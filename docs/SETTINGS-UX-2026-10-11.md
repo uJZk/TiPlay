@@ -1,6 +1,6 @@
 # TiPlay 设置逻辑与 UX 调整 — 2026-10-11
 
-状态：实现与验证完成，正在提交推送并通过现有 GitHub Pages 流程部署网站图标。
+状态：实现与验证完成；功能提交 `3c231985a10211b12dc46488b77a540decb3c124` 已推送 main，网站图标已通过现有 GitHub Pages 流程部署。
 
 ## 当前菜单
 
@@ -41,4 +41,8 @@
 
 按 tie-up 技能执行。清理本轮临时预览，无遗留 Gradle 后台进程。复用已完成的 Android 全量验证与 APK；快速复核浏览器 60/60、diff 空白检查与公共树检查通过；站点已在 `/tmp/tiplay-tie-up-site` 完成组装。当前分支为默认 main，无需合并。
 
-下一步：提交并正常推送本轮改动，跟踪现有 Pages 工作流。Release 草稿与 APK 临时下载仍需可用上传通道；发布说明保留于 `mobile/build/outputs/apk/debug/release-notes.md`，APK 哈希见上文。
+功能提交：`3c231985a10211b12dc46488b77a540decb3c124`（Improve browser settings UX and unify TiPlay icons）。正常推送至 `origin/main`，无强制推送。站点组装产物中的 SVG 与 PNG 均核对为本轮图标。
+
+[Pages 工作流 38104480455](https://github.com/uJZk/TiPlay/actions/runs/38104480455) 已成功；部署地址为 https://ujzk.github.io/TiPlay/ 。[GitHub Android 检查 38104480474](https://github.com/uJZk/TiPlay/actions/runs/38104480474) 在记录时仍运行中；本地完整 Android 检查已经通过，详情见上文。
+
+Release 草稿与 APK 临时下载尚未完成，仍需可用上传通道；发布说明保留于 `mobile/build/outputs/apk/debug/release-notes.md`，APK 哈希见上文。用户已授权，不需再次征求发布草稿或临时上传的许可；恢复访问后仅创建草稿，不公开发布。剩余实车验收及既有链接规范冲突保留。
