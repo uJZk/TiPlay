@@ -19,6 +19,9 @@ Remaining validation: Tesla browser window transitions, audio/Siri behavior on t
 renegotiation recovery. The fit button may be unavailable after new dimensions are accepted; no manual browser
 recovery guarantee is made. A signed release APK and release attachment are outside this debug iteration's delivery.
 
-Tie-up runs on `main`, so no branch merge is needed. Source, tests and these records are delivered by normal push;
-the existing Publish site workflow publishes the browser changes. Deployment acceptance is checked against the
-workflow and public asset contents rather than assuming a successful push means the site is live.
+Tie-up completed on `main`, so no branch merge was needed. Implementation commit `d77eef4` was pushed normally.
+The [Publish site workflow](https://github.com/uJZk/TiPlay/actions/runs/38123376682) succeeded; public `app.js` and
+`sw.js` at https://ujzk.github.io/TiPlay/ matched the committed source. Remote Android results are maintained by the
+[triggered workflow](https://github.com/uJZk/TiPlay/actions/runs/38123376683); the successful required local CI is recorded above.
+Temporary log capture, prototype script and ADB HTTP/DevTools forwards were removed; measurements, build evidence
+and the installed debug APK were retained. No release APK was published.
