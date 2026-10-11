@@ -9,7 +9,6 @@ import { networkInterfaces, tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseIvf, startFakePhone } from './fake-phone.mjs';
-import { TIMESCALE, initSegment, mediaSegment, annexBToLengthPrefixed } from '../../site/play/fmp4.js';
 
 // createRequire honours NODE_PATH, which a bare ESM import does not.
 const { chromium } = createRequire(import.meta.url)('playwright-core');
@@ -24,7 +23,6 @@ const DOWNLOAD_PATH = `${PAGE_PATH}download/`;
 const DEFAULT_HOST = '100.109.220.253:8080';
 const CHROMIUM = process.env.CHROMIUM ?? ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find(existsSync);
 const FFMPEG = process.env.FFMPEG ?? 'ffmpeg';
-const FFPROBE = process.env.FFPROBE ?? FFMPEG.replace(/ffmpeg$/, 'ffprobe');
 
 // Init scripts that take one feature away, to drive the page down its fallback ladder.
 const NO_STREAM_TRANSFER = `for (const type of [MessagePort, Worker]) {
@@ -120,54 +118,6 @@ async function encodeInBrowser(context, origin) {
   return frames.map(frame => ({ key: frame.key, data: new Uint8Array(Buffer.from(frame.data, 'base64')) }));
 }
 
-/**
- * The MSE fallback's H.264 output cannot play in this Chromium (no proprietary codecs), so ffmpeg checks it instead:
- * libx264 Annex-B access units (split at AUDs) are muxed like the page does and must decode frame for frame.
- */
-function checkH264Muxing() {
-  const dir = mkdtempSync(join(tmpdir(), 'tiplay-fmp4-'));
-  try {
-    const stream = join(dir, 'clip.h264'), muxed = join(dir, 'clip.mp4');
-    const encoded = ffmpeg(['-f', 'lavfi', '-i', `testsrc2=size=${WIDTH}x${HEIGHT}:rate=${FPS}`, '-t', '1', '-c:v', 'libx264',
-      '-profile:v', 'high', '-bf', '0', '-x264-params', `aud=1:keyint=${FPS / 2}:repeat-headers=1`, '-f', 'h264', stream]);
-    if (encoded.status !== 0) {
-      log(`skipped the H.264 muxing check: ffmpeg with libx264 unavailable (${encoded.error?.message ?? encoded.stderr.toString().trim()})`);
-      return;
-    }
-    const bytes = new Uint8Array(readFileSync(stream));
-    const units = [];
-    for (let i = 0; i + 4 < bytes.length; i++) {
-      if (bytes[i] === 0 && bytes[i + 1] === 0 && bytes[i + 2] === 1) units.push({ start: i, type: bytes[i + 3] & 0x1f });
-    }
-    const accessUnits = [];
-    units.forEach((unit, index) => {
-      if (unit.type === 9) accessUnits.push({ start: unit.start, key: false });
-      if (unit.type === 5) accessUnits.at(-1).key = true;
-      if (index + 1 === units.length || units[index + 1].type === 9) accessUnits.at(-1).end = index + 1 < units.length ? units[index + 1].start : bytes.length;
-    });
-    const nal = type => {
-      const at = units.findIndex(unit => unit.type === type);
-      return bytes.subarray(units[at].start + 3, units[at + 1].start - (bytes[units[at + 1].start - 1] === 0 ? 1 : 0));
-    };
-    const sps = nal(7), pps = nal(8);
-    const avcC = Uint8Array.of(1, sps[1], sps[2], sps[3], 0xff, 0xe1, sps.length >> 8, sps.length & 255, ...sps, 1, pps.length >> 8, pps.length & 255, ...pps);
-    const codec = `avc1.${[...sps.subarray(1, 4)].map(byte => byte.toString(16).padStart(2, '0')).join('')}`;
-    const duration = TIMESCALE / FPS;
-    const parts = [initSegment({ codec, width: WIDTH, height: HEIGHT, record: avcC })];
-    accessUnits.forEach((unit, index) => {
-      const data = annexBToLengthPrefixed(bytes.subarray(unit.start, unit.end));
-      parts.push(mediaSegment({ sequence: index + 1, decodeTime: index * duration, duration, data, key: unit.key }));
-    });
-    writeFileSync(muxed, Buffer.concat(parts));
-    const decoded = ffmpeg(['-i', muxed, '-f', 'null', '-']);
-    const probe = spawnSync(FFPROBE, ['-v', 'error', '-count_frames', '-select_streams', 'v', '-show_entries', 'stream=nb_read_frames,codec_name,width,height', '-of', 'json', muxed]);
-    const info = JSON.parse(probe.stdout.toString() || '{}').streams?.[0];
-    check(decoded.status === 0 && !decoded.stderr.length && Number(info?.nb_read_frames) === accessUnits.length && info.width === WIDTH,
-      `ffmpeg decodes all ${accessUnits.length} H.264 frames of the MSE muxer's fMP4 (${codec})`);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
 
 function startPageServer() {
   const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -249,7 +199,12 @@ async function checkPath(browser, url, phone, expected, prepare) {
   await waitFor(`decoded frames on ${expected}`, async () => (await stats(page)).page.video.decodedFps > 0);
   const { link, video } = (await stats(page)).page;
   check(link.path === expected, `path ${link.path} (${link.fallback}) decodes at ${video.decodedFps} fps with renderer ${video.renderer}`);
-  if (video.renderer !== 'video') await checkCanvas(page, expected);
+  await checkCanvas(page, expected);
+  await waitFor(`presentation statistics on ${expected}`, async () => {
+    const video = (await stats(page)).page.video;
+    return video.fps90 > 0 && video.fpsLow5 > 0 && video.latency90 >= 40 && video.latency90 < 1000 && video.latencyHigh5 >= video.latency90;
+  });
+  check(true, `${expected}: rolling FPS and timestamp-to-presentation latency reach the main page`);
   checkTap(await tap(page, phone, 0.6, 0.3), 0.6, 0.3, expected);
   await context.close();
   return link;
@@ -260,13 +215,12 @@ function lanAddress() {
 }
 
 async function main() {
-  checkH264Muxing();
   let pageServer, browser;
   const phoneServers = [];
   try {
     pageServer = await startPageServer();
     const origin = `http://127.0.0.1:${pageServer.address().port}`;
-    // These servers are local, including the non-loopback address used by the MSE check.
+    // These servers are local, including the non-loopback address used by the unsupported-context check.
     browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-proxy-server'] });
     const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 1.5, hasTouch: true, locale: 'en-US' });
     let frames = encodeIvf('libvpx');
@@ -316,9 +270,26 @@ async function main() {
     phone.requestPortal();
     await page.waitForSelector('#panel:not([hidden])');
     check(await page.textContent('#connect') === 'Return to CarPlay', 'TiPlay icon returns to the portal');
+    await page.click('#stats-toggle');
+    check(await page.getAttribute('#stats-toggle', 'aria-checked') === 'true', 'Debug is a persistent switch');
     await page.click('#connect');
     await page.waitForSelector('#stage:not([hidden])');
+    await waitFor('Debug presentation samples', async () => (await stats(page)).page.video.latencySamples > 5);
+    const debugLayout = await page.evaluate(() => {
+      const element = document.getElementById('stats'), rect = element.getBoundingClientRect();
+      return { text: element.textContent, x: rect.x + rect.width / 2, y: rect.y,
+        inert: getComputedStyle(element).pointerEvents === 'none' };
+    });
+    check(debugLayout.text.split(' • ').length === 5 && debugLayout.text.includes('ms') &&
+      Math.abs(debugLayout.x - 500) < 1 && debugLayout.y <= 16 && debugLayout.inert,
+      'Debug has five fields centered above CarPlay without intercepting touches');
     check(phone.videoCount === streamsAtPortal, 'returning to CarPlay keeps the same video connection');
+    phone.requestPortal();
+    await page.waitForSelector('#panel:not([hidden])');
+    await page.click('#stats-toggle');
+    await page.click('#connect');
+    check(await page.locator('#stats').isHidden(), 'turning Debug off hides the overlay and keeps decoding');
+    check(phone.videoCount === streamsAtPortal, 'Debug toggles do not replace the video session');
     await page.setViewportSize({ width: 1100, height: 700 });
     await waitFor('resized viewport', () => eventsOf(phone, 'vp').at(-1)?.event.cw === 1100);
     const resized = await page.locator('#stage').boundingBox();
@@ -469,35 +440,18 @@ async function main() {
       'without the page server the pairing link (#c=) opens the cached page, which decodes again');
     await linked.close();
 
-    // The phone-served copy over plain HTTP is not a secure context: MSE plays VP9 in fragmented MP4 there.
-    const address = lanAddress(), vp9 = address && encodeIvf('libvpx-vp9');
-    if (!address || !vp9) log(`skipped the MSE check: ${address ? 'no libvpx-vp9' : 'no non-loopback IPv4 address'}`);
-    else {
-      const served = await startFakePhone({ code: CODE, frames: vp9, width: WIDTH, height: HEIGHT, fps: FPS, codec: 'vp09.00.21.08', host: address, pageDir: PLAY });
+    // Plain HTTP on a LAN address is unsupported: do not open an MSE/video fallback.
+    const address = lanAddress();
+    if (address) {
+      const served = await startFakePhone({ code: CODE, frames, width: WIDTH, height: HEIGHT, fps: FPS, host: address, pageDir: PLAY });
       phoneServers.push(served);
-      const link = await checkPath(browser, `http://${address}:${served.port}/play/#c=${CODE}`, served, 'mse');
-      check(link.fallback === 'not a secure context', 'the MSE rung names its reason');
-      const recovering = await browser.newContext({ locale: 'en-US' });
-      const mse = await recovering.newPage();
-      await mse.goto(`http://${address}:${served.port}/play/#c=${CODE}`);
-      await waitFor('MSE playback', async () => (await stats(mse)).page.video.decodedFps > 0);
-      check(await mse.evaluate(() => location.search === '' && location.hash === ''), 'the page the phone serves needs no ?t= and drops the code fragment');
-      const decodedBefore = eventsOf(served, 'dec').length;
-      await corruptUntil(served, mse, () => mse.evaluate(() => window.tiplayStats.page.video.mediaErrors > 0 || document.getElementById('video').error !== null));
-      await waitFor('MSE playback after a decode error',
-        async () => eventsOf(served, 'dec').length > decodedBefore && (await stats(mse)).page.video.decodedFps > 0);
-      check(true, 'after a decode error ends its <video>, the MSE page reconnects with a new media element and plays again');
-      await recovering.close();
-      const bare = await browser.newContext({ locale: 'en-US' });
-      await bare.addInitScript('delete window.MediaSource; delete window.ManagedMediaSource;');
-      const bareContext = await bare.newPage();
-      await bareContext.goto(`http://${address}:${served.port}/play/#c=${CODE}`);
-      const message = await waitFor('the no-video message', async () => {
-        const text = await bareContext.textContent('#message');
-        return /cannot show the video/.test(text) && text;
-      });
-      check(await bareContext.isDisabled('#connect') && message.includes('not a secure context, no MediaSource'), `without any rung the page says "${message}"`);
-      await bare.close();
+      const context = await browser.newContext();
+      const bare = await context.newPage();
+      await bare.goto(`http://${address}:${served.port}/play/#c=${CODE}`);
+      await waitFor('unsupported HTTP page', async () => bare.isDisabled('#connect'));
+      check((await bare.textContent('#message')).includes('not a secure context'), 'insecure HTTP names the WebCodecs requirement');
+      check(await bare.locator('video').count() === 0 && served.videoCount === 0, 'no video element or removed playback path opens');
+      await context.close();
     }
 
     const unexpected = failures.filter(text => !/Failed to load resource|ERR_CONNECTION_RESET|ERR_EMPTY_RESPONSE|network error/i.test(text));

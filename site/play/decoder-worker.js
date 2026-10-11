@@ -11,10 +11,10 @@ const pipeline = typeof VideoDecoder === 'function' ? createDecoderPipeline({
     if (message.type === 'end') stop();
     self.postMessage(message);
   },
-  present: (frame, config, id) => {
+  present: (frame, config, id, timing) => {
     if (id !== activeId) frame.close();
-    else if (presenter) presenter.present(frame, config);
-    else delivery.present(frame, config, id);
+    else if (presenter) presenter.present(frame, config, timing);
+    else delivery.present(frame, config, id, timing);
   },
 }) : null;
 
@@ -28,7 +28,8 @@ function stop() {
 }
 
 self.onmessage = ({ data }) => {
-  if (data.type === 'canvas') presenter = createFramePresenter(data.canvas);
+  if (data.type === 'clock') pipeline?.clock(data.clock);
+  else if (data.type === 'canvas') presenter = createFramePresenter(data.canvas);
   else if (data.type === 'resize') presenter?.resize(data.width, data.height);
   else if (data.type === 'stream' || data.type === 'feed') {
     stop();

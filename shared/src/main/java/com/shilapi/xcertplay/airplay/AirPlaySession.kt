@@ -124,6 +124,7 @@ class AirPlaySession(
     }
 
     fun syncedNtp(): BigInteger = ntp.syncedNtp()
+    fun mediaTimeNanos(senderNanos: Long): Long? = ntp.mediaTimeNanos(senderNanos)
 
     internal fun logDebug(message: String) = debugLog(message)
 

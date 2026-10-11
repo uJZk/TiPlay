@@ -31,6 +31,9 @@ class BrowserOnlyMediaSink(
     override fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) =
         browser.onVideoFrame(type, naluBytes, senderNanos, arrivalNanos)
 
+    override fun setVideoClockHandler(type: Int, handler: (Long) -> Long?) =
+        browser.setVideoClockHandler(type, handler)
+
     override fun setVideoRecoveryHandler(type: Int, handler: () -> Unit) =
         browser.setVideoRecoveryHandler(type, handler)
 

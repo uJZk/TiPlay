@@ -114,7 +114,8 @@ class WebVideoHub(
     }
 
     /** One Annex-B access unit. [annexB] is shared with the Android decoder: it is queued as is, never copied or changed. */
-    fun frame(owner: Any, annexB: ByteArray, senderNanos: Long, arrivalNanos: Long) {
+    @JvmOverloads
+    fun frame(owner: Any, annexB: ByteArray, senderNanos: Long, arrivalNanos: Long, captureNanos: Long? = null) {
         val force = lock.withLock {
             if (owner !== this.owner) return
             val config = config ?: return
@@ -133,12 +134,12 @@ class WebVideoHub(
             val record = if (WebVideoCodecs.isKeyFrame(config.codec, annexB)) {
                 WebVideoRecord(
                     WebVideoRecords.KIND_FRAME, WebVideoRecords.FLAG_KEY_FRAME or WebVideoRecords.FLAG_PARAMETER_SETS,
-                    WebVideoRecords.codecId(config.codec), sequence, config.epoch, timestampUs, annexB, config.parameterSets, now,
+                    WebVideoRecords.codecId(config.codec), sequence, config.epoch, timestampUs, annexB, config.parameterSets, now, captureNanos,
                 )
             } else {
                 WebVideoRecord(
                     WebVideoRecords.KIND_FRAME, 0, WebVideoRecords.codecId(config.codec), sequence, config.epoch, timestampUs,
-                    annexB, null, now,
+                    annexB, null, now, captureNanos,
                 )
             }
             if (subscription.queue.offer(record, now)) subscription.signal()

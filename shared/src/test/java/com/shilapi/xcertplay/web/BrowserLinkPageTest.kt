@@ -129,7 +129,7 @@ class BrowserLinkPageTest {
             assertEquals(path, BrowserLinkServer.PAGE_POLICY, response.headers["content-security-policy"])
         }
         val policy = BrowserLinkServer.PAGE_POLICY
-        assertTrue(policy, "script-src 'self';" in policy && "media-src 'self' blob:;" in policy && "connect-src 'self' http:;" in policy)
+        assertTrue(policy, "script-src 'self';" in policy && "media-src 'none';" in policy && "connect-src 'self' http:;" in policy)
         assertTrue(policy, "'unsafe-inline'" !in policy && "'unsafe-eval'" !in policy)
     }
 

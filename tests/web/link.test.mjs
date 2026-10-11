@@ -258,7 +258,7 @@ test('a silent stream times out, and a replaced or stopped one reports nothing',
 });
 
 test('the video path takes the Tesla rung when everything is there and replaces only what is missing', () => {
-  const all = { secureContext: true, videoDecoder: true, workerVideoDecoder: true, offscreenCanvas: true, transferableStreams: true, mediaSource: true };
+  const all = { secureContext: true, videoDecoder: true, workerVideoDecoder: true, offscreenCanvas: true, transferableStreams: true };
   assert.deepEqual(choosePath(all), { path: 'worker', decode: 'worker', draw: 'worker', feed: 'stream', reason: null });
   assert.deepEqual(choosePath({ ...all, transferableStreams: false }),
     { path: 'worker-chunks', decode: 'worker', draw: 'worker', feed: 'chunks', reason: 'streams are not transferable' });
@@ -267,10 +267,10 @@ test('the video path takes the Tesla rung when everything is there and replaces 
   assert.equal(choosePath({ ...all, offscreenCanvas: false, transferableStreams: false }).reason, 'streams are not transferable, no OffscreenCanvas');
   assert.deepEqual(choosePath({ ...all, workerVideoDecoder: false }),
     { path: 'main', decode: 'main', draw: 'main', feed: null, reason: 'no VideoDecoder in workers' });
-  assert.deepEqual(choosePath({ ...all, secureContext: false }), { path: 'mse', decode: 'mse', draw: 'video', feed: null, reason: 'not a secure context' });
+  assert.deepEqual(choosePath({ ...all, secureContext: false }), { path: 'none', decode: null, draw: null, feed: null, reason: 'not a secure context' });
   assert.equal(choosePath({ ...all, videoDecoder: false }).reason, 'no WebCodecs');
-  assert.deepEqual(choosePath({ secureContext: false, mediaSource: false }),
-    { path: 'none', decode: null, draw: null, feed: null, reason: 'not a secure context, no MediaSource' });
+  assert.deepEqual(choosePath({ secureContext: false }),
+    { path: 'none', decode: null, draw: null, feed: null, reason: 'not a secure context' });
 });
 
 test('landscape pillarbox is excluded and video center maps correctly', () => {

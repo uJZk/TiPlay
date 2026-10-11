@@ -8,7 +8,7 @@
 
 export const DEFAULT_HOST = '100.109.220.253:8080';
 export const PROTOCOL = 1;
-export const RECORD = Object.freeze({ CONFIG: 1, FRAME: 2, HEARTBEAT: 3, END: 4 });
+export const RECORD = Object.freeze({ CONFIG: 1, FRAME: 2, HEARTBEAT: 3, END: 4, TIMING: 5 });
 export const FLAG = Object.freeze({ KEY: 1, DISCONTINUITY: 2, PARAMETER_SETS: 4 });
 export const HEADER_BYTES = 24;
 export const MAX_PAYLOAD = 8 * 1024 * 1024;
@@ -113,7 +113,7 @@ export function timeoutSignal(ms) {
 /**
  * The video path for this browser (contract §7.2). The first rung is the Tesla path; each later one replaces only
  * what is missing. `features`: secureContext, videoDecoder, workerVideoDecoder, offscreenCanvas, transferableStreams,
- * mediaSource. `decode` and `draw` say where that work happens; `feed` is how the worker gets the response body.
+ * `decode` and `draw` say where that work happens; `feed` is how the worker gets the response body.
  */
 export function choosePath(features) {
   if (features.secureContext && features.videoDecoder) {
@@ -127,8 +127,7 @@ export function choosePath(features) {
     return { path, decode: 'worker', draw, feed, reason: reasons.join(', ') || null };
   }
   const reason = features.secureContext ? 'no WebCodecs' : 'not a secure context';
-  if (features.mediaSource) return { path: 'mse', decode: 'mse', draw: 'video', feed: null, reason };
-  return { path: 'none', decode: null, draw: null, feed: null, reason: `${reason}, no MediaSource` };
+  return { path: 'none', decode: null, draw: null, feed: null, reason };
 }
 
 export class RecordError extends Error {}

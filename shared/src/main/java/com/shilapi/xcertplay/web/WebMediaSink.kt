@@ -16,6 +16,7 @@ class WebMediaSink(
     private var height: Int,
     private val fps: Int,
 ) : MediaSink {
+    @Volatile private var mediaClock: ((Long) -> Long?)? = null
     @Volatile private var codec: VideoCodec? = null
     @Volatile private var recovery: (() -> Unit)? = null
     @Volatile private var diagnostics: ((String) -> Unit)? = null
@@ -40,7 +41,11 @@ class WebMediaSink(
     override fun onVideoFrame(type: Int, naluBytes: ByteArray) = onVideoFrame(type, naluBytes, 0L, System.nanoTime())
 
     override fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) {
-        if (type == MAIN_SCREEN) hub.frame(this, naluBytes, senderNanos, arrivalNanos)
+        if (type == MAIN_SCREEN) hub.frame(this, naluBytes, senderNanos, arrivalNanos, mediaClock?.invoke(senderNanos))
+    }
+
+    override fun setVideoClockHandler(type: Int, handler: (Long) -> Long?) {
+        if (type == MAIN_SCREEN) mediaClock = handler
     }
 
     override fun setVideoRecoveryHandler(type: Int, handler: () -> Unit) {

@@ -176,7 +176,10 @@ class BrowserLinkServerTest {
     @Test fun helloNamesTheAppWithCorsAndHygieneHeaders() {
         val response = get("/hello")
         assertEquals(200, response.status)
-        assertEquals("""{"app":"TiPlay","protocol":1}""", response.text)
+        val hello = WebJson.parse(response.text) as Map<*, *>
+        assertEquals("TiPlay", hello["app"])
+        assertEquals(1L, (hello["protocol"] as Number).toLong())
+        assertTrue((hello["clockMs"] as Number).toDouble().isFinite())
         assertEquals("application/json", response.headers["content-type"])
         assertEquals(origin, response.headers["access-control-allow-origin"])
         assertEquals("Origin", response.headers["vary"])
@@ -416,6 +419,26 @@ class BrowserLinkServerTest {
             val last = it.response()
             assertEquals("close", last.headers["connection"])
             assertTrue(it.closedByServer())
+        }
+    }
+
+    @Test fun requestedTimingPrecedesTheMatchingFrameWithoutChangingTheVideoPayload() {
+        beginStream()
+        Client().use { video ->
+            video.get(videoPath() + "&timing=1")
+            assertEquals(200, video.response().status)
+            assertEquals(WebVideoRecords.KIND_CONFIG, video.record().first.kind)
+            val capture = System.nanoTime() - 50_000_000
+            hub.frame(owner, idr, 1_000_000_000, System.nanoTime(), capture)
+            val (timing, payload) = video.record()
+            val (frame, picture) = video.record()
+            assertEquals(WebDebugTiming.KIND, timing.kind)
+            assertEquals(frame.epoch, timing.epoch)
+            assertEquals(frame.sequence, timing.sequence)
+            assertEquals(frame.timestampUs, timing.timestampUs)
+            assertEquals(capture / 1e6, java.nio.ByteBuffer.wrap(payload)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN).double, 0.0)
+            assertArrayEquals(parameterSets + idr, picture)
         }
     }
 

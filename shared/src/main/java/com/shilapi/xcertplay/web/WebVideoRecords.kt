@@ -18,12 +18,13 @@ class WebVideoRecord(
     val prefix: ByteArray? = null,
     /** System.nanoTime when the record was queued, for the queue's age limit; 0 for records that are not queued. */
     val queuedAtNanos: Long = 0L,
+    val captureNanos: Long? = null,
 ) {
     val payloadLength: Int get() = (prefix?.size ?: 0) + payload.size
     val keyFrame: Boolean get() = flags and WebVideoRecords.FLAG_KEY_FRAME != 0
 
     fun withFlags(extra: Int) =
-        WebVideoRecord(kind, flags or extra, codec, sequence, epoch, timestampUs, payload, prefix, queuedAtNanos)
+        WebVideoRecord(kind, flags or extra, codec, sequence, epoch, timestampUs, payload, prefix, queuedAtNanos, captureNanos)
 }
 
 /** Wire format of the browser video stream (protocol v1). */

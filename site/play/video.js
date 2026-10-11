@@ -2,6 +2,8 @@
  * TiPlay WebCodecs video: §3 records → VideoDecoder → frames, and a presenter that draws frames on a canvas
  * (WebGL, 2D as a fallback). Runs in decoder-worker.js on the Tesla path, or on the main thread as a fallback. */
 import { FLAG, RECORD, RecordError, Samples, chooseDecoderConfig, createRecordStream, letterbox } from './link.js';
+import { createFpsWindow } from './fps-window.js';
+import { captureTime } from './clock-sync.js';
 
 const KEY_REQUEST_INTERVAL_MS = 1000;
 const MAX_DECODE_QUEUE = 30; // half a second at 60 fps; beyond that, drop to the next key frame instead of lagging
@@ -15,6 +17,8 @@ const utf8 = new TextDecoder();
 export function createDecoderPipeline({ post: send, present }) {
   const decoderSupports = config => VideoDecoder.isConfigSupported(config);
   const decodeStarts = new Map();
+  const captureTimes = new Map();
+  let clock = null;
   const decodeMs = new Samples();
   const totals = { decoded: 0, dropped: 0, decodeErrors: 0, backlogResets: 0, keyRequests: 0 };
   let decoder = null, decoderConfig = null, config = null, codecSupported = null;
@@ -24,6 +28,11 @@ export function createDecoderPipeline({ post: send, present }) {
   const records = createRecordStream({
     onRecord: (record, signal) => {
       if (record.kind === RECORD.CONFIG) return configure(record, signal);
+      if (record.kind === RECORD.TIMING && record.payload.byteLength === 8) {
+        const captured = new DataView(record.payload.buffer, record.payload.byteOffset, 8).getFloat64(0, true);
+        captureTimes.set(`${record.epoch}:${record.timestampUs}`, captureTime(captured, clock));
+        if (captureTimes.size > 120) captureTimes.delete(captureTimes.keys().next().value);
+      }
       if (record.kind === RECORD.FRAME) decodeFrame(record);
       return null;
     },
@@ -84,6 +93,7 @@ export function createDecoderPipeline({ post: send, present }) {
     if (decoder && decoder.state !== 'closed') decoder.close();
     decoder = null;
     decodeStarts.clear();
+    captureTimes.clear();
   }
 
   /**
@@ -153,7 +163,10 @@ export function createDecoderPipeline({ post: send, present }) {
     }
     totals.decoded++;
     failures = 0;
-    present(frame, config, streamId);
+    const key = `${config?.epoch}:${frame.timestamp}`;
+    const timing = captureTimes.get(key);
+    captureTimes.delete(key);
+    present(frame, config, streamId, timing);
     if (config && reportedEpoch !== config.epoch) {
       reportedEpoch = config.epoch;
       post({ type: 'decoded', epoch: config.epoch });
@@ -173,6 +186,7 @@ export function createDecoderPipeline({ post: send, present }) {
 
   return {
     /** Every stream starts with a config record and a key frame; outputs still in the decoder are harmless. */
+    clock(value) { clock = value; },
     read(id, stream) {
       stop();
       streamId = id;
@@ -186,6 +200,7 @@ export function createDecoderPipeline({ post: send, present }) {
     stats: () => ({
       codec: config?.codec ?? null,
       codecSupported,
+      clockRttMs: clock && performance.timeOrigin + performance.now() - clock.at <= 15000 ? clock.rtt : null,
       width: config?.width ?? null,
       height: config?.height ?? null,
       acceleration: decoderConfig?.hardwareAcceleration ?? null,
@@ -205,11 +220,12 @@ export function createDecoderPipeline({ post: send, present }) {
  */
 export function createFramePresenter(canvas) {
   const drawMs = new Samples();
+  const fpsWindow = createFpsWindow();
   let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null;
 
   function draw(frame) {
     const width = lastConfig?.width || frame.displayWidth, height = lastConfig?.height || frame.displayHeight;
-    renderer.draw(frame, letterbox(canvas.width, canvas.height, width, height));
+    return renderer.draw(frame, letterbox(canvas.width, canvas.height, width, height));
   }
 
   const lost = event => event.preventDefault();
@@ -224,11 +240,16 @@ export function createFramePresenter(canvas) {
   }
 
   return {
-    present(frame, config) {
+    present(frame, config, timing) {
+      if (lastConfig?.epoch !== config?.epoch) fpsWindow.reset();
       lastConfig = config;
       const started = performance.now();
-      try { draw(frame); } catch (error) { frame.close(); throw error; }
+      let drawn;
+      try { drawn = draw(frame) !== false; } catch (error) { frame.close(); throw error; }
       drawMs.add(performance.now() - started);
+      const at = performance.now();
+      const latency = Number.isFinite(timing) ? performance.timeOrigin + at - timing : null;
+      if (drawn) fpsWindow.frame(at, 1, latency);
       lastFrame?.close();
       lastFrame = frame;
     },
@@ -239,17 +260,19 @@ export function createFramePresenter(canvas) {
       if (lastFrame) draw(lastFrame);
     },
     close() {
+      fpsWindow.reset();
       lastFrame?.close();
       lastFrame = null;
     },
     dispose() {
+      fpsWindow.reset();
       lastFrame?.close();
       lastFrame = null;
       canvas.removeEventListener('webglcontextlost', lost);
       canvas.removeEventListener('webglcontextrestored', restored);
       renderer.dispose?.();
     },
-    stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95) }),
+    stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), ...fpsWindow.stats() }),
   };
 }
 
@@ -300,7 +323,7 @@ function glRenderer(gl) {
     },
     kind: typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext ? 'webgl2' : 'webgl',
     draw(frame, box) {
-      if (gl.isContextLost()) return;
+      if (gl.isContextLost()) return false;
       const { width, height } = gl.canvas;
       gl.viewport(0, 0, width, height);
       gl.clear(gl.COLOR_BUFFER_BIT);

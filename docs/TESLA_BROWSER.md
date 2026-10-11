@@ -137,13 +137,14 @@ See [hotspot address setup](HOTSPOT_ADDRESS.md) for permissions, version limits 
 The phone also serves its own copy of the page at `http://<phone address>:8080/play/`, built from `site/play/` into the
 app. It needs no internet access and no pairing code to load.
 
-- Over `http://` the page is not a secure context, so it plays video through Media Source Extensions (fragmented MP4)
-  instead of WebCodecs. Safari uses its Managed Media Source.
+- Video requires WebCodecs in a secure context. Plain HTTP at a LAN/hotspot address is unsupported; use the HTTPS
+  page for a car browser. The former `<video>` / Media Source Extensions fallback has been removed. The user
+  reports that Tesla pauses `<video>` in Drive; browser codec support alone does not make that path usable.
+  The user has confirmed that the retained WebCodecs/canvas path works in Drive in their real-vehicle test.
 - Firefox usually cannot play HEVC. If the page says so, turn off **HEVC (H.265)** under
   **CarPlay settings → Display**, then choose **Save and reconnect**.
 - The address in the link is the extra hotspot address once TiPlay added it, else the hotspot's own address. Any device
-  on the hotspot can open it. The Tesla should use the HTTPS link: over `http://` it would fall back to Media Source
-  Extensions, which is slower to start and less tested.
+  on the hotspot can load it. The Tesla must use the HTTPS link for playback.
 - A browser on the phone itself can open `http://localhost:8080/play/`, which is a secure context.
 
 ## 6. Picture size
@@ -164,6 +165,13 @@ shows the same picture with black bars and never changes the canvas.
 CarPlay fills the browser video area without a top header or fullscreen button. Tap the **TiPlay** icon inside CarPlay
 to return to the browser portal. This keeps the CarPlay session connected; use the portal's CarPlay button to return
 to the picture.
+
+The portal's **Debug** switch shows a small, non-interactive pill at the top center of CarPlay:
+codec • middle 90% FPS • slowest 5% FPS • middle 90% latency • worst 5% latency.
+Statistics use a rolling five-second window of canvas draw submissions, excluding resize redraws.
+Latency uses the synchronized iPhone frame timestamp through the Android relay to browser drawing; missing or
+expired timing data displays `—`. It is an estimate: the iPhone timestamp's capture semantics and the physical
+screen presentation boundary still need real-device validation. See [Debug implementation](WEB-DEBUG-2026-10-11.md).
 
 ## 7. Screen off and permissions
 

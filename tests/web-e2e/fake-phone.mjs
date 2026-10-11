@@ -9,7 +9,7 @@ import { History, listen, closeServer } from './resources.mjs';
 import { RECORD, FLAG, encodeRecord } from '../../site/play/link.js';
 
 const PAGE_TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
-const PAGE_CSP = "default-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'";
+const PAGE_CSP = "default-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 
 const json = (res, status, body) => {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -76,7 +76,7 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     return true;
   }
 
-  function streamVideo(res) {
+  function streamVideo(res, timing = false) {
     closeVideo('replaced');
     videoCount++;
     // Close-delimited body: no Content-Length and no Transfer-Encoding.
@@ -94,6 +94,12 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
         if (blocked || res.destroyed) return;
         const frame = corrupt ? { key: true, data: new Uint8Array(2000).fill(0x5a) } : frames[cursor++ % frames.length];
         corrupt = false;
+        if (timing) {
+          const payload = new Uint8Array(8);
+          new DataView(payload.buffer).setFloat64(0, performance.now() - 50, true);
+          res.write(encodeRecord({ kind: RECORD.TIMING, epoch: 1, sequence,
+            timestampUs: Math.round(sequence * 1e6 / fps), payload }));
+        }
         blocked = !res.write(encodeRecord({
           kind: RECORD.FRAME, flags: frame.key ? FLAG.KEY : 0, epoch: 1,
           sequence, timestampUs: Math.round(sequence * 1e6 / fps), payload: frame.data,
@@ -154,9 +160,9 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     }
     const route = `${req.method} ${url.pathname}`;
     if (pageDir && req.method === 'GET' && (url.pathname === '/' || url.pathname.startsWith('/play/'))) return servePage(res, url.pathname);
-    if (route === 'GET /hello') return json(res, 200, { app: 'TiPlay', protocol: 1 });
+    if (route === 'GET /hello') return json(res, 200, { app: 'TiPlay', protocol: 1, clockMs: performance.now() });
     if (route === 'GET /video') {
-      if (authorize(res, url.searchParams.get('c'), url.searchParams.get('s'))) streamVideo(res);
+      if (authorize(res, url.searchParams.get('c'), url.searchParams.get('s'))) streamVideo(res, url.searchParams.get('timing') === '1');
       return;
     }
     if (route === 'POST /control' || route === 'POST /bye') {

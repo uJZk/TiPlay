@@ -7,6 +7,9 @@ under "Browser session lifecycle".
 
 ## Current progress
 
+See `docs/WEB-DEBUG-2026-10-11.md` for the five-field Debug overlay, rolling statistics,
+synchronized frame timing, removal of the MSE/video fallback and measurement validation limits.
+
 See `docs/RECONNECT-UX-2026-10-11.md` for the pre-rendered reconnect wallpaper,
 portal integration, verification and delivery progress. Follow `docs/WEB-PAIRING-DESIGN.md`
 and `docs/APP-MAIN-PAGE-DESIGN.md` for the latest layout decisions. The App design is implemented;

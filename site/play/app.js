@@ -8,12 +8,14 @@
  * transferred canvas; other browsers take a later rung of the fallback ladder (link.js choosePath). */
 import {
   DEFAULT_HOST, PROTOCOL, addressSpaceFor, backoffDelay, choosePath, createControlOutbox, createTouchSlots, flatStats,
-  isCode, linkFromAddress, linkLocation, mapPoint, newSessionId, normalizeHost, PROBE_CODECS, supportedCodecs,
+  isCode, linkFromAddress, linkLocation, mapPoint, newSessionId, normalizeHost, supportedCodecs,
   timeoutSignal, viewportFor,
 } from './link.js';
 import { followAppearance } from './appearance.js';
 import { createReconnectOverlay } from './reconnect.js';
 import { pumpChunkStream } from './transport.js';
+import { formatDebugFps } from './fps-window.js';
+import { sampleClock } from './clock-sync.js';
 
 const STRINGS = {
   en: {
@@ -29,7 +31,7 @@ const STRINGS = {
     settings: 'Setting',
     fullscreen: 'Full screen',
     exitFullscreen: 'Exit full screen',
-    stats: 'Stats',
+    stats: 'Debug',
     fit: 'Apply and reconnect',
     fitPending: 'Reconnecting…',
     source: 'TiPlay',
@@ -49,7 +51,7 @@ const STRINGS = {
     protocol: 'TiPlay on the phone does not match this page. Update the app.',
     unsupported: 'This browser cannot decode {0}.',
     unsupportedHevc: 'This browser cannot decode HEVC. Turn off HEVC in TiPlay on the phone.',
-    noVideo: 'This browser cannot show the video ({0}). Open the page over HTTPS in a current Chrome, Edge, Safari or Firefox.',
+    noVideo: 'This browser cannot show the video ({0}). Open the page over HTTPS in a browser with WebCodecs support.',
     invalidCode: 'Enter the 6-digit pairing code.',
     invalidHost: 'Enter an IPv4 address with port, for example 100.109.220.253:8080.',
   },
@@ -66,7 +68,7 @@ const STRINGS = {
     settings: '设置',
     fullscreen: '全屏',
     exitFullscreen: '退出全屏',
-    stats: '统计',
+    stats: 'Debug',
     fit: '应用并重新连接',
     fitPending: '正在重新连接…',
     source: 'TiPlay',
@@ -86,7 +88,7 @@ const STRINGS = {
     protocol: '手机上的 TiPlay 与本页不匹配，请更新应用。',
     unsupported: '此浏览器无法解码 {0}。',
     unsupportedHevc: '此浏览器无法解码 HEVC。请在手机上的 TiPlay 中关闭 HEVC。',
-    noVideo: '此浏览器无法显示画面（{0}）。请用新版 Chrome、Edge、Safari 或 Firefox 通过 HTTPS 打开本页。',
+    noVideo: '此浏览器无法显示画面（{0}）。请使用支持 WebCodecs 的浏览器通过 HTTPS 打开本页。',
     invalidCode: '请输入 6 位配对码。',
     invalidHost: '请输入带端口的 IPv4 地址，例如 100.109.220.253:8080。',
   },
@@ -150,10 +152,6 @@ const pathReady = setUpVideo().catch(error => {
 const codecsReady = pathReady.then(async () => {
   let names = [];
   if (videoPath.decode === 'worker' || videoPath.decode === 'main') names = await supportedCodecs(config => VideoDecoder.isConfigSupported(config));
-  else if (videoPath.decode === 'mse') {
-    const type = window.ManagedMediaSource ?? window.MediaSource;
-    names = Object.keys(PROBE_CODECS).filter(name => type.isTypeSupported(`video/mp4; codecs="${PROBE_CODECS[name]}"`));
-  }
   probedCodecs = names.join(',');
   return probedCodecs;
 });
@@ -205,7 +203,6 @@ async function setUpVideo() {
     workerVideoDecoder: false,
     offscreenCanvas: typeof HTMLCanvasElement.prototype.transferControlToOffscreen === 'function',
     transferableStreams: streamsTransferable(),
-    mediaSource: Boolean(window.ManagedMediaSource || window.MediaSource),
   };
   const started = features.secureContext && features.videoDecoder ? await startWorker() : null;
   features.workerVideoDecoder = Boolean(started?.videoDecoder);
@@ -225,7 +222,7 @@ async function setUpVideo() {
     worker.onmessage = ({ data }) => {
       if (data.type === 'frame') {
         try {
-          if (active && data.id === streamId) presenter.present(data.frame, data.config);
+          if (active && data.id === streamId) presenter.present(data.frame, data.config, data.timing);
           else data.frame.close();
         } finally {
           worker.postMessage({ type: 'frame-ack', frameId: data.frameId });
@@ -236,6 +233,7 @@ async function setUpVideo() {
     };
     worker.onerror = () => stop('noVideo', 'decoder worker failed');
     sink = {
+      clock(clock) { worker.postMessage({ type: 'clock', clock }); },
       open(id, body, signal) {
         if (path.feed === 'stream') worker.postMessage({ type: 'stream', id, stream: body }, [body]);
         else {
@@ -251,10 +249,11 @@ async function setUpVideo() {
   } else if (path.decode === 'main') {
     const { createDecoderPipeline, createFramePresenter } = await import('./video.js');
     const presenter = createFramePresenter(canvas);
-    const pipeline = createDecoderPipeline({ post: onVideoMessage, present: presenter.present });
+    const pipeline = createDecoderPipeline({ post: onVideoMessage, present: (frame, config, id, timing) => presenter.present(frame, config, timing) });
     let timer = null;
     const stop = () => { clearInterval(timer); pipeline.stop(); presenter.close(); };
     sink = {
+      clock: pipeline.clock,
       open(id, body) {
         stop();
         pipeline.read(id, body);
@@ -263,23 +262,6 @@ async function setUpVideo() {
       stop,
       dispose() { stop(); presenter.dispose(); },
       resize: presenter.resize,
-    };
-  } else if (path.decode === 'mse') {
-    const video = $('video');
-    canvas.hidden = true;
-    video.hidden = false;
-    const player = (await import('./mse.js')).createMsePlayer(video, { post: onVideoMessage });
-    let timer = null;
-    const stop = () => { clearInterval(timer); player.stop(); };
-    sink = {
-      open(id, body) {
-        stop();
-        player.read(id, body);
-        timer = setInterval(() => onVideoMessage({ type: 'stats', id, stats: player.stats() }), 1000);
-      },
-      stop,
-      dispose() { stop(); player.dispose(); },
-      resize: () => {},
     };
   }
 }
@@ -380,10 +362,13 @@ async function connectVideo() {
   const abort = videoAbort = new AbortController();
   const timer = setTimeout(() => abort.abort(), 6000); // until the response headers arrive
   try {
+    const clockStart = performance.timeOrigin + performance.now();
     const helloResponse = await phoneFetch('/hello', { signal: abort.signal });
     if (!helloResponse.ok) throw await httpError(helloResponse);
     const hello = await helloResponse.json();
     if (id !== streamId) return;
+    const clock = sampleClock(hello.clockMs, clockStart, performance.timeOrigin + performance.now());
+    sink?.clock(clock);
     if (hello.app !== 'TiPlay' || hello.protocol !== PROTOCOL) {
       stop('protocol');
       return;
@@ -394,7 +379,7 @@ async function connectVideo() {
       stop('noVideo', videoPath.reason);
       return;
     }
-    const response = await phoneFetch(`/video?c=${link.code}&s=${session}&codecs=${codecs}`, { signal: abort.signal });
+    const response = await phoneFetch(`/video?c=${link.code}&s=${session}&codecs=${codecs}&timing=1`, { signal: abort.signal });
     clearTimeout(timer);
     if (id !== streamId) {
       response.body?.cancel().catch(() => {});
@@ -402,6 +387,27 @@ async function connectVideo() {
     }
     if (!response.ok) throw await httpError(response);
     sink.open(id, response.body, abort.signal);
+    if (Number.isFinite(hello.clockMs)) {
+      let busy = false;
+      const clockTimer = setInterval(async () => {
+        if (busy || abort.signal.aborted) return;
+        busy = true;
+        try {
+          let best = null;
+          for (let probe = 0; probe < 3; probe++) {
+            const start = performance.timeOrigin + performance.now();
+            const response = await phoneFetch('/hello', { signal: abort.signal });
+            if (!response.ok) break;
+            const hello = await response.json();
+            const sample = sampleClock(hello.clockMs, start, performance.timeOrigin + performance.now());
+            if (sample && (!best || sample.rtt < best.rtt)) best = sample;
+          }
+          if (!abort.signal.aborted && id === streamId) sink?.clock(best);
+        } catch (_) { /* Expired clock samples produce unavailable latency, never a guessed value. */ }
+        finally { busy = false; }
+      }, 5000);
+      abort.signal.addEventListener('abort', () => clearInterval(clockTimer), { once: true });
+    }
     phase = 'waiting';
     // A phone that restarted while this page stayed open has forgotten the viewport; repeat it once per stream.
     lastViewport = '';
@@ -487,8 +493,7 @@ function onVideoMessage(message) {
 
 function render() {
   $('disconnect').hidden = !active;
-  $('stats-toggle').hidden = !active;
-  $('stats-toggle').setAttribute('aria-pressed', String(statsVisible));
+  $('stats-toggle').setAttribute('aria-checked', String(statsVisible));
   $('fit').hidden = !(active && status?.fit === true);
   $('fit').disabled = fitRequestedAt > 0;
   $('fit').textContent = t(fitRequestedAt ? 'fitPending' : 'fit');
@@ -500,9 +505,9 @@ function render() {
   $('connect').textContent = t(active ? 'resume' : 'connect');
   $('code').disabled = active;
   $('host').disabled = active;
-  $('stats').hidden = !(active && statsVisible);
+  $('stats').hidden = !(active && live && statsVisible);
   if (active && statsVisible) {
-    $('stats').textContent = Object.entries(flatStats(snapshot(), Infinity)).map(([key, value]) => `${key} ${value}`).join('\n');
+    $('stats').textContent = formatDebugFps(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats);
   }
 }
 
@@ -528,7 +533,7 @@ function pageStats() {
   };
 }
 
-/** Everything the stats overlay shows; never the pairing code or the session id. */
+/** Full diagnostics remain available to tools; never include the pairing code or the session id. */
 function snapshot() {
   const { phone = null, ...rest } = status ?? {};
   return { page: pageStats(), status: status ? rest : null, phone };

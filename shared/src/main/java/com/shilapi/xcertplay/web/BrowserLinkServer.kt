@@ -230,7 +230,7 @@ class BrowserLinkServer(
             return respond(output, request, refuse(405, "method", listOf("Allow" to "$method, OPTIONS")))
         }
         return when (request.path) {
-            "/hello" -> respond(output, request, json(200, HELLO))
+            "/hello" -> respond(output, request, json(200, WebDebugTiming.hello(System.nanoTime())))
             "/video" -> streamVideo(request, socket, output)
             "/control" -> respond(output, request, control(request))
             else -> respond(output, request, bye(request))
@@ -297,10 +297,13 @@ class BrowserLinkServer(
             while (true) {
                 val record = stream.subscription.take(maxOf(1L, HEARTBEAT_MILLIS - (nowMillis() - lastWrite)))
                     ?: if (nowMillis() - lastWrite >= HEARTBEAT_MILLIS) WebVideoRecords.HEARTBEAT else continue
-                val size = WebVideoRecords.HEADER_SIZE + record.payloadLength
+                val timing = if (request.query["timing"] == "1") WebDebugTiming.record(record, System.nanoTime()) else null
+                val timingSize = timing?.let { WebVideoRecords.HEADER_SIZE + it.payloadLength } ?: 0
+                val size = timingSize + WebVideoRecords.HEADER_SIZE + record.payloadLength
                 if (buffer.size < size) buffer = ByteArray(maxOf(size, buffer.size * 2))
                 // One gathered write per record: the payload is copied once, into this buffer.
-                WebVideoRecords.write(record, buffer)
+                if (timing != null) WebVideoRecords.write(timing, buffer)
+                WebVideoRecords.write(record, buffer, timingSize)
                 val writeStart = System.nanoTime()
                 stream.writingSince = nowMillis()
                 output.write(buffer, 0, size)
@@ -648,7 +651,6 @@ class BrowserLinkServer(
         private const val LINGER_MILLIS = 500
         private const val INITIAL_RECORD_BUFFER = 64 * 1024
         private const val MAX_STATS = 2 * 1024
-        private const val HELLO = """{"app":"TiPlay","protocol":1}"""
         private const val TOKEN_CHARACTERS = "!#$%&'*+-.^_`|~"
         private val HEADER_NAME_PATTERN = Regex("[a-z0-9-]{1,48}")
         private val KEYS = setOf("home", "back", "siri")
@@ -667,9 +669,9 @@ class BrowserLinkServer(
         )
         /**
          * The served page's policy: only its own files run. `connect-src http:` lets it reach a phone address the
-         * driver typed (CSP cannot express IP ranges); `media-src blob:` is for the MSE fallback's object URL.
+         * driver typed (CSP cannot express IP ranges). Video is drawn through WebCodecs onto a canvas.
          */
-        internal const val PAGE_POLICY = "default-src 'self'; connect-src 'self' http:; media-src 'self' blob:; " +
+        internal const val PAGE_POLICY = "default-src 'self'; connect-src 'self' http:; media-src 'none'; " +
             "img-src 'self' data:; style-src 'self'; script-src 'self'; worker-src 'self'; object-src 'none'; " +
             "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         private val RECORD_NAMES = mapOf(

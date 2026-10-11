@@ -6,7 +6,7 @@ server (protocol v1: `/hello`, `/video`, `/control`, `/bye`, CORS preflights). C
 It serves the page from `http://127.0.0.1` under a nested path, which is a secure context, so WebCodecs and the
 Service Worker work without HTTPS. As on GitHub Pages, the page is the root of that path and a download page lives
 beside it in `download/`. The Chromium used for the recorded checks decodes VP8 and VP9 but not H.264; codec support can differ by build. The fake phone streams VP8
-(and VP9 for the MSE check).
+with optional synthetic frame timing records.
 The page does not assume H.264 or HEVC; it configures `VideoDecoder` with whatever codec string the config record names.
 
 ## Requirements
@@ -14,9 +14,8 @@ The page does not assume H.264 or HEVC; it configures `VideoDecoder` with whatev
 - Node 22.
 - `playwright-core`, installed anywhere. Do not add it to this repository.
 - A Chromium build. Set `CHROMIUM` to its executable; the default is `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`.
-- Optional: `ffmpeg` and `ffprobe` with libvpx, libvpx-vp9 and libx264 (set `FFMPEG` and `FFPROBE` if they are not
-  on `PATH`). Without libvpx, or with `E2E_VP8=browser`, the script encodes the VP8 clip with the browser's own
-  `VideoEncoder`. Without libvpx-vp9 or libx264 it skips the MSE and muxing checks.
+- Optional: `ffmpeg` with libvpx (set `FFMPEG` if it is not on `PATH`). Without libvpx, or with
+  `E2E_VP8=browser`, the script encodes the VP8 clip with the browser's own `VideoEncoder`.
 
 ## Run
 
@@ -52,11 +51,12 @@ even when the environment configures a system proxy.
     requests; with the page server stopped the download page does not open.
 12. With the page server stopped, a reload and the pairing link (with `#c=`) are served by the Service Worker and decode
     again.
-13. `mse`: the fake phone serves the page itself on the first non-loopback IPv4 address. That origin is not a secure
-    context, so the page plays VP9 in fragmented MP4 through MSE (this Chromium has no H.264 MSE). A garbage frame
-    ends that `<video>` with a decode error; the page reconnects with a new media element and plays again.
-14. Without MSE as well, the page disables Connect and names what is missing.
-15. Before the browser starts, ffmpeg (libx264) checks that H.264 access units muxed by `fmp4.js` decode frame for frame.
+13. Plain HTTP on a non-loopback LAN address disables Connect and names the secure WebCodecs requirement;
+    no `<video>` element or MSE/fMP4 playback path remains.
+14. The Debug switch shows five fields at the top center, does not intercept touches or replace the video session,
+    and hides the overlay when disabled. Worker-stream, worker-chunk, worker-frame and main-thread paths all collect
+    rolling presentation FPS and synthetic timestamp-to-draw latency. Synthetic timestamps validate the plumbing,
+    not an actual iPhone capture-to-screen measurement.
 
 ## Real phone side (`phone-run.mjs`)
 
@@ -65,7 +65,7 @@ classes the way a phone + browser session wires them: `BrowserLinkServer` with a
 (as the app does over its bundled `assets/play/`), and a `WebVideoHub` fed through `VideoTeeMediaSink` → `WebMediaSink`
 with an H.264 Annex-B clip. Headless Chromium then opens the page that this server serves. CI does not run it.
 
-The secure-context run checks the unsupported-H.264 message using the recorded Chromium build; the LAN run checks native MSE support and either playback or the unsupported message. The script then repeats with a
+The secure-context run checks the unsupported-H.264 message using the recorded Chromium build; the LAN run checks that unsupported non-secure contexts cannot start playback. The script then repeats with a
 `VideoDecoder` stand-in inside the decoder worker that checks every chunk and outputs a plain frame.
 
 ### Requirements
@@ -92,9 +92,8 @@ NODE_PATH=/tmp/pw/node_modules node tests/web-e2e/phone-run.mjs
    takes the Tesla path (worker), opens `/video` with the code, gets the config record (codec and canvas), says
    "This browser cannot decode H.264.", reports its viewport (CSS × DPR), sends a `/control` heartbeat every 400 ms and
    a stats event, and registers its Service Worker under the served policy.
-3. The LAN address (not a secure context; Chromium is told to treat it as a local address, as a hotspot address is):
-   the MSE rung with native H.264 playback if supported, or the unsupported message otherwise; a `targetAddressSpace: "local"` fetch to the phone works, and the served policy
-   lets a `<video>` open a `MediaSource` object URL.
+3. The LAN address is not a secure context: Connect is disabled, the page explains the WebCodecs requirement,
+   and no removed video element opens.
 4. With the decoder stand-in: the page's `dec` reaches the session's diagnostic handler as `first frame rendered`; key
    frames arrive as SPS, PPS and IDR slices with 4-byte start codes; a tap at 25 % / 75 % reaches `onTouch` as both
    slots, normalized; the page's stats event has every field of the app's `Browser:` session log line;

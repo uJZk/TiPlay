@@ -5,7 +5,7 @@ import { History, listen, closeServer } from './resources.mjs';
 // directory like the app does from its assets, and headless Chromium opens it. Not part of CI; see README.md.
 //
 // The first run forces an unsupported H.264 decoder to check transport and the page's message independently of
-// installed codecs. The LAN run checks native MSE capability; the third uses a decoder stand-in to verify chunks.
+// installed codecs. The LAN run checks the secure-context requirement; the third uses a decoder stand-in to verify chunks.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -27,7 +27,7 @@ const FFMPEG = process.env.FFMPEG ?? 'ffmpeg';
 const PAGE_DIR = process.env.PAGE_DIR ?? join(ROOT, 'site/play');
 const SHARED_CLASSES = process.env.SHARED_CLASSES ?? join(ROOT, 'shared/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes');
 /** The page's served policy, as BrowserLinkServer.PAGE_POLICY sends it. */
-const PAGE_POLICY = "default-src 'self'; connect-src 'self' http:; media-src 'self' blob:; img-src 'self' data:; style-src 'self'; " +
+const PAGE_POLICY = "default-src 'self'; connect-src 'self' http:; media-src 'none'; img-src 'self' data:; style-src 'self'; " +
   "script-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 // A VideoDecoder stand-in for the decoder worker: it checks the chunks the phone sent and draws a plain frame for each.
@@ -272,7 +272,7 @@ async function checkAssets(origin) {
   }
   const hello = await fetch(`${origin}/hello`);
   check(hello.headers.get('cache-control') === 'no-store' && !hello.headers.get('content-security-policy') &&
-    JSON.stringify(await hello.json()) === '{"app":"TiPlay","protocol":1}', '/hello keeps no-store and names TiPlay protocol 1');
+    await hello.json().then(value => value.app === 'TiPlay' && value.protocol === 1 && Number.isFinite(value.clockMs)), '/hello keeps no-store and names TiPlay protocol 1');
   const foreignHost = await rawStatus(origin, 'GET /play/ HTTP/1.1\r\nHost: tiplay.example\r\nConnection: close\r\n\r\n');
   check(foreignHost === 421, `a page request for Host tiplay.example answers ${foreignHost} (DNS-rebinding defence)`);
 }
@@ -404,43 +404,15 @@ async function main() {
       await context.close();
     }
 
-    // 2. Over the LAN address the page is not a secure context: verify the native MSE capability/result.
-    if (!address) log('skipped the LAN check: no non-loopback IPv4 address');
-    else {
+    // 2. Plain HTTP outside loopback does not offer a video/MSE fallback.
+    if (address) {
       const lan = `http://${address}:${phone.port}`;
-      const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, locale: 'en-US' });
-      const mark = phone.events.length;
-      const { page, seen } = await openPage(context, lan, 'LAN');
-      const value = await waitFor('the config record over MSE', async () => {
-        const current = await stats(page);
-        return current.page.video && current.page.link.unsupported !== undefined && (current.page.link.unsupported || current.page.link.live) && current;
-      });
-      check(value.page.link.path === 'mse' && value.page.link.fallback === 'not a secure context',
-        `plain HTTP takes the ${value.page.link.path} rung (${value.page.link.fallback})`);
-      const playable = await page.evaluate(type => MediaSource.isTypeSupported(`video/mp4; codecs="${type}"`), codec);
-      const status = await page.textContent('#status');
-      if (playable) {
-        await waitFor('native H.264 MSE decoded frames', async () => (await stats(page)).page.video.decodedFps > 0);
-        check(value.page.link.live, `MSE plays ${codec}`);
-      }
-      else check(status === 'This browser cannot decode H.264.', `MSE without H.264 says "${status}"`);
-      check(phone.since(mark, 'control').length > 0 && phone.logs(mark).some(text => text.startsWith('Browser link: video stream opened')),
-        'the LAN page talks to /video and /control at its own address');
-      // The page sends targetAddressSpace "local" for a hotspot address; Chrome must accept it outside a secure context.
-      const local = await page.evaluate(() => fetch('/hello', { cache: 'no-store', targetAddressSpace: 'local' }).then(response => response.status, error => error.message));
-      check(local === 200, `a fetch to the phone with targetAddressSpace "local" works outside a secure context (${local})`);
-      // The MSE rung plays a MediaSource object URL; the served policy must allow blob: media.
-      const opened = await page.evaluate(() => new Promise(resolve => {
-        const source = new MediaSource(), video = document.createElement('video');
-        document.addEventListener('securitypolicyviolation', event => resolve(`blocked by ${event.violatedDirective}`), { once: true });
-        source.addEventListener('sourceopen', () => resolve('open'), { once: true });
-        video.src = URL.createObjectURL(source);
-        setTimeout(() => resolve('timeout'), 5000);
-      }));
-      check(opened === 'open', `the served policy lets a <video> open a MediaSource object URL (${opened})`);
-      const video = seen.requests.find(request => new URL(request.url).pathname === '/video');
-      sessions.add(new URL(video.url).searchParams.get('s'));
-      await checkRequests(page, seen, lan, 'LAN');
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.goto(lan);
+      await waitFor('unsupported non-secure page', () => page.isDisabled('#connect'));
+      check((await page.textContent('#message')).includes('not a secure context'), 'LAN page explains the secure WebCodecs requirement');
+      check(await page.locator('video').count() === 0, 'LAN page has no removed video element');
       await context.close();
     }
 
@@ -449,7 +421,7 @@ async function main() {
       const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 1.5, hasTouch: true,
         locale: 'en-US', serviceWorkers: 'block' });
       await useDecoderStandIn(context);
-      // Native MSE may already have acknowledged this epoch; each scenario owns a fresh session.
+      // The preceding loopback check may already have acknowledged this epoch; each scenario owns a fresh session.
       const startMark = phone.events.length;
       phone.command('restart');
       standInSession = (await waitFor('the stand-in session', () => phone.since(startMark, 'restarted').at(-1))).session;

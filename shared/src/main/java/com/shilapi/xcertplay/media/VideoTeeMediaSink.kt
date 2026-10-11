@@ -34,6 +34,11 @@ class VideoTeeMediaSink(
         toTap { onVideoFrame(type, naluBytes, senderNanos, arrivalNanos) }
     }
 
+    override fun setVideoClockHandler(type: Int, handler: (Long) -> Long?) {
+        primary.setVideoClockHandler(type, handler)
+        toTap { setVideoClockHandler(type, handler) }
+    }
+
     override fun setVideoRecoveryHandler(type: Int, handler: () -> Unit) {
         primary.setVideoRecoveryHandler(type, handler)
         toTap { setVideoRecoveryHandler(type, handler) }

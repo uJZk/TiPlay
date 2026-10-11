@@ -34,6 +34,7 @@ class NtpClock : Closeable {
     private var pickOffset = 0.0
     private var pendingT1: BigInteger? = null
     private var synced = false
+    private var lastSyncNanos = 0L
 
     fun listen(): Int {
         check(!running.getAndSet(true)) { "NtpClock is already running" }
@@ -54,6 +55,12 @@ class NtpClock : Closeable {
     /** Now in the phone's synchronized clock domain, as an unsigned NTP64 value. */
     fun syncedNtp(): BigInteger = synchronized(clockLock) {
         ntpFromNanos(System.nanoTime() + clockOffsetNs)
+    }
+
+    /** Maps a synchronized phone media timestamp to our monotonic clock; stale/unsynced clocks are unusable. */
+    fun mediaTimeNanos(senderNanos: Long): Long? = synchronized(clockLock) {
+        if (!synced || senderNanos == 0L || System.nanoTime() - lastSyncNanos > 10_000_000_000L) null
+        else senderNanos - clockOffsetNs
     }
 
     override fun close() {
@@ -146,6 +153,7 @@ class NtpClock : Closeable {
         val offset = t2.subtract(t1).add(t3.subtract(t4)).toDouble() * 0.5 / TWO32_DOUBLE
         val rtt = t4.subtract(t1).subtract(t3.subtract(t2)).toDouble() / TWO32_DOUBLE
         if (rtt < 0.0) return
+        synchronized(clockLock) { lastSyncNanos = System.nanoTime() }
 
         if (rtt < pickRtt) {
             pickRtt = rtt
@@ -170,6 +178,7 @@ class NtpClock : Closeable {
         val stepping = !synced || Math.abs(offsetSec) > STEP_THRESHOLD_SEC
         val applied = if (stepping) offsetSec else offsetSec * SLEW_GAIN
         clockOffsetNs += Math.round(applied * 1e9)
+        lastSyncNanos = System.nanoTime()
         if (stepping) {
             delays.fill(Double.POSITIVE_INFINITY)
             delayIndex = 0
