@@ -43,4 +43,6 @@
 
 本次提交只包含 App 主页面实施、产品测试策略和对应文档；开始实施前已有的 `docs/RECONNECT-UX-2026-10-11.md` 与 `tests/web-e2e/RealPhone.java` 未提交修改保留在工作区，不混入本次提交。此前真实 App HTTP 验证器的配对页控件等待问题仍待单独处理，不作为本轮 App 主页面验证通过的证据。
 
-交付目标为合入默认 `main`、删除 `work` 分支并推送。既有重连页提交随分支一并交付，触发现有 GitHub Pages 工作流；App 不另建部署路径，不发布或安装发行 APK。交付结果在完成后补记。真机验证事项见上一节。
+交付目标为合入默认 `main`、删除 `work` 分支并推送。既有重连页提交随分支一并交付，触发现有 GitHub Pages 工作流；App 不另建部署路径，不发布或安装发行 APK。实施提交 `04f7bb1` 已快进合入 `main` 并推送；`work` 分支已删除，两处既有未提交修改已恢复。Pages [部署 38134350031](https://github.com/uJZk/TiPlay/actions/runs/38134350031) 已成功，发布地址为 https://ujzk.github.io/TiPlay/ 。当前云环境对该域名的 HTTP 请求返回 403，未取得线上页面和背景资源的直接访问验证；部署结论仅依据 Actions 结果。
+
+远程 Android [检查 38134350024](https://github.com/uJZk/TiPlay/actions/runs/38134350024) 在补记时仍运行，本地完整检查及最终代码回归已通过。后续需确认远程 CI 结果、从可访问网络检查网页资源，并完成上一节真机验证。
