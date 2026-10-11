@@ -1,0 +1,4 @@
+<resources>
+    <string name="settings_ignore_battery_optimization">تجاهل تحسين البطارية</string>
+    <string name="settings_battery_settings_unavailable">إعدادات البطارية غير متاحة على هذا الجهاز.</string>
+</resources>

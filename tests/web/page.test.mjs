@@ -26,12 +26,12 @@ test('the service worker answers only its own files, so the download pages in it
   for (const url of ['https://example.test/DiPlay/', 'https://example.test/DiPlay/?t=100.64.0.1', 'https://example.test/DiPlay/index.html',
     'https://example.test/DiPlay/app.js?v=2', 'https://example.test/DiPlay/decoder-worker.js', 'https://example.test/DiPlay/icon.svg',
     // The pairing link: a navigation's request URL keeps its fragment.
-    'https://example.test/DiPlay/#c=123456', 'https://example.test/DiPlay/?t=100.64.0.1#c=123456']) {
+    'https://example.test/DiPlay/#c=1234', 'https://example.test/DiPlay/?t=100.64.0.1#c=1234']) {
     assert.ok(answers(url), url);
   }
   for (const url of ['https://example.test/DiPlay/download/', 'https://example.test/DiPlay/download/zh-Hans/',
     'https://example.test/DiPlay/download/assets/site.css', 'https://example.test/DiPlay/download/index.html',
-    'https://example.test/DiPlay/download/#install', 'https://example.test/DiPlay/play/', 'https://example.test/DiPlay/play/#c=123456',
+    'https://example.test/DiPlay/download/#install', 'https://example.test/DiPlay/play/', 'https://example.test/DiPlay/play/#c=1234',
     'https://example.test/DiPlay/play/sw.js', 'https://example.test/DiPlay/sw.js',
     'https://example.test/DiPlay/app.js/', 'https://example.test/app.js', 'https://other.test/DiPlay/app.js',
     'http://100.109.220.253:8080/hello', 'http://100.109.220.253:8080/play/app.js']) {

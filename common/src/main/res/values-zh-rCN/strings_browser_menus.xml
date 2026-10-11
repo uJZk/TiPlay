@@ -6,4 +6,5 @@
     <string name="settings_browser_video">视频</string>
     <string name="settings_browser_endpoint_hint">输入地址和端口，例如 100.109.220.253:8080。地址范围为 100.64.0.0/10 或 169.254.0.0/16，端口为 1–65535。立即生效；修改端口后请用新链接连接浏览器。</string>
     <string name="settings_browser_endpoint_invalid">请输入有效的地址和端口（1–65535），例如 100.109.220.253:8080。</string>
+    <string name="settings_browser_boot_hint">安卓端开机时打开 TiPlay。Android 或设备系统设置可能限制后台启动。</string>
 </resources>

@@ -1,7 +1,7 @@
 # Android 9 Wi-Fi Direct
 
 This describes the retained Wi-Fi Direct backend. Current TiPlay's browser-profile
-connection chooser offers Built-in car hotspot and Existing Wi-Fi / Same LAN,
+connection chooser offers Phone hotspot and Existing Wi-Fi,
 without Wi-Fi Direct selection. See [Tesla browser setup](TESLA_BROWSER.md) for the
 current product workflow.
 

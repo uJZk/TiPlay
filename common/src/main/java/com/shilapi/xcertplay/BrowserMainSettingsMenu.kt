@@ -30,16 +30,18 @@ internal class BrowserMainSettingsMenu(
     advanced: () -> Unit,
     about: () -> Unit,
 ) {
-    private val ui = TiPlayExpressiveUi(activity)
+    private val ui = TiPlayNativeUi(activity)
     private fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
     private fun text(value: String, size: Float = 14f) = TextView(activity).apply {
-        text = value; textSize = size; setTextColor(ui.muted)
+        text = value
+        if (size >= 18f) setTextAppearance(android.R.style.TextAppearance_Material_Large)
     }
     private val content = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(12), dp(16), dp(16))
     }
     val view: View = ScrollView(activity).apply {
         isFillViewport = true; setBackgroundColor(ui.background); addView(content)
+        ui.protectSystemInsets(this)
     }
     val status = text(activity.getString(R.string.ready_when_you_are), 18f)
     val hotspotStatus = text("")
@@ -55,18 +57,20 @@ internal class BrowserMainSettingsMenu(
     private lateinit var connectionMode: Button
     private var networkStatus: TextView? = null
     private var wifiSettings: Button? = null
-    private lateinit var refreshAddress: () -> Unit
+    private var refreshAddress: () -> Unit = {}
     private lateinit var refreshBrowser: () -> Unit
     private fun button(parent: LinearLayout, label: String, click: () -> Unit) = Button(activity).apply {
-        text = label; isAllCaps = false; minHeight = dp(48)
-        ui.button(this)
-        setOnClickListener { click() }; parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+        text = label; minHeight = dp(48)
+        setOnClickListener { click() }; parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
     }
     private fun heading(id: Int, parent: LinearLayout = content) {
         parent.addView(text(activity.getString(id), 18f).apply {
-            setTextColor(ui.text); typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
             setPadding(0, 0, 0, dp(8))
         })
+    }
+    private fun group(parent: LinearLayout): LinearLayout = LinearLayout(activity).apply {
+        orientation = LinearLayout.VERTICAL
+        parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(16) })
     }
     private fun <T> choice(parent: LinearLayout, label: Int, options: List<Pair<T, String>>, current: T, changed: (T) -> Unit) {
         var selected = current
@@ -83,57 +87,68 @@ internal class BrowserMainSettingsMenu(
         ui.applyWindow(activity)
         content.addView(LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
             addView(ImageView(activity).apply { setImageResource(R.drawable.ic_carplay); contentDescription = "TiPlay" },
                 LinearLayout.LayoutParams(dp(32), dp(32)))
             addView(text("TiPlay", 24f).apply {
-                setTextColor(ui.text); setPadding(dp(12), 0, 0, 0)
-                typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
+                setPadding(dp(12), 0, 0, 0)
             })
         })
-        val session = ui.card(content, hero = true)
-        status.setTextColor(ui.onContainer)
+        val session = group(content)
         session.addView(status)
-        phone = button(session, phoneLabel(), ::choosePhone)
-        action = button(session, activity.getString(R.string.connect_phone), ::submit).apply { ui.button(this, prominent = true) }
+        val wide = activity.resources.configuration.screenWidthDp >= 1000
+        val transport = if (wide) LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            session.addView(this, LinearLayout.LayoutParams(-1, -2))
+        } else session
+        phone = button(transport, phoneLabel(), ::choosePhone)
+        connectionMode = BrowserSettingsPresentation.connectionMode(activity, { draft.wireless }) {
+            draft.wireless = it; renderNetwork(); updateActions()
+        }
+        transport.addView(connectionMode)
+        if (wide) {
+            for (i in 0 until transport.childCount) {
+                transport.getChildAt(i).layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    topMargin = dp(8)
+                    if (i == 0) marginEnd = dp(8)
+                }
+            }
+        }
+        action = button(session, activity.getString(R.string.connect_phone), ::submit)
         stop = button(session, activity.getString(R.string.disconnect)) {
             stopping = true; status.setText(R.string.settings_main_stopping); updateActions(); disconnect()
         }.apply { visibility = View.GONE }
-        error.setTextColor(ui.error)
         session.addView(error)
-        val connection = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; background = ui.shape(ui.surface); setPadding(dp(12), dp(12), dp(12), dp(12)) }
-        val browser = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; background = ui.shape(ui.surface); setPadding(dp(12), dp(12), dp(12), dp(12)) }
-        network.background = ui.shape(ui.surface)
-        network.setPadding(dp(12), dp(12), dp(12), dp(12))
+        val connection = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+        val browser = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         val details = LinearLayout(activity).apply {
             orientation = if (activity.resources.configuration.screenWidthDp >= 1000) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         }
         content.addView(details)
-        for (column in listOf(connection, browser, network)) details.addView(column,
-            if (details.orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(12) }
-            else LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        for (column in listOf(browser, connection, network)) details.addView(column,
+            if (details.orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -2, if (column === network) 2f else 1f).apply { marginEnd = dp(12) }
+            else LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(16) })
         heading(R.string.connection, connection)
-        connectionMode = BrowserSettingsPresentation.connectionMode(activity, { draft.wireless }) {
-            draft.wireless = it; renderNetwork(); updateActions()
-        }
-        ui.button(connectionMode)
-        connection.addView(connectionMode)
-        connection.addView(text(activity.getString(R.string.settings_connection_mode_hint)))
-        refreshAddress = BrowserSettingsMenu.addHotspotAddress(connection, activity)
+        connection.addView(text(activity.getString(R.string.settings_connection_mode_hint)).apply { setPadding(0, dp(8), 0, dp(12)) })
         refreshBrowser = BrowserSettingsMenu.addBrowserLink(browser, activity) {
             requestPermissions(arrayOf(LocalNetworkPermission.PERMISSION))
         }
         renderNetwork()
         connection.addView(hotspotStatus)
+        connection.addView(Space(activity), LinearLayout.LayoutParams(0, dp(12)))
         heading(R.string.settings_startup_and_connection, connection)
-        BrowserSettingsMenu.addConnectOnOpen(connection)
-        val more = ui.card(content)
+        BrowserSettingsMenu.addAutoStartOnBoot(connection)
+        val more = group(content)
         button(more, activity.getString(R.string.settings_advanced), advanced)
-        more.addView(text(activity.getString(R.string.settings_browser_advanced_summary)))
-        val tools = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+        more.addView(text(activity.getString(R.string.settings_browser_advanced_summary)).apply { setPadding(0, dp(8), 0, dp(12)) })
+        val stackTools = activity.resources.configuration.screenWidthDp < 400 || activity.resources.configuration.fontScale > 1.2f
+        val tools = LinearLayout(activity).apply { orientation = if (stackTools) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL }
         more.addView(tools)
         button(tools, activity.getString(R.string.language_app_language)) { AppLocale.showPicker(activity) }
         button(tools, activity.getString(R.string.about), about)
-        for (i in 0 until tools.childCount) tools.getChildAt(i).layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(4) }
+        for (i in 0 until tools.childCount) tools.getChildAt(i).layoutParams =
+            if (stackTools) LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
+            else LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) }
         val version = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
         content.addView(text(activity.getString(R.string.home_public_preview) + version))
     }
@@ -158,7 +173,7 @@ internal class BrowserMainSettingsMenu(
     private fun input(parent: LinearLayout, label: Int, value: String, secret: Boolean = false, changed: (String) -> Unit): EditText {
         parent.addView(text(activity.getString(label)))
         return EditText(activity).apply {
-            setText(value); setSingleLine(); ui.input(this)
+            setText(value); setSingleLine()
             inputType = InputType.TYPE_CLASS_TEXT or if (secret) InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_VARIATION_NORMAL
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -170,62 +185,67 @@ internal class BrowserMainSettingsMenu(
     }
     private fun renderNetwork() {
         network.removeAllViews(); networkStatus = null; wifiSettings = null
+        refreshAddress = {}
         if (!draft.wireless) return
-        if (draft.source == BrowserConnectionDraft.Source.LAN) draft.externalSecured = draft.externalPassword.isNotEmpty()
         val group = RadioGroup(activity).apply { orientation = RadioGroup.HORIZONTAL }
-        val labels = listOf(R.string.built_in_car_hotspot, R.string.existing_wifi_title, R.string.settings_external_ap_title)
+        val labels = listOf(R.string.built_in_car_hotspot, R.string.existing_wifi_title)
         BrowserConnectionDraft.Source.entries.forEachIndexed { index, source ->
             group.addView(RadioButton(activity).apply {
                 id = View.generateViewId(); setText(labels[index])
-                textSize = 14f; minHeight = dp(48)
+                minHeight = dp(48)
                 tag = source
                 isChecked = draft.source == source
-                ui.radio(this)
                 setOnClickListener { draft.source = source; renderNetwork(); updateActions() }
             }, RadioGroup.LayoutParams(0, -2, 1f).apply { marginEnd = dp(4) })
         }
-        network.addView(group)
+        network.addView(group, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
         val local = draft.source == BrowserConnectionDraft.Source.LOCAL
-        if (!local) network.addView(text(activity.getString(
-            if (draft.source == BrowserConnectionDraft.Source.EXTERNAL_AP) R.string.settings_external_ap_setup else R.string.existing_wifi_instructions)))
+        val addressDetails = if (local) LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            refreshAddress = BrowserSettingsMenu.addHotspotAddress(this, activity, network)
+        } else null
+        if (!local) network.addView(text(activity.getString(R.string.existing_wifi_instructions)))
         val fields = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }; network.addView(fields)
         val ssid = input(fields, if (local) R.string.hotspot_ssid else R.string.existing_wifi_ssid,
             if (local) draft.localSsid else draft.externalSsid) { if (local) draft.localSsid = it else { draft.externalSsid = it; refreshNetwork() } }
-        val password = input(fields, R.string.hotspot_password, if (local) draft.localPassword else draft.externalPassword, true) {
-            if (local) draft.localPassword = it else {
-                draft.externalPassword = it
-                if (draft.source == BrowserConnectionDraft.Source.LAN) draft.externalSecured = it.isNotEmpty()
-            }
-        }
         if (local) {
-            LocalHotspotAutofill.attach(fields, ssid, password)
             val options = listOf(ManualHotspotSecurity.OPEN to activity.getString(R.string.open),
                 ManualHotspotSecurity.WPA2 to activity.getString(R.string.wpa2),
                 ManualHotspotSecurity.WPA3_TRANSITION to activity.getString(R.string.wpa3_transition),
                 ManualHotspotSecurity.WPA3 to activity.getString(R.string.wpa3))
-            choice(fields, R.string.security, options, draft.localSecurity) { draft.localSecurity = it; updateActions() }
+            choice(fields, R.string.security, options, draft.localSecurity) { draft.localSecurity = it; renderNetwork(); updateActions() }
+        } else {
+            choice(fields, R.string.security,
+                listOf(false to activity.getString(R.string.open), true to activity.getString(R.string.wpa2)),
+                draft.externalSecured) { secured ->
+                draft.externalSecured = secured; renderNetwork(); updateActions()
+            }
+        }
+        val secured = if (local) draft.localSecurity != ManualHotspotSecurity.OPEN else draft.externalSecured
+        val passwordFields = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = if (secured) View.VISIBLE else View.GONE
+        }
+        fields.addView(passwordFields)
+        val password = input(passwordFields, R.string.hotspot_password, if (local) draft.localPassword else draft.externalPassword, true) {
+            if (local) draft.localPassword = it else draft.externalPassword = it
+        }
+        if (local) {
+            val autofill = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+            LocalHotspotAutofill.attach(fields, ssid, password, controlsParent = autofill)
+            fields.addView(autofill)
             wifiSettings = button(fields, activity.getString(R.string.open_car_hotspot_settings)) {
                 activity.startActivity(Intent("android.settings.TETHER_SETTINGS"))
             }
             refreshNetwork()
         } else {
-            if (draft.source == BrowserConnectionDraft.Source.EXTERNAL_AP) {
-                choice(fields, R.string.security,
-                    listOf(false to activity.getString(R.string.open), true to activity.getString(R.string.wpa2)),
-                    draft.externalSecured) { secured ->
-                    draft.externalSecured = secured
-                    if (!secured) password.setText("") else if (password.text.isEmpty()) password.requestFocus()
-                    updateActions()
-                }
-            }
             networkStatus = text("").also(fields::addView)
             wifiSettings = button(fields, activity.getString(R.string.settings_external_ap_wifi)) {
                 activity.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
             }
             refreshNetwork()
         }
-        // Autofill and shared cards retain their existing actions, with the same product styling.
-        ui.styleTree(network)
+        addressDetails?.let(network::addView)
     }
     fun transportSelected(wireless: Boolean) {
         draft.wireless = wireless

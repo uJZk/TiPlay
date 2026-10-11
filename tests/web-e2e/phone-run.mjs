@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const { chromium } = createRequire(import.meta.url)('playwright-core'); // resolved through NODE_PATH
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const CODE = '271828';
+const CODE = '2718';
 const WIDTH = 1280, HEIGHT = 720, FPS = 30;
 const CHROMIUM = process.env.CHROMIUM ?? ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find(existsSync);
 const JAVA = process.env.JAVA ?? 'java';

@@ -6,4 +6,5 @@
     <string name="settings_browser_video">Видео</string>
     <string name="settings_browser_endpoint_hint">Введите адрес из диапазона 100.64.0.0/10 или 169.254.0.0/16 и порт (1–65535), например 100.109.220.253:8080. Применяется сразу. После смены порта подключите браузер по новой ссылке.</string>
     <string name="settings_browser_endpoint_invalid">Введите допустимый адрес и порт (1–65535), например 100.109.220.253:8080.</string>
+    <string name="settings_browser_boot_hint">Открывать TiPlay при запуске Android. Android или настройки устройства могут ограничивать запуск в фоне.</string>
 </resources>

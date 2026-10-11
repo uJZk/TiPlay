@@ -1,6 +1,6 @@
 # Build TiPlay
 
-Use this procedure to build the TiPlay browser receiver for an Android phone. Head-unit implementations remain in source for upstream compatibility.
+Use this procedure to build the TiPlay browser receiver for an Android device. Head-unit implementations remain in source for upstream compatibility.
 Run the commands from the repository root, where `gradlew` and `settings.gradle.kts` are located.
 
 ## Select the application

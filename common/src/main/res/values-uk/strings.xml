@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="existing_wifi_title">Наявна Wi-Fi / Одна LAN</string>
-    <string name="existing_wifi_description">Використовуйте наявний роутер або портативну Wi-Fi. iPhone та автомобіль залишаються в одній мережі з доступом до Інтернету.</string>
-    <string name="existing_wifi_hint">Наявна Wi-Fi · Підключіть обидва пристрої до однієї Wi-Fi та увімкніть Bluetooth. Точка доступу автомобіля не потрібна.</string>
-    <string name="existing_wifi_instructions">У системних налаштуваннях підключіть автомобіль та iPhone до однієї зовнішньої Wi-Fi. Введіть її точне ім’я та пароль WPA2; залиште пароль порожнім лише для відкритої мережі. Використовуйте WPA2 або змішаний режим WPA2/WPA3 і вимкніть ізоляцію клієнтів на роутері. TiPlay зберігає це підключення та не створює точку доступу.</string>
+    <string name="existing_wifi_title">Наявна Wi-Fi</string>
+    <string name="existing_wifi_description">Використовуйте наявний роутер або портативну Wi-Fi. iPhone та пристрій Android залишаються в одній мережі з доступом до Інтернету.</string>
+    <string name="existing_wifi_hint">Наявна Wi-Fi · Підключіть обидва пристрої до однієї Wi-Fi та увімкніть Bluetooth. Точка доступу пристрою Android не потрібна.</string>
+    <string name="existing_wifi_instructions">У системних налаштуваннях підключіть пристрій Android та iPhone до однієї зовнішньої Wi-Fi. Введіть її точне ім’я та пароль WPA2; залиште пароль порожнім лише для відкритої мережі. Використовуйте WPA2 або змішаний режим WPA2/WPA3 і вимкніть ізоляцію клієнтів на роутері. TiPlay зберігає це підключення та не створює точку доступу.</string>
     <string name="existing_wifi_details">Дані зовнішньої Wi-Fi</string>
     <string name="existing_wifi_ssid">Назва зовнішньої Wi-Fi (SSID)</string>
     <string name="existing_wifi_password">Пароль зовнішньої Wi-Fi</string>
@@ -13,10 +13,10 @@
     <string name="wifi_direct_channel_summary">Бажаний канал: %1$s</string>
     <string name="wifi_direct_channel_choice">Канал %1$d · %2$s</string>
     <string name="wifi_direct_channel_description">У режимі «Авто» канал вибирається автоматично. Доступність ручних каналів залежить від автомобіля. Зміни застосовуються під час наступного підключення Wi-Fi Direct.</string>
-    <string name="built_in_car_hotspot">Вбудована точка доступу автомобіля</string>
+    <string name="built_in_car_hotspot">Точка доступу пристрою Android</string>
     <string name="wifi_direct">Wi-Fi Direct</string>
-    <string name="hotspot_hint_manual">Вбудована точка доступу · Тримайте точку доступу автомобіля, Bluetooth і Wi-Fi на iPhone увімкненими.</string>
-    <string name="hotspot_hint_local">Відкрийте налаштування підключення, щоб зберегти дані вбудованої точки доступу.</string>
+    <string name="hotspot_hint_manual">Вбудоввнв точкв достуру · Тримвйте точку достуру ввтомобіля, Bluetooth і Wi-Fi нв iPhone увімкненими.</string>
+    <string name="hotspot_hint_local">Відкрийте нвлвштуввння рідключення, щоб зберегти двні вбудоввної точки достуру.</string>
     <string name="hotspot_hint_p2p">Wi-Fi Direct · Тримайте Wi-Fi автомобіля, Bluetooth і Wi-Fi на iPhone увімкненими.</string>
     <string name="cluster_size_standard">Стандартний · найчіткіший</string>
     <string name="cluster_size_larger">Більший · типовий</string>
@@ -27,10 +27,10 @@
     <string name="marker_up">Угору</string>
     <string name="marker_down">Униз</string>
     <string name="marker_centre_default">По центру · типово</string>
-    <string name="hotspot_mode_manual_desc">Використовувати власну точку доступу автомобіля. Якщо доступно, виберіть 5 ГГц у налаштуваннях автомобіля.</string>
+    <string name="hotspot_mode_manual_desc">Використовуввти влвсну точку достуру ввтомобіля. Якщо достурно, виберіть 5 ГГц у нвлвштуввннях ввтомобіля.</string>
     <string name="hotspot_mode_p2p_desc">Альтернативний спосіб. Потрібен увімкнений Wi-Fi автомобіля; на частоті 2,4 ГГц можливі затримки.</string>
-    <string name="hotspot_details_off">Точку доступу вимкнено · Увімкніть її в налаштуваннях автомобіля.</string>
-    <string name="hotspot_details_saved">Дані збережено · Перед підключенням перевірте, чи ввімкнено точку доступу автомобіля.</string>
+    <string name="hotspot_details_off">Точку достуру вимкнено · Увімкніть її в нвлвштуввннях ввтомобіля.</string>
+    <string name="hotspot_details_saved">Двні збережено · Перед рідключенням реревірте, чи ввімкнено точку достуру ввтомобіля.</string>
     <string name="permission_enabled_ready">Дозвіл надано · готово до використання</string>
     <string name="permission_not_enabled">Дозвіл ще не надано</string>
     <string name="clipboard_usage_access">Доступ TiPlay до даних використання</string>
@@ -74,12 +74,12 @@
     <string name="status_waiting_reenumeration">Очікування повторного визначення iPhone</string>
     <string name="status_attaching_ncm">Підключення мережі NCM/AirPlay</string>
     <string name="status_failed">Помилка: %1$s</string>
-    <string name="msg_car_hotspot_off">Точку доступу автомобіля «%1$s» вимкнено. Увімкніть її в налаштуваннях автомобіля перед підключенням.</string>
+    <string name="msg_car_hotspot_off">Точку достуру ввтомобіля «%1$s» вимкнено. Увімкніть її в нвлвштуввннях ввтомобіля реред рідключенням.</string>
     <string name="home_public_preview">ПУБЛІЧНЕ ПРЕВ’Ю  ·\u0020\u0020</string>
     <string name="choose_iphone_prefix">Вибрати iPhone ·\u0020</string>
     <string name="audio_saved_value">Збережено: %1$d</string>
     <string name="about_public_preview_prefix">Попередня версія ·\u0020</string>
-    <string name="msg_car_hotspot_connect">TiPlay підключається через точку доступу автомобіля «%1$s». Увімкніть її в налаштуваннях автомобіля, а потім підключіться.</string>
+    <string name="msg_car_hotspot_connect">TiPlay рідключвється через точку достуру ввтомобіля «%1$s». Увімкніть її в нвлвштуввннях ввтомобіля, в ротім рідключіться.</string>
     <string name="edit_saved_hotspot_prefix">Змінити збережену точку доступу ·\u0020</string>
     <string name="cluster_adb_multi_device">Якщо ADB показує кілька пристроїв, виконайте adb -s &lt;car-device-ID&gt; shell appops set %1$s GET_USAGE_STATS allow. Ідентифікатор можна знайти командою adb devices.</string>
     <string name="status_ready_for_prefix">Готово до підключення:\u0020</string>
@@ -130,8 +130,8 @@
     <string name="byd_navigation">Навігація BYD</string>
     <string name="cancel">Скасувати</string>
     <string name="car_home">Головний екран автомобіля</string>
-    <string name="car_hotspot_details">Дані точки доступу автомобіля</string>
-    <string name="car_hotspot_is_off">Точку доступу автомобіля вимкнено</string>
+    <string name="car_hotspot_details">Двні точки достуру ввтомобіля</string>
+    <string name="car_hotspot_is_off">Точку достуру ввтомобіля вимкнено</string>
     <string name="car_marker_horizontal">Маркер автомобіля · горизонтально</string>
     <string name="car_marker_vertical">Маркер автомобіля · вертикально</string>
     <string name="carplay">CarPlay</string>
@@ -174,7 +174,7 @@
     <string name="connection_setup">Налаштування підключення</string>
     <string name="copied_to_the_car_clipboard_run_the_command_on_your_comput">Скопійовано до буфера обміну автомобіля. Виконайте команду на комп’ютері.</string>
     <string name="copy_command">Скопіювати команду</string>
-    <string name="copy_these_from_the_car_s_hotspot_settings_use_5_ghz_if_av">Скопіюйте ці дані з налаштувань точки доступу автомобіля. Якщо доступно, використовуйте 5 ГГц. Збереження тут не змінює точку доступу автомобіля.</string>
+    <string name="copy_these_from_the_car_s_hotspot_settings_use_5_ghz_if_av">Скоріюйте ці двні з нвлвштуввнь точки достуру ввтомобіля. Якщо достурно, використовуйте 5 ГГц. Збереження тут не змінює точку достуру ввтомобіля.</string>
     <string name="could_not_decode_image">Не вдалося декодувати зображення</string>
     <string name="could_not_encode_image">Не вдалося закодувати зображення</string>
     <string name="could_not_reset_wi_fi_direct_close_the_other_projection_ap">Не вдалося скинути Wi-Fi Direct. Закрийте інший застосунок проєкції та спробуйте знову.</string>
@@ -267,12 +267,12 @@
     <string name="open">Відкрити</string>
     <string name="open_after_the_car_starts">Відкривати після запуску автомобіля</string>
     <string name="open_bluetooth">Відкрити Bluetooth</string>
-    <string name="open_car_hotspot_settings">Відкрити налаштування точки доступу автомобіля</string>
+    <string name="open_car_hotspot_settings">Відкрити налаштування точки доступу пристрою Android</string>
     <string name="open_car_settings">Відкрити налаштування автомобіля</string>
     <string name="open_car_wi_fi_settings">Відкрити налаштування Wi-Fi автомобіля</string>
     <string name="open_carplay">Відкрити CarPlay</string>
     <string name="open_connection_setup">Відкрити налаштування підключення</string>
-    <string name="open_this_setting_from_your_car_s_settings_app">Відкрийте цей параметр у застосунку налаштувань автомобіля.</string>
+    <string name="open_this_setting_from_your_car_s_settings_app">Відкрийте цей рврвметр у звстосунку нвлвштуввнь ввтомобіля.</string>
     <string name="opening_carplay">Відкриття CarPlay…</string>
     <string name="opening_usb_data_paths">Відкриття каналів даних USB</string>
     <string name="pair_another">Спарити інший</string>
@@ -318,7 +318,7 @@
     <string name="s_1_0x">1.0x</string>
     <string name="s_1_choose_your_connection">1 · Виберіть спосіб підключення</string>
     <string name="s_1_connect_a_computer_with_adb_installed_to_the_car_using">1. Підключіть до автомобіля комп’ютер з установленим ADB через наявне USB-з’єднання або бездротове налагодження. Якщо автомобіль запитає, дозвольте налагодження.\n\n2. Виконайте цю команду в терміналі комп’ютера:</string>
-    <string name="s_1_open_car_hotspot_settings_turn_the_hotspot_on_and_sele">1. Відкрийте налаштування точки доступу автомобіля, увімкніть її та виберіть 5 ГГц, якщо доступно.\n2. Точно скопіюйте її назву й пароль нижче.\n3. Не вимикайте точку доступу під час підключення. TiPlay передасть дані через Bluetooth; iPhone приєднається автоматично.</string>
+    <string name="s_1_open_car_hotspot_settings_turn_the_hotspot_on_and_sele">1. Відкрийте нвлвштуввння точки достуру ввтомобіля, увімкніть її тв виберіть 5 ГГц, якщо достурно.\n2. Точно скоріюйте її нвзву й рвроль нижче.\n3. Не вимиквйте точку достуру рід чвс рідключення. TiPlay рередвсть двні через Bluetooth; iPhone рриєднвється ввтомвтично.</string>
     <string name="s_2_4_ghz">2,4 ГГц</string>
     <string name="s_2_pair_your_iphone">2 · Спарте свій iPhone</string>
     <string name="s_300_ms_default">300 мс · типово</string>
@@ -338,7 +338,7 @@
     <string name="save_details">Зберегти дані</string>
     <string name="save_diagnostic_report">Зберегти діагностичний звіт</string>
     <string name="save_hotspot_details_and_use_this_mode">Зберегти дані точки доступу й увімкнути цей режим</string>
-    <string name="save_the_name_and_password_from_the_car_s_hotspot_settings">Спочатку збережіть назву й пароль із налаштувань точки доступу автомобіля</string>
+    <string name="save_the_name_and_password_from_the_car_s_hotspot_settings">Срочвтку збережіть нвзву й рвроль із нвлвштуввнь точки достуру ввтомобіля</string>
     <string name="save_your_hotspot_details_in_connection_setup_first">Спочатку збережіть дані точки доступу в налаштуваннях підключення</string>
     <string name="saved_for_your_next_connection">Збережено для наступного підключення</string>
     <string name="saving_report">Збереження звіту…</string>
@@ -418,7 +418,7 @@
     <string name="option_contrast_default">Контрастність теми</string>
     <string name="option_contrast_light">Світле тло · темні прилади</string>
     <string name="option_contrast_dark">Темне тло · світлі прилади</string>
-    <string name="hotspot_error_empty_name">Укажіть назву точки доступу автомобіля</string>
+    <string name="hotspot_error_empty_name">Уквжіть нвзву точки достуру ввтомобіля</string>
     <string name="hotspot_error_long_name">Назва точки доступу має містити не більше 32 байтів</string>
     <string name="hotspot_error_invalid_character">Назва або пароль містять недопустимий символ</string>
     <string name="hotspot_error_password_length">Пароль точки доступу має містити від 8 до 63 символів</string>
@@ -643,12 +643,10 @@
     <string name="settings_interface_size">Розмір інтерфейсу</string>
     <string name="settings_interface_size_auto">Автоматично</string>
     <string name="settings_interface_size_hint">Розмір тексту й елементів керування на екранах TiPlay. В автоматичному режимі вони збільшуються на великих екранах із низькою щільністю. CarPlay не змінюється.</string>
-    <string name="settings_external_ap_title">Точка доступу автомобіля / стороння AP</string>
     <string name="settings_external_ap_hint">Підключіть Android, iPhone і браузер автомобіля до однієї зовнішньої мережі Wi-Fi. Цей режим не створює точку доступу на Android. Використовуйте відкриту мережу або WPA2. Якщо браузер не бачить Android, перевірте ізоляцію клієнтів точки доступу.</string>
     <string name="settings_external_ap_wifi">Відкрити налаштування Wi-Fi</string>
     <string name="settings_external_ap_ready">Підключено до вказаної мережі Wi-Fi.</string>
     <string name="settings_external_ap_check">Приєднайтеся до вказаної мережі Wi-Fi в системних налаштуваннях. Якщо назва недоступна, перевірте її вручну. Збереження даних не підключає пристрій до Wi-Fi.</string>
     <string name="settings_android_address">Адреса Android: %1$s</string>
     <string name="settings_main_stopping">Відключення…</string>
-    <string name="settings_external_ap_setup">Підключіть Android, iPhone і браузер автомобіля до однієї зовнішньої мережі Wi-Fi. Android не створює точку доступу в цьому режимі.</string>
 </resources>

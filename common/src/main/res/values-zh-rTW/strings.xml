@@ -1,8 +1,8 @@
 <resources>
-    <string name="existing_wifi_title">現有 Wi-Fi / 同一區域網路</string>
-    <string name="existing_wifi_description">使用已有路由器或隨身 Wi-Fi。讓 iPhone 和車機保持連線同一網路，並透過它上網。</string>
-    <string name="existing_wifi_hint">現有 Wi-Fi · 兩部裝置保持連線同一 Wi-Fi，藍牙保持開啟，無需開啟車機熱點。</string>
-    <string name="existing_wifi_instructions">先在系統設定中將車機和 iPhone 連線同一外部 Wi-Fi，再準確填寫它的名稱和 WPA2 密碼；僅開放網路可留空密碼。路由器使用 WPA2 或 WPA2/WPA3 混合模式，並關閉用戶端隔離。TiPlay 保持此 Wi-Fi 連線，不建立熱點。</string>
+    <string name="existing_wifi_title">現有 Wi-Fi</string>
+    <string name="existing_wifi_description">使用已有路由器或隨身 Wi-Fi。讓 iPhone 和安卓端保持連線同一網路，並透過它上網。</string>
+    <string name="existing_wifi_hint">現有 Wi-Fi · 兩部裝置保持連線同一 Wi-Fi，藍牙保持開啟，無需開啟安卓端熱點。</string>
+    <string name="existing_wifi_instructions">先在系統設定中將安卓端和 iPhone 連線同一外部 Wi-Fi，再準確填寫它的名稱和 WPA2 密碼；僅開放網路可留空密碼。路由器使用 WPA2 或 WPA2/WPA3 混合模式，並關閉用戶端隔離。TiPlay 保持此 Wi-Fi 連線，不建立熱點。</string>
     <string name="existing_wifi_details">外部 Wi-Fi 詳細資訊</string>
     <string name="existing_wifi_ssid">外部 Wi-Fi 名稱（SSID）</string>
     <string name="existing_wifi_password">外部 Wi-Fi 密碼</string>
@@ -12,10 +12,10 @@
     <string name="wifi_direct_channel_summary">首選頻道：%1$s</string>
     <string name="wifi_direct_channel_choice">頻道 %1$d · %2$s</string>
     <string name="wifi_direct_channel_description">自動模式會為您選擇頻道。手動頻道取決於車機的支援情況。變更將在下次 Wi-Fi Direct 連線時生效。</string>
-    <string name="built_in_car_hotspot">車載熱點</string>
+    <string name="built_in_car_hotspot">安卓端熱點</string>
     <string name="wifi_direct">Wi-Fi Direct</string>
-    <string name="hotspot_hint_manual">車載熱點 · 保持車載熱點、藍牙和 iPhone 的 Wi-Fi 開啟。</string>
-    <string name="hotspot_hint_local">開啟「連線設定」以儲存車載熱點資訊。</string>
+    <string name="hotspot_hint_manual">安卓端熱點 · 保持安卓端熱點、藍牙和 iPhone 的 Wi-Fi 開啟。</string>
+    <string name="hotspot_hint_local">開啟「連線設定」以儲存安卓端熱點資訊。</string>
     <string name="hotspot_hint_p2p">Wi-Fi Direct · 保持車機 Wi-Fi 開關、藍牙和 iPhone 的 Wi-Fi 開啟。</string>
     <string name="cluster_size_standard">標準 · 最清晰</string>
     <string name="cluster_size_larger">較大 · 預設</string>
@@ -25,10 +25,10 @@
     <string name="marker_up">上</string>
     <string name="marker_down">下</string>
     <string name="marker_centre_default">置中 · 預設</string>
-    <string name="hotspot_mode_manual_desc">使用車機內建的熱點。若車機支援，請在車機設定中選擇 5 GHz。</string>
+    <string name="hotspot_mode_manual_desc">使用安卓端內建的熱點。若安卓端支援，請在安卓端設定中選擇 5 GHz。</string>
     <string name="hotspot_mode_p2p_desc">替代方案。需要開啟車機 Wi-Fi 開關；2.4 GHz 連線可能會卡頓。</string>
-    <string name="hotspot_details_off">熱點已關閉 · 請在車機設定中開啟。</string>
-    <string name="hotspot_details_saved">詳細資訊已儲存 · 連線前請確認車載熱點已開啟。</string>
+    <string name="hotspot_details_off">熱點已關閉 · 請在安卓端設定中開啟。</string>
+    <string name="hotspot_details_saved">詳細資訊已儲存 · 連線前請確認安卓端熱點已開啟。</string>
     <string name="permission_enabled_ready">權限已啟用 · 可以使用</string>
     <string name="permission_not_enabled">權限尚未啟用</string>
     <string name="clipboard_usage_access">TiPlay 使用狀況存取權限</string>
@@ -72,12 +72,12 @@
     <string name="status_waiting_reenumeration">正在等待 iPhone 重新列舉</string>
     <string name="status_attaching_ncm">正在連線 NCM/AirPlay 網路</string>
     <string name="status_failed">失敗：%1$s</string>
-    <string name="msg_car_hotspot_off">車機熱點「%1$s」尚未開啟。請在車機設定中開啟後再連線。</string>
+    <string name="msg_car_hotspot_off">安卓端熱點「%1$s」尚未開啟。請在安卓端設定中開啟後再連線。</string>
     <string name="home_public_preview">公開預覽 ·  </string>
     <string name="choose_iphone_prefix">選擇 iPhone · </string>
     <string name="audio_saved_value">已儲存：%1$d</string>
     <string name="about_public_preview_prefix">公開預覽 · </string>
-    <string name="msg_car_hotspot_connect">TiPlay 透過車機熱點「%1$s」連線。請在車機設定中開啟熱點後再連線。</string>
+    <string name="msg_car_hotspot_connect">TiPlay 透過安卓端熱點「%1$s」連線。請在安卓端設定中開啟熱點後再連線。</string>
     <string name="edit_saved_hotspot_prefix">編輯已儲存的熱點 · </string>
     <string name="cluster_adb_multi_device">如果 ADB 列出多個裝置，請使用 adb -s &lt;car-device-ID&gt; shell appops set %1$s GET_USAGE_STATS allow。使用 adb devices 查詢 ID。</string>
     <string name="status_ready_for_prefix">已準備連線：</string>
@@ -108,7 +108,7 @@
     <string name="audio">音訊</string>
     <string name="audio_routing">音訊路由</string>
     <string name="auto">自動</string>
-    <string name="auto_start_on_boot">開機後自動啟動</string>
+    <string name="auto_start_on_boot">開機自啟</string>
     <string name="automatic_cluster_map_setup">自動儀表板地圖設定</string>
     <string name="automatic_connection">自動連線</string>
     <string name="usb_auto_confirm_title">自動確認 USB 權限</string>
@@ -124,8 +124,8 @@
     <string name="byd_navigation">比亞迪導航</string>
     <string name="cancel">取消</string>
     <string name="car_home">車機主畫面</string>
-    <string name="car_hotspot_details">車機熱點詳細資訊</string>
-    <string name="car_hotspot_is_off">車機熱點未開啟</string>
+    <string name="car_hotspot_details">安卓端熱點詳細資訊</string>
+    <string name="car_hotspot_is_off">安卓端熱點未開啟</string>
     <string name="car_marker_horizontal">車輛標記 · 水平</string>
     <string name="car_marker_vertical">車輛標記 · 垂直</string>
     <string name="carplay">CarPlay</string>
@@ -169,7 +169,7 @@
     <string name="connection_setup">連線設定</string>
     <string name="copied_to_the_car_clipboard_run_the_command_on_your_comput">已複製到車機剪貼簿。在電腦上執行此指令。</string>
     <string name="copy_command">複製指令</string>
-    <string name="copy_these_from_the_car_s_hotspot_settings_use_5_ghz_if_av">從車機熱點設定中複製以下內容。如有 5 GHz，請選擇。儲存在此處不會變更車機的熱點。</string>
+    <string name="copy_these_from_the_car_s_hotspot_settings_use_5_ghz_if_av">從安卓端熱點設定中複製以下內容。如有 5 GHz，請選擇。儲存在此處不會變更安卓端的熱點。</string>
     <string name="could_not_decode_image">無法解碼圖片</string>
     <string name="could_not_encode_image">無法編碼圖片</string>
     <string name="could_not_reset_wi_fi_direct_close_the_other_projection_ap">無法重設 Wi-Fi Direct。請關閉其他投放 App 後再試一次。</string>
@@ -267,12 +267,12 @@
     <string name="open">開啟</string>
     <string name="open_after_the_car_starts">車機啟動後開啟</string>
     <string name="open_bluetooth">開啟藍牙</string>
-    <string name="open_car_hotspot_settings">開啟車機熱點設定</string>
+    <string name="open_car_hotspot_settings">開啟安卓端熱點設定</string>
     <string name="open_car_settings">開啟車機設定</string>
     <string name="open_car_wi_fi_settings">開啟車機 Wi-Fi 設定</string>
     <string name="open_carplay">開啟 CarPlay</string>
     <string name="open_connection_setup">開啟連線設定</string>
-    <string name="open_this_setting_from_your_car_s_settings_app">請在車機的設定 App 中開啟此設定。</string>
+    <string name="open_this_setting_from_your_car_s_settings_app">請在安卓端的設定 App 中開啟此設定。</string>
     <string name="opening_carplay">正在開啟 CarPlay…</string>
     <string name="opening_usb_data_paths">正在開啟 USB 資料通道</string>
     <string name="pair_another">配對其他裝置</string>
@@ -318,7 +318,7 @@
     <string name="s_1_0x">1.0x</string>
     <string name="s_1_choose_your_connection">1 · 選擇連線方式</string>
     <string name="s_1_connect_a_computer_with_adb_installed_to_the_car_using">1. 使用已安裝 ADB 的電腦，透過現有的 USB 或無線除錯連線至車機。如出現除錯授權提示，請予以允許。\n\n2. 在電腦終端機中執行此指令：</string>
-    <string name="s_1_open_car_hotspot_settings_turn_the_hotspot_on_and_sele">1. 開啟車機熱點設定，開啟熱點；如有 5 GHz，請選擇。\n2. 在下方準確輸入熱點名稱和密碼。\n3. 連線時保持車機熱點開啟。TiPlay 會透過藍牙傳送熱點資訊，iPhone 會自動加入。</string>
+    <string name="s_1_open_car_hotspot_settings_turn_the_hotspot_on_and_sele">1. 開啟安卓端熱點設定，開啟熱點；如有 5 GHz，請選擇。\n2. 在下方準確輸入熱點名稱和密碼。\n3. 連線時保持安卓端熱點開啟。TiPlay 會透過藍牙傳送熱點資訊，iPhone 會自動加入。</string>
     <string name="s_2_4_ghz">2.4 GHz</string>
     <string name="s_2_pair_your_iphone">2 · 配對你的 iPhone</string>
     <string name="s_300_ms_default">300 毫秒 · 預設</string>
@@ -338,7 +338,7 @@
     <string name="save_details">儲存詳細資訊</string>
     <string name="save_diagnostic_report">儲存診斷報告</string>
     <string name="save_hotspot_details_and_use_this_mode">儲存熱點資訊並使用此模式</string>
-    <string name="save_the_name_and_password_from_the_car_s_hotspot_settings">請先儲存車機熱點設定中的名稱和密碼</string>
+    <string name="save_the_name_and_password_from_the_car_s_hotspot_settings">請先儲存安卓端熱點設定中的名稱和密碼</string>
     <string name="save_your_hotspot_details_in_connection_setup_first">請先在「連線設定」中儲存熱點資訊</string>
     <string name="saved_for_your_next_connection">已儲存，將在下次連線時生效</string>
     <string name="saving_report">正在儲存報告…</string>
@@ -418,7 +418,7 @@
     <string name="option_contrast_default">主題預設</string>
     <string name="option_contrast_light">淺色背景 · 深色儀表板</string>
     <string name="option_contrast_dark">深色背景 · 淺色儀表板</string>
-    <string name="hotspot_error_empty_name">請輸入車載熱點名稱</string>
+    <string name="hotspot_error_empty_name">請輸入安卓端熱點名稱</string>
     <string name="hotspot_error_long_name">熱點名稱不能超過 32 個位元組</string>
     <string name="hotspot_error_invalid_character">名稱或密碼包含無效字元</string>
     <string name="hotspot_error_password_length">熱點密碼長度必須為 8 至 63 個字元</string>
@@ -691,12 +691,10 @@
     <string name="settings_interface_size">介面大小</string>
     <string name="settings_interface_size_auto">自動</string>
     <string name="settings_interface_size_hint">TiPlay 自身畫面中文字與控制項的大小。自動模式會在大尺寸低密度螢幕上放大它們。不影響 CarPlay。</string>
-    <string name="settings_external_ap_title">車載熱點／第三方 AP</string>
-    <string name="settings_external_ap_hint">讓安卓手機、iPhone 和車機瀏覽器使用同一外部網路。本模式不會啟動安卓熱點。使用開放或 WPA2 網路；瀏覽器無法存取安卓時，請檢查 AP 的裝置互訪設定。</string>
+    <string name="settings_external_ap_hint">讓安卓端、iPhone 和車機瀏覽器使用同一外部網路。本模式不會啟動安卓熱點。使用開放或 WPA2 網路；瀏覽器無法存取安卓時，請檢查 AP 的裝置互訪設定。</string>
     <string name="settings_external_ap_wifi">開啟 Wi-Fi 設定</string>
     <string name="settings_external_ap_ready">已連線目標 Wi-Fi。</string>
     <string name="settings_external_ap_check">請在系統設定中加入目標 Wi-Fi。無法讀取網路名稱時請手動核對；儲存設定不代表系統已加入網路。</string>
     <string name="settings_android_address">安卓位址：%1$s</string>
     <string name="settings_main_stopping">正在停止…</string>
-    <string name="settings_external_ap_setup">讓安卓手機、iPhone 和車機瀏覽器使用同一外部 Wi-Fi。本模式不啟動安卓熱點。</string>
 </resources>

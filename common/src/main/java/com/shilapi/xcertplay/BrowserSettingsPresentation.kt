@@ -25,7 +25,7 @@ internal object BrowserSettingsPresentation {
                     dialog.dismiss()
                 }
                 .setNegativeButton(android.R.string.cancel, null)
-                .create().also { TiPlayExpressiveUi(context).showDialog(it) }
+                .create().also { TiPlayNativeUi(context).showDialog(it) }
         }
     }
 
@@ -44,7 +44,7 @@ internal object BrowserSettingsPresentation {
                     dialog.dismiss()
                 }
                 .setNegativeButton(android.R.string.cancel, null)
-                .create().also { TiPlayExpressiveUi(context).showDialog(it) }
+                .create().also { TiPlayNativeUi(context).showDialog(it) }
         }
     }
 

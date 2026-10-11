@@ -13,7 +13,7 @@ export const FLAG = Object.freeze({ KEY: 1, DISCONTINUITY: 2, PARAMETER_SETS: 4 
 export const HEADER_BYTES = 24;
 export const MAX_PAYLOAD = 8 * 1024 * 1024;
 
-const CODE = /^[0-9]{6}$/;
+const CODE = /^[0-9]{4}$/;
 const HOST = /^(?:(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})|(localhost))(?::([1-9]\d{0,4}))?$/i;
 const utf8 = new TextDecoder();
 

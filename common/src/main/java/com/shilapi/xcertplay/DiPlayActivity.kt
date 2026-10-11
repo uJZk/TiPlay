@@ -276,6 +276,8 @@ class DiPlayActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (intent.getStringExtra("page") != "settings" || intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false) ||
+            AirPlayPersistence.isPhoneBrowserMode(this)) setTheme(R.style.Theme_TiPlayNative)
         super.onCreate(savedInstanceState)
         // Normal entry and the host's pages use TiPlay's browser profile. Keep the upstream internal page API.
         if (intent.getStringExtra("page") != "settings" || intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false)) {
@@ -529,8 +531,8 @@ class DiPlayActivity : ComponentActivity() {
             }
             scroll
         }
-        if (AirPlayPersistence.isPhoneBrowserMode(this)) TiPlayExpressiveUi(this).apply {
-            styleTree(root); applyWindow(this@DiPlayActivity)
+        if (AirPlayPersistence.isPhoneBrowserMode(this)) TiPlayNativeUi(this).apply {
+            styleTree(root); applyWindow(this@DiPlayActivity); protectSystemInsets(root)
         }
         setContentView(root)
         renderedPage = page
@@ -619,8 +621,10 @@ class DiPlayActivity : ComponentActivity() {
         addView(label(getString(if (hostSettingsPage) R.string.settings_advanced else R.string.settings), if (compact) 20 else 26, TEXT, true).apply {
             setPadding(dp(12), 0, dp(12), 0)
         }, LinearLayout.LayoutParams(0, if (compact) dp(44) else dp(52), 1f))
-        addView(button(getString(R.string.settings_search), false) { showSettingsSearch() },
-            LinearLayout.LayoutParams(if (compact) dp(92) else dp(140), if (compact) dp(44) else dp(52)))
+        if (!AirPlayPersistence.isPhoneBrowserMode(this@DiPlayActivity)) {
+            addView(button(getString(R.string.settings_search), false) { showSettingsSearch() },
+                LinearLayout.LayoutParams(if (compact) dp(92) else dp(140), if (compact) dp(44) else dp(52)))
+        }
     }
 
     private fun home(content: LinearLayout) {
@@ -1733,6 +1737,7 @@ class DiPlayActivity : ComponentActivity() {
             card.addView(label(getString(if (AirPlayPersistence.isPhoneBrowserMode(this))
                 R.string.settings_browser_permissions else R.string.nearby_devices_connects_your_iphone_microphone_enables_sir), 16, MUTED))
             card.addView(button(getString(R.string.app_permissions), false) { openSystem(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }, matchButton(16, 60))
+            if (AirPlayPersistence.isPhoneBrowserMode(this)) BrowserBatteryOptimizationSettings.add(this, card)
             card.addView(button(getString(R.string.bluetooth_settings), false) { openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }, matchButton(10, 60))
             card.addView(button(getString(R.string.wireless_connection_help), false) { wirelessHelp() }, matchButton(10, 60))
         }
@@ -2416,18 +2421,19 @@ class DiPlayActivity : ComponentActivity() {
     }
 
     private fun showManualPermissionDialog(reason: String) {
+        val phoneBrowser = AirPlayPersistence.isPhoneBrowserMode(this)
         val body = column().apply { setPadding(dp(20), dp(10), dp(20), dp(10)) }
         body.addView(label(reason, 15, MUTED).apply { setPadding(0, 0, 0, dp(12)) })
 
         val autoConfirmOn = UsbPermissionSetup.Permission.ACCESSIBILITY.granted(this)
         body.addView(button(if (autoConfirmOn) getString(R.string.usb_auto_confirm_status_on) else getString(R.string.btn_open_accessibility_setting), false) {
             if (!UsbAutoConfirmService.openSettings(this)) toast(getString(R.string.wheel_keys_no_settings))
-        }, matchButton(0, 56))
+        }, matchButton(0, 56).apply { if (phoneBrowser) height = ViewGroup.LayoutParams.WRAP_CONTENT })
 
         val overlayOn = CenterMapOverlay.permitted(this)
         body.addView(button(if (overlayOn) getString(R.string.center_map_overlay_allowed) else getString(R.string.btn_open_overlay_setting), false) {
             openOverlayPermission()
-        }, matchButton(10, 56))
+        }, matchButton(10, 56).apply { if (phoneBrowser) height = ViewGroup.LayoutParams.WRAP_CONTENT })
 
         UsbPermissionSetup.snapshot(this).forEach { (permission, granted) ->
             val title = getString(when (permission) {
@@ -2440,17 +2446,17 @@ class DiPlayActivity : ComponentActivity() {
         val adbCmd = UsbPermissionSetup.manualCommand(packageName)
         body.addView(label(getString(R.string.manual_grant_cmd_hint), 14, MUTED).apply { setPadding(0, dp(12), 0, dp(6)) })
         body.addView(label(adbCmd, 13, TEXT).apply {
-            typeface = Typeface.MONOSPACE
+            if (!phoneBrowser) typeface = Typeface.MONOSPACE
             setTextIsSelectable(true)
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            setBackgroundColor(0x22FFFFFF)
+            if (!phoneBrowser) setBackgroundColor(0x22FFFFFF)
         })
         body.addView(button(getString(R.string.copy_command), false) {
             getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(
                 android.content.ClipData.newPlainText("TiPlay ADB Command", adbCmd)
             )
             toast(getString(R.string.copied_to_the_car_clipboard_run_the_command_on_your_comput))
-        }, matchButton(8, 50))
+        }, matchButton(8, 50).apply { if (phoneBrowser) height = ViewGroup.LayoutParams.WRAP_CONTENT })
 
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.permissions_and_connection_help))
@@ -4109,7 +4115,7 @@ class DiPlayActivity : ComponentActivity() {
         val body = column().apply { setPadding(dp(24), dp(12), dp(24), dp(12)) }
         body.addView(label(getString(R.string.diagnostic_report_copy_hint), 14, MUTED))
         body.addView(label(report, 13, TEXT).apply {
-            typeface = Typeface.MONOSPACE
+            if (!AirPlayPersistence.isPhoneBrowserMode(this@DiPlayActivity)) typeface = Typeface.MONOSPACE
             setTextIsSelectable(true)
         })
         AlertDialog.Builder(this).setTitle(getString(R.string.view_diagnostic_report))
@@ -4323,15 +4329,25 @@ class DiPlayActivity : ComponentActivity() {
         }
         parent.addView(button, matchButton(0, 60)); parent.addView(space(12))
     }
-    private fun card() = column().apply { background = rounded(SURFACE, BORDER); setPadding(dp(24), dp(24), dp(24), dp(24)) }
+    private fun card() = column().apply {
+        if (!AirPlayPersistence.isPhoneBrowserMode(this@DiPlayActivity)) background = rounded(SURFACE, BORDER)
+        setPadding(dp(24), dp(24), dp(24), dp(24))
+    }
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
     private fun label(value: String, size: Int, color: Int, bold: Boolean = false) = TextView(this).apply {
+        if (AirPlayPersistence.isPhoneBrowserMode(this@DiPlayActivity)) { text = value; return@apply }
         text = value; textSize = size.toFloat(); setTextColor(color); gravity = Gravity.CENTER_VERTICAL
         typeface = if (bold) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.create("sans-serif", Typeface.NORMAL)
         setLineSpacing(dp(3).toFloat(), 1f)
     }
     private fun button(title: String, primary: Boolean, click: () -> Unit) = SettingButton(this).apply {
+        if (AirPlayPersistence.isPhoneBrowserMode(this@DiPlayActivity)) {
+            text = title
+            searchIndexSink?.add(title.substringBefore(VALUE_SEPARATOR))
+            setOnClickListener { click() }
+            return@apply
+        }
         isAllCaps = false; textSize = 18f; setTextColor(if (primary) BG else TEXT)
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         background = android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(RIPPLE), rounded(if (primary) ACCENT else BUTTON, if (primary) ACCENT else BORDER), null)
@@ -4356,6 +4372,11 @@ class DiPlayActivity : ComponentActivity() {
         var action = false
 
         override fun setText(text: CharSequence?, type: BufferType?) {
+            if (AirPlayPersistence.isPhoneBrowserMode(context)) {
+                super.setText(text?.toString(), type)
+                setCompoundDrawablesRelative(null, null, null, null)
+                return
+            }
             val split = if (action) -1 else text?.indexOf(VALUE_SEPARATOR) ?: -1
             if (text == null || split <= 0) {
                 super.setText(text, type)

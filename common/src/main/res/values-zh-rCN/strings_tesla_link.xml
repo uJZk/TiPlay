@@ -14,8 +14,8 @@
     <string name="settings_browser_pairing_code">配对码</string>
     <string name="settings_browser_pairing_code_description">车上的浏览器需要配对码 %1$s 才能显示 CarPlay。下面的链接已包含配对码，打开链接即可完成配对。生成新配对码后，使用旧配对码的浏览器会断开；打开新链接即可重新配对。</string>
     <string name="settings_browser_pairing_code_new">生成新配对码</string>
-    <string name="settings_browser_link_car">在车上的浏览器中打开此链接（特斯拉及其他 Chromium 浏览器）：</string>
-    <string name="settings_browser_link_other">其他浏览器（如 Safari、Firefox）：在连接本机热点的设备上打开此链接：</string>
+    <string name="settings_browser_link_car">在车上的浏览器中打开此链接（特斯拉及其它车机浏览器）：</string>
+    <string name="settings_browser_link_other">其他浏览器（如 Safari、Firefox）：在连接安卓端热点的设备上打开此链接：</string>
     <string name="settings_browser_link_copy">复制链接</string>
     <string name="settings_browser_link_copied">已复制链接</string>
 </resources>

@@ -47,7 +47,7 @@ class CarPlaySettingsNavigationTest {
                 labels.any { it.startsWith(screen.getString(id)) })
         }
         assertFalse(labels.contains(screen.getString(R.string.settings_overview)))
-        assertTrue(labels.contains(screen.getString(R.string.settings_search)))
+        assertFalse(labels.contains(screen.getString(R.string.settings_search)))
         assertTrue(labels.any { it == screen.getString(R.string.frame_rate) + " · 60 fps" })
         assertTrue(labels.contains(screen.getString(R.string.settings_hevc_experimental)))
         assertEquals(SettingsCategory.ADVANCED, CarPlaySettingsNavigation.category(screen.intent))

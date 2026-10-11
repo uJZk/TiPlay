@@ -11,10 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PersistableBundle
 import android.provider.Settings
-import android.text.InputType
 import android.view.View
-import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -26,7 +23,7 @@ import kotlin.math.roundToInt
 
 /**
  * The browser link rows of the Tesla browser card (phone + browser mode only, integration E4): what the link is doing,
- * the local network permission (Android 17), the page address, the pairing code, and the HTTPS page link with its Copy button.
+ * the local network permission (Android 17), the pairing code, and the HTTPS page link with its Copy button.
  *
  * Building the search index ([indexing]) adds the row titles only: it starts no server, creates no pairing code and
  * reads no network interface. Otherwise the links probe the hotspot's address, on a thread.
@@ -51,8 +48,6 @@ internal class TeslaBrowserLinkCard(
         val status = note("").also(parent::addView)
         showState(status, TeslaBrowserLink.state)
         localNetworkRows(parent)
-        settingRow(parent, "${activity.getString(R.string.settings_browser_page_address)} · " +
-            TeslaBrowserLink.pageAddress(app), ::editPageAddress)
         // The index needs the title only; a first build of the card creates the code, which needs no network.
         val code = if (indexing) "" else TeslaBrowserLink.pairingCode(app)
         settingRow(parent, "${activity.getString(R.string.settings_browser_pairing_code)} · $code") { showPairingCode() }
@@ -186,38 +181,6 @@ internal class TeslaBrowserLinkCard(
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             Toast.makeText(activity, R.string.settings_browser_link_copied, Toast.LENGTH_SHORT).show()
         }
-    }
-
-    private fun editPageAddress() {
-        val saved = TeslaBrowserLink.pageAddress(app)
-        val input = EditText(activity).apply {
-            setSingleLine()
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setText(saved)
-            hint = TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS
-        }
-        val body = FrameLayout(activity).apply {
-            setPadding(dp(24), dp(8), dp(24), 0)
-            addView(input)
-        }
-        val dialog = AlertDialog.Builder(activity)
-            .setTitle(R.string.settings_browser_page_address)
-            .setMessage(R.string.settings_browser_page_address_hint)
-            .setView(body)
-            .setPositiveButton(R.string.save, null)
-            .setNegativeButton(R.string.cancel, null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                if (!TeslaBrowserLink.savePageAddress(app, input.text.toString())) {
-                    input.error = activity.getString(R.string.settings_browser_page_address_invalid)
-                    return@setOnClickListener
-                }
-                dialog.dismiss()
-                rerender()
-            }
-        }
-        dialog.show()
     }
 
     private fun showPairingCode() {

@@ -2,8 +2,8 @@
 
 ## 特斯拉浏览器 CarPlay：声音走车辆蓝牙
 
-背景：安卓手机运行 TiPlay 并开热点，特斯拉连接热点后用浏览器显示 CarPlay。
-目标是安卓手机只负责视频和触摸，音乐、导航、Siri、电话和麦克风走 iPhone 与特斯拉之间的蓝牙；完整音频路线仍待实车验证。
+背景：安卓端运行 TiPlay 并开热点，特斯拉连接热点后用浏览器显示 CarPlay。
+目标是安卓端只负责视频和触摸，音乐、导航、Siri、电话和麦克风走 iPhone 与特斯拉之间的蓝牙；完整音频路线仍待实车验证。
 
 ### 依据：Carlinkit 固件的 `BtAudio` 模式
 
@@ -32,7 +32,7 @@
 | `audioFormats` | 去掉 | 去掉 |
 | `audioLatencies` | 保留 | 去掉 |
 | `features` 中的音频位（`CARPLAY_AUDIO_FEATURES`） | 保留 | 清除（Bonjour TXT 和 `/info` 都清除） |
-| `bluetoothIDs` | 保留（转接盒自身地址） | 保留（安卓手机地址） |
+| `bluetoothIDs` | 保留（转接盒自身地址） | 保留（安卓端地址） |
 
 ### 待办
 

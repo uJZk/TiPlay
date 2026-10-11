@@ -19,7 +19,8 @@ class StartupDiagnosticSnapshotTest {
     @Before fun reset() {
         app.getSharedPreferences("diplay_startup_diagnostics", Context.MODE_PRIVATE).edit().clear().commit()
         AirPlayPersistence.saveAutoStartOnBoot(app, false)
-        AirPlayPersistence.saveRunMode(app, CarPlayRunMode.HEAD_UNIT)
+        DiPlayPreferences.saveAutoConnect(app, false)
+        AirPlayPersistence.saveRunMode(app, CarPlayRunMode.PHONE_BROWSER)
     }
 
     @Test fun disabledBootIsRecordedWithoutLaunchingOrChangingTheSetting() {
@@ -33,7 +34,7 @@ class StartupDiagnosticSnapshotTest {
         assertTrue(StartupDiagnosticSnapshot.report(app).contains("launchEnabledAtBoot=false launchResult=disabled"))
     }
 
-    @Test fun phoneBrowserModeDoesNotOpenAtBootButKeepsTheHeadUnitChoice() {
+    @Test fun phoneBrowserModeOpensAtBootOnlyWhenExplicitlyEnabled() {
         AirPlayPersistence.saveAutoStartOnBoot(app, true)
         AirPlayPersistence.saveRunMode(app, CarPlayRunMode.PHONE_BROWSER)
         var launched = false
@@ -41,9 +42,22 @@ class StartupDiagnosticSnapshotTest {
             override fun startActivity(intent: Intent) { launched = true }
         }
         BootReceiver().onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
-        assertFalse(launched)
+        assertTrue(launched)
         assertTrue(AirPlayPersistence.loadAutoStartOnBoot(app))
-        assertTrue(StartupDiagnosticSnapshot.report(app).contains("launchEnabledAtBoot=false launchResult=disabled"))
+        assertFalse(DiPlayPreferences.autoConnect(app))
+        assertTrue(StartupDiagnosticSnapshot.report(app).contains("launchEnabledAtBoot=true launchResult=startActivity-returned"))
+    }
+
+    @Test fun connectOnOpenDoesNotOptIntoBootStartup() {
+        DiPlayPreferences.saveAutoConnect(app, true)
+        var launched = false
+        val context = object : ContextWrapper(app) {
+            override fun startActivity(intent: Intent) { launched = true }
+        }
+        BootReceiver().onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
+        assertFalse(launched)
+        assertFalse(AirPlayPersistence.loadAutoStartOnBoot(app))
+        assertTrue(DiPlayPreferences.autoConnect(app))
     }
 
     @Test fun successfulLaunchMeansAnActivityRequestAndRetainsTheExistingFlags() {
@@ -74,7 +88,13 @@ class StartupDiagnosticSnapshotTest {
     }
 
     @Test fun unrelatedBroadcastsDoNotCreateOrOverwriteBootEvidence() {
-        BootReceiver().onReceive(app, Intent("custom.intent.token=secret"))
+        AirPlayPersistence.saveAutoStartOnBoot(app, true)
+        var launched = false
+        val context = object : ContextWrapper(app) {
+            override fun startActivity(intent: Intent) { launched = true }
+        }
+        BootReceiver().onReceive(context, Intent("custom.intent.token=secret"))
+        assertFalse(launched)
         assertTrue(StartupDiagnosticSnapshot.report(app).contains("received=false"))
     }
 }

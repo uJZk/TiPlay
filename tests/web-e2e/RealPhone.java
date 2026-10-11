@@ -6,7 +6,7 @@
 //
 // Single-file launch (JDK 17 or later):
 //   java -cp <shared classes>:<kotlin-stdlib.jar> tests/web-e2e/RealPhone.java --page site/play --port 0 \
-//     --code 271828 --width 1280 --height 720 --fps 30 [--clip clip.h264] [--bind 0.0.0.0]
+//     --code 2718 --width 1280 --height 720 --fps 30 [--clip clip.h264] [--bind 0.0.0.0]
 // Without --clip it streams hand-made SPS/PPS and fake slices, which are enough for the transport.
 // stdout: one JSON object per line. stdin commands: restart, fit-on, fit-off, quit.
 import com.shilapi.xcertplay.airplay.AirPlayContact;
@@ -69,7 +69,7 @@ public class RealPhone {
         Map<String, String> options = new HashMap<>();
         for (int i = 0; i + 1 < args.length; i += 2) options.put(args[i].replaceFirst("^--", ""), args[i + 1]);
         Path page = Paths.get(options.getOrDefault("page", "site/play")).toAbsolutePath().normalize();
-        String code = options.getOrDefault("code", "271828");
+        String code = options.getOrDefault("code", "2718");
         int width = Integer.parseInt(options.getOrDefault("width", "1280"));
         int height = Integer.parseInt(options.getOrDefault("height", "720"));
         int fps = Integer.parseInt(options.getOrDefault("fps", "30"));

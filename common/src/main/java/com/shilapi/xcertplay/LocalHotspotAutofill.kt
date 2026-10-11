@@ -22,7 +22,7 @@ internal object LocalHotspotAutofill {
             addView(button)
             addView(status)
         }
-        controlsParent.addView(controls, if (controlsParent === parent) 0 else 1)
+        controlsParent.addView(controls, if (controlsParent === parent) 0 else minOf(1, controlsParent.childCount))
         val app = parent.context.applicationContext
         var token: LatestSettingsProbe.Token? = null
         fun read(replace: Boolean) {

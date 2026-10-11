@@ -1,0 +1,4 @@
+<resources>
+    <string name="settings_ignore_battery_optimization">Ignorar la optimización de batería</string>
+    <string name="settings_battery_settings_unavailable">Los ajustes de batería no están disponibles en este dispositivo.</string>
+</resources>

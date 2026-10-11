@@ -14,15 +14,15 @@ class TeslaBrowserPageLinksTest {
     @Test fun theCarLinkNamesAPhoneOtherThanTheDefaultInTAndKeepsTheCodeInTheFragment() {
         val page = TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS
         assertEquals("https://ujzk.github.io/TiPlay/", page)
-        assertEquals("The default phone at 8080 needs no t", "$page#c=123456",
-            TeslaBrowserPageLinks.pageLink(page, "123456", "100.109.220.253", 8080))
-        assertEquals("$page?t=100.109.220.253:8081#c=123456", TeslaBrowserPageLinks.pageLink(page, "123456", "100.109.220.253", 8081))
+        assertEquals("The default phone at 8080 needs no t", "$page#c=1234",
+            TeslaBrowserPageLinks.pageLink(page, "1234", "100.109.220.253", 8080))
+        assertEquals("$page?t=100.109.220.253:8081#c=1234", TeslaBrowserPageLinks.pageLink(page, "1234", "100.109.220.253", 8081))
         assertEquals("$page?t=10.176.81.135#c=042001", TeslaBrowserPageLinks.pageLink(page, "042001", "10.176.81.135", 8080))
         assertEquals("$page?t=100.64.0.1#c=042001", TeslaBrowserPageLinks.pageLink(page, "042001", "100.64.0.1", 8080))
-        assertEquals("Without an address the page uses its default phone", "$page#c=123456",
-            TeslaBrowserPageLinks.pageLink(page, "123456", null, 8080))
-        assertEquals("https://car.example/tiplay/?t=100.64.7.9:8081#c=123456",
-            TeslaBrowserPageLinks.pageLink("https://car.example/tiplay/", "123456", "100.64.7.9", 8081))
+        assertEquals("Without an address the page uses its default phone", "$page#c=1234",
+            TeslaBrowserPageLinks.pageLink(page, "1234", null, 8080))
+        assertEquals("https://car.example/tiplay/?t=100.64.7.9:8081#c=1234",
+            TeslaBrowserPageLinks.pageLink("https://car.example/tiplay/", "1234", "100.64.7.9", 8081))
     }
 
     @Test fun theDefaultPhoneIsThePagesDefaultHost() {
@@ -32,25 +32,25 @@ class TeslaBrowserPageLinksTest {
     }
 
     @Test fun thePageAddressKeepsItsOwnQueryButNotItsOwnT() {
-        assertEquals("https://car.example/p/?t=100.64.7.9&v=2&tab=1#c=123456",
-            TeslaBrowserPageLinks.pageLink("https://car.example/p/?v=2&t=1.2.3.4&tab=1&t", "123456", "100.64.7.9", 8080))
-        assertEquals("https://car.example/p/?v=2#c=123456",
-            TeslaBrowserPageLinks.pageLink("https://car.example/p/?v=2&t=1.2.3.4", "123456", null, 8080))
-        assertEquals("https://car.example/p/?v=2#c=123456",
-            TeslaBrowserPageLinks.pageLink("https://car.example/p/?v=2&t=1.2.3.4", "123456", "100.109.220.253", 8080))
-        assertEquals("https://car.example/p/#c=123456", TeslaBrowserPageLinks.pageLink("https://car.example/p/?", "123456", null, 8080))
+        assertEquals("https://car.example/p/?t=100.64.7.9&v=2&tab=1#c=1234",
+            TeslaBrowserPageLinks.pageLink("https://car.example/p/?v=2&t=1.2.3.4&tab=1&t", "1234", "100.64.7.9", 8080))
+        assertEquals("https://car.example/p/?v=2#c=1234",
+            TeslaBrowserPageLinks.pageLink("https://car.example/p/?v=2&t=1.2.3.4", "1234", null, 8080))
+        assertEquals("https://car.example/p/?v=2#c=1234",
+            TeslaBrowserPageLinks.pageLink("https://car.example/p/?v=2&t=1.2.3.4", "1234", "100.109.220.253", 8080))
+        assertEquals("https://car.example/p/#c=1234", TeslaBrowserPageLinks.pageLink("https://car.example/p/?", "1234", null, 8080))
         for (link in listOf(
-            TeslaBrowserPageLinks.pageLink("https://car.example/p/?c=999999", "123456", "100.64.7.9", 8080),
-            TeslaBrowserPageLinks.pageLink(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS, "123456", "100.64.7.9", 8080),
-            TeslaBrowserPageLinks.pageLink(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS, "123456", "100.109.220.253", 8080),
+            TeslaBrowserPageLinks.pageLink("https://car.example/p/?c=999999", "1234", "100.64.7.9", 8080),
+            TeslaBrowserPageLinks.pageLink(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS, "1234", "100.64.7.9", 8080),
+            TeslaBrowserPageLinks.pageLink(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS, "1234", "100.109.220.253", 8080),
         )) {
-            assertEquals(link, "123456", link.substringAfter('#').removePrefix("c="))
-            assertFalse("The code never goes into the part the page host sees: $link", "123456" in link.substringBefore('#'))
+            assertEquals(link, "1234", link.substringAfter('#').removePrefix("c="))
+            assertFalse("The code never goes into the part the page host sees: $link", "1234" in link.substringBefore('#'))
         }
     }
 
     @Test fun theOtherBrowsersLinkOpensThePhonesOwnCopyOfThePage() {
-        assertEquals("http://10.176.81.135:8080/play/#c=123456", TeslaBrowserPageLinks.phoneLink("10.176.81.135", "123456", 8080))
+        assertEquals("http://10.176.81.135:8080/play/#c=1234", TeslaBrowserPageLinks.phoneLink("10.176.81.135", "1234", 8080))
         assertEquals("http://100.109.220.253:8080/play/#c=000001", TeslaBrowserPageLinks.phoneLink("100.109.220.253", "000001", 8080))
     }
 

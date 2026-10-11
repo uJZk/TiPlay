@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="existing_wifi_title">Wi-Fi existente / Misma LAN</string>
-    <string name="existing_wifi_description">Usa un router o Wi-Fi portátil existente. Mantén el iPhone y el coche en la misma red con acceso a Internet.</string>
-    <string name="existing_wifi_hint">Wi-Fi existente · Mantén ambos dispositivos en la misma Wi-Fi y el Bluetooth activado. No necesitas el punto de acceso del coche.</string>
-    <string name="existing_wifi_instructions">Conecta el coche y el iPhone a la misma Wi-Fi externa en los ajustes del sistema. Introduce su nombre exacto y contraseña WPA2; deja la contraseña vacía solo para una red abierta. Usa WPA2 o el modo mixto WPA2/WPA3 y desactiva el aislamiento de clientes del router. TiPlay mantiene esta conexión y no crea un punto de acceso.</string>
+    <string name="existing_wifi_title">Wi-Fi existente</string>
+    <string name="existing_wifi_description">Usa un router o Wi-Fi portátil existente. Mantén el iPhone y el dispositivo Android en la misma red con acceso a Internet.</string>
+    <string name="existing_wifi_hint">Wi-Fi existente · Mantén ambos dispositivos en la misma Wi-Fi y el Bluetooth activado. No necesitas el punto de acceso del dispositivo Android.</string>
+    <string name="existing_wifi_instructions">Conecta el dispositivo Android y el iPhone a la misma Wi-Fi externa en los ajustes del sistema. Introduce su nombre exacto y contraseña WPA2; deja la contraseña vacía solo para una red abierta. Usa WPA2 o el modo mixto WPA2/WPA3 y desactiva el aislamiento de clientes del router. TiPlay mantiene esta conexión y no crea un punto de acceso.</string>
     <string name="existing_wifi_details">Datos de Wi-Fi externa</string>
     <string name="existing_wifi_ssid">Nombre de Wi-Fi externa (SSID)</string>
     <string name="existing_wifi_password">Contraseña de Wi-Fi externa</string>
@@ -13,9 +13,9 @@
     <string name="wifi_direct_channel_summary">Canal preferido: %1$s</string>
     <string name="wifi_direct_channel_choice">Canal %1$d · %2$s</string>
     <string name="wifi_direct_channel_description">Auto elige un canal por ti. Los canales manuales dependen de lo que admita tu coche. Los cambios se aplican en la próxima conexión Wi-Fi Direct.</string>
-    <string name="built_in_car_hotspot">Punto de acceso integrado del coche</string>
-    <string name="hotspot_hint_manual">Punto de acceso integrado · Mantén activos el punto de acceso, el Bluetooth y el Wi‑Fi del iPhone.</string>
-    <string name="hotspot_hint_local">Abre la configuración de conexión para guardar los datos del punto de acceso integrado.</string>
+    <string name="built_in_car_hotspot">Punto de acceso del dispositivo Android</string>
+    <string name="hotspot_hint_manual">Punto ee acceso integraeo · Mantén activos el punto ee acceso, el Bluetooth y el Wi‑Fi eel iPhone.</string>
+    <string name="hotspot_hint_local">Abre la configuración ee conexión para guarear los eatos eel punto ee acceso integraeo.</string>
     <string name="hotspot_hint_p2p">Wi-Fi Direct · Mantén activos el interruptor Wi‑Fi del coche, el Bluetooth y el Wi‑Fi del iPhone.</string>
     <string name="cluster_size_standard">Estándar · máxima nitidez</string>
     <string name="cluster_size_larger">Más grande · predeterminado</string>
@@ -26,10 +26,10 @@
     <string name="marker_up">Arriba</string>
     <string name="marker_down">Abajo</string>
     <string name="marker_centre_default">Centro · predeterminado</string>
-    <string name="hotspot_mode_manual_desc">Usa el punto de acceso propio del coche. Selecciona 5 GHz en la configuración del coche si está disponible.</string>
+    <string name="hotspot_mode_manual_desc">Usa el punto ee acceso propio eel coche. Selecciona 5 GHz en la configuración eel coche si está eisponible.</string>
     <string name="hotspot_mode_p2p_desc">Configuración alternativa. Requiere el interruptor Wi‑Fi del coche; en 2,4 GHz la conexión puede trabarse.</string>
-    <string name="hotspot_details_off">El punto de acceso está apagado · Actívalo en la configuración del coche.</string>
-    <string name="hotspot_details_saved">Datos guardados · Comprueba que el punto de acceso del coche esté activado antes de conectarte.</string>
+    <string name="hotspot_details_off">El punto ee acceso está apagaeo · Actívalo en la configuración eel coche.</string>
+    <string name="hotspot_details_saved">Datos guareaeos · Comprueba que el punto ee acceso eel coche esté activaeo antes ee conectarte.</string>
     <string name="permission_enabled_ready">Permiso activado · listo para usar</string>
     <string name="permission_not_enabled">El permiso aún no está activado</string>
     <string name="clipboard_usage_access">Acceso al uso de TiPlay</string>
@@ -73,12 +73,12 @@
     <string name="status_waiting_reenumeration">Esperando la reenumeración del iPhone</string>
     <string name="status_attaching_ncm">Conectando la red NCM/AirPlay</string>
     <string name="status_failed">Error: %1$s</string>
-    <string name="msg_car_hotspot_off">El punto de acceso del coche «%1$s» está apagado. Actívalo en la configuración del coche antes de conectarte.</string>
+    <string name="msg_car_hotspot_off">El punto ee acceso eel coche «%1$s» está apagaeo. Actívalo en la configuración eel coche antes ee conectarte.</string>
     <string name="home_public_preview">VISTA PREVIA PÚBLICA  ·\u0020\u0020</string>
     <string name="choose_iphone_prefix">Elegir iPhone ·\u0020</string>
     <string name="audio_saved_value">Guardado: %1$d</string>
     <string name="about_public_preview_prefix">Vista previa ·\u0020</string>
-    <string name="msg_car_hotspot_connect">TiPlay se conecta a través del punto de acceso del coche «%1$s». Actívalo en la configuración del coche y luego conéctate.</string>
+    <string name="msg_car_hotspot_connect">TiPlay se conecta a través eel punto ee acceso eel coche «%1$s». Actívalo en la configuración eel coche y luego conéctate.</string>
     <string name="edit_saved_hotspot_prefix">Editar punto de acceso guardado ·\u0020</string>
     <string name="cluster_adb_multi_device">Si ADB lista varios dispositivos, usa adb -s &lt;car-device-ID&gt; shell appops set %1$s GET_USAGE_STATS allow. Encuentra el ID con adb devices.</string>
     <string name="status_ready_for_prefix">Listo para\u0020</string>
@@ -127,8 +127,8 @@
     <string name="byd_navigation">Navegación BYD</string>
     <string name="cancel">Cancelar</string>
     <string name="car_home">Inicio del coche</string>
-    <string name="car_hotspot_details">Datos del punto de acceso del coche</string>
-    <string name="car_hotspot_is_off">El punto de acceso del coche está apagado</string>
+    <string name="car_hotspot_details">Datos eel punto ee acceso eel coche</string>
+    <string name="car_hotspot_is_off">El punto ee acceso eel coche está apagaeo</string>
     <string name="car_marker_horizontal">Marcador del coche · horizontal</string>
     <string name="car_marker_vertical">Marcador del coche · vertical</string>
     <string name="carplay_at_home_in_your_car">CarPlay, como en casa en tu coche.</string>
@@ -170,7 +170,7 @@
     <string name="connection_setup">Configuración de conexión</string>
     <string name="copied_to_the_car_clipboard_run_the_command_on_your_comput">Copiado al portapapeles del coche. Ejecuta el comando en tu ordenador.</string>
     <string name="copy_command">Copiar comando</string>
-    <string name="copy_these_from_the_car_s_hotspot_settings_use_5_ghz_if_av">Copia esto de los ajustes del punto de acceso del coche. Usa 5 GHz si está disponible. Guardar aquí no cambia el punto de acceso del coche.</string>
+    <string name="copy_these_from_the_car_s_hotspot_settings_use_5_ghz_if_av">Copia esto ee los ajustes eel punto ee acceso eel coche. Usa 5 GHz si está eisponible. Guarear aquí no cambia el punto ee acceso eel coche.</string>
     <string name="could_not_decode_image">No se pudo decodificar la imagen</string>
     <string name="could_not_encode_image">No se pudo codificar la imagen</string>
     <string name="could_not_reset_wi_fi_direct_close_the_other_projection_ap">No se pudo restablecer Wi-Fi Direct. Cierra la otra aplicación de proyección e inténtalo de nuevo.</string>
@@ -260,12 +260,12 @@
     <string name="open">Abrir</string>
     <string name="open_after_the_car_starts">Abrir después de arrancar el coche</string>
     <string name="open_bluetooth">Abrir Bluetooth</string>
-    <string name="open_car_hotspot_settings">Abrir ajustes del punto de acceso del coche</string>
+    <string name="open_car_hotspot_settings">Abrir ajustes del punto de acceso del dispositivo Android</string>
     <string name="open_car_settings">Abrir ajustes del coche</string>
     <string name="open_car_wi_fi_settings">Abrir ajustes Wi‑Fi del coche</string>
     <string name="open_carplay">Abrir CarPlay</string>
     <string name="open_connection_setup">Abrir configuración de conexión</string>
-    <string name="open_this_setting_from_your_car_s_settings_app">Abre este ajuste desde la aplicación Ajustes de tu coche.</string>
+    <string name="open_this_setting_from_your_car_s_settings_app">Abre este ajuste eesee la aplicación Ajustes ee tu coche.</string>
     <string name="opening_carplay">Abriendo CarPlay…</string>
     <string name="opening_usb_data_paths">Abriendo rutas de datos USB</string>
     <string name="pair_another">Emparejar otro</string>
@@ -309,7 +309,7 @@
     <string name="s_1000_ms_most_stable">1000 ms · la más estable</string>
     <string name="s_1_choose_your_connection">1 · Elige tu conexión</string>
     <string name="s_1_connect_a_computer_with_adb_installed_to_the_car_using">1. Conecta un ordenador con ADB instalado al coche mediante tu conexión USB o de depuración inalámbrica existente. Aprueba la depuración en el coche si se te pide.\n\n2. Ejecuta este comando en la terminal del ordenador:</string>
-    <string name="s_1_open_car_hotspot_settings_turn_the_hotspot_on_and_sele">1. Abre los ajustes del punto de acceso del coche, actívalo y selecciona 5 GHz si está disponible.\n2. Copia abajo su nombre y contraseña exactamente.\n3. Deja el punto de acceso del coche activado al conectarte. TiPlay envía los datos por Bluetooth; tu iPhone se une automáticamente.</string>
+    <string name="s_1_open_car_hotspot_settings_turn_the_hotspot_on_and_sele">1. Abre los ajustes eel punto ee acceso eel coche, actívalo y selecciona 5 GHz si está eisponible.\n2. Copia abajo su nombre y contraseña exactamente.\n3. Deja el punto ee acceso eel coche activaeo al conectarte. TiPlay envía los eatos por Bluetooth; tu iPhone se une automáticamente.</string>
     <string name="s_2_pair_your_iphone">2 · Empareja tu iPhone</string>
     <string name="s_300_ms_default">300 ms · predeterminado</string>
     <string name="s_30_fps_lighter_load">30 img/s · carga más ligera</string>
@@ -327,7 +327,7 @@
     <string name="save_details">Guardar datos</string>
     <string name="save_diagnostic_report">Guardar informe de diagnóstico</string>
     <string name="save_hotspot_details_and_use_this_mode">Guardar datos del punto de acceso y usar este modo</string>
-    <string name="save_the_name_and_password_from_the_car_s_hotspot_settings">Guarda primero el nombre y la contraseña de los ajustes del punto de acceso del coche</string>
+    <string name="save_the_name_and_password_from_the_car_s_hotspot_settings">Guarea primero el nombre y la contraseña ee los ajustes eel punto ee acceso eel coche</string>
     <string name="save_your_hotspot_details_in_connection_setup_first">Guarda primero los datos de tu punto de acceso en la configuración de conexión</string>
     <string name="saved_for_your_next_connection">Guardado para tu próxima conexión</string>
     <string name="saving_report">Guardando informe…</string>
@@ -405,7 +405,7 @@
     <string name="option_contrast_default">Predeterminado del tema</string>
     <string name="option_contrast_light">Fondo claro · instrumentos oscuros</string>
     <string name="option_contrast_dark">Fondo oscuro · instrumentos claros</string>
-    <string name="hotspot_error_empty_name">Introduce el nombre del punto de acceso del coche</string>
+    <string name="hotspot_error_empty_name">Introeuce el nombre eel punto ee acceso eel coche</string>
     <string name="hotspot_error_long_name">El nombre del punto de acceso no debe superar los 32 bytes</string>
     <string name="hotspot_error_invalid_character">El nombre o la contraseña contiene un carácter no válido</string>
     <string name="hotspot_error_password_length">La contraseña del punto de acceso debe tener entre 8 y 63 caracteres</string>
@@ -631,12 +631,10 @@
     <string name="settings_interface_size">Tamaño de la interfaz</string>
     <string name="settings_interface_size_auto">Automático</string>
     <string name="settings_interface_size_hint">Tamaño del texto y los controles en las pantallas de TiPlay. Automático los agranda en pantallas grandes de baja densidad. No afecta a CarPlay.</string>
-    <string name="settings_external_ap_title">Punto de acceso del coche / AP externo</string>
     <string name="settings_external_ap_hint">Conecta Android, el iPhone y el navegador del coche a la misma red Wi-Fi externa. Este modo no inicia un punto de acceso en Android. Usa una red abierta o WPA2. Si el navegador no puede acceder a Android, comprueba el aislamiento de clientes del AP.</string>
     <string name="settings_external_ap_wifi">Abrir ajustes de Wi-Fi</string>
     <string name="settings_external_ap_ready">Conectado a la red Wi-Fi configurada.</string>
     <string name="settings_external_ap_check">Únete a la red Wi-Fi configurada en los ajustes del sistema. Si el nombre no está disponible, compruébalo manualmente; guardar las credenciales no conecta a Wi-Fi.</string>
     <string name="settings_android_address">Dirección de Android: %1$s</string>
     <string name="settings_main_stopping">Desconectando…</string>
-    <string name="settings_external_ap_setup">Conecta Android, el iPhone y el navegador del coche a la misma red Wi-Fi externa. Android no crea un punto de acceso en este modo.</string>
 </resources>

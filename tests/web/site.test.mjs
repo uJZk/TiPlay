@@ -37,10 +37,10 @@ test('the former addresses forward: play/ to the root with ?t= and #c=, a langua
   const { out, done } = assemble();
   try {
     const forward = SCRIPT.exec(readFileSync(join(out, 'play', 'index.html'), 'utf8'))[1];
-    const from = new URL('https://ujzk.github.io/DiPlay/play/?t=100.64.0.1#c=123456');
+    const from = new URL('https://ujzk.github.io/DiPlay/play/?t=100.64.0.1#c=1234');
     let target = null;
     new Function('location', forward)({ search: from.search, hash: from.hash, replace: url => { target = url; } });
-    assert.equal(new URL(target, from).href, 'https://ujzk.github.io/DiPlay/?t=100.64.0.1#c=123456');
+    assert.equal(new URL(target, from).href, 'https://ujzk.github.io/DiPlay/?t=100.64.0.1#c=1234');
 
     const editions = readdirSync(SITE, { withFileTypes: true })
       .filter(entry => entry.isDirectory() && existsSync(join(SITE, entry.name, 'index.html')) && entry.name !== 'play')

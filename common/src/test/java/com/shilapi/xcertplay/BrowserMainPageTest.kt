@@ -10,6 +10,7 @@ import android.widget.EditText
 import android.widget.RadioButton
 import android.widget.TextView
 import com.shilapi.xcertplay.host.R
+import com.shilapi.xcertplay.orchestration.ManualHotspotSecurity
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import org.junit.Assert.*
 import org.junit.Before
@@ -20,6 +21,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowAlertDialog
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], qualifiers = "en-w390dp-h844dp")
@@ -29,7 +31,10 @@ class BrowserMainPageTest {
     private var connections = 0
     private var disconnects = 0
     @Before fun setup() {
-        activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val controller = Robolectric.buildActivity(Activity::class.java)
+        activity = controller.get()
+        activity.setTheme(R.style.Theme_TiPlayNative)
+        controller.setup()
         activity.getSharedPreferences("diplay", 0).edit().clear().commit()
         activity.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
         activity.getSharedPreferences("tiplay_browser_network", 0).edit().clear().commit()
@@ -49,7 +54,7 @@ class BrowserMainPageTest {
     @Test fun mainPageHasOneConnectionActionAndNoLegacyNavigationOrVideoControls() {
         val labels = views().filterIsInstance<TextView>().map { it.text.toString() }.toList()
         assertEquals(1, labels.count { it == activity.getString(R.string.connect_phone) })
-        assertEquals(1, labels.count { it == activity.getString(R.string.connect_when_diplay_opens) })
+        assertEquals(1, labels.count { it == activity.getString(R.string.auto_start_on_boot) })
         for (id in listOf(R.string.settings, R.string.settings_main, R.string.exit_application,
             R.string.back, R.string.settings_gesture_fingers_label, R.string.settings_hevc_experimental,
             R.string.resolution, R.string.connect_with_usb)) assertFalse(labels.contains(activity.getString(id)))
@@ -69,27 +74,28 @@ class BrowserMainPageTest {
         assertEquals("New hotspot", AirPlayPersistence.loadManualHotspotSsid(activity))
         assertFalse(button(R.string.save_and_reconnect).isShown)
     }
-    @Test fun externalApUsesTheExistingNetworkTransportAndActualCredentials() {
-        choose(BrowserConnectionDraft.Source.EXTERNAL_AP)
+    @Test fun existingWifiUsesTheExistingNetworkTransportAndActualCredentials() {
+        choose(BrowserConnectionDraft.Source.LAN)
         assertFalse(views().filterIsInstance<Button>().any { it.text == activity.getString(R.string.settings_hotspot_read) })
+        selectSecurity(1)
         val fields = views().filterIsInstance<EditText>().toList()
         fields[0].setText("Car AP"); fields[1].setText("external123")
-        page.draft.externalSecured = true
         button(R.string.save_and_reconnect).performClick()
         assertEquals(1, connections)
         assertEquals(WirelessHotspotMode.EXISTING_WIFI, AirPlayPersistence.loadWirelessHotspotMode(activity))
         assertEquals("Car AP", AirPlayPersistence.loadExistingWifiSsid(activity))
-        assertEquals(BrowserConnectionDraft.Source.EXTERNAL_AP, BrowserConnectionDraft.load(activity).source)
+        assertEquals(BrowserConnectionDraft.Source.LAN, BrowserConnectionDraft.load(activity).source)
         assertTrue(button(R.string.settings_external_ap_wifi).isShown)
     }
     @Test fun switchingNetworksKeepsEachDraftAndOnlyImportsTheLocalHotspot() {
         views().filterIsInstance<EditText>().first().setText("Draft phone")
         choose(BrowserConnectionDraft.Source.LAN)
         views().filterIsInstance<EditText>().first().setText("Draft LAN")
-        choose(BrowserConnectionDraft.Source.EXTERNAL_AP)
-        assertEquals("Draft LAN", views().filterIsInstance<EditText>().first().text.toString())
         choose(BrowserConnectionDraft.Source.LOCAL)
         assertEquals("Draft phone", views().filterIsInstance<EditText>().first().text.toString())
+        choose(BrowserConnectionDraft.Source.LAN)
+        assertEquals("Draft LAN", views().filterIsInstance<EditText>().first().text.toString())
+        choose(BrowserConnectionDraft.Source.LOCAL)
         assertTrue(views().filterIsInstance<Button>().any { it.text == activity.getString(R.string.settings_hotspot_read) })
     }
     @Test fun invalidCredentialsShowAnErrorWithoutStartingOrSaving() {
@@ -99,14 +105,72 @@ class BrowserMainPageTest {
         assertEquals("Phone hotspot", AirPlayPersistence.loadManualHotspotSsid(activity))
         assertTrue(views().filterIsInstance<TextView>().any { it.isShown && it.text == activity.getString(com.shilapi.xcertplay.orchestration.ManualHotspotValidation.Error.EMPTY_NAME.messageResource()) })
     }
-    @Test fun securedExternalApRequiresAPasswordAndOpenNetworkRequiresNone() {
-        choose(BrowserConnectionDraft.Source.EXTERNAL_AP)
+    @Test fun securedExistingWifiRequiresAPasswordAndOpenIgnoresTheRetainedPassword() {
+        choose(BrowserConnectionDraft.Source.LAN)
         page.draft.externalSsid = "Car AP"; page.draft.externalPassword = ""; page.draft.externalSecured = true
         assertEquals(R.string.wpa2_wpa3_password_must_be_8_63_characters, page.draft.validationError())
         page.draft.externalSecured = false
         assertNull(page.draft.validationError())
         page.draft.externalPassword = "password1"
-        assertEquals(R.string.password_must_be_empty_when_security_is_open, page.draft.validationError())
+        assertNull(page.draft.validationError())
+        page.draft.save(activity)
+        assertEquals("", AirPlayPersistence.loadExistingWifiPassphrase(activity))
+        assertEquals("password1", page.draft.externalPassword)
+    }
+    @Test fun mainPageOffersOnlyPhoneHotspotAndExistingWifi() {
+        val choices = views().filterIsInstance<RadioButton>().toList()
+        assertEquals(listOf(BrowserConnectionDraft.Source.LOCAL, BrowserConnectionDraft.Source.LAN), choices.map { it.tag })
+        assertEquals(listOf(activity.getString(R.string.built_in_car_hotspot), activity.getString(R.string.existing_wifi_title)), choices.map { it.text.toString() })
+    }
+    @Test fun connectionModePrecedesConnectAndHotspotAddressOnlyFollowsLocalNetworkChoice() {
+        val controls = views().toList()
+        val mode = controls.filterIsInstance<Button>().single {
+            it.text.toString().startsWith(activity.getString(R.string.settings_iphone_connection_mode) + " · ")
+        }
+        assertTrue(controls.indexOf(mode) < controls.indexOf(button(R.string.connect_phone)))
+        fun addressButtons() = views().filterIsInstance<Button>().filter {
+            it.text.toString().startsWith(activity.getString(R.string.settings_hotspot_address_method) + " · ")
+        }.toList()
+        val source = controls.filterIsInstance<RadioButton>().first()
+        assertTrue(controls.indexOf(source) < controls.indexOf(addressButtons().single()))
+        choose(BrowserConnectionDraft.Source.LAN)
+        assertTrue(addressButtons().isEmpty())
+        choose(BrowserConnectionDraft.Source.LOCAL)
+        assertEquals(1, addressButtons().size)
+        page.transportSelected(false)
+        assertTrue(addressButtons().isEmpty())
+    }
+    @Test fun securityPrecedesPasswordAndTogglingRetainsTheTypedDraftForBothNetworks() {
+        for (source in BrowserConnectionDraft.Source.entries) {
+            choose(source)
+            views().filterIsInstance<EditText>().first().setText("Network name")
+            selectSecurity(1)
+            val password = views().filterIsInstance<EditText>().last()
+            password.setText("typedsecret1")
+            val ordered = views().toList()
+            val passwordLabel = ordered.filterIsInstance<TextView>().single { it.text == activity.getString(R.string.hotspot_password) }
+            assertTrue(ordered.indexOf(securityButton()) < ordered.indexOf(passwordLabel))
+            assertTrue(password.isShown)
+            selectSecurity(0)
+            assertFalse(views().filterIsInstance<EditText>().last().isShown)
+            assertFalse(views().filterIsInstance<TextView>().single { it.text == activity.getString(R.string.hotspot_password) }.isShown)
+            assertNull(page.draft.validationError())
+            assertEquals("typedsecret1", if (source == BrowserConnectionDraft.Source.LOCAL) page.draft.localPassword else page.draft.externalPassword)
+            selectSecurity(1)
+            assertTrue(views().filterIsInstance<EditText>().last().isShown)
+            assertEquals("typedsecret1", views().filterIsInstance<EditText>().last().text.toString())
+        }
+    }
+    @Test fun openLocalHotspotSavesWithoutTheHiddenRetainedPassword() {
+        selectSecurity(0)
+        assertFalse(views().filterIsInstance<EditText>().last().isShown)
+        assertEquals("password1", page.draft.localPassword)
+        assertNull(page.draft.validationError())
+        button(R.string.save_and_reconnect).performClick()
+        assertEquals(1, connections)
+        assertEquals(ManualHotspotSecurity.OPEN, AirPlayPersistence.loadManualHotspotSecurity(activity))
+        assertEquals("", AirPlayPersistence.loadManualHotspotPassphrase(activity))
+        assertEquals("password1", page.draft.localPassword)
     }
     @Test fun usbDoesNotRequireWirelessCredentialsAndHidesWirelessFields() {
         page.draft.localSsid = ""; page.draft.localPassword = ""; page.draft.wireless = false
@@ -116,7 +180,7 @@ class BrowserMainPageTest {
         assertFalse(DiPlayPreferences.autoConnectWireless(activity))
     }
     @Test fun draftSurvivesRecreationWithoutSavingOrOverwritingAdvancedSettings() {
-        page.draft.source = BrowserConnectionDraft.Source.EXTERNAL_AP
+        page.draft.source = BrowserConnectionDraft.Source.LAN
         page.draft.externalSsid = "Unsaved AP"; page.draft.externalPassword = "newsecret1"
         val state = Bundle(); page.draft.retain(state)
         AirPlayPersistence.saveFps(activity, 35)
@@ -128,6 +192,31 @@ class BrowserMainPageTest {
         AirPlayPersistence.saveWirelessHotspotMode(activity, WirelessHotspotMode.EXISTING_WIFI)
         assertEquals(BrowserConnectionDraft.Source.LAN, BrowserConnectionDraft.load(activity).source)
         assertEquals(WirelessHotspotMode.EXISTING_WIFI, BrowserConnectionDraft.load(activity).mode)
+    }
+    @Test fun legacyExternalApPreferenceMigratesToExistingWifiAndPreservesCredentials() {
+        AirPlayPersistence.saveWirelessHotspotMode(activity, WirelessHotspotMode.EXISTING_WIFI)
+        AirPlayPersistence.saveExistingWifiCredentials(activity, "Saved car AP", "savedsecret1")
+        activity.getSharedPreferences("tiplay_browser_network", 0).edit().putString("source", "EXTERNAL_AP").commit()
+        val migrated = BrowserConnectionDraft.load(activity)
+        assertEquals(BrowserConnectionDraft.Source.LAN, migrated.source)
+        assertEquals(WirelessHotspotMode.EXISTING_WIFI, migrated.mode)
+        assertEquals("Saved car AP", migrated.externalSsid)
+        assertEquals("savedsecret1", migrated.externalPassword)
+        assertTrue(migrated.externalSecured)
+        migrated.save(activity)
+        assertEquals("LAN", activity.getSharedPreferences("tiplay_browser_network", 0).getString("source", null))
+        assertEquals("savedsecret1", AirPlayPersistence.loadExistingWifiPassphrase(activity))
+    }
+    @Test fun legacyExternalApRetainedDraftMigratesWithoutLosingUnsavedCredentials() {
+        page.draft.source = BrowserConnectionDraft.Source.LAN
+        page.draft.externalSsid = "Unsaved car AP"
+        page.draft.externalPassword = "draftsecret1"
+        page.draft.externalSecured = true
+        val state = Bundle(); page.draft.retain(state)
+        state.getBundle("browser_main_draft")!!.putString("source", "EXTERNAL_AP")
+        assertEquals(page.draft, BrowserConnectionDraft.load(activity, state))
+        assertEquals("Phone hotspot", AirPlayPersistence.loadManualHotspotSsid(activity))
+        assertEquals(WirelessHotspotMode.MANUAL, AirPlayPersistence.loadWirelessHotspotMode(activity))
     }
     @Test fun disconnectIsExplicitAndHasNoExitApplicationAction() {
         page.update("Connected", true)
@@ -185,7 +274,7 @@ class BrowserMainPageTest {
         page.view.layout(0, 0, width, height)
         val essentials = views().filter { it is EditText || (it is TextView &&
             (it.text == activity.getString(R.string.connect_phone) ||
-            it.text == activity.getString(R.string.connect_when_diplay_opens) ||
+            it.text == activity.getString(R.string.auto_start_on_boot) ||
             it.text.toString().startsWith(activity.getString(R.string.settings_iphone_connection_mode) + " · "))) }.toList()
         assertTrue(essentials.size >= 5)
         for (control in essentials) {
@@ -207,6 +296,13 @@ class BrowserMainPageTest {
         assertEquals("Phone hotspot", AirPlayPersistence.loadManualHotspotSsid(activity))
         assertTrue(button(R.string.save_and_reconnect).isShown)
         assertEquals("Unsaved after rotation", views().filterIsInstance<EditText>().first().text.toString())
+    }
+    private fun securityButton() = views().filterIsInstance<Button>().single {
+        it.text.toString().startsWith(activity.getString(R.string.security) + " ")
+    }
+    private fun selectSecurity(index: Int) {
+        securityButton().performClick()
+        shadowOf(requireNotNull(ShadowAlertDialog.getLatestAlertDialog())).clickOnItem(index)
     }
     private fun choose(source: BrowserConnectionDraft.Source) = views().filterIsInstance<RadioButton>().single { it.tag == source }.performClick()
     private fun button(id: Int) = views().filterIsInstance<Button>().single { it.text == activity.getString(id) }

@@ -7,10 +7,10 @@ import org.junit.Test
 class WebJsonTest {
     @Test fun parsesTheControlBody() {
         val body = WebJson.parse(
-            """ {"c":"123456","s":"abcdefghijklmnop","q":12,"e":[{"k":"t","p":[[0,0.25,1,1],[1,0.5,0.75,0]]},""" +
+            """ {"c":"1234","s":"abcdefghijklmnop","q":12,"e":[{"k":"t","p":[[0,0.25,1,1],[1,0.5,0.75,0]]},""" +
                 """{"k":"vp","w":1182,"h":920,"cw":773,"ch":601,"dpr":1.53},{"k":"kf"}]} """,
         ) as Map<*, *>
-        assertEquals("123456", body["c"])
+        assertEquals("1234", body["c"])
         assertEquals(12L, body["q"])
         val events = body["e"] as List<*>
         assertEquals(listOf(listOf(0L, 0.25, 1L, 1L), listOf(1L, 0.5, 0.75, 0L)), (events[0] as Map<*, *>)["p"])

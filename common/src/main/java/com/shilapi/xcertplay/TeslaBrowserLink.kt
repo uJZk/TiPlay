@@ -210,7 +210,7 @@ internal object TeslaBrowserLink {
         taps[sink]?.updateCanvas(width, height)
     }
 
-    /** The 6-digit pairing code; created (SecureRandom) and saved the first time. */
+    /** The 4-digit pairing code; created (SecureRandom) and saved the first time. */
     fun pairingCode(context: Context): String {
         code?.let { return it }
         synchronized(this) {
@@ -228,10 +228,13 @@ internal object TeslaBrowserLink {
 
     /** Replaces the pairing code and ends the current browser session: the server restarts and refuses the old code. */
     fun newPairingCode(context: Context): String {
-        val value = newCode()
-        synchronized(this) {
-            prefs(context).edit().putString(KEY_PAIRING_CODE, value).apply()
-            code = value
+        val value = synchronized(this) {
+            val previous = code ?: prefs(context).getString(KEY_PAIRING_CODE, null)
+            var replacement: String
+            do { replacement = newCode() } while (replacement == previous)
+            prefs(context).edit().putString(KEY_PAIRING_CODE, replacement).apply()
+            code = replacement
+            replacement
         }
         log("Browser link: new pairing code; the browser must pair again")
         if (requested.get()) worker.execute {
@@ -479,9 +482,9 @@ internal object TeslaBrowserLink {
             .apply()
     }
 
-    private fun newCode(): String = String.format(Locale.ROOT, "%06d", random.nextInt(1_000_000))
+    private fun newCode(): String = String.format(Locale.ROOT, "%04d", random.nextInt(10_000))
 
-    private fun isCode(value: String): Boolean = value.length == 6 && value.all { it in '0'..'9' }
+    private fun isCode(value: String): Boolean = value.length == 4 && value.all { it in '0'..'9' }
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 

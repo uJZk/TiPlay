@@ -22,52 +22,52 @@ const concat = parts => {
 };
 const plain = record => ({ ...record, payload: Array.from(record.payload) });
 
-test('link hash carries an IPv4 host with port and a six-digit code', () => {
-  assert.deepEqual(parseLinkHash('#h=100.109.220.253:8080&c=123456'), { host: '100.109.220.253:8080', code: '123456' });
-  assert.deepEqual(parseLinkHash('#h=100.109.220.253%3A8080&c=000042'), { host: '100.109.220.253:8080', code: '000042' });
-  assert.deepEqual(parseLinkHash('#c=123456'), { host: null, code: '123456' });
+test('link hash carries an IPv4 host with port and a four-digit code', () => {
+  assert.deepEqual(parseLinkHash('#h=100.109.220.253:8080&c=1234'), { host: '100.109.220.253:8080', code: '1234' });
+  assert.deepEqual(parseLinkHash('#h=100.109.220.253%3A8080&c=0042'), { host: '100.109.220.253:8080', code: '0042' });
+  assert.deepEqual(parseLinkHash('#c=1234'), { host: null, code: '1234' });
   assert.deepEqual(parseLinkHash('#h=10.0.0.1'), { host: '10.0.0.1:8080', code: null });
   assert.deepEqual(parseLinkHash(''), { host: null, code: null });
-  for (const code of ['12345', '1234567', '12x456', ' 123456']) assert.equal(parseLinkHash(`#c=${code}`).code, null, code);
+  for (const code of ['123', '12345', '123456', '12x4', ' 1234']) assert.equal(parseLinkHash(`#c=${code}`).code, null, code);
   for (const host of ['phone.local:8080', '256.1.1.1:8080', '1.2.3.4:0', '1.2.3.4:65536', '01.2.3.4:80', '[::1]:8080']) {
     assert.equal(parseLinkHash(`#h=${host}`).host, null, host);
   }
 });
 
 test('built links put a phone other than the default in ?t= for bookmarks and the code in the fragment', () => {
-  const link = buildLink('https://example.test/#old', { host: '100.64.0.1:8080', code: '987654' });
-  assert.equal(link, 'https://example.test/?t=100.64.0.1#c=987654');
+  const link = buildLink('https://example.test/#old', { host: '100.64.0.1:8080', code: '9876' });
+  assert.equal(link, 'https://example.test/?t=100.64.0.1#c=9876');
   assert.deepEqual(parseLinkSearch(new URL(link).search), { host: '100.64.0.1:8080' });
-  assert.deepEqual(parseLinkHash(new URL(link).hash), { host: null, code: '987654' });
-  assert.equal(buildLink('https://example.test/', { host: DEFAULT_HOST, code: '987654' }), 'https://example.test/#c=987654',
+  assert.deepEqual(parseLinkHash(new URL(link).hash), { host: null, code: '9876' });
+  assert.equal(buildLink('https://example.test/', { host: DEFAULT_HOST, code: '9876' }), 'https://example.test/#c=9876',
     'the default phone needs no t');
   assert.equal(buildLink('https://example.test', { host: DEFAULT_HOST, code: null }), 'https://example.test');
   assert.equal(buildLink('https://example.test/', { host: '100.109.220.253:9000', code: null }), 'https://example.test/?t=100.109.220.253:9000',
     'the default address at another port keeps t');
   assert.equal(buildLink('https://example.test/play/?t=1.2.3.4&lang=zh', { host: '100.64.0.1:9000', code: null }),
     'https://example.test/play/?t=100.64.0.1:9000&lang=zh', 'an older t is replaced and other parameters stay');
-  assert.equal(buildLink('https://example.test/?t=1.2.3.4&lang=zh', { host: DEFAULT_HOST, code: '987654' }),
-    'https://example.test/?lang=zh#c=987654', 'an older t goes for the default phone');
+  assert.equal(buildLink('https://example.test/?t=1.2.3.4&lang=zh', { host: DEFAULT_HOST, code: '9876' }),
+    'https://example.test/?lang=zh#c=9876', 'an older t goes for the default phone');
   assert.equal(normalizeHost(' 192.168.1.20:9000 '), '192.168.1.20:9000');
   assert.equal(normalizeHost('LOCALHOST'), 'localhost:8080', 'the page the phone serves may be opened on the phone itself');
 });
 
 test('the address names the phone in ?t=, else a pairing link names the default phone, else the saved one stays', () => {
-  const saved = { host: '10.0.0.5:8080', code: '111111' };
+  const saved = { host: '10.0.0.5:8080', code: '1111' };
   assert.equal(linkFromAddress('', '', saved), null, 'the bare page address keeps what was saved');
   assert.equal(linkFromAddress('?lang=zh', '#x=1', saved), null);
-  assert.deepEqual(linkFromAddress('', '#c=123456', saved), { host: DEFAULT_HOST, code: '123456' },
+  assert.deepEqual(linkFromAddress('', '#c=1234', saved), { host: DEFAULT_HOST, code: '1234' },
     'a link without t is for the default phone, whatever was saved');
-  assert.deepEqual(linkFromAddress('?t=100.64.0.1', '#c=123456', saved), { host: '100.64.0.1:8080', code: '123456' });
-  assert.deepEqual(linkFromAddress('?t=100.64.0.1:9000', '', saved), { host: '100.64.0.1:9000', code: '111111' },
+  assert.deepEqual(linkFromAddress('?t=100.64.0.1', '#c=1234', saved), { host: '100.64.0.1:8080', code: '1234' });
+  assert.deepEqual(linkFromAddress('?t=100.64.0.1:9000', '', saved), { host: '100.64.0.1:9000', code: '1111' },
     'a bookmark with t keeps the saved code');
-  assert.deepEqual(linkFromAddress('', '#h=100.64.0.2:8080&c=123456', saved), { host: '100.64.0.2:8080', code: '123456' },
+  assert.deepEqual(linkFromAddress('', '#h=100.64.0.2:8080&c=1234', saved), { host: '100.64.0.2:8080', code: '1234' },
     'the older #h= still names the phone');
-  assert.deepEqual(linkFromAddress('?t=100.64.0.1', '#h=100.64.0.2&c=123456', saved), { host: '100.64.0.1:8080', code: '123456' },
+  assert.deepEqual(linkFromAddress('?t=100.64.0.1', '#h=100.64.0.2&c=1234', saved), { host: '100.64.0.1:8080', code: '1234' },
     '?t= wins over #h=');
-  assert.deepEqual(linkFromAddress('', '#c=123456', { host: DEFAULT_HOST, code: null }, '10.0.0.5:8080'),
-    { host: '10.0.0.5:8080', code: '123456' }, 'on the page the phone serves, a link without t is for that phone');
-  assert.deepEqual(linkFromAddress('?t=bad', '#c=123456', saved), { host: DEFAULT_HOST, code: '123456' }, 'an invalid t names no phone');
+  assert.deepEqual(linkFromAddress('', '#c=1234', { host: DEFAULT_HOST, code: null }, '10.0.0.5:8080'),
+    { host: '10.0.0.5:8080', code: '1234' }, 'on the page the phone serves, a link without t is for that phone');
+  assert.deepEqual(linkFromAddress('?t=bad', '#c=1234', saved), { host: DEFAULT_HOST, code: '1234' }, 'an invalid t names no phone');
   assert.equal(linkFromAddress('?t=bad', '#c=12', saved), null);
 });
 

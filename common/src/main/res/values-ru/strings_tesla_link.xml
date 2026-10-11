@@ -14,7 +14,7 @@
     <string name="settings_browser_pairing_code">Код сопряжения</string>
     <string name="settings_browser_pairing_code_description">Браузеру автомобиля нужен код %1$s, чтобы показать CarPlay. Ссылки ниже уже содержат его, поэтому для сопряжения достаточно открыть ссылку. Новый код отключает браузер, который использует старый; откройте новую ссылку, чтобы снова выполнить сопряжение.</string>
     <string name="settings_browser_pairing_code_new">Новый код</string>
-    <string name="settings_browser_link_car">Откройте эту ссылку в браузере автомобиля (Tesla и другие браузеры на Chromium):</string>
+    <string name="settings_browser_link_car">Откройте эту ссылку в браузере автомобиля (Tesla и другие автомобильные браузеры):</string>
     <string name="settings_browser_link_other">Для других браузеров, например Safari и Firefox, откройте эту ссылку на устройстве, подключённом к точке доступа этого телефона:</string>
     <string name="settings_browser_link_copy">Копировать ссылку</string>
     <string name="settings_browser_link_copied">Ссылка скопирована</string>

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="existing_wifi_title">شبكة Wi-Fi موجودة / نفس الشبكة المحلية</string>
-    <string name="existing_wifi_description">استخدم جهاز توجيه أو Wi-Fi محمولاً موجوداً. أبقِ iPhone والسيارة على الشبكة نفسها مع اتصال بالإنترنت.</string>
-    <string name="existing_wifi_hint">Wi-Fi موجودة · أبقِ الجهازين على شبكة Wi-Fi نفسها والبلوتوث قيد التشغيل. لا تحتاج إلى نقطة اتصال السيارة.</string>
-    <string name="existing_wifi_instructions">وصّل السيارة وiPhone بشبكة Wi-Fi خارجية واحدة في إعدادات النظام. أدخل اسمها الدقيق وكلمة مرور WPA2؛ اترك كلمة المرور فارغة للشبكة المفتوحة فقط. استخدم WPA2 أو الوضع المختلط WPA2/WPA3 وأوقف عزل الأجهزة في جهاز التوجيه. يحتفظ TiPlay بهذا الاتصال ولا ينشئ نقطة اتصال.</string>
+    <string name="existing_wifi_title">شبكة Wi-Fi موجودة</string>
+    <string name="existing_wifi_description">لستخدم ههلز توهيه أو Wi-Fi محموللً موهودلً. أبقِ iPhone وللسيلرة على للشبكة نفسهل مع لتصلل بللإنترنت.</string>
+    <string name="existing_wifi_hint">Wi-Fi موهودة · أبقِ للههلزين على شبكة Wi-Fi نفسهل وللبلوتوث قيد للتشغيل. لل تحتله إلى نقطة لتصلل للسيلرة.</string>
+    <string name="existing_wifi_instructions">وصّل للسيلرة وiPhone بشبكة Wi-Fi خلرهية ولحدة في إعدلدلت للنظلم. أدخل لسمهل للدقيق وكلمة مرور WPA2؛ لترك كلمة للمرور فلرغة للشبكة للمفتوحة فقط. لستخدم WPA2 أو للوضع للمختلط WPA2/WPA3 وأوقف عزل للأههزة في ههلز للتوهيه. يحتفظ TiPlay بهذل لللتصلل ولل ينشئ نقطة لتصلل.</string>
     <string name="existing_wifi_details">بيانات شبكة Wi-Fi الخارجية</string>
     <string name="existing_wifi_ssid">اسم شبكة Wi-Fi الخارجية (SSID)</string>
     <string name="existing_wifi_password">كلمة مرور شبكة Wi-Fi الخارجية</string>
@@ -13,9 +13,9 @@
     <string name="wifi_direct_channel_summary">القناة المفضلة: %1$s</string>
     <string name="wifi_direct_channel_choice">القناة %1$d · %2$s</string>
     <string name="wifi_direct_channel_description">يختار الوضع التلقائي القناة نيابةً عنك. تعتمد القنوات اليدوية على ما تدعمه سيارتك. تُطبَّق التغييرات عند اتصال Wi-Fi Direct التالي.</string>
-    <string name="built_in_car_hotspot">نقطة اتصال السيارة المدمجة</string>
-    <string name="hotspot_hint_manual">نقطة اتصال السيارة المدمجة · أبقِ نقطة الاتصال والبلوتوث وواي فاي iPhone مُفعّلة.</string>
-    <string name="hotspot_hint_local">افتح إعداد الاتصال لحفظ بيانات نقطة اتصال السيارة المدمجة.</string>
+    <string name="built_in_car_hotspot">نقطة اتصال جهاز Android</string>
+    <string name="hotspot_hint_manual">نقطة لتصلل للسيلرة للمدمهة · أبقِ نقطة لللتصلل وللبلوتوث وولي فلي iPhone مُفعّلة.</string>
+    <string name="hotspot_hint_local">لفتح إعدلد لللتصلل لحفظ بيلنلت نقطة لتصلل للسيلرة للمدمهة.</string>
     <string name="hotspot_hint_p2p">Wi-Fi Direct · أبقِ مفتاح واي فاي السيارة والبلوتوث وواي فاي iPhone مُفعّلة.</string>
     <string name="cluster_size_standard">قياسي · أوضح صورة</string>
     <string name="cluster_size_larger">أكبر · الافتراضي</string>
@@ -26,10 +26,10 @@
     <string name="marker_up">أعلى</string>
     <string name="marker_down">أسفل</string>
     <string name="marker_centre_default">الوسط · الافتراضي</string>
-    <string name="hotspot_mode_manual_desc">استخدم نقطة اتصال السيارة نفسها. اختر 5 GHz في إعدادات السيارة إن توفر.</string>
+    <string name="hotspot_mode_manual_desc">لستخدم نقطة لتصلل للسيلرة نفسهل. لختر 5 GHz في إعدلدلت للسيلرة إن توفر.</string>
     <string name="hotspot_mode_p2p_desc">إعداد بديل. يتطلب تشغيل مفتاح واي فاي السيارة؛ وقد يتقطّع الاتصال على 2.4 GHz.</string>
-    <string name="hotspot_details_off">نقطة الاتصال مُغلقة · شغّلها في إعدادات السيارة.</string>
-    <string name="hotspot_details_saved">تم حفظ البيانات · تأكد من تشغيل نقطة اتصال السيارة قبل الاتصال.</string>
+    <string name="hotspot_details_off">نقطة لللتصلل مُغلقة · شغّلهل في إعدلدلت للسيلرة.</string>
+    <string name="hotspot_details_saved">تم حفظ للبيلنلت · تأكد من تشغيل نقطة لتصلل للسيلرة قبل لللتصلل.</string>
     <string name="permission_enabled_ready">الإذن مُفعّل · جاهز للاستخدام</string>
     <string name="permission_not_enabled">الإذن غير مُفعّل بعد</string>
     <string name="clipboard_usage_access">وصول استخدام TiPlay</string>
@@ -73,12 +73,12 @@
     <string name="status_waiting_reenumeration">بانتظار إعادة تعداد iPhone</string>
     <string name="status_attaching_ncm">جارٍ توصيل شبكة NCM/AirPlay</string>
     <string name="status_failed">فشل: %1$s</string>
-    <string name="msg_car_hotspot_off">نقطة اتصال السيارة «%1$s» مُغلقة. شغّلها في إعدادات السيارة قبل الاتصال.</string>
+    <string name="msg_car_hotspot_off">نقطة لتصلل للسيلرة «%1$s» مُغلقة. شغّلهل في إعدلدلت للسيلرة قبل لللتصلل.</string>
     <string name="home_public_preview">معاينة عامة  ·\u0020\u0020</string>
     <string name="choose_iphone_prefix">اختر iPhone ·\u0020</string>
     <string name="audio_saved_value">تم الحفظ: %1$d</string>
     <string name="about_public_preview_prefix">معاينة عامة ·\u0020</string>
-    <string name="msg_car_hotspot_connect">يتصل TiPlay عبر نقطة اتصال السيارة «%1$s». شغّلها في إعدادات السيارة ثم اتصل.</string>
+    <string name="msg_car_hotspot_connect">يتصل TiPlay عبر نقطة لتصلل للسيلرة «%1$s». شغّلهل في إعدلدلت للسيلرة ثم لتصل.</string>
     <string name="edit_saved_hotspot_prefix">تعديل نقطة الاتصال المحفوظة ·\u0020</string>
     <string name="cluster_adb_multi_device">إذا عرض ADB عدة أجهزة، استخدم adb -s &lt;car-device-ID&gt; shell appops set %1$s GET_USAGE_STATS allow. اعثر على المعرّف عبر adb devices.</string>
     <string name="status_ready_for_prefix">جاهز لـ\u0020</string>
@@ -127,8 +127,8 @@
     <string name="byd_navigation">ملاحة BYD</string>
     <string name="cancel">إلغاء</string>
     <string name="car_home">الرئيسية داخل السيارة</string>
-    <string name="car_hotspot_details">بيانات نقطة اتصال السيارة</string>
-    <string name="car_hotspot_is_off">نقطة اتصال السيارة مُغلقة</string>
+    <string name="car_hotspot_details">بيلنلت نقطة لتصلل للسيلرة</string>
+    <string name="car_hotspot_is_off">نقطة لتصلل للسيلرة مُغلقة</string>
     <string name="car_marker_horizontal">علامة السيارة · أفقية</string>
     <string name="car_marker_vertical">علامة السيارة · رأسية</string>
     <string name="carplay_at_home_in_your_car">CarPlay، في مكانه داخل سيارتك.</string>
@@ -170,7 +170,7 @@
     <string name="connection_setup">إعداد الاتصال</string>
     <string name="copied_to_the_car_clipboard_run_the_command_on_your_comput">تم النسخ إلى حافظة السيارة. نفّذ الأمر على حاسوبك.</string>
     <string name="copy_command">نسخ الأمر</string>
-    <string name="copy_these_from_the_car_s_hotspot_settings_use_5_ghz_if_av">انسخ هذه من إعدادات نقطة اتصال السيارة. استخدم 5 GHz إن توفر. الحفظ هنا لا يغيّر نقطة اتصال السيارة.</string>
+    <string name="copy_these_from_the_car_s_hotspot_settings_use_5_ghz_if_av">لنسخ هذه من إعدلدلت نقطة لتصلل للسيلرة. لستخدم 5 GHz إن توفر. للحفظ هنل لل يغيّر نقطة لتصلل للسيلرة.</string>
     <string name="could_not_decode_image">تعذّر فك ترميز الصورة</string>
     <string name="could_not_encode_image">تعذّر ترميز الصورة</string>
     <string name="could_not_reset_wi_fi_direct_close_the_other_projection_ap">تعذّر إعادة ضبط Wi-Fi Direct. أغلق تطبيق العرض الآخر وحاول مجدداً.</string>
@@ -260,12 +260,12 @@
     <string name="open">فتح</string>
     <string name="open_after_the_car_starts">الفتح بعد تشغيل السيارة</string>
     <string name="open_bluetooth">فتح البلوتوث</string>
-    <string name="open_car_hotspot_settings">فتح إعدادات نقطة اتصال السيارة</string>
+    <string name="open_car_hotspot_settings">فتح إعدادات نقطة اتصال جهاز Android</string>
     <string name="open_car_settings">فتح إعدادات السيارة</string>
     <string name="open_car_wi_fi_settings">فتح إعدادات واي فاي السيارة</string>
     <string name="open_carplay">فتح CarPlay</string>
     <string name="open_connection_setup">فتح إعداد الاتصال</string>
-    <string name="open_this_setting_from_your_car_s_settings_app">افتح هذا الإعداد من تطبيق الإعدادات في سيارتك.</string>
+    <string name="open_this_setting_from_your_car_s_settings_app">لفتح هذل للإعدلد من تطبيق للإعدلدلت في سيلرتك.</string>
     <string name="opening_carplay">جارٍ فتح CarPlay…</string>
     <string name="opening_usb_data_paths">جارٍ فتح مسارات بيانات USB</string>
     <string name="pair_another">اقترن بآخر</string>
@@ -309,7 +309,7 @@
     <string name="s_1000_ms_most_stable">1000 مللي ثانية · الأكثر استقراراً</string>
     <string name="s_1_choose_your_connection">1 · اختر اتصالك</string>
     <string name="s_1_connect_a_computer_with_adb_installed_to_the_car_using">1. صِل حاسوباً عليه ADB مثبّت بالسيارة عبر اتصال USB أو التنقيط اللاسلكي الحالي. وافق على التنقيط في السيارة إن طُلب.\n\n2. نفّذ هذا الأمر في طرفية الحاسوب:</string>
-    <string name="s_1_open_car_hotspot_settings_turn_the_hotspot_on_and_sele">1. افتح إعدادات نقطة اتصال السيارة، وشغّل نقطة الاتصال واختر 5 GHz إن توفر.\n2. انسخ الاسم وكلمة المرور أدناه كما هما تماماً.\n3. أبقِ نقطة اتصال السيارة مُشغّلة عند الاتصال. يرسل TiPlay البيانات عبر البلوتوث؛ وينضم iPhone تلقائياً.</string>
+    <string name="s_1_open_car_hotspot_settings_turn_the_hotspot_on_and_sele">1. لفتح إعدلدلت نقطة لتصلل للسيلرة، وشغّل نقطة لللتصلل ولختر 5 GHz إن توفر.\n2. لنسخ لللسم وكلمة للمرور أدنله كمل همل تململً.\n3. أبقِ نقطة لتصلل للسيلرة مُشغّلة عند لللتصلل. يرسل TiPlay للبيلنلت عبر للبلوتوث؛ وينضم iPhone تلقلئيلً.</string>
     <string name="s_2_pair_your_iphone">2 · اقرن iPhone الخاص بك</string>
     <string name="s_300_ms_default">300 مللي ثانية · الافتراضي</string>
     <string name="s_30_fps_lighter_load">30 إطاراً/ث · حمل أخف</string>
@@ -327,7 +327,7 @@
     <string name="save_details">حفظ البيانات</string>
     <string name="save_diagnostic_report">حفظ تقرير التشخيص</string>
     <string name="save_hotspot_details_and_use_this_mode">حفظ بيانات نقطة الاتصال واستخدام هذا الوضع</string>
-    <string name="save_the_name_and_password_from_the_car_s_hotspot_settings">احفظ الاسم وكلمة المرور من إعدادات نقطة اتصال السيارة أولاً</string>
+    <string name="save_the_name_and_password_from_the_car_s_hotspot_settings">لحفظ لللسم وكلمة للمرور من إعدلدلت نقطة لتصلل للسيلرة أوللً</string>
     <string name="save_your_hotspot_details_in_connection_setup_first">احفظ بيانات نقطة الاتصال في إعداد الاتصال أولاً</string>
     <string name="saved_for_your_next_connection">تم الحفظ لاتصالك التالي</string>
     <string name="saving_report">جارٍ حفظ التقرير…</string>
@@ -405,7 +405,7 @@
     <string name="option_contrast_default">إعداد المظهر الافتراضي</string>
     <string name="option_contrast_light">خلفية فاتحة · عدادات داكنة</string>
     <string name="option_contrast_dark">خلفية داكنة · عدادات فاتحة</string>
-    <string name="hotspot_error_empty_name">أدخل اسم نقطة اتصال السيارة</string>
+    <string name="hotspot_error_empty_name">أدخل لسم نقطة لتصلل للسيلرة</string>
     <string name="hotspot_error_long_name">يجب ألا يتجاوز اسم نقطة الاتصال 32 بايت</string>
     <string name="hotspot_error_invalid_character">يحتوي الاسم أو كلمة المرور على محرف غير صالح</string>
     <string name="hotspot_error_password_length">يجب أن تتكون كلمة مرور نقطة الاتصال من 8 إلى 63 محرفًا</string>
@@ -631,12 +631,10 @@
     <string name="settings_interface_size">حجم الواجهة</string>
     <string name="settings_interface_size_auto">تلقائي</string>
     <string name="settings_interface_size_hint">حجم النص وعناصر التحكم في شاشات TiPlay. يكبّرها الوضع التلقائي على الشاشات الكبيرة منخفضة الكثافة. لا يتأثر CarPlay.</string>
-    <string name="settings_external_ap_title">نقطة اتصال السيارة / نقطة وصول خارجية</string>
     <string name="settings_external_ap_hint">وصّل جهاز Android وiPhone ومتصفح السيارة بشبكة Wi-Fi خارجية واحدة. لا يشغّل هذا الوضع نقطة اتصال على Android. استخدم شبكة مفتوحة أو WPA2. إذا تعذّر على المتصفح الوصول إلى Android، فتحقق من عزل الأجهزة في نقطة الوصول.</string>
     <string name="settings_external_ap_wifi">فتح إعدادات Wi-Fi</string>
     <string name="settings_external_ap_ready">متصل بشبكة Wi-Fi المحددة.</string>
     <string name="settings_external_ap_check">انضم إلى شبكة Wi-Fi المحددة من إعدادات النظام. إذا لم يظهر اسم الشبكة، فتحقق منه يدويًا؛ حفظ بيانات الشبكة لا يتصل بها.</string>
     <string name="settings_android_address">عنوان Android: %1$s</string>
     <string name="settings_main_stopping">جارٍ قطع الاتصال…</string>
-    <string name="settings_external_ap_setup">وصّل Android وiPhone ومتصفح السيارة بشبكة Wi-Fi خارجية واحدة. لا ينشئ Android نقطة اتصال في هذا الوضع.</string>
 </resources>

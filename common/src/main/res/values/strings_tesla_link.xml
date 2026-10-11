@@ -14,7 +14,7 @@
     <string name="settings_browser_pairing_code">Pairing code</string>
     <string name="settings_browser_pairing_code_description">The car’s browser needs the code %1$s to show CarPlay. The links below include it, so opening a link pairs the browser. A new code disconnects the browser that uses the old one; open the new link to pair it again.</string>
     <string name="settings_browser_pairing_code_new">New code</string>
-    <string name="settings_browser_link_car">Open this link in the car’s browser (Tesla and other Chromium browsers):</string>
+    <string name="settings_browser_link_car">Open this link in the car browser (Tesla and other car browsers):</string>
     <string name="settings_browser_link_other">For other browsers, such as Safari and Firefox, open this link on a device on this phone’s hotspot:</string>
     <string name="settings_browser_link_copy">Copy link</string>
     <string name="settings_browser_link_copied">Link copied</string>

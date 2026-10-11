@@ -13,7 +13,7 @@ import { parseIvf, startFakePhone } from './fake-phone.mjs';
 // createRequire honours NODE_PATH, which a bare ESM import does not.
 const { chromium } = createRequire(import.meta.url)('playwright-core');
 
-const CODE = '271828';
+const CODE = '2718';
 const WIDTH = 800, HEIGHT = 480, FPS = 30;
 const PLAY = fileURLToPath(new URL('../../site/play/', import.meta.url));
 // The page must not assume where it is hosted. As published, it is the root of a project site, with the download pages

@@ -14,7 +14,7 @@
     <string name="settings_browser_pairing_code">رمز الإقران</string>
     <string name="settings_browser_pairing_code_description">يحتاج متصفح السيارة إلى الرمز %1$s لعرض CarPlay. تتضمن الروابط أدناه هذا الرمز، لذا يكفي فتح رابط لإقران المتصفح. يقطع الرمز الجديد اتصال المتصفح الذي يستخدم الرمز القديم؛ افتح الرابط الجديد لإقرانه من جديد.</string>
     <string name="settings_browser_pairing_code_new">رمز جديد</string>
-    <string name="settings_browser_link_car">افتح هذا الرابط في متصفح السيارة (تسلا ومتصفحات Chromium الأخرى):</string>
+    <string name="settings_browser_link_car">افتح هذا الرابط في متصفح السيارة (تسلا ومتصفحات السيارات الأخرى):</string>
     <string name="settings_browser_link_other">للمتصفحات الأخرى مثل Safari وFirefox، افتح هذا الرابط على جهاز متصل بنقطة اتصال هذا الهاتف:</string>
     <string name="settings_browser_link_copy">نسخ الرابط</string>
     <string name="settings_browser_link_copied">تم نسخ الرابط</string>

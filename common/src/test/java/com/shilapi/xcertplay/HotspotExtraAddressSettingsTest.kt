@@ -180,7 +180,7 @@ class HotspotExtraAddressSettingsTest {
         }
         openCategory(screen, R.string.connection)
         val row = texts(screen).filterIsInstance<Button>().single { it.text.startsWith(prefix) }
-        assertNotNull("a setting row has a chevron", row.compoundDrawablesRelative[2])
+        assertNull("native setting buttons have no custom chevron", row.compoundDrawablesRelative[2])
         screen.onBackPressedDispatcher.onBackPressed()
         assertEquals(SettingsCategory.CONNECTION,
             searchIndex(screen).single { it.title == screen.getString(R.string.settings_hotspot_address_method) }.category)

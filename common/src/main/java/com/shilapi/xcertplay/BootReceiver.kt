@@ -9,9 +9,7 @@ import android.util.Log
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-        // Starting with the car is a head-unit option, so phone + browser mode never opens at boot.
-        val launchEnabled = AirPlayPersistence.loadAutoStartOnBoot(context) &&
-            !AirPlayPersistence.isPhoneBrowserMode(context)
+        val launchEnabled = AirPlayPersistence.loadAutoStartOnBoot(context)
         StartupDiagnosticSnapshot.received(context, launchEnabled)
         if (!launchEnabled) return
 

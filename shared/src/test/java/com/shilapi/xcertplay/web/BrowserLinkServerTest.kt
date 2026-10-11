@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class BrowserLinkServerTest {
-    private val code = "123456"
+    private val code = "1234"
     private val session = "page-session-0001"
     private val other = "page-session-0002"
     private val origin = "https://tiplay.example"

@@ -1,0 +1,4 @@
+<resources>
+    <string name="settings_ignore_battery_optimization">忽略電池最佳化</string>
+    <string name="settings_battery_settings_unavailable">此裝置無法開啟電池設定。</string>
+</resources>

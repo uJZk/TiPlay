@@ -1,23 +1,23 @@
 # Install and connect
 
 1. Park the car. Download the latest `TiPlay-<version>.apk` from [TiPlay releases](https://github.com/uJZk/DiPlay/releases). Until the first TiPlay release, [build the APK from source](BUILD.md).
-2. Install on the Android phone that shares its hotspot with the car. The current TiPlay profile displays CarPlay in the car browser; head-unit features remain in source for upstream compatibility. Do not install on the iPhone. TiPlay uses the package `com.ujzk.tiplay`, so it installs next to DiPlay and does not update it or keep its settings. For an in-place TiPlay update that preserves settings and pairing records, use the same package/variant and a matching signing certificate.
+2. Install on the Android device that shares its hotspot with the car. The current TiPlay profile displays CarPlay in the car browser; head-unit features remain in source for upstream compatibility. Do not install on the iPhone. TiPlay uses the package `com.ujzk.tiplay`, so it installs next to DiPlay and does not update it or keep its settings. For an in-place TiPlay update that preserves settings and pairing records, use the same package/variant and a matching signing certificate.
 3. Open TiPlay. Grant the permissions requested for the features you use: Bluetooth/Nearby devices, Wi-Fi/Location on older Android, and Android 17 local-network access when requested. The browser audio profile uses the car microphone over iPhone Bluetooth. Allow notifications for connection controls.
 4. Close other phone-projection apps before connecting. Follow [Tesla browser setup](TESLA_BROWSER.md) to open and pair the car page. Sound uses the iPhone-to-car Bluetooth connection; this complete flow still needs vehicle validation.
 
 ## Connection mode
 
-Choose **CarPlay settings → Connection mode with iPhone → Wireless / USB**. This is the single saved mode for connection and connect-on-open; choose **Save and reconnect** to apply a change. **Startup and connection → Connect when TiPlay opens** is saved immediately and uses the saved mode. Boot auto-start is hidden in the phone/browser profile because it is unavailable there.
+On the TiPlay main page, choose **Connection mode with iPhone → Wireless / USB** below the iPhone chooser. Choose **Save and reconnect** to apply a change. **Start on boot** is saved immediately and controls opening TiPlay when Android starts; Android or OEM background launch restrictions can prevent it. This is independent of the retained connect-on-open preference, which has no main-page switch. Advanced settings includes the system battery-optimization settings entry, with app details as fallback.
 
 ## Wireless
 
-The connection backend is named **Built-in car hotspot** and is selected by default; in the browser setup this is the Android phone's hotspot. Open **CarPlay settings → Connection → Built-in car hotspot**, turn on the Android phone hotspot at 5 GHz if available, and save its exact name and password. Keep Bluetooth and Wi-Fi enabled on the iPhone, pair it with the car, then tap **Connect phone**. On compatible firmware, the Bluetooth handshake supplies hotspot credentials for automatic joining; core CarPlay does not require ADB. If the iPhone does not join automatically, record whether manual joining starts CarPlay and see the separately confirmed [experimental join repair](WIRELESS_HOTSPOT_JOIN.md). **Choose iPhone** changes the selected paired device. See [the setup guide](CONNECTION_SETUP.md).
+Select **Android hotspot** on the TiPlay main page, turn on the Android hotspot at 5 GHz if available, and save its exact name and credentials. Choose security before entering the password; Open hides the password field. Keep Bluetooth and Wi-Fi enabled on the iPhone, pair it with the Android device, then tap **Connect phone**. On compatible firmware, the Bluetooth handshake supplies hotspot credentials for automatic joining; core CarPlay does not require ADB. If the iPhone does not join automatically, record whether manual joining starts CarPlay and see the separately confirmed [experimental join repair](WIRELESS_HOTSPOT_JOIN.md). **Choose iPhone** changes the selected paired device.
 
-**Existing Wi-Fi / Same LAN** connects through an external router or portable Wi-Fi: connect the Android device, car browser and iPhone to the same network, disable router client isolation, and save that network in Connection setup. Keep Bluetooth enabled. TiPlay does not join the network or change the default route for you; see [Same LAN setup](EXISTING_WIFI.md). USB remains available.
+**Existing Wi-Fi** connects through an external router or portable Wi-Fi: connect the Android device, car browser and iPhone to the same network, disable router client isolation, and save that network on the TiPlay main page. Keep Bluetooth enabled. TiPlay does not join the network or change the default route for you; see [Existing Wi-Fi setup](EXISTING_WIFI.md). USB remains available.
 
 Wi-Fi Direct and its preferred-channel implementation remain in source, but the current browser connection chooser exposes only the manual hotspot and Existing Wi-Fi backends. A previously saved Wi-Fi Direct choice is displayed as manual hotspot. The retained Android 9 compatibility and channel checks in [Android 9 Wi-Fi Direct](ANDROID9_WIFI_DIRECT.md) and [testing](TESTING.md) apply to builds that expose that backend.
 
-Automatic BYD car-hotspot startup is retained in source, but its head-unit ADB controls are hidden by the current browser profile. Enable the Android phone hotspot using its system settings.
+Automatic BYD car-hotspot startup is retained in source, but its head-unit ADB controls are hidden by the current browser profile. Enable the Android hotspot using its system settings.
 
 ## USB
 

@@ -14,7 +14,7 @@
     <string name="settings_browser_pairing_code">Код сполучення</string>
     <string name="settings_browser_pairing_code_description">Браузеру автомобіля потрібен код %1$s, щоб показати CarPlay. Посилання нижче вже містять його, тож для сполучення достатньо відкрити посилання. Новий код від’єднує браузер, який використовує старий; відкрийте нове посилання, щоб знову виконати сполучення.</string>
     <string name="settings_browser_pairing_code_new">Новий код</string>
-    <string name="settings_browser_link_car">Відкрийте це посилання в браузері автомобіля (Tesla та інші браузери на Chromium):</string>
+    <string name="settings_browser_link_car">Відкрийте це посилання в браузері автомобіля (Tesla та інші автомобільні браузери):</string>
     <string name="settings_browser_link_other">Для інших браузерів, як-от Safari і Firefox, відкрийте це посилання на пристрої, підключеному до точки доступу цього телефона:</string>
     <string name="settings_browser_link_copy">Копіювати посилання</string>
     <string name="settings_browser_link_copied">Посилання скопійовано</string>

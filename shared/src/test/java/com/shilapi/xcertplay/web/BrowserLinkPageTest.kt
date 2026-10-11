@@ -32,7 +32,7 @@ class BrowserLinkPageTest {
     private val logs = CopyOnWriteArrayList<String>()
 
     private val callbacks = object : BrowserLinkServer.Callbacks {
-        override fun code() = "123456"
+        override fun code() = "1234"
         override fun status() = BrowserLinkStatus(BrowserLinkStatus.State.IDLE)
         override fun onTouch(contacts: List<AirPlayContact>) = false
         override fun onViewport(viewport: BrowserViewport) = Unit

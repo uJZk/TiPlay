@@ -28,9 +28,9 @@ test('listen rejects startup failure and closes acquired server resources', asyn
 });
 
 test('bounded session accounting preserves control deduplication across a bye', async () => {
-  const phone = await startFakePhone({ code: '123456', width: 16, height: 16,
+  const phone = await startFakePhone({ code: '1234', width: 16, height: 16,
     frames: [{ key: true, data: new Uint8Array(10) }] });
-  const body = { c: '123456', s: 'abcdefghijklmnop', q: 1, e: [{ k: 'fit' }] };
+  const body = { c: '1234', s: 'abcdefghijklmnop', q: 1, e: [{ k: 'fit' }] };
   const post = path => fetch(`http://127.0.0.1:${phone.port}/${path}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
@@ -44,12 +44,12 @@ test('bounded session accounting preserves control deduplication across a bye', 
 });
 
 test('a stalled fake video consumer stops producing until drain and closes its stream', async () => {
-  const phone = await startFakePhone({ code: '123456', width: 16, height: 16, fps: 1000,
+  const phone = await startFakePhone({ code: '1234', width: 16, height: 16, fps: 1000,
     frames: [{ key: true, data: new Uint8Array(1024 * 1024) }] });
   let request, response;
   try {
     response = await new Promise((resolve, reject) => {
-      request = get(`http://127.0.0.1:${phone.port}/video?c=123456&s=abcdefghijklmnop`, resolve);
+      request = get(`http://127.0.0.1:${phone.port}/video?c=1234&s=abcdefghijklmnop`, resolve);
       request.on('error', reject);
     });
     response.pause();

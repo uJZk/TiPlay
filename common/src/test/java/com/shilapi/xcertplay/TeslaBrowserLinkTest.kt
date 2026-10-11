@@ -183,10 +183,10 @@ class TeslaBrowserLinkTest {
         assertEquals(TeslaBrowserLink.State.Stopped, TeslaBrowserLink.state)
     }
 
-    @Test fun thePairingCodeIsSixDigitsKeptAcrossRestartsAndReplacedOnRequest() {
+    @Test fun thePairingCodeIsFourDigitsKeptAcrossRestartsAndReplacedOnRequest() {
         val server = started()
         val code = TeslaBrowserLink.pairingCode(context)
-        assertTrue(code, Regex("[0-9]{6}").matches(code))
+        assertTrue(code, Regex("[0-9]{4}").matches(code))
         assertEquals(code, server.callbacks.code())
         assertEquals(code, context.getSharedPreferences("tiplay_browser_link", 0).getString("pairing_code", null))
 
@@ -195,12 +195,36 @@ class TeslaBrowserLinkTest {
 
         val restarted = started()
         val codes = (1..20).map { TeslaBrowserLink.newPairingCode(context) }
+        (listOf(code) + codes).zipWithNext().forEach { (previous, replacement) ->
+            assertNotEquals(previous, replacement)
+            assertTrue(Regex("[0-9]{4}").matches(replacement))
+        }
         assertTrue(TeslaBrowserLink.awaitIdle())
         assertTrue("SecureRandom codes vary", codes.toSet().size > 1)
         assertEquals(codes.last(), TeslaBrowserLink.pairingCode(context))
         assertEquals(codes.last(), servers.last().callbacks.code())
         assertEquals("A new code ends the old browser session: the server restarts", 1, restarted.stops.get())
         assertEquals(TeslaBrowserLink.State.Listening(8080), TeslaBrowserLink.state)
+    }
+
+    @Test fun persistedSixDigitPairingCodeMigratesOnFirstLoad() {
+        val prefs = context.getSharedPreferences("tiplay_browser_link", 0)
+        prefs.edit().putString("pairing_code", "123456").commit()
+        assertFalse(TeslaBrowserLink.hasPairingCode(context))
+        val migrated = TeslaBrowserLink.pairingCode(context)
+        assertTrue(Regex("[0-9]{4}").matches(migrated))
+        assertEquals(migrated, prefs.getString("pairing_code", null))
+        TeslaBrowserLink.resetForTest()
+        assertEquals(migrated, TeslaBrowserLink.pairingCode(context))
+    }
+
+    @Test fun persistedFourDigitPairingCodePreservesLeadingZeros() {
+        val prefs = context.getSharedPreferences("tiplay_browser_link", 0)
+        prefs.edit().putString("pairing_code", "0042").commit()
+        assertTrue(TeslaBrowserLink.hasPairingCode(context))
+        assertEquals("0042", TeslaBrowserLink.pairingCode(context))
+        assertEquals("0042", started().callbacks.code())
+        assertNotEquals("0042", TeslaBrowserLink.newPairingCode(context))
     }
 
     @Test fun theLastValidViewportIsSavedForTheNextConnection() {

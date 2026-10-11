@@ -8,7 +8,6 @@ import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
-import android.widget.EditText
 import android.widget.TextView
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.network.HotspotAddresses
@@ -92,15 +91,14 @@ class TeslaBrowserLinkSettingsTest {
             R.string.settings_vehicle, R.string.diagnostics, R.string.settings_advanced).associateWith { visibleIn(screen, it) }
 
         val connection = pages.getValue(R.string.connection)
-        assertTrue(connection.contains(page + TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS))
+        assertFalse(connection.any { it.startsWith(page) })
         assertTrue(connection.contains(pairing + code))
         assertTrue(connection.contains("https://ujzk.github.io/TiPlay/#c=$code"))
         (pages - R.string.connection).values.plusElement(overview).forEach { texts ->
             assertFalse(texts.any { it.startsWith(page) || it.startsWith(pairing) || it.contains("#c=") })
         }
         val index = searchIndex(screen)
-        assertEquals(SettingsCategory.CONNECTION,
-            index.single { it.title == screen.getString(R.string.settings_browser_page_address) }.category)
+        assertFalse(index.any { it.title == screen.getString(R.string.settings_browser_page_address) })
         assertEquals(SettingsCategory.CONNECTION,
             index.single { it.title == screen.getString(R.string.settings_browser_pairing_code) }.category)
         assertFalse("Copy buttons are not search results",
@@ -216,43 +214,26 @@ class TeslaBrowserLinkSettingsTest {
         assertEquals("https://ujzk.github.io/TiPlay/?t=10.176.81.135#c=$code", clipboard.primaryClip!!.getItemAt(0).text.toString())
     }
 
-    @Test fun thePageAddressMustBeHttps() {
-        val screen = openConnection()
-        val prefix = screen.getString(R.string.settings_browser_page_address) + " · "
-        button(screen, prefix + TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS).performClick()
-        shadowOf(Looper.getMainLooper()).idle()
-        val dialog = ShadowAlertDialog.getLatestAlertDialog()
-        val input = descendants(dialog.window!!.decorView).filterIsInstance<EditText>().single()
-        assertEquals(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS, input.text.toString())
+    @Test fun thePageAddressStaysHiddenAndSavedHttpsLinksRemainUsable() {
         for (invalid in listOf("http://car.example/play/", "car.example", "https://car.example/#c=1", "")) {
-            input.setText(invalid)
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-            assertEquals(invalid, screen.getString(R.string.settings_browser_page_address_invalid), input.error?.toString())
-            assertTrue(dialog.isShowing)
+            assertFalse(TeslaBrowserLink.savePageAddress(context, invalid))
         }
-        assertEquals(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS, TeslaBrowserLink.pageAddress(context))
-
-        input.setText(" https://car.example/tiplay/ ")
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-        finishProbes()
-        assertFalse(dialog.isShowing)
+        assertTrue(TeslaBrowserLink.savePageAddress(context, " https://car.example/tiplay/ "))
+        val screen = openConnection()
         assertEquals("https://car.example/tiplay/", TeslaBrowserLink.pageAddress(context))
         val code = TeslaBrowserLink.pairingCode(context)
-        assertTrue(shown(screen).contains(prefix + "https://car.example/tiplay/"))
-        assertTrue(shown(screen).contains("https://car.example/tiplay/#c=$code"))
+        val link = "https://car.example/tiplay/#c=$code"
+        assertFalse(shown(screen).any { it.startsWith(screen.getString(R.string.settings_browser_page_address)) })
+        assertTrue(shown(screen).contains(link))
+        button(screen, screen.getString(R.string.settings_browser_link_copy)).performClick()
+        assertEquals(link, context.getSystemService(ClipboardManager::class.java)
+            .primaryClip!!.getItemAt(0).text.toString())
     }
 
-    /** A dialog saved unchanged stores nothing, so a later default (a new site address) still applies. */
+    /** Saving the default through the compatibility API stores nothing, so a later site address still applies. */
     @Test fun savingTheDefaultPageAddressStoresNothing() {
-        val screen = openConnection()
         val prefs = context.getSharedPreferences("tiplay_browser_link", 0)
-        button(screen, screen.getString(R.string.settings_browser_page_address) + " · " + TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS)
-            .performClick()
-        shadowOf(Looper.getMainLooper()).idle()
-        val dialog = ShadowAlertDialog.getLatestAlertDialog()
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-        finishProbes()
-        assertFalse(dialog.isShowing)
+        assertTrue(TeslaBrowserLink.savePageAddress(context, TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS))
         assertFalse(prefs.contains("page_address"))
         assertEquals(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS, TeslaBrowserLink.pageAddress(context))
 
@@ -271,8 +252,7 @@ class TeslaBrowserLinkSettingsTest {
         val screen = openConnection()
         val code = TeslaBrowserLink.pairingCode(context)
         assertEquals(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS, TeslaBrowserLink.pageAddress(context))
-        assertTrue(shown(screen).contains(
-            screen.getString(R.string.settings_browser_page_address) + " · " + TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS))
+        assertFalse(shown(screen).any { it.startsWith(screen.getString(R.string.settings_browser_page_address)) })
         assertTrue(shown(screen).contains("https://ujzk.github.io/TiPlay/#c=$code"))
         assertFalse(shown(screen).any { it.contains("github.io/DiPlay/play/") })
     }
@@ -290,7 +270,7 @@ class TeslaBrowserLinkSettingsTest {
         finishProbes()
 
         val new = TeslaBrowserLink.pairingCode(context)
-        assertNotEquals(old, new) // one in a million: SecureRandom picked the same six digits
+        assertNotEquals(old, new)
         assertTrue(shown(screen).contains(prefix + new))
         assertTrue(shown(screen).contains("https://ujzk.github.io/TiPlay/#c=$new"))
         assertFalse(shown(screen).any { it.contains("#c=$old") })

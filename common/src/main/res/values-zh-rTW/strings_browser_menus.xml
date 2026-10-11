@@ -6,4 +6,5 @@
     <string name="settings_browser_video">影片</string>
     <string name="settings_browser_endpoint_hint">輸入位址和連接埠，例如 100.109.220.253:8080。位址範圍為 100.64.0.0/10 或 169.254.0.0/16，連接埠為 1–65535。立即生效；修改連接埠後請用新連結連線瀏覽器。</string>
     <string name="settings_browser_endpoint_invalid">請輸入有效的位址和連接埠（1–65535），例如 100.109.220.253:8080。</string>
+    <string name="settings_browser_boot_hint">安卓端開機時開啟 TiPlay。Android 或裝置系統設定可能限制背景啟動。</string>
 </resources>

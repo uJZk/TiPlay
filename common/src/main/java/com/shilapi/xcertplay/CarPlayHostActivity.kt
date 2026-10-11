@@ -608,6 +608,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(R.style.Theme_TiPlayNative)
         super.onCreate(savedInstanceState)
         BrowserSettingsPolicy.activate(this)
         NavigationWidgetUpdater.attach(applicationContext)
@@ -1786,7 +1787,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(36) },
         )
-        BrowserSettingsMenu.addConnectOnOpen(content)
+        BrowserSettingsMenu.addAutoStartOnBoot(content)
         if (!AirPlayPersistence.isPhoneBrowserMode(this)) content.addView(
             settingsSwitchRow(
                 label = getString(R.string.auto_start_on_boot),
@@ -5001,6 +5002,10 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun applyFullscreenMode() {
+        if (!headUnitIntegrations()) {
+            TiPlayNativeUi(this).applyWindow(this)
+            return
+        }
         val multiWindow = isMultiWindowActive()
         val hideTop = hideTopBar && !multiWindow
         val hideBottom = hideBottomBar && !multiWindow

@@ -1,8 +1,8 @@
 # Built-in car hotspot setup
 
 > Retained head-unit setup guidance. Current TiPlay uses the phone + browser
-> profile; install it on the Android phone and follow [Tesla browser setup](TESLA_BROWSER.md).
-> Its connection chooser offers Built-in car hotspot and Existing Wi-Fi / Same LAN.
+> profile; install it on the Android device and follow [Tesla browser setup](TESLA_BROWSER.md).
+> Its connection chooser offers Android hotspot and Existing Wi-Fi.
 > Wi-Fi Direct selection, the BYD hotspot automation section and the cluster/display
 > controls described below are not exposed by the current browser profile.
 

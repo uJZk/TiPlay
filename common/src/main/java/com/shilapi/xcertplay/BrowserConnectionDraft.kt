@@ -21,18 +21,19 @@ internal data class BrowserConnectionDraft(
 ) {
     override fun toString() = "Browser connection draft (redacted)"
 
-    enum class Source { LOCAL, LAN, EXTERNAL_AP }
+    enum class Source { LOCAL, LAN }
     val mode get() = if (source == Source.LOCAL) WirelessHotspotMode.MANUAL else WirelessHotspotMode.EXISTING_WIFI
+    private val localConnectionPassword get() = if (localSecurity == ManualHotspotSecurity.OPEN) "" else localPassword
+    private val externalConnectionPassword get() = if (externalSecured) externalPassword else ""
     fun error(): ManualHotspotValidation.Error? = if (!wireless) null else
         ManualHotspotValidation.error(if (source == Source.LOCAL) localSsid else externalSsid,
-            if (source == Source.LOCAL) localPassword else externalPassword)
+            if (source == Source.LOCAL) localConnectionPassword else externalConnectionPassword)
     fun validationError(): Int? {
         error()?.let { return it.messageResource() }
         if (!wireless) return null
         val open = if (source == Source.LOCAL) localSecurity == ManualHotspotSecurity.OPEN else !externalSecured
-        val password = if (source == Source.LOCAL) localPassword else externalPassword
+        val password = if (source == Source.LOCAL) localConnectionPassword else externalConnectionPassword
         return when {
-            open && password.isNotEmpty() -> com.shilapi.xcertplay.host.R.string.password_must_be_empty_when_security_is_open
             !open && password.length !in 8..63 -> com.shilapi.xcertplay.host.R.string.wpa2_wpa3_password_must_be_8_63_characters
             else -> null
         }
@@ -42,9 +43,9 @@ internal data class BrowserConnectionDraft(
         AirPlayPersistence.saveWirelessEnabled(context, wireless)
         AirPlayPersistence.saveWirelessHotspotMode(context, mode)
         AirPlayPersistence.saveManualHotspotSsid(context, localSsid)
-        AirPlayPersistence.saveManualHotspotPassphrase(context, localPassword)
+        AirPlayPersistence.saveManualHotspotPassphrase(context, localConnectionPassword)
         AirPlayPersistence.saveManualHotspotSecurity(context, localSecurity)
-        AirPlayPersistence.saveExistingWifiCredentials(context, externalSsid, externalPassword)
+        AirPlayPersistence.saveExistingWifiCredentials(context, externalSsid, externalConnectionPassword)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("source", source.name).apply()
     }
     fun retain(state: Bundle) {
@@ -72,7 +73,9 @@ internal data class BrowserConnectionDraft(
             draft.phoneName = DiPlayPreferences.phoneName(context)
             state?.getBundle("browser_main_draft")?.let {
                 draft.wireless = it.getBoolean("wireless", draft.wireless)
-                draft.source = runCatching { Source.valueOf(it.getString("source")!!) }.getOrDefault(draft.source)
+                // Older drafts used EXTERNAL_AP for the same existing-Wi-Fi transport.
+                draft.source = if (it.getString("source") == "EXTERNAL_AP") Source.LAN else
+                    runCatching { Source.valueOf(it.getString("source")!!) }.getOrDefault(draft.source)
                 draft.localSsid = it.getString("localSsid", draft.localSsid)
                 draft.localPassword = it.getString("localPassword", draft.localPassword)
                 draft.localSecurity = runCatching { ManualHotspotSecurity.valueOf(it.getString("security")!!) }.getOrDefault(draft.localSecurity)
