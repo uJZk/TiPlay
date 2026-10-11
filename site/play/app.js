@@ -12,6 +12,8 @@ import {
   timeoutSignal, viewportFor,
 } from './link.js';
 import { followAppearance } from './appearance.js';
+import { createReconnectOverlay } from './reconnect.js';
+import { createBrowserSettings } from './settings.js';
 import { pumpChunkStream } from './transport.js';
 
 const STRINGS = {
@@ -24,6 +26,9 @@ const STRINGS = {
     hostHelp: 'IPv4 address and port of the phone, for example 100.109.220.253:8080.',
     connect: 'Connect',
     disconnect: 'Disconnect',
+    settings: 'Setting',
+    close: 'Close',
+    saveSettings: 'Save and reconnect',
     fullscreen: 'Full screen',
     exitFullscreen: 'Exit full screen',
     stats: 'Stats',
@@ -59,6 +64,9 @@ const STRINGS = {
     hostHelp: '手机的 IPv4 地址和端口，例如 100.109.220.253:8080。',
     connect: '连接',
     disconnect: '断开',
+    settings: '设置',
+    close: '关闭',
+    saveSettings: '保存并重新连接',
     fullscreen: '全屏',
     exitFullscreen: '退出全屏',
     stats: '统计',
@@ -93,6 +101,20 @@ const LINK_KEY = 'tiplay.link', STATS_KEY = 'tiplay.stats';
 const $ = id => document.getElementById(id);
 const stage = $('stage'), touch = $('touch');
 const codecName = codec => CODEC_NAMES[String(codec).split('.')[0]] ?? codec;
+const browserSettings = createBrowserSettings({
+  dialog: $('browser-settings'), controls: $('browser-settings-controls'), panel: $('panel'),
+  nav: $('bar').querySelector('nav'), closeButton: $('browser-settings-close'), isActive: () => active,
+  onOpen: () => {
+    $('code').value = link.code ?? '';
+    $('host').value = link.host;
+    $('advanced').open = true;
+    $('message').textContent = '';
+  },
+});
+const renderReconnect = createReconnectOverlay({
+  overlay: $('reconnect'), message: $('reconnect-message'), settings: $('reconnect-settings'),
+  bar: $('bar'), stage, onSettings: () => { browserSettings.open(); render(); },
+});
 
 document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
 for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
@@ -460,7 +482,10 @@ function render() {
   $('fit').hidden = !(active && status?.fit === true);
   $('fit').disabled = fitRequestedAt > 0;
   $('fit').textContent = t(fitRequestedAt ? 'fitPending' : 'fit');
-  $('status').textContent = statusText();
+  const text = statusText();
+  $('status').textContent = text;
+  renderReconnect({ active, live, phase, pending: fitRequestedAt > 0, text });
+  $('connect').textContent = t(active && $('browser-settings').open ? 'saveSettings' : 'connect');
   $('stats').hidden = !(active && statsVisible);
   if (active && statsVisible) {
     $('stats').textContent = Object.entries(flatStats(snapshot(), Infinity)).map(([key, value]) => `${key} ${value}`).join('\n');
@@ -603,16 +628,20 @@ $('link-form').addEventListener('submit', event => {
   event.preventDefault();
   const code = $('code').value.trim(), host = normalizeHost($('host').value || pageHost || DEFAULT_HOST);
   if (!isCode(code)) {
-    stop('invalidCode');
+    if (active) $('message').textContent = t('invalidCode');
+    else stop('invalidCode');
     $('code').focus();
     return;
   }
   if (!host) {
     $('advanced').open = true;
-    stop('invalidHost');
+    if (active) $('message').textContent = t('invalidHost');
+    else stop('invalidHost');
     $('host').focus();
     return;
   }
+  if (active) { sendBye(); stop(); }
+  browserSettings.close();
   link = { host, code };
   $('host').value = host;
   saveLink();
@@ -651,6 +680,7 @@ if (requestFullscreen) {
   $('fullscreen').hidden = true;
 }
 window.addEventListener('pagehide', event => {
+  browserSettings.close();
   resumeOnShow = active;
   if (active) sendBye();
   stop();

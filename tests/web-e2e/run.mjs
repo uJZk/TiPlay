@@ -170,7 +170,7 @@ function checkH264Muxing() {
 }
 
 function startPageServer() {
-  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
+  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
   const server = createServer((req, res) => {
     const path = new URL(req.url, 'http://page').pathname;
     if (path === '/blank') return res.writeHead(200, { 'Content-Type': 'text/html' }).end('<!doctype html><title>blank</title>');
@@ -284,6 +284,12 @@ async function main() {
     page.on('pageerror', error => failures.push(error.message));
     const pageUrl = `${origin}${PAGE_PATH}?t=127.0.0.1:${phone.port}#c=${CODE}`;
     await page.goto(pageUrl);
+    check(await page.evaluate(async () => {
+      const wallpaper = new Image();
+      wallpaper.src = new URL('reconnect-wallpaper-blurred.png', location.href).href;
+      await wallpaper.decode();
+      return wallpaper.naturalWidth > 0;
+    }), 'the browser loads and decodes the actual wallpaper asset');
 
     await waitFor('a dec event', () => eventsOf(phone, 'dec').length);
     check(eventsOf(phone, 'dec')[0].event.ep === 1, 'the fake phone heard "dec" for epoch 1');
@@ -312,9 +318,58 @@ async function main() {
       `stats event with ${Object.keys(st.v).length} fields, including the path`);
 
     const decodedBefore = eventsOf(phone, 'dec').length, streamsBefore = phone.videoCount, viewportsBefore = eventsOf(phone, 'vp').length;
+    check(await page.locator('#reconnect').isHidden(), 'the reconnect surface is hidden after the first decoded frame');
+    await page.route('**/hello', route => route.abort());
     phone.dropVideo();
+    await page.waitForSelector('#reconnect:not([hidden])');
+    check(await page.textContent('#reconnect-settings') === 'Setting', 'the reconnect action is Setting');
+    await page.click('#reconnect-settings');
+    await page.waitForSelector('#browser-settings[open]');
+    check((await stats(page)).page.link.phase !== 'ready', 'opening settings keeps the current reconnect running');
+    check(await page.locator('#browser-settings #host').isVisible() && await page.locator('#browser-settings #disconnect').isVisible(),
+      'settings reuses the connection form and the running controls');
+    await page.fill('#code', '12');
+    await page.click('#connect');
+    check((await stats(page)).page.link.phase !== 'ready' && /6-digit/.test(await page.textContent('#message')),
+      'invalid settings show an error without stopping the current reconnect');
+    await page.click('#browser-settings-close');
+    await page.waitForSelector('#browser-settings', { state: 'hidden' });
+    check(await page.locator('#panel').isHidden(), 'closing settings restores the active page and hides its connection form');
+    await page.click('#reconnect-settings');
+    check(await page.inputValue('#code') === CODE, 'reopening settings discards unsaved edits and shows the saved pairing code');
+    check(await page.textContent('#connect') === 'Save and reconnect', 'applying connection settings is an explicit reconnect action');
+    await page.click('#connect');
+    await page.waitForSelector('#browser-settings', { state: 'hidden' });
+    check((await stats(page)).page.link.phase !== 'ready' && await page.locator('#reconnect').isVisible(),
+      'saving valid settings closes the panel and starts the new connection');
+    for (const colorScheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme });
+      for (const viewport of [{ width: 1000, height: 700 }, { width: 390, height: 844 }, { width: 640, height: 240 }]) {
+        await page.setViewportSize(viewport);
+        const layout = await page.evaluate(() => {
+          const overlay = document.getElementById('reconnect'), logo = document.getElementById('reconnect-logo');
+          const r = overlay.getBoundingClientRect(), l = logo.getBoundingClientRect();
+          return { width: r.width, height: r.height, x: r.x, y: r.y, cx: l.x + l.width / 2, cy: l.y + l.height / 2,
+            inert: document.getElementById('stage').inert && document.getElementById('bar').inert,
+            base: getComputedStyle(overlay).backgroundColor,
+            wallpaper: document.getElementById('reconnect-wallpaper').src, blur: getComputedStyle(document.getElementById('reconnect-wallpaper')).filter,
+            button: document.getElementById('reconnect-settings').getBoundingClientRect().bottom,
+            message: document.getElementById('reconnect-message').getBoundingClientRect().bottom };
+        });
+        check(layout.x === 0 && layout.y === 0 && layout.width === viewport.width && layout.height === viewport.height &&
+          Math.abs(layout.cx - viewport.width / 2) < 1 && Math.abs(layout.cy - viewport.height / 2) < 1 && layout.inert &&
+          layout.button < viewport.height && layout.message < viewport.height,
+        `${colorScheme} ${viewport.width}×${viewport.height}: full viewport, centered logo, reachable action and blocked CarPlay input`);
+        check(layout.base === 'rgb(25, 33, 46)', `${colorScheme}: shared low-luminance material`);
+        check(layout.wallpaper.includes('reconnect-wallpaper-blurred.png') && layout.blur === 'none',
+          `${colorScheme}: the same pre-rendered wallpaper without a runtime filter`);
+      }
+    }
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await page.unroute('**/hello');
     await waitFor('a new /video request', () => phone.videoCount > streamsBefore);
     await waitFor('decoding after the reconnect', () => eventsOf(phone, 'dec').length > decodedBefore);
+    check(await page.locator('#reconnect').isHidden(), 'the reconnect surface disappears after recovery decodes a frame');
     check(true, `the page reopened /video after the drop (${phone.videoCount} streams) and decoded again`);
     await waitFor('the viewport after the reconnect', () => eventsOf(phone, 'vp').length > viewportsBefore, 3000).catch(() => {});
     check(eventsOf(phone, 'vp').length > viewportsBefore, 'the page repeats its viewport on the new stream, for a phone that restarted');

@@ -11,6 +11,7 @@
 <title>TiPlay</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="reconnect.css">
 <script type="module" src="app.js"></script>
 </head>
 <body>
@@ -49,6 +50,19 @@
 <pre id="stats" hidden></pre>
 </section>
 </main>
+<section id="reconnect" aria-label="TiPlay" hidden>
+<img id="reconnect-wallpaper" src="reconnect-wallpaper-blurred.png" alt="" referrerpolicy="no-referrer">
+<img id="reconnect-logo" src="icon.svg" alt="TiPlay" width="128" height="128">
+<p id="reconnect-message" role="status" aria-live="polite" aria-atomic="true"></p>
+<button id="reconnect-settings" type="button" data-i18n="settings"></button>
+</section>
+<dialog id="browser-settings" aria-labelledby="browser-settings-title">
+<header class="settings-header">
+<h2 id="browser-settings-title" data-i18n="settings"></h2>
+<button id="browser-settings-close" type="button" data-i18n="close"></button>
+</header>
+<div id="browser-settings-controls"></div>
+</dialog>
 <noscript>TiPlay needs JavaScript. · TiPlay 需要 JavaScript。</noscript>
 </body>
 </html>

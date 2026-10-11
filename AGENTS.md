@@ -4,6 +4,11 @@ Instructions for coding agents that work on TiPlay.
 
 ## Current progress
 
+See `docs/RECONNECT-UX-2026-10-11.md` for the pre-rendered reconnect wallpaper,
+portal integration, verification and delivery progress. Follow `docs/WEB-PAIRING-DESIGN.md`
+and `docs/APP-MAIN-PAGE-DESIGN.md` for the latest layout decisions; they remain Markdown
+designs until implemented, including cleanup of non-upstream redundant code.
+
 See `docs/APK-RELEASE-2026-10-11.md` for the signed 0.2.13 APK, upstream runtime
 identity provenance, test results, download delivery and pending Release attachment upload.
 `docs/BUILD.md` includes extraction, verification and draft-upload procedures.

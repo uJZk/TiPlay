@@ -23,6 +23,7 @@ class BrowserLinkPageTest {
         "app.js" to "export const app = 1;",
         "style.css" to "body{margin:0}",
         "icon.svg" to "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+        "reconnect-wallpaper-blurred.png" to "PNG payload",
         "data.json" to "{}",
         "site.webmanifest" to "{\"name\":\"TiPlay\"}",
         "notes.txt" to "not part of the page",
@@ -114,6 +115,7 @@ class BrowserLinkPageTest {
             "/play/app.js?v=2" to ("app.js" to "text/javascript; charset=utf-8"),
             "/play/style.css" to ("style.css" to "text/css; charset=utf-8"),
             "/play/icon.svg" to ("icon.svg" to "image/svg+xml"),
+            "/play/reconnect-wallpaper-blurred.png" to ("reconnect-wallpaper-blurred.png" to "image/png"),
             "/play/data.json" to ("data.json" to "application/json"),
             "/play/site.webmanifest" to ("site.webmanifest" to "application/manifest+json"),
         )

@@ -660,6 +660,7 @@ class BrowserLinkServer(
             "js" to "text/javascript; charset=utf-8",
             "css" to "text/css; charset=utf-8",
             "svg" to "image/svg+xml",
+            "png" to "image/png",
             "json" to "application/json",
             "webmanifest" to "application/manifest+json",
         )

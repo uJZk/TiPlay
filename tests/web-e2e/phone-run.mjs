@@ -256,13 +256,19 @@ async function openPage(context, origin, label) {
 async function checkAssets(origin) {
   const root = await fetch(`${origin}/`, { redirect: 'manual' });
   check(root.status === 302 && root.headers.get('location') === '/play/', `GET / answers 302 to ${root.headers.get('location')}`);
+  await root.arrayBuffer();
   for (const [path, type] of [['/play/', 'text/html; charset=utf-8'], ['/play/app.js', 'text/javascript; charset=utf-8'],
-    ['/play/sw.js', 'text/javascript; charset=utf-8'], ['/play/style.css', 'text/css; charset=utf-8'], ['/play/icon.svg', 'image/svg+xml']]) {
+    ['/play/sw.js', 'text/javascript; charset=utf-8'], ['/play/style.css', 'text/css; charset=utf-8'], ['/play/icon.svg', 'image/svg+xml'], ['/play/reconnect-wallpaper-blurred.png', 'image/png']]) {
     const response = await fetch(`${origin}${path}`);
     const headers = Object.fromEntries(response.headers);
     check(response.status === 200 && headers['content-type'] === type && headers['cache-control'] === 'no-cache' &&
       headers['x-content-type-options'] === 'nosniff' && headers['content-security-policy'] === PAGE_POLICY,
     `${path} is served as ${headers['content-type']} with no-cache, nosniff and the page policy`);
+    const body = Buffer.from(await response.arrayBuffer());
+    if (path.endsWith('.png')) {
+      check(body.equals(readFileSync(join(PAGE_DIR, 'reconnect-wallpaper-blurred.png'))),
+        'the phone serves the wallpaper bytes unchanged');
+    }
   }
   const hello = await fetch(`${origin}/hello`);
   check(hello.headers.get('cache-control') === 'no-store' && !hello.headers.get('content-security-policy') &&
@@ -313,7 +319,7 @@ async function checkTap(page, phone, x, y, label) {
 
 /** The page from another origin, as the public HTTPS page is: a static server for the page directory at its root. */
 function startPageHost() {
-  const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', svg: 'image/svg+xml' };
+  const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', svg: 'image/svg+xml', png: 'image/png' };
   const server = createServer((req, res) => {
     const name = new URL(req.url, 'http://page').pathname.slice(1) || 'index.html';
     const file = join(PAGE_DIR, name);
