@@ -304,6 +304,21 @@ async function main() {
     `viewport event ${JSON.stringify(viewport)} matches the video area`);
     await checkCanvas(page, 'worker');
 
+    check(await page.locator('header, #fullscreen').count() === 0, 'CarPlay has no header or fullscreen button');
+    check(rect.top === 0, 'the CarPlay picture starts at the top of the window');
+    const streamsAtPortal = phone.videoCount;
+    phone.requestPortal();
+    await page.waitForSelector('#panel:not([hidden])');
+    check(await page.textContent('#connect') === 'Return to CarPlay', 'TiPlay icon returns to the portal');
+    await page.click('#connect');
+    await page.waitForSelector('#stage:not([hidden])');
+    check(phone.videoCount === streamsAtPortal, 'returning to CarPlay keeps the same video connection');
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await waitFor('resized viewport', () => eventsOf(phone, 'vp').at(-1)?.event.cw === 1100);
+    const resized = await page.locator('#stage').boundingBox();
+    check(resized.x === 0 && resized.y === 0 && resized.width === 1100 && resized.height === 700,
+      'the picture follows the entire resized window');
+
     checkTap(await tap(page, phone, 0.25, 0.75), 0.25, 0.75, 'worker');
 
     const st = await waitFor('decoded stats event', () => eventsOf(phone, 'st').map(entry => entry.event)
@@ -326,11 +341,14 @@ async function main() {
     check(eventsOf(phone, 'kf').length > keyRequests, 'after a decoder error the page asked for a key frame and decodes again');
 
     phone.setFit(true);
+    phone.requestPortal();
+    await page.waitForSelector('#panel:not([hidden])');
     await page.waitForSelector('#fit:not([hidden])', { timeout: 5000 });
     check(await page.textContent('#fit') === 'Apply and reconnect', '"Apply and reconnect" appears when status.fit is true');
     await page.click('#fit');
     await waitFor('a fit event', () => eventsOf(phone, 'fit').length);
     check(true, 'the button sends {"k":"fit"}');
+    await page.click('#connect');
     phone.setFit(false);
 
     const zh = await browser.newContext({ locale: 'zh-CN' });

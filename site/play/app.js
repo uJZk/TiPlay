@@ -22,6 +22,8 @@ const STRINGS = {
     advanced: 'Advanced',
     hostLabel: 'Phone address',
     hostHelp: 'IPv4 address and port of the phone, for example 100.109.220.253:8080.',
+    resume: 'Return to CarPlay',
+    resizeHelp: 'The picture follows this window. When its size settles, CarPlay reconnects automatically to match the resolution.',
     connect: 'Connect',
     disconnect: 'Disconnect',
     fullscreen: 'Full screen',
@@ -57,6 +59,8 @@ const STRINGS = {
     advanced: '高级',
     hostLabel: '手机地址',
     hostHelp: '手机的 IPv4 地址和端口，例如 100.109.220.253:8080。',
+    resume: '返回 CarPlay',
+    resizeHelp: '画面自动适应窗口。窗口大小稳定后，CarPlay 会自动重新连接，以匹配原生分辨率。',
     connect: '连接',
     disconnect: '断开',
     fullscreen: '全屏',
@@ -287,8 +291,25 @@ async function httpError(response) {
   return Object.assign(new Error(word || `HTTP ${response.status}`), { status: response.status });
 }
 
+let portalRevision = null;
+
+function showPortal() {
+  releaseTouches();
+  stage.hidden = true;
+  $('panel').hidden = false;
+  render();
+}
+
+function resumeCarPlay() {
+  $('panel').hidden = true;
+  stage.hidden = false;
+  onResize();
+  render();
+}
+
 function start() {
   if (active || videoPath.path === 'none') return;
+  portalRevision = null;
   // A fresh session id per start lets "Connect" take the display back after another browser replaced this one.
   session = newSessionId();
   active = true;
@@ -424,6 +445,10 @@ async function postControl(q, events) {
 }
 
 function applyStatus(next) {
+  if (Number.isSafeInteger(next.portalRevision)) {
+    if (portalRevision !== null && next.portalRevision !== portalRevision) showPortal();
+    portalRevision = next.portalRevision;
+  }
   status = next;
   if (!next.fit || Date.now() - fitRequestedAt > 15000) fitRequestedAt = 0;
   render();
@@ -461,6 +486,11 @@ function render() {
   $('fit').disabled = fitRequestedAt > 0;
   $('fit').textContent = t(fitRequestedAt ? 'fitPending' : 'fit');
   $('status').textContent = statusText();
+  $('connect').textContent = t(active ? 'resume' : 'connect');
+  $('code').disabled = active;
+  $('host').disabled = active;
+  $('stream-status').textContent = statusText();
+  $('stream-status').hidden = !active || live;
   $('stats').hidden = !(active && statsVisible);
   if (active && statsVisible) {
     $('stats').textContent = Object.entries(flatStats(snapshot(), Infinity)).map(([key, value]) => `${key} ${value}`).join('\n');
@@ -588,6 +618,7 @@ const onResize = () => {
 };
 new ResizeObserver(onResize).observe(stage);
 window.addEventListener('resize', onResize);
+window.visualViewport?.addEventListener('resize', onResize);
 
 function keepScreenOn() {
   if (!active || wakeLock || document.hidden || !navigator.wakeLock) return;
@@ -601,6 +632,7 @@ function keepScreenOn() {
 
 $('link-form').addEventListener('submit', event => {
   event.preventDefault();
+  if (active) { resumeCarPlay(); return; }
   const code = $('code').value.trim(), host = normalizeHost($('host').value || pageHost || DEFAULT_HOST);
   if (!isCode(code)) {
     stop('invalidCode');
@@ -635,21 +667,6 @@ $('stats-toggle').addEventListener('click', () => {
   render();
 });
 
-const root = document.documentElement;
-const requestFullscreen = root.requestFullscreen ?? root.webkitRequestFullscreen;
-const fullscreenElement = () => document.fullscreenElement ?? document.webkitFullscreenElement;
-if (requestFullscreen) {
-  $('fullscreen').addEventListener('click', () => {
-    const exit = document.exitFullscreen ?? document.webkitExitFullscreen;
-    // Older Safari returns undefined instead of a promise.
-    Promise.resolve(fullscreenElement() ? exit.call(document) : requestFullscreen.call(root, { navigationUI: 'hide' })).catch(() => {});
-  });
-  for (const type of ['fullscreenchange', 'webkitfullscreenchange']) {
-    document.addEventListener(type, () => { $('fullscreen').textContent = t(fullscreenElement() ? 'exitFullscreen' : 'fullscreen'); });
-  }
-} else {
-  $('fullscreen').hidden = true;
-}
 window.addEventListener('pagehide', event => {
   resumeOnShow = active;
   if (active) sendBye();

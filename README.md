@@ -20,6 +20,7 @@ There is no TiPlay release yet. To try it now, [build it from source](docs/BUILD
 - **iPhone:** pair it over Bluetooth with the Tesla as the primary phone for audio and calls, and connect it to TiPlay with wireless CarPlay.
 - **Tesla:** join the phone's hotspot and open the TiPlay page (`https://ujzk.github.io/TiPlay/`) in the browser. Set **Browser page address** to this URL in TiPlay if it still uses `/DiPlay/`. The page will load once from a public HTTPS address and then work from the browser cache.
 - **Tested so far:** probe pages on a Model Y (Chromium 148) decoded 1080p60 H.264 and HEVC in hardware, and H.264 kept 60 fps in Drive. An HTTPS page in the Tesla browser reached the phone over HTTP at a 100.64 address on the hotspot. CarPlay itself has not run in a Tesla yet.
+- **Browser controls:** CarPlay fills the video area without a top header. Its **TiPlay** icon opens the portal while keeping the session connected. Window changes fit immediately and automatically reconnect CarPlay at the matching native resolution once the size settles.
 - **Setup:** publishing the page, pairing, other browsers and the car test checklist are in [Tesla browser](docs/TESLA_BROWSER.md).
 
 ## Inherited head-unit mode (from DiPlay 0.2.13)

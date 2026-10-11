@@ -9,8 +9,6 @@ button[aria-pressed=true]{border-color:#a6c9ff;color:#b9d5ff}
 button:focus-visible,input:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid #a6c9ff;outline-offset:3px}
 .primary{background:#a6c9ff;color:#102542;border-color:transparent;font-weight:650}
 .primary:active{background:#8fb8f5}
-#bar{flex:0 0 auto;height:64px;display:flex;align-items:center;gap:16px;padding:0 12px 0 20px;border-bottom:1px solid #263449}
-.brand{font-size:20px;letter-spacing:-.3px}
 #status{flex:1;min-width:0;margin:0;color:#b9c7db;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 nav{display:flex;gap:8px}
 main{flex:1;min-height:0;position:relative}
@@ -36,4 +34,8 @@ footer a{color:#a6c9ff;text-underline-offset:4px}
 #touch{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 #stats{position:absolute;top:8px;left:8px;margin:0;max-width:calc(100% - 16px);max-height:calc(100% - 16px);overflow:hidden;padding:10px 12px;border-radius:10px;background:#0c121ce0;color:#d4e4fc;font:12px/1.45 ui-monospace,"DejaVu Sans Mono",Menlo,Consolas,monospace;white-space:pre;pointer-events:none}
 [hidden]{display:none!important}
-@media(max-width:640px){#bar{gap:8px;padding:0 8px 0 12px}.brand{display:none}nav button{padding:0 12px;min-width:52px;font-size:15px}#status{font-size:14px}}
+
+
+#portal-controls{max-width:640px;margin:24px auto 0}
+#portal-controls nav{flex-wrap:wrap;margin-top:16px}
+#stream-status{position:absolute;z-index:2;left:16px;right:16px;top:0;padding:12px;background:#0c121ce0;border-radius:12px;pointer-events:none}

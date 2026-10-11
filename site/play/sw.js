@@ -7,7 +7,7 @@
  * not get the page's local-network and mixed-content treatment.
  *
  * Bump VERSION whenever a file in ASSETS changes; the new worker caches the new files and deletes older caches. */
-const VERSION = 'v5';
+const VERSION = 'v6';
 const CACHE = `tiplay-play-${VERSION}`;
 const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'appearance.js', 'transport.js', 'link.js', 'video.js', 'decoder-worker.js', 'mse.js', 'fmp4.js', 'icon.svg'];
 const OWN = new Set(ASSETS.map(path => new URL(path, self.location).href));

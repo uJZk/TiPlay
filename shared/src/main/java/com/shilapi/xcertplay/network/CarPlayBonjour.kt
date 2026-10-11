@@ -353,7 +353,7 @@ class CarPlayBonjour(
             workerToJoin?.interrupt()
             if (multicastLock.isHeld) multicastLock.release()
         }
-        dnsToClose.forEach { dns -> runCatching { dns.close() } }
+        BonjourMdnsCleanup.closeAll(dnsToClose)
         workerToJoin?.let(::joinWorker)
     }
 

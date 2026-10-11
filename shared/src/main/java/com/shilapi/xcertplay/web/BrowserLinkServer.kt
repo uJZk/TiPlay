@@ -463,6 +463,7 @@ class BrowserLinkServer(
             "display" to status.display?.let { mapOf("w" to it.width, "h" to it.height) },
             "viewport" to status.viewport?.let { mapOf("w" to it.width, "h" to it.height) },
             "fit" to status.fit,
+            "portalRevision" to status.portalRevision,
             "touch" to if (status.touchAvailable) "ok" else "unavailable",
             "phone" to status.phone + mapOf("video" to hub.snapshot(), "link" to performance.snapshot()),
         )

@@ -198,17 +198,25 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun clusterMapEnabled(): Boolean = headUnitIntegrations() && AirPlayPersistence.loadClusterMapEnabled(this)
 
     // Phone + browser mode: the car browser's link logs into this session and asks it to fit the browser's size.
-    // The page's button says "Apply and reconnect", which is the driver's consent to reconnect (AGENTS.md).
-    private val browserLinkHost = object : TeslaBrowserLink.Host {
+    // Browser resize reconnects automatically after settling; the portal also offers a manual retry.
+    private val browserLinkHost: TeslaBrowserLink.Host = object : TeslaBrowserLink.Host {
         override fun log(message: String) = AsyncDiagnosticLog.append(sessionLog, message)
         override fun onBrowserTheme(night: Boolean) {
             nightModeController.systemChanged(night)
+        }
+        override fun onBrowserViewport(viewport: com.shilapi.xcertplay.web.BrowserViewport) {
+            mainHandler.removeCallbacks(applyBrowserViewport)
+            mainHandler.postDelayed(applyBrowserViewport, 450L)
         }
         override fun onBrowserFit() {
             val running = sessionDisplay?.takeIf { controller != null && !headUnitIntegrations() }
             TeslaBrowserLink.fitReason(this@CarPlayHostActivity,
                 running?.let { com.shilapi.xcertplay.web.BrowserSize(it.width, it.height) })?.let(::restartCarPlay)
         }
+    }
+
+    private val applyBrowserViewport = Runnable {
+        if (!headUnitIntegrations() && !shuttingDown.get()) browserLinkHost.onBrowserFit()
     }
 
     private val vpnConsent =
@@ -4106,6 +4114,8 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun scheduleDisplaySize(width: Int, height: Int) {
+        // The browser owns a running phone session's canvas; phone rotation must not reconnect it.
+        if (!headUnitIntegrations() && controller != null) return
         if (width <= 0 || height <= 0 || shuttingDown.get()) return
         val size = DisplaySize(width, height)
         if (size == pendingDisplaySize) return
@@ -4410,6 +4420,8 @@ class CarPlayHostActivity : ComponentActivity() {
         teardownExecutor.execute {
             val started = System.nanoTime()
             oldController?.close()
+            // Codec release can run while the controller releases transport resources.
+            oldSink?.close()
             val completed = oldController?.awaitClosed(CONTROLLER_CLOSE_TIMEOUT_MILLIS) ?: true
             AsyncDiagnosticLog.append(
                 diagnosticLog,
@@ -4555,6 +4567,8 @@ class CarPlayHostActivity : ComponentActivity() {
         } else {
             maybeStartCarPlay()
         }
+        // A browser resize can settle while this menu temporarily blocks restarts.
+        if (!headUnitIntegrations()) browserLinkHost.onBrowserFit()
     }
 
     private fun exitApplication() {

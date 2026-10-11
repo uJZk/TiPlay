@@ -1,0 +1,2 @@
+# The golden protocol description is compared byte-for-byte with generated JSON.
+shared/src/test/resources/web/records-v1.json text eol=lf

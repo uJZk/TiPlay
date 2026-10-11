@@ -111,6 +111,18 @@ class CarPlayHostBrowserLinkTest {
         assertEquals(60, config.main.fps)
     }
 
+    @Test fun rotatingThePhoneDoesNotResizeARunningBrowserSession() {
+        val controller = org.mockito.Mockito.mock(CarPlayController::class.java)
+        org.mockito.Mockito.`when`(controller.phoneBrowserMode()).thenReturn(true)
+        set("controller", controller)
+        val original = size(1080, 2200)
+        set("activeDisplaySize", original)
+        activity.javaClass.getDeclaredMethod("scheduleDisplaySize", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, 2200, 1080)
+        assertSame(original, get("activeDisplaySize"))
+        assertNull(get("pendingDisplaySize"))
+    }
+
     @Test fun selectedFrameRateReachesTheIphoneAndBrowserStream() {
         set("fps", 30)
         assertEquals(30, config(1080, 2200).main.fps)
@@ -192,6 +204,27 @@ class CarPlayHostBrowserLinkTest {
         saveViewport(BrowserViewport(1182, 920, 773.0, 601.0, 1.53))
         (get("browserLinkHost") as TeslaBrowserLink.Host).onBrowserFit()
         assertEquals(0, get("restartGeneration"))
+    }
+
+    @Test fun browserResizeReconnectsOnceAfterTheLatestViewportSettles() {
+        startSession(1280, 720, 1080, 2200)
+        set("controller", org.mockito.Mockito.mock(CarPlayController::class.java).also {
+            org.mockito.Mockito.`when`(it.phoneBrowserMode()).thenReturn(true)
+        })
+        val host = get("browserLinkHost") as TeslaBrowserLink.Host
+        val first = BrowserViewport(1182, 920, 773.0, 601.0, 1.53)
+        saveViewport(first)
+        host.onBrowserViewport(first)
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(300))
+        assertEquals(0, get("restartGeneration"))
+        val latest = BrowserViewport(1600, 900, 1046.0, 588.0, 1.53)
+        saveViewport(latest)
+        host.onBrowserViewport(latest)
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(449))
+        assertEquals(0, get("restartGeneration"))
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(1))
+        assertEquals(1, get("restartGeneration"))
+        assertTrue(get("handshakeResetInProgress") as Boolean)
     }
 
     private fun saveViewport(viewport: BrowserViewport) {

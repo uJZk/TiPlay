@@ -14,21 +14,12 @@
 <script type="module" src="app.js"></script>
 </head>
 <body>
-<header id="bar">
-<strong class="brand">TiPlay</strong>
-<p id="status" role="status" aria-live="polite"></p>
-<nav>
-<button id="fit" class="primary" type="button" data-i18n="fit" hidden></button>
-<button id="stats-toggle" type="button" data-i18n="stats" aria-pressed="false" hidden></button>
-<button id="fullscreen" type="button" data-i18n="fullscreen"></button>
-<button id="disconnect" type="button" data-i18n="disconnect" hidden></button>
-</nav>
-</header>
 <main>
 <section id="panel" aria-labelledby="title">
 <form id="link-form" novalidate>
 <h1 id="title" data-i18n="heading"></h1>
 <p data-i18n="intro"></p>
+<p class="hint" data-i18n="resizeHelp"></p>
 <label for="code" data-i18n="codeLabel"></label>
 <input id="code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" required>
 <details id="advanced">
@@ -40,10 +31,19 @@
 <button id="connect" class="primary" type="submit" data-i18n="connect"></button>
 <p id="message" role="alert"></p>
 </form>
+<div id="portal-controls">
+<p id="status" role="status" aria-live="polite"></p>
+<nav>
+<button id="fit" class="primary" type="button" data-i18n="fit" hidden></button>
+<button id="stats-toggle" type="button" data-i18n="stats" aria-pressed="false" hidden></button>
+<button id="disconnect" type="button" data-i18n="disconnect" hidden></button>
+</nav>
+</div>
+
 <footer><a href="https://github.com/uJZk/DiPlay" data-i18n="source"></a></footer>
 </section>
 <section id="stage" hidden>
-<canvas id="screen"></canvas>
+<p id="stream-status" role="status" aria-live="polite" hidden></p><canvas id="screen"></canvas>
 <video id="video" muted playsinline disablepictureinpicture disableremoteplayback hidden></video>
 <div id="touch" aria-hidden="true"></div>
 <pre id="stats" hidden></pre>

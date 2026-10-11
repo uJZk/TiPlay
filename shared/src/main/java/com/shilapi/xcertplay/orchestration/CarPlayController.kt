@@ -358,6 +358,7 @@ class CarPlayController(
                     )
                 }.onFailure { debugLog("Car home screen could not open: ${it.javaClass.simpleName}") }
             } else {
+                com.shilapi.xcertplay.web.BrowserPortalSignal.request()
                 debugLog("CarPlay requested the car UI; no head-unit home screen in phone + browser mode")
             }
             uiListener?.onHostUiRequested(session)

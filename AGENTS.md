@@ -2,6 +2,9 @@
 
 Instructions for coding agents that work on TiPlay.
 
+Browser resize, portal and discovery shutdown contracts are documented in `docs/TESLA_BROWSER.md`
+under "Browser session lifecycle".
+
 ## Current progress
 
 See `docs/APK-RELEASE-2026-10-11.md` for the signed 0.2.13 APK, upstream runtime
