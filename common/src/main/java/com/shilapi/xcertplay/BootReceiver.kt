@@ -13,7 +13,9 @@ class BootReceiver : BroadcastReceiver() {
         StartupDiagnosticSnapshot.received(context, launchEnabled)
         if (!launchEnabled) return
 
-        val launch = Intent(context, DiPlayActivity::class.java).apply {
+        val launch = (if (AirPlayPersistence.isPhoneBrowserMode(context))
+            CarPlaySettingsNavigation.mainIntent(context).putExtra(BrowserBootConnectionSettings.CONNECT_AFTER_BOOT, true)
+        else Intent(context, DiPlayActivity::class.java)).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or

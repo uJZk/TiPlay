@@ -202,8 +202,9 @@ class AdaptiveSettingsUiTest {
         val card = chooseImage.parent as LinearLayout
         val preview = card.getChildAt(card.indexOfChild(chooseImage) - 1)
 
-        assertEquals(Math.round(12 * screen.resources.displayMetrics.density),
-            (preview.layoutParams as LinearLayout.LayoutParams).bottomMargin)
+        assertEquals(Math.round(8 * screen.resources.displayMetrics.density),
+            (preview.layoutParams as LinearLayout.LayoutParams).bottomMargin +
+                (chooseImage.layoutParams as LinearLayout.LayoutParams).topMargin)
     }
 
     @Test fun tappingAToggleRowChangesTheSetting() {
@@ -382,7 +383,7 @@ class AdaptiveSettingsUiTest {
                 page.any { it.startsWith(text(R.string.settings_car_bluetooth_audio)) })
             // The hotspot address chooser helps the car browser connect: Connection only.
             assertEquals(text(category), category == R.string.connection,
-                page.any { it.startsWith(text(R.string.settings_hotspot_address_method) + " · ") })
+                page.any { it.startsWith(text(R.string.settings_browser_hotspot_address_repair) + " · ") })
         }
 
         // Product entry consolidates the retained category APIs into the single advanced menu.
@@ -391,7 +392,7 @@ class AdaptiveSettingsUiTest {
                 CarPlaySettingsNavigation.pageIntent(context, SettingsCategory.ADVANCED)))
         val browserAdvanced = texts(screen).map { it.text.toString() }.toList()
         assertTrue(browserAdvanced.any { it.startsWith(text(R.string.frame_rate) + " · ") })
-        assertTrue(text(R.string.settings_hevc_experimental) in browserAdvanced)
+        assertTrue(text(R.string.settings_browser_hevc_title) in browserAdvanced)
         assertTrue(text(R.string.right_hand_drive) in browserAdvanced)
         assertTrue(text(R.string.save_diagnostic_report) in browserAdvanced)
         assertFalse(text(R.string.connect_when_diplay_opens) in browserAdvanced)

@@ -260,7 +260,7 @@
     <string name="open">Abrir</string>
     <string name="open_after_the_car_starts">Abrir después de arrancar el coche</string>
     <string name="open_bluetooth">Abrir Bluetooth</string>
-    <string name="open_car_hotspot_settings">Abrir ajustes del punto de acceso del dispositivo Android</string>
+    <string name="open_car_hotspot_settings">Abrir ajustes del sistema del punto de acceso</string>
     <string name="open_car_settings">Abrir ajustes del coche</string>
     <string name="open_car_wi_fi_settings">Abrir ajustes Wi‑Fi del coche</string>
     <string name="open_carplay">Abrir CarPlay</string>
@@ -632,9 +632,9 @@
     <string name="settings_interface_size_auto">Automático</string>
     <string name="settings_interface_size_hint">Tamaño del texto y los controles en las pantallas de TiPlay. Automático los agranda en pantallas grandes de baja densidad. No afecta a CarPlay.</string>
     <string name="settings_external_ap_hint">Conecta Android, el iPhone y el navegador del coche a la misma red Wi-Fi externa. Este modo no inicia un punto de acceso en Android. Usa una red abierta o WPA2. Si el navegador no puede acceder a Android, comprueba el aislamiento de clientes del AP.</string>
-    <string name="settings_external_ap_wifi">Abrir ajustes de Wi-Fi</string>
-    <string name="settings_external_ap_ready">Conectado a la red Wi-Fi configurada.</string>
-    <string name="settings_external_ap_check">Únete a la red Wi-Fi configurada en los ajustes del sistema. Si el nombre no está disponible, compruébalo manualmente; guardar las credenciales no conecta a Wi-Fi.</string>
+    <string name="settings_external_ap_wifi">Abrir ajustes de Wi-Fi del sistema</string>
+    <string name="settings_external_ap_ready">Este dispositivo está conectado a la red Wi-Fi indicada.</string>
+    <string name="settings_external_ap_check">Este dispositivo no está conectado a la red Wi-Fi indicada.</string>
     <string name="settings_android_address">Dirección de Android: %1$s</string>
     <string name="settings_main_stopping">Desconectando…</string>
 </resources>

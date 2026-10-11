@@ -260,7 +260,7 @@
     <string name="open">فتح</string>
     <string name="open_after_the_car_starts">الفتح بعد تشغيل السيارة</string>
     <string name="open_bluetooth">فتح البلوتوث</string>
-    <string name="open_car_hotspot_settings">فتح إعدادات نقطة اتصال جهاز Android</string>
+    <string name="open_car_hotspot_settings">فتح إعدادات نقطة الاتصال في النظام</string>
     <string name="open_car_settings">فتح إعدادات السيارة</string>
     <string name="open_car_wi_fi_settings">فتح إعدادات واي فاي السيارة</string>
     <string name="open_carplay">فتح CarPlay</string>
@@ -632,9 +632,9 @@
     <string name="settings_interface_size_auto">تلقائي</string>
     <string name="settings_interface_size_hint">حجم النص وعناصر التحكم في شاشات TiPlay. يكبّرها الوضع التلقائي على الشاشات الكبيرة منخفضة الكثافة. لا يتأثر CarPlay.</string>
     <string name="settings_external_ap_hint">وصّل جهاز Android وiPhone ومتصفح السيارة بشبكة Wi-Fi خارجية واحدة. لا يشغّل هذا الوضع نقطة اتصال على Android. استخدم شبكة مفتوحة أو WPA2. إذا تعذّر على المتصفح الوصول إلى Android، فتحقق من عزل الأجهزة في نقطة الوصول.</string>
-    <string name="settings_external_ap_wifi">فتح إعدادات Wi-Fi</string>
-    <string name="settings_external_ap_ready">متصل بشبكة Wi-Fi المحددة.</string>
-    <string name="settings_external_ap_check">انضم إلى شبكة Wi-Fi المحددة من إعدادات النظام. إذا لم يظهر اسم الشبكة، فتحقق منه يدويًا؛ حفظ بيانات الشبكة لا يتصل بها.</string>
+    <string name="settings_external_ap_wifi">فتح إعدادات Wi-Fi في النظام</string>
+    <string name="settings_external_ap_ready">هذا الجهاز متصل بشبكة Wi-Fi المطلوبة.</string>
+    <string name="settings_external_ap_check">هذا الجهاز غير متصل بشبكة Wi-Fi المطلوبة.</string>
     <string name="settings_android_address">عنوان Android: %1$s</string>
     <string name="settings_main_stopping">جارٍ قطع الاتصال…</string>
 </resources>

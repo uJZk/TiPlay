@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_boot_connect">开机后自动连接</string>
+    <string name="settings_browser_network_configuration">网络配置</string>
+    <string name="settings_browser_connection_status">连接状态</string>
+    <string name="settings_browser_carplay_connection_mode">CarPlay 连接模式</string>
+    <string name="settings_browser_hotspot_on">本机热点已开启</string>
+    <string name="settings_browser_hotspot_off">本机热点未开启</string>
+    <string name="settings_browser_hotspot_unknown">无法读取本机热点状态</string>
+    <string name="settings_return_and_apply">返回并应用</string>
+    <string name="settings_permission_bluetooth">蓝牙</string>
+    <string name="settings_permission_microphone">麦克风</string>
+    <string name="settings_permission_notifications">通知</string>
+    <string name="settings_permission_local_network">本地网络</string>
+    <string name="settings_permission_location">位置信息</string>
+    <string name="settings_permission_group">权限</string>
+    <string name="settings_report_save_failed">保存失败!</string>
+    <string name="settings_report_copy_full_text">复制全文</string>
+    <string name="settings_report_saved_at">报告已保存到：</string>
+    <string name="settings_browser_hevc_title">HEVC (H.265)</string>
+    <string name="settings_browser_hotspot_address_repair">热点地址修复</string>
+    <string name="settings_browser_hotspot_address">热点地址</string>
+    <string name="settings_browser_hotspot_endpoint">热点地址: %1$s</string>
+    <string name="settings_browser_more">更多</string>
+    <string name="settings_selected_iphone">iPhone · %1$s</string>
+    <string name="settings_browser_vpn_endpoint_hint">地址范围为 169.254.0.0/16，端口为 1024–65535, 例如 169.254.220.253:8080。修改端口后请在网页中填写新的安卓端地址。</string>
+    <string name="settings_browser_vpn_endpoint_invalid">请输入 169.254.0.0/16 内的有效地址和端口（1024–65535），例如 169.254.220.253:8080。</string>
+</resources>

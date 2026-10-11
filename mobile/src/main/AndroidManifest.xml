@@ -15,9 +15,18 @@
         android:theme="@style/Theme.Xcertplay">
 
         <activity android:name="com.shilapi.xcertplay.DiPlayActivity"
-            android:theme="@style/Theme.TiPlayNative" tools:replace="android:theme" />
+            android:exported="true"
+            android:theme="@style/Theme.TiPlayNative" tools:replace="android:theme">
+            <intent-filter tools:node="removeAll" />
+        </activity>
         <activity android:name="com.shilapi.xcertplay.CarPlayHostActivity"
-            android:theme="@style/Theme.TiPlayNative" tools:replace="android:theme" />
+            android:exported="true"
+            android:theme="@style/Theme.TiPlayNative" tools:replace="android:theme">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
         <meta-data
             android:name="android.allow_multiple_resumed_activities"

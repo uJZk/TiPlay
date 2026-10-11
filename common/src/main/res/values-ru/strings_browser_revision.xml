@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_boot_connect">Подключаться после запуска устройства</string>
+    <string name="settings_browser_network_configuration">Настройка сети</string>
+    <string name="settings_browser_connection_status">Состояние подключения</string>
+    <string name="settings_browser_carplay_connection_mode">Режим подключения CarPlay</string>
+    <string name="settings_browser_hotspot_on">Точка доступа устройства включена</string>
+    <string name="settings_browser_hotspot_off">Точка доступа устройства выключена</string>
+    <string name="settings_browser_hotspot_unknown">Состояние точки доступа устройства недоступно</string>
+    <string name="settings_return_and_apply">Назад и применить</string>
+    <string name="settings_permission_bluetooth">Bluetooth</string>
+    <string name="settings_permission_microphone">Микрофон</string>
+    <string name="settings_permission_notifications">Уведомления</string>
+    <string name="settings_permission_local_network">Локальная сеть</string>
+    <string name="settings_permission_location">Местоположение</string>
+    <string name="settings_permission_group">Разрешения</string>
+    <string name="settings_report_save_failed">Не удалось сохранить!</string>
+    <string name="settings_report_copy_full_text">Копировать весь текст</string>
+    <string name="settings_report_saved_at">Отчёт сохранён в:</string>
+    <string name="settings_browser_hevc_title">HEVC (H.265)</string>
+    <string name="settings_browser_hotspot_address_repair">Исправление адреса точки доступа</string>
+    <string name="settings_browser_hotspot_address">Адрес точки доступа</string>
+    <string name="settings_browser_hotspot_endpoint">Адрес точки доступа: %1$s</string>
+    <string name="settings_browser_more">Ещё</string>
+    <string name="settings_selected_iphone">iPhone · %1$s</string>
+    <string name="settings_browser_vpn_endpoint_hint">Диапазоны адресов: 169.254.0.0/16, порты 1024–65535, например 169.254.220.253:8080. После смены порта введите новый адрес Android на странице.</string>
+    <string name="settings_browser_vpn_endpoint_invalid">Введите адрес из 169.254.0.0/16 и порт (1024–65535), например 169.254.220.253:8080.</string>
+</resources>

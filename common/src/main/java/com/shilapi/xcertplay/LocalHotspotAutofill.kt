@@ -11,10 +11,12 @@ import com.shilapi.xcertplay.host.R
 /** Optional import alongside the original editable fields. Results never overwrite concurrent typing. */
 internal object LocalHotspotAutofill {
     private val probes = LatestSettingsProbe<LocalHotspotSettings.Credentials?>("tiplay-hotspot-read")
-    fun attach(parent: LinearLayout, ssid: EditText, password: EditText, controlsParent: LinearLayout = parent): LinearLayout {
+    fun attach(parent: LinearLayout, ssid: EditText, password: EditText, controlsParent: LinearLayout = parent,
+        showHint: Boolean = true): LinearLayout {
         val status = TextView(parent.context).apply {
             setText(R.string.settings_hotspot_read_hint)
             setTextColor(ssid.currentTextColor)
+            visibility = if (showHint) View.VISIBLE else View.GONE
         }
         val button = Button(parent.context).apply { setText(R.string.settings_hotspot_read); isAllCaps = false }
         val controls = LinearLayout(parent.context).apply {
@@ -34,6 +36,7 @@ internal object LocalHotspotAutofill {
                 deliver = { result ->
                     if (parent.isShown && parent.isAttachedToWindow) {
                         status.setText(if (result == null) R.string.settings_hotspot_read_unavailable else R.string.settings_hotspot_read_hint)
+                        status.visibility = if (showHint || result == null) View.VISIBLE else View.GONE
                         if (result != null) {
                             if (ssid.text.toString() == beforeName && (replace || beforeName.isBlank())) ssid.setText(result.ssid)
                             if (password.text.toString() == beforePassword && (replace || beforePassword.isBlank())) {

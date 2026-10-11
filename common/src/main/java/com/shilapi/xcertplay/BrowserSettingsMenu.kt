@@ -28,7 +28,8 @@ internal object BrowserSettingsMenu {
         })
     }
 
-    fun addHotspotAddress(parent: LinearLayout, activity: Activity, methodParent: LinearLayout? = null): () -> Unit {
+    fun addHotspotAddress(parent: LinearLayout, activity: Activity, methodParent: LinearLayout? = null,
+        onMethodChanged: (() -> Unit)? = null): () -> Unit {
         val rows = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         parent.addView(rows, LinearLayout.LayoutParams(-1, -2))
         val methodRows = methodParent?.let { target ->
@@ -43,7 +44,7 @@ internal object BrowserSettingsMenu {
             HotspotExtraAddressCard(activity, indexing = false, colors = colors(activity),
                 note = { note(activity, it) },
                 settingRow = { target, text, click -> button(target, text, click); Unit },
-                actionButton = ::button, rerender = ::render,
+                actionButton = ::button, rerender = onMethodChanged ?: ::render,
             ).build(rows)
             // Put the method chooser before status/explanation lines.
             val chooser = (0 until rows.childCount).map(rows::getChildAt).firstOrNull { it is Button }

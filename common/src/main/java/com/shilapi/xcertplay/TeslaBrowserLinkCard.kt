@@ -45,27 +45,38 @@ internal class TeslaBrowserLinkCard(
     private var probeToken: LatestSettingsProbe.Token? = null
 
     fun build(parent: LinearLayout) {
-        val status = note("").also(parent::addView)
+        val status = note("")
         showState(status, TeslaBrowserLink.state)
-        localNetworkRows(parent)
         // The index needs the title only; a first build of the card creates the code, which needs no network.
         val code = if (indexing) "" else TeslaBrowserLink.pairingCode(app)
-        settingRow(parent, "${activity.getString(R.string.settings_browser_pairing_code)} · $code") { showPairingCode() }
-        if (indexing) return
+        if (indexing) {
+            settingRow(parent, activity.getString(R.string.settings_browser_pairing_code)) { }
+            return
+        }
 
         parent.addView(note(activity.getString(R.string.settings_browser_link_car)).withTopPadding())
-        // Final at once with the extra address; otherwise the probe adds the hotspot's own address as `t`.
-        var copyPageLink = TeslaBrowserLink.pageLink(app, hotspotAddress = null)
-        val pageLink = linkText(copyPageLink).also(parent::addView)
+        val pageAddress = TeslaBrowserLink.pageAddress(app).removeSuffix("/")
+        fun connectionLink(hotspot: String?): String = TeslaBrowserPageLinks.pageLink(
+            TeslaBrowserLink.pageAddress(app), code,
+            TeslaBrowserLink.browserAddress(app, hotspot) ?: TeslaBrowserPageLinks.PAGE_DEFAULT_PHONE_ADDRESS,
+            BrowserEndpointSettings.port(app), explicitEndpoint = true)
+        var copyPageLink = connectionLink(null)
+        parent.addView(linkText(pageAddress))
         actionRow(parent, activity.getString(R.string.settings_browser_link_copy)) { copy(copyPageLink) }
+        settingRow(parent, "${activity.getString(R.string.settings_browser_pairing_code)} · $code") { showPairingCode() }
+        parent.addView(note(activity.getString(R.string.settings_browser_android_address)).withTopPadding())
+        val endpoint = linkText("").also(parent::addView)
+        parent.addView(status)
+        localNetworkRows(parent)
 
         var hotspotAddress: String? = null
         val showLinks: (String?) -> Unit = { hotspot ->
             if (status.isAttachedToWindow) {
                 hotspotAddress = hotspot
-                val page = TeslaBrowserLink.pageLink(app, hotspot)
-                copyPageLink = page
-                pageLink.text = page
+                copyPageLink = connectionLink(hotspot)
+                val address = TeslaBrowserLink.browserAddress(app, hotspot)
+                    ?: TeslaBrowserPageLinks.PAGE_DEFAULT_PHONE_ADDRESS
+                endpoint.text = "$address:${BrowserEndpointSettings.port(app)}"
             }
         }
 
@@ -88,6 +99,7 @@ internal class TeslaBrowserLinkCard(
                 HotspotExtraAddressKeeper.addListener(keeperListener)
                 HotspotAddressVpn.addListener(vpnListener)
                 showState(status, TeslaBrowserLink.state) // it may have changed since build()
+                showLinks(hotspotAddress)
                 probe(showLinks)
             }
             override fun onViewDetachedFromWindow(view: View) {
@@ -112,6 +124,7 @@ internal class TeslaBrowserLinkCard(
         }
         line.text = text
         line.setTextColor(color)
+        line.visibility = if (state is TeslaBrowserLink.State.Listening) View.GONE else View.VISIBLE
     }
 
     private fun localNetworkRows(parent: LinearLayout) {
@@ -146,7 +159,7 @@ internal class TeslaBrowserLinkCard(
     }
 
     /**
-     * The HTTPS page names the added address, or the hotspot address discovered off the UI thread.
+     * Resolve the Android address from the configured extra address or a hotspot probe off the UI thread.
      */
     private fun probe(show: (String?) -> Unit) {
         val context = app // The worker must not retain this card or its activity.
@@ -164,6 +177,7 @@ internal class TeslaBrowserLinkCard(
 
     private fun linkText(text: String): TextView = note(text).apply {
         setTextIsSelectable(true)
+        TiPlayNativeUi(activity).emphasize(this)
         setPadding(0, dp(4), 0, dp(4))
     }
 
@@ -172,7 +186,6 @@ internal class TeslaBrowserLinkCard(
     private fun copy(link: String) {
         val clipboard = activity.getSystemService(ClipboardManager::class.java) ?: return
         val clip = ClipData.newPlainText(activity.getString(R.string.app_name), link)
-        // The link carries the pairing code: keep it out of the clipboard preview.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
         }

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_boot_connect">開機後自動連線</string>
+    <string name="settings_browser_network_configuration">網路設定</string>
+    <string name="settings_browser_connection_status">連線狀態</string>
+    <string name="settings_browser_carplay_connection_mode">CarPlay 連線模式</string>
+    <string name="settings_browser_hotspot_on">本機熱點已開啟</string>
+    <string name="settings_browser_hotspot_off">本機熱點未開啟</string>
+    <string name="settings_browser_hotspot_unknown">無法讀取本機熱點狀態</string>
+    <string name="settings_return_and_apply">返回並套用</string>
+    <string name="settings_permission_bluetooth">藍牙</string>
+    <string name="settings_permission_microphone">麥克風</string>
+    <string name="settings_permission_notifications">通知</string>
+    <string name="settings_permission_local_network">區域網路</string>
+    <string name="settings_permission_location">位置資訊</string>
+    <string name="settings_permission_group">權限</string>
+    <string name="settings_report_save_failed">儲存失敗!</string>
+    <string name="settings_report_copy_full_text">複製全文</string>
+    <string name="settings_report_saved_at">報告已儲存至：</string>
+    <string name="settings_browser_hevc_title">HEVC (H.265)</string>
+    <string name="settings_browser_hotspot_address_repair">熱點位址修復</string>
+    <string name="settings_browser_hotspot_address">熱點位址</string>
+    <string name="settings_browser_hotspot_endpoint">熱點位址: %1$s</string>
+    <string name="settings_browser_more">更多</string>
+    <string name="settings_selected_iphone">iPhone · %1$s</string>
+    <string name="settings_browser_vpn_endpoint_hint">位址範圍為 169.254.0.0/16，連接埠為 1024–65535, 例如 169.254.220.253:8080。修改連接埠後請在網頁中填寫新的 Android 端位址。</string>
+    <string name="settings_browser_vpn_endpoint_invalid">請輸入 169.254.0.0/16 內的有效位址和連接埠（1024–65535），例如 169.254.220.253:8080。</string>
+</resources>

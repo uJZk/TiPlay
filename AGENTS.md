@@ -5,6 +5,9 @@ Instructions for coding agents that work on TiPlay.
 Browser resize, portal and discovery shutdown contracts are documented in `docs/TESLA_BROWSER.md`
 under "Browser session lifecycle".
 
+Phone settings, connection drafts, explicit apply/reconnect and boot behavior follow
+`docs/APP-MAIN-PAGE-DESIGN.md` and `docs/APP-MAIN-PAGE-IMPLEMENTATION.md`.
+
 ## Current progress
 
 See `docs/WEB-DEBUG-2026-10-11.md` for the five-field Debug overlay, rolling statistics,

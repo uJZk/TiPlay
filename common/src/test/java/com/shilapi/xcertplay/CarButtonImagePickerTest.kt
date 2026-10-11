@@ -237,7 +237,8 @@ class CarButtonImagePickerTest {
 
     private fun withHome(check: (DiPlayActivity) -> Unit) {
         CarPlayBackgroundSession.clear()
-        val controller = Robolectric.buildActivity(DiPlayActivity::class.java)
+        val controller = Robolectric.buildActivity(DiPlayActivity::class.java,
+            Intent().putExtra("page", "settings"))
         val activity = controller.get()
         activity.setTheme(android.R.style.Theme_Material_NoActionBar)
         controller.setup().visible()

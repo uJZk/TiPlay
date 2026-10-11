@@ -5,12 +5,12 @@
     <string name="settings_hotspot_address_blocked">Es probable que el navegador del Tesla no pueda abrir esta dirección. Elige abajo otro método de dirección del punto de acceso.</string>
     <string name="settings_hotspot_not_found">No se encontró ningún punto de acceso. Activa el punto de acceso de este teléfono.</string>
     <string name="settings_hotspot_address_method">Dirección del punto de acceso</string>
-    <string name="settings_hotspot_method_normal">Sin privilegios</string>
+    <string name="settings_hotspot_method_normal">Ninguno</string>
     <string name="settings_hotspot_method_root">Root</string>
-    <string name="settings_hotspot_method_vpn">VPN (experimental)</string>
+    <string name="settings_hotspot_method_vpn">VPN</string>
     <string name="settings_hotspot_method_shizuku">Shizuku</string>
     <string name="settings_hotspot_method_vpn_unlikely">Probablemente no funciona en este teléfono</string>
-    <string name="settings_hotspot_method_normal_description">No añade ninguna dirección y no necesita nada. Úsalo con otros navegadores de coche o cuando la dirección del punto de acceso ya está dentro de 100.64.0.0/10. Se aplica al instante; no hace falta reconectar.</string>
+    <string name="settings_hotspot_method_normal_description">Para navegadores de coches que no sean Tesla, o si la dirección del punto de acceso ya está en 100.64.0.0/10.</string>
     <string name="settings_hotspot_method_root_description">Requiere root. Añade %1$s al punto de acceso de este teléfono para que el navegador del Tesla pueda llegar a TiPlay, y la vuelve a añadir cuando el punto de acceso se reinicia. Se aplica al instante; no hace falta reconectar.</string>
     <string name="settings_hotspot_method_vpn_description">Sin root. Mantiene %1$s en una VPN que solo usa TiPlay, así que no afecta a otras apps. Android pide una vez permiso para la VPN, y no puede haber otra VPN activa a la vez. Se aplica al instante; no hace falta reconectar.</string>
     <string name="settings_hotspot_method_shizuku_description">Sin root, pero necesita Shizuku en ejecución y con acceso para TiPlay. Vuelve a iniciar Shizuku cada vez que reinicies el teléfono, con la depuración inalámbrica (necesita Wi-Fi) o desde un ordenador por USB. Añade %1$s al punto de acceso de este teléfono y la vuelve a añadir cuando el punto de acceso se reinicia. Shizuku no puede quitarla, así que, si eliges otro método, se queda hasta que el punto de acceso se reinicie. Se aplica al instante; no hace falta reconectar.</string>

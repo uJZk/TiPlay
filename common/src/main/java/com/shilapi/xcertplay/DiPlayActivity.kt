@@ -136,6 +136,8 @@ class DiPlayActivity : ComponentActivity() {
     private var connectionSettingsReturnCategory: SettingsCategory? = null
     private var settingsSectionFilter: Set<SettingsSection>? = null
     private var hostSettingsPage = false
+    private var browserAdvancedPage: BrowserAdvancedPage? = null
+    private var browserAdvancedState: Bundle? = null
     private var clusterSafeAreaDialog: Dialog? = null
     private var clusterContentRequestVersion = 0L
     private var pendingCarHotspotSetup = false
@@ -224,6 +226,9 @@ class DiPlayActivity : ComponentActivity() {
     }
     // Android 17, phone + browser mode: the car browser's connections need the local network permission.
     private val localNetworkPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { render() }
+    private val browserPagePermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        browserAdvancedPage?.refresh()
+    }
     private val tick = object : Runnable {
         override fun run() { refreshStatus(); handler.postDelayed(this, 1000) }
     }
@@ -325,6 +330,7 @@ class DiPlayActivity : ComponentActivity() {
             settingsCategory = savedInstanceState?.getString("settings_category")
                 ?.let { name -> SettingsCategory.valueOf(name) } ?: it
         }
+        browserAdvancedState = savedInstanceState
         render()
         scheduleAutomaticVehicleValidation()
         handleWirelessRecovery()
@@ -344,6 +350,7 @@ class DiPlayActivity : ComponentActivity() {
         if (isLauncherIntent(intent) && AirPlayPersistence.isPhoneBrowserMode(this)) {
             page = "home"
             startActivity(CarPlaySettingsNavigation.mainIntent(this))
+            finish()
             return
         }
         if (isLauncherIntent(intent) && CarPlayBackgroundSession.hasSession()) {
@@ -358,6 +365,7 @@ class DiPlayActivity : ComponentActivity() {
         handleWirelessRecovery()
     }
     override fun onSaveInstanceState(outState: Bundle) {
+        browserAdvancedPage?.retain(outState)
         outState.putString("page", page)
         outState.putString("settings_category", settingsCategory.name)
         connectionSettingsReturnCategory?.let { outState.putString("connection_settings_return_category", it.name) }
@@ -484,6 +492,32 @@ class DiPlayActivity : ComponentActivity() {
         }
 
     private fun render() {
+        // The browser product has one main page; old internal home intents must not revive its predecessor.
+        if (page == "home" && AirPlayPersistence.isPhoneBrowserMode(this)) {
+            startActivity(CarPlaySettingsNavigation.mainIntent(this))
+            finish()
+            return
+        }
+        if (AirPlayPersistence.isPhoneBrowserMode(this) && (page == "about" || page == "settings" && hostSettingsPage)) {
+            val ui = TiPlayNativeUi(this)
+            val productPage = if (page == "about") BrowserAboutPage.build(this, version(), ::navigateBack) else {
+                val advanced = browserAdvancedPage ?: BrowserAdvancedPage(this, browserAdvancedState,
+                    requestPermissions = { browserPagePermissions.launch(it) }, changed = ::markReconnectNeeded,
+                    returnToMain = { apply ->
+                        startActivity(CarPlaySettingsNavigation.mainIntent(this).putExtra(CarPlaySettingsNavigation.APPLY, apply))
+                        finish()
+                    }, saveReport = { exportDiagnostics() }).also { browserAdvancedPage = it }
+                advanced.refresh()
+                exportButton = advanced.reportButton.apply {
+                    isEnabled = !exportInProgress
+                    if (exportInProgress) setText(R.string.saving_report)
+                }
+                advanced.view
+            }
+            ui.applyWindow(this)
+            setContentView(productPage)
+            return
+        }
         enforceInterfaceSize()
         // A pending assignment belongs to the widgets being replaced, never to another page.
         cancelKeyLearning()
@@ -516,7 +550,8 @@ class DiPlayActivity : ComponentActivity() {
             settingsCategoryContent(content)
             expandedSettingsShell(header, scroll)
         } else {
-            if (compact) content.setPadding(dp(12), dp(10), dp(12), dp(12))
+            if (AirPlayPersistence.isPhoneBrowserMode(this)) content.setPadding(dp(16), dp(12), dp(16), dp(16))
+            else if (compact) content.setPadding(dp(12), dp(10), dp(12), dp(12))
             else content.setPadding(dp(32), dp(24), dp(32), dp(32))
             content.addView(header)
             content.addView(space(if (compact) 8 else 24))
@@ -3993,7 +4028,11 @@ class DiPlayActivity : ComponentActivity() {
     private fun exportDiagnostics(uri: Uri? = null) {
         if (exportInProgress) return
         exportInProgress = true
-        exportButton?.apply { isEnabled = false; text = getString(R.string.saving_report) }
+        exportButton?.apply {
+            isEnabled = false
+            text = getString(R.string.saving_report)
+            if (AirPlayPersistence.isPhoneBrowserMode(this@DiPlayActivity)) typeface = Button(this@DiPlayActivity).typeface
+        }
         val appContext = applicationContext
         val fileName = reportFileName()
         Thread({
@@ -4081,6 +4120,16 @@ class DiPlayActivity : ComponentActivity() {
                 exportInProgress = false
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 exportButton?.apply { isEnabled = true; text = getString(R.string.save_diagnostic_report) }
+                if (AirPlayPersistence.isPhoneBrowserMode(this)) {
+                    if (result.isSuccess) {
+                        val (savedReport, report) = result.getOrThrow()
+                        BrowserDiagnosticResultUi.saved(this, savedReport, report)
+                    } else exportButton?.apply {
+                        setText(R.string.settings_report_save_failed)
+                        TiPlayNativeUi(this@DiPlayActivity).emphasize(this)
+                    }
+                    return@runOnUiThread
+                }
                 if (result.isSuccess) {
                     val (savedReport, report) = result.getOrThrow()
                     AlertDialog.Builder(this).setTitle(getString(R.string.diagnostic_report_saved))
@@ -4229,7 +4278,7 @@ class DiPlayActivity : ComponentActivity() {
         searchIndexSink?.add(title)
         val card = card()
         val heading = row().apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(16)) }
-        if (icon != null) heading.addView(ImageView(this).apply {
+        if (icon != null && !AirPlayPersistence.isPhoneBrowserMode(this)) heading.addView(ImageView(this).apply {
             setImageResource(icon); imageTintList = ColorStateList.valueOf(ACCENT)
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }, LinearLayout.LayoutParams(dp(28), dp(28)).apply { marginEnd = dp(12) })
@@ -4294,6 +4343,8 @@ class DiPlayActivity : ComponentActivity() {
 
     private fun toggle(parent: LinearLayout, title: String, description: String, value: Boolean, enabled: Boolean = true, save: (Boolean) -> Unit): Switch {
         searchIndexSink?.add(title)
+        if (AirPlayPersistence.isPhoneBrowserMode(this))
+            return BrowserNativeSettingsUi(this).toggle(parent, title, description, value, enabled, save)
         val result = SettingsWidgets.createSwitchRow(
             context = this,
             label = title,
@@ -4331,15 +4382,17 @@ class DiPlayActivity : ComponentActivity() {
     }
     private fun card() = column().apply {
         if (!AirPlayPersistence.isPhoneBrowserMode(this@DiPlayActivity)) background = rounded(SURFACE, BORDER)
-        setPadding(dp(24), dp(24), dp(24), dp(24))
+        if (!AirPlayPersistence.isPhoneBrowserMode(this@DiPlayActivity)) setPadding(dp(24), dp(24), dp(24), dp(24))
     }
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
-    private fun label(value: String, size: Int, color: Int, bold: Boolean = false) = TextView(this).apply {
-        if (AirPlayPersistence.isPhoneBrowserMode(this@DiPlayActivity)) { text = value; return@apply }
-        text = value; textSize = size.toFloat(); setTextColor(color); gravity = Gravity.CENTER_VERTICAL
-        typeface = if (bold) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.create("sans-serif", Typeface.NORMAL)
-        setLineSpacing(dp(3).toFloat(), 1f)
+    private fun label(value: String, size: Int, color: Int, bold: Boolean = false): TextView {
+        if (AirPlayPersistence.isPhoneBrowserMode(this)) return TiPlayNativeUi(this).label(value, heading = size >= 18)
+        return TextView(this).apply {
+            text = value; textSize = size.toFloat(); setTextColor(color); gravity = Gravity.CENTER_VERTICAL
+            typeface = if (bold) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.create("sans-serif", Typeface.NORMAL)
+            setLineSpacing(dp(3).toFloat(), 1f)
+        }
     }
     private fun button(title: String, primary: Boolean, click: () -> Unit) = SettingButton(this).apply {
         if (AirPlayPersistence.isPhoneBrowserMode(this@DiPlayActivity)) {
@@ -4411,6 +4464,10 @@ class DiPlayActivity : ComponentActivity() {
      * and the last item adds nothing to the card's own padding.
      */
     private fun normalizeSpacing(container: LinearLayout, isCard: Boolean = true) {
+        if (AirPlayPersistence.isPhoneBrowserMode(this)) {
+            BrowserNativeSettingsUi(this).normalizeSpacing(container)
+            return
+        }
         if (container.orientation != LinearLayout.VERTICAL) return
         for (i in container.childCount - 1 downTo 0) {
             if (container.getChildAt(i).tag == SPACER) container.removeViewAt(i)

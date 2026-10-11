@@ -53,25 +53,26 @@ internal class HotspotExtraAddressCard(
         val method = HotspotExtraAddressSettings.method(app)
         val address = HotspotExtraAddressSettings.address(app)
         val text = address.hostAddress.orEmpty()
-        val current = note(activity.getString(R.string.settings_hotspot_address_checking)).also(parent::addView)
+        val current = note(activity.getString(R.string.settings_hotspot_address_checking)).apply {
+            visibility = if (method == HotspotAddressMethod.NORMAL) View.VISIBLE else View.GONE
+            TiPlayNativeUi(activity).emphasize(this)
+        }
         val blocked = note(activity.getString(R.string.settings_hotspot_address_blocked)).apply {
             setTextColor(colors.warning)
             visibility = View.GONE
-        }.also(parent::addView)
-        settingRow(parent, "${activity.getString(R.string.settings_hotspot_address_method)} · ${label(method)}", ::chooseMethod)
-        val description = if (method == HotspotAddressMethod.NORMAL) activity.getString(method.description)
-            else activity.getString(method.description, text)
-        parent.addView(note(description))
-        if (method != HotspotAddressMethod.NORMAL) {
-            settingRow(parent, "${activity.getString(R.string.settings_hotspot_extra_address_value)} · " +
-                "$text:${BrowserEndpointSettings.port(app)}", ::editAddress)
         }
-        if (method == HotspotAddressMethod.VPN && HotspotAddressVpn.probablyBlocked(address)) {
-            parent.addView(note(activity.getString(R.string.settings_hotspot_vpn_unlikely_hint,
-                HotspotExtraAddress.LINK_LOCAL_SUGGESTION)).apply { setTextColor(colors.warning) })
+        settingRow(parent, "${activity.getString(R.string.settings_browser_hotspot_address_repair)} · ${label(method)}", ::chooseMethod)
+        if (method != HotspotAddressMethod.NORMAL) {
+            settingRow(parent, "${activity.getString(R.string.settings_browser_hotspot_address)} · " +
+                "$text:${BrowserEndpointSettings.port(app)}", ::editAddress)
+        } else {
+            parent.addView(current)
+            parent.addView(blocked)
         }
         if (indexing) return
         val status = note("").also(parent::addView)
+        // Keep the probe anchor attached for repaired addresses too, without a duplicate address line.
+        if (method != HotspotAddressMethod.NORMAL) parent.addView(current)
         val action = when (method) {
             HotspotAddressMethod.SHIZUKU -> actionButton(parent, activity.getString(R.string.settings_hotspot_shizuku_allow), ::allowShizuku)
             HotspotAddressMethod.VPN -> actionButton(parent, activity.getString(R.string.settings_hotspot_vpn_allow), ::allowVpn)
@@ -112,10 +113,10 @@ internal class HotspotExtraAddressCard(
 
     private fun chooserItem(method: HotspotAddressMethod): CharSequence {
         val title = label(method)
-        if (method != HotspotAddressMethod.VPN || !HotspotAddressVpn.probablyBlocked(HotspotExtraAddressSettings.address(app))) {
-            return title
+        val hint = when (method) {
+            HotspotAddressMethod.NORMAL -> activity.getString(R.string.settings_hotspot_method_normal_description)
+            else -> return title
         }
-        val hint = activity.getString(R.string.settings_hotspot_method_vpn_unlikely)
         return SpannableStringBuilder(title).append('\n').append(hint).apply {
             setSpan(RelativeSizeSpan(0.8f), length - hint.length, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
@@ -140,7 +141,7 @@ internal class HotspotExtraAddressCard(
             return
         }
         current.text = if (AirPlayPersistence.isPhoneBrowserMode(activity)) {
-            activity.getString(R.string.settings_android_address,
+            activity.getString(R.string.settings_browser_hotspot_endpoint,
                 hotspot.ipv4.joinToString(", ") { "${it.hostAddress.orEmpty()}:${BrowserEndpointSettings.port(app)}" })
         } else activity.getString(R.string.settings_hotspot_current_address,
             hotspot.ipv4.joinToString(", ") { it.hostAddress.orEmpty() })
@@ -207,11 +208,12 @@ internal class HotspotExtraAddressCard(
         if (rootCheckInProgress.get()) return
         val methods = HotspotAddressMethod.entries
         val saved = HotspotExtraAddressSettings.method(app)
-        var pending = methods.indexOf(saved)
         AlertDialog.Builder(activity)
             .setTitle(R.string.settings_hotspot_address_method)
-            .setSingleChoiceItems(methods.map(::chooserItem).toTypedArray(), pending) { _, index -> pending = index }
-            .setPositiveButton(R.string.save) { _, _ -> choose(methods[pending], saved) }
+            .setSingleChoiceItems(methods.map(::chooserItem).toTypedArray(), methods.indexOf(saved)) { dialog, index ->
+                dialog.dismiss()
+                choose(methods[index], saved)
+            }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
@@ -313,6 +315,9 @@ internal class HotspotExtraAddressCard(
     }
 
     private fun editAddress() {
+        val method = HotspotExtraAddressSettings.method(app)
+        val vpn = method == HotspotAddressMethod.VPN
+        val errorMessage = if (vpn) R.string.settings_browser_vpn_endpoint_invalid else R.string.settings_browser_endpoint_invalid
         val saved = HotspotExtraAddressSettings.address(app)
         val savedPort = BrowserEndpointSettings.port(app)
         val input = EditText(activity).apply {
@@ -320,7 +325,8 @@ internal class HotspotExtraAddressCard(
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             keyListener = DigitsKeyListener.getInstance("0123456789.:")
             setText("${saved.hostAddress}:$savedPort")
-            hint = "${HotspotExtraAddress.DEFAULT}:${TeslaBrowserLink.PORT}"
+            TiPlayNativeUi(activity).emphasize(this)
+            hint = "${if (vpn) HotspotExtraAddress.LINK_LOCAL_SUGGESTION else HotspotExtraAddress.DEFAULT}:${TeslaBrowserLink.PORT}"
         }
         val padding = (24 * activity.resources.displayMetrics.density).roundToInt()
         val body = FrameLayout(activity).apply {
@@ -329,16 +335,19 @@ internal class HotspotExtraAddressCard(
         }
         val dialog = AlertDialog.Builder(activity)
             .setTitle(R.string.settings_hotspot_extra_address_value)
-            .setMessage(R.string.settings_browser_endpoint_hint)
+            .setMessage(if (vpn) R.string.settings_browser_vpn_endpoint_hint else R.string.settings_browser_endpoint_hint)
             .setView(body)
             .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
             .create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val endpoint = BrowserEndpointSettings.parse(input.text.toString(), savedPort)
+                // Resolve again on Save in case an external settings update changed the selected repair method.
+                val currentMethod = HotspotExtraAddressSettings.method(app)
+                val endpoint = BrowserEndpointSettings.parse(input.text.toString(), savedPort, currentMethod)
                 if (endpoint == null) {
-                    input.error = activity.getString(R.string.settings_browser_endpoint_invalid)
+                    input.error = activity.getString(if (currentMethod == HotspotAddressMethod.VPN)
+                        R.string.settings_browser_vpn_endpoint_invalid else R.string.settings_browser_endpoint_invalid)
                     return@setOnClickListener
                 }
                 dialog.dismiss()
@@ -351,6 +360,9 @@ internal class HotspotExtraAddressCard(
             }
         }
         dialog.show()
+        if (BrowserEndpointSettings.parse(input.text.toString(), savedPort, method) == null) {
+            input.error = activity.getString(errorMessage)
+        }
     }
 
     companion object {

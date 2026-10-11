@@ -5,12 +5,12 @@
     <string name="settings_hotspot_address_blocked">Браузер Tesla, імовірно, не відкриє цю адресу. Виберіть нижче інший спосіб адреси точки доступу.</string>
     <string name="settings_hotspot_not_found">Точку доступу не знайдено. Увімкніть точку доступу на цьому телефоні.</string>
     <string name="settings_hotspot_address_method">Адреса точки доступу</string>
-    <string name="settings_hotspot_method_normal">Без привілеїв</string>
+    <string name="settings_hotspot_method_normal">Немає</string>
     <string name="settings_hotspot_method_root">Root</string>
-    <string name="settings_hotspot_method_vpn">VPN (експериментально)</string>
+    <string name="settings_hotspot_method_vpn">VPN</string>
     <string name="settings_hotspot_method_shizuku">Shizuku</string>
     <string name="settings_hotspot_method_vpn_unlikely">Імовірно, не працює на цьому телефоні</string>
-    <string name="settings_hotspot_method_normal_description">Нічого не додає і нічого не потребує. Для інших автомобільних браузерів або коли адреса точки доступу вже входить у 100.64.0.0/10. Застосовується одразу, повторне підключення не потрібне.</string>
+    <string name="settings_hotspot_method_normal_description">Для браузерів автомобілів крім Tesla або коли адреса точки доступу вже входить у 100.64.0.0/10.</string>
     <string name="settings_hotspot_method_root_description">Потрібен root. Додає %1$s до точки доступу цього телефону, щоб браузер Tesla міг відкрити TiPlay, і додає її знову після перезапуску точки доступу. Застосовується одразу, повторне підключення не потрібне.</string>
     <string name="settings_hotspot_method_vpn_description">Без root. Тримає %1$s на VPN, яким користується лише TiPlay, тож інші застосунки не зачеплено. Android один раз попросить дозволити VPN; інший VPN у цей час увімкнути не можна. Застосовується одразу, повторне підключення не потрібне.</string>
     <string name="settings_hotspot_method_shizuku_description">Без root, але потрібен запущений Shizuku з дозволом для TiPlay. Запускайте Shizuku знову після кожного перезавантаження телефону — через бездротове налагодження (потрібен Wi-Fi) або з комп’ютера через USB. Додає %1$s до точки доступу цього телефону і додає її знову після перезапуску точки доступу. Shizuku не може видалити адресу, тому після вибору іншого способу вона залишається до перезапуску точки доступу. Застосовується одразу, повторне підключення не потрібне.</string>

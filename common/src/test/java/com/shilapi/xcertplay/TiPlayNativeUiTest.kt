@@ -7,6 +7,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.Switch
+import android.widget.TextView
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -21,6 +22,25 @@ import com.shilapi.xcertplay.host.R
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], qualifiers = "en-notnight")
 class TiPlayNativeUiTest {
+    @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+    @Test fun emphasisSurvivesNativeRestylingAndSelectableTextOnOemFonts() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val ui = TiPlayNativeUi(activity)
+        val link = TextView(activity).apply { text = "https://ujzk.github.io/TiPlay/"; setTextIsSelectable(true) }
+        val ordinary = TextView(activity)
+        val input = EditText(activity)
+        ui.emphasize(input)
+        ui.styleTree(input)
+        assertTrue(input.paint.isFakeBoldText)
+        assertEquals(android.graphics.Typeface.BOLD, input.typeface.style and android.graphics.Typeface.BOLD)
+        ui.emphasize(link)
+        ui.styleTree(link)
+        assertTrue(link.isTextSelectable)
+        assertTrue(link.paint.isFakeBoldText)
+        assertEquals(android.graphics.Typeface.BOLD, link.typeface.style and android.graphics.Typeface.BOLD)
+        assertFalse(ordinary.paint.isFakeBoldText)
+        activity.finish()
+    }
     @Config(sdk = [30])
     @Test fun safeBoundsPreservePagePaddingAcrossInsetsKeyboardAndRotation() {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
@@ -74,6 +94,39 @@ class TiPlayNativeUiTest {
     @Test fun lightAppearanceUsesNativeThemeDefaults() = checkNativeAppearance()
     @Config(qualifiers = "en-night")
     @Test fun darkAppearanceUsesNativeThemeDefaults() = checkNativeAppearance()
+    @Test fun nativeHeadingsKeepTheirThemeAppearanceAfterInheritedStylesAreRemoved() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        activity.setTheme(R.style.Theme_TiPlayNative)
+        val ui = TiPlayNativeUi(activity)
+        val heading = ui.label("Advanced", heading = true)
+        val expected = TextView(activity).apply { setTextAppearance(android.R.style.TextAppearance_Material_Large) }
+        ui.styleTree(heading)
+        assertEquals(expected.textSize, heading.textSize, 0f)
+        assertEquals(expected.textColors, heading.textColors)
+        activity.finish()
+    }
+    @Test fun browserNativeToggleShowsItsFullDescriptionAndSavesOnlyOnInteraction() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        activity.setTheme(R.style.Theme_TiPlayNative)
+        val parent = LinearLayout(activity)
+        val description = "Applies at the next connection. Keep the current session running until the driver reconnects."
+        var changes = 0
+        val toggle = BrowserNativeSettingsUi(activity).toggle(parent, "HEVC", description,
+            value = false, enabled = true) { changes++ }
+        TiPlayNativeUi(activity).styleTree(parent)
+        val group = parent.getChildAt(0) as LinearLayout
+        val note = group.getChildAt(1) as TextView
+        assertEquals(description, note.text.toString())
+        assertEquals(Int.MAX_VALUE, note.maxLines)
+        assertNull(note.ellipsize)
+        assertEquals("HEVC", toggle.text.toString())
+        assertEquals(Switch(activity).thumbTintList, toggle.thumbTintList)
+        assertEquals(0, changes)
+        toggle.performClick()
+        assertTrue(toggle.isChecked)
+        assertEquals(1, changes)
+        activity.finish()
+    }
     @Test fun nativeRestorationPreservesInputSecuritySelectionAndActions() {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         activity.setTheme(R.style.Theme_TiPlayNative)

@@ -30,9 +30,13 @@ class BrowserEndpointSettingsTest {
         assertEquals(8181, endpoint.port)
         assertEquals(8888, BrowserEndpointSettings.parse("169.254.1.2", 8888)!!.port)
         for (bad in listOf("10.0.0.1:8080", "100.109.220.253:0", "100.109.220.253:65536",
+            "100.109.220.253:1023", "100.109.220.253:1",
             "100.109.220.253:-1", "100.109.220.253:", "100.109.220.253:8080:80", "100.109.220.253:abc")) {
             assertNull(bad, BrowserEndpointSettings.parse(bad, 8080))
         }
+        assertEquals(1024, BrowserEndpointSettings.parse("100.109.220.253:1024", 8080)!!.port)
+        assertEquals(65535, BrowserEndpointSettings.parse("169.254.1.2:65535", 8080)!!.port)
+        assertNull(BrowserEndpointSettings.parse("100.109.220.253", 1023))
     }
 
     @Test fun savedPortDefaultsTo8080AndUnchangedSavesDoNotRequestARestart() {
@@ -41,6 +45,19 @@ class BrowserEndpointSettingsTest {
         assertTrue(BrowserEndpointSettings.savePort(context, 8181))
         assertEquals(8181, BrowserEndpointSettings.port(context))
         assertFalse(BrowserEndpointSettings.savePort(context, 8181))
+    }
+    @Test fun selectedRepairMethodRestrictsOnlyExplicitUiParsing() {
+        for (method in HotspotAddressMethod.entries) {
+            val allowed = if (method == HotspotAddressMethod.VPN) "169.254.1.2" else "100.109.220.253"
+            val rejected = if (method == HotspotAddressMethod.VPN) "100.109.220.253" else "169.254.1.2"
+            assertEquals(1024, BrowserEndpointSettings.parse("$allowed:1024", 8080, method)!!.port)
+            assertEquals(65535, BrowserEndpointSettings.parse("$allowed:65535", 8080, method)!!.port)
+            assertEquals(8181, BrowserEndpointSettings.parse(allowed, 8181, method)!!.port)
+            assertNull(BrowserEndpointSettings.parse("$rejected:8080", 8080, method))
+            assertNull(BrowserEndpointSettings.parse("$allowed:1023", 8080, method))
+        }
+        assertEquals("169.254.1.2", BrowserEndpointSettings.parse("169.254.1.2:8080", 8080)!!.address.hostAddress)
+        assertEquals("100.109.220.253", BrowserEndpointSettings.parse("100.109.220.253:8080", 8080)!!.address.hostAddress)
     }
 
     @Test fun theRealListenerMovesToTheChosenPortAndKeepsThePairingCode() {

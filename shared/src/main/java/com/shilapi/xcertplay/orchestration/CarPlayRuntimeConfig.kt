@@ -74,6 +74,7 @@ class CarPlayRuntimeConfig(
     val wifiP2pPreferredChannel: Int = WifiP2pChannels.AUTO,
     val existingWifiSsid: String = "",
     val existingWifiPassphrase: String = "",
+    val existingWifiSecurity: ManualHotspotSecurity = if (existingWifiPassphrase.isEmpty()) ManualHotspotSecurity.OPEN else ManualHotspotSecurity.WPA2,
     /** BYD HUD and cluster outputs, the ADB Wi-Fi scan pause and the car's home screen; off on a phone. */
     val headUnitIntegrations: Boolean = true,
 ) {
@@ -110,6 +111,9 @@ class CarPlayRuntimeConfig(
         if (transport == CarPlayTransport.WIRELESS && wirelessHotspotMode == WirelessHotspotMode.EXISTING_WIFI) {
             require(ManualHotspotValidation.error(existingWifiSsid, existingWifiPassphrase) == null) {
                 "Existing Wi-Fi requires an SSID of at most 32 UTF-8 bytes and an empty (open) or 8–63 character WPA2 password"
+            }
+            require((existingWifiSecurity == ManualHotspotSecurity.OPEN) == existingWifiPassphrase.isEmpty()) {
+                "Existing Wi-Fi password must match the selected security type"
             }
         }
         if (transport == CarPlayTransport.WIRELESS && wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P) {

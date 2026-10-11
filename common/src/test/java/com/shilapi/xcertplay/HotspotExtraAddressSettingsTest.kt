@@ -49,7 +49,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowAlertDialog
-import org.robolectric.shadows.ShadowBuild
 import org.robolectric.shadows.ShadowToast
 import org.robolectric.util.ReflectionHelpers
 
@@ -110,9 +109,9 @@ class HotspotExtraAddressSettingsTest {
 
         val screen = openConnection()
 
-        assertEquals(screen.getString(R.string.settings_hotspot_address_method) + " · " +
+        assertEquals(screen.getString(R.string.settings_browser_hotspot_address_repair) + " · " +
             screen.getString(R.string.settings_hotspot_method_root), chooserRow(screen).text.toString())
-        assertTrue(screen.getString(R.string.settings_hotspot_method_root_description, HotspotExtraAddress.DEFAULT) in shown(screen))
+        assertFalse(screen.getString(R.string.settings_hotspot_method_root_description, HotspotExtraAddress.DEFAULT) in shown(screen))
         // Root was granted when the switch was turned on: the keeper starts on resume and nothing asks again.
         assertEquals(listOf(KeeperStart(defaultAddress, false, "root")), KeeperProbe.starts)
         assertTrue(RootShellProbe.scripts.isEmpty())
@@ -168,7 +167,7 @@ class HotspotExtraAddressSettingsTest {
 
     @Test fun theChooserIsATitleValueRowInConnectionOnlyInPhoneMode() {
         val screen = openSettings()
-        val prefix = screen.getString(R.string.settings_hotspot_address_method) + " · "
+        val prefix = screen.getString(R.string.settings_browser_hotspot_address_repair) + " · "
         val overview = texts(screen).map { it.text.toString() }.toList()
 
         val pages = listOf(R.string.connection, R.string.settings_display, R.string.audio, R.string.settings_navigation,
@@ -183,7 +182,7 @@ class HotspotExtraAddressSettingsTest {
         assertNull("native setting buttons have no custom chevron", row.compoundDrawablesRelative[2])
         screen.onBackPressedDispatcher.onBackPressed()
         assertEquals(SettingsCategory.CONNECTION,
-            searchIndex(screen).single { it.title == screen.getString(R.string.settings_hotspot_address_method) }.category)
+            searchIndex(screen).single { it.title == screen.getString(R.string.settings_browser_hotspot_address_repair) }.category)
     }
 
     @Test fun headUnitModeHasNoHotspotAddressRowsAndStartsNothing() {
@@ -194,8 +193,8 @@ class HotspotExtraAddressSettingsTest {
 
             val connection = visibleIn(screen, R.string.connection)
 
-            assertFalse(connection.any { it.startsWith(screen.getString(R.string.settings_hotspot_address_method) + " · ") })
-            assertFalse(searchIndex(screen).any { it.title == screen.getString(R.string.settings_hotspot_address_method) })
+            assertFalse(connection.any { it.startsWith(screen.getString(R.string.settings_browser_hotspot_address_repair) + " · ") })
+            assertFalse(searchIndex(screen).any { it.title == screen.getString(R.string.settings_browser_hotspot_address_repair) })
             assertTrue(HotspotProbe.threads.isEmpty())
             assertTrue(RootShellProbe.scripts.isEmpty())
             assertTrue(KeeperProbe.starts.isEmpty())
@@ -214,9 +213,9 @@ class HotspotExtraAddressSettingsTest {
             val index = searchIndex(screen)
 
             assertEquals(method.name, SettingsCategory.CONNECTION,
-                index.single { it.title == screen.getString(R.string.settings_hotspot_address_method) }.category)
+                index.single { it.title == screen.getString(R.string.settings_browser_hotspot_address_repair) }.category)
             assertEquals(method.name, method != HotspotAddressMethod.NORMAL,
-                index.any { it.title == screen.getString(R.string.settings_hotspot_extra_address_value) })
+                index.any { it.title == screen.getString(R.string.settings_browser_hotspot_address) })
             assertTrue("no interface probe", HotspotProbe.threads.isEmpty())
             assertTrue("no su", RootShellProbe.scripts.isEmpty())
             assertTrue("no keeper", KeeperProbe.starts.isEmpty() && KeeperProbe.stops.isEmpty())
@@ -233,10 +232,10 @@ class HotspotExtraAddressSettingsTest {
         val screen = openConnection()
         val blocked = screen.getString(R.string.settings_hotspot_address_blocked)
 
-        assertTrue(shown(screen).contains(screen.getString(R.string.settings_android_address, "10.176.81.135:" + BrowserEndpointSettings.port(screen))))
+        assertTrue(shown(screen).contains(screen.getString(R.string.settings_browser_hotspot_endpoint, "10.176.81.135:" + BrowserEndpointSettings.port(screen))))
         assertTrue(blocked in shown(screen))
-        assertTrue(screen.getString(R.string.settings_hotspot_method_normal_description) in shown(screen))
-        assertFalse(shown(screen).any { it.startsWith(screen.getString(R.string.settings_hotspot_extra_address_value) + " · ") })
+        assertFalse(screen.getString(R.string.settings_hotspot_method_normal_description) in shown(screen))
+        assertFalse(shown(screen).any { it.startsWith(screen.getString(R.string.settings_browser_hotspot_address) + " · ") })
 
         // A hotspot already in 100.64.0.0/10 needs nothing.
         HotspotProbe.result = HotspotAddresses.Current("wlan2", listOf(ip("100.70.1.1")))
@@ -248,8 +247,10 @@ class HotspotExtraAddressSettingsTest {
         HotspotExtraAddressSettings.saveMethod(context, HotspotAddressMethod.ROOT)
         rerender(screen)
         assertFalse(blocked in shown(screen))
+        assertFalse(shown(screen).any { it.startsWith(screen.getString(R.string.settings_browser_hotspot_endpoint, "")) })
 
         HotspotProbe.result = null
+        HotspotExtraAddressSettings.saveMethod(context, HotspotAddressMethod.NORMAL)
         rerender(screen)
         assertTrue(screen.getString(R.string.settings_hotspot_not_found) in shown(screen))
         assertTrue(KeeperProbe.starts.isEmpty() && VpnProbe.starts.isEmpty())
@@ -342,7 +343,7 @@ class HotspotExtraAddressSettingsTest {
         assertEquals(listOf(KeeperStart(defaultAddress, true, "shizuku")), KeeperProbe.starts)
         assertEquals(1, ShizukuProbe.requests.get())
         assertTrue(RootShellProbe.scripts.isEmpty())
-        assertTrue(screen.getString(R.string.settings_hotspot_method_shizuku_description, HotspotExtraAddress.DEFAULT) in shown(screen))
+        assertFalse(screen.getString(R.string.settings_hotspot_method_shizuku_description, HotspotExtraAddress.DEFAULT) in shown(screen))
 
         // Opening the screen again never asks by itself.
         screen.finish()
@@ -472,7 +473,7 @@ class HotspotExtraAddressSettingsTest {
         assertTrue(screen.getString(R.string.settings_hotspot_vpn_starting) in line(HotspotAddressVpn.State.Starting))
         assertTrue(screen.getString(R.string.settings_hotspot_vpn_revoked) in line(HotspotAddressVpn.State.Revoked))
         assertTrue(screen.getString(R.string.settings_hotspot_vpn_failed) in line(HotspotAddressVpn.State.Failed("x")))
-        assertTrue(screen.getString(R.string.settings_hotspot_method_vpn_description, "169.254.220.253") in shown(screen))
+        assertFalse(screen.getString(R.string.settings_hotspot_method_vpn_description, "169.254.220.253") in shown(screen))
         AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.EXISTING_WIFI)
         assertTrue(screen.getString(R.string.settings_hotspot_extra_address_manual_only,
             screen.getString(R.string.built_in_car_hotspot)) in line(HotspotAddressVpn.State.Up))
@@ -533,14 +534,10 @@ class HotspotExtraAddressSettingsTest {
 
     @Test
     @Config(sdk = [34])
-    fun theVpnHintAppearsWhereAndroidDropsHotspotTrafficToVpnAddresses() {
+    fun vpnChooserHasNoExtraDescriptionAndKeepsThePreviouslySavedAddress() {
         HotspotExtraAddressSettings.saveMethod(context, HotspotAddressMethod.VPN)
-        ShadowBuild.setVersionSecurityPatch("2025-02-05")
         val screen = openConnection()
-        val hint = screen.getString(R.string.settings_hotspot_vpn_unlikely_hint, HotspotExtraAddress.LINK_LOCAL_SUGGESTION)
-        val unlikely = screen.getString(R.string.settings_hotspot_method_vpn_unlikely)
-
-        assertTrue(hint in shown(screen))
+        assertEquals(defaultAddress, HotspotExtraAddressSettings.address(context))
         chooserRow(screen).performClick()
         val items = ShadowAlertDialog.getLatestAlertDialog().listView.adapter.let { adapter ->
             (0 until adapter.count).map { adapter.getItem(it).toString() }
@@ -548,27 +545,24 @@ class HotspotExtraAddressSettingsTest {
         assertEquals(listOf(R.string.settings_hotspot_method_normal, R.string.settings_hotspot_method_root,
             R.string.settings_hotspot_method_vpn, R.string.settings_hotspot_method_shizuku).map(screen::getString),
             items.map { it.substringBefore('\n') })
-        assertEquals("${screen.getString(R.string.settings_hotspot_method_vpn)}\n$unlikely", items[2])
+        assertEquals(screen.getString(R.string.settings_hotspot_method_vpn), items[2])
+        assertEquals("${screen.getString(R.string.settings_hotspot_method_normal)}\n" +
+            screen.getString(R.string.settings_hotspot_method_normal_description), items[0])
+        assertFalse(ShadowAlertDialog.getLatestAlertDialog().getButton(AlertDialog.BUTTON_POSITIVE).isShown)
         ShadowAlertDialog.getLatestAlertDialog().dismiss()
 
-        // Link-local addresses are exempt.
+        assertEquals(defaultAddress, HotspotExtraAddressSettings.address(context))
         HotspotExtraAddressSettings.saveAddress(context, ip("169.254.220.253"))
         rerender(screen)
-        assertFalse(hint in shown(screen))
-
-        // Android 14 before the January 2025 patch accepts the traffic.
-        HotspotExtraAddressSettings.saveAddress(context, defaultAddress)
-        ShadowBuild.setVersionSecurityPatch("2024-12-05")
-        rerender(screen)
-        assertFalse(hint in shown(screen))
+        assertEquals(ip("169.254.220.253"), HotspotExtraAddressSettings.address(context))
     }
 
     // --- Shared rows -----------------------------------------------------------------------------------------
 
-    @Test fun theAddressRowAcceptsBothRangesAndMovesTheRunningMethod() {
+    @Test fun rootAddressRowAcceptsOnlyCgnatAndMovesTheRunningMethod() {
         HotspotExtraAddressSettings.saveMethod(context, HotspotAddressMethod.ROOT)
         val screen = openConnection()
-        val prefix = screen.getString(R.string.settings_hotspot_extra_address_value) + " · "
+        val prefix = screen.getString(R.string.settings_browser_hotspot_address) + " · "
         KeeperProbe.reset()
 
         texts(screen).filterIsInstance<Button>().single { it.text.toString() == prefix + HotspotExtraAddress.DEFAULT + ":8080" }
@@ -577,7 +571,7 @@ class HotspotExtraAddressSettingsTest {
         val dialog = ShadowAlertDialog.getLatestAlertDialog()
         val input = descendants(dialog.window!!.decorView).filterIsInstance<EditText>().single()
         assertEquals(HotspotExtraAddress.DEFAULT + ":8080", input.text.toString())
-        for (invalid in listOf("100.128.0.1", "10.0.0.1", "169.255.0.1", "1.2.3", "tesla.local", "100.109.220.253;reboot", "")) {
+        for (invalid in listOf("100.128.0.1", "10.0.0.1", "169.254.1.2:8080", "169.255.0.1", "1.2.3", "tesla.local", "100.109.220.253;reboot", "")) {
             input.setText(invalid)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
             assertEquals(invalid, screen.getString(R.string.settings_browser_endpoint_invalid), input.error?.toString())
@@ -586,14 +580,14 @@ class HotspotExtraAddressSettingsTest {
         assertEquals(defaultAddress, HotspotExtraAddressSettings.address(context))
         assertTrue(KeeperProbe.starts.isEmpty())
 
-        input.setText(" 169.254.1.2:8181 ")
+        input.setText(" 100.70.1.2:8181 ")
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
 
         assertFalse(dialog.isShowing)
-        assertEquals(ip("169.254.1.2"), HotspotExtraAddressSettings.address(context))
-        assertEquals(listOf(KeeperStart(ip("169.254.1.2"), false, "root")), KeeperProbe.starts)
+        assertEquals(ip("100.70.1.2"), HotspotExtraAddressSettings.address(context))
+        assertEquals(listOf(KeeperStart(ip("100.70.1.2"), false, "root")), KeeperProbe.starts)
         assertEquals(8181, BrowserEndpointSettings.port(context))
-        assertTrue(texts(screen).any { it.text.toString() == prefix + "169.254.1.2:8181" })
+        assertTrue(texts(screen).any { it.text.toString() == prefix + "100.70.1.2:8181" })
         assertTrue(RootShellProbe.scripts.isEmpty())
     }
 
@@ -620,6 +614,28 @@ class HotspotExtraAddressSettingsTest {
         AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.EXISTING_WIFI)
         assertTrue(screen.getString(R.string.settings_hotspot_extra_address_manual_only,
             screen.getString(R.string.built_in_car_hotspot)) in line(HotspotExtraAddressKeeper.State.Off))
+    }
+    @Test fun vpnEndpointDialogRejectsCgnatWithoutChangingTheSavedLegacyAddress() {
+        HotspotExtraAddressSettings.saveMethod(context, HotspotAddressMethod.VPN)
+        val screen = openConnection()
+        val prefix = screen.getString(R.string.settings_browser_hotspot_address) + " · "
+        texts(screen).filterIsInstance<Button>().single { it.text.toString().startsWith(prefix) }.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        val dialog = ShadowAlertDialog.getLatestAlertDialog()
+        val input = descendants(dialog.window!!.decorView).filterIsInstance<EditText>().single()
+        assertEquals(screen.getString(R.string.settings_browser_vpn_endpoint_hint), shadowOf(dialog).message.toString())
+        assertEquals(HotspotExtraAddress.DEFAULT + ":8080", input.text.toString())
+        assertEquals(screen.getString(R.string.settings_browser_vpn_endpoint_invalid), input.error.toString())
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        assertTrue(dialog.isShowing)
+        assertEquals(defaultAddress, HotspotExtraAddressSettings.address(context))
+        assertEquals(8080, BrowserEndpointSettings.port(context))
+        input.setText("169.254.1.2:1024")
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        assertFalse(dialog.isShowing)
+        assertEquals(ip("169.254.1.2"), HotspotExtraAddressSettings.address(context))
+        assertEquals(1024, BrowserEndpointSettings.port(context))
+        assertTrue(texts(screen).any { it.text.toString() == prefix + "169.254.1.2:1024" })
     }
 
     @Test fun theDiagnosticLineNamesTheMethodAndTheVpnRuleButNeverTheAddress() {
@@ -879,13 +895,13 @@ class HotspotExtraAddressSettingsTest {
         chooserRow(screen).performClick()
         val dialog = ShadowAlertDialog.getLatestAlertDialog()
         dialog.listView.performItemClick(null, method.ordinal, method.ordinal.toLong())
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        assertFalse(dialog.isShowing)
         shadowOf(Looper.getMainLooper()).idle()
         finishProbes()
     }
 
     private fun chooserRow(screen: DiPlayActivity): Button = texts(screen).filterIsInstance<Button>()
-        .single { it.text.startsWith(screen.getString(R.string.settings_hotspot_address_method) + " · ") }
+        .single { it.text.startsWith(screen.getString(R.string.settings_browser_hotspot_address_repair) + " · ") }
 
     private fun awaitThreads(name: String) {
         val deadline = System.currentTimeMillis() + 3_000

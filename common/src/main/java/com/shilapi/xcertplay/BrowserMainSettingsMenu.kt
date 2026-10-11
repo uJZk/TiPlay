@@ -43,9 +43,9 @@ internal class BrowserMainSettingsMenu(
         isFillViewport = true; setBackgroundColor(ui.background); addView(content)
         ui.protectSystemInsets(this)
     }
-    val status = text(activity.getString(R.string.ready_when_you_are), 18f)
-    val hotspotStatus = text("")
-    private val error = text("").apply { visibility = View.GONE }
+    val status = text(activity.getString(R.string.ready_when_you_are), 18f).also(ui::emphasize)
+    val hotspotStatus = text("").also(ui::emphasize)
+    private val error = text("").apply { visibility = View.GONE }.also(ui::emphasize)
     private val action: Button
     private val stop: Button
     private val network = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
@@ -92,6 +92,7 @@ internal class BrowserMainSettingsMenu(
                 LinearLayout.LayoutParams(dp(32), dp(32)))
             addView(text("TiPlay", 24f).apply {
                 setPadding(dp(12), 0, 0, 0)
+                ui.emphasize(this)
             })
         })
         val session = group(content)
@@ -101,7 +102,7 @@ internal class BrowserMainSettingsMenu(
             orientation = LinearLayout.HORIZONTAL
             session.addView(this, LinearLayout.LayoutParams(-1, -2))
         } else session
-        phone = button(transport, phoneLabel(), ::choosePhone)
+        phone = button(transport, phoneLabel(), ::choosePhone).apply { isAllCaps = false }
         connectionMode = BrowserSettingsPresentation.connectionMode(activity, { draft.wireless }) {
             draft.wireless = it; renderNetwork(); updateActions()
         }
@@ -116,31 +117,25 @@ internal class BrowserMainSettingsMenu(
         }
         action = button(session, activity.getString(R.string.connect_phone), ::submit)
         stop = button(session, activity.getString(R.string.disconnect)) {
-            stopping = true; status.setText(R.string.settings_main_stopping); updateActions(); disconnect()
+            stopping = true; updateActions(); disconnect()
         }.apply { visibility = View.GONE }
         session.addView(error)
-        val connection = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+        session.addView(BrowserBootConnectionSettings.create(activity))
         val browser = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         val details = LinearLayout(activity).apply {
             orientation = if (activity.resources.configuration.screenWidthDp >= 1000) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         }
         content.addView(details)
-        for (column in listOf(browser, connection, network)) details.addView(column,
+        for (column in listOf(browser, network)) details.addView(column,
             if (details.orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -2, if (column === network) 2f else 1f).apply { marginEnd = dp(12) }
             else LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(16) })
-        heading(R.string.connection, connection)
-        connection.addView(text(activity.getString(R.string.settings_connection_mode_hint)).apply { setPadding(0, dp(8), 0, dp(12)) })
         refreshBrowser = BrowserSettingsMenu.addBrowserLink(browser, activity) {
             requestPermissions(arrayOf(LocalNetworkPermission.PERMISSION))
         }
         renderNetwork()
-        connection.addView(hotspotStatus)
-        connection.addView(Space(activity), LinearLayout.LayoutParams(0, dp(12)))
-        heading(R.string.settings_startup_and_connection, connection)
-        BrowserSettingsMenu.addAutoStartOnBoot(connection)
         val more = group(content)
+        heading(R.string.settings_browser_more, more)
         button(more, activity.getString(R.string.settings_advanced), advanced)
-        more.addView(text(activity.getString(R.string.settings_browser_advanced_summary)).apply { setPadding(0, dp(8), 0, dp(12)) })
         val stackTools = activity.resources.configuration.screenWidthDp < 400 || activity.resources.configuration.fontScale > 1.2f
         val tools = LinearLayout(activity).apply { orientation = if (stackTools) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL }
         more.addView(tools)
@@ -150,9 +145,10 @@ internal class BrowserMainSettingsMenu(
             if (stackTools) LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
             else LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) }
         val version = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
-        content.addView(text(activity.getString(R.string.home_public_preview) + version))
+        content.addView(text(version).also(ui::emphasize))
     }
-    private fun phoneLabel() = activity.getString(R.string.choose_iphone_prefix) + draft.phoneName
+    private fun phoneLabel() = if (draft.phoneAddress.isNullOrBlank()) activity.getString(R.string.choose_iphone)
+        else activity.getString(R.string.settings_selected_iphone, draft.phoneName)
     private fun choosePhone() {
         if (Build.VERSION.SDK_INT >= 31 && activity.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT)); return
@@ -175,6 +171,7 @@ internal class BrowserMainSettingsMenu(
         return EditText(activity).apply {
             setText(value); setSingleLine()
             inputType = InputType.TYPE_CLASS_TEXT or if (secret) InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_VARIATION_NORMAL
+            ui.emphasize(this)
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
@@ -186,7 +183,7 @@ internal class BrowserMainSettingsMenu(
     private fun renderNetwork() {
         network.removeAllViews(); networkStatus = null; wifiSettings = null
         refreshAddress = {}
-        if (!draft.wireless) return
+        heading(R.string.settings_browser_network_configuration, network)
         val group = RadioGroup(activity).apply { orientation = RadioGroup.HORIZONTAL }
         val labels = listOf(R.string.built_in_car_hotspot, R.string.existing_wifi_title)
         BrowserConnectionDraft.Source.entries.forEachIndexed { index, source ->
@@ -200,26 +197,24 @@ internal class BrowserMainSettingsMenu(
         }
         network.addView(group, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
         val local = draft.source == BrowserConnectionDraft.Source.LOCAL
+        if (local) network.addView(hotspotStatus.apply { (parent as? android.view.ViewGroup)?.removeView(this) })
         val addressDetails = if (local) LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            refreshAddress = BrowserSettingsMenu.addHotspotAddress(this, activity, network)
+            refreshAddress = BrowserSettingsMenu.addHotspotAddress(this, activity, onMethodChanged = ::renderNetwork)
         } else null
-        if (!local) network.addView(text(activity.getString(R.string.existing_wifi_instructions)))
+        addressDetails?.let(network::addView)
+        val actions = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+        network.addView(actions)
         val fields = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }; network.addView(fields)
         val ssid = input(fields, if (local) R.string.hotspot_ssid else R.string.existing_wifi_ssid,
             if (local) draft.localSsid else draft.externalSsid) { if (local) draft.localSsid = it else { draft.externalSsid = it; refreshNetwork() } }
-        if (local) {
-            val options = listOf(ManualHotspotSecurity.OPEN to activity.getString(R.string.open),
+        val options = listOf(ManualHotspotSecurity.OPEN to activity.getString(R.string.open),
                 ManualHotspotSecurity.WPA2 to activity.getString(R.string.wpa2),
                 ManualHotspotSecurity.WPA3_TRANSITION to activity.getString(R.string.wpa3_transition),
                 ManualHotspotSecurity.WPA3 to activity.getString(R.string.wpa3))
-            choice(fields, R.string.security, options, draft.localSecurity) { draft.localSecurity = it; renderNetwork(); updateActions() }
-        } else {
-            choice(fields, R.string.security,
-                listOf(false to activity.getString(R.string.open), true to activity.getString(R.string.wpa2)),
-                draft.externalSecured) { secured ->
-                draft.externalSecured = secured; renderNetwork(); updateActions()
-            }
+        choice(fields, R.string.security, options, if (local) draft.localSecurity else draft.externalSecurity) {
+            if (local) draft.localSecurity = it else draft.externalSecurity = it
+            renderNetwork(); updateActions()
         }
         val secured = if (local) draft.localSecurity != ManualHotspotSecurity.OPEN else draft.externalSecured
         val passwordFields = LinearLayout(activity).apply {
@@ -231,10 +226,9 @@ internal class BrowserMainSettingsMenu(
             if (local) draft.localPassword = it else draft.externalPassword = it
         }
         if (local) {
-            val autofill = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-            LocalHotspotAutofill.attach(fields, ssid, password, controlsParent = autofill)
-            fields.addView(autofill)
-            wifiSettings = button(fields, activity.getString(R.string.open_car_hotspot_settings)) {
+            val privileged = HotspotExtraAddressSettings.method(activity) in setOf(HotspotAddressMethod.ROOT, HotspotAddressMethod.SHIZUKU)
+            if (privileged) LocalHotspotAutofill.attach(fields, ssid, password, controlsParent = actions, showHint = false)
+            else wifiSettings = button(actions, activity.getString(R.string.open_car_hotspot_settings)) {
                 activity.startActivity(Intent("android.settings.TETHER_SETTINGS"))
             }
             refreshNetwork()
@@ -245,12 +239,11 @@ internal class BrowserMainSettingsMenu(
             }
             refreshNetwork()
         }
-        addressDetails?.let(network::addView)
     }
     fun transportSelected(wireless: Boolean) {
         draft.wireless = wireless
         baseline.wireless = wireless
-        connectionMode.text = activity.getString(R.string.settings_iphone_connection_mode) + " · " +
+        connectionMode.text = activity.getString(R.string.settings_browser_carplay_connection_mode) + " · " +
             activity.getString(if (wireless) R.string.default_connection_wireless else R.string.default_connection_usb)
         renderNetwork(); updateActions()
     }
@@ -259,7 +252,11 @@ internal class BrowserMainSettingsMenu(
     }
     fun refreshNetwork() {
         if (draft.source == BrowserConnectionDraft.Source.LOCAL) {
-            wifiSettings?.visibility = if (com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(activity) == true) View.GONE else View.VISIBLE
+            hotspotStatus.setText(when (com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(activity)) {
+                true -> R.string.settings_browser_hotspot_on
+                false -> R.string.settings_browser_hotspot_off
+                null -> R.string.settings_browser_hotspot_unknown
+            })
             return
         }
         val connectivity = activity.getSystemService(ConnectivityManager::class.java)
@@ -268,12 +265,11 @@ internal class BrowserMainSettingsMenu(
         val ssid = runCatching { activity.applicationContext.getSystemService(WifiManager::class.java)?.connectionInfo?.ssid?.trim('"') }
             .getOrNull()?.takeUnless { it == "<unknown ssid>" }
         val matches = wifi && ssid == draft.externalSsid
-        wifiSettings?.visibility = if (matches) View.GONE else View.VISIBLE
         networkStatus?.setText(if (matches) R.string.settings_external_ap_ready else R.string.settings_external_ap_check)
     }
     fun update(stage: String, hasSession: Boolean) {
         active = hasSession
-        status.text = if (stopping) activity.getString(R.string.settings_main_stopping) else stage
+        status.text = stage
         updateActions(); refreshNetwork()
     }
     fun showConnectionError(message: String?) {
@@ -289,6 +285,7 @@ internal class BrowserMainSettingsMenu(
         action.visibility = if (!active || dirty || failed) View.VISIBLE else View.GONE
         action.isEnabled = !stopping
         stop.visibility = if (active) View.VISIBLE else View.GONE; stop.isEnabled = !stopping
+        stop.setText(if (stopping) R.string.settings_main_stopping else R.string.disconnect)
     }
     private fun submit() {
         val invalid = draft.validationError()

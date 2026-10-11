@@ -184,6 +184,7 @@ class CarPlayHostActivity : ComponentActivity() {
         manualHotspotSecurity = manualHotspotSecurity,
         existingWifiSsid = existingWifiSsid,
         existingWifiPassphrase = existingWifiPassphrase,
+        existingWifiSecurity = BrowserExistingWifiSettings.loadSecurity(this),
         locationReportingEnabled = locationReportingEnabled,
         headUnitIntegrations = headUnitIntegrations(),
     )
@@ -645,7 +646,9 @@ class CarPlayHostActivity : ComponentActivity() {
         loadPersistedSettings()
         browserMainState = savedInstanceState
         browserConnectionRequested = savedInstanceState?.getBoolean("browser_connection_requested")
-            ?: (!intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false) && DiPlayPreferences.autoConnect(this))
+            ?: (!intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false) &&
+                (DiPlayPreferences.autoConnect(this) ||
+                    intent.getBooleanExtra(BrowserBootConnectionSettings.CONNECT_AFTER_BOOT, false)))
         locationPermissionAvailable = hasFineLocationPermission()
         setContentView(buildContentView())
         applyFullscreenMode()
@@ -851,12 +854,24 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        val applyBrowserSettings = browserMainPage != null && intent.getBooleanExtra(CarPlaySettingsNavigation.APPLY, false)
+        if (applyBrowserSettings) {
+            intent.removeExtra(CarPlaySettingsNavigation.APPLY)
+            loadPersistedSettings()
+            browserMainPage?.refresh()
+            if (controller != null) {
+                browserConnectionRequested = true
+                restartCarPlay("Settings applied; reconnecting")
+            }
+        }
         if (intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false)) {
             intent.removeExtra(CarPlaySettingsNavigation.MENU)
             openSettingsMenu()
         }
-        if (browserMainPage != null && intent.getBooleanExtra(CarPlaySettingsNavigation.MAIN, false) &&
-            controller == null && DiPlayPreferences.autoConnect(this)) {
+        if (!applyBrowserSettings && browserMainPage != null && (intent.getBooleanExtra(CarPlaySettingsNavigation.MAIN, false) ||
+                DiPlayActivity.isLauncherIntent(intent)) &&
+            controller == null && (DiPlayPreferences.autoConnect(this) ||
+                intent.getBooleanExtra(BrowserBootConnectionSettings.CONNECT_AFTER_BOOT, false))) {
             if (runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isSuccess) {
                 browserConnectionRequested = true
                 requestStartupPrerequisites()

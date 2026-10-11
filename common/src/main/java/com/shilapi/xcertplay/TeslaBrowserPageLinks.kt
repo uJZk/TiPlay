@@ -55,14 +55,16 @@ internal object TeslaBrowserPageLinks {
     /**
      * The HTTPS page link for the car's browser. [phoneAddress] is the IPv4 address the car reaches the phone at. `t`
      * is left out for [PAGE_DEFAULT_PHONE_ADDRESS] at the default port, and when [phoneAddress] is null; the page then
-     * connects to its default phone. The page address keeps its other query parameters; a `t` of its own is replaced.
+     * connects to its default phone. [explicitEndpoint] includes the address and port even at their defaults for
+     * the main page's complete copied connection link. Other query parameters stay; an existing `t` is replaced.
      */
-    fun pageLink(pageAddress: String, code: String, phoneAddress: String?, port: Int): String {
+    fun pageLink(pageAddress: String, code: String, phoneAddress: String?, port: Int,
+        explicitEndpoint: Boolean = false): String {
         val path = pageAddress.substringBefore('?')
         val others = pageAddress.substringAfter('?', "").split('&').filter { it.isNotEmpty() && it != "t" && !it.startsWith("t=") }
         val defaultPort = port == BrowserLinkServer.DEFAULT_PORT
-        val phone = phoneAddress?.takeUnless { it == PAGE_DEFAULT_PHONE_ADDRESS && defaultPort }
-            ?.let { if (defaultPort) "t=$it" else "t=$it:$port" }
+        val phone = phoneAddress?.takeUnless { !explicitEndpoint && it == PAGE_DEFAULT_PHONE_ADDRESS && defaultPort }
+            ?.let { if (defaultPort && !explicitEndpoint) "t=$it" else "t=$it:$port" }
         val query = listOfNotNull(phone) + others
         return path + (if (query.isEmpty()) "" else query.joinToString("&", prefix = "?")) + "#c=$code"
     }

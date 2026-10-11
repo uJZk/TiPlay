@@ -7,6 +7,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 const play = new URL('../../site/play/', import.meta.url);
 const read = name => readFileSync(new URL(name, play), 'utf8');
 
+test('disconnect is a separate full-width row immediately below connect', () => {
+  const html = read('index.html');
+  assert.match(html, /<button id="connect"[^>]*>[\s\S]*?<\/button>\s*<button id="disconnect" type="button"[^>]* hidden><\/button>/);
+  assert.equal([...html.matchAll(/id="disconnect"/g)].length, 1);
+  assert.match(read('style.css'), /#connect,#disconnect\{display:block;width:100%;/);
+  assert.match(read('style.css'), /#disconnect\{margin-top:8px\}/);
+});
+
 test('the service worker precaches every page file', () => {
   const assets = JSON.parse(/const ASSETS = (\[[^\]]*\]);/.exec(read('sw.js'))[1].replaceAll("'", '"'));
   const files = readdirSync(play).filter(name => name !== 'sw.js');

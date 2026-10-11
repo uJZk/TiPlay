@@ -94,7 +94,7 @@ class DiagnosticExportFallbackTest {
         }
         val saved = DiagnosticExportStore.saveWithoutPicker(unavailableExternal, "DiPlay-test.txt", "report")
         assertTrue(saved.savedInApp)
-        assertNull(saved.savedPath)
+        assertEquals(privateReports.listFiles()!!.single().absolutePath, saved.savedPath)
         assertEquals("report", read(saved.uri))
         assertEquals("report", privateReports.listFiles()!!.single().readText())
     }

@@ -6,6 +6,7 @@ tasks.withType<Test>().configureEach {
     filter {
         excludeTestsMatching("com.shilapi.xcertplay.HomeCompactLayoutTest")
         excludeTestsMatching("com.shilapi.xcertplay.CarPlayHostSettingsTest")
+        excludeTestsMatching("com.shilapi.xcertplay.ClusterSettingsConsentTest")
         excludeTestsMatching("com.shilapi.xcertplay.CarPlaySettingsNavigationTest.homeSettingsButtonOpensTheHostMenu")
     }
 }

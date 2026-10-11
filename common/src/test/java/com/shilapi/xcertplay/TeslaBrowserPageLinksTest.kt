@@ -7,6 +7,11 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class TeslaBrowserPageLinksTest {
+    @Test fun explicitConnectionLinkIncludesDefaultAddressPortAndPairingCode() {
+        assertEquals("https://ujzk.github.io/TiPlay/?t=100.109.220.253:8080#c=1234",
+            TeslaBrowserPageLinks.pageLink(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS,
+                "1234", "100.109.220.253", 8080, explicitEndpoint = true))
+    }
     /**
      * The form `buildLink` in site/play/link.js makes: the phone in `?t=` (no port for 8080) unless it is the page's
      * default phone, the code in the fragment.

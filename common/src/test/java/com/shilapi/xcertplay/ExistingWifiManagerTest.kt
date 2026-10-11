@@ -14,6 +14,7 @@ import com.shilapi.xcertplay.network.ExistingWifiManager
 import com.shilapi.xcertplay.network.WirelessHotspotBackend
 import com.shilapi.xcertplay.network.WirelessHotspotInfo
 import com.shilapi.xcertplay.transport.Iap2WirelessSecurity
+import com.shilapi.xcertplay.orchestration.ManualHotspotSecurity
 import java.io.IOException
 import java.net.Inet6Address
 import java.net.InetAddress
@@ -168,6 +169,18 @@ class ExistingWifiManagerTest {
         manager("").use { assertThrows(IOException::class.java) { start(it) } }
         `when`(info.currentSecurityType).thenReturn(WifiInfo.SECURITY_TYPE_EAP)
         manager().use { assertThrows(IOException::class.java) { start(it) } }
+    }
+
+    @Test @Config(sdk = [33]) fun selectedWpa3IsAdvertisedAndRejectsWpa2Station() {
+        fun configured(security: ManualHotspotSecurity) = ExistingWifiManager(context,
+            "Pocket Wi-Fi", "pocket-password", selectedSecurity = security)
+        `when`(info.currentSecurityType).thenReturn(WifiInfo.SECURITY_TYPE_SAE)
+        configured(ManualHotspotSecurity.WPA3).use { assertEquals(Iap2WirelessSecurity.WPA3_ONLY, start(it).security) }
+        configured(ManualHotspotSecurity.WPA3_TRANSITION).use { assertEquals(Iap2WirelessSecurity.WPA3_TRANSITION, start(it).security) }
+        configured(ManualHotspotSecurity.WPA2).use { assertThrows(IOException::class.java) { start(it) } }
+        `when`(info.currentSecurityType).thenReturn(WifiInfo.SECURITY_TYPE_PSK)
+        configured(ManualHotspotSecurity.WPA3).use { assertThrows(IOException::class.java) { start(it) } }
+        configured(ManualHotspotSecurity.WPA3_TRANSITION).use { assertEquals(Iap2WirelessSecurity.WPA3_TRANSITION, start(it).security) }
     }
 
     @Test fun redactedSsidAllowsManualConfigurationAndUnknownChannelStaysZero() {

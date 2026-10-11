@@ -24,7 +24,8 @@ internal object DiagnosticExportStore {
     fun saveWithoutPicker(context: Context, fileName: String, report: String): SavedReport {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
-                return SavedReport(saveToDownloads(context.contentResolver, fileName, report))
+                return SavedReport(saveToDownloads(context.contentResolver, fileName, report),
+                    savedPath = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "TiPlay/$fileName").absolutePath)
             } catch (_: Exception) {
                 // Preserve the report even when the OEM's public storage provider is absent.
             }
@@ -58,7 +59,7 @@ internal object DiagnosticExportStore {
             // Retain only the newest eight reports; never prune the export being returned.
             directory.listFiles()?.filter { it != file && it.isFile }
                 ?.sortedByDescending { it.lastModified() }?.drop(7)?.forEach { it.delete() }
-            return SavedReport(uri, savedInApp = savedInApp, savedPath = if (savedInApp) null else file.absolutePath)
+            return SavedReport(uri, savedInApp = savedInApp, savedPath = file.absolutePath)
         } catch (error: Exception) {
             file.delete()
             throw error

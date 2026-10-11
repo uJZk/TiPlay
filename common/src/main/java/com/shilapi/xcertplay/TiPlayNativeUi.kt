@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.res.Configuration
+import android.graphics.Typeface
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
@@ -16,6 +17,22 @@ import androidx.core.view.doOnAttach
 
 /** Native phone widgets, with safe window bounds independent of upstream projection UI. */
 internal class TiPlayNativeUi(private val context: Context) {
+    private enum class TextRole { HEADING, EMPHASIS }
+
+    fun emphasize(view: TextView) {
+        view.tag = TextRole.EMPHASIS
+        view.typeface = Typeface.create(view.typeface, Typeface.BOLD)
+        // Some OEM font replacements expose a bold style without a visibly heavier face.
+        view.paint.isFakeBoldText = true
+    }
+
+    fun label(value: String, heading: Boolean = false) = TextView(context).apply {
+        text = value
+        if (heading) {
+            tag = TextRole.HEADING
+            setTextAppearance(android.R.style.TextAppearance_Material_Large)
+        }
+    }
     val background: Int
         get() = context.obtainStyledAttributes(intArrayOf(android.R.attr.colorBackground)).let {
             try { it.getColor(0, 0) } finally { it.recycle() }
@@ -84,7 +101,10 @@ internal class TiPlayNativeUi(private val context: Context) {
                 view.setCompoundDrawablesRelative(null, null, null, null)
                 view.layoutParams?.let { params -> params.height = ViewGroup.LayoutParams.WRAP_CONTENT; view.layoutParams = params }
             }
-            is TextView -> restoreText(view, TextView(context), preservePadding = true)
+            is TextView -> {
+                restoreText(view, TextView(context), preservePadding = true)
+                if (view.tag == TextRole.HEADING) view.setTextAppearance(android.R.style.TextAppearance_Material_Large)
+            }
             is SeekBar -> {
                 val native = SeekBar(context)
                 view.background = native.background
@@ -97,6 +117,7 @@ internal class TiPlayNativeUi(private val context: Context) {
             is ImageView -> { view.imageTintList = null; view.background = null }
             is ViewGroup -> view.background = null
         }
+        if (view is TextView && view.tag == TextRole.EMPHASIS) emphasize(view)
         if (view is ScrollView) view.setBackgroundColor(background)
         if (view is ViewGroup) for (i in 0 until view.childCount) styleTree(view.getChildAt(i))
     }

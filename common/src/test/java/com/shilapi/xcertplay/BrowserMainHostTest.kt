@@ -4,6 +4,7 @@ import android.content.Intent
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Handler
+import android.os.Looper
 import android.widget.TextView
 import com.shilapi.xcertplay.airplay.*
 import com.shilapi.xcertplay.orchestration.*
@@ -19,6 +20,8 @@ import org.mockito.MockedConstruction
 import org.mockito.Mockito.mockConstruction
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.never
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
@@ -105,6 +108,63 @@ class BrowserMainHostTest {
             draft.save(activity)
             assertEquals(percent, AirPlayPersistence.loadDisplayScalePercent(activity))
         }
+    }
+
+    @Test fun applyingAdvancedSettingsStartsTheRunningSessionRestartAndPreservesTheWholeMainDraft() {
+        val oldController = attachController()
+        val main = field("browserMainPage") as BrowserMainSettingsMenu
+        main.draft.localSsid = "Unsaved hotspot"
+        main.draft.localPassword = "unsavedsecret"
+        main.draft.externalSsid = "Unsaved car Wi-Fi"
+        main.draft.externalPassword = "othersecret"
+        main.draft.phoneAddress = "02:00:00:00:00:99"
+        main.draft.wireless = !main.draft.wireless
+        val unsaved = main.draft.copy()
+        AirPlayPersistence.saveFps(activity, 35)
+        AirPlayPersistence.saveHevcEnabled(activity, false)
+        AirPlayPersistence.saveRightHandDrive(activity, true)
+
+        newIntent(CarPlaySettingsNavigation.mainIntent(activity).putExtra(CarPlaySettingsNavigation.APPLY, true))
+
+        assertEquals(1, field("restartGeneration"))
+        assertNull(field("controller"))
+        assertTrue(field("handshakeResetInProgress") as Boolean)
+        assertTrue(field("browserConnectionRequested") as Boolean)
+        assertEquals(35, field("fps"))
+        assertFalse(field("hevcEnabled") as Boolean)
+        assertTrue(field("rightHandDrive") as Boolean)
+        assertSame(main, field("browserMainPage"))
+        assertEquals(unsaved, main.draft)
+        assertNotEquals(unsaved.localSsid, AirPlayPersistence.loadManualHotspotSsid(activity))
+        assertNotEquals(unsaved.phoneAddress, DiPlayPreferences.phoneAddress(activity))
+        assertFalse(activity.intent.hasExtra(CarPlaySettingsNavigation.APPLY))
+
+        // Startup is deliberately held so this assertion observes the real old-stack teardown.
+        setField("pendingDisplaySize", null)
+        setField("wirelessPermissionsReady", false)
+        (field("teardownExecutor") as PausedExecutorService).runAll()
+        shadowOf(Looper.getMainLooper()).idle()
+        verify(oldController).close()
+        assertEquals(unsaved, main.draft)
+    }
+
+    @Test fun returningFromAdvancedWithoutApplyKeepsTheRunningControllerAndUnsavedDraft() {
+        val controller = attachController()
+        val main = field("browserMainPage") as BrowserMainSettingsMenu
+        main.draft.localSsid = "Unsaved main-page hotspot"
+        val unsaved = main.draft.copy()
+        AirPlayPersistence.saveFps(activity, 35)
+        PendingReconnect.mark(controller)
+
+        newIntent(CarPlaySettingsNavigation.mainIntent(activity).putExtra(CarPlaySettingsNavigation.APPLY, false))
+        invoke("onResume")
+
+        assertSame(controller, field("controller"))
+        assertEquals(0, field("restartGeneration"))
+        assertEquals(unsaved, main.draft)
+        assertEquals(35, field("fps"))
+        assertTrue(PendingReconnect.isPending(controller))
+        verify(controller, never()).close()
     }
 
     @Test fun phoneBrowserModeKeepsBydVehicleDataAndOutputsOutOfTheRuntime() {
@@ -210,6 +270,10 @@ class BrowserMainHostTest {
 
     private fun invoke(name: String): Any? = activity.javaClass.getDeclaredMethod(name)
         .apply { isAccessible = true }.invoke(activity)
+    private fun newIntent(intent: Intent) {
+        activity.javaClass.getDeclaredMethod("onNewIntent", Intent::class.java)
+            .apply { isAccessible = true }.invoke(activity, intent)
+    }
     private fun field(name: String): Any? = activity.javaClass.getDeclaredField(name)
         .apply { isAccessible = true }.get(activity)
     private fun setField(name: String, value: Any?) {

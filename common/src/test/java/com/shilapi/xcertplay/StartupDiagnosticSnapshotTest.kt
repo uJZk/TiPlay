@@ -59,6 +59,17 @@ class StartupDiagnosticSnapshotTest {
         assertFalse(AirPlayPersistence.loadAutoStartOnBoot(app))
         assertTrue(DiPlayPreferences.autoConnect(app))
     }
+    @Test fun bootRequestsConnectionOnlyForItsOwnLaunch() {
+        AirPlayPersistence.saveAutoStartOnBoot(app, true)
+        var launch: Intent? = null
+        val context = object : ContextWrapper(app) {
+            override fun startActivity(intent: Intent) { launch = intent }
+        }
+        BootReceiver().onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
+        assertEquals(CarPlayHostActivity::class.java.name, launch!!.component!!.className)
+        assertTrue(launch!!.getBooleanExtra(BrowserBootConnectionSettings.CONNECT_AFTER_BOOT, false))
+        assertFalse(DiPlayPreferences.autoConnect(app))
+    }
 
     @Test fun successfulLaunchMeansAnActivityRequestAndRetainsTheExistingFlags() {
         AirPlayPersistence.saveAutoStartOnBoot(app, true)
@@ -67,7 +78,7 @@ class StartupDiagnosticSnapshotTest {
             override fun startActivity(intent: Intent) { launch = intent }
         }
         BootReceiver().onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
-        assertEquals(DiPlayActivity::class.java.name, launch!!.component!!.className)
+        assertEquals(CarPlayHostActivity::class.java.name, launch!!.component!!.className)
         assertTrue(launch!!.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
         assertTrue(StartupDiagnosticSnapshot.report(app).contains("launchResult=startActivity-returned"))
     }

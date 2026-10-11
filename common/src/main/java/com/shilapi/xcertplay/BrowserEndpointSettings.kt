@@ -13,25 +13,27 @@ internal object BrowserEndpointSettings {
     private const val KEY_PORT = "listen_port"
 
     fun port(context: Context): Int = context.getSharedPreferences(PREFS, 0)
-        .getInt(KEY_PORT, BrowserLinkServer.DEFAULT_PORT).takeIf { it in 1..65535 }
+        .getInt(KEY_PORT, BrowserLinkServer.DEFAULT_PORT).takeIf { it in 1024..65535 }
         ?: BrowserLinkServer.DEFAULT_PORT
 
     fun savePort(context: Context, port: Int): Boolean {
-        require(port in 1..65535)
+        require(port in 1024..65535)
         if (port == port(context)) return false
         context.getSharedPreferences(PREFS, 0).edit().putInt(KEY_PORT, port).apply()
         return true
     }
 
-    fun parse(text: String, defaultPort: Int): Endpoint? {
+    fun parse(text: String, defaultPort: Int, method: HotspotAddressMethod? = null): Endpoint? {
         val parts = text.trim().split(':')
         if (parts.size !in 1..2) return null
         val address = HotspotExtraAddress.parse(parts[0]) ?: return null
+        if (method != null && (if (method == HotspotAddressMethod.VPN)
+                !HotspotExtraAddress.isLinkLocal(address) else !HotspotExtraAddress.isCgnat(address))) return null
         val port = if (parts.size == 1) defaultPort else {
             val value = parts[1]
             if (value.isEmpty() || value.any { it !in '0'..'9' }) return null
             value.toIntOrNull() ?: return null
         }
-        return Endpoint(address, port).takeIf { port in 1..65535 }
+        return Endpoint(address, port).takeIf { port in 1024..65535 }
     }
 }

@@ -11,7 +11,7 @@ internal object BrowserSettingsPresentation {
     fun connectionMode(context: Context, wireless: () -> Boolean, changed: (Boolean) -> Unit) = Button(context).apply {
         isAllCaps = false
         fun refresh() {
-            text = "${context.getString(R.string.settings_iphone_connection_mode)} · " +
+            text = "${context.getString(R.string.settings_browser_carplay_connection_mode)} · " +
                 context.getString(if (wireless()) R.string.default_connection_wireless else R.string.default_connection_usb)
         }
         refresh()

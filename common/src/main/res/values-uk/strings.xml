@@ -267,7 +267,7 @@
     <string name="open">Відкрити</string>
     <string name="open_after_the_car_starts">Відкривати після запуску автомобіля</string>
     <string name="open_bluetooth">Відкрити Bluetooth</string>
-    <string name="open_car_hotspot_settings">Відкрити налаштування точки доступу пристрою Android</string>
+    <string name="open_car_hotspot_settings">Відкрити системні налаштування точки доступу</string>
     <string name="open_car_settings">Відкрити налаштування автомобіля</string>
     <string name="open_car_wi_fi_settings">Відкрити налаштування Wi-Fi автомобіля</string>
     <string name="open_carplay">Відкрити CarPlay</string>
@@ -644,9 +644,9 @@
     <string name="settings_interface_size_auto">Автоматично</string>
     <string name="settings_interface_size_hint">Розмір тексту й елементів керування на екранах TiPlay. В автоматичному режимі вони збільшуються на великих екранах із низькою щільністю. CarPlay не змінюється.</string>
     <string name="settings_external_ap_hint">Підключіть Android, iPhone і браузер автомобіля до однієї зовнішньої мережі Wi-Fi. Цей режим не створює точку доступу на Android. Використовуйте відкриту мережу або WPA2. Якщо браузер не бачить Android, перевірте ізоляцію клієнтів точки доступу.</string>
-    <string name="settings_external_ap_wifi">Відкрити налаштування Wi-Fi</string>
-    <string name="settings_external_ap_ready">Підключено до вказаної мережі Wi-Fi.</string>
-    <string name="settings_external_ap_check">Приєднайтеся до вказаної мережі Wi-Fi в системних налаштуваннях. Якщо назва недоступна, перевірте її вручну. Збереження даних не підключає пристрій до Wi-Fi.</string>
+    <string name="settings_external_ap_wifi">Відкрити системні налаштування Wi-Fi</string>
+    <string name="settings_external_ap_ready">Пристрій підключено до потрібної мережі Wi-Fi.</string>
+    <string name="settings_external_ap_check">Пристрій не підключено до потрібної мережі Wi-Fi.</string>
     <string name="settings_android_address">Адреса Android: %1$s</string>
     <string name="settings_main_stopping">Відключення…</string>
 </resources>

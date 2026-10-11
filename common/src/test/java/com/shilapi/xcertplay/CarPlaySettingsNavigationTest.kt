@@ -49,7 +49,7 @@ class CarPlaySettingsNavigationTest {
         assertFalse(labels.contains(screen.getString(R.string.settings_overview)))
         assertFalse(labels.contains(screen.getString(R.string.settings_search)))
         assertTrue(labels.any { it == screen.getString(R.string.frame_rate) + " · 60 fps" })
-        assertTrue(labels.contains(screen.getString(R.string.settings_hevc_experimental)))
+        assertTrue(labels.contains(screen.getString(R.string.settings_browser_hevc_title)))
         assertEquals(SettingsCategory.ADVANCED, CarPlaySettingsNavigation.category(screen.intent))
     }
 
@@ -70,7 +70,7 @@ class CarPlaySettingsNavigationTest {
         assertFalse(labels.contains(screen.getString(R.string.split_screen_areas)))
         assertFalse(labels.contains(screen.getString(R.string.efficient_video)))
         assertFalse(labels.contains(screen.getString(R.string.advanced_audio_channel_mapping)))
-        for (id in listOf(R.string.settings_hevc_experimental, R.string.right_hand_drive,
+        for (id in listOf(R.string.settings_browser_hevc_title, R.string.right_hand_drive,
             R.string.diagnostics, R.string.save_diagnostic_report)) {
             assertTrue(screen.getString(id), labels.contains(screen.getString(id)))
         }
@@ -80,13 +80,14 @@ class CarPlaySettingsNavigationTest {
         }
     }
 
-    @Test fun backReturnsDirectlyToTheHostSettingsMenu() {
+    @Test fun backReturnsDirectlyToTheMainPageWithoutApplyingUnchangedSettings() {
         val screen = open(SettingsCategory.AUDIO)
         descendants(screen.window.decorView).filterIsInstance<Button>()
             .single { it.text == screen.getString(R.string.back) }.performClick()
         val intent = shadowOf(screen).nextStartedActivity
         assertEquals(CarPlayHostActivity::class.java.name, intent.component!!.className)
-        assertTrue(intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false))
+        assertTrue(intent.getBooleanExtra(CarPlaySettingsNavigation.MAIN, false))
+        assertFalse(intent.getBooleanExtra(CarPlaySettingsNavigation.APPLY, false))
         assertTrue(screen.isFinishing)
     }
 
@@ -104,7 +105,6 @@ class CarPlaySettingsNavigationTest {
         }
         frameRate.performClick()
         var dialog = ShadowAlertDialog.getLatestAlertDialog()
-        shadowOf(dialog).clickOnItem(0)
         dialog.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(60, AirPlayPersistence.loadFps(context))
@@ -112,19 +112,24 @@ class CarPlaySettingsNavigationTest {
         frameRate.performClick()
         dialog = ShadowAlertDialog.getLatestAlertDialog()
         shadowOf(dialog).clickOnItem(0)
-        dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        assertFalse(dialog.isShowing)
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(30, AirPlayPersistence.loadFps(context))
         assertTrue(PendingReconnect.isPending(session))
         PendingReconnect.clear()
         descendants(screen.window.decorView).filterIsInstance<Switch>().single {
-            it.contentDescription == screen.getString(R.string.settings_hevc_experimental)
+            it.contentDescription == screen.getString(R.string.settings_browser_hevc_title)
         }.performClick()
         assertFalse(AirPlayPersistence.loadHevcEnabled(context))
         assertTrue(PendingReconnect.isPending(session))
         assertSame(session, CarPlayBackgroundSession.snapshot()?.controller)
         assertEquals(0, stops)
         assertNull(shadowOf(screen).nextStartedActivity)
+        descendants(screen.window.decorView).filterIsInstance<Button>().single {
+            it.text == screen.getString(R.string.settings_return_and_apply)
+        }.performClick()
+        assertTrue(shadowOf(screen).nextStartedActivity.getBooleanExtra(CarPlaySettingsNavigation.APPLY, false))
+        assertTrue(screen.isFinishing)
     }
 
     @Test fun searchIndexesAdditionalPagesWithoutReintroducingTheOldOverviewOrResolutionControl() {

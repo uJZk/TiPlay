@@ -12,10 +12,11 @@
     <string name="settings_browser_page_address_hint">TiPlay 頁面的 HTTPS 網址。只有自行發布頁面時才需要修改。下次開啟連結時生效。</string>
     <string name="settings_browser_page_address_invalid">請輸入以 https:// 開頭且不含 # 的網址。</string>
     <string name="settings_browser_pairing_code">配對碼</string>
-    <string name="settings_browser_pairing_code_description">車上的瀏覽器需要配對碼 %1$s 才能顯示 CarPlay。下方的連結已包含配對碼，開啟連結即可完成配對。產生新配對碼後，使用舊配對碼的瀏覽器會中斷連線；開啟新連結即可重新配對。</string>
+    <string name="settings_browser_pairing_code_description">車機瀏覽器需要配對碼%1$s才能顯示 CarPlay。產生新配對碼後請在網頁中填寫新的配對碼。</string>
     <string name="settings_browser_pairing_code_new">產生新配對碼</string>
-    <string name="settings_browser_link_car">在車上的瀏覽器中開啟此連結（特斯拉及其他車機瀏覽器）：</string>
+    <string name="settings_browser_link_car">在車機的瀏覽器中開啟此連結：</string>
     <string name="settings_browser_link_other">其他瀏覽器（如 Safari、Firefox）：在連上安卓端熱點的裝置上開啟此連結：</string>
     <string name="settings_browser_link_copy">複製連結</string>
     <string name="settings_browser_link_copied">已複製連結</string>
+    <string name="settings_browser_android_address">Android 端位址：</string>
 </resources>

@@ -4,7 +4,7 @@
     <string name="settings_browser_advanced_summary">Frecuencia de fotogramas, HEVC, controles del vehículo, registros e informes de diagnóstico.</string>
     <string name="settings_browser_next_connection_hint">Se guarda al instante. Se aplica en la próxima conexión; reconecta cuando te convenga.</string>
     <string name="settings_browser_video">Vídeo</string>
-    <string name="settings_browser_endpoint_hint">Introduce una dirección de 100.64.0.0/10 o 169.254.0.0/16 y un puerto (1–65535), por ejemplo 100.109.220.253:8080. Se aplica al instante. Si cambias el puerto, conecta el navegador con el enlace nuevo.</string>
-    <string name="settings_browser_endpoint_invalid">Introduce una dirección y un puerto válidos (1–65535), por ejemplo 100.109.220.253:8080.</string>
+    <string name="settings_browser_endpoint_hint">Rangos de dirección: 100.64.0.0/10; puertos: 1024–65535, por ejemplo 100.109.220.253:8080. Tras cambiar el puerto, introduce la nueva dirección de Android en la página.</string>
+    <string name="settings_browser_endpoint_invalid">Introduce una dirección de 100.64.0.0/10 y un puerto (1024–65535), por ejemplo 100.109.220.253:8080.</string>
     <string name="settings_browser_boot_hint">Abre TiPlay al iniciar Android. Android o los ajustes del dispositivo pueden limitar el inicio en segundo plano.</string>
 </resources>

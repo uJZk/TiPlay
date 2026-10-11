@@ -267,7 +267,7 @@
     <string name="open">開啟</string>
     <string name="open_after_the_car_starts">車機啟動後開啟</string>
     <string name="open_bluetooth">開啟藍牙</string>
-    <string name="open_car_hotspot_settings">開啟安卓端熱點設定</string>
+    <string name="open_car_hotspot_settings">開啟系統熱點設定</string>
     <string name="open_car_settings">開啟車機設定</string>
     <string name="open_car_wi_fi_settings">開啟車機 Wi-Fi 設定</string>
     <string name="open_carplay">開啟 CarPlay</string>
@@ -692,9 +692,9 @@
     <string name="settings_interface_size_auto">自動</string>
     <string name="settings_interface_size_hint">TiPlay 自身畫面中文字與控制項的大小。自動模式會在大尺寸低密度螢幕上放大它們。不影響 CarPlay。</string>
     <string name="settings_external_ap_hint">讓安卓端、iPhone 和車機瀏覽器使用同一外部網路。本模式不會啟動安卓熱點。使用開放或 WPA2 網路；瀏覽器無法存取安卓時，請檢查 AP 的裝置互訪設定。</string>
-    <string name="settings_external_ap_wifi">開啟 Wi-Fi 設定</string>
-    <string name="settings_external_ap_ready">已連線目標 Wi-Fi。</string>
-    <string name="settings_external_ap_check">請在系統設定中加入目標 Wi-Fi。無法讀取網路名稱時請手動核對；儲存設定不代表系統已加入網路。</string>
+    <string name="settings_external_ap_wifi">開啟系統 Wi-Fi 設定</string>
+    <string name="settings_external_ap_ready">本機已連線目標 Wi-Fi。</string>
+    <string name="settings_external_ap_check">本機未連線目標 Wi-Fi。</string>
     <string name="settings_android_address">安卓位址：%1$s</string>
-    <string name="settings_main_stopping">正在停止…</string>
+    <string name="settings_main_stopping">正在中斷連線…</string>
 </resources>

@@ -15,13 +15,16 @@ internal data class BrowserConnectionDraft(
     var localSecurity: ManualHotspotSecurity,
     var externalSsid: String,
     var externalPassword: String,
-    var externalSecured: Boolean = externalPassword.isNotEmpty(),
+    var externalSecurity: ManualHotspotSecurity = if (externalPassword.isEmpty()) ManualHotspotSecurity.OPEN else ManualHotspotSecurity.WPA2,
     var phoneAddress: String? = null,
     var phoneName: String = "iPhone",
 ) {
     override fun toString() = "Browser connection draft (redacted)"
 
     enum class Source { LOCAL, LAN }
+    var externalSecured: Boolean
+        get() = externalSecurity != ManualHotspotSecurity.OPEN
+        set(value) { externalSecurity = if (value) ManualHotspotSecurity.WPA2 else ManualHotspotSecurity.OPEN }
     val mode get() = if (source == Source.LOCAL) WirelessHotspotMode.MANUAL else WirelessHotspotMode.EXISTING_WIFI
     private val localConnectionPassword get() = if (localSecurity == ManualHotspotSecurity.OPEN) "" else localPassword
     private val externalConnectionPassword get() = if (externalSecured) externalPassword else ""
@@ -46,6 +49,7 @@ internal data class BrowserConnectionDraft(
         AirPlayPersistence.saveManualHotspotPassphrase(context, localConnectionPassword)
         AirPlayPersistence.saveManualHotspotSecurity(context, localSecurity)
         AirPlayPersistence.saveExistingWifiCredentials(context, externalSsid, externalConnectionPassword)
+        BrowserExistingWifiSettings.saveSecurity(context, externalSecurity)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("source", source.name).apply()
     }
     fun retain(state: Bundle) {
@@ -53,7 +57,7 @@ internal data class BrowserConnectionDraft(
             putBoolean("wireless", wireless); putString("source", source.name)
             putString("localSsid", localSsid); putString("localPassword", localPassword)
             putString("security", localSecurity.name); putString("externalSsid", externalSsid)
-            putString("externalPassword", externalPassword); putBoolean("externalSecured", externalSecured); putString("phoneAddress", phoneAddress); putString("phoneName", phoneName)
+            putString("externalPassword", externalPassword); putString("externalSecurity", externalSecurity.name); putString("phoneAddress", phoneAddress); putString("phoneName", phoneName)
         })
     }
     companion object {
@@ -68,7 +72,7 @@ internal data class BrowserConnectionDraft(
             val draft = BrowserConnectionDraft(AirPlayPersistence.loadWirelessEnabled(context), source,
                 AirPlayPersistence.loadManualHotspotSsid(context), AirPlayPersistence.loadManualHotspotPassphrase(context),
                 AirPlayPersistence.loadManualHotspotSecurity(context), AirPlayPersistence.loadExistingWifiSsid(context),
-                AirPlayPersistence.loadExistingWifiPassphrase(context))
+                AirPlayPersistence.loadExistingWifiPassphrase(context), BrowserExistingWifiSettings.loadSecurity(context))
             draft.phoneAddress = DiPlayPreferences.phoneAddress(context)
             draft.phoneName = DiPlayPreferences.phoneName(context)
             state?.getBundle("browser_main_draft")?.let {
@@ -81,7 +85,8 @@ internal data class BrowserConnectionDraft(
                 draft.localSecurity = runCatching { ManualHotspotSecurity.valueOf(it.getString("security")!!) }.getOrDefault(draft.localSecurity)
                 draft.externalSsid = it.getString("externalSsid", draft.externalSsid)
                 draft.externalPassword = it.getString("externalPassword", draft.externalPassword)
-                draft.externalSecured = it.getBoolean("externalSecured", draft.externalPassword.isNotEmpty())
+                draft.externalSecurity = ManualHotspotSecurity.entries.firstOrNull { security -> security.name == it.getString("externalSecurity") }
+                    ?: if (it.getBoolean("externalSecured", draft.externalPassword.isNotEmpty())) ManualHotspotSecurity.WPA2 else ManualHotspotSecurity.OPEN
                 draft.phoneAddress = it.getString("phoneAddress", draft.phoneAddress)
                 draft.phoneName = it.getString("phoneName", draft.phoneName)
             }

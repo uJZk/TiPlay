@@ -260,7 +260,7 @@
     <string name="open">Открыть</string>
     <string name="open_after_the_car_starts">Открывать после запуска автомобиля</string>
     <string name="open_bluetooth">Открыть Bluetooth</string>
-    <string name="open_car_hotspot_settings">Открыть настройки точки доступа устройства Android</string>
+    <string name="open_car_hotspot_settings">Открыть системные настройки точки доступа</string>
     <string name="open_car_settings">Открыть настройки автомобиля</string>
     <string name="open_car_wi_fi_settings">Открыть настройки Wi-Fi автомобиля</string>
     <string name="open_carplay">Открыть CarPlay</string>
@@ -632,9 +632,9 @@
     <string name="settings_interface_size_auto">Автоматически</string>
     <string name="settings_interface_size_hint">Размер текста и элементов управления на экранах TiPlay. В автоматическом режиме они увеличиваются на больших экранах с низкой плотностью. CarPlay не меняется.</string>
     <string name="settings_external_ap_hint">Подключите Android, iPhone и браузер автомобиля к одной внешней сети Wi-Fi. Этот режим не создаёт точку доступа на Android. Используйте открытую сеть или WPA2. Если браузер не видит Android, проверьте изоляцию клиентов точки доступа.</string>
-    <string name="settings_external_ap_wifi">Открыть настройки Wi-Fi</string>
-    <string name="settings_external_ap_ready">Подключено к указанной сети Wi-Fi.</string>
-    <string name="settings_external_ap_check">Подключитесь к указанной сети Wi-Fi в системных настройках. Если имя сети недоступно, проверьте его вручную. Сохранение данных не подключает устройство к Wi-Fi.</string>
+    <string name="settings_external_ap_wifi">Открыть системные настройки Wi-Fi</string>
+    <string name="settings_external_ap_ready">Устройство подключено к нужной сети Wi-Fi.</string>
+    <string name="settings_external_ap_check">Устройство не подключено к нужной сети Wi-Fi.</string>
     <string name="settings_android_address">Адрес Android: %1$s</string>
     <string name="settings_main_stopping">Отключение…</string>
 </resources>

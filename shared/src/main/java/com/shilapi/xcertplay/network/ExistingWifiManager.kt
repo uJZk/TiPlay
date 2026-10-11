@@ -11,6 +11,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Looper
 import com.shilapi.xcertplay.orchestration.ManualHotspotValidation
+import com.shilapi.xcertplay.orchestration.ManualHotspotSecurity
 import com.shilapi.xcertplay.transport.Iap2WirelessSecurity
 import java.io.IOException
 import java.net.InetAddress
@@ -24,6 +25,7 @@ class ExistingWifiManager(
     private val passphrase: String,
     private val onDiagnostic: (String) -> Unit = {},
     private val onNetworkChanged: () -> Unit = {},
+    private val selectedSecurity: ManualHotspotSecurity = if (passphrase.isEmpty()) ManualHotspotSecurity.OPEN else ManualHotspotSecurity.WPA2,
 ) : WirelessHotspotManager {
     private val connectivity = context.applicationContext.getSystemService(ConnectivityManager::class.java)
         ?: throw IllegalStateException("ConnectivityManager is unavailable")
@@ -52,6 +54,9 @@ class ExistingWifiManager(
     init {
         require(ManualHotspotValidation.error(ssid, passphrase) == null) {
             "Invalid existing Wi-Fi credentials"
+        }
+        require((selectedSecurity == ManualHotspotSecurity.OPEN) == passphrase.isEmpty()) {
+            "Existing Wi-Fi password must match the selected security type"
         }
     }
 
@@ -97,6 +102,7 @@ class ExistingWifiManager(
                 val apBssid = accessPointAddress(info?.bssid)
                 val observedSecurity = if (Build.VERSION.SDK_INT >= 31 && info != null) info.currentSecurityType else -1
                 if (Build.VERSION.SDK_INT >= 31) {
+                    ExistingWifiSecurity.validate(selectedSecurity, observedSecurity)
                     when (observedSecurity) {
                         WifiInfo.SECURITY_TYPE_OPEN -> if (passphrase.isNotEmpty()) {
                             throw IOException("Connected Wi-Fi is open; clear the saved Wi-Fi password")
@@ -150,7 +156,7 @@ class ExistingWifiManager(
             existingWifiHostAddresses(properties.linkAddresses.map { it.address }, interfaceIndex).toSet() == hosts.toSet()
 
     private fun security(): Iap2WirelessSecurity =
-        if (passphrase.isEmpty()) Iap2WirelessSecurity.NONE else Iap2WirelessSecurity.WPA_WPA2
+        ExistingWifiSecurity.advertised(selectedSecurity)
 
     private fun readableSsid(info: WifiInfo?): String? = info?.ssid?.removeSurrounding("\"")
         ?.takeUnless { it == WifiManager.UNKNOWN_SSID || it.isEmpty() }

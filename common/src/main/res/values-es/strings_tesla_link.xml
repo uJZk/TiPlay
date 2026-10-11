@@ -12,10 +12,11 @@
     <string name="settings_browser_page_address_hint">La dirección HTTPS de la página de TiPlay. Cámbiala solo si publicas la página tú mismo. Se usa en el próximo enlace que abras.</string>
     <string name="settings_browser_page_address_invalid">Introduce una dirección que empiece por https:// y no contenga #.</string>
     <string name="settings_browser_pairing_code">Código de emparejamiento</string>
-    <string name="settings_browser_pairing_code_description">El navegador del coche necesita el código %1$s para mostrar CarPlay. Los enlaces de abajo lo incluyen, así que basta con abrir un enlace para emparejar el navegador. Un código nuevo desconecta el navegador que usa el anterior; abre el enlace nuevo para emparejarlo otra vez.</string>
+    <string name="settings_browser_pairing_code_description">El navegador del coche necesita el código %1$s para mostrar CarPlay. Tras generar un código nuevo, introdúcelo en la página.</string>
     <string name="settings_browser_pairing_code_new">Código nuevo</string>
-    <string name="settings_browser_link_car">Abre este enlace en el navegador del coche (Tesla y otros navegadores del coche):</string>
+    <string name="settings_browser_link_car">Abre este enlace en el navegador del coche:</string>
     <string name="settings_browser_link_other">Para otros navegadores, como Safari y Firefox, abre este enlace en un dispositivo conectado al punto de acceso de este teléfono:</string>
     <string name="settings_browser_link_copy">Copiar enlace</string>
     <string name="settings_browser_link_copied">Enlace copiado</string>
+    <string name="settings_browser_android_address">Dirección de Android:</string>
 </resources>
