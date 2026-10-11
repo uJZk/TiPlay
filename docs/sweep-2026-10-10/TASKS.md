@@ -58,4 +58,4 @@
 
 ## Authorized follow-up — 2026-10-11
 
-All six queue/lifecycle decisions completed. Full Android CI, 60 browser tests, four tooling tests and both E2E harnesses pass. See FOLLOWUP-2026-10-11.md and per-module FOLLOWUP reports for bounds, ownership, fixes and remaining platform limits. No commits or pushes.
+All six queue/lifecycle decisions completed. Full Android CI, 60 browser tests, four tooling tests and both E2E harnesses pass. See FOLLOWUP-2026-10-11.md and per-module FOLLOWUP reports for bounds, ownership, fixes and remaining platform limits. No commits or pushes had occurred at that follow-up checkpoint; later delivery is recorded in [TIE-UP-2026-10-11.md](TIE-UP-2026-10-11.md).

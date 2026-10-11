@@ -14,9 +14,12 @@ The protocol and the reasons behind it are in [the plan](todo.md) (Chinese).
 
 Deployment update (2026-10-10): this repository now resolves to `uJZk/TiPlay` and the live page is
 `https://ujzk.github.io/TiPlay/`. In the installed APK, set **CarPlay settings → More Connection settings →
-Car browser → Browser page address** to this URL. The code default and the older examples below still use
+Car browser (experimental) → Page address** to this URL. The code default and the older examples below still use
 `/DiPlay/`; GitHub repository redirects do not make that the live Pages address. Custom page addresses remain editable.
 The existing Pages workflow uses `SITE_BASE_URL=https://ujzk.github.io/TiPlay/`.
+This deployment record conflicts with the `AGENTS.md` requirement to keep current project links on
+`uJZk/DiPlay`; the default and examples below preserve that policy. Use the recorded deployment address above
+for the installed APK until the repository link policy and default are reconciled.
 
 The car opens a public HTTPS page: the browser decodes video with WebCodecs, which needs a secure context, and Chrome
 lets an HTTPS page `fetch` plain HTTP from a local IP address such as `100.109.220.253`.
@@ -99,8 +102,8 @@ and needs no `?t=`.
 ## 3. Pairing
 
 The pairing code is created once and kept until you tap **New code**. The link carries it in the fragment (`#c=…`). The
-page stores it in the browser and removes the fragment, so the code reaches no server and stays out of the history and
-bookmarks.
+page stores it in the browser and removes the fragment, so the code does not reach the static page host and stays out of the cleaned history entry and
+bookmarks. The page sends it to the phone in the `/video` query and the `/control` and `/bye` request bodies.
 You can also type the code on the page.
 
 **Bookmark the page after the first open.** Open the link from TiPlay once, wait until the page connects, then bookmark
@@ -109,7 +112,7 @@ does not contain the code; the page uses the code it saved. Do not bookmark the 
 After **New code**, open the new link once; the bookmark then works again.
 
 One browser shows CarPlay at a time: the latest page that pairs takes over, and the previous one says so. After five wrong
-codes within 30 seconds, the phone refuses every browser for 30 seconds. The video is not encrypted on the hotspot; the
+codes within 30 seconds, authenticated requests are refused for 30 seconds, including requests with the right code. The video is not encrypted on the hotspot; the
 hotspot's WPA password protects it.
 
 ## 4. The phone's address
@@ -117,10 +120,18 @@ hotspot's WPA password protects it.
 The Tesla browser blocks private addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8), which phone hotspots
 use. It opens addresses in 100.64.0.0/10.
 
-- **With root:** turn on **Extra hotspot address (experimental)** in the same card. TiPlay adds `100.109.220.253` (or the
-  address you set) to the hotspot interface, and again after the hotspot restarts. The link names an address you set
-  in `?t=`; the default needs none.
-- **Without root:** no tested way exists yet. See the 169.254 test in section 9.
+Choose **Hotspot address** in **Car browser (experimental)**. Changes apply immediately without reconnecting CarPlay.
+
+- **Normal** (default) uses the hotspot's existing address; it needs no root.
+- **Root** adds `100.109.220.253` (or the configured address) and restores it after hotspot restart.
+- **Shizuku** adds the address without root through an authorized Shizuku service. The shell call was checked on
+  Android 16 on 2026-10-09; access from the Tesla and authorization on Android 17 still need vehicle checks.
+  The address cannot be removed by shell and remains until hotspot restart.
+- **VPN (experimental)** holds an address without root or Shizuku. Hotspot packets to a VPN address may be dropped
+  on Android 14 with the January 2025 patch and newer Android versions. The link-local alternative
+  `169.254.220.253` still needs a Tesla test.
+
+See [hotspot address setup](HOTSPOT_ADDRESS.md) for permissions, version limits and cleanup behavior.
 
 ## 5. Other browsers
 
@@ -129,7 +140,8 @@ app. It needs no internet access and no pairing code to load.
 
 - Over `http://` the page is not a secure context, so it plays video through Media Source Extensions (fragmented MP4)
   instead of WebCodecs. Safari uses its Managed Media Source.
-- Firefox usually cannot play HEVC. If the page says so, turn off **Efficient video** (HEVC) in TiPlay.
+- Firefox usually cannot play HEVC. If the page says so, turn off **HEVC (H.265) (experimental)** under
+  **CarPlay settings → Advanced**, then choose **Save and reconnect**.
 - The address in the link is the extra hotspot address once TiPlay added it, else the hotspot's own address. Any device
   on the hotspot can open it. The Tesla should use the HTTPS link: over `http://` it would fall back to Media Source
   Extensions, which is slower to start and less tested.
@@ -138,8 +150,8 @@ app. It needs no internet access and no pairing code to load.
 ## 6. Picture size
 
 CarPlay's canvas is the size of the page's video area in device pixels (CSS pixels × device pixel ratio, rounded down to
-even numbers, at most 3840 × 2160 in either orientation), at 60 fps by default. Choose 30–60 fps under
-**CarPlay settings → Display → Frame rate**. Both frame rate and **Advanced → HEVC** changes take effect only
+even numbers, at most 3840 × 2160 in either orientation), at 30 fps on a fresh installation. Choose 30–60 fps under
+**CarPlay settings → Display → Frame rate**. Both frame rate and **Advanced → HEVC (H.265) (experimental)** changes take effect only
 after **Save and reconnect**; cancelling leaves the current session unchanged. Before any browser has reported its size, TiPlay
 uses 1280 × 720. CarPlay's physical size follows the page's CSS size (0.2646 mm per CSS pixel), so its controls are as
 large as the browser's own text. The head unit's resolution, CarPlay size, safe area, dock, split screen, turning screen
@@ -176,7 +188,7 @@ localNetworkPermission=…`; the session log has `Browser link: …`, `Web video
 - [ ] The link pairs: the page connects, and its address bar no longer shows `#c=` (with the default extra address,
       only `https://ujzk.github.io/DiPlay/` is left).
 - [ ] A bookmark made after the first open reopens the page and connects with the saved code.
-- [ ] H.264 plays at 60 fps (stats overlay); then HEVC (**Efficient video** on) after a reconnect.
+- [ ] H.264 plays at 60 fps (stats overlay); then HEVC (**HEVC (H.265) (experimental)** on) after a reconnect.
 - [ ] Touch: tap, drag a list, pinch the map with two fingers. A finger lifted outside the picture is released.
 - [ ] In Drive the picture keeps playing (the probe pages kept 60 fps).
 - [ ] After a 30-minute drive the video stream is still the first one (`reconnects=0` in `Browser:` lines).
@@ -189,9 +201,9 @@ localNetworkPermission=…`; the session log has `Browser link: …`, `Web video
 - [ ] **New code** disconnects the car; the new link pairs it again.
 - [ ] A second browser (another phone on the hotspot) takes over; the car's page says so.
 - [ ] Safari and Firefox on another device play the phone-served page.
-- [ ] **169.254 test (no root).** Android 13 and later drop packets that arrive on another interface for a VPN's own
+- [ ] **169.254 test (no root).** Android 14 with the January 2025 patch and newer Android versions can drop packets that arrive on another interface for a VPN's own
       addresses, except link-local ones (`ConnectivityService.generateIngressDiscardRules` skips
-      `isLinkLocalAddress()`). The Tesla does not block 169.254.0.0/16 and Chrome treats it as local. So the address of a
+      `isLinkLocalAddress()`). Chrome treats 169.254.0.0/16 as local; Tesla HTTP access to it has not been verified. So the address of a
       VPN that TiPlay or a test app starts (`VpnService.Builder.addAddress("169.254.77.1", 32)`, which needs no root)
       might be reachable from the car through the hotspot. With such a VPN running and the extra hotspot address off,
       open `<page address>?t=169.254.77.1#c=<code>` in the car and note whether the page reaches the phone,

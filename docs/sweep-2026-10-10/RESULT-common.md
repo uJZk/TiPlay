@@ -1,5 +1,7 @@
 # Common module sweep result
 
+Historical record of the initial 2026-10-10 cleanup and its coordinator verification. The open queue/lifecycle decisions and E2E failure below were superseded by the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md); later commit, push and deployment results are in the [tie-up record](TIE-UP-2026-10-11.md).
+
 ## Scope and review
 
 Reviewed the 133 files assigned to `common` against standards 1–9. For inherited files, review and edits were limited to TiPlay hunks relative to `e837efa`; new files were fully eligible. The review covered browser settings/navigation, session hooks, local permissions, hotspot configuration and address cards, browser canvas/link lifecycle, phone locks, associated tests, Gradle asset bundling, manifest additions and localized resources.

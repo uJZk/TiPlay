@@ -29,10 +29,11 @@ The report includes:
 After a requested Bluetooth handoff, the 45-second watchdog requires a rendered
 video frame before preserving a session whose tunneled iAP2 channel never became
 ready. Session establishment alone can also occur with a black screen and does
-not prevent timeout recovery. A proven video fallback releases the Bluetooth
-bootstrap and reports `STEP handoff/fallback`, explicitly recording that tunneled
-iAP2 is unavailable; `STEP handoff/complete` remains reserved for the normal
-tunnel-ready path. The fallback does not confirm the connection in saved history
+not prevent timeout recovery. A proven video fallback preserves the Bluetooth
+bootstrap for iAP2 control and reports `STEP handoff/fallback`, explicitly recording
+that tunneled iAP2 is unavailable. If the tunnel later becomes ready, TiPlay releases
+Bluetooth and reports `STEP handoff/complete`, as it does for the normal tunnel-ready
+path. The fallback does not confirm the connection in saved history
 without the existing authenticated-tunnel proof.
 
 ## Association limits

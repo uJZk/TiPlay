@@ -1,6 +1,6 @@
 # Build TiPlay
 
-Use this procedure to build the TiPlay app for an Android phone or head unit.
+Use this procedure to build the TiPlay browser receiver for an Android phone. Head-unit implementations remain in source for upstream compatibility.
 Run the commands from the repository root, where `gradlew` and `settings.gradle.kts` are located.
 
 ## Select the application
@@ -10,7 +10,7 @@ Select `mobile` to build the main TiPlay app.
 
 | Gradle module | Purpose | Debug APK |
 | --- | --- | --- |
-| `:mobile` | Main TiPlay app for Android phones and head units | `mobile/build/outputs/apk/debug/mobile-debug.apk` |
+| `:mobile` | Main TiPlay app (current browser receiver profile) | `mobile/build/outputs/apk/debug/mobile-debug.apk` |
 | `:maphost` | Sample application that displays a map from TiPlay | `samples/maphost/build/outputs/apk/debug/maphost-debug.apk` |
 | `:home` | Optional TiPlay Home launcher | `samples/home/build/outputs/apk/debug/home-debug.apk` |
 | `:automotive` | Separate Android Automotive application inherited from xcertplay | `automotive/build/outputs/apk/debug/automotive-debug.apk` |

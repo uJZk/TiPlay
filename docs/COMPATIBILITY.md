@@ -4,13 +4,16 @@ This public preview is an independent receiver, not an Apple-certified CarPlay a
 
 | Area | Current scope |
 | --- | --- |
-| Head unit | Android 9+ APK; Wi-Fi Direct has a firmware-dependent legacy Android 9 path with unverified requested frequency, and modern verified frequency on Android 10+ |
+| Current TiPlay profile | Phone + car browser; audio through the car’s Bluetooth connection. Head-unit display/audio/navigation/vehicle controls are hidden. |
+| Retained head-unit receiver | Android 9+ APK; Wi-Fi Direct has a firmware-dependent legacy Android 9 path with unverified requested frequency, and modern verified frequency on Android 10+ |
 | Phone | Standard, non-jailbroken iPhone with CarPlay enabled; device/iOS compatibility varies |
 | Physical evidence | Previous private builds: wired and wireless picture, touch and audio confirmed on the development car with iPhone XS / iOS 18.7.10 |
 | Other cars | Mixed community reports across DiLink generations; not a certified model support list |
 | 0.2.13 evidence | Automated source/build validation and attributed contributor tests; no new complete-release vehicle test or universal model support is claimed. Earlier DiLink5.1 HUD/hotspot results remain historical evidence. |
 | Wi-Fi | Auto uses eligible saved/aligned channels; beside a 5 GHz station, explicit 2.4 GHz precedes other 5 GHz/unpinned default fallbacks. Manual channels stay explicit; no band/performance guarantee. |
 | Video | Default H.264 / 30 fps; 60 fps and HEVC increase device-specific demands |
+
+Head-unit features below describe retained upstream-compatible code and historical tests. Current TiPlay forces the phone + browser profile and disables BYD outputs, cluster maps, wheel-key integrations, ADB vehicle data and automatic car-hotspot startup.
 
 ## BYD HUD and car hotspot
 

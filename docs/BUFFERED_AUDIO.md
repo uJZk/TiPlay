@@ -1,6 +1,8 @@
 # Buffered music (CarPlay main buffered audio)
 
-Apple calls it "Enhanced buffering" ([WWDC23, Optimize CarPlay for vehicle systems](https://developer.apple.com/videos/play/wwdc2023/10150/)): for apps that support it, the iPhone sends music ahead of time and the car keeps the timing, so short wireless gaps are not heard. TiPlay implements the receiving side. It is off by default: **Settings → Display and performance → Buffered music (experimental)**, which reconnects CarPlay.
+This guide describes the retained head-unit receiver implementation and contributor tests. Current TiPlay uses the phone + browser profile, routes audio through the car’s Bluetooth connection and hides the buffered-music setting.
+
+Apple calls it "Enhanced buffering" ([WWDC23, Optimize CarPlay for vehicle systems](https://developer.apple.com/videos/play/wwdc2023/10150/)): for apps that support it, the iPhone sends music ahead of time and the car keeps the timing, so short wireless gaps are not heard. TiPlay implements the receiving side. It is off by default: **Settings → Advanced → Video and audio → Buffered music (experimental)**, which reconnects CarPlay.
 
 ## What changes
 
@@ -35,10 +37,12 @@ Apple Music's lossless setting does not reach the car this way. With only PCM 48
 
 ## Tested
 
+These are historical contributor results; the test date was not recorded in this guide.
+
 2024 BYD Tang (DiLink 5.0), iPhone on iOS 27, wireless CarPlay (Wi-Fi Direct and the car's hotspot), Apple Music:
 
 - music played from the car, with pause, resume and track changes;
-- navigation prompts ducked the music, a call paused it and it resumed afterwards, Siri worked over it (tested together with #295, which Siri needs on main); Spotify used the normal stream;
+- navigation prompts ducked the music, a call paused it and it resumed afterwards, Siri worked over it (tested together with [upstream #295](https://github.com/shihabal3amri/DiPlay/pull/295), which Siri needs on main); Spotify used the normal stream;
 - unit tests cover the offer and disabled-output SETUP gate, authenticated frame opening and malformed headers, split/coalesced TCP framing, byte/frame limits, anchor format, wrap-safe timestamps, pause/resume preload retention, in-flight pause/flush/close ordering, accepted/waiting socket cancellation, and rejected SETUP replacements.
 
 The hardware results above were supplied by the original author before the review corrections. The corrected bounded-buffer and pause/resume paths have source-level regression coverage; they have not been rerun on physical hardware by the reviewer. Recheck Apple Music pause/resume, seek/track change, navigation ducking and call/Siri interruption on the corrected build before treating this experimental option as generally supported.

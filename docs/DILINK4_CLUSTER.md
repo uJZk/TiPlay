@@ -1,5 +1,7 @@
 # Experimental DiLink 4 cluster video
 
+This guide describes the retained head-unit implementation and contributor tests. Current TiPlay forces the phone + browser profile, hides the cluster-map settings and disables cluster output. The setup below refers to the retained head-unit UI.
+
 The contributor reported testing this approach on a 2022 BYD Seal with DiLink 4.0 / Android 10. The updated upstream branch still needs a vehicle retest.
 It keeps the main CarPlay stream on the head unit and launches a separate Activity
 for the instrument-cluster stream. Other firmware has not been vehicle-tested.
@@ -7,7 +9,7 @@ for the instrument-cluster stream. Other firmware has not been vehicle-tested.
 ## Setup
 
 1. Enable the car's native cluster-map/projection mode.
-2. In TiPlay settings, enable **DiLink 4 cluster video via ADB (experimental)**.
+2. Under **Settings → Advanced → CarPlay map on dashboard (experimental)**, enable **DiLink 4 cluster video via ADB (experimental)**.
 3. Tap **Authorize ADB / retry cluster routing** and approve the car's debugging
    prompt. Local ADB must be available; background retries never request approval.
 4. Connect or reconnect the iPhone and open Apple Maps. The main CarPlay display
@@ -75,7 +77,7 @@ ChatGPT/Codex. DiPlay/xcertplay authors and existing licence notices are retaine
 
 ## Optional stock map and HUD text
 
-This route is shared with PR #187; there is only one decoder-surface owner.
+This route is shared with [upstream PR #187](https://github.com/shihabal3amri/DiPlay/pull/187); there is only one decoder-surface owner.
 Stock-map holding defaults off. A selected component/package hold is journaled
 before changing OEM state, checked before launch, and restores the exact original
 state on failure, stop, or the next app launch after a crash. A failed restoration
@@ -90,4 +92,4 @@ DiLink 4 HUD support: no verified DiLink 4 HUD receiver profile was supplied wit
 these PRs. Diagnostic exports include the firmware and installed receiver version,
 certificate and permission metadata needed to review a new profile. Do not add
 one based only on package presence. Fork application-ID/build changes and deleted
-HUD diagnostic tooling from #187 are intentionally excluded.
+HUD diagnostic tooling from [upstream PR #187](https://github.com/shihabal3amri/DiPlay/pull/187) are intentionally excluded.

@@ -4,6 +4,10 @@ Instructions for coding agents that work on TiPlay.
 
 ## Current progress
 
+See `docs/docs-sweep-2026-10-11/README.md` for the completed documentation sweep,
+verification and remaining link-policy/vehicle-validation limits;
+`docs/docs-sweep-2026-10-11/TIE-UP.md` records its commit and delivery progress.
+
 See `docs/sweep-2026-10-10/FOLLOWUP-2026-10-11.md` for the completed queue/resource lifecycle fixes and verification;
 `docs/sweep-2026-10-10/TIE-UP-2026-10-11.md` records commit, merge, push and Pages deployment progress.
 

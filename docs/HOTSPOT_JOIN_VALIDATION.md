@@ -5,7 +5,7 @@ end-to-end wireless CarPlay acceptance. See the
 [joining guide](WIRELESS_HOTSPOT_JOIN.md) for the repair workflow and the
 controlled broadcast comparison.
 
-## Software checks
+## Software checks — historical snapshot recorded 2026-10-05
 
 | Suite | Tests | Failures / errors / skipped |
 | --- | ---: | --- |

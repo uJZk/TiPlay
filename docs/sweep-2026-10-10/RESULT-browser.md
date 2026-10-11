@@ -1,5 +1,7 @@
 # Browser sweep result
 
+Historical record of the initial 2026-10-10 cleanup and its coordinator verification. The open queue/lifecycle decisions and E2E failure below were superseded by the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md); later commit, push and deployment results are in the [tie-up record](TIE-UP-2026-10-11.md).
+
 Reviewed all 20 files in the browser scope against STANDARDS.md rules 1–9 and AGENTS.md. `site/play/*` and the seven `tests/web/*.test.mjs` files are additions after `e837efa`; the inherited `site/assets/site.css` and `site/content.json` were reviewed only at the fork's changed hunks. No upstream code or generated locale pages changed.
 
 ## Changes

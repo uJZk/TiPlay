@@ -7,7 +7,7 @@ tells whether TiPlay's extra hotspot address can work through Shizuku on that ph
 The interface name must carry an alias (`wlan2:tp`). Without it, the system first clears the interface's IPv4
 addresses, which cuts every device off the hotspot until it restarts. The tool refuses a name without an alias.
 
-Build (needs a JDK and the Android SDK build tools):
+Run the build from `tools/shell-address/` (needs a JDK and the Android SDK build tools):
 
 ```sh
 javac --release 11 -d out AddAddr.java
@@ -24,11 +24,11 @@ adb shell CLASSPATH=/data/local/tmp/addaddr.dex app_process /system/bin AddAddr 
 adb shell ip -4 addr show wlan2
 ```
 
-The last line printed starts with `RESULT:`:
+A completed service-call check prints a final `RESULT:` line; invalid arguments instead print usage and exit 64:
 
 | Output | Meaning |
 |---|---|
-| `OK`, and `ip` shows both addresses | The shell user can add the address; the Shizuku method works on this phone |
+| `OK`, and `ip` shows both addresses | The shell service call can add the address; app authorization and car reachability still need checks |
 | `File exists` | The permission check passed; the address was already there |
 | `SecurityException` | The ROM blocks it; the shell user cannot change interface addresses |
 

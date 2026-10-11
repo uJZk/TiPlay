@@ -1,12 +1,20 @@
 # Built-in car hotspot setup
 
-DiAuto (Android Auto) and TiPlay (CarPlay, formerly DiPlay) share this
-built-in car hotspot setup. Install the APK on the car, not on your phone.
+> Retained head-unit setup guidance. Current TiPlay uses the phone + browser
+> profile; install it on the Android phone and follow [Tesla browser setup](TESLA_BROWSER.md).
+> Its connection chooser offers Built-in car hotspot and Existing Wi-Fi / Same LAN.
+> Wi-Fi Direct selection, the BYD hotspot automation section and the cluster/display
+> controls described below are not exposed by the current browser profile.
+
+The earlier DiAuto (Android Auto) and TiPlay (CarPlay, formerly DiPlay) head-unit
+workflow shared this built-in car hotspot setup. For that workflow, install the
+APK on the car.
 Update an existing installation of the same app without uninstalling to
 preserve settings.
 
 The Local hotspot option has been removed. Built-in car hotspot is the
-default; Wi-Fi Direct and USB remain available. Previous Local hotspot
+default in this head-unit setup; Wi-Fi Direct remains in the transport code and
+USB remains available. Previous Local hotspot
 selections switch to built-in hotspot. Check and save the car's real hotspot
 details before connecting.
 
@@ -30,8 +38,9 @@ the menu open and preserves the previously saved authentication choice.
 BUILT-IN HOTSPOT SETUP — BOTH APPS
 1. In the car's settings, turn on its built-in Wi-Fi hotspot. Select 5 GHz
    if available. Note the hotspot name and password exactly.
-2. Open DiAuto or TiPlay on the car. Go to Settings → Connection setup
-   (tap Open connection setup if shown).
+2. Open DiAuto or TiPlay on the car. In TiPlay, go to Settings → Connection →
+   Connection setup (tap Open connection setup if shown). In DiAuto, open
+   its Connection setup screen.
 3. Select Built-in car hotspot. Tap Save hotspot details and use this mode
    (or Edit saved hotspot), enter the car's hotspot name and password, and
    save. Use Hide keyboard if needed. Leave the car hotspot on.
@@ -51,25 +60,29 @@ Test one projection app at a time.
 
 EXISTING WI-FI / SAME LAN — TIPLAY
 Connect the car and iPhone to the same external router or portable Wi-Fi in
-system settings. In TiPlay Connection setup, select Existing Wi-Fi / Same LAN
+system settings. In TiPlay Settings → Connection → Connection setup, select Existing Wi-Fi / Same LAN
 and save that network's exact name and WPA2 password. Keep Bluetooth enabled,
 then connect as usual. No car hotspot or Wi-Fi Direct group is created. Disable
 router client isolation. See [Existing Wi-Fi](EXISTING_WIFI.md) for build
 requirements, network limitations and device validation.
 
-WI-FI DIRECT CHANNEL — TIPLAY
-In Settings → Connection setup, choose Wi-Fi Direct, then Preferred channel.
+WI-FI DIRECT CHANNEL — RETAINED HEAD-UNIT GUIDANCE
+In Settings → Connection → Connection setup, choose Wi-Fi Direct, then Preferred channel.
 Auto is the default and keeps TiPlay's automatic channel selection. You can
 choose a 5 GHz channel (36, 40, 44, 48, 149, 153, 157, 161 or 165), or a
 2.4 GHz channel (1–11). The car and its regional Wi-Fi settings must support
 the selected channel. Save applies the choice to the next Wi-Fi Direct
 connection; an existing connection continues until you disconnect/reconnect.
-If the car rejects the channel or creates a different one, TiPlay reports an
-error. Choose Auto or another channel and reconnect. Switching to the built-in
+If the car rejects the channel, TiPlay reports an error. On Android 10+, it also
+reports an error if the negotiated channel differs. Android 9 cannot verify the
+negotiated frequency; its reported channel is the unverified request (see
+[Android 9 limits](ANDROID9_WIFI_DIRECT.md)). Choose Auto or another channel and
+reconnect after an error. Switching to the built-in
 hotspot preserves this choice without applying it to the car hotspot.
 
-OPTIONAL: TIPLAY BYD FEATURES REQUIRING ADB
-Settings → BYD features · needs ADB appears only when BYD navigation services or
+OPTIONAL: TIPLAY BYD FEATURES REQUIRING ADB — RETAINED HEAD-UNIT GUIDANCE
+Settings → Connection → BYD features · needs ADB appears only when Built-in car
+hotspot is selected, BYD navigation services or
 the factory BYD car settings app are present, and traditional network ADB is
 reachable at 127.0.0.1:5555. The hotspot check also covers older QUALCOMM/qti
 head units without the supported navigation services; it does not enable
@@ -77,17 +90,18 @@ navigation-output features on those units.
 An unapproved ADB key still shows the setup entry; TLS pairing is not supported.
 The initial check never requests approval or reads vehicle data.
 
-The BYD ADB section contains battery reporting (with charging connectors and
-low-charge warning), wheel speed for tunnels, video while parked, and the
-dashboard song. These use autoservice through ADB, not the AMap navigation
-receiver. Check ADB access and Apply and reconnect are in this section too.
-The cluster-map stream switch retains its existing display and firmware checks.
-Navigation arrows, HUD, and map-display settings keep their existing capability
-checks in BYD navigation. Saved choices and vehicle-reading behavior are unchanged.
+Battery reporting (with charging connectors and low-charge warning), wheel speed
+for tunnels and video while parked are under Settings → Advanced → Vehicle →
+Advanced vehicle data, along with the vehicle-data checks and Apply and reconnect.
+These use autoservice through ADB, not the AMap navigation receiver. The dashboard
+song control appears in BYD navigation when available, or in Advanced vehicle data
+otherwise. The cluster-map stream switch is under Advanced and retains its display
+and firmware checks. Navigation arrows and HUD keep their capability checks in
+Settings → Navigation → BYD navigation.
 
 Automatically turn on the car hotspot appears as one switch and description in
 the same section only when Built-in car hotspot is selected. Wi-Fi Direct hides
-it without changing the saved choice or the other BYD ADB options.
+the section without changing the saved choice.
 The switch is off by default. Turning it on automatically requests missing
 WRITE_SETTINGS through ADB, without a separate setup button or TiPlay confirmation.
 Approve the car's system ADB prompt if needed. The switch is enabled only after
@@ -113,8 +127,9 @@ automatically. The head unit may also require its own auto-start permission.
 Connect when TiPlay opens remains a separate choice: the app can start the hotspot
 without connecting to an iPhone.
 
-OPTIONAL: TIPLAY AUTOMATIC INSTRUMENT MAP
-On the supported DiLink 5.1 firmware, open Settings → BYD navigation →
+OPTIONAL: TIPLAY AUTOMATIC INSTRUMENT MAP — RETAINED HEAD-UNIT GUIDANCE
+On the supported DiLink 5.1 firmware, open Settings → Advanced →
+CarPlay map on dashboard (experimental), enable the map stream, then open
 Automatic map setup · ADB. Follow the displayed one-time computer setup,
 then tap Check and enable. Open the cluster's map card or select Map theme.
 This permission is for automatic cluster theme/card detection, not hotspot

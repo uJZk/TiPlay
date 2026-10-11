@@ -1,5 +1,7 @@
 # Network sweep result
 
+Historical record of the initial 2026-10-10 cleanup and its coordinator verification. The open queue/lifecycle decisions and E2E failure below were superseded by the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md); later commit, push and deployment results are in the [tie-up record](TIE-UP-2026-10-11.md).
+
 Reviewed all 21 network files in SCOPE.md under STANDARDS.md rules 1–9. Inherited files were reviewed only at the TiPlay hunks against `e837efa`; original upstream code was not cleaned up. No production or test changes were justified without changing behavior. Only this result record was added.
 
 ## Coverage and performance review

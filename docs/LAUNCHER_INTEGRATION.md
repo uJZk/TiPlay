@@ -1,5 +1,7 @@
 # CarPlay on your launcher's home screen
 
+This guide describes retained head-unit launcher integrations. Current TiPlay forces the phone + browser profile, hides dashboard-map and sharing settings and disables the cluster stream. The live-map setup below refers to the retained head-unit UI.
+
 TiPlay can put CarPlay information on a launcher's home screen in three ways:
 
 | | What it shows | Works with | Needs |
@@ -8,7 +10,7 @@ TiPlay can put CarPlay information on a launcher's home screen in three ways:
 | [Map card](#2-map-card) | The live CarPlay map, as a card on the home screen | Any launcher, including BYD home and map home | Two permissions (see below) |
 | [Embedded map](#3-embedded-live-map-for-launcher-developers) | The live CarPlay map inside the launcher's own layout | Launchers that add support for it | Launcher code, Android 11+ |
 
-The live map is CarPlay's instrument-cluster map: the map the iPhone draws for the dashboard. The map card and the embedded map need **CarPlay map on instrument cluster** turned on in TiPlay. Without it, the iPhone does not send that map.
+The live map is CarPlay's instrument-cluster map: the map the iPhone draws for the dashboard. The map card and the embedded map need **CarPlay map on dashboard (experimental)** turned on under **Settings → Advanced** in the retained head-unit UI. Without it, the iPhone does not send that map.
 
 Why the live map is not a widget: Android widgets are drawn by the launcher from a fixed set of views (text, images, buttons, lists). An app cannot run a video decoder inside another app's widget. So the widget shows text and arrows, and the live map needs the card or the embedding protocol.
 
@@ -40,7 +42,7 @@ Use the card:
 
 Size and place are remembered. The card goes when you open another app and comes back on the home screen. It also goes when CarPlay disconnects.
 
-In TiPlay settings, under the dashboard map, turn on **Dashboard map on the centre screen** (off by default) and give two permissions:
+Under **Settings → Advanced → CarPlay map on dashboard (experimental)**, turn on **Dashboard map on the centre screen** (off by default) and give two permissions:
 
 - **Draw over other apps**: the settings screen offers it, or over ADB:
 
@@ -66,7 +68,7 @@ Requirements:
 
 - Android 11 (API 30) or newer on the head unit;
 - the driver turns on **Share the live map with other launchers** in TiPlay (off by default);
-- CarPlay connected with **CarPlay map on instrument cluster** on, for the map itself.
+- CarPlay connected with **CarPlay map on dashboard (experimental)** on, for the map itself.
 
 A complete working example is the sample app in [`samples/maphost`](../samples/maphost/src/main/java/com/diplay/maphost/MainActivity.kt).
 
@@ -87,7 +89,7 @@ Service action: `com.shihab.diplay.action.EMBED_MAP`. The package differs betwee
 
 Turning sharing off releases every attached map and sends `ERROR` with `disabled` to its launcher. Treat this as a detach. Enabling sharing again requires a fresh `ATTACH`; old views do not reconnect automatically.
 
-The map is 8:3. If your view has another shape, TiPlay fills it and crops the edges, keeping the car position near the centre. While there is no map, the view shows a "waiting" text. A tap on the map opens CarPlay.
+The embedded view follows the active cluster stream’s aspect ratio: normally 8:3 for a physical dashboard, or 16:9 for the virtual stream on a head unit without a dashboard display. If your view has another shape, TiPlay fills it and crops the edges, keeping the car position near the centre. While there is no map, the view shows a "waiting" text. A tap on the map opens CarPlay.
 
 ### Steps
 
@@ -186,5 +188,5 @@ It runs without system privileges. BYD's home stays installed, and the **BYD hom
 | Card shows over every app | Usage Access is not allowed for TiPlay. |
 | Card on BYD home but not on another launcher | Make that launcher the default home; TiPlay reads the default home when the card starts. |
 | Embedded map says `disabled` | Turn on "Share the live map with other launchers" in TiPlay. |
-| Embedded map stays on "waiting" | CarPlay is not connected, or "CarPlay map on instrument cluster" is off. |
+| Embedded map stays on "waiting" | CarPlay is not connected, or "CarPlay map on dashboard (experimental)" is off. |
 | Widget says "CarPlay is not connected" while CarPlay works | Open TiPlay once after installing it; the widget follows the running session. |

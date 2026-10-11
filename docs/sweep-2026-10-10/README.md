@@ -15,14 +15,14 @@ Status: complete — cleanup and authorized queue/lifecycle fixes verified. See 
 
 The user authorized these fixes on 2026-10-11. All six modules now have verified implementations and regression tests. Full Android CI, browser tests and both E2E harnesses pass. The following list preserves the initial findings.
 
-Performance review found follow-ups requiring behavioral policy decisions; no changes applied and no measured regression/gain claimed. Details and file references are in each RESULT report.
+At the initial review checkpoint, performance review found follow-ups requiring behavioral policy decisions; no changes had yet been applied and no measured regression/gain was claimed. Details and file references are in each RESULT report.
 
 - common: coalesce/bound per-trigger interface probe threads; preserve request freshness.
 - network: coalesce hotspot refresh tasks without losing retries; define bounded timed-out shell reader cleanup.
 - web: define limits/coalescing for never-dropped configuration records and queued key-frame requests.
 - shared-other: replace lifetime audio SETUP CopyOnWriteArrayList only after defining concurrent diagnostic snapshot semantics.
 - browser: define producer backpressure, disconnected decoder/frame lifetime and pending MSE object URL ownership.
-- tooling: see RESULT-tooling.md for harness lifecycle/queue decisions. Optional fake-phone E2E retry failed the stats-event assertion with one field received, after H.264 muxing, VP8 decode, viewport and touch checks passed. Full E2E is not passing; see E2E-VALIDATION.txt.
+- tooling: see RESULT-tooling.md for harness lifecycle/queue decisions. Optional fake-phone E2E retry failed the stats-event assertion with one field received, after H.264 muxing, VP8 decode, viewport and touch checks passed. Full E2E did not pass at that checkpoint; see E2E-VALIDATION.txt.
 
 These findings mean performance best practices review is complete, not a blanket certification. Allocation/copy reductions are evident from source; end-to-end latency/throughput was not measured.
 
@@ -39,7 +39,7 @@ These findings mean performance best practices review is complete, not a blanket
 - Source diff spot-checked: all 11 changed source files are in scope; inherited edits belong to TiPlay hunks. Protocol, validation order, settings ordering and resource ownership preserved by inspection.
 - Full required AGENTS.md Android command succeeded on Temurin 25.0.4.1+1 (`BUILD SUCCESSFUL in 9m 21s`; 247 tasks, 30 executed / 217 up-to-date). Included shared/common/home unit tests; mobile/home/maphost lint; and all three debug APK builds.
 - Android report totals: shared 1,186; common 987; home 4; total 2,177 tests, zero failures/errors/skips. See ANDROID-TEST-SUMMARY.json and ANDROID-VALIDATION.txt.
-- Browser unit suite passed 50/50 (Node 24.19.0; CI specifies Node 22). See BROWSER-VALIDATION.txt. Browser source has not changed since that passing run.
+- Browser unit suite passed 50/50 (Node 24.19.0; CI specifies Node 22). See BROWSER-VALIDATION.txt. Browser source had not changed at that initial verification checkpoint.
 - Public-tree check passed. Site generator produced seven landing pages with no generated Git changes. All 63 in-scope Android XML files parse without duplicate named entries. Diff and changed-JS syntax checks passed.
 - RealPhone.java compiled successfully with Temurin 25 and the newly built shared classes/Kotlin standard library.
 - Optional fake-phone E2E retry failed the stats-event assertion after earlier playback/touch checks. This separate harness issue is an Open decision, not a passing check; see E2E-VALIDATION.txt.

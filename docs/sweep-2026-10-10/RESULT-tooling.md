@@ -1,5 +1,7 @@
 # Tooling sweep result
 
+Historical record of the initial 2026-10-10 cleanup and its coordinator verification. The open queue/lifecycle decisions and E2E failure below were superseded by the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md); later commit, push and deployment results are in the [tie-up record](TIE-UP-2026-10-11.md).
+
 Reviewed the tooling section of SCOPE.md against standards 1–9. Inherited files were reviewed only for fork changes relative to e837efa; original upstream implementation and generated locale HTML were excluded. No shared TASKS.md edits, commits or pushes.
 
 ## Changes

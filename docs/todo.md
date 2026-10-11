@@ -3,7 +3,7 @@
 ## 特斯拉浏览器 CarPlay：声音走车辆蓝牙
 
 背景：安卓手机运行 TiPlay 并开热点，特斯拉连接热点后用浏览器显示 CarPlay。
-安卓手机只负责视频和触摸。音乐、导航、Siri、电话和麦克风全部走 iPhone 与特斯拉之间的蓝牙。
+目标是安卓手机只负责视频和触摸，音乐、导航、Siri、电话和麦克风走 iPhone 与特斯拉之间的蓝牙；完整音频路线仍待实车验证。
 
 ### 依据：Carlinkit 固件的 `BtAudio` 模式
 
@@ -25,7 +25,7 @@
 
 ### TiPlay 现状
 
-`AirPlayConfig.disableAudioOutput`（`shared/.../airplay/AirPlayConfig.kt`）目前只在测试中使用，界面上没有开关。它和 Carlinkit 的差别：
+`AirPlayConfig.audioViaCarBluetooth` 已实现 Carlinkit 风格路线，`disableAudioOutput` 保留为备选变体。当前 `BrowserSettingsPolicy` 在进入应用时选择手机 + 浏览器、标准车辆蓝牙音频，并隐藏音频选择界面；下面已完成项记录此前选择界面的实现，不代表当前可见设置。备选变体和 Carlinkit 的差别：
 
 | | Carlinkit `BtAudio=1` | TiPlay `disableAudioOutput` |
 |---|---|---|
@@ -36,9 +36,9 @@
 
 ### 待办
 
-- [x] 在 `AirPlayConfig` 新增一个字段（例如 `audioViaCarBluetooth`），在 `AirPlayInfoPlist.build` 中**只去掉 `audioFormats`**，`audioLatencies` 和 `features` 保持不变，与 Carlinkit 一致。
+- [x] 在 `AirPlayConfig` 新增字段 `audioViaCarBluetooth`，在 `AirPlayInfoPlist.build` 中**只去掉 `audioFormats`**，`audioLatencies` 和 `features` 保持不变，与 Carlinkit 一致。
 - [x] 保留 `disableAudioOutput` 作为备选变体，实测两者哪个让 iPhone 稳定地把声音交给车辆蓝牙。
-  设置里选"开启（备选方式）"即为该变体；两者的对比放在下面的真机验证里。
+  此前设置里选"开启（备选方式）"即为该变体；当前界面隐藏此选择，两者的对比放在下面的真机验证里。
 - [x] 该模式下不启动音频接收、麦克风上行和回声消除，也不请求音频焦点（`AndroidMediaSink`、`MicrophoneUplink`）。
   iPhone 仍然打开的音频流会被拒绝（不放进 SETUP 响应）。
 - [ ] 如果真机上 iPhone 在音频 SETUP 被拒绝后断开会话：改为接受但丢弃（绑定端口，不解密、不播放）。
@@ -80,8 +80,8 @@
   - 没有弹出"本地网络访问"授权提示。`ws://` 没有到达手机（被浏览器拦截）。
 - [ ] 确认 iPhone 发来的码流格式：在诊断日志中记录配置头的格式标记（`avcC`/`hvcC`/其他）。
   代码已完成：会话日志每种配置记一行 `Video config marker=… codec=…`；待真机报告确认。
-- [x] 视频链路：新增 `WebMediaSink`，不转码，直接把 iPhone 码流（H.264 或 HEVC）通过 HTTP 响应流送给浏览器；浏览器在 Worker 里用 `fetch` 读取，用 WebCodecs 硬解，用 WebGL 画到 OffscreenCanvas；发送端积压时丢帧到下一个关键帧。
-  分辨率按浏览器上报的视口 × DPR 协商，60 fps。
+- [x] 视频链路：新增 `WebMediaSink`，不转码，直接把 iPhone 码流（H.264 或 HEVC）通过 HTTP 响应流送给浏览器；浏览器在主线程发起 `fetch`，把响应流转交 Worker 读取，用 WebCodecs 硬解，用 WebGL 画到 OffscreenCanvas；发送端积压时丢帧到下一个关键帧。
+  分辨率按浏览器上报的视口 × DPR 协商；当前帧率新安装默认 30 fps，可在 CarPlay 设置中选 60 fps 后保存并重新连接。
   代码已完成（`TeslaBrowserLink`、`TeslaBrowserCanvas`，在 `CarPlayHostActivity` 的 `createMediaEngine` 分出视频），实车测试见 [TESLA_BROWSER.md](TESLA_BROWSER.md) 的清单。
 - [x] 网络：按下面"热点地址"和"传输层"的决定实现。
   代码已完成：手机在所有 IPv4 地址的 8080 端口提供协议接口，也提供自带的页面副本（`http://<地址>:8080/play/`，给其他浏览器）；端口被占用时退避重试；Android 17 申请本地网络权限；连接期间持有唤醒锁和低延迟 Wi-Fi 锁。实车测试待做。
@@ -111,8 +111,8 @@
     不用流式上传：Chrome 只在 HTTP/2 以上支持流式请求体。
   - 手机端：普通 HTTP 服务器，监听 8080，开 TCP_NODELAY，发送缓冲设小，积压时丢帧到下一个关键帧并向 iPhone 请求关键帧；
     返回 CORS 响应头（含 `Access-Control-Allow-Private-Network`），以备浏览器发出本地网络预检。
-  - 配对：URL 参数带配对码，只允许一个控制端。热点有 WPA 加密，明文 HTTP 的风险可以接受。
-  - 不需要任何证书、域名解析或证书服务器。
+  - 配对：页面链接片段 `#c=` 带配对码，静态页面服务器收不到片段；页面随后在 `/video` 查询和 `/control`、`/bye` 请求体中发给手机，只允许一个控制端。热点有 WPA 加密，明文 HTTP 的风险可以接受。
+  - 手机 HTTP 接口不需要证书或证书服务器；公网静态页面仍需域名解析和有效 HTTPS 证书。
   - 风险（都不受我们控制）：Chrome 取消或收紧这条混合内容豁免；特斯拉以后开始弹授权提示（只需用户允许一次）；特斯拉的拦截名单加入 100.64。
   - Worker 里直接发起 `fetch` 是否享受豁免：公开资料没有定论（2026-10-09 查证）。LNA 规范说该机制同样适用于 Worker，
     但授权检查依赖关联的 Document；Chrome 文档只说明 Service Worker 和 Shared Worker 需要其来源事先获得授权，未提及 Dedicated Worker。
@@ -123,15 +123,15 @@
   - WheelPlay 基于较旧的 DiPlay 快照，没有共同 git 历史，缺少后来的热点和无线可靠性修复，难以再合并上游修复。
   - 它的主视频路线是 WebRTC → `<video>` → `drawImage`，按其他项目的报告，特斯拉挂挡后 `<video>` 会暂停（推断，未在本车验证）。
   - 它的音频走安卓或浏览器，和"声音走车辆蓝牙"的方案不同。
-- [ ] 从 WheelPlay 按需移植以下组件（GPL-3.0，保留署名）：
+- [ ] 评估是否还需要从 WheelPlay 移植以下组件（GPL-3.0，保留署名）；当前已用 `BrowserLinkServer`、`BrowserPairingGate`、`WebMediaSink` 和触摸/统计实现对应主要功能，未完成标记不表示这些功能缺失：
   - `LanWebServer`：手机端 HTTP 服务器（只提供视频流和控制接口，页面改为公网静态托管）。`LanTls` 不再需要。
   - `QrPairing`、`RememberedBrowsers`、`TouchLease`：扫码配对、记住已配对浏览器、单一控制端。
   - `EncodedVideoSink`、`CompressedVideoFrame`：从媒体层接出不解码的码流，作为 `WebMediaSink` 的基础。
   - 触摸坐标换算，以及浏览器端统计面板（参考 `window.wheelplayStats`）。
   - 不移植：WebRTC 原生代码（`rtc_bridge.cpp`、libdatachannel）、`<video>` 转画布渲染、JPEG 兼容模式、浏览器音频。
-- [ ] 增加"手机 + 浏览器"运行模式：跳过 BYD HUD、仪表、ADB、方向盘按键等车机专属功能。
+- [x] 增加"手机 + 浏览器"运行模式：跳过 BYD HUD、仪表、ADB、方向盘按键等车机专属功能。当前产品配置固定选择该模式，界面没有切换开关。
 - **热点地址**（2026-10-09）：
-  - [x] 设置项"热点地址"，四种方式（2026-10-09 实现，说明见 `docs/HOTSPOT_ADDRESS.md`），都立即生效、不重新连接：
+  - [x] 设置项"热点地址"，四种方式（2026-10-09 实现，说明见 [HOTSPOT_ADDRESS.md](HOTSPOT_ADDRESS.md)），都立即生效、不重新连接：
     - 普通（默认）：不加地址，不需要 root。适用于其他车机浏览器，或手机热点网段本身就在 100.64.0.0/10 内。
     - Root：`ip addr` 加地址；离开这个方式时删除。
     - VPN（实验性）：只持有地址的 VPN，不需要 root 和 Shizuku；Android 14（2025-01 补丁起）和 15 以上很可能无效，
@@ -145,7 +145,7 @@
   - 网卡名不要写死 `wlan2`，按当前热点网卡的地址查找。热点重启后地址会消失，Root 和 Shizuku 方式会自动重新添加。
   - **免 root（2026-10-09 实测）**：shell 用户（uid 2000，和免 root 的 Shizuku 相同）调用 `network_management` 服务的
     `setInterfaceConfig("wlan2:tp", 100.109.220.253/32)`，成功把地址加到 wlan2，热点原地址 `10.176.81.135/24` 不受影响
-    （Android 16，SDK 36，安全补丁 2026-07-01；工具见 `tools/shell-address/`）。
+    （Android 16，SDK 36，安全补丁 2026-07-01；工具见 [shell-address](../tools/shell-address/README.md)）。
     - 原理：shell 没有 `CAP_NET_ADMIN`，但有 `CONNECTIVITY_INTERNAL`，`NetworkManagementService.setInterfaceConfig` 接受它，
       再以 system 身份让 netd 加地址。Android 17 源码（`android-17.0.0_r1`）这条链没有变化。
     - 网卡名必须带别名（`wlan2:tp`）。不带别名时系统会先清空该网卡的 IPv4 地址，热点上的设备全部断网。

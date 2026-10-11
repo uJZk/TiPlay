@@ -1,16 +1,20 @@
 # Side panel next to CarPlay (experimental)
 
-CarPlay can share the head unit's main screen with TiPlay: the iPhone draws CarPlay in two thirds of the screen while TiPlay shows its own panel in the rest. On a landscape screen CarPlay stays on the driver's side and the panel is the passenger's third (the right in a left-hand-drive car, the left with **Right-hand drive** on); on a portrait screen the panel is a band at the bottom. The car switches between this and full-screen CarPlay at any time without reconnecting. It is off by default (**Settings → Display and performance → Side panel next to CarPlay**); once on, the in-session menu has a **Side panel** button, and the panel has a **Full screen** button.
+This guide describes the retained head-unit implementation and contributor tests. Current TiPlay forces the phone + browser profile and hides the side-panel setting. The settings path below refers to the retained head-unit UI.
+
+CarPlay can share the head unit's main screen with TiPlay: the iPhone draws CarPlay in two thirds of the screen while TiPlay shows its own panel in the rest. On a landscape screen CarPlay stays on the driver's side and the panel is the passenger's third (the right in a left-hand-drive car, the left with **Right-hand drive** on); on a portrait screen the panel is a band at the bottom. The car switches between this and full-screen CarPlay at any time without reconnecting. It is off by default (**Settings → Advanced → Display (experimental) → Side panel next to CarPlay (experimental)**); enabling it applies at the next connection and shows the consent-controlled **Reconnect now** bar. Once connected with it on, the in-session menu has a **Side panel** button, and the panel has a **Full screen** button.
 
 ## How it works
 
-The panel builds on the view areas described in [VIEW_AREAS.md](VIEW_AREAS.md). With the setting on, the main display also declares, for each screen orientation and dock edge, an area with two thirds of the screen: the left of a landscape screen, the top of a portrait one. The **Side panel** button moves CarPlay there with `updateViewArea`; TiPlay lays out the canvas by the whole screen and an ordinary Android view covers the strip of the stream CarPlay leaves black, mapped through the video's layout, so it stays on that strip when the video is letterboxed. Touches on the panel stay in TiPlay; touches elsewhere go to the iPhone as before. A window change (a turn, the head unit's split screen) ends the panel and picks the matching area as usual. Closing TiPlay or ending the session hides the panel and stops its refresh.
+The panel builds on the view areas described in [VIEW_AREAS.md](VIEW_AREAS.md). With the setting on, the main display also declares, for each screen orientation and dock edge, an area with two thirds of the screen: the driver’s side of a landscape screen, the top of a portrait one. The **Side panel** button moves CarPlay there with `updateViewArea`; TiPlay lays out the canvas by the whole screen and an ordinary Android view covers the strip of the stream CarPlay leaves black, mapped through the video's layout, so it stays on that strip when the video is letterboxed. Touches on the panel stay in TiPlay; touches elsewhere go to the iPhone as before. A window change (a turn, the head unit's split screen) ends the panel and picks the matching area as usual. Closing TiPlay or ending the session hides the panel and stops its refresh.
 
 CarPlay has no notion of the panel's contents; the iPhone only knows the car asked it to use a smaller area.
 
 Panel placement uses physical video coordinates, so switching the UI to a right-to-left language does not move it over CarPlay. When a new host Activity adopts a live session with the panel open, it restores the panel and its refresh callback without changing the view area.
 
 ## Tested
+
+These are historical contributor results; the test date was not recorded in this guide.
 
 2024 BYD Tang (DiLink 5.0, 2560×1440 rotating centre screen) with an iPhone on iOS 27, over wireless CarPlay (lab build of the same design): CarPlay moved to the left two thirds (landscape) or the top two thirds (portrait) and back within a fraction of a second, without reconnecting; touches in CarPlay's area landed correctly; the panel showed a clock and the car's battery and range. With an automatic dock, CarPlay puts its dock at the bottom once several areas are declared; the dock setting places it.
 

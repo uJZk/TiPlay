@@ -1,12 +1,18 @@
 # Smooth wireless CarPlay
 
+> Retained head-unit engineering guide and measurements. Current TiPlay's
+> phone + browser profile hides the rotation and smooth-video controls and does
+> not offer Wi-Fi Direct in its connection chooser. The settings paths below
+> describe the retained head-unit layout. Use [Tesla browser setup](TESLA_BROWSER.md)
+> for the current product workflow.
+
 The Wi-Fi channel and the size of the picture can affect how smooth wireless CarPlay feels. The numbers below were measured on a 2024 BYD Tang (DiLink 5.0, 2560×1440 screen) with an iPhone on iOS 27, parked, while scrolling the same Apple Music list. Other cars, firmware and phones may behave differently; interference, scanning and decoder limits can also contribute.
 
 This guide describes 0.2.13 channel-policy and rotation behavior. Wi-Fi Direct is available on Android 9+ with suitable firmware. Android 9 uses the legacy group/channel path and cannot verify the negotiated frequency; see [Android 9 limits](ANDROID9_WIFI_DIRECT.md). Android 10+ retains actual-frequency verification. The contributor measurements below describe their specified Tang setup, not every device.
 
 ## 1. Wi-Fi channel
 
-**Settings → Connection setup → Wi-Fi Direct → Preferred channel**
+**Settings → Connection → Connection setup → Wi-Fi Direct → Preferred channel**
 
 On this Tang, running Wi-Fi Direct on a different 5 GHz channel from the car's joined Wi-Fi network caused:
 
@@ -20,7 +26,10 @@ A 2.4 GHz Wi-Fi Direct channel alongside the 5 GHz network was smooth in this te
 
 ## 2. Picture size and screen rotation
 
-**Settings → Display and performance → Turn CarPlay with the screen without reconnecting**
+**Settings → Advanced → Display (experimental) → Turn CarPlay with the screen without reconnecting**
+
+Rotation and square-picture changes apply at the next connection. Use the
+Reconnect now bar when ready to apply them to a running session.
 
 Larger pictures can increase encoding, transmission and decoding work. In this test, TiPlay's received and rendered frame rates were close in all three cases, while the larger square arrived at a lower rate. This suggests testing picture size, but does not by itself identify the iPhone encoder as the bottleneck or rule out network effects and backpressure.
 
@@ -40,7 +49,8 @@ With rotation on, CarPlay gets a square picture that holds both a landscape and 
 
 ## 3. Smooth video (experimental)
 
-**Settings → Display and performance → Smooth video (experimental)**, off by default.
+**Settings → Advanced → Video and audio → Smooth video (experimental)**, off by default.
+Changing this switch reconnects CarPlay.
 
 By default TiPlay shows each frame as soon as the decoder releases it. On the Tang, the decoder's output timing depended on later input:
 

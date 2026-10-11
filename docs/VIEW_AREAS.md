@@ -1,10 +1,14 @@
 # CarPlay view areas: dock position, split screen and a turning screen
 
-A CarPlay accessory may declare several **view areas** inside the main screen's video stream and tell the iPhone which one to draw in. TiPlay uses this for three optional settings, all without reconnecting CarPlay:
+This guide describes the retained head-unit display controls and contributor tests. Current TiPlay forces the phone + browser profile, saves the split-screen adaptation setting as enabled and hides the dock, split-screen and turning-screen settings. The settings paths below refer to the retained head-unit UI.
 
-- **CarPlay dock** (Settings → Display and performance, and the in-session menu): Automatic (default), Driver's side or Bottom.
-- **CarPlay in the head unit's split screen** (Settings → Display and performance, off by default): when the head unit shows TiPlay in half of the screen, CarPlay redraws for that window instead of shrinking with black bars, and returns to full screen.
-- **Turn CarPlay with the screen without reconnecting** (Settings → Display and performance, off by default): for head units whose screen turns, CarPlay redraws in the other orientation instead of reconnecting.
+A CarPlay accessory may declare several **view areas** inside the main screen's video stream and tell the iPhone which one to draw in. TiPlay uses this for three settings. Once negotiated, view-area transitions can run without reconnecting CarPlay:
+
+- **CarPlay dock** (Settings → Display, and the in-session menu): Automatic (default), Driver's side or Bottom.
+- **CarPlay in the head unit's split screen** (Settings → Advanced → Display (experimental), off by default): when the head unit shows TiPlay in half of the screen, CarPlay redraws for that window instead of shrinking with black bars, and returns to full screen.
+- **Turn CarPlay with the screen without reconnecting** (Settings → Advanced → Display (experimental), off by default): for head units whose screen turns, CarPlay redraws in the other orientation instead of reconnecting.
+
+Enabling split-screen adaptation or turning-screen support applies at the next connection and shows the **Reconnect now** bar; the driver chooses when to reconnect. Switching between Bottom and Driver’s side dock positions can apply live when the session has the matching areas. Switching to or from Automatic requires the next connection.
 
 ## How it works
 
@@ -42,6 +46,8 @@ When the screen turns, TiPlay moves CarPlay to the other area and lays out the c
 - **Starting in split screen:** a session that starts there keeps the plain canvas.
 
 ## Tested
+
+These are historical contributor results; the test date was not recorded in this guide.
 
 2024 BYD Tang (DiLink 5.0, 2560×1440 centre screen) with an iPhone on iOS 27, wireless CarPlay:
 

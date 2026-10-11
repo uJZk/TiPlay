@@ -1,6 +1,6 @@
 # Test checklist
 
-Use the [installation guide](INSTALL.md). With the car parked, verify wired and wireless connection, picture, touch and music. Test disconnect/reconnect, then settings Apply/Cancel. Save a diagnostic report after reproducing an issue.
+Use the [installation guide](INSTALL.md) and [browser vehicle checklist](TESLA_BROWSER.md#9-car-test-checklist). The current app applies the browser receiver profile; head-unit display/audio/location/BYD controls are hidden. The retained head-unit checks below are a compatibility matrix for a build that exposes those controls, not instructions to enable them in the current profile. Record that build and profile explicitly. With the car parked, verify wired and wireless connection, picture, touch and music. Test disconnect/reconnect, then settings Apply/Cancel. Save a diagnostic report after reproducing an issue.
 
 For the USB trailer, software-window video and RFCOMM reliability changes, complete the
 [connection reliability matrix](CONNECTION_RELIABILITY.md#vehicle-acceptance-before-release).
@@ -28,7 +28,7 @@ Include head-unit model, DiLink/Android, iPhone/iOS, wired/wireless, app version
 
 ## Preferred Wi-Fi Direct channel
 
-- In **Settings → Connection setup → Wi-Fi Direct**, confirm **Preferred channel: Auto** on a fresh install. Select channel 149 and Cancel; Auto must remain selected. Select 149 and Save, reopen the chooser and restart the app to confirm it stays saved.
+- In **Settings → Connection → Connection setup → Wi-Fi Direct**, confirm **Preferred channel: Auto** on a fresh install. Select channel 149 and Cancel; Auto must remain selected. Select 149 and Save, reopen the chooser and restart the app to confirm it stays saved.
 - Disconnect/reconnect after saving. Check `channel preference=149 frequencyMHz=5745`, `create mode=PREFERRED_CHANNEL`, and `requestedMHz=5745 actualMHz=5745 matched=true`. An unsupported channel or a different actual channel must report an error instead of silently falling back. Select Auto to restore automatic startup.
 - Compare Auto and manual choices with the car already joined to Wi-Fi. A manual choice must override station alignment and any remembered automatic channel. Successful manual sessions must not replace the remembered automatic configuration.
 - Switch to built-in hotspot and USB. The channel chooser must be hidden for built-in hotspot, and neither connection may apply the Wi-Fi Direct preference. Returning to Wi-Fi Direct must restore the saved choice. Saving a channel during a connection must leave that session running and apply the change to the next connection.
@@ -54,7 +54,7 @@ In the diagnostic report, the next `Starting CarPlay controller at` and `Display
 
 ## Location reporting
 
-With the car parked, open **Settings → Location → Report location to iPhone**.
+With the car parked, open **Settings → Navigation → Location → Report location to iPhone**.
 
 - On a fresh installation, the switch is off. Enabling it requests precise location if needed; denying the request or granting only approximate location leaves it off.
 - Grant precise location, enable the switch, then reopen Settings to confirm the saved state. With no connection running, the setting applies to the next connection.
@@ -63,7 +63,7 @@ With the car parked, open **Settings → Location → Report location to iPhone*
 
 ## Advanced vehicle data
 
-- Expand **Settings → Location → Advanced vehicle data**. Confirm a fresh install uses **Default mode · verified on DiLink 5.0 head units** and shows the battery, wheel-speed and parked-video switches without a field probe.
+- Expand **Settings → Advanced → Vehicle → Advanced vehicle data**. Confirm a fresh install uses **Default mode · verified on DiLink 5.0 head units** and shows the battery, wheel-speed and parked-video switches without a field probe.
 - In Default mode, tap **Check ADB access** and record the battery, speed and gear it shows. With CarPlay connected, turn on a switch whose data cannot be read: CarPlay must stay connected and the page must show what cannot be read.
 - Select **Legacy head-unit detection · tested on controller 13 / DiLink 3.0**. Approve the key if the car asks; the same action must continue into the read-only field probe. With “Always allow” ticked, the page must not say the car allowed TiPlay only once. A failed probe must leave Default mode selected.
 - Reopen Settings, restart TiPlay, change gear and reconnect CarPlay. The successful probe, resolved fields and enabled battery/wheel-speed/video switches must remain saved without another tap, even when the current firmware metadata differs.

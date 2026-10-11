@@ -1,0 +1,788 @@
+commit 269852ef86f842612c7854d373affc4d3c665e37 Record successful Pages delivery and CI continuation
+
+M	docs/sweep-2026-10-10/TIE-UP-2026-10-11.md
+commit 1b47c96bca69a0b95bf8235e5c95e54a9090f5bd Record sweep completion and current Pages deployment path
+
+M	docs/sweep-2026-10-10/README.md
+M	docs/sweep-2026-10-10/TIE-UP-2026-10-11.md
+commit 0f90c0c00f01f9d201a4b49acfd7949a39b7a20b Bound TiPlay queues and release retired media resources
+
+M	AGENTS.md
+A	docs/sweep-2026-10-10/ANDROID-INITIAL-BLOCKER.txt
+A	docs/sweep-2026-10-10/ANDROID-VALIDATION.txt
+A	docs/sweep-2026-10-10/BROWSER-VALIDATION.txt
+A	docs/sweep-2026-10-10/DIFFSTAT.txt
+A	docs/sweep-2026-10-10/E2E-VALIDATION.txt
+A	docs/sweep-2026-10-10/ENVIRONMENT.md
+A	docs/sweep-2026-10-10/FOLLOWUP-2026-10-11.md
+A	docs/sweep-2026-10-10/FOLLOWUP-ANDROID-INITIAL-FAILURE.txt
+A	docs/sweep-2026-10-10/FOLLOWUP-ANDROID-VALIDATION.txt
+A	docs/sweep-2026-10-10/FOLLOWUP-BROWSER-VALIDATION.txt
+A	docs/sweep-2026-10-10/FOLLOWUP-COMMON-FOCUSED-VALIDATION.txt
+A	docs/sweep-2026-10-10/FOLLOWUP-FAKE-E2E-VALIDATION.txt
+A	docs/sweep-2026-10-10/FOLLOWUP-REAL-E2E-VALIDATION.txt
+A	docs/sweep-2026-10-10/FOLLOWUP-TOOLING-VALIDATION.txt
+A	docs/sweep-2026-10-10/FOLLOWUP-browser.md
+A	docs/sweep-2026-10-10/FOLLOWUP-common.md
+A	docs/sweep-2026-10-10/FOLLOWUP-network.md
+A	docs/sweep-2026-10-10/FOLLOWUP-shared-other.md
+A	docs/sweep-2026-10-10/FOLLOWUP-tooling.md
+A	docs/sweep-2026-10-10/FOLLOWUP-web.md
+A	docs/sweep-2026-10-10/HISTORY.txt
+A	docs/sweep-2026-10-10/README.md
+A	docs/sweep-2026-10-10/RESULT-browser.md
+A	docs/sweep-2026-10-10/RESULT-common.md
+A	docs/sweep-2026-10-10/RESULT-network.md
+A	docs/sweep-2026-10-10/RESULT-shared-other.md
+A	docs/sweep-2026-10-10/RESULT-tooling.md
+A	docs/sweep-2026-10-10/RESULT-web.md
+A	docs/sweep-2026-10-10/SCOPE.md
+A	docs/sweep-2026-10-10/SDK-VALIDATION.txt
+A	docs/sweep-2026-10-10/STANDARDS.md
+A	docs/sweep-2026-10-10/TASKS.md
+A	docs/sweep-2026-10-10/TIE-UP-2026-10-11.md
+commit e80a6208e7f17e7432261a2a7ee50ade15155bdd Record Pages deployment and browser address migration
+
+M	README.md
+M	README.zh-CN.md
+M	docs/SETTINGS-VALIDATION-2026-10-10.md
+M	docs/TESLA_BROWSER.md
+commit 7fbefa08eee662c3d86a54a61ce15ab619d04c6c Unify CarPlay settings for the TiPlay browser profile
+
+M	AGENTS.md
+M	README.md
+M	README.zh-CN.md
+A	docs/SETTINGS-VALIDATION-2026-10-10.md
+M	docs/TESLA_BROWSER.md
+commit ba11d917ad780baefd014ec8c848848ac7d38f91 Keep local browser E2E traffic out of system proxies
+
+M	AGENTS.md
+A	docs/E2E-VALIDATION-2026-10-10.md
+M	tests/web-e2e/README.md
+commit 88dfdd69fce046dc73c27be5909631ec70270c46 Merge branch 'worktree-wf_79e90574-2a4-2'
+commit 6b7b8812f35af686271c56575fd41b6df87f33ac Merge branch 'worktree-wf_79e90574-2a4-1'
+commit e43042ecae1718abcb5f128148b953e731fe25d7 Merge the hotspot address methods: Normal, root, VPN and Shizuku
+commit 1ebe82ee0808adc29114f7c1912cc173d9c4c078 Fix review findings in the site-root page move
+
+M	docs/TESLA_BROWSER.md
+M	docs/todo.md
+M	tests/web-e2e/README.md
+commit 77a0eed6539c89c5750fbcf0d9af49b025e48a9a Fix review findings in the hotspot address chooser
+
+M	docs/HOTSPOT_ADDRESS.md
+commit 73c993bfb394ab731a6ce7aba62fd470cd07b8a1 Fix review findings in the hotspot address methods
+
+M	docs/HOTSPOT_ADDRESS.md
+commit d76a21d3ffc24d6c8e1d74cc706b98f91b89beaf Publish the TiPlay page at the site root and shorten the car link
+
+M	README.md
+M	README.zh-CN.md
+M	docs/TESLA_BROWSER.md
+M	docs/todo.md
+M	tests/web-e2e/README.md
+commit 87613ccf00fb4283da675a1a2fa74460225fa0e0 Fix review findings in the upstream merge guide
+
+M	docs/UPSTREAM_SYNC.md
+commit 67268e895fc7cdf14b6ec62c4d4e915b01bf5bea Document how TiPlay merges upstream DiPlay
+
+M	AGENTS.md
+A	docs/UPSTREAM_SYNC.md
+commit afe0d1b1a049981392a03fa11044365f768234a0 Let the driver choose how TiPlay provides the hotspot address
+
+A	docs/HOTSPOT_ADDRESS.md
+M	docs/THIRD_PARTY_NOTICES.md
+A	docs/licenses/dependencies/Shizuku-API-LICENSE.txt
+M	docs/todo.md
+M	tools/shell-address/README.md
+commit 3487cee688e4c9a5ea8922fec2ca26008f02f882 Merge branch 'worktree-wf_806f971f-856-1'
+commit 95efa59ad41ce74a6850ec26367d55ea3640dbd3 Fix review findings in the browser link wiring
+
+M	docs/TESLA_BROWSER.md
+M	tests/web-e2e/README.md
+commit 57218f55945c2c6b4cdd8ade745e9c410e23c1c7 Defer the VPN address idea until root and Shizuku both fail
+
+M	docs/todo.md
+commit 4a6478c279e77274cf2f477531d165b3a22de706 Record that the shell user can add the hotspot address without root
+
+M	docs/todo.md
+commit d238bc4a1dd831c228956c16781e7910d4c3cdd2 Add a tool that checks whether the shell user can add the hotspot address
+
+A	tools/shell-address/README.md
+commit 376f280dcb6a42016e7e5d41f6260a6c0a89f9e6 Wire the Tesla browser link into the app and serve the page from the phone
+
+M	README.md
+M	README.zh-CN.md
+A	docs/TESLA_BROWSER.md
+M	docs/todo.md
+commit 8eb3bfb57a41ba8b2423f5bd901efff5a6c1cb71 Rename TeslaPlay to TiPlay
+
+M	AGENTS.md
+M	CHANGELOG.md
+M	README.md
+M	README.zh-CN.md
+M	SECURITY.md
+M	docs/ANDROID9_WIFI_DIRECT.md
+M	docs/BUFFERED_AUDIO.md
+M	docs/BUILD.md
+M	docs/BYD_NAVIGATION.md
+M	docs/COMPATIBILITY.md
+M	docs/CONNECTION_SETUP.md
+M	docs/DILINK4_CLUSTER.md
+M	docs/EXISTING_WIFI.md
+M	docs/INSTALL.md
+M	docs/LAUNCHER_INTEGRATION.md
+M	docs/PRIVACY.md
+M	docs/RELEASE-NOTES-NEXT.md
+M	docs/SIDE_PANEL.md
+M	docs/SMOOTH_WIRELESS.md
+M	docs/TESTING.md
+M	docs/THIRD_PARTY_NOTICES.md
+M	docs/VIEW_AREAS.md
+M	docs/WIRELESS_DIAGNOSTICS.md
+M	docs/WIRELESS_HOTSPOT_JOIN.md
+M	docs/todo.md
+M	tests/web-e2e/README.md
+commit a6d321bb952b7031b7dcc8a30cbef71f75bb3340 Merge branch 'worktree-wf_43997691-a32-2'
+commit bd87455627887e030b774534ccbe1e377220b40f Merge branch 'worktree-wf_43997691-a32-1'
+commit 62e1222c89e9647e24f4acb597141d158a2ce02c Add the root-only extra hotspot address for the car browser
+
+M	AGENTS.md
+commit 2f4034cdd68a6a1d37629cba8c03e61ad5c2ba5d Default to phone + browser mode and gate car Bluetooth sound on it
+
+M	CHANGELOG.md
+M	docs/RELEASE-NOTES-NEXT.md
+commit a5e3b4a18448c2c902535a42dd03f672e9a24565 Merge branch 'integrate/mode-audio'
+commit d051899f7cf2e82b8e8ad4022021a7ef03e57ace Stream CarPlay video and touch to the Tesla browser
+
+M	AGENTS.md
+A	tests/web-e2e/README.md
+commit ae6a5c9cbf894fdaa4685f5deab216e4954d2547 Merge branch 'worktree-wf_c2a90c80-831-2' into integrate/mode-audio
+commit 3d5bfcf258e285c79523745e3d9ebd686eaa6e90 Add the phone + browser run mode that turns off head-unit features
+
+M	AGENTS.md
+commit 9b5f0b476fcd4d5edbbc58b6df9ad326d483cdd3 Add an experimental setting to keep CarPlay sound on car Bluetooth
+
+M	CHANGELOG.md
+M	docs/RELEASE-NOTES-NEXT.md
+M	docs/todo.md
+commit d940fe6718639490a4393343809bc2b8f4e80f69 Rename the project to TeslaPlay with its own application ID
+
+M	AGENTS.md
+M	CHANGELOG.md
+M	README.md
+M	README.zh-CN.md
+M	SECURITY.md
+M	docs/ANDROID9_WIFI_DIRECT.md
+M	docs/BUFFERED_AUDIO.md
+M	docs/BUILD.md
+M	docs/BYD_NAVIGATION.md
+M	docs/COMPATIBILITY.md
+M	docs/CONNECTION_SETUP.md
+M	docs/DILINK4_CLUSTER.md
+M	docs/EXISTING_WIFI.md
+M	docs/INSTALL.md
+M	docs/LAUNCHER_INTEGRATION.md
+M	docs/PRIVACY.md
+M	docs/RELEASE-NOTES-NEXT.md
+M	docs/SIDE_PANEL.md
+M	docs/SMOOTH_WIRELESS.md
+M	docs/TESTING.md
+M	docs/THIRD_PARTY_NOTICES.md
+M	docs/VIEW_AREAS.md
+M	docs/WIRELESS_DIAGNOSTICS.md
+M	docs/WIRELESS_HOTSPOT_JOIN.md
+M	docs/todo.md
+commit 74f1fb4ef98f693625b27f7ce3b4eeee0e75ce87 Start the video fetch on the page and hand the stream to the worker
+
+M	docs/todo.md
+commit 8433b874fac16f545722b8800a8cd0589d719843 Switch the Tesla browser transport to HTTP fetch streaming
+
+M	docs/todo.md
+commit 653cd88475dc21cfa6a860b9ef6ef26b99862c30 Record that Tesla UDP and TCP reach the 100.64 hotspot address
+
+M	docs/todo.md
+commit 0cfea54fb3964698863562d751bac0665dea8b5b Switch the Tesla browser transport to WebTransport with certificate hashes
+
+M	docs/todo.md
+commit d6056991030ee5ffcde37d32d6104b7d19f28c5b Use port 8080 for the Tesla browser page
+
+M	docs/todo.md
+commit 2c58d2dfbc61c1f05c79ba49d2b4537c69e6480e Record the hotspot address decision and Tesla private-network findings
+
+M	docs/todo.md
+commit 0f617324c280652c268e002f0eaed3b67b42fbef Record the drive-mode and private-IP retest results
+
+M	docs/todo.md
+commit 39b41b1179bba8863ac8b9d668d9e0d86c9a84f4 Record the WSS and DiPlay-base decisions in the Tesla browser todo
+
+M	docs/todo.md
+commit 1c30a269f8da2f1fbc710fdf6e34363d41fd57c1 Mark the Tesla drive-mode check as confirmed by the driver
+
+M	docs/todo.md
+commit efc883bbc9f7614e8b88cb4bbb0ff9f2fe222f4b Add network retest results to the Tesla browser todo
+
+M	docs/todo.md
+commit 8b6c04675c9d59eede9fcb1301b9e55b29262ecb Record Tesla browser probe results in the todo
+
+M	docs/todo.md
+commit 4a8ef22912cf2421b7967f9cad4d16a23f41ff44 Add todo for Tesla browser CarPlay with audio over car Bluetooth
+
+A	docs/todo.md
+commit a27d41eb73ad959c7170f14e9f102b37aa8eeea3 Merge remote-tracking branch 'origin/main' into HEAD
+commit 921703381f6c3ba94403d3fe274d9340d55311c0 Merge pull request #388 from sa3eedo12/fix/dilink3-cluster-480p
+commit 741c613259c6a8c7c55520fab830dfcf46f0e3e3 Limit cluster recognition to observed projection geometries
+
+M	docs/BYD_NAVIGATION.md
+commit bbca53bfc81fd3a0c77274849ca59944eb4e35fb Merge commit '5e58b4bba62b96e93b86f1bab8e171b10803b132' into HEAD
+commit 8077c7cbe09f0b9e96f98dd63c123026c3347cb2 Merge commit '5e58b4bba62b96e93b86f1bab8e171b10803b132' into HEAD
+commit 19935a0e1af60a2fa5891844b73bdec8b9d21bbf Merge commit '5e58b4bba62b96e93b86f1bab8e171b10803b132' into HEAD
+commit e91e258dd2dfb157c7c2de8384a9e036817afc9a Merge main and preserve Smooth video in Advanced settings
+commit 12f3250de03280f2076b3383012396910494f362 Accept smaller 8:3 BYD cluster projection displays
+
+M	docs/BYD_NAVIGATION.md
+commit 1b6af45a6d7778626031e0c04a1196f7a0885894 Point readers to the main application build guide
+
+M	README.md
+M	README.zh-CN.md
+commit afda80bdbbe6b5527fd498b6afe880fbb6f90b8c Explain how to build the main DiPlay app
+
+M	docs/BUILD.md
+commit 824f818de65e4942d9bcca8799cc4a1c83636c7f Pace with a margin of a refresh plus 4 ms
+
+M	docs/SMOOTH_WIRELESS.md
+commit 2502a57eb6019f55e3f55b3e325f5f33a050dbd2 Mark pause-held frames by the gap between iPhone frame times
+
+M	docs/SMOOTH_WIRELESS.md
+commit d43297bd89878472f4d04ce8356ae7548f0e97f3 Let the smooth video delay adjust itself
+
+M	docs/SMOOTH_WIRELESS.md
+commit c62a8fcd1730721b1a2f8888ba2125a5da07c595 Add an experimental Smooth video setting
+
+M	docs/SMOOTH_WIRELESS.md
+commit 1d3b8c341791be0a4a6090c5b40544da551d1bd6 feat(settings): gather the wheel keys in Vehicle
+
+M	AGENTS.md
+commit f19a101a126f3f9174f91911fff119dba9462243 Add call echo cancelling, voice filter and pre-armed call watcher
+
+M	docs/BYD_NAVIGATION.md
+A	shared/src/main/jni/speexdsp/README.md
+commit 8f8fe0c4c8106d1e45a30cf87c96c50f85133dea Don't set AUDIO_CARPLAY_CALL_STATUS during CarPlay calls
+
+M	docs/BYD_NAVIGATION.md
+commit 038eb39d829e1c3dac62b302bc4f33ff2c557f75 docs: add agent rules for placing new settings
+
+A	AGENTS.md
+A	CLAUDE.md
+commit 5fc7a7af55674960f9e7219595027e0b6a3abbf8 Handle USB reply trailers, software video windows and RFCOMM stalls
+
+A	docs/CONNECTION_RELIABILITY.md
+M	docs/RELEASE-NOTES-NEXT.md
+M	docs/TESTING.md
+commit 434a9b3716fd832e7100b1fde42da6fba9f90434 Record verified 0.2.13 build and compatibility evidence
+
+M	docs/RELEASE-NOTES-0.2.13.md
+M	docs/VALIDATION.md
+commit 6fb0fa4a09e77a84a437da5159147a6f6141ed61 Prepare mobile preview 0.2.13 and comprehensive release documentation
+
+M	CHANGELOG.md
+M	README.md
+M	README.zh-CN.md
+M	docs/COMPATIBILITY.md
+M	docs/INSTALL.md
+A	docs/RELEASE-NOTES-0.2.13.md
+M	docs/SMOOTH_WIRELESS.md
+M	docs/VALIDATION.md
+commit 917d84ee66e263e8a68a59e457e3fef669b3c83e Merge branch 'feat/traditional-chinese-translation' of https://github.com/yeukchan777-glitch/DiPlay into release/0.2.13
+commit 54ce82b6de88461b4d7d14074fdeb0d1e18aa21f Respect Chinese scripts and polish Traditional locale support
+
+M	README.zh-CN.md
+commit 1240f8e41ad7b530dabedce37fdad21d6b22d543 fix(carplay): follow day/night mode on the waiting screen
+
+M	CHANGELOG.md
+commit f03ceab927ec6c936bd4b28c1dd1215539ba854e Document Traditional Chinese app interface support
+
+M	README.md
+commit 12d33a8f9c6ccbf5b0c3b1bb06c107e8c143466a Document guarded experimental call output for release testing
+
+M	docs/BYD_NAVIGATION.md
+commit 097431bc0f5e8ba1bcce3bb277b5081c4890b776 Merge current reviewed main for experimental call controls
+commit 38cfac7cf0723a7b2846886b4129f1a1e6453fd0 Merge commit 'refs/review/pr310-main' into review/recheck310
+commit 89f22ab7b8a4029b95baef2167d4ca78f5b555df Scope wireless performance guidance to measured evidence
+
+M	docs/SMOOTH_WIRELESS.md
+commit d1074b5b422e530938fc021c4dfbb9d10880a9dc Document what makes wireless CarPlay smooth
+
+M	README.md
+M	docs/COMPATIBILITY.md
+A	docs/SMOOTH_WIRELESS.md
+commit ceb89abf0e07bb1442a25f06dcc1c785ddd36e99 Serialize buffered music ownership across control sessions
+
+M	docs/BUFFERED_AUDIO.md
+commit 8425f9104d4a9a082f09457f58baab4bd57a3a1e Merge commit '5ef8d574326642c37f84c80ff740698a9e487f2a' into review/pr308-buffered-audio
+commit 5ef8d574326642c37f84c80ff740698a9e487f2a Merge branch 'review/recheck305' into review/recheck306
+commit 68d5385922e04a40357397d6d9aa578252651e94 Merge remote-tracking branch 'origin/recheck-pr304' into review/recheck305
+commit ab178802f35bc8a05bf4455c2aaccc628b7259da Bound buffered audio and serialize playback lifecycle
+
+M	docs/BUFFERED_AUDIO.md
+commit a3b3043129edc73f308ae32144b74e543a141e32 fix(hud): bound retained turn guidance and preserve explicit teardown
+
+M	CHANGELOG.md
+commit 5b3f23f63f66371498e42c78b8e5879b41d15536 Document the buffered music test and the slow-link case
+
+M	docs/BUFFERED_AUDIO.md
+commit 3c44b6665b79840ef1f9077525b08acb82b5cf84 Play CarPlay's buffered music (main buffered audio), off by default
+
+A	docs/BUFFERED_AUDIO.md
+commit c1e53ea172145f38ba90da6430ce35c892a468b0 Undo accepted CarPlay call writes when the car refuses one
+
+M	docs/BYD_NAVIGATION.md
+commit 7f84052cf8e2cc77d9598ae016c6619c3e0d0cb9 feat: smaller dashboard map scale with more detail
+
+M	CHANGELOG.md
+commit 41ef84fe266b0a2b619af0b045c9d51e311d39ed feat: light waiting screens and a 300 ms cluster cross-fade
+
+M	CHANGELOG.md
+commit eb1ade72600afdd665c290fc8d8b72dca496cc39 feat: keep the dashboard turn card across a wireless drop
+
+M	CHANGELOG.md
+commit d185bc67a1d25f8e206c68eb6d5e3da63efa0aac Merge final main while preserving experimental call opt-in
+commit bf9b4dda678c305a703c5e7a8ad936a0abbb5eb4 Merge pull request #296 from sa3eedo12/fix/dilink3-cluster-projection-enter
+commit cec9d98e2b0ab3f97dac1188f66ce6542066ac2f Merge pull request #282 from band-wa/android9-wifi-direct
+commit 44cfa2e0851c3fa8d37dc3a520a158526fda5c5d Gate experimental call controls and isolate watcher ownership
+
+M	CHANGELOG.md
+M	docs/BYD_NAVIGATION.md
+commit c37dba87bf4ea95e672ce62a1b28b6a6c4e50eea fix(cluster): validate projection stages and compensate partial entry
+
+M	docs/BYD_NAVIGATION.md
+commit 0d40eb1fce26cff58d38dada41471dad323fd08c fix(wireless): bound Android 9 channel selection lifecycle
+
+A	docs/ANDROID9_WIFI_DIRECT.md
+commit 2385c08f15cf05822e01cefbb79050d0389b5c48 Merge current main into experimental call-control work
+commit f1ca1a8c85b33f8b94664e76c47f69d62bc4fcb4 Restore side panels across host recreation and RTL layouts
+
+M	docs/SIDE_PANEL.md
+commit a0009b33e1889b3e2df0fff65c2d97dc35407d47 DiLink 3: send full projection before half projection so the cluster map shows
+
+M	CHANGELOG.md
+M	docs/BYD_NAVIGATION.md
+commit 5b534b8028d390913ba43e0a74cc2b50b47de677 Keep the side panel on the stream's strip and on the passenger's side
+
+M	docs/SIDE_PANEL.md
+commit 10be5d25daa985e9b351e1030347dafedd0549d8 Show CarPlay beside a DiPlay side panel, switched live (experimental)
+
+A	docs/SIDE_PANEL.md
+commit fd9850c665feb5192ffb41e8b2b69e990b19558d Merge pull request #258 from a88883284/pr/wireless-watchdog-guard
+commit dffb28164132617ab22a0e2cbabf4064028dc8f9 Merge pull request #251 from mohammed-just/codex/wireless-hotspot-join-evidence
+commit 440230c59efbdf1c1e7523b3b6311e7d833f45d8 Merge pull request #277 from romanchukg-cloud/feat/carplay-rotation-areas
+commit a1e5ce964e09666323c9bfa77a583765c21348db Merge pull request #246 from romanchukg-cloud/feat/carplay-dock-position
+commit 8e47a3226e755f2b5a989932778dadf73edd0e39 Require rendered video before releasing a no-tunnel wireless bootstrap
+
+M	docs/WIRELESS_DIAGNOSTICS.md
+commit 2d4e3671dc2922330a880ded73d98069ac5c82e5 Refuse hotspot repairs that cannot preserve the user configuration flag
+
+M	docs/HOTSPOT_JOIN_VALIDATION.md
+M	docs/WIRELESS_HOTSPOT_JOIN.md
+commit 0c0df1763883f8bd01fb2601afbeaac06aecba90 Gate rotating square canvas on the selected decoder capabilities
+
+M	docs/VIEW_AREAS.md
+commit a265de81a9af60d7b07b207b2257aa828b5673d4 Merge pull request #260 from ojjj13/fix/dilink4-casting-and-calibration
+commit db2fe0ae422b75f27e4eba6e6f75793e3c462b7e Turn CarPlay with the screen without reconnecting (optional square canvas)
+
+M	docs/VIEW_AREAS.md
+commit be57cfeb50f539ba00991e25311b0fb69cd720c9 Declare CarPlay view areas for the dock and the head unit's split screen
+
+A	docs/VIEW_AREAS.md
+commit ecd9b4011133d30e68aeafc91c6369216dbdf732 Preserve DiLink 4 native casting and preview cluster calibration before connection
+
+M	docs/DILINK4_CLUSTER.md
+commit fbe89b9c88f2cf0ccac97a33ac4034c8eb0c3d71 Add opt-in hotspot repair for automatic wireless CarPlay joining
+
+M	docs/COMPATIBILITY.md
+A	docs/HOTSPOT_JOIN_VALIDATION.md
+A	docs/WIRELESS_HOTSPOT_JOIN.md
+commit ec80b80a2eb5ca2db08558bd892222338956a3e2 DiLink 3: CarPlay call keys and call card on the dashboard
+
+M	CHANGELOG.md
+M	docs/BYD_NAVIGATION.md
+commit 2fc876e578eba3905a5b873e3c2dbd74f498433a Make 0.2.12 fixes and review corrections explicit
+
+M	docs/RELEASE-NOTES-0.2.12.md
+commit e678301d6e57188239eab45472cfa7694ef7f6bd Update installation and fresh-report instructions for 0.2.12
+
+M	docs/INSTALL.md
+commit 056f7dccb417adbf7c187bbc6f1d31b0cff7eb20 Record final 0.2.12 validation and diagnostic reporting guidance
+
+M	docs/RELEASE-NOTES-0.2.12.md
+M	docs/VALIDATION.md
+commit c1a7f670dfe99860d21d57ebbb383a7e75772eef Merge verified hotspot fallback into release preparation
+commit 1eac74aff7d253fb71ef9f7dad67be9d52d196cc fix: validate and bound firmware hotspot ADB fallback
+
+M	docs/CONNECTION_SETUP.md
+commit aecc397d98b309725d34f5f26d152c6fc2db31c2 Clarify release scope, localized notes and saved resolution fallback
+
+M	CHANGELOG.md
+M	README.md
+M	README.zh-CN.md
+M	docs/RELEASE-NOTES-0.2.12.md
+commit ba596bf609e446c1ec1766e27e4573b6539eb640 Merge branch 'review/pr230-fixed-last' into release/v0.2.12
+commit 7504bf38d612f2f0741bcaf4d5075f2de53bf1f3 Validate supersampled CarPlay canvases and show the true resolution range
+
+M	docs/TESTING.md
+commit 4f537729d639c5e5d92fee0bfa12d3575f7132fb Prepare DiPlay 0.2.12 version and release documentation
+
+M	CHANGELOG.md
+M	README.md
+A	docs/RELEASE-NOTES-0.2.12.md
+M	docs/RELEASE-NOTES-NEXT.md
+commit fc47131367ce68b1f4fedf4af82afce6ac77a4bf Merge pull request #232 from romanchukg-cloud/feat/dashboard-content-live
+commit 5a4072a582f7617a71c5caea12ebccd66248c6b0 Merge pull request #231 from romanchukg-cloud/feat/wheel-joystick
+commit a34dab4556a793973bcd6f7bf01773ff78a05bf1 Merge wheel joystick session fixes before live dashboard content updates
+commit 8880a9a85750cd5b275d2f9c15886952a74f3cfb Track delivered dashboard content across stream and phone replacement
+
+M	docs/BYD_NAVIGATION.md
+M	docs/TESTING.md
+commit 55ce778eefc6d31142b4cdfbe2479c49505d7b57 Merge branch 'review/pr182-fixed-new' into review/pr225-fixed-new
+commit 31f9859ef566f5c8a800089c494f16e70e19fd61 Coordinate Wi-Fi scan pause ownership and durable recovery
+
+M	CHANGELOG.md
+M	docs/COMPATIBILITY.md
+M	docs/TESTING.md
+commit dd92dc4a3ccc0adf138823493dbd4a48708f84d8 Compensate a failed final DiLink 3 mode and document vehicle retest
+
+M	docs/BYD_NAVIGATION.md
+commit 763ff4615c04921129290a6b58e0ebad0ac9b4e0 Merge remote-tracking branch 'origin/main' into review/pr182-fixed-new
+commit aa818a024766f3aff636a9043a4721d3e4232343 Recover interrupted DiLink 3 cluster modes and compensate failed projection setup
+
+M	docs/BYD_NAVIGATION.md
+commit f100d821888d85ddc0d0d4bf21977a6b7395191e Merge remote-tracking branch 'origin/main' into review/pr225-fixed-new
+commit 669fec04820521f29a7b37fc599519882c06b87f Switch the dashboard content live, without reconnecting
+
+M	docs/BYD_NAVIGATION.md
+commit 62736007273874dca6cdf0f4b73c36e8a0dbea6a Drive CarPlay's screen with the steering wheel as a joystick
+
+M	docs/BYD_NAVIGATION.md
+M	docs/TESTING.md
+commit 4af14c2b224ca12bd9f7ac8f44dd8a5004a7d5ac Integrate fixed wheel zoom dependency while retaining song timer safeguards
+commit 9949a9ceaf7311e10f9b73ccd3baece51d1a23e9 Preserve wheel key pairs and reset zoom and learning with route lifecycle
+
+M	docs/BYD_NAVIGATION.md
+M	docs/TESTING.md
+commit 808c609fd42d00b2a1ebf98ac5a1076f3afc9bde Invalidate dashboard song timers on settings and session changes
+
+M	docs/TESTING.md
+commit 4ab1ac5b4af64b396d6ce851d05e93656d61eaab DiLink 3: reuse the DiLink 4 display match and pick up a late cluster display
+
+M	docs/BYD_NAVIGATION.md
+commit 227278cd9c1f03f102f5fdaa07b9a2ff4f188fb7 Merge current main and retain HUD support with dashboard song settings
+commit 91ca1a2881794bd25b5a664eb60f8da73d8b22d2 Merge current main and preserve HUD song support alongside dashboard notes
+commit a41542a16dd2187952235fbc7ef548060a9e2837 Merge pull request #219 from mohammed-just/codex/diagnostics-external-fallback
+commit f403f1a51108c68cdf0f82bc6155dbd5319cb55d Merge pull request #223 from Dlochon/feature/existing-wifi-lan
+commit 1b35633f2ec04622cd1fb6652bc3219eed82c10d docs: record clean-install Same LAN vehicle validation
+
+M	README.md
+M	README.zh-CN.md
+M	docs/CONNECTION_SETUP.md
+M	docs/EXISTING_WIFI.md
+commit ebbcb6476954f703563f033452e703644ef383b3 refactor: streamline Same LAN support after vehicle validation
+
+M	docs/EXISTING_WIFI.md
+commit 37f06926cd866c2ddf2e9a0f2fb274f0f1cf4e47 fix: correct wireless Bonjour discovery and add bootstrap diagnostics
+
+M	docs/EXISTING_WIFI.md
+commit 99746af030fb7681d21b1d17fd0e208f1cbed5ab Docs: record DiLink 3 windshield HUD test results
+
+M	docs/BYD_NAVIGATION.md
+commit 5ac9bc59e88158bb1b6cf81410ac6c114a24eace DiLink 3: send cluster text fields and create the projection display
+
+M	docs/BYD_NAVIGATION.md
+commit 598b814eb6f4848cea2e4daae6af409c1133944c Support DiLink 3 cluster guidance and map
+
+M	docs/BYD_NAVIGATION.md
+commit d9d9e1522def1ca8aa5282fc6094c2d8a948f11c Pause head-unit Wi-Fi scans during wireless CarPlay
+
+M	CHANGELOG.md
+M	docs/COMPATIBILITY.md
+commit f6bfea43ac2be14b81c9c9e39513fc3e515b9183 fix: verify Same LAN network identity and include AP hint in bootstrap
+
+M	docs/EXISTING_WIFI.md
+commit a2dc105ccb463afd548dd0fd85e76072d843314e Save fallback diagnostic reports under Android/data
+
+M	README.md
+M	docs/INSTALL.md
+M	docs/PRIVACY.md
+M	docs/TESTING.md
+commit 5cb6887d52a1e21c5aec718a50bf9a5ef965aa92 Verify bounded lyrics and document firmware support requirements
+
+M	docs/DILINK4_CLUSTER.md
+commit 74f61a07a25adad421f744ecd6a08bae86abb148 Merge branch 'review/pr213-fixed' into review/pr187-fixed
+commit 3e6356019650916454b9ba26d0d1cb7307e5ba2e Keep DiLink 5 settings and reject stale cluster launch tickets
+
+M	docs/DILINK4_CLUSTER.md
+commit a3efba959fe056094110c450721b6b1600fc0da0 Consolidate DiLink 4 routing and journal optional OEM map restoration
+commit 0b31720b56ca5e38ba48fdde5707fdb74900ce57 fix: serve Same LAN AirPlay discovery and TCP on both IP families
+
+M	docs/EXISTING_WIFI.md
+commit 11aaad472927788f49d68da14ba8dc9079adc643 Show the dashboard song only when it changes
+
+M	docs/TESTING.md
+commit e82a2c13b70aa32ae1ae5587974ec8e5e85a8d28 Zoom the dashboard map with the steering wheel
+
+M	docs/BYD_NAVIGATION.md
+commit 442bb25dcad97df334da272f572b96c967a49511 Resolve cluster PR conflicts with upstream turn-card and picture-control merges
+commit 31b8dfcd9b11496b02b868b898deb37d0f04c0b0 feat: add Existing Wi-Fi / Same LAN wireless CarPlay mode
+
+M	README.md
+M	README.zh-CN.md
+M	docs/CONNECTION_SETUP.md
+A	docs/EXISTING_WIFI.md
+commit a4ae1061bef5c2cfce386781d187e90b544ef019 Merge latest upstream settings changes into DiLink 4 cluster support
+commit fe246fdc534151dadcd4438beb09adc2060895be Add opt-in DiLink 4 cluster Activity routing and calibration
+
+A	docs/DILINK4_CLUSTER.md
+commit f77298cc39150f7e69ca1f2a5a62e48a4da77bff Merge current main and restore all safe-area edits when cancelling the session menu
+commit ad50ff8fe782e6181789d4cf23e2ecf03f323914 feat: support selectable local and CH341 authentication
+
+M	docs/CONNECTION_SETUP.md
+commit 1cc7879d91ab2d184b5f5f263df6436a7e259ab6 Allow diagnostic export without a head-unit file picker
+
+M	CHANGELOG.md
+commit 76a9ca9779802d67bfe7c4fc93ba2978d13fc2dd Record verified DiPlay 0.2.11 release validation
+
+M	docs/RELEASE-NOTES-0.2.11.md
+M	docs/VALIDATION.md
+commit 4ea340e2a4152ca31addaf6d8462da24d95eaf59 Document DiPlay 0.2.11 public preview and fresh diagnostics
+
+M	CHANGELOG.md
+M	README.md
+M	README.zh-CN.md
+M	docs/INSTALL.md
+A	docs/RELEASE-NOTES-0.2.11.md
+M	docs/RELEASE-NOTES-NEXT.md
+M	docs/VALIDATION.md
+commit a83ded7853f470b4b921362b68e280afda47d580 Add preferred Wi-Fi Direct channel selection (#175)
+
+M	docs/CONNECTION_SETUP.md
+M	docs/TESTING.md
+commit 1eb2ae64b75c9c77999365562f65f4e751f71e0d Record combined validation and probe concurrency corrections
+
+M	docs/PR158-INTEGRATION-2026-10-03.md
+M	docs/SAFETY-REVIEW-2026-10-03.md
+commit d623af930dd639bd650bb7bbd4bdd224c44e6229 Distinguish historical review results from publication preflight
+
+M	docs/PR158-INTEGRATION-2026-10-03.md
+M	docs/SAFETY-REVIEW-2026-10-03.md
+commit c1f11af81cadd2541d9183d6b3440268d6a8e54f Merge corrected PR 158 with hotspot and safety changes
+commit bb6dd37640f4d65348962607c9f74712aaa20d5b Document complete issue audit, closures and final safety validation
+
+A	docs/ISSUE-AUDIT-2026-10-03.md
+M	docs/SAFETY-REVIEW-2026-10-03.md
+commit 5d170cc4a38074abf3e48fce15a5609681501e5b Document October 3 issue triage and PR safety review
+
+A	docs/SAFETY-REVIEW-2026-10-03.md
+commit 0c2848c503cc2b6ed23eec7a2b2360502febb933 Use settled display size and startup checks after reconnect
+
+M	docs/TESTING.md
+commit b56a1b4004163f5bc11e8fce4b6ad169efca4383 Review integration: PR 164
+commit a871a6bb979923b87e392105a7cb245982975424 feat: group BYD ADB settings and add automatic car hotspot startup
+
+M	docs/BYD_NAVIGATION.md
+M	docs/CONNECTION_SETUP.md
+commit f75fce6927de81879cf4a040072327a35daaa92c Fix wireless vehicle data ownership and parked video readiness
+
+M	docs/BYD_NAVIGATION.md
+M	docs/TESTING.md
+commit f485041e0e2f7e7df331ad765f2dfa7379f08fb4 Move the ADB requirement out of switch titles
+
+M	docs/BYD_NAVIGATION.md
+commit 9fc36e784ccae6cb310090877025c45b0bf6a18a Show Dashboard song without the BYD navigation card
+
+M	docs/BYD_NAVIGATION.md
+M	docs/TESTING.md
+commit 43c8feb75af8e25f05e1098b56f167dfacbda538 Add a vehicle-data mode with legacy head-unit detection
+
+M	docs/BYD_NAVIGATION.md
+M	docs/TESTING.md
+commit 48317fa8c156570368a493b4205bcbde1dc92e84 Improve location reporting settings permission flow
+
+M	docs/TESTING.md
+commit 81a0767ac6eaaeec6c934d3270822bd0874a7493 Add wireless startup diagnostics for issue #151 (#154)
+
+A	docs/WIRELESS_DIAGNOSTICS.md
+commit 45563135a3d05a17315a84f57434fdb5dfa43a5f Request fresh diagnostic reports for unresolved 0.2.10 issues
+
+M	docs/RELEASE-NOTES-0.2.10.md
+commit ff9d2c525ab571addfe9d430ecd6cadcceb4c8db Prepare DiPlay 0.2.10 release notes and downloads
+
+M	CHANGELOG.md
+M	README.md
+M	docs/INSTALL.md
+A	docs/RELEASE-NOTES-0.2.10.md
+M	docs/VALIDATION.md
+commit 090ae80a52efaaeefc78f1317e20c33a172c8f67 Integrate the ten reviewed pull requests for DiPlay 0.2.10 validation
+commit c752ed5a6e7263748efc4a8bea286e4a857bed31 Document the car's video player: it starts at once, has a time bar and plays app video
+
+M	docs/BYD_NAVIGATION.md
+commit e75507d1dcb8b3c6742c99bb4e602309b0a42192 feat: optional home-screen map sync with the dashboard
+
+M	docs/BYD_NAVIGATION.md
+commit 1119cd05712624f28b48eb19f2386daa7ab4000b feat: independent dashboard turn-card overlay on the cluster map
+
+M	docs/BYD_NAVIGATION.md
+commit 43cac1d9aecd212781b659a9f6b7427efdf01688 docs: record confirmed vehicle validation
+
+M	docs/BYD_NAVIGATION.md
+commit 195b2672347293e3edd669e51c8cb38c4e60629f fix: detect BYD battery protocol over ADB
+
+M	docs/BYD_NAVIGATION.md
+commit 18429e737228e8d75d9b6c850af89dcca2f591b6 Prepare DiPlay 0.2.9 release with floating maps, widgets and Ukrainian
+
+M	CHANGELOG.md
+M	README.md
+M	README.zh-CN.md
+M	docs/INSTALL.md
+A	docs/RELEASE-NOTES-0.2.9.md
+M	docs/RELEASE-NOTES-NEXT.md
+M	docs/VALIDATION.md
+commit 9dba92661a2dba3f1e823552f5b44e554c03e77d Record floating-map gesture validation and car installation
+
+M	docs/RELEASE-NOTES-NEXT.md
+commit 48fd9c96745a133d09731a1a697928599bccad86 Stabilize map pinch contact and allow immediate reversal at size limits
+
+M	docs/RELEASE-NOTES-NEXT.md
+commit 3a2341582f8b0024d6b6ac69eb809bd8d212ae2f Fix small pinch gestures resizing the floating dashboard map
+
+M	CHANGELOG.md
+M	docs/RELEASE-NOTES-NEXT.md
+commit 45fefe43f385833bce0ae892175382333ee080b0 Document the merged launcher, widget, Ukrainian and GPS changes for the next release
+
+M	CHANGELOG.md
+M	docs/RELEASE-NOTES-NEXT.md
+commit e9f150e770bc9460385c6e984b7037a0dab02674 Integrate merged launcher features while preserving translated safe-area summaries
+commit 2f9402caaecc5057701ecfb1b5e6b3ff2c6b622d Merge branch 'fix/romanchuk-pr107' into fix/romanchuk-pr108
+commit 63d99f50ec047a7c8bec50874de6a8c56b4db826 Handle and document map-sharing revocation in launcher clients
+
+M	docs/LAUNCHER_INTEGRATION.md
+commit 7c49036dd56c1d63ec6043d08d12999927567e52 Merge branch 'fix/romanchuk-pr107' into fix/romanchuk-pr108
+commit d0226ace9673b85c25b5a2756b70827719417e85 Integrate current main and the song and navigation widget fixes
+commit ff0de58055037da91b12d66850281f15b6cbc28e Merge remote-tracking branch 'origin/main' into fix/romanchuk-pr93
+commit b3ea0e54746dcc0f08ea1df7d7b7c1310e6546ba Document merged CarPlay fixes for the next release announcement
+
+M	CHANGELOG.md
+A	docs/RELEASE-NOTES-NEXT.md
+commit ca15460a9cac196ad57663535b90921eb6ff289b Add DiPlay Home, a sample launcher with the live map and widgets
+
+M	docs/LAUNCHER_INTEGRATION.md
+commit 6e55da7115263307fb4754fa81d8568c3a47f0d0 Let other launchers show the live dashboard map
+
+A	docs/LAUNCHER_INTEGRATION.md
+commit 75fc2fc65721bc3085d7fe4c07ca56fb62fba487 Add the Ukrainian edition of the website
+
+M	README.md
+M	README.zh-CN.md
+commit f2d06951b4e8114dbb62f551c12a32a845a3042f Prepare DiPlay 0.2.8 release
+
+M	CHANGELOG.md
+M	README.md
+M	README.zh-CN.md
+M	docs/INSTALL.md
+commit 49c160afe6aaaa9329e41332a597297eecf598ff Report video the car cannot play instead of showing black
+
+M	docs/BYD_NAVIGATION.md
+commit ed9b20ae76d0c30ebd5693b4f92b53f9da686125 Play iOS 27 video in car while parked (optional, ADB)
+
+M	docs/BYD_NAVIGATION.md
+commit 640001ff5002e5a4775ad89c6b19384693813aa2 Send wheel speed for tunnels (optional, ADB)
+
+M	docs/BYD_NAVIGATION.md
+commit 11dc9581df5323170e8033efb6f6b318857a5c81 Prepare DiPlay 0.2.7 release and clarify BYD support scope
+
+M	CHANGELOG.md
+M	README.md
+M	README.zh-CN.md
+commit 1ea6fc2328870f321a242a7380e46a0fd28c6662 Fix battery readiness and provide checked CarPlay reconnect
+
+M	docs/BYD_NAVIGATION.md
+commit c49cfba4bfe3506c17789bc0090695c3c18d7861 Tell the iPhone the car's battery (optional, ADB)
+
+M	docs/BYD_NAVIGATION.md
+commit 049e396cffab292b87d0aa8fcacbec36c6384ea7 Send the dashboard map only in Small and Full navi (optional, ADB)
+
+M	docs/BYD_NAVIGATION.md
+commit 11bc01c6e28e21d79772f9dbeadc5e947b146006 Let the dashboard show the turn card instead of the map
+
+M	docs/BYD_NAVIGATION.md
+commit c3faa630a488a7b7f4bc8706c829ce2f140d8337 Call the instrument cluster the dashboard in settings
+
+M	docs/BYD_NAVIGATION.md
+commit e6135d36e6a64ad85a94795b2dcbd54e826fa4c0 Prepare DiPlay 0.2.6 release pages and setup guidance
+
+M	docs/INSTALL.md
+commit 76e10ce8fe85ddfcafb521436865ee7d79a691e7 Simplify built-in hotspot setup and add guided cluster access
+
+M	docs/BUILD.md
+M	docs/BYD_NAVIGATION.md
+A	docs/CONNECTION_SETUP.md
+M	docs/INSTALL.md
+M	docs/LOCAL_HOTSPOT_TEST.md
+commit 9edcf527cebd877fba9daa5a0c7bc7afd1efbb23 Integrate current PR marker controls while preserving the DiLink 5.1 stream
+commit 3001bdebffc9d65f006cf011d664e3822fe0a20f Fix DiLink 5.1 cluster themes and standalone local hotspot playback
+
+M	docs/BYD_NAVIGATION.md
+A	docs/LOCAL_HOTSPOT_TEST.md
+M	docs/PRIVACY.md
+commit d87152ca9f165368151bd0f3a44cad2c130d1520 Drop the cluster preview from settings
+
+M	docs/BYD_NAVIGATION.md
+commit ac75c94c25052388e9feb9fb879797fdf9534f49 Place the cluster car marker in the measured clear area
+
+M	docs/BYD_NAVIGATION.md
+commit 700fde7ebf99015914097ebfe1f1f3dde9f3dde3 Show the CarPlay instrument-cluster map on BYD clusters
+
+M	docs/BYD_NAVIGATION.md
+commit 949d67c0e12550aafa0ee93b709a4e5cf04829b8 Release 0.2.0 with standalone BYD HUD and connection fixes
+
+M	CHANGELOG.md
+M	README.md
+A	docs/BYD_NAVIGATION.md
+M	docs/COMPATIBILITY.md
+M	docs/INSTALL.md
+A	docs/PR3_REVIEW.md
+M	docs/THIRD_PARTY_NOTICES.md
+M	shared/BYD_HUD_ICONS_NOTICE.md
+A	shared/src/main/assets/byd-hud-icons/LICENSE-BYDMate.txt
+A	shared/src/main/assets/byd-hud-icons/NOTICE.txt
+commit 94c7563d888a8b0feb2bbaaa180f4a7773006960 Add BYD navigation and connection improvements
+
+A	shared/BYD_HUD_ICONS_NOTICE.md
+commit 3a0da43a8978ec6a5ddd27b147fe0f48e79411e0 Restore local release packaging and public preview downloads
+
+M	CHANGELOG.md
+M	README.md
+M	README.zh-CN.md
+M	SECURITY.md
+M	docs/BUILD.md
+M	docs/COMPATIBILITY.md
+M	docs/INSTALL.md
+M	docs/TESTING.md
+M	docs/THIRD_PARTY_NOTICES.md
+M	docs/VALIDATION.md
+commit 3b67c80b0acf663dec01dba5c9e1a8cc8d516c47 Reset public source after withdrawing credential-bearing release
+
+A	CHANGELOG.md
+A	README.md
+A	README.zh-CN.md
+A	SECURITY.md
+A	docs/BUILD.md
+A	docs/COMPATIBILITY.md
+A	docs/INSTALL.md
+A	docs/PRIVACY.md
+A	docs/TESTING.md
+A	docs/THIRD_PARTY_NOTICES.md
+A	docs/UPSTREAM-README.md
+A	docs/UPSTREAM-README.zh-CN.md
+A	docs/VALIDATION.md
+A	docs/licenses/DiAuto-AGPL-3.0.txt
+A	docs/licenses/dependencies/Apache-2.0.txt
+A	docs/licenses/dependencies/Bouncy-Castle-LICENSE.txt
+A	docs/licenses/dependencies/SLF4J-LICENSE.txt

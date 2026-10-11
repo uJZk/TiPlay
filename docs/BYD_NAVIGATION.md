@@ -1,5 +1,7 @@
 # BYD navigation displays and vehicle data
 
+This guide describes retained head-unit integrations and their recorded vehicle tests. Current TiPlay forces the phone + browser profile and hides BYD navigation, dashboard map, wheel-key and vehicle-data settings; these outputs are disabled in that profile. The settings paths below refer to the retained head-unit UI.
+
 Phone navigation arrows, next-turn distance and street names can appear on supported BYD displays. Ordinary operation requires no ADB, root, laptop or helper process. The map app must provide structured navigation metadata; compatibility is not guaranteed for every map app or version.
 
 ## Validated windshield path
@@ -37,7 +39,7 @@ TiPlay can ask the iPhone for CarPlay's second, instrument-cluster screen and sh
 
 Validated on DiLink5.0 / Android12, firmware `BYD-AUTO/DiLink5.0/DiLink5.0:12/SKQ1.230128.001/eng.build.20251111.182747:user/release-keys`, with Apple Maps on iOS 27:
 
-- Turn on "CarPlay map on dashboard" under BYD navigation. The switch appears only when a cluster projection display is visible to the app.
+- Turn on **Settings → Advanced → CarPlay map on dashboard (experimental)**. The control also appears without a visible cluster display so a virtual stream can serve the centre-screen card or launcher embedding.
 - In the cluster's own steering-wheel menu, choose "Full screen navi" or "Small screen navi". "Turn on by navi" shows arrows only, even during CarPlay navigation.
 - The cluster's speed readout stays visible. "Small screen navi" crops the same picture on the cluster side; Android does not report that crop.
 - The car marker is placed through CarPlay's safe area: the centre of the panel (x 35–64 %, y 16–75 %), measured with a calibration grid to be clear of BYD's own readouts in both Full and Small screen navi. "Car marker · horizontal" (Left 40 % … Right 40 %) and "Car marker · vertical" (Up 30 % … Down 30 %) move it from there in 10 % steps of the panel. Near a panel edge the safe area shrinks so the marker stays at its centre.
@@ -66,7 +68,7 @@ Enable **Follow instrument theme and map card** to follow the stock cluster acti
 adb shell appops set com.ujzk.tiplay.hudtest GET_USAGE_STATS allow
 ```
 
-Open **Settings → BYD navigation → Automatic map setup · ADB** for the guided setup, available even when automatic mode is off. It shows the command for the installed package, offers a copy button, explains multiple-device ADB selection, and displays the current permission status. After running the command on your computer, tap **Check and enable** to verify permission and enable both the cluster map and automatic following. If permission is still missing, the guide stays open with instructions; an active CarPlay session reconnects once after successful setup. The copy button copies to the car clipboard, so the command is also displayed for typing on your computer. To revoke it, substitute `default` for `allow`. Without access or a recognized active theme, automatic mode hides the overlay. Manual mode remains available but cannot follow card visibility. If no current theme can be inferred after startup, select a different theme once to produce a fresh event.
+Open **Settings → Advanced → CarPlay map on dashboard (experimental) → Automatic map setup · ADB** for the guided setup, available even when automatic mode is off. It shows the command for the installed package, offers a copy button, explains multiple-device ADB selection, and displays the current permission status. After running the command on your computer, tap **Check and enable** to verify permission and enable both the cluster map and automatic following. If permission is still missing, the guide stays open with instructions; an active CarPlay session reconnects once after successful setup. The copy button copies to the car clipboard, so the command is also displayed for typing on your computer. To revoke it, substitute `default` for `allow`. Without access or a recognized active theme, automatic mode hides the overlay. Manual mode remains available but cannot follow card visibility. If no current theme can be inferred after startup, select a different theme once to produce a fresh event.
 
 Only the four stock full-map, mini-map, Scenario and Simple activity events are processed locally. Closing the mini-map card hides the side overlay; Map theme selects the full layer. Merely moving focus to a head-unit app does not hide a still-visible cluster activity. See [Android's UsageStatsManager documentation](https://developer.android.com/reference/android/app/usage/UsageStatsManager) for the permission model.
 
@@ -84,7 +86,7 @@ TiPlay runs the read through the head unit's own adbd on `127.0.0.1:5555` ("ADB 
 
 CarPlay lets the car zoom the cluster map: the accessory sends the command `changeMapZoomLevel` with the cluster screen's UUID and a `zoomDirection` (`{"type": "changeMapZoomLevel", "params": {"uuid": <alt screen UUID>, "zoomDirection": N}}`), the same family as `stopUI`/`showUI`. With Apple Maps on a Tang, `zoomDirection` 0 zooms in and 1 zooms out (2, 3 and -1 also zoomed out). The iPhone does not answer these commands on the event channel, so the values were checked on the dashboard.
 
-The Tang's wheel has no spare keys for this, and BYD's window manager takes the wheel keys before any app can see them: volume (`KEYCODE` 291 / 292, scan 115 / 114, device `simulate-keys`) changes the volume, the custom key (305, scan 300) runs the action chosen for it in BYD's settings (screen rotation on our car). An accessibility service that filters key events receives keys earlier, in Android's input filter, and may keep them. With **Settings → BYD navigation → Zoom the dashboard map with the wheel** turned on and TiPlay's wheel key service running:
+The Tang's wheel has no spare keys for this, and BYD's window manager takes the wheel keys before any app can see them: volume (`KEYCODE` 291 / 292, scan 115 / 114, device `simulate-keys`) changes the volume, the custom key (305, scan 300) runs the action chosen for it in BYD's settings (screen rotation on our car). An accessibility service that filters key events receives keys earlier, in Android's input filter, and may keep them. With **Settings → Vehicle → Wheel keys → Zoom the dashboard map with the wheel** turned on and TiPlay's wheel key service running:
 
 - while the dashboard shows the CarPlay map, the custom key switches the volume keys to map zoom (volume up zooms in, volume down out) and back; the mode key can instead turn zoom on for five seconds after the last zoom press;
 - the mode shows briefly as a toast and, where the song shows on the dashboard, as "🔍 Map zoom" (with BYD's Bluetooth-music icon) or "🔊 Volume" for three seconds (this note uses the dashboard song's ADB access);
@@ -103,7 +105,7 @@ BYD's settings have no accessibility page. The "Turn on the wheel key service ·
 
 TiPlay already declares a rotary knob for CarPlay's main screen (HID `xcertplay Knob`). Checked with Apple Maps and lists on a Tang: only the knob's turn moves CarPlay's focus (the first turn opens the Maps side panel with search, pinned places and recents), select activates the focused item and back closes the screen; the knob's x/y nudges only pan a focused map, so the joystick does not use them.
 
-With **Settings → BYD navigation → CarPlay joystick on the wheel** turned on and the wheel key service running (see above):
+With **Settings → Vehicle → Wheel keys → CarPlay joystick on the wheel** turned on and the wheel key service running (see above):
 
 - BYD's media key (289, scan 89, normally opens BYD's media app) turns the joystick on and off; without a CarPlay session it keeps its BYD action;
 - while the joystick is on, previous/next (88 / 87) and the volume roller (291 / 292) turn the knob one step back or forward, play/pause (353, scan 505) selects and the custom key (305) goes back. With the joystick off the custom key switches the map zoom as before (if that setting is on); turning the joystick on ends zoom mode;
@@ -127,7 +129,7 @@ TiPlay follows the iPhone's calls from iAP2 CallStateUpdate (0x4155, already sub
 With that setting enabled, during a CarPlay call:
 
 - the call key answers a ringing call with CarPlay's telephony HID Hook Switch, and is kept during a connected call. It works through the wheel key service and on the CarPlay screen; since BYD has already opened its phone screen by then, TiPlay brings CarPlay back to the front;
-- the hang-up and menu keys end or decline the call (telephony HID Drop), through BYD's broadcast; no setting or service is needed;
+- the hang-up and menu keys end or decline the call (telephony HID Drop), through BYD's broadcast; the call-key opt-in is required, but the wheel key service is not;
 - with a CarPlay session, the CarPlay voice keys open Siri through the wheel key service. DiLink 3's play/pause key (331) toggles CarPlay playback.
 
 With the experimental controls disabled, all new call/voice/play-pause key behavior passes through.
@@ -135,7 +137,7 @@ Outside a CarPlay call every call key keeps BYD's action. The exported hang-up r
 the sender's `android.permission.DUMP`; BYD's system-server window manager can send it, while an
 ordinary third-party app cannot. Actual sender/key behavior still requires vehicle acceptance.
 
-**Settings → BYD navigation → CarPlay calls on the dashboard** (optional, needs ADB over network) also writes what BYD's CarPlay app writes, through the adb shell (`BydCarPlayCallTool`, feature ids resolved on the car): the instrument's call state and caller (device 1007, `INSTRUMENT_CALL_STATE_SET`, `INSTRUMENT_CALL_INFO_SET` as UTF-16LE up to 60 bytes), the call time every second (`INSTRUMENT_CALL_TIME_HOUR/MINUTE/SECOND_SET`), the car's call state (device 1023, `SET_CALL_STATE_SET`, `SET_CMD_BTCALL_STATE_SET`: 2 ringing, 1 dialing, 3 active, 5 ended). It deliberately does not set the audio system's CarPlay call status (device 1002, `AUDIO_CARPLAY_CALL_STATUS`) during a call: on a GCC DiLink 3 Han that switches the amplifier to BYD CarPlay's call channel and the caller goes silent, because BYD's audio service plays a third-party app's voice stream as media. The call end still writes 1 (idle) so a stale status is cleared. The call time comes from a small watcher under the adb shell that also ends the call on the car if TiPlay's process goes away mid-call.
+**Settings → Navigation → BYD navigation → CarPlay calls on the dashboard** (optional, needs ADB over network) also writes what BYD's CarPlay app writes, through the adb shell (`BydCarPlayCallTool`, feature ids resolved on the car): the instrument's call state and caller (device 1007, `INSTRUMENT_CALL_STATE_SET`, `INSTRUMENT_CALL_INFO_SET` as UTF-16LE up to 60 bytes), the call time every second (`INSTRUMENT_CALL_TIME_HOUR/MINUTE/SECOND_SET`), the car's call state (device 1023, `SET_CALL_STATE_SET`, `SET_CMD_BTCALL_STATE_SET`: 2 ringing, 1 dialing, 3 active, 5 ended). It deliberately does not set the audio system's CarPlay call status (device 1002, `AUDIO_CARPLAY_CALL_STATUS`) during a call: on a GCC DiLink 3 Han that switches the amplifier to BYD CarPlay's call channel and the caller goes silent, because BYD's audio service plays a third-party app's voice stream as media. The call end still writes 1 (idle) so a stale status is cleared. The call time comes from a small watcher under the adb shell that also ends the call on the car if TiPlay's process goes away mid-call.
 
 Before its first vehicle write, a call reserves a token and waits for confirmation that its shell
 watcher initialized. A failed launch or missing readiness acknowledgment prevents new call-state
@@ -171,7 +173,7 @@ process-death cleanup. The reported live key codes alone do not prove these beha
 
 ## ADB vehicle-data settings and firmware scope
 
-Settings → Location contains **Advanced vehicle data**, collapsed by default, with two saved modes.
+Settings → Advanced → Vehicle contains **Advanced vehicle data**, collapsed by default, with two saved modes.
 **Default mode**, validated on DiLink 5.0 head units, uses the 0.2.10 CAN/CANFD battery selection and
 the established DiLink 5.0 speed/gear addresses. **Legacy head-unit detection**, tested on controller
 13 / DiLink 3.0, resolves and validates the current firmware's fields. Selecting legacy detection for
@@ -240,11 +242,11 @@ Full charge is estimated only from known energy; full range is scaled up from th
 
 If CarPlay connected before the first battery reading was available, battery reporting stays off for that connection. Enabling the setting reconnects an active session once a default-mode ADB check reads the battery, or after a successful legacy probe; returning after idle requests an immediate background refresh rather than waiting for the next 30-second poll. The UI and iAP2 loop never wait for ADB.
 
-Vehicle-data mode, battery, wheel speed and parked-video settings have one owner under **Settings → Location → Advanced vehicle data**. The separate BYD ADB card controls optional car-hotspot startup. It does not expose another set of vehicle switches or override which fields the selected vehicle mode supports. Hotspot authorization and user vehicle checks/probes wait for one another; saved legacy validation resumes after a hotspot authorization finishes.
+Vehicle-data mode, battery, wheel speed and parked-video settings have one owner under **Settings → Advanced → Vehicle → Advanced vehicle data**. The separate BYD ADB card controls optional car-hotspot startup. It does not expose another set of vehicle switches or override which fields the selected vehicle mode supports. Hotspot authorization and user vehicle checks/probes wait for one another; saved legacy validation resumes after a hotspot authorization finishes.
 
 ## Wheel speed for tunnels (optional, needs ADB)
 
-"Report location to iPhone" (Settings → Location) sends the head unit's position as `$GPGGA` + `$GPRMC` in iAP2 LocationInformation (`0xFFFB`). In a tunnel or car park there is no fix, and the iPhone has only its own motion sensors. "Wheel speed for tunnels" adds the car's speed and gear so the iPhone can keep the position moving:
+"Report location to iPhone" (Settings → Navigation → Location) sends the head unit's position as `$GPGGA` + `$GPRMC` in iAP2 LocationInformation (`0xFFFB`). In a tunnel or car park there is no fix, and the iPhone has only its own motion sensors. "Wheel speed for tunnels" adds the car's speed and gear so the iPhone can keep the position moving:
 
 - TiPlay also sets VehicleSpeedData (id 20) in the LocationInformation identification component. It sends `$PASCD` only if the iPhone selects it (id 4) in StartLocationInformation (`0xFFFA`); the log shows the ids the iPhone asked for (`components=[…]`).
 - Every LocationInformation (about once a second) carries the samples since the previous one, even without a GPS fix: `$PASCD,<first sample, s since boot>,C,<P/R/N/D>,0,<n>,<offset s>,<speed m/s>,…*CS`. The layout copies a production head unit's log; what `C` and `0` stand for is not public.

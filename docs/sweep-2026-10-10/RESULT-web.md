@@ -1,5 +1,7 @@
 # Web sweep result
 
+Historical record of the initial 2026-10-10 cleanup and its coordinator verification. The open queue/lifecycle decisions and E2E failure below were superseded by the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md); later commit, push and deployment results are in the [tie-up record](TIE-UP-2026-10-11.md).
+
 Reviewed the `web` section of SCOPE.md against STANDARDS.md rules 1–9. All 11 production Kotlin files are additions since `e837efa`; no inherited upstream code was edited. Reviewed all 12 assigned test files and the JSON fixture; the binary fixture was excluded from edits.
 
 ## Changes

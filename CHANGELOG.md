@@ -2,8 +2,9 @@
 
 - Rename the project from DiPlay to TiPlay. The app uses the new package `com.ujzk.tiplay`, so it installs alongside DiPlay (`com.shihab.diplay`). It does not take over DiPlay's settings, pairing records or updates, and the iPhone sees it as a new car.
 - Show TiPlay as the app name and as the CarPlay accessory name on the iPhone. Local hotspot names start with `TiPlay-`. Diagnostic reports save to Downloads/TiPlay as `TiPlay-<time>.txt`.
-- Add the default-off experimental Audio setting "Sound through car Bluetooth": `/info` leaves out only `audioFormats`, as Carlinkit's `BtAudio=1` does, so the iPhone can keep sound on its Bluetooth link to the car, and TiPlay declines audio streams and opens no microphone. An alternative method also leaves out audio latencies and audio feature bits. Applies at the next connection; not yet verified in a car.
-- Start in the phone + browser run mode unless head-unit mode was chosen in Settings → Connection → Tesla browser. "Sound through car Bluetooth" appears and applies only in that mode, so a choice saved there never silences a head unit. In that mode CarPlay's car button shows a neutral car instead of the BYD logo, labelled "Tesla" while its name is the default "BYD"; a custom icon or name is kept.
+- Use the phone + browser profile on normal app and CarPlay entry. Browser display, car Bluetooth audio and split-screen handling are enabled; local display, audio, location and BYD settings are hidden. There is no head-unit mode selector in the current TiPlay profile.
+- Route sound through the iPhone’s Bluetooth link to the car: `/info` leaves out `audioFormats`, as Carlinkit's `BtAudio=1` does, and TiPlay declines audio streams and opens no microphone. The current profile fixes this method on; car audio remains unverified.
+- In phone + browser mode, CarPlay's car button shows a neutral car instead of the BYD logo, labelled "TiPlay" while its saved name is the default "BYD"; a custom icon or name is kept. Applies at the next connection.
 - TiPlay is a fork of [DiPlay by shihabal3amri](https://github.com/shihabal3amri/DiPlay), GPL-3.0. The entries below are DiPlay's release history and keep its name and upstream issue numbers.
 
 # DiPlay 0.2.13 — 2026-10-06

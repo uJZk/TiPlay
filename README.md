@@ -1,8 +1,8 @@
 # TiPlay
 
-**CarPlay in the Tesla browser from an Android phone, and CarPlay on compatible BYD Android head units.** Independent app: `com.ujzk.tiplay`.
+**CarPlay in the Tesla browser from an Android phone, with inherited BYD Android head-unit receiver code.** Independent app: `com.ujzk.tiplay`.
 
-The Tesla browser mode is in development and is not in a release yet. In this mode an Android phone runs TiPlay and hosts a Wi-Fi hotspot. The iPhone connects to the phone with wireless CarPlay, the Tesla joins the same hotspot, and the Tesla's built-in browser shows CarPlay and sends touches back to the phone. The phone passes the iPhone's H.264 or HEVC video to the browser without re-encoding. Music, navigation prompts, Siri and calls stay on the Bluetooth connection between the iPhone and the Tesla. See the [plan and test results](docs/todo.md) (Chinese). TiPlay also keeps DiPlay's CarPlay receiver for compatible BYD Android head units, described below.
+The Tesla browser mode is in development and is not in a release yet. In this mode an Android phone runs TiPlay and hosts a Wi-Fi hotspot. The iPhone connects to the phone with wireless CarPlay, the Tesla joins the same hotspot, and the Tesla's built-in browser shows CarPlay and sends touches back to the phone. The phone passes the iPhone's H.264 or HEVC video to the browser without re-encoding. Music, navigation prompts, Siri and calls stay on the Bluetooth connection between the iPhone and the Tesla. See the [plan and test results](docs/todo.md) (Chinese). TiPlay also keeps DiPlay's CarPlay receiver code for compatible BYD Android head units, described below as inherited functionality. The current TiPlay entry points use the phone + browser profile and hide the BYD head-unit settings.
 
 TiPlay is based on [DiPlay](https://github.com/shihabal3amri/DiPlay) by shihabal3amri, GPL-3.0. It is not affiliated with or endorsed by Tesla, Inc., Apple Inc. or BYD. Tesla and CarPlay are trademarks of their respective owners.
 
@@ -16,13 +16,15 @@ There is no TiPlay release yet. To try it now, [build it from source](docs/BUILD
 
 ## Tesla browser mode (in development)
 
-- **Android phone:** runs TiPlay and its Wi-Fi hotspot. Reaching the phone from the Tesla browser needs root: the browser blocks private addresses such as 192.168.x.x and 10.x.x.x, so an optional setting adds an address from 100.64.0.0/10 to the hotspot interface.
+- **Android phone:** runs TiPlay and its Wi-Fi hotspot. The Tesla browser blocks private addresses such as 192.168.x.x and 10.x.x.x, so the phone needs a reachable address from 100.64.0.0/10. The extra hotspot address setting offers root, experimental VPN and Shizuku methods; their requirements and validation limits are in [Hotspot address](docs/HOTSPOT_ADDRESS.md).
 - **iPhone:** pair it over Bluetooth with the Tesla as the primary phone for audio and calls, and connect it to TiPlay with wireless CarPlay.
 - **Tesla:** join the phone's hotspot and open the TiPlay page (`https://ujzk.github.io/TiPlay/`) in the browser. Set **Browser page address** to this URL in TiPlay if it still uses `/DiPlay/`. The page will load once from a public HTTPS address and then work from the browser cache.
 - **Tested so far:** probe pages on a Model Y (Chromium 148) decoded 1080p60 H.264 and HEVC in hardware, and H.264 kept 60 fps in Drive. An HTTPS page in the Tesla browser reached the phone over HTTP at a 100.64 address on the hotspot. CarPlay itself has not run in a Tesla yet.
 - **Setup:** publishing the page, pairing, other browsers and the car test checklist are in [Tesla browser](docs/TESLA_BROWSER.md).
 
-## Head-unit mode (from DiPlay 0.2.13)
+## Inherited head-unit mode (from DiPlay 0.2.13)
+
+The following describes DiPlay’s inherited receiver functionality. The current TiPlay browser profile does not expose a head-unit mode selector.
 
 Install on the **car**, not the iPhone. No jailbreak, dongle, Mac, account or authentication server is required for use. Core CarPlay does not require ADB; optional dashboard, battery, wheel-speed and parked-video features do. Your head unit must permit APK installation. The APK supports Android 9+ (API 28); wireless supports Wi-Fi Direct, the car’s existing hotspot or Existing Wi-Fi / Same LAN. Android 9 Wi-Fi Direct uses a firmware-dependent legacy path with generated group credentials and unverified requested frequency; see [Android 9 Wi-Fi Direct](docs/ANDROID9_WIFI_DIRECT.md). Android 10+ verifies its negotiated group frequency.
 

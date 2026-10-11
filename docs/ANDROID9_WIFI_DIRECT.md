@@ -1,5 +1,10 @@
 # Android 9 Wi-Fi Direct
 
+This describes the retained Wi-Fi Direct backend. Current TiPlay's browser-profile
+connection chooser offers Built-in car hotspot and Existing Wi-Fi / Same LAN,
+without Wi-Fi Direct selection. See [Tesla browser setup](TESLA_BROWSER.md) for the
+current product workflow.
+
 Android 9 uses the public two-argument `WifiP2pManager.createGroup` overload and reads the
 system-generated credentials from `requestGroupInfo`. Unlike the Android 10 configuration
 overload, Android 9 asks the framework to create or reuse a persistent group-owner profile.

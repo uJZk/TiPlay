@@ -1,7 +1,7 @@
 # Existing Wi-Fi / Same LAN
 
 Connect the Android receiver and iPhone to the same third-party router or portable
-Wi-Fi in system settings. In TiPlay → Connection setup → Wireless, select
+Wi-Fi in system settings. In TiPlay → Settings → Connection → Connection setup, select
 **Existing Wi-Fi / Same LAN**, enter the exact SSID and WPA2 password, and save.
 For an open network, leave the password empty. Keep Bluetooth enabled and the iPhone
 paired with the receiver, then start wireless CarPlay as usual.

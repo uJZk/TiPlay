@@ -1,5 +1,7 @@
 # Shared-other sweep result
 
+Historical record of the initial 2026-10-10 cleanup and its coordinator verification. The open queue/lifecycle decisions and E2E failure below were superseded by the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md); later commit, push and deployment results are in the [tie-up record](TIE-UP-2026-10-11.md).
+
 ## Scope and outcome
 
 Reviewed all 21 files assigned to `shared-other` in `SCOPE.md`, using `git diff e837efa HEAD` to restrict inherited files to TiPlay hunks. Read `STANDARDS.md`, `AGENTS.md`, and `docs/UPSTREAM_SYNC.md`. No source changes were justified by the behavior-preserving cleanup standard. Original upstream implementation remains untouched.

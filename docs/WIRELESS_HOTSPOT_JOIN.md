@@ -90,7 +90,13 @@ evidence for a general in-app fix.
 
 ## Opt-in app repair
 
-**Connection setup → Built-in car hotspot → Check hotspot repair** runs TiPlay's
+The repair implementation and controls are retained in the source, but current
+TiPlay does not attach the repair controls to its connection screen. The workflow
+below describes that earlier UI, not an available action in the current browser
+profile. Use the car/phone's own hotspot settings for current setup; see
+[Tesla browser setup](TESLA_BROWSER.md).
+
+**Settings → Connection → Connection setup → Built-in car hotspot → Check hotspot repair** runs TiPlay's
 authorized local-ADB/app_process helper. Opening the screen, resuming the app or
 starting CarPlay does not run this repair. Check reads the saved configuration
 and prepares a private full rollback snapshot; it does not change the hotspot.

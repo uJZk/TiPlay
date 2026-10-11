@@ -1,0 +1,1264 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 721e754..c8495a0 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -2,8 +2,9 @@
+ 
+ - Rename the project from DiPlay to TiPlay. The app uses the new package `com.ujzk.tiplay`, so it installs alongside DiPlay (`com.shihab.diplay`). It does not take over DiPlay's settings, pairing records or updates, and the iPhone sees it as a new car.
+ - Show TiPlay as the app name and as the CarPlay accessory name on the iPhone. Local hotspot names start with `TiPlay-`. Diagnostic reports save to Downloads/TiPlay as `TiPlay-<time>.txt`.
+-- Add the default-off experimental Audio setting "Sound through car Bluetooth": `/info` leaves out only `audioFormats`, as Carlinkit's `BtAudio=1` does, so the iPhone can keep sound on its Bluetooth link to the car, and TiPlay declines audio streams and opens no microphone. An alternative method also leaves out audio latencies and audio feature bits. Applies at the next connection; not yet verified in a car.
+-- Start in the phone + browser run mode unless head-unit mode was chosen in Settings → Connection → Tesla browser. "Sound through car Bluetooth" appears and applies only in that mode, so a choice saved there never silences a head unit. In that mode CarPlay's car button shows a neutral car instead of the BYD logo, labelled "Tesla" while its name is the default "BYD"; a custom icon or name is kept.
++- Use the phone + browser profile on normal app and CarPlay entry. Browser display, car Bluetooth audio and split-screen handling are enabled; local display, audio, location and BYD settings are hidden. There is no head-unit mode selector in the current TiPlay profile.
++- Route sound through the iPhone’s Bluetooth link to the car: `/info` leaves out `audioFormats`, as Carlinkit's `BtAudio=1` does, and TiPlay declines audio streams and opens no microphone. The current profile fixes this method on; car audio remains unverified.
++- In phone + browser mode, CarPlay's car button shows a neutral car instead of the BYD logo, labelled "TiPlay" while its saved name is the default "BYD"; a custom icon or name is kept. Applies at the next connection.
+ - TiPlay is a fork of [DiPlay by shihabal3amri](https://github.com/shihabal3amri/DiPlay), GPL-3.0. The entries below are DiPlay's release history and keep its name and upstream issue numbers.
+ 
+ # DiPlay 0.2.13 — 2026-10-06
+diff --git a/README.md b/README.md
+index ae8a96a..970b6a9 100644
+--- a/README.md
++++ b/README.md
+@@ -1,8 +1,8 @@
+ # TiPlay
+ 
+-**CarPlay in the Tesla browser from an Android phone, and CarPlay on compatible BYD Android head units.** Independent app: `com.ujzk.tiplay`.
++**CarPlay in the Tesla browser from an Android phone, with inherited BYD Android head-unit receiver code.** Independent app: `com.ujzk.tiplay`.
+ 
+-The Tesla browser mode is in development and is not in a release yet. In this mode an Android phone runs TiPlay and hosts a Wi-Fi hotspot. The iPhone connects to the phone with wireless CarPlay, the Tesla joins the same hotspot, and the Tesla's built-in browser shows CarPlay and sends touches back to the phone. The phone passes the iPhone's H.264 or HEVC video to the browser without re-encoding. Music, navigation prompts, Siri and calls stay on the Bluetooth connection between the iPhone and the Tesla. See the [plan and test results](docs/todo.md) (Chinese). TiPlay also keeps DiPlay's CarPlay receiver for compatible BYD Android head units, described below.
++The Tesla browser mode is in development and is not in a release yet. In this mode an Android phone runs TiPlay and hosts a Wi-Fi hotspot. The iPhone connects to the phone with wireless CarPlay, the Tesla joins the same hotspot, and the Tesla's built-in browser shows CarPlay and sends touches back to the phone. The phone passes the iPhone's H.264 or HEVC video to the browser without re-encoding. Music, navigation prompts, Siri and calls stay on the Bluetooth connection between the iPhone and the Tesla. See the [plan and test results](docs/todo.md) (Chinese). TiPlay also keeps DiPlay's CarPlay receiver code for compatible BYD Android head units, described below as inherited functionality. The current TiPlay entry points use the phone + browser profile and hide the BYD head-unit settings.
+ 
+ TiPlay is based on [DiPlay](https://github.com/shihabal3amri/DiPlay) by shihabal3amri, GPL-3.0. It is not affiliated with or endorsed by Tesla, Inc., Apple Inc. or BYD. Tesla and CarPlay are trademarks of their respective owners.
+ 
+@@ -16,13 +16,15 @@ There is no TiPlay release yet. To try it now, [build it from source](docs/BUILD
+ 
+ ## Tesla browser mode (in development)
+ 
+-- **Android phone:** runs TiPlay and its Wi-Fi hotspot. Reaching the phone from the Tesla browser needs root: the browser blocks private addresses such as 192.168.x.x and 10.x.x.x, so an optional setting adds an address from 100.64.0.0/10 to the hotspot interface.
++- **Android phone:** runs TiPlay and its Wi-Fi hotspot. The Tesla browser blocks private addresses such as 192.168.x.x and 10.x.x.x, so the phone needs a reachable address from 100.64.0.0/10. The extra hotspot address setting offers root, experimental VPN and Shizuku methods; their requirements and validation limits are in [Hotspot address](docs/HOTSPOT_ADDRESS.md).
+ - **iPhone:** pair it over Bluetooth with the Tesla as the primary phone for audio and calls, and connect it to TiPlay with wireless CarPlay.
+ - **Tesla:** join the phone's hotspot and open the TiPlay page (`https://ujzk.github.io/TiPlay/`) in the browser. Set **Browser page address** to this URL in TiPlay if it still uses `/DiPlay/`. The page will load once from a public HTTPS address and then work from the browser cache.
+ - **Tested so far:** probe pages on a Model Y (Chromium 148) decoded 1080p60 H.264 and HEVC in hardware, and H.264 kept 60 fps in Drive. An HTTPS page in the Tesla browser reached the phone over HTTP at a 100.64 address on the hotspot. CarPlay itself has not run in a Tesla yet.
+ - **Setup:** publishing the page, pairing, other browsers and the car test checklist are in [Tesla browser](docs/TESLA_BROWSER.md).
+ 
+-## Head-unit mode (from DiPlay 0.2.13)
++## Inherited head-unit mode (from DiPlay 0.2.13)
++
++The following describes DiPlay’s inherited receiver functionality. The current TiPlay browser profile does not expose a head-unit mode selector.
+ 
+ Install on the **car**, not the iPhone. No jailbreak, dongle, Mac, account or authentication server is required for use. Core CarPlay does not require ADB; optional dashboard, battery, wheel-speed and parked-video features do. Your head unit must permit APK installation. The APK supports Android 9+ (API 28); wireless supports Wi-Fi Direct, the car’s existing hotspot or Existing Wi-Fi / Same LAN. Android 9 Wi-Fi Direct uses a firmware-dependent legacy path with generated group credentials and unverified requested frequency; see [Android 9 Wi-Fi Direct](docs/ANDROID9_WIFI_DIRECT.md). Android 10+ verifies its negotiated group frequency.
+ 
+diff --git a/README.zh-CN.md b/README.zh-CN.md
+index 7d46bab..cc52fcc 100644
+--- a/README.zh-CN.md
++++ b/README.zh-CN.md
+@@ -1,8 +1,8 @@
+ # TiPlay
+ 
+-**用安卓手机把 CarPlay 送到特斯拉车载浏览器，并继续支持兼容的比亚迪安卓车机。** 独立应用：`com.ujzk.tiplay`。
++**用安卓手机把 CarPlay 送到特斯拉车载浏览器，并保留比亚迪安卓车机接收器的上游代码。** 独立应用：`com.ujzk.tiplay`。
+ 
+-特斯拉浏览器模式正在开发，尚未发布。在这个模式下，安卓手机运行 TiPlay 并开热点。iPhone 以无线 CarPlay 连接这台手机，特斯拉连接同一个热点，用车载浏览器显示 CarPlay，并把触摸操作传回手机。手机不转码，直接把 iPhone 的 H.264 或 HEVC 视频交给浏览器；音乐、导航语音、Siri 和电话仍走 iPhone 与特斯拉之间的蓝牙。方案和实测记录见 [docs/todo.md](docs/todo.md)。TiPlay 同时保留 DiPlay 面向兼容比亚迪安卓车机的 CarPlay 功能，见下文。
++特斯拉浏览器模式正在开发，尚未发布。在这个模式下，安卓手机运行 TiPlay 并开热点。iPhone 以无线 CarPlay 连接这台手机，特斯拉连接同一个热点，用车载浏览器显示 CarPlay，并把触摸操作传回手机。手机不转码，直接把 iPhone 的 H.264 或 HEVC 视频交给浏览器；音乐、导航语音、Siri 和电话仍走 iPhone 与特斯拉之间的蓝牙。方案和实测记录见 [docs/todo.md](docs/todo.md)。TiPlay 同时保留 DiPlay 面向兼容比亚迪安卓车机的 CarPlay 接收器代码，下文介绍其继承功能。当前 TiPlay 入口使用手机＋浏览器配置，并隐藏比亚迪车机设置。
+ 
+ TiPlay 基于 shihabal3amri 的 [DiPlay](https://github.com/shihabal3amri/DiPlay)（GPL-3.0）。本项目与 Tesla, Inc.、Apple Inc. 及比亚迪无隶属关系，也未获其认可。Tesla 和 CarPlay 是其各自所有者的商标。
+ 
+@@ -16,7 +16,7 @@ TiPlay 还没有发布版本，现在试用请[从源码构建](docs/BUILD.md)
+ 
+ ## 特斯拉浏览器模式（开发中）
+ 
+-- **安卓手机**：运行 TiPlay 并开启 Wi-Fi 热点。从特斯拉浏览器访问手机需要 root：浏览器拦截 192.168.x.x、10.x.x.x 等私有地址，所以提供了一个可选设置，给热点网卡加一个 100.64.0.0/10 内的地址。
++- **安卓手机**：运行 TiPlay 并开启 Wi-Fi 热点。特斯拉浏览器拦截 192.168.x.x、10.x.x.x 等私有地址，因此手机需要一个浏览器可访问的 100.64.0.0/10 地址。“热点附加地址”提供 root、实验性 VPN 和 Shizuku 方法，要求与验证边界见[热点地址](docs/HOTSPOT_ADDRESS.md)（英文）。
+ - **iPhone**：通过蓝牙连接特斯拉并设为主电话，用于声音和通话；同时以无线 CarPlay 连接 TiPlay。
+ - **特斯拉**：连接手机热点，在浏览器中打开 TiPlay 页面（`https://ujzk.github.io/TiPlay/`）。若 TiPlay 的“浏览器页面地址”仍为 `/DiPlay/`，改为这个新地址。页面将从公网 HTTPS 地址加载一次，之后使用浏览器缓存。
+ - **目前的实测**：在 Model Y（Chromium 148）上，探测页能硬解 1080p60 的 H.264 和 HEVC，挂 D 挡时 H.264 保持 60 fps。特斯拉浏览器中的 HTTPS 页面已能通过 HTTP 访问热点上的 100.64 地址。CarPlay 本身还没有在特斯拉上跑通。
+@@ -24,6 +24,8 @@ TiPlay 还没有发布版本，现在试用请[从源码构建](docs/BUILD.md)
+ 
+ ## 车机模式（继承自 DiPlay 0.2.13）
+ 
++以下介绍 DiPlay 的继承功能；当前 TiPlay 浏览器配置未提供车机模式选择器。
++
+ 请安装在允许 APK 安装的 Android 9+（API 28+）车机上。无需越狱、转接盒、账户或认证服务器。有线及无线核心连接不要求 ADB；可选车辆数据及车辆控制需要支持的固件和已授权网络 ADB。
+ 
+ Wi-Fi Direct 现支持 Android 9 的旧版建组路径，使用系统返回的真实凭据。首选信道依赖固件 API；Android 9 无法读回协商频率，所以请求信道在诊断中标为未经验证，系统默认为信道 0。Android 10+ 保留频率验证。也可使用车机内置热点、USB 或[现有 Wi-Fi／同一局域网](docs/EXISTING_WIFI.md)；同一局域网模式由车机和 iPhone 自行连接外部路由器，TiPlay 不替你修改默认路由。[Android 9 Wi-Fi Direct 限制](docs/ANDROID9_WIFI_DIRECT.md)说明清理及持久配置边界。
+@@ -37,10 +39,14 @@ Wi-Fi Direct 现支持 Android 9 的旧版建组路径，使用系统返回的
+ - **音频与触摸**：针对已捕获的 24 kHz Siri 流修正 RTP 时间戳；通话及未经验证的 Opus 格式继续使用 48 kHz。触摸事件通道启用 TCP_NODELAY。相关效果仍依赖实际车机、网络和 iOS。
+ - **默认关闭的实验功能**：DiLink 3 通话键及仪表通话卡片为两个独立开关；车机写入必须先获得已初始化观察进程的就绪确认，并保留失败恢复所有权。AAC-LC 缓冲音乐需要主动启用并重连，不是无损音频。它们仍需实际通话、麦克风、恢复及音乐中断测试反馈。
+ - **热点自动加入修复**：只在符合要求的 Android 13+、用户配置的 5 GHz 热点上提供明确的检查／应用／恢复操作；要求热点关闭、无活动会话、支持的 API 和已授权本地 ADB，并保留完整私有备份。打开设置或启动 CarPlay 不会自动修改热点。
+-- **界面与语言**：首页设置和 CarPlay 手势均打开“CarPlay 设置”，依次为连接、自动连接、显示、车辆、高级及诊断。浏览器显示、汽车蓝牙音频和分屏固定启用，日夜模式跟随浏览器主题；本机显示布局、音频和位置选项隐藏。帧率为 30–60 FPS，默认 60，HEVC 在高级分组；修改后点击“保存并重新连接”生效。热点名称、密码可手动输入，系统允许时可读取本机热点；进入“更多设置”子页会保留主菜单草稿。应用及发布网站支持繁体中文（台湾），共七种语言。
++- **界面与语言**：改进设置界面、保留主菜单草稿、提供车载按钮定制及跟随日夜模式的等待画面。应用及发布网站新增繁体中文（台湾），共七种语言。
+ 
+ [DiPlay 0.2.13 完整说明](docs/RELEASE-NOTES-0.2.13.md)包含全部 35 项贡献及验证边界，最终发布检查见[验证记录](docs/VALIDATION.md)。可选功能请停车后测试。不宣称所有秦／海豹／汉／唐固件、一般卡顿、Siri 或旧版 iOS 问题均已解决。
+ 
++### 当前 TiPlay 浏览器设置
++
++首页设置和 CarPlay 手势均打开“CarPlay 设置”，依次为连接、自动连接、显示、车辆、高级及诊断。浏览器显示、汽车蓝牙音频和分屏固定启用，日夜模式跟随浏览器主题；本机显示布局、音频和位置选项隐藏。帧率为 30–60 FPS，全新安装默认 30，可选 60；HEVC 在高级分组；修改后点击“保存并重新连接”生效。热点名称、密码可手动输入，系统允许时可读取本机热点；进入“更多设置”子页会保留主菜单草稿。
++
+ ### 报告问题
+ 
+ TiPlay 的问题请报告到本仓库，不要报告到 DiPlay。
+diff --git a/docs/ANDROID9_WIFI_DIRECT.md b/docs/ANDROID9_WIFI_DIRECT.md
+index fe7fe0d..3cbcd7a 100644
+--- a/docs/ANDROID9_WIFI_DIRECT.md
++++ b/docs/ANDROID9_WIFI_DIRECT.md
+@@ -1,5 +1,10 @@
+ # Android 9 Wi-Fi Direct
+ 
++This describes the retained Wi-Fi Direct backend. Current TiPlay's browser-profile
++connection chooser offers Built-in car hotspot and Existing Wi-Fi / Same LAN,
++without Wi-Fi Direct selection. See [Tesla browser setup](TESLA_BROWSER.md) for the
++current product workflow.
++
+ Android 9 uses the public two-argument `WifiP2pManager.createGroup` overload and reads the
+ system-generated credentials from `requestGroupInfo`. Unlike the Android 10 configuration
+ overload, Android 9 asks the framework to create or reuse a persistent group-owner profile.
+diff --git a/docs/BUFFERED_AUDIO.md b/docs/BUFFERED_AUDIO.md
+index 67b3e09..d8e15c1 100644
+--- a/docs/BUFFERED_AUDIO.md
++++ b/docs/BUFFERED_AUDIO.md
+@@ -1,6 +1,8 @@
+ # Buffered music (CarPlay main buffered audio)
+ 
+-Apple calls it "Enhanced buffering" ([WWDC23, Optimize CarPlay for vehicle systems](https://developer.apple.com/videos/play/wwdc2023/10150/)): for apps that support it, the iPhone sends music ahead of time and the car keeps the timing, so short wireless gaps are not heard. TiPlay implements the receiving side. It is off by default: **Settings → Display and performance → Buffered music (experimental)**, which reconnects CarPlay.
++This guide describes the retained head-unit receiver implementation and contributor tests. Current TiPlay uses the phone + browser profile, routes audio through the car’s Bluetooth connection and hides the buffered-music setting.
++
++Apple calls it "Enhanced buffering" ([WWDC23, Optimize CarPlay for vehicle systems](https://developer.apple.com/videos/play/wwdc2023/10150/)): for apps that support it, the iPhone sends music ahead of time and the car keeps the timing, so short wireless gaps are not heard. TiPlay implements the receiving side. It is off by default: **Settings → Advanced → Video and audio → Buffered music (experimental)**, which reconnects CarPlay.
+ 
+ ## What changes
+ 
+@@ -35,10 +37,12 @@ Apple Music's lossless setting does not reach the car this way. With only PCM 48
+ 
+ ## Tested
+ 
++These are historical contributor results; the test date was not recorded in this guide.
++
+ 2024 BYD Tang (DiLink 5.0), iPhone on iOS 27, wireless CarPlay (Wi-Fi Direct and the car's hotspot), Apple Music:
+ 
+ - music played from the car, with pause, resume and track changes;
+-- navigation prompts ducked the music, a call paused it and it resumed afterwards, Siri worked over it (tested together with #295, which Siri needs on main); Spotify used the normal stream;
++- navigation prompts ducked the music, a call paused it and it resumed afterwards, Siri worked over it (tested together with [upstream #295](https://github.com/shihabal3amri/DiPlay/pull/295), which Siri needs on main); Spotify used the normal stream;
+ - unit tests cover the offer and disabled-output SETUP gate, authenticated frame opening and malformed headers, split/coalesced TCP framing, byte/frame limits, anchor format, wrap-safe timestamps, pause/resume preload retention, in-flight pause/flush/close ordering, accepted/waiting socket cancellation, and rejected SETUP replacements.
+ 
+ The hardware results above were supplied by the original author before the review corrections. The corrected bounded-buffer and pause/resume paths have source-level regression coverage; they have not been rerun on physical hardware by the reviewer. Recheck Apple Music pause/resume, seek/track change, navigation ducking and call/Siri interruption on the corrected build before treating this experimental option as generally supported.
+diff --git a/docs/BUILD.md b/docs/BUILD.md
+index 6049bc5..ac75ccc 100644
+--- a/docs/BUILD.md
++++ b/docs/BUILD.md
+@@ -1,6 +1,6 @@
+ # Build TiPlay
+ 
+-Use this procedure to build the TiPlay app for an Android phone or head unit.
++Use this procedure to build the TiPlay browser receiver for an Android phone. Head-unit implementations remain in source for upstream compatibility.
+ Run the commands from the repository root, where `gradlew` and `settings.gradle.kts` are located.
+ 
+ ## Select the application
+@@ -10,7 +10,7 @@ Select `mobile` to build the main TiPlay app.
+ 
+ | Gradle module | Purpose | Debug APK |
+ | --- | --- | --- |
+-| `:mobile` | Main TiPlay app for Android phones and head units | `mobile/build/outputs/apk/debug/mobile-debug.apk` |
++| `:mobile` | Main TiPlay app (current browser receiver profile) | `mobile/build/outputs/apk/debug/mobile-debug.apk` |
+ | `:maphost` | Sample application that displays a map from TiPlay | `samples/maphost/build/outputs/apk/debug/maphost-debug.apk` |
+ | `:home` | Optional TiPlay Home launcher | `samples/home/build/outputs/apk/debug/home-debug.apk` |
+ | `:automotive` | Separate Android Automotive application inherited from xcertplay | `automotive/build/outputs/apk/debug/automotive-debug.apk` |
+diff --git a/docs/BYD_NAVIGATION.md b/docs/BYD_NAVIGATION.md
+index 09c7418..94de901 100644
+--- a/docs/BYD_NAVIGATION.md
++++ b/docs/BYD_NAVIGATION.md
+@@ -1,5 +1,7 @@
+ # BYD navigation displays and vehicle data
+ 
++This guide describes retained head-unit integrations and their recorded vehicle tests. Current TiPlay forces the phone + browser profile and hides BYD navigation, dashboard map, wheel-key and vehicle-data settings; these outputs are disabled in that profile. The settings paths below refer to the retained head-unit UI.
++
+ Phone navigation arrows, next-turn distance and street names can appear on supported BYD displays. Ordinary operation requires no ADB, root, laptop or helper process. The map app must provide structured navigation metadata; compatibility is not guaranteed for every map app or version.
+ 
+ ## Validated windshield path
+@@ -37,7 +39,7 @@ TiPlay can ask the iPhone for CarPlay's second, instrument-cluster screen and sh
+ 
+ Validated on DiLink5.0 / Android12, firmware `BYD-AUTO/DiLink5.0/DiLink5.0:12/SKQ1.230128.001/eng.build.20251111.182747:user/release-keys`, with Apple Maps on iOS 27:
+ 
+-- Turn on "CarPlay map on dashboard" under BYD navigation. The switch appears only when a cluster projection display is visible to the app.
++- Turn on **Settings → Advanced → CarPlay map on dashboard (experimental)**. The control also appears without a visible cluster display so a virtual stream can serve the centre-screen card or launcher embedding.
+ - In the cluster's own steering-wheel menu, choose "Full screen navi" or "Small screen navi". "Turn on by navi" shows arrows only, even during CarPlay navigation.
+ - The cluster's speed readout stays visible. "Small screen navi" crops the same picture on the cluster side; Android does not report that crop.
+ - The car marker is placed through CarPlay's safe area: the centre of the panel (x 35–64 %, y 16–75 %), measured with a calibration grid to be clear of BYD's own readouts in both Full and Small screen navi. "Car marker · horizontal" (Left 40 % … Right 40 %) and "Car marker · vertical" (Up 30 % … Down 30 %) move it from there in 10 % steps of the panel. Near a panel edge the safe area shrinks so the marker stays at its centre.
+@@ -66,7 +68,7 @@ Enable **Follow instrument theme and map card** to follow the stock cluster acti
+ adb shell appops set com.ujzk.tiplay.hudtest GET_USAGE_STATS allow
+ ```
+ 
+-Open **Settings → BYD navigation → Automatic map setup · ADB** for the guided setup, available even when automatic mode is off. It shows the command for the installed package, offers a copy button, explains multiple-device ADB selection, and displays the current permission status. After running the command on your computer, tap **Check and enable** to verify permission and enable both the cluster map and automatic following. If permission is still missing, the guide stays open with instructions; an active CarPlay session reconnects once after successful setup. The copy button copies to the car clipboard, so the command is also displayed for typing on your computer. To revoke it, substitute `default` for `allow`. Without access or a recognized active theme, automatic mode hides the overlay. Manual mode remains available but cannot follow card visibility. If no current theme can be inferred after startup, select a different theme once to produce a fresh event.
++Open **Settings → Advanced → CarPlay map on dashboard (experimental) → Automatic map setup · ADB** for the guided setup, available even when automatic mode is off. It shows the command for the installed package, offers a copy button, explains multiple-device ADB selection, and displays the current permission status. After running the command on your computer, tap **Check and enable** to verify permission and enable both the cluster map and automatic following. If permission is still missing, the guide stays open with instructions; an active CarPlay session reconnects once after successful setup. The copy button copies to the car clipboard, so the command is also displayed for typing on your computer. To revoke it, substitute `default` for `allow`. Without access or a recognized active theme, automatic mode hides the overlay. Manual mode remains available but cannot follow card visibility. If no current theme can be inferred after startup, select a different theme once to produce a fresh event.
+ 
+ Only the four stock full-map, mini-map, Scenario and Simple activity events are processed locally. Closing the mini-map card hides the side overlay; Map theme selects the full layer. Merely moving focus to a head-unit app does not hide a still-visible cluster activity. See [Android's UsageStatsManager documentation](https://developer.android.com/reference/android/app/usage/UsageStatsManager) for the permission model.
+ 
+@@ -84,7 +86,7 @@ TiPlay runs the read through the head unit's own adbd on `127.0.0.1:5555` ("ADB
+ 
+ CarPlay lets the car zoom the cluster map: the accessory sends the command `changeMapZoomLevel` with the cluster screen's UUID and a `zoomDirection` (`{"type": "changeMapZoomLevel", "params": {"uuid": <alt screen UUID>, "zoomDirection": N}}`), the same family as `stopUI`/`showUI`. With Apple Maps on a Tang, `zoomDirection` 0 zooms in and 1 zooms out (2, 3 and -1 also zoomed out). The iPhone does not answer these commands on the event channel, so the values were checked on the dashboard.
+ 
+-The Tang's wheel has no spare keys for this, and BYD's window manager takes the wheel keys before any app can see them: volume (`KEYCODE` 291 / 292, scan 115 / 114, device `simulate-keys`) changes the volume, the custom key (305, scan 300) runs the action chosen for it in BYD's settings (screen rotation on our car). An accessibility service that filters key events receives keys earlier, in Android's input filter, and may keep them. With **Settings → BYD navigation → Zoom the dashboard map with the wheel** turned on and TiPlay's wheel key service running:
++The Tang's wheel has no spare keys for this, and BYD's window manager takes the wheel keys before any app can see them: volume (`KEYCODE` 291 / 292, scan 115 / 114, device `simulate-keys`) changes the volume, the custom key (305, scan 300) runs the action chosen for it in BYD's settings (screen rotation on our car). An accessibility service that filters key events receives keys earlier, in Android's input filter, and may keep them. With **Settings → Vehicle → Wheel keys → Zoom the dashboard map with the wheel** turned on and TiPlay's wheel key service running:
+ 
+ - while the dashboard shows the CarPlay map, the custom key switches the volume keys to map zoom (volume up zooms in, volume down out) and back; the mode key can instead turn zoom on for five seconds after the last zoom press;
+ - the mode shows briefly as a toast and, where the song shows on the dashboard, as "🔍 Map zoom" (with BYD's Bluetooth-music icon) or "🔊 Volume" for three seconds (this note uses the dashboard song's ADB access);
+@@ -103,7 +105,7 @@ BYD's settings have no accessibility page. The "Turn on the wheel key service ·
+ 
+ TiPlay already declares a rotary knob for CarPlay's main screen (HID `xcertplay Knob`). Checked with Apple Maps and lists on a Tang: only the knob's turn moves CarPlay's focus (the first turn opens the Maps side panel with search, pinned places and recents), select activates the focused item and back closes the screen; the knob's x/y nudges only pan a focused map, so the joystick does not use them.
+ 
+-With **Settings → BYD navigation → CarPlay joystick on the wheel** turned on and the wheel key service running (see above):
++With **Settings → Vehicle → Wheel keys → CarPlay joystick on the wheel** turned on and the wheel key service running (see above):
+ 
+ - BYD's media key (289, scan 89, normally opens BYD's media app) turns the joystick on and off; without a CarPlay session it keeps its BYD action;
+ - while the joystick is on, previous/next (88 / 87) and the volume roller (291 / 292) turn the knob one step back or forward, play/pause (353, scan 505) selects and the custom key (305) goes back. With the joystick off the custom key switches the map zoom as before (if that setting is on); turning the joystick on ends zoom mode;
+@@ -127,7 +129,7 @@ TiPlay follows the iPhone's calls from iAP2 CallStateUpdate (0x4155, already sub
+ With that setting enabled, during a CarPlay call:
+ 
+ - the call key answers a ringing call with CarPlay's telephony HID Hook Switch, and is kept during a connected call. It works through the wheel key service and on the CarPlay screen; since BYD has already opened its phone screen by then, TiPlay brings CarPlay back to the front;
+-- the hang-up and menu keys end or decline the call (telephony HID Drop), through BYD's broadcast; no setting or service is needed;
++- the hang-up and menu keys end or decline the call (telephony HID Drop), through BYD's broadcast; the call-key opt-in is required, but the wheel key service is not;
+ - with a CarPlay session, the CarPlay voice keys open Siri through the wheel key service. DiLink 3's play/pause key (331) toggles CarPlay playback.
+ 
+ With the experimental controls disabled, all new call/voice/play-pause key behavior passes through.
+@@ -135,7 +137,7 @@ Outside a CarPlay call every call key keeps BYD's action. The exported hang-up r
+ the sender's `android.permission.DUMP`; BYD's system-server window manager can send it, while an
+ ordinary third-party app cannot. Actual sender/key behavior still requires vehicle acceptance.
+ 
+-**Settings → BYD navigation → CarPlay calls on the dashboard** (optional, needs ADB over network) also writes what BYD's CarPlay app writes, through the adb shell (`BydCarPlayCallTool`, feature ids resolved on the car): the instrument's call state and caller (device 1007, `INSTRUMENT_CALL_STATE_SET`, `INSTRUMENT_CALL_INFO_SET` as UTF-16LE up to 60 bytes), the call time every second (`INSTRUMENT_CALL_TIME_HOUR/MINUTE/SECOND_SET`), the car's call state (device 1023, `SET_CALL_STATE_SET`, `SET_CMD_BTCALL_STATE_SET`: 2 ringing, 1 dialing, 3 active, 5 ended). It deliberately does not set the audio system's CarPlay call status (device 1002, `AUDIO_CARPLAY_CALL_STATUS`) during a call: on a GCC DiLink 3 Han that switches the amplifier to BYD CarPlay's call channel and the caller goes silent, because BYD's audio service plays a third-party app's voice stream as media. The call end still writes 1 (idle) so a stale status is cleared. The call time comes from a small watcher under the adb shell that also ends the call on the car if TiPlay's process goes away mid-call.
++**Settings → Navigation → BYD navigation → CarPlay calls on the dashboard** (optional, needs ADB over network) also writes what BYD's CarPlay app writes, through the adb shell (`BydCarPlayCallTool`, feature ids resolved on the car): the instrument's call state and caller (device 1007, `INSTRUMENT_CALL_STATE_SET`, `INSTRUMENT_CALL_INFO_SET` as UTF-16LE up to 60 bytes), the call time every second (`INSTRUMENT_CALL_TIME_HOUR/MINUTE/SECOND_SET`), the car's call state (device 1023, `SET_CALL_STATE_SET`, `SET_CMD_BTCALL_STATE_SET`: 2 ringing, 1 dialing, 3 active, 5 ended). It deliberately does not set the audio system's CarPlay call status (device 1002, `AUDIO_CARPLAY_CALL_STATUS`) during a call: on a GCC DiLink 3 Han that switches the amplifier to BYD CarPlay's call channel and the caller goes silent, because BYD's audio service plays a third-party app's voice stream as media. The call end still writes 1 (idle) so a stale status is cleared. The call time comes from a small watcher under the adb shell that also ends the call on the car if TiPlay's process goes away mid-call.
+ 
+ Before its first vehicle write, a call reserves a token and waits for confirmation that its shell
+ watcher initialized. A failed launch or missing readiness acknowledgment prevents new call-state
+@@ -171,7 +173,7 @@ process-death cleanup. The reported live key codes alone do not prove these beha
+ 
+ ## ADB vehicle-data settings and firmware scope
+ 
+-Settings → Location contains **Advanced vehicle data**, collapsed by default, with two saved modes.
++Settings → Advanced → Vehicle contains **Advanced vehicle data**, collapsed by default, with two saved modes.
+ **Default mode**, validated on DiLink 5.0 head units, uses the 0.2.10 CAN/CANFD battery selection and
+ the established DiLink 5.0 speed/gear addresses. **Legacy head-unit detection**, tested on controller
+ 13 / DiLink 3.0, resolves and validates the current firmware's fields. Selecting legacy detection for
+@@ -240,11 +242,11 @@ Full charge is estimated only from known energy; full range is scaled up from th
+ 
+ If CarPlay connected before the first battery reading was available, battery reporting stays off for that connection. Enabling the setting reconnects an active session once a default-mode ADB check reads the battery, or after a successful legacy probe; returning after idle requests an immediate background refresh rather than waiting for the next 30-second poll. The UI and iAP2 loop never wait for ADB.
+ 
+-Vehicle-data mode, battery, wheel speed and parked-video settings have one owner under **Settings → Location → Advanced vehicle data**. The separate BYD ADB card controls optional car-hotspot startup. It does not expose another set of vehicle switches or override which fields the selected vehicle mode supports. Hotspot authorization and user vehicle checks/probes wait for one another; saved legacy validation resumes after a hotspot authorization finishes.
++Vehicle-data mode, battery, wheel speed and parked-video settings have one owner under **Settings → Advanced → Vehicle → Advanced vehicle data**. The separate BYD ADB card controls optional car-hotspot startup. It does not expose another set of vehicle switches or override which fields the selected vehicle mode supports. Hotspot authorization and user vehicle checks/probes wait for one another; saved legacy validation resumes after a hotspot authorization finishes.
+ 
+ ## Wheel speed for tunnels (optional, needs ADB)
+ 
+-"Report location to iPhone" (Settings → Location) sends the head unit's position as `$GPGGA` + `$GPRMC` in iAP2 LocationInformation (`0xFFFB`). In a tunnel or car park there is no fix, and the iPhone has only its own motion sensors. "Wheel speed for tunnels" adds the car's speed and gear so the iPhone can keep the position moving:
++"Report location to iPhone" (Settings → Navigation → Location) sends the head unit's position as `$GPGGA` + `$GPRMC` in iAP2 LocationInformation (`0xFFFB`). In a tunnel or car park there is no fix, and the iPhone has only its own motion sensors. "Wheel speed for tunnels" adds the car's speed and gear so the iPhone can keep the position moving:
+ 
+ - TiPlay also sets VehicleSpeedData (id 20) in the LocationInformation identification component. It sends `$PASCD` only if the iPhone selects it (id 4) in StartLocationInformation (`0xFFFA`); the log shows the ids the iPhone asked for (`components=[…]`).
+ - Every LocationInformation (about once a second) carries the samples since the previous one, even without a GPS fix: `$PASCD,<first sample, s since boot>,C,<P/R/N/D>,0,<n>,<offset s>,<speed m/s>,…*CS`. The layout copies a production head unit's log; what `C` and `0` stand for is not public.
+diff --git a/docs/COMPATIBILITY.md b/docs/COMPATIBILITY.md
+index e251593..709e61b 100644
+--- a/docs/COMPATIBILITY.md
++++ b/docs/COMPATIBILITY.md
+@@ -4,7 +4,8 @@ This public preview is an independent receiver, not an Apple-certified CarPlay a
+ 
+ | Area | Current scope |
+ | --- | --- |
+-| Head unit | Android 9+ APK; Wi-Fi Direct has a firmware-dependent legacy Android 9 path with unverified requested frequency, and modern verified frequency on Android 10+ |
++| Current TiPlay profile | Phone + car browser; audio through the car’s Bluetooth connection. Head-unit display/audio/navigation/vehicle controls are hidden. |
++| Retained head-unit receiver | Android 9+ APK; Wi-Fi Direct has a firmware-dependent legacy Android 9 path with unverified requested frequency, and modern verified frequency on Android 10+ |
+ | Phone | Standard, non-jailbroken iPhone with CarPlay enabled; device/iOS compatibility varies |
+ | Physical evidence | Previous private builds: wired and wireless picture, touch and audio confirmed on the development car with iPhone XS / iOS 18.7.10 |
+ | Other cars | Mixed community reports across DiLink generations; not a certified model support list |
+@@ -12,6 +13,8 @@ This public preview is an independent receiver, not an Apple-certified CarPlay a
+ | Wi-Fi | Auto uses eligible saved/aligned channels; beside a 5 GHz station, explicit 2.4 GHz precedes other 5 GHz/unpinned default fallbacks. Manual channels stay explicit; no band/performance guarantee. |
+ | Video | Default H.264 / 30 fps; 60 fps and HEVC increase device-specific demands |
+ 
++Head-unit features below describe retained upstream-compatible code and historical tests. Current TiPlay forces the phone + browser profile and disables BYD outputs, cluster maps, wheel-key integrations, ADB vehicle data and automatic car-hotspot startup.
++
+ ## BYD HUD and car hotspot
+ 
+ See [BYD navigation](BYD_NAVIGATION.md) for the exact verified firmware and lifecycle limits. Earlier car-hotspot builds started CarPlay on the development car using scoped IPv6. Current access-point endpoints prefer usable IPv4 and retain scoped IPv6 fallback. The phone must join the configured car hotspot. Neither result guarantees support on every firmware.
+diff --git a/docs/CONNECTION_RELIABILITY.md b/docs/CONNECTION_RELIABILITY.md
+index c8ea0a1..895d810 100644
+--- a/docs/CONNECTION_RELIABILITY.md
++++ b/docs/CONNECTION_RELIABILITY.md
+@@ -35,7 +35,7 @@ whitespace checks pass. These are automated source checks, not vehicle acceptanc
+ 
+ ## Vehicle acceptance before release
+ 
+-Use a [standalone test build](BUILD.md#standalone-car-test-apk) with an explicit runtime
++Use a [standalone test build](BUILD.md#build-a-standalone-car-test-apk) with an explicit runtime
+ identity. An identity-free source/CI APK cannot establish iPhone connection success.
+ Keep each test attributable to its exact commit, APK digest, signing/update path,
+ firmware fingerprint, head-unit hardware, Android API, iPhone/iOS and connection mode.
+diff --git a/docs/CONNECTION_SETUP.md b/docs/CONNECTION_SETUP.md
+index 056ca6e..99f6a0d 100644
+--- a/docs/CONNECTION_SETUP.md
++++ b/docs/CONNECTION_SETUP.md
+@@ -1,12 +1,20 @@
+ # Built-in car hotspot setup
+ 
+-DiAuto (Android Auto) and TiPlay (CarPlay, formerly DiPlay) share this
+-built-in car hotspot setup. Install the APK on the car, not on your phone.
++> Retained head-unit setup guidance. Current TiPlay uses the phone + browser
++> profile; install it on the Android phone and follow [Tesla browser setup](TESLA_BROWSER.md).
++> Its connection chooser offers Built-in car hotspot and Existing Wi-Fi / Same LAN.
++> Wi-Fi Direct selection, the BYD hotspot automation section and the cluster/display
++> controls described below are not exposed by the current browser profile.
++
++The earlier DiAuto (Android Auto) and TiPlay (CarPlay, formerly DiPlay) head-unit
++workflow shared this built-in car hotspot setup. For that workflow, install the
++APK on the car.
+ Update an existing installation of the same app without uninstalling to
+ preserve settings.
+ 
+ The Local hotspot option has been removed. Built-in car hotspot is the
+-default; Wi-Fi Direct and USB remain available. Previous Local hotspot
++default in this head-unit setup; Wi-Fi Direct remains in the transport code and
++USB remains available. Previous Local hotspot
+ selections switch to built-in hotspot. Check and save the car's real hotspot
+ details before connecting.
+ 
+@@ -30,8 +38,9 @@ the menu open and preserves the previously saved authentication choice.
+ BUILT-IN HOTSPOT SETUP — BOTH APPS
+ 1. In the car's settings, turn on its built-in Wi-Fi hotspot. Select 5 GHz
+    if available. Note the hotspot name and password exactly.
+-2. Open DiAuto or TiPlay on the car. Go to Settings → Connection setup
+-   (tap Open connection setup if shown).
++2. Open DiAuto or TiPlay on the car. In TiPlay, go to Settings → Connection →
++   Connection setup (tap Open connection setup if shown). In DiAuto, open
++   its Connection setup screen.
+ 3. Select Built-in car hotspot. Tap Save hotspot details and use this mode
+    (or Edit saved hotspot), enter the car's hotspot name and password, and
+    save. Use Hide keyboard if needed. Leave the car hotspot on.
+@@ -51,25 +60,29 @@ Test one projection app at a time.
+ 
+ EXISTING WI-FI / SAME LAN — TIPLAY
+ Connect the car and iPhone to the same external router or portable Wi-Fi in
+-system settings. In TiPlay Connection setup, select Existing Wi-Fi / Same LAN
++system settings. In TiPlay Settings → Connection → Connection setup, select Existing Wi-Fi / Same LAN
+ and save that network's exact name and WPA2 password. Keep Bluetooth enabled,
+ then connect as usual. No car hotspot or Wi-Fi Direct group is created. Disable
+ router client isolation. See [Existing Wi-Fi](EXISTING_WIFI.md) for build
+ requirements, network limitations and device validation.
+ 
+-WI-FI DIRECT CHANNEL — TIPLAY
+-In Settings → Connection setup, choose Wi-Fi Direct, then Preferred channel.
++WI-FI DIRECT CHANNEL — RETAINED HEAD-UNIT GUIDANCE
++In Settings → Connection → Connection setup, choose Wi-Fi Direct, then Preferred channel.
+ Auto is the default and keeps TiPlay's automatic channel selection. You can
+ choose a 5 GHz channel (36, 40, 44, 48, 149, 153, 157, 161 or 165), or a
+ 2.4 GHz channel (1–11). The car and its regional Wi-Fi settings must support
+ the selected channel. Save applies the choice to the next Wi-Fi Direct
+ connection; an existing connection continues until you disconnect/reconnect.
+-If the car rejects the channel or creates a different one, TiPlay reports an
+-error. Choose Auto or another channel and reconnect. Switching to the built-in
++If the car rejects the channel, TiPlay reports an error. On Android 10+, it also
++reports an error if the negotiated channel differs. Android 9 cannot verify the
++negotiated frequency; its reported channel is the unverified request (see
++[Android 9 limits](ANDROID9_WIFI_DIRECT.md)). Choose Auto or another channel and
++reconnect after an error. Switching to the built-in
+ hotspot preserves this choice without applying it to the car hotspot.
+ 
+-OPTIONAL: TIPLAY BYD FEATURES REQUIRING ADB
+-Settings → BYD features · needs ADB appears only when BYD navigation services or
++OPTIONAL: TIPLAY BYD FEATURES REQUIRING ADB — RETAINED HEAD-UNIT GUIDANCE
++Settings → Connection → BYD features · needs ADB appears only when Built-in car
++hotspot is selected, BYD navigation services or
+ the factory BYD car settings app are present, and traditional network ADB is
+ reachable at 127.0.0.1:5555. The hotspot check also covers older QUALCOMM/qti
+ head units without the supported navigation services; it does not enable
+@@ -77,17 +90,18 @@ navigation-output features on those units.
+ An unapproved ADB key still shows the setup entry; TLS pairing is not supported.
+ The initial check never requests approval or reads vehicle data.
+ 
+-The BYD ADB section contains battery reporting (with charging connectors and
+-low-charge warning), wheel speed for tunnels, video while parked, and the
+-dashboard song. These use autoservice through ADB, not the AMap navigation
+-receiver. Check ADB access and Apply and reconnect are in this section too.
+-The cluster-map stream switch retains its existing display and firmware checks.
+-Navigation arrows, HUD, and map-display settings keep their existing capability
+-checks in BYD navigation. Saved choices and vehicle-reading behavior are unchanged.
++Battery reporting (with charging connectors and low-charge warning), wheel speed
++for tunnels and video while parked are under Settings → Advanced → Vehicle →
++Advanced vehicle data, along with the vehicle-data checks and Apply and reconnect.
++These use autoservice through ADB, not the AMap navigation receiver. The dashboard
++song control appears in BYD navigation when available, or in Advanced vehicle data
++otherwise. The cluster-map stream switch is under Advanced and retains its display
++and firmware checks. Navigation arrows and HUD keep their capability checks in
++Settings → Navigation → BYD navigation.
+ 
+ Automatically turn on the car hotspot appears as one switch and description in
+ the same section only when Built-in car hotspot is selected. Wi-Fi Direct hides
+-it without changing the saved choice or the other BYD ADB options.
++the section without changing the saved choice.
+ The switch is off by default. Turning it on automatically requests missing
+ WRITE_SETTINGS through ADB, without a separate setup button or TiPlay confirmation.
+ Approve the car's system ADB prompt if needed. The switch is enabled only after
+@@ -113,8 +127,9 @@ automatically. The head unit may also require its own auto-start permission.
+ Connect when TiPlay opens remains a separate choice: the app can start the hotspot
+ without connecting to an iPhone.
+ 
+-OPTIONAL: TIPLAY AUTOMATIC INSTRUMENT MAP
+-On the supported DiLink 5.1 firmware, open Settings → BYD navigation →
++OPTIONAL: TIPLAY AUTOMATIC INSTRUMENT MAP — RETAINED HEAD-UNIT GUIDANCE
++On the supported DiLink 5.1 firmware, open Settings → Advanced →
++CarPlay map on dashboard (experimental), enable the map stream, then open
+ Automatic map setup · ADB. Follow the displayed one-time computer setup,
+ then tap Check and enable. Open the cluster's map card or select Map theme.
+ This permission is for automatic cluster theme/card detection, not hotspot
+diff --git a/docs/DILINK4_CLUSTER.md b/docs/DILINK4_CLUSTER.md
+index dc5e130..3197480 100644
+--- a/docs/DILINK4_CLUSTER.md
++++ b/docs/DILINK4_CLUSTER.md
+@@ -1,5 +1,7 @@
+ # Experimental DiLink 4 cluster video
+ 
++This guide describes the retained head-unit implementation and contributor tests. Current TiPlay forces the phone + browser profile, hides the cluster-map settings and disables cluster output. The setup below refers to the retained head-unit UI.
++
+ The contributor reported testing this approach on a 2022 BYD Seal with DiLink 4.0 / Android 10. The updated upstream branch still needs a vehicle retest.
+ It keeps the main CarPlay stream on the head unit and launches a separate Activity
+ for the instrument-cluster stream. Other firmware has not been vehicle-tested.
+@@ -7,7 +9,7 @@ for the instrument-cluster stream. Other firmware has not been vehicle-tested.
+ ## Setup
+ 
+ 1. Enable the car's native cluster-map/projection mode.
+-2. In TiPlay settings, enable **DiLink 4 cluster video via ADB (experimental)**.
++2. Under **Settings → Advanced → CarPlay map on dashboard (experimental)**, enable **DiLink 4 cluster video via ADB (experimental)**.
+ 3. Tap **Authorize ADB / retry cluster routing** and approve the car's debugging
+    prompt. Local ADB must be available; background retries never request approval.
+ 4. Connect or reconnect the iPhone and open Apple Maps. The main CarPlay display
+@@ -75,7 +77,7 @@ ChatGPT/Codex. DiPlay/xcertplay authors and existing licence notices are retaine
+ 
+ ## Optional stock map and HUD text
+ 
+-This route is shared with PR #187; there is only one decoder-surface owner.
++This route is shared with [upstream PR #187](https://github.com/shihabal3amri/DiPlay/pull/187); there is only one decoder-surface owner.
+ Stock-map holding defaults off. A selected component/package hold is journaled
+ before changing OEM state, checked before launch, and restores the exact original
+ state on failure, stop, or the next app launch after a crash. A failed restoration
+@@ -90,4 +92,4 @@ DiLink 4 HUD support: no verified DiLink 4 HUD receiver profile was supplied wit
+ these PRs. Diagnostic exports include the firmware and installed receiver version,
+ certificate and permission metadata needed to review a new profile. Do not add
+ one based only on package presence. Fork application-ID/build changes and deleted
+-HUD diagnostic tooling from #187 are intentionally excluded.
++HUD diagnostic tooling from [upstream PR #187](https://github.com/shihabal3amri/DiPlay/pull/187) are intentionally excluded.
+diff --git a/docs/E2E-VALIDATION-2026-10-10.md b/docs/E2E-VALIDATION-2026-10-10.md
+index fba0877..b4cfb45 100644
+--- a/docs/E2E-VALIDATION-2026-10-10.md
++++ b/docs/E2E-VALIDATION-2026-10-10.md
+@@ -1,5 +1,9 @@
+ # 无设备 E2E 验证 — 2026-10-10
+ 
++本文保留本次系统代理修复的工作目录快照；“剩余工作”描述当时的提交边界。
++后续测试与代码收尾见 [2026-10-11 扫尾记录](sweep-2026-10-10/FOLLOWUP-2026-10-11.md)
++和 [收尾记录](sweep-2026-10-10/TIE-UP-2026-10-11.md)。
++
+ ## 本次修复
+ 
+ 两套测试启动 Chromium 时显式添加 `--no-proxy-server`。测试只访问本机服务，
+diff --git a/docs/EXISTING_WIFI.md b/docs/EXISTING_WIFI.md
+index 0a1df0c..9121daa 100644
+--- a/docs/EXISTING_WIFI.md
++++ b/docs/EXISTING_WIFI.md
+@@ -1,7 +1,7 @@
+ # Existing Wi-Fi / Same LAN
+ 
+ Connect the Android receiver and iPhone to the same third-party router or portable
+-Wi-Fi in system settings. In TiPlay → Connection setup → Wireless, select
++Wi-Fi in system settings. In TiPlay → Settings → Connection → Connection setup, select
+ **Existing Wi-Fi / Same LAN**, enter the exact SSID and WPA2 password, and save.
+ For an open network, leave the password empty. Keep Bluetooth enabled and the iPhone
+ paired with the receiver, then start wireless CarPlay as usual.
+diff --git a/docs/HOTSPOT_JOIN_VALIDATION.md b/docs/HOTSPOT_JOIN_VALIDATION.md
+index 7748a05..485ed66 100644
+--- a/docs/HOTSPOT_JOIN_VALIDATION.md
++++ b/docs/HOTSPOT_JOIN_VALIDATION.md
+@@ -5,7 +5,7 @@ end-to-end wireless CarPlay acceptance. See the
+ [joining guide](WIRELESS_HOTSPOT_JOIN.md) for the repair workflow and the
+ controlled broadcast comparison.
+ 
+-## Software checks
++## Software checks — historical snapshot recorded 2026-10-05
+ 
+ | Suite | Tests | Failures / errors / skipped |
+ | --- | ---: | --- |
+diff --git a/docs/INSTALL.md b/docs/INSTALL.md
+index 8048663..dbeb7b8 100644
+--- a/docs/INSTALL.md
++++ b/docs/INSTALL.md
+@@ -1,42 +1,39 @@
+ # Install and connect
+ 
+ 1. Park the car. Download the latest `TiPlay-<version>.apk` from [TiPlay releases](https://github.com/uJZk/DiPlay/releases). Until the first TiPlay release, [build the APK from source](BUILD.md).
+-2. Install on the Android head unit using its supported APK installation method. Do not install on the iPhone. TiPlay uses the package `com.ujzk.tiplay`, so it installs next to DiPlay and does not update it or keep its settings. For an in-place TiPlay update that preserves settings and pairing records, use the same package/variant and a matching signing certificate.
+-3. Open TiPlay. Grant the permissions requested for the features you use: Bluetooth/Nearby devices, Wi-Fi/Location on older Android, and microphone for Siri/calls. Allow notifications for connection controls.
+-4. Close other phone-projection apps before connecting.
++2. Install on the Android phone that shares its hotspot with the car. The current TiPlay profile displays CarPlay in the car browser; head-unit features remain in source for upstream compatibility. Do not install on the iPhone. TiPlay uses the package `com.ujzk.tiplay`, so it installs next to DiPlay and does not update it or keep its settings. For an in-place TiPlay update that preserves settings and pairing records, use the same package/variant and a matching signing certificate.
++3. Open TiPlay. Grant the permissions requested for the features you use: Bluetooth/Nearby devices, Wi-Fi/Location on older Android, and Android 17 local-network access when requested. The browser audio profile uses the car microphone over iPhone Bluetooth. Allow notifications for connection controls.
++4. Close other phone-projection apps before connecting. Follow [Tesla browser setup](TESLA_BROWSER.md) to open and pair the car page. Sound uses the iPhone-to-car Bluetooth connection; this complete flow still needs vehicle validation.
+ 
+ ## Wireless
+ 
+-Built-in car hotspot is the default. Open **Settings → Connection setup → Built-in car hotspot**, turn on the car hotspot at 5 GHz if available, and save its exact name and password. Keep Bluetooth and Wi-Fi enabled on the iPhone, pair it with the car, then tap **Connect phone**. On compatible firmware, the Bluetooth handshake supplies hotspot credentials for automatic joining; core CarPlay does not require ADB. If the iPhone does not join automatically, record whether manual joining starts CarPlay and see the separately confirmed [experimental join repair](WIRELESS_HOTSPOT_JOIN.md). **Choose iPhone** changes the selected paired device. See [the setup guide](CONNECTION_SETUP.md).
++The connection backend is named **Built-in car hotspot** and is selected by default; in the browser setup this is the Android phone's hotspot. Open **CarPlay settings → Connection → Built-in car hotspot**, turn on the Android phone hotspot at 5 GHz if available, and save its exact name and password. Keep Bluetooth and Wi-Fi enabled on the iPhone, pair it with the car, then tap **Connect phone**. On compatible firmware, the Bluetooth handshake supplies hotspot credentials for automatic joining; core CarPlay does not require ADB. If the iPhone does not join automatically, record whether manual joining starts CarPlay and see the separately confirmed [experimental join repair](WIRELESS_HOTSPOT_JOIN.md). **Choose iPhone** changes the selected paired device. See [the setup guide](CONNECTION_SETUP.md).
+ 
+-Wi-Fi Direct is an alternative on Android 9+ when the head unit implements the needed firmware APIs. Android 9 uses generated group credentials and cannot verify the requested frequency; Android 10+ retains negotiated-frequency verification. Legacy pinning/cleanup limits are in [Android 9 Wi-Fi Direct](ANDROID9_WIFI_DIRECT.md). **Existing Wi-Fi / Same LAN** connects through an external router or portable Wi-Fi: connect the car and iPhone to the same network, disable router client isolation, and save that network in Connection setup. Keep Bluetooth enabled. TiPlay does not join the network or change the default route for you; see [Same LAN setup](EXISTING_WIFI.md). The Local hotspot option has been removed; existing selections migrate to built-in hotspot. USB remains available.
++**Existing Wi-Fi / Same LAN** connects through an external router or portable Wi-Fi: connect the Android device, car browser and iPhone to the same network, disable router client isolation, and save that network in Connection setup. Keep Bluetooth enabled. TiPlay does not join the network or change the default route for you; see [Same LAN setup](EXISTING_WIFI.md). USB remains available.
+ 
+-In **Settings → Connection setup → Wi-Fi Direct → Preferred channel**, Auto keeps automatic selection: beside a 5 GHz station it tries eligible saved/aligned channels and explicit 2.4 GHz before other 5 GHz/system-default fallbacks. It does not guarantee a band. You may save a supported 2.4/5 GHz channel for the next connection; an active session continues until reconnect. If the radio rejects it or creates a different channel, choose Auto or another channel and reconnect. Regional/radio support still applies, and channel choice does not establish stutter as fixed.
++Wi-Fi Direct and its preferred-channel implementation remain in source, but the current browser connection chooser exposes only the manual hotspot and Existing Wi-Fi backends. A previously saved Wi-Fi Direct choice is displayed as manual hotspot. The retained Android 9 compatibility and channel checks in [Android 9 Wi-Fi Direct](ANDROID9_WIFI_DIRECT.md) and [testing](TESTING.md) apply to builds that expose that backend.
+ 
+-Optional automatic built-in-hotspot startup is off by default. On supported BYD firmware, explicitly enabling it verifies permissions for TiPlay's own package through already-authorized local ADB. It preserves the car's saved hotspot name/password; boot-open and connect-on-open are separate settings. The ADB fallback requires a reachable, already-authorized connection on each request and a firmware-advertised Wi-Fi tethering command; it reports success only after observing hotspot readiness. This does not establish support on every DiLink version. See [connection setup](CONNECTION_SETUP.md).
++Automatic BYD car-hotspot startup is retained in source, but its head-unit ADB controls are hidden by the current browser profile. Enable the Android phone hotspot using its system settings.
+ 
+ ## USB
+ 
+-Connect the iPhone to a USB **data** port with a data-capable cable and choose **Connect with USB**. Approve USB access, Trust/CarPlay and the local VPN permission if requested. The local VPN carries the USB network link; it is not an internet VPN service. Charge-only ports/cables cannot work.
++Connect the iPhone to the Android device's USB **data** port with a data-capable cable and choose **Connect with USB**. Approve USB access, Trust/CarPlay and the local VPN permission if requested. The local VPN carries the USB network link; it is not an internet VPN service. Charge-only ports/cables cannot work.
+ 
+ ## Settings
+ 
+-Swipe down with the configured finger count in CarPlay to open TiPlay settings, or return to the home screen. Choose two, three or four fingers under **Settings → CarPlay controls**; three remains the default. Icon/text size, resolution and frame rate use **Apply and reconnect** during an active session. A selection alone does not apply; Cancel preserves the old setting. When disconnected, **Save** applies to the next connection. Other settings also apply on the next connection unless described otherwise.
++Swipe down with the configured finger count in CarPlay to open **CarPlay settings**, or open that menu from the home screen. Tap **Open settings · swipe with 3 fingers (tap to change)** near the bottom of the menu to cycle through two, three or four fingers; three remains the default.
+ 
+-Start with 30 fps, Efficient video (HEVC) off and Default icon/text size. Try 80% or 60% resolution for a slower head unit. Some iPhone/head-unit combinations still ignore icon/text scaling.
++The browser reports its canvas size. Choose frame rate under **CarPlay settings → Display**, and **HEVC (H.265) (experimental)** under **Advanced**. Video changes apply after **Save and reconnect**; Cancel preserves the active session. Before connecting, Save applies them to the next connection. The browser's **Apply and reconnect** button applies a changed browser viewport.
+ 
+-Vehicle-data mode and battery/wheel-speed/parked-video controls are under **Settings → Location → Advanced vehicle data**. Default DiLink 5.0 mode remains the default. Legacy mode is optional, uses bounded read-only detection and needs authorized network ADB; it exposes only confirmed fields. Review any prompt to replace previously saved fields. This does not enable ADB, write vehicle settings or establish support for every older head unit.
+-
+-
+-The optional square-canvas rotation and split-screen areas, fixed dock and experimental side panel are under **Display and performance**. Larger canvases increase decoder/GPU work. **Buffered music (experimental)** is also there, remains off by default and reconnects CarPlay; it accepts AAC-LC from supporting apps, not lossless audio. Independent experimental **CarPlay call keys** and **CarPlay calls on the dashboard** stay off by default in the BYD navigation/advanced vehicle area; the dashboard card needs authorized ADB and target firmware. Review [DiPlay 0.2.13 limits](RELEASE-NOTES-0.2.13.md) before opting in.
++The current profile uses car Bluetooth sound, browser light/dark appearance and no Android location reporting. Head-unit display scaling, BYD navigation, vehicle data, wheel keys and audio-output controls are hidden. Their retained implementation and vehicle checks do not establish browser support.
+ 
+ The app and release website offer seven languages, including Traditional Chinese (Taiwan). Android 13+ app-language selection is synchronized with Android settings; Android 9–12 retain a saved context override. Hong Kong/Macao and Hant use the Taiwan app translation, not separate regional editions.
+ 
+ ## Connection recovery and reports
+ 
+-If reinstalling left an old group, close other projection apps, then use **Settings → Wireless connection help → Reset CarPlay Wi-Fi**. TiPlay asks before removing an unrecognized Wi-Fi Direct group. Updating in place is preferable to uninstalling.
++If reinstalling left an old group, close other projection apps, then use **CarPlay settings → More Connection settings → Wireless connection help → Reset CarPlay Wi-Fi**. TiPlay asks before removing an unrecognized Wi-Fi Direct group. Updating in place is preferable to uninstalling.
+ 
+-Please reproduce unresolved problems on the latest TiPlay build and export a fresh report, even if you already sent older logs. Capture from the first connection attempt through the failure; for boot/auto-start problems, reboot and then open TiPlay manually to export. Use **Settings → Diagnostics → Save diagnostic report**. Android 10+ saves to **Downloads/TiPlay**; Android 9 uses a document picker. If the picker or Downloads storage is unavailable, the fallback TXT file is saved under **Android/data/com.ujzk.tiplay/files/diagnostic-reports/**; the confirmation shows its exact path. If external storage is also unavailable, TiPlay saves the report privately. Both fallbacks offer **View report** and **Share**; select/copy text in the report view when no sharing app is available. Review the `.txt` file, then attach it to your existing [GitHub issue](https://github.com/uJZk/DiPlay/issues) or [create a new issue](https://github.com/uJZk/DiPlay/issues/new/choose), with car/head-unit model, exact DiLink/Android/firmware versions, iPhone/iOS, connection backend (USB, built-in hotspot, Wi-Fi Direct or Same LAN), relevant settings, expected/actual behavior, reproduction steps and approximate failure time. Never include your hotspot password. Nothing is uploaded automatically.
++Please reproduce unresolved problems on the latest TiPlay build and export a fresh report, even if you already sent older logs. Capture from the first connection attempt through the failure; for boot/auto-start problems, reboot and then open TiPlay manually to export. Use **CarPlay settings → More Diagnostics settings → Save diagnostic report**. Android 10+ saves to **Downloads/TiPlay**; Android 9 uses a document picker. If the picker or Downloads storage is unavailable, the fallback TXT file is saved under **Android/data/com.ujzk.tiplay/files/diagnostic-reports/**; the confirmation shows its exact path. If external storage is also unavailable, TiPlay saves the report privately. Both fallbacks offer **View report** and **Share**; select/copy text in the report view when no sharing app is available. Review the `.txt` file, then attach it to your existing [GitHub issue](https://github.com/uJZk/DiPlay/issues) or [create a new issue](https://github.com/uJZk/DiPlay/issues/new/choose), with car/head-unit model, exact DiLink/Android/firmware versions, iPhone/iOS, connection backend (USB, built-in hotspot, Wi-Fi Direct or Same LAN), relevant settings, expected/actual behavior, reproduction steps and approximate failure time. Never include your hotspot password. Nothing is uploaded automatically.
+ 
+ The additional wireless/media/theme/own-app-exit records help identify the failing stage; they do not establish Qin Plus startup, Wi-Fi Direct stutter, Siri, iOS 15 or day/night firmware reports as resolved. See [DiPlay 0.2.13 release notes](RELEASE-NOTES-0.2.13.md).
+ 
+@@ -50,4 +47,4 @@ Only use a trusted computer. A different signing certificate cannot update this
+ 
+ ## BYD navigation
+ 
+-See [BYD navigation displays](BYD_NAVIGATION.md) for the firmware scope, map metadata requirements, settings and cleanup behavior. Native DiLink 5 display routing needs no external ADB starter. Optional DiLink 3/4 integrations have separate firmware and authorized-ADB requirements described in the guide.
++BYD navigation controls are hidden in the current browser profile. The retained head-unit implementation is documented in [BYD navigation displays](BYD_NAVIGATION.md), including firmware scope, map metadata and authorized-ADB requirements.
+diff --git a/docs/LAUNCHER_INTEGRATION.md b/docs/LAUNCHER_INTEGRATION.md
+index 94acf67..641028a 100644
+--- a/docs/LAUNCHER_INTEGRATION.md
++++ b/docs/LAUNCHER_INTEGRATION.md
+@@ -1,5 +1,7 @@
+ # CarPlay on your launcher's home screen
+ 
++This guide describes retained head-unit launcher integrations. Current TiPlay forces the phone + browser profile, hides dashboard-map and sharing settings and disables the cluster stream. The live-map setup below refers to the retained head-unit UI.
++
+ TiPlay can put CarPlay information on a launcher's home screen in three ways:
+ 
+ | | What it shows | Works with | Needs |
+@@ -8,7 +10,7 @@ TiPlay can put CarPlay information on a launcher's home screen in three ways:
+ | [Map card](#2-map-card) | The live CarPlay map, as a card on the home screen | Any launcher, including BYD home and map home | Two permissions (see below) |
+ | [Embedded map](#3-embedded-live-map-for-launcher-developers) | The live CarPlay map inside the launcher's own layout | Launchers that add support for it | Launcher code, Android 11+ |
+ 
+-The live map is CarPlay's instrument-cluster map: the map the iPhone draws for the dashboard. The map card and the embedded map need **CarPlay map on instrument cluster** turned on in TiPlay. Without it, the iPhone does not send that map.
++The live map is CarPlay's instrument-cluster map: the map the iPhone draws for the dashboard. The map card and the embedded map need **CarPlay map on dashboard (experimental)** turned on under **Settings → Advanced** in the retained head-unit UI. Without it, the iPhone does not send that map.
+ 
+ Why the live map is not a widget: Android widgets are drawn by the launcher from a fixed set of views (text, images, buttons, lists). An app cannot run a video decoder inside another app's widget. So the widget shows text and arrows, and the live map needs the card or the embedding protocol.
+ 
+@@ -40,7 +42,7 @@ Use the card:
+ 
+ Size and place are remembered. The card goes when you open another app and comes back on the home screen. It also goes when CarPlay disconnects.
+ 
+-In TiPlay settings, under the dashboard map, turn on **Dashboard map on the centre screen** (off by default) and give two permissions:
++Under **Settings → Advanced → CarPlay map on dashboard (experimental)**, turn on **Dashboard map on the centre screen** (off by default) and give two permissions:
+ 
+ - **Draw over other apps**: the settings screen offers it, or over ADB:
+ 
+@@ -66,7 +68,7 @@ Requirements:
+ 
+ - Android 11 (API 30) or newer on the head unit;
+ - the driver turns on **Share the live map with other launchers** in TiPlay (off by default);
+-- CarPlay connected with **CarPlay map on instrument cluster** on, for the map itself.
++- CarPlay connected with **CarPlay map on dashboard (experimental)** on, for the map itself.
+ 
+ A complete working example is the sample app in [`samples/maphost`](../samples/maphost/src/main/java/com/diplay/maphost/MainActivity.kt).
+ 
+@@ -87,7 +89,7 @@ Service action: `com.shihab.diplay.action.EMBED_MAP`. The package differs betwee
+ 
+ Turning sharing off releases every attached map and sends `ERROR` with `disabled` to its launcher. Treat this as a detach. Enabling sharing again requires a fresh `ATTACH`; old views do not reconnect automatically.
+ 
+-The map is 8:3. If your view has another shape, TiPlay fills it and crops the edges, keeping the car position near the centre. While there is no map, the view shows a "waiting" text. A tap on the map opens CarPlay.
++The embedded view follows the active cluster stream’s aspect ratio: normally 8:3 for a physical dashboard, or 16:9 for the virtual stream on a head unit without a dashboard display. If your view has another shape, TiPlay fills it and crops the edges, keeping the car position near the centre. While there is no map, the view shows a "waiting" text. A tap on the map opens CarPlay.
+ 
+ ### Steps
+ 
+@@ -186,5 +188,5 @@ It runs without system privileges. BYD's home stays installed, and the **BYD hom
+ | Card shows over every app | Usage Access is not allowed for TiPlay. |
+ | Card on BYD home but not on another launcher | Make that launcher the default home; TiPlay reads the default home when the card starts. |
+ | Embedded map says `disabled` | Turn on "Share the live map with other launchers" in TiPlay. |
+-| Embedded map stays on "waiting" | CarPlay is not connected, or "CarPlay map on instrument cluster" is off. |
++| Embedded map stays on "waiting" | CarPlay is not connected, or "CarPlay map on dashboard (experimental)" is off. |
+ | Widget says "CarPlay is not connected" while CarPlay works | Open TiPlay once after installing it; the widget follows the running session. |
+diff --git a/docs/PRIVACY.md b/docs/PRIVACY.md
+index 9fd7946..d2f0558 100644
+--- a/docs/PRIVACY.md
++++ b/docs/PRIVACY.md
+@@ -8,8 +8,10 @@ Diagnostic export is initiated by you. Reports include app/device versions, disp
+ 
+ When the document picker or Downloads storage is unavailable, reports save under `Android/data/<package>/files/diagnostic-reports/` on primary external storage without requesting storage permission. The confirmation shows the actual TXT file path. The release package is `com.ujzk.tiplay`; debug builds use `com.ujzk.tiplay.hudtest`. File managers on newer Android versions may restrict access to `Android/data`; use **View** or **Share** in TiPlay instead. If external storage is also unavailable, reports save in private app storage. Each fallback location retains its newest eight exports, and uninstalling removes them. Sharing grants read access to the selected report only; nothing is sent automatically. On Android 9 and older, other apps with storage permission may be able to read the external reports.
+ 
+-Microphone access supports Siri and calls. Bluetooth/Nearby devices and Wi-Fi/Location permissions support discovery and transport. The optional local VPN permission supports the USB link; it does not provide a remote internet VPN.
++The current browser profile leaves Siri/call audio and microphone on the iPhone-to-car Bluetooth route. The retained Android microphone path supports Siri and calls in head-unit configurations. Bluetooth/Nearby devices and Wi-Fi/Location permissions support discovery and transport. The optional local VPN permission supports the USB link; it does not provide a remote internet VPN.
+ 
+-The verified DiLink 5.1 cluster profile optionally uses Android Usage Access to follow theme and mini-map-card visibility. This permission exposes app-activity history. TiPlay filters the results to four stock BYD cluster activities, processes them locally, and logs only inferred cluster theme/visibility changes. Unrelated activity events are not retained or uploaded. Automatic mode is opt-in; disabling it stops these queries. Usage Access can also be revoked as described in [BYD navigation](BYD_NAVIGATION.md#dilink-51-theme-profile).
++The retained DiLink 5.1 head-unit cluster profile optionally uses Android Usage Access to follow theme and mini-map-card visibility. This permission exposes app-activity history. TiPlay filters the results to four stock BYD cluster activities, processes them locally, and logs only inferred cluster theme/visibility changes. Unrelated activity events are not retained or uploaded. Automatic mode is opt-in; disabling it stops these queries. Usage Access can also be revoked as described in [BYD navigation](BYD_NAVIGATION.md#dilink-51-theme-profile).
++
++The browser page stores the pairing code and phone address in browser storage and removes the code from the link fragment after opening. The fragment is not sent to the static host; authenticated requests send the code to the phone over HTTP. Video and controls are not encrypted by TiPlay on the local network; the hotspot WPA password protects that link. **New code** invalidates the old code.
+ 
+ The static website has no analytics script or account. GitHub Pages and GitHub apply their own policies when you use those services.
+diff --git a/docs/RELEASE-NOTES-NEXT.md b/docs/RELEASE-NOTES-NEXT.md
+index 44ae50e..0dc58ea 100644
+--- a/docs/RELEASE-NOTES-NEXT.md
++++ b/docs/RELEASE-NOTES-NEXT.md
+@@ -6,16 +6,17 @@ TiPlay is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay). Changes t
+ 
+ - The project is now called TiPlay, with the package `com.ujzk.tiplay`. It installs alongside DiPlay and does not reuse DiPlay's settings or pairing records.
+ 
+-## Phone + browser by default
++## Browser receiver profile
+ 
+-- New installs, and installs that never chose a run mode, start in the phone + browser run mode (Settings → Connection → Tesla browser). Head-unit features stay in the app; turn "Phone and car browser" off to use them on a car head unit.
+-- In phone + browser mode, CarPlay's car button shows a neutral car icon instead of the BYD logo, and the label "Tesla" while the car button name is still the default "BYD". A custom icon or name is kept. Applies at the next CarPlay connection.
++- TiPlay applies the phone + browser profile when opening the app or CarPlay screen. There is no run-mode switch. The car browser shows CarPlay; BYD HUD/dashboard, ADB and wheel-key controls stay hidden.
++- CarPlay's car button shows a neutral car icon instead of the BYD logo and the label "Tesla" while the saved name is still "BYD". Custom icons and names are kept. Applies at the next CarPlay connection.
++- The profile selects car Bluetooth sound, browser light/dark appearance, no Android location reporting and split-screen areas. Existing sessions keep their negotiated configuration. The CarPlay settings menu retains frame-rate and experimental HEVC choices with **Save and reconnect**.
+ 
+ ## Sound through car Bluetooth
+ 
+-- Settings → Audio has a new experimental choice, "Sound through car Bluetooth", for cars that show CarPlay in their web browser, such as Tesla. When it is on, `/info` leaves out only `audioFormats`, as the Carlinkit `BtAudio=1` mode does; audio latencies, feature bits and Bluetooth IDs stay the same. TiPlay then declines any audio stream the iPhone still opens and starts no audio output, microphone, echo canceller or audio focus. "On, alternative method" also leaves out the audio latencies and audio feature bits. The choice is off by default and applies at the next CarPlay connection. It is not yet verified in a car.
+-- The choice appears, and applies, only in the phone + browser run mode; a head unit always plays CarPlay sound itself, whatever was saved.
+-- The diagnostic report shows the saved choice, the audio route at each start, the `/info` audio declaration and every audio stream the iPhone asks for.
++- The browser profile selects the Carlinkit-style Bluetooth audio route: `/info` omits `audioFormats` while retaining audio latencies, feature bits and Bluetooth IDs. TiPlay declines audio streams the iPhone still opens and starts no audio output, microphone, echo canceller or audio focus. The complete iPhone-to-car Bluetooth audio flow still needs vehicle validation.
++- The earlier audio-route choice and its alternative variant remain in source, but the current interface hides audio-routing controls and selects the standard route on entry.
++- Diagnostic reports show the saved route, the audio declaration and each audio stream the iPhone requests.
+ 
+ ## Connection reliability
+ 
+diff --git a/docs/SETTINGS-VALIDATION-2026-10-10.md b/docs/SETTINGS-VALIDATION-2026-10-10.md
+index 9cc6112..17c1829 100644
+--- a/docs/SETTINGS-VALIDATION-2026-10-10.md
++++ b/docs/SETTINGS-VALIDATION-2026-10-10.md
+@@ -1,5 +1,10 @@
+ # TiPlay 设置整合与实机验证 — 2026-10-10
+ 
++本文保留 2026-10-10 的实现、安装和验证快照。文中的“当前”和剩余工作针对当时版本；
++后续托管环境的完整 Android 与浏览器验证结果见 [2026-10-11 扫尾记录](sweep-2026-10-10/FOLLOWUP-2026-10-11.md)，
++提交、推送和部署见 [收尾记录](sweep-2026-10-10/TIE-UP-2026-10-11.md)。
++后续通过不改写本次 8 个测试失败的记录，也不代表完成真车验收。
++
+ ## 当前实现
+ 
+ 首页设置和 CarPlay 手势统一打开上游 CarPlay 设置菜单。新增选项通过对应的“更多设置”子页进入，
+diff --git a/docs/SIDE_PANEL.md b/docs/SIDE_PANEL.md
+index 5bb5674..fa94ffd 100644
+--- a/docs/SIDE_PANEL.md
++++ b/docs/SIDE_PANEL.md
+@@ -1,10 +1,12 @@
+ # Side panel next to CarPlay (experimental)
+ 
+-CarPlay can share the head unit's main screen with TiPlay: the iPhone draws CarPlay in two thirds of the screen while TiPlay shows its own panel in the rest. On a landscape screen CarPlay stays on the driver's side and the panel is the passenger's third (the right in a left-hand-drive car, the left with **Right-hand drive** on); on a portrait screen the panel is a band at the bottom. The car switches between this and full-screen CarPlay at any time without reconnecting. It is off by default (**Settings → Display and performance → Side panel next to CarPlay**); once on, the in-session menu has a **Side panel** button, and the panel has a **Full screen** button.
++This guide describes the retained head-unit implementation and contributor tests. Current TiPlay forces the phone + browser profile and hides the side-panel setting. The settings path below refers to the retained head-unit UI.
++
++CarPlay can share the head unit's main screen with TiPlay: the iPhone draws CarPlay in two thirds of the screen while TiPlay shows its own panel in the rest. On a landscape screen CarPlay stays on the driver's side and the panel is the passenger's third (the right in a left-hand-drive car, the left with **Right-hand drive** on); on a portrait screen the panel is a band at the bottom. The car switches between this and full-screen CarPlay at any time without reconnecting. It is off by default (**Settings → Advanced → Display (experimental) → Side panel next to CarPlay (experimental)**); enabling it applies at the next connection and shows the consent-controlled **Reconnect now** bar. Once connected with it on, the in-session menu has a **Side panel** button, and the panel has a **Full screen** button.
+ 
+ ## How it works
+ 
+-The panel builds on the view areas described in [VIEW_AREAS.md](VIEW_AREAS.md). With the setting on, the main display also declares, for each screen orientation and dock edge, an area with two thirds of the screen: the left of a landscape screen, the top of a portrait one. The **Side panel** button moves CarPlay there with `updateViewArea`; TiPlay lays out the canvas by the whole screen and an ordinary Android view covers the strip of the stream CarPlay leaves black, mapped through the video's layout, so it stays on that strip when the video is letterboxed. Touches on the panel stay in TiPlay; touches elsewhere go to the iPhone as before. A window change (a turn, the head unit's split screen) ends the panel and picks the matching area as usual. Closing TiPlay or ending the session hides the panel and stops its refresh.
++The panel builds on the view areas described in [VIEW_AREAS.md](VIEW_AREAS.md). With the setting on, the main display also declares, for each screen orientation and dock edge, an area with two thirds of the screen: the driver’s side of a landscape screen, the top of a portrait one. The **Side panel** button moves CarPlay there with `updateViewArea`; TiPlay lays out the canvas by the whole screen and an ordinary Android view covers the strip of the stream CarPlay leaves black, mapped through the video's layout, so it stays on that strip when the video is letterboxed. Touches on the panel stay in TiPlay; touches elsewhere go to the iPhone as before. A window change (a turn, the head unit's split screen) ends the panel and picks the matching area as usual. Closing TiPlay or ending the session hides the panel and stops its refresh.
+ 
+ CarPlay has no notion of the panel's contents; the iPhone only knows the car asked it to use a smaller area.
+ 
+@@ -12,6 +14,8 @@ Panel placement uses physical video coordinates, so switching the UI to a right-
+ 
+ ## Tested
+ 
++These are historical contributor results; the test date was not recorded in this guide.
++
+ 2024 BYD Tang (DiLink 5.0, 2560×1440 rotating centre screen) with an iPhone on iOS 27, over wireless CarPlay (lab build of the same design): CarPlay moved to the left two thirds (landscape) or the top two thirds (portrait) and back within a fraction of a second, without reconnecting; touches in CarPlay's area landed correctly; the panel showed a clock and the car's battery and range. With an automatic dock, CarPlay puts its dock at the bottom once several areas are declared; the dock setting places it.
+ 
+ ## What it could become
+diff --git a/docs/SMOOTH_WIRELESS.md b/docs/SMOOTH_WIRELESS.md
+index 340e983..65e1baf 100644
+--- a/docs/SMOOTH_WIRELESS.md
++++ b/docs/SMOOTH_WIRELESS.md
+@@ -1,12 +1,18 @@
+ # Smooth wireless CarPlay
+ 
++> Retained head-unit engineering guide and measurements. Current TiPlay's
++> phone + browser profile hides the rotation and smooth-video controls and does
++> not offer Wi-Fi Direct in its connection chooser. The settings paths below
++> describe the retained head-unit layout. Use [Tesla browser setup](TESLA_BROWSER.md)
++> for the current product workflow.
++
+ The Wi-Fi channel and the size of the picture can affect how smooth wireless CarPlay feels. The numbers below were measured on a 2024 BYD Tang (DiLink 5.0, 2560×1440 screen) with an iPhone on iOS 27, parked, while scrolling the same Apple Music list. Other cars, firmware and phones may behave differently; interference, scanning and decoder limits can also contribute.
+ 
+ This guide describes 0.2.13 channel-policy and rotation behavior. Wi-Fi Direct is available on Android 9+ with suitable firmware. Android 9 uses the legacy group/channel path and cannot verify the negotiated frequency; see [Android 9 limits](ANDROID9_WIFI_DIRECT.md). Android 10+ retains actual-frequency verification. The contributor measurements below describe their specified Tang setup, not every device.
+ 
+ ## 1. Wi-Fi channel
+ 
+-**Settings → Connection setup → Wi-Fi Direct → Preferred channel**
++**Settings → Connection → Connection setup → Wi-Fi Direct → Preferred channel**
+ 
+ On this Tang, running Wi-Fi Direct on a different 5 GHz channel from the car's joined Wi-Fi network caused:
+ 
+@@ -20,7 +26,10 @@ A 2.4 GHz Wi-Fi Direct channel alongside the 5 GHz network was smooth in this te
+ 
+ ## 2. Picture size and screen rotation
+ 
+-**Settings → Display and performance → Turn CarPlay with the screen without reconnecting**
++**Settings → Advanced → Display (experimental) → Turn CarPlay with the screen without reconnecting**
++
++Rotation and square-picture changes apply at the next connection. Use the
++Reconnect now bar when ready to apply them to a running session.
+ 
+ Larger pictures can increase encoding, transmission and decoding work. In this test, TiPlay's received and rendered frame rates were close in all three cases, while the larger square arrived at a lower rate. This suggests testing picture size, but does not by itself identify the iPhone encoder as the bottleneck or rule out network effects and backpressure.
+ 
+@@ -40,7 +49,8 @@ With rotation on, CarPlay gets a square picture that holds both a landscape and
+ 
+ ## 3. Smooth video (experimental)
+ 
+-**Settings → Display and performance → Smooth video (experimental)**, off by default.
++**Settings → Advanced → Video and audio → Smooth video (experimental)**, off by default.
++Changing this switch reconnects CarPlay.
+ 
+ By default TiPlay shows each frame as soon as the decoder releases it. On the Tang, the decoder's output timing depended on later input:
+ 
+diff --git a/docs/TESLA_BROWSER.md b/docs/TESLA_BROWSER.md
+index 4a27aff..7af22d3 100644
+--- a/docs/TESLA_BROWSER.md
++++ b/docs/TESLA_BROWSER.md
+@@ -14,9 +14,12 @@ The protocol and the reasons behind it are in [the plan](todo.md) (Chinese).
+ 
+ Deployment update (2026-10-10): this repository now resolves to `uJZk/TiPlay` and the live page is
+ `https://ujzk.github.io/TiPlay/`. In the installed APK, set **CarPlay settings → More Connection settings →
+-Car browser → Browser page address** to this URL. The code default and the older examples below still use
++Car browser (experimental) → Page address** to this URL. The code default and the older examples below still use
+ `/DiPlay/`; GitHub repository redirects do not make that the live Pages address. Custom page addresses remain editable.
+ The existing Pages workflow uses `SITE_BASE_URL=https://ujzk.github.io/TiPlay/`.
++This deployment record conflicts with the `AGENTS.md` requirement to keep current project links on
++`uJZk/DiPlay`; the default and examples below preserve that policy. Use the recorded deployment address above
++for the installed APK until the repository link policy and default are reconciled.
+ 
+ The car opens a public HTTPS page: the browser decodes video with WebCodecs, which needs a secure context, and Chrome
+ lets an HTTPS page `fetch` plain HTTP from a local IP address such as `100.109.220.253`.
+@@ -99,8 +102,8 @@ and needs no `?t=`.
+ ## 3. Pairing
+ 
+ The pairing code is created once and kept until you tap **New code**. The link carries it in the fragment (`#c=…`). The
+-page stores it in the browser and removes the fragment, so the code reaches no server and stays out of the history and
+-bookmarks.
++page stores it in the browser and removes the fragment, so the code does not reach the static page host and stays out of the cleaned history entry and
++bookmarks. The page sends it to the phone in the `/video` query and the `/control` and `/bye` request bodies.
+ You can also type the code on the page.
+ 
+ **Bookmark the page after the first open.** Open the link from TiPlay once, wait until the page connects, then bookmark
+@@ -109,7 +112,7 @@ does not contain the code; the page uses the code it saved. Do not bookmark the
+ After **New code**, open the new link once; the bookmark then works again.
+ 
+ One browser shows CarPlay at a time: the latest page that pairs takes over, and the previous one says so. After five wrong
+-codes within 30 seconds, the phone refuses every browser for 30 seconds. The video is not encrypted on the hotspot; the
++codes within 30 seconds, authenticated requests are refused for 30 seconds, including requests with the right code. The video is not encrypted on the hotspot; the
+ hotspot's WPA password protects it.
+ 
+ ## 4. The phone's address
+@@ -117,10 +120,18 @@ hotspot's WPA password protects it.
+ The Tesla browser blocks private addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8), which phone hotspots
+ use. It opens addresses in 100.64.0.0/10.
+ 
+-- **With root:** turn on **Extra hotspot address (experimental)** in the same card. TiPlay adds `100.109.220.253` (or the
+-  address you set) to the hotspot interface, and again after the hotspot restarts. The link names an address you set
+-  in `?t=`; the default needs none.
+-- **Without root:** no tested way exists yet. See the 169.254 test in section 9.
++Choose **Hotspot address** in **Car browser (experimental)**. Changes apply immediately without reconnecting CarPlay.
++
++- **Normal** (default) uses the hotspot's existing address; it needs no root.
++- **Root** adds `100.109.220.253` (or the configured address) and restores it after hotspot restart.
++- **Shizuku** adds the address without root through an authorized Shizuku service. The shell call was checked on
++  Android 16 on 2026-10-09; access from the Tesla and authorization on Android 17 still need vehicle checks.
++  The address cannot be removed by shell and remains until hotspot restart.
++- **VPN (experimental)** holds an address without root or Shizuku. Hotspot packets to a VPN address may be dropped
++  on Android 14 with the January 2025 patch and newer Android versions. The link-local alternative
++  `169.254.220.253` still needs a Tesla test.
++
++See [hotspot address setup](HOTSPOT_ADDRESS.md) for permissions, version limits and cleanup behavior.
+ 
+ ## 5. Other browsers
+ 
+@@ -129,7 +140,8 @@ app. It needs no internet access and no pairing code to load.
+ 
+ - Over `http://` the page is not a secure context, so it plays video through Media Source Extensions (fragmented MP4)
+   instead of WebCodecs. Safari uses its Managed Media Source.
+-- Firefox usually cannot play HEVC. If the page says so, turn off **Efficient video** (HEVC) in TiPlay.
++- Firefox usually cannot play HEVC. If the page says so, turn off **HEVC (H.265) (experimental)** under
++  **CarPlay settings → Advanced**, then choose **Save and reconnect**.
+ - The address in the link is the extra hotspot address once TiPlay added it, else the hotspot's own address. Any device
+   on the hotspot can open it. The Tesla should use the HTTPS link: over `http://` it would fall back to Media Source
+   Extensions, which is slower to start and less tested.
+@@ -138,8 +150,8 @@ app. It needs no internet access and no pairing code to load.
+ ## 6. Picture size
+ 
+ CarPlay's canvas is the size of the page's video area in device pixels (CSS pixels × device pixel ratio, rounded down to
+-even numbers, at most 3840 × 2160 in either orientation), at 60 fps by default. Choose 30–60 fps under
+-**CarPlay settings → Display → Frame rate**. Both frame rate and **Advanced → HEVC** changes take effect only
++even numbers, at most 3840 × 2160 in either orientation), at 30 fps on a fresh installation. Choose 30–60 fps under
++**CarPlay settings → Display → Frame rate**. Both frame rate and **Advanced → HEVC (H.265) (experimental)** changes take effect only
+ after **Save and reconnect**; cancelling leaves the current session unchanged. Before any browser has reported its size, TiPlay
+ uses 1280 × 720. CarPlay's physical size follows the page's CSS size (0.2646 mm per CSS pixel), so its controls are as
+ large as the browser's own text. The head unit's resolution, CarPlay size, safe area, dock, split screen, turning screen
+@@ -176,7 +188,7 @@ localNetworkPermission=…`; the session log has `Browser link: …`, `Web video
+ - [ ] The link pairs: the page connects, and its address bar no longer shows `#c=` (with the default extra address,
+       only `https://ujzk.github.io/DiPlay/` is left).
+ - [ ] A bookmark made after the first open reopens the page and connects with the saved code.
+-- [ ] H.264 plays at 60 fps (stats overlay); then HEVC (**Efficient video** on) after a reconnect.
++- [ ] H.264 plays at 60 fps (stats overlay); then HEVC (**HEVC (H.265) (experimental)** on) after a reconnect.
+ - [ ] Touch: tap, drag a list, pinch the map with two fingers. A finger lifted outside the picture is released.
+ - [ ] In Drive the picture keeps playing (the probe pages kept 60 fps).
+ - [ ] After a 30-minute drive the video stream is still the first one (`reconnects=0` in `Browser:` lines).
+@@ -189,9 +201,9 @@ localNetworkPermission=…`; the session log has `Browser link: …`, `Web video
+ - [ ] **New code** disconnects the car; the new link pairs it again.
+ - [ ] A second browser (another phone on the hotspot) takes over; the car's page says so.
+ - [ ] Safari and Firefox on another device play the phone-served page.
+-- [ ] **169.254 test (no root).** Android 13 and later drop packets that arrive on another interface for a VPN's own
++- [ ] **169.254 test (no root).** Android 14 with the January 2025 patch and newer Android versions can drop packets that arrive on another interface for a VPN's own
+       addresses, except link-local ones (`ConnectivityService.generateIngressDiscardRules` skips
+-      `isLinkLocalAddress()`). The Tesla does not block 169.254.0.0/16 and Chrome treats it as local. So the address of a
++      `isLinkLocalAddress()`). Chrome treats 169.254.0.0/16 as local; Tesla HTTP access to it has not been verified. So the address of a
+       VPN that TiPlay or a test app starts (`VpnService.Builder.addAddress("169.254.77.1", 32)`, which needs no root)
+       might be reachable from the car through the hotspot. With such a VPN running and the extra hotspot address off,
+       open `<page address>?t=169.254.77.1#c=<code>` in the car and note whether the page reaches the phone,
+diff --git a/docs/TESTING.md b/docs/TESTING.md
+index ba23869..e268895 100644
+--- a/docs/TESTING.md
++++ b/docs/TESTING.md
+@@ -1,6 +1,6 @@
+ # Test checklist
+ 
+-Use the [installation guide](INSTALL.md). With the car parked, verify wired and wireless connection, picture, touch and music. Test disconnect/reconnect, then settings Apply/Cancel. Save a diagnostic report after reproducing an issue.
++Use the [installation guide](INSTALL.md) and [browser vehicle checklist](TESLA_BROWSER.md#9-car-test-checklist). The current app applies the browser receiver profile; head-unit display/audio/location/BYD controls are hidden. The retained head-unit checks below are a compatibility matrix for a build that exposes those controls, not instructions to enable them in the current profile. Record that build and profile explicitly. With the car parked, verify wired and wireless connection, picture, touch and music. Test disconnect/reconnect, then settings Apply/Cancel. Save a diagnostic report after reproducing an issue.
+ 
+ For the USB trailer, software-window video and RFCOMM reliability changes, complete the
+ [connection reliability matrix](CONNECTION_RELIABILITY.md#vehicle-acceptance-before-release).
+@@ -28,7 +28,7 @@ Include head-unit model, DiLink/Android, iPhone/iOS, wired/wireless, app version
+ 
+ ## Preferred Wi-Fi Direct channel
+ 
+-- In **Settings → Connection setup → Wi-Fi Direct**, confirm **Preferred channel: Auto** on a fresh install. Select channel 149 and Cancel; Auto must remain selected. Select 149 and Save, reopen the chooser and restart the app to confirm it stays saved.
++- In **Settings → Connection → Connection setup → Wi-Fi Direct**, confirm **Preferred channel: Auto** on a fresh install. Select channel 149 and Cancel; Auto must remain selected. Select 149 and Save, reopen the chooser and restart the app to confirm it stays saved.
+ - Disconnect/reconnect after saving. Check `channel preference=149 frequencyMHz=5745`, `create mode=PREFERRED_CHANNEL`, and `requestedMHz=5745 actualMHz=5745 matched=true`. An unsupported channel or a different actual channel must report an error instead of silently falling back. Select Auto to restore automatic startup.
+ - Compare Auto and manual choices with the car already joined to Wi-Fi. A manual choice must override station alignment and any remembered automatic channel. Successful manual sessions must not replace the remembered automatic configuration.
+ - Switch to built-in hotspot and USB. The channel chooser must be hidden for built-in hotspot, and neither connection may apply the Wi-Fi Direct preference. Returning to Wi-Fi Direct must restore the saved choice. Saving a channel during a connection must leave that session running and apply the change to the next connection.
+@@ -54,7 +54,7 @@ In the diagnostic report, the next `Starting CarPlay controller at` and `Display
+ 
+ ## Location reporting
+ 
+-With the car parked, open **Settings → Location → Report location to iPhone**.
++With the car parked, open **Settings → Navigation → Location → Report location to iPhone**.
+ 
+ - On a fresh installation, the switch is off. Enabling it requests precise location if needed; denying the request or granting only approximate location leaves it off.
+ - Grant precise location, enable the switch, then reopen Settings to confirm the saved state. With no connection running, the setting applies to the next connection.
+@@ -63,7 +63,7 @@ With the car parked, open **Settings → Location → Report location to iPhone*
+ 
+ ## Advanced vehicle data
+ 
+-- Expand **Settings → Location → Advanced vehicle data**. Confirm a fresh install uses **Default mode · verified on DiLink 5.0 head units** and shows the battery, wheel-speed and parked-video switches without a field probe.
++- Expand **Settings → Advanced → Vehicle → Advanced vehicle data**. Confirm a fresh install uses **Default mode · verified on DiLink 5.0 head units** and shows the battery, wheel-speed and parked-video switches without a field probe.
+ - In Default mode, tap **Check ADB access** and record the battery, speed and gear it shows. With CarPlay connected, turn on a switch whose data cannot be read: CarPlay must stay connected and the page must show what cannot be read.
+ - Select **Legacy head-unit detection · tested on controller 13 / DiLink 3.0**. Approve the key if the car asks; the same action must continue into the read-only field probe. With “Always allow” ticked, the page must not say the car allowed TiPlay only once. A failed probe must leave Default mode selected.
+ - Reopen Settings, restart TiPlay, change gear and reconnect CarPlay. The successful probe, resolved fields and enabled battery/wheel-speed/video switches must remain saved without another tap, even when the current firmware metadata differs.
+diff --git a/docs/UPSTREAM_SYNC.md b/docs/UPSTREAM_SYNC.md
+index 2cb77b0..6476cad 100644
+--- a/docs/UPSTREAM_SYNC.md
++++ b/docs/UPSTREAM_SYNC.md
+@@ -304,9 +304,9 @@ python3 scripts/build_site.py && git status --short site
+ After the site script, `git status` must list no file. A listed page was not generated again after the merge.
+ To check the page with a fake phone in headless Chromium, follow `tests/web-e2e/README.md`.
+ 
+-## 9. The phone + browser default
++## 9. The phone + browser product profile
+ 
+-TiPlay starts in the phone + browser run mode. A merge must not change that.
++Normal TiPlay entry applies `BrowserSettingsPolicy.activate()`: phone + browser mode, car Bluetooth audio on, system day/night mode, location reporting off and the split-screen adaptation setting on. Head-unit configuration remains only for upstream compatibility. A merge must preserve this profile and `BrowserSettingsPolicy.hiddenSections`; an already running session keeps its negotiated configuration.
+ 
+ - `PhoneBrowserModeSettingsTest` must pass. `AirPlayPersistence.loadRunMode` must still fall back to
+   `CarPlayRunMode.PHONE_BROWSER`.
+@@ -317,10 +317,13 @@ TiPlay starts in the phone + browser run mode. A merge must not change that.
+   Code that can run during a session passes the session's controller, as `CarPlayCallKeys` and `WheelKeyService` do,
+   so that a running session keeps the mode it connected with.
+ - A new Settings card for head-unit hardware goes into `SettingsInformationArchitecture.headUnitOnlySections`.
++  Retained head-unit-only controls must also stay hidden by `BrowserSettingsPolicy` in the browser profile and by
++  `CarPlaySettingsNavigation.additionalSections()` on host settings pages.
+ - An upstream test that expects head-unit behavior can fail in the default mode. Call `useHeadUnitMode()` in its setup
+   (`common/src/test/java/com/shilapi/xcertplay/HeadUnitRunMode.kt`). Do not change the default to make a test pass.
+-- On a phone, install a fresh debug build. Open **Settings → Connection → Tesla browser (experimental)**.
+-  **Phone and car browser** must be on.
++- On a phone, install a fresh debug build and open TiPlay normally. Verify that the browser profile is applied,
++  audio stays on the car’s Bluetooth connection and the retained head-unit settings are hidden.
++  The former **Phone and car browser** choice is no longer a user-facing mode switch.
+ 
+ ## Checklist
+ 
+diff --git a/docs/VIEW_AREAS.md b/docs/VIEW_AREAS.md
+index 16d8e7e..bdbbc58 100644
+--- a/docs/VIEW_AREAS.md
++++ b/docs/VIEW_AREAS.md
+@@ -1,10 +1,14 @@
+ # CarPlay view areas: dock position, split screen and a turning screen
+ 
+-A CarPlay accessory may declare several **view areas** inside the main screen's video stream and tell the iPhone which one to draw in. TiPlay uses this for three optional settings, all without reconnecting CarPlay:
++This guide describes the retained head-unit display controls and contributor tests. Current TiPlay forces the phone + browser profile, saves the split-screen adaptation setting as enabled and hides the dock, split-screen and turning-screen settings. The settings paths below refer to the retained head-unit UI.
+ 
+-- **CarPlay dock** (Settings → Display and performance, and the in-session menu): Automatic (default), Driver's side or Bottom.
+-- **CarPlay in the head unit's split screen** (Settings → Display and performance, off by default): when the head unit shows TiPlay in half of the screen, CarPlay redraws for that window instead of shrinking with black bars, and returns to full screen.
+-- **Turn CarPlay with the screen without reconnecting** (Settings → Display and performance, off by default): for head units whose screen turns, CarPlay redraws in the other orientation instead of reconnecting.
++A CarPlay accessory may declare several **view areas** inside the main screen's video stream and tell the iPhone which one to draw in. TiPlay uses this for three settings. Once negotiated, view-area transitions can run without reconnecting CarPlay:
++
++- **CarPlay dock** (Settings → Display, and the in-session menu): Automatic (default), Driver's side or Bottom.
++- **CarPlay in the head unit's split screen** (Settings → Advanced → Display (experimental), off by default): when the head unit shows TiPlay in half of the screen, CarPlay redraws for that window instead of shrinking with black bars, and returns to full screen.
++- **Turn CarPlay with the screen without reconnecting** (Settings → Advanced → Display (experimental), off by default): for head units whose screen turns, CarPlay redraws in the other orientation instead of reconnecting.
++
++Enabling split-screen adaptation or turning-screen support applies at the next connection and shows the **Reconnect now** bar; the driver chooses when to reconnect. Switching between Bottom and Driver’s side dock positions can apply live when the session has the matching areas. Switching to or from Automatic requires the next connection.
+ 
+ ## How it works
+ 
+@@ -43,6 +47,8 @@ When the screen turns, TiPlay moves CarPlay to the other area and lays out the c
+ 
+ ## Tested
+ 
++These are historical contributor results; the test date was not recorded in this guide.
++
+ 2024 BYD Tang (DiLink 5.0, 2560×1440 centre screen) with an iPhone on iOS 27, wireless CarPlay:
+ 
+ - **Dock:** Automatic → Bottom reconnected. Bottom ↔ Driver's side moved at once, from Settings and from the in-session menu.
+diff --git a/docs/WIRELESS_DIAGNOSTICS.md b/docs/WIRELESS_DIAGNOSTICS.md
+index 0842854..6f70874 100644
+--- a/docs/WIRELESS_DIAGNOSTICS.md
++++ b/docs/WIRELESS_DIAGNOSTICS.md
+@@ -29,10 +29,11 @@ The report includes:
+ After a requested Bluetooth handoff, the 45-second watchdog requires a rendered
+ video frame before preserving a session whose tunneled iAP2 channel never became
+ ready. Session establishment alone can also occur with a black screen and does
+-not prevent timeout recovery. A proven video fallback releases the Bluetooth
+-bootstrap and reports `STEP handoff/fallback`, explicitly recording that tunneled
+-iAP2 is unavailable; `STEP handoff/complete` remains reserved for the normal
+-tunnel-ready path. The fallback does not confirm the connection in saved history
++not prevent timeout recovery. A proven video fallback preserves the Bluetooth
++bootstrap for iAP2 control and reports `STEP handoff/fallback`, explicitly recording
++that tunneled iAP2 is unavailable. If the tunnel later becomes ready, TiPlay releases
++Bluetooth and reports `STEP handoff/complete`, as it does for the normal tunnel-ready
++path. The fallback does not confirm the connection in saved history
+ without the existing authenticated-tunnel proof.
+ 
+ ## Association limits
+diff --git a/docs/WIRELESS_HOTSPOT_JOIN.md b/docs/WIRELESS_HOTSPOT_JOIN.md
+index 3bda099..454238f 100644
+--- a/docs/WIRELESS_HOTSPOT_JOIN.md
++++ b/docs/WIRELESS_HOTSPOT_JOIN.md
+@@ -90,7 +90,13 @@ evidence for a general in-app fix.
+ 
+ ## Opt-in app repair
+ 
+-**Connection setup → Built-in car hotspot → Check hotspot repair** runs TiPlay's
++The repair implementation and controls are retained in the source, but current
++TiPlay does not attach the repair controls to its connection screen. The workflow
++below describes that earlier UI, not an available action in the current browser
++profile. Use the car/phone's own hotspot settings for current setup; see
++[Tesla browser setup](TESLA_BROWSER.md).
++
++**Settings → Connection → Connection setup → Built-in car hotspot → Check hotspot repair** runs TiPlay's
+ authorized local-ADB/app_process helper. Opening the screen, resuming the app or
+ starting CarPlay does not run this repair. Check reads the saved configuration
+ and prepares a private full rollback snapshot; it does not change the hotspot.
+diff --git a/docs/sweep-2026-10-10/ENVIRONMENT.md b/docs/sweep-2026-10-10/ENVIRONMENT.md
+index 5d13113..51685b8 100644
+--- a/docs/sweep-2026-10-10/ENVIRONMENT.md
++++ b/docs/sweep-2026-10-10/ENVIRONMENT.md
+@@ -1,5 +1,7 @@
+ # Managed build environment recovery
+ 
++Historical environment and initial validation record from the 2026-10-10 sweep. The commands and installed paths describe that managed workspace; recheck local tool availability before reuse. Later E2E results are recorded in the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md).
++
+ Original blocker: Gradle's Foojay JDK provisioning URL at `api.foojay.io` returned HTTP 403 under the managed destination policy. No policy bypass or project JDK downgrade was used. Installed the required JDK 25 from official permitted distributions; final verification uses Temurin 25, matching CI.
+ 
+ ## Installed tools
+@@ -38,4 +40,4 @@ Run with sandboxed network permission for SDK/dependency downloads and local Gra
+ 
+ ## Optional browser E2E retry
+ 
+-Existing Playwright and Chromium allowed the harness to start. The H.264 mux check decoded 30/30 frames; worker VP8 decode, viewport sizing, link handling and touch mapping passed. The harness then failed its stats-event assertion (one field received). Full E2E is not passing; see E2E-VALIDATION.txt. This is separate from the JDK provisioning blocker and the 50/50 passing browser unit suite.
++Existing Playwright and Chromium allowed the harness to start. The H.264 mux check decoded 30/30 frames; worker VP8 decode, viewport sizing, link handling and touch mapping passed. The harness then failed its stats-event assertion (one field received). Full E2E did not pass at this initial checkpoint; see [E2E-VALIDATION.txt](E2E-VALIDATION.txt). This is separate from the JDK provisioning blocker and the 50/50 passing browser unit suite.
+diff --git a/docs/sweep-2026-10-10/FOLLOWUP-2026-10-11.md b/docs/sweep-2026-10-10/FOLLOWUP-2026-10-11.md
+index 70f3277..7c45a5e 100644
+--- a/docs/sweep-2026-10-10/FOLLOWUP-2026-10-11.md
++++ b/docs/sweep-2026-10-10/FOLLOWUP-2026-10-11.md
+@@ -27,7 +27,7 @@ Coordinator reviewed queue/resource ownership and inherited hook scope. Android
+ - First focused Android attempt exposed private companion constant access in the new audio helper; corrected with a helper-owned whitelist, without widening upstream visibility. First full required Android command stopped at two common link-probe assertions after shared completed 1,205 tests with zero failures/errors/skips. Stale/default links exposed queued UI delivery and test-isolation issues; correction now removes cancelled UI callbacks and uses helper-owned work waits/current main looper with explicit activity destruction. Focused common verification passed 48/48 tests with unchanged clipboard and reattachment assertions. Cancelled UI callbacks are now removed under the scheduling lock, and helper-owned idle waits replace unrelated global-thread joins. Final full Android rerun has passed shared/common/home tests: 1,205 + 992 + 4 = 2,201, zero failures/errors/skips. The full AGENTS.md command succeeded in 7m 40s (247 tasks: 45 executed, 202 up-to-date), including mobile/home/maphost lint and all three debug APKs. Final command evidence: FOLLOWUP-ANDROID-VALIDATION.txt. Report totals: FOLLOWUP-ANDROID-TEST-SUMMARY.json. Evidence: FOLLOWUP-COMMON-FOCUSED-VALIDATION.txt. Initial failure evidence: FOLLOWUP-ANDROID-INITIAL-FAILURE.txt.
+ - Fake-phone E2E passed every path (worker, chunk/frame transfers, main thread, MSE), reconnect/decode recovery, touch, stats and service-worker offline behavior. Real-phone E2E passed against the newly compiled shared classes: explicit unsupported codec fixture, native H.264 MSE playback, stand-in protocol/decode/touch checks, key-frame recovery, restart/retired-session isolation, bye, CORS and redaction. Evidence: FOLLOWUP-FAKE-E2E-VALIDATION.txt and FOLLOWUP-REAL-E2E-VALIDATION.txt.
+ 
+-The JDK 25 download blocker is resolved; verification uses the existing official Temurin installation and writable SDK/user-data paths documented in ENVIRONMENT.md. No commits or pushes. Bounds and cancellation prevent unbounded retained work; no end-to-end speedup was measured. A running platform interface read cannot be forcibly interrupted, so a blocked read delays the newest probe while retaining no detached UI. RootShell releases its pipes without waiting for descendants; it does not promise to terminate descendant processes.
++The JDK 25 download blocker is resolved; verification uses the existing official Temurin installation and writable SDK/user-data paths documented in ENVIRONMENT.md. No commits or pushes had occurred at this verification checkpoint; later delivery is recorded in [TIE-UP-2026-10-11.md](TIE-UP-2026-10-11.md). Bounds and cancellation prevent unbounded retained work; no end-to-end speedup was measured. A running platform interface read cannot be forcibly interrupted, so a blocked read delays the newest probe while retaining no detached UI. RootShell releases its pipes without waiting for descendants; it does not promise to terminate descendant processes.
+ 
+ 
+ ## Final outcome
+diff --git a/docs/sweep-2026-10-10/README.md b/docs/sweep-2026-10-10/README.md
+index ef4e260..ba6f59f 100644
+--- a/docs/sweep-2026-10-10/README.md
++++ b/docs/sweep-2026-10-10/README.md
+@@ -15,14 +15,14 @@ Status: complete — cleanup and authorized queue/lifecycle fixes verified. See
+ 
+ The user authorized these fixes on 2026-10-11. All six modules now have verified implementations and regression tests. Full Android CI, browser tests and both E2E harnesses pass. The following list preserves the initial findings.
+ 
+-Performance review found follow-ups requiring behavioral policy decisions; no changes applied and no measured regression/gain claimed. Details and file references are in each RESULT report.
++At the initial review checkpoint, performance review found follow-ups requiring behavioral policy decisions; no changes had yet been applied and no measured regression/gain was claimed. Details and file references are in each RESULT report.
+ 
+ - common: coalesce/bound per-trigger interface probe threads; preserve request freshness.
+ - network: coalesce hotspot refresh tasks without losing retries; define bounded timed-out shell reader cleanup.
+ - web: define limits/coalescing for never-dropped configuration records and queued key-frame requests.
+ - shared-other: replace lifetime audio SETUP CopyOnWriteArrayList only after defining concurrent diagnostic snapshot semantics.
+ - browser: define producer backpressure, disconnected decoder/frame lifetime and pending MSE object URL ownership.
+-- tooling: see RESULT-tooling.md for harness lifecycle/queue decisions. Optional fake-phone E2E retry failed the stats-event assertion with one field received, after H.264 muxing, VP8 decode, viewport and touch checks passed. Full E2E is not passing; see E2E-VALIDATION.txt.
++- tooling: see RESULT-tooling.md for harness lifecycle/queue decisions. Optional fake-phone E2E retry failed the stats-event assertion with one field received, after H.264 muxing, VP8 decode, viewport and touch checks passed. Full E2E did not pass at that checkpoint; see E2E-VALIDATION.txt.
+ 
+ These findings mean performance best practices review is complete, not a blanket certification. Allocation/copy reductions are evident from source; end-to-end latency/throughput was not measured.
+ 
+@@ -39,7 +39,7 @@ These findings mean performance best practices review is complete, not a blanket
+ - Source diff spot-checked: all 11 changed source files are in scope; inherited edits belong to TiPlay hunks. Protocol, validation order, settings ordering and resource ownership preserved by inspection.
+ - Full required AGENTS.md Android command succeeded on Temurin 25.0.4.1+1 (`BUILD SUCCESSFUL in 9m 21s`; 247 tasks, 30 executed / 217 up-to-date). Included shared/common/home unit tests; mobile/home/maphost lint; and all three debug APK builds.
+ - Android report totals: shared 1,186; common 987; home 4; total 2,177 tests, zero failures/errors/skips. See ANDROID-TEST-SUMMARY.json and ANDROID-VALIDATION.txt.
+-- Browser unit suite passed 50/50 (Node 24.19.0; CI specifies Node 22). See BROWSER-VALIDATION.txt. Browser source has not changed since that passing run.
++- Browser unit suite passed 50/50 (Node 24.19.0; CI specifies Node 22). See BROWSER-VALIDATION.txt. Browser source had not changed at that initial verification checkpoint.
+ - Public-tree check passed. Site generator produced seven landing pages with no generated Git changes. All 63 in-scope Android XML files parse without duplicate named entries. Diff and changed-JS syntax checks passed.
+ - RealPhone.java compiled successfully with Temurin 25 and the newly built shared classes/Kotlin standard library.
+ - Optional fake-phone E2E retry failed the stats-event assertion after earlier playback/touch checks. This separate harness issue is an Open decision, not a passing check; see E2E-VALIDATION.txt.
+diff --git a/docs/sweep-2026-10-10/RESULT-browser.md b/docs/sweep-2026-10-10/RESULT-browser.md
+index 667a95f..f898a2b 100644
+--- a/docs/sweep-2026-10-10/RESULT-browser.md
++++ b/docs/sweep-2026-10-10/RESULT-browser.md
+@@ -1,5 +1,7 @@
+ # Browser sweep result
+ 
++Historical record of the initial 2026-10-10 cleanup and its coordinator verification. The open queue/lifecycle decisions and E2E failure below were superseded by the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md); later commit, push and deployment results are in the [tie-up record](TIE-UP-2026-10-11.md).
++
+ Reviewed all 20 files in the browser scope against STANDARDS.md rules 1–9 and AGENTS.md. `site/play/*` and the seven `tests/web/*.test.mjs` files are additions after `e837efa`; the inherited `site/assets/site.css` and `site/content.json` were reviewed only at the fork's changed hunks. No upstream code or generated locale pages changed.
+ 
+ ## Changes
+diff --git a/docs/sweep-2026-10-10/RESULT-common.md b/docs/sweep-2026-10-10/RESULT-common.md
+index c833c21..bf9128a 100644
+--- a/docs/sweep-2026-10-10/RESULT-common.md
++++ b/docs/sweep-2026-10-10/RESULT-common.md
+@@ -1,5 +1,7 @@
+ # Common module sweep result
+ 
++Historical record of the initial 2026-10-10 cleanup and its coordinator verification. The open queue/lifecycle decisions and E2E failure below were superseded by the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md); later commit, push and deployment results are in the [tie-up record](TIE-UP-2026-10-11.md).
++
+ ## Scope and review
+ 
+ Reviewed the 133 files assigned to `common` against standards 1–9. For inherited files, review and edits were limited to TiPlay hunks relative to `e837efa`; new files were fully eligible. The review covered browser settings/navigation, session hooks, local permissions, hotspot configuration and address cards, browser canvas/link lifecycle, phone locks, associated tests, Gradle asset bundling, manifest additions and localized resources.
+diff --git a/docs/sweep-2026-10-10/RESULT-network.md b/docs/sweep-2026-10-10/RESULT-network.md
+index 9a290e2..2420ad8 100644
+--- a/docs/sweep-2026-10-10/RESULT-network.md
++++ b/docs/sweep-2026-10-10/RESULT-network.md
+@@ -1,5 +1,7 @@
+ # Network sweep result
+ 
++Historical record of the initial 2026-10-10 cleanup and its coordinator verification. The open queue/lifecycle decisions and E2E failure below were superseded by the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md); later commit, push and deployment results are in the [tie-up record](TIE-UP-2026-10-11.md).
++
+ Reviewed all 21 network files in SCOPE.md under STANDARDS.md rules 1–9. Inherited files were reviewed only at the TiPlay hunks against `e837efa`; original upstream code was not cleaned up. No production or test changes were justified without changing behavior. Only this result record was added.
+ 
+ ## Coverage and performance review
+diff --git a/docs/sweep-2026-10-10/RESULT-shared-other.md b/docs/sweep-2026-10-10/RESULT-shared-other.md
+index 75b3780..d51e6be 100644
+--- a/docs/sweep-2026-10-10/RESULT-shared-other.md
++++ b/docs/sweep-2026-10-10/RESULT-shared-other.md
+@@ -1,5 +1,7 @@
+ # Shared-other sweep result
+ 
++Historical record of the initial 2026-10-10 cleanup and its coordinator verification. The open queue/lifecycle decisions and E2E failure below were superseded by the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md); later commit, push and deployment results are in the [tie-up record](TIE-UP-2026-10-11.md).
++
+ ## Scope and outcome
+ 
+ Reviewed all 21 files assigned to `shared-other` in `SCOPE.md`, using `git diff e837efa HEAD` to restrict inherited files to TiPlay hunks. Read `STANDARDS.md`, `AGENTS.md`, and `docs/UPSTREAM_SYNC.md`. No source changes were justified by the behavior-preserving cleanup standard. Original upstream implementation remains untouched.
+diff --git a/docs/sweep-2026-10-10/RESULT-tooling.md b/docs/sweep-2026-10-10/RESULT-tooling.md
+index 74df8ff..90bce5e 100644
+--- a/docs/sweep-2026-10-10/RESULT-tooling.md
++++ b/docs/sweep-2026-10-10/RESULT-tooling.md
+@@ -1,5 +1,7 @@
+ # Tooling sweep result
+ 
++Historical record of the initial 2026-10-10 cleanup and its coordinator verification. The open queue/lifecycle decisions and E2E failure below were superseded by the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md); later commit, push and deployment results are in the [tie-up record](TIE-UP-2026-10-11.md).
++
+ Reviewed the tooling section of SCOPE.md against standards 1–9. Inherited files were reviewed only for fork changes relative to e837efa; original upstream implementation and generated locale HTML were excluded. No shared TASKS.md edits, commits or pushes.
+ 
+ ## Changes
+diff --git a/docs/sweep-2026-10-10/RESULT-web.md b/docs/sweep-2026-10-10/RESULT-web.md
+index 0f948a8..cfb4e2e 100644
+--- a/docs/sweep-2026-10-10/RESULT-web.md
++++ b/docs/sweep-2026-10-10/RESULT-web.md
+@@ -1,5 +1,7 @@
+ # Web sweep result
+ 
++Historical record of the initial 2026-10-10 cleanup and its coordinator verification. The open queue/lifecycle decisions and E2E failure below were superseded by the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md); later commit, push and deployment results are in the [tie-up record](TIE-UP-2026-10-11.md).
++
+ Reviewed the `web` section of SCOPE.md against STANDARDS.md rules 1–9. All 11 production Kotlin files are additions since `e837efa`; no inherited upstream code was edited. Reviewed all 12 assigned test files and the JSON fixture; the binary fixture was excluded from edits.
+ 
+ ## Changes
+diff --git a/docs/sweep-2026-10-10/TASKS.md b/docs/sweep-2026-10-10/TASKS.md
+index 4af428c..3b7ade2 100644
+--- a/docs/sweep-2026-10-10/TASKS.md
++++ b/docs/sweep-2026-10-10/TASKS.md
+@@ -58,4 +58,4 @@
+ 
+ ## Authorized follow-up — 2026-10-11
+ 
+-All six queue/lifecycle decisions completed. Full Android CI, 60 browser tests, four tooling tests and both E2E harnesses pass. See FOLLOWUP-2026-10-11.md and per-module FOLLOWUP reports for bounds, ownership, fixes and remaining platform limits. No commits or pushes.
++All six queue/lifecycle decisions completed. Full Android CI, 60 browser tests, four tooling tests and both E2E harnesses pass. See FOLLOWUP-2026-10-11.md and per-module FOLLOWUP reports for bounds, ownership, fixes and remaining platform limits. No commits or pushes had occurred at that follow-up checkpoint; later delivery is recorded in [TIE-UP-2026-10-11.md](TIE-UP-2026-10-11.md).
+diff --git a/docs/todo.md b/docs/todo.md
+index dbf0f08..e422d4b 100644
+--- a/docs/todo.md
++++ b/docs/todo.md
+@@ -3,7 +3,7 @@
+ ## 特斯拉浏览器 CarPlay：声音走车辆蓝牙
+ 
+ 背景：安卓手机运行 TiPlay 并开热点，特斯拉连接热点后用浏览器显示 CarPlay。
+-安卓手机只负责视频和触摸。音乐、导航、Siri、电话和麦克风全部走 iPhone 与特斯拉之间的蓝牙。
++目标是安卓手机只负责视频和触摸，音乐、导航、Siri、电话和麦克风走 iPhone 与特斯拉之间的蓝牙；完整音频路线仍待实车验证。
+ 
+ ### 依据：Carlinkit 固件的 `BtAudio` 模式
+ 
+@@ -25,7 +25,7 @@
+ 
+ ### TiPlay 现状
+ 
+-`AirPlayConfig.disableAudioOutput`（`shared/.../airplay/AirPlayConfig.kt`）目前只在测试中使用，界面上没有开关。它和 Carlinkit 的差别：
++`AirPlayConfig.audioViaCarBluetooth` 已实现 Carlinkit 风格路线，`disableAudioOutput` 保留为备选变体。当前 `BrowserSettingsPolicy` 在进入应用时选择手机 + 浏览器、标准车辆蓝牙音频，并隐藏音频选择界面；下面已完成项记录此前选择界面的实现，不代表当前可见设置。备选变体和 Carlinkit 的差别：
+ 
+ | | Carlinkit `BtAudio=1` | TiPlay `disableAudioOutput` |
+ |---|---|---|
+@@ -36,9 +36,9 @@
+ 
+ ### 待办
+ 
+-- [x] 在 `AirPlayConfig` 新增一个字段（例如 `audioViaCarBluetooth`），在 `AirPlayInfoPlist.build` 中**只去掉 `audioFormats`**，`audioLatencies` 和 `features` 保持不变，与 Carlinkit 一致。
++- [x] 在 `AirPlayConfig` 新增字段 `audioViaCarBluetooth`，在 `AirPlayInfoPlist.build` 中**只去掉 `audioFormats`**，`audioLatencies` 和 `features` 保持不变，与 Carlinkit 一致。
+ - [x] 保留 `disableAudioOutput` 作为备选变体，实测两者哪个让 iPhone 稳定地把声音交给车辆蓝牙。
+-  设置里选"开启（备选方式）"即为该变体；两者的对比放在下面的真机验证里。
++  此前设置里选"开启（备选方式）"即为该变体；当前界面隐藏此选择，两者的对比放在下面的真机验证里。
+ - [x] 该模式下不启动音频接收、麦克风上行和回声消除，也不请求音频焦点（`AndroidMediaSink`、`MicrophoneUplink`）。
+   iPhone 仍然打开的音频流会被拒绝（不放进 SETUP 响应）。
+ - [ ] 如果真机上 iPhone 在音频 SETUP 被拒绝后断开会话：改为接受但丢弃（绑定端口，不解密、不播放）。
+@@ -80,8 +80,8 @@
+   - 没有弹出"本地网络访问"授权提示。`ws://` 没有到达手机（被浏览器拦截）。
+ - [ ] 确认 iPhone 发来的码流格式：在诊断日志中记录配置头的格式标记（`avcC`/`hvcC`/其他）。
+   代码已完成：会话日志每种配置记一行 `Video config marker=… codec=…`；待真机报告确认。
+-- [x] 视频链路：新增 `WebMediaSink`，不转码，直接把 iPhone 码流（H.264 或 HEVC）通过 HTTP 响应流送给浏览器；浏览器在 Worker 里用 `fetch` 读取，用 WebCodecs 硬解，用 WebGL 画到 OffscreenCanvas；发送端积压时丢帧到下一个关键帧。
+-  分辨率按浏览器上报的视口 × DPR 协商，60 fps。
++- [x] 视频链路：新增 `WebMediaSink`，不转码，直接把 iPhone 码流（H.264 或 HEVC）通过 HTTP 响应流送给浏览器；浏览器在主线程发起 `fetch`，把响应流转交 Worker 读取，用 WebCodecs 硬解，用 WebGL 画到 OffscreenCanvas；发送端积压时丢帧到下一个关键帧。
++  分辨率按浏览器上报的视口 × DPR 协商；当前帧率新安装默认 30 fps，可在 CarPlay 设置中选 60 fps 后保存并重新连接。
+   代码已完成（`TeslaBrowserLink`、`TeslaBrowserCanvas`，在 `CarPlayHostActivity` 的 `createMediaEngine` 分出视频），实车测试见 [TESLA_BROWSER.md](TESLA_BROWSER.md) 的清单。
+ - [x] 网络：按下面"热点地址"和"传输层"的决定实现。
+   代码已完成：手机在所有 IPv4 地址的 8080 端口提供协议接口，也提供自带的页面副本（`http://<地址>:8080/play/`，给其他浏览器）；端口被占用时退避重试；Android 17 申请本地网络权限；连接期间持有唤醒锁和低延迟 Wi-Fi 锁。实车测试待做。
+@@ -111,8 +111,8 @@
+     不用流式上传：Chrome 只在 HTTP/2 以上支持流式请求体。
+   - 手机端：普通 HTTP 服务器，监听 8080，开 TCP_NODELAY，发送缓冲设小，积压时丢帧到下一个关键帧并向 iPhone 请求关键帧；
+     返回 CORS 响应头（含 `Access-Control-Allow-Private-Network`），以备浏览器发出本地网络预检。
+-  - 配对：URL 参数带配对码，只允许一个控制端。热点有 WPA 加密，明文 HTTP 的风险可以接受。
+-  - 不需要任何证书、域名解析或证书服务器。
++  - 配对：页面链接片段 `#c=` 带配对码，静态页面服务器收不到片段；页面随后在 `/video` 查询和 `/control`、`/bye` 请求体中发给手机，只允许一个控制端。热点有 WPA 加密，明文 HTTP 的风险可以接受。
++  - 手机 HTTP 接口不需要证书或证书服务器；公网静态页面仍需域名解析和有效 HTTPS 证书。
+   - 风险（都不受我们控制）：Chrome 取消或收紧这条混合内容豁免；特斯拉以后开始弹授权提示（只需用户允许一次）；特斯拉的拦截名单加入 100.64。
+   - Worker 里直接发起 `fetch` 是否享受豁免：公开资料没有定论（2026-10-09 查证）。LNA 规范说该机制同样适用于 Worker，
+     但授权检查依赖关联的 Document；Chrome 文档只说明 Service Worker 和 Shared Worker 需要其来源事先获得授权，未提及 Dedicated Worker。
+@@ -123,15 +123,15 @@
+   - WheelPlay 基于较旧的 DiPlay 快照，没有共同 git 历史，缺少后来的热点和无线可靠性修复，难以再合并上游修复。
+   - 它的主视频路线是 WebRTC → `<video>` → `drawImage`，按其他项目的报告，特斯拉挂挡后 `<video>` 会暂停（推断，未在本车验证）。
+   - 它的音频走安卓或浏览器，和"声音走车辆蓝牙"的方案不同。
+-- [ ] 从 WheelPlay 按需移植以下组件（GPL-3.0，保留署名）：
++- [ ] 评估是否还需要从 WheelPlay 移植以下组件（GPL-3.0，保留署名）；当前已用 `BrowserLinkServer`、`BrowserPairingGate`、`WebMediaSink` 和触摸/统计实现对应主要功能，未完成标记不表示这些功能缺失：
+   - `LanWebServer`：手机端 HTTP 服务器（只提供视频流和控制接口，页面改为公网静态托管）。`LanTls` 不再需要。
+   - `QrPairing`、`RememberedBrowsers`、`TouchLease`：扫码配对、记住已配对浏览器、单一控制端。
+   - `EncodedVideoSink`、`CompressedVideoFrame`：从媒体层接出不解码的码流，作为 `WebMediaSink` 的基础。
+   - 触摸坐标换算，以及浏览器端统计面板（参考 `window.wheelplayStats`）。
+   - 不移植：WebRTC 原生代码（`rtc_bridge.cpp`、libdatachannel）、`<video>` 转画布渲染、JPEG 兼容模式、浏览器音频。
+-- [ ] 增加"手机 + 浏览器"运行模式：跳过 BYD HUD、仪表、ADB、方向盘按键等车机专属功能。
++- [x] 增加"手机 + 浏览器"运行模式：跳过 BYD HUD、仪表、ADB、方向盘按键等车机专属功能。当前产品配置固定选择该模式，界面没有切换开关。
+ - **热点地址**（2026-10-09）：
+-  - [x] 设置项"热点地址"，四种方式（2026-10-09 实现，说明见 `docs/HOTSPOT_ADDRESS.md`），都立即生效、不重新连接：
++  - [x] 设置项"热点地址"，四种方式（2026-10-09 实现，说明见 [HOTSPOT_ADDRESS.md](HOTSPOT_ADDRESS.md)），都立即生效、不重新连接：
+     - 普通（默认）：不加地址，不需要 root。适用于其他车机浏览器，或手机热点网段本身就在 100.64.0.0/10 内。
+     - Root：`ip addr` 加地址；离开这个方式时删除。
+     - VPN（实验性）：只持有地址的 VPN，不需要 root 和 Shizuku；Android 14（2025-01 补丁起）和 15 以上很可能无效，
+@@ -145,7 +145,7 @@
+   - 网卡名不要写死 `wlan2`，按当前热点网卡的地址查找。热点重启后地址会消失，Root 和 Shizuku 方式会自动重新添加。
+   - **免 root（2026-10-09 实测）**：shell 用户（uid 2000，和免 root 的 Shizuku 相同）调用 `network_management` 服务的
+     `setInterfaceConfig("wlan2:tp", 100.109.220.253/32)`，成功把地址加到 wlan2，热点原地址 `10.176.81.135/24` 不受影响
+-    （Android 16，SDK 36，安全补丁 2026-07-01；工具见 `tools/shell-address/`）。
++    （Android 16，SDK 36，安全补丁 2026-07-01；工具见 [shell-address](../tools/shell-address/README.md)）。
+     - 原理：shell 没有 `CAP_NET_ADMIN`，但有 `CONNECTIVITY_INTERNAL`，`NetworkManagementService.setInterfaceConfig` 接受它，
+       再以 system 身份让 netd 加地址。Android 17 源码（`android-17.0.0_r1`）这条链没有变化。
+     - 网卡名必须带别名（`wlan2:tp`）。不带别名时系统会先清空该网卡的 IPv4 地址，热点上的设备全部断网。
+diff --git a/tests/web-e2e/README.md b/tests/web-e2e/README.md
+index d777918..454baef 100644
+--- a/tests/web-e2e/README.md
++++ b/tests/web-e2e/README.md
+@@ -5,7 +5,7 @@ server (protocol v1: `/hello`, `/video`, `/control`, `/bye`, CORS preflights). C
+ 
+ It serves the page from `http://127.0.0.1` under a nested path, which is a secure context, so WebCodecs and the
+ Service Worker work without HTTPS. As on GitHub Pages, the page is the root of that path and a download page lives
+-beside it in `download/`. Headless Chromium decodes VP8 and VP9 but not H.264, so the fake phone streams VP8
++beside it in `download/`. The Chromium used for the recorded checks decodes VP8 and VP9 but not H.264; codec support can differ by build. The fake phone streams VP8
+ (and VP9 for the MSE check).
+ The page does not assume H.264 or HEVC; it configures `VideoDecoder` with whatever codec string the config record names.
+ 
+@@ -65,7 +65,7 @@ classes the way a phone + browser session wires them: `BrowserLinkServer` with a
+ (as the app does over its bundled `assets/play/`), and a `WebVideoHub` fed through `VideoTeeMediaSink` → `WebMediaSink`
+ with an H.264 Annex-B clip. Headless Chromium then opens the page that this server serves. CI does not run it.
+ 
+-This Chromium cannot decode H.264, so the script checks the transport and the page's messages, then repeats with a
++The secure-context run checks the unsupported-H.264 message using the recorded Chromium build; the LAN run checks native MSE support and either playback or the unsupported message. The script then repeats with a
+ `VideoDecoder` stand-in inside the decoder worker that checks every chunk and outputs a plain frame.
+ 
+ ### Requirements
+@@ -93,7 +93,7 @@ NODE_PATH=/tmp/pw/node_modules node tests/web-e2e/phone-run.mjs
+    "This browser cannot decode H.264.", reports its viewport (CSS × DPR), sends a `/control` heartbeat every 400 ms and
+    a stats event, and registers its Service Worker under the served policy.
+ 3. The LAN address (not a secure context; Chromium is told to treat it as a local address, as a hotspot address is):
+-   the MSE rung with the same message, a `targetAddressSpace: "local"` fetch to the phone works, and the served policy
++   the MSE rung with native H.264 playback if supported, or the unsupported message otherwise; a `targetAddressSpace: "local"` fetch to the phone works, and the served policy
+    lets a `<video>` open a `MediaSource` object URL.
+ 4. With the decoder stand-in: the page's `dec` reaches the session's diagnostic handler as `first frame rendered`; key
+    frames arrive as SPS, PPS and IDR slices with 4-byte start codes; a tap at 25 % / 75 % reaches `onTouch` as both
+diff --git a/tools/shell-address/README.md b/tools/shell-address/README.md
+index 6508cd3..7d862e7 100644
+--- a/tools/shell-address/README.md
++++ b/tools/shell-address/README.md
+@@ -7,7 +7,7 @@ tells whether TiPlay's extra hotspot address can work through Shizuku on that ph
+ The interface name must carry an alias (`wlan2:tp`). Without it, the system first clears the interface's IPv4
+ addresses, which cuts every device off the hotspot until it restarts. The tool refuses a name without an alias.
+ 
+-Build (needs a JDK and the Android SDK build tools):
++Run the build from `tools/shell-address/` (needs a JDK and the Android SDK build tools):
+ 
+ ```sh
+ javac --release 11 -d out AddAddr.java
+@@ -24,11 +24,11 @@ adb shell CLASSPATH=/data/local/tmp/addaddr.dex app_process /system/bin AddAddr
+ adb shell ip -4 addr show wlan2
+ ```
+ 
+-The last line printed starts with `RESULT:`:
++A completed service-call check prints a final `RESULT:` line; invalid arguments instead print usage and exit 64:
+ 
+ | Output | Meaning |
+ |---|---|
+-| `OK`, and `ip` shows both addresses | The shell user can add the address; the Shizuku method works on this phone |
++| `OK`, and `ip` shows both addresses | The shell service call can add the address; app authorization and car reachability still need checks |
+ | `File exists` | The permission check passed; the address was already there |
+ | `SecurityException` | The ROM blocks it; the shell user cannot change interface addresses |
+ 

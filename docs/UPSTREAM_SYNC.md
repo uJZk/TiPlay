@@ -304,9 +304,9 @@ python3 scripts/build_site.py && git status --short site
 After the site script, `git status` must list no file. A listed page was not generated again after the merge.
 To check the page with a fake phone in headless Chromium, follow `tests/web-e2e/README.md`.
 
-## 9. The phone + browser default
+## 9. The phone + browser product profile
 
-TiPlay starts in the phone + browser run mode. A merge must not change that.
+Normal TiPlay entry applies `BrowserSettingsPolicy.activate()`: phone + browser mode, car Bluetooth audio on, system day/night mode, location reporting off and the split-screen adaptation setting on. Head-unit configuration remains only for upstream compatibility. A merge must preserve this profile and `BrowserSettingsPolicy.hiddenSections`; an already running session keeps its negotiated configuration.
 
 - `PhoneBrowserModeSettingsTest` must pass. `AirPlayPersistence.loadRunMode` must still fall back to
   `CarPlayRunMode.PHONE_BROWSER`.
@@ -317,10 +317,13 @@ TiPlay starts in the phone + browser run mode. A merge must not change that.
   Code that can run during a session passes the session's controller, as `CarPlayCallKeys` and `WheelKeyService` do,
   so that a running session keeps the mode it connected with.
 - A new Settings card for head-unit hardware goes into `SettingsInformationArchitecture.headUnitOnlySections`.
+  Retained head-unit-only controls must also stay hidden by `BrowserSettingsPolicy` in the browser profile and by
+  `CarPlaySettingsNavigation.additionalSections()` on host settings pages.
 - An upstream test that expects head-unit behavior can fail in the default mode. Call `useHeadUnitMode()` in its setup
   (`common/src/test/java/com/shilapi/xcertplay/HeadUnitRunMode.kt`). Do not change the default to make a test pass.
-- On a phone, install a fresh debug build. Open **Settings → Connection → Tesla browser (experimental)**.
-  **Phone and car browser** must be on.
+- On a phone, install a fresh debug build and open TiPlay normally. Verify that the browser profile is applied,
+  audio stays on the car’s Bluetooth connection and the retained head-unit settings are hidden.
+  The former **Phone and car browser** choice is no longer a user-facing mode switch.
 
 ## Checklist
 

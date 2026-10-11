@@ -6,16 +6,17 @@ TiPlay is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay). Changes t
 
 - The project is now called TiPlay, with the package `com.ujzk.tiplay`. It installs alongside DiPlay and does not reuse DiPlay's settings or pairing records.
 
-## Phone + browser by default
+## Browser receiver profile
 
-- New installs, and installs that never chose a run mode, start in the phone + browser run mode (Settings → Connection → Tesla browser). Head-unit features stay in the app; turn "Phone and car browser" off to use them on a car head unit.
-- In phone + browser mode, CarPlay's car button shows a neutral car icon instead of the BYD logo, and the label "Tesla" while the car button name is still the default "BYD". A custom icon or name is kept. Applies at the next CarPlay connection.
+- TiPlay applies the phone + browser profile when opening the app or CarPlay screen. There is no run-mode switch. The car browser shows CarPlay; BYD HUD/dashboard, ADB and wheel-key controls stay hidden.
+- CarPlay's car button shows a neutral car icon instead of the BYD logo and the label "Tesla" while the saved name is still "BYD". Custom icons and names are kept. Applies at the next CarPlay connection.
+- The profile selects car Bluetooth sound, browser light/dark appearance, no Android location reporting and split-screen areas. Existing sessions keep their negotiated configuration. The CarPlay settings menu retains frame-rate and experimental HEVC choices with **Save and reconnect**.
 
 ## Sound through car Bluetooth
 
-- Settings → Audio has a new experimental choice, "Sound through car Bluetooth", for cars that show CarPlay in their web browser, such as Tesla. When it is on, `/info` leaves out only `audioFormats`, as the Carlinkit `BtAudio=1` mode does; audio latencies, feature bits and Bluetooth IDs stay the same. TiPlay then declines any audio stream the iPhone still opens and starts no audio output, microphone, echo canceller or audio focus. "On, alternative method" also leaves out the audio latencies and audio feature bits. The choice is off by default and applies at the next CarPlay connection. It is not yet verified in a car.
-- The choice appears, and applies, only in the phone + browser run mode; a head unit always plays CarPlay sound itself, whatever was saved.
-- The diagnostic report shows the saved choice, the audio route at each start, the `/info` audio declaration and every audio stream the iPhone asks for.
+- The browser profile selects the Carlinkit-style Bluetooth audio route: `/info` omits `audioFormats` while retaining audio latencies, feature bits and Bluetooth IDs. TiPlay declines audio streams the iPhone still opens and starts no audio output, microphone, echo canceller or audio focus. The complete iPhone-to-car Bluetooth audio flow still needs vehicle validation.
+- The earlier audio-route choice and its alternative variant remain in source, but the current interface hides audio-routing controls and selects the standard route on entry.
+- Diagnostic reports show the saved route, the audio declaration and each audio stream the iPhone requests.
 
 ## Connection reliability
 

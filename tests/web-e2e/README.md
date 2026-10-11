@@ -5,7 +5,7 @@ server (protocol v1: `/hello`, `/video`, `/control`, `/bye`, CORS preflights). C
 
 It serves the page from `http://127.0.0.1` under a nested path, which is a secure context, so WebCodecs and the
 Service Worker work without HTTPS. As on GitHub Pages, the page is the root of that path and a download page lives
-beside it in `download/`. Headless Chromium decodes VP8 and VP9 but not H.264, so the fake phone streams VP8
+beside it in `download/`. The Chromium used for the recorded checks decodes VP8 and VP9 but not H.264; codec support can differ by build. The fake phone streams VP8
 (and VP9 for the MSE check).
 The page does not assume H.264 or HEVC; it configures `VideoDecoder` with whatever codec string the config record names.
 
@@ -65,7 +65,7 @@ classes the way a phone + browser session wires them: `BrowserLinkServer` with a
 (as the app does over its bundled `assets/play/`), and a `WebVideoHub` fed through `VideoTeeMediaSink` → `WebMediaSink`
 with an H.264 Annex-B clip. Headless Chromium then opens the page that this server serves. CI does not run it.
 
-This Chromium cannot decode H.264, so the script checks the transport and the page's messages, then repeats with a
+The secure-context run checks the unsupported-H.264 message using the recorded Chromium build; the LAN run checks native MSE support and either playback or the unsupported message. The script then repeats with a
 `VideoDecoder` stand-in inside the decoder worker that checks every chunk and outputs a plain frame.
 
 ### Requirements
@@ -93,7 +93,7 @@ NODE_PATH=/tmp/pw/node_modules node tests/web-e2e/phone-run.mjs
    "This browser cannot decode H.264.", reports its viewport (CSS × DPR), sends a `/control` heartbeat every 400 ms and
    a stats event, and registers its Service Worker under the served policy.
 3. The LAN address (not a secure context; Chromium is told to treat it as a local address, as a hotspot address is):
-   the MSE rung with the same message, a `targetAddressSpace: "local"` fetch to the phone works, and the served policy
+   the MSE rung with native H.264 playback if supported, or the unsupported message otherwise; a `targetAddressSpace: "local"` fetch to the phone works, and the served policy
    lets a `<video>` open a `MediaSource` object URL.
 4. With the decoder stand-in: the page's `dec` reaches the session's diagnostic handler as `first frame rendered`; key
    frames arrive as SPS, PPS and IDR slices with 4-byte start codes; a tap at 25 % / 75 % reaches `onTouch` as both

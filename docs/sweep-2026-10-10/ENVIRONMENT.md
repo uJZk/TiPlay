@@ -1,5 +1,7 @@
 # Managed build environment recovery
 
+Historical environment and initial validation record from the 2026-10-10 sweep. The commands and installed paths describe that managed workspace; recheck local tool availability before reuse. Later E2E results are recorded in the [2026-10-11 follow-up](FOLLOWUP-2026-10-11.md).
+
 Original blocker: Gradle's Foojay JDK provisioning URL at `api.foojay.io` returned HTTP 403 under the managed destination policy. No policy bypass or project JDK downgrade was used. Installed the required JDK 25 from official permitted distributions; final verification uses Temurin 25, matching CI.
 
 ## Installed tools
@@ -38,4 +40,4 @@ Run with sandboxed network permission for SDK/dependency downloads and local Gra
 
 ## Optional browser E2E retry
 
-Existing Playwright and Chromium allowed the harness to start. The H.264 mux check decoded 30/30 frames; worker VP8 decode, viewport sizing, link handling and touch mapping passed. The harness then failed its stats-event assertion (one field received). Full E2E is not passing; see E2E-VALIDATION.txt. This is separate from the JDK provisioning blocker and the 50/50 passing browser unit suite.
+Existing Playwright and Chromium allowed the harness to start. The H.264 mux check decoded 30/30 frames; worker VP8 decode, viewport sizing, link handling and touch mapping passed. The harness then failed its stats-event assertion (one field received). Full E2E did not pass at this initial checkpoint; see [E2E-VALIDATION.txt](E2E-VALIDATION.txt). This is separate from the JDK provisioning blocker and the 50/50 passing browser unit suite.
