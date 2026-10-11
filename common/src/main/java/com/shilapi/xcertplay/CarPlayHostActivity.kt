@@ -1558,6 +1558,10 @@ class CarPlayHostActivity : ComponentActivity() {
         settingsGestureHint = gestureHint
         stageStatusView = stage
         connectionPanel = viewport
+        // TiPlay's phone receiver measures the layout without a local video surface.
+        if (!headUnitIntegrations()) PhoneBrowserReceiverUi.configure(
+            video, gestureLayer, gestureHint, ::scheduleDisplaySize, ::openSettingsMenu,
+        )
         updateDebugOverlays()
         return root
     }
@@ -4611,6 +4615,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun observeVideoWindow(texture: TextureView) {
+        if (!headUnitIntegrations()) return // TiPlay's browser is the only video renderer.
         val probe = object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
                 if (!texture.isAttachedToWindow) return true
@@ -4811,6 +4816,9 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun updateDebugOverlays() {
         statusScrollView?.visibility = View.GONE
         connectionPanel?.visibility = if (activeScreenStreamTypes.isEmpty()) View.VISIBLE else View.GONE
+        if (!headUnitIntegrations()) PhoneBrowserReceiverUi.update(
+            connectionPanel, gestureOverlay, settingsGestureHint, stageStatusView, activeScreenStreamTypes.isNotEmpty(),
+        )
     }
 
     private fun friendlyStage(message: String): String = when {

@@ -9,7 +9,7 @@ import com.shilapi.xcertplay.airplay.MediaSink
 import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.airplay.VideoCodec
 import com.shilapi.xcertplay.media.AndroidMediaSink
-import com.shilapi.xcertplay.media.VideoTeeMediaSink
+import com.shilapi.xcertplay.media.BrowserOnlyMediaSink
 import com.shilapi.xcertplay.orchestration.CarPlayController
 import com.shilapi.xcertplay.orchestration.CarPlayRunMode
 import com.shilapi.xcertplay.orchestration.MfiTarget
@@ -144,10 +144,10 @@ class CarPlayHostBrowserLinkTest {
         assertEquals(990, config.main.heightPixels)
     }
 
-    @Test fun phoneModeTeesTheMainScreenToTheBrowserAndAHeadUnitDoesNot() {
+    @Test fun phoneModeRoutesVideoOnlyToTheBrowserAndAHeadUnitKeepsItsRenderer() {
         val sink = sink(1182, 920)
         val teed = engineSink(sink)
-        assertTrue(teed is VideoTeeMediaSink)
+        assertTrue(teed is BrowserOnlyMediaSink)
         teed.onVideoCodec(110, VideoCodec.H264)
         teed.onScreenStreamActive(110, true)
         assertEquals(WebVideoHub.StreamInfo(1182, 920, 60, null, null), TeslaBrowserLink.hub.info())
