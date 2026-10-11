@@ -205,6 +205,11 @@ internal object TeslaBrowserLink {
         taps.remove(sink)?.close()
     }
 
+    /** A retained wireless engine starts its next stream with the replacement display's negotiated canvas. */
+    fun updateCanvas(sink: MediaSink, width: Int, height: Int) {
+        taps[sink]?.updateCanvas(width, height)
+    }
+
     /** The 6-digit pairing code; created (SecureRandom) and saved the first time. */
     fun pairingCode(context: Context): String {
         code?.let { return it }

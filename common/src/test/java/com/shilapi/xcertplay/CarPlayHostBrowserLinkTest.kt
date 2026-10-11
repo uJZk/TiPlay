@@ -5,6 +5,7 @@ import android.os.Looper
 import android.view.Surface
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
+import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.MediaSink
 import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.airplay.VideoCodec
@@ -16,6 +17,7 @@ import com.shilapi.xcertplay.orchestration.MfiTarget
 import com.shilapi.xcertplay.web.BrowserViewport
 import com.shilapi.xcertplay.web.WebVideoHub
 import java.util.concurrent.ExecutorService
+import java.time.Duration
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -104,6 +106,17 @@ class CarPlayHostBrowserLinkTest {
         assertTrue(DisplayDiagnosticSnapshot.report(activity).contains("Phone + browser canvas=1182x920"))
     }
 
+    @Test fun phoneModeDeclinesAudioEvenWithLegacyAudioSettingsAndMicrophonePermission() {
+        AirPlayPersistence.saveCarBluetoothAudio(activity, CarBluetoothAudio.OFF)
+        AirPlayPersistence.saveMainBufferedAudio(activity, true)
+        set("microphoneAvailable", true)
+        val config = config(1080, 2200)
+        assertTrue(config.audioViaCarBluetooth)
+        assertFalse(config.receivesAudio)
+        assertFalse(config.microphone)
+        assertFalse(config.mainBufferedAudio)
+    }
+
     @Test fun beforeAnyBrowserSizeThePhoneNegotiates720p() {
         val config = config(1080, 2200)
         assertEquals(1280, config.main.widthPixels)
@@ -182,7 +195,7 @@ class CarPlayHostBrowserLinkTest {
         assertTrue(get("sessionDisplay") != null)
     }
 
-    @Test fun applyAndReconnectReconnectsOnlyWhenTheCanvasDiffers() {
+    @Test fun applyAndReconnectDoesNotRebuildWhenRetainedTransportIsUnavailable() {
         startSession(canvasWidth = 1280, canvasHeight = 720, windowWidth = 1080, windowHeight = 2200)
         set("controller", org.mockito.Mockito.mock(CarPlayController::class.java).also {
             org.mockito.Mockito.`when`(it.phoneBrowserMode()).thenReturn(true)
@@ -195,8 +208,9 @@ class CarPlayHostBrowserLinkTest {
 
         saveViewport(BrowserViewport(1182, 920, 773.0, 601.0, 1.53))
         host.onBrowserFit()
-        assertEquals(1, get("restartGeneration"))
-        assertTrue(get("handshakeResetInProgress") as Boolean)
+        assertEquals("An unavailable retained request does not fall back to full teardown", 0, get("restartGeneration"))
+        assertFalse(get("handshakeResetInProgress") as Boolean)
+        assertEquals(1280, (get("sessionDisplay") as CarPlaySessionDisplay).width)
     }
 
     @Test fun applyAndReconnectDoesNothingWithoutASession() {
@@ -206,25 +220,188 @@ class CarPlayHostBrowserLinkTest {
         assertEquals(0, get("restartGeneration"))
     }
 
-    @Test fun browserResizeReconnectsOnceAfterTheLatestViewportSettles() {
+    @Test fun browserResizeRequestsRetainedTransportImmediatelyAndCoalescesTheLatestCanvas() {
         startSession(1280, 720, 1080, 2200)
-        set("controller", org.mockito.Mockito.mock(CarPlayController::class.java).also {
-            org.mockito.Mockito.`when`(it.phoneBrowserMode()).thenReturn(true)
-        })
+        val current = org.mockito.Mockito.mock(CarPlayController::class.java)
+        org.mockito.Mockito.`when`(current.phoneBrowserMode()).thenReturn(true)
+        set("controller", current)
         val host = get("browserLinkHost") as TeslaBrowserLink.Host
         val first = BrowserViewport(1182, 920, 773.0, 601.0, 1.53)
         saveViewport(first)
+        val firstConfig = config(1080, 2200).main
+        org.mockito.Mockito.`when`(current.reconnectBrowserDisplay(firstConfig)).thenReturn(true)
         host.onBrowserViewport(first)
-        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(300))
-        assertEquals(0, get("restartGeneration"))
+        org.mockito.Mockito.verify(current).reconnectBrowserDisplay(firstConfig)
+        assertEquals("The already-main callback requests a replacement without full teardown", 0, get("restartGeneration"))
+        assertFalse(get("handshakeResetInProgress") as Boolean)
         val latest = BrowserViewport(1600, 900, 1046.0, 588.0, 1.53)
         saveViewport(latest)
+        org.mockito.Mockito.`when`(current.reconnectBrowserDisplay(config(1080, 2200).main)).thenReturn(true)
         host.onBrowserViewport(latest)
-        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(449))
+        assertEquals("Coalescing retains the existing controller", 0, get("restartGeneration"))
+        assertEquals(1600, (get("sessionDisplay") as CarPlaySessionDisplay).width)
+        val nextConfig = config(1080, 2200)
+        assertEquals("The replacement session uses the latest saved viewport", 1600, nextConfig.main.widthPixels)
+        assertEquals(900, nextConfig.main.heightPixels)
+        shadowOf(Looper.getMainLooper()).idle()
         assertEquals(0, get("restartGeneration"))
-        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(1))
-        assertEquals(1, get("restartGeneration"))
-        assertTrue(get("handshakeResetInProgress") as Boolean)
+        assertFalse(get("handshakeResetInProgress") as Boolean)
+    }
+
+    @Test fun browserResizeRespectsShutdownMenuAndHandshakeGuards() {
+        val host = get("browserLinkHost") as TeslaBrowserLink.Host
+        val viewport = BrowserViewport(1600, 900, 1046.0, 588.0, 1.53)
+        for (blockedBy in listOf("shuttingDown", "menuOpen", "handshakeResetInProgress")) {
+            startSession(1280, 720, 1080, 2200)
+            set("controller", org.mockito.Mockito.mock(CarPlayController::class.java).also {
+                org.mockito.Mockito.`when`(it.phoneBrowserMode()).thenReturn(true)
+            })
+            saveViewport(viewport)
+            if (blockedBy == "shuttingDown") (get(blockedBy) as AtomicBoolean).set(true) else set(blockedBy, true)
+            host.onBrowserViewport(viewport)
+            assertEquals("Resize cannot bypass $blockedBy", 0, get("restartGeneration"))
+            if (blockedBy == "shuttingDown") (get(blockedBy) as AtomicBoolean).set(false) else set(blockedBy, false)
+        }
+    }
+
+    @Test fun browserResizeDoesNotReconnectAHeadUnitOrAnUnownedSession() {
+        val host = get("browserLinkHost") as TeslaBrowserLink.Host
+        val viewport = BrowserViewport(1600, 900, 1046.0, 588.0, 1.53)
+        startSession(1280, 720, 1080, 2200)
+        saveViewport(viewport)
+        useHeadUnitMode(activity)
+        set("controller", org.mockito.Mockito.mock(CarPlayController::class.java))
+        host.onBrowserViewport(viewport)
+        assertEquals("Head-unit mode keeps its own canvas", 0, get("restartGeneration"))
+
+        AirPlayPersistence.saveRunMode(activity, CarPlayRunMode.PHONE_BROWSER)
+        set("controller", org.mockito.Mockito.mock(CarPlayController::class.java).also {
+            org.mockito.Mockito.`when`(it.phoneBrowserMode()).thenReturn(true)
+        })
+        CarPlayBackgroundSession::class.java.getDeclaredField("owner").apply { isAccessible = true }
+            .set(CarPlayBackgroundSession, null)
+        host.onBrowserViewport(viewport)
+        assertEquals("Only the session owner can rebuild it", 0, get("restartGeneration"))
+    }
+
+    @Test fun browserResizeRetainsTheControllerAndUpdatesTheNextBrowserStreamCanvas() {
+        startSession(1280, 720, 1080, 2200)
+        val current = org.mockito.Mockito.mock(CarPlayController::class.java)
+        org.mockito.Mockito.`when`(current.phoneBrowserMode()).thenReturn(true)
+        set("controller", current)
+        val renderer = sink(1280, 720)
+        set("sink", renderer)
+        val viewport = BrowserViewport(1600, 900, 1046.0, 588.0, 1.53)
+        saveViewport(viewport)
+        val retained = engineSink(renderer)
+        retained.onVideoCodec(110, VideoCodec.H264)
+        retained.onScreenStreamActive(110, true)
+        org.mockito.Mockito.`when`(current.reconnectBrowserDisplay(config(1080, 2200).main)).thenReturn(true)
+
+        (get("browserLinkHost") as TeslaBrowserLink.Host).onBrowserViewport(viewport)
+
+        assertEquals(0, get("restartGeneration"))
+        assertSame(current, get("controller"))
+        val display = get("sessionDisplay") as CarPlaySessionDisplay
+        assertEquals(1600, display.width)
+        assertEquals(900, display.height)
+        assertEquals("The old stream keeps its old dimensions until it ends", 1280, TeslaBrowserLink.hub.info()?.width)
+        retained.onScreenStreamActive(110, false)
+        retained.onScreenStreamActive(110, true)
+        assertEquals(WebVideoHub.StreamInfo(1600, 900, 60, null, null), TeslaBrowserLink.hub.info())
+    }
+
+    @Test fun retainedBrowserDisplayDoesNotRestartOrCancelAfterTwoSeconds() {
+        startSession(1280, 720, 1080, 2200)
+        val current = org.mockito.Mockito.mock(CarPlayController::class.java)
+        org.mockito.Mockito.`when`(current.phoneBrowserMode()).thenReturn(true)
+        set("controller", current)
+        val viewport = BrowserViewport(1600, 900, 1046.0, 588.0, 1.53)
+        saveViewport(viewport)
+        org.mockito.Mockito.`when`(current.reconnectBrowserDisplay(config(1080, 2200).main)).thenReturn(true)
+        (get("browserLinkHost") as TeslaBrowserLink.Host).onBrowserViewport(viewport)
+        set("menuOpen", true)
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+
+        assertEquals(0, get("restartGeneration"))
+        assertFalse(get("recoveryPendingAfterMenu") as Boolean)
+        org.mockito.Mockito.verify(current, org.mockito.Mockito.never()).cancelBrowserDisplayReconnect()
+    }
+
+    @Test fun retainedBrowserDisplayCoalescesTargetsAndWaitsForAReplacementFrame() {
+        val current = org.mockito.Mockito.mock(CarPlayController::class.java)
+        val source = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        val replacement = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        val first = com.shilapi.xcertplay.airplay.AirPlayDisplayConfig(1600, 900)
+        val last = first.copy(widthPixels = 1920, heightPixels = 1080)
+        val accepted = mutableListOf<com.shilapi.xcertplay.airplay.AirPlayDisplayConfig>()
+        val host = BrowserDisplayReconnectHost { accepted += it }
+        org.mockito.Mockito.`when`(current.reconnectBrowserDisplay(first)).thenReturn(true)
+        assertTrue(host.request(current, source, first))
+        assertTrue(host.expectedEnd(current, source))
+        assertFalse(host.firstFrame(current, source))
+        // /info was accepted already; the final target waits for a proven replacement.
+        assertTrue(host.request(current, source, last))
+        assertEquals(listOf(first), accepted)
+        host.sessionActive(current, replacement)
+        assertTrue(host.firstFrame(current, replacement))
+        assertFalse(host.pending)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        org.mockito.Mockito.verify(current, org.mockito.Mockito.never()).cancelBrowserDisplayReconnect()
+    }
+
+    @Test fun anAdoptedPendingDisplaySuppressesTheUnknownOldEndButNotTheReplacementEnd() {
+        val current = org.mockito.Mockito.mock(CarPlayController::class.java)
+        val old = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        val next = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        val host = BrowserDisplayReconnectHost {}
+        host.adopt(current)
+        assertTrue(host.expectedEnd(current, old))
+        assertFalse(host.firstFrame(current, old))
+        host.sessionActive(current, next)
+        assertTrue(host.expectedEnd(current, old))
+        assertFalse(host.expectedEnd(current, next))
+        org.mockito.Mockito.`when`(current.isBrowserDisplayReconnectPending()).thenReturn(true)
+        assertFalse("The controller must confirm this is a replacement frame", host.firstFrame(current, next))
+        org.mockito.Mockito.`when`(current.isBrowserDisplayReconnectPending()).thenReturn(false)
+        assertTrue("The adopted replacement rechecks any last viewport saved by the old host", host.firstFrame(current, next))
+        assertFalse(host.pending)
+    }
+
+    @Test fun queuedOldHostSessionCallbacksCannotChangeTheSuccessorOwnersLiveState() {
+        val old = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        val replacement = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        set("activeAirPlaySession", old)
+        CarPlayBackgroundSession.active = true
+        val listener = activity.javaClass.getDeclaredMethod("createSessionListener", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, 0) as com.shilapi.xcertplay.airplay.AirPlaySessionListener
+        CarPlayBackgroundSession::class.java.getDeclaredField("owner").apply { isAccessible = true }
+            .set(CarPlayBackgroundSession, Any())
+        listener.onSessionEnded(old)
+        listener.onSessionActive(replacement)
+        listener.onTransportError("old connection error")
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(CarPlayBackgroundSession.active)
+        assertSame(old, get("activeAirPlaySession"))
+        assertEquals(0, get("restartGeneration"))
+    }
+
+    @Test fun anAdoptedReplacementFirstFrameCompletesWithoutAReplayedActiveCallback() {
+        val current = org.mockito.Mockito.mock(CarPlayController::class.java)
+        val replacement = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        set("controller", current)
+        val host = activity.javaClass.getDeclaredMethod("getBrowserDisplayReconnectHost")
+            .apply { isAccessible = true }.invoke(activity) as BrowserDisplayReconnectHost
+        host.adopt(current)
+        val listener = activity.javaClass.getDeclaredMethod("createSessionListener", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, 0) as com.shilapi.xcertplay.airplay.AirPlaySessionListener
+        assertNull(get("activeAirPlaySession"))
+        listener.onVideoFrameRendered(replacement)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertSame(replacement, get("activeAirPlaySession"))
+        assertFalse(host.pending)
+        assertTrue(CarPlayBackgroundSession.active)
     }
 
     private fun saveViewport(viewport: BrowserViewport) {

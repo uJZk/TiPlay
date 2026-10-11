@@ -51,7 +51,7 @@ class BrowserOnlyMediaSinkTest {
             "config", "frame", "frame:7:9", "iap", "android:false", "browser:false"), calls)
     }
 
-    @Test fun audioAndMicrophoneStayOnAndroid() {
+    @Test fun audioAndMicrophoneNeverReachAndroidOrBrowser() {
         val calls = mutableListOf<String>()
         val android = object : MediaSink {
             override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) { calls += "start" }
@@ -76,6 +76,6 @@ class BrowserOnlyMediaSinkTest {
         sink.onAudioStopped(id)
         sink.onMicrophoneStarted(id, microphone)
         sink.onMicrophoneStopped(id)
-        assertEquals(listOf("start", "rtp", "stop", "mic-start", "mic-stop"), calls)
+        assertEquals(emptyList<String>(), calls)
     }
 }

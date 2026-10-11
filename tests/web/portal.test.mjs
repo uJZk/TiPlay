@@ -12,15 +12,16 @@ const functions = ['showPortal', 'resumeCarPlay', 'applyStatus'].map(name => {
 function page() {
   return new Function(`
     let active = true, portalRevision = null, status = null, fitRequestedAt = 0;
-    let releases = 0, resizes = 0;
+    let releases = 0, resizes = 0, viewportCancellations = 0;
     const stage = { hidden: false }, panel = { hidden: true };
     const $ = () => panel;
     const releaseTouches = () => releases++;
+    const cancelViewport = () => viewportCancellations++;
     const onResize = () => resizes++;
     const render = () => {};
     ${functions}
     return { applyStatus, resumeCarPlay, stage, panel,
-      state: () => ({ active, releases, resizes }) };
+      state: () => ({ active, releases, resizes, viewportCancellations }) };
   `)();
 }
 
@@ -31,14 +32,15 @@ test('TiPlay icon returns to the portal once and keeps the session available to 
   p.applyStatus({ portalRevision: 8 });
   assert.equal(p.stage.hidden, true);
   assert.equal(p.panel.hidden, false);
-  assert.deepEqual(p.state(), { active: true, releases: 1, resizes: 0 });
+  assert.deepEqual(p.state(), { active: true, releases: 1, resizes: 0, viewportCancellations: 1 });
   p.resumeCarPlay();
   assert.equal(p.stage.hidden, false);
   assert.equal(p.panel.hidden, true);
   p.applyStatus({ portalRevision: 8 });
-  assert.deepEqual(p.state(), { active: true, releases: 1, resizes: 1 });
+  assert.deepEqual(p.state(), { active: true, releases: 1, resizes: 1, viewportCancellations: 1 });
   p.applyStatus({ portalRevision: 9 });
   assert.equal(p.stage.hidden, true);
+  assert.equal(p.state().viewportCancellations, 2, 'each portal entry cancels any pending viewport report');
 });
 
 test('older phone status without portal notifications keeps the display open', () => {
@@ -46,4 +48,5 @@ test('older phone status without portal notifications keeps the display open', (
   p.applyStatus({ state: 'streaming' });
   assert.equal(p.stage.hidden, false);
   assert.equal(p.state().releases, 0);
+  assert.equal(p.state().viewportCancellations, 0);
 });

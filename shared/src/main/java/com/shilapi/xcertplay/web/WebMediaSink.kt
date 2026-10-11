@@ -12,14 +12,21 @@ import com.shilapi.xcertplay.airplay.VideoCodec
  */
 class WebMediaSink(
     private val hub: WebVideoHub,
-    private val width: Int,
-    private val height: Int,
+    private var width: Int,
+    private var height: Int,
     private val fps: Int,
 ) : MediaSink {
     @Volatile private var codec: VideoCodec? = null
     @Volatile private var recovery: (() -> Unit)? = null
     @Volatile private var diagnostics: ((String) -> Unit)? = null
     private var closed = false // guarded by this
+
+    /** Changes the next stream's canvas; an existing stream retains its negotiated dimensions. */
+    fun updateCanvas(width: Int, height: Int) = synchronized(this) {
+        if (closed) return@synchronized
+        this.width = width
+        this.height = height
+    }
 
     override fun onVideoCodec(type: Int, codec: VideoCodec) {
         if (type == MAIN_SCREEN) this.codec = codec

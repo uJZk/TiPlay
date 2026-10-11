@@ -7,6 +7,9 @@ under "Browser session lifecycle".
 
 ## Current progress
 
+See `docs/BROWSER-RESIZE-2026-10-11.md` for retained-wireless display renegotiation,
+ADB measurements, debug installation, verification and remaining vehicle/recovery validation.
+
 See `docs/APK-RELEASE-2026-10-11.md` for the signed 0.2.13 APK, upstream runtime
 identity provenance, test results, download delivery and pending Release attachment upload.
 `docs/BUILD.md` includes extraction, verification and draft-upload procedures.

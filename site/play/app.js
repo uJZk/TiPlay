@@ -131,7 +131,7 @@ const slots = createTouchSlots();
 let session = null, active = false, phase = 'ready', notice = null;
 let attempt = 0, reconnects = 0, retryTimer = null, retryAt = 0, streamId = 0, videoAbort = null, lastError = null;
 let config = null, live = false, status = null, unsupported = null, videoStats = {};
-let outbox = null, heartbeatTimer = null, statsTimer = null, viewportTimer = null, lastViewport = '';
+let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 const reportAppearance = followAppearance(window.matchMedia('(prefers-color-scheme: dark)'), () => outbox);
 let movePending = false, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
 let statsVisible = false;
@@ -295,6 +295,7 @@ let portalRevision = null;
 
 function showPortal() {
   releaseTouches();
+  cancelViewport();
   stage.hidden = true;
   $('panel').hidden = false;
   render();
@@ -309,6 +310,7 @@ function resumeCarPlay() {
 
 function start() {
   if (active || videoPath.path === 'none') return;
+  cancelViewport();
   portalRevision = null;
   // A fresh session id per start lets "Connect" take the display back after another browser replaced this one.
   session = newSessionId();
@@ -335,6 +337,7 @@ function start() {
 }
 
 function stop(key = null, ...args) {
+  cancelViewport();
   notice = key ? { key, args } : null;
   active = false;
   phase = 'ready';
@@ -593,7 +596,7 @@ document.addEventListener('visibilitychange', () => {
   else keepScreenOn();
 });
 
-// Viewport: the canvas backing store follows at once; the phone hears about it debounced and deduplicated.
+// Viewport: the canvas backing store follows at once; reports share the next frame and omit duplicate sizes.
 function resizeCanvas() {
   if (stage.hidden) return;
   const rect = stage.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
@@ -601,15 +604,21 @@ function resizeCanvas() {
 }
 
 function scheduleViewport() {
-  clearTimeout(viewportTimer);
-  viewportTimer = setTimeout(() => {
+  if (stage.hidden || !outbox || viewportFrame !== null) return;
+  viewportFrame = requestAnimationFrame(() => {
+    viewportFrame = null;
     if (stage.hidden || !outbox) return;
     const rect = stage.getBoundingClientRect();
     const viewport = viewportFor(rect.width, rect.height, window.devicePixelRatio || 1);
     if (!viewport || `${viewport.w}x${viewport.h}` === lastViewport) return;
     lastViewport = `${viewport.w}x${viewport.h}`;
     outbox.push({ k: 'vp', ...viewport }, 'latest');
-  }, 180);
+  }); // Coalesce layout notifications without waiting for a quiet period during a resize.
+}
+
+function cancelViewport() {
+  if (viewportFrame !== null) cancelAnimationFrame(viewportFrame);
+  viewportFrame = null;
 }
 
 const onResize = () => {

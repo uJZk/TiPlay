@@ -1,13 +1,27 @@
 package com.shilapi.xcertplay.media
 
 import com.shilapi.xcertplay.airplay.MediaSink
+import com.shilapi.xcertplay.airplay.AudioFormat
+import com.shilapi.xcertplay.airplay.AudioStreamId
+import com.shilapi.xcertplay.airplay.MicrophoneConfig
 import com.shilapi.xcertplay.airplay.VideoCodec
 
-/** Routes compressed video only to the browser, while Android retains audio and stream lifecycle. */
+/** Routes compressed video to the browser; sound and microphone stay on the iPhone's car Bluetooth link. */
 class BrowserOnlyMediaSink(
     private val android: MediaSink,
     private val browser: MediaSink,
 ) : MediaSink by android {
+    // Keep host screen lifecycle and iAP callbacks, but never allocate Android audio renderers or capture.
+    override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) {}
+
+    override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {}
+
+    override fun onAudioStopped(id: AudioStreamId) {}
+
+    override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) {}
+
+    override fun onMicrophoneStopped(id: AudioStreamId) {}
+
     override fun onVideoCodec(type: Int, codec: VideoCodec) = browser.onVideoCodec(type, codec)
 
     override fun onVideoConfig(type: Int, codecData: ByteArray) = browser.onVideoConfig(type, codecData)

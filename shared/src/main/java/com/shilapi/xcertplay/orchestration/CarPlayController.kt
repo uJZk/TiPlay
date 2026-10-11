@@ -24,6 +24,7 @@ import android.util.Log
 import com.shilapi.xcertplay.airplay.AirPlayListenerIdentity
 import com.shilapi.xcertplay.airplay.AirPlayTcpAccepted
 import com.shilapi.xcertplay.airplay.AirPlayConfig
+import com.shilapi.xcertplay.airplay.AirPlayDisplayConfig
 import com.shilapi.xcertplay.airplay.AirPlayContact
 import com.shilapi.xcertplay.airplay.AirPlayKnobState
 import com.shilapi.xcertplay.airplay.AirPlayDeviceInfo
@@ -218,6 +219,10 @@ class CarPlayController(
     @Volatile private var mux: Iap2UsbMuxHost? = null
     @Volatile private var csm: Iap2Session? = null
     @Volatile private var activeSession: AirPlaySession? = null
+    private val browserDisplayReconnect = BrowserDisplayReconnect()
+    @Volatile private var browserBluetoothBootstrap: RetainedBluetoothBootstrap? = null
+    @Volatile private var wirelessBluetoothTarget: BluetoothDevice? = null
+    @Volatile private var effectiveMainDisplay = airPlayConfig.main
     @Volatile private var requestedDashboardUrl: String? = airPlayConfig.cluster?.initialUrl
     private val clusterUiLock = Any()
     private var clusterUiStream: Pair<AirPlaySession, Int>? = null
@@ -422,6 +427,69 @@ class CarPlayController(
 
     fun hasActiveAirPlayAttachment(): Boolean = synchronized(lifecycleLock) {
         !closed && vpnService?.isAttached() == true
+    }
+
+    fun isBrowserDisplayReconnectPending(): Boolean = browserDisplayReconnect.pending
+
+    fun cancelBrowserDisplayReconnect() = browserDisplayReconnect.cancelPending()
+
+    /** Reopens browser projection while retaining the Wi-Fi listener, hotspot, discovery and MFi. */
+    fun reconnectBrowserDisplay(display: AirPlayDisplayConfig): Boolean = synchronized(lifecycleLock) {
+        synchronized(wirelessResourceLock) {
+            if (closed || config.transport != CarPlayTransport.WIRELESS || config.headUnitIntegrations) return false
+            val service = vpnService ?: return false
+            val owner = firstTcpWatchdog?.listener ?: return false
+            browserDisplayReconnect.retiringSession?.let { retiring ->
+                if (!service.updatePendingWirelessDisplay(owner, display, retiring)) return false
+                effectiveMainDisplay = display
+                debugLog("browser display reconnect coalesced at ${display.widthPixels}x${display.heightPixels}")
+                return true
+            }
+            val session = activeSession ?: return false
+            val tunnel = wirelessTunnelChannel
+            val endpoint = wirelessAirPlayEndpoint ?: return false
+            val device = wirelessBluetoothTarget ?: return false
+            val mfi = mfiSession?.client ?: return false
+            val wireless = wirelessRuntimeIdentification?.wireless ?: return false
+            val bootstrapIdentification = config.identification.forWirelessLink(
+                Iap2WirelessLinkRole.BLUETOOTH_BOOTSTRAP, wireless)
+            if (!browserDisplayReconnect.begin(session, tunnel)) return false
+            val closeDisplay = service.prepareWirelessDisplayReconnect(owner, display, session)
+            if (closeDisplay == null) {
+                browserDisplayReconnect.cancel(tunnel)
+                return false
+            }
+            effectiveMainDisplay = display
+            val bootstrap = RetainedBluetoothBootstrap()
+            browserBluetoothBootstrap?.close()
+            browserBluetoothBootstrap = bootstrap
+            try {
+                Thread({
+                    debugLog("browser display reconnect retaining wireless transport at ${display.widthPixels}x${display.heightPixels}")
+                    try {
+                        closeDisplay()
+                        synchronized(wirelessResourceLock) {
+                            if (closed || browserBluetoothBootstrap !== bootstrap) return@Thread
+                            closeBluetoothBootstrapTransport()
+                        }
+                        bootstrap.run(device, ::connectBluetoothSocket, bootstrapIdentification, endpoint, mfi,
+                            ::debugLog, ::onRouteFrame, ::onArtworkTransfer)
+                    } catch (error: Exception) {
+                        if (!bootstrap.isClosed) {
+                            debugLog("browser display reconnect bootstrap failed")
+                            debugLog("browser display reconnect retained Bluetooth ended", error)
+                        }
+                    } finally {
+                        bootstrap.close()
+                    }
+                }, "tiplay-browser-bootstrap").apply { isDaemon = true }.start()
+                true
+            } catch (_: Exception) {
+                bootstrap.close()
+                browserDisplayReconnect.cancel(tunnel)
+                false
+            }
+        }
     }
 
     fun start() {
@@ -1230,12 +1298,14 @@ class CarPlayController(
                 ?: throw IOException("Bluetooth adapter is unavailable")
             if (!adapter.isEnabled) throw IOException("Bluetooth is not enabled")
             val device = selectWirelessBluetoothDevice(adapter)
+            wirelessBluetoothTarget = device
             val hostBluetoothMac = accessoryBluetoothMac(adapter)
             debugLog(
                 "wireless selected Bluetooth target name=${device.name ?: "unknown"} " +
                     "address=${device.address} localBt=$hostBluetoothMac",
             )
             val wirelessAirPlayConfig = airPlayConfig.copy(
+                main = effectiveMainDisplay,
                 deviceId = deviceIdentifier,
                 btMac = hostBluetoothMac,
             )
@@ -1499,12 +1569,13 @@ class CarPlayController(
                         locationProvider = locationProvider,
                         vehicleStatusProvider = vehicleStatusProvider,
                         onReady = {
-                            onWirelessTunnelReady(generation)
+                            onWirelessTunnelReady(generation, channel)
                         },
                         onIncoming = ::onRouteFrame,
                         onProgress = { message -> debugLog("iAP tunnel $message") },
                     )
                     if (closed || generation != wirelessGeneration.get()) return@execute
+                    if (browserDisplayReconnect.suppressTunnelFailure(channel)) return@execute
                     when (result.terminal) {
                         Iap2WirelessControlTerminal.TIMED_OUT ->
                             onStatus(CarPlayStatus.ControlEnded)
@@ -1512,6 +1583,7 @@ class CarPlayController(
                             onStatus(CarPlayStatus.Failed("Wireless iAP2 tunnel closed"))
                     }
                 } catch (error: Throwable) {
+                    if (browserDisplayReconnect.suppressTunnelFailure(channel)) return@execute
                     if (!closed && generation == wirelessGeneration.get()) {
                         debugLog("tunneled iAP2 control failed", error)
                         onStatus(
@@ -1576,6 +1648,10 @@ class CarPlayController(
                         true
                     }
                 }
+                if (firstFrame && browserDisplayReconnect.pending) {
+                    debugLog("browser display reconnect replacement first frame")
+                }
+                browserDisplayReconnect.completed(session)
                 if (firstFrame) uiListener?.onVideoFrameRendered(session)
             }
 
@@ -1592,11 +1668,23 @@ class CarPlayController(
                 sessionListener.onVideoPlaybackUiRequested(session)
         }
 
+    private fun onWirelessTunnelReady(generation: Int, channel: Iap2Session) {
+        applyWirelessTunnelReady(generation, channel)
+    }
+
     private fun onWirelessTunnelReady(generation: Int) {
+        applyWirelessTunnelReady(generation, null)
+    }
+
+    private fun applyWirelessTunnelReady(generation: Int, channel: Iap2Session?) {
         synchronized(wirelessResourceLock) {
             if (closed || phase != Phase.WIRELESS || generation != wirelessGeneration.get() ||
-                wirelessFailureReported.get()) return
+                wirelessFailureReported.get() ||
+                (channel != null && browserDisplayReconnect.isRetiringTunnel(channel))) return
             wirelessTunnelReady.set(true)
+            val retainedBootstrap = browserBluetoothBootstrap
+            browserBluetoothBootstrap = null
+            retainedBootstrap?.close()
         }
         wirelessConnectionProof.authenticated(generation)
         debugLog("wireless iAP2 tunnel ready; handoffRequested=${wirelessHandoffRequested.get()}")
@@ -2302,12 +2390,18 @@ class CarPlayController(
             wirelessDiagnostics = null
             diagnostics?.close()
             wirelessConnectionProof.clear()
+            browserBluetoothBootstrap?.close()
+            browserBluetoothBootstrap = null
             media.setIapTunnelHandler(null)
             val activeTunnel = wirelessTunnelChannel
             wirelessTunnelChannel = null
             if (activeTunnel != null) closeBestEffort("tunneled iAP2 link") { activeTunnel.close() }
 
             closeBluetoothBootstrapTransport()
+
+            // Let the iPhone observe the lost session while Bonjour sends its goodbye records.
+            // Replacement discovery still waits for the full stack cleanup below to finish.
+            if (service != null && owner != null) closeBestEffort("AirPlay service") { service.detachWireless(owner) }
 
             val activeBonjour = bonjour
             bonjour = null
@@ -2322,8 +2416,6 @@ class CarPlayController(
             wirelessTunnelReady.set(false)
             wirelessActiveReported.set(false)
             wirelessHandoffFellBack.set(false)
-
-            if (service != null && owner != null) closeBestEffort("AirPlay service") { service.detachWireless(owner) }
         }
 
     private fun isBluetoothDeviceConnected(device: BluetoothDevice): Boolean = try {
