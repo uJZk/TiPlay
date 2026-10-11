@@ -728,4 +728,12 @@
     <string name="settings_interface_size">Interface size</string>
     <string name="settings_interface_size_auto">Automatic</string>
     <string name="settings_interface_size_hint">Size of text and controls on TiPlay\'s own screens. Automatic enlarges them on large screens with a low density. CarPlay is not affected.</string>
+    <string name="settings_external_ap_title">Car hotspot / third-party AP</string>
+    <string name="settings_external_ap_hint">Connect Android, iPhone and the car browser to the same external Wi-Fi. This mode does not start an Android hotspot. Use an open or WPA2 network. If the browser cannot reach Android, check AP client isolation.</string>
+    <string name="settings_external_ap_wifi">Open Wi-Fi settings</string>
+    <string name="settings_external_ap_ready">Connected to the configured Wi-Fi.</string>
+    <string name="settings_external_ap_check">Join the configured Wi-Fi in system settings. If the network name is unavailable, check it manually; saving credentials does not join Wi-Fi.</string>
+    <string name="settings_android_address">Android address: %1$s</string>
+    <string name="settings_main_stopping">Stopping…</string>
+    <string name="settings_external_ap_setup">Connect Android, iPhone and the car browser to the same external Wi-Fi. Android does not create a hotspot in this mode.</string>
 </resources>

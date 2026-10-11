@@ -631,4 +631,12 @@
     <string name="settings_interface_size">Tamaño de la interfaz</string>
     <string name="settings_interface_size_auto">Automático</string>
     <string name="settings_interface_size_hint">Tamaño del texto y los controles en las pantallas de TiPlay. Automático los agranda en pantallas grandes de baja densidad. No afecta a CarPlay.</string>
+    <string name="settings_external_ap_title">Punto de acceso del coche / AP externo</string>
+    <string name="settings_external_ap_hint">Conecta Android, el iPhone y el navegador del coche a la misma red Wi-Fi externa. Este modo no inicia un punto de acceso en Android. Usa una red abierta o WPA2. Si el navegador no puede acceder a Android, comprueba el aislamiento de clientes del AP.</string>
+    <string name="settings_external_ap_wifi">Abrir ajustes de Wi-Fi</string>
+    <string name="settings_external_ap_ready">Conectado a la red Wi-Fi configurada.</string>
+    <string name="settings_external_ap_check">Únete a la red Wi-Fi configurada en los ajustes del sistema. Si el nombre no está disponible, compruébalo manualmente; guardar las credenciales no conecta a Wi-Fi.</string>
+    <string name="settings_android_address">Dirección de Android: %1$s</string>
+    <string name="settings_main_stopping">Desconectando…</string>
+    <string name="settings_external_ap_setup">Conecta Android, el iPhone y el navegador del coche a la misma red Wi-Fi externa. Android no crea un punto de acceso en este modo.</string>
 </resources>

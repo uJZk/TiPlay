@@ -139,7 +139,10 @@ internal class HotspotExtraAddressCard(
             blocked.visibility = View.GONE
             return
         }
-        current.text = activity.getString(R.string.settings_hotspot_current_address,
+        current.text = if (AirPlayPersistence.isPhoneBrowserMode(activity)) {
+            activity.getString(R.string.settings_android_address,
+                hotspot.ipv4.joinToString(", ") { "${it.hostAddress.orEmpty()}:${BrowserEndpointSettings.port(app)}" })
+        } else activity.getString(R.string.settings_hotspot_current_address,
             hotspot.ipv4.joinToString(", ") { it.hostAddress.orEmpty() })
         current.setTextColor(colors.muted)
         // With another method, its status line says what happens instead.

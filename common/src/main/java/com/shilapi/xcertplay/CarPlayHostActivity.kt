@@ -457,6 +457,9 @@ class CarPlayHostActivity : ComponentActivity() {
     private var awaitingLocationPermission = false
     private var vpnReady = false
     private var hotspotStatus = HotspotStatus(state = "off")
+    private var browserMainPage: BrowserMainSettingsMenu? = null
+    private var browserMainState: Bundle? = null
+    private var browserConnectionRequested = false
     private var menuOpen = false
     private var settingsOnlyLaunch = false
     private var latestStage = "Preparing CarPlay"
@@ -614,10 +617,12 @@ class CarPlayHostActivity : ComponentActivity() {
         MapMirrors.onChanged = mirrorsChanged
         languagePreferenceAtCreate = AppLocale.preference(this)
         if (isIphoneUsbAttachment(intent)) {
+            browserConnectionRequested = true
             AirPlayPersistence.saveWirelessEnabled(this, false)
         }
         if (!intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false) &&
             savedInstanceState?.getBoolean(CarPlaySettingsNavigation.MENU) != true &&
+            headUnitIntegrations() &&
             runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isFailure) {
             startActivity(Intent(this, DiPlayActivity::class.java))
             finish(); return
@@ -637,6 +642,9 @@ class CarPlayHostActivity : ComponentActivity() {
             resources.getBoolean(R.bool.config_advanced_audio_channel_mapping)
         airPlayIdentity = AirPlayPersistence.loadIdentity(this)
         loadPersistedSettings()
+        browserMainState = savedInstanceState
+        browserConnectionRequested = savedInstanceState?.getBoolean("browser_connection_requested")
+            ?: (!intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false) && DiPlayPreferences.autoConnect(this))
         locationPermissionAvailable = hasFineLocationPermission()
         setContentView(buildContentView())
         applyFullscreenMode()
@@ -648,6 +656,8 @@ class CarPlayHostActivity : ComponentActivity() {
                         closePicturePanel()
                     } else if (menuOpen) {
                         if (safeAreaEditorActive) closeSafeAreaEditor() else cancelSettingsEdits()
+                    } else if (browserMainPage != null) {
+                        moveTaskToBack(true)
                     } else {
                         showDiPlayHome()
                     }
@@ -660,6 +670,16 @@ class CarPlayHostActivity : ComponentActivity() {
                 "transport=${if (wirelessEnabled) "wireless" else "wired"}",
         )
         val reusedBackgroundSession = adoptBackgroundSession()
+        if (browserMainPage != null) {
+            settingsMenu?.visibility = View.VISIBLE
+            browserConnectionRequested = browserConnectionRequested || reusedBackgroundSession || isIphoneUsbAttachment(intent)
+            if (!reusedBackgroundSession && browserConnectionRequested &&
+                runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isFailure) {
+                browserConnectionRequested = false
+                browserMainPage?.showConnectionError(getString(R.string.setup_error_auth))
+            }
+            updateDebugOverlays()
+        }
         microphoneAvailable =
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         microphonePermissionResolved = microphoneAvailable || !headUnitIntegrations()
@@ -668,13 +688,13 @@ class CarPlayHostActivity : ComponentActivity() {
             settingsOnlyLaunch = savedInstanceState?.getBoolean("settings_only_launch") ?: !reusedBackgroundSession
             intent.removeExtra(CarPlaySettingsNavigation.MENU)
             openSettingsMenu()
-            return
+            if (browserMainPage == null) return
         }
         if (reusedBackgroundSession) {
             updateDebugOverlays()
-        } else if (microphonePermissionResolved) {
+        } else if (microphonePermissionResolved && (browserMainPage == null || browserConnectionRequested)) {
             requestStartupPrerequisites()
-        } else {
+        } else if (browserMainPage == null) {
             microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
@@ -834,7 +854,16 @@ class CarPlayHostActivity : ComponentActivity() {
             intent.removeExtra(CarPlaySettingsNavigation.MENU)
             openSettingsMenu()
         }
+        if (browserMainPage != null && intent.getBooleanExtra(CarPlaySettingsNavigation.MAIN, false) &&
+            controller == null && DiPlayPreferences.autoConnect(this)) {
+            if (runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isSuccess) {
+                browserConnectionRequested = true
+                requestStartupPrerequisites()
+            } else browserMainPage?.showConnectionError(getString(R.string.setup_error_auth))
+        }
         if (isIphoneUsbAttachment(intent)) {
+            browserConnectionRequested = true
+            browserMainPage?.transportSelected(false)
             if (wirelessEnabled) {
                 if (menuOpen) cancelSettingsEdits()
                 AirPlayPersistence.saveWirelessEnabled(this, false)
@@ -870,6 +899,7 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (!headUnitIntegrations()) syncBrowserAdvancedSettings()
+        browserMainPage?.refresh()
         HotspotExtraAddressSettings.sync(this) // Resume the address method after its VPN consent dialog.
         val savedNightMode = if (AirPlayPersistence.isPhoneBrowserMode(this)) CarPlayNightMode.SYSTEM else AirPlayPersistence.loadCarPlayNightMode(this)
         val savedThreshold = AirPlayPersistence.loadAmbientLightThreshold(this)
@@ -1270,6 +1300,8 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        browserMainPage?.draft?.retain(outState)
+        outState.putBoolean("browser_connection_requested", browserConnectionRequested)
         outState.putBoolean("carplay_night_active", darkMode)
         outState.putBoolean(CarPlaySettingsNavigation.MENU, menuOpen)
         outState.putBoolean("settings_only_launch", settingsOnlyLaunch)
@@ -1565,7 +1597,7 @@ class CarPlayHostActivity : ComponentActivity() {
             insets
         }
         ViewCompat.requestApplyInsets(viewport)
-        settingsMenu = buildSettingsMenu().apply { visibility = View.GONE }
+        settingsMenu = buildSettingsMenu().apply { visibility = if (browserMainPage != null) View.VISIBLE else View.GONE }
         root.addView(settingsMenu, FrameLayout.LayoutParams(-1, -1))
         safeAreaEditor = buildSafeAreaEditor().apply { visibility = View.GONE }
         root.addView(safeAreaEditor, FrameLayout.LayoutParams(-1, -1))
@@ -1668,6 +1700,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun buildSettingsMenu(): View {
         if (!headUnitIntegrations()) return buildBrowserSettingsMenu()
+        browserMainPage = null
         val overlay = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             isClickable = true
@@ -2083,29 +2116,44 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun buildBrowserSettingsMenu(): View {
-        val menu = BrowserMainSettingsMenu.build(this,
-            wireless = { wirelessEnabled },
-            changeConnectionMode = { wireless ->
-                wirelessEnabled = wireless
-                hotspotStatus = HotspotStatus(state = getString(if (wireless) R.string.hotspot_state_stopped else R.string.hotspot_state_off))
-                updateHotspotStatusBlock()
+        val draft = browserMainPage?.draft ?: BrowserConnectionDraft.load(this, browserMainState)
+        val page = BrowserMainSettingsMenu(this, draft,
+            requestPermissions = { wirelessPermissions.launch(it) },
+            connect = submit@{
+                if (runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isFailure) {
+                    browserMainPage?.showConnectionError(getString(R.string.setup_error_auth))
+                    return@submit
+                }
+                draft.save(this)
+                loadPersistedSettings()
+                browserMainPage?.committed()
+                browserConnectionRequested = true
+                settingsOnlyLaunch = false
+                if (controller != null) restartCarPlay("Settings saved; reconnecting")
                 requestStartupPrerequisites()
             },
-            hotspot = ::buildHotspotModeSection,
-            requestLocalNetwork = { wirelessPermissions.launch(arrayOf(LocalNetworkPermission.PERMISSION)) },
+            disconnect = {
+                browserConnectionRequested = false
+                shutdown(false, "Main page disconnect") {
+                    // A shut-down host owns closed executors; recreate it as an idle receiver.
+                    if (!isDestroyed && !isFinishing) {
+                        intent.putExtra(CarPlaySettingsNavigation.MENU, true)
+                        recreate()
+                    }
+                }
+            },
             advanced = { openAdditionalSettings(SettingsCategory.ADVANCED) },
             about = {
                 startActivity(Intent(this, DiPlayActivity::class.java).putExtra("page", "about")
                     .putExtra(CarPlaySettingsNavigation.MENU, true).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
             },
-            save = ::saveSettingsAndReconnect, cancel = ::cancelSettingsEdits, exit = ::exitApplication,
         )
+        browserMainPage = page
         resolutionValueView = null
-        resolutionPreviewView = menu.preview
-        hotspotStatusView = menu.hotspotStatus
+        resolutionPreviewView = null
+        hotspotStatusView = page.hotspotStatus
         updateHotspotStatusBlock()
-        updateResolutionMenu()
-        return menu.view
+        return page.view
     }
 
     private fun captureSettingsBaseline(): SettingsBaseline {
@@ -3897,6 +3945,12 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         updateHotspotStatus(status)
         val description = status.describe()
+        browserMainPage?.showConnectionError(if (status is CarPlayStatus.Failed) {
+            if (wirelessHotspotMode == WirelessHotspotMode.EXISTING_WIFI &&
+                listOf("Wi-Fi", "network", "SSID", "unreachable").any { description.contains(it, true) })
+                getString(R.string.settings_external_ap_check) + "\n" + getString(R.string.settings_external_ap_hint)
+            else friendlyStage(description)
+        } else null)
         setConnectionStage(description)
         when (status) {
             is CarPlayStatus.Failed -> if (status.wifiResetRequired) {
@@ -4365,6 +4419,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun maybeStartCarPlay() {
+        if (browserMainPage != null && !browserConnectionRequested) return
         if (shuttingDown.get()) return
         if (CarPlayBackgroundSession.hasSession() && !CarPlayBackgroundSession.isOwner(this)) {
             if (!adoptBackgroundSession()) mainHandler.postDelayed({ maybeStartCarPlay() }, 500)
@@ -4507,6 +4562,11 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun openSettingsMenu() {
+        if (browserMainPage != null && !headUnitIntegrations()) {
+            settingsMenu?.visibility = View.VISIBLE
+            updateDebugOverlays()
+            return
+        }
         if (menuOpen) return
         controller?.sendTouch(emptyList())
         loadPersistedSettings()
@@ -4861,6 +4921,11 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun updateDebugOverlays() {
+        browserMainPage?.update(
+            if (activeScreenStreamTypes.isNotEmpty()) getString(R.string.carplay_connected)
+            else if (!browserConnectionRequested && controller == null) getString(R.string.ready_when_you_are)
+            else friendlyStage(latestStage), controller != null,
+        )
         statusScrollView?.visibility = View.GONE
         connectionPanel?.visibility = if (activeScreenStreamTypes.isEmpty()) View.VISIBLE else View.GONE
         if (!headUnitIntegrations()) PhoneBrowserReceiverUi.update(

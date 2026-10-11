@@ -691,4 +691,12 @@
     <string name="settings_interface_size">界面大小</string>
     <string name="settings_interface_size_auto">自动</string>
     <string name="settings_interface_size_hint">TiPlay 自身界面中文字和控件的大小。自动模式会在大尺寸低密度屏幕上放大它们。不影响 CarPlay。</string>
+    <string name="settings_external_ap_title">车载热点／第三方 AP</string>
+    <string name="settings_external_ap_hint">让安卓手机、iPhone 和车机浏览器使用同一外部网络。本模式不会启动安卓热点。使用开放或 WPA2 网络；浏览器无法访问安卓时，请检查 AP 的设备互访设置。</string>
+    <string name="settings_external_ap_wifi">打开 Wi-Fi 设置</string>
+    <string name="settings_external_ap_ready">已连接目标 Wi-Fi。</string>
+    <string name="settings_external_ap_check">请在系统设置中加入目标 Wi-Fi。无法读取网络名称时请手动核对；保存配置不代表系统已加入网络。</string>
+    <string name="settings_android_address">安卓地址：%1$s</string>
+    <string name="settings_main_stopping">正在停止…</string>
+    <string name="settings_external_ap_setup">让安卓手机、iPhone 和车机浏览器使用同一外部 Wi-Fi。本模式不启动安卓热点。</string>
 </resources>

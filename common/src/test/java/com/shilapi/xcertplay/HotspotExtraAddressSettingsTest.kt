@@ -233,7 +233,7 @@ class HotspotExtraAddressSettingsTest {
         val screen = openConnection()
         val blocked = screen.getString(R.string.settings_hotspot_address_blocked)
 
-        assertTrue(shown(screen).contains(screen.getString(R.string.settings_hotspot_current_address, "10.176.81.135")))
+        assertTrue(shown(screen).contains(screen.getString(R.string.settings_android_address, "10.176.81.135:" + BrowserEndpointSettings.port(screen))))
         assertTrue(blocked in shown(screen))
         assertTrue(screen.getString(R.string.settings_hotspot_method_normal_description) in shown(screen))
         assertFalse(shown(screen).any { it.startsWith(screen.getString(R.string.settings_hotspot_extra_address_value) + " · ") })

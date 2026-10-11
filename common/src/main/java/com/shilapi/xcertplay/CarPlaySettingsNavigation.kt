@@ -9,6 +9,10 @@ import com.shilapi.xcertplay.host.R
 /** Additional pages belong to the host menu; controls owned by that menu stay there. */
 internal object CarPlaySettingsNavigation {
     const val MENU = "carplay_settings_menu"
+    const val MAIN = "browser_main_entry"
+
+    fun mainIntent(context: Context) = Intent(context, CarPlayHostActivity::class.java)
+        .putExtra(MAIN, true).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
     private const val CATEGORY = "carplay_settings_category"
 
     fun menuIntent(context: Context) = Intent(context, CarPlayHostActivity::class.java)

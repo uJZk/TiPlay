@@ -9,8 +9,9 @@ under "Browser session lifecycle".
 
 See `docs/RECONNECT-UX-2026-10-11.md` for the pre-rendered reconnect wallpaper,
 portal integration, verification and delivery progress. Follow `docs/WEB-PAIRING-DESIGN.md`
-and `docs/APP-MAIN-PAGE-DESIGN.md` for the latest layout decisions; they remain Markdown
-designs until implemented, including cleanup of non-upstream redundant code.
+and `docs/APP-MAIN-PAGE-DESIGN.md` for the latest layout decisions. The App design is implemented;
+see `docs/APP-MAIN-PAGE-IMPLEMENTATION.md` for draft/session behavior, upstream compatibility
+and verification. The web pairing redesign remains a Markdown design.
 
 See `docs/BROWSER-RESIZE-2026-10-11.md` for retained-wireless display renegotiation,
 ADB measurements, debug installation, verification and remaining vehicle/recovery validation.
@@ -119,7 +120,19 @@ Do not edit Kotlin comments or KDoc only to rename DiPlay.
 The application ID is `com.ujzk.tiplay`; debug builds add `.hudtest`.
 Link issues, releases, downloads and the site to https://github.com/uJZk/DiPlay. Keep links to numbered upstream issues, pull requests and commits, and credits, on https://github.com/shihabal3amri/DiPlay.
 
+## Product scope
+
+TiPlay supports the Android phone + car browser flow only. 本项目不考虑原生车机。
+Do not add or maintain native head-unit product navigation, settings or acceptance tests.
+Upstream native files may remain solely to keep future upstream merges practical; their presence
+is not a commitment to ship or validate a second product mode. Keep shared session, media,
+permission and connection contracts that the phone + browser flow actually uses.
+
 ## Upstream
 
 TiPlay merges upstream DiPlay and contributes nothing back: send no pull requests or patches to https://github.com/shihabal3amri/DiPlay.
+在不影响复用上游后续代码更新可能的前提下，移除冗余代码。
+Clean up TiPlay-owned duplicate or unused code while preserving the ability to reuse future upstream updates.
+Retain upstream files, identifiers and compatibility paths; prefer small hooks into new product-specific files.
+
 Put new features in new files. Give upstream files only small hook edits, and do not rename, move or delete upstream files or identifiers. Follow `docs/UPSTREAM_SYNC.md` to merge.

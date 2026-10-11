@@ -281,6 +281,12 @@ class DiPlayActivity : ComponentActivity() {
         if (intent.getStringExtra("page") != "settings" || intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false)) {
             BrowserSettingsPolicy.activate(this)
         }
+        // TiPlay's main page reuses the host and its session. Retain upstream pages for compatibility.
+        if (savedInstanceState == null && isLauncherIntent(intent) &&
+            AirPlayPersistence.isPhoneBrowserMode(this)) {
+            startActivity(CarPlaySettingsNavigation.mainIntent(this))
+            finish(); return
+        }
         // Back on the home page finishes this activity while the session runs on, so the icon lands here.
         if (savedInstanceState == null && isLauncherIntent(intent) && CarPlayBackgroundSession.hasSession()) {
             openProjection(); finish(); return
@@ -333,6 +339,11 @@ class DiPlayActivity : ComponentActivity() {
         connectionSettingsReturnCategory = null
         // CarPlay runs in its own task, so the launcher icon resumes this one. Settings opened from
         // CarPlay carry a "page" extra, which isLauncherIntent rejects.
+        if (isLauncherIntent(intent) && AirPlayPersistence.isPhoneBrowserMode(this)) {
+            page = "home"
+            startActivity(CarPlaySettingsNavigation.mainIntent(this))
+            return
+        }
         if (isLauncherIntent(intent) && CarPlayBackgroundSession.hasSession()) {
             page = "home"; render(); openProjection(); return
         }
@@ -400,6 +411,7 @@ class DiPlayActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (isFinishing) return
         HotspotExtraAddressSettings.sync(this) // phone + browser mode: keep the car browser's hotspot address
         TeslaBrowserLink.sync(this)
         // Returning from another activity can bring the head unit's own density back.
@@ -1250,6 +1262,7 @@ class DiPlayActivity : ComponentActivity() {
     private fun allSettingsSections(content: LinearLayout) {
         filteredSection(content, SettingsSection.CARPLAY_CONTROLS,
             getString(R.string.carplay_controls), R.drawable.ic_dp_controls) { card ->
+            if (!AirPlayPersistence.isPhoneBrowserMode(this)) {
             val gestureFingers = listOf(2, 3, 4)
             choice(card, getString(R.string.settings_gesture_fingers_label),
                 gestureFingers.map { getString(R.string.settings_gesture_fingers_option, it) },
@@ -1260,6 +1273,7 @@ class DiPlayActivity : ComponentActivity() {
             card.addView(label(getString(R.string.settings_gesture_fingers_hint), 14, MUTED).apply {
                 setPadding(0, dp(10), 0, 0)
             })
+            }
             val drivingSideHint = getString(R.string.place_carplay_s_controls_closer_to_the_driver) +
                 if (hostSettingsPage) "\n" + getString(R.string.settings_browser_next_connection_hint) else ""
             toggle(card, getString(R.string.right_hand_drive), drivingSideHint, AirPlayPersistence.loadRightHandDrive(this)) {

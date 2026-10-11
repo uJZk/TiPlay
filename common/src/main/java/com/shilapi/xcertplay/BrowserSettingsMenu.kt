@@ -28,7 +28,7 @@ internal object BrowserSettingsMenu {
         parent.addView(this, LinearLayout.LayoutParams(-1, -2))
     }
 
-    fun addHotspotAddress(parent: LinearLayout, activity: Activity) {
+    fun addHotspotAddress(parent: LinearLayout, activity: Activity): () -> Unit {
         val rows = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         parent.addView(rows, LinearLayout.LayoutParams(-1, -2))
         fun render() {
@@ -46,9 +46,10 @@ internal object BrowserSettingsMenu {
             }
         }
         render()
+        return ::render
     }
 
-    fun addBrowserLink(parent: LinearLayout, activity: Activity, requestLocalNetwork: () -> Unit) {
+    fun addBrowserLink(parent: LinearLayout, activity: Activity, requestLocalNetwork: () -> Unit): () -> Unit {
         val rows = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         parent.addView(rows, LinearLayout.LayoutParams(-1, -2))
         fun render() {
@@ -62,6 +63,7 @@ internal object BrowserSettingsMenu {
             ).build(rows)
         }
         render()
+        return ::render
     }
 
     fun addConnectOnOpen(parent: LinearLayout) {

@@ -631,4 +631,12 @@
     <string name="settings_interface_size">Размер интерфейса</string>
     <string name="settings_interface_size_auto">Автоматически</string>
     <string name="settings_interface_size_hint">Размер текста и элементов управления на экранах TiPlay. В автоматическом режиме они увеличиваются на больших экранах с низкой плотностью. CarPlay не меняется.</string>
+    <string name="settings_external_ap_title">Точка доступа автомобиля / сторонняя AP</string>
+    <string name="settings_external_ap_hint">Подключите Android, iPhone и браузер автомобиля к одной внешней сети Wi-Fi. Этот режим не создаёт точку доступа на Android. Используйте открытую сеть или WPA2. Если браузер не видит Android, проверьте изоляцию клиентов точки доступа.</string>
+    <string name="settings_external_ap_wifi">Открыть настройки Wi-Fi</string>
+    <string name="settings_external_ap_ready">Подключено к указанной сети Wi-Fi.</string>
+    <string name="settings_external_ap_check">Подключитесь к указанной сети Wi-Fi в системных настройках. Если имя сети недоступно, проверьте его вручную. Сохранение данных не подключает устройство к Wi-Fi.</string>
+    <string name="settings_android_address">Адрес Android: %1$s</string>
+    <string name="settings_main_stopping">Отключение…</string>
+    <string name="settings_external_ap_setup">Подключите Android, iPhone и браузер автомобиля к одной внешней сети Wi-Fi. Android не создаёт точку доступа в этом режиме.</string>
 </resources>

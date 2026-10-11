@@ -631,4 +631,12 @@
     <string name="settings_interface_size">حجم الواجهة</string>
     <string name="settings_interface_size_auto">تلقائي</string>
     <string name="settings_interface_size_hint">حجم النص وعناصر التحكم في شاشات TiPlay. يكبّرها الوضع التلقائي على الشاشات الكبيرة منخفضة الكثافة. لا يتأثر CarPlay.</string>
+    <string name="settings_external_ap_title">نقطة اتصال السيارة / نقطة وصول خارجية</string>
+    <string name="settings_external_ap_hint">وصّل جهاز Android وiPhone ومتصفح السيارة بشبكة Wi-Fi خارجية واحدة. لا يشغّل هذا الوضع نقطة اتصال على Android. استخدم شبكة مفتوحة أو WPA2. إذا تعذّر على المتصفح الوصول إلى Android، فتحقق من عزل الأجهزة في نقطة الوصول.</string>
+    <string name="settings_external_ap_wifi">فتح إعدادات Wi-Fi</string>
+    <string name="settings_external_ap_ready">متصل بشبكة Wi-Fi المحددة.</string>
+    <string name="settings_external_ap_check">انضم إلى شبكة Wi-Fi المحددة من إعدادات النظام. إذا لم يظهر اسم الشبكة، فتحقق منه يدويًا؛ حفظ بيانات الشبكة لا يتصل بها.</string>
+    <string name="settings_android_address">عنوان Android: %1$s</string>
+    <string name="settings_main_stopping">جارٍ قطع الاتصال…</string>
+    <string name="settings_external_ap_setup">وصّل Android وiPhone ومتصفح السيارة بشبكة Wi-Fi خارجية واحدة. لا ينشئ Android نقطة اتصال في هذا الوضع.</string>
 </resources>

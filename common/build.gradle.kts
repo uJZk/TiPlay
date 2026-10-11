@@ -79,3 +79,6 @@ androidComponents {
         variant.sources.assets?.addGeneratedSourceDirectory(bundle, BundleBrowserPage::outputDirectory)
     }
 }
+
+// TiPlay validates the phone + browser product; retain upstream native UI test sources unchanged.
+apply(from = rootProject.file("gradle/tiplay-product-tests.gradle.kts"))
