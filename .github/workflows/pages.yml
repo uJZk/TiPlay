@@ -19,6 +19,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     env:
+      # Current deployment: https://ujzk.github.io/TiPlay/ with SITE_BASE_URL configured in the repository.
       # The site's public address. For a custom domain, set the repository variable SITE_BASE_URL (Settings → Secrets
       # and variables → Actions → Variables), for example https://tiplay.example/. Unset: https://ujzk.github.io/DiPlay/.
       SITE_BASE_URL: ${{ vars.SITE_BASE_URL }}

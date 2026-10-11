@@ -4,8 +4,8 @@ Status: complete — cleanup and authorized queue/lifecycle fixes verified. See 
 
 - Scope: first sweep, TiPlay-owned code only (user excludes upstream original code). See SCOPE.md.
 - upstream-base: `e837efa95e10632aee3e1d6e8c03dcc66c754868`
-- base-commit: `e80a6208e7f17e7432261a2a7ee50ade15155bdd` (final sweep point for the next sweep)
-- current HEAD: `e80a6208e7f17e7432261a2a7ee50ade15155bdd`
+- base-commit: `0f90c0c00f01f9d201a4b49acfd7949a39b7a20b` (completed source sweep point for the next sweep)
+- completed source commit: `0f90c0c00f01f9d201a4b49acfd7949a39b7a20b`; later tie-up changes are documentation only.
 - Initial working tree: clean.
 - Standards: STANDARDS.md, grounded in AGENTS.md and upstream merge policy.
 - Resume: consult TASKS.md; agents own disjoint source files. Each agent writes its own RESULT-<task>.md to avoid concurrent edits; coordinator integrates these into TASKS.md after each batch.
