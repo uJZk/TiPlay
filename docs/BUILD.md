@@ -27,7 +27,7 @@ Use the module name in each build command to select the required application.
 
 Install these tools:
 
-- JDK 25.
+- Eclipse Temurin JDK 25 (the distribution used by CI).
 - Android SDK Platform 37 (`platforms;android-37.0`).
 - Android SDK Build-Tools 36.0.0.
 - Android SDK Platform-Tools.
@@ -139,6 +139,50 @@ Use this APK for a standalone connection test.
 Update the existing test app with the same signing key to keep its settings.
 Different signing keys cannot update the same installed application.
 
+## Extract runtime identity from an upstream APK
+
+When using the experimental identity bundled by upstream, download the selected
+public APK from [upstream DiPlay releases](https://github.com/shihabal3amri/DiPlay/releases).
+Check the APK against that release's published SHA-256 before extracting files.
+Selecting an APK for runtime assets does not merge that upstream version's source
+into TiPlay. See [the identity notice](THIRD_PARTY_NOTICES.md#experimental-authentication-data).
+
+The following example pins the upstream 0.2.17 APK used for the October 11 build.
+Keep this temporary input directory outside the repository. For a different
+upstream release, select its APK name and published hash together.
+
+```sh
+export RELEASE_INPUT_DIR="$(mktemp -d /tmp/tiplay-release-inputs.XXXXXX)"
+gh release download v0.2.17 --repo shihabal3amri/DiPlay \
+  --pattern DiPlay-0.2.17.apk --dir "$RELEASE_INPUT_DIR"
+python3 - <<'PYCODE'
+import hashlib
+import os
+from pathlib import Path
+import zipfile
+
+inputs = Path(os.environ["RELEASE_INPUT_DIR"])
+apk = inputs / "DiPlay-0.2.17.apk"
+expected = "6f6a4e797fb32a01a1e30fb6fcf3bc55c15ddcd7ddcaa436f91e9897657b0db0"
+assert hashlib.sha256(apk.read_bytes()).hexdigest() == expected, "Upstream APK hash mismatch"
+assets = inputs / "runtime-assets" / "offline-mfi"
+assets.mkdir(parents=True)
+assets.chmod(0o700)
+with zipfile.ZipFile(apk) as archive:
+    for name in ("identity.pk8", "certificate.p7b"):
+        data = archive.read("assets/offline-mfi/" + name)
+        assert data, "Empty runtime asset: " + name
+        output = assets / name
+        output.write_bytes(data)
+        output.chmod(0o600)
+PYCODE
+export DIPLAY_AUTH_ASSETS_DIR="$RELEASE_INPUT_DIR/runtime-assets"
+```
+
+Only these two extracted files belong in the runtime assets directory. The Android
+signing keystore is a separate input; never extract a signing key from an APK or
+place a signing keystore under APK assets.
+
 ## Build a release APK
 
 Prepare the runtime assets as described in the car-test procedure.
@@ -152,8 +196,18 @@ Set these environment variables locally:
 | `ANDROID_KEY_ALIAS` | Signing key alias |
 | `ANDROID_KEY_PASSWORD` | Signing key password |
 
-Keep the keystore and passwords outside Git.
-Run the release checks and build:
+Keep the keystore and passwords outside Git. A PKCS12 `.p12` signing keystore is
+supported. Check its password and signing-key entry before building:
+
+```sh
+keytool -list -keystore "$ANDROID_KEYSTORE_PATH" \
+  -storepass:env ANDROID_KEYSTORE_PASSWORD
+```
+
+The configured alias must identify a `PrivateKeyEntry`. Use configured secret
+environment variables rather than putting passwords in command arguments or logs.
+Run the full [CI checks](../.github/workflows/android.yml), including the Node 22
+browser tests, followed by the release checks and build:
 
 ```sh
 ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :mobile:lintRelease :mobile:assembleRelease
@@ -169,6 +223,94 @@ See [the project notices](THIRD_PARTY_NOTICES.md) for the experimental identity 
 The public source archive matches the release tag.
 It excludes runtime identities, signing keys, local configuration, and build output.
 The retired `build-beta.py` helper is no longer part of the build procedure.
+
+## Verify the APK and create a Release draft
+
+Use the SDK Build-Tools selected above to verify the APK signature and manifest:
+
+```sh
+"$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs \
+  mobile/build/outputs/apk/release/mobile-release.apk
+"$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging \
+  mobile/build/outputs/apk/release/mobile-release.apk
+```
+
+Check the release application ID `com.ujzk.tiplay`, the version name/code from
+`mobile/build.gradle.kts`, the API 28 minimum, and the signing certificate fingerprint
+against the selected keystore. Compare both packaged runtime files byte for byte
+with the chosen inputs, and reject additional credential containers:
+
+```sh
+python3 - <<'PYCODE'
+import os
+from pathlib import Path
+import zipfile
+
+assets = Path(os.environ["DIPLAY_AUTH_ASSETS_DIR"])
+expected = {"assets/offline-mfi/identity.pk8", "assets/offline-mfi/certificate.p7b"}
+credential_suffixes = {".pk8", ".p7b", ".pem", ".key", ".p12", ".pfx", ".jks", ".keystore"}
+with zipfile.ZipFile("mobile/build/outputs/apk/release/mobile-release.apk") as archive:
+    found = {name for name in archive.namelist()
+             if Path(name).suffix.lower() in credential_suffixes}
+    assert found == expected, "Unexpected or missing APK credentials"
+    for name in expected:
+        assert archive.read(name) == (assets / name.removeprefix("assets/")).read_bytes()
+PYCODE
+```
+
+Prepare `TiPlay-<version>.apk`, the source ZIP for the exact build commit, and
+`SHA256SUMS.txt` in a release directory outside Git. Run `scripts/check_public_tree.py`
+before archiving the tracked source. Scan the archive as well; omit local signing
+inputs, extracted identities, configuration and build output. Record the exact
+build commit, upstream APK/hash, signing fingerprint, validation and remaining
+vehicle checks in the release notes. Use the version already declared by the
+build; a new version requires an intentional version-name/code update first.
+
+Create a draft rather than a public release:
+
+```sh
+# Set RELEASE_VERSION, RELEASE_COMMIT, RELEASE_OUTPUT_DIR and RELEASE_NOTES_FILE
+# to this build's version, full commit, external asset directory and notes file.
+(
+  cd "$RELEASE_OUTPUT_DIR"
+  sha256sum "TiPlay-$RELEASE_VERSION.apk" "TiPlay-$RELEASE_VERSION-source.zip" > SHA256SUMS.txt
+)
+gh release create "v$RELEASE_VERSION" --repo uJZk/TiPlay --draft \
+  --target "$RELEASE_COMMIT" --title "TiPlay $RELEASE_VERSION" \
+  --notes-file "$RELEASE_NOTES_FILE" \
+  "$RELEASE_OUTPUT_DIR/TiPlay-$RELEASE_VERSION.apk" \
+  "$RELEASE_OUTPUT_DIR/TiPlay-$RELEASE_VERSION-source.zip" \
+  "$RELEASE_OUTPUT_DIR/SHA256SUMS.txt"
+gh release view "v$RELEASE_VERSION" --repo uJZk/TiPlay --json isDraft,assets,url
+```
+
+A failed upload can leave a created draft without attachments. Inspect the draft
+before retrying, then use `gh release upload` to add only missing assets; do not
+create a duplicate draft or overwrite an existing asset without checking it.
+Confirm the draft state and all three attachments after uploading.
+
+GitHub Release metadata uses `api.github.com`; binary attachments use
+`uploads.github.com`. In a managed environment, both need network access and
+working GitHub authentication with repository Contents write permission. A working
+API request alone does not prove upload authentication. If uploads return
+`401 Bad credentials`, preserve the draft and built files, record the upload as
+pending, and fix the upload-host credential binding through the supported
+environment configuration workflow. Do not disable the proxy, TLS verification,
+or print tokens. The currently exposed GitHub connector has no Release attachment
+upload operation and cannot replace this upload step.
+
+### Restricted build environments
+
+When the user home directory is read-only, put tool caches in a writable workspace:
+set `GRADLE_USER_HOME` and `ANDROID_USER_HOME` to external directories, and set
+`JAVA_TOOL_OPTIONS` to include `-Duser.home=<writable-java-home>` for Robolectric.
+Preserve any existing Java options, proxy settings and CA trust. SDK Manager may
+need its explicit `--proxy=http --proxy_host=<host> --proxy_port=<port>` options;
+Gradle may need `systemProp.http.proxyHost`/`proxyPort` and the HTTPS equivalents in
+its external user properties. Use the proxy and trust store provided by the
+selected environment. Temurin 25 matches CI; the October 11 Oracle JDK attempt
+failed during Robolectric crypto-provider initialization and passed after switching
+to Temurin. These are environment settings, not source changes.
 
 ## Correct build problems
 

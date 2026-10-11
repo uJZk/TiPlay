@@ -4,6 +4,10 @@ Instructions for coding agents that work on TiPlay.
 
 ## Current progress
 
+See `docs/APK-RELEASE-2026-10-11.md` for the signed 0.2.13 APK, upstream runtime
+identity provenance, test results, download delivery and pending Release attachment upload.
+`docs/BUILD.md` includes extraction, verification and draft-upload procedures.
+
 See `docs/SETTINGS-UX-2026-10-11.md` for the current main-menu ordering, connection-mode
 migration, automatic radio hints, codec defaults, shared branding, verification and delivery progress.
 
