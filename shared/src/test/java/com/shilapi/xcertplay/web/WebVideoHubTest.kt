@@ -8,6 +8,11 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.Executor
 
 class WebVideoHubTest {
@@ -302,4 +307,127 @@ class WebVideoHubTest {
         assertEquals(WebVideoRecords.KIND_END, subscription.take(5_000)?.kind)
         ender.join()
     }
+    @Test fun rapidConfigurationsEndASlowSubscriberAndReconnectUsesTheLatest() {
+        begin()
+        val slow = hub.subscribe()
+        repeat(1000) { index ->
+            hub.configure(owner, VideoCodec.H264, avcc.copyOf().apply { this[3] = (index % 100).toByte() })
+        }
+        val end = slow.take(0)!!
+        assertEquals(WebVideoRecords.KIND_END, end.kind)
+        assertEquals("slow-consumer", String(end.payload))
+        assertEquals(0, slow.queue.configCount)
+        assertEquals(0, slow.queue.configBytes)
+        assertEquals(0, slow.queue.size)
+        assertEquals(false, hub.snapshot()["viewer"])
+        val latestEpoch = hub.info()!!.epoch
+        val next = hub.subscribe()
+        assertEquals(latestEpoch, next.take(0)!!.epoch)
+        hub.frame(owner, delta(), 0, now)
+        assertNull(next.take(0))
+        hub.frame(owner, idr(), 0, now)
+        assertTrue(next.take(0)!!.keyFrame)
+        slow.close()
+        assertEquals(true, hub.snapshot()["viewer"])
+        next.close()
+        assertNull(next.queue.poll(now))
+    }
+
+    @Test fun queuedKeyFrameBurstsCoalesceAndRetiredCallbacksAreSuppressed() {
+        val tasks = mutableListOf<Runnable>()
+        val hub = WebVideoHub(Executor { tasks += it }, { now })
+        var oldCalls = 0
+        var newCalls = 0
+        hub.beginStream(owner, 640, 480, 60, { oldCalls++ }, {})
+        repeat(1000) { hub.requestKeyFrame(force = true) }
+        assertEquals(1, tasks.size)
+        val nextOwner = Any()
+        hub.beginStream(nextOwner, 640, 480, 60, { newCalls++ }, {})
+        repeat(1000) { hub.requestKeyFrame(force = true) }
+        assertEquals(1, tasks.size)
+        tasks.removeAt(0).run()
+        assertEquals(0, oldCalls)
+        assertEquals(1, newCalls)
+        hub.requestKeyFrame(force = true)
+        hub.endStream(nextOwner)
+        tasks.removeAt(0).run()
+        assertEquals(1, newCalls)
+        // Reusing the same owner is still a new stream generation.
+        hub.beginStream(nextOwner, 640, 480, 60, { newCalls++ }, {})
+        hub.requestKeyFrame(force = true)
+        hub.beginStream(nextOwner, 640, 480, 60, { oldCalls++ }, {})
+        tasks.removeAt(0).run()
+        assertEquals(0, oldCalls)
+        assertEquals(1, newCalls)
+    }
+
+    @Test fun aBlockedRequestRetainsOnlyTheNewestRetryWithoutBlockingStreamChanges() {
+        val executor = Executors.newSingleThreadExecutor()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val recovered = CountDownLatch(1)
+        val oldCalls = AtomicInteger()
+        val newCalls = AtomicInteger()
+        val hub = WebVideoHub(executor)
+        try {
+            hub.beginStream(owner, 640, 480, 60, {
+                oldCalls.incrementAndGet()
+                entered.countDown()
+                check(release.await(5, TimeUnit.SECONDS))
+            }, {})
+            hub.requestKeyFrame(force = true)
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            repeat(1000) { hub.requestKeyFrame(force = true) }
+            hub.endStream(owner)
+            val nextOwner = Any()
+            hub.beginStream(nextOwner, 640, 480, 60, { newCalls.incrementAndGet(); recovered.countDown() }, {})
+            repeat(1000) { hub.requestKeyFrame(force = true) }
+            release.countDown()
+            assertTrue(recovered.await(5, TimeUnit.SECONDS))
+            executor.submit {}.get(5, TimeUnit.SECONDS)
+            assertEquals(1, oldCalls.get())
+            assertEquals(1, newCalls.get())
+            hub.endStream(nextOwner)
+            // An injected executor belongs to the caller and remains usable after teardown.
+            executor.submit {}.get(5, TimeUnit.SECONDS)
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test fun requestsDuringAnActiveCallbackBecomeOneRetry() {
+        val tasks = mutableListOf<Runnable>()
+        val hub = WebVideoHub(Executor { tasks += it }, { now })
+        var calls = 0
+        hub.beginStream(owner, 640, 480, 60, {
+            calls++
+            if (calls == 1) repeat(1000) { hub.requestKeyFrame(force = true) }
+        }, {})
+        hub.requestKeyFrame(force = true)
+        tasks.removeAt(0).run()
+        assertEquals(2, calls)
+        assertTrue(tasks.isEmpty())
+        now += 500_000_000
+        hub.requestKeyFrame()
+        assertEquals(1, tasks.size)
+        tasks.removeAt(0).run()
+        assertEquals(3, calls)
+    }
+
+    @Test fun rejectionAndCallbackFailureAllowLaterRequests() {
+        var reject = true
+        var calls = 0
+        val hub = WebVideoHub(Executor { if (reject) throw RejectedExecutionException() else it.run() }, { now })
+        hub.beginStream(owner, 640, 480, 60, { calls++; error("closed") }, {})
+        hub.requestKeyFrame()
+        reject = false
+        hub.requestKeyFrame()
+        assertEquals(1, calls)
+        now += 500_000_000
+        hub.requestKeyFrame()
+        assertEquals(2, calls)
+    }
+
 }

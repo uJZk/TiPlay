@@ -12,6 +12,7 @@ import {
   timeoutSignal, viewportFor,
 } from './link.js';
 import { followAppearance } from './appearance.js';
+import { pumpChunkStream } from './transport.js';
 
 const STRINGS = {
   en: {
@@ -153,6 +154,7 @@ function streamsTransferable() {
     const stream = new ReadableStream(), channel = new MessageChannel();
     channel.port1.postMessage(stream, [stream]);
     channel.port1.close();
+    channel.port2.close();
     return true;
   } catch (_) {
     return false;
@@ -212,54 +214,64 @@ async function setUpVideo() {
       presenter = (await import('./video.js')).createFramePresenter(canvas);
     }
     worker.onmessage = ({ data }) => {
-      if (data.type === 'frame') presenter.present(data.frame, data.config);
-      else if (data.type === 'stats') onVideoMessage({ type: 'stats', stats: { ...data.stats, ...presenter?.stats() } });
+      if (data.type === 'frame') {
+        try {
+          if (active && data.id === streamId) presenter.present(data.frame, data.config);
+          else data.frame.close();
+        } finally {
+          worker.postMessage({ type: 'frame-ack', frameId: data.frameId });
+        }
+      }
+      else if (data.type === 'stats') onVideoMessage({ type: 'stats', id: data.id, stats: { ...data.stats, ...presenter?.stats() } });
       else onVideoMessage(data);
     };
     worker.onerror = () => stop('noVideo', 'decoder worker failed');
     sink = {
-      open(id, body) {
+      open(id, body, signal) {
         if (path.feed === 'stream') worker.postMessage({ type: 'stream', id, stream: body }, [body]);
-        else pumpChunks(worker, id, body);
+        else {
+          const channel = new MessageChannel();
+          worker.postMessage({ type: 'feed', id, port: channel.port2 }, [channel.port2]);
+          pumpChunkStream(body, channel.port1, signal);
+        }
       },
-      stop: () => worker.postMessage({ type: 'stop' }),
+      stop() { worker.postMessage({ type: 'stop' }); presenter?.close(); },
+      dispose() { worker.postMessage({ type: 'dispose' }); presenter?.dispose(); },
       resize: (width, height) => (presenter ? presenter.resize(width, height) : worker.postMessage({ type: 'resize', width, height })),
     };
   } else if (path.decode === 'main') {
     const { createDecoderPipeline, createFramePresenter } = await import('./video.js');
     const presenter = createFramePresenter(canvas);
     const pipeline = createDecoderPipeline({ post: onVideoMessage, present: presenter.present });
-    setInterval(() => onVideoMessage({ type: 'stats', stats: { ...pipeline.stats(), ...presenter.stats() } }), 1000);
-    sink = { open: pipeline.read, stop: pipeline.stop, resize: presenter.resize };
+    let timer = null;
+    const stop = () => { clearInterval(timer); pipeline.stop(); presenter.close(); };
+    sink = {
+      open(id, body) {
+        stop();
+        pipeline.read(id, body);
+        timer = setInterval(() => onVideoMessage({ type: 'stats', id, stats: { ...pipeline.stats(), ...presenter.stats() } }), 1000);
+      },
+      stop,
+      dispose() { stop(); presenter.dispose(); },
+      resize: presenter.resize,
+    };
   } else if (path.decode === 'mse') {
     const video = $('video');
     canvas.hidden = true;
     video.hidden = false;
     const player = (await import('./mse.js')).createMsePlayer(video, { post: onVideoMessage });
-    setInterval(() => onVideoMessage({ type: 'stats', stats: player.stats() }), 1000);
-    sink = { open: player.read, stop: player.stop, resize: () => {} };
-  }
-}
-
-/** Streams that cannot be transferred: read the body here and transfer each chunk's buffer to the worker. */
-async function pumpChunks(worker, id, body) {
-  const reader = body.getReader();
-  worker.postMessage({ type: 'feed', id });
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (id !== streamId) {
-        reader.cancel().catch(() => {});
-        return;
-      }
-      if (done) break;
-      // Transfer only a buffer that holds just this chunk; anything else is copied first.
-      const chunk = value.byteOffset === 0 && value.byteLength === value.buffer.byteLength ? value : value.slice();
-      worker.postMessage({ type: 'chunk', id, chunk }, [chunk.buffer]);
-    }
-    worker.postMessage({ type: 'feed-end', id });
-  } catch (_) {
-    worker.postMessage({ type: 'feed-end', id, error: 'network' });
+    let timer = null;
+    const stop = () => { clearInterval(timer); player.stop(); };
+    sink = {
+      open(id, body) {
+        stop();
+        player.read(id, body);
+        timer = setInterval(() => onVideoMessage({ type: 'stats', id, stats: player.stats() }), 1000);
+      },
+      stop,
+      dispose() { stop(); player.dispose(); },
+      resize: () => {},
+    };
   }
 }
 
@@ -331,6 +343,7 @@ function sendBye() {
 
 async function connectVideo() {
   const id = ++streamId;
+  sink?.stop();
   clearTimeout(retryTimer);
   videoAbort?.abort();
   live = false;
@@ -360,7 +373,7 @@ async function connectVideo() {
       return;
     }
     if (!response.ok) throw await httpError(response);
-    sink.open(id, response.body);
+    sink.open(id, response.body, abort.signal);
     phase = 'waiting';
     // A phone that restarted while this page stayed open has forgotten the viewport; repeat it once per stream.
     lastViewport = '';
@@ -379,6 +392,8 @@ async function connectVideo() {
 }
 
 function streamEnded(reason) {
+  sink?.stop();
+  videoAbort?.abort();
   live = false;
   releaseTouches();
   if (reason === 'replaced') {
@@ -420,6 +435,7 @@ function controlFailed(error) {
 }
 
 function onVideoMessage(message) {
+  if (!active || message.id !== streamId) return;
   if (message.type === 'alive' && message.id === streamId) attempt = 0;
   else if (message.type === 'config') {
     config = message.config;
@@ -634,11 +650,14 @@ if (requestFullscreen) {
 } else {
   $('fullscreen').hidden = true;
 }
-window.addEventListener('pagehide', () => {
+window.addEventListener('pagehide', event => {
   resumeOnShow = active;
-  if (!active) return;
-  sendBye();
+  if (active) sendBye();
   stop();
+  if (!event.persisted) {
+    if (sink) sink.dispose();
+    else pathReady.then(() => sink?.dispose());
+  }
 });
 window.addEventListener('pageshow', event => {
   if (event.persisted && resumeOnShow) start();

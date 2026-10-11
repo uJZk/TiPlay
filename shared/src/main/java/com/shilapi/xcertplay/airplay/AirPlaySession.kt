@@ -81,7 +81,7 @@ class AirPlaySession(
     internal var deviceBtMac = ""
     internal val activeStreams = linkedSetOf<Int>()
     /** Audio streams the iPhone asked for, as "type/audioType", for the summary at close. */
-    private val audioSetups = CopyOnWriteArrayList<String>()
+    private val audioSetups = AirPlayAudioSetupDiagnostics()
     @Volatile private var recorded = false
 
     /** Counts the iPhone's cluster stream setups; 0 while no cluster stream is up. */
@@ -150,7 +150,7 @@ class AirPlaySession(
         } catch (error: Exception) {
             Log.w(TAG, "airplay media stream teardown failed", error)
         }
-        if (recorded) debugLog(AirPlayAudioDiagnostics.summary(config, audioSetups))
+        if (recorded) debugLog(audioSetups.snapshot().summary(config))
         teardown()
         if (notified.compareAndSet(false, true)) listener.onSessionEnded(this)
     }
@@ -700,7 +700,7 @@ class AirPlaySession(
                 STREAM_TYPE_MAIN_AUDIO, STREAM_TYPE_ALT_AUDIO, STREAM_TYPE_MAIN_HIGH_AUDIO -> {
                     // Car Bluetooth sound: the iPhone should not open audio streams; decline one it opens anyway.
                     val streamResponse = if (config.receivesAudio) media.onAudio(this, type, stream) else null
-                    audioSetups.add(AirPlayAudioDiagnostics.streamLabel(type, stream))
+                    audioSetups.record(type, stream)
                     debugLog(AirPlayAudioDiagnostics.setup(config, type, stream, streamResponse))
                     if (streamResponse != null) {
                         activeStreams.add(type)
@@ -709,7 +709,7 @@ class AirPlaySession(
                 }
                 STREAM_TYPE_MAIN_BUFFERED_AUDIO -> {
                     val streamResponse = if (config.bufferedAudioOutputEnabled) media.onBufferedAudio(this, stream) else null
-                    audioSetups.add(AirPlayAudioDiagnostics.streamLabel(type, stream))
+                    audioSetups.record(type, stream)
                     debugLog(AirPlayAudioDiagnostics.setup(config, type, stream, streamResponse))
                     if (streamResponse != null) {
                         activeStreams.add(type)

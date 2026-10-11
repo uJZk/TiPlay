@@ -62,6 +62,51 @@ class RootShellTest {
         assertTrue((System.nanoTime() - started) / 1_000_000 < 5_000)
     }
 
+    @Test fun inheritedStdoutDoesNotKeepAReaderAliveAfterTimeout() {
+        assumeTrue(File("/bin/sh").canExecute())
+        // This child retains stdout after the direct shell is killed. Do not leave a 30-second reader behind.
+        val pidFile = File.createTempFile("tiplay-root-child", ".pid")
+        try {
+            val command = listOf("/bin/sh", "-c", "sleep 30 & echo \$! > '${pidFile.absolutePath}'; wait")
+            val started = System.nanoTime()
+            assertEquals(RootShell.Result.TimedOut, RootShell.execute(command, "id -u", 200))
+            assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000)
+            assertTrue(Thread.getAllStackTraces().keys.none { it.name == "tiplay-root-output" && it.isAlive })
+        } finally {
+            pidFile.readText().trim().toLongOrNull()?.let { pid ->
+                ProcessBuilder("/bin/kill", pid.toString()).start().waitFor()
+            }
+            pidFile.delete()
+        }
+    }
+
+    @Test fun interruptionStopsTheShellAndPreservesTheCallersInterrupt() {
+        assumeTrue(File("/bin/sh").canExecute())
+        val result = java.util.concurrent.atomic.AtomicReference<RootShell.Result>()
+        val interrupted = java.util.concurrent.atomic.AtomicBoolean()
+        val caller = Thread {
+            result.set(RootShell.execute(listOf("/bin/sh", "-c", "exec sleep 30"), "id -u", 5_000))
+            interrupted.set(Thread.currentThread().isInterrupted)
+        }
+        caller.start()
+        Thread.sleep(100)
+        caller.interrupt()
+        caller.join(2_000)
+        assertTrue(!caller.isAlive)
+        assertEquals(RootShell.Result.TimedOut, result.get())
+        assertTrue(interrupted.get())
+        assertTrue(Thread.getAllStackTraces().keys.none { it.name == "tiplay-root-output" && it.isAlive })
+    }
+
+    @Test fun outputBeyondTheTailLimitStillReportsTheFinalMarker() {
+        assumeTrue(File("/bin/sh").canExecute())
+        val command = listOf("/bin/sh", "-c", "i=0; while [ \$i -lt 2000 ]; do echo abcdefghijklmnopqrstuvwxyz; i=\$((i+1)); done; exec /bin/sh")
+        val result = RootShell.execute(command, "id -u", 5_000) as RootShell.Result.Done
+        assertEquals(0, result.exitCode)
+        assertTrue(result.output.length <= 16_384)
+        assertTrue(result.output.lineSequence().last().matches(Regex("[0-9]+")))
+    }
+
     @Test fun timeoutsAreBounded() {
         assertThrows(IllegalArgumentException::class.java) { RootShell.execute(listOf("/nonexistent/su"), "id -u", 0) }
         assertThrows(IllegalArgumentException::class.java) {

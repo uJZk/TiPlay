@@ -33,6 +33,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -51,13 +53,19 @@ public class RealPhone {
     /** One CarPlay session's media path: the engine's sink (the tee) and the browser tap inside it. */
     record Session(int number, MediaSink engineSink, WebMediaSink tap) {}
 
-    private static final Object OUT = new Object();
+    private static final AsyncLog OUT = new AsyncLog();
     private static volatile Session session;
     private static final AtomicBoolean keyRequested = new AtomicBoolean(false);
     private static final AtomicReference<BrowserViewport> viewport = new AtomicReference<>();
     private static volatile boolean reportViewport = true;
 
     public static void main(String[] args) throws Exception {
+        try (AsyncLog logger = OUT) {
+            run(args);
+        }
+    }
+
+    private static void run(String[] args) throws Exception {
         Map<String, String> options = new HashMap<>();
         for (int i = 0; i + 1 < args.length; i += 2) options.put(args[i].replaceFirst("^--", ""), args[i + 1]);
         Path page = Paths.get(options.getOrDefault("page", "site/play")).toAbsolutePath().normalize();
@@ -69,124 +77,139 @@ public class RealPhone {
         emit("clip", "units", clip.units().size(), "keyUnits", clip.units().stream().filter(AccessUnit::key).count(),
             "source", options.containsKey("clip") ? "file" : "hand-made");
 
-        WebVideoHub hub = new WebVideoHub(Executors.newSingleThreadExecutor(), System::nanoTime, message -> {
-            emit("log", "source", "hub", "message", message);
-            return Unit.INSTANCE;
-        });
-        BrowserLinkServer.Callbacks callbacks = new BrowserLinkServer.Callbacks() {
-            @Override public String code() { return code; }
-
-            // Called once per /control request, so it doubles as the heartbeat counter.
-            @Override public BrowserLinkStatus status() {
-                WebVideoHub.StreamInfo info = hub.info();
-                emit("control");
-                BrowserViewport last = reportViewport ? viewport.get() : null;
-                return new BrowserLinkStatus(
-                    info != null ? BrowserLinkStatus.State.STREAMING : BrowserLinkStatus.State.IDLE,
-                    info == null ? null : info.getCodec(),
-                    info == null ? null : new BrowserSize(info.getWidth(), info.getHeight()),
-                    last == null ? null : last.getSize(),
-                    true,
-                    Map.of("harness", "RealPhone"));
-            }
-
-            @Override public boolean onTouch(List<AirPlayContact> contacts) {
-                List<Object> points = new ArrayList<>();
-                for (AirPlayContact contact : contacts) {
-                    points.add(List.of(contact.getId(), contact.getX(), contact.getY(), contact.getDown()));
-                }
-                emit("touch", "contacts", points);
-                return true;
-            }
-
-            @Override public void onViewport(BrowserViewport next) {
-                viewport.set(next);
-                emit("viewport", "w", next.getWidth(), "h", next.getHeight(), "cw", next.getCssWidth(),
-                    "ch", next.getCssHeight(), "dpr", next.getDevicePixelRatio());
-            }
-
-            @Override public void onFit() { emit("fit"); }
-
-            @Override public void onKey(String name) { emit("key", "name", name); }
-
-            @Override public void onBrowserStats(Map<String, ?> stats) { emit("stats", "values", stats); }
-
-            @Override public void log(String message) { emit("log", "source", "server", "message", message); }
-        };
-        BrowserLinkServer server = new BrowserLinkServer(hub, callbacks, options.getOrDefault("bind", "0.0.0.0"),
-            Integer.parseInt(options.getOrDefault("port", "0")), () -> System.nanoTime() / 1_000_000, name -> {
-                Path file = page.resolve(name).normalize();
-                boolean inside = page.equals(file.getParent());
-                emit("asset", "name", name, "inside", inside);
-                if (!inside || !Files.isRegularFile(file)) return null;
-                try {
-                    return Files.readAllBytes(file);
-                } catch (Exception error) {
-                    return null;
-                }
-            });
-        // start() returns kotlin.Result<Int>, an inline class, so its JVM name is mangled.
-        BrowserLinkServer.class.getMethod("start-d1pmJ48").invoke(server);
-        if (server.getLocalPort() <= 0) {
-            emit("failed", "reason", "the server did not start");
-            System.exit(1);
-        }
-
-        startSession(hub, clip, width, height, fps);
+        ExecutorService hubExecutor = Executors.newSingleThreadExecutor();
         ScheduledExecutorService feeder = Executors.newSingleThreadScheduledExecutor();
-        AtomicInteger next = new AtomicInteger();
-        long frameNanos = 1_000_000_000L / fps;
-        long[] count = {0};
-        feeder.scheduleAtFixedRate(() -> {
-            Session current = session;
-            if (current == null) return;
-            int index = next.get();
-            if (keyRequested.getAndSet(false)) {
-                // The iPhone answers with a byte-identical config and an IDR, which keeps the epoch.
-                current.engineSink().onVideoConfig(MAIN_SCREEN, clip.avcC());
-                for (int step = 0; step < clip.units().size(); step++) {
-                    int candidate = (index + step) % clip.units().size();
-                    if (clip.units().get(candidate).key()) {
-                        index = candidate;
-                        break;
+        BrowserLinkServer server = null;
+        try {
+            WebVideoHub hub = new WebVideoHub(hubExecutor, System::nanoTime, message -> {
+                emit("log", "source", "hub", "message", message);
+                return Unit.INSTANCE;
+            });
+            BrowserLinkServer.Callbacks callbacks = new BrowserLinkServer.Callbacks() {
+                @Override public String code() { return code; }
+
+                // Called once per /control request, so it doubles as the heartbeat counter.
+                @Override public BrowserLinkStatus status() {
+                    WebVideoHub.StreamInfo info = hub.info();
+                    emit("control");
+                    BrowserViewport last = reportViewport ? viewport.get() : null;
+                    return new BrowserLinkStatus(
+                        info != null ? BrowserLinkStatus.State.STREAMING : BrowserLinkStatus.State.IDLE,
+                        info == null ? null : info.getCodec(),
+                        info == null ? null : new BrowserSize(info.getWidth(), info.getHeight()),
+                        last == null ? null : last.getSize(),
+                        true,
+                        Map.of("harness", "RealPhone"));
+                }
+
+                @Override public boolean onTouch(List<AirPlayContact> contacts) {
+                    List<Object> points = new ArrayList<>();
+                    for (AirPlayContact contact : contacts) {
+                        points.add(List.of(contact.getId(), contact.getX(), contact.getY(), contact.getDown()));
+                    }
+                    emit("touch", "contacts", points);
+                    return true;
+                }
+
+                @Override public void onViewport(BrowserViewport next) {
+                    viewport.set(next);
+                    emit("viewport", "w", next.getWidth(), "h", next.getHeight(), "cw", next.getCssWidth(),
+                        "ch", next.getCssHeight(), "dpr", next.getDevicePixelRatio());
+                }
+
+                @Override public void onFit() { emit("fit"); }
+
+                @Override public void onKey(String name) { emit("key", "name", name); }
+
+                @Override public void onBrowserStats(Map<String, ?> stats) { emit("stats", "values", stats); }
+
+                @Override public void log(String message) { emit("log", "source", "server", "message", message); }
+            };
+            server = new BrowserLinkServer(hub, callbacks, options.getOrDefault("bind", "0.0.0.0"),
+                Integer.parseInt(options.getOrDefault("port", "0")), () -> System.nanoTime() / 1_000_000, name -> {
+                    Path file = page.resolve(name).normalize();
+                    boolean inside = page.equals(file.getParent());
+                    emit("asset", "name", name, "inside", inside);
+                    if (!inside || !Files.isRegularFile(file)) return null;
+                    try {
+                        return Files.readAllBytes(file);
+                    } catch (Exception error) {
+                        return null;
+                    }
+                });
+            // start() returns kotlin.Result<Int>, an inline class, so its JVM name is mangled.
+            BrowserLinkServer.class.getMethod("start-d1pmJ48").invoke(server);
+            if (server.getLocalPort() <= 0) {
+                emit("failed", "reason", "the server did not start");
+                throw new IllegalStateException("the server did not start");
+            }
+
+            startSession(hub, clip, width, height, fps);
+            AtomicInteger next = new AtomicInteger();
+            long frameNanos = 1_000_000_000L / fps;
+            long[] count = {0};
+            feeder.scheduleAtFixedRate(() -> {
+                Session current = session;
+                if (current == null) return;
+                int index = next.get();
+                if (keyRequested.getAndSet(false)) {
+                    // The iPhone answers with a byte-identical config and an IDR, which keeps the epoch.
+                    current.engineSink().onVideoConfig(MAIN_SCREEN, clip.avcC());
+                    for (int step = 0; step < clip.units().size(); step++) {
+                        int candidate = (index + step) % clip.units().size();
+                        if (clip.units().get(candidate).key()) {
+                            index = candidate;
+                            break;
+                        }
+                    }
+                }
+                AccessUnit unit = clip.units().get(index);
+                next.set((index + 1) % clip.units().size());
+                current.engineSink().onVideoFrame(MAIN_SCREEN, unit.bytes(), ++count[0] * frameNanos, System.nanoTime());
+            }, frameNanos, frameNanos, TimeUnit.NANOSECONDS);
+            emit("listening", "port", server.getLocalPort(), "page", page.toString());
+
+            BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+            for (String line; (line = input.readLine()) != null; ) {
+                switch (line.trim()) {
+                    case "restart" -> {
+                        // restartCarPlay: TeslaBrowserLink.releaseTap closes the old tap at once; the old stack closes later.
+                        Session retired = session;
+                        retired.tap().close();
+                        next.set(0);
+                        startSession(hub, clip, width, height, fps);
+                        // A retired session whose screen comes up late must not take the hub from the new one.
+                        retired.engineSink().onScreenStreamActive(MAIN_SCREEN, true);
+                        retired.engineSink().onVideoCodec(MAIN_SCREEN, VideoCodec.H264);
+                        retired.engineSink().onVideoConfig(MAIN_SCREEN, clip.avcC());
+                        emit("restarted", "session", session.number());
+                    }
+                    case "fit-on" -> reportViewport = true;
+                    case "fit-off" -> reportViewport = false;
+                    case "quit" -> {
+                        emit("stopped");
+                        return;
+                    }
+                    default -> emit("unknown-command", "line", line);
+                }
+            }
+        } finally {
+            feeder.shutdownNow();
+            try {
+                if (server != null) server.stop();
+            } finally {
+                try {
+                    Session current = session;
+                    session = null;
+                    if (current != null) current.tap().close();
+                } finally {
+                    hubExecutor.shutdownNow();
+                    if (!feeder.awaitTermination(3, TimeUnit.SECONDS) || !hubExecutor.awaitTermination(3, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("harness media executors did not stop");
                     }
                 }
             }
-            AccessUnit unit = clip.units().get(index);
-            next.set((index + 1) % clip.units().size());
-            current.engineSink().onVideoFrame(MAIN_SCREEN, unit.bytes(), ++count[0] * frameNanos, System.nanoTime());
-        }, frameNanos, frameNanos, TimeUnit.NANOSECONDS);
-        emit("listening", "port", server.getLocalPort(), "page", page.toString());
-
-        BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
-        for (String line; (line = input.readLine()) != null; ) {
-            switch (line.trim()) {
-                case "restart" -> {
-                    // restartCarPlay: TeslaBrowserLink.releaseTap closes the old tap at once; the old stack closes later.
-                    Session retired = session;
-                    retired.tap().close();
-                    next.set(0);
-                    startSession(hub, clip, width, height, fps);
-                    // A retired session whose screen comes up late must not take the hub from the new one.
-                    retired.engineSink().onScreenStreamActive(MAIN_SCREEN, true);
-                    retired.engineSink().onVideoCodec(MAIN_SCREEN, VideoCodec.H264);
-                    retired.engineSink().onVideoConfig(MAIN_SCREEN, clip.avcC());
-                    emit("restarted", "session", session.number());
-                }
-                case "fit-on" -> reportViewport = true;
-                case "fit-off" -> reportViewport = false;
-                case "quit" -> {
-                    feeder.shutdownNow();
-                    server.stop();
-                    emit("stopped");
-                    System.exit(0);
-                }
-                default -> emit("unknown-command", "line", line);
-            }
         }
-        feeder.shutdownNow();
-        server.stop();
-        System.exit(0);
     }
 
     private static final AtomicInteger sessions = new AtomicInteger();
@@ -195,24 +218,30 @@ public class RealPhone {
     private static void startSession(WebVideoHub hub, Clip clip, int width, int height, int fps) {
         int number = sessions.incrementAndGet();
         WebMediaSink tap = new WebMediaSink(hub, width, height, fps);
-        MediaSink androidSink = new MediaSink() {}; // stands in for AndroidMediaSink, which needs Android
-        MediaSink tee = new VideoTeeMediaSink(androidSink, tap, error -> {
-            emit("tap-error", "session", number, "error", error.getClass().getSimpleName());
-            return Unit.INSTANCE;
-        });
-        tee.setVideoRecoveryHandler(MAIN_SCREEN, () -> {
-            emit("keyframe-request", "session", number);
-            if (session != null && session.number() == number) keyRequested.set(true);
-            return Unit.INSTANCE;
-        });
-        tee.setVideoDiagnosticHandler(MAIN_SCREEN, message -> {
-            emit("diagnostic", "session", number, "message", message);
-            return Unit.INSTANCE;
-        });
-        tee.onScreenStreamActive(MAIN_SCREEN, true);
-        tee.onVideoCodec(MAIN_SCREEN, VideoCodec.H264);
-        tee.onVideoConfig(MAIN_SCREEN, clip.avcC());
-        session = new Session(number, tee, tap);
+        boolean published = false;
+        try {
+            MediaSink androidSink = new MediaSink() {}; // stands in for AndroidMediaSink, which needs Android
+            MediaSink tee = new VideoTeeMediaSink(androidSink, tap, error -> {
+                emit("tap-error", "session", number, "error", error.getClass().getSimpleName());
+                return Unit.INSTANCE;
+            });
+            tee.setVideoRecoveryHandler(MAIN_SCREEN, () -> {
+                emit("keyframe-request", "session", number);
+                if (session != null && session.number() == number) keyRequested.set(true);
+                return Unit.INSTANCE;
+            });
+            tee.setVideoDiagnosticHandler(MAIN_SCREEN, message -> {
+                emit("diagnostic", "session", number, "message", message);
+                return Unit.INSTANCE;
+            });
+            tee.onScreenStreamActive(MAIN_SCREEN, true);
+            tee.onVideoCodec(MAIN_SCREEN, VideoCodec.H264);
+            tee.onVideoConfig(MAIN_SCREEN, clip.avcC());
+            session = new Session(number, tee, tap);
+            published = true;
+        } finally {
+            if (!published) tap.close();
+        }
     }
 
     /** Splits an x264 Annex-B stream written with aud=1 into access units, and builds the avcC record from its SPS/PPS. */
@@ -220,7 +249,7 @@ public class RealPhone {
         List<int[]> nals = new ArrayList<>(); // {payload start, payload end, type}
         int start = -1;
         for (int i = 0; i + 3 <= stream.length; i++) {
-            boolean three = i + 3 <= stream.length && stream[i] == 0 && stream[i + 1] == 0 && stream[i + 2] == 1;
+            boolean three = stream[i] == 0 && stream[i + 1] == 0 && stream[i + 2] == 1;
             if (!three) continue;
             if (start >= 0) {
                 int end = i;
@@ -307,9 +336,49 @@ public class RealPhone {
         for (int i = 0; i + 1 < fields.length; i += 2) event.put(String.valueOf(fields[i]), fields[i + 1]);
         StringBuilder text = new StringBuilder();
         json(text, event);
-        synchronized (OUT) {
-            System.out.println(text);
-            System.out.flush();
+        OUT.offer(text.toString());
+    }
+
+    /** Callbacks enqueue without stdout I/O. Saturation fails explicitly rather than losing assertion evidence. */
+    static final class AsyncLog implements AutoCloseable {
+        private final ArrayBlockingQueue<String> queue = new ArrayBlockingQueue<>(4096);
+        private final AtomicBoolean overflow = new AtomicBoolean();
+        private volatile boolean closing;
+        private final Thread writer;
+
+        AsyncLog() {
+            writer = new Thread(() -> {
+                try {
+                    while (!closing || !queue.isEmpty()) {
+                        String line = queue.poll(100, TimeUnit.MILLISECONDS);
+                        if (line != null) System.out.println(line);
+                        if (overflow.get()) {
+                            System.out.println("{\"event\":\"tap-error\",\"error\":\"harness log queue overflow\"}");
+                            System.out.flush();
+                            // No critical event can be silently lost while the harness reports success.
+                            System.exit(1);
+                        }
+                    }
+                    System.out.flush();
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                }
+            }, "RealPhone-log");
+            writer.setDaemon(true);
+            writer.start();
+        }
+
+        synchronized void offer(String line) {
+            // Server teardown can finish a daemon callback late; it no longer owns live evidence.
+            if (closing) return;
+            if (!queue.offer(line)) overflow.set(true);
+        }
+
+        @Override public void close() throws InterruptedException {
+            synchronized (this) { closing = true; }
+            writer.join(3000);
+            if (writer.isAlive()) throw new IllegalStateException("harness stdout did not drain within 3 seconds");
+            if (overflow.get()) throw new IllegalStateException("harness log queue overflow");
         }
     }
 

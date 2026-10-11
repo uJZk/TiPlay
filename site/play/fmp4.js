@@ -32,8 +32,8 @@ function concat(parts) {
 }
 
 function box(type, ...parts) {
-  const body = concat(parts);
-  return concat([u32(8 + body.length), ascii(type), body]);
+  const size = 8 + parts.reduce((sum, part) => sum + part.length, 0);
+  return concat([u32(size), ascii(type), ...parts]);
 }
 
 const fullBox = (type, version, flags, ...parts) => box(type, u32(version * 2 ** 24 + flags), ...parts);

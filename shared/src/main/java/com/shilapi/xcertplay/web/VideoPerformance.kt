@@ -12,7 +12,7 @@ internal class VideoPerformance(private val now: () -> Long = System::nanoTime) 
         fun add(value: Double) { values[cursor] = value; cursor = (cursor + 1) % values.size; count = minOf(count + 1, values.size) }
         fun summary(): Map<String, Double>? {
             if (count == 0) return null
-            val sorted = values.copyOf(count).sorted()
+            val sorted = values.copyOf(count).apply { sort() }
             return mapOf("meanMs" to sorted.average(), "p95Ms" to sorted[kotlin.math.ceil(count * .95).toInt() - 1])
         }
     }

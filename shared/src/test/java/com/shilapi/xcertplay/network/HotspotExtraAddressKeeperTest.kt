@@ -204,6 +204,23 @@ class HotspotExtraAddressKeeperTest {
         await { first in onInterface }
     }
 
+    @Test fun restartingTheSameAddressUsesTheNewestEligibilityPredicate() {
+        HotspotExtraAddressKeeper.start(context, first, eligible = { false })
+        Thread.sleep(200)
+        assertTrue(scripts.isEmpty())
+
+        HotspotExtraAddressKeeper.start(context, first, eligible = { true })
+        await { first in onInterface }
+        assertEquals(1, scripts.size)
+
+        HotspotExtraAddressKeeper.start(context, first, eligible = { false })
+        await { HotspotExtraAddressKeeper.state == State.Off }
+        onInterface.clear()
+        repeat(1_000) { HotspotExtraAddressKeeper.checkNow() }
+        Thread.sleep(200)
+        assertEquals(1, scripts.size)
+    }
+
     @Test fun theRootCheckAsksOnceWithThePromptTimeout() {
         HotspotExtraAddressKeeper.rootRefused = true
         assertTrue(HotspotExtraAddressKeeper.checkRoot())

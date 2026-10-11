@@ -24,7 +24,9 @@ internal object CarPlaySettingsNavigation {
     private val hostSections = setOf(SettingsSection.CONNECTION_SETUP, SettingsSection.CARPLAY_CONTROLS,
         SettingsSection.CAR_BUTTON, SettingsSection.LOCATION)
 
-    fun additionalSections(sections: Set<SettingsSection>) = (sections - hostSections).filterTo(linkedSetOf(), BrowserSettingsPolicy::shows)
+    fun additionalSections(sections: Set<SettingsSection>) = sections.filterTo(linkedSetOf()) {
+        it !in hostSections && BrowserSettingsPolicy.shows(it)
+    }
 
     fun addPage(parent: LinearLayout, category: SettingsCategory, open: (SettingsCategory) -> Unit) {
         val context = parent.context

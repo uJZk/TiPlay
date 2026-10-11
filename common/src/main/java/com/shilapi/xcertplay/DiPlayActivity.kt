@@ -54,7 +54,6 @@ import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.network.CarHotspotSettings
 import com.shilapi.xcertplay.network.CarHotspotTethering
 import com.shilapi.xcertplay.network.WifiP2pChannels
-import com.shilapi.xcertplay.orchestration.CarPlayRunMode
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import com.shilapi.xcertplay.settings.SettingsTheme
 import com.shilapi.xcertplay.settings.SettingsWidgets
@@ -1464,7 +1463,6 @@ class DiPlayActivity : ComponentActivity() {
             getString(R.string.car_button_in_carplay), R.drawable.ic_dp_car) { card -> carButtonCard = card; carButtonControls(card) }
         filteredSection(content, SettingsSection.AUDIO_ROUTING,
             getString(R.string.audio_routing), R.drawable.ic_dp_audio) { card ->
-            // Only a car browser needs it (its audience sees it, so it stays in Audio); a head unit plays the sound.
             mediaChannelControl(card)
             navigationChannelControl(card)
             val bufferPresets = com.shilapi.xcertplay.media.MediaAudioBuffer.presets
@@ -3696,7 +3694,7 @@ class DiPlayActivity : ComponentActivity() {
 
     private fun carButtonControls(parent: LinearLayout) {
         val custom = AirPlayPersistence.loadCustomAirPlayIconFile(this)?.let { BitmapFactory.decodeFile(it.absolutePath) }
-        // Phone + browser mode sends a neutral car and "Tesla" instead of the BYD defaults (CarButtonDefaults).
+        // Phone + browser mode uses the neutral car icon and label from CarButtonDefaults.
         val phoneBrowser = AirPlayPersistence.isPhoneBrowserMode(this)
         val phoneIcon = if (phoneBrowser && custom == null) CarButtonDefaults.phoneBrowserIcon(this) else null
         val preview = row().apply { gravity = Gravity.CENTER_VERTICAL }

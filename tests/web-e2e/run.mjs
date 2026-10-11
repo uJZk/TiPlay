@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import { History, listen, closeServer } from './resources.mjs';
 // End-to-end check of site/play against the fake phone in headless Chromium. Not part of CI; see README.md.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -183,7 +184,7 @@ function startPageServer() {
     res.writeHead(200, { 'Content-Type': types[extname(name)] ?? 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(readFileSync(join(PLAY, name)));
   });
-  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)));
+  return listen(server, '127.0.0.1');
 }
 
 const eventsOf = (phone, k, from = 0) => phone.events.slice(from).filter(entry => entry.event.k === k);
@@ -260,25 +261,27 @@ function lanAddress() {
 
 async function main() {
   checkH264Muxing();
-  const pageServer = await startPageServer();
-  const origin = `http://127.0.0.1:${pageServer.address().port}`;
-  // These servers are local, including the non-loopback address used by the MSE check.
-  const browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-proxy-server'] });
-  const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 1.5, hasTouch: true, locale: 'en-US' });
-  let frames = encodeIvf('libvpx');
-  if (frames) log(`encoded ${frames.length} VP8 frames with ffmpeg/libvpx`);
-  else {
-    frames = await encodeInBrowser(context, origin);
-    log(`encoded ${frames.length} VP8 frames with the browser's VideoEncoder`);
-  }
-  if (!frames[0]?.key) throw new Error('the clip must start with a key frame');
-  const phone = await startFakePhone({ code: CODE, frames, width: WIDTH, height: HEIGHT, fps: FPS });
-  const failures = [];
-  const page = await context.newPage();
-  page.on('console', message => { if (message.type() === 'error') failures.push(message.text()); });
-  page.on('pageerror', error => failures.push(error.message));
-  const phoneServers = [phone];
+  let pageServer, browser;
+  const phoneServers = [];
   try {
+    pageServer = await startPageServer();
+    const origin = `http://127.0.0.1:${pageServer.address().port}`;
+    // These servers are local, including the non-loopback address used by the MSE check.
+    browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-proxy-server'] });
+    const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 1.5, hasTouch: true, locale: 'en-US' });
+    let frames = encodeIvf('libvpx');
+    if (frames) log(`encoded ${frames.length} VP8 frames with ffmpeg/libvpx`);
+    else {
+      frames = await encodeInBrowser(context, origin);
+      log(`encoded ${frames.length} VP8 frames with the browser's VideoEncoder`);
+    }
+    if (!frames[0]?.key) throw new Error('the clip must start with a key frame');
+    const phone = await startFakePhone({ code: CODE, frames, width: WIDTH, height: HEIGHT, fps: FPS });
+    phoneServers.push(phone);
+    const failures = new History();
+    const page = await context.newPage();
+    page.on('console', message => { if (message.type() === 'error') failures.push(message.text()); });
+    page.on('pageerror', error => failures.push(error.message));
     const pageUrl = `${origin}${PAGE_PATH}?t=127.0.0.1:${phone.port}#c=${CODE}`;
     await page.goto(pageUrl);
 
@@ -303,7 +306,8 @@ async function main() {
 
     checkTap(await tap(page, phone, 0.25, 0.75), 0.25, 0.75, 'worker');
 
-    const st = await waitFor('a stats event', () => eventsOf(phone, 'st').at(-1)?.event, 8000);
+    const st = await waitFor('decoded stats event', () => eventsOf(phone, 'st').map(entry => entry.event)
+      .find(event => event.v['video.decodedFps'] > 0 && event.v['link.path'] === 'worker'), 8000);
     check(JSON.stringify(st.v).length <= 2048 && st.v['video.decodedFps'] > 0 && st.v['link.path'] === 'worker',
       `stats event with ${Object.keys(st.v).length} fields, including the path`);
 
@@ -371,7 +375,7 @@ async function main() {
     // The worker's scope is the site root, which also holds the download pages: it must leave them to the network.
     await page.evaluate(() => navigator.serviceWorker.ready);
     const download = await context.newPage();
-    const fromWorker = [];
+    const fromWorker = new History();
     download.on('response', response => { if (response.fromServiceWorker()) fromWorker.push(response.url()); });
     const downloaded = await download.goto(`${origin}${DOWNLOAD_PATH}`);
     check(downloaded.ok() && await download.textContent('#download') === 'TiPlay download' &&
@@ -431,12 +435,14 @@ async function main() {
 
     const unexpected = failures.filter(text => !/Failed to load resource|ERR_CONNECTION_RESET|ERR_EMPTY_RESPONSE|network error/i.test(text));
     check(!unexpected.length, `no unexpected page errors${unexpected.length ? `: ${unexpected.join(' | ')}` : ''}`);
+    failures.assertComplete();
+    fromWorker.assertComplete();
+    for (const server of phoneServers) server.assertHistories();
     log('all checks passed');
   } finally {
-    await browser.close();
-    for (const server of phoneServers) await server.close();
-    pageServer.closeAllConnections();
-    pageServer.close();
+    try { await browser?.close(); } finally {
+      try { await Promise.all(phoneServers.map(server => server.close())); } finally { await closeServer(pageServer); }
+    }
   }
 }
 

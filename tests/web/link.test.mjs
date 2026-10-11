@@ -544,3 +544,20 @@ test('stats events are flat, rounded and at most 2 KiB', () => {
   assert.ok(JSON.stringify(flatStats(many)).length <= 2048);
   assert.equal(flatStats({ s: 'x'.repeat(100) }).s.length, 40);
 });
+
+test('stopping a stream unblocks a pending configuration and releases its reader', async () => {
+  let signal;
+  const ends = [];
+  const stream = createRecordStream({
+    onRecord: (_, cancellation) => { signal = cancellation; return new Promise(() => {}); },
+    onEnd: (...args) => ends.push(args),
+  });
+  const body = streamOf([encodeRecord({ kind: RECORD.CONFIG, payload: utf8('{}') })]);
+  const reading = stream.read(1, body);
+  await new Promise(resolve => setImmediate(resolve));
+  stream.stop();
+  await reading;
+  assert.equal(signal.aborted, true);
+  assert.equal(body.locked, false);
+  assert.deepEqual(ends, []);
+});

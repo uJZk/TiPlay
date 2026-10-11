@@ -1,0 +1,731 @@
+COMMIT e80a6208e7f17e7432261a2a7ee50ade15155bdd Record Pages deployment and browser address migration
+
+M	README.md
+M	README.zh-CN.md
+M	docs/SETTINGS-VALIDATION-2026-10-10.md
+M	docs/TESLA_BROWSER.md
+COMMIT 7fbefa08eee662c3d86a54a61ce15ab619d04c6c Unify CarPlay settings for the TiPlay browser profile
+
+M	AGENTS.md
+M	README.md
+M	README.zh-CN.md
+M	common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
+A	common/src/main/java/com/shilapi/xcertplay/BrowserAppearance.kt
+A	common/src/main/java/com/shilapi/xcertplay/BrowserSettingsPolicy.kt
+A	common/src/main/java/com/shilapi/xcertplay/BrowserSettingsPresentation.kt
+M	common/src/main/java/com/shilapi/xcertplay/CarButtonDefaults.kt
+M	common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+A	common/src/main/java/com/shilapi/xcertplay/CarPlaySettingsNavigation.kt
+A	common/src/main/java/com/shilapi/xcertplay/CarPlaySettingsPermissions.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+A	common/src/main/java/com/shilapi/xcertplay/LocalHotspotAutofill.kt
+A	common/src/main/java/com/shilapi/xcertplay/LocalHotspotSettings.kt
+M	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserCanvas.kt
+M	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserLink.kt
+M	common/src/main/java/com/shilapi/xcertplay/settings/DisplaySettingsSection.kt
+A	common/src/main/res/values-ar/strings_carplay_settings.xml
+M	common/src/main/res/values-ar/strings_tesla.xml
+A	common/src/main/res/values-es/strings_carplay_settings.xml
+M	common/src/main/res/values-es/strings_tesla.xml
+A	common/src/main/res/values-ru/strings_carplay_settings.xml
+M	common/src/main/res/values-ru/strings_tesla.xml
+A	common/src/main/res/values-uk/strings_carplay_settings.xml
+M	common/src/main/res/values-uk/strings_tesla.xml
+M	common/src/main/res/values-zh-rCN/strings.xml
+A	common/src/main/res/values-zh-rCN/strings_carplay_settings.xml
+M	common/src/main/res/values-zh-rCN/strings_tesla.xml
+A	common/src/main/res/values-zh-rTW/strings_carplay_settings.xml
+M	common/src/main/res/values-zh-rTW/strings_tesla.xml
+A	common/src/main/res/values/strings_carplay_settings.xml
+M	common/src/main/res/values/strings_tesla.xml
+M	common/src/test/java/com/shilapi/xcertplay/AdaptiveSettingsUiTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/BrowserAppearanceTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/BrowserSettingsPolicyTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarButtonDefaultsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostBrowserLinkTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostResolutionTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostThemeDiagnosticsTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/CarPlaySettingsNavigationTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/ClusterSettingsConsentTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/HotspotExtraAddressSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/InterfaceSizeActivityTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/LocalHotspotSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/LocationReportingSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/NightModeSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/PhoneBrowserModeSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/SystemBarSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/TeslaBrowserLinkSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/WifiDirectChannelSettingsTest.kt
+A	docs/SETTINGS-VALIDATION-2026-10-10.md
+M	docs/TESLA_BROWSER.md
+A	shared/src/main/java/com/shilapi/xcertplay/network/HotspotConfigurationAccess.kt
+M	site/play/app.js
+A	site/play/appearance.js
+M	site/play/sw.js
+A	tests/web/appearance.test.mjs
+COMMIT ba11d917ad780baefd014ec8c848848ac7d38f91 Keep local browser E2E traffic out of system proxies
+
+M	AGENTS.md
+A	docs/E2E-VALIDATION-2026-10-10.md
+M	tests/web-e2e/README.md
+M	tests/web-e2e/phone-run.mjs
+M	tests/web-e2e/run.mjs
+COMMIT 88dfdd69fce046dc73c27be5909631ec70270c46 Merge branch 'worktree-wf_79e90574-2a4-2'
+COMMIT 6b7b8812f35af686271c56575fd41b6df87f33ac Merge branch 'worktree-wf_79e90574-2a4-1'
+COMMIT e43042ecae1718abcb5f128148b953e731fe25d7 Merge the hotspot address methods: Normal, root, VPN and Shizuku
+COMMIT 1ebe82ee0808adc29114f7c1912cc173d9c4c078 Fix review findings in the site-root page move
+
+M	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserLink.kt
+M	common/src/test/java/com/shilapi/xcertplay/TeslaBrowserLinkSettingsTest.kt
+M	docs/TESLA_BROWSER.md
+M	docs/todo.md
+M	scripts/assemble_site.py
+M	site/play/sw.js
+M	tests/web-e2e/README.md
+M	tests/web-e2e/run.mjs
+M	tests/web/page.test.mjs
+A	tests/web/site.test.mjs
+COMMIT 77a0eed6539c89c5750fbcf0d9af49b025e48a9a Fix review findings in the hotspot address chooser
+
+M	common/src/main/java/com/shilapi/xcertplay/HotspotExtraAddressCard.kt
+M	common/src/main/res/values-ar/strings_hotspot_address.xml
+M	common/src/main/res/values-es/strings_hotspot_address.xml
+M	common/src/main/res/values-ru/strings_hotspot_address.xml
+M	common/src/main/res/values-uk/strings_hotspot_address.xml
+M	common/src/main/res/values-zh-rCN/strings_hotspot_address.xml
+M	common/src/main/res/values-zh-rTW/strings_hotspot_address.xml
+M	common/src/main/res/values/strings_hotspot_address.xml
+M	common/src/test/java/com/shilapi/xcertplay/HotspotExtraAddressSettingsTest.kt
+M	docs/HOTSPOT_ADDRESS.md
+COMMIT 73c993bfb394ab731a6ce7aba62fd470cd07b8a1 Fix review findings in the hotspot address methods
+
+M	common/src/main/java/com/shilapi/xcertplay/HotspotExtraAddressCard.kt
+M	common/src/main/java/com/shilapi/xcertplay/HotspotExtraAddressSettings.kt
+M	common/src/main/res/values-ar/strings.xml
+M	common/src/main/res/values-es/strings.xml
+M	common/src/main/res/values-ru/strings.xml
+M	common/src/main/res/values-uk/strings.xml
+M	common/src/main/res/values-zh-rCN/strings.xml
+M	common/src/main/res/values-zh-rTW/strings.xml
+M	common/src/main/res/values/strings.xml
+M	common/src/test/java/com/shilapi/xcertplay/HotspotExtraAddressSettingsTest.kt
+M	docs/HOTSPOT_ADDRESS.md
+M	shared/src/main/java/com/shilapi/xcertplay/network/HotspotAddressVpn.kt
+M	shared/src/main/java/com/shilapi/xcertplay/network/HotspotAddressVpnService.kt
+M	shared/src/main/java/com/shilapi/xcertplay/network/HotspotExtraAddressKeeper.kt
+M	shared/src/main/java/com/shilapi/xcertplay/network/ShizukuHotspotAddress.kt
+M	shared/src/test/java/com/shilapi/xcertplay/network/HotspotAddressVpnTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/network/HotspotExtraAddressKeeperTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/network/HotspotExtraAddressLoopTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/network/NetworkManagementCallTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/network/WirelessHostAddressTest.kt
+COMMIT d76a21d3ffc24d6c8e1d74cc706b98f91b89beaf Publish the TiPlay page at the site root and shorten the car link
+
+M	.github/workflows/pages.yml
+M	.gitignore
+M	README.md
+M	README.zh-CN.md
+M	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserLink.kt
+M	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserPageLinks.kt
+M	common/src/test/java/com/shilapi/xcertplay/TeslaBrowserLinkSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/TeslaBrowserPageLinksTest.kt
+M	docs/TESLA_BROWSER.md
+M	docs/todo.md
+A	scripts/assemble_site.py
+M	scripts/build_site.py
+M	site/ar/index.html
+M	site/es/index.html
+M	site/index.html
+M	site/play/app.js
+M	site/play/link.js
+M	site/play/sw.js
+M	site/ru/index.html
+M	site/uk/index.html
+M	site/zh-Hans/index.html
+M	site/zh-Hant/index.html
+M	tests/web-e2e/README.md
+M	tests/web-e2e/phone-run.mjs
+M	tests/web-e2e/run.mjs
+M	tests/web/link.test.mjs
+M	tests/web/page.test.mjs
+COMMIT 87613ccf00fb4283da675a1a2fa74460225fa0e0 Fix review findings in the upstream merge guide
+
+M	docs/UPSTREAM_SYNC.md
+COMMIT 67268e895fc7cdf14b6ec62c4d4e915b01bf5bea Document how TiPlay merges upstream DiPlay
+
+M	AGENTS.md
+A	docs/UPSTREAM_SYNC.md
+COMMIT afe0d1b1a049981392a03fa11044365f768234a0 Let the driver choose how TiPlay provides the hotspot address
+
+M	common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+A	common/src/main/java/com/shilapi/xcertplay/HotspotAddressMethod.kt
+M	common/src/main/java/com/shilapi/xcertplay/HotspotExtraAddressCard.kt
+M	common/src/main/java/com/shilapi/xcertplay/HotspotExtraAddressSettings.kt
+M	common/src/main/res/values-ar/strings_hotspot_address.xml
+M	common/src/main/res/values-es/strings_hotspot_address.xml
+M	common/src/main/res/values-ru/strings_hotspot_address.xml
+M	common/src/main/res/values-uk/strings_hotspot_address.xml
+M	common/src/main/res/values-zh-rCN/strings_hotspot_address.xml
+M	common/src/main/res/values-zh-rTW/strings_hotspot_address.xml
+M	common/src/main/res/values/strings_hotspot_address.xml
+M	common/src/test/java/com/shilapi/xcertplay/AdaptiveSettingsUiTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/HotspotExtraAddressSettingsTest.kt
+A	docs/HOTSPOT_ADDRESS.md
+M	docs/THIRD_PARTY_NOTICES.md
+A	docs/licenses/dependencies/Shizuku-API-LICENSE.txt
+M	docs/todo.md
+M	gradle/libs.versions.toml
+M	shared/build.gradle
+M	shared/src/main/AndroidManifest.xml
+A	shared/src/main/java/com/shilapi/xcertplay/network/HotspotAddressBackend.kt
+A	shared/src/main/java/com/shilapi/xcertplay/network/HotspotAddressVpn.kt
+A	shared/src/main/java/com/shilapi/xcertplay/network/HotspotAddressVpnService.kt
+M	shared/src/main/java/com/shilapi/xcertplay/network/HotspotAddresses.kt
+M	shared/src/main/java/com/shilapi/xcertplay/network/HotspotExtraAddress.kt
+M	shared/src/main/java/com/shilapi/xcertplay/network/HotspotExtraAddressKeeper.kt
+A	shared/src/main/java/com/shilapi/xcertplay/network/ShizukuHotspotAddress.kt
+A	shared/src/test/java/com/shilapi/xcertplay/network/HotspotAddressBackendTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/network/HotspotAddressVpnTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/network/HotspotExtraAddressKeeperTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/network/HotspotExtraAddressLoopTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/network/HotspotExtraAddressTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/network/NetworkManagementCallTest.kt
+M	tools/shell-address/AddAddr.java
+M	tools/shell-address/README.md
+COMMIT 3487cee688e4c9a5ea8922fec2ca26008f02f882 Merge branch 'worktree-wf_806f971f-856-1'
+COMMIT 95efa59ad41ce74a6850ec26367d55ea3640dbd3 Fix review findings in the browser link wiring
+
+M	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserLink.kt
+M	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserLinkCard.kt
+M	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserPageLinks.kt
+M	common/src/test/java/com/shilapi/xcertplay/TeslaBrowserLinkSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/TeslaBrowserPageLinksTest.kt
+M	docs/TESLA_BROWSER.md
+M	shared/src/main/java/com/shilapi/xcertplay/web/BrowserLinkServer.kt
+M	shared/src/test/java/com/shilapi/xcertplay/web/BrowserLinkPageTest.kt
+M	tests/web-e2e/README.md
+A	tests/web-e2e/RealPhone.java
+A	tests/web-e2e/phone-run.mjs
+COMMIT 0a8e24c8ae34dfa4d0fcf7e20c7069256da473d2 Keep the phone address in the page URL as ?t= for bookmarks
+
+M	site/play/app.js
+M	site/play/link.js
+M	tests/web-e2e/run.mjs
+M	tests/web/link.test.mjs
+COMMIT eb44547feee512e54adfb7457eb3b6538ae8e5cc Fix review findings in the browser link wiring
+
+M	common/src/main/java/com/shilapi/xcertplay/LocalNetworkPermission.kt
+M	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserLinkCard.kt
+A	common/src/test/java/com/shilapi/xcertplay/LocalNetworkPermissionTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/TeslaBrowserLinkSettingsTest.kt
+M	shared/src/main/java/com/shilapi/xcertplay/web/WebMediaSink.kt
+M	shared/src/test/java/com/shilapi/xcertplay/web/WebMediaSinkTest.kt
+COMMIT 57218f55945c2c6b4cdd8ade745e9c410e23c1c7 Defer the VPN address idea until root and Shizuku both fail
+
+M	docs/todo.md
+COMMIT 4a6478c279e77274cf2f477531d165b3a22de706 Record that the shell user can add the hotspot address without root
+
+M	docs/todo.md
+COMMIT d238bc4a1dd831c228956c16781e7910d4c3cdd2 Add a tool that checks whether the shell user can add the hotspot address
+
+A	tools/shell-address/AddAddr.java
+A	tools/shell-address/README.md
+COMMIT 376f280dcb6a42016e7e5d41f6260a6c0a89f9e6 Wire the Tesla browser link into the app and serve the page from the phone
+
+M	README.md
+M	README.zh-CN.md
+M	common/build.gradle.kts
+M	common/src/main/AndroidManifest.xml
+M	common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlaySessionService.kt
+A	common/src/main/java/com/shilapi/xcertplay/LocalNetworkPermission.kt
+A	common/src/main/java/com/shilapi/xcertplay/PhoneBrowserLocks.kt
+A	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserCanvas.kt
+A	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserLink.kt
+A	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserLinkCard.kt
+A	common/src/main/java/com/shilapi/xcertplay/TeslaBrowserPageLinks.kt
+A	common/src/main/res/values-ar/strings_tesla_link.xml
+A	common/src/main/res/values-es/strings_tesla_link.xml
+A	common/src/main/res/values-ru/strings_tesla_link.xml
+A	common/src/main/res/values-uk/strings_tesla_link.xml
+A	common/src/main/res/values-zh-rCN/strings_tesla_link.xml
+A	common/src/main/res/values-zh-rTW/strings_tesla_link.xml
+A	common/src/main/res/values/strings_tesla_link.xml
+A	common/src/test/java/com/shilapi/xcertplay/CarPlayHostBrowserLinkTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostDisplaySizeTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostResolutionTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/HotspotExtraAddressSettingsTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/PhoneBrowserSessionServiceTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/TeslaBrowserCanvasTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/TeslaBrowserLinkSettingsTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/TeslaBrowserLinkTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/TeslaBrowserPageLinksTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/TiPlayTestApplication.kt
+A	common/src/test/resources/robolectric.properties
+A	docs/TESLA_BROWSER.md
+M	docs/todo.md
+M	shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
+M	shared/src/main/java/com/shilapi/xcertplay/web/BrowserLinkServer.kt
+M	shared/src/main/java/com/shilapi/xcertplay/web/BrowserLinkStatus.kt
+A	shared/src/test/java/com/shilapi/xcertplay/web/BrowserLinkPageTest.kt
+COMMIT 8eb3bfb57a41ba8b2423f5bd901efff5a6c1cb71 Rename TeslaPlay to TiPlay
+
+M	.github/ISSUE_TEMPLATE/bug.yml
+M	.github/workflows/build-android-tv.yml
+M	AGENTS.md
+M	CHANGELOG.md
+M	README.md
+M	README.zh-CN.md
+M	SECURITY.md
+M	common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
+M	common/src/main/java/com/shilapi/xcertplay/CarBluetoothAudio.kt
+M	common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiagnosticExportStore.kt
+M	common/src/main/res/values-ar/hotspot_join.xml
+M	common/src/main/res/values-ar/strings.xml
+M	common/src/main/res/values-ar/strings_car_audio.xml
+M	common/src/main/res/values-ar/strings_default_connection.xml
+M	common/src/main/res/values-ar/strings_settings_layout.xml
+M	common/src/main/res/values-es/hotspot_join.xml
+M	common/src/main/res/values-es/strings.xml
+M	common/src/main/res/values-es/strings_car_audio.xml
+M	common/src/main/res/values-es/strings_default_connection.xml
+M	common/src/main/res/values-es/strings_settings_layout.xml
+M	common/src/main/res/values-ru/hotspot_join.xml
+M	common/src/main/res/values-ru/strings.xml
+M	common/src/main/res/values-ru/strings_car_audio.xml
+M	common/src/main/res/values-ru/strings_default_connection.xml
+M	common/src/main/res/values-ru/strings_settings_layout.xml
+M	common/src/main/res/values-uk/hotspot_join.xml
+M	common/src/main/res/values-uk/strings.xml
+M	common/src/main/res/values-uk/strings_car_audio.xml
+M	common/src/main/res/values-uk/strings_default_connection.xml
+M	common/src/main/res/values-uk/strings_settings_layout.xml
+M	common/src/main/res/values-zh-rCN/hotspot_join.xml
+M	common/src/main/res/values-zh-rCN/strings.xml
+M	common/src/main/res/values-zh-rCN/strings_car_audio.xml
+M	common/src/main/res/values-zh-rCN/strings_default_connection.xml
+M	common/src/main/res/values-zh-rCN/strings_settings_layout.xml
+M	common/src/main/res/values-zh-rTW/hotspot_join.xml
+M	common/src/main/res/values-zh-rTW/strings.xml
+M	common/src/main/res/values-zh-rTW/strings_car_audio.xml
+M	common/src/main/res/values-zh-rTW/strings_default_connection.xml
+M	common/src/main/res/values-zh-rTW/strings_settings_layout.xml
+M	common/src/main/res/values/hotspot_join.xml
+M	common/src/main/res/values/strings.xml
+M	common/src/main/res/values/strings_car_audio.xml
+M	common/src/main/res/values/strings_default_connection.xml
+M	common/src/test/java/com/shilapi/xcertplay/BrandNameResourcesTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/DiagnosticExportStoreTest.kt
+M	docs/ANDROID9_WIFI_DIRECT.md
+M	docs/BUFFERED_AUDIO.md
+M	docs/BUILD.md
+M	docs/BYD_NAVIGATION.md
+M	docs/COMPATIBILITY.md
+M	docs/CONNECTION_SETUP.md
+M	docs/DILINK4_CLUSTER.md
+M	docs/EXISTING_WIFI.md
+M	docs/INSTALL.md
+M	docs/LAUNCHER_INTEGRATION.md
+M	docs/PRIVACY.md
+M	docs/RELEASE-NOTES-NEXT.md
+M	docs/SIDE_PANEL.md
+M	docs/SMOOTH_WIRELESS.md
+M	docs/TESTING.md
+M	docs/THIRD_PARTY_NOTICES.md
+M	docs/VIEW_AREAS.md
+M	docs/WIRELESS_DIAGNOSTICS.md
+M	docs/WIRELESS_HOTSPOT_JOIN.md
+M	docs/todo.md
+M	mobile/build.gradle.kts
+M	mobile/src/debug/AndroidManifest.xml
+M	mobile/src/debug/java/com/shilapi/xcertplay/hud/StandaloneHudDemoActivity.kt
+M	mobile/src/main/res/values/strings.xml
+M	samples/home/src/main/AndroidManifest.xml
+M	samples/home/src/main/java/com/diplay/home/DiPlayMapPanel.kt
+M	samples/home/src/main/java/com/diplay/home/WidgetBoard.kt
+M	samples/maphost/src/main/AndroidManifest.xml
+M	samples/maphost/src/main/java/com/diplay/maphost/MainActivity.kt
+M	scripts/build_site.py
+M	shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayAudioDiagnostics.kt
+M	shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayConfig.kt
+M	shared/src/main/java/com/shilapi/xcertplay/hud/BydStandaloneHudOutput.kt
+M	shared/src/main/java/com/shilapi/xcertplay/hud/BydStarterBridge.kt
+M	shared/src/main/java/com/shilapi/xcertplay/network/LocalOnlyHotspotManager.kt
+M	shared/src/main/java/com/shilapi/xcertplay/network/WifiP2pGroupManager.kt
+M	shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+M	shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayRuntimeConfig.kt
+M	shared/src/main/java/com/shilapi/xcertplay/web/BrowserLinkServer.kt
+M	shared/src/main/java/com/shilapi/xcertplay/web/BrowserTouchSlots.kt
+M	shared/src/main/java/com/shilapi/xcertplay/web/VideoPerformance.kt
+M	shared/src/main/java/com/shilapi/xcertplay/web/WebFrameQueue.kt
+M	shared/src/main/java/com/shilapi/xcertplay/web/WebVideoCodecs.kt
+M	shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayAudioDiagnosticsTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/airplay/CarBluetoothAudioSessionTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/hud/BydOptionalOutputSettingsTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/web/BrowserLinkServerTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/web/BrowserTouchSlotsTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/web/VideoPerformanceTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/web/WebFrameQueueTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/web/WebVideoCodecsTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/web/WebVideoRecordsTest.kt
+M	shared/src/test/resources/web/records-v1.json
+M	site/ar/index.html
+M	site/assets/site.css
+M	site/content.json
+M	site/es/index.html
+M	site/index.html
+M	site/play/app.js
+M	site/play/decoder-worker.js
+M	site/play/fmp4.js
+M	site/play/index.html
+M	site/play/link.js
+M	site/play/mse.js
+M	site/play/sw.js
+M	site/play/video.js
+M	site/ru/index.html
+M	site/uk/index.html
+M	site/zh-Hans/index.html
+M	site/zh-Hant/index.html
+M	tests/web-e2e/README.md
+M	tests/web-e2e/fake-phone.mjs
+M	tests/web-e2e/run.mjs
+M	tests/web/link.test.mjs
+COMMIT 1e3031975319f06c775d74d3a4201b8d58e4d261 Choose head-unit mode in the hotspot address tests that need it
+
+M	common/src/test/java/com/shilapi/xcertplay/HotspotExtraAddressSettingsTest.kt
+COMMIT a6d321bb952b7031b7dcc8a30cbef71f75bb3340 Merge branch 'worktree-wf_43997691-a32-2'
+COMMIT bd87455627887e030b774534ccbe1e377220b40f Merge branch 'worktree-wf_43997691-a32-1'
+COMMIT 51dacd9368fc020aea23d3e7611748e5991e7d61 Check that the browser link port is free by rebinding it
+
+M	shared/src/test/java/com/shilapi/xcertplay/web/BrowserLinkServerTest.kt
+COMMIT 6154009e27fe95b879cff95ccb4a6d2ff16e5e0c Fix review findings in the root hotspot extra address keeper
+
+M	common/src/main/java/com/shilapi/xcertplay/DiPlaySessionService.kt
+M	common/src/main/java/com/shilapi/xcertplay/HotspotExtraAddressSettings.kt
+M	common/src/test/java/com/shilapi/xcertplay/HotspotExtraAddressSettingsTest.kt
+M	shared/src/main/java/com/shilapi/xcertplay/network/HotspotExtraAddressKeeper.kt
+M	shared/src/test/java/com/shilapi/xcertplay/network/HotspotExtraAddressKeeperTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/network/HotspotExtraAddressLoopTest.kt
+COMMIT 707796493497857304893522b34eeb565200e98c Fix review findings in phone-mode defaults, audio gating and OEM icon
+
+M	common/src/test/java/com/shilapi/xcertplay/AdaptiveSettingsUiTest.kt
+COMMIT 62e1222c89e9647e24f4acb597141d158a2ce02c Add the root-only extra hotspot address for the car browser
+
+M	AGENTS.md
+M	common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlaySessionService.kt
+A	common/src/main/java/com/shilapi/xcertplay/HotspotExtraAddressCard.kt
+A	common/src/main/java/com/shilapi/xcertplay/HotspotExtraAddressSettings.kt
+A	common/src/main/res/values-ar/strings_hotspot_address.xml
+A	common/src/main/res/values-es/strings_hotspot_address.xml
+A	common/src/main/res/values-ru/strings_hotspot_address.xml
+A	common/src/main/res/values-uk/strings_hotspot_address.xml
+A	common/src/main/res/values-zh-rCN/strings_hotspot_address.xml
+A	common/src/main/res/values-zh-rTW/strings_hotspot_address.xml
+A	common/src/main/res/values/strings_hotspot_address.xml
+A	common/src/test/java/com/shilapi/xcertplay/HotspotExtraAddressSettingsTest.kt
+A	shared/src/main/java/com/shilapi/xcertplay/network/HotspotAddresses.kt
+A	shared/src/main/java/com/shilapi/xcertplay/network/HotspotExtraAddress.kt
+A	shared/src/main/java/com/shilapi/xcertplay/network/HotspotExtraAddressKeeper.kt
+M	shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt
+A	shared/src/main/java/com/shilapi/xcertplay/network/RootShell.kt
+A	shared/src/test/java/com/shilapi/xcertplay/network/HotspotExtraAddressKeeperTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/network/HotspotExtraAddressLoopTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/network/HotspotExtraAddressTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/network/RootShellTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/network/WirelessHostAddressTest.kt
+COMMIT 2f4034cdd68a6a1d37629cba8c03e61ad5c2ba5d Default to phone + browser mode and gate car Bluetooth sound on it
+
+M	CHANGELOG.md
+M	common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
+M	common/src/main/java/com/shilapi/xcertplay/CarBluetoothAudio.kt
+A	common/src/main/java/com/shilapi/xcertplay/CarButtonDefaults.kt
+M	common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlaySessionService.kt
+M	common/src/main/res/values-ar/strings_tesla.xml
+M	common/src/main/res/values-es/strings_tesla.xml
+M	common/src/main/res/values-ru/strings_tesla.xml
+M	common/src/main/res/values-uk/strings_tesla.xml
+M	common/src/main/res/values-zh-rCN/strings_tesla.xml
+M	common/src/main/res/values-zh-rTW/strings_tesla.xml
+M	common/src/main/res/values/strings_tesla.xml
+M	common/src/test/java/com/shilapi/xcertplay/AdaptiveSettingsUiTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/AdbClusterSelectionTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/BydVehicleDataSettingsTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/CarButtonDefaultsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarHotspotSwitchTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostResolutionTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/ClusterMapScaleCapabilityTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/ClusterSettingsConsentTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/DiPlaySessionServiceTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/HeadUnitRunMode.kt
+M	common/src/test/java/com/shilapi/xcertplay/PhoneBrowserModeSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/VirtualClusterDisplayTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/WheelKeyServiceTest.kt
+M	docs/RELEASE-NOTES-NEXT.md
+COMMIT a5e3b4a18448c2c902535a42dd03f672e9a24565 Merge branch 'integrate/mode-audio'
+COMMIT d051899f7cf2e82b8e8ad4022021a7ef03e57ace Stream CarPlay video and touch to the Tesla browser
+
+M	.github/workflows/android.yml
+M	AGENTS.md
+M	shared/src/main/java/com/shilapi/xcertplay/airplay/ScreenStream.kt
+A	shared/src/main/java/com/shilapi/xcertplay/media/VideoTeeMediaSink.kt
+A	shared/src/main/java/com/shilapi/xcertplay/web/BrowserLinkServer.kt
+A	shared/src/main/java/com/shilapi/xcertplay/web/BrowserLinkStatus.kt
+A	shared/src/main/java/com/shilapi/xcertplay/web/BrowserPairingGate.kt
+A	shared/src/main/java/com/shilapi/xcertplay/web/BrowserTouchSlots.kt
+A	shared/src/main/java/com/shilapi/xcertplay/web/VideoPerformance.kt
+A	shared/src/main/java/com/shilapi/xcertplay/web/WebFrameQueue.kt
+A	shared/src/main/java/com/shilapi/xcertplay/web/WebJson.kt
+A	shared/src/main/java/com/shilapi/xcertplay/web/WebMediaSink.kt
+A	shared/src/main/java/com/shilapi/xcertplay/web/WebVideoCodecs.kt
+A	shared/src/main/java/com/shilapi/xcertplay/web/WebVideoHub.kt
+A	shared/src/main/java/com/shilapi/xcertplay/web/WebVideoRecords.kt
+M	shared/src/test/java/com/shilapi/xcertplay/airplay/ScreenCodecTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/media/VideoTeeMediaSinkTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/web/BrowserLinkServerTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/web/BrowserLinkStatusTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/web/BrowserPairingGateTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/web/BrowserTouchSlotsTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/web/VideoPerformanceTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/web/WebFrameQueueTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/web/WebJsonTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/web/WebMediaSinkTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/web/WebVideoCodecsTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/web/WebVideoHubTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/web/WebVideoRecordsTest.kt
+A	shared/src/test/resources/web/records-v1.bin
+A	shared/src/test/resources/web/records-v1.json
+A	site/play/app.js
+A	site/play/decoder-worker.js
+A	site/play/fmp4.js
+A	site/play/icon.svg
+A	site/play/index.html
+A	site/play/link.js
+A	site/play/mse.js
+A	site/play/style.css
+A	site/play/sw.js
+A	site/play/video.js
+A	tests/web-e2e/README.md
+A	tests/web-e2e/fake-phone.mjs
+A	tests/web-e2e/run.mjs
+A	tests/web/fmp4.test.mjs
+A	tests/web/link.test.mjs
+A	tests/web/page.test.mjs
+A	tests/web/records-v1.test.mjs
+A	tests/web/video.test.mjs
+COMMIT ae6a5c9cbf894fdaa4685f5deab216e4954d2547 Merge branch 'worktree-wf_c2a90c80-831-2' into integrate/mode-audio
+COMMIT 6f3bc2c00a19e403c42941ead06f4f7502947db7 Fix review findings in the phone + browser run mode
+
+M	common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
+M	common/src/main/java/com/shilapi/xcertplay/CarPlayCallKeys.kt
+M	common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/WheelKeyService.kt
+M	common/src/main/res/values-es/strings_tesla.xml
+M	common/src/main/res/values-uk/strings_tesla.xml
+M	common/src/main/res/values-zh-rCN/strings_tesla.xml
+M	common/src/main/res/values-zh-rTW/strings_tesla.xml
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayCallControlsOptInTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/WheelKeyServiceTest.kt
+M	shared/src/main/java/com/shilapi/xcertplay/hud/BydNavigationOutputs.kt
+M	shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+M	shared/src/test/java/com/shilapi/xcertplay/hud/DiLink3ClusterRecoveryTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/orchestration/CarPlayControllerHeadUnitIntegrationsTest.kt
+COMMIT 28248d96817b5caf6958ce7ca47947fcfe2d0574 Fix review findings in car Bluetooth sound
+
+M	common/src/main/java/com/shilapi/xcertplay/DiPlaySessionService.kt
+M	common/src/main/res/values-ru/strings_car_audio.xml
+M	common/src/main/res/values-uk/strings_car_audio.xml
+M	common/src/main/res/values-zh-rCN/strings_car_audio.xml
+M	common/src/main/res/values-zh-rTW/strings_car_audio.xml
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostResolutionTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/DiPlaySessionServiceTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/airplay/CarBluetoothAudioSessionTest.kt
+COMMIT 3d5bfcf258e285c79523745e3d9ebd686eaa6e90 Add the phone + browser run mode that turns off head-unit features
+
+M	AGENTS.md
+M	common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
+M	common/src/main/java/com/shilapi/xcertplay/BootReceiver.kt
+M	common/src/main/java/com/shilapi/xcertplay/CarPlayCallKeys.kt
+M	common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/WheelKeyService.kt
+A	common/src/main/res/values-ar/strings_tesla.xml
+A	common/src/main/res/values-es/strings_tesla.xml
+A	common/src/main/res/values-ru/strings_tesla.xml
+A	common/src/main/res/values-uk/strings_tesla.xml
+A	common/src/main/res/values-zh-rCN/strings_tesla.xml
+A	common/src/main/res/values-zh-rTW/strings_tesla.xml
+A	common/src/main/res/values/strings_tesla.xml
+M	common/src/test/java/com/shilapi/xcertplay/AdaptiveSettingsUiTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayCallControlsOptInTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostResolutionTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostSettingsTest.kt
+A	common/src/test/java/com/shilapi/xcertplay/PhoneBrowserModeSettingsTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/SettingsLayoutPolicyTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/StartupDiagnosticSnapshotTest.kt
+M	shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+M	shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayRuntimeConfig.kt
+A	shared/src/test/java/com/shilapi/xcertplay/orchestration/CarPlayControllerHeadUnitIntegrationsTest.kt
+COMMIT 9b5f0b476fcd4d5edbbc58b6df9ad326d483cdd3 Add an experimental setting to keep CarPlay sound on car Bluetooth
+
+M	CHANGELOG.md
+M	common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
+A	common/src/main/java/com/shilapi/xcertplay/CarBluetoothAudio.kt
+M	common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlaySessionService.kt
+A	common/src/main/res/values-ar/strings_car_audio.xml
+A	common/src/main/res/values-es/strings_car_audio.xml
+A	common/src/main/res/values-ru/strings_car_audio.xml
+A	common/src/main/res/values-uk/strings_car_audio.xml
+A	common/src/main/res/values-zh-rCN/strings_car_audio.xml
+A	common/src/main/res/values-zh-rTW/strings_car_audio.xml
+A	common/src/main/res/values/strings_car_audio.xml
+M	common/src/test/java/com/shilapi/xcertplay/AdaptiveSettingsUiTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/CarPlayHostResolutionTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/DiagnosticRedactorTest.kt
+M	docs/RELEASE-NOTES-NEXT.md
+M	docs/todo.md
+A	shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayAudioDiagnostics.kt
+M	shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayConfig.kt
+M	shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayInfoPlist.kt
+M	shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlaySession.kt
+A	shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayAudioDiagnosticsTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayInfoPlistTest.kt
+A	shared/src/test/java/com/shilapi/xcertplay/airplay/CarBluetoothAudioSessionTest.kt
+M	shared/src/test/java/com/shilapi/xcertplay/network/CarPlayBonjourTest.kt
+COMMIT d940fe6718639490a4393343809bc2b8f4e80f69 Rename the project to TeslaPlay with its own application ID
+
+M	.github/ISSUE_TEMPLATE/bug.yml
+M	.github/ISSUE_TEMPLATE/config.yml
+M	.github/workflows/build-android-tv.yml
+M	AGENTS.md
+M	CHANGELOG.md
+M	README.md
+M	README.zh-CN.md
+M	SECURITY.md
+M	common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
+M	common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiPlaySessionService.kt
+M	common/src/main/java/com/shilapi/xcertplay/DiagnosticExportStore.kt
+M	common/src/main/java/com/shilapi/xcertplay/NavigationWidget.kt
+M	common/src/main/res/values-ar/hotspot_join.xml
+M	common/src/main/res/values-ar/strings.xml
+M	common/src/main/res/values-ar/strings_default_connection.xml
+M	common/src/main/res/values-ar/strings_settings_layout.xml
+M	common/src/main/res/values-es/hotspot_join.xml
+M	common/src/main/res/values-es/strings.xml
+M	common/src/main/res/values-es/strings_default_connection.xml
+M	common/src/main/res/values-es/strings_settings_layout.xml
+M	common/src/main/res/values-ru/hotspot_join.xml
+M	common/src/main/res/values-ru/strings.xml
+M	common/src/main/res/values-ru/strings_default_connection.xml
+M	common/src/main/res/values-ru/strings_settings_layout.xml
+M	common/src/main/res/values-uk/hotspot_join.xml
+M	common/src/main/res/values-uk/strings.xml
+M	common/src/main/res/values-uk/strings_default_connection.xml
+M	common/src/main/res/values-uk/strings_settings_layout.xml
+M	common/src/main/res/values-zh-rCN/hotspot_join.xml
+M	common/src/main/res/values-zh-rCN/strings.xml
+M	common/src/main/res/values-zh-rCN/strings_default_connection.xml
+M	common/src/main/res/values-zh-rCN/strings_settings_layout.xml
+M	common/src/main/res/values-zh-rTW/hotspot_join.xml
+M	common/src/main/res/values-zh-rTW/strings.xml
+M	common/src/main/res/values-zh-rTW/strings_default_connection.xml
+M	common/src/main/res/values-zh-rTW/strings_settings_layout.xml
+M	common/src/main/res/values/hotspot_join.xml
+M	common/src/main/res/values/strings.xml
+M	common/src/main/res/values/strings_default_connection.xml
+A	common/src/test/java/com/shilapi/xcertplay/BrandNameResourcesTest.kt
+M	common/src/test/java/com/shilapi/xcertplay/DiagnosticExportStoreTest.kt
+M	docs/ANDROID9_WIFI_DIRECT.md
+M	docs/BUFFERED_AUDIO.md
+M	docs/BUILD.md
+M	docs/BYD_NAVIGATION.md
+M	docs/COMPATIBILITY.md
+M	docs/CONNECTION_SETUP.md
+M	docs/DILINK4_CLUSTER.md
+M	docs/EXISTING_WIFI.md
+M	docs/INSTALL.md
+M	docs/LAUNCHER_INTEGRATION.md
+M	docs/PRIVACY.md
+M	docs/RELEASE-NOTES-NEXT.md
+M	docs/SIDE_PANEL.md
+M	docs/SMOOTH_WIRELESS.md
+M	docs/TESTING.md
+M	docs/THIRD_PARTY_NOTICES.md
+M	docs/VIEW_AREAS.md
+M	docs/WIRELESS_DIAGNOSTICS.md
+M	docs/WIRELESS_HOTSPOT_JOIN.md
+M	docs/todo.md
+M	mobile/build.gradle.kts
+M	mobile/src/debug/AndroidManifest.xml
+M	mobile/src/debug/java/com/shilapi/xcertplay/hud/StandaloneHudDemoActivity.kt
+M	mobile/src/main/res/values/strings.xml
+M	samples/home/src/main/AndroidManifest.xml
+M	samples/home/src/main/java/com/diplay/home/DiPlayMapPanel.kt
+M	samples/home/src/main/java/com/diplay/home/WidgetBoard.kt
+M	samples/maphost/src/main/AndroidManifest.xml
+M	samples/maphost/src/main/java/com/diplay/maphost/MainActivity.kt
+M	scripts/build_site.py
+M	shared/src/main/java/com/shilapi/xcertplay/hud/BydStandaloneHudOutput.kt
+M	shared/src/main/java/com/shilapi/xcertplay/hud/BydStarterBridge.kt
+M	shared/src/main/java/com/shilapi/xcertplay/network/LocalOnlyHotspotManager.kt
+M	shared/src/main/java/com/shilapi/xcertplay/network/WifiP2pGroupManager.kt
+M	shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+M	shared/src/test/java/com/shilapi/xcertplay/hud/BydOptionalOutputSettingsTest.kt
+M	site/ar/index.html
+M	site/assets/site.css
+M	site/content.json
+M	site/es/index.html
+M	site/index.html
+M	site/ru/index.html
+M	site/uk/index.html
+M	site/zh-Hans/index.html
+M	site/zh-Hant/index.html
+COMMIT 74f1fb4ef98f693625b27f7ce3b4eeee0e75ce87 Start the video fetch on the page and hand the stream to the worker
+
+M	docs/todo.md
+COMMIT 8433b874fac16f545722b8800a8cd0589d719843 Switch the Tesla browser transport to HTTP fetch streaming
+
+M	docs/todo.md
+COMMIT 653cd88475dc21cfa6a860b9ef6ef26b99862c30 Record that Tesla UDP and TCP reach the 100.64 hotspot address
+
+M	docs/todo.md
+COMMIT 0cfea54fb3964698863562d751bac0665dea8b5b Switch the Tesla browser transport to WebTransport with certificate hashes
+
+M	docs/todo.md
+COMMIT d6056991030ee5ffcde37d32d6104b7d19f28c5b Use port 8080 for the Tesla browser page
+
+M	docs/todo.md
+COMMIT 2c58d2dfbc61c1f05c79ba49d2b4537c69e6480e Record the hotspot address decision and Tesla private-network findings
+
+M	docs/todo.md
+COMMIT 0f617324c280652c268e002f0eaed3b67b42fbef Record the drive-mode and private-IP retest results
+
+M	docs/todo.md
+COMMIT 39b41b1179bba8863ac8b9d668d9e0d86c9a84f4 Record the WSS and DiPlay-base decisions in the Tesla browser todo
+
+M	docs/todo.md
+COMMIT 1c30a269f8da2f1fbc710fdf6e34363d41fd57c1 Mark the Tesla drive-mode check as confirmed by the driver
+
+M	docs/todo.md
+COMMIT efc883bbc9f7614e8b88cb4bbb0ff9f2fe222f4b Add network retest results to the Tesla browser todo
+
+M	docs/todo.md
+COMMIT 8b6c04675c9d59eede9fcb1301b9e55b29262ecb Record Tesla browser probe results in the todo
+
+M	docs/todo.md
+COMMIT 4a8ef22912cf2421b7967f9cad4d16a23f41ff44 Add todo for Tesla browser CarPlay with audio over car Bluetooth
+
+A	docs/todo.md

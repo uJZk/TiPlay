@@ -27,7 +27,7 @@ class BrowserTouchSlots(private val send: (List<AirPlayContact>) -> Boolean) {
     @Synchronized fun touch(client: Any, contacts: List<AirPlayContact>, now: Long): Boolean {
         if (owner != client || contacts.size > 2 || contacts.any {
             !it.x.isFinite() || !it.y.isFinite() || it.x !in 0.0..1.0 || it.y !in 0.0..1.0 || it.id !in 0..1
-        } || contacts.map { it.id }.distinct().size != contacts.size) return false
+        } || (contacts.size == 2 && contacts[0].id == contacts[1].id)) return false
         val slots = (0..1).map { id -> contacts.find { it.id == id } ?: AirPlayContact(id, 0.0, 0.0, false) }
         val accepted = send(slots)
         pressed = accepted && contacts.any { it.down }

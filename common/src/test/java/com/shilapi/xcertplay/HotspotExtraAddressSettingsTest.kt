@@ -9,7 +9,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
-import android.widget.Switch
 import android.widget.TextView
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.media.AndroidMediaSink
@@ -896,7 +895,8 @@ class HotspotExtraAddressSettingsTest {
     }
 
     private fun finishProbes() {
-        HotspotProbe.threads.forEach { it.join(3_000) }
+        assertTrue(HotspotExtraAddressCard.awaitProbesForTest())
+        assertTrue(TeslaBrowserLinkCard.awaitProbesForTest())
         shadowOf(Looper.getMainLooper()).idle()
     }
 
@@ -921,10 +921,6 @@ class HotspotExtraAddressSettingsTest {
                 CarPlaySessionDisplay(800, 480, Surface.ROTATION_0, false, false, 800, 480)) { }
             CarPlayBackgroundSession.active = true
         }
-
-    private fun phoneModeSwitch(screen: DiPlayActivity): Switch =
-        descendants(screen.window.decorView).filterIsInstance<Switch>()
-            .single { it.contentDescription == screen.getString(R.string.settings_phone_browser_mode) }
 
     private fun searchIndex(screen: DiPlayActivity) =
         ReflectionHelpers.callInstanceMethod<List<DiPlayActivity.SettingsSearchResult>>(screen, "buildSettingsSearchIndex")

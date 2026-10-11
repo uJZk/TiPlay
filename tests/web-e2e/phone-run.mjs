@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import { History, listen, closeServer } from './resources.mjs';
 // End-to-end check of the real phone side: RealPhone.java runs the app's BrowserLinkServer, WebVideoHub,
 // VideoTeeMediaSink and WebMediaSink (compiled :shared classes) with an H.264 clip, serves the page from a page
 // directory like the app does from its assets, and headless Chromium opens it. Not part of CI; see README.md.
 //
-// This Chromium cannot decode H.264, so the first two runs check the transport and the page's message, and the third
-// replaces VideoDecoder inside the decoder worker with a stand-in that checks each chunk and outputs a plain frame.
+// The first run forces an unsupported H.264 decoder to check transport and the page's message independently of
+// installed codecs. The LAN run checks native MSE capability; the third uses a decoder stand-in to verify chunks.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -31,7 +32,7 @@ const PAGE_POLICY = "default-src 'self'; connect-src 'self' http:; media-src 'se
 
 // A VideoDecoder stand-in for the decoder worker: it checks the chunks the phone sent and draws a plain frame for each.
 const DECODER_STAND_IN = `(() => {
-  const info = { chunks: 0, keys: 0, firstKeyTypes: null, firstDeltaTypes: null, badStartCodes: 0, failures: 0, configs: [] };
+  const info = { chunks: 0, keys: 0, firstKeyTypes: null, firstDeltaTypes: null, badStartCodes: 0, failures: 0, configs: [], configsOverflow: 0 };
   let failNext = false;
   self.addEventListener('message', event => { if (event.data && event.data.type === 'stand-in-fail') failNext = true; });
   const nalTypes = data => {
@@ -46,7 +47,8 @@ const DECODER_STAND_IN = `(() => {
     static async isConfigSupported(config) { return { supported: /^avc1\\./.test(config.codec), config }; }
     constructor({ output, error }) { this.output = output; this.error = error; this.state = 'unconfigured'; this.decodeQueueSize = 0; }
     configure(config) {
-      info.configs.push(config.codec + ' ' + config.codedWidth + 'x' + config.codedHeight);
+      if (info.configs.length < 64) info.configs.push(config.codec + ' ' + config.codedWidth + 'x' + config.codedHeight);
+      else info.configsOverflow++;
       this.state = 'configured';
       this.canvas = new OffscreenCanvas(config.codedWidth, config.codedHeight);
       this.context = this.canvas.getContext('2d');
@@ -89,8 +91,14 @@ const WATCH_WORKERS = `(() => {
   window.Worker = class extends Native {
     constructor(...args) {
       super(...args);
+      if (window.__workers.length >= 64) { super.terminate(); throw new Error('too many live test workers'); }
       window.__workers.push(this);
       this.addEventListener('message', event => { if (event.data && event.data.type === 'stand-in') window.__standIn = event.data.info; });
+    }
+    terminate() {
+      const index = window.__workers.indexOf(this);
+      if (index >= 0) window.__workers.splice(index, 1);
+      super.terminate();
     }
   };
 })();`;
@@ -148,7 +156,7 @@ async function startPhone(clip) {
     '--bind', '0.0.0.0', '--code', CODE, '--width', String(WIDTH), '--height', String(HEIGHT), '--fps', String(FPS)];
   if (clip) args.push('--clip', clip);
   const child = spawn(JAVA, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-  const events = [], stderr = [];
+  const events = new History(), stderr = new History();
   createInterface({ input: child.stdout }).on('line', line => {
     try {
       events.push(JSON.parse(line));
@@ -157,24 +165,45 @@ async function startPhone(clip) {
     }
   });
   createInterface({ input: child.stderr }).on('line', line => { if (!line.startsWith('Picked up JAVA_TOOL_OPTIONS')) stderr.push(line); });
-  const exited = new Promise(resolve => child.on('exit', code => resolve(code)));
-  const listening = await Promise.race([
-    waitFor('RealPhone to listen', () => events.find(event => event.event === 'listening'), 60000),
-    exited.then(code => { throw new Error(`RealPhone exited with ${code}: ${stderr.join('\n')}`); }),
-  ]);
-  return {
-    port: listening.port,
-    events,
-    stderr,
-    command: line => child.stdin.write(`${line}\n`),
-    since: (mark, name) => events.slice(mark).filter(event => event.event === name),
-    logs: mark => events.slice(mark).filter(event => event.event === 'log').map(event => event.message),
-    async close() {
-      child.stdin.write('quit\n');
-      await Promise.race([exited, sleep(3000)]);
-      child.kill();
-    },
-  };
+  const exited = new Promise(resolve => {
+    child.once('exit', code => resolve(code));
+    child.once('error', error => { stderr.push(error.message); resolve(-1); });
+  });
+  async function close() {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    if (!child.stdin.destroyed) child.stdin.end('quit\n');
+    let timer;
+    try {
+      await Promise.race([exited, new Promise(resolve => { timer = setTimeout(resolve, 3000); })]);
+    } finally { clearTimeout(timer); }
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+      await exited;
+    }
+  }
+  // Handle a closed stdin as a child failure rather than an unhandled stream error.
+  child.stdin.on('error', error => stderr.push(error.message));
+  let startupFinished = false;
+  try {
+    const listening = await Promise.race([
+      waitFor('RealPhone to listen', () => {
+        if (startupFinished) throw new Error('RealPhone startup ended');
+        return events.find(event => event.event === 'listening');
+      }, 60000),
+      exited.then(code => { throw new Error(`RealPhone exited with ${code}: ${stderr.join('\n')}`); }),
+    ]);
+    return {
+      port: listening.port, events, stderr,
+      command: line => child.stdin.write(`${line}\n`),
+      since: (mark, name) => events.slice(mark).filter(event => event.event === name),
+      logs: mark => events.slice(mark).filter(event => event.event === 'log').map(event => event.message),
+      close,
+    };
+  } catch (error) {
+    await close();
+    throw error;
+  } finally { startupFinished = true; }
+
 }
 
 function lanAddress() {
@@ -185,7 +214,7 @@ const stats = page => page.evaluate(() => window.tiplayStats);
 
 /** Collects what a page does: its requests to the phone and its console problems. */
 function watch(page) {
-  const seen = { requests: [], problems: [], responses: [] };
+  const seen = { requests: new History(), problems: new History(), responses: new History() };
   page.on('request', request => seen.requests.push({ url: request.url(), method: request.method(), headers: request.headers() }));
   page.on('response', response => seen.responses.push(`${response.status()} ${new URL(response.url()).pathname}`));
   page.on('requestfailed', request => seen.responses.push(`failed ${new URL(request.url()).pathname} ${request.failure()?.errorText}`));
@@ -200,6 +229,7 @@ function watch(page) {
 async function checkRequests(page, seen, origin, label) {
   const counts = (await stats(page)).phone?.link?.counts ?? {};
   check(!counts.busy, `${label}: the phone never answered busy (${JSON.stringify(counts)})`);
+  for (const history of Object.values(seen)) history.assertComplete();
   const foreign = seen.requests.filter(request => new URL(request.url).origin !== origin);
   check(!foreign.length, `${label}: every request goes to the phone's own origin ${origin}${foreign.length ? `, not ${foreign[0].url}` : ''}`);
   const leaks = seen.requests.filter(request => request.url.includes(CODE) && new URL(request.url).pathname !== '/video');
@@ -291,7 +321,7 @@ function startPageHost() {
     res.writeHead(200, { 'Content-Type': types[name.split('.').pop()] ?? 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(readFileSync(file));
   });
-  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)));
+  return listen(server, '127.0.0.1');
 }
 
 /** Stats keys that TeslaBrowserLink.statsLine puts in the session log (its STATS_FIELDS). */
@@ -303,25 +333,31 @@ function statsLogKeys() {
 
 async function main() {
   const dir = mkdtempSync(join(tmpdir(), 'tiplay-phone-e2e-'));
-  const clip = encodeClip(dir);
-  const phone = await startPhone(clip);
-  const clipInfo = phone.events.find(event => event.event === 'clip');
-  log(`RealPhone listens on port ${phone.port} with ${clipInfo.units} access units (${clipInfo.source}), page ${PAGE_DIR}`);
-  const config = await waitFor('the config log', () => phone.logs(0).find(text => text.startsWith('Web video: config epoch=1 ')));
-  const codec = /codec=(\S+)/.exec(config)[1];
-  // Chrome counts this container's LAN address as public; a hotspot address is local, so make it local here too.
-  const address = lanAddress();
-  const browser = await chromium.launch({ executablePath: CHROMIUM,
-    // Keep the local test servers out of any system proxy, including their LAN address.
-    args: ['--no-proxy-server', ...(address ? [`--ip-address-space-overrides=${address}:${phone.port}=local`] : [])] });
-  const sessions = new Set();
+  let phone, browser;
   try {
+    const clip = encodeClip(dir);
+    phone = await startPhone(clip);
+    const clipInfo = phone.events.find(event => event.event === 'clip');
+    log(`RealPhone listens on port ${phone.port} with ${clipInfo.units} access units (${clipInfo.source}), page ${PAGE_DIR}`);
+    const config = await waitFor('the config log', () => phone.logs(0).find(text => text.startsWith('Web video: config epoch=1 ')));
+    const codec = /codec=(\S+)/.exec(config)[1];
+    // Chrome counts this container's LAN address as public; a hotspot address is local, so make it local here too.
+    const address = lanAddress();
+    browser = await chromium.launch({ executablePath: CHROMIUM,
+      // Keep the local test servers out of any system proxy, including their LAN address.
+      args: ['--no-proxy-server', ...(address ? [`--ip-address-space-overrides=${address}:${phone.port}=local`] : [])] });
+    const sessions = new Set();
+    let standInSession;
     const local = `http://127.0.0.1:${phone.port}`;
     await checkAssets(local);
 
-    // 1. Secure context (loopback): the Tesla path. This Chromium cannot decode H.264, so the page must say so.
+    // 1. Secure context (loopback): explicitly test the unsupported-codec branch on the Tesla path.
     {
       const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 1.5, hasTouch: true, locale: 'en-US' });
+      await context.route('**/decoder-worker.js', async route => {
+        const response = await route.fetch();
+        await route.fulfill({ response, body: `if (self.VideoDecoder) self.VideoDecoder.isConfigSupported = async config => ({ supported: false, config });\n${await response.text()}` });
+      });
       const mark = phone.events.length;
       const { page, seen } = await openPage(context, local, 'loopback');
       const opened = await waitFor('the video stream', () => phone.logs(mark).find(text => text.startsWith('Browser link: video stream opened')));
@@ -349,7 +385,8 @@ async function main() {
       await sleep(2000);
       const beats = phone.since(beat, 'control').length;
       check(beats >= 4 && beats <= 8, `${beats} /control requests in 2 s (one heartbeat every 400 ms)`);
-      const st = await waitFor('a stats event', () => phone.since(mark, 'stats').at(-1), 8000);
+      const st = await waitFor('unsupported-codec stats event', () => phone.since(mark, 'stats')
+        .find(event => event.values['link.path'] === 'worker' && event.values['link.unsupported'] === codec), 8000);
       check(st.values['link.path'] === 'worker' && st.values['link.unsupported'] === codec,
         `onBrowserStats got the page's stats with path and the unsupported codec (${Object.keys(st.values).length} fields)`);
       const registered = await waitFor('the service worker', () => page.evaluate(() =>
@@ -361,7 +398,7 @@ async function main() {
       await context.close();
     }
 
-    // 2. Over the LAN address the page is not a secure context: the MSE rung, which cannot play H.264 here either.
+    // 2. Over the LAN address the page is not a secure context: verify the native MSE capability/result.
     if (!address) log('skipped the LAN check: no non-loopback IPv4 address');
     else {
       const lan = `http://${address}:${phone.port}`;
@@ -370,13 +407,16 @@ async function main() {
       const { page, seen } = await openPage(context, lan, 'LAN');
       const value = await waitFor('the config record over MSE', async () => {
         const current = await stats(page);
-        return current.page.video && current.page.link.unsupported !== undefined && (current.page.link.unsupported || current.page.live) && current;
+        return current.page.video && current.page.link.unsupported !== undefined && (current.page.link.unsupported || current.page.link.live) && current;
       });
       check(value.page.link.path === 'mse' && value.page.link.fallback === 'not a secure context',
         `plain HTTP takes the ${value.page.link.path} rung (${value.page.link.fallback})`);
       const playable = await page.evaluate(type => MediaSource.isTypeSupported(`video/mp4; codecs="${type}"`), codec);
       const status = await page.textContent('#status');
-      if (playable) check(value.page.live, `MSE plays ${codec}`);
+      if (playable) {
+        await waitFor('native H.264 MSE decoded frames', async () => (await stats(page)).page.video.decodedFps > 0);
+        check(value.page.link.live, `MSE plays ${codec}`);
+      }
       else check(status === 'This browser cannot decode H.264.', `MSE without H.264 says "${status}"`);
       check(phone.since(mark, 'control').length > 0 && phone.logs(mark).some(text => text.startsWith('Browser link: video stream opened')),
         'the LAN page talks to /video and /control at its own address');
@@ -403,16 +443,21 @@ async function main() {
       const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 1.5, hasTouch: true,
         locale: 'en-US', serviceWorkers: 'block' });
       await useDecoderStandIn(context);
+      // Native MSE may already have acknowledged this epoch; each scenario owns a fresh session.
+      const startMark = phone.events.length;
+      phone.command('restart');
+      standInSession = (await waitFor('the stand-in session', () => phone.since(startMark, 'restarted').at(-1))).session;
       const mark = phone.events.length;
       const { page, seen } = await openPage(context, local, 'stand-in');
       const rendered = await waitFor('"first frame rendered"', () => phone.since(mark, 'diagnostic').find(event => event.message === 'first frame rendered'));
-      check(rendered.session === 1, 'the page decoded epoch 1 and its "dec" reached the session\'s diagnostic handler as "first frame rendered"');
+      check(rendered.session === standInSession, 'the page decoded the fresh epoch and its "dec" reached the session\'s diagnostic handler as "first frame rendered"');
       await waitFor('decoded frames', async () => (await stats(page)).page.video.decodedFps > 0);
       const standIn = await page.evaluate(() => window.__standIn);
       const [sps, pps, ...idr] = standIn.firstKeyTypes ?? [];
       check(sps === 7 && pps === 8 && idr.length && idr.every(type => type === 5) && standIn.firstDeltaTypes?.every(type => type === 1) &&
         standIn.badStartCodes === 0,
       `key frames arrive as SPS, PPS and IDR slices, deltas as slices, all with 4-byte start codes (${standIn.chunks} chunks, ${standIn.keys} keys)`);
+      check(standIn.configsOverflow === 0, 'the decoder config evidence remains complete');
       check(standIn.configs[0] === `${codec} ${WIDTH}x${HEIGHT}`, `VideoDecoder is configured as ${standIn.configs[0]}, without a description`);
       const status = await page.textContent('#status');
       check(/^H\.264 · \d+ fps$/.test(status), `the status line reads "${status}"`);
@@ -451,9 +496,9 @@ async function main() {
       const restartMark = phone.events.length;
       phone.command('restart');
       const second = await waitFor('"first frame rendered" for the next session',
-        () => phone.since(restartMark, 'diagnostic').find(event => event.session === 2 && event.message === 'first frame rendered'));
+        () => phone.since(restartMark, 'diagnostic').find(event => event.session === standInSession + 1 && event.message === 'first frame rendered'));
       check(Boolean(second) && phone.logs(restartMark).filter(text => text.startsWith('Web video: stream started')).length === 1,
-        'after a restart the page decoded epoch 2 of the new session; the retired session\'s late screen did not take the hub');
+        'after a restart the page decoded the next epoch of the new session; the retired session\'s late screen did not take the hub');
       const decodedAfterRestart = (await stats(page)).page.video.decoded;
       await waitFor('decoding after the restart', async () => (await stats(page)).page.video.decoded > decodedAfterRestart + 20);
       check((await stats(page)).page.video.codec === codec, 'the page keeps decoding the new session');
@@ -464,7 +509,7 @@ async function main() {
 
       // Leaving the page sends /bye.
       const byeMark = phone.events.length;
-      const byes = [];
+      const byes = new History();
       context.on('request', request => { if (request.url().endsWith('/bye')) byes.push(`request ${request.postData()}`); });
       context.on('requestfailed', request => { if (request.url().endsWith('/bye')) byes.push(`failed ${request.failure()?.errorText}`); });
       context.on('response', response => { if (response.url().endsWith('/bye')) byes.push(`response ${response.status()}`); });
@@ -473,6 +518,7 @@ async function main() {
       await page.goto('about:blank');
       await waitFor('the bye', () => phone.logs(byeMark).includes('Browser link: session ended by the page'))
         .catch(error => { throw new Error(`${error.message}; the phone logged ${JSON.stringify(phone.events.slice(byeMark).filter(event => event.event !== 'asset'))}; bye ${byes}`); });
+      byes.assertComplete();
       check(true, 'leaving the page ends its session with /bye');
       await context.close();
     }
@@ -487,7 +533,7 @@ async function main() {
         await useDecoderStandIn(context);
         const page = await context.newPage();
         const seen = watch(page);
-        const cors = [];
+        const cors = new History();
         page.on('response', response => {
           if (new URL(response.url()).port === String(phone.port)) cors.push({ path: new URL(response.url()).pathname, headers: response.headers() });
         });
@@ -498,7 +544,9 @@ async function main() {
         await page.goto(`${origin}/?t=127.0.0.1:${phone.port}#c=${CODE}`);
         const decoded = await waitFor('"first frame rendered" from the other origin',
           () => phone.since(mark, 'diagnostic').find(event => event.message === 'first frame rendered'));
-        check(decoded.session === 3, 'a page from another origin decodes the new session and its "dec" reaches that session');
+        check(decoded.session === standInSession + 2, 'a page from another origin decodes the new session and its "dec" reaches that session');
+        cors.assertComplete();
+        for (const history of Object.values(seen)) history.assertComplete();
         const echoed = cors.filter(entry => ['/hello', '/video', '/control'].includes(entry.path));
         check(echoed.length >= 3 && echoed.every(entry => entry.headers['access-control-allow-origin'] === origin &&
           /\bOrigin\b/.test(entry.headers.vary ?? '') && entry.headers['cache-control'] === 'no-store'),
@@ -515,7 +563,7 @@ async function main() {
         await context.unrouteAll();
         await context.close();
       } finally {
-        host.close();
+        await closeServer(host);
       }
     }
 
@@ -526,12 +574,14 @@ async function main() {
     const failures = phone.events.filter(event => event.event === 'tap-error' || (event.event === 'log' && /failed/.test(event.message) &&
       !/video stream ended reason=write failed/.test(event.message)));
     check(!failures.length, `no tap or server failures${failures.length ? `: ${JSON.stringify(failures)}` : ''}`);
+    phone.events.assertComplete();
+    phone.stderr.assertComplete();
     log('all checks passed');
   } finally {
-    await browser.close();
-    await phone.close();
-    if (phone.stderr.length) log(`RealPhone stderr:\n${phone.stderr.join('\n')}`);
-    rmSync(dir, { recursive: true, force: true });
+    try { await browser?.close(); } finally {
+      try { await phone?.close(); } finally { rmSync(dir, { recursive: true, force: true }); }
+    }
+    if (phone?.stderr.length) log(`RealPhone stderr:\n${phone.stderr.join('\n')}`);
   }
 }
 

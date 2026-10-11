@@ -1,55 +1,48 @@
 /*! SPDX-License-Identifier: GPL-3.0-only
- * TiPlay decoder worker (see video.js).
- * In:  {type:'canvas', canvas} · {type:'resize', width, height} · {type:'stream', id, stream} · {type:'stop'}
- *      {type:'feed', id}, {type:'chunk', id, chunk}, {type:'feed-end', id, error}: the main thread pumps the body
- *      when streams are not transferable.
- * Out: the pipeline's messages · {type:'frame', frame, config} when the main thread draws (no OffscreenCanvas)
- *      {type:'stats', stats} every second · {type:'ready', videoDecoder} once at start. */
+ * TiPlay decoder worker. Native streams keep their backpressure; fallback feeds use a pull-credit MessagePort.
+ * Transferred frames require a main-thread acknowledgement before the next one is sent. */
 import { createDecoderPipeline, createFramePresenter } from './video.js';
+import { createChunkStream, createFrameDelivery } from './transport.js';
 
-let presenter = null;
-const feeds = new Map();
+let presenter = null, timer = null, activeId = null;
+const delivery = createFrameDelivery(message => self.postMessage({ type: 'frame', ...message }, [message.frame]));
 const pipeline = typeof VideoDecoder === 'function' ? createDecoderPipeline({
-  post: message => self.postMessage(message),
-  present: (frame, config) => {
-    if (presenter) presenter.present(frame, config);
-    else transferFrame(frame, config);
+  post: message => {
+    if (message.type === 'end') stop();
+    self.postMessage(message);
+  },
+  present: (frame, config, id) => {
+    if (id !== activeId) frame.close();
+    else if (presenter) presenter.present(frame, config);
+    else delivery.present(frame, config, id);
   },
 }) : null;
 
-function transferFrame(frame, config) {
-  try {
-    self.postMessage({ type: 'frame', frame, config }, [frame]);
-  } catch (_) {
-    frame.close();
-  }
-}
-
-function feed(id) {
-  return new ReadableStream({
-    start: controller => { feeds.set(id, controller); },
-    cancel: () => { feeds.delete(id); },
-  });
-}
-
-function endFeed(id, error) {
-  const controller = feeds.get(id);
-  feeds.delete(id);
-  if (error) controller?.error(new TypeError(error));
-  else controller?.close();
+function stop() {
+  activeId = null;
+  pipeline?.stop();
+  presenter?.close();
+  delivery.stop();
+  clearInterval(timer);
+  timer = null;
 }
 
 self.onmessage = ({ data }) => {
   if (data.type === 'canvas') presenter = createFramePresenter(data.canvas);
   else if (data.type === 'resize') presenter?.resize(data.width, data.height);
-  else if (data.type === 'stream') pipeline?.read(data.id, data.stream);
-  else if (data.type === 'feed') pipeline?.read(data.id, feed(data.id));
-  else if (data.type === 'chunk') feeds.get(data.id)?.enqueue(data.chunk);
-  else if (data.type === 'feed-end') endFeed(data.id, data.error);
-  else if (data.type === 'stop') pipeline?.stop();
+  else if (data.type === 'stream' || data.type === 'feed') {
+    stop();
+    activeId = data.id;
+    pipeline?.read(data.id, data.type === 'stream' ? data.stream : createChunkStream(data.port));
+    timer = setInterval(() => {
+      if (pipeline) self.postMessage({ type: 'stats', id: activeId, stats: { ...pipeline.stats(), ...presenter?.stats() } });
+    }, 1000);
+  } else if (data.type === 'frame-ack') delivery.acknowledge(data.frameId);
+  else if (data.type === 'stop') stop();
+  else if (data.type === 'dispose') {
+    stop();
+    presenter?.dispose();
+    self.close();
+  }
 };
-
-setInterval(() => {
-  if (pipeline) self.postMessage({ type: 'stats', stats: { ...pipeline.stats(), ...presenter?.stats() } });
-}, 1000);
 self.postMessage({ type: 'ready', videoDecoder: Boolean(pipeline) });

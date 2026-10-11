@@ -12,31 +12,33 @@ const utf8 = new TextDecoder();
  * Decodes record streams. `post(message)` gets {type:'alive'|'config'|'decoded'|'keyframe'|'unsupported'|'end'};
  * `present(frame)` takes ownership of every decoded VideoFrame.
  */
-export function createDecoderPipeline({ post, present }) {
+export function createDecoderPipeline({ post: send, present }) {
   const decoderSupports = config => VideoDecoder.isConfigSupported(config);
   const decodeStarts = new Map();
   const decodeMs = new Samples();
   const totals = { decoded: 0, dropped: 0, decodeErrors: 0, backlogResets: 0, keyRequests: 0 };
   let decoder = null, decoderConfig = null, config = null, codecSupported = null;
+  let streamId = null, timer = null;
   let needKey = true, reportedEpoch = null, lastKeyRequest = -Infinity, failures = 0;
+  const post = message => send({ ...message, id: streamId });
   const records = createRecordStream({
-    onRecord: record => {
-      if (record.kind === RECORD.CONFIG) return configure(record);
+    onRecord: (record, signal) => {
+      if (record.kind === RECORD.CONFIG) return configure(record, signal);
       if (record.kind === RECORD.FRAME) decodeFrame(record);
       return null;
     },
     onAlive: id => post({ type: 'alive', id }),
-    onEnd: (id, reason) => post({ type: 'end', id, reason }),
+    onEnd: (id, reason) => { stop(); send({ type: 'end', id, reason }); },
   });
   let rates = { decodedFps: 0, bytesPerSec: 0 }, lastTick = { at: performance.now(), decoded: 0, bytes: 0 };
-  setInterval(() => {
+  function tick() {
     records.watchdog();
     const now = performance.now(), seconds = (now - lastTick.at) / 1000, bytes = records.stats().bytes;
     rates = { decodedFps: Math.round((totals.decoded - lastTick.decoded) / seconds * 10) / 10, bytesPerSec: Math.round((bytes - lastTick.bytes) / seconds) };
     lastTick = { at: now, decoded: totals.decoded, bytes };
-  }, 1000);
+  }
 
-  async function configure(record) {
+  async function configure(record, signal) {
     let info;
     try {
       info = JSON.parse(utf8.decode(record.payload));
@@ -53,7 +55,7 @@ export function createDecoderPipeline({ post, present }) {
     // Late output of the old decoder would otherwise be drawn and reported as the first frame of the new epoch.
     closeDecoder();
     const chosen = await chooseDecoderConfig(decoderSupports, next);
-    if (config !== next) return; // a newer config arrived meanwhile
+    if (signal.aborted || config !== next) return; // a newer config arrived meanwhile
     decoderConfig = chosen;
     codecSupported = Boolean(chosen);
     failures = 0;
@@ -151,21 +153,36 @@ export function createDecoderPipeline({ post, present }) {
     }
     totals.decoded++;
     failures = 0;
-    present(frame, config);
+    present(frame, config, streamId);
     if (config && reportedEpoch !== config.epoch) {
       reportedEpoch = config.epoch;
       post({ type: 'decoded', epoch: config.epoch });
     }
   }
 
+  function stop() {
+    records.stop();
+    clearInterval(timer);
+    timer = null;
+    closeDecoder();
+    config = decoderConfig = null;
+    streamId = null;
+    codecSupported = null;
+    reportedEpoch = null;
+  }
+
   return {
     /** Every stream starts with a config record and a key frame; outputs still in the decoder are harmless. */
     read(id, stream) {
+      stop();
+      streamId = id;
+      lastTick = { at: performance.now(), decoded: totals.decoded, bytes: records.stats().bytes };
+      timer = setInterval(tick, 1000);
       needKey = true;
       reportedEpoch = null;
-      records.read(id, stream);
+      return records.read(id, stream);
     },
-    stop: () => records.stop(),
+    stop,
     stats: () => ({
       codec: config?.codec ?? null,
       codecSupported,
@@ -195,19 +212,22 @@ export function createFramePresenter(canvas) {
     renderer.draw(frame, letterbox(canvas.width, canvas.height, width, height));
   }
 
+  const lost = event => event.preventDefault();
+  const restored = () => {
+    renderer.dispose?.();
+    renderer = createRenderer(canvas);
+    if (lastFrame) draw(lastFrame);
+  };
   if (renderer.kind !== '2d') {
-    canvas.addEventListener('webglcontextlost', event => event.preventDefault());
-    canvas.addEventListener('webglcontextrestored', () => {
-      renderer = createRenderer(canvas);
-      if (lastFrame) draw(lastFrame);
-    });
+    canvas.addEventListener('webglcontextlost', lost);
+    canvas.addEventListener('webglcontextrestored', restored);
   }
 
   return {
     present(frame, config) {
       lastConfig = config;
       const started = performance.now();
-      draw(frame);
+      try { draw(frame); } catch (error) { frame.close(); throw error; }
       drawMs.add(performance.now() - started);
       lastFrame?.close();
       lastFrame = frame;
@@ -221,6 +241,13 @@ export function createFramePresenter(canvas) {
     close() {
       lastFrame?.close();
       lastFrame = null;
+    },
+    dispose() {
+      lastFrame?.close();
+      lastFrame = null;
+      canvas.removeEventListener('webglcontextlost', lost);
+      canvas.removeEventListener('webglcontextrestored', restored);
+      renderer.dispose?.();
     },
     stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95) }),
   };
@@ -250,19 +277,27 @@ function glRenderer(gl) {
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
     gl.attachShader(program, shader);
+    gl.deleteShader(shader);
   }
   gl.linkProgram(program);
   gl.useProgram(program);
-  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   const position = gl.getAttribLocation(program, 'p');
   gl.enableVertexAttribArray(position);
   gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
-  gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
   for (const [name, value] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR],
     [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, name, value);
   gl.clearColor(0, 0, 0, 1);
   return {
+    dispose() {
+      gl.deleteTexture(texture);
+      gl.deleteBuffer(buffer);
+      gl.deleteProgram(program);
+    },
     kind: typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext ? 'webgl2' : 'webgl',
     draw(frame, box) {
       if (gl.isContextLost()) return;

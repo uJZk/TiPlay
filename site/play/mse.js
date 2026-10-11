@@ -1,7 +1,7 @@
 /*! SPDX-License-Identifier: GPL-3.0-only
  * TiPlay MSE fallback (contract §7.2, rung 4): §3 records → fragmented MP4 → <video>. For browsers without
  * WebCodecs or outside a secure context, such as the page the phone serves over plain HTTP. */
-import { FLAG, RECORD, RecordError, createRecordStream } from './link.js';
+import { FLAG, RECORD, RecordError, abortable, createRecordStream } from './link.js';
 import { TIMESCALE, annexBToLengthPrefixed, initSegment, mediaSegment, mseType } from './fmp4.js';
 
 const LIVE_EDGE_S = 0.15; // seek to the end of the buffer when playback falls further behind
@@ -14,18 +14,19 @@ const utf8 = new TextDecoder();
 const base64Bytes = text => Uint8Array.from(atob(String(text ?? '')), char => char.charCodeAt(0));
 
 /** Plays record streams on `video`. `post(message)` gets the same messages as the WebCodecs pipeline. */
-export function createMsePlayer(video, { post }) {
+export function createMsePlayer(video, { post: send }) {
   const totals = { appended: 0, dropped: 0, seeks: 0, backlogResets: 0, appendErrors: 0, mediaErrors: 0, keyRequests: 0 };
-  let media = null, generation = 0, needKey = true, reportedEpoch = null, lastKeyRequest = -Infinity, codecSupported = null;
+  let media = null, timer = null, needKey = true, reportedEpoch = null, lastKeyRequest = -Infinity, codecSupported = null;
   let lastConfig = null, streamId = null, rates = { decodedFps: 0, bytesPerSec: 0 }, lastTick = { at: performance.now(), frames: 0, bytes: 0 };
+  const post = message => send({ ...message, id: streamId });
   const records = createRecordStream({
-    onRecord: record => {
-      if (record.kind === RECORD.CONFIG) return configure(record);
+    onRecord: (record, signal) => {
+      if (record.kind === RECORD.CONFIG) return configure(record, signal);
       if (record.kind === RECORD.FRAME) append(record);
       return null;
     },
     onAlive: id => post({ type: 'alive', id }),
-    onEnd: (id, reason) => post({ type: 'end', id, reason }),
+    onEnd: (id, reason) => { stop(); send({ type: 'end', id, reason }); },
   });
   video.muted = true;
   video.playsInline = true;
@@ -33,23 +34,24 @@ export function createMsePlayer(video, { post }) {
   video.addEventListener('loadeddata', reportDecoded);
   // A decode error ends the media element for good, and every later append throws. Drop it and reconnect:
   // the new stream's config record builds a fresh one.
-  video.addEventListener('error', () => {
+  const onError = () => {
     if (!media) return;
     totals.mediaErrors++;
-    close();
-    records.stop();
-    post({ type: 'end', id: streamId, reason: 'media-error' });
-  });
+    const id = streamId;
+    stop();
+    send({ type: 'end', id, reason: 'media-error' });
+  };
+  video.addEventListener('error', onError);
 
   const shownFrames = () => video.getVideoPlaybackQuality?.().totalVideoFrames ?? video.webkitDecodedFrameCount ?? 0;
-  setInterval(() => {
+  function tick() {
     records.watchdog();
     const now = performance.now(), seconds = (now - lastTick.at) / 1000, frames = shownFrames(), bytes = records.stats().bytes;
     rates = { decodedFps: Math.round((frames - lastTick.frames) / seconds * 10) / 10, bytesPerSec: Math.round((bytes - lastTick.bytes) / seconds) };
     lastTick = { at: now, frames, bytes };
-  }, 1000);
+  }
 
-  async function configure(record) {
+  async function configure(record, signal) {
     let info;
     try {
       info = JSON.parse(utf8.decode(record.payload));
@@ -73,19 +75,26 @@ export function createMsePlayer(video, { post }) {
       post({ type: 'unsupported', codec: next.codec });
       return;
     }
-    const mine = ++generation;
     const source = new MediaSourceType();
     const url = URL.createObjectURL(source);
-    const opened = new Promise(resolve => source.addEventListener('sourceopen', resolve, { once: true }));
-    video.src = url;
-    await opened;
-    if (mine !== generation) return;
-    const buffer = source.addSourceBuffer(type);
-    media = {
-      config: next, buffer, url, queue: [], trimming: false, sequence: 0, decodeTime: 0,
+    const current = media = {
+      config: next, source, buffer: null, url, queue: [], trimming: false, sequence: 0, decodeTime: 0,
       duration: Math.round(TIMESCALE / (next.fps || 60)), lengthPrefixed: !next.codec.startsWith('vp'),
     };
-    const current = media;
+    let opened;
+    const opening = new Promise(resolve => { opened = resolve; source.addEventListener('sourceopen', opened); });
+    try {
+      video.src = url;
+      await abortable(opening, signal);
+      if (signal.aborted || media !== current) return;
+      current.buffer = source.addSourceBuffer(type);
+    } catch (error) {
+      if (media === current) close();
+      throw error;
+    } finally {
+      source.removeEventListener('sourceopen', opened);
+    }
+    const { buffer } = current;
     buffer.addEventListener('updateend', () => {
       if (media !== current) return;
       chaseLiveEdge();
@@ -99,10 +108,11 @@ export function createMsePlayer(video, { post }) {
   }
 
   function close() {
-    generation++;
     if (!media) return;
-    URL.revokeObjectURL(media.url);
+    const previous = media;
     media = null;
+    previous.queue.length = 0;
+    URL.revokeObjectURL(previous.url);
     video.removeAttribute('src');
     video.load();
   }
@@ -118,7 +128,7 @@ export function createMsePlayer(video, { post }) {
   /** Frames get consecutive decode times one nominal frame apart, so a still CarPlay screen leaves no gap to stall on. */
   function append(record) {
     const key = (record.flags & FLAG.KEY) !== 0;
-    if (!media || (needKey && !key)) {
+    if (!media?.buffer || (needKey && !key)) {
       totals.dropped++;
       if (media) requestKeyFrame();
       return;
@@ -149,7 +159,7 @@ export function createMsePlayer(video, { post }) {
   }
 
   function pump() {
-    if (!media || media.buffer.updating || !media.queue.length) return;
+    if (!media?.buffer || media.buffer.updating || !media.queue.length) return;
     const next = media.queue.shift();
     try {
       if (next.remove) {
@@ -184,21 +194,40 @@ export function createMsePlayer(video, { post }) {
   }
 
   function reportDecoded() {
-    if (!media || reportedEpoch === media.config.epoch || video.readyState < 2) return;
+    if (!media?.buffer || reportedEpoch === media.config.epoch || video.readyState < 2) return;
     reportedEpoch = media.config.epoch;
     post({ type: 'decoded', epoch: reportedEpoch });
   }
 
+  function stop() {
+    records.stop();
+    close();
+    clearInterval(timer);
+    timer = null;
+    streamId = null;
+    lastConfig = null;
+    codecSupported = null;
+    reportedEpoch = null;
+  }
+
   return {
     read(id, stream) {
+      stop();
       streamId = id;
+      lastTick = { at: performance.now(), frames: shownFrames(), bytes: records.stats().bytes };
+      timer = setInterval(tick, 1000);
       needKey = true;
       reportedEpoch = null;
-      records.read(id, stream);
+      return records.read(id, stream);
     },
-    stop: () => records.stop(),
+    stop,
+    dispose() {
+      stop();
+      video.removeEventListener('loadeddata', reportDecoded);
+      video.removeEventListener('error', onError);
+    },
     stats() {
-      const buffered = media?.buffer.buffered;
+      const buffered = media?.buffer?.buffered;
       return {
         renderer: 'video',
         codec: lastConfig?.codec ?? null,

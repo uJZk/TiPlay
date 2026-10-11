@@ -1,0 +1,12 @@
+✔ bounded evidence retains original marks and makes dropped assertions an explicit failure (3.913922ms)
+✔ listen rejects startup failure and closes acquired server resources (8.522007ms)
+✔ bounded session accounting preserves control deduplication across a bye (34.819292ms)
+✔ a stalled fake video consumer stops producing until drain and closes its stream (176.034719ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 314.488361

@@ -22,7 +22,6 @@ import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.network.HotspotAddressVpn
 import com.shilapi.xcertplay.network.HotspotAddresses
 import com.shilapi.xcertplay.network.HotspotExtraAddressKeeper
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 /**
@@ -47,7 +46,7 @@ internal class TeslaBrowserLinkCard(
     private val rerender: () -> Unit,
 ) {
     private val app = activity.applicationContext
-    private val probes = AtomicInteger()
+    private var probeToken: LatestSettingsProbe.Token? = null
 
     fun build(parent: LinearLayout) {
         val status = note("").also(parent::addView)
@@ -73,13 +72,14 @@ internal class TeslaBrowserLinkCard(
             copyPhoneLink?.let(::copy) ?: Toast.makeText(activity, R.string.settings_hotspot_not_found, Toast.LENGTH_SHORT).show()
         }
         val showLinks: (String, String?) -> Unit = { page, phone ->
-            copyPageLink = page
-            pageLink.text = page
-            copyPhoneLink = phone
-            phoneLink.text = phone ?: activity.getString(R.string.settings_hotspot_not_found)
-            phoneLink.setTextColor(if (phone == null) colors.warning else colors.muted)
+            if (status.isAttachedToWindow) {
+                copyPageLink = page
+                pageLink.text = page
+                copyPhoneLink = phone
+                phoneLink.text = phone ?: activity.getString(R.string.settings_hotspot_not_found)
+                phoneLink.setTextColor(if (phone == null) colors.warning else colors.muted)
+            }
         }
-        probe(showLinks)
 
         val stateListener: (TeslaBrowserLink.State) -> Unit = { state ->
             activity.runOnUiThread { if (status.isAttachedToWindow) showState(status, state) }
@@ -95,8 +95,11 @@ internal class TeslaBrowserLinkCard(
                 HotspotExtraAddressKeeper.addListener(keeperListener)
                 HotspotAddressVpn.addListener(vpnListener)
                 showState(status, TeslaBrowserLink.state) // it may have changed since build()
+                probe(showLinks)
             }
             override fun onViewDetachedFromWindow(view: View) {
+                probes.cancel(probeToken)
+                probeToken = null
                 TeslaBrowserLink.removeListener(stateListener)
                 HotspotExtraAddressKeeper.removeListener(keeperListener)
                 HotspotAddressVpn.removeListener(vpnListener)
@@ -154,17 +157,20 @@ internal class TeslaBrowserLinkCard(
      * address; the phone-served page is at the extra address once it is on the hotspot, else at the hotspot's own.
      */
     private fun probe(show: (page: String, phone: String?) -> Unit) {
-        val generation = probes.incrementAndGet()
-        val code = TeslaBrowserLink.pairingCode(app)
-        val extra = HotspotExtraAddressSettings.liveAddress(app)?.hostAddress
-        Thread({
-            // An added extra address answers both links, so the interfaces need no look.
-            val hotspot = if (extra != null) null
-            else runCatching { HotspotAddresses.current(app) }.getOrNull()?.ipv4?.firstOrNull()?.hostAddress
-            val page = TeslaBrowserLink.pageLink(app, hotspot)
-            val phone = (extra ?: hotspot)?.let { TeslaBrowserPageLinks.phoneLink(it, code, TeslaBrowserLink.PORT) }
-            activity.runOnUiThread { if (generation == probes.get()) show(page, phone) }
-        }, "tiplay-browser-link-probe").start()
+        val context = app // The worker must not retain this card or its activity.
+        val code = TeslaBrowserLink.pairingCode(context)
+        val extra = HotspotExtraAddressSettings.liveAddress(context)?.hostAddress
+        probeToken = probes.request(
+            work = {
+                // An added extra address answers both links, so the interfaces need no look.
+                val hotspot = if (extra != null) null
+                else runCatching { HotspotAddresses.current(context) }.getOrNull()?.ipv4?.firstOrNull()?.hostAddress
+                val page = TeslaBrowserLink.pageLink(context, hotspot)
+                val phone = (extra ?: hotspot)?.let { TeslaBrowserPageLinks.phoneLink(it, code, TeslaBrowserLink.PORT) }
+                page to phone
+            },
+            deliver = { (page, phone) -> show(page, phone) },
+        )
     }
 
     private fun linkText(text: String): TextView = note(text).apply {
@@ -230,6 +236,12 @@ internal class TeslaBrowserLinkCard(
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    internal companion object {
+        private val probes = LatestSettingsProbe<Pair<String, String?>>("tiplay-browser-link-probe")
+
+        internal fun awaitProbesForTest(): Boolean = probes.awaitIdle()
     }
 
     private fun dp(value: Int): Int = (value * activity.resources.displayMetrics.density).roundToInt()

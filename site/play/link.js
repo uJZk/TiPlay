@@ -224,6 +224,20 @@ export function encodeRecord({ kind, flags = 0, codec = 0, sequence = 0, epoch =
   return bytes;
 }
 
+/** Await work without keeping a stopped stream blocked on browser configuration promises. */
+export function abortable(promise, signal) {
+  if (signal.aborted) return Promise.reject(new Error('stream stopped'));
+  return new Promise((resolve, reject) => {
+    const finish = (callback, value) => {
+      signal.removeEventListener('abort', aborted);
+      callback(value);
+    };
+    const aborted = () => finish(reject, new Error('stream stopped'));
+    signal.addEventListener('abort', aborted, { once: true });
+    Promise.resolve(promise).then(value => finish(resolve, value), error => finish(reject, error));
+  });
+}
+
 /**
  * Reads §3 records from one response body at a time. `onRecord(record)` may return a promise; the next record waits
  * for it. `onEnd(id, reason)` says why a stream ended: the end record's text, `closed`, `network`, `bad-record`,
@@ -236,15 +250,17 @@ export function createRecordStream({ onRecord, onAlive = () => {}, onEnd = () =>
 
   function stop() {
     if (!current) return;
-    current.reader.cancel().catch(() => {});
+    const previous = current;
     current = null;
+    previous.abort.abort();
+    previous.reader.cancel().catch(() => {});
   }
 
   async function read(id, stream) {
     stop();
     const reader = stream.getReader();
     const parser = new RecordParser();
-    const mine = current = { id, reader, lastRecordAt: now(), alive: false, lastSequence: null };
+    const mine = current = { id, reader, abort: new AbortController(), lastRecordAt: now(), alive: false, lastSequence: null };
     let reason = 'closed';
     try {
       reading: for (;;) {
@@ -274,18 +290,21 @@ export function createRecordStream({ onRecord, onAlive = () => {}, onEnd = () =>
             mine.lastSequence = record.sequence;
             if (record.flags & FLAG.DISCONTINUITY) totals.discontinuities++;
           }
-          const pending = onRecord(record);
-          if (pending) await pending;
+          const pending = onRecord(record, mine.abort.signal);
+          if (pending) await abortable(pending, mine.abort.signal);
           if (current !== mine) return;
         }
       }
     } catch (error) {
       if (current !== mine) return;
       reason = error instanceof RecordError ? 'bad-record' : 'error';
+    } finally {
+      reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
     if (current !== mine) return;
     current = null;
-    reader.cancel().catch(() => {});
+    mine.abort.abort();
     onEnd(id, reason);
   }
 

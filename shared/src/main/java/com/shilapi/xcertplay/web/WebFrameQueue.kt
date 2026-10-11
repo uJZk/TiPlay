@@ -7,17 +7,22 @@ package com.shilapi.xcertplay.web
  * The records waiting for one `/video` writer. Caller holds the hub lock. Predictive frames are never
  * retained across a gap: when the oldest frame is too old, or the queue is full, every queued frame is
  * dropped and frames are skipped until the next key frame, which then carries [WebVideoRecords.FLAG_DISCONTINUITY].
- * Config records are never dropped and keep their place between frames.
+ * Config records keep their place between frames. A full config budget rejects the new record so the caller
+ * can end the subscription instead of continuing without a required configuration.
  */
 internal class WebFrameQueue(
     // TCP retransmits instead of losing packets, so allow more than WheelPlay's 50 ms WebRTC budget.
     private val maxAgeNanos: Long = 150_000_000,
     private val maxBytes: Int = 4 * 1024 * 1024,
     private val maxFrames: Int = 10,
+    private val maxConfigs: Int = 8,
+    private val maxConfigBytes: Int = WebVideoRecords.MAX_PAYLOAD,
 ) {
     private val records = ArrayDeque<WebVideoRecord>()
     private var started = false
     private var gap = false
+    var configCount = 0; private set
+    var configBytes = 0; private set
     var size = 0; private set
     var bytes = 0; private set
     var needsKeyFrame = true; private set
@@ -54,9 +59,24 @@ internal class WebFrameQueue(
     }
 
     /** Queues a config record; the next frame must be a key frame of the new configuration. */
-    fun offerConfig(config: WebVideoRecord, now: Long) {
+    fun offerConfig(config: WebVideoRecord, now: Long): Boolean {
+        if (configCount >= maxConfigs || config.payloadLength > maxConfigBytes - configBytes) return false
         records.addLast(config)
+        configCount++
+        configBytes += config.payloadLength
         requireKeyFrame(now)
+        return true
+    }
+
+    /** Releases all retained payloads when a subscription ends. */
+    fun clear() {
+        records.clear()
+        size = 0
+        bytes = 0
+        configCount = 0
+        configBytes = 0
+        waitingSinceNanos = null
+        needsKeyFrame = true
     }
 
     fun poll(now: Long): WebVideoRecord? {
@@ -65,6 +85,9 @@ internal class WebFrameQueue(
         if (record.kind == WebVideoRecords.KIND_FRAME) {
             size--
             bytes -= record.payloadLength
+        } else if (record.kind == WebVideoRecords.KIND_CONFIG) {
+            configCount--
+            configBytes -= record.payloadLength
         }
         return record
     }

@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join } from 'node:path';
+import { History, listen, closeServer } from './resources.mjs';
 import { RECORD, FLAG, encodeRecord } from '../../site/play/link.js';
 
 const PAGE_TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
@@ -38,17 +39,18 @@ export function parseIvf(buffer) {
  * Events from /control land in `events` as `{s, q, event}`. With `pageDir` it also serves the page under /play/.
  */
 export function startFakePhone({ code, frames, width, height, fps = 30, codec = 'vp8', host = '127.0.0.1', pageDir = null }) {
-  const events = [], requests = [], preflights = [];
-  let current = null, lastSeen = 0, video = null, fit = false, viewport = null, videoCount = 0, corrupt = false;
+  const events = new History(), requests = new History(), preflights = new History();
+  let current = null, lastSeen = 0, video = null, fit = false, viewport = null, videoCount = 0, corrupt = false, framesWritten = 0;
   const replaced = new Set(), lastQ = new Map();
   const config = new TextEncoder().encode(JSON.stringify({ codec, width, height, fps, format: 'annexb', marker: 'none' }));
 
   function closeVideo(reason) {
     if (!video) return;
-    const { res, timer } = video;
+    const { res, timer, drain } = video;
     video = null;
     clearInterval(timer);
-    if (reason) res.end(encodeRecord({ kind: RECORD.END, payload: new TextEncoder().encode(reason) }));
+    res.off('drain', drain);
+    if (reason && !res.writableNeedDrain) res.end(encodeRecord({ kind: RECORD.END, payload: new TextEncoder().encode(reason) }));
     else res.socket?.destroy();
   }
 
@@ -57,8 +59,15 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     if (c !== code) return json(res, 401, { error: 'code' }), false;
     if (!/^[A-Za-z0-9_-]{16,64}$/.test(s ?? '')) return json(res, 400, { error: 'bad-request' }), false;
     if (replaced.has(s)) return json(res, 409, { error: 'replaced' }), false;
+    if (!lastQ.has(s)) {
+      if (lastQ.size >= 1024) return json(res, 503, { error: 'session-limit' }), false;
+      lastQ.set(s, 0);
+    }
     if (current !== s) {
-      if (current && (video || Date.now() - lastSeen < 6000)) replaced.add(current);
+      if (current && (video || Date.now() - lastSeen < 6000)) {
+        if (replaced.size >= 1024) return json(res, 503, { error: 'session-limit' }), false;
+        replaced.add(current);
+      }
       closeVideo('replaced');
       current = s;
     }
@@ -73,25 +82,31 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     res.useChunkedEncodingByDefault = false;
     res.writeHead(200, { 'Content-Type': 'application/octet-stream', Connection: 'close' });
     res.socket.setNoDelay(true);
-    res.write(encodeRecord({ kind: RECORD.CONFIG, epoch: 1, payload: config }));
+    let blocked = !res.write(encodeRecord({ kind: RECORD.CONFIG, epoch: 1, payload: config }));
     let sequence = 0, cursor = 0;
     const stream = {
       res,
+      drain: () => { blocked = false; },
+      get blocked() { return blocked; },
       restart: () => { cursor = 0; },
       timer: setInterval(() => {
+        if (blocked || res.destroyed) return;
         const frame = corrupt ? { key: true, data: new Uint8Array(2000).fill(0x5a) } : frames[cursor++ % frames.length];
         corrupt = false;
-        res.write(encodeRecord({
+        blocked = !res.write(encodeRecord({
           kind: RECORD.FRAME, flags: frame.key ? FLAG.KEY : 0, epoch: 1,
           sequence, timestampUs: Math.round(sequence * 1e6 / fps), payload: frame.data,
         }));
         sequence++;
+        framesWritten++;
       }, 1000 / fps),
     };
     video = stream;
+    res.on('drain', stream.drain);
     res.on('close', () => {
       if (video !== stream) return;
       clearInterval(stream.timer);
+      res.off('drain', stream.drain);
       video = null;
     });
   }
@@ -179,10 +194,12 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     res.end(readFileSync(join(pageDir, name)));
   }
 
-  return new Promise(resolve => server.listen(0, host, () => resolve({
+  return listen(server, host).then(() => ({
     port: server.address().port,
     events, requests, preflights,
+    assertHistories() { for (const history of [events, requests, preflights]) history.assertComplete(); },
     get videoCount() { return videoCount; },
+    get streamStats() { return { framesWritten, blocked: Boolean(video?.blocked), bufferedBytes: video?.res.writableLength ?? 0, active: Boolean(video) }; },
     setFit(value) { fit = value; },
     /** Drops the current /video socket without an end record, as a vanished hotspot would. */
     dropVideo() { closeVideo(null); },
@@ -190,8 +207,7 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     corruptNextFrame() { corrupt = true; },
     close() {
       closeVideo('stopped');
-      server.closeAllConnections();
-      return new Promise(done => server.close(done));
+      return closeServer(server);
     },
-  })));
+  }));
 }

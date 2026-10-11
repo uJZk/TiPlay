@@ -17,6 +17,8 @@ import com.shilapi.xcertplay.orchestration.CarPlayRunMode
 import java.net.BindException
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
@@ -44,6 +46,7 @@ import org.robolectric.util.ReflectionHelpers
 class TeslaBrowserLinkSettingsTest {
     private val context get() = RuntimeEnvironment.getApplication()
     private var activity: DiPlayActivity? = null
+    private val screens = mutableListOf<org.robolectric.android.controller.ActivityController<DiPlayActivity>>()
     private val servers = AtomicInteger()
     private val failBinds = AtomicInteger()
 
@@ -66,7 +69,9 @@ class TeslaBrowserLinkSettingsTest {
     }
 
     @After fun tearDown() {
-        activity?.finish()
+        screens.forEach { it.pause().stop().destroy() }
+        screens.clear()
+        finishProbes()
         TeslaBrowserLink.resetForTest()
         TeslaBrowserLink.serverFactory = TiPlayTestApplication.noSocketServers
         TeslaBrowserLink.backoffMillis = { failures -> minOf(30_000L, 1_000L shl minOf(failures, 5)) }
@@ -322,6 +327,42 @@ class TeslaBrowserLinkSettingsTest {
         assertEquals("package:${context.packageName}", settings.dataString)
     }
 
+    @Test fun detachedCardsDiscardBlockedProbesAndReattachmentGetsFreshLinks() {
+        val screen = openSettings()
+        val entered = CountDownLatch(2) // Both the hotspot and link cards use a bounded worker.
+        val release = CountDownLatch(1)
+        HotspotProbe.entered = entered
+        HotspotProbe.gate = release
+        HotspotProbe.result = HotspotAddresses.Current("wlan0", listOf(ip("192.168.43.1")))
+        ReflectionHelpers.setField(screen, "settingsCategory", SettingsCategory.CONNECTION)
+        ReflectionHelpers.callInstanceMethod<Unit>(screen, "render")
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val oldRows = texts(screen).filter {
+                it.text.toString() == screen.getString(R.string.settings_hotspot_address_checking)
+            }.toList()
+            assertEquals(2, oldRows.size)
+            ReflectionHelpers.setField(screen, "settingsCategory", SettingsCategory.DISPLAY)
+            ReflectionHelpers.callInstanceMethod<Unit>(screen, "render")
+            assertTrue(oldRows.none { it.isAttachedToWindow })
+            release.countDown()
+            finishProbes()
+            assertTrue(oldRows.all {
+                it.text.toString() == screen.getString(R.string.settings_hotspot_address_checking)
+            })
+            HotspotProbe.result = HotspotAddresses.Current("wlan0", listOf(ip("192.168.44.1")))
+            ReflectionHelpers.setField(screen, "settingsCategory", SettingsCategory.CONNECTION)
+            rerender(screen)
+            assertTrue(shown(screen).any { it.startsWith("http://192.168.44.1:8080/play/") })
+            assertFalse(shown(screen).any { it.contains("192.168.43.1") })
+        } finally {
+            release.countDown()
+            HotspotProbe.gate = null
+            HotspotProbe.entered = null
+            finishProbes()
+        }
+    }
+
     /** Android 17 with the permission denied; Robolectric's platforms are older. */
     @Implements(LocalNetworkPermission::class, isInAndroidSdk = false)
     internal class DeniedLocalNetwork {
@@ -332,13 +373,18 @@ class TeslaBrowserLinkSettingsTest {
     class HotspotProbe {
         @Implementation fun current(context: Context): HotspotAddresses.Current? {
             threads += Thread.currentThread()
-            return result
+            val snapshot = result
+            entered?.countDown()
+            check(gate?.await(5, TimeUnit.SECONDS) != false)
+            return snapshot
         }
 
         companion object {
             val threads = CopyOnWriteArrayList<Thread>()
             @Volatile var result: HotspotAddresses.Current? = null
-            fun reset() { threads.clear(); result = null }
+            @Volatile var gate: CountDownLatch? = null
+            @Volatile var entered: CountDownLatch? = null
+            fun reset() { threads.clear(); result = null; gate = null; entered = null }
         }
     }
 
@@ -360,11 +406,9 @@ class TeslaBrowserLinkSettingsTest {
     }
 
     private fun finishProbes() {
-        // A probe can start while the main looper idles (a render after a dialog). The link rows' probe does not look
-        // at the interfaces when the extra address is on the hotspot, so wait for it by name too.
         repeat(2) {
-            (HotspotProbe.threads + Thread.getAllStackTraces().keys.filter { it.name == "tiplay-browser-link-probe" })
-                .forEach { it.join(3_000) }
+            assertTrue(HotspotExtraAddressCard.awaitProbesForTest())
+            assertTrue(TeslaBrowserLinkCard.awaitProbesForTest())
             shadowOf(Looper.getMainLooper()).idle()
         }
     }
@@ -380,7 +424,7 @@ class TeslaBrowserLinkSettingsTest {
     private fun openSettings(): DiPlayActivity = Robolectric.buildActivity(
         DiPlayActivity::class.java,
         Intent(context, DiPlayActivity::class.java).putExtra("page", "settings"),
-    ).setup().get().also { activity = it }
+    ).also { screens += it }.setup().get().also { activity = it }
 
     private fun openConnection(): DiPlayActivity = openSettings().also { screen ->
         descendants(screen.window.decorView).first { candidate ->

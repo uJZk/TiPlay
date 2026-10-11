@@ -202,10 +202,6 @@ class PhoneBrowserModeSettingsTest {
         assertEquals(0, stops)
     }
 
-    private fun runModeSwitch(screen: DiPlayActivity): Switch =
-        descendants(screen.window.decorView).filterIsInstance<Switch>()
-            .single { it.contentDescription == screen.getString(R.string.settings_phone_browser_mode) }
-
     private fun visibleIn(screen: DiPlayActivity, category: Int): List<CharSequence> {
         descendants(screen.window.decorView).first { candidate ->
             candidate.contentDescription == screen.getString(R.string.settings_open_category, screen.getString(category))

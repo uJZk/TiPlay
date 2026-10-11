@@ -9,6 +9,8 @@ import com.shilapi.xcertplay.network.HotspotConfigurationAccess
 
 /** Read-only. Never enables a hotspot, requests a grant, or logs credentials. */
 internal object LocalHotspotSettings {
+    private val CURRENT_SOFT_AP_SSID = Regex("(?m)^\\s*mCurrentSoftApConfiguration=ssid=\"([^\"\\r\\n]+)\"")
+
     class Credentials(val ssid: String, val password: String?) {
         override fun toString() = "Local hotspot credentials (redacted)"
     }
@@ -53,8 +55,7 @@ internal object LocalHotspotSettings {
 
     /** Only the current AP's record; connected and remembered router names must never be imported. */
     fun fromDump(text: String): Credentials? {
-        val name = Regex("(?m)^\\s*mCurrentSoftApConfiguration=ssid=\"([^\"\\r\\n]+)\"")
-            .find(text)?.groupValues?.get(1) ?: return null
+        val name = CURRENT_SOFT_AP_SSID.find(text)?.groupValues?.get(1) ?: return null
         return credentials(name, null) // dumpsys masks secrets on many ROMs; keep the manual password.
     }
 }

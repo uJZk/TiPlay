@@ -22,7 +22,6 @@ import com.shilapi.xcertplay.network.HotspotExtraAddress
 import com.shilapi.xcertplay.network.HotspotExtraAddressKeeper
 import com.shilapi.xcertplay.network.ShizukuSystem
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 /**
@@ -48,7 +47,7 @@ internal class HotspotExtraAddressCard(
     data class Colors(val muted: Int, val warning: Int, val ready: Int)
 
     private val app = activity.applicationContext
-    private val probes = AtomicInteger()
+    private var probeToken: LatestSettingsProbe.Token? = null
 
     fun build(parent: LinearLayout) {
         val method = HotspotExtraAddressSettings.method(app)
@@ -79,7 +78,6 @@ internal class HotspotExtraAddressCard(
         }
         val refresh = { showStatus(method, status, action) }
         refresh()
-        probe(current, blocked, method)
         val keeperListener: (HotspotExtraAddressKeeper.State) -> Unit = {
             activity.runOnUiThread {
                 if (status.isAttachedToWindow) {
@@ -97,8 +95,11 @@ internal class HotspotExtraAddressCard(
                 HotspotExtraAddressKeeper.addListener(keeperListener)
                 HotspotAddressVpn.addListener(vpnListener)
                 refresh() // it may have changed since build()
+                probe(current, blocked, method)
             }
             override fun onViewDetachedFromWindow(view: View) {
+                probes.cancel(probeToken)
+                probeToken = null
                 HotspotExtraAddressKeeper.removeListener(keeperListener)
                 HotspotAddressVpn.removeListener(vpnListener)
             }
@@ -120,13 +121,13 @@ internal class HotspotExtraAddressCard(
     }
 
     private fun probe(current: TextView, blocked: TextView, method: HotspotAddressMethod) {
-        val generation = probes.incrementAndGet()
-        Thread({
-            val hotspot = runCatching { HotspotAddresses.current(app) }.getOrNull()
-            activity.runOnUiThread {
-                if (generation == probes.get()) showHotspot(current, blocked, hotspot, method)
-            }
-        }, "tiplay-hotspot-probe").start()
+        val context = app // The worker must not retain this card or its activity.
+        probeToken = probes.request(
+            work = { runCatching { HotspotAddresses.current(context) }.getOrNull() },
+            deliver = { hotspot ->
+                if (current.isAttachedToWindow) showHotspot(current, blocked, hotspot, method)
+            },
+        )
     }
 
     private fun showHotspot(current: TextView, blocked: TextView, hotspot: HotspotAddresses.Current?,
@@ -347,6 +348,10 @@ internal class HotspotExtraAddressCard(
     }
 
     companion object {
+        private val probes = LatestSettingsProbe<HotspotAddresses.Current?>("tiplay-hotspot-probe")
+
+        internal fun awaitProbesForTest(): Boolean = probes.awaitIdle()
+
         /** Process-wide, so a render during the check keeps the chooser busy. */
         internal val rootCheckInProgress = AtomicBoolean(false)
     }

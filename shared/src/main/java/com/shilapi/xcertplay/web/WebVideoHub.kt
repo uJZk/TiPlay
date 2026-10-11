@@ -24,7 +24,7 @@ import kotlin.concurrent.withLock
  * epoch. The iPhone repeats a byte-identical config whenever it honours a key-frame request; that keeps the epoch.
  */
 class WebVideoHub(
-    private val keyFrameExecutor: Executor = Executors.newSingleThreadExecutor { Thread(it, "web-keyframe").apply { isDaemon = true } },
+    private val keyFrameExecutor: Executor = defaultKeyFrameExecutor,
     private val nanoTime: () -> Long = System::nanoTime,
     private val log: (String) -> Unit = {},
 ) {
@@ -62,6 +62,8 @@ class WebVideoHub(
     private var renderedEpoch = 0
     private var subscription: WebVideoSubscription? = null
     private var lastKeyFrameRequestNanos: Long? = null
+    private var pendingKeyFrame: Stream? = null
+    private var keyFrameWorkerScheduled = false
 
     /**
      * Makes [owner] the producer. [requestKeyFrame] asks the iPhone for a key frame (blocking); [report] is the
@@ -71,6 +73,7 @@ class WebVideoHub(
         lock.withLock {
             this.owner = owner
             stream = Stream(width, height, fps, requestKeyFrame, report)
+            pendingKeyFrame = null
             config = null
             lastCodec = null
             lastRecord = null
@@ -103,8 +106,7 @@ class WebVideoHub(
             sequence = 0
             origin = false
             subscription?.let {
-                it.queue.offerConfig(next.message, nanoTime())
-                it.signal()
+                it.offerConfig(next.message, nanoTime())
             }
             "Web video: config epoch=$epoch codec=$codecString"
         }
@@ -150,6 +152,7 @@ class WebVideoHub(
             if (owner !== this.owner) return
             this.owner = null
             stream = null
+            pendingKeyFrame = null
             config = null
             lastCodec = null
             lastRecord = null
@@ -158,26 +161,50 @@ class WebVideoHub(
         log("Web video: stream ended")
     }
 
-    /** Asks the current stream for a key frame, at most once per 500 ms unless [force]. */
+    /**
+     * Asks at most once per 500 ms unless [force]. One worker and one pending request bound bursts,
+     * including forced retries. A new stream replaces pending work; an already admitted network write
+     * may finish after retirement, without holding the hub lock or delaying the producer.
+     */
     fun requestKeyFrame(force: Boolean = false) {
-        val request = lock.withLock {
+        lock.withLock {
             val stream = stream ?: return
             val now = nanoTime()
             val last = lastKeyFrameRequestNanos
             if (!force && last != null && now - last < KEY_FRAME_INTERVAL_NANOS) return
             lastKeyFrameRequestNanos = now
-            performance.count("keyFrameRequests")
-            stream.requestKeyFrame
+            pendingKeyFrame = stream
+            if (keyFrameWorkerScheduled) return
+            keyFrameWorkerScheduled = true
         }
         try {
-            keyFrameExecutor.execute {
-                try {
-                    request()
-                } catch (error: Exception) {
-                    log("Web video: key frame request failed ${error.javaClass.simpleName}")
-                }
-            }
+            keyFrameExecutor.execute(::drainKeyFrameRequests)
         } catch (_: RejectedExecutionException) {
+            lock.withLock {
+                keyFrameWorkerScheduled = false
+                pendingKeyFrame = null
+                lastKeyFrameRequestNanos = null
+            }
+        }
+    }
+
+    private fun drainKeyFrameRequests() {
+        while (true) {
+            val request = lock.withLock {
+                val pending = pendingKeyFrame
+                pendingKeyFrame = null
+                if (pending == null || pending !== stream) {
+                    keyFrameWorkerScheduled = false
+                    return
+                }
+                performance.count("keyFrameRequests")
+                pending.requestKeyFrame
+            }
+            try {
+                request()
+            } catch (error: Exception) {
+                log("Web video: key frame request failed ${error.javaClass.simpleName}")
+            }
         }
     }
 
@@ -221,8 +248,8 @@ class WebVideoHub(
             val now = nanoTime()
             subscription?.endLocked("replaced")
             WebVideoSubscription(this, lock.newCondition(), now).also { next ->
-                config?.let { next.queue.offerConfig(it.message, now) }
                 subscription = next
+                config?.let { next.offerConfig(it.message, now) }
             }
         }
         requestKeyFrame(force = true)
@@ -260,6 +287,11 @@ class WebVideoHub(
     }
 
     companion object {
+        // Owned by the process, not an AirPlay session or an individual hub. Injected executors remain
+        // caller-owned; neither stream teardown nor subscription teardown shuts an executor down.
+        private val defaultKeyFrameExecutor: Executor by lazy {
+            Executors.newSingleThreadExecutor { Thread(it, "web-keyframe").apply { isDaemon = true } }
+        }
         const val FIRST_FRAME_RENDERED = "first frame rendered"
         private const val KEY_FRAME_INTERVAL_NANOS = 500_000_000L
         private const val KEY_FRAME_RETRY_NANOS = 3_000_000_000L
@@ -297,7 +329,14 @@ internal class WebVideoSubscription(
 
     internal fun endLocked(reason: String) {
         if (end == null) end = WebVideoRecords.end(reason)
+        queue.clear()
+        hub.unsubscribe(this)
         available.signalAll()
+    }
+
+    internal fun offerConfig(record: WebVideoRecord, now: Long) {
+        if (end != null) return
+        if (!queue.offerConfig(record, now)) endLocked("slow-consumer") else signal()
     }
 
     internal fun signal() = available.signalAll()

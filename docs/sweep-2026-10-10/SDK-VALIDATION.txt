@@ -1,0 +1,34 @@
+WARNING: The SDK Manager CLI tool (sdkmanager) is deprecated. Android CLI will be used instead.
+The 'android' binary can also be found in the cmdline-tools directory, and 'android sdk' is the replacement for 'sdkmanager'.
+To learn more about the Android CLI and how to use it, see the documentation (https://d.android.com/tools/agents/android-cli)
+
+Downloading Android CLI...
+Unpacking embedded installation...
+
+Terms of Service and License Agreement for the Android Software Development Kit
+
+https://developer.android.com/studio/terms
+
+Google collects usage data for the Android CLI, such as commands, sub-commands, and flags used. This data does not include custom parameters or identifiable information. This information helps improve the tool and is collected in accordance with Google's Privacy Policy.
+
+https://policies.google.com/privacy
+
+Disable Android CLI metrics collection by using the --no-metrics flag.
+
+Tip: For the best experience using Android CLI with agents, we strongly recommend running android init to install the necessary skills and resources.
+
+https://dl.google.com/android/repository/platform-37.0_r02.zip...
+
+https://dl.google.com/android/repository/build-tools_r36_linux.zip...
+
+https://dl.google.com/android/repository/platform-tools_r37.0.1-linux.zip...
+
+https://dl.google.com/android/repository/android-ndk-r28c-linux.zip...
+
+Unzipping platforms/android-37.0......
+
+Unzipping build-tools/36.0.0......
+
+Unzipping platform-tools......
+
+Unzipping ndk/28.2.13676358......

@@ -4,6 +4,9 @@ Instructions for coding agents that work on TiPlay.
 
 ## Current progress
 
+See `docs/sweep-2026-10-10/FOLLOWUP-2026-10-11.md` for the completed queue/resource lifecycle fixes and verification;
+`docs/sweep-2026-10-10/TIE-UP-2026-10-11.md` records commit, merge, push and Pages deployment progress.
+
 See `docs/SETTINGS-VALIDATION-2026-10-10.md` for the current browser settings profile,
 device installation, verification results and remaining vehicle checks.
 `docs/E2E-VALIDATION-2026-10-10.md` records the earlier local browser E2E results

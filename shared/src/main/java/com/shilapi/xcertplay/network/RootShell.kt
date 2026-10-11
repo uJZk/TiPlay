@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.network
 
 import android.os.Looper
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -26,7 +27,8 @@ object RootShell {
     const val PROMPT_TIMEOUT_MILLIS = 30_000L
     private const val MAX_TIMEOUT_MILLIS = 60_000L
     private const val MAX_OUTPUT_CHARS = 16_384
-    private const val READER_JOIN_MILLIS = 1_000L
+    private const val MAX_OUTPUT_BYTES = MAX_OUTPUT_CHARS * 4
+    private const val DRAIN_INTERVAL_MILLIS = 10L
 
     // Letters, digits, space and `_ . / -`: enough for `id -u` and `ip -4 addr replace A.B.C.D/32 dev IFACE`.
     private val SAFE_SCRIPT = Regex("[A-Za-z0-9_./ -]{1,256}")
@@ -48,43 +50,52 @@ object RootShell {
         } catch (_: SecurityException) {
             return Result.Unavailable
         }
-        val output = StringBuilder()
-        val reader = Thread({
-            runCatching {
-                process.inputStream.bufferedReader().use { input ->
-                    val buffer = CharArray(1_024)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        synchronized(output) {
-                            output.append(buffer, 0, count)
-                            // The marker comes last, so keep the tail.
-                            if (output.length > MAX_OUTPUT_CHARS) output.delete(0, output.length - MAX_OUTPUT_CHARS)
-                        }
-                    }
+        // Only read bytes the pipe already has. A blocking reader can outlive a timed-out shell when a
+        // descendant inherits stdout; interrupting a Java stream read does not reliably release it.
+        val input = process.inputStream
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(1_024)
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+        fun drain() {
+            // Bound each pass even if a descendant continuously writes after the direct process exits.
+            var remaining = MAX_OUTPUT_BYTES
+            while (remaining > 0) {
+                val available = input.available()
+                if (available == 0) break
+                val count = input.read(buffer, 0, minOf(available, buffer.size, remaining))
+                if (count <= 0) break
+                output.write(buffer, 0, count)
+                remaining -= count
+                if (output.size() > MAX_OUTPUT_BYTES) {
+                    val tail = output.toByteArray()
+                    output.reset()
+                    output.write(tail, tail.size - MAX_OUTPUT_BYTES, MAX_OUTPUT_BYTES)
                 }
             }
-        }, "tiplay-root-output").apply { isDaemon = true; start() }
-        // A refusing su may exit before reading stdin; the missing marker reports that below.
-        runCatching { process.outputStream.bufferedWriter().use { it.write(wrap(script)) } }
-        val finished = try {
-            process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-            false
-        }
-        if (!finished) {
-            process.destroyForcibly()
-            reader.interrupt()
-            return Result.TimedOut
         }
         try {
-            reader.join(READER_JOIN_MILLIS)
+            // The bounded script is smaller than a pipe buffer, including when su refuses to read stdin.
+            runCatching { process.outputStream.bufferedWriter().use { it.write(wrap(script)) } }
+            while (true) {
+                runCatching { drain() }
+                val remaining = deadline - System.nanoTime()
+                if (remaining <= 0) return Result.TimedOut
+                if (process.waitFor(minOf(remaining, TimeUnit.MILLISECONDS.toNanos(DRAIN_INTERVAL_MILLIS)),
+                        TimeUnit.NANOSECONDS)) {
+                    runCatching { drain() }
+                    return parse(output.toByteArray().toString(Charsets.UTF_8).takeLast(MAX_OUTPUT_CHARS))
+                }
+            }
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
+            return Result.TimedOut
+        } finally {
+            // No thread is reading these streams, so closing never waits for a descendant's EOF or a reader lock.
+            runCatching { input.close() }
+            runCatching { process.outputStream.close() }
+            runCatching { process.errorStream.close() }
+            if (process.isAlive) process.destroyForcibly()
         }
-        runCatching { process.inputStream.close() }
-        return parse(synchronized(output) { output.toString() })
     }
 
     /** The text written to `su`: the script, then its exit status behind [EXIT_MARKER]. */

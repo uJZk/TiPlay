@@ -116,4 +116,35 @@ class WebFrameQueueTest {
         q.invalidate(50)
         assertEquals(40L, q.waitingSinceNanos)
     }
+    @Test fun configBudgetsPreserveOrderAndPollingRestoresCapacity() {
+        val q = WebFrameQueue(maxConfigs = 2, maxConfigBytes = 6)
+        assertTrue(q.offerConfig(config(1), 0))
+        assertTrue(q.offer(frame(0, true, 0), 0))
+        assertTrue(q.offerConfig(config(2), 0))
+        assertFalse(q.offerConfig(config(3), 0))
+        assertEquals(2, q.configCount)
+        assertEquals(6, q.configBytes)
+        assertEquals(1, q.poll(0)!!.epoch)
+        assertTrue(q.offerConfig(config(3), 0))
+        assertEquals(WebVideoRecords.KIND_FRAME, q.poll(0)!!.kind)
+        assertEquals(2, q.poll(0)!!.epoch)
+        assertEquals(3, q.poll(0)!!.epoch)
+        assertEquals(0, q.configBytes)
+        assertEquals(0, q.configCount)
+    }
+
+    @Test fun oversizedConfigIsRefusedAndClearReleasesAllKinds() {
+        val q = WebFrameQueue(maxConfigs = 10, maxConfigBytes = 5)
+        assertTrue(q.offerConfig(config(1), 0))
+        assertFalse(q.offerConfig(config(2), 0))
+        assertTrue(q.offer(frame(0, true, 0), 0))
+        q.clear()
+        assertEquals(0, q.bytes)
+        assertEquals(0, q.size)
+        assertEquals(0, q.configCount)
+        assertEquals(0, q.configBytes)
+        assertNull(q.poll(0))
+        assertFalse(WebFrameQueue(maxConfigBytes = 2).offerConfig(config(1), 0))
+    }
+
 }

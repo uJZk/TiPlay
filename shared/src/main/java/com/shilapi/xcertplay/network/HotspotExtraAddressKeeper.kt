@@ -81,6 +81,7 @@ object HotspotExtraAddressKeeper {
             if (retryRootDenied && root) rootRefused = false
             val current = session
             if (current != null && current.address == address && current.backend.id == chosen.id) {
+                current.eligible = eligible
                 current.refresh(retryRootDenied)
                 return
             }
@@ -124,7 +125,7 @@ object HotspotExtraAddressKeeper {
 
     private fun publish(source: Session?, next: State) {
         synchronized(lock) {
-            if (source != null && session !== source) return
+            if (session !== source) return
             if (state == next) return
             state = next
         }
@@ -160,7 +161,16 @@ object HotspotExtraAddressKeeper {
         rootDenied: Boolean,
     ) {
         @Volatile private var closed = false
+        @Volatile var eligible: () -> Boolean = eligible
+        private val refreshes = HotspotRefreshQueue(worker) { retry ->
+            if (!closed) {
+                if (!opened) openOnWorker()
+                if (retry) loop.clearDenied()
+                tick()
+            }
+        }
         // Worker thread only.
+        private var opened = false
         private var finder: HotspotFinder? = null
         private var pending: ScheduledFuture<*>? = null
         private var watcher: Closeable? = null
@@ -169,7 +179,7 @@ object HotspotExtraAddressKeeper {
             backend = backend,
             hasAddress = dependencies.hasAddress,
             findIface = { (finder ?: dependencies.openFinder(context).also { finder = it }).find() },
-            eligible = eligible,
+            eligible = { this.eligible() },
             nowMillis = dependencies.nowMillis,
             log = dependencies.log,
             rootDenied = rootDenied,
@@ -182,7 +192,10 @@ object HotspotExtraAddressKeeper {
         }
         private var registered = false
 
-        fun open() {
+        fun open() = refresh(retryRootDenied = false)
+
+        private fun openOnWorker() {
+            opened = true
             val filter = IntentFilter().apply {
                 addAction(ACTION_TETHER_STATE_CHANGED)
                 addAction(ACTION_WIFI_AP_STATE_CHANGED)
@@ -197,26 +210,22 @@ object HotspotExtraAddressKeeper {
                 }
             }.onFailure { dependencies.log("hotspot broadcasts unavailable; polling only: ${it.javaClass.simpleName}") }
                 .isSuccess
-            post {
-                watcher = runCatching { backend.watch { refresh(retryRootDenied = false) } }
-                    .onFailure { dependencies.log("${backend.id} events unavailable; polling only: ${it.javaClass.simpleName}") }
-                    .getOrNull()
-                tick()
-            }
+            watcher = runCatching { backend.watch { refresh(retryRootDenied = false) } }
+                .onFailure { dependencies.log("${backend.id} events unavailable; polling only: ${it.javaClass.simpleName}") }
+                .getOrNull()
         }
 
-        fun refresh(retryRootDenied: Boolean) = post {
-            if (retryRootDenied) loop.clearDenied()
-            tick()
-        }
+        fun refresh(retryRootDenied: Boolean) = refreshes.request(retryRootDenied)
 
         fun close(removeAddress: Boolean) {
             closed = true
-            if (registered) {
-                registered = false
-                runCatching { context.unregisterReceiver(receiver) }
-            }
-            post(evenWhenClosed = true) {
+            // An unopened session owns no resources. Cancel its queued work without queuing a redundant teardown.
+            if (!refreshes.close()) return
+            worker.execute {
+                if (registered) {
+                    registered = false
+                    runCatching { context.unregisterReceiver(receiver) }
+                }
                 pending?.cancel(false)
                 pending = null
                 runCatching { watcher?.close() }
@@ -235,21 +244,58 @@ object HotspotExtraAddressKeeper {
                 dependencies.log("check failed: ${it.javaClass.simpleName}")
                 HotspotExtraAddressLoop.POLL_MILLIS
             }
-            if (!closed && backend.id == RootHotspotAddressBackend.ID) rootRefused = loop.state == State.RootDenied
+            synchronized(lock) {
+                if (!closed && session === this && backend.id == RootHotspotAddressBackend.ID) {
+                    rootRefused = loop.state == State.RootDenied
+                }
+            }
             publish(this, loop.state)
             if (next != null && !closed) {
                 pending = runCatching { worker.schedule({ tick() }, next, TimeUnit.MILLISECONDS) }.getOrNull()
             }
         }
+    }
+}
 
-        private fun post(evenWhenClosed: Boolean = false, block: () -> Unit) {
-            if (closed && !evenWhenClosed) return
+/** At most one queued refresh per session, plus its running check; explicit retries survive ordinary events. */
+internal class HotspotRefreshQueue(
+    private val worker: ScheduledThreadPoolExecutor,
+    private val check: (Boolean) -> Unit,
+) {
+    private val lock = Any()
+    private var pending: ScheduledFuture<*>? = null
+    private var retry = false
+    private var closed = false
+    private var started = false
+
+    fun request(retryDenied: Boolean) {
+        synchronized(lock) {
+            if (closed) return
+            retry = retry || retryDenied
+            if (pending != null) return
             try {
-                worker.execute { if (evenWhenClosed || !closed) block() }
+                pending = worker.schedule({
+                    val requestedRetry = synchronized(lock) {
+                        pending = null
+                        if (closed) return@schedule
+                        started = true
+                        retry.also { retry = false }
+                    }
+                    check(requestedRetry)
+                }, 0, TimeUnit.MILLISECONDS)
             } catch (_: RejectedExecutionException) {
-                // The worker never shuts down; nothing to do if it did.
+                // The keeper's worker lives for the process; a test executor may have stopped.
             }
         }
+    }
+
+    /** Cancel queued work; true only if the worker may have acquired resources that need teardown. */
+    fun close(): Boolean = synchronized(lock) {
+        closed = true
+        pending?.cancel(false)
+        pending = null
+        retry = false
+        started
     }
 }
 
