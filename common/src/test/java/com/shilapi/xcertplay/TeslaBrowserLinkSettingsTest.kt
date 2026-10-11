@@ -215,6 +215,16 @@ class TeslaBrowserLinkSettingsTest {
             clipboard.primaryClip!!.getItemAt(0).text.toString())
     }
 
+    @Test fun androidEndpointIsVisibleBeforeHotspotProbeCompletes() {
+        HotspotExtraAddressSettings.setEnabled(context, false)
+        val screen = openSettings()
+        descendants(screen.window.decorView).first { candidate ->
+            candidate.contentDescription == screen.getString(R.string.settings_open_category, screen.getString(R.string.connection))
+        }.performClick()
+        assertTrue(shown(screen).contains("${TeslaBrowserPageLinks.PAGE_DEFAULT_PHONE_ADDRESS}:8080"))
+        finishProbes()
+    }
+
     @Test fun browserInstructionsKeepPageCodeAndAndroidEndpointInOrder() {
         HotspotProbe.result = HotspotAddresses.Current("wlan2", listOf(ip("10.176.81.135")))
         val screen = openConnection()

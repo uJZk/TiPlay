@@ -65,7 +65,10 @@ internal class TeslaBrowserLinkCard(
         actionRow(parent, activity.getString(R.string.settings_browser_link_copy)) { copy(copyPageLink) }
         settingRow(parent, "${activity.getString(R.string.settings_browser_pairing_code)} · $code") { showPairingCode() }
         parent.addView(note(activity.getString(R.string.settings_browser_android_address)).withTopPadding())
-        val endpoint = linkText("").also(parent::addView)
+        // Show the configured endpoint immediately while the hotspot probe is pending.
+        val initialAddress = TeslaBrowserLink.browserAddress(app, null)
+            ?: TeslaBrowserPageLinks.PAGE_DEFAULT_PHONE_ADDRESS
+        val endpoint = linkText("$initialAddress:${BrowserEndpointSettings.port(app)}").also(parent::addView)
         parent.addView(status)
         localNetworkRows(parent)
 
