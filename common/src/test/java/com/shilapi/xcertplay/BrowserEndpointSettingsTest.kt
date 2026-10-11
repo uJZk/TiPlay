@@ -1,0 +1,70 @@
+package com.shilapi.xcertplay
+
+import java.net.ServerSocket
+import java.net.Socket
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class BrowserEndpointSettingsTest {
+    private val context get() = RuntimeEnvironment.getApplication()
+
+    @After fun cleanup() {
+        TeslaBrowserLink.resetForTest()
+        TeslaBrowserLink.serverFactory = TiPlayTestApplication.noSocketServers
+        context.getSharedPreferences("tiplay_browser_link", 0).edit().clear().commit()
+    }
+
+    @Test fun endpointAcceptsBothAddressRangesAndKeepsThePortForLegacyIpOnlyInput() {
+        val endpoint = BrowserEndpointSettings.parse(" 100.109.220.253:8181 ", 8080)!!
+        assertEquals("100.109.220.253", endpoint.address.hostAddress)
+        assertEquals(8181, endpoint.port)
+        assertEquals(8888, BrowserEndpointSettings.parse("169.254.1.2", 8888)!!.port)
+        for (bad in listOf("10.0.0.1:8080", "100.109.220.253:0", "100.109.220.253:65536",
+            "100.109.220.253:-1", "100.109.220.253:", "100.109.220.253:8080:80", "100.109.220.253:abc")) {
+            assertNull(bad, BrowserEndpointSettings.parse(bad, 8080))
+        }
+    }
+
+    @Test fun savedPortDefaultsTo8080AndUnchangedSavesDoNotRequestARestart() {
+        assertEquals(8080, BrowserEndpointSettings.port(context))
+        assertFalse(BrowserEndpointSettings.savePort(context, 8080))
+        assertTrue(BrowserEndpointSettings.savePort(context, 8181))
+        assertEquals(8181, BrowserEndpointSettings.port(context))
+        assertFalse(BrowserEndpointSettings.savePort(context, 8181))
+    }
+
+    @Test fun theRealListenerMovesToTheChosenPortAndKeepsThePairingCode() {
+        TeslaBrowserLink.resetForTest()
+        TeslaBrowserLink.serverFactory = TeslaBrowserLink.appServers
+        fun availablePort() = ServerSocket(0).use { it.localPort }
+        val first = availablePort()
+        BrowserEndpointSettings.savePort(context, first)
+        TeslaBrowserLink.start(context)
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertEquals(TeslaBrowserLink.State.Listening(first), TeslaBrowserLink.state)
+        val code = TeslaBrowserLink.pairingCode(context)
+        var second = availablePort()
+        while (second == first) second = availablePort()
+        BrowserEndpointSettings.savePort(context, second)
+        TeslaBrowserLink.onPortChanged()
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertEquals(TeslaBrowserLink.State.Listening(second), TeslaBrowserLink.state)
+        assertEquals(code, TeslaBrowserLink.pairingCode(context))
+        ServerSocket(first).use { assertTrue(it.isBound) }
+        Socket("127.0.0.1", second).use { socket ->
+            socket.soTimeout = 3000
+            socket.getOutputStream().write("GET /hello HTTP/1.1\r\nHost: 127.0.0.1:$second\r\nConnection: close\r\n\r\n".toByteArray())
+            assertTrue(socket.getInputStream().bufferedReader().readText().contains("\"app\":\"TiPlay\""))
+        }
+    }
+}

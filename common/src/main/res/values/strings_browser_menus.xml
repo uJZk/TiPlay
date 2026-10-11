@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_main">Main settings</string>
+    <string name="settings_browser_advanced_summary">Frame rate, HEVC, vehicle controls, logs and diagnostic reports.</string>
+    <string name="settings_browser_next_connection_hint">Saved immediately. Takes effect at the next connection; reconnect when you are ready.</string>
+    <string name="settings_browser_video">Video</string>
+    <string name="settings_browser_endpoint_hint">Enter an address in 100.64.0.0/10 or 169.254.0.0/16 and a port (1–65535), for example 100.109.220.253:8080. Applies immediately. After changing the port, connect the browser using the new link.</string>
+    <string name="settings_browser_endpoint_invalid">Enter a valid address and port (1–65535), for example 100.109.220.253:8080.</string>
+</resources>

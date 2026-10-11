@@ -94,7 +94,7 @@ class TeslaBrowserLinkSettingsTest {
         val connection = pages.getValue(R.string.connection)
         assertTrue(connection.contains(page + TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS))
         assertTrue(connection.contains(pairing + code))
-        assertTrue(connection.contains("https://ujzk.github.io/DiPlay/#c=$code"))
+        assertTrue(connection.contains("https://ujzk.github.io/TiPlay/#c=$code"))
         (pages - R.string.connection).values.plusElement(overview).forEach { texts ->
             assertFalse(texts.any { it.startsWith(page) || it.startsWith(pairing) || it.contains("#c=") })
         }
@@ -175,22 +175,22 @@ class TeslaBrowserLinkSettingsTest {
         var screen = openConnection()
         val code = TeslaBrowserLink.pairingCode(context)
         assertTrue("Without the extra address the car link names the hotspot's own address",
-            shown(screen).contains("https://ujzk.github.io/DiPlay/?t=10.176.81.135#c=$code"))
+            shown(screen).contains("https://ujzk.github.io/TiPlay/?t=10.176.81.135#c=$code"))
         assertFalse(shown(screen).any { it.startsWith("http://") })
         assertTrue("The probe ran off the main thread", HotspotProbe.threads.none { it == Looper.getMainLooper().thread })
 
         // The default extra address is the page's default phone: the link is the page address and the code.
         HotspotExtraAddressSettings.setEnabled(context, true)
         rerender(screen)
-        assertTrue(shown(screen).contains("https://ujzk.github.io/DiPlay/#c=$code"))
-        assertFalse(shown(screen).any { it.startsWith("https://ujzk.github.io/DiPlay/?t=") })
+        assertTrue(shown(screen).contains("https://ujzk.github.io/TiPlay/#c=$code"))
+        assertFalse(shown(screen).any { it.startsWith("https://ujzk.github.io/TiPlay/?t=") })
         assertFalse("Only the car HTTPS link is shown", shown(screen).any { it.startsWith("http://") })
 
         HotspotExtraAddressSettings.saveAddress(context, ip("100.64.7.9"))
         KeeperProbe.state = HotspotExtraAddressKeeper.State.Added("wlan2")
         HotspotProbe.threads.clear()
         rerender(screen)
-        assertTrue(shown(screen).contains("https://ujzk.github.io/DiPlay/?t=100.64.7.9#c=$code"))
+        assertTrue(shown(screen).contains("https://ujzk.github.io/TiPlay/?t=100.64.7.9#c=$code"))
         assertFalse("The local test link stays hidden", shown(screen).any { it.startsWith("http://") })
         assertTrue("An added extra address needs no interface look", HotspotProbe.threads.none { it.name == "tiplay-browser-link-probe" })
 
@@ -199,7 +199,7 @@ class TeslaBrowserLinkSettingsTest {
         HotspotExtraAddressSettings.setEnabled(context, false)
         screen = openConnection()
         assertTrue("Without any address the link has no t, and the page uses its default phone",
-            shown(screen).contains("https://ujzk.github.io/DiPlay/#c=$code"))
+            shown(screen).contains("https://ujzk.github.io/TiPlay/#c=$code"))
         assertEquals("Only the hotspot status says so", 1,
             shown(screen).count { it == screen.getString(R.string.settings_hotspot_not_found) })
     }
@@ -213,7 +213,7 @@ class TeslaBrowserLinkSettingsTest {
         assertEquals(1, copies.size)
         val clipboard = context.getSystemService(ClipboardManager::class.java)
         copies[0].performClick()
-        assertEquals("https://ujzk.github.io/DiPlay/?t=10.176.81.135#c=$code", clipboard.primaryClip!!.getItemAt(0).text.toString())
+        assertEquals("https://ujzk.github.io/TiPlay/?t=10.176.81.135#c=$code", clipboard.primaryClip!!.getItemAt(0).text.toString())
     }
 
     @Test fun thePageAddressMustBeHttps() {
@@ -273,7 +273,7 @@ class TeslaBrowserLinkSettingsTest {
         assertEquals(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS, TeslaBrowserLink.pageAddress(context))
         assertTrue(shown(screen).contains(
             screen.getString(R.string.settings_browser_page_address) + " · " + TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS))
-        assertTrue(shown(screen).contains("https://ujzk.github.io/DiPlay/#c=$code"))
+        assertTrue(shown(screen).contains("https://ujzk.github.io/TiPlay/#c=$code"))
         assertFalse(shown(screen).any { it.contains("github.io/DiPlay/play/") })
     }
 
@@ -292,8 +292,23 @@ class TeslaBrowserLinkSettingsTest {
         val new = TeslaBrowserLink.pairingCode(context)
         assertNotEquals(old, new) // one in a million: SecureRandom picked the same six digits
         assertTrue(shown(screen).contains(prefix + new))
-        assertTrue(shown(screen).contains("https://ujzk.github.io/DiPlay/#c=$new"))
+        assertTrue(shown(screen).contains("https://ujzk.github.io/TiPlay/#c=$new"))
         assertFalse(shown(screen).any { it.contains("#c=$old") })
+    }
+
+    @Test fun theCarLinkUsesTheConfiguredPort() {
+        BrowserEndpointSettings.savePort(context, 8081)
+        TeslaBrowserLink.serverFactory = TeslaBrowserLink.ServerFactory { _, _, _ ->
+            object : TeslaBrowserLink.Server {
+                override fun start() = Result.success(8081)
+                override fun stop() = Unit
+            }
+        }
+        val screen = openConnection()
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        finishProbes()
+        val code = TeslaBrowserLink.pairingCode(context)
+        assertTrue(shown(screen).contains("https://ujzk.github.io/TiPlay/?t=100.109.220.253:8081#c=$code"))
     }
 
     @Config(shadows = [DeniedLocalNetwork::class])

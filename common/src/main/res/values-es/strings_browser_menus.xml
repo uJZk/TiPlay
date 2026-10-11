@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_main">Ajustes principales</string>
+    <string name="settings_browser_advanced_summary">Frecuencia de fotogramas, HEVC, controles del vehículo, registros e informes de diagnóstico.</string>
+    <string name="settings_browser_next_connection_hint">Se guarda al instante. Se aplica en la próxima conexión; reconecta cuando te convenga.</string>
+    <string name="settings_browser_video">Vídeo</string>
+    <string name="settings_browser_endpoint_hint">Introduce una dirección de 100.64.0.0/10 o 169.254.0.0/16 y un puerto (1–65535), por ejemplo 100.109.220.253:8080. Se aplica al instante. Si cambias el puerto, conecta el navegador con el enlace nuevo.</string>
+    <string name="settings_browser_endpoint_invalid">Introduce una dirección y un puerto válidos (1–65535), por ejemplo 100.109.220.253:8080.</string>
+</resources>

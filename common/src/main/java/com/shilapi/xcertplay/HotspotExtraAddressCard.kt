@@ -63,7 +63,8 @@ internal class HotspotExtraAddressCard(
             else activity.getString(method.description, text)
         parent.addView(note(description))
         if (method != HotspotAddressMethod.NORMAL) {
-            settingRow(parent, "${activity.getString(R.string.settings_hotspot_extra_address_value)} · $text", ::editAddress)
+            settingRow(parent, "${activity.getString(R.string.settings_hotspot_extra_address_value)} · " +
+                "$text:${BrowserEndpointSettings.port(app)}", ::editAddress)
         }
         if (method == HotspotAddressMethod.VPN && HotspotAddressVpn.probablyBlocked(address)) {
             parent.addView(note(activity.getString(R.string.settings_hotspot_vpn_unlikely_hint,
@@ -310,12 +311,13 @@ internal class HotspotExtraAddressCard(
 
     private fun editAddress() {
         val saved = HotspotExtraAddressSettings.address(app)
+        val savedPort = BrowserEndpointSettings.port(app)
         val input = EditText(activity).apply {
             setSingleLine()
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            keyListener = DigitsKeyListener.getInstance("0123456789.")
-            setText(saved.hostAddress)
-            hint = HotspotExtraAddress.DEFAULT
+            keyListener = DigitsKeyListener.getInstance("0123456789.:")
+            setText("${saved.hostAddress}:$savedPort")
+            hint = "${HotspotExtraAddress.DEFAULT}:${TeslaBrowserLink.PORT}"
         }
         val padding = (24 * activity.resources.displayMetrics.density).roundToInt()
         val body = FrameLayout(activity).apply {
@@ -324,23 +326,24 @@ internal class HotspotExtraAddressCard(
         }
         val dialog = AlertDialog.Builder(activity)
             .setTitle(R.string.settings_hotspot_extra_address_value)
-            .setMessage(R.string.settings_hotspot_extra_address_value_hint)
+            .setMessage(R.string.settings_browser_endpoint_hint)
             .setView(body)
             .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
             .create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val address = HotspotExtraAddress.parse(input.text.toString().trim())
-                if (address == null) {
-                    input.error = activity.getString(R.string.settings_hotspot_extra_address_invalid)
+                val endpoint = BrowserEndpointSettings.parse(input.text.toString(), savedPort)
+                if (endpoint == null) {
+                    input.error = activity.getString(R.string.settings_browser_endpoint_invalid)
                     return@setOnClickListener
                 }
                 dialog.dismiss()
-                if (address != saved) {
-                    HotspotExtraAddressSettings.saveAddress(app, address)
+                if (endpoint.address != saved) {
+                    HotspotExtraAddressSettings.saveAddress(app, endpoint.address)
                     HotspotExtraAddressSettings.sync(app) // the running method moves to the new address at once
                 }
+                if (BrowserEndpointSettings.savePort(app, endpoint.port)) TeslaBrowserLink.onPortChanged()
                 rerender()
             }
         }

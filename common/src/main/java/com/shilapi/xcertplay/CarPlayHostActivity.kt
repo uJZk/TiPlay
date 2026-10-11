@@ -844,6 +844,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!headUnitIntegrations()) syncBrowserAdvancedSettings()
         HotspotExtraAddressSettings.sync(this) // Resume the address method after its VPN consent dialog.
         val savedNightMode = if (AirPlayPersistence.isPhoneBrowserMode(this)) CarPlayNightMode.SYSTEM else AirPlayPersistence.loadCarPlayNightMode(this)
         val savedThreshold = AirPlayPersistence.loadAmbientLightThreshold(this)
@@ -1636,6 +1637,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun buildSettingsMenu(): View {
+        if (!headUnitIntegrations()) return buildBrowserSettingsMenu()
         val overlay = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             isClickable = true
@@ -1999,6 +2001,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun persistMenuSettings() {
+        if (!headUnitIntegrations()) syncBrowserAdvancedSettings()
         AirPlayPersistence.saveSettingsGestureFingers(this, gestureFingerCount)
         AirPlayPersistence.saveWirelessEnabled(this, wirelessEnabled)
         DiPlayPreferences.saveDefaultConnectionMode(this, DefaultConnectionMode.LAST_USED)
@@ -2037,6 +2040,42 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun openAdditionalSettings(category: SettingsCategory) {
         controller?.sendTouch(emptyList())
         startActivity(CarPlaySettingsNavigation.pageIntent(this, category))
+    }
+
+    private fun syncBrowserAdvancedSettings() {
+        fps = AirPlayPersistence.loadFps(this)
+        hevcEnabled = AirPlayPersistence.loadHevcEnabled(this)
+        rightHandDrive = AirPlayPersistence.loadRightHandDrive(this)
+        gestureFingerCount = AirPlayPersistence.loadSettingsGestureFingers(this)
+        debugLogsEnabled = AirPlayPersistence.loadDebugLogsEnabled(this)
+        updateResolutionMenu()
+        updateDebugOverlays()
+    }
+
+    private fun buildBrowserSettingsMenu(): View {
+        val menu = BrowserMainSettingsMenu.build(this,
+            wireless = { wirelessEnabled },
+            changeConnectionMode = { wireless ->
+                wirelessEnabled = wireless
+                hotspotStatus = HotspotStatus(state = getString(if (wireless) R.string.hotspot_state_stopped else R.string.hotspot_state_off))
+                updateHotspotStatusBlock()
+                requestStartupPrerequisites()
+            },
+            hotspot = ::buildHotspotModeSection,
+            requestLocalNetwork = { wirelessPermissions.launch(arrayOf(LocalNetworkPermission.PERMISSION)) },
+            advanced = { openAdditionalSettings(SettingsCategory.ADVANCED) },
+            about = {
+                startActivity(Intent(this, DiPlayActivity::class.java).putExtra("page", "about")
+                    .putExtra(CarPlaySettingsNavigation.MENU, true).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+            },
+            save = ::saveSettingsAndReconnect, cancel = ::cancelSettingsEdits, exit = ::exitApplication,
+        )
+        resolutionValueView = null
+        resolutionPreviewView = menu.preview
+        hotspotStatusView = menu.hotspotStatus
+        updateHotspotStatusBlock()
+        updateResolutionMenu()
+        return menu.view
     }
 
     private fun captureSettingsBaseline(): SettingsBaseline {

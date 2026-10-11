@@ -7,7 +7,7 @@
     <string name="settings_display">الشاشة</string>
     <string name="settings_navigation">الملاحة</string>
     <string name="settings_vehicle">السيارة</string>
-    <string name="settings_advanced">متقدم</string>
+    <string name="settings_advanced">الإعدادات المتقدمة</string>
     <string name="settings_advanced_subtitle">عناصر تحكم تجريبية وخاصة بالسيارة للمستخدمين ذوي الخبرة.</string>
     <string name="settings_advanced_caution_title">غيّر بحذر</string>
     <string name="settings_advanced_caution_description">قد تعتمد هذه الميزات على برنامج السيارة الثابت أو الوصول عبر ADB أو سلوك تجريبي في CarPlay. الإعدادات اليومية موجودة في الفئات أعلاه.</string>

@@ -358,7 +358,7 @@
     <string name="settings_display">Display</string>
     <string name="settings_navigation">Navigation</string>
     <string name="settings_vehicle">Vehicle</string>
-    <string name="settings_advanced">Advanced</string>
+    <string name="settings_advanced">Advanced settings</string>
     <string name="settings_advanced_subtitle">Experimental and vehicle-specific controls for experienced users.</string>
     <string name="settings_advanced_caution_title">Change with care</string>
     <string name="settings_advanced_caution_description">These features can depend on vehicle firmware, ADB access, or experimental CarPlay behavior. Everyday settings are organized in the categories above.</string>

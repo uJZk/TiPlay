@@ -384,6 +384,18 @@ class AdaptiveSettingsUiTest {
             assertEquals(text(category), category == R.string.connection,
                 page.any { it.startsWith(text(R.string.settings_hotspot_address_method) + " · ") })
         }
+
+        // Product entry consolidates the retained category APIs into the single advanced menu.
+        ReflectionHelpers.callInstanceMethod<Unit>(screen, "onNewIntent",
+            ReflectionHelpers.ClassParameter.from(Intent::class.java,
+                CarPlaySettingsNavigation.pageIntent(context, SettingsCategory.ADVANCED)))
+        val browserAdvanced = texts(screen).map { it.text.toString() }.toList()
+        assertTrue(browserAdvanced.any { it.startsWith(text(R.string.frame_rate) + " · ") })
+        assertTrue(text(R.string.settings_hevc_experimental) in browserAdvanced)
+        assertTrue(text(R.string.right_hand_drive) in browserAdvanced)
+        assertTrue(text(R.string.save_diagnostic_report) in browserAdvanced)
+        assertFalse(text(R.string.connect_when_diplay_opens) in browserAdvanced)
+        assertFalse(text(R.string.mfi_certificate_signing_target) in browserAdvanced)
     }
 
     @Test

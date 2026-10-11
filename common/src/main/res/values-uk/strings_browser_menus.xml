@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_main">Основні налаштування</string>
+    <string name="settings_browser_advanced_summary">Частота кадрів, HEVC, керування автомобілем, журнали та діагностичні звіти.</string>
+    <string name="settings_browser_next_connection_hint">Зберігається одразу. Застосовується під час наступного підключення; перепідключіться, коли буде зручно.</string>
+    <string name="settings_browser_video">Відео</string>
+    <string name="settings_browser_endpoint_hint">Введіть адресу з діапазону 100.64.0.0/10 або 169.254.0.0/16 і порт (1–65535), наприклад 100.109.220.253:8080. Застосовується одразу. Після зміни порту підключіть браузер за новим посиланням.</string>
+    <string name="settings_browser_endpoint_invalid">Введіть припустиму адресу й порт (1–65535), наприклад 100.109.220.253:8080.</string>
+</resources>

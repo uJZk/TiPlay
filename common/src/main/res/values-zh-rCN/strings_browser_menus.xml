@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_main">主设置</string>
+    <string name="settings_browser_advanced_summary">帧率、HEVC、车型适配、日志和诊断报告。</string>
+    <string name="settings_browser_next_connection_hint">修改后立即保存，下次连接生效；请在方便时重新连接。</string>
+    <string name="settings_browser_video">视频</string>
+    <string name="settings_browser_endpoint_hint">输入地址和端口，例如 100.109.220.253:8080。地址范围为 100.64.0.0/10 或 169.254.0.0/16，端口为 1–65535。立即生效；修改端口后请用新链接连接浏览器。</string>
+    <string name="settings_browser_endpoint_invalid">请输入有效的地址和端口（1–65535），例如 100.109.220.253:8080。</string>
+</resources>

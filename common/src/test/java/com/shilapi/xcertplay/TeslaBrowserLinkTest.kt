@@ -116,6 +116,18 @@ class TeslaBrowserLinkTest {
         assertEquals(listOf(TeslaBrowserLink.State.Listening(8080), TeslaBrowserLink.State.Stopped), states)
     }
 
+    @Test fun linksUseTheListeningPortIncludingWhenNoHotspotAddressIsKnown() {
+        BrowserEndpointSettings.savePort(context, 8081)
+        binds += Result.success(8081)
+        started()
+        val code = TeslaBrowserLink.pairingCode(context)
+        assertEquals(8081, TeslaBrowserLink.listeningPort(context))
+        assertEquals("https://ujzk.github.io/TiPlay/?t=100.109.220.253:8081#c=$code",
+            TeslaBrowserLink.pageLink(context, null))
+        assertEquals("https://ujzk.github.io/TiPlay/?t=192.168.43.1:8081#c=$code",
+            TeslaBrowserLink.pageLink(context, "192.168.43.1"))
+    }
+
     @Test fun aTakenPortIsRetriedUntilItIsFree() {
         binds += Result.failure(BindException("Address already in use"))
         binds += Result.failure(BindException("Address already in use"))

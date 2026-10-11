@@ -601,7 +601,7 @@ class DiPlayActivity : ComponentActivity() {
         gravity = Gravity.CENTER_VERTICAL
         addView(button(getString(R.string.back), false, ::navigateBack),
             LinearLayout.LayoutParams(if (compact) dp(78) else dp(112), if (compact) dp(44) else dp(52)))
-        addView(label(getString(if (hostSettingsPage) R.string.carplay_settings else R.string.settings), if (compact) 20 else 26, TEXT, true).apply {
+        addView(label(getString(if (hostSettingsPage) R.string.settings_advanced else R.string.settings), if (compact) 20 else 26, TEXT, true).apply {
             setPadding(dp(12), 0, dp(12), 0)
         }, LinearLayout.LayoutParams(0, if (compact) dp(44) else dp(52), 1f))
         addView(button(getString(R.string.settings_search), false) { showSettingsSearch() },
@@ -817,7 +817,22 @@ class DiPlayActivity : ComponentActivity() {
     })
 
     private fun settingsCategoryContent(content: LinearLayout) {
-        if (hostSettingsPage) content.addView(label(getString(R.string.settings_additional_save_hint), 14, MUTED))
+        if (hostSettingsPage) {
+            settingsPageTitle(content, getString(R.string.settings_advanced), getString(R.string.settings_browser_advanced_summary))
+            content.addView(label(getString(R.string.settings_additional_save_hint), 14, MUTED))
+            section(content, getString(R.string.settings_browser_video), R.drawable.ic_dp_advanced) { card ->
+                card.addView(label(getString(R.string.settings_browser_next_connection_hint), 14, MUTED))
+                BrowserAdvancedSettings.build(this, card,
+                    choice = { parent, title, options, current, save ->
+                        choice(parent, title, options, current, reconnects = false, save = save)
+                    },
+                    toggle = { parent, title, description, value, save -> toggle(parent, title, description, value, save = save); Unit },
+                    reconnectNeeded = ::markReconnectNeeded,
+                )
+            }
+            renderSections(content, BrowserAdvancedSettings.sections)
+            return
+        }
         when (settingsCategory) {
             SettingsCategory.OVERVIEW -> settingsOverview(content)
             SettingsCategory.CONNECTION -> connectionSettings(content)
@@ -1095,8 +1110,8 @@ class DiPlayActivity : ComponentActivity() {
     private fun buildSettingsSearchIndex(): List<SettingsSearchResult> {
         val selected = settingsCategory
         // Category names first, so a card that only links to a category cannot claim its name.
-        val categories = SettingsCategory.entries.filter { it != SettingsCategory.OVERVIEW } +
-            if (hostSettingsPage) emptyList() else listOf(SettingsCategory.OVERVIEW)
+        val categories = if (hostSettingsPage) listOf(SettingsCategory.ADVANCED) else
+            SettingsCategory.entries.filter { it != SettingsCategory.OVERVIEW } + listOf(SettingsCategory.OVERVIEW)
         val index = categories.associateByTo(linkedMapOf(), ::settingsCategoryTitle)
         try {
             for (category in categories) {
@@ -1245,7 +1260,12 @@ class DiPlayActivity : ComponentActivity() {
             card.addView(label(getString(R.string.settings_gesture_fingers_hint), 14, MUTED).apply {
                 setPadding(0, dp(10), 0, 0)
             })
-            toggle(card, getString(R.string.right_hand_drive), getString(R.string.place_carplay_s_controls_closer_to_the_driver), AirPlayPersistence.loadRightHandDrive(this)) { AirPlayPersistence.saveRightHandDrive(this, it); markReconnectNeeded() }
+            val drivingSideHint = getString(R.string.place_carplay_s_controls_closer_to_the_driver) +
+                if (hostSettingsPage) "\n" + getString(R.string.settings_browser_next_connection_hint) else ""
+            toggle(card, getString(R.string.right_hand_drive), drivingSideHint, AirPlayPersistence.loadRightHandDrive(this)) {
+                AirPlayPersistence.saveRightHandDrive(this, it)
+                markReconnectNeeded()
+            }
         }
         filteredSection(content, SettingsSection.WHEEL_KEYS,
             getString(R.string.settings_wheel_keys), R.drawable.ic_dp_controls, ::wheelKeysSettings)

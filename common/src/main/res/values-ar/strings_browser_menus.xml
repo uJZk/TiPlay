@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_main">الإعدادات الرئيسية</string>
+    <string name="settings_browser_advanced_summary">معدل الإطارات وHEVC وعناصر التحكم بالمركبة والسجلات وتقارير التشخيص.</string>
+    <string name="settings_browser_next_connection_hint">تُحفظ التغييرات فورًا وتُطبّق عند الاتصال التالي. أعد الاتصال عندما تكون مستعدًا.</string>
+    <string name="settings_browser_video">الفيديو</string>
+    <string name="settings_browser_endpoint_hint">أدخل عنوانًا ضمن 100.64.0.0/10 أو 169.254.0.0/16 ومنفذًا (1–65535)، مثل 100.109.220.253:8080. يُطبَّق فورًا. بعد تغيير المنفذ، صِل المتصفح باستخدام الرابط الجديد.</string>
+    <string name="settings_browser_endpoint_invalid">أدخل عنوانًا ومنفذًا صالحين (1–65535)، مثل 100.109.220.253:8080.</string>
+</resources>

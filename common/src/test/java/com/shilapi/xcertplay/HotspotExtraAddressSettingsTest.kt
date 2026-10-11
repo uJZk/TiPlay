@@ -79,7 +79,7 @@ class HotspotExtraAddressSettingsTest {
         CarPlayBackgroundSession.clear()
         PendingReconnect.clear()
         HotspotExtraAddressCard.rootCheckInProgress.set(false)
-        listOf("diplay", "xcertplay_airplay", "tiplay_hotspot_address").forEach {
+        listOf("diplay", "xcertplay_airplay", "tiplay_hotspot_address", "tiplay_browser_link").forEach {
             context.getSharedPreferences(it, 0).edit().clear().commit()
         }
     }
@@ -571,28 +571,29 @@ class HotspotExtraAddressSettingsTest {
         val prefix = screen.getString(R.string.settings_hotspot_extra_address_value) + " · "
         KeeperProbe.reset()
 
-        texts(screen).filterIsInstance<Button>().single { it.text.toString() == prefix + HotspotExtraAddress.DEFAULT }
+        texts(screen).filterIsInstance<Button>().single { it.text.toString() == prefix + HotspotExtraAddress.DEFAULT + ":8080" }
             .performClick()
         shadowOf(Looper.getMainLooper()).idle() // delivers the dialog's show callback
         val dialog = ShadowAlertDialog.getLatestAlertDialog()
         val input = descendants(dialog.window!!.decorView).filterIsInstance<EditText>().single()
-        assertEquals(HotspotExtraAddress.DEFAULT, input.text.toString())
+        assertEquals(HotspotExtraAddress.DEFAULT + ":8080", input.text.toString())
         for (invalid in listOf("100.128.0.1", "10.0.0.1", "169.255.0.1", "1.2.3", "tesla.local", "100.109.220.253;reboot", "")) {
             input.setText(invalid)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-            assertEquals(invalid, screen.getString(R.string.settings_hotspot_extra_address_invalid), input.error?.toString())
+            assertEquals(invalid, screen.getString(R.string.settings_browser_endpoint_invalid), input.error?.toString())
             assertTrue(invalid, dialog.isShowing)
         }
         assertEquals(defaultAddress, HotspotExtraAddressSettings.address(context))
         assertTrue(KeeperProbe.starts.isEmpty())
 
-        input.setText(" 169.254.1.2 ")
+        input.setText(" 169.254.1.2:8181 ")
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
 
         assertFalse(dialog.isShowing)
         assertEquals(ip("169.254.1.2"), HotspotExtraAddressSettings.address(context))
         assertEquals(listOf(KeeperStart(ip("169.254.1.2"), false, "root")), KeeperProbe.starts)
-        assertTrue(texts(screen).any { it.text.toString() == prefix + "169.254.1.2" })
+        assertEquals(8181, BrowserEndpointSettings.port(context))
+        assertTrue(texts(screen).any { it.text.toString() == prefix + "169.254.1.2:8181" })
         assertTrue(RootShellProbe.scripts.isEmpty())
     }
 

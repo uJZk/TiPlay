@@ -10,6 +10,8 @@ identity provenance, test results, download delivery and pending Release attachm
 
 See `docs/SETTINGS-UX-2026-10-11.md` for the current main-menu ordering, connection-mode
 migration, automatic radio hints, codec defaults, shared branding, verification and delivery progress.
+Its final section records the two-menu browser UI, editable `address:port`, the
+stopped Termux probe, the corrected Pages URL and the latest signed installation.
 
 See `docs/docs-sweep-2026-10-11/README.md` for the completed documentation sweep,
 verification and remaining link-policy/vehicle-validation limits;
@@ -38,6 +40,13 @@ Set `ANDROID_HOME` or `local.properties` if Gradle cannot find the SDK.
 CI also runs the browser page tests with Node 22: `node --test tests/web/*.test.mjs`.
 
 ## Adding or moving a setting
+
+The TiPlay browser product has only **Main settings** and **Advanced settings**.
+`BrowserMainSettingsMenu` holds everyday connection controls; `BrowserAdvancedSettings`
+and the host-owned advanced page hold frame rate (60 fps by default), HEVC,
+vehicle controls and diagnostic reports. Manufacturer, model, OEM label and MFi
+certificate controls are hidden. Keep the legacy category APIs below for upstream
+compatibility; do not add their navigation entries back to the browser menu.
 
 The Settings screen is grouped by driver goal, not by implementation.
 `SettingsCategory`, `SettingsSection` and `SettingsInformationArchitecture` at the top of

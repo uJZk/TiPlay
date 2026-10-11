@@ -98,7 +98,8 @@ internal object TeslaBrowserLink {
 
     /** The app's server: every IPv4 address, so it answers on the hotspot's own and its extra address alike. */
     val appServers = ServerFactory { hub, callbacks, assets ->
-        val server = BrowserLinkServer(hub, callbacks, "0.0.0.0", PORT, assets = assets)
+        val port = app?.let(BrowserEndpointSettings::port) ?: PORT
+        val server = BrowserLinkServer(hub, callbacks, "0.0.0.0", port, assets = assets)
         object : Server {
             override fun start() = server.start()
             override fun stop() = server.stop()
@@ -139,6 +140,18 @@ internal object TeslaBrowserLink {
 
     /** True between [start] and [stop]: the link is listening, or binding, or waiting to retry. */
     val active: Boolean get() = requested.get()
+
+    fun listeningPort(context: Context): Int = (state as? State.Listening)?.port ?: BrowserEndpointSettings.port(context)
+
+    /** The driver saved another port: restart the browser listener without reconnecting CarPlay. */
+    fun onPortChanged() {
+        if (requested.get()) worker.execute {
+            server?.let { stopQuietly(it) }
+            server = null
+            publish(State.Stopped)
+            reconcile()
+        }
+    }
 
     fun addListener(listener: (State) -> Unit) { listeners += listener }
 
@@ -272,7 +285,8 @@ internal object TeslaBrowserLink {
      * page's default phone. Creates the pairing code if needed; no network access.
      */
     fun pageLink(context: Context, hotspotAddress: String?): String = TeslaBrowserPageLinks.pageLink(
-        pageAddress(context), pairingCode(context), browserAddress(context, hotspotAddress), PORT)
+        pageAddress(context), pairingCode(context),
+        browserAddress(context, hotspotAddress) ?: TeslaBrowserPageLinks.PAGE_DEFAULT_PHONE_ADDRESS, listeningPort(context))
 
     /**
      * Why CarPlay should reconnect for the browser's "Apply and reconnect", or null when it should not: no session runs

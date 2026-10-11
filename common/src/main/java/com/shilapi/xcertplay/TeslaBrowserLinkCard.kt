@@ -64,15 +64,23 @@ internal class TeslaBrowserLinkCard(
         val pageLink = linkText(copyPageLink).also(parent::addView)
         actionRow(parent, activity.getString(R.string.settings_browser_link_copy)) { copy(copyPageLink) }
 
-        val showLinks: (String) -> Unit = { page ->
+        var hotspotAddress: String? = null
+        val showLinks: (String?) -> Unit = { hotspot ->
             if (status.isAttachedToWindow) {
+                hotspotAddress = hotspot
+                val page = TeslaBrowserLink.pageLink(app, hotspot)
                 copyPageLink = page
                 pageLink.text = page
             }
         }
 
         val stateListener: (TeslaBrowserLink.State) -> Unit = { state ->
-            activity.runOnUiThread { if (status.isAttachedToWindow) showState(status, state) }
+            activity.runOnUiThread {
+                if (status.isAttachedToWindow) {
+                    showState(status, state)
+                    showLinks(hotspotAddress)
+                }
+            }
         }
         val keeperListener: (HotspotExtraAddressKeeper.State) -> Unit = {
             activity.runOnUiThread { if (status.isAttachedToWindow) probe(showLinks) } // the address list changes with it
@@ -102,7 +110,7 @@ internal class TeslaBrowserLinkCard(
             is TeslaBrowserLink.State.Listening ->
                 activity.getString(R.string.settings_browser_link_listening, state.port) to colors.ready
             TeslaBrowserLink.State.PortInUse ->
-                activity.getString(R.string.settings_browser_link_port_in_use, TeslaBrowserLink.PORT) to colors.warning
+                activity.getString(R.string.settings_browser_link_port_in_use, BrowserEndpointSettings.port(app)) to colors.warning
             TeslaBrowserLink.State.Failed -> activity.getString(R.string.settings_browser_link_failed) to colors.warning
             TeslaBrowserLink.State.Stopped -> activity.getString(if (TeslaBrowserLink.active)
                 R.string.settings_browser_link_starting else R.string.settings_browser_link_stopped) to colors.muted
@@ -145,7 +153,7 @@ internal class TeslaBrowserLinkCard(
     /**
      * The HTTPS page names the added address, or the hotspot address discovered off the UI thread.
      */
-    private fun probe(show: (page: String) -> Unit) {
+    private fun probe(show: (String?) -> Unit) {
         val context = app // The worker must not retain this card or its activity.
         val extra = HotspotExtraAddressSettings.liveAddress(context)?.hostAddress
         probeToken = probes.request(
@@ -153,7 +161,7 @@ internal class TeslaBrowserLinkCard(
                 // An added extra address answers both links, so the interfaces need no look.
                 val hotspot = if (extra != null) null
                 else runCatching { HotspotAddresses.current(context) }.getOrNull()?.ipv4?.firstOrNull()?.hostAddress
-                TeslaBrowserLink.pageLink(context, hotspot)
+                hotspot
             },
             deliver = show,
         )
@@ -225,7 +233,7 @@ internal class TeslaBrowserLinkCard(
     }
 
     internal companion object {
-        private val probes = LatestSettingsProbe<String>("tiplay-browser-link-probe")
+        private val probes = LatestSettingsProbe<String?>("tiplay-browser-link-probe")
 
         internal fun awaitProbesForTest(): Boolean = probes.awaitIdle()
     }

@@ -13,7 +13,7 @@ class TeslaBrowserPageLinksTest {
      */
     @Test fun theCarLinkNamesAPhoneOtherThanTheDefaultInTAndKeepsTheCodeInTheFragment() {
         val page = TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS
-        assertEquals("https://ujzk.github.io/DiPlay/", page)
+        assertEquals("https://ujzk.github.io/TiPlay/", page)
         assertEquals("The default phone at 8080 needs no t", "$page#c=123456",
             TeslaBrowserPageLinks.pageLink(page, "123456", "100.109.220.253", 8080))
         assertEquals("$page?t=100.109.220.253:8081#c=123456", TeslaBrowserPageLinks.pageLink(page, "123456", "100.109.220.253", 8081))
@@ -72,6 +72,7 @@ class TeslaBrowserPageLinksTest {
         val default = TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS
         assertEquals(default, TeslaBrowserPageLinks.savedPageAddress(null))
         assertEquals(default, TeslaBrowserPageLinks.savedPageAddress("https://ujzk.github.io/DiPlay/play/"))
+        assertEquals(default, TeslaBrowserPageLinks.savedPageAddress("https://ujzk.github.io/DiPlay/"))
         assertEquals(default, TeslaBrowserPageLinks.savedPageAddress("http://car.example/"))
         assertEquals("https://car.example/play/", TeslaBrowserPageLinks.savedPageAddress("https://car.example/play/"))
         assertEquals("https://ujzk.github.io/DiPlay/play/?v=2",

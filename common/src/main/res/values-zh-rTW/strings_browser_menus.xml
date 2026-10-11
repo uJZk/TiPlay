@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_main">主設定</string>
+    <string name="settings_browser_advanced_summary">幀率、HEVC、車型適配、日誌和診斷報告。</string>
+    <string name="settings_browser_next_connection_hint">修改後立即儲存，下次連線生效；請在方便時重新連線。</string>
+    <string name="settings_browser_video">影片</string>
+    <string name="settings_browser_endpoint_hint">輸入位址和連接埠，例如 100.109.220.253:8080。位址範圍為 100.64.0.0/10 或 169.254.0.0/16，連接埠為 1–65535。立即生效；修改連接埠後請用新連結連線瀏覽器。</string>
+    <string name="settings_browser_endpoint_invalid">請輸入有效的位址和連接埠（1–65535），例如 100.109.220.253:8080。</string>
+</resources>
