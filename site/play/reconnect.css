@@ -5,6 +5,6 @@
 #reconnect-wallpaper{position:absolute;inset:0;z-index:-1;width:100%;height:100%;max-width:none;object-fit:cover;object-position:center}
 #reconnect-logo{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:var(--reconnect-logo);height:var(--reconnect-logo);border-radius:23%;box-shadow:0 8px 32px rgba(0,0,0,.18)}
 #reconnect-message{position:absolute;top:calc(50% + var(--reconnect-logo)/2 + var(--reconnect-gap));left:max(24px,env(safe-area-inset-left));right:max(24px,env(safe-area-inset-right));margin:0;text-align:center;color:inherit;font-size:16px;line-height:1.5;overflow-wrap:anywhere}
-#reconnect-settings{position:absolute;top:max(16px,env(safe-area-inset-top));right:max(16px,env(safe-area-inset-right));min-height:48px;background:rgba(255,255,255,.06);border:1px solid var(--reconnect-line);color:inherit}
+#reconnect-settings{position:absolute;top:max(16px,env(safe-area-inset-top));right:max(16px,env(safe-area-inset-right));min-height:48px;background:linear-gradient(150deg,rgba(255,255,255,.15),rgba(255,255,255,.05));border:1px solid var(--reconnect-line);color:inherit;box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 4px 20px rgba(0,0,0,.12)}
 @media(max-height:360px){:root{--reconnect-logo:64px;--reconnect-gap:12px}#reconnect-message{font-size:14px}#reconnect-settings{top:max(8px,env(safe-area-inset-top));min-height:44px}}
 @media(max-aspect-ratio:3/4){#reconnect-wallpaper{object-position:65% center}}

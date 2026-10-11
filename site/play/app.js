@@ -17,14 +17,13 @@ import { pumpChunkStream } from './transport.js';
 
 const STRINGS = {
   en: {
-    heading: 'Show CarPlay on this screen',
-    intro: 'Join this car to the hotspot of the Android phone that runs TiPlay, then enter the pairing code that TiPlay shows.',
+    heading: 'Connect to TiPlay',
+    intro: 'Connect this screen and your Android phone to the same network. Enter the code shown in TiPlay to display CarPlay.',
     codeLabel: 'Pairing code',
-    advanced: 'Advanced',
-    hostLabel: 'Phone address',
-    hostHelp: 'IPv4 address and port of the phone, for example 100.109.220.253:8080.',
+    hostLabel: 'Android address',
+    hostHelp: 'Use the address shown in TiPlay, including the port.',
     resume: 'Return to CarPlay',
-    resizeHelp: 'The picture follows this window. When its size settles, CarPlay reconnects automatically to match the resolution.',
+    resizeHelp: 'The picture follows this window and reconnects automatically when needed.',
     connect: 'Connect',
     disconnect: 'Disconnect',
     settings: 'Setting',
@@ -33,7 +32,7 @@ const STRINGS = {
     stats: 'Stats',
     fit: 'Apply and reconnect',
     fitPending: 'Reconnecting…',
-    source: 'Source code (GPL-3.0)',
+    source: 'TiPlay',
     enterCode: 'Enter the pairing code to connect.',
     ready: 'Ready to connect.',
     stopped: 'Disconnected.',
@@ -55,14 +54,13 @@ const STRINGS = {
     invalidHost: 'Enter an IPv4 address with port, for example 100.109.220.253:8080.',
   },
   zh: {
-    heading: '在这块屏幕上显示 CarPlay',
-    intro: '让车辆连接运行 TiPlay 的安卓手机热点，然后输入 TiPlay 显示的配对码。',
+    heading: '连接 TiPlay',
+    intro: '让这块屏幕与安卓手机连接同一网络，输入 TiPlay 显示的配对码，即可显示 CarPlay。',
     codeLabel: '配对码',
-    advanced: '高级',
-    hostLabel: '手机地址',
-    hostHelp: '手机的 IPv4 地址和端口，例如 100.109.220.253:8080。',
+    hostLabel: '安卓地址',
+    hostHelp: '填写 TiPlay 显示的地址，包含端口。',
     resume: '返回 CarPlay',
-    resizeHelp: '画面自动适应窗口。窗口大小稳定后，CarPlay 会自动重新连接，以匹配原生分辨率。',
+    resizeHelp: '画面随窗口调整，必要时自动重新连接。',
     connect: '连接',
     disconnect: '断开',
     settings: '设置',
@@ -71,7 +69,7 @@ const STRINGS = {
     stats: '统计',
     fit: '应用并重新连接',
     fitPending: '正在重新连接…',
-    source: '源代码（GPL-3.0）',
+    source: 'TiPlay',
     enterCode: '输入配对码后连接。',
     ready: '可以连接。',
     stopped: '已断开。',
@@ -364,7 +362,6 @@ function stop(key = null, ...args) {
   wakeLock = null;
   $('panel').hidden = false;
   stage.hidden = true;
-  $('message').textContent = key && key !== 'stopped' ? t(key, ...args) : '';
   render();
 }
 
@@ -496,7 +493,9 @@ function render() {
   $('fit').disabled = fitRequestedAt > 0;
   $('fit').textContent = t(fitRequestedAt ? 'fitPending' : 'fit');
   const text = statusText();
+  $('message').textContent = !active && notice && notice.key !== 'stopped' ? t(notice.key, ...notice.args) : '';
   $('status').textContent = text;
+  $('status').hidden = Boolean($('message').textContent);
   renderReconnect({ active, live, phase, pending: fitRequestedAt > 0, text });
   $('connect').textContent = t(active ? 'resume' : 'connect');
   $('code').disabled = active;
@@ -656,7 +655,6 @@ $('link-form').addEventListener('submit', event => {
     return;
   }
   if (!host) {
-    $('advanced').open = true;
     stop('invalidHost');
     $('host').focus();
     return;

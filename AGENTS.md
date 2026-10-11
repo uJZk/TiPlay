@@ -11,7 +11,8 @@ See `docs/RECONNECT-UX-2026-10-11.md` for the pre-rendered reconnect wallpaper,
 portal integration, verification and delivery progress. Follow `docs/WEB-PAIRING-DESIGN.md`
 and `docs/APP-MAIN-PAGE-DESIGN.md` for the latest layout decisions. The App design is implemented;
 see `docs/APP-MAIN-PAGE-IMPLEMENTATION.md` for draft/session behavior, upstream compatibility
-and verification. The web pairing redesign remains a Markdown design.
+and verification. See `docs/UI-REDESIGN-2026-10-11.md` for the Liquid Glass web UI,
+Material 3 Expressive App styling, shared pre-rendered wallpaper and current verification limits.
 
 See `docs/BROWSER-RESIZE-2026-10-11.md` for retained-wireless display renegotiation,
 ADB measurements, debug installation, verification and remaining vehicle/recovery validation.

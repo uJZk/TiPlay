@@ -17,18 +17,20 @@
 <body>
 <main>
 <section id="panel" aria-labelledby="title">
+<div class="glass-sheet">
 <form id="link-form" novalidate>
+<img class="brand-mark" src="icon.svg" alt="TiPlay" width="72" height="72">
 <h1 id="title" data-i18n="heading"></h1>
-<p data-i18n="intro"></p>
-<p class="hint" data-i18n="resizeHelp"></p>
+<p class="intro" data-i18n="intro"></p>
+<div class="field">
 <label for="code" data-i18n="codeLabel"></label>
 <input id="code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" required>
-<details id="advanced">
-<summary data-i18n="advanced"></summary>
+</div>
+<div class="field">
 <label for="host" data-i18n="hostLabel"></label>
 <input id="host" name="host" inputmode="decimal" autocomplete="off" spellcheck="false">
 <p class="hint" data-i18n="hostHelp"></p>
-</details>
+</div>
 <button id="connect" class="primary" type="submit" data-i18n="connect"></button>
 <p id="message" role="alert"></p>
 </form>
@@ -40,8 +42,9 @@
 <button id="disconnect" type="button" data-i18n="disconnect" hidden></button>
 </nav>
 </div>
-
+<p class="hint window-help" data-i18n="resizeHelp"></p>
 <footer><a href="https://github.com/uJZk/DiPlay" data-i18n="source"></a></footer>
+</div>
 </section>
 <section id="stage" hidden>
 <canvas id="screen"></canvas>

@@ -2,7 +2,7 @@
 
 更新日期：2026-10-11。
 
-状态：已按本文实施 App 代码，验证进度见 [App 主页面实施](APP-MAIN-PAGE-IMPLEMENTATION.md)。网页设计见 [网页配对页设计](WEB-PAIRING-DESIGN.md)。
+状态：已实施统一主页面，并采用 Material 3 Expressive 风格；视觉与验证见 [UI 重写记录](UI-REDESIGN-2026-10-11.md)。初次实施进度见 [App 主页面实施](APP-MAIN-PAGE-IMPLEMENTATION.md)。网页设计见 [网页配对页设计](WEB-PAIRING-DESIGN.md)。
 
 ## 页面合并
 

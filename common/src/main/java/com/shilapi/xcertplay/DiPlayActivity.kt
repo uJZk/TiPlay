@@ -529,6 +529,9 @@ class DiPlayActivity : ComponentActivity() {
             }
             scroll
         }
+        if (AirPlayPersistence.isPhoneBrowserMode(this)) TiPlayExpressiveUi(this).apply {
+            styleTree(root); applyWindow(this@DiPlayActivity)
+        }
         setContentView(root)
         renderedPage = page
         renderedSettingsCategory = settingsCategory.takeIf { page == "settings" }
