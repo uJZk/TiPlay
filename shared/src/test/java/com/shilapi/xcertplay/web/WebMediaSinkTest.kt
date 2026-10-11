@@ -92,4 +92,19 @@ class WebMediaSinkTest {
         sink.onVideoConfig(110, avcc)
         assertTrue(hub.info()?.codec == null)
     }
+
+    @Test fun retainedEngineChangesCanvasOnlyWhenTheReplacementStreamStarts() {
+        val sink = WebMediaSink(hub, 1280, 720, 60)
+        sink.onScreenStreamActive(110, true)
+        sink.updateCanvas(1600, 900)
+        sink.updateCanvas(1920, 1080)
+        assertEquals(WebVideoHub.StreamInfo(1280, 720, 60, null, null), hub.info())
+        sink.onScreenStreamActive(110, false)
+        sink.onScreenStreamActive(110, true)
+        assertEquals(WebVideoHub.StreamInfo(1920, 1080, 60, null, null), hub.info())
+        sink.close()
+        sink.updateCanvas(1600, 900)
+        sink.onScreenStreamActive(110, true)
+        assertNull(hub.info())
+    }
 }

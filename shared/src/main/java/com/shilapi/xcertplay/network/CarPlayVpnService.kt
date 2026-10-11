@@ -11,6 +11,7 @@ import com.shilapi.xcertplay.airplay.AirPlayListenerIdentity
 import com.shilapi.xcertplay.airplay.AirPlayTcpAccepted
 import com.shilapi.xcertplay.airplay.isInternalAirPlayPeer
 import com.shilapi.xcertplay.airplay.AirPlayConfig
+import com.shilapi.xcertplay.airplay.AirPlayDisplayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
 import com.shilapi.xcertplay.airplay.AirPlayMediaHandler
 import com.shilapi.xcertplay.airplay.AirPlaySession
@@ -166,6 +167,45 @@ class CarPlayVpnService : VpnService() {
     @Synchronized
     fun detachWireless(owner: AirPlayListenerIdentity) {
         if (attachment?.listenerIdentity === owner) releaseLocked()
+    }
+
+    /** Updates the next display handshake while retaining the listener and its transport. */
+    @Synchronized
+    fun prepareWirelessDisplayReconnect(
+        owner: AirPlayListenerIdentity,
+        display: AirPlayDisplayConfig,
+        expectedSession: AirPlaySession,
+    ): (() -> Unit)? {
+        val current = attachment ?: return null
+        if (!active.get() || current.listenerIdentity !== owner || expectedSession.isClosed) return null
+        val peer = expectedSession.remoteAddress ?: return null
+        val local = expectedSession.localAddress ?: return null
+        if (isInternalAirPlayPeer(peer, local)) return null
+        if (!synchronized(sessionsLock) { expectedSession in sessions }) return null
+        attachment = current.copy(config = current.config.copy(main = display))
+        return { expectedSession.close() }
+    }
+
+    /** A resize burst can update the offer until the replacement external TCP session accepts it. */
+    @Synchronized
+    fun updatePendingWirelessDisplay(
+        owner: AirPlayListenerIdentity,
+        display: AirPlayDisplayConfig,
+        retiringSession: AirPlaySession,
+    ): Boolean {
+        val current = attachment ?: return false
+        if (!active.get() || current.listenerIdentity !== owner) return false
+        val replacementAccepted = synchronized(sessionsLock) {
+            sessions.any { session ->
+                session !== retiringSession && !session.isClosed &&
+                    session.remoteAddress?.let { peer ->
+                        session.localAddress?.let { local -> !isInternalAirPlayPeer(peer, local) }
+                    } == true
+            }
+        }
+        if (replacementAccepted) return false
+        attachment = current.copy(config = current.config.copy(main = display))
+        return true
     }
 
     fun isAttached(): Boolean = active.get() && attachment != null

@@ -33,6 +33,8 @@ data class BrowserLinkStatus(
     val touchAvailable: Boolean = false,
     /** Phone-side counters and timings for the page's stats overlay; the server adds the hub's and its own. */
     val phone: Map<String, Any?> = emptyMap(),
+    /** Changes when the driver taps the TiPlay icon in CarPlay. */
+    val portalRevision: Long = BrowserPortalSignal.revision,
 ) {
     enum class State(val wire: String) { IDLE("idle"), CONNECTING("connecting"), STREAMING("streaming") }
 

@@ -39,6 +39,7 @@ export function parseIvf(buffer) {
  * Events from /control land in `events` as `{s, q, event}`. With `pageDir` it also serves the page under /play/.
  */
 export function startFakePhone({ code, frames, width, height, fps = 30, codec = 'vp8', host = '127.0.0.1', pageDir = null }) {
+  let portalRevision = 0;
   const events = new History(), requests = new History(), preflights = new History();
   let current = null, lastSeen = 0, video = null, fit = false, viewport = null, videoCount = 0, corrupt = false, framesWritten = 0;
   const replaced = new Set(), lastQ = new Map();
@@ -127,7 +128,7 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
 
   function status(q) {
     return {
-      q, state: 'streaming', codec, display: { w: width, h: height }, viewport, fit, touch: 'ok',
+      q, state: 'streaming', codec, display: { w: width, h: height }, viewport, fit, touch: 'ok', portalRevision,
       phone: { fake: 1, videoStreams: videoCount },
     };
   }
@@ -201,6 +202,7 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     get videoCount() { return videoCount; },
     get streamStats() { return { framesWritten, blocked: Boolean(video?.blocked), bufferedBytes: video?.res.writableLength ?? 0, active: Boolean(video) }; },
     setFit(value) { fit = value; },
+    requestPortal() { portalRevision++; },
     /** Drops the current /video socket without an end record, as a vanished hotspot would. */
     dropVideo() { closeVideo(null); },
     /** Sends a key frame of garbage next, which the browser's decoder rejects. */

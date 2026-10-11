@@ -13,7 +13,6 @@ import {
 } from './link.js';
 import { followAppearance } from './appearance.js';
 import { createReconnectOverlay } from './reconnect.js';
-import { createBrowserSettings } from './settings.js';
 import { pumpChunkStream } from './transport.js';
 
 const STRINGS = {
@@ -24,11 +23,11 @@ const STRINGS = {
     advanced: 'Advanced',
     hostLabel: 'Phone address',
     hostHelp: 'IPv4 address and port of the phone, for example 100.109.220.253:8080.',
+    resume: 'Return to CarPlay',
+    resizeHelp: 'The picture follows this window. When its size settles, CarPlay reconnects automatically to match the resolution.',
     connect: 'Connect',
     disconnect: 'Disconnect',
     settings: 'Setting',
-    close: 'Close',
-    saveSettings: 'Save and reconnect',
     fullscreen: 'Full screen',
     exitFullscreen: 'Exit full screen',
     stats: 'Stats',
@@ -62,11 +61,11 @@ const STRINGS = {
     advanced: '高级',
     hostLabel: '手机地址',
     hostHelp: '手机的 IPv4 地址和端口，例如 100.109.220.253:8080。',
+    resume: '返回 CarPlay',
+    resizeHelp: '画面自动适应窗口。窗口大小稳定后，CarPlay 会自动重新连接，以匹配原生分辨率。',
     connect: '连接',
     disconnect: '断开',
     settings: '设置',
-    close: '关闭',
-    saveSettings: '保存并重新连接',
     fullscreen: '全屏',
     exitFullscreen: '退出全屏',
     stats: '统计',
@@ -101,19 +100,9 @@ const LINK_KEY = 'tiplay.link', STATS_KEY = 'tiplay.stats';
 const $ = id => document.getElementById(id);
 const stage = $('stage'), touch = $('touch');
 const codecName = codec => CODEC_NAMES[String(codec).split('.')[0]] ?? codec;
-const browserSettings = createBrowserSettings({
-  dialog: $('browser-settings'), controls: $('browser-settings-controls'), panel: $('panel'),
-  nav: $('bar').querySelector('nav'), closeButton: $('browser-settings-close'), isActive: () => active,
-  onOpen: () => {
-    $('code').value = link.code ?? '';
-    $('host').value = link.host;
-    $('advanced').open = true;
-    $('message').textContent = '';
-  },
-});
 const renderReconnect = createReconnectOverlay({
   overlay: $('reconnect'), message: $('reconnect-message'), settings: $('reconnect-settings'),
-  bar: $('bar'), stage, onSettings: () => { browserSettings.open(); render(); },
+  panel: $('panel'), stage, onSettings: showPortal,
 });
 
 document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
@@ -149,7 +138,7 @@ const slots = createTouchSlots();
 let session = null, active = false, phase = 'ready', notice = null;
 let attempt = 0, reconnects = 0, retryTimer = null, retryAt = 0, streamId = 0, videoAbort = null, lastError = null;
 let config = null, live = false, status = null, unsupported = null, videoStats = {};
-let outbox = null, heartbeatTimer = null, statsTimer = null, viewportTimer = null, lastViewport = '';
+let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 const reportAppearance = followAppearance(window.matchMedia('(prefers-color-scheme: dark)'), () => outbox);
 let movePending = false, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
 let statsVisible = false;
@@ -309,8 +298,27 @@ async function httpError(response) {
   return Object.assign(new Error(word || `HTTP ${response.status}`), { status: response.status });
 }
 
+let portalRevision = null;
+
+function showPortal() {
+  releaseTouches();
+  cancelViewport();
+  stage.hidden = true;
+  $('panel').hidden = false;
+  render();
+}
+
+function resumeCarPlay() {
+  $('panel').hidden = true;
+  stage.hidden = false;
+  onResize();
+  render();
+}
+
 function start() {
   if (active || videoPath.path === 'none') return;
+  cancelViewport();
+  portalRevision = null;
   // A fresh session id per start lets "Connect" take the display back after another browser replaced this one.
   session = newSessionId();
   active = true;
@@ -336,6 +344,7 @@ function start() {
 }
 
 function stop(key = null, ...args) {
+  cancelViewport();
   notice = key ? { key, args } : null;
   active = false;
   phase = 'ready';
@@ -446,6 +455,10 @@ async function postControl(q, events) {
 }
 
 function applyStatus(next) {
+  if (Number.isSafeInteger(next.portalRevision)) {
+    if (portalRevision !== null && next.portalRevision !== portalRevision) showPortal();
+    portalRevision = next.portalRevision;
+  }
   status = next;
   if (!next.fit || Date.now() - fitRequestedAt > 15000) fitRequestedAt = 0;
   render();
@@ -485,7 +498,9 @@ function render() {
   const text = statusText();
   $('status').textContent = text;
   renderReconnect({ active, live, phase, pending: fitRequestedAt > 0, text });
-  $('connect').textContent = t(active && $('browser-settings').open ? 'saveSettings' : 'connect');
+  $('connect').textContent = t(active ? 'resume' : 'connect');
+  $('code').disabled = active;
+  $('host').disabled = active;
   $('stats').hidden = !(active && statsVisible);
   if (active && statsVisible) {
     $('stats').textContent = Object.entries(flatStats(snapshot(), Infinity)).map(([key, value]) => `${key} ${value}`).join('\n');
@@ -588,7 +603,7 @@ document.addEventListener('visibilitychange', () => {
   else keepScreenOn();
 });
 
-// Viewport: the canvas backing store follows at once; the phone hears about it debounced and deduplicated.
+// Viewport: the canvas backing store follows at once; reports share the next frame and omit duplicate sizes.
 function resizeCanvas() {
   if (stage.hidden) return;
   const rect = stage.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
@@ -596,15 +611,21 @@ function resizeCanvas() {
 }
 
 function scheduleViewport() {
-  clearTimeout(viewportTimer);
-  viewportTimer = setTimeout(() => {
+  if (stage.hidden || !outbox || viewportFrame !== null) return;
+  viewportFrame = requestAnimationFrame(() => {
+    viewportFrame = null;
     if (stage.hidden || !outbox) return;
     const rect = stage.getBoundingClientRect();
     const viewport = viewportFor(rect.width, rect.height, window.devicePixelRatio || 1);
     if (!viewport || `${viewport.w}x${viewport.h}` === lastViewport) return;
     lastViewport = `${viewport.w}x${viewport.h}`;
     outbox.push({ k: 'vp', ...viewport }, 'latest');
-  }, 180);
+  }); // Coalesce layout notifications without waiting for a quiet period during a resize.
+}
+
+function cancelViewport() {
+  if (viewportFrame !== null) cancelAnimationFrame(viewportFrame);
+  viewportFrame = null;
 }
 
 const onResize = () => {
@@ -613,6 +634,7 @@ const onResize = () => {
 };
 new ResizeObserver(onResize).observe(stage);
 window.addEventListener('resize', onResize);
+window.visualViewport?.addEventListener('resize', onResize);
 
 function keepScreenOn() {
   if (!active || wakeLock || document.hidden || !navigator.wakeLock) return;
@@ -626,22 +648,19 @@ function keepScreenOn() {
 
 $('link-form').addEventListener('submit', event => {
   event.preventDefault();
+  if (active) { resumeCarPlay(); return; }
   const code = $('code').value.trim(), host = normalizeHost($('host').value || pageHost || DEFAULT_HOST);
   if (!isCode(code)) {
-    if (active) $('message').textContent = t('invalidCode');
-    else stop('invalidCode');
+    stop('invalidCode');
     $('code').focus();
     return;
   }
   if (!host) {
     $('advanced').open = true;
-    if (active) $('message').textContent = t('invalidHost');
-    else stop('invalidHost');
+    stop('invalidHost');
     $('host').focus();
     return;
   }
-  if (active) { sendBye(); stop(); }
-  browserSettings.close();
   link = { host, code };
   $('host').value = host;
   saveLink();
@@ -664,23 +683,7 @@ $('stats-toggle').addEventListener('click', () => {
   render();
 });
 
-const root = document.documentElement;
-const requestFullscreen = root.requestFullscreen ?? root.webkitRequestFullscreen;
-const fullscreenElement = () => document.fullscreenElement ?? document.webkitFullscreenElement;
-if (requestFullscreen) {
-  $('fullscreen').addEventListener('click', () => {
-    const exit = document.exitFullscreen ?? document.webkitExitFullscreen;
-    // Older Safari returns undefined instead of a promise.
-    Promise.resolve(fullscreenElement() ? exit.call(document) : requestFullscreen.call(root, { navigationUI: 'hide' })).catch(() => {});
-  });
-  for (const type of ['fullscreenchange', 'webkitfullscreenchange']) {
-    document.addEventListener(type, () => { $('fullscreen').textContent = t(fullscreenElement() ? 'exitFullscreen' : 'fullscreen'); });
-  }
-} else {
-  $('fullscreen').hidden = true;
-}
 window.addEventListener('pagehide', event => {
-  browserSettings.close();
   resumeOnShow = active;
   if (active) sendBye();
   stop();

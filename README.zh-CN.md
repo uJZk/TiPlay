@@ -20,6 +20,7 @@ TiPlay 还没有发布版本，现在试用请[从源码构建](docs/BUILD.md)�
 - **iPhone**：通过蓝牙连接特斯拉并设为主电话，用于声音和通话；同时以无线 CarPlay 连接 TiPlay。
 - **特斯拉**：连接手机热点，在浏览器中打开 TiPlay 页面（`https://ujzk.github.io/TiPlay/`）。若 TiPlay 的“浏览器页面地址”仍为 `/DiPlay/`，改为这个新地址。页面将从公网 HTTPS 地址加载一次，之后使用浏览器缓存。
 - **目前的实测**：在 Model Y（Chromium 148）上，探测页能硬解 1080p60 的 H.264 和 HEVC，挂 D 挡时 H.264 保持 60 fps。特斯拉浏览器中的 HTTPS 页面已能通过 HTTP 访问热点上的 100.64 地址。CarPlay 本身还没有在特斯拉上跑通。
+- **网页操作**：CarPlay 画面没有顶部页眉栏；点击 CarPlay 内的 **TiPlay** 图标可返回网页门户，连接保持运行。窗口变化时画面立即适应，大小稳定后自动重连以匹配原生分辨率；门户保留手动重连入口。
 - **设置**：发布页面、配对、其他浏览器和实车测试清单见 [Tesla browser](docs/TESLA_BROWSER.md)（英文）。
 
 ## 车机模式（继承自 DiPlay 0.2.13）

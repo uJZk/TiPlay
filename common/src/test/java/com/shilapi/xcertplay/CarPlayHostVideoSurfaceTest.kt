@@ -72,6 +72,7 @@ class CarPlayHostVideoSurfaceTest {
     }
 
     private fun observe(activity: CarPlayHostActivity, texture: TextureView) {
+        useHeadUnitMode(activity)
         activity.javaClass.getDeclaredMethod("observeVideoWindow", TextureView::class.java)
             .apply { isAccessible = true }.invoke(activity, texture)
     }

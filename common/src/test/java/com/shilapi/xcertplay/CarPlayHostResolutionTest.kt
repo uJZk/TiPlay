@@ -132,14 +132,14 @@ class CarPlayHostResolutionTest {
         assertTrue(DisplayDiagnosticSnapshot.report(activity).contains("software_decoder"))
     }
 
-    @Test fun carBluetoothAudioReachesTheAirPlayConfig() {
+    @Test fun browserAudioAlwaysStaysOnCarBluetooth() {
         set("microphoneAvailable", true)
         AirPlayPersistence.saveRunMode(activity, com.shilapi.xcertplay.orchestration.CarPlayRunMode.PHONE_BROWSER)
         assertEquals(CarBluetoothAudio.OFF, AirPlayPersistence.loadCarBluetoothAudio(activity))
         for ((mode, expected) in listOf(
-            CarBluetoothAudio.OFF to listOf(false, false, true, true),
+            CarBluetoothAudio.OFF to listOf(true, false, false, false),
             CarBluetoothAudio.ON to listOf(true, false, false, false),
-            CarBluetoothAudio.ALTERNATIVE to listOf(true, true, false, false),
+            CarBluetoothAudio.ALTERNATIVE to listOf(true, false, false, false),
         )) {
             AirPlayPersistence.saveCarBluetoothAudio(activity, mode)
             val airPlay = config(100)

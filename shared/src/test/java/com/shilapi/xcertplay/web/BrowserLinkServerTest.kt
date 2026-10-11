@@ -328,6 +328,7 @@ class BrowserLinkServerTest {
         assertEquals(mapOf("w" to 1182L, "h" to 920L), body["display"])
         assertEquals(mapOf("w" to 1182L, "h" to 920L), body["viewport"])
         assertEquals(false, body["fit"])
+        assertEquals(status.portalRevision, body["portalRevision"])
         assertEquals("ok", body["touch"])
         val phone = body["phone"] as Map<*, *>
         assertEquals(60L, phone["rx"])

@@ -12,6 +12,7 @@ import com.shilapi.xcertplay.hud.BydClusterMapPause
 import com.shilapi.xcertplay.hud.BydNavigationOutputs
 import com.shilapi.xcertplay.network.WirelessHotspotBackend
 import com.shilapi.xcertplay.transport.Iap2IdentificationConfig
+import com.shilapi.xcertplay.web.BrowserPortalSignal
 import java.net.Socket
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -56,6 +57,7 @@ class CarPlayControllerHeadUnitIntegrationsTest {
         val controller = controller(headUnitIntegrations = false)
         val phone = phone()
         sessionListener(controller).onSessionActive(phone)
+        val portalRevision = BrowserPortalSignal.revision
         sessionListener(controller).onHostUiRequested(phone)
         // Android 10 with a hotspot backend is where the head unit pauses Wi-Fi scans over ADB.
         ReflectionHelpers.callInstanceMethod<Unit>(controller, "pauseWifiScans",
@@ -64,6 +66,7 @@ class CarPlayControllerHeadUnitIntegrationsTest {
         assertFalse(bydOutputsAccepting())
         assertNull(BydClusterMapPause.streamControl)
         assertNull(shadowOf(app).nextStartedActivity)
+        assertEquals(portalRevision + 1, BrowserPortalSignal.revision)
         assertNull(ReflectionHelpers.getField<Any?>(controller, "wifiScanPause"))
         // The host and key gates follow the mode this session connected with.
         assertTrue(controller.phoneBrowserMode())
@@ -73,11 +76,13 @@ class CarPlayControllerHeadUnitIntegrationsTest {
         val controller = controller(headUnitIntegrations = true)
         val phone = phone()
         sessionListener(controller).onSessionActive(phone)
+        val portalRevision = BrowserPortalSignal.revision
         sessionListener(controller).onHostUiRequested(phone)
 
         assertTrue(bydOutputsAccepting())
         assertNotNull(BydClusterMapPause.streamControl)
         assertFalse(controller.phoneBrowserMode())
+        assertEquals(portalRevision, BrowserPortalSignal.revision)
         val home = shadowOf(app).nextStartedActivity
         assertEquals(Intent.ACTION_MAIN, home.action)
         assertTrue(home.hasCategory(Intent.CATEGORY_HOME))

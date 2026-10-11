@@ -8,7 +8,7 @@ import android.util.Log
 import com.shilapi.xcertplay.airplay.AirPlayContact
 import com.shilapi.xcertplay.airplay.AirPlayKnobState
 import com.shilapi.xcertplay.airplay.MediaSink
-import com.shilapi.xcertplay.media.VideoTeeMediaSink
+import com.shilapi.xcertplay.media.BrowserOnlyMediaSink
 import com.shilapi.xcertplay.web.BrowserLinkServer
 import com.shilapi.xcertplay.web.BrowserLinkStatus
 import com.shilapi.xcertplay.web.BrowserSize
@@ -190,23 +190,24 @@ internal object TeslaBrowserLink {
     }
 
     /**
-     * The engine's sink for a new session: in phone + browser mode the Android [sink] with a tap that feeds the main
+     * The engine's sink for a new session: in phone + browser mode video bypasses the Android [sink] and feeds the main
      * screen into [hub]; otherwise [sink] itself. [width] × [height] is the negotiated canvas.
      */
     fun tee(sink: MediaSink, phoneBrowser: Boolean, width: Int, height: Int, fps: Int = TeslaBrowserCanvas.FPS): MediaSink {
         if (!phoneBrowser) return sink
         val web = WebMediaSink(hub, width, height, fps)
         taps[sink] = web
-        val reported = AtomicBoolean(false)
-        return VideoTeeMediaSink(sink, web) { error ->
-            // Once per session: a failing tap would otherwise log every frame.
-            if (reported.compareAndSet(false, true)) log("Browser link: video tap failed (${error.javaClass.simpleName})")
-        }
+        return BrowserOnlyMediaSink(sink, web)
     }
 
     /** Ends the browser's stream of [sink]'s session, which is being retired; the next session starts a new one. */
     fun releaseTap(sink: MediaSink) {
         taps.remove(sink)?.close()
+    }
+
+    /** A retained wireless engine starts its next stream with the replacement display's negotiated canvas. */
+    fun updateCanvas(sink: MediaSink, width: Int, height: Int) {
+        taps[sink]?.updateCanvas(width, height)
     }
 
     /** The 6-digit pairing code; created (SecureRandom) and saved the first time. */

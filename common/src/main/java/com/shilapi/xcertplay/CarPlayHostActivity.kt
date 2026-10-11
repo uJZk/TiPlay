@@ -198,17 +198,42 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun clusterMapEnabled(): Boolean = headUnitIntegrations() && AirPlayPersistence.loadClusterMapEnabled(this)
 
     // Phone + browser mode: the car browser's link logs into this session and asks it to fit the browser's size.
-    // The page's button says "Apply and reconnect", which is the driver's consent to reconnect (AGENTS.md).
-    private val browserLinkHost = object : TeslaBrowserLink.Host {
+    // Browser resize reconnects automatically after settling; the portal also offers a manual retry.
+    private val browserLinkHost: TeslaBrowserLink.Host = object : TeslaBrowserLink.Host {
         override fun log(message: String) = AsyncDiagnosticLog.append(sessionLog, message)
         override fun onBrowserTheme(night: Boolean) {
             nightModeController.systemChanged(night)
         }
+        override fun onBrowserViewport(viewport: com.shilapi.xcertplay.web.BrowserViewport) {
+            // TeslaBrowserLink already delivers this callback on the main thread.
+            if (!headUnitIntegrations() && !shuttingDown.get()) onBrowserFit()
+        }
         override fun onBrowserFit() {
             val running = sessionDisplay?.takeIf { controller != null && !headUnitIntegrations() }
             TeslaBrowserLink.fitReason(this@CarPlayHostActivity,
-                running?.let { com.shilapi.xcertplay.web.BrowserSize(it.width, it.height) })?.let(::restartCarPlay)
+                running?.let { com.shilapi.xcertplay.web.BrowserSize(it.width, it.height) })?.let {
+                if (!CarPlayBackgroundSession.isOwner(this@CarPlayHostActivity) || shuttingDown.get() ||
+                    menuOpen || handshakeResetInProgress) return
+                val current = controller ?: return
+                if (activeDisplaySize == null) return
+                val plan = TeslaBrowserCanvas.plan(TeslaBrowserLink.lastViewport(this@CarPlayHostActivity), widthPhysicalMm)
+                val display = AirPlayDisplayConfig(plan.width, plan.height, plan.widthMm, plan.heightMm, fps,
+                    primaryInputDevice = if (AndroidTvInputMode.shouldUseKnobAsPrimaryInput(this@CarPlayHostActivity)) 3 else 1)
+                if (browserDisplayReconnectHost.request(current, activeAirPlaySession, display)) {
+                    appendLog("Browser display reconnect retaining wireless transport")
+                } else appendLog("Browser display reconnect retaining wireless transport is unavailable; keeping the current session")
+            }
         }
+    }
+
+    private val browserDisplayReconnectHost by lazy {
+        BrowserDisplayReconnectHost(accepted = { display ->
+            sessionDisplay = sessionDisplay?.copy(width = display.widthPixels, height = display.heightPixels)
+            val current = controller
+            val updated = sessionDisplay
+            if (current != null && updated != null) CarPlayBackgroundSession.updateDisplay(current, updated)
+            sink?.let { TeslaBrowserLink.updateCanvas(it, display.widthPixels, display.heightPixels) }
+        })
     }
 
     private val vpnConsent =
@@ -637,7 +662,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val reusedBackgroundSession = adoptBackgroundSession()
         microphoneAvailable =
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        microphonePermissionResolved = microphoneAvailable
+        microphonePermissionResolved = microphoneAvailable || !headUnitIntegrations()
         if (intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false) ||
             savedInstanceState?.getBoolean(CarPlaySettingsNavigation.MENU) == true) {
             settingsOnlyLaunch = savedInstanceState?.getBoolean("settings_only_launch") ?: !reusedBackgroundSession
@@ -1347,6 +1372,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        browserDisplayReconnectHost.detach()
         resetSidePanel()
         nightModeController.pause()
         pictureBinding?.close()
@@ -1550,6 +1576,10 @@ class CarPlayHostActivity : ComponentActivity() {
         settingsGestureHint = gestureHint
         stageStatusView = stage
         connectionPanel = viewport
+        // TiPlay's phone receiver measures the layout without a local video surface.
+        if (!headUnitIntegrations()) PhoneBrowserReceiverUi.configure(
+            video, gestureLayer, gestureHint, ::scheduleDisplaySize, ::openSettingsMenu,
+        )
         updateDebugOverlays()
         return root
     }
@@ -3510,7 +3540,6 @@ class CarPlayHostActivity : ComponentActivity() {
         displayDiagnosticAttempt = DisplayDiagnosticSnapshot.begin(this, summary,
             "Decoder capability check skipped: phone + browser mode", summary)
         appendLog(summary)
-        val carBluetoothAudio = CarBluetoothAudio.effective(this, controller ?: CarPlayBackgroundSession.snapshot()?.controller)
         return AirPlayConfig(
             deviceName = "TiPlay",
             deviceId = DiPlayBootstrap.deviceId(airPlayIdentity),
@@ -3520,15 +3549,14 @@ class CarPlayHostActivity : ComponentActivity() {
             cluster = null,
             rightHandDrive = rightHandDrive,
             hevc = hevcEnabled,
-            microphone = microphoneAvailable && carBluetoothAudio == CarBluetoothAudio.OFF,
+            microphone = false,
             manufacturer = normalizedManufacturer(),
             model = normalizedModel(),
             oemLabel = CarButtonDefaults.label(oemLabel, phoneBrowser = true),
             icons = listOf(loadAirPlayIcon()),
             videoInCar = false,
-            mainBufferedAudio = AirPlayPersistence.loadMainBufferedAudio(this),
-            audioViaCarBluetooth = carBluetoothAudio != CarBluetoothAudio.OFF,
-            disableAudioOutput = carBluetoothAudio == CarBluetoothAudio.ALTERNATIVE,
+            mainBufferedAudio = false,
+            audioViaCarBluetooth = true,
         )
     }
 
@@ -3735,7 +3763,7 @@ class CarPlayHostActivity : ComponentActivity() {
         CarPlayMediaEngine(
             // Phone + browser mode: the main screen also goes to the car's browser, untouched.
             sink = TeslaBrowserLink.tee(sink, phoneBrowser = !headUnitIntegrations(), sink.videoWidth, sink.videoHeight, fps),
-            microphoneEnabled = microphoneAvailable && receivesAudio,
+            microphoneEnabled = headUnitIntegrations() && microphoneAvailable && receivesAudio,
             audioCaptureDirectory = if (receivesAudio) audioCaptureDirectory() else null,
         )
 
@@ -3745,10 +3773,12 @@ class CarPlayHostActivity : ComponentActivity() {
 
             override fun onSessionActive(session: AirPlaySession) {
                 runOnUiThread {
-                    if (controllerGeneration != restartGeneration) {
+                    if (controllerGeneration != restartGeneration || isDestroyed ||
+                        !CarPlayBackgroundSession.isOwner(this@CarPlayHostActivity)) {
                         return@runOnUiThread
                     }
                     activeAirPlaySession = session
+                    browserDisplayReconnectHost.sessionActive(controller, session)
                     CarPlayBackgroundSession.active = true
                     reconnectAttempts = 0
                     logThemeState(ThemeModeDiagnostics.Source.SESSION_ACTIVE, resources.configuration)
@@ -3760,7 +3790,20 @@ class CarPlayHostActivity : ComponentActivity() {
 
             override fun onVideoFrameRendered(session: AirPlaySession) {
                 runOnUiThread {
-                    if (controllerGeneration != restartGeneration || activeAirPlaySession !== session || shuttingDown.get()) return@runOnUiThread
+                    if (controllerGeneration != restartGeneration || shuttingDown.get() || isDestroyed ||
+                        !CarPlayBackgroundSession.isOwner(this@CarPlayHostActivity)) return@runOnUiThread
+                    // attachUi does not replay onSessionActive when a host adopts between replacement
+                    // activation and its first frame. The controller clears pending only for that replacement.
+                    if (activeAirPlaySession == null && browserDisplayReconnectHost.pending &&
+                        controller?.isBrowserDisplayReconnectPending() == false) {
+                        activeAirPlaySession = session
+                        browserDisplayReconnectHost.sessionActive(controller, session)
+                        CarPlayBackgroundSession.active = true
+                    }
+                    if (activeAirPlaySession !== session) return@runOnUiThread
+                    if (browserDisplayReconnectHost.firstFrame(controller, session)) {
+                        mainHandler.post { if (!shuttingDown.get()) browserLinkHost.onBrowserFit() }
+                    }
                     if (!startupRetryBudget.firstFrame(session, android.os.SystemClock.elapsedRealtime())) return@runOnUiThread
                     mainHandler.postDelayed({
                         if (controllerGeneration == restartGeneration && activeAirPlaySession === session &&
@@ -3774,6 +3817,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
             override fun onSessionEnded(session: AirPlaySession) {
                 runOnUiThread {
+                    if (isDestroyed || !CarPlayBackgroundSession.isOwner(this@CarPlayHostActivity)) return@runOnUiThread
                     val active = activeAirPlaySession
                     if (active != null && active !== session) {
                         // 探针或非活动握手结束时，保留当前播放会话。
@@ -3781,6 +3825,13 @@ class CarPlayHostActivity : ComponentActivity() {
                         return@runOnUiThread
                     }
                     if (controllerGeneration != restartGeneration || startupRetryStopped) return@runOnUiThread
+                    if (browserDisplayReconnectHost.expectedEnd(controller, session)) {
+                        activeAirPlaySession = null
+                        CarPlayBackgroundSession.active = false
+                        appendLog("Browser display session ended; retaining wireless transport")
+                        return@runOnUiThread
+                    }
+                    browserDisplayReconnectHost.cancel()
                     startupRetryBudget.disconnected()
                     activeAirPlaySession = null
                     CarPlayBackgroundSession.active = false
@@ -3798,7 +3849,9 @@ class CarPlayHostActivity : ComponentActivity() {
 
             override fun onTransportError(message: String) {
                 runOnUiThread {
+                    if (isDestroyed || !CarPlayBackgroundSession.isOwner(this@CarPlayHostActivity)) return@runOnUiThread
                     if (controllerGeneration != restartGeneration || startupRetryStopped) return@runOnUiThread
+                    browserDisplayReconnectHost.cancel()
                     startupRetryBudget.disconnected()
                     if (menuOpen) {
                         recoveryPendingAfterMenu = true
@@ -3865,6 +3918,9 @@ class CarPlayHostActivity : ComponentActivity() {
         if (snapshot.controller.isClosed()) {
             CarPlayBackgroundSession.clear(snapshot.controller)
             return false
+        }
+        if (snapshot.controller.isBrowserDisplayReconnectPending()) {
+            browserDisplayReconnectHost.adopt(snapshot.controller)
         }
         // The sink's pacing is fixed when it is built; a session from before a Smooth video change (for
         // example one whose reconnect stopped at a prerequisite) is stopped instead of adopted. Callers
@@ -3934,6 +3990,7 @@ class CarPlayHostActivity : ComponentActivity() {
             },
         )
         updateDebugOverlays()
+        if (!headUnitIntegrations()) mainHandler.post { if (!isDestroyed && !shuttingDown.get()) browserLinkHost.onBrowserFit() }
         return true
     }
 
@@ -4106,6 +4163,8 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun scheduleDisplaySize(width: Int, height: Int) {
+        // The browser owns a running phone session's canvas; phone rotation must not reconnect it.
+        if (!headUnitIntegrations() && controller != null) return
         if (width <= 0 || height <= 0 || shuttingDown.get()) return
         val size = DisplaySize(width, height)
         if (size == pendingDisplaySize) return
@@ -4388,6 +4447,7 @@ class CarPlayHostActivity : ComponentActivity() {
         if (!CarPlayBackgroundSession.isOwner(this)) return
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress) return
         val size = activeDisplaySize ?: return
+        browserDisplayReconnectHost.cancel()
         startupRetryBudget.disconnected()
         startupRetryButton?.visibility = View.GONE
         appendLog(reason)
@@ -4410,6 +4470,8 @@ class CarPlayHostActivity : ComponentActivity() {
         teardownExecutor.execute {
             val started = System.nanoTime()
             oldController?.close()
+            // Codec release can run while the controller releases transport resources.
+            oldSink?.close()
             val completed = oldController?.awaitClosed(CONTROLLER_CLOSE_TIMEOUT_MILLIS) ?: true
             AsyncDiagnosticLog.append(
                 diagnosticLog,
@@ -4555,6 +4617,8 @@ class CarPlayHostActivity : ComponentActivity() {
         } else {
             maybeStartCarPlay()
         }
+        // A browser resize can settle while this menu temporarily blocks restarts.
+        if (!headUnitIntegrations()) browserLinkHost.onBrowserFit()
     }
 
     private fun exitApplication() {
@@ -4566,6 +4630,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun shutdown(terminateProcess: Boolean, reason: String, completion: () -> Unit = {}) {
         if (!shuttingDown.compareAndSet(false, true)) { completion(); return }
+        browserDisplayReconnectHost.cancel()
         resetSidePanel()
         startupRetryBudget.disconnected()
         restartGeneration += 1
@@ -4597,6 +4662,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun observeVideoWindow(texture: TextureView) {
+        if (!headUnitIntegrations()) return // TiPlay's browser is the only video renderer.
         val probe = object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
                 if (!texture.isAttachedToWindow) return true
@@ -4797,6 +4863,9 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun updateDebugOverlays() {
         statusScrollView?.visibility = View.GONE
         connectionPanel?.visibility = if (activeScreenStreamTypes.isEmpty()) View.VISIBLE else View.GONE
+        if (!headUnitIntegrations()) PhoneBrowserReceiverUi.update(
+            connectionPanel, gestureOverlay, settingsGestureHint, stageStatusView, activeScreenStreamTypes.isNotEmpty(),
+        )
     }
 
     private fun friendlyStage(message: String): String = when {
@@ -5036,6 +5105,11 @@ internal object CarPlayBackgroundSession {
         this.width = width
         this.height = height
         this.display = display
+    }
+
+    @Synchronized
+    fun updateDisplay(expected: CarPlayController, display: CarPlaySessionDisplay) {
+        if (controller === expected) this.display = display
     }
 
     @Synchronized

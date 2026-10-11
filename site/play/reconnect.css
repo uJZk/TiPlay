@@ -6,13 +6,5 @@
 #reconnect-logo{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:var(--reconnect-logo);height:var(--reconnect-logo);border-radius:23%;box-shadow:0 8px 32px rgba(0,0,0,.18)}
 #reconnect-message{position:absolute;top:calc(50% + var(--reconnect-logo)/2 + var(--reconnect-gap));left:max(24px,env(safe-area-inset-left));right:max(24px,env(safe-area-inset-right));margin:0;text-align:center;color:inherit;font-size:16px;line-height:1.5;overflow-wrap:anywhere}
 #reconnect-settings{position:absolute;top:max(16px,env(safe-area-inset-top));right:max(16px,env(safe-area-inset-right));min-height:48px;background:rgba(255,255,255,.06);border:1px solid var(--reconnect-line);color:inherit}
-#browser-settings{width:min(640px,calc(100% - 32px));max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);margin:auto;padding:0;overflow:auto;border:1px solid var(--reconnect-line);border-radius:20px;background:#141e2c;color:var(--reconnect-text);z-index:1001}
-#browser-settings::backdrop{background:rgba(0,0,0,.24)}
-.settings-header{display:flex;align-items:center;gap:16px;position:sticky;top:0;padding:16px 24px;background:#141e2c;border-bottom:1px solid var(--reconnect-line);z-index:1}
-.settings-header h2{flex:1;margin:0;font-size:22px}
-#browser-settings-controls{padding:20px 24px 0}
-#browser-settings-controls nav{flex-wrap:wrap}
-#browser-settings #panel{height:auto;overflow:visible;padding:20px 24px}
-#browser-settings #title,#browser-settings #link-form>p[data-i18n=intro]{display:none}
 @media(max-height:360px){:root{--reconnect-logo:64px;--reconnect-gap:12px}#reconnect-message{font-size:14px}#reconnect-settings{top:max(8px,env(safe-area-inset-top));min-height:44px}}
 @media(max-aspect-ratio:3/4){#reconnect-wallpaper{object-position:65% center}}

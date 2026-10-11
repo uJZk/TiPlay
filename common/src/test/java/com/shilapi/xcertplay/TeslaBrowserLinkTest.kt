@@ -7,7 +7,7 @@ import com.shilapi.xcertplay.airplay.AirPlayKnobState
 import com.shilapi.xcertplay.airplay.MediaSink
 import com.shilapi.xcertplay.airplay.VideoCodec
 import com.shilapi.xcertplay.media.AndroidMediaSink
-import com.shilapi.xcertplay.media.VideoTeeMediaSink
+import com.shilapi.xcertplay.media.BrowserOnlyMediaSink
 import com.shilapi.xcertplay.orchestration.CarPlayController
 import com.shilapi.xcertplay.orchestration.CarPlayRunMode
 import com.shilapi.xcertplay.web.BrowserLinkServer
@@ -354,10 +354,10 @@ class TeslaBrowserLinkTest {
         assertSame(sink, TeslaBrowserLink.tee(sink, phoneBrowser = false, 1280, 720))
     }
 
-    @Test fun aPhoneSessionsMainScreenAlsoFeedsTheBrowserUntilItIsRetired() {
+    @Test fun aPhoneSessionsMainScreenFeedsOnlyTheBrowserUntilItIsRetired() {
         val sink = mock(MediaSink::class.java)
         val tee = TeslaBrowserLink.tee(sink, phoneBrowser = true, 1182, 920)
-        assertTrue(tee is VideoTeeMediaSink)
+        assertTrue(tee is BrowserOnlyMediaSink)
         tee.onVideoCodec(110, VideoCodec.H264)
         tee.onScreenStreamActive(110, true)
         verify(sink).onScreenStreamActive(110, true)

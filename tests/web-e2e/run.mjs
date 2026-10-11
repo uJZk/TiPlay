@@ -310,6 +310,21 @@ async function main() {
     `viewport event ${JSON.stringify(viewport)} matches the video area`);
     await checkCanvas(page, 'worker');
 
+    check(await page.locator('header, #fullscreen').count() === 0, 'CarPlay has no header or fullscreen button');
+    check(rect.top === 0, 'the CarPlay picture starts at the top of the window');
+    const streamsAtPortal = phone.videoCount;
+    phone.requestPortal();
+    await page.waitForSelector('#panel:not([hidden])');
+    check(await page.textContent('#connect') === 'Return to CarPlay', 'TiPlay icon returns to the portal');
+    await page.click('#connect');
+    await page.waitForSelector('#stage:not([hidden])');
+    check(phone.videoCount === streamsAtPortal, 'returning to CarPlay keeps the same video connection');
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await waitFor('resized viewport', () => eventsOf(phone, 'vp').at(-1)?.event.cw === 1100);
+    const resized = await page.locator('#stage').boundingBox();
+    check(resized.x === 0 && resized.y === 0 && resized.width === 1100 && resized.height === 700,
+      'the picture follows the entire resized window');
+
     checkTap(await tap(page, phone, 0.25, 0.75), 0.25, 0.75, 'worker');
 
     const st = await waitFor('decoded stats event', () => eventsOf(phone, 'st').map(entry => entry.event)
@@ -324,24 +339,18 @@ async function main() {
     await page.waitForSelector('#reconnect:not([hidden])');
     check(await page.textContent('#reconnect-settings') === 'Setting', 'the reconnect action is Setting');
     await page.click('#reconnect-settings');
-    await page.waitForSelector('#browser-settings[open]');
-    check((await stats(page)).page.link.phase !== 'ready', 'opening settings keeps the current reconnect running');
-    check(await page.locator('#browser-settings #host').isVisible() && await page.locator('#browser-settings #disconnect').isVisible(),
-      'settings reuses the connection form and the running controls');
-    await page.fill('#code', '12');
+    await page.waitForSelector('#panel:not([hidden])');
+    check((await stats(page)).page.link.phase !== 'ready', 'Setting returns to the pairing portal without stopping the current reconnect');
+    check(await page.locator('#reconnect').isHidden() && await page.locator('#disconnect').isVisible(),
+      'the portal remains usable while the reconnect continues');
+    check(await page.locator('#code').isDisabled() && await page.locator('#host').isDisabled(),
+      'the portal preserves the active connection parameters');
+    const streamsBeforeResume = phone.videoCount;
+    check(await page.textContent('#connect') === 'Return to CarPlay', 'the portal can resume the active reconnect');
     await page.click('#connect');
-    check((await stats(page)).page.link.phase !== 'ready' && /6-digit/.test(await page.textContent('#message')),
-      'invalid settings show an error without stopping the current reconnect');
-    await page.click('#browser-settings-close');
-    await page.waitForSelector('#browser-settings', { state: 'hidden' });
-    check(await page.locator('#panel').isHidden(), 'closing settings restores the active page and hides its connection form');
-    await page.click('#reconnect-settings');
-    check(await page.inputValue('#code') === CODE, 'reopening settings discards unsaved edits and shows the saved pairing code');
-    check(await page.textContent('#connect') === 'Save and reconnect', 'applying connection settings is an explicit reconnect action');
-    await page.click('#connect');
-    await page.waitForSelector('#browser-settings', { state: 'hidden' });
-    check((await stats(page)).page.link.phase !== 'ready' && await page.locator('#reconnect').isVisible(),
-      'saving valid settings closes the panel and starts the new connection');
+    await page.waitForSelector('#reconnect:not([hidden])');
+    check(phone.videoCount === streamsBeforeResume, 'resuming from the portal does not replace the reconnect session');
+    check(await page.locator('#browser-settings, #bar, #fullscreen').count() === 0, 'no redundant modal, playback header or fullscreen control remains');
     for (const colorScheme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme });
       for (const viewport of [{ width: 1000, height: 700 }, { width: 390, height: 844 }, { width: 640, height: 240 }]) {
@@ -350,7 +359,7 @@ async function main() {
           const overlay = document.getElementById('reconnect'), logo = document.getElementById('reconnect-logo');
           const r = overlay.getBoundingClientRect(), l = logo.getBoundingClientRect();
           return { width: r.width, height: r.height, x: r.x, y: r.y, cx: l.x + l.width / 2, cy: l.y + l.height / 2,
-            inert: document.getElementById('stage').inert && document.getElementById('bar').inert,
+            inert: document.getElementById('stage').inert && document.getElementById('panel').inert,
             base: getComputedStyle(overlay).backgroundColor,
             wallpaper: document.getElementById('reconnect-wallpaper').src, blur: getComputedStyle(document.getElementById('reconnect-wallpaper')).filter,
             button: document.getElementById('reconnect-settings').getBoundingClientRect().bottom,
@@ -381,11 +390,14 @@ async function main() {
     check(eventsOf(phone, 'kf').length > keyRequests, 'after a decoder error the page asked for a key frame and decodes again');
 
     phone.setFit(true);
+    phone.requestPortal();
+    await page.waitForSelector('#panel:not([hidden])');
     await page.waitForSelector('#fit:not([hidden])', { timeout: 5000 });
     check(await page.textContent('#fit') === 'Apply and reconnect', '"Apply and reconnect" appears when status.fit is true');
     await page.click('#fit');
     await waitFor('a fit event', () => eventsOf(phone, 'fit').length);
     check(true, 'the button sends {"k":"fit"}');
+    await page.click('#connect');
     phone.setFit(false);
 
     const zh = await browser.newContext({ locale: 'zh-CN' });

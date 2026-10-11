@@ -156,11 +156,44 @@ uses 1280 × 720. HEVC is enabled by default for a browser installation without 
 large as the browser's own text. The head unit's resolution, CarPlay size, safe area, dock, split screen, turning screen
 and side panel settings do not apply.
 
-When the browser window changes size, the page shows **Apply and reconnect**. Only that button reconnects CarPlay at the
-new size; TiPlay saves the size for the next connection either way. The phone's own screen shows the same picture with
-black bars and never changes the canvas.
+The browser picture follows the available window immediately. Once its size settles, TiPlay automatically reconnects
+CarPlay to negotiate the matching native resolution. Resizing can briefly interrupt CarPlay; reconnect time depends
+on the iPhone and connection. **Apply and reconnect** remains on the portal for manual retry. The phone's own screen
+shows the same picture with black bars and never changes the canvas.
+
+CarPlay fills the browser video area without a top header or fullscreen button. Tap the **TiPlay** icon inside CarPlay
+to return to the browser portal. This keeps the CarPlay session connected; use the portal's CarPlay button to return
+to the picture.
 
 ## 7. Screen off and permissions
+
+### Browser session lifecycle
+
+Changing the browser's native CarPlay canvas requires a new iPhone display session: its negotiated dimensions cannot
+change during a stream. The page fits the existing picture while reporting the new canvas on the next display frame.
+The phone closes the old display and reopens the paired iPhone's Bluetooth control channel to negotiate the replacement,
+retaining its hotspot, Bonjour advertisements, AirPlay listener and MFi connection. A small resize tolerance prevents
+browser rounding from repeatedly replacing the session. Closing the old display alone, or repeating StartSession through
+its existing iAP2 tunnel, does not reliably make the iPhone establish a replacement.
+
+Viewport notifications share one pending animation-frame callback, which reads the latest dimensions without
+waiting for a quiet period. Returning to the portal or stopping cancels that callback so it cannot report into a
+new session. The phone dispatches viewport notifications to the main thread and checks the fit immediately, without
+another settling delay. During display replacement it updates the latest offered dimensions until the new TCP session
+accepts them. Later viewport changes wait for the replacement's first frame before requesting another display session.
+The next video stream uses the new canvas metadata; the old stream keeps its existing metadata until it closes.
+Resize does not trigger a timed full-stack fallback. A failed renegotiation can leave the display pending;
+the browser's fit button is not a reliable retry once the replacement dimensions have been accepted.
+
+Returning to the portal retains the video connection. The status revision is a signal to show the portal, not a
+request to reconnect; a newly opened page treats its first revision as a baseline. Older phones without this signal
+remain compatible with the page.
+
+During full-stack shutdown, Bonjour cleanup must finish before a replacement stack advertises its services. Independent address instances
+can send their goodbye records concurrently, but cleanup still waits for every instance. Starting the replacement
+early risks stale discovery records; reducing the shutdown timeout is not an equivalent optimization.
+The old AirPlay listener closes before Bonjour cleanup so the iPhone can detect the lost connection while goodbye
+records are being sent; this does not permit replacement advertisements before cleanup completes.
 
 While CarPlay is connected in this mode, TiPlay keeps the CPU awake and Wi-Fi in its low-latency mode, so the car keeps
 its picture with the phone's screen off. Android 17 asks for local network access (Nearby devices) when CarPlay
@@ -194,7 +227,10 @@ localNetworkPermission=…`; the session log has `Browser link: …`, `Web video
 - [ ] With the phone's screen off for 10 minutes the picture keeps playing.
 - [ ] With the phone's screen off from the start, CarPlay still connects and the session log shows
       `Web video: browser rendered epoch=1`: the browser's first decoded frame is the wireless connection proof.
-- [ ] Resize or split the browser window: **Apply and reconnect** appears; after it, the picture fills the area.
+- [ ] Resize or split the browser window: the picture fits immediately and reports the latest size on the next display frame.
+      Verify native resolution and touch mapping; retry with **Apply and reconnect** on the portal.
+- [ ] Tap the **TiPlay** icon in CarPlay: the portal appears while the session stays connected; returning to CarPlay
+      restores the picture without a new connection.
 - [ ] Turn the phone's hotspot off and on: the extra address comes back and the page reconnects.
 - [ ] After a reload without internet access, the page opens from the cache and plays.
 - [ ] **New code** disconnects the car; the new link pairs it again.
