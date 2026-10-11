@@ -1,9 +1,9 @@
 # Documentation sweep — 2026-10-11
 
 - status: complete
-- base-commit: `269852ef86f842612c7854d373affc4d3c665e37`
+- base-commit: `92cc2efca3a27c87f064f3ea63303dc266226b89`
 - Scope: first docs sweep; 90 tracked documentation files across six independent tasks. Generated output and this sweep’s records excluded from source scope.
-- Initial working tree: clean. The original sweep patch is recorded in CHANGES.diff and DIFFSTAT.txt. The subsequent tie-up is authorized to commit and push; see [TIE-UP.md](TIE-UP.md). The final sweep baseline will be advanced to the documentation-fix commit during tie-up.
+- Initial working tree: clean. The original sweep patch is recorded in CHANGES.diff and DIFFSTAT.txt. The subsequent tie-up is authorized to commit and push; see [TIE-UP.md](TIE-UP.md). The final sweep baseline is the committed documentation-fix point `92cc2efca3a27c87f064f3ea63303dc266226b89`; later delivery-record edits are outside the next sweep’s source scope.
 - Standard: project AGENTS.md and upstream-sync requirements; see [CHECKLIST.md](CHECKLIST.md).
 - Tasks and per-document results: [TASKS.md](TASKS.md). Full scope/history: [SCOPE.md](SCOPE.md), HISTORY.txt.
 - No application/configuration changes. The sweep itself made no commit or push; the user subsequently authorized tie-up delivery.
