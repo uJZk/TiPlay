@@ -176,7 +176,7 @@ class TeslaBrowserLinkSettingsTest {
         val code = TeslaBrowserLink.pairingCode(context)
         assertTrue("Without the extra address the car link names the hotspot's own address",
             shown(screen).contains("https://ujzk.github.io/DiPlay/?t=10.176.81.135#c=$code"))
-        assertTrue(shown(screen).contains("http://10.176.81.135:8080/play/#c=$code"))
+        assertFalse(shown(screen).any { it.startsWith("http://") })
         assertTrue("The probe ran off the main thread", HotspotProbe.threads.none { it == Looper.getMainLooper().thread })
 
         // The default extra address is the page's default phone: the link is the page address and the code.
@@ -184,16 +184,14 @@ class TeslaBrowserLinkSettingsTest {
         rerender(screen)
         assertTrue(shown(screen).contains("https://ujzk.github.io/DiPlay/#c=$code"))
         assertFalse(shown(screen).any { it.startsWith("https://ujzk.github.io/DiPlay/?t=") })
-        assertTrue("Until it is added, the phone's page is at the hotspot's own address",
-            shown(screen).contains("http://10.176.81.135:8080/play/#c=$code"))
+        assertFalse("Only the car HTTPS link is shown", shown(screen).any { it.startsWith("http://") })
 
         HotspotExtraAddressSettings.saveAddress(context, ip("100.64.7.9"))
         KeeperProbe.state = HotspotExtraAddressKeeper.State.Added("wlan2")
         HotspotProbe.threads.clear()
         rerender(screen)
         assertTrue(shown(screen).contains("https://ujzk.github.io/DiPlay/?t=100.64.7.9#c=$code"))
-        assertTrue("Once added, the phone's page uses the extra address",
-            shown(screen).contains("http://100.64.7.9:8080/play/#c=$code"))
+        assertFalse("The local test link stays hidden", shown(screen).any { it.startsWith("http://") })
         assertTrue("An added extra address needs no interface look", HotspotProbe.threads.none { it.name == "tiplay-browser-link-probe" })
 
         activity?.finish()
@@ -202,7 +200,7 @@ class TeslaBrowserLinkSettingsTest {
         screen = openConnection()
         assertTrue("Without any address the link has no t, and the page uses its default phone",
             shown(screen).contains("https://ujzk.github.io/DiPlay/#c=$code"))
-        assertEquals("The hotspot line and the phone's page link both say so", 2,
+        assertEquals("Only the hotspot status says so", 1,
             shown(screen).count { it == screen.getString(R.string.settings_hotspot_not_found) })
     }
 
@@ -212,12 +210,10 @@ class TeslaBrowserLinkSettingsTest {
         val code = TeslaBrowserLink.pairingCode(context)
         val copies = texts(screen).filterIsInstance<Button>()
             .filter { it.text.toString() == screen.getString(R.string.settings_browser_link_copy) }.toList()
-        assertEquals(2, copies.size)
+        assertEquals(1, copies.size)
         val clipboard = context.getSystemService(ClipboardManager::class.java)
         copies[0].performClick()
         assertEquals("https://ujzk.github.io/DiPlay/?t=10.176.81.135#c=$code", clipboard.primaryClip!!.getItemAt(0).text.toString())
-        copies[1].performClick()
-        assertEquals("http://10.176.81.135:8080/play/#c=$code", clipboard.primaryClip!!.getItemAt(0).text.toString())
     }
 
     @Test fun thePageAddressMustBeHttps() {
@@ -341,7 +337,7 @@ class TeslaBrowserLinkSettingsTest {
             val oldRows = texts(screen).filter {
                 it.text.toString() == screen.getString(R.string.settings_hotspot_address_checking)
             }.toList()
-            assertEquals(2, oldRows.size)
+            assertEquals(1, oldRows.size)
             ReflectionHelpers.setField(screen, "settingsCategory", SettingsCategory.DISPLAY)
             ReflectionHelpers.callInstanceMethod<Unit>(screen, "render")
             assertTrue(oldRows.none { it.isAttachedToWindow })
@@ -353,7 +349,7 @@ class TeslaBrowserLinkSettingsTest {
             HotspotProbe.result = HotspotAddresses.Current("wlan0", listOf(ip("192.168.44.1")))
             ReflectionHelpers.setField(screen, "settingsCategory", SettingsCategory.CONNECTION)
             rerender(screen)
-            assertTrue(shown(screen).any { it.startsWith("http://192.168.44.1:8080/play/") })
+            assertTrue(shown(screen).any { it.contains("?t=192.168.44.1#c=") })
             assertFalse(shown(screen).any { it.contains("192.168.43.1") })
         } finally {
             release.countDown()

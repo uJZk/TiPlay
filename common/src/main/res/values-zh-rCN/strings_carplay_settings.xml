@@ -8,5 +8,9 @@
     <string name="settings_browser_canvas">浏览器画面</string>
     <string name="settings_video_reconnect_hint">画面设置修改后，点击“保存并重新连接”生效。</string>
     <string name="settings_browser_permissions">附近设备权限用于连接 iPhone，本地网络权限用于连接车机浏览器。声音通过汽车蓝牙播放。</string>
-    <string name="settings_hevc_experimental">HEVC (H.265)（实验性）</string>
+    <string name="settings_hevc_experimental">HEVC (H.265)</string>
+    <string name="settings_iphone_connection_mode">与 iPhone 的连接模式</string>
+    <string name="settings_startup_and_connection">启动与连接</string>
+    <string name="settings_connect_on_open_hint">打开 TiPlay 时，按保存的 iPhone 连接模式自动连接。此开关立即保存。</string>
+    <string name="settings_connection_mode_hint">选择无线或 USB。点击“保存并重新连接”后生效，未连接时用于下次连接。</string>
 </resources>

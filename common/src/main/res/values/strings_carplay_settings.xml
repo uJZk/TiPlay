@@ -8,5 +8,9 @@
     <string name="settings_browser_canvas">Browser canvas</string>
     <string name="settings_video_reconnect_hint">Video changes take effect after you choose Save and reconnect.</string>
     <string name="settings_browser_permissions">Nearby devices connects your iPhone. Allow local network access for the car browser. Audio uses the car Bluetooth connection.</string>
-    <string name="settings_hevc_experimental">HEVC (H.265) (experimental)</string>
+    <string name="settings_hevc_experimental">HEVC (H.265)</string>
+    <string name="settings_iphone_connection_mode">Connection mode with iPhone</string>
+    <string name="settings_startup_and_connection">Startup and connection</string>
+    <string name="settings_connect_on_open_hint">When TiPlay opens, connect using the saved iPhone connection mode. This switch is saved immediately.</string>
+    <string name="settings_connection_mode_hint">Choose Wireless or USB. The mode applies after Save and reconnect, or to the next connection.</string>
 </resources>

@@ -8,5 +8,9 @@
     <string name="settings_browser_canvas">مساحة عرض المتصفح</string>
     <string name="settings_video_reconnect_hint">تُطبّق تغييرات الفيديو بعد اختيار الحفظ وإعادة الاتصال.</string>
     <string name="settings_browser_permissions">تتيح الأجهزة القريبة توصيل iPhone. اسمح بالوصول إلى الشبكة المحلية لمتصفح السيارة. يستخدم الصوت اتصال بلوتوث السيارة.</string>
-    <string name="settings_hevc_experimental">HEVC (H.265) (تجريبي)</string>
+    <string name="settings_hevc_experimental">HEVC (H.265)</string>
+    <string name="settings_iphone_connection_mode">وضع الاتصال بـ iPhone</string>
+    <string name="settings_startup_and_connection">التشغيل والاتصال</string>
+    <string name="settings_connect_on_open_hint">عند فتح TiPlay، يتم الاتصال باستخدام وضع iPhone المحفوظ. يُحفظ هذا المفتاح فورًا.</string>
+    <string name="settings_connection_mode_hint">اختر الاتصال اللاسلكي أو USB. يُطبّق بعد الحفظ وإعادة الاتصال أو عند الاتصال التالي.</string>
 </resources>

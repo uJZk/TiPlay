@@ -39,7 +39,7 @@ class DefaultConnectionModeTest {
         CarPlayBackgroundSession.clear()
     }
 
-    @Test fun initialLaunchUsesTheFixedDefaultInsteadOfTheLastManualTransport() {
+    @Test fun initialLaunchMigratesTheOldFixedDefaultToTheSingleConnectionChoice() {
         DiPlayPreferences.saveAutoConnect(app, true)
         DiPlayPreferences.savePhone(app, "00:11:22:33:44:55", "Test iPhone")
         AirPlayPersistence.saveWirelessHotspotMode(app, WirelessHotspotMode.WIFI_P2P)
@@ -57,7 +57,8 @@ class DefaultConnectionModeTest {
             assertEquals(expectedWireless, AirPlayPersistence.loadWirelessEnabled(app))
             assertEquals(CarPlayHostActivity::class.java.name,
                 shadowOf(activity).nextStartedActivity?.component?.className)
-            assertEquals(mode, DiPlayPreferences.defaultConnectionMode(app))
+            assertEquals(DefaultConnectionMode.LAST_USED, DiPlayPreferences.defaultConnectionMode(app))
+            assertEquals(expectedWireless, DiPlayPreferences.autoConnectWireless(app))
             controller.pause().stop().destroy()
         }
     }

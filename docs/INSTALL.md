@@ -5,6 +5,10 @@
 3. Open TiPlay. Grant the permissions requested for the features you use: Bluetooth/Nearby devices, Wi-Fi/Location on older Android, and Android 17 local-network access when requested. The browser audio profile uses the car microphone over iPhone Bluetooth. Allow notifications for connection controls.
 4. Close other phone-projection apps before connecting. Follow [Tesla browser setup](TESLA_BROWSER.md) to open and pair the car page. Sound uses the iPhone-to-car Bluetooth connection; this complete flow still needs vehicle validation.
 
+## Connection mode
+
+Choose **CarPlay settings → Connection mode with iPhone → Wireless / USB**. This is the single saved mode for connection and connect-on-open; choose **Save and reconnect** to apply a change. **Startup and connection → Connect when TiPlay opens** is saved immediately and uses the saved mode. Boot auto-start is hidden in the phone/browser profile because it is unavailable there.
+
 ## Wireless
 
 The connection backend is named **Built-in car hotspot** and is selected by default; in the browser setup this is the Android phone's hotspot. Open **CarPlay settings → Connection → Built-in car hotspot**, turn on the Android phone hotspot at 5 GHz if available, and save its exact name and password. Keep Bluetooth and Wi-Fi enabled on the iPhone, pair it with the car, then tap **Connect phone**. On compatible firmware, the Bluetooth handshake supplies hotspot credentials for automatic joining; core CarPlay does not require ADB. If the iPhone does not join automatically, record whether manual joining starts CarPlay and see the separately confirmed [experimental join repair](WIRELESS_HOTSPOT_JOIN.md). **Choose iPhone** changes the selected paired device. See [the setup guide](CONNECTION_SETUP.md).
@@ -23,7 +27,7 @@ Connect the iPhone to the Android device's USB **data** port with a data-capable
 
 Swipe down with the configured finger count in CarPlay to open **CarPlay settings**, or open that menu from the home screen. Tap **Open settings · swipe with 3 fingers (tap to change)** near the bottom of the menu to cycle through two, three or four fingers; three remains the default.
 
-The browser reports its canvas size. Choose frame rate under **CarPlay settings → Display**, and **HEVC (H.265) (experimental)** under **Advanced**. Video changes apply after **Save and reconnect**; Cancel preserves the active session. Before connecting, Save applies them to the next connection. The browser's **Apply and reconnect** button applies a changed browser viewport.
+The browser reports its canvas size. HEVC defaults on when no codec choice has been saved; turn it off for a browser that needs H.264. Choose frame rate under **CarPlay settings → Display**, and **HEVC (H.265)** under **Display**. Video changes apply after **Save and reconnect**; Cancel preserves the active session. Before connecting, Save applies them to the next connection. The browser's **Apply and reconnect** button applies a changed browser viewport.
 
 The current profile uses car Bluetooth sound, browser light/dark appearance and no Android location reporting. Head-unit display scaling, BYD navigation, vehicle data, wheel keys and audio-output controls are hidden. Their retained implementation and vehicle checks do not establish browser support.
 

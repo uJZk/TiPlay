@@ -26,8 +26,7 @@ import kotlin.math.roundToInt
 
 /**
  * The browser link rows of the Tesla browser card (phone + browser mode only, integration E4): what the link is doing,
- * the local network permission (Android 17), the page address, the pairing code, and the two links with Copy buttons:
- * the HTTPS page for the Tesla and other Chromium browsers, and the page the phone serves itself for other browsers.
+ * the local network permission (Android 17), the page address, the pairing code, and the HTTPS page link with its Copy button.
  *
  * Building the search index ([indexing]) adds the row titles only: it starts no server, creates no pairing code and
  * reads no network interface. Otherwise the links probe the hotspot's address, on a thread.
@@ -65,19 +64,10 @@ internal class TeslaBrowserLinkCard(
         val pageLink = linkText(copyPageLink).also(parent::addView)
         actionRow(parent, activity.getString(R.string.settings_browser_link_copy)) { copy(copyPageLink) }
 
-        parent.addView(note(activity.getString(R.string.settings_browser_link_other)).withTopPadding())
-        val phoneLink = linkText(activity.getString(R.string.settings_hotspot_address_checking)).also(parent::addView)
-        var copyPhoneLink: String? = null
-        actionRow(parent, activity.getString(R.string.settings_browser_link_copy)) {
-            copyPhoneLink?.let(::copy) ?: Toast.makeText(activity, R.string.settings_hotspot_not_found, Toast.LENGTH_SHORT).show()
-        }
-        val showLinks: (String, String?) -> Unit = { page, phone ->
+        val showLinks: (String) -> Unit = { page ->
             if (status.isAttachedToWindow) {
                 copyPageLink = page
                 pageLink.text = page
-                copyPhoneLink = phone
-                phoneLink.text = phone ?: activity.getString(R.string.settings_hotspot_not_found)
-                phoneLink.setTextColor(if (phone == null) colors.warning else colors.muted)
             }
         }
 
@@ -153,23 +143,19 @@ internal class TeslaBrowserLinkCard(
     }
 
     /**
-     * Both links, on a thread: the HTTPS page names the extra address when the driver set one, else the hotspot's own
-     * address; the phone-served page is at the extra address once it is on the hotspot, else at the hotspot's own.
+     * The HTTPS page names the added address, or the hotspot address discovered off the UI thread.
      */
-    private fun probe(show: (page: String, phone: String?) -> Unit) {
+    private fun probe(show: (page: String) -> Unit) {
         val context = app // The worker must not retain this card or its activity.
-        val code = TeslaBrowserLink.pairingCode(context)
         val extra = HotspotExtraAddressSettings.liveAddress(context)?.hostAddress
         probeToken = probes.request(
             work = {
                 // An added extra address answers both links, so the interfaces need no look.
                 val hotspot = if (extra != null) null
                 else runCatching { HotspotAddresses.current(context) }.getOrNull()?.ipv4?.firstOrNull()?.hostAddress
-                val page = TeslaBrowserLink.pageLink(context, hotspot)
-                val phone = (extra ?: hotspot)?.let { TeslaBrowserPageLinks.phoneLink(it, code, TeslaBrowserLink.PORT) }
-                page to phone
+                TeslaBrowserLink.pageLink(context, hotspot)
             },
-            deliver = { (page, phone) -> show(page, phone) },
+            deliver = show,
         )
     }
 
@@ -239,7 +225,7 @@ internal class TeslaBrowserLinkCard(
     }
 
     internal companion object {
-        private val probes = LatestSettingsProbe<Pair<String, String?>>("tiplay-browser-link-probe")
+        private val probes = LatestSettingsProbe<String>("tiplay-browser-link-probe")
 
         internal fun awaitProbesForTest(): Boolean = probes.awaitIdle()
     }

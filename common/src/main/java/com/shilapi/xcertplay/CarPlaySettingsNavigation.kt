@@ -22,7 +22,8 @@ internal object CarPlaySettingsNavigation {
         .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
 
     private val hostSections = setOf(SettingsSection.CONNECTION_SETUP, SettingsSection.CARPLAY_CONTROLS,
-        SettingsSection.CAR_BUTTON, SettingsSection.LOCATION)
+        SettingsSection.CAR_BUTTON, SettingsSection.LOCATION, SettingsSection.TESLA_BROWSER,
+        SettingsSection.AUTOMATIC_CONNECTION)
 
     fun additionalSections(sections: Set<SettingsSection>) = sections.filterTo(linkedSetOf()) {
         it !in hostSections && BrowserSettingsPolicy.shows(it)

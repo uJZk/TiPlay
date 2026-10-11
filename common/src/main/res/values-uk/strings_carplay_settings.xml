@@ -8,5 +8,9 @@
     <string name="settings_browser_canvas">Область браузера</string>
     <string name="settings_video_reconnect_hint">Зміни відео застосовуються після вибору «Зберегти та перепідключити».</string>
     <string name="settings_browser_permissions">Доступ до пристроїв поблизу підключає iPhone. Дозвольте доступ до локальної мережі для браузера автомобіля. Звук передається через Bluetooth автомобіля.</string>
-    <string name="settings_hevc_experimental">HEVC (H.265) (експериментально)</string>
+    <string name="settings_hevc_experimental">HEVC (H.265)</string>
+    <string name="settings_iphone_connection_mode">Режим підключення до iPhone</string>
+    <string name="settings_startup_and_connection">Запуск і підключення</string>
+    <string name="settings_connect_on_open_hint">Під час відкриття TiPlay підключатися у збереженому режимі iPhone. Цей перемикач зберігається одразу.</string>
+    <string name="settings_connection_mode_hint">Виберіть бездротове підключення або USB. Застосовується після збереження й повторного підключення або під час наступного підключення.</string>
 </resources>

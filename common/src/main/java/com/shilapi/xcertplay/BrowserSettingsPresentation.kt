@@ -8,6 +8,27 @@ import com.shilapi.xcertplay.host.R
 
 /** Browser controls use the same draft and explicit reconnect action as the host menu. */
 internal object BrowserSettingsPresentation {
+    fun connectionMode(context: Context, wireless: () -> Boolean, changed: (Boolean) -> Unit) = Button(context).apply {
+        isAllCaps = false
+        fun refresh() {
+            text = "${context.getString(R.string.settings_iphone_connection_mode)} · " +
+                context.getString(if (wireless()) R.string.default_connection_wireless else R.string.default_connection_usb)
+        }
+        refresh()
+        setOnClickListener {
+            AlertDialog.Builder(context)
+                .setTitle(R.string.settings_iphone_connection_mode)
+                .setSingleChoiceItems(arrayOf(context.getString(R.string.default_connection_wireless),
+                    context.getString(R.string.default_connection_usb)), if (wireless()) 0 else 1) { dialog, index ->
+                    changed(index == 0)
+                    refresh()
+                    dialog.dismiss()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+    }
+
     fun frameRate(context: Context, current: () -> Int, changed: (Int) -> Unit) = Button(context).apply {
         isAllCaps = false
         fun refresh() { text = "${context.getString(R.string.frame_rate)} · ${current()} fps" }

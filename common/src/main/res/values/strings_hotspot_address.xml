@@ -5,7 +5,7 @@
     <string name="settings_hotspot_address_blocked">The Tesla browser probably cannot open this address. Choose another hotspot address method below.</string>
     <string name="settings_hotspot_not_found">No hotspot found. Turn on this phone’s hotspot.</string>
     <string name="settings_hotspot_address_method">Hotspot address</string>
-    <string name="settings_hotspot_method_normal">Normal</string>
+    <string name="settings_hotspot_method_normal">Unprivileged</string>
     <string name="settings_hotspot_method_root">Root</string>
     <string name="settings_hotspot_method_vpn">VPN (experimental)</string>
     <string name="settings_hotspot_method_shizuku">Shizuku</string>

@@ -10,52 +10,59 @@ import com.shilapi.xcertplay.host.R
 
 /** Optional import alongside the original editable fields. Results never overwrite concurrent typing. */
 internal object LocalHotspotAutofill {
-    fun attach(parent: LinearLayout, ssid: EditText, password: EditText) {
+    private val probes = LatestSettingsProbe<LocalHotspotSettings.Credentials?>("tiplay-hotspot-read")
+    fun attach(parent: LinearLayout, ssid: EditText, password: EditText, controlsParent: LinearLayout = parent): LinearLayout {
         val status = TextView(parent.context).apply {
             setText(R.string.settings_hotspot_read_hint)
             setTextColor(ssid.currentTextColor)
         }
         val button = Button(parent.context).apply { setText(R.string.settings_hotspot_read); isAllCaps = false }
-        parent.addView(status)
-        parent.addView(button)
-        var reading = false
+        val controls = LinearLayout(parent.context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(button)
+            addView(status)
+        }
+        controlsParent.addView(controls, if (controlsParent === parent) 0 else 1)
+        val app = parent.context.applicationContext
+        var token: LatestSettingsProbe.Token? = null
         fun read(replace: Boolean) {
-            if (reading || !parent.isShown || !parent.isAttachedToWindow) return
-            reading = true
+            if (!parent.isShown || !parent.isAttachedToWindow) return
             val beforeName = ssid.text.toString()
             val beforePassword = password.text.toString()
-            button.isEnabled = false
-            Thread({
-                val result = LocalHotspotSettings.read(parent.context.applicationContext)
-                button.post {
-                    reading = false
-                    button.isEnabled = true
-                    if (!parent.isShown || !parent.isAttachedToWindow) return@post
-                    status.setText(if (result == null) R.string.settings_hotspot_read_unavailable else R.string.settings_hotspot_read_hint)
-                    if (result != null) {
-                        if (ssid.text.toString() == beforeName && (replace || beforeName.isBlank())) ssid.setText(result.ssid)
-                        if (password.text.toString() == beforePassword && (replace || beforePassword.isBlank())) {
-                            result.password?.let(password::setText)
+            token = probes.request(
+                work = { runCatching { LocalHotspotSettings.read(app) }.getOrNull() },
+                deliver = { result ->
+                    if (parent.isShown && parent.isAttachedToWindow) {
+                        status.setText(if (result == null) R.string.settings_hotspot_read_unavailable else R.string.settings_hotspot_read_hint)
+                        if (result != null) {
+                            if (ssid.text.toString() == beforeName && (replace || beforeName.isBlank())) ssid.setText(result.ssid)
+                            if (password.text.toString() == beforePassword && (replace || beforePassword.isBlank())) {
+                                result.password?.let(password::setText)
+                            }
                         }
                     }
-                }
-            }, "tiplay-hotspot-read").apply { isDaemon = true; start() }
+                },
+            )
         }
         button.setOnClickListener { read(true) }
         parent.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(view: View) { view.post { read(false) } }
-            override fun onViewDetachedFromWindow(view: View) {}
+            override fun onViewDetachedFromWindow(view: View) {
+                probes.cancel(token)
+                token = null
+            }
         })
-        parent.post { read(false) }
+        if (parent.isAttachedToWindow) parent.post { read(false) }
+        return controls
     }
 
-    fun attach(parent: LinearLayout) {
+    fun attach(parent: LinearLayout, controlsParent: LinearLayout = parent): LinearLayout? {
         fun inputs(view: View): List<EditText> = when (view) {
             is EditText -> listOf(view)
             is ViewGroup -> (0 until view.childCount).flatMap { inputs(view.getChildAt(it)) }
             else -> emptyList()
         }
         val fields = inputs(parent)
-        if (fields.size >= 3) attach(parent, fields.first(), fields.last())
+        return if (fields.size >= 2) attach(parent, fields.first(), fields.last(), controlsParent) else null
     }
 }

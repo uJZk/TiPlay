@@ -40,11 +40,12 @@ class CarPlaySettingsNavigationTest {
         assertTrue(labels.contains(screen.getString(R.string.settings_search)))
     }
 
-    @Test fun connectionPageRetainsBrowserAndAutomationWithoutAnotherSetupWizard() {
+    @Test fun connectionPageDoesNotDuplicateMainMenuBrowserOrStartupControls() {
         val screen = open(SettingsCategory.CONNECTION)
         val labels = labels(screen)
         assertFalse(labels.contains(screen.getString(R.string.settings_phone_browser_mode)))
-        assertTrue(labels.contains(screen.getString(R.string.connect_when_diplay_opens)))
+        assertFalse(labels.contains(screen.getString(R.string.connect_when_diplay_opens)))
+        assertFalse(labels.any { it.startsWith(screen.getString(R.string.settings_browser_page_address)) })
         assertFalse(labels.contains(screen.getString(R.string.open_connection_setup)))
         assertFalse(labels.contains(screen.getString(R.string.open_after_the_car_starts)))
     }

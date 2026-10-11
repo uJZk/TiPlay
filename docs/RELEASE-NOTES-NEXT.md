@@ -10,7 +10,7 @@ TiPlay is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay). Changes t
 
 - TiPlay applies the phone + browser profile when opening the app or CarPlay screen. There is no run-mode switch. The car browser shows CarPlay; BYD HUD/dashboard, ADB and wheel-key controls stay hidden.
 - CarPlay's car button shows a neutral car icon instead of the BYD logo and the label "Tesla" while the saved name is still "BYD". Custom icons and names are kept. Applies at the next CarPlay connection.
-- The profile selects car Bluetooth sound, browser light/dark appearance, no Android location reporting and split-screen areas. Existing sessions keep their negotiated configuration. The CarPlay settings menu retains frame-rate and experimental HEVC choices with **Save and reconnect**.
+- The profile selects car Bluetooth sound, browser light/dark appearance, no Android location reporting and split-screen areas. Existing sessions keep their negotiated configuration. The CarPlay settings menu retains frame-rate and HEVC choices with **Save and reconnect**.
 
 ## Sound through car Bluetooth
 
@@ -26,3 +26,11 @@ TiPlay is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay). Changes t
 - USB bulk-IN makes one 16 KiB queue attempt after an explicitly rejected larger request, remembering the smaller size only when it succeeds. Exceptions and timed-out requests are not retried this way. This compatibility path needs an affected-device retest; Android 9 normally supports the original larger sizes.
 
 These changes retain Android 9 / API 28 as the APK minimum. Device acceptance and remaining failure families are tracked in [connection reliability validation](CONNECTION_RELIABILITY.md).
+
+## Settings UX
+
+- Put Hotspot address first in the main CarPlay settings menu; rename Normal to Unprivileged. Browser page/pairing and the single HTTPS copy action also live in the main menu, without an experimental browser label. The local HTTP page remains available for developer tests but its row/copy button is hidden.
+- Replace the wireless toggle with Connection mode with iPhone: Wireless / USB. It follows the menu draft and explicit save/reconnect; old separate launch-mode choices migrate to this single saved mode. Connect-on-open appears once; the ineffective phone-mode boot-start option is hidden.
+- Read device hotspot is the first action under Wi-Fi session. Hidden band/channel metadata uses automatic values; the operating system controls the hotspot radio. Import preserves concurrent typing and uses a bounded, detachable background probe.
+- Move authentication to Advanced and hide AirPlay icon editing. HEVC is under Display, defaults on in browser mode without a saved preference, and retains an explicit H.264 choice. Codec changes still require Save and reconnect.
+- Use the supplied TiPlay logo for Android and CarPlay, including adaptive, round and monochrome Android icons. CarPlay reads the packaged PNG without runtime drawing or reencoding.

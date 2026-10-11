@@ -209,20 +209,77 @@ class CarPlayHostSettingsTest {
             R.string.report_location_to_iphone, R.string.hide_top_bar, R.string.hide_bottom_bar)) {
             assertFalse("Hidden setting: ${activity.getString(id)}", labels.contains(activity.getString(id)))
         }
+        for (id in listOf(R.string.band, R.string.channel_0_auto, R.string.airplay_icon, R.string.wireless_carplay, R.string.auto_start_on_boot)) {
+            assertFalse(labels.contains(activity.getString(id)))
+        }
+        assertEquals(1, labels.count { it == activity.getString(R.string.connect_when_diplay_opens) })
+        assertEquals(1, labels.count { it == activity.getString(R.string.settings_browser_link_copy) })
+        assertTrue(labels.indexOfFirst { it.startsWith(activity.getString(R.string.settings_hotspot_address_method)) } <
+            labels.indexOfFirst { it.startsWith(activity.getString(R.string.settings_iphone_connection_mode)) })
+        assertTrue(labels.indexOf(activity.getString(R.string.settings_hotspot_read)) < labels.indexOf(activity.getString(R.string.hotspot_ssid)))
+        assertTrue(labels.indexOf(activity.getString(R.string.mfi_certificate_signing_target)) > labels.indexOf(activity.getString(R.string.settings_advanced)))
         assertTrue(labels.contains(activity.getString(R.string.settings_hotspot_read)))
         assertTrue(labels.contains(activity.getString(R.string.settings_advanced)))
         assertTrue(labels.contains(activity.getString(R.string.settings_hevc_experimental)))
+        assertTrue(labels.indexOf(activity.getString(R.string.settings_hevc_experimental)) < labels.indexOf(activity.getString(R.string.settings_vehicle)))
         assertFalse(labels.contains(activity.getString(R.string.hevc_software_decoder)))
         assertFalse(labels.contains(activity.getString(R.string.debug_logs)))
         val summary = field("resolutionPreviewView") as TextView
         assertTrue(summary.text.contains(activity.getString(R.string.settings_browser_canvas)))
         assertFalse(summary.text.contains(activity.getString(R.string.preview_fullscreen)))
         assertFalse(summary.text.contains(activity.getString(R.string.preview_location_reporting)))
-        val headings = listOf(R.string.connection, R.string.automatic_connection, R.string.settings_display,
+        val headings = listOf(R.string.connection, R.string.settings_startup_and_connection, R.string.settings_display,
             R.string.settings_vehicle, R.string.settings_advanced, R.string.diagnostics)
             .map { labels.indexOf(activity.getString(it)) }
         assertTrue(headings.all { it >= 0 })
         assertEquals(headings.sorted(), headings)
+    }
+
+
+    @Test fun hotspotImportAppearsOnlyForTheLocalHotspotBackend() {
+        AirPlayPersistence.saveWirelessHotspotMode(activity, WirelessHotspotMode.MANUAL)
+        invoke("openSettingsMenu")
+        val read = views(menu()).filterIsInstance<Button>().single {
+            it.text == activity.getString(R.string.settings_hotspot_read)
+        }
+        val controls = read.parent as View
+        assertEquals(View.VISIBLE, controls.visibility)
+        views(menu()).filterIsInstance<RadioButton>().single { it.tag == WirelessHotspotMode.EXISTING_WIFI }.performClick()
+        assertEquals(View.GONE, controls.visibility)
+        views(menu()).filterIsInstance<RadioButton>().single { it.tag == WirelessHotspotMode.MANUAL }.performClick()
+        assertEquals(View.VISIBLE, controls.visibility)
+    }
+
+    @Test fun iphoneConnectionChoiceUsesTheDraftAndCancelKeepsTheSavedMode() {
+        AirPlayPersistence.saveWirelessEnabled(activity, true)
+        invoke("openSettingsMenu")
+        val choice = views(menu()).filterIsInstance<Button>().single {
+            it.text.toString().startsWith(activity.getString(R.string.settings_iphone_connection_mode) + " · ")
+        }
+        choice.performClick()
+        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        val list = dialog.listView
+        list.performItemClick(list.adapter.getView(1, null, list), 1, 1L)
+        assertFalse(field("wirelessEnabled") as Boolean)
+        assertTrue(AirPlayPersistence.loadWirelessEnabled(activity))
+        assertTrue(choice.text.toString().endsWith(activity.getString(R.string.default_connection_usb)))
+        invoke("cancelSettingsEdits")
+        assertTrue(field("wirelessEnabled") as Boolean)
+        assertTrue(AirPlayPersistence.loadWirelessEnabled(activity))
+    }
+
+
+    @Test fun usbModeSavesWithoutRequiringHiddenWifiCredentials() {
+        AirPlayPersistence.saveWirelessEnabled(activity, true)
+        AirPlayPersistence.saveWirelessHotspotMode(activity, WirelessHotspotMode.MANUAL)
+        AirPlayPersistence.saveManualHotspotSsid(activity, "")
+        AirPlayPersistence.saveManualHotspotPassphrase(activity, "")
+        invoke("openSettingsMenu")
+        setField("wirelessEnabled", false)
+        invoke("saveSettingsAndReconnect")
+        assertFalse(AirPlayPersistence.loadWirelessEnabled(activity))
+        assertFalse(DiPlayPreferences.autoConnectWireless(activity))
+        assertFalse(field("menuOpen") as Boolean)
     }
 
     @Test fun browserFrameRateUsesADraftUntilSaveAndReconnectAndCancelRestoresIt() {

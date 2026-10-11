@@ -12,6 +12,7 @@ internal object CarPlaySettingsPermissions {
     private val pending = java.util.WeakHashMap<ComponentActivity, Boolean>()
     fun readyToSave(activity: ComponentActivity, bootStart: Boolean, mode: WirelessHotspotMode,
         onReady: () -> Unit): Boolean {
+        if (AirPlayPersistence.isPhoneBrowserMode(activity)) return true
         val permission = CarHotspotSetup.Permission.BOOT_LAUNCH
         if (!bootStart || mode != WirelessHotspotMode.MANUAL || !CarHotspotSettings.enabled(activity) ||
             permission.granted(activity)) return true

@@ -5,7 +5,7 @@
     <string name="settings_hotspot_address_blocked">Браузер Tesla, імовірно, не відкриє цю адресу. Виберіть нижче інший спосіб адреси точки доступу.</string>
     <string name="settings_hotspot_not_found">Точку доступу не знайдено. Увімкніть точку доступу на цьому телефоні.</string>
     <string name="settings_hotspot_address_method">Адреса точки доступу</string>
-    <string name="settings_hotspot_method_normal">Звичайний</string>
+    <string name="settings_hotspot_method_normal">Без привілеїв</string>
     <string name="settings_hotspot_method_root">Root</string>
     <string name="settings_hotspot_method_vpn">VPN (експериментально)</string>
     <string name="settings_hotspot_method_shizuku">Shizuku</string>

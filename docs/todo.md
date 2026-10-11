@@ -81,7 +81,7 @@
 - [ ] 确认 iPhone 发来的码流格式：在诊断日志中记录配置头的格式标记（`avcC`/`hvcC`/其他）。
   代码已完成：会话日志每种配置记一行 `Video config marker=… codec=…`；待真机报告确认。
 - [x] 视频链路：新增 `WebMediaSink`，不转码，直接把 iPhone 码流（H.264 或 HEVC）通过 HTTP 响应流送给浏览器；浏览器在主线程发起 `fetch`，把响应流转交 Worker 读取，用 WebCodecs 硬解，用 WebGL 画到 OffscreenCanvas；发送端积压时丢帧到下一个关键帧。
-  分辨率按浏览器上报的视口 × DPR 协商；当前帧率新安装默认 30 fps，可在 CarPlay 设置中选 60 fps 后保存并重新连接。
+  分辨率按浏览器上报的视口 × DPR 协商；当前帧率新安装默认 30 fps，可在 CarPlay 设置中选 60 fps 后保存并重新连接。未保存编码选择时 HEVC 默认开启，显示分组保留关闭选项供 H.264 兼容。
   代码已完成（`TeslaBrowserLink`、`TeslaBrowserCanvas`，在 `CarPlayHostActivity` 的 `createMediaEngine` 分出视频），实车测试见 [TESLA_BROWSER.md](TESLA_BROWSER.md) 的清单。
 - [x] 网络：按下面"热点地址"和"传输层"的决定实现。
   代码已完成：手机在所有 IPv4 地址的 8080 端口提供协议接口，也提供自带的页面副本（`http://<地址>:8080/play/`，给其他浏览器）；端口被占用时退避重试；Android 17 申请本地网络权限；连接期间持有唤醒锁和低延迟 Wi-Fi 锁。实车测试待做。
@@ -131,8 +131,8 @@
   - 不移植：WebRTC 原生代码（`rtc_bridge.cpp`、libdatachannel）、`<video>` 转画布渲染、JPEG 兼容模式、浏览器音频。
 - [x] 增加"手机 + 浏览器"运行模式：跳过 BYD HUD、仪表、ADB、方向盘按键等车机专属功能。当前产品配置固定选择该模式，界面没有切换开关。
 - **热点地址**（2026-10-09）：
-  - [x] 设置项"热点地址"，四种方式（2026-10-09 实现，说明见 [HOTSPOT_ADDRESS.md](HOTSPOT_ADDRESS.md)），都立即生效、不重新连接：
-    - 普通（默认）：不加地址，不需要 root。适用于其他车机浏览器，或手机热点网段本身就在 100.64.0.0/10 内。
+  - [x] 主设置菜单第一项"热点地址"，四种方式（2026-10-09 实现，说明见 [HOTSPOT_ADDRESS.md](HOTSPOT_ADDRESS.md)），都立即生效、不重新连接：
+    - 无特权（默认）：不加地址，不需要 root。适用于其他车机浏览器，或手机热点网段本身就在 100.64.0.0/10 内。
     - Root：`ip addr` 加地址；离开这个方式时删除。
     - VPN（实验性）：只持有地址的 VPN，不需要 root 和 Shizuku；Android 14（2025-01 补丁起）和 15 以上很可能无效，
       设置里会提示，并建议改用 `169.254.220.253`。

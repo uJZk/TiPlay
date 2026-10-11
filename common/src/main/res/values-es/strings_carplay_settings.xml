@@ -8,5 +8,9 @@
     <string name="settings_browser_canvas">Lienzo del navegador</string>
     <string name="settings_video_reconnect_hint">Los cambios de vídeo se aplican al elegir Guardar y reconectar.</string>
     <string name="settings_browser_permissions">Dispositivos cercanos conecta el iPhone. Permite el acceso a la red local para el navegador del coche. El audio usa el Bluetooth del coche.</string>
-    <string name="settings_hevc_experimental">HEVC (H.265) (experimental)</string>
+    <string name="settings_hevc_experimental">HEVC (H.265)</string>
+    <string name="settings_iphone_connection_mode">Modo de conexión con el iPhone</string>
+    <string name="settings_startup_and_connection">Inicio y conexión</string>
+    <string name="settings_connect_on_open_hint">Al abrir TiPlay, conectar con el modo guardado para el iPhone. Este interruptor se guarda inmediatamente.</string>
+    <string name="settings_connection_mode_hint">Elige inalámbrico o USB. Se aplica al guardar y reconectar o en la próxima conexión.</string>
 </resources>

@@ -13,8 +13,7 @@ The protocol and the reasons behind it are in [the plan](todo.md) (Chinese).
 ## 1. Publish the page
 
 Deployment update (2026-10-10): this repository now resolves to `uJZk/TiPlay` and the live page is
-`https://ujzk.github.io/TiPlay/`. In the installed APK, set **CarPlay settings → More Connection settings →
-Car browser (experimental) → Page address** to this URL. The code default and the older examples below still use
+`https://ujzk.github.io/TiPlay/`. In the installed APK, set **CarPlay settings → Car browser → Page address** to this URL. The code default and the older examples below still use
 `/DiPlay/`; GitHub repository redirects do not make that the live Pages address. Custom page addresses remain editable.
 The existing Pages workflow uses `SITE_BASE_URL=https://ujzk.github.io/TiPlay/`.
 This deployment record conflicts with the `AGENTS.md` requirement to keep current project links on
@@ -78,7 +77,7 @@ the new files.
 
 ## 2. Set up TiPlay
 
-Open **CarPlay settings → More Connection settings → Car browser (experimental)**.
+Open **CarPlay settings → Car browser**.
 
 - CarPlay always appears in the car browser; there is no run-mode switch. Sound stays on the iPhone-to-car Bluetooth connection.
 - CarPlay day/night appearance follows the light/dark theme reported by the browser. The bundled page is updated with the APK; a hosted page must also be updated.
@@ -120,9 +119,9 @@ hotspot's WPA password protects it.
 The Tesla browser blocks private addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8), which phone hotspots
 use. It opens addresses in 100.64.0.0/10.
 
-Choose **Hotspot address** in **Car browser (experimental)**. Changes apply immediately without reconnecting CarPlay.
+Choose **Hotspot address**, the first setting in **CarPlay settings**. Changes apply immediately without reconnecting CarPlay.
 
-- **Normal** (default) uses the hotspot's existing address; it needs no root.
+- **Unprivileged** (default) uses the hotspot's existing address; it needs no root.
 - **Root** adds `100.109.220.253` (or the configured address) and restores it after hotspot restart.
 - **Shizuku** adds the address without root through an authorized Shizuku service. The shell call was checked on
   Android 16 on 2026-10-09; access from the Tesla and authorization on Android 17 still need vehicle checks.
@@ -140,8 +139,8 @@ app. It needs no internet access and no pairing code to load.
 
 - Over `http://` the page is not a secure context, so it plays video through Media Source Extensions (fragmented MP4)
   instead of WebCodecs. Safari uses its Managed Media Source.
-- Firefox usually cannot play HEVC. If the page says so, turn off **HEVC (H.265) (experimental)** under
-  **CarPlay settings → Advanced**, then choose **Save and reconnect**.
+- Firefox usually cannot play HEVC. If the page says so, turn off **HEVC (H.265)** under
+  **CarPlay settings → Display**, then choose **Save and reconnect**.
 - The address in the link is the extra hotspot address once TiPlay added it, else the hotspot's own address. Any device
   on the hotspot can open it. The Tesla should use the HTTPS link: over `http://` it would fall back to Media Source
   Extensions, which is slower to start and less tested.
@@ -151,9 +150,9 @@ app. It needs no internet access and no pairing code to load.
 
 CarPlay's canvas is the size of the page's video area in device pixels (CSS pixels × device pixel ratio, rounded down to
 even numbers, at most 3840 × 2160 in either orientation), at 30 fps on a fresh installation. Choose 30–60 fps under
-**CarPlay settings → Display → Frame rate**. Both frame rate and **Advanced → HEVC (H.265) (experimental)** changes take effect only
+**CarPlay settings → Display → Frame rate**. Both frame rate and **Display → HEVC (H.265)** changes take effect only
 after **Save and reconnect**; cancelling leaves the current session unchanged. Before any browser has reported its size, TiPlay
-uses 1280 × 720. CarPlay's physical size follows the page's CSS size (0.2646 mm per CSS pixel), so its controls are as
+uses 1280 × 720. HEVC is enabled by default for a browser installation without a saved codec choice; an explicit H.264 choice is preserved. CarPlay's physical size follows the page's CSS size (0.2646 mm per CSS pixel), so its controls are as
 large as the browser's own text. The head unit's resolution, CarPlay size, safe area, dock, split screen, turning screen
 and side panel settings do not apply.
 
@@ -188,7 +187,7 @@ localNetworkPermission=…`; the session log has `Browser link: …`, `Web video
 - [ ] The link pairs: the page connects, and its address bar no longer shows `#c=` (with the default extra address,
       only `https://ujzk.github.io/DiPlay/` is left).
 - [ ] A bookmark made after the first open reopens the page and connects with the saved code.
-- [ ] H.264 plays at 60 fps (stats overlay); then HEVC (**HEVC (H.265) (experimental)** on) after a reconnect.
+- [ ] H.264 plays at 60 fps (stats overlay); then HEVC (**HEVC (H.265)** on) after a reconnect.
 - [ ] Touch: tap, drag a list, pinch the map with two fingers. A finger lifted outside the picture is released.
 - [ ] In Drive the picture keeps playing (the probe pages kept 60 fps).
 - [ ] After a 30-minute drive the video stream is still the first one (`reconnects=0` in `Browser:` lines).

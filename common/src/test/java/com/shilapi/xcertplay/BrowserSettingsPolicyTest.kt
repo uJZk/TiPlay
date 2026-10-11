@@ -20,13 +20,40 @@ class BrowserSettingsPolicyTest {
         AirPlayPersistence.saveManualHotspotSsid(context, "Manual phone hotspot")
         AirPlayPersistence.saveManualHotspotPassphrase(context, "manual123")
         SplitScreenSettings.setEnabled(context, false)
+        AirPlayPersistence.saveManualHotspotBand(context, com.shilapi.xcertplay.orchestration.ManualHotspotBand.GHZ_5)
+        AirPlayPersistence.saveManualHotspotChannel(context, 149)
         BrowserSettingsPolicy.activate(context)
         assertEquals(CarPlayRunMode.PHONE_BROWSER, AirPlayPersistence.loadRunMode(context))
         assertEquals(CarBluetoothAudio.ON, AirPlayPersistence.loadCarBluetoothAudio(context))
         assertEquals(CarPlayNightMode.SYSTEM, AirPlayPersistence.loadCarPlayNightMode(context))
         assertTrue(SplitScreenSettings.enabled(context))
         assertFalse(AirPlayPersistence.loadLocationReportingEnabled(context))
+        assertEquals(com.shilapi.xcertplay.orchestration.ManualHotspotBand.AUTO, AirPlayPersistence.loadManualHotspotBand(context))
+        assertEquals(0, AirPlayPersistence.loadManualHotspotChannel(context))
         assertEquals("Manual phone hotspot", AirPlayPersistence.loadManualHotspotSsid(context))
         assertEquals("manual123", AirPlayPersistence.loadManualHotspotPassphrase(context))
     }
+    @Test fun browserHevcDefaultsOnButKeepsAnExplicitCompatibilityChoice() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
+        BrowserSettingsPolicy.activate(context)
+        assertTrue(AirPlayPersistence.loadHevcEnabled(context))
+        AirPlayPersistence.saveHevcEnabled(context, false)
+        BrowserSettingsPolicy.activate(context)
+        assertFalse(AirPlayPersistence.loadHevcEnabled(context))
+    }
+
+    @Test fun oldUsbLaunchPreferenceBecomesTheSingleSavedConnectionMode() {
+        val context = RuntimeEnvironment.getApplication()
+        AirPlayPersistence.saveWirelessEnabled(context, true)
+        DiPlayPreferences.saveDefaultConnectionMode(context, DefaultConnectionMode.USB)
+        BrowserSettingsPolicy.activate(context)
+        assertFalse(AirPlayPersistence.loadWirelessEnabled(context))
+        assertFalse(DiPlayPreferences.autoConnectWireless(context))
+        assertEquals(DefaultConnectionMode.LAST_USED, DiPlayPreferences.defaultConnectionMode(context))
+        AirPlayPersistence.saveWirelessEnabled(context, true)
+        BrowserSettingsPolicy.activate(context)
+        assertTrue(DiPlayPreferences.autoConnectWireless(context))
+    }
+
 }

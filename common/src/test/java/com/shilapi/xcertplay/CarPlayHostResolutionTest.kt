@@ -182,8 +182,8 @@ class CarPlayHostResolutionTest {
 
     @Test
     @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
-    fun phoneBrowserModeSendsANeutralCarButtonInsteadOfTheBydLogo() {
-        val byd = activity.resources.openRawResource(com.shilapi.xcertplay.host.R.raw.ic_car_home).use { it.readBytes() }
+    fun bothModesSendThePackagedTiPlayLogo() {
+        val packaged = activity.resources.openRawResource(com.shilapi.xcertplay.host.R.raw.ic_car_home).use { it.readBytes() }
         assertEquals(AirPlayPersistence.DEFAULT_OEM_LABEL, AirPlayPersistence.loadOemLabel(activity))
 
         AirPlayPersistence.saveRunMode(activity, com.shilapi.xcertplay.orchestration.CarPlayRunMode.PHONE_BROWSER)
@@ -192,14 +192,14 @@ class CarPlayHostResolutionTest {
         val icon = phone.icons.single()
         assertEquals(CarButtonDefaults.ICON_SIZE_PX, icon.widthPixels)
         assertEquals(CarButtonDefaults.ICON_SIZE_PX, icon.heightPixels)
-        assertFalse("phone + browser mode must not send the BYD logo", icon.data.contentEquals(byd))
+        assertTrue("phone + browser mode sends the TiPlay logo", icon.data.contentEquals(packaged))
         val decoded = android.graphics.BitmapFactory.decodeByteArray(icon.data, 0, icon.data.size)
         assertEquals(CarButtonDefaults.ICON_SIZE_PX, decoded.width)
 
         useHeadUnitMode(activity)
         val headUnit = config(100)
         assertEquals(AirPlayPersistence.DEFAULT_OEM_LABEL, headUnit.oemLabel)
-        assertTrue("a head unit keeps the packaged icon", headUnit.icons.single().data.contentEquals(byd))
+        assertTrue("a head unit keeps the packaged icon", headUnit.icons.single().data.contentEquals(packaged))
     }
 
     @Test fun aCustomCarButtonNameIsKeptInBothRunModes() {

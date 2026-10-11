@@ -5,7 +5,7 @@
     <string name="settings_hotspot_address_blocked">Es probable que el navegador del Tesla no pueda abrir esta dirección. Elige abajo otro método de dirección del punto de acceso.</string>
     <string name="settings_hotspot_not_found">No se encontró ningún punto de acceso. Activa el punto de acceso de este teléfono.</string>
     <string name="settings_hotspot_address_method">Dirección del punto de acceso</string>
-    <string name="settings_hotspot_method_normal">Normal</string>
+    <string name="settings_hotspot_method_normal">Sin privilegios</string>
     <string name="settings_hotspot_method_root">Root</string>
     <string name="settings_hotspot_method_vpn">VPN (experimental)</string>
     <string name="settings_hotspot_method_shizuku">Shizuku</string>

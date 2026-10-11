@@ -96,17 +96,17 @@ class PhoneBrowserModeSettingsTest {
             return name.substringAfter(" · ") to icon
         }
         val phoneIcon = requireNotNull(CarButtonDefaults.phoneBrowserIcon(context))
-        val bydIcon = android.graphics.BitmapFactory.decodeResource(context.resources, R.raw.ic_car_home)
+        val packagedIcon = android.graphics.BitmapFactory.decodeResource(context.resources, R.raw.ic_car_home)
 
         val (phoneName, phonePreview) = carButton()
         assertEquals("TiPlay", phoneName)
         assertTrue(phonePreview.sameAs(phoneIcon))
-        assertFalse(phonePreview.sameAs(bydIcon))
+        assertTrue(phonePreview.sameAs(packagedIcon))
 
         useHeadUnitMode()
         val (headUnitName, headUnitPreview) = carButton()
         assertEquals(AirPlayPersistence.DEFAULT_OEM_LABEL, headUnitName)
-        assertTrue(headUnitPreview.sameAs(bydIcon))
+        assertTrue(headUnitPreview.sameAs(packagedIcon))
 
         // A name the driver chose is kept in both modes.
         AirPlayPersistence.saveOemLabel(context, "My car")

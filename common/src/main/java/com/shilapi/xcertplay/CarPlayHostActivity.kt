@@ -328,6 +328,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var resolutionPreviewView: TextView? = null
     private var hotspotStatusView: TextView? = null
     private var manualHotspotFields: View? = null
+    private var manualHotspotReadControls: View? = null
     private var existingWifiFields: View? = null
     private var existingWifiErrorView: TextView? = null
     private var manualHotspotErrorView: TextView? = null
@@ -843,6 +844,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        HotspotExtraAddressSettings.sync(this) // Resume the address method after its VPN consent dialog.
         val savedNightMode = if (AirPlayPersistence.isPhoneBrowserMode(this)) CarPlayNightMode.SYSTEM else AirPlayPersistence.loadCarPlayNightMode(this)
         val savedThreshold = AirPlayPersistence.loadAmbientLightThreshold(this)
         val savedDelay = AirPlayPersistence.loadAmbientDelaySeconds(this)
@@ -1673,36 +1675,18 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(32) },
         )
 
-        content.addView(
-            buildMfiTargetSection(),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(14) },
-        )
-
-        val wirelessRowResult = ConnectionSettingsSection.createWirelessCarPlayRow(
-            context = this,
-            checked = wirelessEnabled,
-            theme = SettingsTheme.OVERLAY,
-        ) { checked ->
-            if (wirelessEnabled == checked) return@createWirelessCarPlayRow
-            wirelessEnabled = checked
-            hotspotStatus = HotspotStatus(state = if (wirelessEnabled) getString(R.string.hotspot_state_stopped) else getString(R.string.hotspot_state_off))
+        BrowserSettingsMenu.addHotspotAddress(content, this)
+        content.addView(BrowserSettingsPresentation.connectionMode(this, { wirelessEnabled }) { wireless ->
+            wirelessEnabled = wireless
+            hotspotStatus = HotspotStatus(state = getString(if (wireless) R.string.hotspot_state_stopped else R.string.hotspot_state_off))
             updateHotspotStatusBlock()
-            appendLog(
-                "Wireless CarPlay ${if (wirelessEnabled) "enabled" else "disabled"}; " +
-                    "applies when settings close",
-            )
+            appendLog("iPhone connection mode ${if (wireless) "wireless" else "USB"}; applies after save")
             requestStartupPrerequisites()
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+        content.addView(menuText(getString(R.string.settings_connection_mode_hint), 14f, MENU_SECONDARY))
+        BrowserSettingsMenu.addBrowserLink(content, this) {
+            wirelessPermissions.launch(arrayOf(LocalNetworkPermission.PERMISSION))
         }
-        content.addView(
-            wirelessRowResult.rowView,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(30) },
-        )
 
         content.addView(
             buildHotspotModeSection(),
@@ -1731,13 +1715,14 @@ class CarPlayHostActivity : ComponentActivity() {
         CarPlaySettingsNavigation.addPage(content, SettingsCategory.CONNECTION, ::openAdditionalSettings)
 
         content.addView(
-            settingsCategoryHeader(getString(R.string.automatic_connection)),
+            settingsCategoryHeader(getString(R.string.settings_startup_and_connection)),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(36) },
         )
-        content.addView(
+        BrowserSettingsMenu.addConnectOnOpen(content)
+        if (!AirPlayPersistence.isPhoneBrowserMode(this)) content.addView(
             settingsSwitchRow(
                 label = getString(R.string.auto_start_on_boot),
                 checked = autoStartOnBoot,
@@ -1758,43 +1743,6 @@ class CarPlayHostActivity : ComponentActivity() {
             updateResolutionMenu()
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
         content.addView(menuText(getString(R.string.settings_video_reconnect_hint), 16f, MENU_SECONDARY))
-
-        content.addView(
-            settingsCategoryHeader(getString(R.string.settings_vehicle)),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(36) },
-        )
-        content.addView(
-            buildDrivingSideSection(),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(12) },
-        )
-        content.addView(
-            buildIdentitySettingsSection(),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(26) },
-        )
-        content.addView(
-            buildAirPlayIconSection(),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(26) },
-        )
-        if (!AirPlayPersistence.isPhoneBrowserMode(this)) {
-            CarPlaySettingsNavigation.addPage(content, SettingsCategory.VEHICLE, ::openAdditionalSettings)
-        }
-        val resolutionValue: TextView? = null
-        content.addView(settingsCategoryHeader(getString(R.string.settings_advanced)))
-        if (headUnitIntegrations()) {
-            CarPlaySettingsNavigation.addPage(content, SettingsCategory.ADVANCED, ::openAdditionalSettings)
-        }
 
         val hevcRow = DisplaySettingsSection.createHevcRow(
             context = this,
@@ -1818,6 +1766,37 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(30) },
         )
         content.addView(menuText(getString(R.string.settings_video_reconnect_hint), 16f, MENU_SECONDARY))
+
+        content.addView(
+            settingsCategoryHeader(getString(R.string.settings_vehicle)),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(36) },
+        )
+        content.addView(
+            buildDrivingSideSection(),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(12) },
+        )
+        content.addView(
+            buildIdentitySettingsSection(),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(26) },
+        )
+        if (!AirPlayPersistence.isPhoneBrowserMode(this)) {
+            CarPlaySettingsNavigation.addPage(content, SettingsCategory.VEHICLE, ::openAdditionalSettings)
+        }
+        val resolutionValue: TextView? = null
+        content.addView(settingsCategoryHeader(getString(R.string.settings_advanced)))
+        content.addView(buildMfiTargetSection(), LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
+        if (headUnitIntegrations()) {
+            CarPlaySettingsNavigation.addPage(content, SettingsCategory.ADVANCED, ::openAdditionalSettings)
+        }
 
         val softwareHevcRow = DisplaySettingsSection.createSoftwareHevcRow(
             context = this,
@@ -2022,6 +2001,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun persistMenuSettings() {
         AirPlayPersistence.saveSettingsGestureFingers(this, gestureFingerCount)
         AirPlayPersistence.saveWirelessEnabled(this, wirelessEnabled)
+        DiPlayPreferences.saveDefaultConnectionMode(this, DefaultConnectionMode.LAST_USED)
         AirPlayPersistence.saveMfiTarget(this, mfiTarget)
         AirPlayPersistence.saveMfiI2cPath(this, mfiI2cPath)
         AirPlayPersistence.saveRemoteMfiServer(this, remoteMfiServer)
@@ -2967,40 +2947,6 @@ class CarPlayHostActivity : ComponentActivity() {
         )
 
         manualFields.addView(
-            settingsChoiceRow(
-                label = getString(R.string.band),
-                options = listOf(
-                    ManualHotspotBand.AUTO to getString(R.string.auto),
-                    ManualHotspotBand.GHZ_2_4 to getString(R.string.s_2_4_ghz),
-                    ManualHotspotBand.GHZ_5 to getString(R.string.s_5_ghz),
-                ),
-                selected = manualHotspotBand,
-            ) { value ->
-                manualHotspotBand = value
-                manualHotspotErrorView?.visibility = View.GONE
-            },
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(10) },
-        )
-
-        manualFields.addView(
-            settingsInputRow(
-                label = getString(R.string.channel_0_auto),
-                value = manualHotspotChannel.toString(),
-                numeric = true,
-            ) { value ->
-                manualHotspotChannel = value.toIntOrNull() ?: -1
-                manualHotspotErrorView?.visibility = View.GONE
-            },
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(10) },
-        )
-
-        manualFields.addView(
             settingsInputRow(
                 label = getString(R.string.hotspot_password),
                 value = manualHotspotPassphrase,
@@ -3053,7 +2999,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(8) },
         )
-        LocalHotspotAutofill.attach(manualFields)
+        manualHotspotReadControls = LocalHotspotAutofill.attach(manualFields, section)
         manualHotspotFields = manualFields
         manualHotspotErrorView = error
         val existingFields = LinearLayout(this).apply {
@@ -3081,6 +3027,7 @@ class CarPlayHostActivity : ComponentActivity() {
         existingWifiErrorView?.visibility = View.GONE
         val visible = wirelessHotspotMode == WirelessHotspotMode.MANUAL
         manualHotspotFields?.visibility = if (visible) View.VISIBLE else View.GONE
+        manualHotspotReadControls?.visibility = if (visible) View.VISIBLE else View.GONE
         if (!visible) manualHotspotErrorView?.visibility = View.GONE
     }
 
@@ -3572,7 +3519,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun defaultAirPlayIconBytes(): ByteArray =
-        // Phone + browser mode: a neutral car instead of the BYD logo.
+        // Both profiles use the packaged TiPlay logo.
         (if (headUnitIntegrations()) null else CarButtonDefaults.phoneBrowserIconPng(this)) ?:
         // Shown in CarPlay's app list as the "back to the car" button.
         resources.openRawResource(R.raw.ic_car_home).use { it.readBytes() }
@@ -4509,7 +4456,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun saveSettingsAndReconnect() {
         if (!menuOpen) return
         if (!validateMfiSettings()) return
-        if (!validateManualHotspotSettings()) return
+        if (wirelessEnabled && !validateManualHotspotSettings()) return
         val baseline = settingsBaseline
         if (!CarPlaySettingsPermissions.readyToSave(this, autoStartOnBoot, wirelessHotspotMode) {
             if (menuOpen && settingsBaseline === baseline) saveSettingsAndReconnect()
