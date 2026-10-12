@@ -7,9 +7,10 @@ import java.nio.ByteOrder
 object WebDebugTiming {
     const val KIND = 5
 
-    fun hello(now: Long): String = WebJson.write(mapOf(
-        "app" to "TiPlay", "protocol" to 1, "clockMs" to now / 1e6,
-    ))
+    fun hello(now: Long, audio: Boolean? = null): String = WebJson.write(buildMap {
+        put("app", "TiPlay"); put("protocol", 1); put("clockMs", now / 1e6)
+        if (audio != null) put("audio", audio)
+    })
 
     fun record(frame: WebVideoRecord, now: Long): WebVideoRecord? {
         if (frame.kind != WebVideoRecords.KIND_FRAME) return null

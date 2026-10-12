@@ -674,7 +674,7 @@
     <string name="side_panel_show">侧边面板</string>
     <string name="side_panel_full_screen">⤢ 全屏</string>
     <string name="main_buffered_audio">缓冲音乐（实验性）</string>
-    <string name="main_buffered_audio_description">支持此功能的应用（如 Apple Music）会提前发送约两分钟的音乐，因此短暂的 Wi-Fi 中断不会被听到。其他应用保持原样。会重新连接 CarPlay。</string>
+    <string name="main_buffered_audio_description">接收 Apple Music 等应用的缓冲音乐，播放缓冲保留在车机浏览器端。其他应用仍使用普通流。此功能为实验性功能；更改后会重新连接 CarPlay。</string>
     <string name="call_echo_cancellation">通话回声消除（实验性）</string>
     <string name="call_echo_cancellation_description">尝试减少 CarPlay 通话中发送给对方的扬声器回声。效果取决于车载主机。下次连接 CarPlay 时生效。</string>
     <string name="call_voice_filter">更清晰的通话人声（实验性）</string>
@@ -701,4 +701,6 @@
     <string name="settings_airplay_listening">等待 iPhone · TiPlay</string>
     <string name="settings_airplay_disable">禁用 AirPlay</string>
     <string name="settings_airplay_disable_description">立即生效。AirPlay 默认开启。打开此开关会停止 AirPlay 并恢复仍连接的 CarPlay 画面；关闭此开关会重新启用接收器。</string>
+    <string name="settings_disable_carplay_audio">禁用 CarPlay 音频</string>
+    <string name="settings_disable_carplay_audio_description">音乐、导航、电话和 Siri 均使用 iPhone 与车机的蓝牙连接。请先将 iPhone 连接到车机蓝牙。更改后会重新连接 CarPlay。</string>
 </resources>

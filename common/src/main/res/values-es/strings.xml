@@ -614,7 +614,7 @@
     <string name="side_panel_show">Panel lateral</string>
     <string name="side_panel_full_screen">⤢ Pantalla completa</string>
     <string name="main_buffered_audio">Música con búfer (experimental)</string>
-    <string name="main_buffered_audio_description">Las apps compatibles, como Apple Music, envían hasta unos dos minutos de música por adelantado, así que los cortes breves del Wi-Fi no se oyen. Las demás apps siguen igual. Reconecta CarPlay.</string>
+    <string name="main_buffered_audio_description">Recibe música almacenada en búfer de apps como Apple Music y mantiene el búfer de reproducción en el navegador del coche. Otras apps conservan el flujo normal. Experimental; CarPlay se reconecta después del cambio.</string>
     <string name="call_echo_cancellation">Cancelación de eco en llamadas (experimental)</string>
     <string name="call_echo_cancellation_description">Intenta reducir el eco de los altavoces que recibe la otra persona en llamadas de CarPlay. El resultado depende del equipo del coche. Se aplica en la próxima conexión de CarPlay.</string>
     <string name="call_voice_filter">Voces más claras en llamadas (experimental)</string>
@@ -641,4 +641,6 @@
     <string name="settings_airplay_listening">Esperando al iPhone · TiPlay</string>
     <string name="settings_airplay_disable">Desactivar AirPlay</string>
     <string name="settings_airplay_disable_description">Se aplica de inmediato. AirPlay está activado por defecto. Esta opción detiene AirPlay y restaura CarPlay; al desactivarla, el receptor vuelve a iniciarse.</string>
+    <string name="settings_disable_carplay_audio">Desactivar audio de CarPlay</string>
+    <string name="settings_disable_carplay_audio_description">Mantén música, navegación, llamadas y Siri en la conexión Bluetooth del iPhone con el coche. Conecta primero el iPhone al Bluetooth del coche. CarPlay se reconecta después del cambio.</string>
 </resources>

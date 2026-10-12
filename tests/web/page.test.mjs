@@ -17,6 +17,7 @@ test('the initial clock reaches a video sink whose setup finishes after hello', 
     let streamId = 0, sink = null, retryTimer, videoAbort, live, phase, lastViewport;
     const link = { code: '1234' }, session = 'session', PROTOCOL = 1;
     const videoPath = {};
+    const browserAudio = { attach() {} };
     const render = () => {}, reportAppearance = () => {}, scheduleViewport = () => {};
     const setInterval = () => 0, clearInterval = () => {};
     const stop = reason => { throw new Error(reason); };

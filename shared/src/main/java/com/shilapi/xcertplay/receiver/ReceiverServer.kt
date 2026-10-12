@@ -28,6 +28,9 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
     interface Listener {
         fun mirrorSink(): WebMediaSink
         fun play(item: ReceiverPlay)
+        fun photo(bytes: ByteArray) {}
+        fun mirrorAudio(format: ReceiverMirrorAudioFormat, payload: ByteArray) {}
+        fun stopMirrorAudio() {}
         fun stopPlayback()
         fun seek(seconds: Double)
         fun rate(value: Double)
@@ -44,6 +47,8 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
     private var owner: Connection? = null
     private var playbackPeer: InetAddress? = null
     private var playbackId: String? = null
+    private var photoSession: Pair<InetAddress, String>? = null
+    private var photos = ReceiverPhotos()
     private val reverse = ConcurrentHashMap<String, Connection>()
     private val resourceIds = AtomicLong()
     private val connectionIds = AtomicLong()
@@ -135,6 +140,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
         synchronized(ownership) {
             owner?.closeMedia(); owner = null
             playbackPeer = null; playbackId = null
+            photos = ReceiverPhotos(); photoSession = null
             listener.stopPlayback()
         }
         reverse.clear()
@@ -151,6 +157,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
         if (playbackPeer == null) return@synchronized
         playbackEvent("stopped")
         playbackPeer = null; playbackId = null
+        photos = ReceiverPhotos(); photoSession = null
         resources.values.forEach { it.future.complete(null) }; resources.clear()
         listener.stopPlayback()
         listener.status("listening")
@@ -202,6 +209,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
         private var mirror: ReceiverMirrorStream? = null
         private var mirrorToken: Any? = null
         private var audio: ReceiverAudioDrain? = null
+        private var audioIv: ByteArray? = null
         private var timing: NtpClock? = null
         private val output = socket.getOutputStream()
         private var reverseId: String? = null
@@ -274,11 +282,13 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
         }
 
         fun closeMedia() {
+            if (owner === this) listener.stopMirrorAudio()
             mirrorToken = null
             mirror?.close(); mirror = null
             audio?.close(); audio = null
             timing?.close(); timing = null
             key = null; handshake = null
+            audioIv?.fill(0); audioIv = null
         }
 
         fun event(state: String, id: String) {
@@ -325,7 +335,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                         if (types == null) {
                             closeMedia()
                         } else {
-                            if (96 in types) { audio?.close(); audio = null }
+                            if (96 in types) { audio?.close(); audio = null; if (owner === this) listener.stopMirrorAudio() }
                             if (110 in types) {
                                 mirrorToken = null
                                 val hadMirror = mirror != null
@@ -357,6 +367,20 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                         resources.values.forEach { it.future.complete(null) }; resources.clear()
                         playbackPeer = peer; playbackId = id
                         listener.play(item); listener.status("video")
+                    }
+                    return RtspMessage.Response()
+                }
+                path == "/photo" && request.method == "PUT" -> {
+                    synchronized(ownership) {
+                        if (closed.get() || owner != null || (playbackPeer != null &&
+                                (playbackPeer != peer || playbackId != id))) return busy()
+                        if (photoSession != (peer to id)) { photos = ReceiverPhotos(); photoSession = peer to id }
+                        val image = photos.receive(request.headers["x-apple-assetaction"],
+                            request.headers["x-apple-assetkey"], request.body)
+                        if (image != null) {
+                            playbackPeer = peer; playbackId = id
+                            listener.photo(image); listener.status("photo")
+                        }
                     }
                     return RtspMessage.Response()
                 }
@@ -435,6 +459,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                 handshake = transportHandshake
                 if (hadMirror) listener.status("listening")
                 key = AirPlayCrypto.sha512(raw, shared).copyOf(16)
+                audioIv = requireNotNull(iv).copyOf()
                 val clock = NtpClock(log = { listener.log("c=$diagnosticId $it") },
                     wireTimeline = com.shilapi.xcertplay.airplay.NtpWireTimeline())
                 timing = clock
@@ -451,7 +476,19 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                     if ((stream["type"] as Number).toInt() == 96) {
                         requireNotNull(key)
                         requireNotNull(timing)
-                        val receiver = ReceiverAudioDrain(peer) { listener.log("c=$diagnosticId $it") }
+                        val format = ReceiverMirrorAudioFormat.parse(stream)
+                        val audioKey = requireNotNull(key).copyOf()
+                        val iv = audioIv?.copyOf()
+                        val order = ReceiverMirrorAudioOrder()
+                        val receiver = ReceiverAudioDrain(peer, { listener.log("c=$diagnosticId $it") }, packetReceived = { packet ->
+                            // Ordinary audio without an active mirror is deliberately not a product mode.
+                            if (format != null && iv != null && synchronized(ownership) { mirror != null && owner === this }) {
+                                ReceiverMirrorAudioPacket.decrypt(packet, audioKey, iv)?.let { payload ->
+                                    val sequence = ((packet[2].toInt() and 0xff) shl 8) or (packet[3].toInt() and 0xff)
+                                    order.offer(sequence, payload).forEach { listener.mirrorAudio(format, it) }
+                                }
+                            }
+                        })
                         val ports = receiver.start()
                         audio?.close()
                         audio = receiver

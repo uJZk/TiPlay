@@ -140,8 +140,8 @@ class ReceiverServerTest {
             val volume = control.send("GET_PARAMETER", "rtsp://receiver/stream", "volume\r\n".toByteArray(), contentType = "text/parameters")
             assertEquals("200", volume.path)
             assertEquals("text/parameters", volume.headers["content-type"])
-            assertEquals("volume: -144.0\r\n", volume.body.toString(Charsets.US_ASCII))
-            assertEquals("volume: -144.0\r\n", control.send("GET_PARAMETER", "rtsp://receiver/stream",
+            assertEquals("volume: 0.0\r\n", volume.body.toString(Charsets.US_ASCII))
+            assertEquals("volume: 0.0\r\n", control.send("GET_PARAMETER", "rtsp://receiver/stream",
                 "volume\r\n".toByteArray()).body.toString(Charsets.US_ASCII))
             val requested = listOf(mapOf("type" to 110, "streamConnectionID" to 1234L)) +
                 if (audioDrain) listOf(mapOf("type" to 96, "ct" to 8, "audioFormat" to 0x1000000L, "spf" to 480)) else emptyList()

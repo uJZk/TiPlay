@@ -26,6 +26,27 @@ class BufferedAudioStreamTest {
     private val key = ByteArray(32) { (it + 1).toByte() }
     private val format = AudioFormat(AudioCodecKind.AAC_LC, 48_000, 2, BufferedAudioStream.STREAM_TYPE, "media")
 
+    @Test fun browserRelayDoesNotRetainTheNativeTwoMinutePreload() {
+        val sink = object : MediaSink, BrowserBufferedAudioPolicy {}
+        val stream = BufferedAudioStream(key, format, sink)
+        try {
+            assertEquals(256 * 1024, stream.audioBufferBytes)
+            stream.start()
+            Socket(InetAddress.getLoopbackAddress(), stream.port).use { socket ->
+                val out = DataOutputStream(socket.getOutputStream())
+                repeat(150) { index ->
+                    val body = seal(index, index * 1024L, byteArrayOf(1, 2))
+                    out.writeShort(body.size + 2); out.write(body)
+                }
+                out.flush()
+                waitFor { queuedFrames(stream) >= 116 }
+                Thread.sleep(100)
+                assertEquals("paused relay is bounded by audio time, even for tiny frames", 117, queuedFrames(stream))
+                assertTrue(queuedBytes(stream) <= stream.audioBufferBytes)
+            }
+        } finally { stream.close() }
+    }
+
     @Test
     fun theOfferIsMadeOnlyWhenEnabled() {
         val off = AirPlayInfoPlist.build(config)
@@ -159,6 +180,13 @@ class BufferedAudioStreamTest {
         val lock = BufferedAudioStream::class.java.getDeclaredField("lock").apply { isAccessible = true }.get(stream)!!
         return synchronized(lock) {
             BufferedAudioStream::class.java.getDeclaredField("queuedBytes").apply { isAccessible = true }.getLong(stream)
+        }
+    }
+
+    private fun queuedFrames(stream: BufferedAudioStream): Int {
+        val lock = BufferedAudioStream::class.java.getDeclaredField("lock").apply { isAccessible = true }.get(stream)!!
+        return synchronized(lock) {
+            (BufferedAudioStream::class.java.getDeclaredField("queue").apply { isAccessible = true }.get(stream) as java.util.ArrayDeque<*>).size
         }
     }
 

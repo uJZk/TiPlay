@@ -8,8 +8,9 @@ import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-/** Ordinary AirPlay UDP audio transport; encrypted packets are discarded without decoding. */
-class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String) -> Unit = {}) : Closeable {
+/** Legacy UDP transport; optional mirror soundtrack consumer, otherwise packets are discarded. */
+class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String) -> Unit = {},
+                         private val packetReceived: ((ByteArray) -> Unit)? = null) : Closeable {
     private class Counts {
         val packets = AtomicLong()
         val bytes = AtomicLong()
@@ -73,6 +74,7 @@ class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String
                     continue
                 }
                 val bytes = counts.bytes.addAndGet(packet.length.toLong())
+                if (channel == "DATA") packetReceived?.invoke(buffer.copyOf(packet.length))
                 val packets = counts.packets.incrementAndGet()
                 if (sample(packets)) emit("audioDrain stage=DRAINED channel=$channel packets=$packets bytes=$bytes")
             } catch (_: Exception) {

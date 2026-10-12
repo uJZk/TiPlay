@@ -72,7 +72,7 @@ class CarPlayHostBrowserLinkTest {
         CarPlayBackgroundSession.clear()
         controllerConstruction.close()
         TeslaBrowserLink.resetForTest()
-        listOf("xcertplay_airplay", "tiplay_browser_link", "diplay_carplay_dock").forEach {
+        listOf("xcertplay_airplay", "tiplay_browser_link", "tiplay_browser_audio", "diplay_carplay_dock").forEach {
             activity.getSharedPreferences(it, 0).edit().clear().commit()
         }
     }
@@ -106,10 +106,21 @@ class CarPlayHostBrowserLinkTest {
         assertTrue(DisplayDiagnosticSnapshot.report(activity).contains("Phone + browser canvas=1182x920"))
     }
 
-    @Test fun phoneModeDeclinesAudioEvenWithLegacyAudioSettingsAndMicrophonePermission() {
+    @Test fun phoneModeReceivesAudioWithBrowserMicrophoneWithoutAndroidPermission() {
         AirPlayPersistence.saveCarBluetoothAudio(activity, CarBluetoothAudio.OFF)
         AirPlayPersistence.saveMainBufferedAudio(activity, true)
-        set("microphoneAvailable", true)
+        BrowserCarPlayAudioSettings.saveDisabled(activity, false)
+        set("microphoneAvailable", false)
+        val config = config(1080, 2200)
+        assertFalse(config.audioViaCarBluetooth)
+        assertTrue(config.receivesAudio)
+        assertTrue(config.microphone)
+        assertTrue(config.mainBufferedAudio)
+    }
+
+    @Test fun disabledAudioAlsoDeclinesBufferedMusicAndBrowserMicrophone() {
+        BrowserCarPlayAudioSettings.saveDisabled(activity, true)
+        AirPlayPersistence.saveMainBufferedAudio(activity, true)
         val config = config(1080, 2200)
         assertTrue(config.audioViaCarBluetooth)
         assertFalse(config.receivesAudio)

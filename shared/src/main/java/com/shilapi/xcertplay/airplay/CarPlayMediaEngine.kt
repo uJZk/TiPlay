@@ -293,7 +293,7 @@ class CarPlayMediaEngine(
         return linkedMapOf(
             "type" to type,
             "dataPort" to buffered.port,
-            "audioBufferSize" to BufferedAudioStream.AUDIO_BUFFER_BYTES,
+            "audioBufferSize" to buffered.audioBufferBytes,
         )
     }
 

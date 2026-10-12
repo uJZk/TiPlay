@@ -668,7 +668,7 @@
     <string name="carplay_rotation_smoother">較流暢（1920）</string>
     <string name="cluster_size_smallest">較小 · 地圖範圍較廣、細節較多</string>
     <string name="main_buffered_audio">緩衝音樂（實驗性）</string>
-    <string name="main_buffered_audio_description">支援此功能的應用程式（例如 Apple Music）可預先傳送約兩分鐘的音樂，因此短暫的 Wi-Fi 中斷不會影響播放。其他應用程式仍使用一般串流。變更後會重新連線至 CarPlay。</string>
+    <string name="main_buffered_audio_description">接收 Apple Music 等應用程式的緩衝音樂，播放緩衝保留在車機瀏覽器端。其他應用程式仍使用一般串流。此功能為實驗性功能；變更後會重新連線至 CarPlay。</string>
     <string name="call_echo_cancellation">通話回音消除（實驗性）</string>
     <string name="call_echo_cancellation_description">嘗試減少 CarPlay 通話中傳送給對方的喇叭回音。效果取決於車用主機。下次連線至 CarPlay 時生效。</string>
     <string name="call_voice_filter">更清晰的通話人聲（實驗性）</string>
@@ -701,4 +701,6 @@
     <string name="settings_airplay_listening">等待 iPhone · TiPlay</string>
     <string name="settings_airplay_disable">停用 AirPlay</string>
     <string name="settings_airplay_disable_description">立即生效。AirPlay 預設開啟。開啟此開關會停止 AirPlay 並恢復仍連線的 CarPlay 畫面；關閉此開關會重新啟用接收器。</string>
+    <string name="settings_disable_carplay_audio">停用 CarPlay 音訊</string>
+    <string name="settings_disable_carplay_audio_description">音樂、導航、電話和 Siri 均使用 iPhone 與車機的藍牙連線。請先將 iPhone 連線至車機藍牙。變更後會重新連線至 CarPlay。</string>
 </resources>

@@ -2,7 +2,7 @@
 
 **CarPlay in the car browser from an Android phone.**
 
-TiPlay runs on an Android phone and sends the iPhone's CarPlay picture to the car browser. Touches return to the iPhone through TiPlay. Music, navigation prompts, Siri and calls are intended to use the iPhone's Bluetooth connection to the car; that complete audio flow still needs vehicle validation.
+TiPlay runs on an Android phone and sends the iPhone's CarPlay picture and audio to the car browser. Touches and browser microphone input return to the iPhone through TiPlay. Advanced settings can disable CarPlay audio so that the iPhone uses the car's Bluetooth connection for all sound and calls.
 
 TiPlay supports the Android phone + car browser flow only. Native Android head units are not supported.
 
@@ -14,12 +14,12 @@ TiPlay is experimental and has no publicly published release yet. Check [Release
 
 You need an Android 9+ phone, an iPhone and a compatible car browser. TiPlay installs alongside DiPlay and does not reuse its settings or pairing records. Run one projection app at a time.
 
-On the tested Model Y, probe pages decoded 1080p60 H.264 and HEVC in hardware, and an HTTPS page reached the phone's hotspot at a 100.64 address. These were browser probes: complete CarPlay operation in a Tesla and the car Bluetooth audio route remain unverified. Browser and Android behavior can vary with software updates.
+On the tested Model Y, probe pages decoded 1080p60 H.264 and HEVC in hardware, and an HTTPS page reached the phone's hotspot at a 100.64 address. These were browser probes: complete CarPlay operation and browser speaker/microphone use in a Tesla remain unverified. Browser and Android behavior can vary with software updates.
 
 ## Install and connect
 
 1. Park the car and install TiPlay on the Android phone. Grant the requested permissions for the features you use.
-2. Pair the iPhone with the car over Bluetooth and select it as the primary phone for audio and calls. Pair it with the Android phone for wireless CarPlay as well.
+2. Pair the iPhone with the Android phone for wireless CarPlay. To use the car's Bluetooth for audio instead, pair the iPhone with the car, select it for audio and calls, and enable **Disable CarPlay audio** in TiPlay's advanced settings.
 3. In TiPlay's **Main settings**, choose the iPhone and **CarPlay connection mode → Wireless / USB**. For wireless, choose **Android hotspot** and enter its name, security and password, or choose **Existing Wi-Fi** with all three devices on the same network. Enable the hotspot in Android settings; TiPlay does not enable it for you.
 4. Connect the car to the same network. Tesla browsers need a reachable phone address outside the blocked private ranges; the tested route uses 100.64.0.0/10. See [Hotspot address](docs/HOTSPOT_ADDRESS.md) for root, Shizuku and experimental VPN requirements and limits.
 5. In the Android app, tap **Connect phone**, or **Save and reconnect** after editing connection settings. Open the TiPlay page in the car browser, use the link/code shown by the app, then tap **Connect** on the page.

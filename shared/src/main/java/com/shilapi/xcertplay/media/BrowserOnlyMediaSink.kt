@@ -5,22 +5,23 @@ import com.shilapi.xcertplay.airplay.AudioFormat
 import com.shilapi.xcertplay.airplay.AudioStreamId
 import com.shilapi.xcertplay.airplay.MicrophoneConfig
 import com.shilapi.xcertplay.airplay.VideoCodec
+import com.shilapi.xcertplay.airplay.BrowserBufferedAudioPolicy
 
-/** Routes compressed video to the browser; sound and microphone stay on the iPhone's car Bluetooth link. */
+/** Routes media to the browser while retaining Android session and iAP lifecycle callbacks. */
 class BrowserOnlyMediaSink(
     private val android: MediaSink,
     private val browser: MediaSink,
-) : MediaSink by android {
+) : MediaSink by android, BrowserBufferedAudioPolicy {
     // Keep host screen lifecycle and iAP callbacks, but never allocate Android audio renderers or capture.
-    override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) {}
+    override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) = browser.onAudioStarted(id, format, firstSample)
 
-    override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {}
+    override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) = browser.onAudioRtp(id, format, rtp, sample)
 
-    override fun onAudioStopped(id: AudioStreamId) {}
+    override fun onAudioStopped(id: AudioStreamId) = browser.onAudioStopped(id)
 
-    override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) {}
+    override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) = browser.onMicrophoneStarted(id, config)
 
-    override fun onMicrophoneStopped(id: AudioStreamId) {}
+    override fun onMicrophoneStopped(id: AudioStreamId) = browser.onMicrophoneStopped(id)
 
     override fun onVideoCodec(type: Int, codec: VideoCodec) = browser.onVideoCodec(type, codec)
 

@@ -132,14 +132,15 @@ class CarPlayHostResolutionTest {
         assertTrue(DisplayDiagnosticSnapshot.report(activity).contains("software_decoder"))
     }
 
-    @Test fun browserAudioAlwaysStaysOnCarBluetooth() {
+    @Test fun browserAudioUsesTheExplicitOptOutRatherThanLegacyBluetoothPreferences() {
         set("microphoneAvailable", true)
         AirPlayPersistence.saveRunMode(activity, com.shilapi.xcertplay.orchestration.CarPlayRunMode.PHONE_BROWSER)
         assertEquals(CarBluetoothAudio.OFF, AirPlayPersistence.loadCarBluetoothAudio(activity))
+        BrowserCarPlayAudioSettings.saveDisabled(activity, false)
         for ((mode, expected) in listOf(
-            CarBluetoothAudio.OFF to listOf(true, false, false, false),
-            CarBluetoothAudio.ON to listOf(true, false, false, false),
-            CarBluetoothAudio.ALTERNATIVE to listOf(true, false, false, false),
+            CarBluetoothAudio.OFF to listOf(false, false, true, true),
+            CarBluetoothAudio.ON to listOf(false, false, true, true),
+            CarBluetoothAudio.ALTERNATIVE to listOf(false, false, true, true),
         )) {
             AirPlayPersistence.saveCarBluetoothAudio(activity, mode)
             val airPlay = config(100)
@@ -164,6 +165,7 @@ class CarPlayHostResolutionTest {
     @Test fun carBluetoothSoundFollowsTheRunModeOfTheRunningSession() {
         set("microphoneAvailable", true)
         AirPlayPersistence.saveCarBluetoothAudio(activity, CarBluetoothAudio.ON)
+        BrowserCarPlayAudioSettings.saveDisabled(activity, true)
         try {
             AirPlayPersistence.saveRunMode(activity, com.shilapi.xcertplay.orchestration.CarPlayRunMode.PHONE_BROWSER)
             set("controller", org.mockito.Mockito.mock(com.shilapi.xcertplay.orchestration.CarPlayController::class.java))
@@ -176,6 +178,7 @@ class CarPlayHostResolutionTest {
             assertFalse("a phone + browser session keeps car Bluetooth sound", config(100).receivesAudio)
         } finally {
             set("controller", null)
+            BrowserCarPlayAudioSettings.saveDisabled(activity, false)
         }
         assertTrue("without a session the saved head-unit mode applies", config(100).receivesAudio)
     }

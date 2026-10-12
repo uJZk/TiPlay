@@ -1,6 +1,6 @@
 package com.shilapi.xcertplay.receiver
 
-/** Legacy audio transport is accepted and immediately discarded, without capture or playback. */
+/** Legacy transport shared by mirroring. Only AAC-ELD mirror audio is decoded; no standalone service. */
 internal object ReceiverAudioCapabilities {
     // Pinned UxPlay advertises this transport format mask for stream types 100 and 101.
     const val OUTPUT_FORMATS = 0x3fffffcL
@@ -8,7 +8,7 @@ internal object ReceiverAudioCapabilities {
     val featureBits: Long = listOf(9, 18, 19, 20, 21).fold(0L) { bits, bit -> bits or (1L shl bit) }
 
     fun info(): Map<String, Any?> = mapOf(
-        "initialVolume" to -144.0,
+        "initialVolume" to 0.0,
         "audioFormats" to listOf(100L, 101L).map { type -> mapOf(
             "type" to type, "audioInputFormats" to 0L, "audioOutputFormats" to OUTPUT_FORMATS,
         ) },

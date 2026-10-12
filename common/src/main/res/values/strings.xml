@@ -711,7 +711,7 @@
     <string name="side_panel_show">Side panel</string>
     <string name="side_panel_full_screen">⤢ Full screen</string>
     <string name="main_buffered_audio">Buffered music (experimental)</string>
-    <string name="main_buffered_audio_description">Apps that support it, such as Apple Music, send up to about two minutes of music ahead, so short Wi-Fi gaps are not heard. Other apps keep the normal stream. Reconnects CarPlay.</string>
+    <string name="main_buffered_audio_description">Receive buffered music from apps such as Apple Music and keep the playback buffer in the car browser. Other apps keep the normal stream. Experimental; CarPlay reconnects after a change.</string>
     <string name="call_echo_cancellation">Call echo cancellation (experimental)</string>
     <string name="call_echo_cancellation_description">Tries to reduce speaker echo sent to the other person during CarPlay calls. Results depend on the head unit. Applies at the next CarPlay connection.</string>
     <string name="call_voice_filter">Clearer call voices (experimental)</string>
@@ -738,4 +738,6 @@
     <string name="settings_airplay_listening">Waiting for iPhone · TiPlay</string>
     <string name="settings_airplay_disable">Disable AirPlay</string>
     <string name="settings_airplay_disable_description">Takes effect immediately. AirPlay is enabled by default. Disabling it stops AirPlay and restores the connected CarPlay display; turning this switch off restarts the receiver.</string>
+    <string name="settings_disable_carplay_audio">Disable CarPlay audio</string>
+    <string name="settings_disable_carplay_audio_description">Keep music, navigation, calls and Siri on the iPhoneʼs Bluetooth connection to the car. Connect the iPhone to the carʼs Bluetooth first. CarPlay reconnects after a change.</string>
 </resources>

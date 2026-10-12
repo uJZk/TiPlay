@@ -26,7 +26,7 @@ class DiPlaySessionServiceTest {
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO)
         AirPlayPersistence.saveRunMode(app, CarPlayRunMode.PHONE_BROWSER)
         for ((mode, microphone) in listOf(
-            CarBluetoothAudio.OFF to true,
+            CarBluetoothAudio.OFF to false,
             CarBluetoothAudio.ON to false,
             CarBluetoothAudio.ALTERNATIVE to false,
         )) {

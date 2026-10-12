@@ -11,6 +11,14 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class BrowserSettingsPolicyTest {
+    @Test fun openingSettingsKeepsAnExplicitCarPlayAudioOptOut() {
+        val context = RuntimeEnvironment.getApplication()
+        BrowserCarPlayAudioSettings.saveDisabled(context, true)
+        try {
+            BrowserSettingsPolicy.activate(context)
+            assertTrue(BrowserCarPlayAudioSettings.disabled(context))
+        } finally { BrowserCarPlayAudioSettings.saveDisabled(context, false) }
+    }
     @Test fun openingTheProductMigratesOldChoicesWithoutChangingManualCredentials() {
         val context = RuntimeEnvironment.getApplication()
         AirPlayPersistence.saveRunMode(context, CarPlayRunMode.HEAD_UNIT)
@@ -24,7 +32,8 @@ class BrowserSettingsPolicyTest {
         AirPlayPersistence.saveManualHotspotChannel(context, 149)
         BrowserSettingsPolicy.activate(context)
         assertEquals(CarPlayRunMode.PHONE_BROWSER, AirPlayPersistence.loadRunMode(context))
-        assertEquals(CarBluetoothAudio.ON, AirPlayPersistence.loadCarBluetoothAudio(context))
+        assertEquals(CarBluetoothAudio.OFF, AirPlayPersistence.loadCarBluetoothAudio(context))
+        assertFalse(BrowserCarPlayAudioSettings.disabled(context))
         assertEquals(CarPlayNightMode.SYSTEM, AirPlayPersistence.loadCarPlayNightMode(context))
         assertTrue(SplitScreenSettings.enabled(context))
         assertFalse(AirPlayPersistence.loadLocationReportingEnabled(context))

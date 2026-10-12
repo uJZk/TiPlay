@@ -17,17 +17,17 @@ class ReceiverProtocolTest {
         assertEquals("1.0", config.serverInfo()["protovers"])
         assertEquals(config.features, config.serverInfo()["features"])
         assertEquals(ReceiverCapabilities.txtFeatures(config.features), config.txt["features"])
-        for (bit in listOf(0, 4, 7, 9, 14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 30)) assertTrue(config.features and (1L shl bit) != 0L)
-        for (bit in listOf(1, 2, 3, 5, 6, 8, 10, 11, 12, 13, 23, 26, 32, 33, 34, 40, 41, 42, 61)) {
+        for (bit in listOf(0, 1, 4, 7, 9, 14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 30)) assertTrue(config.features and (1L shl bit) != 0L)
+        for (bit in listOf(2, 3, 5, 6, 8, 10, 11, 12, 13, 23, 26, 32, 33, 34, 40, 41, 42, 61)) {
             assertEquals("Unexpected advertised feature $bit", 0L, config.features and (1L shl bit))
         }
         assertFalse(config.info().containsKey("modes"))
         assertFalse(config.info().containsKey("hidDevices"))
     }
 
-    @Test fun audioCapabilitiesOfferOutputTransportWithoutMicrophoneOrAudibleVolume() {
+    @Test fun audioCapabilitiesOfferMirrorOutputWithoutMicrophoneAndDoNotMuteTheSender() {
         val info = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()).info()
-        assertEquals(-144.0, info["initialVolume"])
+        assertEquals(0.0, info["initialVolume"])
         val formats = info["audioFormats"] as List<*>
         assertEquals(listOf(100L, 101L), formats.map { (it as Map<*, *>)["type"] })
         for (entry in formats) {

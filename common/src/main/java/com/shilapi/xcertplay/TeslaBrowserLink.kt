@@ -9,6 +9,8 @@ import com.shilapi.xcertplay.airplay.AirPlayContact
 import com.shilapi.xcertplay.airplay.AirPlayKnobState
 import com.shilapi.xcertplay.airplay.MediaSink
 import com.shilapi.xcertplay.media.BrowserOnlyMediaSink
+import com.shilapi.xcertplay.media.BrowserAudioMediaSink
+import com.shilapi.xcertplay.web.WebAudioHub
 import com.shilapi.xcertplay.web.BrowserLinkServer
 import com.shilapi.xcertplay.web.BrowserLinkStatus
 import com.shilapi.xcertplay.web.BrowserSize
@@ -102,7 +104,7 @@ internal object TeslaBrowserLink {
     /** The app's server: every IPv4 address, so it answers on the hotspot's own and its extra address alike. */
     val appServers = ServerFactory { hub, callbacks ->
         val port = app?.let(BrowserEndpointSettings::port) ?: PORT
-        val server = BrowserLinkServer(hub, callbacks, "0.0.0.0", port)
+        val server = BrowserLinkServer(hub, callbacks, "0.0.0.0", port, audioHub = audioHub)
         object : Server {
             override fun start() = server.start()
             override fun stop() = server.stop()
@@ -115,6 +117,7 @@ internal object TeslaBrowserLink {
     @Volatile internal var clock: () -> Long = SystemClock::elapsedRealtime
 
     val hub: WebVideoHub by lazy { WebVideoHub(log = ::log) }
+    val audioHub: WebAudioHub by lazy { WebAudioHub() }
 
     private val worker = ScheduledThreadPoolExecutor(1) { Thread(it, "tiplay-browser-link").apply { isDaemon = true } }
         .apply { removeOnCancelPolicy = true }
@@ -124,17 +127,21 @@ internal object TeslaBrowserLink {
     private val host = AtomicReference<Host?>(null)
     private val listeners = CopyOnWriteArraySet<(State) -> Unit>()
     private val taps = Collections.synchronizedMap(WeakHashMap<MediaSink, WebMediaSink>())
+    private val audioTaps = Collections.synchronizedMap(WeakHashMap<MediaSink, BrowserAudioMediaSink>())
     @Volatile private var carPlayDisplayPaused = false
 
     /** AirPlay borrows the canvas; the CarPlay controller and its Wi-Fi/session resources stay alive. */
     fun pauseCarPlayDisplay() = synchronized(taps) {
         if (!carPlayDisplayPaused) CarPlayBackgroundSession.snapshot()?.controller?.sendTouch(emptyList())
         carPlayDisplayPaused = true
+        audioTaps.values.forEach { it.pauseAudio() }
         taps.values.forEach { it.pauseDisplay() }
     }
 
     fun resumeCarPlayDisplay() = synchronized(taps) {
         carPlayDisplayPaused = false
+        audioHub.enabled = app?.let { !BrowserCarPlayAudioSettings.disabled(it) } ?: true
+        CarPlayBackgroundSession.snapshot()?.sink?.let { audioTaps[it]?.resumeAudio() }
         CarPlayBackgroundSession.snapshot()?.sink?.let { taps[it]?.resumeDisplay() }
     }
     private val statsLock = Any()
@@ -216,11 +223,15 @@ internal object TeslaBrowserLink {
             if (carPlayDisplayPaused) web.pauseDisplay()
             taps[sink] = web
         }
-        return BrowserOnlyMediaSink(sink, web)
+        if (!carPlayDisplayPaused) audioHub.enabled = app?.let { !BrowserCarPlayAudioSettings.disabled(it) } ?: true
+        val audio = BrowserAudioMediaSink(web, audioHub, initiallyPaused = carPlayDisplayPaused)
+        audioTaps.put(sink, audio)?.close()
+        return BrowserOnlyMediaSink(sink, audio)
     }
 
     /** Ends the browser's stream of [sink]'s session, which is being retired; the next session starts a new one. */
     fun releaseTap(sink: MediaSink) {
+        audioTaps.remove(sink)?.close()
         taps.remove(sink)?.close()
     }
 
@@ -535,6 +546,8 @@ internal object TeslaBrowserLink {
         synchronized(statsLock) { lastStatsLog = null }
         host.set(null)
         listeners.clear()
+        synchronized(audioTaps) { audioTaps.values.forEach { it.close() }; audioTaps.clear() }
+        audioHub.enabled = true
         taps.clear()
         carPlayDisplayPaused = false
         app = null

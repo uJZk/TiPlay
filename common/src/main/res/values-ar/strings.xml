@@ -614,7 +614,7 @@
     <string name="side_panel_show">اللوحة الجانبية</string>
     <string name="side_panel_full_screen">⤢ ملء الشاشة</string>
     <string name="main_buffered_audio">موسيقى مخزّنة مسبقًا (تجريبي)</string>
-    <string name="main_buffered_audio_description">التطبيقات التي تدعم ذلك، مثل Apple Music، ترسل الموسيقى مسبقًا لمدة دقيقتين تقريبًا، فلا تُسمع الانقطاعات القصيرة في Wi-Fi. تعمل التطبيقات الأخرى كما كانت. يعيد توصيل CarPlay.</string>
+    <string name="main_buffered_audio_description">استقبال الموسيقى المخزنة مؤقتًا من تطبيقات مثل Apple Music، مع إبقاء مخزن التشغيل في متصفح السيارة. تستخدم التطبيقات الأخرى البث المعتاد. تجريبي؛ يُعاد توصيل CarPlay بعد التغيير.</string>
     <string name="call_echo_cancellation">إلغاء صدى المكالمات (تجريبي)</string>
     <string name="call_echo_cancellation_description">يحاول تقليل صدى السماعات المرسل إلى الطرف الآخر أثناء مكالمات CarPlay. تعتمد النتيجة على وحدة السيارة. يُطبَّق عند الاتصال التالي بـ CarPlay.</string>
     <string name="call_voice_filter">أصوات مكالمات أوضح (تجريبي)</string>
@@ -641,4 +641,6 @@
     <string name="settings_airplay_listening">بانتظار iPhone · TiPlay</string>
     <string name="settings_airplay_disable">تعطيل AirPlay</string>
     <string name="settings_airplay_disable_description">يسري فورًا. AirPlay مفعّل افتراضيًا. يوقف هذا الخيار AirPlay ويعيد عرض CarPlay؛ إيقاف الخيار يعيد تشغيل المستقبل.</string>
+    <string name="settings_disable_carplay_audio">تعطيل صوت CarPlay</string>
+    <string name="settings_disable_carplay_audio_description">إبقاء الموسيقى والملاحة والمكالمات وSiri على اتصال Bluetooth بين iPhone والسيارة. وصّل iPhone ببلوتوث السيارة أولاً. يُعاد توصيل CarPlay بعد التغيير.</string>
 </resources>

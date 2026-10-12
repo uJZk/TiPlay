@@ -2,13 +2,14 @@
 
 TiPlay runs on an Android phone and shows CarPlay in the car browser. The iPhone uses wireless CarPlay or USB;
 the browser reaches the Android device through its hotspot or an existing Wi-Fi network. These are separate choices:
-USB does not remove the browser's network configuration. Audio stays on the iPhone-to-car Bluetooth connection.
+USB does not remove the browser's network configuration. CarPlay audio plays through the browser by default;
+advanced settings can disable CarPlay audio and leave all sound and calls on the iPhone-to-car Bluetooth connection.
 
 ## Hosting and playback
 
 The hosted page needs HTTPS because WebCodecs requires a secure context. The phone relays the iPhone's encoded video
 without re-encoding it and receives browser touch input. The app does not bundle or serve the browser page. It
-provides `/hello`, `/video`, `/control` and `/bye`; GET `/`, `/play` and `/play/*` return `404`. Plain HTTP at a LAN
+provides `/hello`, `/video`, `/audio`, `/microphone`, `/control` and `/bye`; GET `/`, `/play` and `/play/*` return `404`. Plain HTTP at a LAN
 address cannot provide the secure context needed for playback; localhost is a browser exception. Do not restore a video/MSE
 fallback: vehicle browsers can pause that path while driving.
 
@@ -16,6 +17,23 @@ Playback requires WebCodecs and support for the negotiated codec. The remaining 
 thread for decoding and canvas drawing, depending on browser capabilities; there is no HTML video or MSE path.
 These capability checks do not establish support for a particular vehicle or browser version. In the phone profile,
 encoded video bypasses the Android decoder and local video surface; the phone retains its native settings and status UI.
+
+## Audio and microphone
+
+CarPlay negotiates media, navigation, telephone and speech streams independently, but these format declarations
+do not select an external Bluetooth destination. TiPlay offers all CarPlay audio, or disables its output and input
+capabilities together. It does not offer automatic music/navigation-versus-call/Siri Bluetooth routing; the
+[upstream discussion](https://github.com/shihabal3amri/DiPlay/issues/697#issuecomment-6127683452) describes the same protocol limitation.
+
+The browser uses an AudioWorklet for playback and capture. A driver gesture enables sound; microphone permission
+is requested only while the iPhone requests microphone input. Capture stops when that demand or the page session
+ends. A vehicle browser without `getUserMedia` cannot provide call or Siri microphone input. Permission granted
+in a desktop or phone browser does not establish support in the car browser.
+
+The phone decodes audio to PCM without playing it locally. Audio has its own authenticated HTTP stream so it
+cannot block video writes. Live queues are bounded and discard stale audio; buffered music uses backpressure
+instead of dropping ordered frames. The browser holds the playback buffer. Microphone uploads are short,
+serialized PCM requests; browser echo cancellation is used without a second Android capture path.
 
 The App's page address and the deployment's public base URL must agree. Their authoritative sources are
 [TeslaBrowserPageLinks](../common/src/main/java/com/shilapi/xcertplay/TeslaBrowserPageLinks.kt) and

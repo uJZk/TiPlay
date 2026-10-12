@@ -20,14 +20,16 @@ With the car parked, record the exact APK/build, Android phone/OS, iPhone/iOS, c
 iPhone transport (wireless or USB), browser network and any untested setup.
 
 - Check picture, letterboxed touch mapping and music with a fresh connection for each supported transport/network
-  setup. Audio stays on the iPhone-to-car Bluetooth connection. Disconnect/reconnect and repeat with the phone screen off.
+  setup. Enable browser sound, then check navigation ducking, phone/Siri audio and microphone permission. Separately
+  enable **Disable CarPlay audio** and confirm the iPhone uses the car's Bluetooth for all sound and calls.
+  Disconnect/reconnect and repeat with the phone screen off.
 - In **Main settings**, change the selected iPhone, connection mode or network fields without applying. Opening
   **Advanced settings** and returning must preserve that connection draft. A running session must continue until
   **Save and reconnect** is selected; an unchanged fresh connection uses **Connect phone**. Confirm an invalid draft shows an error.
-- In **Advanced settings**, change frame rate, HEVC or driving side. These choices save without immediately dropping
-  the running session. The top action becomes **Return and apply**; selecting it applies changed choices and reconnects
-  a running session. Revert the choices and confirm the action returns to **Back**. Check permission rows after returning
-  from Android settings and export through **Save diagnostic report**.
+- In **Advanced settings**, change frame rate, HEVC, driving side or CarPlay audio. Valid changes save immediately;
+  changes needing negotiation reconnect a running session while keeping the settings page open. Idle changes must
+  not start a connection. Buffered music is off by default; verify Apple Music pause/resume and track changes when
+  enabled. Check permission rows after returning from Android settings and export through **Save diagnostic report**.
 - Pair using the copied link, then confirm the code fragment disappears from the address bar. Reopen the saved page,
   test a new browser taking over and return through the CarPlay TiPlay icon to the portal. The portal Connect button,
   labeled **Return to CarPlay** while active, must resume the same connection; **Disconnect** must stop retries.

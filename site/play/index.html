@@ -11,6 +11,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="reconnect.css">
+<link rel="stylesheet" href="airplay-controls.css">
 <script type="module" src="app.js"></script>
 </head>
 <body>
@@ -51,6 +52,11 @@
 <section id="stage" hidden>
 <canvas id="screen"></canvas>
 <div id="touch" aria-hidden="true"></div>
+<div id="audio-controls">
+<button id="audio-enable" type="button" hidden></button>
+<button id="microphone-enable" type="button" hidden></button>
+<p id="audio-message" role="status"></p>
+</div>
 <output id="stats" aria-label="Debug: codec, actual frames drawn in the last second, middle 90% signed presentation offset, slowest 5% presentation offset" hidden></output>
 </section>
 </main>

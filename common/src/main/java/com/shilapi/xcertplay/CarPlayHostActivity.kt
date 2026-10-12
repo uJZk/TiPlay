@@ -3623,14 +3623,14 @@ class CarPlayHostActivity : ComponentActivity() {
             cluster = null,
             rightHandDrive = rightHandDrive,
             hevc = hevcEnabled,
-            microphone = false,
+            microphone = !BrowserCarPlayAudioSettings.disabled(this),
             manufacturer = normalizedManufacturer(),
             model = normalizedModel(),
             oemLabel = CarButtonDefaults.label(oemLabel, phoneBrowser = true),
             icons = listOf(loadAirPlayIcon()),
             videoInCar = false,
-            mainBufferedAudio = false,
-            audioViaCarBluetooth = true,
+            mainBufferedAudio = AirPlayPersistence.loadMainBufferedAudio(this) && !BrowserCarPlayAudioSettings.disabled(this),
+            audioViaCarBluetooth = BrowserCarPlayAudioSettings.disabled(this),
         )
     }
 
@@ -3837,7 +3837,7 @@ class CarPlayHostActivity : ComponentActivity() {
         CarPlayMediaEngine(
             // Phone + browser mode: the main screen also goes to the car's browser, untouched.
             sink = TeslaBrowserLink.tee(sink, phoneBrowser = !headUnitIntegrations(), sink.videoWidth, sink.videoHeight, fps),
-            microphoneEnabled = headUnitIntegrations() && microphoneAvailable && receivesAudio,
+            microphoneEnabled = receivesAudio && (!headUnitIntegrations() || microphoneAvailable),
             audioCaptureDirectory = if (receivesAudio) audioCaptureDirectory() else null,
         )
 

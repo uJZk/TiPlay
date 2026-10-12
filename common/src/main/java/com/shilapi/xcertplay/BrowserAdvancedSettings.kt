@@ -22,6 +22,7 @@ internal object BrowserAdvancedSettings {
         toggle: (LinearLayout, String, String, Boolean, (Boolean) -> Unit) -> Unit,
         reconnectNeeded: () -> Unit,
     ) {
+        BrowserCarPlayAudioSettings.addControls(context, card, toggle, reconnectNeeded)
         val rates = (AirPlayDisplaySettings.MIN_FPS..AirPlayDisplaySettings.MAX_FPS
             step AirPlayDisplaySettings.FPS_STEP).toList()
         choice(card, context.getString(R.string.frame_rate), rates.map { "$it fps" },

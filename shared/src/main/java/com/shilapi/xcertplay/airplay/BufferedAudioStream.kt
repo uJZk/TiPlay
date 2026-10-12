@@ -8,6 +8,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.InetAddress
 import java.util.ArrayDeque
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -47,7 +48,12 @@ internal class BufferedAudioStream(
     private val fed = ArrayDeque<Frame>()
     // Includes queued and not-yet-audible fed frames, bounded by both bytes and frame count.
     private var queuedBytes = 0L
-    private val maxBufferedFrames = (format.sampleRate * MAX_BUFFER_MILLIS / (SAMPLES_PER_FRAME * 1000)).toInt()
+    private val browserPolicy = sink as? BrowserBufferedAudioPolicy
+    private val bufferMillis = browserPolicy?.bufferedRelayMillis ?: MAX_BUFFER_MILLIS
+    val audioBufferBytes: Int = browserPolicy?.bufferedRelayBytes ?: AUDIO_BUFFER_BYTES
+    private val maxBufferedFrames = (format.sampleRate * bufferMillis / (SAMPLES_PER_FRAME * 1000)).toInt()
+    private val leadMillis = if (browserPolicy != null) 2_000L else LEAD_MILLIS
+    private var nextReceiveNs = 0L
 
     // Playback state, guarded by [lock].
     private var rate = 0
@@ -106,7 +112,7 @@ internal class BufferedAudioStream(
                 synchronized(lock) {
                     while (!closed.get() &&
                         flushUntil?.let { before(frame.timestamp, it) } != true &&
-                        (queuedBytes + frame.rtp.size > AUDIO_BUFFER_BYTES || queue.size + fed.size >= maxBufferedFrames)) {
+                        (queuedBytes + frame.rtp.size > audioBufferBytes || queue.size + fed.size >= maxBufferedFrames)) {
                         // TCP backpressure preserves music rather than dropping an arbitrary part
                         // of a track. Close, playback and flush all wake the bounded receiver.
                         lock.wait()
@@ -116,6 +122,15 @@ internal class BufferedAudioStream(
                     queue.addLast(frame)
                     queuedBytes += frame.rtp.size
                     lock.notifyAll()
+                }
+                if (browserPolicy != null) {
+                    // At most four times playback speed, including the initial refill. Never race
+                    // TCP on the video channel. The bounded relay applies additional backpressure.
+                    val interval = SAMPLES_PER_FRAME * 1_000_000_000L / (format.sampleRate * 4L)
+                    val nowNs = nanoTime()
+                    nextReceiveNs = maxOf(nowNs, nextReceiveNs) + interval
+                    val delay = nextReceiveNs - nowNs
+                    if (delay > 0) TimeUnit.NANOSECONDS.sleep(delay)
                 }
             }
         } catch (error: Exception) {
@@ -155,7 +170,7 @@ internal class BufferedAudioStream(
                 synchronized(lock) {
                     if (closed.get()) return
                     retireFedLocked()
-                    if (rate == 0 || queue.isEmpty() || leadMillisLocked() >= LEAD_MILLIS) {
+                    if (rate == 0 || queue.isEmpty() || leadMillisLocked() >= leadMillis) {
                         lock.wait(FEED_POLL_MILLIS)
                     } else {
                         queue.pollFirst()?.also { frame ->

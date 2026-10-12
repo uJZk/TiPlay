@@ -39,6 +39,7 @@ class DiPlaySessionService : Service() {
             // Car Bluetooth sound opens no microphone: Siri and calls use the car's microphone over the iPhone's Bluetooth.
             // It applies only in phone + browser mode; a head unit keeps its microphone.
             if (Build.VERSION.SDK_INT >= 30 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
+                !AirPlayPersistence.isPhoneBrowserMode(this, CarPlayBackgroundSession.snapshot()?.controller) &&
                 CarBluetoothAudio.effective(this, CarPlayBackgroundSession.snapshot()?.controller) == CarBluetoothAudio.OFF) {
                 types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             }

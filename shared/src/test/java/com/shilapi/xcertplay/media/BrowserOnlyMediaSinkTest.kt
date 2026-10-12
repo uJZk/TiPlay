@@ -51,7 +51,7 @@ class BrowserOnlyMediaSinkTest {
             "config", "frame", "frame:7:9", "iap", "android:false", "browser:false"), calls)
     }
 
-    @Test fun audioAndMicrophoneNeverReachAndroidOrBrowser() {
+    @Test fun audioAndMicrophoneReachOnlyTheBrowser() {
         val calls = mutableListOf<String>()
         val android = object : MediaSink {
             override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) { calls += "start" }
@@ -61,11 +61,11 @@ class BrowserOnlyMediaSinkTest {
             override fun onMicrophoneStopped(id: AudioStreamId) { calls += "mic-stop" }
         }
         val browser = object : MediaSink {
-            override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) = error("Browser audio")
-            override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) = error("Browser audio")
-            override fun onAudioStopped(id: AudioStreamId) = error("Browser audio")
-            override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) = error("Browser microphone")
-            override fun onMicrophoneStopped(id: AudioStreamId) = error("Browser microphone")
+            override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) { calls += "browser-start" }
+            override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) { calls += "browser-rtp" }
+            override fun onAudioStopped(id: AudioStreamId) { calls += "browser-stop" }
+            override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) { calls += "browser-mic-start" }
+            override fun onMicrophoneStopped(id: AudioStreamId) { calls += "browser-mic-stop" }
         }
         val sink = BrowserOnlyMediaSink(android, browser)
         val id = AudioStreamId(100, "media")
@@ -76,6 +76,6 @@ class BrowserOnlyMediaSinkTest {
         sink.onAudioStopped(id)
         sink.onMicrophoneStarted(id, microphone)
         sink.onMicrophoneStopped(id)
-        assertEquals(emptyList<String>(), calls)
+        assertEquals(listOf("browser-start", "browser-rtp", "browser-stop", "browser-mic-start", "browser-mic-stop"), calls)
     }
 }

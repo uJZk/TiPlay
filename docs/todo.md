@@ -11,16 +11,14 @@
 ## 独立图片／视频 AirPlay
 
 - [ ] 验证 iPhone 应用的 iOS AirPlay 入口发现和首次投放：Bilibili／YouTube 未发现接收器，相册首次投放转圈、再次选择才可输出。HTTP 视频解码到网页的验证不代表这些应用的协议入口已兼容。
-- [ ] 补齐纯图片、幻灯片及缓存显示的完整协议与浏览器呈现；固定 UxPlay 只有能力声明，没有对应处理入口，不能直接搬用其功能位。相册使用类型 110 不代表纯图片协议已实现。
+- [ ] 验证 `/photo` JPEG/PNG、`cacheOnly` / `displayCached` 的实机兼容性；补齐幻灯片调度。相册使用类型 110 不代表客户端采用独立图片协议。
 - [ ] 实现独立视频播放队列及队列控制；固定 UxPlay 的 HLS 播放列表缓存与恢复不能作为队列实现。完成前不声明 bit 33。
 
-## 普通 AirPlay 音频验证与网页播放
+## AirPlay 镜像伴随音频与视频验证
 
-- [ ] 实机验证类型 96 的格式选择、UDP 数据／控制接收与断连清理；当前阶段在安卓端立即丢弃音频，契约见 [AIRPLAY.md](AIRPLAY.md)。
-- [ ] 实现网页音频。接收后丢弃不代表已能解密、解码或播放；不要额外声明未实现的服务或控制路径。
-- [ ] 音频播放接入时移植 UxPlay 的 UDP 序号、丢包检测与类型 85／86 重传恢复，再开启 bit 11；当前立即丢弃的数据通道不请求重传。
-- [ ] 接入 AirPlay 2 缓冲音频的完整会话：参考 [Shairport Sync](https://github.com/mikebrady/shairport-sync) 的现代配对、加密控制及事件通道、`shk` 会话密钥、类型 103 的 TCP 长度分帧与控制通道、时间锚点和 `FLUSHBUFFERED`。与 [openairplay/airplay2-receiver](https://github.com/openairplay/airplay2-receiver) 对照协议，但其音频核心未找到明确复用许可，不直接复制。单独增加 TCP 接收器或普通音频抖动缓冲不构成 bit 40；需核实关闭 PTP 时的可用同步方案，完成前保持关闭。
-- [ ] 如需要展示曲目、封面和播放进度，在现有有界元数据接收上接入媒体状态与浏览器展示；当前解析后丢弃，不保存内容。
+- [ ] 实机验证类型 96 的 AAC-ELD 格式选择、UDP 接收、浏览器声画同步与断连清理，以及 URL 视频 PCM 声轨播放，契约见 [AIRPLAY.md](AIRPLAY.md)。
+- [ ] 将镜像 RTP/NTP 时间锚点接入音频呈现时间；当前只提供有界实时接收与乱序恢复，不保证精确声画同步。
+- [ ] 如需要 UDP 类型 85／86 重传恢复，先补齐接收与序号验证，再开启 bit 11。
 - [ ] 实机验证普通镜像 HEVC 的配置封装、暂停／恢复、横竖屏变化和浏览器解码兼容性；关闭 HEVC 后必须恢复 H.264 声明。
 
 ## AirPlay 轻量信任设备机制（待实现，2026-10-12）
@@ -36,63 +34,11 @@
 
 下一步先验证两条协议路径的设备身份与配对行为，再实现授权状态、信任管理和画布接管保护；补充首次允许／拒绝、超时、记忆、撤销、并发抢占及禁用开关的回归与设备验收。
 
-## 特斯拉浏览器 CarPlay：声音走车辆蓝牙
+## 车载浏览器音频实车验证
 
-背景：安卓端运行 TiPlay 并开热点，特斯拉连接热点后用浏览器显示 CarPlay。
-目标是安卓端只负责视频和触摸，音乐、导航、Siri、电话和麦克风走 iPhone 与特斯拉之间的蓝牙；完整音频路线仍待实车验证。
-
-### 依据：Carlinkit 固件的 `BtAudio` 模式
-
-静态分析对象：[ludwig-v/wireless-carplay-dongle-reverse-engineering](https://github.com/ludwig-v/wireless-carplay-dongle-reverse-engineering)
-仓库中已解密的 `Firmware/U2AW/_AUTOKIT/2024.01.10.0953/Decrypted/AppleCarPlay`（ARM Thumb）。
-
-- `riddle.conf` 的 `BtAudio`（0/1）是"蓝牙音频"开关，见该仓库的 `Updater-App.md`。
-- `0x2cfe8`：读取配置 `BtAudio`，判断是否等于 1。
-- 整个二进制只有一处调用：`0x1ae18`，位于生成 `audioFormats` 的属性函数 `0x1adec` 的开头。
-  - `BtAudio == 1`：跳到 `0x1b4d0`，返回空且不报错，即 `/info` 中**没有 `audioFormats`**。
-  - `BtAudio == 0`：照常生成类型 100/101 的各类音频流（`compatibility`、`default`、`alert` 等）。
-- `audioLatencies`、`features`、`bluetoothIDs`、`displays` 不受影响。
-- `ARMiPhoneIAP2`、`bluetoothDaemon`、`hfpd` 中只在通用配置键表里出现 `BtAudio`，没有找到按名称读取它的代码。
-  如果它们按表格序号读取配置，静态搜索查不出来。
-
-局限：
-- 只是静态分析，没有在真机上验证。
-- 2025 年 A15W 固件在仓库里没有解密版，无法确认它的逻辑相同。
-
-### TiPlay 现状
-
-`AirPlayConfig.audioViaCarBluetooth` 已实现 Carlinkit 风格路线，`disableAudioOutput` 保留为备选变体。当前 `BrowserSettingsPolicy` 在进入应用时选择手机 + 浏览器、标准车辆蓝牙音频，并隐藏音频选择界面；下面已完成项记录此前选择界面的实现，不代表当前可见设置。备选变体和 Carlinkit 的差别：
-
-| | Carlinkit `BtAudio=1` | TiPlay `disableAudioOutput` |
-|---|---|---|
-| `audioFormats` | 去掉 | 去掉 |
-| `audioLatencies` | 保留 | 去掉 |
-| `features` 中的音频位（`CARPLAY_AUDIO_FEATURES`） | 保留 | 清除（Bonjour TXT 和 `/info` 都清除） |
-| `bluetoothIDs` | 保留（转接盒自身地址） | 保留（安卓端地址） |
-
-### 待办
-
-- [x] 在 `AirPlayConfig` 新增字段 `audioViaCarBluetooth`，在 `AirPlayInfoPlist.build` 中**只去掉 `audioFormats`**，`audioLatencies` 和 `features` 保持不变，与 Carlinkit 一致。
-- [x] 保留 `disableAudioOutput` 作为备选变体，实测两者哪个让 iPhone 稳定地把声音交给车辆蓝牙。
-  此前设置里选"开启（备选方式）"即为该变体；当前界面隐藏此选择，两者的对比放在下面的真机验证里。
-- [x] 该模式下不启动音频接收、麦克风上行和回声消除，也不请求音频焦点（`AndroidMediaSink`、`MicrophoneUplink`）。
-  iPhone 仍然打开的音频流会被拒绝（不放进 SETUP 响应）。
-- [ ] 如果真机上 iPhone 在音频 SETUP 被拒绝后断开会话：改为接受但丢弃（绑定端口，不解密、不播放）。
-- [x] 按 `AGENTS.md` 加设置项：
-  - 放进 Audio 分类。
-  - 下次连接时生效，保存后调用 `markReconnectNeeded()`，描述里说明需要重新连接。
-  - 所有语言补齐 `settings_*` 文案。
-  - 更新 `AdaptiveSettingsUiTest.settingsLiveWhereDriversLookForThem`。
-- [x] 单元测试：开启该模式时 `/info` 没有 `audioFormats`，但有 `audioLatencies`，且 `features` 不变。
-- [x] 诊断日志记录 iPhone 实际打开的音频流（期望为空）。
-  报告中的 `airplay /info audioRoute=…`、`airplay audio SETUP …` 和 `airplay audio summary …` 行。
-- [ ] 真机验证（前提：iPhone 用蓝牙连特斯拉并设为主电话，同时以无线 CarPlay 连接 TiPlay）：
-  - [ ] 对比"开启"和"开启（备选方式）"，记录哪个让 iPhone 稳定地把声音交给车辆蓝牙。
-  - [ ] 音乐和导航从特斯拉的蓝牙媒体音频出声。
-  - [ ] Siri 用特斯拉麦克风收音，回答从车上出声。
-  - [ ] 来电和去电走特斯拉免提，CarPlay 通话界面正常。
-  - [ ] 记录特斯拉软件版本和 iOS 版本。
-- [ ] 跑 `AGENTS.md` 中的 CI 命令。
+- [ ] 在真实车载浏览器验证麦克风权限、扬声器播放、电话/Siri 往返时延、回声消除与连接恢复；ADB 安卓测试不能替代车辆浏览器与 iPhone 的路由验证。
+- [ ] 验证高级设置“禁用 CarPlay 音频”后所有声音是否稳定交给 iPhone 与车辆之间的蓝牙；重新启用后验证媒体、导航、电话/Siri 与麦克风均由浏览器承载。完整音频合同见 [TESLA_BROWSER.md](TESLA_BROWSER.md)。
+- [ ] 验证网页端的 CarPlay 缓冲音乐在网络波动、暂停、跳转和长时间播放下的背压与连续性，设计依据见 [BUFFERED_AUDIO.md](BUFFERED_AUDIO.md)。
 
 ## 特斯拉浏览器 CarPlay：其余待定事项
 

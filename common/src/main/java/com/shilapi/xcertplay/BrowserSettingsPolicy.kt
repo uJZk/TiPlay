@@ -14,7 +14,6 @@ internal object BrowserSettingsPolicy {
             AirPlayPersistence.saveWirelessEnabled(context, DiPlayPreferences.autoConnectWireless(context))
             DiPlayPreferences.saveDefaultConnectionMode(context, DefaultConnectionMode.LAST_USED)
         }
-        AirPlayPersistence.saveCarBluetoothAudio(context, CarBluetoothAudio.ON)
         AirPlayPersistence.saveCarPlayNightMode(context, CarPlayNightMode.SYSTEM)
         AirPlayPersistence.saveLocationReportingEnabled(context, false)
         SplitScreenSettings.setEnabled(context, true)

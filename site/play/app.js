@@ -16,6 +16,8 @@ import { createReconnectOverlay } from './reconnect.js';
 import { pumpChunkStream } from './transport.js';
 import { formatDebugFps } from './fps-window.js';
 import { sampleClock } from './clock-sync.js';
+import { createBrowserAudio } from './audio.js';
+import { createAirPlayControls } from './airplay-controls.js';
 
 const STRINGS = {
   en: {
@@ -138,6 +140,19 @@ let config = null, live = false, status = null, unsupported = null, videoStats =
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 const appearance = window.matchMedia('(prefers-color-scheme: dark)');
 const reportAppearance = followAppearance(appearance, () => outbox);
+const browserAudio = createBrowserAudio({
+  fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }),
+  onState(state) {
+    $('audio-enable').hidden = !active || !state.supported || !state.enabled || state.sound;
+    $('microphone-enable').hidden = !active || !state.sound || !state.micRequested || state.microphone;
+    $('audio-message').textContent = state.error ? (lang === 'zh' ? '声音或麦克风不可用，请检查浏览器权限或重新连接。' : 'Sound or microphone unavailable. Check browser permissions or reconnect.') : '';
+  },
+});
+$('audio-enable').textContent = lang === 'zh' ? '启用车机声音' : 'Enable car sound';
+$('microphone-enable').textContent = lang === 'zh' ? '启用车机麦克风' : 'Enable car microphone';
+$('audio-enable').addEventListener('click', () => browserAudio.activate());
+$('microphone-enable').addEventListener('click', () => browserAudio.activateMicrophone());
+const airplayControls = createAirPlayControls($('stage'), event => outbox?.push(event), lang);
 let movePending = false, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
 let statsVisible = false;
 try { statsVisible = localStorage.getItem(STATS_KEY) === '1'; } catch (_) {}
@@ -312,6 +327,7 @@ function start() {
   reconnects = 0;
   lastError = null;
   status = null;
+  airplayControls.update(null);
   live = false;
   lastViewport = '';
   fitRequestedAt = 0;
@@ -332,6 +348,7 @@ function stop(key = null, ...args) {
   cancelViewport();
   notice = key ? { key, args } : null;
   active = false;
+  browserAudio.stop();
   phase = 'ready';
   streamId++;
   clearTimeout(retryTimer);
@@ -393,6 +410,7 @@ async function connectVideo() {
     }
     if (!response.ok) throw await httpError(response);
     sink.open(id, response.body, abort.signal);
+    browserAudio.attach(abort.signal, hello);
     if (Number.isFinite(hello.clockMs)) {
       let busy = false;
       const clockTimer = setInterval(async () => {
@@ -483,6 +501,8 @@ function migrateEndpoint(value) {
 }
 
 function applyStatus(next) {
+  browserAudio.status(next);
+  airplayControls.update(next.airplay);
   if (next.endpoint) migrateEndpoint(next.endpoint);
   if (Number.isSafeInteger(next.portalRevision)) {
     if (portalRevision !== null && next.portalRevision !== portalRevision) showPortal();
@@ -561,6 +581,7 @@ function pageStats() {
     themeDark: appearance.matches,
     link: { path: videoPath.path, fallback: videoPath.reason, codecs: probedCodecs, phase, attempt, reconnects, live, unsupported },
     video: videoStats,
+    audio: browserAudio.stats(),
     control: outbox?.stats() ?? null,
   };
 }
@@ -723,6 +744,7 @@ window.addEventListener('pagehide', event => {
   if (active) sendBye();
   stop();
   if (!event.persisted) {
+    browserAudio.dispose();
     if (sink) sink.dispose();
     else pathReady.then(() => sink?.dispose());
   }

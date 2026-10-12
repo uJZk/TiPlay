@@ -17,6 +17,8 @@ import androidx.media3.common.VideoSize
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.DecoderCounters
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -28,6 +30,7 @@ import com.shilapi.xcertplay.receiver.ReceiverPlay
 import com.shilapi.xcertplay.receiver.ReceiverPlayback
 import com.shilapi.xcertplay.receiver.ReceiverResource
 import com.shilapi.xcertplay.web.WebMediaSink
+import com.shilapi.xcertplay.web.AirPlayBrowserPlayback
 import com.shilapi.xcertplay.media.MediaCodecSupport
 import java.io.Closeable
 import java.util.concurrent.CountDownLatch
@@ -42,10 +45,13 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
     private val diagnostics = AirPlayVideoDiagnostics { Log.i("tiplay-airplay", it) }
     private var player: ExoPlayer? = null
     private var video: EncodedVideo? = null
+    private var photoFrames: AirPlayPhotoFrames? = null
     private var generation = 0L
     private var closed = false
     private var requestedPlaying = true
     private var requestedSeek: Double? = null
+    private var browserControls: Closeable? = null
+    @Volatile private var seekable = false
     @Volatile var state = ReceiverPlayback()
         private set
 
@@ -54,6 +60,18 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
         stopNow()
         diagnostics.stage(AirPlayVideoDiagnostics.Stage.START)
         val token = generation
+        browserControls = AirPlayBrowserPlayback.register(state = {
+            val playback = state
+            AirPlayBrowserPlayback.State(playback.duration, playback.position, playback.rate != 0.0,
+                playback.ready, playback.buffering, seekable)
+        }, control = { action, value -> main.post {
+            if (!closed && generation == token) when (action) {
+                "play" -> { requestedPlaying = true; player?.playWhenReady = true }
+                "pause" -> { requestedPlaying = false; player?.playWhenReady = false }
+                "seek" -> { requestedSeek = value; player?.seekTo((requireNotNull(value) * 1000).toLong()) }
+                "stop" -> { stopNow(); stateChanged("stopped") }
+            }
+        } })
         try {
             video = EncodedVideo(diagnostics, ready = { surface -> main.post readyPost@ {
                 if (closed || generation != token) return@readyPost
@@ -65,13 +83,36 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
         } catch (error: Exception) { diagnostics.failure(AirPlayVideoDiagnostics.Stage.START, error); fail() }
     }
 
+    fun photo(bytes: ByteArray) = main.post {
+        if (closed) return@post
+        stopNow()
+        val token = generation
+        browserControls = AirPlayBrowserPlayback.register(state = {
+            AirPlayBrowserPlayback.State(0.0, 0.0, false, true, false, false, "photo")
+        }, control = { action, _ -> if (action == "stop") main.post {
+            if (!closed && generation == token) { stopNow(); stateChanged("stopped") }
+        } })
+        val failure: (Exception) -> Unit = { error -> main.post {
+            if (!closed && generation == token) { diagnostics.failure(AirPlayVideoDiagnostics.Stage.PREPARE, error); fail() }
+        } }
+        try {
+            video = EncodedVideo(diagnostics, ready = { surface -> main.post {
+                if (!closed && generation == token) photoFrames = AirPlayPhotoFrames(surface, bytes, failure)
+            } }, failed = failure)
+        } catch (error: Exception) { failure(error) }
+    }
+
     private fun startPlayer(item: ReceiverPlay, token: Long, surface: android.view.Surface) {
         val next = video ?: return
         val http = DefaultHttpDataSource.Factory().setConnectTimeoutMs(5000).setReadTimeoutMs(10_000)
         val data = DataSource.Factory { AirPlayVideoDataSource(http.createDataSource(), diagnostics, resource) }
-        val exo = ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(data)).build()
+        val renderers = object : DefaultRenderersFactory(context) {
+            override fun buildAudioSink(context: Context, enableFloatOutput: Boolean,
+                                        enableAudioTrackPlaybackParams: Boolean): AudioSink =
+                AirPlayBrowserAudioSink(TeslaBrowserLink.audioHub)
+        }
+        val exo = ExoPlayer.Builder(context, renderers).setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(data)).build()
         player = exo
-        exo.volume = 0f // browser product does not take over the car's audio route
         exo.setVideoSurface(surface)
         exo.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT)
         exo.addAnalyticsListener(object : AnalyticsListener {
@@ -144,6 +185,7 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
 
     private fun update() {
         val current = player ?: return
+        seekable = current.isCurrentMediaItemSeekable && current.duration > 0
         state = ReceiverPlayback(
             duration = (current.duration.coerceAtLeast(0) / 1000.0),
             position = current.currentPosition.coerceAtLeast(0) / 1000.0,
@@ -164,8 +206,11 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
     fun stop() = main.post { stopNow() }
     private fun fail() { stopNow(); stateChanged("failed") }
     private fun stopNow() {
+        browserControls?.close(); browserControls = null
+        seekable = false
         if (player != null || video != null) diagnostics.stage(AirPlayVideoDiagnostics.Stage.STOP)
         generation++
+        photoFrames?.close(); photoFrames = null
         player?.release(); player = null
         video?.close(); video = null
         requestedPlaying = true; requestedSeek = null

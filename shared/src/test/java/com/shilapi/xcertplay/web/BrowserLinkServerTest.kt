@@ -67,7 +67,8 @@ class BrowserLinkServerTest {
         override fun log(message: String) { logs += message }
     }
 
-    private val server = BrowserLinkServer(hub, callbacks, "127.0.0.1", 0)
+    private val audioHub = WebAudioHub()
+    private val server = BrowserLinkServer(hub, callbacks, "127.0.0.1", 0, audioHub = audioHub)
     private var port = 0
 
     private val avcc = byteArrayOf(1, 0x64, 0x00, 0x28, -1, -31, 0, 4, 0x67, 0x64, 0x00, 0x28, 1, 0, 2, 0x68, -18)
@@ -151,6 +152,34 @@ class BrowserLinkServerTest {
         post("/control", """{"c":"$c","s":"$s","q":$q,"e":[$events]}""")
 
     private fun videoPath(s: String = session, c: String = code) = "/video?c=$c&s=$s&codecs=avc1%2Chvc1"
+
+    @Test fun audioIsPairedAndByeClosesItsConnection() {
+        assertEquals(401, get("/audio?c=wrong&s=$session").status)
+        Client().use { client ->
+            client.get("/audio?c=$code&s=$session")
+            assertEquals(200, client.response().status)
+            audioHub.begin(owner)
+            repeat(5) { client.bytes(20) } // source switch resets every semantic stream
+            audioHub.publish(owner, 0, 48000, 2, byteArrayOf(1, 2, 3, 4))
+            val packet = client.bytes(24)
+            assertArrayEquals(byteArrayOf(1, 2, 3, 4), packet.copyOfRange(20, 24))
+            assertEquals(204, post("/bye", """{"c":"$code","s":"$session"}""").status)
+            assertTrue(client.closedByServer())
+        }
+    }
+
+    @Test fun microphoneRequiresPairingAndCurrentIPhoneDemand() {
+        audioHub.begin(owner)
+        var received = 0
+        audioHub.microphone(owner, 16000) { received += it.size }
+        assertEquals(401, post("/microphone?c=wrong&s=$session", "aa").status)
+        assertEquals(400, post("/microphone?c=$code", "aa").status)
+        assertEquals(204, post("/microphone?c=$code&s=$session", "aa").status)
+        assertEquals(2, received)
+        audioHub.microphone(owner, 0, null)
+        assertEquals(409, post("/microphone?c=$code&s=$session", "aa").status)
+        assertEquals(2, received)
+    }
 
     private fun beginStream() {
         hub.beginStream(owner, 1182, 920, 60, { keyFrameRequests.incrementAndGet() }, { reports += it })

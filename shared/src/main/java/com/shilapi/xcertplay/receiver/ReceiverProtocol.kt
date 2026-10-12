@@ -7,7 +7,7 @@ import com.shilapi.xcertplay.airplay.VideoInCar
 import java.net.URI
 import java.net.URLDecoder
 
-/** Capabilities shared by Bonjour, /info and /server-info. No CarPlay, photos or DRM offer. */
+/** Capabilities shared by Bonjour, /info and /server-info. No CarPlay or DRM offer. */
 data class ReceiverConfig(val name: String, val deviceId: String, val identity: AirPlayIdentity,
                           val width: Int = 1920, val height: Int = 1080, val fps: Int = 60,
                           val hevcEnabled: Boolean = false) {

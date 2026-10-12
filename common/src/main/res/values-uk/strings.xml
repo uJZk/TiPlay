@@ -626,7 +626,7 @@
     <string name="side_panel_show">Бічна панель</string>
     <string name="side_panel_full_screen">⤢ На весь екран</string>
     <string name="main_buffered_audio">Буферизована музика (експериментально)</string>
-    <string name="main_buffered_audio_description">Застосунки, які це підтримують (наприклад, Apple Music), надсилають музику приблизно на дві хвилини наперед, тож короткі провали Wi-Fi не чути. Інші застосунки працюють як раніше. Перепідключає CarPlay.</string>
+    <string name="main_buffered_audio_description">Приймання буферизованої музики з програм на зразок Apple Music із буфером відтворення в браузері автомобіля. Інші програми використовують звичайний потік. Експериментально; після зміни CarPlay перепідключається.</string>
     <string name="call_echo_cancellation">Придушення луни у дзвінках (експериментально)</string>
     <string name="call_echo_cancellation_description">Намагається зменшити луну динаміків, яку чує співрозмовник під час дзвінків CarPlay. Результат залежить від головного пристрою. Застосовується під час наступного підключення CarPlay.</string>
     <string name="call_voice_filter">Чіткіші голоси у дзвінках (експериментально)</string>
@@ -653,4 +653,6 @@
     <string name="settings_airplay_listening">Очікування iPhone · TiPlay</string>
     <string name="settings_airplay_disable">Вимкнути AirPlay</string>
     <string name="settings_airplay_disable_description">Діє одразу. AirPlay увімкнено за замовчуванням. Цей перемикач зупиняє AirPlay та повертає екран CarPlay; вимкнення перемикача знову запускає приймач.</string>
+    <string name="settings_disable_carplay_audio">Вимкнути звук CarPlay</string>
+    <string name="settings_disable_carplay_audio_description">Музика, навігація, дзвінки та Siri використовують Bluetooth-зʼєднання iPhone з автомобілем. Спочатку підключіть iPhone до Bluetooth автомобіля. Після зміни CarPlay перепідключається.</string>
 </resources>

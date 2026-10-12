@@ -19,6 +19,7 @@ function page() {
     const cancelViewport = () => viewportCancellations++;
     const onResize = () => resizes++;
     const render = () => {};
+    const browserAudio = { status() {} }, airplayControls = { update() {} };
     ${functions}
     return { applyStatus, resumeCarPlay, stage, panel,
       state: () => ({ active, releases, resizes, viewportCancellations }) };

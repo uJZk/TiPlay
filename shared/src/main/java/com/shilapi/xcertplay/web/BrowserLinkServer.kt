@@ -44,6 +44,7 @@ class BrowserLinkServer(
     private val bindAddress: String = "0.0.0.0",
     private val port: Int = DEFAULT_PORT,
     private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val audioHub: WebAudioHub? = null,
 ) {
     /** What the server needs from the app. Called on server threads; implementations must not block. */
     interface Callbacks {
@@ -92,6 +93,10 @@ class BrowserLinkServer(
     private val started = AtomicBoolean(false)
     private val connections = ConcurrentHashMap.newKeySet<Socket>()
     private val videos = ConcurrentHashMap.newKeySet<VideoStream>()
+    private class AudioStream(val session: String, val socket: Socket, val subscription: WebAudioHub.Subscription) {
+        @Volatile var writingSince: Long? = null
+    }
+    private val audios = ConcurrentHashMap.newKeySet<AudioStream>()
     private val preflightLogged = AtomicBoolean(false)
     private val performance = VideoPerformance()
     private val gate = BrowserPairingGate(callbacks::code)
@@ -139,6 +144,7 @@ class BrowserLinkServer(
         if (!running.compareAndSet(true, false)) return
         closeQuietly(server)
         watchdog?.shutdownNow()
+        audios.forEach { it.subscription.close(); closeQuietly(it.socket) }
         videos.forEach { it.subscription.end("stopped") }
         // Give each writer a moment to send its end record; a stalled one is cut off below.
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(STOP_GRACE_MILLIS)
@@ -217,8 +223,10 @@ class BrowserLinkServer(
             return respond(output, request, refuse(405, "method", listOf("Allow" to "$method, OPTIONS")))
         }
         return when (request.path) {
-            "/hello" -> respond(output, request, json(200, WebDebugTiming.hello(System.nanoTime())))
+            "/hello" -> respond(output, request, json(200, WebDebugTiming.hello(System.nanoTime(), audio = audioHub != null)))
             "/video" -> streamVideo(request, socket, output)
+            "/audio" -> streamAudio(request, socket, output)
+            "/microphone" -> respond(output, request, microphone(request))
             "/control" -> respond(output, request, control(request))
             else -> respond(output, request, bye(request))
         }
@@ -299,6 +307,43 @@ class BrowserLinkServer(
         return false
     }
 
+    private fun streamAudio(request: Request, socket: Socket, output: OutputStream): Boolean {
+        val hub = audioHub ?: return respond(output, request, refuse(404, "unavailable"))
+        val session = request.query["s"]?.takeIf(BrowserPairingGate::isSessionId)
+            ?: return respond(output, request, refuse(400, "bad-request"))
+        val stream = synchronized(lock) {
+            admitLocked(request.query["c"], session)?.let { return respond(output, request, it) }
+            audios.forEach { it.subscription.close(); closeQuietly(it.socket) }
+            AudioStream(session, socket, hub.subscribe()).also { audios += it }
+        }
+        try {
+            socket.sendBufferSize = 16 * 1024
+            output.write(head(200, request, listOf("Content-Type" to "application/octet-stream", "Connection" to "close")))
+            while (running.get() && !stream.subscription.closed) {
+                val record = stream.subscription.take(HEARTBEAT_MILLIS) ?: ByteArray(4)
+                if (stream.subscription.closed) break
+                stream.writingSince = nowMillis()
+                output.write(record)
+                stream.writingSince = null
+            }
+        } finally {
+            stream.subscription.close()
+            audios -= stream
+        }
+        return false
+    }
+
+    private fun microphone(request: Request): Response {
+        val hub = audioHub ?: return refuse(404, "unavailable")
+        val session = request.query["s"]?.takeIf(BrowserPairingGate::isSessionId) ?: return refuse(400, "bad-request")
+        synchronized(lock) {
+            admitLocked(request.query["c"], session)?.let { return it }
+        }
+        // Encoding and UDP writes must not hold the session/control lock.
+        return if (gate.current == session && hub.acceptMicrophone(request.body)) Response(204)
+            else refuse(409, "microphone-inactive")
+    }
+
     private fun control(request: Request): Response {
         val body = jsonBody(request) ?: return refuse(400, "bad-request")
         val session = (body["s"] as? String)?.takeIf(BrowserPairingGate::isSessionId) ?: return refuse(400, "bad-request")
@@ -329,6 +374,7 @@ class BrowserLinkServer(
                 is BrowserPairingGate.Decision.Accepted -> {
                     touch.drop(session)
                     video?.takeIf { it.session == session }?.subscription?.end("bye")
+                    audios.filter { it.session == session }.forEach { it.subscription.close(); closeQuietly(it.socket) }
                 }
                 BrowserPairingGate.Decision.Unauthorized -> return refuse(401, "code")
                 BrowserPairingGate.Decision.Throttled -> return refuse(429, "throttled")
@@ -350,6 +396,7 @@ class BrowserLinkServer(
                 decision.replaced?.let { previous ->
                     touch.drop(previous)
                     video?.takeIf { it.session == previous }?.subscription?.end("replaced")
+                    audios.filter { it.session == previous }.forEach { it.subscription.close(); closeQuietly(it.socket) }
                     callbacks.log("Browser link: a new page session replaced the previous one")
                 }
                 touch.claim(session)
@@ -394,6 +441,12 @@ class BrowserLinkServer(
                 val stats = stats(fields["v"])
                 if (stats == null) performance.count("statsRejected") else callbacks.onBrowserStats(stats)
             }
+            "ap" -> {
+                val id = fields["id"].wholeNumber() ?: return
+                val action = fields["a"] as? String ?: return
+                val value = (fields["v"] as? Number)?.toDouble()?.takeIf { it.isFinite() }
+                AirPlayBrowserPlayback.command(id, action, value)
+            }
         }
     }
 
@@ -437,6 +490,9 @@ class BrowserLinkServer(
             "fit" to status.fit,
             "portalRevision" to status.portalRevision,
             "endpoint" to status.endpoint,
+            "audio" to (audioHub?.enabled == true),
+            "mic" to (audioHub?.microphoneStatus() ?: mapOf("active" to false, "sampleRate" to 0)),
+            "airplay" to AirPlayBrowserPlayback.snapshot(),
             "touch" to if (status.touchAvailable) "ok" else "unavailable",
             "phone" to status.phone + mapOf("video" to hub.snapshot(), "link" to performance.snapshot()),
         )
@@ -450,6 +506,8 @@ class BrowserLinkServer(
                 callbacks.log("Browser link: video stream stalled; closing it")
                 closeQuietly(it.socket)
             }
+            audios.filter { it.writingSince?.let { started -> now - started > BrowserPairingGate.STALE_MILLIS } == true }
+                .forEach { it.subscription.close(); closeQuietly(it.socket) }
         } catch (error: Exception) {
             callbacks.log("Browser link: watchdog failed (${error.javaClass.simpleName})")
         }
@@ -623,7 +681,7 @@ class BrowserLinkServer(
         private const val TOKEN_CHARACTERS = "!#$%&'*+-.^_`|~"
         private val HEADER_NAME_PATTERN = Regex("[a-z0-9-]{1,48}")
         private val KEYS = setOf("home", "back", "siri")
-        private val ROUTES = mapOf("/hello" to "GET", "/video" to "GET", "/control" to "POST", "/bye" to "POST")
+        private val ROUTES = mapOf("/hello" to "GET", "/video" to "GET", "/audio" to "GET", "/microphone" to "POST", "/control" to "POST", "/bye" to "POST")
         private val RECORD_NAMES = mapOf(
             WebVideoRecords.KIND_CONFIG to "configRecords",
             WebVideoRecords.KIND_FRAME to "frameRecords",

@@ -20,6 +20,7 @@ import com.shilapi.xcertplay.receiver.ReceiverBonjour
 import com.shilapi.xcertplay.receiver.ReceiverConfig
 import com.shilapi.xcertplay.receiver.ReceiverPlay
 import com.shilapi.xcertplay.receiver.ReceiverServer
+import com.shilapi.xcertplay.receiver.ReceiverMirrorAudioFormat
 import com.shilapi.xcertplay.receiver.UnifiedAirPlayTrial
 import com.shilapi.xcertplay.network.UnifiedAirPlayEndpoint
 import com.shilapi.xcertplay.web.WebMediaSink
@@ -37,6 +38,7 @@ class AirPlayReceiverService : Service() {
     private lateinit var player: AirPlayCastPlayer
     private val displayLock = Any()
     @Volatile private var mirrorOutput: WebMediaSink? = null
+    private var mirrorAudio: AirPlayMirrorAudio? = null
     private var discovery: ReceiverBonjour? = null // worker only
     private var sharedEntry: UnifiedAirPlayEndpoint? = null // worker only
     @Volatile private var destroyed = false
@@ -86,6 +88,7 @@ class AirPlayReceiverService : Service() {
                     override fun log(message: String) { Log.i("tiplay-airplay", message) }
                     override fun mirrorSink(): WebMediaSink = synchronized(displayLock) {
                         check(!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService))
+                        mirrorAudio?.close(); mirrorAudio = null
                         TeslaBrowserLink.pauseCarPlayDisplay()
                         WebMediaSink(TeslaBrowserLink.hub, receiverConfig.width, receiverConfig.height, receiverConfig.fps).also {
                             mirrorOutput = it
@@ -99,12 +102,33 @@ class AirPlayReceiverService : Service() {
                         }
                     }
                     override fun stopPlayback() { player.stop() }
+                    override fun mirrorAudio(format: ReceiverMirrorAudioFormat, payload: ByteArray) {
+                        synchronized(displayLock) {
+                            if (!destroyed && mirrorOutput != null && format.sampleRate == 44100 && format.channels == 2) {
+                                val soundtrack = mirrorAudio ?: AirPlayMirrorAudio(format, TeslaBrowserLink.audioHub).also { mirrorAudio = it }
+                                soundtrack.offer(payload)
+                            }
+                        }
+                    }
+                    override fun stopMirrorAudio() {
+                        synchronized(displayLock) { mirrorAudio?.close(); mirrorAudio = null }
+                    }
+                    override fun photo(bytes: ByteArray) {
+                        synchronized(displayLock) {
+                            if (!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService)) {
+                                TeslaBrowserLink.pauseCarPlayDisplay(); player.photo(bytes)
+                            }
+                        }
+                    }
                     override fun seek(seconds: Double) { player.seek(seconds) }
                     override fun rate(value: Double) { player.rate(value) }
                     override fun playback() = player.state
                     override fun status(state: String) {
                         if (destroyed) return
-                        if (state == "listening") TeslaBrowserLink.resumeCarPlayDisplay()
+                        if (state == "listening") {
+                            synchronized(displayLock) { mirrorAudio?.close(); mirrorAudio = null; mirrorOutput = null }
+                            TeslaBrowserLink.resumeCarPlayDisplay()
+                        }
                         publish(state)
                     }
                 })
@@ -163,6 +187,7 @@ class AirPlayReceiverService : Service() {
         synchronized(displayLock) {
             destroyed = true
             mirrorOutput?.close(); mirrorOutput = null
+            mirrorAudio?.close(); mirrorAudio = null
             TeslaBrowserLink.resumeCarPlayDisplay() // do not wait for mDNS registration/goodbye timers
         }
         locks.release()

@@ -1,0 +1,9 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+.airplay-controls{position:absolute;z-index:8;bottom:max(12px,env(safe-area-inset-bottom));left:12px;right:12px;display:flex;align-items:center;gap:8px;padding:10px;border-radius:16px;background:rgba(12,18,28,.88);color:#fff;touch-action:auto}
+.airplay-controls[hidden]{display:none}
+.airplay-controls button{flex:0 0 auto;min-width:44px;min-height:44px;margin:0;padding:6px 10px;background:transparent;color:inherit;border:1px solid #76808d;border-radius:10px;font-size:16px}
+.airplay-controls input{flex:1;min-width:40px;accent-color:#fff}
+.airplay-controls output{white-space:nowrap;font-variant-numeric:tabular-nums;font-size:14px}
+.airplay-controls :focus-visible{outline:2px solid #8fc4ff;outline-offset:3px}
+.airplay-controls :disabled{opacity:.45}
+@media(max-width:600px){.airplay-controls{gap:4px;padding:6px;left:6px;right:6px}.airplay-controls output{font-size:11px}.airplay-controls button{padding:4px;min-width:38px}}

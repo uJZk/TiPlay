@@ -23,6 +23,7 @@ function page(active = true) {
     const sink = { stop: () => effects.push('stop-video') };
     const scheduleRetry = delay => effects.push(['retry', delay]);
     const render = () => {}, showPortal = () => {};
+    const browserAudio = { status() {} }, airplayControls = { update() {} };
     ${functions}
     return { applyStatus, effects, field,
       state: () => ({ link, session, outbox, streamId, live, attempt, active }) };

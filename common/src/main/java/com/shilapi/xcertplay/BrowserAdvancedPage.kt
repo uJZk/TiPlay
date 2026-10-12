@@ -63,6 +63,13 @@ internal class BrowserAdvancedPage(
             AirPlayPersistence.saveHevcEnabled(activity, it)
             configurationChanged()
         }
+        heading(R.string.audio)
+        BrowserCarPlayAudioSettings.addControls(activity, content,
+            toggle = { parent, title, description, value, save ->
+                BrowserNativeSettingsUi(activity).toggle(parent, title, description, value, true, save)
+                Unit
+            }, changed = ::configurationChanged,
+        )
         heading(R.string.carplay_controls)
         BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.right_hand_drive),
             activity.getString(R.string.place_carplay_s_controls_closer_to_the_driver),

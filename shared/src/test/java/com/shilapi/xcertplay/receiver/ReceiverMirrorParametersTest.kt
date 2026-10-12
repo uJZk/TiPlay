@@ -13,8 +13,8 @@ class ReceiverMirrorParametersTest {
         val response = ReceiverMirrorParameters.reply(request("volume\r\n"))
         assertEquals(200, response.status ?: 200)
         assertEquals("text/parameters", response.headers["Content-Type"])
-        assertEquals("volume: -144.0\r\n", response.body.toString(Charsets.US_ASCII))
-        assertEquals("volume: -144.0\r\n", ReceiverMirrorParameters.reply(request("volume\r\n", null)).body.toString(Charsets.US_ASCII))
+        assertEquals("volume: 0.0\r\n", response.body.toString(Charsets.US_ASCII))
+        assertEquals("volume: 0.0\r\n", ReceiverMirrorParameters.reply(request("volume\r\n", null)).body.toString(Charsets.US_ASCII))
         assertTrue(ReceiverMirrorParameters.reply(request("", null)).body.isEmpty())
     }
 
