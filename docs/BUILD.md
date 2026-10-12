@@ -2,6 +2,7 @@
 
 Use this procedure to build the TiPlay receiver on an Android phone for the car browser. Head-unit implementations remain in source for upstream compatibility.
 Run the commands from the repository root, where `gradlew` and `settings.gradle.kts` are located.
+For Windows container-specific constraints, see [the WSLC supplement](WLSC.md).
 
 ## Select the application
 
@@ -25,23 +26,20 @@ Use the module name in each build command to select the required application.
 
 ## Prepare the build environment
 
-Install these tools:
-
-- Eclipse Temurin JDK 25 (the distribution used by CI).
-- Android SDK Platform 37 (`platforms;android-37.0`).
-- Android SDK Build-Tools 36.0.0.
-- Android SDK Platform-Tools.
-- Android NDK 28.2.13676358.
+Use the JDK distribution/version, Node version and SDK packages declared by
+[the Android workflow](../.github/workflows/android.yml). Prefer an existing container
+toolchain over installing packages on the host. The workflow is authoritative for
+tool versions; module build files remain authoritative for application requirements.
 
 Use the Gradle wrapper included in this repository.
 The first build needs an internet connection to download dependencies.
 
 1. Open the repository root in Android Studio.
 2. Install the Android SDK packages with **Tools → SDK Manager**.
-3. Set **Gradle JDK** to JDK 25 in the Android Studio Gradle settings.
+3. Set **Gradle JDK** to the JDK selected by CI in the Android Studio Gradle settings.
 4. Wait for Gradle sync to finish.
 
-For a terminal build, set `JAVA_HOME` to your JDK 25 directory.
+For a terminal build, set `JAVA_HOME` to your selected JDK directory.
 Set `ANDROID_HOME` to your Android SDK directory.
 You can also specify the SDK directory in the root `local.properties` file:
 
@@ -56,8 +54,24 @@ Check the Java version before the build:
 java -version
 ```
 
-The output must identify Java 25.
+The output must match the JDK selected by CI.
 On Windows, use `gradlew.bat` in place of `./gradlew` in the commands below.
+
+### Source copies and build isolation
+
+`git archive` exports a commit, omitting uncommitted edits, untracked files and `.git`.
+Use it only when the intended build input is that commit. To build working-tree edits,
+use a copy that explicitly includes those edits and excludes local credentials and outputs.
+
+The public-tree checker uses `git ls-files` relative to its own script location.
+Run it from a real checkout of the source being built; changing the working directory
+does not make an archive copy a Git checkout. If compilation uses an archive, check
+the originating checkout and ensure both inputs represent the same intended source.
+
+Keep source-only CI checks separate from builds that supply runtime authentication.
+Complete CI checks before the signed build, and avoid concurrent Gradle invocations
+against the same build directory. Separate outputs prevent a release artifact from
+being confused with a source-only or previously built APK.
 
 ## Build the main app
 
@@ -233,17 +247,18 @@ The retired `build-beta.py` helper is no longer part of the build procedure.
 
 ## Verify the APK and create a Release draft
 
-Use the SDK Build-Tools selected above to verify the APK signature and manifest:
+Use the SDK Build-Tools selected by CI to verify the APK signature and manifest.
+Set `BUILD_TOOLS_DIR` to that installed package directory before running:
 
 ```sh
-"$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs \
+"$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs \
   mobile/build/outputs/apk/release/mobile-release.apk
-"$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging \
+"$BUILD_TOOLS_DIR/aapt" dump badging \
   mobile/build/outputs/apk/release/mobile-release.apk
 ```
 
-Check the release application ID `com.ujzk.tiplay`, the version name/code from
-`mobile/build.gradle.kts`, the API 28 minimum, and the signing certificate fingerprint
+Check the application ID, version name/code and minimum SDK against
+[the mobile build configuration](../mobile/build.gradle.kts), and the signing certificate fingerprint
 against the selected keystore. Compare both packaged runtime files byte for byte
 with the chosen inputs, and reject additional credential containers:
 
@@ -306,7 +321,28 @@ environment configuration workflow. Do not disable the proxy, TLS verification,
 or print tokens. The currently exposed GitHub connector has no Release attachment
 upload operation and cannot replace this upload step.
 
-### Restricted build environments
+## Update an installed app with ADB
+
+Select the device explicitly with `adb -s <serial>` when installing or inspecting it.
+Before an update, use `pm path <application-id>` to locate the installed base APK and
+pull it for comparison. Verify both APK signatures and compare their signing
+certificate fingerprints. A different application ID installs a separate app;
+a different signing key cannot update the existing app. Do not uninstall to bypass
+a mismatch when the goal is to retain settings.
+
+Android signing and CarPlay runtime identity are separate contracts. To preserve
+the existing runtime identity, compare both `offline-mfi` assets byte for byte.
+An installed APK can provide those runtime assets if this is the intended identity;
+it cannot provide the private Android signing key. Keep extracted assets outside Git
+and apply the same credential checks as for a release build.
+
+After verification, `adb -s <serial> install -r <apk>` updates the app while retaining
+its data. Confirm the package version and update time, launch its declared launcher
+activity and inspect logs for new crashes from that application. Old crash entries
+from other applications do not establish an installation failure. A successful
+install and launch do not validate an iPhone connection or vehicle playback.
+
+## Restricted build environments
 
 When the user home directory is read-only, put tool caches in a writable workspace:
 set `GRADLE_USER_HOME` and `ANDROID_USER_HOME` to external directories, and set
@@ -315,9 +351,9 @@ Preserve any existing Java options, proxy settings and CA trust. SDK Manager may
 need its explicit `--proxy=http --proxy_host=<host> --proxy_port=<port>` options;
 Gradle may need `systemProp.http.proxyHost`/`proxyPort` and the HTTPS equivalents in
 its external user properties. Use the proxy and trust store provided by the
-selected environment. Temurin 25 matches CI; the October 11 Oracle JDK attempt
-failed during Robolectric crypto-provider initialization and passed after switching
-to Temurin. These are environment settings, not source changes.
+selected environment. Match the JDK distribution as well as its version to CI:
+Robolectric crypto-provider initialization can fail with another distribution even
+when the Java major version matches. These are environment settings, not source changes.
 
 ## Correct build problems
 
@@ -326,7 +362,7 @@ to Temurin. These are environment settings, not source changes.
 | Installed app is TiPlay map host | Select `mobile` in Android Studio. Build and install the APK from the `mobile` output directory. |
 | Gradle cannot find the Android SDK | Set `ANDROID_HOME` or the `sdk.dir` value in `local.properties`. |
 | A required SDK or NDK package is absent | Install the listed package with SDK Manager. |
-| Java or Gradle JDK version is incorrect | Set the terminal JDK and Android Studio Gradle JDK to Java 25. |
+| Java or Gradle JDK version is incorrect | Match the terminal JDK and Android Studio Gradle JDK to the distribution/version selected by CI. |
 | Source APK cannot start standalone CarPlay | Supply runtime authentication assets. Use `:mobile:assembleStandaloneDebug`. |
 | Standalone task reports missing authentication files | Check the external directory path and both required files. |
 | Android rejects an app update | Use the same application ID and signing key as the installed app. |

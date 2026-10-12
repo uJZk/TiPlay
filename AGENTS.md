@@ -8,6 +8,10 @@ under "Browser session lifecycle".
 Phone settings, connection drafts, explicit apply/reconnect and boot behavior follow
 `docs/APP-MAIN-PAGE-DESIGN.md` and `docs/APP-MAIN-PAGE-IMPLEMENTATION.md`.
 
+Build prerequisites, runtime identity, signing and APK update contracts are documented
+in [docs/BUILD.md](docs/BUILD.md). Windows WSLC container supplements, including filesystem,
+secret transfer and host ADB boundaries, are in [docs/WLSC.md](docs/WLSC.md).
+
 ## Current progress
 
 See `docs/docs-sweep-2026-10-12/README.md` for the incremental documentation sweep,
