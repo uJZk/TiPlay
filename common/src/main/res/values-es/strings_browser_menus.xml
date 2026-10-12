@@ -2,9 +2,9 @@
 <resources>
     <string name="settings_main">Ajustes principales</string>
     <string name="settings_browser_advanced_summary">Frecuencia de fotogramas, HEVC, controles del vehículo, registros e informes de diagnóstico.</string>
-    <string name="settings_browser_next_connection_hint">Se guarda al instante. Se aplica en la próxima conexión; reconecta cuando te convenga.</string>
+    <string name="settings_browser_next_connection_hint">Los cambios se aplican al instante; CarPlay se reconecta automáticamente cuando es necesario.</string>
     <string name="settings_browser_video">Vídeo</string>
-    <string name="settings_browser_endpoint_hint">Rangos de dirección: 100.64.0.0/10; puertos: 1024–65535, por ejemplo 100.109.220.253:8080. Tras cambiar el puerto, introduce la nueva dirección de Android en la página.</string>
-    <string name="settings_browser_endpoint_invalid">Introduce una dirección de 100.64.0.0/10 y un puerto (1024–65535), por ejemplo 100.109.220.253:8080.</string>
+    <string name="settings_browser_endpoint_hint">Rangos de dirección: 169.254.0.0/16 / 100.64.0.0/10; puertos: 1024–65535, por ejemplo 169.254.111.111:8080. El navegador conectado actualiza la dirección automáticamente. Si está desconectado, introduce la nueva dirección de Android en la página. Déjalo vacío para usar 169.254.111.111 y conservar el puerto guardado.</string>
+    <string name="settings_browser_endpoint_invalid">Introduce una dirección de 169.254.0.0/16 / 100.64.0.0/10 y un puerto (1024–65535), por ejemplo 169.254.111.111:8080.</string>
     <string name="settings_browser_boot_hint">Abre TiPlay al iniciar Android. Android o los ajustes del dispositivo pueden limitar el inicio en segundo plano.</string>
 </resources>

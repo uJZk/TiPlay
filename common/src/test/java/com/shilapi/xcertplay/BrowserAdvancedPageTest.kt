@@ -2,7 +2,7 @@ package com.shilapi.xcertplay
 
 import android.Manifest
 import android.app.Activity
-import android.os.Bundle
+
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -25,7 +25,7 @@ import org.robolectric.annotation.Config
 class BrowserAdvancedPageTest {
     private lateinit var activity: Activity
     private lateinit var page: BrowserAdvancedPage
-    private var applied: Boolean? = null
+    private var returns = 0
     private var changes = 0
     private var reportSaves = 0
     private var requested = emptyList<String>()
@@ -43,34 +43,32 @@ class BrowserAdvancedPageTest {
 
     @After fun cleanup() { activity.finish() }
 
-    private fun create(state: Bundle? = null) = BrowserAdvancedPage(activity, state,
+    private fun create() = BrowserAdvancedPage(activity,
         requestPermissions = { requested = it.toList() }, changed = { changes++ },
-        returnToMain = { applied = it }, saveReport = { reportSaves++ })
+        returnToMain = { returns++ }, saveReport = { reportSaves++ })
 
-    @Test fun onlyExplicitReturnAndApplyConsentsToReconnectingAndRevertingRemovesIt() {
-        button(R.string.back).performClick()
-        assertEquals(false, applied)
-        applied = null
+    @Test fun advancedSettingsApplyImmediatelyAndReturnNeverAppliesAgain() {
         val hevc = views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_browser_hevc_title) }
         hevc.performClick()
-        assertTrue(page.edited)
-        assertNull(applied)
         assertEquals(1, changes)
-        button(R.string.settings_return_and_apply).performClick()
-        assertEquals(true, applied)
+        assertEquals(0, returns)
+        assertEquals(1, views(page.view).filterIsInstance<Button>().count { it.text == activity.getString(R.string.back) })
+        button(R.string.back).performClick()
+        assertEquals(1, returns)
+        assertEquals(1, changes)
         hevc.performClick()
-        assertFalse(page.edited)
-        assertEquals(activity.getString(R.string.back), button(R.string.back).text.toString())
+        assertEquals(2, changes)
     }
 
-    @Test fun recreationRetainsTheOpenedConfigurationUntilTheDriverAppliesIt() {
-        AirPlayPersistence.saveHevcEnabled(activity, !AirPlayPersistence.loadHevcEnabled(activity))
-        val state = Bundle()
-        page.retain(state)
-        page = create(state)
+    @Test fun recreationReadsAlreadyAppliedConfigurationWithoutPendingState() {
+        val hevc = views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_browser_hevc_title) }
+        hevc.performClick()
+        val saved = AirPlayPersistence.loadHevcEnabled(activity)
+        page = create()
         activity.setContentView(page.view)
-        assertTrue(page.edited)
-        assertNotNull(button(R.string.settings_return_and_apply))
+        assertEquals(saved, views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_browser_hevc_title) }.isChecked)
+        assertNotNull(button(R.string.back))
+        assertEquals(1, changes)
     }
 
     @Test fun disablingAirPlayIsDefaultOffPersistsAndDoesNotRequireCarPlayReconnect() {
@@ -80,7 +78,6 @@ class BrowserAdvancedPageTest {
         assertFalse(toggle.isChecked)
         toggle.performClick()
         assertTrue(AirPlayReceiverSettings.isDisabled(activity))
-        assertFalse(page.edited)
         assertEquals(0, changes)
         page = create()
         activity.setContentView(page.view)
@@ -90,7 +87,6 @@ class BrowserAdvancedPageTest {
         assertTrue(recreated.isChecked)
         recreated.performClick()
         assertFalse(AirPlayReceiverSettings.isDisabled(activity))
-        assertFalse(page.edited)
     }
 
     @Test fun productAdvancedHasOnlyRequestedDescriptionsAndOneReportAction() {

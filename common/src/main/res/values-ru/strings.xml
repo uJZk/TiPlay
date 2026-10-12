@@ -638,18 +638,7 @@
     <string name="settings_android_address">Адрес Android: %1$s</string>
     <string name="settings_main_stopping">Отключение…</string>
     <string name="settings_airplay_title">AirPlay (экспериментально)</string>
-    <string name="settings_airplay_instructions">Подключите iPhone и телефон Android к одной сети Wi-Fi или точке доступа Android, затем откройте сопряжённую страницу в браузере автомобиля. Запустите приёмник и выберите «TiPlay AirPlay» в повторе экрана или меню AirPlay видеоприложения. Соединение CarPlay сохраняется, его изображение возвращается после завершения трансляции. Управляйте воспроизведением на iPhone. Эта версия передаёт только видео; защищённое видео не поддерживается.</string>
-    <string name="settings_airplay_start">Запустить AirPlay</string>
-    <string name="settings_airplay_stop">Остановить AirPlay и вернуться к CarPlay</string>
-    <string name="settings_airplay_wifi">Настройки Wi-Fi и точки доступа</string>
-    <string name="settings_airplay_back">Назад</string>
     <string name="settings_airplay_listening">Ожидание iPhone · TiPlay AirPlay</string>
-    <string name="settings_airplay_mirror">Повтор экрана</string>
-    <string name="settings_airplay_video">Воспроизведение видео AirPlay</string>
-    <string name="settings_airplay_stopped">AirPlay остановлен</string>
-    <string name="settings_airplay_network">Подключите оба телефона к одной сети Wi-Fi или точке доступа Android.</string>
-    <string name="settings_airplay_failed">Не удалось запустить AirPlay или воспроизвести видео. Проверьте разрешение локальной сети и попробуйте незащищённое видео MP4 или HLS.</string>
     <string name="settings_airplay_disable">Отключить AirPlay</string>
-    <string name="settings_airplay_disable_description">Действует сразу. Останавливает AirPlay и возвращает изображение подключённого CarPlay. Выключите этот параметр, чтобы снова запускать AirPlay вручную.</string>
-    <string name="settings_airplay_disabled">AirPlay отключён в расширенных настройках.</string>
+    <string name="settings_airplay_disable_description">Действует сразу. AirPlay включён по умолчанию. Этот переключатель останавливает AirPlay и возвращает экран CarPlay; выключение переключателя снова запускает приёмник.</string>
 </resources>

@@ -459,6 +459,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var vpnReady = false
     private var hotspotStatus = HotspotStatus(state = "off")
     private var browserMainPage: BrowserMainSettingsMenu? = null
+    private var browserSettingsChanges: AutoCloseable? = null
     private var browserMainState: Bundle? = null
     private var browserConnectionRequested = false
     private var menuOpen = false
@@ -645,6 +646,7 @@ class CarPlayHostActivity : ComponentActivity() {
         airPlayIdentity = AirPlayPersistence.loadIdentity(this)
         loadPersistedSettings()
         browserMainState = savedInstanceState
+        browserSettingsChanges = BrowserSettingsChanges.listen(this, ::applyBrowserSettings)
         browserConnectionRequested = savedInstanceState?.getBoolean("browser_connection_requested")
             ?: (!intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false) &&
                 (DiPlayPreferences.autoConnect(this) ||
@@ -854,21 +856,11 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val applyBrowserSettings = browserMainPage != null && intent.getBooleanExtra(CarPlaySettingsNavigation.APPLY, false)
-        if (applyBrowserSettings) {
-            intent.removeExtra(CarPlaySettingsNavigation.APPLY)
-            loadPersistedSettings()
-            browserMainPage?.refresh()
-            if (controller != null) {
-                browserConnectionRequested = true
-                restartCarPlay("Settings applied; reconnecting")
-            }
-        }
         if (intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false)) {
             intent.removeExtra(CarPlaySettingsNavigation.MENU)
             openSettingsMenu()
         }
-        if (!applyBrowserSettings && browserMainPage != null && (intent.getBooleanExtra(CarPlaySettingsNavigation.MAIN, false) ||
+        if (browserMainPage != null && (intent.getBooleanExtra(CarPlaySettingsNavigation.MAIN, false) ||
                 DiPlayActivity.isLauncherIntent(intent)) &&
             controller == null && (DiPlayPreferences.autoConnect(this) ||
                 intent.getBooleanExtra(BrowserBootConnectionSettings.CONNECT_AFTER_BOOT, false))) {
@@ -914,6 +906,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        AirPlayReceiverSettings.sync(this)
         if (!headUnitIntegrations()) syncBrowserAdvancedSettings()
         browserMainPage?.refresh()
         HotspotExtraAddressSettings.sync(this) // Resume the address method after its VPN consent dialog.
@@ -1325,6 +1318,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        browserMainPage?.applyPendingEdits()
         nightModeController.pause()
         super.onPause()
     }
@@ -1420,6 +1414,9 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        browserSettingsChanges?.close()
+        browserSettingsChanges = null
+        browserMainPage?.dispose()
         browserDisplayReconnectHost.detach()
         resetSidePanel()
         nightModeController.pause()
@@ -2131,7 +2128,19 @@ class CarPlayHostActivity : ComponentActivity() {
         updateDebugOverlays()
     }
 
+    private fun applyBrowserSettings() {
+        if (headUnitIntegrations() || shuttingDown.get()) return
+        loadPersistedSettings()
+        browserMainPage?.refresh()
+        if (controller != null) {
+            browserConnectionRequested = true
+            restartCarPlay("Settings changed; reconnecting")
+        }
+        if (browserConnectionRequested) requestStartupPrerequisites()
+    }
+
     private fun buildBrowserSettingsMenu(): View {
+        browserMainPage?.dispose()
         val draft = browserMainPage?.draft ?: BrowserConnectionDraft.load(this, browserMainState)
         val page = BrowserMainSettingsMenu(this, draft,
             requestPermissions = { wirelessPermissions.launch(it) },
@@ -2159,6 +2168,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 }
             },
             advanced = { openAdditionalSettings(SettingsCategory.ADVANCED) },
+            settingsChanged = ::applyBrowserSettings,
             about = {
                 startActivity(Intent(this, DiPlayActivity::class.java).putExtra("page", "about")
                     .putExtra(CarPlaySettingsNavigation.MENU, true).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))

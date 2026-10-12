@@ -6,7 +6,7 @@
  * Pure helpers shared by the page, the decoder worker and the unit tests. No DOM access here.
  * Page code stays within syntax that Safari 15 and Firefox 115 ESR run (ES2020 modules). */
 
-export const DEFAULT_HOST = '100.109.220.253:8080';
+export const DEFAULT_HOST = '169.254.111.111:8080';
 export const PROTOCOL = 1;
 export const RECORD = Object.freeze({ CONFIG: 1, FRAME: 2, HEARTBEAT: 3, END: 4, TIMING: 5 });
 export const FLAG = Object.freeze({ KEY: 1, DISCONTINUITY: 2, PARAMETER_SETS: 4 });

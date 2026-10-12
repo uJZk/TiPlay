@@ -21,11 +21,10 @@ import com.shilapi.xcertplay.receiver.ReceiverPlay
 import com.shilapi.xcertplay.receiver.ReceiverServer
 import com.shilapi.xcertplay.web.WebMediaSink
 import java.security.SecureRandom
-import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** A driver-started AirPlay receiver; CarPlay retains its controller while AirPlay borrows the canvas. */
+/** The default AirPlay receiver; CarPlay retains its controller while AirPlay borrows the canvas. */
 @OptIn(UnstableApi::class)
 class AirPlayReceiverService : Service() {
     private val worker = Executors.newSingleThreadScheduledExecutor { Thread(it, "tiplay-airplay-service").apply { isDaemon = true } }
@@ -56,16 +55,14 @@ class AirPlayReceiverService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == STOP || AirPlayReceiverSettings.isDisabled(this)) { stopSelf(); return START_NOT_STICKY }
+        if (AirPlayReceiverSettings.isDisabled(this)) { stopSelf(); return START_NOT_STICKY }
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "AirPlay", NotificationManager.IMPORTANCE_LOW))
-        val open = PendingIntent.getActivity(this, 10, Intent(this, AirPlayReceiverActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val stop = PendingIntent.getService(this, 11, Intent(this, AirPlayReceiverService::class.java).setAction(STOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val open = PendingIntent.getActivity(this, 10, CarPlaySettingsNavigation.mainIntent(this), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_diplay_notification)
             .setContentTitle(getString(R.string.settings_airplay_title))
             .setContentText(getString(R.string.settings_airplay_listening))
-            .setContentIntent(open).setOngoing(true)
-            .addAction(Notification.Action.Builder(null, getString(R.string.settings_airplay_stop), stop).build()).build()
+            .setContentIntent(open).setOngoing(true).build()
         if (Build.VERSION.SDK_INT >= 29) startForeground(10, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         else startForeground(10, notification)
         if (LocalNetworkPermission.state(this) == LocalNetworkPermission.State.DENIED) { publish("permission"); stopSelf(); return START_NOT_STICKY }
@@ -163,12 +160,8 @@ class AirPlayReceiverService : Service() {
 
     companion object {
         private const val CHANNEL = "tiplay_airplay_receiver"
-        private const val STOP = "com.ujzk.tiplay.STOP_AIRPLAY"
         @Volatile var state: String = "stopped"
             private set
-        private val observers = CopyOnWriteArraySet<(String) -> Unit>()
-        fun observe(observer: (String) -> Unit) { observers.add(observer); observer(state) }
-        fun unobserve(observer: (String) -> Unit) { observers.remove(observer) }
-        private fun publish(value: String) { state = value; observers.forEach { it(value) } }
+        private fun publish(value: String) { state = value }
     }
 }

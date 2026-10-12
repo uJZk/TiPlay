@@ -6,7 +6,7 @@ import com.shilapi.xcertplay.orchestration.ManualHotspotSecurity
 import com.shilapi.xcertplay.orchestration.ManualHotspotValidation
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 
-/** Product network choices map onto upstream transports; editing never changes a running session. */
+/** Product network choices map onto upstream transports; invalid edits stay local until valid. */
 internal data class BrowserConnectionDraft(
     var wireless: Boolean,
     var source: Source,

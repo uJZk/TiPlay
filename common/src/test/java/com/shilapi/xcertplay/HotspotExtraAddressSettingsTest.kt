@@ -561,7 +561,7 @@ class HotspotExtraAddressSettingsTest {
 
     // --- Shared rows -----------------------------------------------------------------------------------------
 
-    @Test fun rootAddressRowAcceptsOnlyCgnatAndMovesTheRunningMethod() {
+    @Test fun rootAddressRowAcceptsBothRangesAndMovesTheRunningMethod() {
         HotspotExtraAddressSettings.saveMethod(context, HotspotAddressMethod.ROOT)
         val screen = openConnection()
         val prefix = screen.getString(R.string.settings_browser_hotspot_address) + " · "
@@ -573,7 +573,7 @@ class HotspotExtraAddressSettingsTest {
         val dialog = ShadowAlertDialog.getLatestAlertDialog()
         val input = descendants(dialog.window!!.decorView).filterIsInstance<EditText>().single()
         assertEquals(HotspotExtraAddress.DEFAULT + ":8080", input.text.toString())
-        for (invalid in listOf("100.128.0.1", "10.0.0.1", "169.254.1.2:8080", "169.255.0.1", "1.2.3", "tesla.local", "100.109.220.253;reboot", "")) {
+        for (invalid in listOf("100.128.0.1", "10.0.0.1", "169.255.0.1", "1.2.3", "tesla.local", "100.109.220.253;reboot")) {
             input.setText(invalid)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
             assertEquals(invalid, screen.getString(R.string.settings_browser_endpoint_invalid), input.error?.toString())
@@ -584,6 +584,7 @@ class HotspotExtraAddressSettingsTest {
 
         input.setText(" 100.70.1.2:8181 ")
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS)
 
         assertFalse(dialog.isShowing)
         assertEquals(ip("100.70.1.2"), HotspotExtraAddressSettings.address(context))
@@ -627,6 +628,9 @@ class HotspotExtraAddressSettingsTest {
         val input = descendants(dialog.window!!.decorView).filterIsInstance<EditText>().single()
         assertEquals(screen.getString(R.string.settings_browser_vpn_endpoint_hint), shadowOf(dialog).message.toString())
         assertEquals(HotspotExtraAddress.DEFAULT + ":8080", input.text.toString())
+        assertNull(input.error)
+        input.setText("100.109.220.253:8080")
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         assertEquals(screen.getString(R.string.settings_browser_vpn_endpoint_invalid), input.error.toString())
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         assertTrue(dialog.isShowing)

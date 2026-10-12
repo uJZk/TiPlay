@@ -1,7 +1,6 @@
 package com.shilapi.xcertplay
 
 import android.content.ActivityNotFoundException
-import android.app.AlertDialog
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
@@ -12,29 +11,23 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
-import android.view.Surface
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityOptionsCompat
 import com.shilapi.xcertplay.host.R
-import com.shilapi.xcertplay.media.AndroidMediaSink
-import com.shilapi.xcertplay.orchestration.CarPlayController
 import java.util.concurrent.ExecutorService
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mockito.mock
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowToast
-import org.robolectric.shadows.ShadowAlertDialog
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
@@ -163,43 +156,6 @@ class CarButtonImagePickerTest {
         match = IntentFilter.MATCH_CATEGORY_TYPE
     }
 
-    @Test fun savingCarButtonNameMarksTheActiveSessionWithoutStoppingIt() = withHome { activity ->
-        val session = mock(CarPlayController::class.java)
-        val sink = mock(AndroidMediaSink::class.java)
-        val previousName = AirPlayPersistence.loadOemLabel(activity)
-        var stops = 0
-        CarPlayBackgroundSession.store(session, sink, 800, 480, Any(),
-            CarPlaySessionDisplay(800, 480, Surface.ROTATION_0, false, false, 800, 480)) {
-            stops++
-        }
-        CarPlayBackgroundSession.active = true
-        PendingReconnect.clear()
-        try {
-            ReflectionHelpers.setField(activity, "page", "settings")
-            ReflectionHelpers.setField(activity, "settingsCategory", SettingsCategory.VEHICLE)
-            ReflectionHelpers.callInstanceMethod<Unit>(activity, "render")
-            val bar = ReflectionHelpers.getField<View>(activity, "reconnectBar")
-            assertEquals(View.GONE, bar.visibility)
-            val name = views(activity.window.decorView).filterIsInstance<Button>().single {
-                it.text.startsWith(activity.getString(R.string.car_button_name) + " · ")
-            }
-            name.performClick()
-            val dialog = requireNotNull(ShadowAlertDialog.getLatestAlertDialog())
-            views(dialog.window!!.decorView).filterIsInstance<EditText>().single().setText("My car")
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-            shadowOf(Looper.getMainLooper()).idle()
-
-            assertEquals("My car", AirPlayPersistence.loadOemLabel(activity))
-            assertTrue(PendingReconnect.isPending(session))
-            assertEquals(View.VISIBLE, bar.visibility)
-            assertSame(session, CarPlayBackgroundSession.snapshot()?.controller)
-            assertEquals(0, stops)
-            assertNull(shadowOf(activity).nextStartedActivity)
-        } finally {
-            AirPlayPersistence.saveOemLabel(activity, previousName)
-            PendingReconnect.clear()
-        }
-    }
 
     private fun assertDocumentFilter(intent: Intent) {
         assertEquals(Intent.ACTION_OPEN_DOCUMENT, intent.action)

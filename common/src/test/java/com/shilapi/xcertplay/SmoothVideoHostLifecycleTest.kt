@@ -54,6 +54,7 @@ class SmoothVideoHostLifecycleTest {
     private val blockedCodecs = mutableListOf<BlockingCodec>()
 
     @Before fun setUp() {
+        grantBrowserSettingsReceiverPermission()
         CarPlayBackgroundSession.clear()
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
         AirPlayPersistence.saveAdaptPipResolution(activity, false)

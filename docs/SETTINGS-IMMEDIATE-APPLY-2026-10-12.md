@@ -1,0 +1,23 @@
+# 设置立即应用与热点地址交付
+
+本轮删除 AirPlay 主入口、二级菜单及通知栏停止操作。AirPlay 随 TiPlay 打开默认启动，只有高级设置保留关闭开关。有效连接参数自动保存并应用，空闲修改不主动发起连接；需要重新协商的修改自动重连活动会话，高级页返回仅负责导航。
+
+安卓端和网页使用同一默认热点地址，地址文本框留空时使用默认值。Root/Shizuku 接受链路本地与共享地址空间，VPN 仅接受链路本地地址；已有不兼容的 VPN 地址回退到默认值，不覆盖其他方式的保存值。修改地址或端口时，手机先通过已认证控制状态通知网页，再移动地址或监听端口，网页保留配对码并自动恢复连接。
+
+持久契约与维护入口：
+
+- [主页面设计](APP-MAIN-PAGE-DESIGN.md)与[设置、会话边界](APP-MAIN-PAGE-IMPLEMENTATION.md)。
+- [热点地址机制](HOTSPOT_ADDRESS.md)与[浏览器协议](TESLA_BROWSER.md)。
+- [普通 AirPlay](AIRPLAY.md)。
+
+## 验证
+
+本轮完整 Android CI 通过：shared 1,232、common 1,053、home 4，共 2,289 项测试，失败、错误、跳过均为 0。mobile/home/maphost 的 lint 与 debug 构建全部通过。Node 22 浏览器测试 68/68、发布草稿测试 9/9、公共源码检查、资源 XML 与空白检查通过。
+
+Android 验证复用已有 WSLC 工具链，在 Linux 文件系统复制本轮工作树后执行，未安装主机依赖。容器最初禁用 IPv6 回环，导致网络和音频测试失败；恢复回环后重跑完整 CI，没有过滤或跳过测试。调试 APK 为源码构建，不包含发布身份或发布签名，未安装到手机。
+
+## 交付与后续
+
+本轮在 main 收尾，提交和推送结果以 Git 历史为准。网页由仓库现有 [Publish site 工作流](../.github/workflows/pages.yml) 部署，实际部署记录以 [GitHub Actions](https://github.com/uJZk/TiPlay/actions/workflows/pages.yml) 为准；不创建版本标签或 APK Release。
+
+仍需实机检查默认 AirPlay 启动、开关与 CarPlay 共存，以及修改热点地址、端口、连接参数和视频设置后的自动恢复。此次未新增 iPhone 或真车验证；既有 VPN 实测结论由用户提供。下一步优先覆盖连接中的地址切换和连续修改设置时的恢复。

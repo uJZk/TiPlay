@@ -123,7 +123,7 @@ class TeslaBrowserLinkTest {
         started()
         val code = TeslaBrowserLink.pairingCode(context)
         assertEquals(8081, TeslaBrowserLink.listeningPort(context))
-        assertEquals("https://ujzk.github.io/TiPlay/?t=100.109.220.253:8081#c=$code",
+        assertEquals("https://ujzk.github.io/TiPlay/?t=169.254.111.111:8081#c=$code",
             TeslaBrowserLink.pageLink(context, null))
         assertEquals("https://ujzk.github.io/TiPlay/?t=192.168.43.1:8081#c=$code",
             TeslaBrowserLink.pageLink(context, "192.168.43.1"))
@@ -435,7 +435,7 @@ class TeslaBrowserLinkTest {
         TeslaBrowserLink.clock = { now }
         val stats = mapOf("link.path" to "worker-stream", "video.codec" to "avc1.640028", "video.decodedFps" to 59.9,
             "video.decodeMsP95" to 1.52, "video.gaps" to 0L, "video.dropped" to 3L, "video.decodeErrors" to 0L,
-            "link.reconnects" to 1L, "link.fallback" to "TypeError at 100.109.220.253", "code" to "123456")
+            "link.reconnects" to 1L, "link.fallback" to "TypeError at 169.254.111.111", "code" to "123456")
         server.callbacks.onBrowserStats(stats)
         now += 9_999
         server.callbacks.onBrowserStats(stats)

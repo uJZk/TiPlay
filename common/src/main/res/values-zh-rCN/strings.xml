@@ -698,18 +698,7 @@
     <string name="settings_android_address">安卓地址：%1$s</string>
     <string name="settings_main_stopping">正在断开连接…</string>
     <string name="settings_airplay_title">AirPlay（实验性）</string>
-    <string name="settings_airplay_instructions">将 iPhone 和安卓手机连接到同一 Wi-Fi 或安卓热点，再打开已配对的车载浏览器页面。启动接收器后，在“屏幕镜像”或视频应用的 AirPlay 菜单中选择“TiPlay AirPlay”。投屏期间保留 CarPlay 连接，投屏结束后恢复浏览器中的 CarPlay 画面。请在 iPhone 上控制播放。此预览版仅传送视频，不支持受保护的视频。</string>
-    <string name="settings_airplay_start">启动 AirPlay</string>
-    <string name="settings_airplay_stop">停止 AirPlay 并返回 CarPlay</string>
-    <string name="settings_airplay_wifi">Wi-Fi 与热点设置</string>
-    <string name="settings_airplay_back">返回</string>
     <string name="settings_airplay_listening">等待 iPhone · TiPlay AirPlay</string>
-    <string name="settings_airplay_mirror">正在屏幕镜像</string>
-    <string name="settings_airplay_video">正在播放 AirPlay 视频</string>
-    <string name="settings_airplay_stopped">AirPlay 已停止</string>
-    <string name="settings_airplay_network">请将两部手机连接到同一 Wi-Fi 或安卓热点。</string>
-    <string name="settings_airplay_failed">无法启动 AirPlay 或播放此视频。请检查本地网络权限，并尝试未受保护的 MP4 或 HLS 视频。</string>
     <string name="settings_airplay_disable">禁用 AirPlay</string>
-    <string name="settings_airplay_disable_description">立即生效。停止 AirPlay 并恢复仍连接的 CarPlay 画面。关闭此开关后，可再次手动启动 AirPlay。</string>
-    <string name="settings_airplay_disabled">AirPlay 已在高级设置中禁用。</string>
+    <string name="settings_airplay_disable_description">立即生效。AirPlay 默认开启。打开此开关会停止 AirPlay 并恢复仍连接的 CarPlay 画面；关闭此开关会重新启用接收器。</string>
 </resources>

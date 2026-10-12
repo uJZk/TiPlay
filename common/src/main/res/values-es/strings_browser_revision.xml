@@ -7,7 +7,6 @@
     <string name="settings_browser_hotspot_on">El punto de acceso del dispositivo está activado</string>
     <string name="settings_browser_hotspot_off">El punto de acceso del dispositivo está desactivado</string>
     <string name="settings_browser_hotspot_unknown">No se puede leer el estado del punto de acceso</string>
-    <string name="settings_return_and_apply">Volver y aplicar</string>
     <string name="settings_permission_bluetooth">Bluetooth</string>
     <string name="settings_permission_microphone">Micrófono</string>
     <string name="settings_permission_notifications">Notificaciones</string>
@@ -18,11 +17,12 @@
     <string name="settings_report_copy_full_text">Copiar todo el texto</string>
     <string name="settings_report_saved_at">Informe guardado en:</string>
     <string name="settings_browser_hevc_title">HEVC (H.265)</string>
-    <string name="settings_browser_hotspot_address_repair">Reparar dirección del punto de acceso</string>
+    <string name="settings_browser_hotspot_address_repair">Modificar dirección del punto de acceso</string>
     <string name="settings_browser_hotspot_address">Dirección del punto de acceso</string>
     <string name="settings_browser_hotspot_endpoint">Dirección del punto de acceso: %1$s</string>
     <string name="settings_browser_more">Más</string>
     <string name="settings_selected_iphone">iPhone · %1$s</string>
-    <string name="settings_browser_vpn_endpoint_hint">Rangos de dirección: 169.254.0.0/16; puertos: 1024–65535, por ejemplo 169.254.220.253:8080. Tras cambiar el puerto, introduce la nueva dirección de Android en la página.</string>
-    <string name="settings_browser_vpn_endpoint_invalid">Introduce una dirección de 169.254.0.0/16 y un puerto (1024–65535), por ejemplo 169.254.220.253:8080.</string>
+    <string name="settings_browser_vpn_endpoint_hint">Rangos de dirección: 169.254.0.0/16; puertos: 1024–65535, por ejemplo 169.254.111.111:8080. El navegador conectado actualiza la dirección automáticamente. Si está desconectado, introduce la nueva dirección de Android en la página. Déjalo vacío para usar 169.254.111.111 y conservar el puerto guardado.</string>
+    <string name="settings_browser_vpn_endpoint_invalid">Introduce una dirección de 169.254.0.0/16 y un puerto (1024–65535), por ejemplo 169.254.111.111:8080.</string>
+    <string name="settings_browser_hotspot_address_explanation">El navegador Tesla bloquea las direcciones privadas habituales del punto de acceso. Modifica la dirección para que pueda acceder a TiPlay.</string>
 </resources>

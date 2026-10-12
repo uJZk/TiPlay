@@ -137,7 +137,6 @@ class DiPlayActivity : ComponentActivity() {
     private var settingsSectionFilter: Set<SettingsSection>? = null
     private var hostSettingsPage = false
     private var browserAdvancedPage: BrowserAdvancedPage? = null
-    private var browserAdvancedState: Bundle? = null
     private var clusterSafeAreaDialog: Dialog? = null
     private var clusterContentRequestVersion = 0L
     private var pendingCarHotspotSetup = false
@@ -330,7 +329,6 @@ class DiPlayActivity : ComponentActivity() {
             settingsCategory = savedInstanceState?.getString("settings_category")
                 ?.let { name -> SettingsCategory.valueOf(name) } ?: it
         }
-        browserAdvancedState = savedInstanceState
         render()
         scheduleAutomaticVehicleValidation()
         handleWirelessRecovery()
@@ -365,7 +363,6 @@ class DiPlayActivity : ComponentActivity() {
         handleWirelessRecovery()
     }
     override fun onSaveInstanceState(outState: Bundle) {
-        browserAdvancedPage?.retain(outState)
         outState.putString("page", page)
         outState.putString("settings_category", settingsCategory.name)
         connectionSettingsReturnCategory?.let { outState.putString("connection_settings_return_category", it.name) }
@@ -424,6 +421,7 @@ class DiPlayActivity : ComponentActivity() {
         if (isFinishing) return
         HotspotExtraAddressSettings.sync(this) // phone + browser mode: keep the car browser's hotspot address
         TeslaBrowserLink.sync(this)
+        AirPlayReceiverSettings.sync(this)
         // Returning from another activity can bring the head unit's own density back.
         if (enforceInterfaceSize()) render()
         if (Build.VERSION.SDK_INT < 33 && AppLocale.preference(this) != languagePreferenceAtCreate) {
@@ -501,10 +499,10 @@ class DiPlayActivity : ComponentActivity() {
         if (AirPlayPersistence.isPhoneBrowserMode(this) && (page == "about" || page == "settings" && hostSettingsPage)) {
             val ui = TiPlayNativeUi(this)
             val productPage = if (page == "about") BrowserAboutPage.build(this, version(), ::navigateBack) else {
-                val advanced = browserAdvancedPage ?: BrowserAdvancedPage(this, browserAdvancedState,
+                val advanced = browserAdvancedPage ?: BrowserAdvancedPage(this,
                     requestPermissions = { browserPagePermissions.launch(it) }, changed = ::markReconnectNeeded,
-                    returnToMain = { apply ->
-                        startActivity(CarPlaySettingsNavigation.mainIntent(this).putExtra(CarPlaySettingsNavigation.APPLY, apply))
+                    returnToMain = {
+                        startActivity(CarPlaySettingsNavigation.mainIntent(this))
                         finish()
                     }, saveReport = { exportDiagnostics() }).also { browserAdvancedPage = it }
                 advanced.refresh()
@@ -3475,6 +3473,10 @@ class DiPlayActivity : ComponentActivity() {
 
     // Saved without dropping CarPlay; the reconnect bar lets the driver choose when.
     private fun markReconnectNeeded() {
+        if (AirPlayPersistence.isPhoneBrowserMode(this)) {
+            BrowserSettingsChanges.apply(this)
+            return
+        }
         CarPlayBackgroundSession.snapshot()?.controller?.let(PendingReconnect::mark)
         refreshReconnectBar()
     }

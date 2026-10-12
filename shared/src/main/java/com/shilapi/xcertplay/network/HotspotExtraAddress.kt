@@ -7,14 +7,12 @@ import java.util.Collections
 
 /**
  * The extra IPv4 address TiPlay can put on this phone's own hotspot, for car browsers (Tesla) that open only
- * addresses in 100.64.0.0/10 (shared address space, RFC 6598). The VPN method may also use 169.254.0.0/16, which
- * Android still accepts from the hotspot on a VPN address. Pure helpers: parsing, validation, the two root scripts and
+ * addresses in 100.64.0.0/10 (shared address space, RFC 6598) or 169.254.0.0/16. The VPN method uses only
+ * 169.254.0.0/16, which Android accepts from the hotspot on a VPN address. Pure helpers: parsing, validation, the two root scripts and
  * the Shizuku alias. Every value that reaches a script is a validated token; nothing else is ever interpolated.
  */
 object HotspotExtraAddress {
-    const val DEFAULT = "100.109.220.253"
-    /** Suggested for the VPN method where Android drops hotspot traffic to other VPN addresses. */
-    const val LINK_LOCAL_SUGGESTION = "169.254.220.253"
+    const val DEFAULT = "169.254.111.111"
     const val ROOT_CHECK_SCRIPT = "id -u"
     /** The label the Shizuku method gives its address (`wlan2:tp`); without one netd first clears the interface. */
     const val ALIAS = "tp"

@@ -7,7 +7,6 @@
     <string name="settings_browser_hotspot_on">Точку доступу пристрою увімкнено</string>
     <string name="settings_browser_hotspot_off">Точку доступу пристрою вимкнено</string>
     <string name="settings_browser_hotspot_unknown">Стан точки доступу пристрою недоступний</string>
-    <string name="settings_return_and_apply">Назад і застосувати</string>
     <string name="settings_permission_bluetooth">Bluetooth</string>
     <string name="settings_permission_microphone">Мікрофон</string>
     <string name="settings_permission_notifications">Сповіщення</string>
@@ -18,11 +17,12 @@
     <string name="settings_report_copy_full_text">Копіювати весь текст</string>
     <string name="settings_report_saved_at">Звіт збережено в:</string>
     <string name="settings_browser_hevc_title">HEVC (H.265)</string>
-    <string name="settings_browser_hotspot_address_repair">Виправлення адреси точки доступу</string>
+    <string name="settings_browser_hotspot_address_repair">Зміна адреси точки доступу</string>
     <string name="settings_browser_hotspot_address">Адреса точки доступу</string>
     <string name="settings_browser_hotspot_endpoint">Адреса точки доступу: %1$s</string>
     <string name="settings_browser_more">Більше</string>
     <string name="settings_selected_iphone">iPhone · %1$s</string>
-    <string name="settings_browser_vpn_endpoint_hint">Діапазони адрес: 169.254.0.0/16, порти 1024–65535, наприклад 169.254.220.253:8080. Після зміни порту введіть нову адресу Android на сторінці.</string>
-    <string name="settings_browser_vpn_endpoint_invalid">Введіть адресу з 169.254.0.0/16 та порт (1024–65535), наприклад 169.254.220.253:8080.</string>
+    <string name="settings_browser_vpn_endpoint_hint">Діапазони адрес: 169.254.0.0/16, порти 1024–65535, наприклад 169.254.111.111:8080. Підключений браузер оновлює адресу автоматично. Якщо він відключений, введіть нову адресу Android на сторінці. Залиште поле порожнім для 169.254.111.111; збережений порт залишається.</string>
+    <string name="settings_browser_vpn_endpoint_invalid">Введіть адресу з 169.254.0.0/16 та порт (1024–65535), наприклад 169.254.111.111:8080.</string>
+    <string name="settings_browser_hotspot_address_explanation">Браузер Tesla блокує звичайні приватні адреси точки доступу. Змініть адресу, щоб браузер міг підключитися до TiPlay.</string>
 </resources>

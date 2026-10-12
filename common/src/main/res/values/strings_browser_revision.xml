@@ -7,7 +7,6 @@
     <string name="settings_browser_hotspot_on">Local hotspot is on</string>
     <string name="settings_browser_hotspot_off">Local hotspot is off</string>
     <string name="settings_browser_hotspot_unknown">Local hotspot status is unavailable</string>
-    <string name="settings_return_and_apply">Return and apply</string>
     <string name="settings_permission_bluetooth">Bluetooth</string>
     <string name="settings_permission_microphone">Microphone</string>
     <string name="settings_permission_notifications">Notifications</string>
@@ -18,11 +17,12 @@
     <string name="settings_report_copy_full_text">Copy full text</string>
     <string name="settings_report_saved_at">Report saved to:</string>
     <string name="settings_browser_hevc_title">HEVC (H.265)</string>
-    <string name="settings_browser_hotspot_address_repair">Hotspot address repair</string>
+    <string name="settings_browser_hotspot_address_repair">Hotspot address modification</string>
     <string name="settings_browser_hotspot_address">Hotspot address</string>
     <string name="settings_browser_hotspot_endpoint">Hotspot address: %1$s</string>
     <string name="settings_browser_more">More</string>
     <string name="settings_selected_iphone">iPhone · %1$s</string>
-    <string name="settings_browser_vpn_endpoint_hint">Address ranges: 169.254.0.0/16. Ports: 1024–65535, for example 169.254.220.253:8080. After changing the port, enter the updated Android address on the page.</string>
-    <string name="settings_browser_vpn_endpoint_invalid">Enter an address in 169.254.0.0/16 and a port (1024–65535), for example 169.254.220.253:8080.</string>
+    <string name="settings_browser_vpn_endpoint_hint">Address ranges: 169.254.0.0/16. Ports: 1024–65535, for example 169.254.111.111:8080. The connected browser updates its address automatically. If disconnected, enter the updated Android address on the page. Leave blank to use 169.254.111.111 (the saved port stays).</string>
+    <string name="settings_browser_vpn_endpoint_invalid">Enter an address in 169.254.0.0/16 and a port (1024–65535), for example 169.254.111.111:8080.</string>
+    <string name="settings_browser_hotspot_address_explanation">The Tesla browser blocks ordinary private hotspot addresses. Modify the hotspot address so it can reach TiPlay.</string>
 </resources>

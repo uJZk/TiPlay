@@ -2,6 +2,8 @@ package com.shilapi.xcertplay
 
 import java.net.ServerSocket
 import java.net.Socket
+import java.time.Duration
+import android.os.Looper
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -11,6 +13,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -53,7 +56,10 @@ class BrowserEndpointSettingsTest {
             assertEquals(1024, BrowserEndpointSettings.parse("$allowed:1024", 8080, method)!!.port)
             assertEquals(65535, BrowserEndpointSettings.parse("$allowed:65535", 8080, method)!!.port)
             assertEquals(8181, BrowserEndpointSettings.parse(allowed, 8181, method)!!.port)
-            assertNull(BrowserEndpointSettings.parse("$rejected:8080", 8080, method))
+            if (method == HotspotAddressMethod.VPN) assertNull(BrowserEndpointSettings.parse("$rejected:8080", 8080, method))
+            else assertEquals(rejected, BrowserEndpointSettings.parse("$rejected:8080", 8080, method)!!.address.hostAddress)
+            assertEquals("169.254.111.111", BrowserEndpointSettings.parse("  ", 8181, method)!!.address.hostAddress)
+            assertEquals(8181, BrowserEndpointSettings.parse("", 8181, method)!!.port)
             assertNull(BrowserEndpointSettings.parse("$allowed:1023", 8080, method))
         }
         assertEquals("169.254.1.2", BrowserEndpointSettings.parse("169.254.1.2:8080", 8080)!!.address.hostAddress)
@@ -83,5 +89,24 @@ class BrowserEndpointSettingsTest {
             socket.getOutputStream().write("GET /hello HTTP/1.1\r\nHost: 127.0.0.1:$second\r\nConnection: close\r\n\r\n".toByteArray())
             assertTrue(socket.getInputStream().bufferedReader().readText().contains("\"app\":\"TiPlay\""))
         }
+    }
+
+    @Test fun endpointChangesAnnounceTheLatestTargetBeforeMovingTheListener() {
+        TeslaBrowserLink.resetForTest()
+        TeslaBrowserLink.serverFactory = TeslaBrowserLink.appServers
+        val oldPort = ServerSocket(0).use { it.localPort }
+        BrowserEndpointSettings.savePort(context, oldPort)
+        TeslaBrowserLink.start(context)
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        val newPort = ServerSocket(0).use { it.localPort }
+        BrowserEndpointSettings.savePort(context, newPort)
+        BrowserEndpointChanges.apply(context, portChanged = true)
+        assertEquals("169.254.111.111:$newPort", TeslaBrowserLink.status().endpoint)
+        assertEquals(TeslaBrowserLink.State.Listening(oldPort), TeslaBrowserLink.state)
+        // A second address edit must not lose the pending listener restart.
+        BrowserEndpointChanges.apply(context)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1200))
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertEquals(TeslaBrowserLink.State.Listening(newPort), TeslaBrowserLink.state)
     }
 }

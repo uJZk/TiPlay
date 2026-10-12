@@ -111,7 +111,7 @@ internal class HotspotExtraAddressCard(
         if (status.isAttachedToWindow) attachment.onViewAttachedToWindow(status)
     }
 
-    /** The chooser's label; the VPN gets a second line where Android drops hotspot traffic to its address. */
+    /** The chooser's label. */
     private fun label(method: HotspotAddressMethod): String = activity.getString(method.label)
 
     private fun chooserItem(method: HotspotAddressMethod): CharSequence {
@@ -151,7 +151,7 @@ internal class HotspotExtraAddressCard(
         current.setTextColor(colors.muted)
         // With another method, its status line says what happens instead.
         blocked.visibility = if (method == HotspotAddressMethod.NORMAL &&
-            hotspot.ipv4.none(HotspotExtraAddress::isCgnat)) View.VISIBLE else View.GONE
+            hotspot.ipv4.none(HotspotExtraAddress::isAllowed)) View.VISIBLE else View.GONE
     }
 
     private fun showStatus(method: HotspotAddressMethod, line: TextView, action: Button?) {
@@ -211,14 +211,20 @@ internal class HotspotExtraAddressCard(
         if (rootCheckInProgress.get()) return
         val methods = HotspotAddressMethod.entries
         val saved = HotspotExtraAddressSettings.method(app)
-        AlertDialog.Builder(activity)
-            .setTitle(R.string.settings_hotspot_address_method)
+        val body = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = TiPlayNativeUi(activity).dp(24)
+            setPadding(padding, padding / 2, padding, 0)
+            addView(TiPlayNativeUi(activity).label(activity.getString(R.string.settings_browser_hotspot_address_repair), heading = true))
+            addView(note(activity.getString(R.string.settings_browser_hotspot_address_explanation)))
+        }
+        val dialog = AlertDialog.Builder(activity)
+            .setCustomTitle(body)
             .setSingleChoiceItems(methods.map(::chooserItem).toTypedArray(), methods.indexOf(saved)) { dialog, index ->
                 dialog.dismiss()
                 choose(methods[index], saved)
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+            }.setNegativeButton(R.string.cancel, null).create()
+        TiPlayNativeUi(activity).showDialog(dialog)
     }
 
     /**
@@ -236,6 +242,7 @@ internal class HotspotExtraAddressCard(
     }
 
     private fun apply(next: HotspotAddressMethod, previous: HotspotAddressMethod, retry: Boolean = false) {
+        BrowserEndpointChanges.clearAnnouncement()
         HotspotExtraAddressSettings.saveMethod(app, next)
         HotspotExtraAddressSettings.sync(app, retry) // starts the new method, cleans up the old one
         // Root takes the address over (and removes it when the driver leaves Root), so only the others leave it behind.
@@ -330,7 +337,7 @@ internal class HotspotExtraAddressCard(
             keyListener = DigitsKeyListener.getInstance("0123456789.:")
             setText("${saved.hostAddress}:$savedPort")
             TiPlayNativeUi(activity).emphasize(this)
-            hint = "${if (vpn) HotspotExtraAddress.LINK_LOCAL_SUGGESTION else HotspotExtraAddress.DEFAULT}:${TeslaBrowserLink.PORT}"
+            hint = "${HotspotExtraAddress.DEFAULT}:$savedPort"
         }
         val padding = (24 * activity.resources.displayMetrics.density).roundToInt()
         val body = FrameLayout(activity).apply {
@@ -357,9 +364,9 @@ internal class HotspotExtraAddressCard(
                 dialog.dismiss()
                 if (endpoint.address != saved) {
                     HotspotExtraAddressSettings.saveAddress(app, endpoint.address)
-                    HotspotExtraAddressSettings.sync(app) // the running method moves to the new address at once
                 }
-                if (BrowserEndpointSettings.savePort(app, endpoint.port)) TeslaBrowserLink.onPortChanged()
+                val portChanged = BrowserEndpointSettings.savePort(app, endpoint.port)
+                if (endpoint.address != saved || portChanged) BrowserEndpointChanges.apply(app, portChanged)
                 rerender()
             }
         }

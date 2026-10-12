@@ -46,7 +46,9 @@ internal object HotspotExtraAddressSettings {
 
     /** The saved address, or the default when none (or no valid one) is saved. */
     fun address(context: Context): Inet4Address =
-        prefs(context).getString(KEY_ADDRESS, null)?.let(HotspotExtraAddress::parse) ?: defaultAddress
+        prefs(context).getString(KEY_ADDRESS, null)?.let(HotspotExtraAddress::parse)
+            ?.takeIf { method(context) != HotspotAddressMethod.VPN || HotspotExtraAddress.isLinkLocal(it) }
+            ?: defaultAddress
 
     /** The address the chosen method provides for the car's page link, or null with Normal. */
     fun providedAddress(context: Context): Inet4Address? = address(context).takeIf { enabled(context) }

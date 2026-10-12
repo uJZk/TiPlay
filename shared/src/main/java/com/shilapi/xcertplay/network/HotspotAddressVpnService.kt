@@ -25,7 +25,7 @@ class HotspotAddressVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val address = intent?.takeIf { it.action == ACTION_START }?.getStringExtra(EXTRA_ADDRESS)
-            ?.let(HotspotExtraAddress::parse)
+            ?.let(HotspotExtraAddress::parse)?.takeIf(HotspotExtraAddress::isLinkLocal)
         if (address == null || HotspotAddressVpn.requested == null) release(HotspotAddressVpn.State.Off) else hold(address)
         return START_NOT_STICKY
     }

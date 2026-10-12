@@ -2,9 +2,9 @@
 <resources>
     <string name="settings_main">主設定</string>
     <string name="settings_browser_advanced_summary">幀率、HEVC、車型適配、日誌和診斷報告。</string>
-    <string name="settings_browser_next_connection_hint">修改後立即儲存，下次連線生效；請在方便時重新連線。</string>
+    <string name="settings_browser_next_connection_hint">修改後立即生效；需要時自動重新連線 CarPlay。</string>
     <string name="settings_browser_video">影片</string>
-    <string name="settings_browser_endpoint_hint">位址範圍為 100.64.0.0/10，連接埠為 1024–65535, 例如 100.109.220.253:8080。修改連接埠後請在網頁中填寫新的 Android 端位址。</string>
-    <string name="settings_browser_endpoint_invalid">請輸入 100.64.0.0/10 內的有效位址和連接埠（1024–65535），例如 100.109.220.253:8080。</string>
+    <string name="settings_browser_endpoint_hint">位址範圍為 169.254.0.0/16 / 100.64.0.0/10，連接埠為 1024–65535, 例如 169.254.111.111:8080。已連線的網頁會自動更新位址；未連線時，請填寫新的 Android 端位址。 留空使用 169.254.111.111，保留已儲存的連接埠。</string>
+    <string name="settings_browser_endpoint_invalid">請輸入 169.254.0.0/16 / 100.64.0.0/10 內的有效位址和連接埠（1024–65535），例如 169.254.111.111:8080。</string>
     <string name="settings_browser_boot_hint">安卓端開機時開啟 TiPlay。Android 或裝置系統設定可能限制背景啟動。</string>
 </resources>

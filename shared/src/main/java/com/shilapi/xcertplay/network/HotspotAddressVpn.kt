@@ -98,7 +98,7 @@ object HotspotAddressVpn {
      * `VpnService.prepare` would switch off the other app's VPN while it is still connecting.
      */
     fun start(context: Context, address: Inet4Address, retry: Boolean = false) {
-        require(HotspotExtraAddress.isAllowed(address)) { "address must be in 100.64.0.0/10 or 169.254.0.0/16" }
+        require(HotspotExtraAddress.isLinkLocal(address)) { "VPN address must be in 169.254.0.0/16" }
         val app = context.applicationContext
         requested = address
         if (state == State.Revoked && !retry) return

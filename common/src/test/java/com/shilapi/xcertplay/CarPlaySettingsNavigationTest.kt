@@ -12,6 +12,7 @@ import com.shilapi.xcertplay.orchestration.CarPlayController
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.host.R
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -28,6 +29,8 @@ import org.mockito.Mockito.mock
 class CarPlaySettingsNavigationTest {
     private val context get() = RuntimeEnvironment.getApplication()
     private var activity: DiPlayActivity? = null
+
+    @Before fun setUp() { grantBrowserSettingsReceiverPermission() }
 
     @After fun tearDown() {
         activity?.finish()
@@ -87,14 +90,16 @@ class CarPlaySettingsNavigationTest {
         val intent = shadowOf(screen).nextStartedActivity
         assertEquals(CarPlayHostActivity::class.java.name, intent.component!!.className)
         assertTrue(intent.getBooleanExtra(CarPlaySettingsNavigation.MAIN, false))
-        assertFalse(intent.getBooleanExtra(CarPlaySettingsNavigation.APPLY, false))
+
         assertTrue(screen.isFinishing)
     }
 
-    @Test fun advancedVideoChangesSaveForTheNextConnectionWithoutInterruptingCarPlay() {
+    @Test fun advancedVideoChangesNotifyTheHostImmediatelyWithoutLeavingThePage() {
         val screen = open(SettingsCategory.ADVANCED)
         val session = mock(CarPlayController::class.java)
         var stops = 0
+        var changes = 0
+        val listener = BrowserSettingsChanges.listen(context) { changes++ }
         CarPlayBackgroundSession.store(session, mock(AndroidMediaSink::class.java), 800, 480, Any(),
             CarPlaySessionDisplay(800, 480, Surface.ROTATION_0, false, false, 800, 480)) { stops++ }
         CarPlayBackgroundSession.active = true
@@ -115,20 +120,24 @@ class CarPlaySettingsNavigationTest {
         assertFalse(dialog.isShowing)
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(30, AirPlayPersistence.loadFps(context))
-        assertTrue(PendingReconnect.isPending(session))
-        PendingReconnect.clear()
+        assertFalse(PendingReconnect.isPending(session))
+        assertEquals(1, changes)
         descendants(screen.window.decorView).filterIsInstance<Switch>().single {
             it.contentDescription == screen.getString(R.string.settings_browser_hevc_title)
         }.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
         assertFalse(AirPlayPersistence.loadHevcEnabled(context))
-        assertTrue(PendingReconnect.isPending(session))
+        assertEquals(2, changes)
+        assertFalse(PendingReconnect.isPending(session))
         assertSame(session, CarPlayBackgroundSession.snapshot()?.controller)
         assertEquals(0, stops)
         assertNull(shadowOf(screen).nextStartedActivity)
         descendants(screen.window.decorView).filterIsInstance<Button>().single {
-            it.text == screen.getString(R.string.settings_return_and_apply)
+            it.text == screen.getString(R.string.back)
         }.performClick()
-        assertTrue(shadowOf(screen).nextStartedActivity.getBooleanExtra(CarPlaySettingsNavigation.APPLY, false))
+        assertTrue(shadowOf(screen).nextStartedActivity.getBooleanExtra(CarPlaySettingsNavigation.MAIN, false))
+        assertEquals(2, changes)
+        listener.close()
         assertTrue(screen.isFinishing)
     }
 

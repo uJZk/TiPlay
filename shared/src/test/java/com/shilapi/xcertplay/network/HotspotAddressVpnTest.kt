@@ -123,7 +123,7 @@ class HotspotAddressVpnTest {
     @Test fun startWithoutConsentOnlyReportsIt() {
         prepared = false
 
-        HotspotAddressVpn.start(context, cgnat)
+        HotspotAddressVpn.start(context, linkLocal)
 
         assertEquals(State.NeedsConsent, HotspotAddressVpn.state)
         assertTrue(started.isEmpty())
@@ -133,23 +133,23 @@ class HotspotAddressVpnTest {
     @Test fun startNeverAsksForConsentWhileAnotherVpnRuns() {
         prepared = false
         networks = listOf(VpnNetwork(Owner.OTHER_APP, emptyList()))
-        HotspotAddressVpn.start(context, cgnat)
+        HotspotAddressVpn.start(context, linkLocal)
         assertEquals(State.OtherVpn, HotspotAddressVpn.state)
 
         prepared = true
         networks = listOf(VpnNetwork(Owner.THIS_APP, emptyList()))
-        HotspotAddressVpn.start(context, cgnat)
+        HotspotAddressVpn.start(context, linkLocal)
         assertEquals(State.WiredCarPlayVpn, HotspotAddressVpn.state)
 
         assertTrue(started.isEmpty())
     }
 
     @Test fun theServiceHoldsTheAddressAndStopClosesIt() {
-        val service = startService(cgnat)
+        val service = startService(linkLocal)
 
         assertEquals(State.Up, HotspotAddressVpn.state)
         assertSame(service.get(), HotspotAddressVpn.service)
-        assertEquals(cgnat, service.get().heldAddress)
+        assertEquals(linkLocal, service.get().heldAddress)
         assertEquals("establish", calls.last())
         assertTrue(tunnels.single().fileDescriptor.valid())
 
@@ -162,23 +162,24 @@ class HotspotAddressVpnTest {
     }
 
     @Test fun aNewAddressReplacesTheTunnelThenClosesTheOldOne() {
-        val service = startService(cgnat)
+        val service = startService(linkLocal)
+        val replacement = ip("169.254.111.111")
 
-        HotspotAddressVpn.start(context, linkLocal)
+        HotspotAddressVpn.start(context, replacement)
         service.withIntent(started.last()).startCommand(0, 2)
 
         assertEquals(2, tunnels.size)
         assertFalse(tunnels[0].fileDescriptor.valid())
         assertTrue(tunnels[1].fileDescriptor.valid())
-        assertEquals(linkLocal, service.get().heldAddress)
+        assertEquals(replacement, service.get().heldAddress)
         assertEquals(State.Up, HotspotAddressVpn.state)
         // The same address again changes nothing.
-        HotspotAddressVpn.start(context, linkLocal)
+        HotspotAddressVpn.start(context, replacement)
         assertEquals(2, started.size)
     }
 
     @Test fun theServiceGivesWayInsteadOfFighting() {
-        HotspotAddressVpn.start(context, cgnat)
+        HotspotAddressVpn.start(context, linkLocal)
         networks = listOf(VpnNetwork(Owner.OTHER_APP, emptyList())) // started in between
         Robolectric.buildService(HotspotAddressVpnService::class.java, started.single()).create().startCommand(0, 1)
         assertEquals(State.OtherVpn, HotspotAddressVpn.state)
@@ -186,13 +187,13 @@ class HotspotAddressVpnTest {
 
         networks = emptyList()
         prepared = false // consent revoked in between
-        HotspotAddressVpn.start(context, cgnat)
+        HotspotAddressVpn.start(context, linkLocal)
         assertEquals(State.NeedsConsent, HotspotAddressVpn.state)
         assertTrue("establish" !in calls)
     }
 
     @Test fun revokingClosesTheTunnelAndNothingRestartsIt() {
-        val service = startService(cgnat)
+        val service = startService(linkLocal)
 
         service.get().onRevoke()
 
@@ -201,7 +202,7 @@ class HotspotAddressVpnTest {
         assertEquals(1, started.size)
 
         // An activity resume, a new connection or a new address does not undo the driver's (or the other app's) choice.
-        HotspotAddressVpn.start(context, cgnat)
+        HotspotAddressVpn.start(context, linkLocal)
         HotspotAddressVpn.start(context, linkLocal)
         assertEquals(State.Revoked, HotspotAddressVpn.state)
         assertEquals(1, started.size)
@@ -213,27 +214,27 @@ class HotspotAddressVpnTest {
     }
 
     @Test fun aTapAfterARevokeStillNeverReplacesAnotherVpn() {
-        startService(cgnat).get().onRevoke()
+        startService(linkLocal).get().onRevoke()
         networks = listOf(VpnNetwork(Owner.OTHER_APP, emptyList())) // the app that took over
 
-        HotspotAddressVpn.start(context, cgnat, retry = true)
+        HotspotAddressVpn.start(context, linkLocal, retry = true)
 
         assertEquals(State.OtherVpn, HotspotAddressVpn.state)
         assertEquals(1, started.size)
     }
 
     @Test fun leavingTheMethodForgetsARevoke() {
-        startService(cgnat).get().onRevoke()
+        startService(linkLocal).get().onRevoke()
 
         HotspotAddressVpn.stop()
-        HotspotAddressVpn.start(context, cgnat)
+        HotspotAddressVpn.start(context, linkLocal)
 
         assertEquals(State.Starting, HotspotAddressVpn.state)
         assertEquals(2, started.size)
     }
 
     @Test fun theWiredCarPlayVpnTakingTheSlotClosesThisTunnel() {
-        val service = startService(cgnat)
+        val service = startService(linkLocal)
         networks = listOf(VpnNetwork(Owner.THIS_APP, emptyList()))
 
         service.get().onUnbind(Intent(VpnService.SERVICE_INTERFACE))
@@ -244,7 +245,7 @@ class HotspotAddressVpnTest {
 
     @Test fun aLostBindingBeforeTheWiredTunnelIsVisibleIsStillTheWiredVpnNotARevoke() {
         // Android drops the binding right after the wired tunnel takes the slot; its addresses may not be published yet.
-        val service = startService(cgnat)
+        val service = startService(linkLocal)
         networks = listOf(VpnNetwork(Owner.THIS_APP, listOf(cgnat)))
 
         service.get().onUnbind(Intent(VpnService.SERVICE_INTERFACE))
@@ -253,20 +254,20 @@ class HotspotAddressVpnTest {
         assertFalse(tunnels.single().fileDescriptor.valid())
         // Once the wired connection is over, the next resume or connection starts the tunnel again.
         networks = emptyList()
-        HotspotAddressVpn.start(context, cgnat)
+        HotspotAddressVpn.start(context, linkLocal)
         assertEquals(State.Starting, HotspotAddressVpn.state)
     }
 
     @Test fun aRefusedEstablishMeansConsentIsGone() {
         establishes = false
 
-        startService(cgnat)
+        startService(linkLocal)
 
         assertEquals(State.NeedsConsent, HotspotAddressVpn.state)
     }
 
     @Test fun aStartAfterStopDoesNotReopenTheTunnel() {
-        HotspotAddressVpn.start(context, cgnat)
+        HotspotAddressVpn.start(context, linkLocal)
         val intent = started.single()
         HotspotAddressVpn.stop()
 

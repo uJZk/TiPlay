@@ -10,7 +10,6 @@ import com.shilapi.xcertplay.host.R
 internal object CarPlaySettingsNavigation {
     const val MENU = "carplay_settings_menu"
     const val MAIN = "browser_main_entry"
-    const val APPLY = "browser_apply_settings"
 
     fun mainIntent(context: Context) = Intent(context, CarPlayHostActivity::class.java)
         .putExtra(MAIN, true).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)

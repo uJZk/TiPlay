@@ -2,34 +2,21 @@ package com.shilapi.xcertplay
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.TextView
 import com.shilapi.xcertplay.airplay.AirPlayDisplaySettings
 import com.shilapi.xcertplay.host.R
 
 /** Product-owned advanced controls; upstream settings remain available through their internal API. */
 internal class BrowserAdvancedPage(
     private val activity: Activity,
-    state: Bundle?,
     private val requestPermissions: (Array<String>) -> Unit,
     private val changed: () -> Unit,
-    private val returnToMain: (Boolean) -> Unit,
+    private val returnToMain: () -> Unit,
     private val saveReport: () -> Unit,
 ) {
-    private data class Configuration(val fps: Int, val hevc: Boolean, val rightHand: Boolean)
-    private fun configuration() = Configuration(AirPlayPersistence.loadFps(activity),
-        AirPlayPersistence.loadHevcEnabled(activity), AirPlayPersistence.loadRightHandDrive(activity))
-    private val baseline = state?.getBundle(STATE)?.let {
-        Configuration(it.getInt("fps"), it.getBoolean("hevc"), it.getBoolean("right_hand"))
-    } ?: configuration()
-    private var preservePending = state?.getBundle(STATE)?.getBoolean("pending_before")
-        ?: PendingReconnect.isPending(CarPlayBackgroundSession.snapshot()?.controller)
-    private var editedController: Any? = if (state?.containsKey(STATE) == true && !preservePending && configuration() != baseline)
-        CarPlayBackgroundSession.snapshot()?.controller else null
     private val ui = TiPlayNativeUi(activity)
     private val content = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
@@ -51,12 +38,11 @@ internal class BrowserAdvancedPage(
         content.addView(ui.label(activity.getString(id), heading = true),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(16); bottomMargin = ui.dp(8) })
     }
-    private val back = button(activity.getString(R.string.back)) { returnToMain(edited) }
-    val edited: Boolean get() = configuration() != baseline
     val reportButton: Button
     private val permissions: BrowserPermissionsPage
 
     init {
+        button(activity.getString(R.string.back), returnToMain)
         heading(R.string.settings_browser_video)
         val rates = (AirPlayDisplaySettings.MIN_FPS..AirPlayDisplaySettings.MAX_FPS
             step AirPlayDisplaySettings.FPS_STEP).toList()
@@ -98,28 +84,11 @@ internal class BrowserAdvancedPage(
     }
 
     private fun configurationChanged() {
-        if (edited) {
-            val current = CarPlayBackgroundSession.snapshot()?.controller
-            if (editedController == null && PendingReconnect.isPending(current)) preservePending = true
-            editedController = current
-            changed()
-        } else if (!preservePending && PendingReconnect.isPending(editedController)) PendingReconnect.clear()
+        changed()
         refresh()
     }
 
     fun refresh() {
-        back.setText(if (edited) R.string.settings_return_and_apply else R.string.back)
         permissions.refresh()
     }
-
-    fun retain(state: Bundle) {
-        state.putBundle(STATE, Bundle().apply {
-            putInt("fps", baseline.fps)
-            putBoolean("hevc", baseline.hevc)
-            putBoolean("right_hand", baseline.rightHand)
-            putBoolean("pending_before", preservePending)
-        })
-    }
-
-    companion object { private const val STATE = "browser_advanced_baseline" }
 }

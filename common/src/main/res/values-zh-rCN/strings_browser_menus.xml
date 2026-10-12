@@ -2,9 +2,9 @@
 <resources>
     <string name="settings_main">主设置</string>
     <string name="settings_browser_advanced_summary">帧率、HEVC、车型适配、日志和诊断报告。</string>
-    <string name="settings_browser_next_connection_hint">修改后立即保存，下次连接生效；请在方便时重新连接。</string>
+    <string name="settings_browser_next_connection_hint">修改后立即生效；需要时自动重新连接 CarPlay。</string>
     <string name="settings_browser_video">视频</string>
-    <string name="settings_browser_endpoint_hint">地址范围为 100.64.0.0/10，端口为 1024–65535, 例如 100.109.220.253:8080。修改端口后请在网页中填写新的安卓端地址。</string>
-    <string name="settings_browser_endpoint_invalid">请输入 100.64.0.0/10 内的有效地址和端口（1024–65535），例如 100.109.220.253:8080。</string>
+    <string name="settings_browser_endpoint_hint">地址范围为 169.254.0.0/16 / 100.64.0.0/10，端口为 1024–65535, 例如 169.254.111.111:8080。已连接的网页会自动更新地址；未连接时，请填写新的安卓端地址。 留空使用 169.254.111.111，保留已保存的端口。</string>
+    <string name="settings_browser_endpoint_invalid">请输入 169.254.0.0/16 / 100.64.0.0/10 内的有效地址和端口（1024–65535），例如 169.254.111.111:8080。</string>
     <string name="settings_browser_boot_hint">安卓端开机时打开 TiPlay。Android 或设备系统设置可能限制后台启动。</string>
 </resources>

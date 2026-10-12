@@ -23,7 +23,7 @@ const STRINGS = {
     intro: 'Connect this screen and your Android device to the same network. Enter the code shown in TiPlay to display CarPlay.',
     codeLabel: 'Pairing code',
     hostLabel: 'Android device address',
-    hostHelp: 'Use the address shown in TiPlay, including the port.',
+    hostHelp: 'Use the address shown in TiPlay, including the port. Leave blank to use 169.254.111.111:8080.',
     resume: 'Return to CarPlay',
     resizeHelp: 'The picture follows this window and reconnects automatically when needed.',
     connect: 'Connect',
@@ -53,14 +53,14 @@ const STRINGS = {
     unsupportedHevc: 'This browser cannot decode HEVC. Turn off HEVC in TiPlay on the Android device.',
     noVideo: 'This browser cannot show the video ({0}). Open the page over HTTPS in a browser with WebCodecs support.',
     invalidCode: 'Enter the 4-digit pairing code.',
-    invalidHost: 'Enter an IPv4 address with port, for example 100.109.220.253:8080.',
+    invalidHost: 'Enter an IPv4 address with port, for example 169.254.111.111:8080.',
   },
   zh: {
     heading: '连接 TiPlay',
     intro: '让这块屏幕与安卓端连接同一网络，输入 TiPlay 显示的配对码，即可显示 CarPlay。',
     codeLabel: '配对码',
     hostLabel: '安卓端地址',
-    hostHelp: '填写 TiPlay 显示的地址，包含端口。',
+    hostHelp: '填写 TiPlay 显示的地址，包含端口；留空使用 169.254.111.111:8080。',
     resume: '返回 CarPlay',
     resizeHelp: '画面随窗口调整，必要时自动重新连接。',
     connect: '连接',
@@ -90,7 +90,7 @@ const STRINGS = {
     unsupportedHevc: '此浏览器无法解码 HEVC。请在安卓端上的 TiPlay 中关闭 HEVC。',
     noVideo: '此浏览器无法显示画面（{0}）。请使用支持 WebCodecs 的浏览器通过 HTTPS 打开本页。',
     invalidCode: '请输入 4 位配对码。',
-    invalidHost: '请输入带端口的 IPv4 地址，例如 100.109.220.253:8080。',
+    invalidHost: '请输入带端口的 IPv4 地址，例如 169.254.111.111:8080。',
   },
 };
 const lang = /^zh\b/i.test(navigator.language || '') ? 'zh' : 'en';
@@ -456,7 +456,26 @@ async function postControl(q, events) {
   return response.json();
 }
 
+function migrateEndpoint(value) {
+  const host = normalizeHost(value);
+  if (!active || !host || host === link.host) return;
+  releaseTouches();
+  link = { ...link, host };
+  $('host').value = host;
+  saveLink();
+  showLink();
+  // Keep the authenticated session and control sequence while the phone moves its listener/address.
+  // Ignore the retired stream's asynchronous end notification before aborting it.
+  streamId++;
+  videoAbort?.abort();
+  sink?.stop();
+  live = false;
+  attempt = 0;
+  scheduleRetry(1500);
+}
+
 function applyStatus(next) {
+  if (next.endpoint) migrateEndpoint(next.endpoint);
   if (Number.isSafeInteger(next.portalRevision)) {
     if (portalRevision !== null && next.portalRevision !== portalRevision) showPortal();
     portalRevision = next.portalRevision;
@@ -653,7 +672,7 @@ function keepScreenOn() {
 $('link-form').addEventListener('submit', event => {
   event.preventDefault();
   if (active) { resumeCarPlay(); return; }
-  const code = $('code').value.trim(), host = normalizeHost($('host').value || DEFAULT_HOST);
+  const code = $('code').value.trim(), host = normalizeHost($('host').value.trim() || DEFAULT_HOST);
   if (!isCode(code)) {
     stop('invalidCode');
     $('code').focus();

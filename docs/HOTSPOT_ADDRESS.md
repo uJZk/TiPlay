@@ -2,28 +2,32 @@
 
 In phone + browser mode the Tesla browser opens TiPlay at an address on the phone’s
 own hotspot. The current setup guidance treats the private ranges
-(10/8, 172.16/12, 192.168/16) as blocked by the Tesla browser and uses 100.64.0.0/10
-for an extra phone address; vehicle/browser firmware still needs a reachability check.
+(10/8, 172.16/12, 192.168/16) as blocked by the Tesla browser and uses a link-local
+extra phone address. Root and Shizuku also support the CGNAT range.
 On the TiPlay main page, select **Android hotspot** under **Network configuration**,
-then choose **Hotspot address repair**:
+then choose **Hotspot address modification**. The chooser explains why the Tesla browser needs this:
 
 | Method | Needs | What TiPlay does | When the driver leaves it |
 |---|---|---|---|
-| None (default) | nothing | Adds nothing. Shows the hotspot's IPv4 and warns when it is outside 100.64.0.0/10. For other car browsers, or a hotspot that already uses 100.64. | — |
+| None (default) | nothing | Adds nothing. Shows the hotspot's IPv4 and warns when it is outside the supported link-local and CGNAT ranges. For other car browsers, or an already accessible hotspot address. | — |
 | Root | root (Magisk, KernelSU …) | `ip -4 addr replace <address>/32 dev <iface>` through `su`, again after every hotspot restart | `ip -4 addr del …`: the address goes at once |
 | VPN | Android's VPN permission (asked once); no other VPN at the same time | A VPN that holds the address and nothing else | The VPN closes |
 | Shizuku | Shizuku (ADB) or Sui (root), running and allowing TiPlay; without root, Shizuku must be started again after every phone restart (wireless debugging needs Wi-Fi, or a computer over USB) | `INetworkManagementService.setInterfaceConfig("<iface>:tp", <address>/32)`, again after every hotspot restart | The address stays until the hotspot restarts: the shell user cannot remove it. A toast says so, except when the driver switches to Root, which takes the address over and removes it when left |
 
 Method changes apply at once without reconnecting CarPlay. With Root, Shizuku or VPN
 selected, tap **Hotspot address** to edit `address:port`. Root/Shizuku edits require
-100.64.0.0/10 (default `100.109.220.253`); VPN edits require 169.254.0.0/16
-(suggested `169.254.220.253`). Ports must be 1024–65535; the default is 8080.
-An address without a port preserves the saved port. Saving a changed address moves
-the selected method to it; changing the port restarts the browser listener, so enter
-the updated endpoint on the car page. This is separate from the connection draft’s
-**Save and reconnect** action. None shows the live hotspot endpoint without an edit row.
-The stored address is shared between methods: switching to VPN does not automatically
-replace an existing CGNAT address, so edit it to the suggested link-local address.
+169.254.0.0/16 or 100.64.0.0/10; VPN edits require 169.254.0.0/16.
+The default address is defined in [the address policy](../shared/src/main/java/com/shilapi/xcertplay/network/HotspotExtraAddress.kt);
+both phone and browser use it.
+Ports must be 1024–65535. An empty address uses the default while preserving the
+saved port. An address without a port also preserves the saved port. Saving a changed address moves
+the selected method to it; changing the port restarts the browser listener. An active authenticated
+browser learns the new endpoint before the address/listener moves and keeps the same session;
+a disconnected browser needs the updated endpoint entered manually. Connection settings apply immediately and reconnect
+automatically when needed. None shows the live hotspot endpoint without an edit row.
+The stored address is shared between methods. VPN uses the default link-local address when
+the saved address is outside its supported range, without overwriting the saved value.
+Switching back to Root or Shizuku restores the saved address.
 The first root prompt, Shizuku permission request and VPN consent come only from
 a tap in the chooser or its buttons; building the settings search index touches none of them.
 
@@ -83,7 +87,7 @@ So TiPlay needs no exemption from the non-SDK interface restrictions. The one me
 layout change fails cleanly instead of sending a wrong address. The transaction code always comes from the device's own
 `Stub.Proxy`; TiPlay never hard-codes one.
 
-## VPN (experimental)
+## VPN
 
 `HotspotAddressVpnService` is separate from the wired path's `CarPlayVpnService`. Its tunnel:
 
@@ -98,10 +102,9 @@ The service never calls `startForeground`, so it needs no `foregroundServiceType
 tunnel is up, Android binds the service itself (`BIND_FOREGROUND_SERVICE`) and shows its own VPN icon. It has no
 `android.net.VpnService` intent filter and declares `SUPPORTS_ALWAYS_ON=false`, so it cannot be an always-on VPN.
 
-**Probably does not work** on Android 15 and later, and on Android 14 from the 2025-01-01 security patch (an unreadable
-patch level counts as patched): those versions drop packets that arrive on another interface for a VPN address
-(CVE-2024-49734). Link-local addresses (169.254.0.0/16) are exempt, so the current VPN endpoint editor requires that range and suggests `169.254.220.253`. A previously saved CGNAT address can still be loaded; choosing VPN alone does not migrate it.
-Whether the Tesla browser opens a 169.254 address is not tested yet.
+Android ingress protection can drop packets that arrive on another interface for a VPN address
+(CVE-2024-49734). Link-local addresses (169.254.0.0/16) are exempt, so VPN requires that range.
+A previously saved CGNAT address stays saved for Root/Shizuku; VPN uses the default link-local address instead.
 
 TiPlay does not fight other VPNs:
 
@@ -122,6 +125,5 @@ result handler: when the driver comes back, the activity's `onResume` starts the
 
 ## Diagnostics
 
-The diagnostic report has one line: method, method in effect, keeper backend and state, VPN state, the Android class for
-the VPN rule (`android15+`, `android14-patched`, `android14-unpatched`, `before-android14`), whether the VPN probably
-fails, and whether the address is the default or link-local. Never the address.
+The diagnostic report includes method, method in effect, keeper backend and state, VPN state,
+and whether the address is the default or link-local. Never the address.

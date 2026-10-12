@@ -14,7 +14,7 @@ class HotspotExtraAddressTest {
     private val address = HotspotExtraAddress.parse("100.109.220.253")!!
 
     @Test fun parseAcceptsOnlyPlainDottedQuadsInTheSharedAddressSpace() {
-        assertEquals(ip("100.109.220.253"), HotspotExtraAddress.parse(HotspotExtraAddress.DEFAULT))
+        assertEquals(ip("169.254.111.111"), HotspotExtraAddress.parse(HotspotExtraAddress.DEFAULT))
         assertEquals(ip("100.64.0.0"), HotspotExtraAddress.parse("100.64.0.0"))
         assertEquals(ip("100.127.255.255"), HotspotExtraAddress.parse("100.127.255.255"))
         listOf(
@@ -29,7 +29,7 @@ class HotspotExtraAddressTest {
     }
 
     @Test fun linkLocalAddressesAreAllowedForEveryMethod() {
-        assertEquals(ip("169.254.220.253"), HotspotExtraAddress.parse(HotspotExtraAddress.LINK_LOCAL_SUGGESTION))
+        assertEquals(ip("169.254.111.111"), HotspotExtraAddress.parse(HotspotExtraAddress.DEFAULT))
         assertEquals(ip("169.254.0.1"), HotspotExtraAddress.parse("169.254.0.1"))
         listOf("169.253.1.1", "169.255.1.1", "170.254.1.1", "169.254.1", "169.254.01.1").forEach {
             assertNull(it, HotspotExtraAddress.parse(it))

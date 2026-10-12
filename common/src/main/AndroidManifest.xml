@@ -31,8 +31,6 @@
         </intent>
     </queries>
     <application>
-        <activity android:name="com.shilapi.xcertplay.AirPlayReceiverActivity"
-            android:exported="false" android:theme="@style/Theme.Xcertplay" />
         <service android:name="com.shilapi.xcertplay.AirPlayReceiverService"
             android:exported="false" android:foregroundServiceType="connectedDevice" />
         <provider

@@ -2,6 +2,7 @@ package com.shilapi.xcertplay
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 
 /** Immediate receiver opt-out, independent of CarPlay connection drafts and pairing identity. */
 internal object AirPlayReceiverSettings {
@@ -13,6 +14,18 @@ internal object AirPlayReceiverSettings {
 
     fun setDisabled(context: Context, disabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(DISABLED, disabled).apply()
-        if (disabled) context.stopService(Intent(context, AirPlayReceiverService::class.java))
+        sync(context)
+    }
+
+    /** Called while a product activity is visible, including after network permission is granted. */
+    fun sync(context: Context) {
+        val service = Intent(context, AirPlayReceiverService::class.java)
+        if (isDisabled(context)) {
+            context.stopService(service)
+        } else if (AirPlayPersistence.isPhoneBrowserMode(context) &&
+            LocalNetworkPermission.state(context) != LocalNetworkPermission.State.DENIED) {
+            if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(service)
+            else context.startService(service)
+        }
     }
 }

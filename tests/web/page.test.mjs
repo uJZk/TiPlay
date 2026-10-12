@@ -3,9 +3,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
+import { DEFAULT_HOST, isCode, normalizeHost } from '../../site/play/link.js';
 
 const play = new URL('../../site/play/', import.meta.url);
 const read = name => readFileSync(new URL(name, play), 'utf8');
+
+test('blank and whitespace address fields connect to the default phone', () => {
+  const submit = /\$\('link-form'\)\.addEventListener\('submit', event => \{([\s\S]*?)\n\}\);/.exec(read('app.js'))[1];
+  for (const value of ['', '   ', '169.254.111.112:9000', 'invalid']) {
+    const fields = { code: { value: '1234', focus() {} }, host: { value, focus() {} } };
+    const run = new Function('$', 'DEFAULT_HOST', 'normalizeHost', 'isCode', `
+      let link, stopped, started = false;
+      const active = false, event = { preventDefault() {} };
+      const stop = value => { stopped = value; }, saveLink = () => {}, showLink = () => {};
+      const start = () => { started = true; };
+      function submit() { ${submit} }
+      submit();
+      return { link, stopped, started };
+    `);
+    const result = run(id => fields[id], DEFAULT_HOST, normalizeHost, isCode);
+    if (value === 'invalid') {
+      assert.equal(result.stopped, 'invalidHost');
+      assert.equal(result.started, false);
+    } else {
+      assert.equal(result.link.host, value.trim() || DEFAULT_HOST);
+      assert.equal(result.started, true);
+    }
+  }
+});
 
 test('disconnect is a separate full-width row immediately below connect', () => {
   const html = read('index.html');

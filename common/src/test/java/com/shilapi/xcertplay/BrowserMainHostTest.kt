@@ -119,7 +119,7 @@ class BrowserMainHostTest {
         }
     }
 
-    @Test fun applyingAdvancedSettingsStartsTheRunningSessionRestartAndPreservesTheWholeMainDraft() {
+    @Test fun savedSettingsRestartTheRunningSessionImmediatelyAndPreserveIncompleteMainEdits() {
         val oldController = attachController()
         val main = field("browserMainPage") as BrowserMainSettingsMenu
         main.draft.localSsid = "Unsaved hotspot"
@@ -133,7 +133,7 @@ class BrowserMainHostTest {
         AirPlayPersistence.saveHevcEnabled(activity, false)
         AirPlayPersistence.saveRightHandDrive(activity, true)
 
-        newIntent(CarPlaySettingsNavigation.mainIntent(activity).putExtra(CarPlaySettingsNavigation.APPLY, true))
+        invoke("applyBrowserSettings")
 
         assertEquals(1, field("restartGeneration"))
         assertNull(field("controller"))
@@ -146,7 +146,7 @@ class BrowserMainHostTest {
         assertEquals(unsaved, main.draft)
         assertNotEquals(unsaved.localSsid, AirPlayPersistence.loadManualHotspotSsid(activity))
         assertNotEquals(unsaved.phoneAddress, DiPlayPreferences.phoneAddress(activity))
-        assertFalse(activity.intent.hasExtra(CarPlaySettingsNavigation.APPLY))
+
 
         // Startup is deliberately held so this assertion observes the real old-stack teardown.
         setField("pendingDisplaySize", null)
@@ -157,7 +157,7 @@ class BrowserMainHostTest {
         assertEquals(unsaved, main.draft)
     }
 
-    @Test fun returningFromAdvancedWithoutApplyKeepsTheRunningControllerAndUnsavedDraft() {
+    @Test fun returningFromAdvancedIsOnlyNavigationAndPreservesIncompleteMainEdits() {
         val controller = attachController()
         val main = field("browserMainPage") as BrowserMainSettingsMenu
         main.draft.localSsid = "Unsaved main-page hotspot"
@@ -165,7 +165,7 @@ class BrowserMainHostTest {
         AirPlayPersistence.saveFps(activity, 35)
         PendingReconnect.mark(controller)
 
-        newIntent(CarPlaySettingsNavigation.mainIntent(activity).putExtra(CarPlaySettingsNavigation.APPLY, false))
+        newIntent(CarPlaySettingsNavigation.mainIntent(activity))
         invoke("onResume")
 
         assertSame(controller, field("controller"))

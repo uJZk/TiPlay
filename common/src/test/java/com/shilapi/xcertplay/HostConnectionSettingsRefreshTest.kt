@@ -26,6 +26,7 @@ class HostConnectionSettingsRefreshTest {
     private val app get() = RuntimeEnvironment.getApplication()
 
     @Before fun setUp() {
+        grantBrowserSettingsReceiverPermission()
         app.getSharedPreferences("xcertplay_airplay", Context.MODE_PRIVATE).edit().clear().commit()
     }
 

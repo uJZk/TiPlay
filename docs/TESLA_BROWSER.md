@@ -35,11 +35,14 @@ fragment, including when the address or port equals its default. This makes the 
 depending on a browser's saved address or fallback endpoint.
 
 The copied endpoint names the live extra address when available, otherwise the detected network address, with the
-configured address as a fallback. Endpoint edits require 169.254.0.0/16 for VPN repair and 100.64.0.0/10 for other
-repair methods, with ports 1024–65535. Changing the method never rewrites the saved address; the editor reports an
-incompatible value and checks the currently selected method again before saving. Address repair and endpoint changes
-apply independently of the iPhone connection draft. After a port
-change, manually configured browsers must update the Android endpoint.
+configured address as a fallback. Endpoint edits require 169.254.0.0/16 for VPN and allow both
+169.254.0.0/16 and 100.64.0.0/10 for Root/Shizuku, with ports 1024–65535. An empty address uses the
+default and preserves the saved port. Changing the method never rewrites the saved address;
+VPN uses the default when the saved address is outside its supported range. The editor checks the
+currently selected method before saving. Address modification and endpoint changes
+apply immediately. Before moving the address or listener, an authenticated control status announces
+the new endpoint. The connected browser saves it, updates its bookmark and resumes transport with the
+same pairing code and session. A disconnected browser still needs the updated endpoint entered manually.
 
 The code belongs in a URL fragment so it is not sent to the static page host. The page imports and saves it, then
 removes the fragment. Bookmark only after import; a bookmark does not contain the code and cannot replace a new code
@@ -60,9 +63,9 @@ The separately hosted static page and the phone's discovery response are reachab
 The local video transport is not encrypted. An HTTPS page protects static-page delivery and enables WebCodecs; it does
 not turn the HTTP connection to the phone into TLS. Protect the shared network with its Wi-Fi security.
 
-Tesla browser restrictions can block ordinary private hotspot addresses. Address repair provides an alternative
+Tesla browser restrictions can block ordinary private hotspot addresses. Address modification provides an alternative
 without changing the iPhone's transport. Root and Shizuku add an address to the hotspot; Shizuku cannot remove that
-address, so it survives a method change until the hotspot restarts. VPN repair holds its own address and must not
+address, so it survives a method change until the hotspot restarts. VPN holds its own address and must not
 replace another VPN, including TiPlay's wired connection VPN. Some Android ingress rules discard hotspot traffic
 to non-link-local VPN addresses; a link-local address avoids that rule but still depends on the car's routing behavior.
 See [hotspot address setup](HOTSPOT_ADDRESS.md) for permission and cleanup contracts.
@@ -77,8 +80,8 @@ configured fallback rather than falsely reporting a disconnected network.
 
 The browser reports its available video area and theme. Native head-unit display settings do not govern the browser
 canvas. The phone fits the existing picture while negotiating a replacement display; this can briefly interrupt
-CarPlay. Frame rate and codec controls belong to the App's Advanced settings. **Return and apply** commits changed
-connection parameters and immediately reconnects a running session; the Main settings connection draft remains intact.
+CarPlay. Frame rate and codec controls belong to the App's Advanced settings. Settings apply immediately and
+reconnect a running session automatically when required. Returning from Advanced settings is navigation only.
 
 CarPlay has no product header over its canvas. Its TiPlay icon returns to the portal while preserving the session;
 the portal returns to the picture without creating a second connection. Connect appears above Disconnect on the portal.

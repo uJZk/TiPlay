@@ -260,7 +260,7 @@ class TeslaBrowserLinkSettingsTest {
         assertFalse(shown(screen).any { it.startsWith(screen.getString(R.string.settings_browser_page_address)) })
         assertTrue(shown(screen).contains(link))
         button(screen, screen.getString(R.string.settings_browser_link_copy)).performClick()
-        assertEquals("https://car.example/tiplay/?t=100.109.220.253:8080#c=$code", context.getSystemService(ClipboardManager::class.java)
+        assertEquals("https://car.example/tiplay/?t=169.254.111.111:8080#c=$code", context.getSystemService(ClipboardManager::class.java)
             .primaryClip!!.getItemAt(0).text.toString())
     }
 
@@ -322,7 +322,7 @@ class TeslaBrowserLinkSettingsTest {
         assertTrue(TeslaBrowserLink.awaitIdle())
         finishProbes()
         val code = TeslaBrowserLink.pairingCode(context)
-        assertTrue(shown(screen).contains("100.109.220.253:8081"))
+        assertTrue(shown(screen).contains("169.254.111.111:8081"))
     }
 
     @Config(shadows = [DeniedLocalNetwork::class])

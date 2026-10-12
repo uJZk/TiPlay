@@ -23,8 +23,8 @@ const concat = parts => {
 const plain = record => ({ ...record, payload: Array.from(record.payload) });
 
 test('link hash carries an IPv4 host with port and a four-digit code', () => {
-  assert.deepEqual(parseLinkHash('#h=100.109.220.253:8080&c=1234'), { host: '100.109.220.253:8080', code: '1234' });
-  assert.deepEqual(parseLinkHash('#h=100.109.220.253%3A8080&c=0042'), { host: '100.109.220.253:8080', code: '0042' });
+  assert.deepEqual(parseLinkHash('#h=169.254.111.111:8080&c=1234'), { host: '169.254.111.111:8080', code: '1234' });
+  assert.deepEqual(parseLinkHash('#h=169.254.111.111%3A8080&c=0042'), { host: '169.254.111.111:8080', code: '0042' });
   assert.deepEqual(parseLinkHash('#c=1234'), { host: null, code: '1234' });
   assert.deepEqual(parseLinkHash('#h=10.0.0.1'), { host: '10.0.0.1:8080', code: null });
   assert.deepEqual(parseLinkHash(''), { host: null, code: null });
@@ -42,7 +42,7 @@ test('built links put a phone other than the default in ?t= for bookmarks and th
   assert.equal(buildLink('https://example.test/', { host: DEFAULT_HOST, code: '9876' }), 'https://example.test/#c=9876',
     'the default phone needs no t');
   assert.equal(buildLink('https://example.test', { host: DEFAULT_HOST, code: null }), 'https://example.test');
-  assert.equal(buildLink('https://example.test/', { host: '100.109.220.253:9000', code: null }), 'https://example.test/?t=100.109.220.253:9000',
+  assert.equal(buildLink('https://example.test/', { host: '169.254.111.111:9000', code: null }), 'https://example.test/?t=169.254.111.111:9000',
     'the default address at another port keeps t');
   assert.equal(buildLink('https://example.test/play/?t=1.2.3.4&lang=zh', { host: '100.64.0.1:9000', code: null }),
     'https://example.test/play/?t=100.64.0.1:9000&lang=zh', 'an older t is replaced and other parameters stay');
@@ -84,9 +84,9 @@ test('?t= names the phone with an optional port that defaults to 8080', () => {
 
 test('the address bar keeps ?t= for bookmarks of a phone other than the default and drops the fragment with the code', () => {
   assert.equal(linkLocation('/', '', DEFAULT_HOST), '/', 'the default phone at 8080 leaves just the page address');
-  assert.equal(linkLocation('/DiPlay/', '?t=100.109.220.253:8080', DEFAULT_HOST), '/DiPlay/', 'an explicit default t goes too');
+  assert.equal(linkLocation('/DiPlay/', '?t=169.254.111.111:8080', DEFAULT_HOST), '/DiPlay/', 'an explicit default t goes too');
   assert.equal(linkLocation('/', '?t=1.2.3.4&lang=zh', DEFAULT_HOST), '/?lang=zh');
-  assert.equal(linkLocation('/', '', '100.109.220.253:9000'), '/?t=100.109.220.253:9000', 'another port keeps t');
+  assert.equal(linkLocation('/', '', '169.254.111.111:9000'), '/?t=169.254.111.111:9000', 'another port keeps t');
   assert.equal(linkLocation('/', '', '100.64.0.1:8080'), '/?t=100.64.0.1');
   assert.equal(linkLocation('/play/', '?t=1.2.3.4&lang=zh', '100.64.0.1:9000'), '/play/?t=100.64.0.1:9000&lang=zh');
   assert.equal(linkLocation('/play/', '?t', '100.64.0.1:8080'), '/play/?t=100.64.0.1', 'a bare t is replaced');
@@ -98,7 +98,7 @@ test('the address bar keeps ?t= for bookmarks of a phone other than the default 
 test('the declared address space matches what Chrome resolves for the host', () => {
   assert.equal(addressSpaceFor('127.0.0.1:8080'), 'loopback');
   assert.equal(addressSpaceFor('localhost:8080'), 'loopback');
-  for (const host of ['100.109.220.253:8080', '10.1.2.3:80', '172.16.0.1:80', '192.168.0.2:80', '169.254.1.1:80']) {
+  for (const host of ['169.254.111.111:8080', '10.1.2.3:80', '172.16.0.1:80', '192.168.0.2:80', '169.254.1.1:80']) {
     assert.equal(addressSpaceFor(host), 'local', host);
   }
   for (const host of ['100.128.0.1:80', '172.32.0.1:80', '8.8.8.8:80']) assert.equal(addressSpaceFor(host), undefined, host);

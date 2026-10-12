@@ -10,6 +10,8 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
@@ -29,6 +31,7 @@ internal class BrowserMainSettingsMenu(
     private val disconnect: () -> Unit,
     advanced: () -> Unit,
     about: () -> Unit,
+    private val settingsChanged: () -> Unit = {},
 ) {
     private val ui = TiPlayNativeUi(activity)
     private fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
@@ -50,6 +53,8 @@ internal class BrowserMainSettingsMenu(
     private val stop: Button
     private val network = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
     private var baseline = BrowserConnectionDraft.load(activity)
+    private val editHandler = Handler(Looper.getMainLooper())
+    private val applyEdit = Runnable { applyChanges() }
     private var active = false
     private var idle = true
     private var stopping = false
@@ -106,7 +111,7 @@ internal class BrowserMainSettingsMenu(
         } else session
         phone = button(transport, phoneLabel(), ::choosePhone).apply { isAllCaps = false }
         connectionMode = BrowserSettingsPresentation.connectionMode(activity, { draft.wireless }) {
-            draft.wireless = it; renderNetwork(); updateActions()
+            draft.wireless = it; renderNetwork(); applyChanges()
         }
         connectionMode.minHeight = dp(48)
         transport.addView(connectionMode, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
@@ -123,9 +128,6 @@ internal class BrowserMainSettingsMenu(
             stopping = true; updateActions(); disconnect()
         }.apply { visibility = View.GONE }
         session.addView(error)
-        button(session, activity.getString(R.string.settings_airplay_title)) {
-            activity.startActivity(Intent(activity, AirPlayReceiverActivity::class.java))
-        }
         session.addView(BrowserBootConnectionSettings.create(activity))
         val browser = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         val details = LinearLayout(activity).apply {
@@ -141,18 +143,19 @@ internal class BrowserMainSettingsMenu(
         renderNetwork()
         val more = group(content)
         heading(R.string.settings_browser_more, more)
-        button(more, activity.getString(R.string.settings_advanced), advanced)
+        button(more, activity.getString(R.string.settings_advanced)) { applyChanges(); advanced() }
         val stackTools = activity.resources.configuration.screenWidthDp < 400 || activity.resources.configuration.fontScale > 1.2f
         val tools = LinearLayout(activity).apply { orientation = if (stackTools) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL }
         more.addView(tools)
         button(tools, activity.getString(R.string.language_app_language)) { AppLocale.showPicker(activity) }
-        button(tools, activity.getString(R.string.about), about)
+        button(tools, activity.getString(R.string.about)) { applyChanges(); about() }
         for (i in 0 until tools.childCount) tools.getChildAt(i).layoutParams =
             if (stackTools) LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
             else LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) }
         val version = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
         content.addView(text(version).also(ui::emphasize))
         updateActions()
+        if (draft != baseline) editHandler.postDelayed(applyEdit, 400L)
     }
     private fun phoneLabel() = if (draft.phoneAddress.isNullOrBlank()) activity.getString(R.string.choose_iphone)
         else activity.getString(R.string.settings_selected_iphone, draft.phoneName)
@@ -169,7 +172,7 @@ internal class BrowserMainSettingsMenu(
             .setItems(devices.map { "${it.name ?: activity.getString(R.string.paired_device)} · ${it.address.takeLast(5)}" }.toTypedArray()) { _, index ->
                 val device = devices[index]
                 draft.phoneAddress = device.address; draft.phoneName = device.name ?: "iPhone"
-                phone.text = phoneLabel(); updateActions()
+                phone.text = phoneLabel(); applyChanges()
             }.setNeutralButton(R.string.pair_another) { _, _ -> activity.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
             .setNegativeButton(android.R.string.cancel, null).create().also(ui::showDialog)
     }
@@ -182,7 +185,11 @@ internal class BrowserMainSettingsMenu(
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-                override fun afterTextChanged(s: Editable?) { changed(s.toString()); this@BrowserMainSettingsMenu.error.visibility = View.GONE; updateActions() }
+                override fun afterTextChanged(s: Editable?) {
+                    changed(s.toString()); this@BrowserMainSettingsMenu.error.visibility = View.GONE; updateActions()
+                    editHandler.removeCallbacks(applyEdit)
+                    editHandler.postDelayed(applyEdit, 400L)
+                }
             })
             parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4); bottomMargin = dp(8) })
         }
@@ -199,7 +206,7 @@ internal class BrowserMainSettingsMenu(
                 minHeight = dp(48)
                 tag = source
                 isChecked = draft.source == source
-                setOnClickListener { draft.source = source; renderNetwork(); updateActions() }
+                setOnClickListener { draft.source = source; renderNetwork(); applyChanges() }
             }, RadioGroup.LayoutParams(0, -2, 1f).apply { marginEnd = dp(4) })
         }
         network.addView(group, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
@@ -221,7 +228,7 @@ internal class BrowserMainSettingsMenu(
                 ManualHotspotSecurity.WPA3 to activity.getString(R.string.wpa3))
         choice(fields, R.string.security, options, if (local) draft.localSecurity else draft.externalSecurity) {
             if (local) draft.localSecurity = it else draft.externalSecurity = it
-            renderNetwork(); updateActions()
+            renderNetwork(); applyChanges()
         }
         val secured = if (local) draft.localSecurity != ManualHotspotSecurity.OPEN else draft.externalSecured
         val passwordFields = LinearLayout(activity).apply {
@@ -310,14 +317,23 @@ internal class BrowserMainSettingsMenu(
     }
     private fun updateActions() {
         if (stopping) status.setText(R.string.settings_main_stopping) else updateIdleStatus()
-        val dirty = draft != baseline
-        action.setText(if (dirty || active) R.string.save_and_reconnect else R.string.connect_phone)
-        action.visibility = if (!active || dirty || failed) View.VISIBLE else View.GONE
+        action.setText(R.string.connect_phone)
+        action.visibility = if (!active) View.VISIBLE else View.GONE
         action.isEnabled = !stopping
         stop.visibility = if (active) View.VISIBLE else View.GONE; stop.isEnabled = !stopping
         stop.setText(if (stopping) R.string.settings_main_stopping else R.string.disconnect)
     }
+    private fun applyChanges() {
+        editHandler.removeCallbacks(applyEdit)
+        if (activity.isDestroyed || activity.isFinishing || draft == baseline || draft.validationError() != null) return
+        draft.save(activity)
+        committed()
+        settingsChanged()
+    }
+    fun dispose() { editHandler.removeCallbacks(applyEdit) }
+    fun applyPendingEdits() { applyChanges() }
     private fun submit() {
+        editHandler.removeCallbacks(applyEdit)
         val invalid = draft.validationError()
         if (invalid != null) {
             error.text = activity.getString(invalid)

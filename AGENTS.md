@@ -14,6 +14,9 @@ secret transfer and host ADB boundaries, are in [docs/WLSC.md](docs/WLSC.md).
 
 ## Current progress
 
+See `docs/SETTINGS-IMMEDIATE-APPLY-2026-10-12.md` for immediate settings application,
+default AirPlay startup, hotspot address handoff, verification and device follow-up.
+
 See `docs/BETA-RELEASE-2026-10-12.md` for the 0.2.14-beta.1 release inputs,
 upstream CarPlay identity provenance, validation and publication status.
 
@@ -122,10 +125,11 @@ Each locale MUST use its existing form: `(تجريبي)`, `(experimental)`, `(э
    A plain `section(...)` call there MUST NOT be used: it renders on every category page.
 4. A setting MUST NOT appear in two categories.
    Overview quick settings are the only duplicates. They MUST use the same persistence as the full control. Overview SHOULD NOT have more than four quick settings.
-5. If the change reconnects CarPlay or applies at the next connection, the description MUST say so.
-   A setting that only takes effect at the next connection MUST call `markReconnectNeeded()` after it saves.
-   This shows the "Reconnect now" bar. It MUST NOT drop a running session without the driver's consent.
-   Reconnect at once (`reconnectIfRunning()`) only after a dialog button that says "Apply and reconnect", or when the description says that the change reconnects CarPlay.
+5. Browser settings save and apply valid changes immediately. Changes requiring new negotiation MUST call
+   `markReconnectNeeded()` after saving; in phone + browser mode it notifies the host to reconnect automatically
+   while keeping the current settings page open. Idle edits MUST NOT start a connection.
+   Do not add "Save and reconnect" or "Return and apply" actions to browser settings.
+   Retained upstream native settings keep their existing explicit reconnect behavior.
 6. Add each new string to `common/src/main/res/values/` and to every `values-xx` locale folder.
    New Settings copy SHOULD use the `settings_` prefix. `SettingsTranslationsTest` fails when a `settings_*` string has no translation.
 7. A control that opens a choice uses `button()` with the text `"Title · Value"`.
