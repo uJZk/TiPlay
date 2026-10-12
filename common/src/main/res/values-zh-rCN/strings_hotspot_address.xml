@@ -5,14 +5,14 @@
     <string name="settings_hotspot_address_blocked">特斯拉浏览器很可能无法访问这个地址。请在下方选择其他热点地址方式。</string>
     <string name="settings_hotspot_not_found">未找到热点。请打开这台手机的热点。</string>
     <string name="settings_hotspot_address_method">热点地址</string>
-    <string name="settings_hotspot_method_normal">无</string>
+    <string name="settings_hotspot_method_normal">标准</string>
     <string name="settings_hotspot_method_root">Root</string>
     <string name="settings_hotspot_method_vpn">VPN</string>
     <string name="settings_hotspot_method_shizuku">Shizuku</string>
     <string name="settings_hotspot_method_normal_description">适用于其他车机浏览器，或热点地址本身就在 169.254.0.0/16 或 100.64.0.0/10 内的情况。</string>
-    <string name="settings_hotspot_method_root_description">需要 root。给这台手机的热点加上 %1$s，让特斯拉浏览器访问 TiPlay；热点重启后自动重新添加。立即生效，无需重新连接。</string>
+    <string name="settings_hotspot_method_root_description">需要 Root。为热点添加 %1$s，热点重启后自动恢复；支持读取热点名称和密码，并尝试启用 TiPlay USB 弹窗自动确认。部分系统可能限制这些功能。</string>
     <string name="settings_hotspot_method_vpn_description">不需要 root。通过只供 TiPlay 使用的 VPN 提供地址 %1$s，不影响其他应用。第一次使用时 Android 会请你允许 VPN；开启期间不能同时使用其他 VPN。立即生效，无需重新连接。</string>
-    <string name="settings_hotspot_method_shizuku_description">不需要 root，但需要 Shizuku 正在运行并已授权 TiPlay。每次手机重启后都要重新启动 Shizuku：用无线调试启动（需要连接 Wi-Fi），或通过 USB 连接电脑启动。给这台手机的热点加上 %1$s，热点重启后自动重新添加。Shizuku 无法删除这个地址，所以改用其他方式后，它会保留到热点重启为止。立即生效，无需重新连接。</string>
+    <string name="settings_hotspot_method_shizuku_description">需要 Shizuku 运行并授权 TiPlay。尝试为热点添加 %1$s、自动授权 TiPlay 的 USB 连接，部分系统可能拒绝。热点名称和密码需手动填写；添加的地址会保留到热点重启。手机重启后需重新启动 Shizuku。</string>
     <string name="settings_hotspot_extra_address_value">地址</string>
     <string name="settings_hotspot_extra_address_value_hint">Root / Shizuku：169.254.0.0/16 或 100.64.0.0/10；VPN：仅 169.254.0.0/16。留空使用 169.254.111.111。立即生效。</string>
     <string name="settings_hotspot_extra_address_invalid">请输入 100.64.0.0/10 或 169.254.0.0/16 内的地址，例如 169.254.111.111。</string>

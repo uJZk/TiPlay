@@ -4,7 +4,7 @@ import android.content.Context
 import android.widget.Switch
 import com.shilapi.xcertplay.host.R
 
-/** The boot action requests a connection without changing the separate connect-on-open preference. */
+/** Boot controls launching TiPlay; the independent CarPlay opt-out controls connection attempts. */
 internal object BrowserBootConnectionSettings {
     const val CONNECT_AFTER_BOOT = "tiplay_connect_after_boot"
     fun create(context: Context) = Switch(context).apply {

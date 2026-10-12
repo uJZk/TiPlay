@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_browser_boot_connect">Connect automatically after boot</string>
+    <string name="settings_browser_boot_connect">Start on boot</string>
     <string name="settings_browser_network_configuration">Network configuration</string>
     <string name="settings_browser_connection_status">Connection status</string>
     <string name="settings_browser_carplay_connection_mode">CarPlay connection mode</string>
@@ -17,12 +17,12 @@
     <string name="settings_report_copy_full_text">Copy full text</string>
     <string name="settings_report_saved_at">Report saved to:</string>
     <string name="settings_browser_hevc_title">HEVC (H.265)</string>
-    <string name="settings_browser_hotspot_address_repair">Hotspot address modification</string>
+    <string name="settings_browser_hotspot_address_repair">TiPlay mode</string>
     <string name="settings_browser_hotspot_address">Hotspot address</string>
     <string name="settings_browser_hotspot_endpoint">Hotspot address: %1$s</string>
     <string name="settings_browser_more">More</string>
     <string name="settings_selected_iphone">iPhone · %1$s</string>
     <string name="settings_browser_vpn_endpoint_hint">Address ranges: 169.254.0.0/16. Ports: 1024–65535, for example 169.254.111.111:8080. The connected browser updates its address automatically. If disconnected, enter the updated Android address on the page. Leave blank to use 169.254.111.111 (the saved port stays).</string>
     <string name="settings_browser_vpn_endpoint_invalid">Enter an address in 169.254.0.0/16 and a port (1024–65535), for example 169.254.111.111:8080.</string>
-    <string name="settings_browser_hotspot_address_explanation">The Tesla browser blocks ordinary private hotspot addresses. Modify the hotspot address so it can reach TiPlay.</string>
+    <string name="settings_browser_hotspot_address_explanation">Choose how TiPlay supports access from the car browser and USB permission handling. Standard uses the current network address; other modes offer address workarounds with different permissions and limits.</string>
 </resources>

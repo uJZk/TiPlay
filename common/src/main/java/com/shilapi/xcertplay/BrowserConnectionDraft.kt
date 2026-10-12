@@ -18,6 +18,7 @@ internal data class BrowserConnectionDraft(
     var externalSecurity: ManualHotspotSecurity = if (externalPassword.isEmpty()) ManualHotspotSecurity.OPEN else ManualHotspotSecurity.WPA2,
     var phoneAddress: String? = null,
     var phoneName: String = "iPhone",
+    var allTransports: Boolean = false,
 ) {
     override fun toString() = "Browser connection draft (redacted)"
 
@@ -43,7 +44,8 @@ internal data class BrowserConnectionDraft(
     }
     fun save(context: Context) {
         phoneAddress?.let { DiPlayPreferences.savePhone(context, it, phoneName) }
-        AirPlayPersistence.saveWirelessEnabled(context, wireless)
+        BrowserCarPlaySettings.saveMode(context, if (allTransports) BrowserCarPlaySettings.Mode.ALL
+            else if (wireless) BrowserCarPlaySettings.Mode.WIRELESS else BrowserCarPlaySettings.Mode.USB)
         AirPlayPersistence.saveWirelessHotspotMode(context, mode)
         AirPlayPersistence.saveManualHotspotSsid(context, localSsid)
         AirPlayPersistence.saveManualHotspotPassphrase(context, localConnectionPassword)
@@ -54,7 +56,7 @@ internal data class BrowserConnectionDraft(
     }
     fun retain(state: Bundle) {
         state.putBundle("browser_main_draft", Bundle().apply {
-            putBoolean("wireless", wireless); putString("source", source.name)
+            putBoolean("allTransports", allTransports); putBoolean("wireless", wireless); putString("source", source.name)
             putString("localSsid", localSsid); putString("localPassword", localPassword)
             putString("security", localSecurity.name); putString("externalSsid", externalSsid)
             putString("externalPassword", externalPassword); putString("externalSecurity", externalSecurity.name); putString("phoneAddress", phoneAddress); putString("phoneName", phoneName)
@@ -73,9 +75,12 @@ internal data class BrowserConnectionDraft(
                 AirPlayPersistence.loadManualHotspotSsid(context), AirPlayPersistence.loadManualHotspotPassphrase(context),
                 AirPlayPersistence.loadManualHotspotSecurity(context), AirPlayPersistence.loadExistingWifiSsid(context),
                 AirPlayPersistence.loadExistingWifiPassphrase(context), BrowserExistingWifiSettings.loadSecurity(context))
+            draft.allTransports = BrowserCarPlaySettings.mode(context) == BrowserCarPlaySettings.Mode.ALL
+            if (draft.allTransports) draft.wireless = true
             draft.phoneAddress = DiPlayPreferences.phoneAddress(context)
             draft.phoneName = DiPlayPreferences.phoneName(context)
             state?.getBundle("browser_main_draft")?.let {
+                draft.allTransports = it.getBoolean("allTransports", draft.allTransports)
                 draft.wireless = it.getBoolean("wireless", draft.wireless)
                 // Older drafts used EXTERNAL_AP for the same existing-Wi-Fi transport.
                 draft.source = if (it.getString("source") == "EXTERNAL_AP") Source.LAN else

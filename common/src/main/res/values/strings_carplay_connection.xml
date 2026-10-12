@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_carplay_mode_all">All (USB first)</string>
+    <string name="settings_carplay_reconnect">Reconnect CarPlay</string>
+    <string name="settings_carplay_disable">Disable CarPlay</string>
+    <string name="settings_carplay_disable_description">Stop CarPlay connections and retries. AirPlay remains independent.</string>
+    <string name="settings_carplay_disabled">CarPlay disabled</string>
+    <string name="settings_carplay_ready">CarPlay ready</string>
+    <string name="settings_carplay_searching">CarPlay searching</string>
+    <string name="settings_airplay_ready_status">AirPlay ready</string>
+    <string name="settings_airplay_disabled_status">AirPlay disabled</string>
+</resources>

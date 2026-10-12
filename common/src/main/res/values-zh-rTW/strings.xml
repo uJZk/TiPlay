@@ -157,7 +157,7 @@
     <string name="cluster_map_size">儀表板地圖大小</string>
     <string name="common_cancel">取消</string>
     <string name="connect">連線</string>
-    <string name="connect_phone">連線手機</string>
+    <string name="connect_phone">連接 CarPlay</string>
     <string name="connect_when_diplay_opens">開啟 TiPlay 時連線</string>
     <string name="connect_with_usb">透過 USB 連線</string>
     <string name="connect_your_iphone_with_a_usb_cable">請使用 USB 傳輸線連線 iPhone</string>
@@ -262,7 +262,7 @@
     <string name="nearby_devices_connects_your_iphone_microphone_enables_sir">「附近的裝置」權限用於連線 iPhone；麥克風權限用於 Siri 和通話。較舊版本的 Android 也需要位置權限來設定無線連線。USB 模式可能會要求建立本機 VPN 連線。</string>
     <string name="nothing_is_sent_automatically_protocol_payloads_and_creden">報告不會自動傳送，不包含通訊協定資料和認證資訊。</string>
     <string name="oem_label">OEM 標籤</string>
-    <string name="on_your_iphone_open_settings_bluetooth_and_pair_with_the_c">在 iPhone 上開啟「設定 → 藍牙」並與車機配對。然後返回 TiPlay，點一下「連線手機」。</string>
+    <string name="on_your_iphone_open_settings_bluetooth_and_pair_with_the_c">在 iPhone 上開啟「設定 → 藍牙」並與本機配對。返回 TiPlay，未停用 CarPlay 時會自動連線。</string>
     <string name="one_time_setup_on_this_car">在此車機上進行一次性設定</string>
     <string name="open">開啟</string>
     <string name="open_after_the_car_starts">車機啟動後開啟</string>
@@ -289,7 +289,7 @@
     <string name="prefer_a_cable">想使用傳輸線？</string>
     <string name="preparing_mfi_authentication">正在準備 MFi 認證</string>
     <string name="ready">就緒</string>
-    <string name="ready_when_you_are">一切就緒</string>
+    <string name="ready_when_you_are">CarPlay 就緒</string>
     <string name="receiver_based_on_xcertplay_licensed_under_gpl_3_0_diplay">TiPlay 是 DiPlay（github.com/shihabal3amri/DiPlay）的修改版本，採用 GPL-3.0 授權。DiPlay 的接收器以採用 GPL-3.0 授權的 xcertplay 為基礎，介面沿用採用 AGPL-3.0 授權的 DiAuto 設計。\n\n專案包含 AndroidX、Bouncy Castle、JmDNS、Shizuku API 和 SLF4J。本版本附有原始碼和授權聲明。\n\nCarPlay 和 CarPlay 圖示為 Apple Inc. 所有。Tesla 是 Tesla, Inc. 的商標。TiPlay 為獨立專案，與 Apple 和 Tesla 無關。</string>
     <string name="reconnecting_to_your_iphone">正在重新連線 iPhone…</string>
     <string name="remote">遠端</string>

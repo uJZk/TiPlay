@@ -10,7 +10,8 @@ import java.util.concurrent.TimeUnit
  *
  * The script goes to `su`'s stdin instead of `su -c`, whose meaning differs between implementations. It may hold only
  * the characters of the validated tokens TiPlay builds (see [HotspotExtraAddress]), so no shell syntax can ever reach the
- * root shell. Blocking, bounded by a timeout, never on the main thread.
+ * root shell. The separate USB setup uses a fixed script with a validated package name.
+ * Blocking, bounded by a timeout, never on the main thread.
  */
 object RootShell {
     sealed interface Result {
@@ -43,6 +44,10 @@ object RootShell {
     internal fun execute(command: List<String>, script: String, timeoutMillis: Long): Result {
         require(SAFE_SCRIPT.matches(script)) { "root script holds characters outside the safe set" }
         require(timeoutMillis in 1..MAX_TIMEOUT_MILLIS) { "timeoutMillis must be in 1..$MAX_TIMEOUT_MILLIS" }
+        return executeValidated(command, script, timeoutMillis)
+    }
+
+    private fun executeValidated(command: List<String>, script: String, timeoutMillis: Long): Result {
         val process = try {
             ProcessBuilder(command).redirectErrorStream(true).start()
         } catch (_: IOException) {
@@ -96,6 +101,25 @@ object RootShell {
             runCatching { process.errorStream.close() }
             if (process.isAlive) process.destroyForcibly()
         }
+    }
+
+    /** Fixed, validated USB accessibility setup; preserve all other enabled services. */
+    fun enableUsbAutoConfirm(packageName: String): Result {
+        check(!onMainThread()) { "USB permission setup must not run on the main thread" }
+        return executeValidated(listOf("su"), usbAutoConfirmScript(packageName), DEFAULT_TIMEOUT_MILLIS)
+    }
+
+    internal fun usbAutoConfirmScript(packageName: String): String {
+        require(Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+").matches(packageName))
+        val service = "$packageName/com.shilapi.xcertplay.UsbAutoConfirmService"
+        val script = """current=${'$'}(settings get secure enabled_accessibility_services) || exit 1
+            case "${'$'}current" in null|"") current="";; esac
+            case "${'$'}current" in *[!a-zA-Z0-9_./:]* ) exit 1;; esac
+            case ":${'$'}current:" in *":$service:"*) ;; *)
+              if [ -n "${'$'}current" ]; then current="${'$'}current:$service"; else current="$service"; fi;; esac
+            settings put secure enabled_accessibility_services "${'$'}current" && settings put secure accessibility_enabled 1
+        """.trimIndent()
+        return script
     }
 
     /** The text written to `su`: the script, then its exit status behind [EXIT_MARKER]. */

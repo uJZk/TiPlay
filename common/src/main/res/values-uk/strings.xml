@@ -162,7 +162,7 @@
     <string name="close">Закрити</string>
     <string name="cluster_map_size">Розмір карти на приборці</string>
     <string name="connect">Підключити</string>
-    <string name="connect_phone">Підключити телефон</string>
+    <string name="connect_phone">Підключити CarPlay</string>
     <string name="connect_when_diplay_opens">Підключати під час відкриття TiPlay</string>
     <string name="connect_with_usb">Підключити через USB</string>
     <string name="connect_your_iphone_with_a_usb_cable">Підключіть iPhone кабелем USB</string>
@@ -262,7 +262,7 @@
     <string name="nearby_devices_connects_your_iphone_microphone_enables_sir">Дозвіл «Пристрої поблизу» потрібен для підключення iPhone. Мікрофон потрібен для Siri та викликів. На старіших версіях Android для бездротового підключення також потрібен доступ до місцезнаходження. Для USB може знадобитися дозвіл на локальне VPN-з’єднання.</string>
     <string name="nothing_is_sent_automatically_protocol_payloads_and_creden">Нічого не надсилається автоматично. Протокольні дані та облікові дані не включаються.</string>
     <string name="oem_label">Назва OEM</string>
-    <string name="on_your_iphone_open_settings_bluetooth_and_pair_with_the_c">На iPhone відкрийте Налаштування → Bluetooth і спарте його з автомобілем. Потім поверніться до TiPlay та виберіть «Підключити телефон».</string>
+    <string name="on_your_iphone_open_settings_bluetooth_and_pair_with_the_c">На iPhone відкрийте Параметри → Bluetooth і створіть пару з цим пристроєм. Поверніться до TiPlay: CarPlay підключається автоматично, якщо не вимкнений.</string>
     <string name="one_time_setup_on_this_car">Одноразове налаштування в цьому автомобілі</string>
     <string name="open">Відкрити</string>
     <string name="open_after_the_car_starts">Відкривати після запуску автомобіля</string>
@@ -289,7 +289,7 @@
     <string name="prefer_a_cable">Хочете підключити кабелем?</string>
     <string name="preparing_mfi_authentication">Підготовка автентифікації MFi</string>
     <string name="ready">Готово</string>
-    <string name="ready_when_you_are">Готово до підключення</string>
+    <string name="ready_when_you_are">CarPlay готовий</string>
     <string name="receiver_based_on_xcertplay_licensed_under_gpl_3_0_diplay">TiPlay — змінена версія DiPlay (github.com/shihabal3amri/DiPlay) за ліцензією GPL-3.0. Приймач DiPlay створено на основі xcertplay за ліцензією GPL-3.0, а його інтерфейс наслідує дизайн DiAuto за ліцензією AGPL-3.0.\n\nВикористовуються AndroidX, Bouncy Castle, JmDNS, Shizuku API і SLF4J. Вихідний код і повідомлення про ліцензії додаються до цього випуску.\n\nCarPlay і його значок належать Apple Inc. Tesla — торговельна марка Tesla, Inc. TiPlay — незалежний проєкт, не пов’язаний з Apple і Tesla.</string>
     <string name="reconnecting_to_your_iphone">Повторне підключення до iPhone…</string>
     <string name="remote">Віддалено</string>

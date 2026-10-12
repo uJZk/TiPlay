@@ -164,7 +164,7 @@
     <string name="close">Close</string>
     <string name="cluster_map_size">Dashboard map size</string>
     <string name="connect">Connect</string>
-    <string name="connect_phone">Connect phone</string>
+    <string name="connect_phone">Connect CarPlay</string>
     <string name="connect_when_diplay_opens">Connect when TiPlay opens</string>
     <string name="connect_with_usb">Connect with USB</string>
     <string name="connect_your_iphone_with_a_usb_cable">Connect your iPhone with a USB cable</string>
@@ -264,7 +264,7 @@
     <string name="nearby_devices_connects_your_iphone_microphone_enables_sir">Nearby devices connects your iPhone. Microphone enables Siri and calls. Older Android versions also require Location for wireless setup. USB mode may ask for a local VPN connection.</string>
     <string name="nothing_is_sent_automatically_protocol_payloads_and_creden">Nothing is sent automatically. Protocol payloads and credentials are excluded.</string>
     <string name="oem_label">OEM label</string>
-    <string name="on_your_iphone_open_settings_bluetooth_and_pair_with_the_c">On your iPhone, open Settings → Bluetooth and pair with the car. Then return to TiPlay and choose Connect phone.</string>
+    <string name="on_your_iphone_open_settings_bluetooth_and_pair_with_the_c">On your iPhone, open Settings → Bluetooth and pair with this device. Return to TiPlay; CarPlay connects automatically unless disabled.</string>
     <string name="one_time_setup_on_this_car">One-time setup on this car</string>
     <string name="open">Open</string>
     <string name="open_after_the_car_starts">Open after the car starts</string>
@@ -291,7 +291,7 @@
     <string name="prefer_a_cable">Prefer a cable?</string>
     <string name="preparing_mfi_authentication">Preparing MFi authentication</string>
     <string name="ready">Ready</string>
-    <string name="ready_when_you_are">Ready when you are</string>
+    <string name="ready_when_you_are">CarPlay ready</string>
     <string name="receiver_based_on_xcertplay_licensed_under_gpl_3_0_diplay">TiPlay is a modified version of DiPlay (github.com/shihabal3amri/DiPlay), licensed under GPL-3.0. DiPlay’s receiver is based on xcertplay, licensed under GPL-3.0, and its interface follows DiAuto’s design, licensed under AGPL-3.0.\n\nIncludes AndroidX, Bouncy Castle, JmDNS, Shizuku API and SLF4J. Source and license notices accompany this release.\n\nCarPlay and the CarPlay icon belong to Apple Inc. Tesla is a trademark of Tesla, Inc. TiPlay is an independent project, not affiliated with Apple or Tesla.</string>
     <string name="reconnecting_to_your_iphone">Reconnecting to your iPhone…</string>
     <string name="remote">Remote</string>

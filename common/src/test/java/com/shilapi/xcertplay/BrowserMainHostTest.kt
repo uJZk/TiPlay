@@ -23,6 +23,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.never
 import org.robolectric.Robolectric
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -37,6 +38,7 @@ class BrowserMainHostTest {
     private lateinit var controllers: MockedConstruction<CarPlayController>
 
     @Before fun setUp() {
+        RuntimeEnvironment.getApplication().getSharedPreferences("tiplay_carplay", 0).edit().clear().commit()
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
         controllers = mockConstruction(CarPlayController::class.java) { mock, _ ->
             `when`(mock.phoneBrowserMode()).thenReturn(true)
@@ -76,6 +78,28 @@ class BrowserMainHostTest {
         assertNull(field("controller"))
     }
 
+    @Test fun disablingCarPlayClosesTheStackAndBlocksPendingStartup() {
+        attachController()
+        BrowserCarPlaySettings.setDisabled(activity, true)
+        invoke("applyBrowserSettings")
+        assertNull(field("controller"))
+        assertFalse(field("browserConnectionRequested") as Boolean)
+        invoke("maybeStartCarPlay")
+        assertNull(field("controller"))
+    }
+
+    @Test fun disablingDuringPrerequisiteWaitUpdatesStatusWithoutAController() {
+        setField("browserConnectionRequested", true)
+        setField("wirelessEnabled", true)
+        invoke("updateDebugOverlays")
+        val main = field("browserMainPage") as BrowserMainSettingsMenu
+        assertEquals("CarPlay searching | AirPlay ready", main.status.text.toString())
+        BrowserCarPlaySettings.setDisabled(activity, true)
+        invoke("applyBrowserSettings")
+        assertEquals("CarPlay disabled | AirPlay ready", main.status.text.toString())
+        assertNull(field("controller"))
+    }
+
     @Test fun phoneMainPageKeepsDraftAndControllerWhileAdvancedValuesRefresh() {
         val controller = attachController()
         `when`(controller.phoneBrowserMode()).thenReturn(true)
@@ -94,10 +118,23 @@ class BrowserMainHostTest {
         assertEquals(0, field("restartGeneration"))
         assertFalse(field("menuOpen") as Boolean) // Main page does not gate session recovery.
         report(CarPlayStatus.StartingHotspot)
-        assertEquals((field("stageStatusView") as TextView).text.toString(), main.status.text.toString())
+        assertEquals("CarPlay searching | AirPlay ready", main.status.text.toString())
         main.draft.save(activity)
         assertEquals(35, AirPlayPersistence.loadFps(activity))
         assertFalse(AirPlayPersistence.loadHevcEnabled(activity))
+    }
+
+    @Test fun wirelessWaitingIsReadyAndActiveBluetoothAttemptsAreSearching() {
+        attachController()
+        setField("wirelessEnabled", true)
+        setField("browserConnectionRequested", true)
+        val main = field("browserMainPage") as BrowserMainSettingsMenu
+        report(CarPlayStatus.WaitingForPairedIphone)
+        assertEquals("CarPlay ready | AirPlay ready", main.status.text.toString())
+        report(CarPlayStatus.ConnectingBluetooth)
+        assertEquals("CarPlay searching | AirPlay ready", main.status.text.toString())
+        report(CarPlayStatus.RunningWireless)
+        assertEquals("CarPlay ready | AirPlay ready", main.status.text.toString())
     }
 
     @Test fun idleReadinessDoesNotClaimReadyBeforeAnIphoneIsSelected() {
@@ -106,7 +143,7 @@ class BrowserMainHostTest {
         main.draft.phoneAddress = null
         setField("browserConnectionRequested", false)
         invoke("updateDebugOverlays")
-        assertEquals(activity.getString(com.shilapi.xcertplay.host.R.string.choose_your_iphone), main.status.text.toString())
+        assertEquals("CarPlay ready | AirPlay ready", main.status.text.toString())
     }
 
     @Test fun savingConnectionDraftDoesNotOverwriteCustomResolution() {
@@ -216,6 +253,7 @@ class BrowserMainHostTest {
 
     @Test fun iphoneAttachmentSwitchesToWiredTransportWithoutFinishing() {
         org.robolectric.shadows.ShadowVpnService.setPrepareResult(null)
+        BrowserCarPlaySettings.saveMode(activity, BrowserCarPlaySettings.Mode.ALL)
         attachController()
         AirPlayPersistence.saveWirelessEnabled(activity, true)
         invoke("loadPersistedSettings")
@@ -224,7 +262,7 @@ class BrowserMainHostTest {
         val intent = Intent(UsbManager.ACTION_USB_DEVICE_ATTACHED).putExtra(UsbManager.EXTRA_DEVICE, device)
         activity.javaClass.getDeclaredMethod("onNewIntent", Intent::class.java)
             .apply { isAccessible = true }.invoke(activity, intent)
-        assertFalse(AirPlayPersistence.loadWirelessEnabled(activity))
+        assertEquals(BrowserCarPlaySettings.Mode.ALL, BrowserCarPlaySettings.mode(activity))
         assertFalse(field("wirelessEnabled") as Boolean)
         assertTrue(field("vpnReady") as Boolean)
         assertFalse((field("shuttingDown") as AtomicBoolean).get())
@@ -234,6 +272,7 @@ class BrowserMainHostTest {
 
     @Test fun switchingToUsbRequestsVpnConsentAndDoesNotRepeatPendingConsent() {
         org.robolectric.shadows.ShadowVpnService.setPrepareResult(Intent("test.VPN_CONSENT"))
+        BrowserCarPlaySettings.saveMode(activity, BrowserCarPlaySettings.Mode.ALL)
         attachController()
         AirPlayPersistence.saveWirelessEnabled(activity, true)
         invoke("loadPersistedSettings")

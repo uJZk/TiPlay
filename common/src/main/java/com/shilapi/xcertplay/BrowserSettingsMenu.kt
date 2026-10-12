@@ -22,6 +22,7 @@ internal object BrowserSettingsMenu {
 
     private fun button(parent: LinearLayout, text: String, click: () -> Unit) = Button(parent.context).apply {
         this.text = text
+        isAllCaps = false
         setOnClickListener { click() }
         parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply {
             topMargin = TiPlayNativeUi(parent.context).dp(8)

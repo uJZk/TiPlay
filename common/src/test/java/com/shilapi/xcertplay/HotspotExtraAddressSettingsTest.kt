@@ -536,7 +536,7 @@ class HotspotExtraAddressSettingsTest {
 
     @Test
     @Config(sdk = [34])
-    fun vpnChooserHasNoExtraDescriptionAndKeepsThePreviouslySavedAddress() {
+    fun allModeChoicesDescribeTheirCapabilitiesAndKeepThePreviouslySavedAddress() {
         HotspotExtraAddressSettings.saveMethod(context, HotspotAddressMethod.VPN)
         val screen = openConnection()
         assertEquals(defaultAddress, HotspotExtraAddressSettings.address(context))
@@ -547,7 +547,9 @@ class HotspotExtraAddressSettingsTest {
         assertEquals(listOf(R.string.settings_hotspot_method_normal, R.string.settings_hotspot_method_root,
             R.string.settings_hotspot_method_vpn, R.string.settings_hotspot_method_shizuku).map(screen::getString),
             items.map { it.substringBefore('\n') })
-        assertEquals(screen.getString(R.string.settings_hotspot_method_vpn), items[2])
+        assertEquals(screen.getString(R.string.settings_hotspot_method_vpn) + "\n" +
+            screen.getString(R.string.settings_hotspot_method_vpn_description, HotspotExtraAddress.DEFAULT), items[2])
+        assertTrue(items.all { it.substringAfter('\n', "").isNotBlank() })
         assertEquals("${screen.getString(R.string.settings_hotspot_method_normal)}\n" +
             screen.getString(R.string.settings_hotspot_method_normal_description), items[0])
         assertFalse(ShadowAlertDialog.getLatestAlertDialog().getButton(AlertDialog.BUTTON_POSITIVE).isShown)

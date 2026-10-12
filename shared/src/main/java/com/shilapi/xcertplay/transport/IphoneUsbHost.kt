@@ -100,7 +100,8 @@ class IphoneUsbHost(
     @Throws(IphoneUsbException::class)
     fun requestPermission(device: UsbDevice): PermissionRequest {
         requireConfiguredDevice(device)
-        if (usbManager.hasPermission(device)) return PermissionRequest.AlreadyGranted(device)
+        if (usbManager.hasPermission(device) || PrivilegedUsbPermission.grant(appContext, usbManager, device))
+            return PermissionRequest.AlreadyGranted(device)
 
         usbManager.requestPermission(device, permissionPendingIntent())
         return PermissionRequest.Requested(device)

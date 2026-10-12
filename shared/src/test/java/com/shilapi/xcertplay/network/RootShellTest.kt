@@ -37,6 +37,37 @@ class RootShellTest {
             }
     }
 
+    @Test fun usbSetupRejectsUntrustedPackageNamesAndPreservesOtherServices() {
+        listOf("com.app; reboot", "com.app\nreboot", "com.app${'$'}(reboot)", "com.app'", "").forEach {
+            assertThrows(IllegalArgumentException::class.java) { RootShell.usbAutoConfirmScript(it) }
+        }
+        assumeTrue(File("/bin/sh").canExecute())
+        val folder = java.nio.file.Files.createTempDirectory("tiplay-usb-settings").toFile()
+        try {
+            val state = File(folder, "services").apply { writeText("com.other/com.other.Service") }
+            File(folder, "settings").apply {
+                writeText("""#!/bin/sh
+                    case "${'$'}1 ${'$'}3" in
+                      "get enabled_accessibility_services") cat "${'$'}TIPLAY_TEST_STATE";;
+                      "put enabled_accessibility_services") printf '%s' "${'$'}4" > "${'$'}TIPLAY_TEST_STATE";;
+                      "put accessibility_enabled") exit 0;;
+                      *) exit 1;;
+                    esac
+                """.trimIndent())
+                setExecutable(true)
+            }
+            repeat(2) {
+                val process = ProcessBuilder("/bin/sh").apply {
+                    environment()["PATH"] = folder.absolutePath + ":/usr/bin:/bin"
+                    environment()["TIPLAY_TEST_STATE"] = state.absolutePath
+                }.start()
+                process.outputStream.bufferedWriter().use { it.write(RootShell.wrap(RootShell.usbAutoConfirmScript("com.ujzk.tiplay"))) }
+                assertEquals(0, process.waitFor())
+            }
+            assertEquals("com.other/com.other.Service:com.ujzk.tiplay/com.shilapi.xcertplay.UsbAutoConfirmService", state.readText())
+        } finally { folder.deleteRecursively() }
+    }
+
     @Test fun missingSuIsUnavailable() {
         assertEquals(RootShell.Result.Unavailable, RootShell.execute(listOf("/nonexistent/su"), "id -u", 1_000))
     }

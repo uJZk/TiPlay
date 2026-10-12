@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_carplay_mode_all">الكل (USB أولاً)</string>
+    <string name="settings_carplay_reconnect">إعادة توصيل CarPlay</string>
+    <string name="settings_carplay_disable">تعطيل CarPlay</string>
+    <string name="settings_carplay_disable_description">إيقاف اتصالات CarPlay ومحاولات إعادة الاتصال. يعمل AirPlay بشكل مستقل.</string>
+    <string name="settings_carplay_disabled">CarPlay معطل</string>
+    <string name="settings_carplay_ready">CarPlay جاهز</string>
+    <string name="settings_carplay_searching">CarPlay يبحث</string>
+    <string name="settings_airplay_ready_status">AirPlay جاهز</string>
+    <string name="settings_airplay_disabled_status">AirPlay معطل</string>
+</resources>

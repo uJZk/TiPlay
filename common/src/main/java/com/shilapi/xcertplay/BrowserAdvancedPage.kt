@@ -63,6 +63,10 @@ internal class BrowserAdvancedPage(
             AirPlayPersistence.saveHevcEnabled(activity, it)
             configurationChanged()
         }
+        BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_carplay_disable),
+            activity.getString(R.string.settings_carplay_disable_description), BrowserCarPlaySettings.disabled(activity), true) {
+            BrowserCarPlaySettings.setDisabled(activity, it)
+        }
         heading(R.string.carplay_controls)
         BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.right_hand_drive),
             activity.getString(R.string.place_carplay_s_controls_closer_to_the_driver),

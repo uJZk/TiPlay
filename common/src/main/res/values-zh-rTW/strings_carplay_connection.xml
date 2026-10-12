@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_carplay_mode_all">全部（USB 優先）</string>
+    <string name="settings_carplay_reconnect">重新連接 CarPlay</string>
+    <string name="settings_carplay_disable">停用 CarPlay</string>
+    <string name="settings_carplay_disable_description">停止 CarPlay 連線與重試；AirPlay 獨立運作。</string>
+    <string name="settings_carplay_disabled">CarPlay 已停用</string>
+    <string name="settings_carplay_ready">CarPlay 就緒</string>
+    <string name="settings_carplay_searching">CarPlay 搜尋中</string>
+    <string name="settings_airplay_ready_status">AirPlay 就緒</string>
+    <string name="settings_airplay_disabled_status">AirPlay 已停用</string>
+</resources>

@@ -116,10 +116,12 @@ internal class HotspotExtraAddressCard(
 
     private fun chooserItem(method: HotspotAddressMethod): CharSequence {
         val title = label(method)
-        val hint = when (method) {
-            HotspotAddressMethod.NORMAL -> activity.getString(R.string.settings_hotspot_method_normal_description)
-            else -> return title
-        }
+        val hint = activity.getString(when (method) {
+            HotspotAddressMethod.NORMAL -> R.string.settings_hotspot_method_normal_description
+            HotspotAddressMethod.ROOT -> R.string.settings_hotspot_method_root_description
+            HotspotAddressMethod.SHIZUKU -> R.string.settings_hotspot_method_shizuku_description
+            HotspotAddressMethod.VPN -> R.string.settings_hotspot_method_vpn_description
+        }, HotspotExtraAddressSettings.address(app).hostAddress.orEmpty())
         return SpannableStringBuilder(title).append('\n').append(hint).apply {
             setSpan(RelativeSizeSpan(0.8f), length - hint.length, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
