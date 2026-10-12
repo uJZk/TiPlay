@@ -62,6 +62,11 @@ Report TiPlay problems in this repository, not in the DiPlay tracker. Reproduce 
 
 ## Documentation
 
+[AirPlay mirror and video reception (experimental)](docs/AIRPLAY.md) adds a separate
+phone-to-browser receiver based on UxPlay protocol references. It retains the CarPlay
+session while temporarily lending its browser display to AirPlay. This preview sends
+video only; real iPhone and Android codec compatibility still require device validation.
+
 [Existing Wi-Fi / Same LAN](docs/EXISTING_WIFI.md) keeps the iPhone and head unit
 on an external router. See the guide for setup, build requirements and the
 BYD DiLink 4.0 / Android 10 clean-install validation result.

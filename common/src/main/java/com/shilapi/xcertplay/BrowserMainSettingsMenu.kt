@@ -123,6 +123,9 @@ internal class BrowserMainSettingsMenu(
             stopping = true; updateActions(); disconnect()
         }.apply { visibility = View.GONE }
         session.addView(error)
+        button(session, activity.getString(R.string.settings_airplay_title)) {
+            activity.startActivity(Intent(activity, AirPlayReceiverActivity::class.java))
+        }
         session.addView(BrowserBootConnectionSettings.create(activity))
         val browser = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         val details = LinearLayout(activity).apply {

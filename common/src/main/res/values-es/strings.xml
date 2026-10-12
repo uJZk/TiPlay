@@ -637,4 +637,19 @@
     <string name="settings_external_ap_check">Este dispositivo no está conectado a la red Wi-Fi indicada.</string>
     <string name="settings_android_address">Dirección de Android: %1$s</string>
     <string name="settings_main_stopping">Desconectando…</string>
+    <string name="settings_airplay_title">AirPlay (experimental)</string>
+    <string name="settings_airplay_instructions">Conecta el iPhone y el teléfono Android a la misma Wi-Fi o al punto de acceso de Android y abre la página vinculada del navegador del coche. Inicia el receptor y elige «TiPlay AirPlay» en Duplicar pantalla o en el menú AirPlay de una app de vídeo. CarPlay mantiene la conexión y vuelve al terminar la transmisión. Controla la reproducción desde el iPhone. Esta versión solo transmite vídeo; no admite contenido protegido.</string>
+    <string name="settings_airplay_start">Iniciar AirPlay</string>
+    <string name="settings_airplay_stop">Detener AirPlay y volver a CarPlay</string>
+    <string name="settings_airplay_wifi">Ajustes de Wi-Fi y punto de acceso</string>
+    <string name="settings_airplay_back">Volver</string>
+    <string name="settings_airplay_listening">Esperando al iPhone · TiPlay AirPlay</string>
+    <string name="settings_airplay_mirror">Duplicando pantalla</string>
+    <string name="settings_airplay_video">Reproduciendo vídeo AirPlay</string>
+    <string name="settings_airplay_stopped">AirPlay detenido</string>
+    <string name="settings_airplay_network">Conecta ambos teléfonos a la misma Wi-Fi o al punto de acceso de Android.</string>
+    <string name="settings_airplay_failed">No se pudo iniciar AirPlay o reproducir el vídeo. Revisa los permisos de red local y prueba un vídeo MP4 o HLS sin protección.</string>
+    <string name="settings_airplay_disable">Desactivar AirPlay</string>
+    <string name="settings_airplay_disable_description">Se aplica de inmediato. Detiene AirPlay y restaura la pantalla de CarPlay conectado. Desactiva esta opción para permitir iniciar AirPlay manualmente.</string>
+    <string name="settings_airplay_disabled">AirPlay está desactivado en los ajustes avanzados.</string>
 </resources>

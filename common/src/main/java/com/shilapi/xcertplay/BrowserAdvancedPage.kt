@@ -84,6 +84,12 @@ internal class BrowserAdvancedPage(
             AirPlayPersistence.saveRightHandDrive(activity, it)
             configurationChanged()
         }
+        heading(R.string.settings_airplay_title)
+        BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_airplay_disable),
+            activity.getString(R.string.settings_airplay_disable_description),
+            AirPlayReceiverSettings.isDisabled(activity), true) {
+            AirPlayReceiverSettings.setDisabled(activity, it)
+        }
         heading(R.string.diagnostics)
         reportButton = button(activity.getString(R.string.save_diagnostic_report), saveReport)
         heading(R.string.settings_permission_group)

@@ -21,6 +21,25 @@ class WebMediaSink(
     @Volatile private var recovery: (() -> Unit)? = null
     @Volatile private var diagnostics: ((String) -> Unit)? = null
     private var closed = false // guarded by this
+    private var paused = false // guarded by this
+    private var active = false // guarded by this
+    private var retainedConfig: ByteArray? = null // guarded by this
+
+    /** Temporarily lend the browser display to another source without closing the CarPlay stream. */
+    fun pauseDisplay() = synchronized(this) {
+        paused = true
+        hub.endStream(this)
+    }
+
+    fun resumeDisplay() = synchronized(this) {
+        if (closed || !paused) return@synchronized
+        paused = false
+        if (!active) return@synchronized
+        hub.beginStream(this, width, height, fps, requestKeyFrame = { recovery?.invoke() }, report = { diagnostics?.invoke(it) })
+        val codec = codec
+        if (codec != null) retainedConfig?.let { hub.configure(this, codec, it) }
+        hub.requestKeyFrame(force = true)
+    }
 
     /** Changes the next stream's canvas; an existing stream retains its negotiated dimensions. */
     fun updateCanvas(width: Int, height: Int) = synchronized(this) {
@@ -34,8 +53,13 @@ class WebMediaSink(
     }
 
     override fun onVideoConfig(type: Int, codecData: ByteArray) {
-        val codec = codec ?: return
-        if (type == MAIN_SCREEN) hub.configure(this, codec, codecData)
+        if (type != MAIN_SCREEN) return
+        synchronized(this) {
+            if (closed) return
+            retainedConfig = codecData.copyOf()
+            val codec = codec ?: return
+            if (!paused) hub.configure(this, codec, codecData)
+        }
     }
 
     override fun onVideoFrame(type: Int, naluBytes: ByteArray) = onVideoFrame(type, naluBytes, 0L, System.nanoTime())
@@ -63,16 +87,20 @@ class WebMediaSink(
             // closing, must not take the hub from the next session's sink.
             synchronized(this) {
                 if (closed) return
+                this.active = true
+                if (paused) return
                 hub.beginStream(this, width, height, fps, requestKeyFrame = { recovery?.invoke() }, report = { diagnostics?.invoke(it) })
             }
         } else {
-            hub.endStream(this)
+            synchronized(this) { this.active = false; retainedConfig = null; hub.endStream(this) }
         }
     }
 
     /** Ends this sink's stream for good, for a session that is retired without a screen teardown. */
     fun close() = synchronized(this) {
         closed = true
+        active = false
+        retainedConfig = null
         hub.endStream(this)
     }
 

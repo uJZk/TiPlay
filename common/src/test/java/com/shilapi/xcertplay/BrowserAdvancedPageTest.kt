@@ -35,7 +35,7 @@ class BrowserAdvancedPageTest {
         activity = controller.get()
         activity.setTheme(R.style.Theme_TiPlayNative)
         controller.setup()
-        for (name in listOf("xcertplay_airplay", "diplay", "tiplay_permission_requests"))
+        for (name in listOf("xcertplay_airplay", "diplay", "tiplay_permission_requests", "tiplay_airplay_receiver"))
             activity.getSharedPreferences(name, 0).edit().clear().commit()
         page = create()
         activity.setContentView(page.view)
@@ -71,6 +71,26 @@ class BrowserAdvancedPageTest {
         activity.setContentView(page.view)
         assertTrue(page.edited)
         assertNotNull(button(R.string.settings_return_and_apply))
+    }
+
+    @Test fun disablingAirPlayIsDefaultOffPersistsAndDoesNotRequireCarPlayReconnect() {
+        val toggle = views(page.view).filterIsInstance<Switch>().single {
+            it.text == activity.getString(R.string.settings_airplay_disable)
+        }
+        assertFalse(toggle.isChecked)
+        toggle.performClick()
+        assertTrue(AirPlayReceiverSettings.isDisabled(activity))
+        assertFalse(page.edited)
+        assertEquals(0, changes)
+        page = create()
+        activity.setContentView(page.view)
+        val recreated = views(page.view).filterIsInstance<Switch>().single {
+            it.text == activity.getString(R.string.settings_airplay_disable)
+        }
+        assertTrue(recreated.isChecked)
+        recreated.performClick()
+        assertFalse(AirPlayReceiverSettings.isDisabled(activity))
+        assertFalse(page.edited)
     }
 
     @Test fun productAdvancedHasOnlyRequestedDescriptionsAndOneReportAction() {

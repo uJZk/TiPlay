@@ -6,6 +6,16 @@ TiPlay is a modified version of [DiPlay by shihabal3amri](https://github.com/shi
 
 ## Receiver
 
+TiPlay's ordinary AirPlay receiver follows the legacy pairing, AES-CTR mirroring and HTTP video
+protocol in [FDH2/UxPlay](https://github.com/FDH2/UxPlay), pinned at
+`ec203121355220dd90278a369eeabb0b8ba4f14a` (2026-10-11). The native `playfair/`
+transport-key module is copied from that revision with its GPL-3.0 license retained.
+Juho Vähä-Herttua's FairPlay transport reply tables are LGPL-2.1-or-later;
+the license and provenance are in `shared/src/main/jni/airplay/`.
+The Android control, discovery and browser adapters are TiPlay additions.
+This is not the UxPlay desktop application or its GStreamer renderer, and it does not
+provide FairPlay Streaming licenses for protected video.
+
 DiPlay, and therefore TiPlay, is a modified version of [xcertplay by shilapi](https://github.com/shilapi/xcertplay). The upstream receiver is licensed under GNU GPL version 3; the full text is in `LICENSE` and the original README is retained in `docs/UPSTREAM-README.md`.
 
 Upstream credits [LIVI](https://github.com/f-io/LIVI) and [Showcase](https://github.com/amineross/showcase) for protocol research. Existing source comments and attribution are preserved.

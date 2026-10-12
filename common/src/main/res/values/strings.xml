@@ -734,4 +734,19 @@
     <string name="settings_external_ap_check">This device is not connected to the target Wi-Fi.</string>
     <string name="settings_android_address">Android address: %1$s</string>
     <string name="settings_main_stopping">Disconnecting…</string>
+    <string name="settings_airplay_title">AirPlay (experimental)</string>
+    <string name="settings_airplay_instructions">Connect the iPhone and Android phone to the same Wi-Fi or Android hotspot, then open the paired car browser page. Start the receiver and choose “TiPlay AirPlay” in Screen Mirroring or a video app’s AirPlay menu. CarPlay stays connected while AirPlay borrows the browser display and returns when casting stops. Control playback on the iPhone. This preview sends video only; protected video is unsupported.</string>
+    <string name="settings_airplay_start">Start AirPlay</string>
+    <string name="settings_airplay_stop">Stop AirPlay and return to CarPlay</string>
+    <string name="settings_airplay_wifi">Wi-Fi and hotspot settings</string>
+    <string name="settings_airplay_back">Back</string>
+    <string name="settings_airplay_listening">Waiting for iPhone · TiPlay AirPlay</string>
+    <string name="settings_airplay_mirror">Screen mirroring</string>
+    <string name="settings_airplay_video">AirPlay video playback</string>
+    <string name="settings_airplay_stopped">AirPlay stopped</string>
+    <string name="settings_airplay_network">Connect both phones to the same Wi-Fi or Android hotspot.</string>
+    <string name="settings_airplay_failed">AirPlay could not start or play this video. Check network permissions and try an unprotected MP4 or HLS video.</string>
+    <string name="settings_airplay_disable">Disable AirPlay</string>
+    <string name="settings_airplay_disable_description">Takes effect immediately. Stops AirPlay and restores the connected CarPlay display. Turn this off to allow manual AirPlay startup again.</string>
+    <string name="settings_airplay_disabled">AirPlay is disabled in Advanced settings.</string>
 </resources>

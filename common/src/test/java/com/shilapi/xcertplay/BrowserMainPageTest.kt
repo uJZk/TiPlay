@@ -446,6 +446,13 @@ class BrowserMainPageTest {
         assertTrue(button(R.string.save_and_reconnect).isShown)
         assertEquals("Unsaved after rotation", views().filterIsInstance<EditText>().first().text.toString())
     }
+    @Test fun airplayEntryOpensReceiverWithoutEndingOrReconnectingCarPlay() {
+        button(R.string.settings_airplay_title).performClick()
+        assertEquals(AirPlayReceiverActivity::class.java.name, shadowOf(activity).nextStartedActivity.component!!.className)
+        assertEquals(0, connections)
+        assertEquals(0, disconnects)
+    }
+
     private fun securityButton() = views().filterIsInstance<Button>().single {
         it.text.toString().startsWith(activity.getString(R.string.security) + " ")
     }

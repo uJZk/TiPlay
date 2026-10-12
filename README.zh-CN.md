@@ -16,6 +16,8 @@ TiPlay 还没有发布版本，现在试用请[从源码构建](docs/BUILD.md)�
 
 ## 特斯拉浏览器模式（开发中）
 
+- **AirPlay（实验性）**：主设置可启动普通 AirPlay 屏幕镜像及视频投放接收器，画面送到既有车载浏览器；投屏期间保留 CarPlay 会话，结束后尝试恢复画面。当前仅传送视频，真机兼容性尚待验证。使用与边界见 [AirPlay](docs/AIRPLAY.md)。
+
 - **安卓手机**：运行 TiPlay 并开启 Wi-Fi 热点。特斯拉浏览器拦截 192.168.x.x、10.x.x.x 等私有地址，因此手机需要一个浏览器可访问的 100.64.0.0/10 地址。“热点附加地址”提供 root、实验性 VPN 和 Shizuku 方法，要求与验证边界见[热点地址](docs/HOTSPOT_ADDRESS.md)（英文）。
 - **iPhone**：通过蓝牙连接特斯拉并设为主电话，用于声音和通话；同时以无线 CarPlay 连接 TiPlay。
 - **特斯拉**：连接手机热点，在浏览器中打开 TiPlay 页面（`https://ujzk.github.io/TiPlay/`）。若 TiPlay 的“浏览器页面地址”仍为 `/DiPlay/`，改为这个新地址。页面将从公网 HTTPS 地址加载一次，之后使用浏览器缓存。
