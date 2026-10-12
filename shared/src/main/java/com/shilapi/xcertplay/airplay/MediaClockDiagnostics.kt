@@ -13,6 +13,8 @@ internal class MediaClockDiagnostics(private val log: (String) -> Unit) {
     @Volatile private var lastRttMicros: Long? = null
     @Volatile private var lastOffsetMillis: Long? = null
     private var lastReportNanos: Long? = null
+    private var finalReported = false
+    private var lastVideoReportNanos: Long? = null
 
     fun sent() { requestsSent.incrementAndGet() }
     fun requested() { requestsReceived.incrementAndGet() }
@@ -38,6 +40,31 @@ internal class MediaClockDiagnostics(private val log: (String) -> Unit) {
             "sendFailures=${sendFailures.get()} synced=$synced syncAgeMs=${syncAge ?: "-"} " +
             "lastPacketType=${lastPacketType ?: "-"} rttUs=${lastRttMicros ?: "-"} " +
             "offsetMs=${lastOffsetMillis ?: "-"} senderZero=${senderNanos == 0L} frameAgeMs=${frameAge ?: "-"}"
+        runCatching { log(message) }
+    }
+
+    /** A short failed session still needs its final timing evidence; repeated closes emit nothing. */
+    @Synchronized
+    fun ended(now: Long, synced: Boolean, lastSyncNanos: Long) {
+        if (finalReported) return
+        finalReported = true
+        summary("Media clock final:", now, synced, lastSyncNanos)
+    }
+
+    /** The control/timing session can outlive its video socket; capture the timing at that boundary. */
+    @Synchronized
+    fun videoEnded(now: Long, synced: Boolean, lastSyncNanos: Long) {
+        if (lastVideoReportNanos?.let { now - it < 1_000_000_000L } == true) return
+        lastVideoReportNanos = now
+        summary("Media clock snapshot: reason=VIDEO_END", now, synced, lastSyncNanos)
+    }
+
+    private fun summary(prefix: String, now: Long, synced: Boolean, lastSyncNanos: Long) {
+        val syncAge = if (synced) (now - lastSyncNanos) / 1_000_000 else null
+        val message = "$prefix tx=${requestsSent.get()} rxRequest=${requestsReceived.get()} " +
+            "rxResponse=${responsesReceived.get()} unmatched=${unmatchedResponses.get()} " +
+            "sendFailures=${sendFailures.get()} synced=$synced syncAgeMs=${syncAge ?: "-"} " +
+            "lastPacketType=${lastPacketType ?: "-"} rttUs=${lastRttMicros ?: "-"} offsetMs=${lastOffsetMillis ?: "-"}"
         runCatching { log(message) }
     }
 }

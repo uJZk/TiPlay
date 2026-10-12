@@ -342,7 +342,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                 val raw = fairPlayDecrypt(requireNotNull(handshake), encrypted) ?: error("invalid transport key")
                 key = AirPlayCrypto.sha512(raw, shared).copyOf(16)
                 timing?.close()
-                val clock = NtpClock()
+                val clock = NtpClock { listener.log("c=$diagnosticId $it") }
                 timing = clock
                 response["timingPort"] = clock.listen()
                 val timingPort = (dict["timingPort"] as? Number)?.toInt() ?: 0
@@ -366,11 +366,14 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                         log = { listener.log("c=$diagnosticId $it") }) {
                         synchronized(ownership) {
                             if (owner === this && mirrorToken === token) {
+                                timing?.reportVideoEnd()
                                 mirror = null
+                                mirrorToken = null
                                 owner = null
-                                timing?.close(); timing = null
+                                // A data-channel EOF ends the picture, not the RTSP session. Keep timing
+                                // and transport keys until TEARDOWN/control EOF, allowing its reply or
+                                // another SETUP on this connection (as ordinary UxPlay mirroring does).
                                 listener.status("listening")
-                                runCatching { socket.close() }
                             }
                         }
                     }

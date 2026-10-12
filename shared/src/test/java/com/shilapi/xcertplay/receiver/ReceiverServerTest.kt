@@ -87,7 +87,9 @@ class ReceiverServerTest {
 
     @Test fun explicitMirrorTeardownRestoresTheRetainedDisplay() = encryptedMirrorProbe(true)
 
-    private fun encryptedMirrorProbe(teardown: Boolean) {
+    @Test fun mirrorDataEofKeepsControlAndTimingUntilTeardownAndAllowsAnotherSetup() = encryptedMirrorProbe(false, true)
+
+    private fun encryptedMirrorProbe(teardown: Boolean, dataEofRecovery: Boolean = false) {
         val identity = AirPlayIdentity.generate()
         val listener = Listener()
         val rawKey = ByteArray(16) { (it + 1).toByte() }
@@ -141,7 +143,34 @@ class ReceiverServerTest {
                 val second = byteArrayOf(0, 0, 0, 2, 0x41, 1)
                 data.getOutputStream().write(packet(0, encryption.update(first)) + packet(0, encryption.update(second)))
                 assertNotNull(subscription.take(5000)); assertNotNull(subscription.take(5000))
-                if (teardown) assertEquals(200, control.status("TEARDOWN", "/")) else control.close()
+                if (dataEofRecovery) {
+                    data.close()
+                    assertTrue(listener.ended.await(5, TimeUnit.SECONDS))
+                    assertNull(listener.hub.info())
+                    assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_IDLE, subscription.take(5000)!!.kind)
+                    assertEquals(200, control.status("OPTIONS", "/"))
+                    assertEquals(200, control.status("POST", "/feedback"))
+                    assertTrue(listener.logs.any { it.contains("Media clock snapshot: reason=VIDEO_END") })
+                    assertFalse("Data EOF must not close the session timing clock", listener.logs.any { it.contains("Media clock final:") })
+                    val nextSetup = control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(
+                        mapOf("type" to 110, "streamConnectionID" to 1235L),
+                    ))))
+                    assertEquals("200", nextSetup.path)
+                    val nextPorts = BplistCodec.decode(nextSetup.body) as Map<*, *>
+                    val nextPort = (((nextPorts["streams"] as List<*>).single() as Map<*, *>)["dataPort"] as Number).toInt()
+                    connect(nextPort).use { nextData ->
+                        nextData.getOutputStream().write(packet(1, avcc))
+                        assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_CONFIG, subscription.take(5000)!!.kind)
+                        assertEquals(720, listener.hub.info()!!.width)
+                        val nextEncryption = aesCtr(AirPlayCrypto.sha512("AirPlayStreamKey1235".toByteArray(), mirrorKey).copyOf(16),
+                            AirPlayCrypto.sha512("AirPlayStreamIV1235".toByteArray(), mirrorKey).copyOf(16))
+                        nextData.getOutputStream().write(packet(0, nextEncryption.update(first)))
+                        assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_FRAME, subscription.take(5000)!!.kind)
+                        assertEquals(200, control.status("TEARDOWN", "/"))
+                        assertTrue(listener.logs.any { it.contains("Media clock final:") })
+                        assertNull(readReceiverRequest(control.getInputStream()))
+                    }
+                } else if (teardown) assertEquals(200, control.status("TEARDOWN", "/")) else control.close()
                 assertTrue(listener.ended.await(5, TimeUnit.SECONDS))
                 assertNull(listener.hub.info())
             }

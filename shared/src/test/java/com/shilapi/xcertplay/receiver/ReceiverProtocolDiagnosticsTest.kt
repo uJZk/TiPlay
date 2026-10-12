@@ -44,6 +44,21 @@ class ReceiverProtocolDiagnosticsTest {
         assertEquals("c=1 stage=RESPONSE status=200 bodyBytes=0", messages.single())
     }
 
+    @Test fun setupTimingMetadataUsesOnlyPresenceAndWhitelistedProtocol() {
+        val messages = mutableListOf<String>()
+        val diagnostics = ReceiverProtocolDiagnostics(messages::add)
+        diagnostics.setup(1, mapOf("timingPort" to 0, "timingProtocol" to "NTP"), true, 164)
+        diagnostics.setup(2, mapOf("timingPort" to 65432, "timingProtocol" to "PTP"), true, 164)
+        diagnostics.setup(3, emptyMap<Any, Any>(), true, 164)
+        diagnostics.setup(4, mapOf("timingProtocol" to "private-protocol-secret"), true, 164)
+        assertTrue(messages[0].contains("timingPortProvided=true timingPortZero=true timingProtocol=NTP"))
+        assertTrue(messages[1].contains("timingPortProvided=true timingPortZero=false timingProtocol=PTP"))
+        assertTrue(messages[2].contains("timingPortProvided=false timingPortZero=false timingProtocol=ABSENT"))
+        assertTrue(messages[3].endsWith("timingProtocol=OTHER"))
+        assertFalse(messages.joinToString().contains("65432"))
+        assertFalse(messages.joinToString().contains("private-protocol-secret"))
+    }
+
     @Test fun resourceDiagnosticsContainOnlyStageCorrelationAndNumericResponseMetadata() {
         val messages = mutableListOf<String>()
         val diagnostics = ReceiverProtocolDiagnostics(messages::add)

@@ -54,9 +54,17 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
                 else -> "OTHER"
             }
         }.orEmpty().joinToString(",")
+        val timingProtocol = when ((dict["timingProtocol"] as? String)?.uppercase()) {
+            null -> if (dict.containsKey("timingProtocol")) "OTHER" else "ABSENT"
+            "NTP" -> "NTP"
+            "PTP" -> "PTP"
+            else -> "OTHER"
+        }
         emit("c=$connection stage=SETUP verified=$verified handshakeBytes=$handshakeBytes " +
             "ekeyBytes=${(dict["ekey"] as? ByteArray)?.size ?: 0} " +
-            "eivBytes=${(dict["eiv"] as? ByteArray)?.size ?: 0} streams=[$streams]")
+            "eivBytes=${(dict["eiv"] as? ByteArray)?.size ?: 0} streams=[$streams] " +
+            "timingPortProvided=${dict.containsKey("timingPort")} timingPortZero=${(dict["timingPort"] as? Number)?.toInt() == 0} " +
+            "timingProtocol=$timingProtocol")
     }
 
     private fun emit(message: String) { runCatching { log(message) } }

@@ -75,6 +75,12 @@ class NtpClock(log: (String) -> Unit = {}) : Closeable {
         return mapped
     }
 
+    /** Numeric state at a video-channel end, without ending the timing session. */
+    fun reportVideoEnd() {
+        val syncState = synchronized(clockLock) { synced to lastSyncNanos }
+        diagnostics.videoEnded(System.nanoTime(), syncState.first, syncState.second)
+    }
+
     override fun close() {
         running.set(false)
         synchronized(socketLock) {
@@ -83,6 +89,8 @@ class NtpClock(log: (String) -> Unit = {}) : Closeable {
         }
         sender?.interrupt()
         receiver?.interrupt()
+        val syncState = synchronized(clockLock) { synced to lastSyncNanos }
+        diagnostics.ended(System.nanoTime(), syncState.first, syncState.second)
     }
 
     private fun runSender() {
