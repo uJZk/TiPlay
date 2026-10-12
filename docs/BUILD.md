@@ -206,6 +206,39 @@ place a signing keystore under APK assets.
 
 ## Build a release APK
 
+### GitHub Actions release build
+
+Run **Actions → Build signed TiPlay release APK → Run workflow**
+(`.github/workflows/android-release.yml`). It builds `:mobile:assembleRelease`
+with release lint and uploads the signed APK, matching source ZIP and checksums
+as the `TiPlay-signed-release` Actions artifact. A separate job with Contents
+write permission creates or updates the version's GitHub Release draft with
+exactly those three attachments. The checksum file covers both APK and source ZIP;
+the notes record the exact build commit and upstream runtime identity provenance.
+The Release remains a prerelease draft and is not published publicly.
+
+Rerunning the workflow replaces the three draft attachments and removes obsolete
+attachments after a successful upload. It refuses to modify an already published
+Release. Workflow runs on the same branch execute serially. The build job retains
+Contents read permission; only the draft-upload job has Contents write permission.
+
+Configure these **repository secrets** under **Settings → Secrets and variables
+→ Actions → Repository secrets** before running it:
+
+- `ANDROID_KEYSTORE_BASE64`: Base64 of the complete release `.p12` or `.jks` file.
+- `ANDROID_KEYSTORE_PASSWORD`: the keystore password.
+- `ANDROID_KEY_ALIAS`: the private-key entry alias.
+- `ANDROID_KEY_PASSWORD`: the selected key's password.
+
+Keep the same signing key to allow updates over earlier TiPlay installations.
+Do not commit the keystore or encoded content. The workflow downloads the pinned
+upstream DiPlay 0.2.18 APK, verifies its published SHA-256 and extracts the two
+CarPlay runtime assets automatically. No CarPlay certificate secret is needed.
+Temporary signing and runtime inputs are deleted after the job; only the intended
+runtime identity is distributed inside the APK.
+
+### Local release build
+
 Prepare the runtime assets as described in the car-test procedure.
 Set these environment variables locally:
 

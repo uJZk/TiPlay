@@ -14,6 +14,9 @@ secret transfer and host ADB boundaries, are in [docs/WLSC.md](docs/WLSC.md).
 
 ## Current progress
 
+See `docs/BETA-RELEASE-2026-10-12.md` for the 0.2.14-beta.1 release inputs,
+upstream CarPlay identity provenance, validation and publication status.
+
 See `docs/docs-sweep-2026-10-12/README.md` for the incremental documentation sweep,
 user-focused English/Chinese READMEs, checks and unresolved destination/label policies.
 `docs/docs-sweep-2026-10-12/TIE-UP.md` records its integration and delivery progress.
