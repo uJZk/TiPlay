@@ -57,6 +57,16 @@ even when the environment configures a system proxy.
     and hides the overlay when disabled. Worker-stream, worker-chunk, worker-frame and main-thread paths all collect
     rolling presentation FPS and synthetic timestamp-to-draw latency. Synthetic timestamps validate the plumbing,
     not an actual iPhone capture-to-screen measurement.
+15. The picture starts at the top and fills the resized window without a header or fullscreen button. The TiPlay
+    icon returns to the pairing portal; its Connect button, labeled **Return to CarPlay** while active,
+    resumes the same video connection.
+16. While reconnecting, **Setting** opens the portal, keeps the active address/code disabled and preserves the retry;
+    returning to CarPlay does not replace it. The full-window reconnect surface blocks CarPlay input and keeps its
+    logo centered and action reachable at desktop, portrait and short landscape sizes in light and dark modes.
+    Recovery hides the surface after the first decoded frame.
+
+These runs use a fake phone and local browser. They verify browser resize reporting and layout,
+not the iPhone's replacement-display negotiation or real vehicle routing, recovery or presentation latency.
 
 ## Real phone side (`phone-run.mjs`)
 
@@ -65,7 +75,9 @@ classes the way a phone + browser session wires them: `BrowserLinkServer` with a
 (as the app does over its bundled `assets/play/`), and a `WebVideoHub` fed through `VideoTeeMediaSink` → `WebMediaSink`
 with an H.264 Annex-B clip. Headless Chromium then opens the page that this server serves. CI does not run it.
 
-The secure-context run checks the unsupported-H.264 message using the recorded Chromium build; the LAN run checks that unsupported non-secure contexts cannot start playback. The script then repeats with a
+The secure-context run forces `VideoDecoder.isConfigSupported` to return unsupported
+inside the worker, so the unsupported-H.264 message is checked independently of the
+installed Chromium's codec support. The LAN run checks that non-secure contexts cannot start playback. The script then repeats with a
 `VideoDecoder` stand-in inside the decoder worker that checks every chunk and outputs a plain frame.
 
 ### Requirements

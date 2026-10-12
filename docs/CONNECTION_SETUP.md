@@ -1,10 +1,11 @@
 # Built-in car hotspot setup
 
 > Retained head-unit setup guidance. Current TiPlay uses the phone + browser
-> profile; install it on the Android device and follow [Tesla browser setup](TESLA_BROWSER.md).
+> profile only; install it on the Android phone and follow [Tesla browser setup](TESLA_BROWSER.md).
 > Its connection chooser offers Android hotspot and Existing Wi-Fi.
 > Wi-Fi Direct selection, the BYD hotspot automation section and the cluster/display
 > controls described below are not exposed by the current browser profile.
+> This retained upstream layout is not a supported native head-unit product.
 
 The earlier DiAuto (Android Auto) and TiPlay (CarPlay, formerly DiPlay) head-unit
 workflow shared this built-in car hotspot setup. For that workflow, install the
@@ -135,7 +136,9 @@ then tap Check and enable. Open the cluster's map card or select Map theme.
 This permission is for automatic cluster theme/card detection, not hotspot
 connection. The guide explains the exact command for the installed app.
 
-WHAT TO TEST / REPORT
+HISTORICAL HEAD-UNIT TEST / REPORT GUIDANCE
+These checks describe the earlier compatibility workflow, not current TiPlay
+acceptance requirements. Current phone + browser checks are in the browser guide.
 Check first connection, reconnect after restarting the app/car, maps,
 music/audio, and any instrument-map features supported by your car.
 If something fails, note the time and steps, car model, DiLink/Android

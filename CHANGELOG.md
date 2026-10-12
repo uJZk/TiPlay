@@ -4,7 +4,10 @@
 - Show TiPlay as the app name and as the CarPlay accessory name on the iPhone. Local hotspot names start with `TiPlay-`. Diagnostic reports save to Downloads/TiPlay as `TiPlay-<time>.txt`.
 - Use the phone + browser profile on normal app and CarPlay entry. Browser display, car Bluetooth audio and split-screen handling are enabled; local display, audio, location and BYD settings are hidden. There is no head-unit mode selector in the current TiPlay profile.
 - Route sound through the iPhone’s Bluetooth link to the car: `/info` leaves out `audioFormats`, as Carlinkit's `BtAudio=1` does, and TiPlay declines audio streams and opens no microphone. The current profile fixes this method on; car audio remains unverified.
-- In phone + browser mode, CarPlay's car button shows a neutral car instead of the BYD logo, labelled "TiPlay" while its saved name is the default "BYD"; a custom icon or name is kept. Applies at the next connection.
+- In phone + browser mode, CarPlay's car button shows the packaged TiPlay logo, labelled "TiPlay" while its saved name is the default "BYD"; a custom icon or name is kept. Applies at the next connection.
+- Use native Main settings and Advanced settings for the phone + browser flow. Main settings keeps connection drafts until Connect phone / Save and reconnect; Advanced settings saves frame rate, HEVC and driving side for the next connection, with Return and apply to reconnect a running session. Fresh installs default to 60 fps; saved choices remain.
+- Add Connect automatically after boot, independent of connect-on-open, plus permission/battery controls and diagnostic export in Advanced settings. Startup remains subject to Android/OEM restrictions.
+- Support editable hotspot address:port and keep browser window fitting with automatic settled-resolution reconnect; the TiPlay CarPlay icon opens the portal without disconnecting.
 - TiPlay is a fork of [DiPlay by shihabal3amri](https://github.com/shihabal3amri/DiPlay), GPL-3.0. The entries below are DiPlay's release history and keep its name and upstream issue numbers.
 
 # DiPlay 0.2.13 — 2026-10-06

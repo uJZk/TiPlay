@@ -1,0 +1,76 @@
+TAP version 13
+# Subtest: tests/web/appearance.test.mjs
+ok 1 - tests/web/appearance.test.mjs
+  ---
+  duration_ms: 59.475317
+  type: 'test'
+  ...
+# Subtest: tests/web/debug-window.test.mjs
+ok 2 - tests/web/debug-window.test.mjs
+  ---
+  duration_ms: 58.467199
+  type: 'test'
+  ...
+# Subtest: tests/web/link.test.mjs
+ok 3 - tests/web/link.test.mjs
+  ---
+  duration_ms: 212.725893
+  type: 'test'
+  ...
+# Subtest: tests/web/page.test.mjs
+ok 4 - tests/web/page.test.mjs
+  ---
+  duration_ms: 88.226899
+  type: 'test'
+  ...
+# Subtest: tests/web/portal.test.mjs
+ok 5 - tests/web/portal.test.mjs
+  ---
+  duration_ms: 48.445892
+  type: 'test'
+  ...
+# Subtest: tests/web/records-v1.test.mjs
+ok 6 - tests/web/records-v1.test.mjs
+  ---
+  duration_ms: 51.117145
+  type: 'test'
+  ...
+# Subtest: tests/web/site.test.mjs
+not ok 7 - tests/web/site.test.mjs
+  ---
+  duration_ms: 141.36097
+  type: 'test'
+  location: '/workspace/TiPlay/tests/web/site.test.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: tests/web/transport.test.mjs
+ok 8 - tests/web/transport.test.mjs
+  ---
+  duration_ms: 135.637583
+  type: 'test'
+  ...
+# Subtest: tests/web/video.test.mjs
+ok 9 - tests/web/video.test.mjs
+  ---
+  duration_ms: 65.079191
+  type: 'test'
+  ...
+# Subtest: tests/web/viewport.test.mjs
+ok 10 - tests/web/viewport.test.mjs
+  ---
+  duration_ms: 52.36449
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 9
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 356.340454

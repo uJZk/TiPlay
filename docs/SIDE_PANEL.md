@@ -1,6 +1,6 @@
 # Side panel next to CarPlay (experimental)
 
-This guide describes the retained head-unit implementation and contributor tests. Current TiPlay forces the phone + browser profile and hides the side-panel setting. The settings path below refers to the retained head-unit UI.
+This guide describes the retained upstream head-unit implementation and contributor tests. Current TiPlay forces the phone + browser profile and hides the side-panel setting. The settings path and hardware results below refer to upstream compatibility, not current product support or acceptance requirements.
 
 CarPlay can share the head unit's main screen with TiPlay: the iPhone draws CarPlay in two thirds of the screen while TiPlay shows its own panel in the rest. On a landscape screen CarPlay stays on the driver's side and the panel is the passenger's third (the right in a left-hand-drive car, the left with **Right-hand drive** on); on a portrait screen the panel is a band at the bottom. The car switches between this and full-screen CarPlay at any time without reconnecting. It is off by default (**Settings → Advanced → Display (experimental) → Side panel next to CarPlay (experimental)**); enabling it applies at the next connection and shows the consent-controlled **Reconnect now** bar. Once connected with it on, the in-session menu has a **Side panel** button, and the panel has a **Full screen** button.
 
@@ -19,6 +19,8 @@ These are historical contributor results; the test date was not recorded in this
 2024 BYD Tang (DiLink 5.0, 2560×1440 rotating centre screen) with an iPhone on iOS 27, over wireless CarPlay (lab build of the same design): CarPlay moved to the left two thirds (landscape) or the top two thirds (portrait) and back within a fraction of a second, without reconnecting; touches in CarPlay's area landed correctly; the panel showed a clock and the car's battery and range. With an automatic dock, CarPlay puts its dock at the bottom once several areas are declared; the dock setting places it.
 
 ## What it could become
+
+The following possibilities belong to the historical head-unit research, not the TiPlay phone + browser roadmap.
 
 The panel is an Android view, so it can show anything TiPlay can read or do: vehicle data over the head unit's adb (climate, tyre pressure, doors), controls for the car (for example the climate fids documented for BYD's autoservice), widgets, shortcuts to BYD apps, or the map from another source. With a few more pieces (a wheel key or an automatic rule when parked to show the panel, a layout per screen size, a choice of panel side), TiPlay could act as a launcher around CarPlay rather than a full-screen projection only.
 

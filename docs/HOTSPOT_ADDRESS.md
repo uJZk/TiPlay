@@ -1,19 +1,31 @@
 # Hotspot address methods
 
-In phone + browser mode the Tesla browser opens TiPlay at an address on the phone's own hotspot. The Tesla browser
-blocks the private ranges (10/8, 172.16/12, 192.168/16) but opens 100.64.0.0/10, so TiPlay can give the phone an extra
-address in that range. The driver picks how, in **CarPlay settings → Hotspot address**, the first setting:
+In phone + browser mode the Tesla browser opens TiPlay at an address on the phone’s
+own hotspot. The current setup guidance treats the private ranges
+(10/8, 172.16/12, 192.168/16) as blocked by the Tesla browser and uses 100.64.0.0/10
+for an extra phone address; vehicle/browser firmware still needs a reachability check.
+On the TiPlay main page, select **Android hotspot** under **Network configuration**,
+then choose **Hotspot address repair**:
 
 | Method | Needs | What TiPlay does | When the driver leaves it |
 |---|---|---|---|
-| Unprivileged (default) | nothing | Adds nothing. Shows the hotspot's IPv4 and warns when it is outside 100.64.0.0/10. For other car browsers, or a hotspot that already uses 100.64. | — |
+| None (default) | nothing | Adds nothing. Shows the hotspot's IPv4 and warns when it is outside 100.64.0.0/10. For other car browsers, or a hotspot that already uses 100.64. | — |
 | Root | root (Magisk, KernelSU …) | `ip -4 addr replace <address>/32 dev <iface>` through `su`, again after every hotspot restart | `ip -4 addr del …`: the address goes at once |
-| VPN (experimental) | Android's VPN permission (asked once); no other VPN at the same time | A VPN that holds the address and nothing else | The VPN closes |
+| VPN | Android's VPN permission (asked once); no other VPN at the same time | A VPN that holds the address and nothing else | The VPN closes |
 | Shizuku | Shizuku (ADB) or Sui (root), running and allowing TiPlay; without root, Shizuku must be started again after every phone restart (wireless debugging needs Wi-Fi, or a computer over USB) | `INetworkManagementService.setInterfaceConfig("<iface>:tp", <address>/32)`, again after every hotspot restart | The address stays until the hotspot restarts: the shell user cannot remove it. A toast says so, except when the driver switches to Root, which takes the address over and removes it when left |
 
-Every method applies at once; none reconnects CarPlay. The address must be in 100.64.0.0/10 or 169.254.0.0/16 (default
-`100.109.220.253`). The first root prompt, the Shizuku permission request and the VPN consent come only from a tap in
-the chooser or its buttons; building the settings search index touches none of them.
+Method changes apply at once without reconnecting CarPlay. With Root, Shizuku or VPN
+selected, tap **Hotspot address** to edit `address:port`. Root/Shizuku edits require
+100.64.0.0/10 (default `100.109.220.253`); VPN edits require 169.254.0.0/16
+(suggested `169.254.220.253`). Ports must be 1024–65535; the default is 8080.
+An address without a port preserves the saved port. Saving a changed address moves
+the selected method to it; changing the port restarts the browser listener, so enter
+the updated endpoint on the car page. This is separate from the connection draft’s
+**Save and reconnect** action. None shows the live hotspot endpoint without an edit row.
+The stored address is shared between methods: switching to VPN does not automatically
+replace an existing CGNAT address, so edit it to the suggested link-local address.
+The first root prompt, Shizuku permission request and VPN consent come only from
+a tap in the chooser or its buttons; building the settings search index touches none of them.
 
 Code: `shared/src/main/java/com/shilapi/xcertplay/network/` (`HotspotExtraAddressKeeper`, `HotspotAddressBackend`,
 `ShizukuHotspotAddress.kt`, `HotspotAddressVpn`, `HotspotAddressVpnService`) and
@@ -28,7 +40,7 @@ missing from the hotspot interface it calls its backend, then reads the interfac
 method again in the chooser (an activity resume or a new connection does not retry). Shizuku that is not running, or has not allowed TiPlay yet, is only a waiting state: Shizuku's own events
 (binder received or dead, permission answered) trigger a check at once.
 
-The keeper touches only the phone's own hotspot ("Built-in car hotspot" connection), never a joined Wi-Fi network.
+The keeper touches only the phone's own hotspot (**Android hotspot** connection; internal `MANUAL` mode), never a joined Wi-Fi network.
 The VPN also runs only with that connection: on a joined network the car cannot reach the extra address at all.
 
 ## Shizuku
@@ -88,7 +100,7 @@ tunnel is up, Android binds the service itself (`BIND_FOREGROUND_SERVICE`) and s
 
 **Probably does not work** on Android 15 and later, and on Android 14 from the 2025-01-01 security patch (an unreadable
 patch level counts as patched): those versions drop packets that arrive on another interface for a VPN address
-(CVE-2024-49734). Link-local addresses (169.254.0.0/16) are exempt, so the settings suggest `169.254.220.253` there.
+(CVE-2024-49734). Link-local addresses (169.254.0.0/16) are exempt, so the current VPN endpoint editor requires that range and suggests `169.254.220.253`. A previously saved CGNAT address can still be loaded; choosing VPN alone does not migrate it.
 Whether the Tesla browser opens a 169.254 address is not tested yet.
 
 TiPlay does not fight other VPNs:

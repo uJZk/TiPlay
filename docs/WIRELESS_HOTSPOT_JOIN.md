@@ -1,5 +1,12 @@
 # Automatic joining of a CarPlay hotspot
 
+> This guide includes a historical receiver experiment and retained upstream repair
+> implementation. Current TiPlay supports Android phone + car browser only; native
+> BYD repair controls are not exposed or maintained as a second product. Follow
+> [Tesla browser setup](TESLA_BROWSER.md) for the current connection flow. The
+> experiment’s exact date is not recorded here; no device run was added by the
+> 2026-10-12 documentation review.
+
 An iPhone can receive usable hotspot credentials yet fail to join automatically.
 If it leaves its current Wi-Fi network, but selecting the receiver's hotspot
 manually starts CarPlay without a password prompt, distinguish that association

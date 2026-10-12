@@ -1,24 +1,71 @@
 # Test checklist
 
-Use the [installation guide](INSTALL.md) and [browser vehicle checklist](TESLA_BROWSER.md#9-car-test-checklist). The current app applies the browser receiver profile; head-unit display/audio/location/BYD controls are hidden. The retained head-unit checks below are a compatibility matrix for a build that exposes those controls, not instructions to enable them in the current profile. Record that build and profile explicitly. With the car parked, verify wired and wireless connection, picture, touch and music. Test disconnect/reconnect, then settings Apply/Cancel. Save a diagnostic report after reproducing an issue.
+TiPlay supports the Android phone + car browser flow only. Use the [installation guide](INSTALL.md)
+and [browser guide](TESLA_BROWSER.md). Retained native head-unit code and automated compatibility tests
+protect future upstream merges; they do not add a second supported product or native vehicle acceptance gate.
 
-For the USB trailer, software-window video and RFCOMM reliability changes, complete the
-[connection reliability matrix](CONNECTION_RELIABILITY.md#vehicle-acceptance-before-release).
-Record the exact candidate APK and each untested setup before a release.
+## Source checks and local browser E2E
 
-## Custom stream resolution
+Run the required Android, Node 22 browser and public-tree checks in [Build TiPlay](BUILD.md#check-the-source-build).
+The command includes retained `home`/`maphost` module checks required by AGENTS.md and CI.
+[Browser E2E](../tests/web-e2e/README.md) documents the optional fake-phone and compiled-phone harnesses;
+CI does not run them. They check WebCodecs playback, pairing, touch, resize reporting, the Debug overlay and
+reconnect/portal layout. The MSE/fMP4 and `<video>` fallback has been removed; plain HTTP on a LAN address must
+show the secure-context requirement rather than start playback. Local harness results do not establish
+vehicle routing, real iPhone display renegotiation or physical display latency.
+
+## Phone + browser vehicle checks
+
+With the car parked, record the exact APK/build, Android phone/OS, iPhone/iOS, car/browser version,
+iPhone transport (wireless or USB), browser network and any untested setup.
+
+- Check picture, letterboxed touch mapping and music with a fresh connection for each supported transport/network
+  setup. Audio stays on the iPhone-to-car Bluetooth connection. Disconnect/reconnect and repeat with the phone screen off.
+- In **Main settings**, change the selected iPhone, connection mode or network fields without applying. Opening
+  **Advanced settings** and returning must preserve that connection draft. A running session must continue until
+  **Save and reconnect** is selected; an unchanged fresh connection uses **Connect phone**. Confirm an invalid draft shows an error.
+- In **Advanced settings**, change frame rate, HEVC or driving side. These choices save without immediately dropping
+  the running session. The top action becomes **Return and apply**; selecting it applies changed choices and reconnects
+  a running session. Revert the choices and confirm the action returns to **Back**. Check permission rows after returning
+  from Android settings and export through **Save diagnostic report**.
+- Pair using the copied link, then confirm the code fragment disappears from the address bar. Reopen the saved page,
+  test a new browser taking over and return through the CarPlay TiPlay icon to the portal. The portal Connect button,
+  labeled **Return to CarPlay** while active, must resume the same connection; **Disconnect** must stop retries.
+  A new code requires re-pairing.
+- Resize the browser window in both directions and confirm the picture fills its available area and touches match
+  after replacement video starts. Record any display that remains pending; resize retains the wireless network stack
+  and has no timed full-stack recovery fallback. See [browser session lifecycle](TESLA_BROWSER.md#browser-session-lifecycle).
+- Enable **Debug** in the browser portal. Check the five fields at the top center, uninterrupted touch and playback,
+  and hiding the overlay when disabled. Missing timing remains unknown. Synthetic harness timing and canvas submission
+  statistics do not establish physical capture-to-screen latency.
+
+Save a diagnostic report after reproducing an issue. Do not post credentials or unreviewed personal information.
+
+## Retained upstream head-unit compatibility reference
+
+The following matrix predates the phone-only product scope and is retained as an upstream compatibility reference.
+Its native Settings paths, BYD/ADB probes, location/car-data controls, resolution controls and wheel/dashboard checks
+are not current TiPlay user instructions or required acceptance tests. Its mentions of outstanding hardware retests
+refer to that retained compatibility work, not a requirement to validate a native TiPlay product.
+Do not enable or restore native product navigation to run it.
+
+The [connection reliability matrix](CONNECTION_RELIABILITY.md#historical-compatibility-acceptance-checklist) describes shared
+USB/RFCOMM/session behavior as well as retained head-unit cases. Use only the cases that exercise the supported
+phone + browser path for current release validation; record the APK and untested supported setups explicitly.
+
+### Custom stream resolution
 
 In the home settings and the in-session menu, confirm the accepted range is **30–160%**. Try 160%, cancel an edit, save an unrelated setting, and reconnect; the exact saved percentage must survive. Enter 161% in the numeric dialog and confirm it stays open with an error. Reset must only change the draft to 100% until Save/Apply is selected.
 
 On a parked head unit, test a supported setting above 100% with Default, Smaller and Large icon/text sizes. Confirm the display diagnostics show the requested and effective resolution, actual decoder size/rate/alignment support, negotiated canvas and video output. An unsupported enlarged canvas must fall back before advertising it to the phone, with a notice; resolution falls back to 100% if removing the Smaller-size enlargement is insufficient, and 100% is saved for later connections. Compare picture sharpness, touch mapping, audio and sustained video smoothness. Decoder metadata and automated tests cannot establish performance on real hardware, so the contributor's supersampling result needs a signed vehicle retest.
 
-## Android 10 Wi-Fi scan recovery
+### Android 10 Wi-Fi scan recovery
 
 On a parked DiLink 3 head unit with network ADB already authorized, compare hotspot/P2P wireless CarPlay with the car's Wi-Fi client disconnected. Confirm that a supported framework reports `Wi-Fi connectivity scans paused=true` and check whether the contributor's periodic stutter is resolved. Close the session and confirm station scanning/reconnect returns. Trigger a full controller retry or replace the controller while the prior restore is delayed: an old cleanup must never enable scans after the replacement reports its pause.
 
 Temporarily make the authorized ADB connection unavailable during teardown, then restore access. Confirm cleanup retries while the app remains open, and confirm a subsequent session's pause survives any pending old retry. Interrupt the app after suppression, reopen it, and verify the recorded restore is recovered; a force-stop cannot restore until the app next runs. With **Existing Wi-Fi**, confirm no pause is reported and normal station reconnect/roaming still works. On Android versions other than 10, or without existing ADB approval, there must be no suppression or approval prompt. These hardware checks remain necessary after the automated ownership/recovery tests pass.
 
-## Diagnostic export without a picker
+### Diagnostic export without a picker
 
 On an Android 9 emulator or head unit without a document picker, open **Settings → Diagnostics → Save diagnostic report**. Confirm that no picker is required and that the success dialog shows a TXT file under `Android/data/<package>/files/diagnostic-reports/`. Read that file and verify the app/device information and UTF-8 text. Use **View** and **Share** from the confirmation. Export twice and confirm that the reports have distinct file names and the earlier file is not overwritten. On Android 10+, normal exports should still use `Downloads/TiPlay`; **Choose save location** should still open a working picker, and cancelling it should not export anything. If external storage is unavailable, confirm that the private in-app fallback can still be viewed and shared. Do not disable system components on a car to simulate the missing-picker case; use an emulator for that simulation.
 
@@ -26,33 +73,33 @@ For channel memory, connect until authenticated CarPlay renders, disconnect and 
 
 Include head-unit model, DiLink/Android, iPhone/iOS, wired/wireless, app version and exact steps. Do not post credentials or unreviewed personal information. See [compatibility](COMPATIBILITY.md) for remaining limitations.
 
-## Preferred Wi-Fi Direct channel
+### Preferred Wi-Fi Direct channel
 
 - In **Settings → Connection → Connection setup → Wi-Fi Direct**, confirm **Preferred channel: Auto** on a fresh install. Select channel 149 and Cancel; Auto must remain selected. Select 149 and Save, reopen the chooser and restart the app to confirm it stays saved.
 - Disconnect/reconnect after saving. Check `channel preference=149 frequencyMHz=5745`, `create mode=PREFERRED_CHANNEL`, and `requestedMHz=5745 actualMHz=5745 matched=true`. An unsupported channel or a different actual channel must report an error instead of silently falling back. Select Auto to restore automatic startup.
 - Compare Auto and manual choices with the car already joined to Wi-Fi. A manual choice must override station alignment and any remembered automatic channel. Successful manual sessions must not replace the remembered automatic configuration.
 - Switch to built-in hotspot and USB. The channel chooser must be hidden for built-in hotspot, and neither connection may apply the Wi-Fi Direct preference. Returning to Wi-Fi Direct must restore the saved choice. Saving a channel during a connection must leave that session running and apply the change to the next connection.
 
-## Wireless and USB car data
+### Wireless and USB car data
 
 - On wireless, with **Report location to iPhone** on, confirm the Bluetooth bootstrap identifies with `location=false vehicleStatus=false`, then the Wi-Fi tunnel receives its own `start-location-information` before its first `location-information`. There must be no location output on Bluetooth and no unsolicited continuation from it.
 - On USB, start a fresh wired session rather than plugging into an already active wireless session. Confirm the USB iAP2 link receives StartLocationInformation and carries all location updates itself.
 - With **Car battery for the iPhone** on, confirm on wireless that the Bluetooth bootstrap does not advertise Vehicle Status and that the Wi-Fi tunnel receives its own `0xa100 start-vehicle-status` before sending `0xa101 vehicle-status`. On USB, the single wired iAP2 link must receive `0xa100` and send `0xa101`. A missing or stale battery reading must leave Vehicle Status undeclared rather than sending invented values.
 
-## Video while parked
+### Video while parked
 
 - Use a plain HTTPS MP4 or HLS item that supports AirPlay, such as one sent from Safari. DRM-protected services and apps that disable AirPlay are not acceptance tests.
 - Test fresh wireless and fresh USB sessions separately. Confirm `/info videoInCar=true`, SETUP negotiates `videoPlayback`, the event channel becomes ready, and the latest P-state reports `delivery=SENT` even if it was first `QUEUED`.
 - Confirm the video settings stream and remote-control stream are accepted, `requestUI videoplayback:` opens the player, and the player log reports a validated internet network before loading the URL.
 - Shift out of P and confirm availability becomes false and the car player closes immediately. Disable ADB or make the gear unreadable and confirm the same fail-closed behavior.
 
-## Rotation during reconnect
+### Rotation during reconnect
 
 On an Android device that supports screen rotation, connect until CarPlay renders, then rotate from landscape to portrait and back while the connection is rebuilding. Repeat in both directions, including several quick rotations and a 180-degree turn. Let the device settle after the last rotation and check that the CarPlay picture has the correct aspect ratio and that touch targets match the displayed controls.
 
 In the diagnostic report, the next `Starting CarPlay controller at` and `Display request` must use the latest settled dimensions, including a `Display updated while handshake is reset` event that arrived during teardown. A queued size change must settle before startup; cancelling it by returning to the accepted size must still resume the connection. On a BYD head unit, also open and close the camera window to confirm that a shrink/restore within the original window keeps the existing CarPlay session.
 
-## Location reporting
+### Location reporting
 
 With the car parked, open **Settings → Navigation → Location → Report location to iPhone**.
 
@@ -61,7 +108,7 @@ With the car parked, open **Settings → Navigation → Location → Report loca
 - During wired and wireless CarPlay, enabling or disabling the switch reconnects the session. When enabled and requested by the iPhone, check for `start-location-information` and `location-information` in the TiPlay diagnostics; on wireless, also verify that reporting continues after the Bluetooth-to-Wi-Fi handoff.
 - Disable the switch and confirm the next session does not advertise location reporting. These checks verify the accessory reporting path; they do not establish which inputs iOS uses in each fused location result.
 
-## Advanced vehicle data
+### Advanced vehicle data
 
 - Expand **Settings → Advanced → Vehicle → Advanced vehicle data**. Confirm a fresh install uses **Default mode · verified on DiLink 5.0 head units** and shows the battery, wheel-speed and parked-video switches without a field probe.
 - In Default mode, tap **Check ADB access** and record the battery, speed and gear it shows. With CarPlay connected, turn on a switch whose data cannot be read: CarPlay must stay connected and the page must show what cannot be read.
@@ -73,7 +120,7 @@ With the car parked, open **Settings → Navigation → Location → Report loca
 - Scroll down Settings, open CarPlay, then return to Settings (Back to TiPlay or the three-finger gesture). The page must keep its scroll position.
 - When the BYD navigation card is available, confirm **Dashboard song** exists there exactly once and does not appear in Advanced vehicle data. Without that card, it must appear once under Advanced vehicle data, and turning it on must show the CarPlay song on the dashboard. With **Song only when it changes** on, a new song must show for about 5 seconds and the card must then empty; pause and play alone must not show it again.
 
-## Hotspot and vehicle-settings interaction
+### Hotspot and vehicle-settings interaction
 
 - On a supported BYD unit, choose the built-in car hotspot. Automatic hotspot startup stays off on a fresh installation. Enable it explicitly and approve the ADB prompt; the setting saves only after TiPlay confirms its own required permissions. Denial must leave it off. Choosing Wi-Fi Direct hides the hotspot card and preserves its saved preference.
 - Expand Advanced vehicle data. Battery, wheel-speed and parked-video switches must appear only in that section, with unavailable legacy fields hidden. The hotspot card must not provide duplicate switches that bypass the selected mode.
@@ -82,14 +129,14 @@ With the car parked, open **Settings → Navigation → Location → Report loca
 - During a pending battery preflight, let the hotspot eligibility check finish and redraw Settings. A valid vehicle result must still apply the requested reconnect once; an unreadable result or ADB failure must keep the existing connection.
 
 
-## Dashboard song only when it changes
+### Dashboard song only when it changes
 
 - Enable Dashboard song and Song only when it changes. A new title/artist appears for five seconds, then the card becomes blank/stopped. Pause/play and duplicate metadata must not reopen the card or extend its window.
 - During that window, turn off Song only when it changes. The song must remain visible after the old five-second deadline. Turn off Dashboard song instead; the old timer must not recreate a blank card. Disable/re-enable and change tracks quickly to confirm earlier timers cannot dismiss a newer song.
 - Show a wheel zoom/volume note while a song changes. The note must stay visible for its own duration, then restore the latest song if its five-second window is still active, or a blank card otherwise. A note from a disconnected session must not affect a new session.
 - On supported HUD firmware, confirm HUD title/lyrics continue to follow the actual phone metadata while the dashboard card is blank or showing a wheel note. The updated upstream blank-card behavior still needs a vehicle retest.
 
-## Steering-wheel dashboard map zoom
+### Steering-wheel dashboard map zoom
 
 - On a fresh installation, wheel zoom is off. Enable the key service explicitly and configure the mode/zoom keys with the car parked. Confirm leaving settings, disabling wheel zoom, or waiting ten seconds cancels a pending key assignment. Subsequent hardware keys must keep their ordinary action.
 - With the dashboard map visible, test both toggle and five-second modes. The mode key selects zoom, the zoom keys change the map, and pressing the mode key again restores volume. With the map hidden, stopped, or configured as a turn card, keys must keep their ordinary car action.
@@ -97,13 +144,13 @@ With the car parked, open **Settings → Navigation → Location → Report loca
 - Hold a volume key while a call starts or ends, the zoom timer expires, the map disappears, or the feature is disabled. Confirm every press has its matching release, with no stuck volume action or stray car key action. Test CarPlay and BYD Bluetooth calls; audio-mode call detection still needs firmware-specific vehicle confirmation.
 - Recheck the current cluster/HUD controls, Same LAN connection, and diagnostic-report export after the update.
 
-## Live dashboard content switching
+### Live dashboard content switching
 
 - With the car parked, switch among Map, Turn card, and Map with the iPhone's turn card. Confirm the live switch keeps the phone connected and wheel zoom is available only for a delivered, visible map.
 - Hide/pause the cluster map, choose different content, then resume it. The pause must remain in effect until resume, which shows the latest selection. Recreate the cluster stream to confirm the selection is reapplied after SETUP, with no stale wheel eligibility before delivery. Replace/reconnect the phone after a successful live change and confirm it keeps the selection; failed or stale switches must not overwrite the last accepted choice.
 - Interrupt the event channel during a switch. The settings caller must fall back to reconnecting for the latest selection; rapid changes or a replacement controller must not trigger an old reconnect. Recheck the custom overlay and DiLink 5.1 reconnect paths.
 
-## Steering-wheel CarPlay joystick
+### Steering-wheel CarPlay joystick
 
 - On a fresh installation the joystick is off. Turn it on (the key service as for zoom) and check the joystick, previous/next, select and mode keys with the car parked.
 - With CarPlay connected, the media key turns the joystick on (toast with the keys, "Joystick on" on the dashboard where the song shows). Previous/next and the volume roller move CarPlay's focus on the main screen (lists, the Maps side panel), play/pause selects and the custom key goes back. The media key turns it off and every key has its usual action again; the custom key switches the map zoom again.

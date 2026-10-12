@@ -11,6 +11,11 @@ without re-encoding it and receives browser touch input. Plain HTTP at a LAN add
 cannot provide the secure context needed for playback; localhost is a browser exception. Do not restore a video/MSE
 fallback: vehicle browsers can pause that path while driving.
 
+Playback requires WebCodecs and support for the negotiated codec. The remaining paths use a worker or the main
+thread for decoding and canvas drawing, depending on browser capabilities; there is no HTML video or MSE path.
+These capability checks do not establish support for a particular vehicle or browser version. In the phone profile,
+encoded video bypasses the Android decoder and local video surface; the phone retains its native settings and status UI.
+
 The App's page address and the deployment's public base URL must agree. Their authoritative sources are
 [TeslaBrowserPageLinks](../common/src/main/java/com/shilapi/xcertplay/TeslaBrowserPageLinks.kt) and
 [the Pages workflow](../.github/workflows/pages.yml). A repository redirect is not proof of the deployed site address.
@@ -38,6 +43,12 @@ change, manually configured browsers must update the Android endpoint.
 The code belongs in a URL fragment so it is not sent to the static page host. The page imports and saves it, then
 removes the fragment. Bookmark only after import; a bookmark does not contain the code and cannot replace a new code
 after the phone invalidates the old one. Legacy parameter forms remain compatibility inputs, not the App's copy format.
+
+The page uses [link.js](../site/play/link.js) to resolve one phone/code pair: `?t=` takes precedence over the legacy
+`#h=` endpoint, and a valid `#c=` supplies the code. A code without an endpoint names the page's default phone
+(or the serving phone on a bundled HTTP page); a bookmark without a code retains the saved code. **Connect** starts
+one browser session, and returning from the portal resumes that session. Importing a link does not create a parallel
+connection. Browser storage must remain available for a code-free bookmark to recover the saved pairing.
 
 ## Pairing and network boundaries
 
@@ -73,8 +84,11 @@ CarPlay has no product header over its canvas. Its TiPlay icon returns to the po
 the portal returns to the picture without creating a second connection. Connect appears above Disconnect on the portal.
 Disconnect explicitly stops both the connection and automatic retries; returning to settings does not.
 
-Debug measures canvas submission and synchronized frame timing. It cannot establish the physical display's presentation
-time. Missing or expired timing data must remain unknown rather than substituting transport arrival time as latency.
+**Debug** shows five fields: codec, middle 90% FPS, slowest 5% FPS, middle 90% latency and worst 5% latency.
+The statistics use a rolling five-second window of canvas submissions and synchronized frame timing; FPS is derived
+from presentation intervals, and latency ends at canvas submission. They cannot establish the physical display's
+presentation time. Missing or expired timing data displays `—`, rather than substituting transport arrival time as
+latency. See [the dated measurement record](WEB-DEBUG-2026-10-11.md) for validation limits.
 
 ## Browser session lifecycle
 

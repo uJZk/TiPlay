@@ -1,5 +1,11 @@
 # Hotspot automatic-join repair validation
 
+> Historical validation of retained upstream hotspot-repair code. Current TiPlay
+> supports Android phone + car browser only and does not attach these repair
+> controls to its connection screen. The BYD acceptance list below records the
+> earlier compatibility boundary, not a current product release gate. No new device
+> run was performed for the 2026-10-12 documentation review.
+
 This report separates software checks, observed device API behavior and
 end-to-end wireless CarPlay acceptance. See the
 [joining guide](WIRELESS_HOTSPOT_JOIN.md) for the repair workflow and the
@@ -58,7 +64,7 @@ Automotive. All six app languages contain the repair controls and status text.
 Public-tree credential and whitespace checks passed. No private configuration,
 authentication asset, signing material or APK is included in the source change.
 
-## Device API observations
+## Historical device API observations
 
 Read-only checks on a OnePlus 7T Pro / Android 13 established that:
 
@@ -75,7 +81,8 @@ Read-only checks on a OnePlus 7T Pro / Android 13 established that:
 - Full stored-configuration readback matched the private baseline afterward.
   No hotspot writes or restarts were performed during these API checks.
 
-These observations are outside the project's BYD support scope. The separate
+These observations predate the current phone + browser-only scope; at the time,
+they were outside the earlier BYD support scope. The separate
 broadcast add/remove/re-add comparison used the original DiPlay 0.2.12 APK and
 a privileged experimental helper: automatic joining and CarPlay succeeded with
 the tested element, failed after removal and succeeded after re-add. Channel 0

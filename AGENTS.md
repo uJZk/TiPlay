@@ -10,6 +10,10 @@ Phone settings, connection drafts, explicit apply/reconnect and boot behavior fo
 
 ## Current progress
 
+See `docs/docs-sweep-2026-10-12/README.md` for the incremental documentation sweep,
+user-focused English/Chinese READMEs, checks and unresolved destination/label policies.
+`docs/docs-sweep-2026-10-12/TIE-UP.md` records its integration and delivery progress.
+
 See `docs/WEB-DEBUG-2026-10-11.md` for the five-field Debug overlay, rolling statistics,
 synchronized frame timing, removal of the MSE/video fallback and measurement validation limits.
 
