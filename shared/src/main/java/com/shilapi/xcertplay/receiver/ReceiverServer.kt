@@ -1,0 +1,383 @@
+package com.shilapi.xcertplay.receiver
+
+import com.shilapi.xcertplay.airplay.AirPlayCrypto
+import com.shilapi.xcertplay.airplay.BplistCodec
+import com.shilapi.xcertplay.airplay.NtpClock
+import com.shilapi.xcertplay.airplay.RtspMessage
+import com.shilapi.xcertplay.web.WebMediaSink
+import com.shilapi.xcertplay.network.TcpLiveness
+import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
+import java.io.Closeable
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Semaphore
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** Explicitly started LAN receiver, on its own port and identity, separate from CarPlay. */
+class ReceiverServer(private val config: ReceiverConfig, private val listener: Listener,
+                     private val fairPlayReply: (ByteArray) -> ByteArray? = { ReceiverFairPlay.reply(it) },
+                     private val fairPlayDecrypt: (ByteArray, ByteArray) -> ByteArray? = { message, key -> ReceiverFairPlay.decrypt(message, key) }) : Closeable {
+    interface Listener {
+        fun mirrorSink(): WebMediaSink
+        fun play(item: ReceiverPlay)
+        fun stopPlayback()
+        fun seek(seconds: Double)
+        fun rate(value: Double)
+        fun playback(): ReceiverPlayback
+        fun status(state: String)
+    }
+
+    private val closed = AtomicBoolean(false)
+    private val server = ServerSocket()
+    private val sockets = ConcurrentHashMap.newKeySet<Socket>()
+    private val slots = Semaphore(12)
+    private val ownership = Any()
+    private var owner: Connection? = null
+    private var playbackPeer: InetAddress? = null
+    private var playbackId: String? = null
+    private val reverse = ConcurrentHashMap<String, Connection>()
+    private val resourceIds = AtomicLong()
+    private data class PendingResource(val session: String, val peer: InetAddress, val url: String,
+                                       val future: CompletableFuture<ReceiverResource?> = CompletableFuture())
+    private val resources = ConcurrentHashMap<Long, PendingResource>()
+    val port: Int get() = server.localPort
+
+    fun start(): Int {
+        server.reuseAddress = true
+        server.bind(InetSocketAddress(InetAddress.getByName("::"), 0))
+        Thread({
+            try {
+                while (!closed.get()) {
+                    val socket = server.accept()
+                    if (!slots.tryAcquire()) { socket.close(); continue }
+                    sockets.add(socket)
+                    if (closed.get()) { socket.close(); sockets.remove(socket); slots.release(); break }
+                    Thread({
+                        try { Connection(socket).run() }
+                        finally { sockets.remove(socket); slots.release() }
+                    }, "tiplay-airplay-control").apply { isDaemon = true; start() }
+                }
+            } catch (_: Exception) {
+                if (!closed.get()) listener.status("failed")
+            }
+        }, "tiplay-airplay-listener").apply { isDaemon = true; start() }
+        return port
+    }
+
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        runCatching { server.close() }
+        sockets.forEach { runCatching { it.close() } }
+        synchronized(ownership) {
+            owner?.closeMedia(); owner = null
+            playbackPeer = null; playbackId = null
+            listener.stopPlayback()
+        }
+        reverse.clear()
+        resources.values.forEach { it.future.complete(null) }; resources.clear()
+    }
+
+    /** Playback updates use the iPhone's reverse HTTP channel, never the browser's control channel. */
+    fun playbackEvent(state: String) {
+        val id = synchronized(ownership) { playbackId } ?: return
+        reverse[id]?.event(state, id)
+    }
+
+    fun finishPlayback() = synchronized(ownership) {
+        if (playbackPeer == null) return@synchronized
+        playbackEvent("stopped")
+        playbackPeer = null; playbackId = null
+        resources.values.forEach { it.future.complete(null) }; resources.clear()
+        listener.stopPlayback()
+        listener.status("listening")
+    }
+
+    /** An iPhone app may own its HLS playlists. Request them on reverse HTTP, as UxPlay does. */
+    fun loadResource(url: String): ReceiverResource? {
+        if (!com.shilapi.xcertplay.airplay.VideoInCar.isPlayableUrl(url, iphoneLoadsAppSchemes = true)) return null
+        val (requestId, pending, channel) = synchronized(ownership) {
+            if (closed.get() || resources.size >= 16) return null
+            val pending = PendingResource(playbackId ?: return null, playbackPeer ?: return null, url)
+            val channel = reverse[pending.session] ?: return null
+            val requestId = resourceIds.incrementAndGet()
+            resources[requestId] = pending
+            Triple(requestId, pending, channel)
+        }
+        try {
+            channel.sendEvent(receiverXml(mapOf("sessionID" to 1, "type" to "unhandledURLRequest", "request" to mapOf(
+                "FCUP_Response_ClientInfo" to 1, "FCUP_Response_ClientRef" to 40030004,
+                "FCUP_Response_RequestID" to requestId, "FCUP_Response_URL" to url,
+                "FCUP_Response_IsContentKeyRequest" to false, "sessionID" to 1,
+                "FCUP_Response_Headers" to mapOf("X-Playback-Session-Id" to pending.session,
+                    "User-Agent" to "AppleCoreMedia/1.0.0.11B554a (Apple TV; U; CPU OS 7_0_4 like Mac OS X; en_us)"),
+            ))), pending.session)
+            return pending.future.get(10, TimeUnit.SECONDS)
+        } catch (_: InterruptedException) { Thread.currentThread().interrupt(); return null }
+        catch (_: Exception) { return null }
+        finally { resources.remove(requestId, pending) }
+    }
+
+    private inner class Connection(private val socket: Socket) {
+        private val pairing = ReceiverPairing(config.identity)
+        private var handshake: ByteArray? = null
+        private var key: ByteArray? = null
+        private var mirror: ReceiverMirrorStream? = null
+        private var mirrorToken: Any? = null
+        private var timing: NtpClock? = null
+        private val output = socket.getOutputStream()
+        private var reverseId: String? = null
+        private val peer = socket.inetAddress
+
+        fun run() {
+            try {
+                TcpLiveness.configure(socket) {}
+                socket.tcpNoDelay = true
+                socket.soTimeout = 120_000
+                val input = BufferedInputStream(socket.getInputStream())
+                while (!closed.get() && !socket.isClosed) {
+                    val request = readReceiverRequest(input) ?: break
+                    // Replies to our POST /event have the same framing, but are not requests.
+                    if (request.method.startsWith("HTTP/")) continue
+                    val response = try { handle(request) }
+                    catch (_: IllegalArgumentException) { RtspMessage.Response(status = 400) }
+                    catch (_: IllegalStateException) { RtspMessage.Response(status = 400) }
+                    catch (_: Exception) { RtspMessage.Response(status = 500) }
+                    synchronized(output) {
+                        if (response.status == 101) reverseId?.let {
+                            reverse.put(it, this)?.takeIf { old -> old !== this }?.socket?.close()
+                        }
+                        val headers = response.headers + ("Server" to "AirTunes/220.68")
+                        output.write(RtspMessage.buildResponse(request, response.copy(headers = headers))); output.flush()
+                    }
+                    if (response.status == 101) {
+                        socket.soTimeout = 0
+                    }
+                    if (request.method == "TEARDOWN") break
+                }
+            } catch (_: Exception) {
+                // Malformed requests and peer disconnects are confined to their own connection.
+            } finally {
+                runCatching { socket.close() }
+                reverseId?.let { id ->
+                    if (reverse.remove(id, this)) synchronized(ownership) {
+                        if (playbackId == id && playbackPeer == peer) finishPlayback()
+                    }
+                }
+                synchronized(ownership) {
+                    closeMedia()
+                    if (owner === this) { owner = null; listener.status("listening") }
+                }
+            }
+        }
+
+        fun closeMedia() {
+            mirrorToken = null
+            mirror?.close(); mirror = null
+            timing?.close(); timing = null
+            key = null; handshake = null
+        }
+
+        fun event(state: String, id: String) {
+            val body = receiverXml(mapOf("category" to "video", "state" to state))
+            sendEvent(body, id)
+        }
+
+        fun sendEvent(body: ByteArray, id: String) {
+            val headers = "POST /event HTTP/1.1\r\nContent-Type: text/x-apple-plist+xml\r\n" +
+                "X-Apple-Session-ID: $id\r\nContent-Length: ${body.size}\r\n\r\n"
+            runCatching { synchronized(output) { output.write(headers.toByteArray()); output.write(body); output.flush() } }
+        }
+
+        private fun handle(request: RtspMessage.Request): RtspMessage.Response {
+            val path = request.path.substringBefore('?')
+            val query = receiverQuery(request.path)
+            val id = request.headers["x-apple-session-id"] ?: "default"
+            require(id.matches(Regex("[A-Za-z0-9._-]{1,128}")))
+            when {
+                path == "/info" -> {
+                    val info = config.info().toMutableMap()
+                    if (request.body.isNotEmpty()) {
+                        val dict = BplistCodec.decode(request.body) as? Map<*, *>
+                        if ((dict?.get("qualifier") as? List<*>)?.contains("txtAirPlay") == true) {
+                            info["txtAirPlay"] = config.txt.entries.fold(ByteArray(0)) { bytes, (k, v) ->
+                                val entry = "$k=$v".toByteArray(); bytes + byteArrayOf(entry.size.toByte()) + entry
+                            }
+                        }
+                    }
+                    return plist(info)
+                }
+                path == "/server-info" -> return xml(config.serverInfo())
+                path == "/pair-setup" -> return octets(pairing.setup(request.body))
+                path == "/pair-verify" -> return octets(pairing.verify(request.body))
+                path == "/fp-setup" -> {
+                    val reply = fairPlayReply(request.body) ?: return RtspMessage.Response(status = 400)
+                    handshake = if (request.body.size == 164) request.body.copyOf() else null
+                    return octets(reply)
+                }
+                request.method == "OPTIONS" -> return RtspMessage.Response(headers = mapOf("Public" to
+                    "SETUP, RECORD, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER, FLUSH"))
+                request.method == "SETUP" -> return setup(request)
+                request.method == "RECORD" -> return RtspMessage.Response(headers = mapOf("Audio-Latency" to "0"))
+                request.method == "TEARDOWN" -> {
+                    synchronized(ownership) { closeMedia(); if (owner === this) owner = null }
+                    return RtspMessage.Response(headers = mapOf("Connection" to "close"))
+                }
+                path == "/reverse" && request.method == "POST" -> {
+                    if (!request.headers["upgrade"].equals("PTTH/1.0", true)) return RtspMessage.Response(status = 400)
+                    synchronized(ownership) {
+                        if (playbackPeer != null && playbackPeer != peer) return busy()
+                    }
+                    reverseId = id
+                    return RtspMessage.Response(status = 101, statusText = "Switching Protocols",
+                        headers = mapOf("Connection" to "Upgrade", "Upgrade" to "PTTH/1.0"))
+                }
+                path == "/play" && request.method == "POST" -> {
+                    val item = ReceiverPlay.parse(request)
+                    synchronized(ownership) {
+                        if (closed.get()) return busy()
+                        if ((owner != null && owner !== this) || (playbackPeer != null && playbackPeer != peer)) return busy()
+                        owner?.closeMedia(); owner = null
+                        resources.values.forEach { it.future.complete(null) }; resources.clear()
+                        playbackPeer = peer; playbackId = id
+                        listener.play(item); listener.status("video")
+                    }
+                    return RtspMessage.Response()
+                }
+                path == "/action" && request.method == "POST" -> {
+                    val message = BplistCodec.decode(request.body) as? Map<*, *> ?: error("invalid action")
+                    if (message["type"] != "unhandledURLResponse") return RtspMessage.Response(status = 501, statusText = "Not Implemented")
+                    val params = message["params"] as? Map<*, *> ?: error("missing params")
+                    val requestId = (params["FCUP_Response_RequestID"] as? Number)?.toLong() ?: error("missing request id")
+                    val pending = resources[requestId] ?: return RtspMessage.Response(status = 404)
+                    if (pending.session != id || pending.peer != peer || pending.url != params["FCUP_Response_URL"]) {
+                        return RtspMessage.Response(status = 403, statusText = "Forbidden")
+                    }
+                    val headers = params["FCUP_Response_Headers"] as? Map<*, *>
+                    val location = headers?.entries?.firstOrNull { it.key.toString().equals("Location", true) }?.value as? String
+                    pending.future.complete(ReceiverResource(params["FCUP_Response_Data"] as? ByteArray,
+                        (params["FCUP_Response_StatusCode"] as? Number)?.toInt(), location))
+                    return RtspMessage.Response()
+                }
+                path in listOf("/stop", "/scrub", "/rate", "/playback-info") -> {
+                    synchronized(ownership) {
+                        if (playbackPeer != peer || playbackId != id) return RtspMessage.Response(status = 403, statusText = "Forbidden")
+                        when (path) {
+                            "/stop" -> finishPlayback()
+                            "/scrub" -> if (request.method == "POST") {
+                                val value = query["position"]?.toDoubleOrNull()
+                                require(value != null && value.isFinite() && value >= 0); listener.seek(value)
+                            } else {
+                                val state = listener.playback()
+                                return RtspMessage.Response(headers = mapOf("Content-Type" to "text/parameters"),
+                                    body = "duration: ${state.duration}\r\nposition: ${state.position}\r\n".toByteArray())
+                            }
+                            "/rate" -> { val value = query["value"]?.toDoubleOrNull(); require(value == 0.0 || value == 1.0); listener.rate(value!!) }
+                            "/playback-info" -> return xml(listener.playback().info())
+                        }
+                    }
+                    return RtspMessage.Response()
+                }
+                request.method in listOf("GET_PARAMETER", "SET_PARAMETER", "FLUSH") || path == "/feedback" -> return RtspMessage.Response()
+                else -> return RtspMessage.Response(status = 404)
+            }
+        }
+
+        private fun setup(request: RtspMessage.Request): RtspMessage.Response = synchronized(ownership) {
+            if (closed.get() || (owner != null && owner !== this) || playbackPeer != null) return busy()
+            val dict = BplistCodec.decode(request.body) as? Map<*, *> ?: error("setup must be dictionary")
+            val response = linkedMapOf<String, Any?>()
+            val encrypted = dict["ekey"] as? ByteArray
+            if (encrypted != null) {
+                val iv = dict["eiv"] as? ByteArray
+                require(iv?.size == 16)
+                val shared = pairing.sharedSecret ?: return RtspMessage.Response(status = 403, statusText = "Forbidden")
+                val raw = fairPlayDecrypt(requireNotNull(handshake), encrypted) ?: error("invalid transport key")
+                key = AirPlayCrypto.sha512(raw, shared).copyOf(16)
+                timing?.close()
+                val clock = NtpClock()
+                timing = clock
+                response["timingPort"] = clock.listen()
+                val timingPort = (dict["timingPort"] as? Number)?.toInt() ?: 0
+                require(timingPort in 0..65535)
+                clock.start(peer, timingPort)
+                response["eventPort"] = port
+                owner = this
+            }
+            (dict["streams"] as? List<*>)?.let { streams ->
+                response["streams"] = streams.mapNotNull { entry ->
+                    val stream = entry as? Map<*, *> ?: error("invalid stream")
+                    if ((stream["type"] as? Number)?.toInt() != 110) return@mapNotNull null
+                    val streamKey = requireNotNull(key)
+                    val clock = requireNotNull(timing)
+                    val connectionId = (stream["streamConnectionID"] as? Number)?.toLong() ?: error("missing connection id")
+                    mirror?.close()
+                    val token = Any()
+                    mirrorToken = token
+                    val receiver = ReceiverMirrorStream(streamKey, connectionId, peer, listener.mirrorSink(), clock) {
+                        synchronized(ownership) {
+                            if (owner === this && mirrorToken === token) {
+                                mirror = null
+                                owner = null
+                                timing?.close(); timing = null
+                                listener.status("listening")
+                                runCatching { socket.close() }
+                            }
+                        }
+                    }
+                    mirror = receiver; owner = this
+                    val dataPort = receiver.start()
+                    listener.status("mirror")
+                    mapOf("type" to 110, "dataPort" to dataPort)
+                }
+            }
+            plist(response)
+        }
+    }
+}
+
+private fun busy() = RtspMessage.Response(status = 453, statusText = "Not Enough Bandwidth")
+private fun plist(dict: Map<String, Any?>) = RtspMessage.Response(headers = mapOf("Content-Type" to "application/x-apple-binary-plist"), body = BplistCodec.encode(dict))
+private fun octets(bytes: ByteArray) = RtspMessage.Response(headers = mapOf("Content-Type" to "application/octet-stream"), body = bytes)
+private fun xml(dict: Map<String, Any?>) = RtspMessage.Response(headers = mapOf("Content-Type" to "text/x-apple-plist+xml"), body = receiverXml(dict))
+
+/** Bound allocation before passing framing to the shared RTSP parser. */
+internal fun readReceiverRequest(input: java.io.InputStream): RtspMessage.Request? {
+    val header = ByteArrayOutputStream()
+    var end = 0
+    while (end != 0x0d0a0d0a) {
+        val byte = input.read()
+        if (byte < 0) { require(header.size() == 0); return null }
+        header.write(byte); require(header.size() <= 16 * 1024)
+        end = (end shl 8) or byte
+    }
+    val bytes = header.toByteArray()
+    val lengths = bytes.toString(Charsets.US_ASCII).split("\r\n").filter { it.substringBefore(':').equals("Content-Length", true) }
+    require(lengths.size <= 1)
+    val length = lengths.firstOrNull()?.substringAfter(':')?.trim()?.toIntOrNull() ?: if (lengths.isEmpty()) 0 else error("invalid content length")
+    require(length in 0..1024 * 1024)
+    val body = ByteArray(length)
+    require(readPacket(input, body))
+    return RtspMessage.parseMessages(bytes + body).messages.single()
+}
+
+internal fun receiverXml(value: Any?): ByteArray {
+    fun escape(text: String) = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    fun render(value: Any?): String = when (value) {
+        is Map<*, *> -> "<dict>" + value.entries.joinToString("") { "<key>${escape(it.key.toString())}</key>${render(it.value)}" } + "</dict>"
+        is List<*> -> "<array>" + value.joinToString("") { render(it) } + "</array>"
+        is Boolean -> if (value) "<true/>" else "<false/>"
+        is Float, is Double -> "<real>$value</real>"
+        is Number -> "<integer>$value</integer>"
+        is ByteArray -> "<data>${java.util.Base64.getEncoder().encodeToString(value)}</data>"
+        else -> "<string>${escape(value?.toString().orEmpty())}</string>"
+    }
+    return ("<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" " +
+        "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\">${render(value)}</plist>").toByteArray()
+}

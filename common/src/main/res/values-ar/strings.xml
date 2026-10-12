@@ -637,4 +637,19 @@
     <string name="settings_external_ap_check">هذا الجهاز غير متصل بشبكة Wi-Fi المطلوبة.</string>
     <string name="settings_android_address">عنوان Android: %1$s</string>
     <string name="settings_main_stopping">جارٍ قطع الاتصال…</string>
+    <string name="settings_airplay_title">AirPlay (تجريبي)</string>
+    <string name="settings_airplay_instructions">صِل iPhone وهاتف Android بشبكة Wi-Fi نفسها أو نقطة اتصال Android، ثم افتح صفحة متصفح السيارة المقترنة. شغّل المستقبل واختر «TiPlay AirPlay» في انعكاس الشاشة أو قائمة AirPlay بتطبيق الفيديو. يبقى CarPlay متصلاً وتعود صورته بعد انتهاء البث. تحكّم بالتشغيل من iPhone. يرسل هذا الإصدار الفيديو فقط ولا يدعم الفيديو المحمي.</string>
+    <string name="settings_airplay_start">تشغيل AirPlay</string>
+    <string name="settings_airplay_stop">إيقاف AirPlay والعودة إلى CarPlay</string>
+    <string name="settings_airplay_wifi">إعدادات Wi-Fi ونقطة الاتصال</string>
+    <string name="settings_airplay_back">رجوع</string>
+    <string name="settings_airplay_listening">بانتظار iPhone · TiPlay AirPlay</string>
+    <string name="settings_airplay_mirror">انعكاس الشاشة</string>
+    <string name="settings_airplay_video">تشغيل فيديو AirPlay</string>
+    <string name="settings_airplay_stopped">تم إيقاف AirPlay</string>
+    <string name="settings_airplay_network">صِل الهاتفين بشبكة Wi-Fi نفسها أو نقطة اتصال Android.</string>
+    <string name="settings_airplay_failed">تعذّر تشغيل AirPlay أو الفيديو. تحقّق من إذن الشبكة المحلية وجرّب فيديو MP4 أو HLS غير محمي.</string>
+    <string name="settings_airplay_disable">تعطيل AirPlay</string>
+    <string name="settings_airplay_disable_description">يسري فورًا. يوقف AirPlay ويعيد عرض CarPlay المتصل. أوقف هذا الخيار للسماح بتشغيل AirPlay يدويًا مجددًا.</string>
+    <string name="settings_airplay_disabled">AirPlay معطّل في الإعدادات المتقدمة.</string>
 </resources>

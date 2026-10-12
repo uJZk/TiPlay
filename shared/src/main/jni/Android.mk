@@ -6,6 +6,15 @@ LOCAL_SRC_FILES := linux_i2c_jni.c
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
+LOCAL_MODULE := tiplay_airplay
+LOCAL_SRC_FILES := airplay/fairplay_jni.c airplay/playfair/playfair.c \
+    airplay/playfair/hand_garble.c airplay/playfair/modified_md5.c \
+    airplay/playfair/omg_hax.c airplay/playfair/sap_hash.c
+LOCAL_CFLAGS := -O2 -fno-strict-aliasing
+LOCAL_LDLIBS := -lm
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
 LOCAL_MODULE := local_hotspot_radio
 LOCAL_SRC_FILES := local_hotspot_radio.c
 LOCAL_CFLAGS := -Wall -Wextra -Werror

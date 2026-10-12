@@ -297,6 +297,45 @@ class TeslaBrowserLinkTest {
         verify(session).requestSiri()
     }
 
+    @Test fun airplayPauseKeepsCarPlayButStopsHiddenTouchAndKeyInputUntilResume() {
+        val server = started()
+        val controller = storeSession(phoneBrowser = true)
+        CarPlayBackgroundSession.active = true
+        val contacts = listOf(AirPlayContact(0, 0.25, 0.75, true))
+        `when`(controller.sendTouch(contacts)).thenReturn(true)
+        TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(CarPlayBackgroundSession.hasSession())
+        assertFalse(server.callbacks.status().touchAvailable)
+        assertFalse(server.callbacks.onTouch(contacts))
+        server.callbacks.onKey("home")
+        verify(controller).sendTouch(emptyList())
+        verify(controller, org.mockito.Mockito.never()).sendTouch(contacts)
+        verify(controller, org.mockito.Mockito.never()).sendKnob(AirPlayKnobState(home = true))
+        TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(server.callbacks.status().touchAvailable)
+        assertTrue(server.callbacks.onTouch(contacts))
+    }
+
+    @Test fun stoppingAirPlayServiceRestoresTheRetainedCarPlayProducerAndKeepsItsSessionAlive() {
+        storeSession(phoneBrowser = true)
+        val retained = CarPlayBackgroundSession.snapshot()!!
+        val carPlay = TeslaBrowserLink.tee(retained.sink, true, 1920, 1080, 60)
+        val avcc = byteArrayOf(1, 0x64, 0, 0x28, -1, -31, 0, 4, 0x67, 0x64, 0, 0x28, 1, 0, 2, 0x68, -18)
+        carPlay.onScreenStreamActive(110, true)
+        carPlay.onVideoCodec(110, VideoCodec.H264); carPlay.onVideoConfig(110, avcc)
+        TeslaBrowserLink.pauseCarPlayDisplay()
+        val borrowed = com.shilapi.xcertplay.web.WebMediaSink(TeslaBrowserLink.hub, 720, 1280, 60)
+        borrowed.onScreenStreamActive(110, true)
+        val service = org.robolectric.Robolectric.buildService(AirPlayReceiverService::class.java).create()
+        service.destroy()
+        assertEquals(1920, TeslaBrowserLink.hub.info()!!.width)
+        assertEquals("avc1.640028", TeslaBrowserLink.hub.info()!!.codec)
+        assertTrue(CarPlayBackgroundSession.hasSession())
+        borrowed.close()
+        assertEquals(1920, TeslaBrowserLink.hub.info()!!.width)
+        TeslaBrowserLink.releaseTap(retained.sink)
+    }
+
     @Test fun appearanceChangesReachTheMainThreadWithoutTheStatsLogThrottle() {
         val server = started()
         val seen = mutableListOf<Boolean>()

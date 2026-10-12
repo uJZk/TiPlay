@@ -649,4 +649,19 @@
     <string name="settings_external_ap_check">Пристрій не підключено до потрібної мережі Wi-Fi.</string>
     <string name="settings_android_address">Адреса Android: %1$s</string>
     <string name="settings_main_stopping">Відключення…</string>
+    <string name="settings_airplay_title">AirPlay (експериментально)</string>
+    <string name="settings_airplay_instructions">Підключіть iPhone і телефон Android до однієї мережі Wi-Fi або точки доступу Android, потім відкрийте спарену сторінку в браузері автомобіля. Запустіть приймач і виберіть «TiPlay AirPlay» у дублюванні екрана або меню AirPlay відеозастосунку. З’єднання CarPlay зберігається, його зображення повертається після завершення трансляції. Керуйте відтворенням на iPhone. Ця версія передає лише відео; захищене відео не підтримується.</string>
+    <string name="settings_airplay_start">Запустити AirPlay</string>
+    <string name="settings_airplay_stop">Зупинити AirPlay та повернутися до CarPlay</string>
+    <string name="settings_airplay_wifi">Налаштування Wi-Fi і точки доступу</string>
+    <string name="settings_airplay_back">Назад</string>
+    <string name="settings_airplay_listening">Очікування iPhone · TiPlay AirPlay</string>
+    <string name="settings_airplay_mirror">Дублювання екрана</string>
+    <string name="settings_airplay_video">Відтворення відео AirPlay</string>
+    <string name="settings_airplay_stopped">AirPlay зупинено</string>
+    <string name="settings_airplay_network">Підключіть обидва телефони до однієї мережі Wi-Fi або точки доступу Android.</string>
+    <string name="settings_airplay_failed">Не вдалося запустити AirPlay або відтворити відео. Перевірте дозвіл локальної мережі та спробуйте незахищене відео MP4 або HLS.</string>
+    <string name="settings_airplay_disable">Вимкнути AirPlay</string>
+    <string name="settings_airplay_disable_description">Діє одразу. Зупиняє AirPlay та повертає зображення підключеного CarPlay. Вимкніть цей параметр, щоб знову запускати AirPlay вручну.</string>
+    <string name="settings_airplay_disabled">AirPlay вимкнено в розширених налаштуваннях.</string>
 </resources>

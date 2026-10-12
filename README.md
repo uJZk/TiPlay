@@ -32,6 +32,8 @@ CarPlay fills the browser video area. Tap its **TiPlay** icon to open the portal
 
 The app has **Main settings** and **Advanced settings**. Main settings holds the connection and browser controls. Advanced settings holds frame rate, HEVC, driving side, diagnostic reports and permissions. Frame rate defaults to 60 fps on a fresh install; saved choices remain. HEVC defaults on without a saved codec choice; turn it off for H.264 compatibility. Advanced video/control changes save immediately for the next connection; **Return and apply** returns to the main page and reconnects a running session.
 
+Experimental [AirPlay mirroring and video casting](docs/AIRPLAY.md) is available from Main settings. It temporarily pauses the CarPlay picture and restores a still-connected session when casting ends. **Advanced settings → Disable AirPlay** defaults off and stops the receiver immediately when enabled. This preview is video-only and still needs real iPhone/car validation.
+
 **Connect automatically after boot** is saved immediately and requests a connection when Android starts. Android or device background-launch restrictions can prevent it. Enable the hotspot separately.
 
 ## Limitations and help

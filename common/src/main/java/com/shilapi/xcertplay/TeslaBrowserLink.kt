@@ -118,6 +118,19 @@ internal object TeslaBrowserLink {
     private val host = AtomicReference<Host?>(null)
     private val listeners = CopyOnWriteArraySet<(State) -> Unit>()
     private val taps = Collections.synchronizedMap(WeakHashMap<MediaSink, WebMediaSink>())
+    @Volatile private var carPlayDisplayPaused = false
+
+    /** AirPlay borrows the canvas; the CarPlay controller and its Wi-Fi/session resources stay alive. */
+    fun pauseCarPlayDisplay() = synchronized(taps) {
+        if (!carPlayDisplayPaused) CarPlayBackgroundSession.snapshot()?.controller?.sendTouch(emptyList())
+        carPlayDisplayPaused = true
+        taps.values.forEach { it.pauseDisplay() }
+    }
+
+    fun resumeCarPlayDisplay() = synchronized(taps) {
+        carPlayDisplayPaused = false
+        CarPlayBackgroundSession.snapshot()?.sink?.let { taps[it]?.resumeDisplay() }
+    }
     private val statsLock = Any()
 
     // Worker thread only.
@@ -193,7 +206,10 @@ internal object TeslaBrowserLink {
     fun tee(sink: MediaSink, phoneBrowser: Boolean, width: Int, height: Int, fps: Int = TeslaBrowserCanvas.FPS): MediaSink {
         if (!phoneBrowser) return sink
         val web = WebMediaSink(hub, width, height, fps)
-        taps[sink] = web
+        synchronized(taps) {
+            if (carPlayDisplayPaused) web.pauseDisplay()
+            taps[sink] = web
+        }
         return BrowserOnlyMediaSink(sink, web)
     }
 
@@ -341,7 +357,7 @@ internal object TeslaBrowserLink {
             display = info?.let { BrowserSize(it.width, it.height) } ?: snapshot?.display?.let { BrowserSize(it.width, it.height) },
             // The canvas "Apply and reconnect" would ask for, so the page offers it only when a reconnect changes something.
             viewport = viewport?.let { TeslaBrowserCanvas.size(it.size) },
-            touchAvailable = snapshot != null && CarPlayBackgroundSession.active,
+            touchAvailable = !carPlayDisplayPaused && snapshot != null && CarPlayBackgroundSession.active,
             phone = linkedMapOf("localNetworkPermission" to (app?.let { LocalNetworkPermission.state(it).wire })),
         )
     }
@@ -356,9 +372,10 @@ internal object TeslaBrowserLink {
         override fun code(): String? = code
         override fun status(): BrowserLinkStatus = this@TeslaBrowserLink.status()
         override fun onTouch(contacts: List<AirPlayContact>): Boolean =
-            CarPlayBackgroundSession.snapshot()?.controller?.sendTouch(contacts) ?: false
+            if (carPlayDisplayPaused) false else CarPlayBackgroundSession.snapshot()?.controller?.sendTouch(contacts) ?: false
         override fun onViewport(viewport: BrowserViewport) = viewportChanged(viewport)
         override fun onFit() {
+            if (carPlayDisplayPaused) return
             main.post {
                 val screen = host.get()
                 if (screen == null) log("Browser link: the browser asked to fit, but no CarPlay screen is open")
@@ -366,6 +383,7 @@ internal object TeslaBrowserLink {
             }
         }
         override fun onKey(name: String) {
+            if (carPlayDisplayPaused) return
             val controller = CarPlayBackgroundSession.snapshot()?.controller ?: return
             when (name) {
                 "home" -> controller.sendKnob(AirPlayKnobState(home = true))
@@ -510,6 +528,7 @@ internal object TeslaBrowserLink {
         host.set(null)
         listeners.clear()
         taps.clear()
+        carPlayDisplayPaused = false
         app = null
     }
 
