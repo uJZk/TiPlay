@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -88,6 +89,16 @@ class ReleaseDraftTest(unittest.TestCase):
         run.return_value = subprocess.CompletedProcess([], 1, '', 'HTTP 403')
         with self.assertRaisesRegex(RuntimeError, 'HTTP 403'):
             release.find_release('example/repo', 'v0.2.14-beta.1')
+
+    @patch.object(release.subprocess, 'run')
+    def test_finds_unpublished_draft_without_tag_endpoint(self, run):
+        draft = dict(self.metadata, tag_name='v0.2.14-beta.1')
+        run.return_value = subprocess.CompletedProcess([], 0, json.dumps([[], [draft]]), '')
+        self.assertEqual(release.find_release('example/repo', draft['tag_name']), draft)
+        args = run.call_args.args[0]
+        self.assertIn('--paginate', args)
+        self.assertIn('--slurp', args)
+        self.assertEqual(args[-1], 'repos/example/repo/releases?per_page=100')
 
     @patch.object(release, 'gh')
     @patch.object(release, 'find_release')

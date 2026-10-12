@@ -16,14 +16,18 @@ def gh(*args):
 
 def find_release(repo, tag):
     result = subprocess.run(
-        ['gh', 'api', f'repos/{repo}/releases/tags/{tag}'],
+        ['gh', 'api', '--paginate', '--slurp', f'repos/{repo}/releases?per_page=100'],
         text=True, capture_output=True,
     )
-    if result.returncode == 0:
-        return json.loads(result.stdout)
-    if 'HTTP 404' in result.stderr:
-        return None
-    raise RuntimeError(result.stderr.strip())
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip())
+    # The tag endpoint can return 404 for an unpublished draft. List releases
+    # with authentication instead, including all pages so reruns find old drafts.
+    matches = [release for page in json.loads(result.stdout) for release in page
+               if release['tag_name'] == tag]
+    if len(matches) > 1:
+        raise ValueError('Multiple releases have the requested tag')
+    return matches[0] if matches else None
 
 
 def validate_artifacts(directory):

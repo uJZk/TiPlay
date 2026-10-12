@@ -114,6 +114,13 @@ and remote execution. The user subsequently explicitly authorized the commit,
 main push and workflow execution. Draft delivery will be verified in Actions;
 no local Android build is part of this follow-up.
 
+Delivery commit `4a8f8670` was pushed and Actions run
+https://github.com/uJZk/TiPlay/actions/runs/38207149600 built and uploaded all
+three attachments to prerelease draft `410201815`. Its final draft lookup failed
+because GitHub's tag endpoint returned 404 for this unpublished draft. The
+publisher now finds drafts through the authenticated paginated Releases list;
+a regression test covers this case. A fresh workflow run will verify the repair.
+
 Session inputs, logs and deliverables are outside Git in
 `/workspace/release-beta-2026-10-12/`.
 
