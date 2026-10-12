@@ -60,7 +60,8 @@ assets and matching source archive were checked again.
 - Publication remains pending; the incomplete release is still a draft.
 
 A checksum-verified GitHub Actions upload workflow was prepared locally in
-`.github/workflows/upload-prepared-release.yml`, but automatic approval rejected
+`/workspace/release-beta-2026-10-12/upload-prepared-release.awaiting-approval.yml`,
+but automatic approval rejected
 its commit/push because a persistent workflow with Contents write permission
 requires explicit authorization. It has not been committed, pushed or run.
 The user was asked to approve a temporary workflow (removed after use), or fix
@@ -69,6 +70,20 @@ the upload credentials for direct upload. Do not bypass that rejection.
 Next: upload the exact APK above through the approved path, verify all three
 remote attachments and their hashes, then publish the beta with prerelease true.
 Do not rebuild or change the draft's target commit when resuming this upload.
+
+## Release build workflow follow-up
+
+The user subsequently requested a non-debug APK release build workflow.
+`.github/workflows/android-release.yml` builds a signed mobile release with
+Contents read permission, automatically extracts the pinned upstream identity,
+and uploads Actions build artifacts. It does not upload or publish a GitHub
+Release. Signing requires the four repository secrets documented in
+[BUILD.md](BUILD.md#github-actions-release-build); cloud runtime variables are
+separate from repository secrets. Listing repository secrets via the current
+GitHub integration returned HTTP 403, so their presence could not be established.
+Workflow YAML, shell and embedded Python syntax checks passed. A local signed
+release rebuild and release lint passed in 51s. The previous beta draft's exact
+APK and matching source inputs remain preserved separately.
 Session inputs, logs and deliverables are outside Git in
 `/workspace/release-beta-2026-10-12/`.
 
