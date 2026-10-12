@@ -93,6 +93,27 @@ the exact missing secret names were not established. Configure the four signing
 repository secrets, then rerun this workflow. The user explicitly stopped local
 release builds; continue with GitHub Actions only. Do not resume the separate
 Contents-write upload workflow without its required authorization.
+
+The repository secrets were then configured. Actions run
+https://github.com/uJZk/TiPlay/actions/runs/38204955887 succeeded, including
+release lint/build, APK identity verification and Actions artifact upload.
+
+The user subsequently explicitly requested automatic Release draft delivery,
+with APK, source ZIP and SHA256SUMS.txt. This authorizes the new separate
+Contents-write draft job in `android-release.yml`. It uploads the verified
+Actions build outputs, sets the exact build target, verifies remote hashes,
+and keeps the Release a prerelease draft. The old temporary split-upload workflow
+is unused. No local Android build is required or authorized by this follow-up.
+
+Eight release-delivery tests passed, covering checksum and source-credential
+rejection, draft creation/reruns, preservation of published releases and remote
+asset verification. YAML, shell, embedded Python, public-tree and whitespace
+checks passed. Automatic review rejected the combined commit/main-push/dispatch
+action because it required explicit approval for this exact default-branch push
+and remote execution. The user subsequently explicitly authorized the commit,
+main push and workflow execution. Draft delivery will be verified in Actions;
+no local Android build is part of this follow-up.
+
 Session inputs, logs and deliverables are outside Git in
 `/workspace/release-beta-2026-10-12/`.
 

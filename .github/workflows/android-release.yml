@@ -6,6 +6,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -27,6 +31,7 @@ jobs:
               raise SystemExit('Missing repository signing secrets: ' + ', '.join(missing))
           PY
           python3 scripts/check_public_tree.py
+          python3 -m unittest discover -s tests -p 'test_release_draft.py'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -100,7 +105,6 @@ jobs:
           source = output / f'TiPlay-{version}-source.zip'
           subprocess.run(['git', 'archive', '--format=zip', f'--prefix=TiPlay-{version}/', '-o', str(source), 'HEAD'], check=True)
           (output / 'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.name + '\n' for path in [target, source]))
-          (output / 'BUILD-COMMIT.txt').write_text(os.environ['GITHUB_SHA'] + '\n')
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -111,3 +115,21 @@ jobs:
       - name: Remove temporary signing and runtime inputs
         if: always()
         run: rm -rf "$RUNNER_TEMP/tiplay-release-inputs"
+
+  draft:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: TiPlay-signed-release
+          path: release-artifacts/
+      - name: Create or update draft with APK, source and SHA256
+        run: python3 scripts/publish_release_draft.py

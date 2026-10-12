@@ -196,9 +196,17 @@ place a signing keystore under APK assets.
 
 Run **Actions → Build signed TiPlay release APK → Run workflow**
 (`.github/workflows/android-release.yml`). It builds `:mobile:assembleRelease`
-with release lint and uploads the signed APK, matching source ZIP, checksums and
-build commit as the `TiPlay-signed-release` Actions artifact. This workflow has
-Contents read permission and does not publish a GitHub Release.
+with release lint and uploads the signed APK, matching source ZIP and checksums
+as the `TiPlay-signed-release` Actions artifact. A separate job with Contents
+write permission creates or updates the version's GitHub Release draft with
+exactly those three attachments. The checksum file covers both APK and source ZIP;
+the notes record the exact build commit and upstream runtime identity provenance.
+The Release remains a prerelease draft and is not published publicly.
+
+Rerunning the workflow replaces the three draft attachments and removes obsolete
+attachments after a successful upload. It refuses to modify an already published
+Release. Workflow runs on the same branch execute serially. The build job retains
+Contents read permission; only the draft-upload job has Contents write permission.
 
 Configure these **repository secrets** under **Settings → Secrets and variables
 → Actions → Repository secrets** before running it:
