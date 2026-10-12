@@ -1,4 +1,9 @@
-# TiPlay — unreleased
+# TiPlay 0.2.14-beta.1 — 2026-10-12
+
+- Publish the first TiPlay beta for Android phone + car browser use, with a signed APK and matching source archive.
+- Add experimental AirPlay screen mirroring and non-DRM video casting; receiving video pauses CarPlay browser output and stopping restores it. AirPlay audio, DRM and HEVC mirroring are unsupported; device acceptance remains pending.
+- Host the browser page over HTTPS, with reconnect recovery, automatic window fitting, codec diagnostics and browser theme delivery.
+- Provision the experimental CarPlay runtime identity from the hash-verified upstream DiPlay 0.2.18 APK. This does not merge upstream 0.2.18 source.
 
 - Rename the project from DiPlay to TiPlay. The app uses the new package `com.ujzk.tiplay`, so it installs alongside DiPlay (`com.shihab.diplay`). It does not take over DiPlay's settings, pairing records or updates, and the iPhone sees it as a new car.
 - Show TiPlay as the app name and as the CarPlay accessory name on the iPhone. Local hotspot names start with `TiPlay-`. Diagnostic reports save to Downloads/TiPlay as `TiPlay-<time>.txt`.
