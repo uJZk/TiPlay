@@ -1,11 +1,11 @@
 # Documentation sweep — 2026-10-12
 
 - status: complete
-- base-commit: `5449de24d399f9e4e1ce1124e7066d906df98813`
+- base-commit: `84123f908ae9e620e5aa58b07cbc2471e2024464`
 - Previous sweep baseline: `92cc2efca3a27c87f064f3ea63303dc266226b89`
 - Reviewed HEAD: `5449de24d399f9e4e1ce1124e7066d906df98813`
 - Scope: 35 documents across six independent tasks, selected using commit history since the completed 2026-10-11 sweep and mappings from changed code. 34 source documents changed; AGENTS.md reviewed unchanged.
-- Initial working tree: clean. The docs sweep changed no application/configuration and made no commits, pushes or deployment. The original final base-commit is the reviewed HEAD; the user subsequently authorized delivery via tie-up. See [TIE-UP.md](TIE-UP.md) for integration and commit/push progress.
+- Initial working tree: clean. The docs sweep changed no application/configuration and made no commits, pushes or deployment. The user subsequently authorized tie-up delivery; final baseline is committed integration `84123f908ae9e620e5aa58b07cbc2471e2024464`, pushed to origin/main. See [TIE-UP.md](TIE-UP.md) for integration and commit/push progress.
 - Standard and user requirement: [CHECKLIST.md](CHECKLIST.md). The user explicitly requested README.md contain only user-needed content; English and Chinese entry guides were aligned.
 - Scope/history: [SCOPE.md](SCOPE.md), HISTORY.txt and DIFFSTAT.txt. Tasks/results: [TASKS.md](TASKS.md). Validation: [VERIFICATION.md](VERIFICATION.md).
 - Model: skill-requested Sonnet/Opus are unavailable; six independent agents used the inherited available GPT-6 model, recorded with task reasons.
@@ -20,7 +20,7 @@ Dated implementation/delivery records identify superseded behavior while preserv
 
 ## Integration during tie-up
 
-Fetched main advanced to `cbe7cff6` after the original review. The integration preserves its hosted-only page, four-field Debug and lifecycle changes while retaining this sweep’s documentation improvements; see [INTEGRATION.md](INTEGRATION.md). Original results below describe the original reviewed HEAD; final integration checks and delivery are in [TIE-UP.md](TIE-UP.md).
+Fetched main advanced to `cbe7cff6` after the original review. The integration preserves its hosted-only page, four-field Debug and lifecycle changes while retaining this sweep’s documentation improvements; see [INTEGRATION.md](INTEGRATION.md). Original results below describe the original reviewed HEAD. Final integration passed 2,268 Android unit tests, required Lint/three debug builds and 65 browser tests; details and delivery are in [TIE-UP.md](TIE-UP.md). Later delivery-record commits are excluded from the next sweep source scope.
 
 ## Verification
 

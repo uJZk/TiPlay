@@ -11,3 +11,7 @@ This evidence describes the original reviewed `5449de24` before tie-up fetched n
 - Browser tests: 63 passed, zero failures/skips with Node 22. Restricted-sandbox first run blocked the site Python subprocess; rerun with approved subprocess capability passed without source changes.
 - Android: full required CI command passed, BUILD SUCCESSFUL in 5m 57s. Reports: shared 1225, common 1035, Home 4; total 2264, zero failures/errors/skips. Unit tasks executed for shared/common; Home reused its up-to-date reports. Required Lint and mobile/Home/maphost debug assemblies passed. Initial restricted run could not determine usable wildcard IP because local sockets were blocked; approved rerun passed with existing toolchains. Full success and initial failure logs retained.
 - No physical phone/car checks, E2E runs, downloads, remote Release/Pages verification or deployment were performed. Past device and delivery reports remain attributed historical evidence.
+
+## Final integration verification
+
+After origin/main advanced to cbe7cff6, the user-authorized tie-up integrated the original sweep with current behavior. The integrated tree passed 2,268 unit tests, Lint/three debug assemblies and browser 65/65; scoped local references and whitespace/public-tree checks passed. No code/config/site change exists relative to fetched main. The built debug APK contains no browser page assets. See [TIE-UP.md](TIE-UP.md) and its separate integration logs/results; original evidence above is unchanged.
