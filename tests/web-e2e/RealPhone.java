@@ -137,6 +137,7 @@ public class RealPhone {
             startSession(hub, clip, width, height, fps);
             AtomicInteger next = new AtomicInteger();
             long frameNanos = 1_000_000_000L / fps;
+            long syntheticSourceOrigin = System.nanoTime() - 50_000_000L;
             long[] count = {0};
             feeder.scheduleAtFixedRate(() -> {
                 Session current = session;
@@ -155,7 +156,7 @@ public class RealPhone {
                 }
                 AccessUnit unit = clip.units().get(index);
                 next.set((index + 1) % clip.units().size());
-                current.engineSink().onVideoFrame(MAIN_SCREEN, unit.bytes(), ++count[0] * frameNanos, System.nanoTime());
+                current.engineSink().onVideoFrame(MAIN_SCREEN, unit.bytes(), syntheticSourceOrigin + ++count[0] * frameNanos, System.nanoTime());
             }, frameNanos, frameNanos, TimeUnit.NANOSECONDS);
             emit("listening", "port", server.getLocalPort());
 
@@ -216,6 +217,8 @@ public class RealPhone {
                 emit("tap-error", "session", number, "error", error.getClass().getSimpleName());
                 return Unit.INSTANCE;
             });
+            // This harness supplies synthetic source PTS in the local clock domain, independently of frame arrival.
+            tee.setVideoClockHandler(MAIN_SCREEN, senderNanos -> senderNanos);
             tee.setVideoRecoveryHandler(MAIN_SCREEN, () -> {
                 emit("keyframe-request", "session", number);
                 if (session != null && session.number() == number) keyRequested.set(true);

@@ -31,6 +31,14 @@ Switching back to Root or Shizuku restores the saved address.
 The first root prompt, Shizuku permission request and VPN consent come only from
 a tap in the chooser or its buttons; building the settings search index touches none of them.
 
+Hotspot credential import uses only the selected Root or Shizuku method. Root reads
+the system Wi-Fi configuration through a read-only `app_process` helper after an
+explicit tap; opening settings never launches `su`. Shizuku reads through its already
+authorized binder. Neither path changes the hotspot or persists/logs the returned
+credentials outside the editable settings. Ordinary app Wi-Fi APIs and local ADB
+are not credential-import fallbacks. A refused or timed-out read leaves the existing
+fields intact, and a missing password never clears a manually entered one.
+
 Code: `shared/src/main/java/com/shilapi/xcertplay/network/` (`HotspotExtraAddressKeeper`, `HotspotAddressBackend`,
 `ShizukuHotspotAddress.kt`, `HotspotAddressVpn`, `HotspotAddressVpnService`) and
 `common/src/main/java/com/shilapi/xcertplay/` (`HotspotAddressMethod`, `HotspotExtraAddressSettings`,

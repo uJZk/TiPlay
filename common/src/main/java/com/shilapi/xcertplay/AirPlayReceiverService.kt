@@ -11,6 +11,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Base64
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
@@ -76,6 +77,7 @@ class AirPlayReceiverService : Service() {
             try {
                 val receiverConfig = identity()
                 val receiver = ReceiverServer(receiverConfig, object : ReceiverServer.Listener {
+                    override fun log(message: String) { Log.i("tiplay-airplay", message) }
                     override fun mirrorSink(): WebMediaSink = synchronized(displayLock) {
                         check(!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService))
                         TeslaBrowserLink.pauseCarPlayDisplay()
@@ -126,7 +128,7 @@ class AirPlayReceiverService : Service() {
         val deviceId = prefs.getString("device", null) ?: ByteArray(6).also {
             SecureRandom().nextBytes(it); it[0] = ((it[0].toInt() or 2) and 0xfe).toByte()
         }.joinToString(":") { "%02X".format(it.toInt() and 255) }.also { prefs.edit().putString("device", it).apply() }
-        return ReceiverConfig("TiPlay AirPlay", deviceId, identity)
+        return ReceiverConfig("TiPlay", deviceId, identity)
     }
 
     private fun refreshDiscovery() {

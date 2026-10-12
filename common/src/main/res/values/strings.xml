@@ -735,7 +735,7 @@
     <string name="settings_android_address">Android address: %1$s</string>
     <string name="settings_main_stopping">Disconnecting…</string>
     <string name="settings_airplay_title">AirPlay (experimental)</string>
-    <string name="settings_airplay_listening">Waiting for iPhone · TiPlay AirPlay</string>
+    <string name="settings_airplay_listening">Waiting for iPhone · TiPlay</string>
     <string name="settings_airplay_disable">Disable AirPlay</string>
     <string name="settings_airplay_disable_description">Takes effect immediately. AirPlay is enabled by default. Disabling it stops AirPlay and restores the connected CarPlay display; turning this switch off restarts the receiver.</string>
 </resources>

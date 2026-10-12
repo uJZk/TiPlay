@@ -15,6 +15,7 @@ import java.net.URI
 /** UxPlay's FCUP playlist exchange adapted to Media3; local files and DRM key schemes remain blocked. */
 @OptIn(UnstableApi::class)
 internal class AirPlayVideoDataSource(private val upstream: DataSource,
+                                    private val diagnostics: AirPlayVideoDiagnostics = AirPlayVideoDiagnostics {},
                                     private val onIphone: (String) -> ReceiverResource?) : DataSource {
     private var current: DataSource? = null
     private val transfers = mutableListOf<TransferListener>()
@@ -24,7 +25,12 @@ internal class AirPlayVideoDataSource(private val upstream: DataSource,
 
     override fun open(dataSpec: DataSpec): Long {
         check(current == null)
-        return open(dataSpec, 0)
+        diagnostics.stage(AirPlayVideoDiagnostics.Stage.RESOURCE_OPEN)
+        try { return open(dataSpec, 0) }
+        catch (error: Exception) {
+            diagnostics.failure(AirPlayVideoDiagnostics.Stage.RESOURCE_OPEN, error)
+            throw error
+        }
     }
 
     private fun open(spec: DataSpec, redirects: Int): Long {
@@ -35,12 +41,20 @@ internal class AirPlayVideoDataSource(private val upstream: DataSource,
         // iPhone apps often broker master/media playlists even when their URLs look like HTTP.
         if (!direct || spec.uri.path?.endsWith(".m3u8", true) == true) response = onIphone(url)
         if (response == null && direct) {
-            try { return use(upstream, spec) }
-            catch (_: IOException) { close(); response = onIphone(url) }
+            try {
+                val length = use(upstream, spec)
+                diagnostics.stage(AirPlayVideoDiagnostics.Stage.RESOURCE_DIRECT, length)
+                return length
+            } catch (error: IOException) {
+                diagnostics.failure(AirPlayVideoDiagnostics.Stage.RESOURCE_DIRECT, error)
+                close(); response = onIphone(url)
+            }
         }
         val resolved = response ?: throw IOException("iPhone did not load video resource")
+        diagnostics.stage(AirPlayVideoDiagnostics.Stage.RESOURCE_IPHONE, resolved.status?.toLong())
         resolved.location?.let { location ->
             if (redirects >= 5) throw IOException("Too many video resource redirects")
+            diagnostics.stage(AirPlayVideoDiagnostics.Stage.RESOURCE_REDIRECT, (redirects + 1).toLong())
             val next = URI(url).resolve(location).toString()
             return open(spec.withUri(Uri.parse(next)), redirects + 1)
         }

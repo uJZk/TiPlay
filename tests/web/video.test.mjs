@@ -117,6 +117,43 @@ test('stop interrupts codec probing and an old probe cannot reopen a decoder aft
   assert.equal(presented.length, 1);
 });
 
+test('producer idle drops late decoder output and resumes on the same response', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  FakeDecoder.instances = [];
+  FakeDecoder.gate = null;
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const messages = [], presented = [];
+  const pipeline = createDecoderPipeline({ post: message => messages.push(message), present: frame => presented.push(frame) });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(7, new ReadableStream({ start(c) { controller = c; } }));
+  controller.enqueue(config(1));
+  controller.enqueue(keyFrame(1));
+  await settle();
+  const first = FakeDecoder.instances.at(-1);
+  first.output(videoFrame(0));
+  controller.enqueue(encodeRecord({ kind: RECORD.IDLE }));
+  controller.enqueue(encodeRecord({ kind: RECORD.HEARTBEAT }));
+  await settle();
+  assert.equal(first.state, 'closed');
+  assert.equal(pipeline.stats().codec, null);
+  assert.deepEqual(messages.filter(m => m.type === 'idle').map(m => m.id), [7]);
+  assert.equal(messages.some(m => m.type === 'end'), false, 'idle must retain the response');
+  const late = videoFrame(16666);
+  first.output(late);
+  assert.equal(late.closed, true);
+  assert.equal(presented.length, 1);
+  controller.enqueue(config(2));
+  controller.enqueue(keyFrame(2));
+  await settle();
+  const second = FakeDecoder.instances.at(-1);
+  assert.notEqual(second, first);
+  second.output(videoFrame(0));
+  assert.deepEqual(messages.filter(m => m.type === 'decoded').map(m => [m.id, m.epoch]), [[7, 1], [7, 2]]);
+});
+
 test('the presenter closes retained and failed frames on stop/dispose', async () => {
   const { createFramePresenter } = await import('../../site/play/video.js');
   let fail = false;
@@ -127,17 +164,19 @@ test('the presenter closes retained and failed frames on stop/dispose', async ()
   presenter.present(first);
   presenter.close();
   assert.equal(first.closed, true);
+  assert.equal(presenter.stats().currentFps, 0);
   const second = { ...videoFrame(1), displayWidth: 800, displayHeight: 480 };
   presenter.present(second);
   const failed = { ...videoFrame(2), displayWidth: 800, displayHeight: 480 };
   fail = true;
   assert.throws(() => presenter.present(failed), /draw failed/);
   assert.equal(failed.closed, true);
+  assert.equal(presenter.stats().currentFps, 1, 'a failed draw does not contribute to current FPS');
   presenter.dispose();
   assert.equal(second.closed, true);
 });
 
-test('synchronized frame timestamps reach presentation; absent clocks never become arrival-time latency', async t => {
+test('scheduled source timestamps reach presentation; absent clocks never become guessed offsets', async t => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   FakeDecoder.instances = [];
   FakeDecoder.gate = null;
@@ -154,13 +193,13 @@ test('synchronized frame timestamps reach presentation; absent clocks never beco
   const now = performance.timeOrigin + performance.now();
   pipeline.clock({ offset: now - 1000, at: now, rtt: 2 });
   const payload = new Uint8Array(8);
-  new DataView(payload.buffer).setFloat64(0, 900, true);
+  new DataView(payload.buffer).setFloat64(0, 1100, true);
   const timing = () => encodeRecord({ kind: RECORD.TIMING, epoch: 1, payload });
   controller.enqueue(timing());
   controller.enqueue(keyFrame(1));
   await settle();
   FakeDecoder.instances.at(-1).output(videoFrame(0));
-  assert.equal(presented[0], now - 100);
+  assert.equal(presented[0], now + 100);
   pipeline.clock(null);
   controller.enqueue(timing());
   controller.enqueue(keyFrame(1));
@@ -169,4 +208,17 @@ test('synchronized frame timestamps reach presentation; absent clocks never beco
   assert.equal(presented[1], null);
   assert.equal(pipeline.stats().timingRecords, 2);
   assert.equal(pipeline.stats().timingRejected, 1);
+});
+
+test('canvas submission reports an early source presentation as a signed offset', async () => {
+  const { createFramePresenter } = await import('../../site/play/video.js');
+  const context = { fillRect() {}, drawImage() {} };
+  const canvas = { width: 800, height: 480, getContext: type => type === '2d' ? context : null, removeEventListener() {} };
+  const presenter = createFramePresenter(canvas);
+  const sourcePresentation = performance.timeOrigin + performance.now() + 40;
+  presenter.present({ ...videoFrame(0), displayWidth: 800, displayHeight: 480 }, { epoch: 1 }, sourcePresentation);
+  const stats = presenter.stats();
+  assert.equal(stats.presentationOffsetSamples, 1);
+  assert.ok(stats.presentationOffset90 < 0 && stats.presentationOffset90 >= -40);
+  presenter.dispose();
 });

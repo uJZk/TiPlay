@@ -11,17 +11,21 @@ import javax.jmdns.ServiceInfo
 class ReceiverBonjour(private val config: ReceiverConfig, private val port: Int) : Closeable {
     private val instances = linkedMapOf<String, JmDNS>()
     fun refresh(): Boolean {
-        val addresses = NetworkInterface.getNetworkInterfaces().toList().filter {
+        val interfaces = NetworkInterface.getNetworkInterfaces().toList().filter {
             it.isUp && !it.isLoopback && it.supportsMulticast() && !it.name.startsWith("tun") && !it.name.startsWith("wg")
-        }.flatMap { it.inetAddresses.toList() }.filterIsInstance<Inet4Address>()
-            .filter { !it.isLoopbackAddress && !it.isAnyLocalAddress }.associateBy { it.hostAddress!! }
+        }.flatMap { network -> network.interfaceAddresses.mapNotNull { bound ->
+            val address = bound.address as? Inet4Address ?: return@mapNotNull null
+            ReceiverDiscoveryInterfaces.Address(network.name, address, bound.networkPrefixLength)
+        } }
+        val addresses = ReceiverDiscoveryInterfaces.select(interfaces)
+            .associateBy { "${it.physicalName}:${it.address.hostAddress}" }
         val retired = (instances.keys - addresses.keys).mapNotNull { instances.remove(it) }
         BonjourMdnsCleanup.closeAll(retired)
-        for ((key, address) in addresses) {
+        for ((key, selected) in addresses) {
             if (key in instances) continue
             var dns: JmDNS? = null
             try {
-                dns = JmDNS.create(address, "tiplay-airplay-${config.deviceId.replace(":", "")}")
+                dns = JmDNS.create(selected.address, ReceiverDiscoveryInterfaces.hostname(config.deviceId, selected.physicalName))
                 dns.registerService(ServiceInfo.create("_airplay._tcp.local.", config.name, port, 0, 0, config.txt))
                 instances[key] = dns
             } catch (_: Exception) { dns?.let { BonjourMdnsCleanup.closeAll(listOf(it)) } }

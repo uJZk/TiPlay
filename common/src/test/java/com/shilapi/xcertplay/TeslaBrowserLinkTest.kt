@@ -435,6 +435,9 @@ class TeslaBrowserLinkTest {
         TeslaBrowserLink.clock = { now }
         val stats = mapOf("link.path" to "worker-stream", "video.codec" to "avc1.640028", "video.decodedFps" to 59.9,
             "video.decodeMsP95" to 1.52, "video.gaps" to 0L, "video.dropped" to 3L, "video.decodeErrors" to 0L,
+            "video.timingRecords" to 120L, "video.timingRejected" to 2L, "video.clockRttMs" to 4.25,
+            "video.presentationOffset90" to -40.25, "video.presentationOffsetHigh5" to -10.5,
+            "video.presentationOffsetSamples" to 118L,
             "link.reconnects" to 1L, "link.fallback" to "TypeError at 169.254.111.111", "code" to "123456")
         server.callbacks.onBrowserStats(stats)
         now += 9_999
@@ -443,11 +446,11 @@ class TeslaBrowserLinkTest {
         server.callbacks.onBrowserStats(stats + ("video.codec" to "x".repeat(40)))
         val lines = logs.filter { it.startsWith("Browser:") }
         assertEquals(listOf(
-            "Browser: path=worker-stream codec=avc1.640028 fps=59.9 decodeP95Ms=1.5 gaps=0 dropped=3 errors=0 reconnects=1",
-            "Browser: path=worker-stream codec=? fps=59.9 decodeP95Ms=1.5 gaps=0 dropped=3 errors=0 reconnects=1",
+            "Browser: path=worker-stream codec=avc1.640028 fps=59.9 decodeP95Ms=1.5 timingRecords=120 timingRejected=2 clockRttMs=4.3 presentationOffset90=-40.3 presentationOffsetHigh5=-10.5 presentationOffsetSamples=118 gaps=0 dropped=3 errors=0 reconnects=1",
+            "Browser: path=worker-stream codec=? fps=59.9 decodeP95Ms=1.5 timingRecords=120 timingRejected=2 clockRttMs=4.3 presentationOffset90=-40.3 presentationOffsetHigh5=-10.5 presentationOffsetSamples=118 gaps=0 dropped=3 errors=0 reconnects=1",
         ), lines)
         for (line in lines) assertEquals(line, DiagnosticRedactor.redact(line))
-        assertEquals("Browser: path=- codec=- fps=- decodeP95Ms=- gaps=- dropped=- errors=- reconnects=-",
+        assertEquals("Browser: path=- codec=- fps=- decodeP95Ms=- timingRecords=- timingRejected=- clockRttMs=- presentationOffset90=- presentationOffsetHigh5=- presentationOffsetSamples=- gaps=- dropped=- errors=- reconnects=-",
             TeslaBrowserLink.statsLine(emptyMap()))
     }
 

@@ -6,7 +6,7 @@ server (protocol v1: `/hello`, `/video`, `/control`, `/bye`, CORS preflights). C
 It serves the page from `http://127.0.0.1` under a nested path, which is a secure context, so WebCodecs and the
 Service Worker work without HTTPS. As on GitHub Pages, the page is the root of that path and a download page lives
 beside it in `download/`. The Chromium used for the recorded checks decodes VP8 and VP9 but not H.264; codec support can differ by build. The fake phone streams VP8
-with optional synthetic frame timing records.
+with optional synthetic source presentation timing records.
 The page does not assume H.264 or HEVC; it configures `VideoDecoder` with whatever codec string the config record names.
 
 ## Requirements
@@ -52,8 +52,9 @@ even when the environment configures a system proxy.
     again.
 13. The Debug switch shows four fields at the top center, does not intercept touches or replace the video session,
     and hides the overlay when disabled. Worker-stream, worker-chunk, worker-frame and main-thread paths all collect
-    rolling presentation FPS and synthetic timestamp-to-draw latency. Synthetic timestamps validate the plumbing,
-    not an actual iPhone capture-to-screen measurement.
+    actual draw counts in the last second and signed offsets from synthetic scheduled presentation times to canvas submission.
+    Negative offsets mean early submission; positive offsets mean late submission. Synthetic timestamps validate
+    the timing path, not an actual iPhone capture-to-screen measurement.
 14. The picture starts at the top and fills the resized window without a header or fullscreen button. The TiPlay
     icon returns to the pairing portal; its Connect button, labeled **Return to CarPlay** while active,
     resumes the same video connection.
@@ -63,7 +64,7 @@ even when the environment configures a system proxy.
     Recovery hides the surface after the first decoded frame.
 
 These runs use a fake phone and local browser. They verify browser resize reporting and layout,
-not the iPhone's replacement-display negotiation or real vehicle routing, recovery or presentation latency.
+not the iPhone's replacement-display negotiation or real vehicle routing, recovery or physical screen presentation.
 
 ## Real phone side (`phone-run.mjs`)
 

@@ -31,13 +31,16 @@ internal object LocalHotspotAutofill {
         var token: LatestSettingsProbe.Token? = null
         fun read(replace: Boolean) {
             if (!parent.isShown || !parent.isAttachedToWindow) return
+            if (!replace && HotspotExtraAddressSettings.method(app) == HotspotAddressMethod.ROOT) return
             button.isEnabled = false
             status.setText(R.string.settings_hotspot_reading)
             status.visibility = if (showHint || replace) View.VISIBLE else View.GONE
             val beforeName = ssid.text.toString()
             val beforePassword = password.text.toString()
             token = probes.request(
-                work = { runCatching { LocalHotspotSettings.read(app) }.getOrNull() },
+                work = { runCatching {
+                    if (replace) LocalHotspotSettings.readExplicit(app) else LocalHotspotSettings.read(app)
+                }.getOrNull() },
                 deliver = { result ->
                     button.isEnabled = true
                     if (parent.isShown && parent.isAttachedToWindow) {

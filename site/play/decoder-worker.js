@@ -9,6 +9,10 @@ const delivery = createFrameDelivery(message => self.postMessage({ type: 'frame'
 const pipeline = typeof VideoDecoder === 'function' ? createDecoderPipeline({
   post: message => {
     if (message.type === 'end') stop();
+    if (message.type === 'idle') {
+      presenter?.close();
+      delivery.stop();
+    }
     self.postMessage(message);
   },
   present: (frame, config, id, timing) => {

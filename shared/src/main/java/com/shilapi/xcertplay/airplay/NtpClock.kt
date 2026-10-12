@@ -16,7 +16,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * transmit stamps. The resulting offset and round-trip time steer a local monotonic clock onto
  * the phone's media-clock domain, which /feedback reports.
  */
-class NtpClock : Closeable {
+class NtpClock(log: (String) -> Unit = {}) : Closeable {
+    private val diagnostics = MediaClockDiagnostics(log)
     private val running = AtomicBoolean(false)
     private val socketLock = Any()
     private val clockLock = Any()
@@ -60,9 +61,18 @@ class NtpClock : Closeable {
     }
 
     /** Maps a synchronized phone media timestamp to our monotonic clock; stale/unsynced clocks are unusable. */
-    fun mediaTimeNanos(senderNanos: Long): Long? = synchronized(clockLock) {
-        if (!synced || senderNanos == 0L || System.nanoTime() - lastSyncNanos > 10_000_000_000L) null
-        else senderNanos - clockOffsetNs
+    fun mediaTimeNanos(senderNanos: Long): Long? {
+        val now = System.nanoTime()
+        val syncState: Boolean
+        val syncTime: Long
+        val mapped = synchronized(clockLock) {
+            syncState = synced
+            syncTime = lastSyncNanos
+            if (!synced || senderNanos == 0L || now - lastSyncNanos > 10_000_000_000L) null
+            else VideoMediaClockMapping.toMonotonic(senderNanos, clockOffsetNs)
+        }
+        diagnostics.frame(now, senderNanos, mapped, syncState, syncTime)
+        return mapped
     }
 
     override fun close() {
@@ -83,6 +93,7 @@ class NtpClock : Closeable {
             } catch (_: InterruptedException) {
                 return
             } catch (_: Exception) {
+                diagnostics.failed()
                 try {
                     Thread.sleep(REQUEST_INTERVAL_MS)
                 } catch (_: InterruptedException) {
@@ -102,6 +113,7 @@ class NtpClock : Closeable {
         synchronized(clockLock) { pendingT1 = t1 }
         ntpBytes(t1).copyInto(packet, NTP_TRANSMIT_OFFSET)
         currentSocket()?.send(DatagramPacket(packet, packet.size, destination))
+        diagnostics.sent()
     }
 
     private fun runReceiver() {
@@ -123,8 +135,10 @@ class NtpClock : Closeable {
     }
 
     private fun handleMessage(message: ByteArray, source: InetSocketAddress) {
+        diagnostics.packet(message[1].toInt() and 0xff)
         when (message[1].toInt() and 0xff) {
             PT_REQUEST -> {
+                diagnostics.requested()
                 respondToRequest(message, source)
                 // Some senders initiate timing without advertising a SETUP timingPort. A reply alone
                 // cannot synchronize us: learn that RTSP peer's endpoint and perform our own exchange.
@@ -153,12 +167,14 @@ class NtpClock : Closeable {
 
         synchronized(clockLock) {
             val pending = pendingT1
+            diagnostics.responded(pending != null && pending == t1)
             if (pending == null || pending != t1) return
             pendingT1 = null
         }
 
         val offset = t2.subtract(t1).add(t3.subtract(t4)).toDouble() * 0.5 / TWO32_DOUBLE
         val rtt = t4.subtract(t1).subtract(t3.subtract(t2)).toDouble() / TWO32_DOUBLE
+        diagnostics.sample(rtt, offset)
         if (rtt < 0.0) return
         synchronized(clockLock) { lastSyncNanos = System.nanoTime() }
 

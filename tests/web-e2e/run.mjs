@@ -202,9 +202,10 @@ async function checkPath(browser, url, phone, expected, prepare) {
   await checkCanvas(page, expected);
   await waitFor(`presentation statistics on ${expected}`, async () => {
     const video = (await stats(page)).page.video;
-    return video.fps90 > 0 && video.fpsLow5 > 0 && video.latency90 >= 40 && video.latency90 < 1000 && video.latencyHigh5 >= video.latency90;
+    return video.currentFps > 0 && video.presentationOffset90 >= 40 &&
+      video.presentationOffset90 < 1000 && video.presentationOffsetHigh5 >= video.presentationOffset90;
   });
-  check(true, `${expected}: rolling FPS and timestamp-to-presentation latency reach the main page`);
+  check(true, `${expected}: current one-second draw rate and signed scheduled-presentation-to-draw offsets reach the main page`);
   checkTap(await tap(page, phone, 0.6, 0.3), 0.6, 0.3, expected);
   await context.close();
   return link;
@@ -269,7 +270,7 @@ async function main() {
     check(await page.getAttribute('#stats-toggle', 'aria-checked') === 'true', 'Debug is a persistent switch');
     await page.click('#connect');
     await page.waitForSelector('#stage:not([hidden])');
-    await waitFor('Debug presentation samples', async () => (await stats(page)).page.video.latencySamples > 5);
+    await waitFor('Debug presentation samples', async () => (await stats(page)).page.video.presentationOffsetSamples > 5);
     const debugLayout = await page.evaluate(() => {
       const element = document.getElementById('stats'), rect = element.getBoundingClientRect();
       return { text: element.textContent, x: rect.x + rect.width / 2, y: rect.y,

@@ -1,18 +1,22 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
-/** Completed presentation intervals ending in the last five seconds, independent of decode/transport stats. */
+/** Recent actual draws and five-second presentation statistics, independent of decode/transport stats. */
 export function createFpsWindow({ now = () => performance.now(), windowMs = 5000 } = {}) {
-  let previous = null, samples = [], latencies = [];
+  let previous = null, samples = [], offsets = [], draws = [];
   const prune = at => {
+    while (draws.length && draws[0] <= at - 1000) draws.shift();
     while (samples.length && samples[0].at <= at - windowMs) samples.shift();
-    while (latencies.length && latencies[0].at <= at - windowMs) latencies.shift();
+    while (offsets.length && offsets[0].at <= at - windowMs) offsets.shift();
   };
   return {
-    frame(at = now(), count = 1, latency = null) {
+    frame(at = now(), count = 1, offset = null) {
       if (!Number.isFinite(at) || !Number.isInteger(count) || count < 1) return;
       prune(at);
-      if (Number.isFinite(latency) && latency >= 0 && latency <= 10000) {
-        latencies.push({ at, duration: latency, count: 1 });
-        if (latencies.length > 4096) latencies.shift();
+      // One successful presenter call is one draw, even when delivery coalesced several source frames.
+      draws.push(at);
+      if (draws.length > 4096) draws.shift();
+      if (Number.isFinite(offset) && Math.abs(offset) <= 10000) {
+        offsets.push({ at, duration: offset, count: 1 });
+        if (offsets.length > 4096) offsets.shift();
       }
       if (previous !== null && at > previous) {
         samples.push({ at, duration: Math.min(at - previous, windowMs) / count, count });
@@ -20,11 +24,11 @@ export function createFpsWindow({ now = () => performance.now(), windowMs = 5000
       }
       if (previous === null || at > previous) previous = at;
     },
-    reset() { previous = null; samples = []; latencies = []; },
+    reset() { previous = null; samples = []; offsets = []; draws = []; },
     stats(at = now()) {
       prune(at);
       const sortedSamples = [...samples].sort((a, b) => a.duration - b.duration);
-      const sortedLatencies = [...latencies].sort((a, b) => a.duration - b.duration);
+      const sortedLatencies = [...offsets].sort((a, b) => a.duration - b.duration);
       const sampleCount = samples.reduce((sum, sample) => sum + sample.count, 0);
       const average = (sorted, total, from, to) => {
         let position = 0, weightTotal = 0, sum = 0;
@@ -37,17 +41,18 @@ export function createFpsWindow({ now = () => performance.now(), windowMs = 5000
       };
       const fps = duration => duration > 0 ? 1000 / duration : null;
       return {
+        currentFps: draws.length,
         fps90: fps(average(sortedSamples, sampleCount, .05, .95)), fpsLow5: fps(average(sortedSamples, sampleCount, .95, 1)),
         fpsSamples: sampleCount,
-        latency90: average(sortedLatencies, latencies.length, .05, .95), latencyHigh5: average(sortedLatencies, latencies.length, .95, 1),
-        latencySamples: latencies.length,
+        presentationOffset90: average(sortedLatencies, offsets.length, .05, .95), presentationOffsetHigh5: average(sortedLatencies, offsets.length, .95, 1),
+        presentationOffsetSamples: offsets.length,
       };
     },
   };
 }
 
-/** Codec and five-second presentation statistics for the Debug banner. */
+/** Codec, current draw rate and five-second signed presentation offsets for Debug. */
 export function formatDebugFps(codec, stats = {}) {
-  const number = value => Number.isFinite(value) && value >= 0 ? String(Math.round(value)) : '—';
-  return `${codec} · ${number(stats.fps90)} fps · ${number(stats.latency90)} ms · ${number(stats.latencyHigh5)} ms`;
+  const number = value => Number.isFinite(value) ? String(Math.round(value)) : '—';
+  return `${codec} · ${number(stats.currentFps)} fps · ${number(stats.presentationOffset90)} ms · ${number(stats.presentationOffsetHigh5)} ms`;
 }

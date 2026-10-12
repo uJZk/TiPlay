@@ -275,13 +275,28 @@ class WebVideoHubTest {
         hub.frame(owner, delta(), 0, now)
         hub.frame(owner, idr(), 0, now)
         val records = subscription.drain()
-        assertEquals(listOf(1, 1, 2, 2), records.map { it.epoch })
+        assertEquals(listOf(2, 2), records.map { it.epoch })
         assertEquals(
-            listOf(WebVideoRecords.KIND_CONFIG, WebVideoRecords.KIND_FRAME, WebVideoRecords.KIND_CONFIG, WebVideoRecords.KIND_FRAME),
+            listOf(WebVideoRecords.KIND_CONFIG, WebVideoRecords.KIND_FRAME),
             records.map { it.kind },
         )
         assertTrue(records.last().keyFrame)
         assertEquals(2, requests)
+    }
+
+    @Test fun producerIdleClearsQueuedFramesWithoutEndingTheViewer() {
+        begin()
+        hub.configure(owner, VideoCodec.H264, avcc)
+        val subscription = hub.subscribe()
+        hub.frame(owner, idr(), 0, now)
+        hub.endStream(owner)
+        assertEquals(WebVideoRecords.KIND_IDLE, subscription.take(0)?.kind)
+        assertNull(subscription.take(0))
+        assertEquals(0, subscription.queue.size)
+        begin()
+        hub.configure(owner, VideoCodec.H264, avcc)
+        hub.frame(owner, idr(), 0, now)
+        assertEquals(listOf(WebVideoRecords.KIND_CONFIG, WebVideoRecords.KIND_FRAME), subscription.drain().map { it.kind })
     }
 
     @Test fun takeWaitsForARecordOrTimesOut() {

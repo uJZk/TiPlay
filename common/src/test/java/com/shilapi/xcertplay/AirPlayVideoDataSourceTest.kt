@@ -63,4 +63,20 @@ class AirPlayVideoDataSourceTest {
             source.close()
         }
     }
+
+    @Test fun diagnosticsDistinguishHttpFailureFromIphoneRejectionWithoutResourceSecrets() {
+        val messages = mutableListOf<String>()
+        val source = AirPlayVideoDataSource(Unreachable(), AirPlayVideoDiagnostics(messages::add)) {
+            ReceiverResource(null, 403, null)
+        }
+        assertThrows(IOException::class.java) {
+            source.open(DataSpec(Uri.parse("https://private.example/segment.ts?token=private-token")))
+        }
+        val output = messages.joinToString("\n")
+        assertTrue(output.contains("operation=RESOURCE_DIRECT exception=IOException"))
+        assertTrue(output.contains("stage=RESOURCE_IPHONE value=403"))
+        assertTrue(output.contains("operation=RESOURCE_OPEN exception=IOException"))
+        assertFalse(output.contains("private.example")); assertFalse(output.contains("private-token"))
+        source.close()
+    }
 }

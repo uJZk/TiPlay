@@ -5,8 +5,8 @@ export function sampleClock(serverMs, start, end) {
   return { offset: (start + end) / 2 - serverMs, rtt: end - start, at: end };
 }
 
-export function captureTime(serverMs, clock, now = performance.timeOrigin + performance.now()) {
+export function presentationTime(serverMs, clock, now = performance.timeOrigin + performance.now()) {
   if (!Number.isFinite(serverMs) || !clock || now - clock.at > 15000 || now < clock.at) return null;
-  const captured = serverMs + clock.offset;
-  return captured <= now && now - captured <= 10000 ? captured : null;
+  const presentation = serverMs + clock.offset;
+  return Math.abs(now - presentation) <= 10000 ? presentation : null;
 }

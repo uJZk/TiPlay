@@ -1,8 +1,8 @@
 <resources>
     <string name="existing_wifi_title">现有 Wi-Fi</string>
-    <string name="existing_wifi_description">使用已有路由器或随身 Wi-Fi。让 iPhone 和安卓端保持连接同一网络，并通过它上网。</string>
-    <string name="existing_wifi_hint">现有 Wi-Fi · 两台设备保持连接同一 Wi-Fi，蓝牙保持开启，无需开启安卓端热点。</string>
-    <string name="existing_wifi_instructions">先在系统设置中将安卓端和 iPhone 连接同一外部 Wi-Fi，再准确填写它的名称和 WPA2 密码；仅开放网络可留空密码。路由器使用 WPA2 或 WPA2/WPA3 混合模式，并关闭客户端隔离。TiPlay 保持此 Wi-Fi 连接，不创建热点。</string>
+    <string name="existing_wifi_description">使用已有路由器或随身 Wi-Fi。让 iPhone 和本机保持连接同一网络，并通过它上网。</string>
+    <string name="existing_wifi_hint">现有 Wi-Fi · 两台设备保持连接同一 Wi-Fi，蓝牙保持开启，无需开启本机热点。</string>
+    <string name="existing_wifi_instructions">先在系统设置中将本机和 iPhone 连接同一外部 Wi-Fi，再准确填写它的名称和 WPA2 密码；仅开放网络可留空密码。路由器使用 WPA2 或 WPA2/WPA3 混合模式，并关闭客户端隔离。TiPlay 保持此 Wi-Fi 连接，不创建热点。</string>
     <string name="existing_wifi_details">外部 Wi-Fi 详情</string>
     <string name="existing_wifi_ssid">外部 Wi-Fi 名称（SSID）</string>
     <string name="existing_wifi_password">外部 Wi-Fi 密码</string>
@@ -12,10 +12,10 @@
     <string name="wifi_direct_channel_summary">首选信道：%1$s</string>
     <string name="wifi_direct_channel_choice">信道 %1$d · %2$s</string>
     <string name="wifi_direct_channel_description">自动模式会为您选择信道。手动信道取决于车机的支持情况。更改将在下次 Wi-Fi Direct 连接时生效。</string>
-    <string name="built_in_car_hotspot">安卓端热点</string>
+    <string name="built_in_car_hotspot">本机热点</string>
     <string name="wifi_direct">Wi-Fi Direct</string>
-    <string name="hotspot_hint_manual">安卓端热点 · 保持安卓端热点、蓝牙和 iPhone 的 Wi-Fi 开启。</string>
-    <string name="hotspot_hint_local">打开“连接设置”以保存安卓端热点信息。</string>
+    <string name="hotspot_hint_manual">本机热点 · 保持本机热点、蓝牙和 iPhone 的 Wi-Fi 开启。</string>
+    <string name="hotspot_hint_local">打开“连接设置”以保存本机热点信息。</string>
     <string name="hotspot_hint_p2p">Wi-Fi Direct · 保持车机 Wi-Fi 开关、蓝牙和 iPhone 的 Wi-Fi 开启。</string>
     <string name="cluster_size_standard">标准 · 最清晰</string>
     <string name="cluster_size_larger">更大 · 默认</string>
@@ -26,10 +26,10 @@
     <string name="marker_up">上</string>
     <string name="marker_down">下</string>
     <string name="marker_centre_default">居中 · 默认</string>
-    <string name="hotspot_mode_manual_desc">使用安卓端热点。若安卓端支持，请在安卓端设置中选择 5 GHz。</string>
+    <string name="hotspot_mode_manual_desc">使用本机热点。若本机支持，请在本机设置中选择 5 GHz。</string>
     <string name="hotspot_mode_p2p_desc">备选方案。需要打开车机 Wi-Fi 开关；2.4 GHz 连接可能会卡顿。</string>
-    <string name="hotspot_details_off">热点已关闭 · 请在安卓端设置中开启。</string>
-    <string name="hotspot_details_saved">详情已保存 · 连接前请确认安卓端热点已开启。</string>
+    <string name="hotspot_details_off">热点已关闭 · 请在本机设置中开启。</string>
+    <string name="hotspot_details_saved">详情已保存 · 连接前请确认本机热点已开启。</string>
     <string name="permission_enabled_ready">权限已启用 · 可以使用</string>
     <string name="permission_not_enabled">权限尚未启用</string>
     <string name="clipboard_usage_access">TiPlay 使用情况访问权限</string>
@@ -73,12 +73,12 @@
     <string name="status_waiting_reenumeration">等待 iPhone 重新枚举</string>
     <string name="status_attaching_ncm">正在连接 NCM/AirPlay 网络</string>
     <string name="status_failed">失败：%1$s</string>
-    <string name="msg_car_hotspot_off">安卓端热点“%1$s”未开启。请在安卓端设置中开启后再连接。</string>
+    <string name="msg_car_hotspot_off">本机热点“%1$s”未开启。请在本机设置中开启后再连接。</string>
     <string name="home_public_preview">公开预览  ·\u0020\u0020</string>
     <string name="choose_iphone_prefix">选择 iPhone ·\u0020</string>
     <string name="audio_saved_value">已保存：%1$d</string>
     <string name="about_public_preview_prefix">公开预览 ·\u0020</string>
-    <string name="msg_car_hotspot_connect">TiPlay 通过安卓端热点“%1$s”连接。请在安卓端设置中开启热点后连接。</string>
+    <string name="msg_car_hotspot_connect">TiPlay 通过本机热点“%1$s”连接。请在本机设置中开启热点后连接。</string>
     <string name="edit_saved_hotspot_prefix">编辑已保存的热点 ·\u0020</string>
     <string name="cluster_adb_multi_device">如果 ADB 列出多个设备，请使用 adb -s &lt;car-device-ID&gt; shell appops set %1$s GET_USAGE_STATS allow。用 adb devices 查询 ID。</string>
     <string name="status_ready_for_prefix">已准备连接：</string>
@@ -125,8 +125,8 @@
     <string name="byd_navigation">比亚迪导航</string>
     <string name="cancel">取消</string>
     <string name="car_home">本机主页</string>
-    <string name="car_hotspot_details">安卓端热点详情</string>
-    <string name="car_hotspot_is_off">安卓端热点未开启</string>
+    <string name="car_hotspot_details">本机热点详情</string>
+    <string name="car_hotspot_is_off">本机热点未开启</string>
     <string name="car_marker_horizontal">车辆标记 · 水平</string>
     <string name="car_marker_vertical">车辆标记 · 垂直</string>
     <string name="carplay">CarPlay</string>
@@ -147,7 +147,7 @@
     <string name="channel_must_be_0_or_1_196">信道必须为 0 或 1–196</string>
     <string name="check_and_enable">检查并启用</string>
     <string name="check_that_storage_is_available_or_choose_another_save_loc">请检查存储空间，或选择其他保存位置。</string>
-    <string name="choose_how_to_connect_follow_the_setup_steps_and_save_your">选择连接方式，按步骤操作并保存安卓端热点信息。</string>
+    <string name="choose_how_to_connect_follow_the_setup_steps_and_save_your">选择连接方式，按步骤操作并保存本机热点信息。</string>
     <string name="choose_image">选择图片</string>
     <string name="choose_iphone">选择 iPhone</string>
     <string name="choose_location">选择位置</string>
@@ -170,7 +170,7 @@
     <string name="connection_setup">连接设置</string>
     <string name="copied_to_the_car_clipboard_run_the_command_on_your_comput">已复制到本机剪贴板。在电脑上运行该命令。</string>
     <string name="copy_command">复制命令</string>
-    <string name="copy_these_from_the_car_s_hotspot_settings_use_5_ghz_if_av">从安卓端热点设置中复制以下内容。如有 5 GHz 请选择。在此保存不会更改安卓端的热点。</string>
+    <string name="copy_these_from_the_car_s_hotspot_settings_use_5_ghz_if_av">从本机热点设置中复制以下内容。如有 5 GHz 请选择。在此保存不会更改本机的热点。</string>
     <string name="could_not_decode_image">无法读取图片</string>
     <string name="could_not_encode_image">无法编码图片</string>
     <string name="could_not_reset_wi_fi_direct_close_the_other_projection_ap">无法重置 Wi-Fi Direct。请关闭其他投屏应用后重试。</string>
@@ -273,7 +273,7 @@
     <string name="open_car_wi_fi_settings">打开本机 Wi-Fi 设置</string>
     <string name="open_carplay">打开 CarPlay</string>
     <string name="open_connection_setup">打开连接设置</string>
-    <string name="open_this_setting_from_your_car_s_settings_app">请在安卓端的设置应用中打开此设置。</string>
+    <string name="open_this_setting_from_your_car_s_settings_app">请在本机的设置应用中打开此设置。</string>
     <string name="opening_carplay">正在打开 CarPlay…</string>
     <string name="opening_usb_data_paths">正在打开 USB 数据通道</string>
     <string name="pair_another">配对其他设备</string>
@@ -319,7 +319,7 @@
     <string name="s_1_0x">1.0x</string>
     <string name="s_1_choose_your_connection">1 · 选择连接方式</string>
     <string name="s_1_connect_a_computer_with_adb_installed_to_the_car_using">1. 用装有 ADB 的电脑，通过现有的 USB 或无线调试连接连接到车机。如有调试授权提示请批准。\n\n2. 在电脑终端中运行此命令：</string>
-    <string name="s_1_open_car_hotspot_settings_turn_the_hotspot_on_and_sele">1. 打开安卓端热点设置，开启热点，如有 5 GHz 请选择。\n2. 在下方准确复制热点名称和密码。\n3. 连接时保持安卓端热点开启。TiPlay 通过蓝牙发送热点信息，iPhone 会自动加入。</string>
+    <string name="s_1_open_car_hotspot_settings_turn_the_hotspot_on_and_sele">1. 打开本机热点设置，开启热点，如有 5 GHz 请选择。\n2. 在下方准确复制热点名称和密码。\n3. 连接时保持本机热点开启。TiPlay 通过蓝牙发送热点信息，iPhone 会自动加入。</string>
     <string name="s_2_4_ghz">2.4 GHz</string>
     <string name="s_2_pair_your_iphone">2 · 配对你的 iPhone</string>
     <string name="s_300_ms_default">300 毫秒 · 默认</string>
@@ -339,7 +339,7 @@
     <string name="save_details">保存详情</string>
     <string name="save_diagnostic_report">保存诊断报告</string>
     <string name="save_hotspot_details_and_use_this_mode">保存热点信息并使用此模式</string>
-    <string name="save_the_name_and_password_from_the_car_s_hotspot_settings">请先保存安卓端热点设置中的名称和密码</string>
+    <string name="save_the_name_and_password_from_the_car_s_hotspot_settings">请先保存本机热点设置中的名称和密码</string>
     <string name="save_your_hotspot_details_in_connection_setup_first">请先在“连接设置”中保存热点信息</string>
     <string name="saved_for_your_next_connection">已保存，将在下次连接时生效</string>
     <string name="saving_report">正在保存报告…</string>
@@ -419,7 +419,7 @@
     <string name="option_contrast_default">主题默认</string>
     <string name="option_contrast_light">浅色背景 · 深色仪表</string>
     <string name="option_contrast_dark">深色背景 · 浅色仪表</string>
-    <string name="hotspot_error_empty_name">请输入安卓端热点名称</string>
+    <string name="hotspot_error_empty_name">请输入本机热点名称</string>
     <string name="hotspot_error_long_name">热点名称不能超过32字节</string>
     <string name="hotspot_error_invalid_character">名称或密码包含无效字符</string>
     <string name="hotspot_error_password_length">热点密码长度必须为8至63个字符</string>
@@ -581,7 +581,7 @@
     <string name="settings_gesture_fingers_option">%1$d 指</string>
     <string name="settings_gesture_fingers_hint">选择车机没有占用的手指数。比亚迪的三指下滑是空调面板，建议改用 2 指。</string>
     <string name="auto_car_hotspot_title">自动开启热点</string>
-    <string name="auto_car_hotspot_description">TiPlay 启动时开启安卓端热点。打开开关会自动通过 ADB 申请所需权限，请允许本机上的授权提示。配合“车辆启动后打开”可随开机启动。保留热点名称和密码，不会自动关闭热点。</string>
+    <string name="auto_car_hotspot_description">TiPlay 启动时开启本机热点。打开开关会自动通过 ADB 申请所需权限，请允许本机上的授权提示。配合“车辆启动后打开”可随开机启动。保留热点名称和密码，不会自动关闭热点。</string>
     <string name="hotspot_control_missing">缺少热点控制权限。请通过 ADB 授权，或在车机设置中手动开启热点。</string>
     <string name="hotspot_permission_granted">授权成功。</string>
     <string name="hotspot_permission_failed">未获得所请求的权限。请检查车机设置后重试。</string>
@@ -691,14 +691,14 @@
     <string name="settings_interface_size">界面大小</string>
     <string name="settings_interface_size_auto">自动</string>
     <string name="settings_interface_size_hint">TiPlay 自身界面中文字和控件的大小。自动模式会在大尺寸低密度屏幕上放大它们。不影响 CarPlay。</string>
-    <string name="settings_external_ap_hint">让安卓端、iPhone 和车机浏览器使用同一外部网络。本模式不会启动安卓热点。使用开放或 WPA2 网络；浏览器无法访问安卓时，请检查 AP 的设备互访设置。</string>
+    <string name="settings_external_ap_hint">让本机、iPhone 和车机浏览器使用同一外部网络。本模式不会启动安卓热点。使用开放或 WPA2 网络；浏览器无法访问安卓时，请检查 AP 的设备互访设置。</string>
     <string name="settings_external_ap_wifi">打开系统 Wi-Fi 设置</string>
     <string name="settings_external_ap_ready">本机已连接目标 Wi-Fi。</string>
     <string name="settings_external_ap_check">本机未连接目标 Wi-Fi。</string>
     <string name="settings_android_address">安卓地址：%1$s</string>
     <string name="settings_main_stopping">正在断开连接…</string>
     <string name="settings_airplay_title">AirPlay（实验性）</string>
-    <string name="settings_airplay_listening">等待 iPhone · TiPlay AirPlay</string>
+    <string name="settings_airplay_listening">等待 iPhone · TiPlay</string>
     <string name="settings_airplay_disable">禁用 AirPlay</string>
     <string name="settings_airplay_disable_description">立即生效。AirPlay 默认开启。打开此开关会停止 AirPlay 并恢复仍连接的 CarPlay 画面；关闭此开关会重新启用接收器。</string>
 </resources>

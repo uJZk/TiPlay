@@ -442,6 +442,23 @@ class BrowserLinkServerTest {
         }
     }
 
+    @Test fun producerIdleKeepsTheAuthenticatedVideoResponseForTheNextConfig() {
+        for (lifecycle in listOf(false, true)) {
+            hub.beginStream(owner, 1182, 920, 60, {}, {})
+            hub.configure(owner, VideoCodec.H264, avcc)
+            Client().use { video ->
+                video.get(videoPath() + if (lifecycle) "&lifecycle=1" else "")
+                assertEquals(200, video.response().status)
+                assertEquals(WebVideoRecords.KIND_CONFIG, video.record().first.kind)
+                hub.endStream(owner)
+                assertEquals(if (lifecycle) WebVideoRecords.KIND_IDLE else WebVideoRecords.KIND_HEARTBEAT, video.record().first.kind)
+                hub.beginStream(owner, 1182, 920, 60, {}, {})
+                hub.configure(owner, VideoCodec.H264, avcc)
+                assertEquals(WebVideoRecords.KIND_CONFIG, video.record().first.kind)
+            }
+        }
+    }
+
     @Test fun videoStreamsConfigKeyFrameFramesHeartbeatAndEnd() {
         beginStream()
         Client().use { video ->

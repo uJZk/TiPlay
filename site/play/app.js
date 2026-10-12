@@ -227,6 +227,10 @@ async function setUpVideo() {
         }
       }
       else if (data.type === 'stats') onVideoMessage({ type: 'stats', id: data.id, stats: { ...data.stats, ...presenter?.stats() } });
+      else if (data.type === 'idle') {
+        if (active && data.id === streamId) presenter?.close();
+        onVideoMessage(data);
+      }
       else onVideoMessage(data);
     };
     worker.onerror = () => stop('noVideo', 'decoder worker failed');
@@ -247,7 +251,10 @@ async function setUpVideo() {
   } else if (path.decode === 'main') {
     const { createDecoderPipeline, createFramePresenter } = await import('./video.js');
     const presenter = createFramePresenter(canvas);
-    const pipeline = createDecoderPipeline({ post: onVideoMessage, present: (frame, config, id, timing) => presenter.present(frame, config, timing) });
+    const pipeline = createDecoderPipeline({ post: message => {
+      if (message.type === 'idle' && active && message.id === streamId) presenter.close();
+      onVideoMessage(message);
+    }, present: (frame, config, id, timing) => presenter.present(frame, config, timing) });
     let timer = null;
     const stop = () => { clearInterval(timer); pipeline.stop(); presenter.close(); };
     sink = {
@@ -366,7 +373,6 @@ async function connectVideo() {
     const hello = await helloResponse.json();
     if (id !== streamId) return;
     const clock = sampleClock(hello.clockMs, clockStart, performance.timeOrigin + performance.now());
-    sink?.clock(clock);
     if (hello.app !== 'TiPlay' || hello.protocol !== PROTOCOL) {
       stop('protocol');
       return;
@@ -377,7 +383,9 @@ async function connectVideo() {
       stop('noVideo', videoPath.reason);
       return;
     }
-    const response = await phoneFetch(`/video?c=${link.code}&s=${session}&codecs=${codecs}&timing=1`, { signal: abort.signal });
+    // The first hello can finish before asynchronous worker setup creates the sink.
+    sink.clock(clock);
+    const response = await phoneFetch(`/video?c=${link.code}&s=${session}&codecs=${codecs}&timing=1&lifecycle=1`, { signal: abort.signal });
     clearTimeout(timer);
     if (id !== streamId) {
       response.body?.cancel().catch(() => {});
@@ -401,7 +409,7 @@ async function connectVideo() {
             if (sample && (!best || sample.rtt < best.rtt)) best = sample;
           }
           if (!abort.signal.aborted && id === streamId) sink?.clock(best);
-        } catch (_) { /* Expired clock samples produce unavailable latency, never a guessed value. */ }
+        } catch (_) { /* Expired clock samples produce unavailable presentation offsets, never guessed values. */ }
         finally { busy = false; }
       }, 5000);
       abort.signal.addEventListener('abort', () => clearInterval(clockTimer), { once: true });
@@ -496,6 +504,11 @@ function onVideoMessage(message) {
   else if (message.type === 'config') {
     config = message.config;
     unsupported = null;
+  } else if (message.type === 'idle') {
+    config = null;
+    live = false;
+    unsupported = null;
+    videoStats = {};
   } else if (message.type === 'unsupported') {
     unsupported = message.codec;
     live = false;

@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -32,6 +33,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
         fun rate(value: Double)
         fun playback(): ReceiverPlayback
         fun status(state: String)
+        fun log(message: String) {}
     }
 
     private val closed = AtomicBoolean(false)
@@ -44,6 +46,8 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
     private var playbackId: String? = null
     private val reverse = ConcurrentHashMap<String, Connection>()
     private val resourceIds = AtomicLong()
+    private val connectionIds = AtomicLong()
+    private val diagnostics = ReceiverProtocolDiagnostics(listener::log)
     private data class PendingResource(val session: String, val peer: InetAddress, val url: String,
                                        val future: CompletableFuture<ReceiverResource?> = CompletableFuture())
     private val resources = ConcurrentHashMap<Long, PendingResource>()
@@ -105,12 +109,16 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
         val (requestId, pending, channel) = synchronized(ownership) {
             if (closed.get() || resources.size >= 16) return null
             val pending = PendingResource(playbackId ?: return null, playbackPeer ?: return null, url)
-            val channel = reverse[pending.session] ?: return null
+            val channel = reverse[pending.session] ?: run {
+                diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.UNAVAILABLE)
+                return null
+            }
             val requestId = resourceIds.incrementAndGet()
             resources[requestId] = pending
             Triple(requestId, pending, channel)
         }
         try {
+            diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.REQUEST, requestId)
             channel.sendEvent(receiverXml(mapOf("sessionID" to 1, "type" to "unhandledURLRequest", "request" to mapOf(
                 "FCUP_Response_ClientInfo" to 1, "FCUP_Response_ClientRef" to 40030004,
                 "FCUP_Response_RequestID" to requestId, "FCUP_Response_URL" to url,
@@ -118,9 +126,18 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                 "FCUP_Response_Headers" to mapOf("X-Playback-Session-Id" to pending.session,
                     "User-Agent" to "AppleCoreMedia/1.0.0.11B554a (Apple TV; U; CPU OS 7_0_4 like Mac OS X; en_us)"),
             ))), pending.session)
-            return pending.future.get(10, TimeUnit.SECONDS)
-        } catch (_: InterruptedException) { Thread.currentThread().interrupt(); return null }
-        catch (_: Exception) { return null }
+            return pending.future.get(10, TimeUnit.SECONDS).also {
+                diagnostics.resource(if (it == null) ReceiverProtocolDiagnostics.ResourceStage.CANCELLED
+                    else ReceiverProtocolDiagnostics.ResourceStage.COMPLETE, requestId)
+            }
+        } catch (_: InterruptedException) {
+            diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.CANCELLED, requestId)
+            Thread.currentThread().interrupt(); return null
+        } catch (_: TimeoutException) {
+            diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.TIMEOUT, requestId); return null
+        } catch (_: Exception) {
+            diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.FAILURE, requestId); return null
+        }
         finally { resources.remove(requestId, pending) }
     }
 
@@ -134,21 +151,35 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
         private val output = socket.getOutputStream()
         private var reverseId: String? = null
         private val peer = socket.inetAddress
+        private val diagnosticId = connectionIds.incrementAndGet()
 
         fun run() {
+            var stage = ReceiverProtocolDiagnostics.Stage.ACCEPT
+            diagnostics.stage(diagnosticId, stage)
             try {
                 TcpLiveness.configure(socket) {}
                 socket.tcpNoDelay = true
                 socket.soTimeout = 120_000
                 val input = BufferedInputStream(socket.getInputStream())
                 while (!closed.get() && !socket.isClosed) {
+                    stage = ReceiverProtocolDiagnostics.Stage.READ
                     val request = readReceiverRequest(input) ?: break
                     // Replies to our POST /event have the same framing, but are not requests.
                     if (request.method.startsWith("HTTP/")) continue
+                    diagnostics.request(diagnosticId, request)
+                    stage = ReceiverProtocolDiagnostics.Stage.DISPATCH
                     val response = try { handle(request) }
-                    catch (_: IllegalArgumentException) { RtspMessage.Response(status = 400) }
-                    catch (_: IllegalStateException) { RtspMessage.Response(status = 400) }
-                    catch (_: Exception) { RtspMessage.Response(status = 500) }
+                    catch (error: IllegalArgumentException) {
+                        diagnostics.failure(diagnosticId, stage, error); RtspMessage.Response(status = 400)
+                    }
+                    catch (error: IllegalStateException) {
+                        diagnostics.failure(diagnosticId, stage, error); RtspMessage.Response(status = 400)
+                    }
+                    catch (error: Exception) {
+                        diagnostics.failure(diagnosticId, stage, error); RtspMessage.Response(status = 500)
+                    }
+                    diagnostics.response(diagnosticId, response)
+                    stage = ReceiverProtocolDiagnostics.Stage.WRITE
                     synchronized(output) {
                         if (response.status == 101) reverseId?.let {
                             reverse.put(it, this)?.takeIf { old -> old !== this }?.socket?.close()
@@ -161,9 +192,11 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                     }
                     if (request.method == "TEARDOWN") break
                 }
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                diagnostics.failure(diagnosticId, stage, error)
                 // Malformed requests and peer disconnects are confined to their own connection.
             } finally {
+                diagnostics.stage(diagnosticId, ReceiverProtocolDiagnostics.Stage.CLOSE)
                 runCatching { socket.close() }
                 reverseId?.let { id ->
                     if (reverse.remove(id, this)) synchronized(ownership) {
@@ -226,7 +259,10 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                 request.method == "SETUP" -> return setup(request)
                 request.method == "RECORD" -> return RtspMessage.Response(headers = mapOf("Audio-Latency" to "0"))
                 request.method == "TEARDOWN" -> {
-                    synchronized(ownership) { closeMedia(); if (owner === this) owner = null }
+                    synchronized(ownership) {
+                        closeMedia()
+                        if (owner === this) { owner = null; listener.status("listening") }
+                    }
                     return RtspMessage.Response(headers = mapOf("Connection" to "close"))
                 }
                 path == "/reverse" && request.method == "POST" -> {
@@ -261,6 +297,9 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                     }
                     val headers = params["FCUP_Response_Headers"] as? Map<*, *>
                     val location = headers?.entries?.firstOrNull { it.key.toString().equals("Location", true) }?.value as? String
+                    diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.RESPONSE, requestId,
+                        (params["FCUP_Response_StatusCode"] as? Number)?.toInt(),
+                        (params["FCUP_Response_Data"] as? ByteArray)?.size)
                     pending.future.complete(ReceiverResource(params["FCUP_Response_Data"] as? ByteArray,
                         (params["FCUP_Response_StatusCode"] as? Number)?.toInt(), location))
                     return RtspMessage.Response()
@@ -284,7 +323,8 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                     }
                     return RtspMessage.Response()
                 }
-                request.method in listOf("GET_PARAMETER", "SET_PARAMETER", "FLUSH") || path == "/feedback" -> return RtspMessage.Response()
+                request.method == "GET_PARAMETER" -> return ReceiverMirrorParameters.reply(request)
+                request.method in listOf("SET_PARAMETER", "FLUSH") || path == "/feedback" -> return RtspMessage.Response()
                 else -> return RtspMessage.Response(status = 404)
             }
         }
@@ -292,6 +332,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
         private fun setup(request: RtspMessage.Request): RtspMessage.Response = synchronized(ownership) {
             if (closed.get() || (owner != null && owner !== this) || playbackPeer != null) return busy()
             val dict = BplistCodec.decode(request.body) as? Map<*, *> ?: error("setup must be dictionary")
+            diagnostics.setup(diagnosticId, dict, pairing.sharedSecret != null, handshake?.size ?: 0)
             val response = linkedMapOf<String, Any?>()
             val encrypted = dict["ekey"] as? ByteArray
             if (encrypted != null) {
@@ -307,7 +348,8 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                 val timingPort = (dict["timingPort"] as? Number)?.toInt() ?: 0
                 require(timingPort in 0..65535)
                 clock.start(peer, timingPort)
-                response["eventPort"] = port
+                // Legacy mirroring has no separate event channel; do not point it at the control listener.
+                response["eventPort"] = 0
                 owner = this
             }
             (dict["streams"] as? List<*>)?.let { streams ->
@@ -320,7 +362,8 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                     mirror?.close()
                     val token = Any()
                     mirrorToken = token
-                    val receiver = ReceiverMirrorStream(streamKey, connectionId, peer, listener.mirrorSink(), clock) {
+                    val receiver = ReceiverMirrorStream(streamKey, connectionId, peer, listener.mirrorSink(), clock,
+                        log = { listener.log("c=$diagnosticId $it") }) {
                         synchronized(ownership) {
                             if (owner === this && mirrorToken === token) {
                                 mirror = null

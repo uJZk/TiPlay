@@ -1,0 +1,57 @@
+package com.shilapi.xcertplay.receiver
+
+import com.shilapi.xcertplay.airplay.RtspMessage
+import org.junit.Assert.*
+import org.junit.Test
+
+class ReceiverProtocolDiagnosticsTest {
+    @Test fun logsOnlyWhitelistedMetadataAndNeverSensitiveRequestOrFailureContent() {
+        val messages = mutableListOf<String>()
+        val diagnostics = ReceiverProtocolDiagnostics(messages::add)
+        val secret = "private-key-secret"
+        diagnostics.request(1, RtspMessage.Request(secret, "https://private-host/$secret?token=$secret", "RTSP/1.0",
+            mapOf("authorization" to secret), secret.toByteArray()))
+        diagnostics.failure(1, ReceiverProtocolDiagnostics.Stage.DISPATCH, IllegalArgumentException(secret))
+        diagnostics.setup(1, mapOf("ekey" to secret.toByteArray(), "eiv" to ByteArray(16),
+            "streams" to listOf(mapOf("type" to 110), mapOf("type" to 96), mapOf("type" to secret)),
+            "deviceID" to secret), true, 164)
+        diagnostics.response(1, RtspMessage.Response(status = 403, body = secret.toByteArray(),
+            headers = mapOf("authorization" to secret)))
+        diagnostics.request(1, RtspMessage.Request("GET_PARAMETER", "/", "RTSP/1.0", emptyMap(),
+            "volume: $secret\r\nprogress: $secret\r\n$secret\r\n".toByteArray()))
+        val output = messages.joinToString("\n")
+        assertFalse(output.contains(secret))
+        assertFalse(output.contains("private-host"))
+        assertFalse(output.contains("authorization"))
+        assertTrue(output.contains("method=OTHER path=OTHER"))
+        assertTrue(output.contains("exception=IllegalArgumentException"))
+        assertTrue(output.contains("streams=[110,96,OTHER]"))
+        assertTrue(output.contains("status=403"))
+        assertTrue(output.contains("names=[volume,progress,OTHER]"))
+    }
+
+    @Test fun safePathOmitsQueryAndLoggingFailureDoesNotChangeProtocolExecution() {
+        val messages = mutableListOf<String>()
+        ReceiverProtocolDiagnostics(messages::add).request(1,
+            RtspMessage.Request("GET", "/info?secret=hidden", "RTSP/1.0", emptyMap(), ByteArray(0)))
+        assertEquals("c=1 stage=REQUEST method=GET path=/info bodyBytes=0", messages.single())
+        ReceiverProtocolDiagnostics { error("log unavailable") }.stage(1, ReceiverProtocolDiagnostics.Stage.CLOSE)
+    }
+
+    @Test fun implicitSuccessStatusMatchesTheWireResponse() {
+        val messages = mutableListOf<String>()
+        ReceiverProtocolDiagnostics(messages::add).response(1, RtspMessage.Response())
+        assertEquals("c=1 stage=RESPONSE status=200 bodyBytes=0", messages.single())
+    }
+
+    @Test fun resourceDiagnosticsContainOnlyStageCorrelationAndNumericResponseMetadata() {
+        val messages = mutableListOf<String>()
+        val diagnostics = ReceiverProtocolDiagnostics(messages::add)
+        diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.REQUEST, 7)
+        diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.RESPONSE, 7, 200, 1024)
+        diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.TIMEOUT, 8)
+        assertEquals(listOf("resource stage=REQUEST request=7",
+            "resource stage=RESPONSE request=7 status=200 bodyBytes=1024",
+            "resource stage=TIMEOUT request=8"), messages)
+    }
+}

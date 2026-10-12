@@ -46,6 +46,7 @@ class BrowserSettingsLifecycleTest {
         HotspotExtraAddressSettingsTest.HotspotProbe.reset()
         Reader.result = LocalHotspotSettings.Credentials("Device hotspot", "password123")
         Reader.gate = null
+        Reader.reads = 0
     }
 
     @After fun tearDown() {
@@ -81,6 +82,25 @@ class BrowserSettingsLifecycleTest {
         assertFalse(texts(parent).any { it.text.toString() == activity.getString(R.string.settings_hotspot_address_checking) })
         assertTrue(texts(parent).any { it.text.toString().contains("192.168.44.1:8080") })
         assertCopiedAddress("192.168.44.1")
+    }
+
+    @Test fun rootHotspotReadRunsOnlyAfterAnExplicitTap() {
+        HotspotExtraAddressSettings.saveMethod(activity, HotspotAddressMethod.ROOT)
+        val ssid = EditText(activity)
+        val password = EditText(activity)
+        parent.addView(ssid)
+        parent.addView(password)
+        val controls = LocalHotspotAutofill.attach(parent, ssid, password, showHint = false)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(LocalHotspotAutofill.awaitProbesForTest())
+        assertEquals(0, Reader.reads)
+        assertEquals(View.GONE, controls.getChildAt(1).visibility)
+        (controls.getChildAt(0) as Button).performClick()
+        assertTrue(LocalHotspotAutofill.awaitProbesForTest())
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, Reader.reads)
+        assertEquals("Device hotspot", ssid.text.toString())
+        assertEquals("password123", password.text.toString())
     }
 
     @Test fun explicitHotspotReadShowsProgressAndPreservesTypingDuringTheRead() {
@@ -141,13 +161,16 @@ class BrowserSettingsLifecycleTest {
 
     @Implements(LocalHotspotSettings::class, isInAndroidSdk = false)
     internal class Reader {
+        @Implementation fun readExplicit(context: Context): LocalHotspotSettings.Credentials? = read(context)
         @Implementation fun read(context: Context): LocalHotspotSettings.Credentials? {
+            reads++
             gate?.await(3, TimeUnit.SECONDS)
             return result
         }
         companion object {
             @Volatile var gate: CountDownLatch? = null
             @Volatile var result: LocalHotspotSettings.Credentials? = null
+            @Volatile var reads = 0
         }
     }
 }

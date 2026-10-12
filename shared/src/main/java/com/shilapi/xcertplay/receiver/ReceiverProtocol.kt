@@ -7,10 +7,13 @@ import com.shilapi.xcertplay.airplay.VideoInCar
 import java.net.URI
 import java.net.URLDecoder
 
-/** Capabilities shared by Bonjour, /info and /server-info. No CarPlay, audio, photos or DRM offer. */
+/** Capabilities shared by Bonjour, /info and /server-info. No CarPlay, photos or DRM offer. */
 data class ReceiverConfig(val name: String, val deviceId: String, val identity: AirPlayIdentity,
                           val width: Int = 1920, val height: Int = 1080, val fps: Int = 60) {
-    val features: Long = listOf(0, 4, 6, 7, 10, 12, 14, 22, 27).fold(0L) { bits, bit -> bits or (1L shl bit) }
+    // Bit 30 advertises the existing mirror RTSP endpoint on the AirPlay port, so
+    // clients need no separate AirTunes service. Bit 9 is enabled for the requested
+    // iPhone compatibility trial; audio negotiation and receiving remain pending.
+    val features: Long = listOf(0, 4, 6, 7, 9, 10, 12, 14, 22, 27, 30).fold(0L) { bits, bit -> bits or (1L shl bit) }
     val txt: Map<String, String> get() = mapOf(
         "deviceid" to deviceId, "features" to "0x${features.toString(16)},0x0",
         "flags" to "0x4", "model" to "AppleTV3,2", "srcvers" to "220.68", "vv" to "2",

@@ -15,8 +15,8 @@
     <string name="settings_browser_pairing_code_description">车机浏览器需要配对码%1$s才能显示 CarPlay。生成新配对码后请在网页中填写新的配对码。</string>
     <string name="settings_browser_pairing_code_new">生成新配对码</string>
     <string name="settings_browser_link_car">在车机的浏览器中打开此链接：</string>
-    <string name="settings_browser_link_other">其他浏览器（如 Safari、Firefox）：在连接安卓端热点的设备上打开此链接：</string>
+    <string name="settings_browser_link_other">其他浏览器（如 Safari、Firefox）：在连接本机热点的设备上打开此链接：</string>
     <string name="settings_browser_link_copy">复制链接</string>
     <string name="settings_browser_link_copied">已复制链接</string>
-    <string name="settings_browser_android_address">安卓端地址：</string>
+    <string name="settings_browser_android_address">本机地址：</string>
 </resources>

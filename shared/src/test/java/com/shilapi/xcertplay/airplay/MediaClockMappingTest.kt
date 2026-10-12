@@ -13,7 +13,8 @@ class MediaClockMappingTest {
         correct.isAccessible = true
         correct.invoke(clock, 0.0)
         val before = System.nanoTime()
-        val sender = clock.syncedNtp().multiply(BigInteger.valueOf(1_000_000_000)).shiftRight(32).toLong()
+        val sender = clock.syncedNtp().multiply(BigInteger.valueOf(1_000_000_000)).shiftRight(32).toLong() -
+            VideoMediaClockMapping.NTP_EPOCH_NANOS
         val mapped = clock.mediaTimeNanos(sender)!!
         assertTrue(mapped >= before - 1 && mapped <= System.nanoTime())
         assertNull(clock.mediaTimeNanos(0))

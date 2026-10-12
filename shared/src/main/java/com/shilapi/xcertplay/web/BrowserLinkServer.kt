@@ -264,6 +264,8 @@ class BrowserLinkServer(
             while (true) {
                 val record = stream.subscription.take(maxOf(1L, HEARTBEAT_MILLIS - (nowMillis() - lastWrite)))
                     ?: if (nowMillis() - lastWrite >= HEARTBEAT_MILLIS) WebVideoRecords.HEARTBEAT else continue
+                // Cached pages predate producer-idle records; only send them to readers that opt in.
+                if (record.kind == WebVideoRecords.KIND_IDLE && request.query["lifecycle"] != "1") continue
                 val timing = if (request.query["timing"] == "1") WebDebugTiming.record(record, System.nanoTime()) else null
                 val timingSize = timing?.let { WebVideoRecords.HEADER_SIZE + it.payloadLength } ?: 0
                 val size = timingSize + WebVideoRecords.HEADER_SIZE + record.payloadLength
@@ -627,6 +629,7 @@ class BrowserLinkServer(
             WebVideoRecords.KIND_FRAME to "frameRecords",
             WebVideoRecords.KIND_HEARTBEAT to "heartbeats",
             WebVideoRecords.KIND_END to "endRecords",
+            WebVideoRecords.KIND_IDLE to "idleRecords",
         )
         private val REASONS = mapOf(
             200 to "OK", 204 to "No Content", 400 to "Bad Request", 401 to "Unauthorized", 404 to "Not Found",

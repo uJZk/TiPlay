@@ -23,11 +23,17 @@ class WebDebugTimingTest {
         assertArrayEquals(byteArrayOf(1, 2), frame.payload)
     }
 
-    @Test fun missingFutureAndStaleMediaClocksProduceNoTimingRecord() {
+    @Test fun missingOrUnrelatedMediaClocksProduceNoTimingRecord() {
         assertNull(WebDebugTiming.record(frame(null), 100))
-        assertNull(WebDebugTiming.record(frame(101), 100))
+        assertNotNull(WebDebugTiming.record(frame(101), 100))
+        assertNull(WebDebugTiming.record(frame(10_000_000_101), 100))
         assertNull(WebDebugTiming.record(frame(100), 10_000_000_101))
         assertNull(WebDebugTiming.record(WebVideoRecords.HEARTBEAT, 100))
+    }
+
+    @Test fun futureScheduledPresentationIsTransmittedWithoutClampingToCurrentTime() {
+        val timing = WebDebugTiming.record(frame(1_040_000_000), 1_000_000_000)!!
+        assertEquals(1040.0, ByteBuffer.wrap(timing.payload).order(ByteOrder.LITTLE_ENDIAN).double, 0.0)
     }
 
     @Test fun browserProductRoutesTheSynchronizedPhoneClockIntoQueuedFrames() {

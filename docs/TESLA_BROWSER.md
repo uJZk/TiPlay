@@ -87,14 +87,28 @@ CarPlay has no product header over its canvas. Its TiPlay icon returns to the po
 the portal returns to the picture without creating a second connection. Connect appears above Disconnect on the portal.
 Disconnect explicitly stops both the connection and automatic retries; returning to settings does not.
 
-**Debug** shows exactly four fields: codec, five-second middle-90% FPS, middle-90% latency and slowest-5% latency,
-for example `HEVC · 60 fps · 5 ms · 34 ms`. Hardware/software labels are omitted. Debug measures canvas submission
-and synchronized frame timing. It cannot establish the physical display's presentation
-time. FPS is derived from presentation intervals and latency ends at canvas submission. Missing or expired timing
-data displays `—` rather than substituting transport arrival time as latency.
+**Debug** shows four fields: codec, current FPS, middle-90% presentation offset and
+slowest-5% presentation offset, for example `HEVC · 60 fps · -40 ms · -10 ms`.
+Current FPS counts frames actually drawn in the last second, including during startup; it becomes zero when
+no frames have been drawn for a second. Coalesced or dropped source frames do not add to the draw count.
+The two presentation offset fields retain their five-second windows.
+The offset is browser canvas submission time minus the iPhone's synchronized scheduled presentation time.
+Negative values mean the browser submitted the frame early; positive values mean it submitted it late.
+The slowest tail contains the largest signed offsets, including when every sample is negative.
+This measures presentation scheduling, not capture-to-display latency or physical screen illumination.
+Screen headers omit the NTP epoch present in timing-port timestamps; video clock mapping restores that epoch
+before applying the synchronized offset. Missing or expired synchronization, or timestamps outside the ten-second
+window in either direction, display `—`. Transport arrival time never substitutes for source presentation time.
 See [current implementation and verification](WEB-DEBUG-2026-10-12.md).
 
 ## Browser session lifecycle
+
+Stopping the active video producer leaves the authenticated browser connection open. Pages opt in with
+`lifecycle=1` on `/video` to receive the empty kind-6 idle record, release the decoder and retained frame,
+and show the waiting surface. A subsequent configuration resumes on the same response. Queued frames from
+the stopped producer are discarded; a replacement configuration supersedes an idle record not yet sent.
+Cached pages without that opt-in continue receiving the older record set. Producer idle is distinct from
+the kind-4 end record, which retires the browser response.
 
 Changing the browser's native CarPlay canvas requires a new iPhone display session: its negotiated dimensions cannot
 change during a stream. The page fits the existing picture while reporting the new canvas on the next display frame.

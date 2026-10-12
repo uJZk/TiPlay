@@ -18,6 +18,7 @@ class WebVideoRecord(
     val prefix: ByteArray? = null,
     /** System.nanoTime when the record was queued, for the queue's age limit; 0 for records that are not queued. */
     val queuedAtNanos: Long = 0L,
+    /** Source scheduled presentation time mapped to System.nanoTime; the retained name is wire-path compatibility. */
     val captureNanos: Long? = null,
 ) {
     val payloadLength: Int get() = (prefix?.size ?: 0) + payload.size
@@ -37,6 +38,8 @@ object WebVideoRecords {
     const val KIND_FRAME = 2
     const val KIND_HEARTBEAT = 3
     const val KIND_END = 4
+    /** Producer stopped; the authenticated response remains open for the next stream. */
+    const val KIND_IDLE = 6
 
     const val FLAG_KEY_FRAME = 1
     /** Frames were dropped before this one. */
@@ -60,6 +63,7 @@ object WebVideoRecords {
     )
 
     val HEARTBEAT = WebVideoRecord(KIND_HEARTBEAT, 0, CODEC_NONE, 0, 0, 0L, ByteArray(0))
+    val IDLE = WebVideoRecord(KIND_IDLE, 0, CODEC_NONE, 0, 0, 0L, ByteArray(0))
 
     fun codecId(codec: VideoCodec) = when (codec) {
         VideoCodec.H264 -> CODEC_H264

@@ -10,15 +10,17 @@ import org.junit.Test
 import java.io.ByteArrayInputStream
 
 class ReceiverProtocolTest {
-    @Test fun discoveryAndInfoAgreeWithoutClaimingCarPlayDrmOrAudio() {
-        val config = ReceiverConfig("TiPlay AirPlay", "02:11:22:33:44:55", AirPlayIdentity.generate())
+    @Test fun discoveryAndInfoAgreeWithAudioCompatibilityFlagWithoutClaimingCarPlayOrDrm() {
+        val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate())
         assertEquals(config.features, config.info()["features"])
         assertEquals(config.deviceId, config.serverInfo()["deviceid"])
         assertEquals("1.0", config.serverInfo()["protovers"])
         assertEquals(config.features, config.serverInfo()["features"])
         assertEquals("0x${config.features.toString(16)},0x0", config.txt["features"])
-        for (bit in listOf(0, 4, 7, 27)) assertTrue(config.features and (1L shl bit) != 0L)
-        for (bit in listOf(1, 2, 5, 9, 32, 42)) assertEquals(0L, config.features and (1L shl bit))
+        for (bit in listOf(0, 4, 7, 9, 27, 30)) assertTrue(config.features and (1L shl bit) != 0L)
+        for (bit in listOf(1, 2, 5, 11, 18, 19, 20, 21, 26, 32, 40, 41, 42)) {
+            assertEquals("Unexpected advertised feature $bit", 0L, config.features and (1L shl bit))
+        }
         assertFalse(config.info().containsKey("modes"))
         assertFalse(config.info().containsKey("hidDevices"))
     }

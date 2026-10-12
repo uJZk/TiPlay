@@ -8,7 +8,7 @@
 
 export const DEFAULT_HOST = '169.254.111.111:8080';
 export const PROTOCOL = 1;
-export const RECORD = Object.freeze({ CONFIG: 1, FRAME: 2, HEARTBEAT: 3, END: 4, TIMING: 5 });
+export const RECORD = Object.freeze({ CONFIG: 1, FRAME: 2, HEARTBEAT: 3, END: 4, TIMING: 5, IDLE: 6 });
 export const FLAG = Object.freeze({ KEY: 1, DISCONTINUITY: 2, PARAMETER_SETS: 4 });
 export const HEADER_BYTES = 24;
 export const MAX_PAYLOAD = 8 * 1024 * 1024;

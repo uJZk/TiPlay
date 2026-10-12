@@ -650,7 +650,7 @@
     <string name="settings_android_address">Адреса Android: %1$s</string>
     <string name="settings_main_stopping">Відключення…</string>
     <string name="settings_airplay_title">AirPlay (експериментально)</string>
-    <string name="settings_airplay_listening">Очікування iPhone · TiPlay AirPlay</string>
+    <string name="settings_airplay_listening">Очікування iPhone · TiPlay</string>
     <string name="settings_airplay_disable">Вимкнути AirPlay</string>
     <string name="settings_airplay_disable_description">Діє одразу. AirPlay увімкнено за замовчуванням. Цей перемикач зупиняє AirPlay та повертає екран CarPlay; вимкнення перемикача знову запускає приймач.</string>
 </resources>

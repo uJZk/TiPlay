@@ -7,12 +7,18 @@ import android.media.MediaFormat
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.C
+import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DecoderCounters
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -24,6 +30,8 @@ import com.shilapi.xcertplay.receiver.ReceiverResource
 import com.shilapi.xcertplay.web.WebMediaSink
 import com.shilapi.xcertplay.media.MediaCodecSupport
 import java.io.Closeable
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Decode MP4/HLS on Android, encode to H.264 and publish through the existing canvas transport. */
@@ -31,50 +39,101 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class AirPlayCastPlayer(private val context: Context, private val resource: (String) -> ReceiverResource?,
                                 private val stateChanged: (String) -> Unit) : Closeable {
     private val main = Handler(Looper.getMainLooper())
+    private val diagnostics = AirPlayVideoDiagnostics { Log.i("tiplay-airplay", it) }
     private var player: ExoPlayer? = null
     private var video: EncodedVideo? = null
     private var generation = 0L
     private var closed = false
+    private var requestedPlaying = true
+    private var requestedSeek: Double? = null
     @Volatile var state = ReceiverPlayback()
         private set
 
     fun play(item: ReceiverPlay) = main.post {
         if (closed) return@post
         stopNow()
+        diagnostics.stage(AirPlayVideoDiagnostics.Stage.START)
         val token = generation
         try {
-            val next = EncodedVideo { main.post { if (generation == token) fail() } }
-            video = next
-            val http = DefaultHttpDataSource.Factory().setConnectTimeoutMs(5000).setReadTimeoutMs(10_000)
-            val data = DataSource.Factory { AirPlayVideoDataSource(http.createDataSource(), resource) }
-            val exo = ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(data)).build()
-            player = exo
-            exo.volume = 0f // browser product does not take over the car's audio route
-            exo.setVideoSurface(next.surface)
-            exo.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT)
-            var initialSeekDone = false
-            exo.addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (generation != token) return
-                    if (playbackState == Player.STATE_READY && !initialSeekDone) {
-                        initialSeekDone = true
-                        val seconds = if (item.fraction && exo.duration > 0) item.start.coerceAtMost(1.0) * exo.duration / 1000.0 else item.start
-                        if (seconds > 0) exo.seekTo((seconds * 1000).toLong())
-                    }
-                    update()
-                    stateChanged(when (playbackState) {
-                        Player.STATE_ENDED -> "stopped"
-                        Player.STATE_BUFFERING -> "loading"
-                        else -> if (exo.isPlaying) "playing" else "paused"
-                    })
+            video = EncodedVideo(diagnostics, ready = { surface -> main.post readyPost@ {
+                if (closed || generation != token) return@readyPost
+                try { startPlayer(item, token, surface) }
+                catch (error: Exception) { diagnostics.failure(AirPlayVideoDiagnostics.Stage.PREPARE, error); fail() }
+            } }, failed = { error -> main.post {
+                if (!closed && generation == token) { diagnostics.failure(AirPlayVideoDiagnostics.Stage.ENCODED_FRAME, error); fail() }
+            } })
+        } catch (error: Exception) { diagnostics.failure(AirPlayVideoDiagnostics.Stage.START, error); fail() }
+    }
+
+    private fun startPlayer(item: ReceiverPlay, token: Long, surface: android.view.Surface) {
+        val next = video ?: return
+        val http = DefaultHttpDataSource.Factory().setConnectTimeoutMs(5000).setReadTimeoutMs(10_000)
+        val data = DataSource.Factory { AirPlayVideoDataSource(http.createDataSource(), diagnostics, resource) }
+        val exo = ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(data)).build()
+        player = exo
+        exo.volume = 0f // browser product does not take over the car's audio route
+        exo.setVideoSurface(surface)
+        exo.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT)
+        exo.addAnalyticsListener(object : AnalyticsListener {
+            override fun onVideoCodecError(eventTime: AnalyticsListener.EventTime, videoCodecError: Exception) {
+                if (generation == token) diagnostics.failure(AirPlayVideoDiagnostics.Stage.VIDEO_CODEC, videoCodecError)
+            }
+            override fun onVideoDisabled(eventTime: AnalyticsListener.EventTime, decoderCounters: DecoderCounters) {
+                // Release increments generation before renderer callbacks; counters still describe this player.
+                diagnostics.decoded(decoderCounters.renderedOutputBufferCount,
+                    decoderCounters.skippedOutputBufferCount, decoderCounters.droppedBufferCount)
+            }
+        })
+        var initialSeekDone = false
+        exo.addListener(object : Player.Listener {
+            override fun onTracksChanged(tracks: Tracks) {
+                if (generation == token) diagnostics.stage(AirPlayVideoDiagnostics.Stage.VIDEO_TRACKS,
+                    tracks.groups.count { it.type == C.TRACK_TYPE_VIDEO && it.isSelected }.toLong())
+            }
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                if (generation == token) {
+                    diagnostics.videoSize(videoSize.width, videoSize.height)
+                    next.setVideoSize(videoSize)
                 }
-                override fun onIsPlayingChanged(isPlaying: Boolean) { if (generation == token) { update(); stateChanged(if (isPlaying) "playing" else "paused") } }
-                override fun onPlayerError(error: PlaybackException) { if (generation == token) fail() }
-            })
-            exo.setMediaItem(MediaItem.fromUri(item.url))
-            exo.prepare(); exo.play()
-            poll(token)
-        } catch (_: Exception) { fail() }
+            }
+            override fun onRenderedFirstFrame() {
+                if (generation == token) diagnostics.stage(AirPlayVideoDiagnostics.Stage.VIDEO_FIRST_FRAME)
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (generation != token) return
+                diagnostics.stage(when (playbackState) {
+                    Player.STATE_READY -> AirPlayVideoDiagnostics.Stage.READY
+                    Player.STATE_ENDED -> AirPlayVideoDiagnostics.Stage.ENDED
+                    else -> AirPlayVideoDiagnostics.Stage.BUFFERING
+                })
+                if (playbackState == Player.STATE_READY && !initialSeekDone) {
+                    initialSeekDone = true
+                    val seconds = requestedSeek ?: if (item.fraction && exo.duration > 0) item.start.coerceAtMost(1.0) * exo.duration / 1000.0 else item.start
+                    if (seconds > 0) exo.seekTo((seconds * 1000).toLong())
+                }
+                update()
+                stateChanged(when (playbackState) {
+                    Player.STATE_ENDED -> "stopped"
+                    Player.STATE_BUFFERING -> "loading"
+                    else -> if (exo.isPlaying) "playing" else "paused"
+                })
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) { if (generation == token) {
+                diagnostics.stage(if (isPlaying) AirPlayVideoDiagnostics.Stage.PLAYING else AirPlayVideoDiagnostics.Stage.PAUSED)
+                update(); stateChanged(if (isPlaying) "playing" else "paused")
+            } }
+            override fun onPlayerError(error: PlaybackException) { if (generation == token) {
+                diagnostics.failure(AirPlayVideoDiagnostics.Stage.PREPARE, error, error.errorCode)
+                // Cause types distinguish resource, DRM and codec failures without their messages.
+                (error.cause as? Exception)?.let { diagnostics.failure(AirPlayVideoDiagnostics.Stage.PREPARE, it) }
+                fail()
+            } }
+        })
+        exo.setMediaItem(MediaItem.fromUri(item.url))
+        diagnostics.stage(AirPlayVideoDiagnostics.Stage.PREPARE)
+        exo.playWhenReady = requestedPlaying
+        exo.prepare()
+        poll(token)
     }
 
     private fun poll(token: Long) {
@@ -94,14 +153,22 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
         )
     }
 
-    fun seek(seconds: Double) = main.post { if (!closed) { player?.seekTo((seconds * 1000).toLong()); update() } }
-    fun rate(value: Double) = main.post { if (!closed) { if (value == 0.0) player?.pause() else player?.play(); update() } }
+    fun seek(seconds: Double) = main.post { if (!closed) {
+        requestedSeek = seconds
+        player?.seekTo((seconds * 1000).toLong()); update()
+    } }
+    fun rate(value: Double) = main.post { if (!closed) {
+        requestedPlaying = value != 0.0
+        player?.playWhenReady = requestedPlaying; update()
+    } }
     fun stop() = main.post { stopNow() }
     private fun fail() { stopNow(); stateChanged("failed") }
     private fun stopNow() {
+        if (player != null || video != null) diagnostics.stage(AirPlayVideoDiagnostics.Stage.STOP)
         generation++
         player?.release(); player = null
         video?.close(); video = null
+        requestedPlaying = true; requestedSeek = null
         state = ReceiverPlayback()
     }
     override fun close() {
@@ -109,14 +176,19 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
         else main.post { closed = true; stopNow() }
     }
 
-    private class EncodedVideo(private val failed: () -> Unit) : Closeable {
+    private class EncodedVideo(private val diagnostics: AirPlayVideoDiagnostics,
+                               ready: (android.view.Surface) -> Unit,
+                               private val failed: (Exception) -> Unit) : Closeable {
         private val stopped = AtomicBoolean(false)
+        private val closing = AtomicBoolean(false)
         private val sink = WebMediaSink(TeslaBrowserLink.hub, 1280, 720, 30)
         private val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-        val surface: android.view.Surface
+        private val surface: android.view.Surface
+        private val bridge: AirPlayVideoSurfaceBridge
         private val thread: Thread
 
         init {
+            var allocatedSurface: android.view.Surface? = null
             try {
                 val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1280, 720).apply {
                     setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
@@ -125,20 +197,29 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                     setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
                 }
                 encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-                surface = encoder.createInputSurface()
+                surface = encoder.createInputSurface().also { allocatedSurface = it }
                 encoder.start()
-            } catch (error: Exception) { encoder.release(); sink.close(); throw error }
+                diagnostics.stage(AirPlayVideoDiagnostics.Stage.ENCODER_READY)
+            } catch (error: Exception) { allocatedSurface?.release(); encoder.release(); sink.close(); throw error }
             sink.setVideoRecoveryHandler(110) {
-                if (!stopped.get()) runCatching {
+                if (!closing.get()) runCatching {
                     encoder.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) })
                 }
             }
             sink.onScreenStreamActive(110, true)
+            bridge = try { AirPlayVideoSurfaceBridge(surface, 1280, 720, ready, failed) }
+            catch (error: Exception) {
+                sink.close(); runCatching { encoder.stop() }; encoder.release(); surface.release(); throw error
+            }
             thread = Thread(::drain, "tiplay-airplay-cast-encoder").apply { isDaemon = true; start() }
         }
 
+        fun setVideoSize(size: VideoSize) = bridge.setVideoSize(size.width, size.height,
+            size.pixelWidthHeightRatio, size.unappliedRotationDegrees)
+
         private fun drain() {
             val info = MediaCodec.BufferInfo()
+            var frames = 0L
             try {
                 while (!stopped.get()) {
                     val index = encoder.dequeueOutputBuffer(info, 20_000)
@@ -148,6 +229,7 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                             .map { buffer -> ByteArray(buffer.remaining()).also { buffer.duplicate().get(it) } }
                         sink.onVideoCodec(110, VideoCodec.H264)
                         sink.onVideoConfig(110, ReceiverAvc.record(*buffers.toTypedArray()))
+                        diagnostics.stage(AirPlayVideoDiagnostics.Stage.ENCODER_CONFIG)
                     } else if (index >= 0) {
                         try {
                             val buffer = encoder.getOutputBuffer(index)
@@ -157,23 +239,33 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                                 val annexB = if (bytes.size >= 4 && bytes[0] == 0.toByte() && bytes[1] == 0.toByte() &&
                                     (bytes[2] == 1.toByte() || (bytes[2] == 0.toByte() && bytes[3] == 1.toByte()))) bytes
                                     else MediaCodecSupport.toAnnexB(bytes)
-                                if (annexB.isNotEmpty()) sink.onVideoFrame(110, annexB)
+                                if (annexB.isNotEmpty()) {
+                                    sink.onVideoFrame(110, annexB)
+                                    frames++
+                                    if (frames == 1L || frames % 120 == 0L) diagnostics.stage(AirPlayVideoDiagnostics.Stage.ENCODED_FRAME, frames)
+                                }
                             }
                         } finally { encoder.releaseOutputBuffer(index, false) }
                     }
                 }
-            } catch (_: Exception) { if (!stopped.get()) failed() }
+            } catch (error: Exception) { if (!closing.get()) failed(error) }
             finally {
                 sink.close()
+                // Normal close has already released GL while draining stayed alive. A codec
+                // failure still requests GL cleanup here; only this thread tears down the codec.
+                val released = CountDownLatch(1)
+                bridge.close { released.countDown() }
+                runCatching { released.await(2, TimeUnit.SECONDS) }
+                // A failed codec can leave eglSwapBuffers blocked; bounded codec teardown
+                // releases that consumer so owner-thread cleanup can finish without an ANR.
                 runCatching { encoder.stop() }; encoder.release(); surface.release()
             }
         }
 
         override fun close() {
-            if (!stopped.compareAndSet(false, true)) return
+            if (!closing.compareAndSet(false, true)) return
             sink.close()
-            // Drain owns codec release; no cross-thread stop during dequeueOutputBuffer.
-            thread.interrupt()
+            bridge.close { stopped.set(true); thread.interrupt() }
         }
     }
 }

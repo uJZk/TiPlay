@@ -157,7 +157,7 @@ class WebVideoHub(
             config = null
             lastCodec = null
             lastRecord = null
-            subscription?.queue?.requireKeyFrame(nanoTime())
+            subscription?.offerIdle()
         }
         log("Web video: stream ended")
     }
@@ -307,6 +307,7 @@ internal class WebVideoSubscription(
 ) : Closeable {
     val queue = WebFrameQueue().apply { requireKeyFrame(now) }
     private var end: WebVideoRecord? = null
+    private var idle = false
 
     /**
      * The next record to write, or null after [timeoutMillis] without one. Once the subscription was ended
@@ -318,6 +319,10 @@ internal class WebVideoSubscription(
             var remaining = TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
             while (true) {
                 end?.let { return it }
+                if (idle) {
+                    idle = false
+                    return WebVideoRecords.IDLE
+                }
                 queue.poll(hub.now())?.let { return it }
                 if (remaining <= 0L) return null
                 remaining = available.awaitNanos(remaining)
@@ -337,7 +342,15 @@ internal class WebVideoSubscription(
 
     internal fun offerConfig(record: WebVideoRecord, now: Long) {
         if (end != null) return
+        idle = false
         if (!queue.offerConfig(record, now)) endLocked("slow-consumer") else signal()
+    }
+
+    internal fun offerIdle() {
+        if (end != null) return
+        queue.clear()
+        idle = true
+        signal()
     }
 
     internal fun signal() = available.signalAll()

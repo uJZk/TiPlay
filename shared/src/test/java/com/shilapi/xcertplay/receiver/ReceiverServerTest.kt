@@ -20,6 +20,7 @@ class ReceiverServerTest {
         val hub = WebVideoHub()
         val items = CopyOnWriteArrayList<ReceiverPlay>()
         val states = CopyOnWriteArrayList<String>()
+        val logs = CopyOnWriteArrayList<String>()
         val ended = CountDownLatch(1)
         var stopped = 0
         var sought = 0.0
@@ -31,11 +32,13 @@ class ReceiverServerTest {
         override fun rate(value: Double) { speed = value }
         override fun playback() = ReceiverPlayback(100.0, sought, speed, true)
         override fun status(state: String) { states.add(state); if (state == "listening") ended.countDown() }
+        override fun log(message: String) { logs.add(message) }
     }
 
-    private fun Socket.send(method: String, path: String, body: ByteArray = ByteArray(0), id: String = "test"):
+    private fun Socket.send(method: String, path: String, body: ByteArray = ByteArray(0), id: String = "test", contentType: String? = null):
         com.shilapi.xcertplay.airplay.RtspMessage.Request {
-        getOutputStream().write(("$method $path HTTP/1.1\r\nX-Apple-Session-ID: $id\r\nContent-Length: ${body.size}\r\n\r\n").toByteArray() + body)
+        val contentHeader = contentType?.let { "Content-Type: $it\r\n" }.orEmpty()
+        getOutputStream().write(("$method $path HTTP/1.1\r\nX-Apple-Session-ID: $id\r\n${contentHeader}Content-Length: ${body.size}\r\n\r\n").toByteArray() + body)
         return requireNotNull(readReceiverRequest(getInputStream()))
     }
     private fun Socket.status(method: String, path: String, body: ByteArray = ByteArray(0), id: String = "test") = send(method, path, body, id).path.toInt()
@@ -48,6 +51,7 @@ class ReceiverServerTest {
         try {
             connect(receiver.port).use { control ->
                 assertEquals(200, control.status("GET", "/info"))
+                assertTrue(listener.logs.any { it.contains("method=GET path=/info bodyBytes=0") })
                 assertEquals(404, control.status("GET", "/unknown"))
                 assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\nStart-Position: 0\r\n".toByteArray()))
                 assertEquals(1, listener.items.size)
@@ -58,6 +62,8 @@ class ReceiverServerTest {
                 assertEquals(200, control.status("POST", "/rate?value=0"))
                 assertEquals(0.0, listener.speed, 0.0)
                 assertEquals(400, control.status("POST", "/rate?value=NaN"))
+                assertTrue(listener.logs.any { it.contains("exception=IllegalArgumentException") })
+                assertFalse(listener.logs.any { it.contains("example.org") || it.contains("value=NaN") })
                 connect(receiver.port).use { reverse ->
                     reverse.getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: test\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
                     assertEquals("101", readReceiverRequest(reverse.getInputStream())!!.path)
@@ -77,12 +83,16 @@ class ReceiverServerTest {
         } finally { receiver.close() }
     }
 
-    @Test fun encryptedMirrorUsesIndependentKeyAndGeometryAndControlDisconnectEndsStream() {
+    @Test fun encryptedMirrorUsesIndependentKeyAndGeometryAndControlDisconnectEndsStream() = encryptedMirrorProbe(false)
+
+    @Test fun explicitMirrorTeardownRestoresTheRetainedDisplay() = encryptedMirrorProbe(true)
+
+    private fun encryptedMirrorProbe(teardown: Boolean) {
         val identity = AirPlayIdentity.generate()
         val listener = Listener()
         val rawKey = ByteArray(16) { (it + 1).toByte() }
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", identity), listener,
-            fairPlayReply = { ByteArray(32) }, fairPlayDecrypt = { _, _ -> rawKey })
+            fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) }, fairPlayDecrypt = { _, _ -> rawKey })
         receiver.start()
         val control = connect(receiver.port)
         try {
@@ -95,9 +105,21 @@ class ReceiverServerTest {
                 AirPlayCrypto.sha512("Pair-Verify-AES-IV".toByteArray(), secret).copyOf(16))
             verifyCipher.update(reply.copyOfRange(32, 96))
             assertEquals(200, control.status("POST", "/pair-verify", ByteArray(4) + verifyCipher.update(AirPlayCrypto.ed25519Sign(signing.privateKey, curve.publicKey + serverCurve))))
-            control.send("POST", "/fp-setup", ByteArray(164))
+            assertEquals(142, control.send("POST", "/fp-setup", ByteArray(16)).body.size)
+            assertEquals(32, control.send("POST", "/fp-setup", ByteArray(164)).body.size)
             val setup = mapOf("eiv" to ByteArray(16), "ekey" to ByteArray(72), "timingPort" to 0)
-            assertEquals(200, control.status("SETUP", "/", BplistCodec.encode(setup)))
+            val initialSetup = control.send("SETUP", "rtsp://receiver/stream", BplistCodec.encode(setup))
+            assertEquals("200", initialSetup.path)
+            val initialPorts = BplistCodec.decode(initialSetup.body) as Map<*, *>
+            assertEquals(0, (initialPorts["eventPort"] as Number).toInt())
+            assertTrue((initialPorts["timingPort"] as Number).toInt() > 0)
+            assertEquals(200, control.status("GET", "/info"))
+            val volume = control.send("GET_PARAMETER", "rtsp://receiver/stream", "volume\r\n".toByteArray(), contentType = "text/parameters")
+            assertEquals("200", volume.path)
+            assertEquals("text/parameters", volume.headers["content-type"])
+            assertEquals("volume: -144.0\r\n", volume.body.toString(Charsets.US_ASCII))
+            assertEquals("volume: -144.0\r\n", control.send("GET_PARAMETER", "rtsp://receiver/stream",
+                "volume\r\n".toByteArray()).body.toString(Charsets.US_ASCII))
             val stream = BplistCodec.decode(control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(mapOf("type" to 110, "streamConnectionID" to 1234L))))).body) as Map<*, *>
             val port = (((stream["streams"] as List<*>).single() as Map<*, *>)["dataPort"] as Number).toInt()
             val subscription = listener.hub.subscribe()
@@ -111,6 +133,7 @@ class ReceiverServerTest {
                 data.getOutputStream().write(packet(1, avcc))
                 assertNotNull(subscription.take(5000))
                 assertEquals(720, listener.hub.info()!!.width)
+                assertTrue(listener.logs.any { it.contains("mirror stage=CONFIG codec=H264") })
                 val mirrorKey = AirPlayCrypto.sha512(rawKey, secret).copyOf(16)
                 val encryption = aesCtr(AirPlayCrypto.sha512("AirPlayStreamKey1234".toByteArray(), mirrorKey).copyOf(16),
                     AirPlayCrypto.sha512("AirPlayStreamIV1234".toByteArray(), mirrorKey).copyOf(16))
@@ -118,7 +141,7 @@ class ReceiverServerTest {
                 val second = byteArrayOf(0, 0, 0, 2, 0x41, 1)
                 data.getOutputStream().write(packet(0, encryption.update(first)) + packet(0, encryption.update(second)))
                 assertNotNull(subscription.take(5000)); assertNotNull(subscription.take(5000))
-                control.close()
+                if (teardown) assertEquals(200, control.status("TEARDOWN", "/")) else control.close()
                 assertTrue(listener.ended.await(5, TimeUnit.SECONDS))
                 assertNull(listener.hub.info())
             }

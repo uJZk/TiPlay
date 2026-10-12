@@ -35,7 +35,8 @@ class PeerInitiatedTimingTest {
                 val deadline = System.nanoTime() + 1_000_000_000
                 while (clock.mediaTimeNanos(1) == null && System.nanoTime() < deadline) Thread.yield()
                 val before = System.nanoTime()
-                val sender = clock.syncedNtp().multiply(BigInteger.valueOf(1_000_000_000)).shiftRight(32).toLong()
+                val sender = clock.syncedNtp().multiply(BigInteger.valueOf(1_000_000_000)).shiftRight(32).toLong() -
+                    VideoMediaClockMapping.NTP_EPOCH_NANOS
                 val mapped = clock.mediaTimeNanos(sender)
                 assertNotNull("Peer-initiated timing must establish a synchronized media clock", mapped)
                 assertTrue(mapped!! >= before - 1 && mapped <= System.nanoTime())

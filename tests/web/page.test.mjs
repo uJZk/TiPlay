@@ -8,6 +8,42 @@ import { DEFAULT_HOST, isCode, normalizeHost } from '../../site/play/link.js';
 const play = new URL('../../site/play/', import.meta.url);
 const read = name => readFileSync(new URL(name, play), 'utf8');
 
+test('the initial clock reaches a video sink whose setup finishes after hello', async () => {
+  const connect = /async function connectVideo\(\) \{([\s\S]*?)\n\}/.exec(read('app.js'))[1];
+  let finishSetup;
+  const codecsReady = new Promise(resolve => { finishSetup = resolve; });
+  const events = [];
+  const run = new Function('codecsReady', 'events', `
+    let streamId = 0, sink = null, retryTimer, videoAbort, live, phase, lastViewport;
+    const link = { code: '1234' }, session = 'session', PROTOCOL = 1;
+    const videoPath = {};
+    const render = () => {}, reportAppearance = () => {}, scheduleViewport = () => {};
+    const setInterval = () => 0, clearInterval = () => {};
+    const stop = reason => { throw new Error(reason); };
+    const sampleClock = serverMs => ({ offset: 10, rtt: 2, at: serverMs });
+    const phoneFetch = async route => {
+      events.push(route);
+      return { ok: true, body: null, json: async () => ({ app: 'TiPlay', protocol: 1, clockMs: 100 }) };
+    };
+    const pending = (async () => { ${connect} })();
+    return {
+      pending,
+      setup() { sink = {
+        clock: value => events.push(['clock', value]),
+        open: () => events.push('open'),
+      }; },
+    };
+  `)(codecsReady, events);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(events, ['/hello'], 'hello finished while the decoder sink is still unavailable');
+  run.setup();
+  finishSetup('avc1');
+  await run.pending;
+  assert.deepEqual(events[1], ['clock', { offset: 10, rtt: 2, at: 100 }]);
+  assert.match(events[2], /^\/video\?/);
+  assert.equal(events[3], 'open');
+});
+
 test('blank and whitespace address fields connect to the default phone', () => {
   const submit = /\$\('link-form'\)\.addEventListener\('submit', event => \{([\s\S]*?)\n\}\);/.exec(read('app.js'))[1];
   for (const value of ['', '   ', '169.254.111.112:9000', 'invalid']) {
