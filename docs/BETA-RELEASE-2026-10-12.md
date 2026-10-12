@@ -46,9 +46,29 @@ containers in the APK were the two selected runtime files. All three ABI AirPlay
 libraries are present; the APK contains no bundled browser page.
 Public source credential and whitespace checks passed.
 
-The exact build commit and final APK/source checksums are recorded in the GitHub
-Release notes and attached `SHA256SUMS.txt`. Upload and publication are the next
-steps after committing this release change and assembling at the committed tree.
+Build commit: `283d4582be56ae39e8874de739119fd6884c645e`, merged into main and pushed.
+The final committed-tree APK assembly passed in 15s and the signature, runtime
+assets and matching source archive were checked again.
+
+- APK SHA-256: `4a8265fc5170070af2e3eaa08cfe56de7e24c3c294c2775aee0e9316848da23b`.
+- Source ZIP SHA-256: `7e388ecd90a39c243cdade7951def43c08dadeb68c5e818d7dc99212ded54bd8`.
+- GitHub Release draft ID: `410162538`, tag `v0.2.14-beta.1`, prerelease true.
+- The source ZIP and `SHA256SUMS.txt` uploaded successfully. The 39 MB APK failed
+  with HTTP 401 at `uploads.github.com`, both with gh and an Expect/continue curl
+  request. The environment reported its GitHub binding ready on both API and
+  upload hosts; that readiness did not establish successful large-attachment upload.
+- Publication remains pending; the incomplete release is still a draft.
+
+A checksum-verified GitHub Actions upload workflow was prepared locally in
+`.github/workflows/upload-prepared-release.yml`, but automatic approval rejected
+its commit/push because a persistent workflow with Contents write permission
+requires explicit authorization. It has not been committed, pushed or run.
+The user was asked to approve a temporary workflow (removed after use), or fix
+the upload credentials for direct upload. Do not bypass that rejection.
+
+Next: upload the exact APK above through the approved path, verify all three
+remote attachments and their hashes, then publish the beta with prerelease true.
+Do not rebuild or change the draft's target commit when resuming this upload.
 Session inputs, logs and deliverables are outside Git in
 `/workspace/release-beta-2026-10-12/`.
 
