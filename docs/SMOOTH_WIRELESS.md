@@ -3,7 +3,9 @@
 > Retained head-unit engineering guide and measurements. Current TiPlay's
 > phone + browser profile hides the rotation and smooth-video controls and does
 > not offer Wi-Fi Direct in its connection chooser. The settings paths below
-> describe the retained head-unit layout. Use [Tesla browser setup](TESLA_BROWSER.md)
+> describe the retained upstream head-unit layout, not a supported TiPlay product
+> or current browser-media behavior. The contributor runs are historical evidence;
+> their precise test dates are not recorded here. Use [Tesla browser setup](TESLA_BROWSER.md)
 > for the current product workflow.
 
 The Wi-Fi channel and the size of the picture can affect how smooth wireless CarPlay feels. The numbers below were measured on a 2024 BYD Tang (DiLink 5.0, 2560×1440 screen) with an iPhone on iOS 27, parked, while scrolling the same Apple Music list. Other cars, firmware and phones may behave differently; interference, scanning and decoder limits can also contribute.

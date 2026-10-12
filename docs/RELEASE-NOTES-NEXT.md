@@ -9,8 +9,8 @@ TiPlay is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay). Changes t
 ## Browser receiver profile
 
 - TiPlay applies the phone + browser profile when opening the app or CarPlay screen. There is no run-mode switch. The car browser shows CarPlay; BYD HUD/dashboard, ADB and wheel-key controls stay hidden.
-- CarPlay's car button shows a neutral car icon instead of the BYD logo and the label "Tesla" while the saved name is still "BYD". Custom icons and names are kept. Applies at the next CarPlay connection.
-- The profile selects car Bluetooth sound, browser light/dark appearance, no Android location reporting and split-screen areas. Existing sessions keep their negotiated configuration. The CarPlay settings menu retains frame-rate and HEVC choices with **Save and reconnect**.
+- CarPlay's car button shows the packaged TiPlay logo and the label "TiPlay" while the saved name is still "BYD". Custom icons and names are kept. Applies at the next CarPlay connection.
+- The profile selects car Bluetooth sound, browser light/dark appearance, no Android location reporting and split-screen areas. Existing sessions keep their negotiated configuration. Advanced settings retains frame-rate and HEVC choices, saved for the next connection; **Return and apply** reconnects a running session.
 
 ## Sound through car Bluetooth
 
@@ -21,7 +21,7 @@ TiPlay is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay). Changes t
 ## Connection reliability
 
 - USBMUX accepts the bounded protocol-1 diagnostic frame with the four-byte trailer captured in [DiPlay issue #100](https://github.com/shihabal3amri/DiPlay/issues/100), including fragmented reads. Recovery still requires a validated preceding reply and a validated next frame; unknown data is rejected. This repairs that captured framing failure, without claiming the entire reported USB connection succeeds.
-- Video uses SurfaceView when the attached app window lacks hardware acceleration. Hardware-accelerated windows retain TextureView. Letterboxing, view-area cropping and touch mapping share the same viewport. Picture color adjustments are unavailable on SurfaceView and the controls explain this; saved adjustments remain available for TextureView output.
+- The retained local renderer uses SurfaceView when the attached app window lacks hardware acceleration or smooth-video output is selected; other hardware-accelerated windows use TextureView. The phone + browser profile sends video to the browser without this local renderer. Letterboxing, view-area cropping and touch mapping share the same viewport. Picture color adjustments are unavailable on SurfaceView and the controls explain this; saved adjustments remain available for TextureView output.
 - Bluetooth checks both RFCOMM streams before starting iAP2 and reports whether reading fails before any bytes arrive. Stream failures preserve their cause and close the socket once. Draining a full receive queue wakes the reader so it can continue.
 - USB bulk-IN makes one 16 KiB queue attempt after an explicitly rejected larger request, remembering the smaller size only when it succeeds. Exceptions and timed-out requests are not retried this way. This compatibility path needs an affected-device retest; Android 9 normally supports the original larger sizes.
 
@@ -29,8 +29,8 @@ These changes retain Android 9 / API 28 as the APK minimum. Device acceptance an
 
 ## Settings UX
 
-- Put Hotspot address first in the main CarPlay settings menu; rename Normal to Unprivileged. Browser page/pairing and the single HTTPS copy action also live in the main menu, without an experimental browser label. The local HTTP page remains available for developer tests but its row/copy button is hidden.
-- Replace the wireless toggle with Connection mode with iPhone: Wireless / USB. It follows the menu draft and explicit save/reconnect; old separate launch-mode choices migrate to this single saved mode. Connect-on-open appears once; the ineffective phone-mode boot-start option is hidden.
-- Read device hotspot is the first action under Wi-Fi session. Hidden band/channel metadata uses automatic values; the operating system controls the hotspot radio. Import preserves concurrent typing and uses a bounded, detachable background probe.
-- Move authentication to Advanced and hide AirPlay icon editing. HEVC is under Display, defaults on in browser mode without a saved preference, and retains an explicit H.264 choice. Codec changes still require Save and reconnect.
-- Use the supplied TiPlay logo for Android and CarPlay, including adaptive, round and monochrome Android icons. CarPlay reads the packaged PNG without runtime drawing or reencoding.
+- The browser product has native Android **Main settings** and **Advanced settings** pages. Main settings owns the iPhone chooser, CarPlay connection mode, browser pairing/link and network configuration. The editable hotspot endpoint supports an address and port; changing it also requires updating the Android address on the browser page.
+- **CarPlay connection mode → Wireless / USB** follows the connection draft and explicit **Save and reconnect**. Older separate launch-mode choices migrate to this saved mode. **Connect automatically after boot** saves immediately and requests a connection after boot, independently of the retained connect-on-open preference; Android/OEM background restrictions can prevent startup.
+- Network configuration exposes **Android hotspot** and **Existing Wi-Fi**. A saved Wi-Fi Direct choice maps to manual hotspot in the browser UI. Android controls hotspot activation and radio settings. Root/Shizuku users can import hotspot credentials; the bounded, detachable probe preserves concurrent typing.
+- Advanced settings provides frame rate (30–60 fps; fresh-install default 60), HEVC (default on without a saved preference), driving side, diagnostic export and permissions, including battery optimization. Video/control changes save immediately for the next connection. **Return and apply** reconnects a running session; ordinary Back does not. Manufacturer, model, OEM label, MFi certificate and authentication controls are hidden.
+- Use the supplied TiPlay logo for Android and CarPlay, including adaptive, round and monochrome Android icons. CarPlay reads the packaged PNG without runtime drawing or reencoding; saved custom icons and labels remain.

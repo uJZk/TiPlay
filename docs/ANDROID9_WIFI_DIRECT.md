@@ -1,8 +1,9 @@
 # Android 9 Wi-Fi Direct
 
 This describes the retained Wi-Fi Direct backend. Current TiPlay's browser-profile
-connection chooser offers Phone hotspot and Existing Wi-Fi,
-without Wi-Fi Direct selection. See [Tesla browser setup](TESLA_BROWSER.md) for the
+connection chooser offers Android hotspot and Existing Wi-Fi,
+without Wi-Fi Direct selection. Native head-unit behavior below is retained solely
+for upstream compatibility, not a supported TiPlay product mode. See [Tesla browser setup](TESLA_BROWSER.md) for the
 current product workflow.
 
 Android 9 uses the public two-argument `WifiP2pManager.createGroup` overload and reads the
@@ -35,6 +36,7 @@ Android 9 source references:
 - [WifiP2pServiceImpl](https://android.googlesource.com/platform/frameworks/opt/net/wifi/+/android-9.0.0_r1/service/java/com/android/server/wifi/p2p/WifiP2pServiceImpl.java)
 - [SupplicantP2pIfaceHal](https://android.googlesource.com/platform/frameworks/opt/net/wifi/+/android-9.0.0_r1/service/java/com/android/server/wifi/p2p/SupplicantP2pIfaceHal.java)
 
-The author's Redmi K20 Pro/iPhone test supports basic bring-up; automated tests exercise default
-retry, close, late callbacks, foreign replacement and failed cleanup. BYD Android 9 cancellation
-and cleanup acceptance has not been run by this review.
+The earlier author-reported Redmi K20 Pro/iPhone test supports basic bring-up; its
+precise run date is not recorded here. Automated tests exercise default retry, close,
+late callbacks, foreign replacement and failed cleanup. No BYD Android 9 cancellation
+or cleanup device run was performed for the 2026-10-12 documentation review.

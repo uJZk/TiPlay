@@ -1,9 +1,14 @@
 # TiPlay APK release record for October 11 2026
 
-The signed TiPlay 0.2.13 APK is built and verified. A GitHub Release draft exists,
-but it has no attachments: `uploads.github.com` returned `401 Bad credentials`
+This records the October 11 build and delivery session at commit `83ec070`; it is
+not a release-status check for the current checkout. The APK hashes and test
+counts below apply only to that build. A later signed installation is recorded in
+[Settings UX](SETTINGS-UX-2026-10-11.md#主设置高级设置和浏览器端口).
+
+The signed TiPlay 0.2.13 APK was built and verified. A GitHub Release draft exists,
+but at the end of that session it had no attachments: `uploads.github.com` returned `401 Bad credentials`
 while GitHub API authentication worked. The user received the APK through a private
-ChatGPT Page with two ZIP volumes. The draft has not been publicly published.
+ChatGPT Page with two ZIP volumes. The draft had not been publicly published in that session.
 
 ## Build inputs and output
 
@@ -52,6 +57,12 @@ These fixes did not change application source.
 Vehicle CarPlay acceptance and complete Bluetooth audio flow remain unverified.
 
 ## Delivery and next steps
+
+The TiPlay repository URL below records the actual draft destination from that
+session. It conflicts with the `uJZk/DiPlay` destination required by `AGENTS.md`;
+this record does not resolve that policy conflict. Local paths and the private
+Page describe session assets, whose continued availability has not been checked
+in this documentation sweep.
 
 The existing Release draft uses tag `v0.2.13`, target commit `83ec070`, and release
 ID `409363608`. Find it in the repository's [Releases](https://github.com/uJZk/TiPlay/releases)

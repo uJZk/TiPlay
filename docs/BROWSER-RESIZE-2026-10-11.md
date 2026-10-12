@@ -1,6 +1,13 @@
 # Browser resize delivery — 2026-10-11
 
-The browser profile now suppresses Android audio and microphone processing. Window resize reports the newest
+This records the `d77eef4` resize iteration and its October 11 validation. The
+measurements and workflow results below are historical, not tests of the current
+checkout. Later UI and Debug changes are recorded in [UI redesign](UI-REDESIGN-2026-10-11.md)
+and [Web Debug](WEB-DEBUG-2026-10-11.md). The TiPlay workflow/site URLs below record
+the actual delivery destination; they conflict with the `uJZk/DiPlay` destination
+required by `AGENTS.md`, which remains unresolved.
+
+The browser profile suppresses Android audio and microphone processing. Window resize reports the newest
 viewport on the next animation frame, then replaces the iPhone display session by reopening only Bluetooth control.
 Hotspot, Bonjour, AirPlay listener and MFi resources remain owned by the existing controller. Automatic timed and
 request-unavailable full-stack resize fallbacks are disabled at the user's request.

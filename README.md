@@ -1,90 +1,53 @@
 # TiPlay
 
-**CarPlay in the Tesla browser from an Android phone, with inherited BYD Android head-unit receiver code.** Independent app: `com.ujzk.tiplay`.
+**CarPlay in the car browser from an Android phone.**
 
-The Tesla browser mode is in development and is not in a release yet. In this mode an Android phone runs TiPlay and hosts a Wi-Fi hotspot. The iPhone connects to the phone with wireless CarPlay, the Tesla joins the same hotspot, and the Tesla's built-in browser shows CarPlay and sends touches back to the phone. The phone passes the iPhone's H.264 or HEVC video to the browser without re-encoding. Music, navigation prompts, Siri and calls stay on the Bluetooth connection between the iPhone and the Tesla. See the [plan and test results](docs/todo.md) (Chinese). TiPlay also keeps DiPlay's CarPlay receiver code for compatible BYD Android head units, described below as inherited functionality. The current TiPlay entry points use the phone + browser profile and hide the BYD head-unit settings.
+TiPlay runs on an Android phone and sends the iPhone's CarPlay picture to the car browser. Touches return to the iPhone through TiPlay. Music, navigation prompts, Siri and calls are intended to use the iPhone's Bluetooth connection to the car; that complete audio flow still needs vehicle validation.
 
-TiPlay is based on [DiPlay](https://github.com/shihabal3amri/DiPlay) by shihabal3amri, GPL-3.0. It is not affiliated with or endorsed by Tesla, Inc., Apple Inc. or BYD. Tesla and CarPlay are trademarks of their respective owners.
+TiPlay supports the Android phone + car browser flow only. Native Android head units are not supported.
 
-> **BYD support scope:** The head-unit mode focuses on BYD cars. It may work on other brands, but other brands are unsupported and there are no plans to add support or fix brand-specific incompatibilities.
+[Releases](https://github.com/uJZk/DiPlay/releases) · [Report a problem](https://github.com/uJZk/DiPlay/issues/new/choose) · [中文说明](README.zh-CN.md)
 
-[Releases](https://github.com/uJZk/DiPlay/releases) · [Report a problem](https://github.com/uJZk/DiPlay/issues/new/choose) · [Upstream DiPlay](https://github.com/shihabal3amri/DiPlay)
+## Status and requirements
 
-## Status
+TiPlay is experimental and has no publicly published release yet. Check [Releases](https://github.com/uJZk/DiPlay/releases) for available APKs and follow the [installation guide](docs/INSTALL.md).
 
-There is no TiPlay release yet. To try it now, [build it from source](docs/BUILD.md). TiPlay starts from DiPlay 0.2.13. It uses its own package, `com.ujzk.tiplay`, so it installs next to DiPlay (`com.shihab.diplay`) and does not take over DiPlay's settings, pairing records or updates.
+You need an Android 9+ phone, an iPhone and a compatible car browser. TiPlay installs alongside DiPlay and does not reuse its settings or pairing records. Run one projection app at a time.
 
-## Tesla browser mode (in development)
+On the tested Model Y, probe pages decoded 1080p60 H.264 and HEVC in hardware, and an HTTPS page reached the phone's hotspot at a 100.64 address. These were browser probes: complete CarPlay operation in a Tesla and the car Bluetooth audio route remain unverified. Browser and Android behavior can vary with software updates.
 
-- **Android phone:** runs TiPlay and its Wi-Fi hotspot. The Tesla browser blocks private addresses such as 192.168.x.x and 10.x.x.x, so the phone needs a reachable address from 100.64.0.0/10. The extra hotspot address setting offers root, experimental VPN and Shizuku methods; their requirements and validation limits are in [Hotspot address](docs/HOTSPOT_ADDRESS.md).
-- **iPhone:** pair it over Bluetooth with the Tesla as the primary phone for audio and calls, and connect it to TiPlay with wireless CarPlay.
-- **Tesla:** join the phone's hotspot and open the TiPlay page (`https://ujzk.github.io/TiPlay/`) in the browser. Set **Browser page address** to this URL in TiPlay if it still uses `/DiPlay/`. The page will load once from a public HTTPS address and then work from the browser cache.
-- **Tested so far:** probe pages on a Model Y (Chromium 148) decoded 1080p60 H.264 and HEVC in hardware, and H.264 kept 60 fps in Drive. An HTTPS page in the Tesla browser reached the phone over HTTP at a 100.64 address on the hotspot. CarPlay itself has not run in a Tesla yet.
-- **Browser controls:** CarPlay fills the video area without a top header. Its **TiPlay** icon opens the portal while keeping the session connected. Window changes fit immediately and automatically reconnect CarPlay at the matching native resolution once the size settles.
-- **Setup:** publishing the page, pairing, other browsers and the car test checklist are in [Tesla browser](docs/TESLA_BROWSER.md).
+## Install and connect
 
-## Inherited head-unit mode (from DiPlay 0.2.13)
+1. Park the car and install TiPlay on the Android phone. Grant the requested permissions for the features you use.
+2. Pair the iPhone with the car over Bluetooth and select it as the primary phone for audio and calls. Pair it with the Android phone for wireless CarPlay as well.
+3. In TiPlay's **Main settings**, choose the iPhone and **CarPlay connection mode → Wireless / USB**. For wireless, choose **Android hotspot** and enter its name, security and password, or choose **Existing Wi-Fi** with all three devices on the same network. Enable the hotspot in Android settings; TiPlay does not enable it for you.
+4. Connect the car to the same network. Tesla browsers need a reachable phone address outside the blocked private ranges; the tested route uses 100.64.0.0/10. See [Hotspot address](docs/HOTSPOT_ADDRESS.md) for root, Shizuku and experimental VPN requirements and limits.
+5. In the Android app, tap **Connect phone**, or **Save and reconnect** after editing connection settings. Open the TiPlay page in the car browser, use the link/code shown by the app, then tap **Connect** on the page.
 
-The following describes DiPlay’s inherited receiver functionality. The current TiPlay browser profile does not expose a head-unit mode selector.
+Follow [Install and connect](docs/INSTALL.md) and [Tesla browser setup](docs/TESLA_BROWSER.md) for the page address, USB permissions, pairing and troubleshooting. The page needs HTTPS and a browser with WebCodecs; first load requires internet access, then its cache can support offline use.
 
-Install on the **car**, not the iPhone. No jailbreak, dongle, Mac, account or authentication server is required for use. Core CarPlay does not require ADB; optional dashboard, battery, wheel-speed and parked-video features do. Your head unit must permit APK installation. The APK supports Android 9+ (API 28); wireless supports Wi-Fi Direct, the car’s existing hotspot or Existing Wi-Fi / Same LAN. Android 9 Wi-Fi Direct uses a firmware-dependent legacy path with generated group credentials and unverified requested frequency; see [Android 9 Wi-Fi Direct](docs/ANDROID9_WIFI_DIRECT.md). Android 10+ verifies its negotiated group frequency.
+## Use and settings
 
-- Wired USB and wireless CarPlay with local authentication.
-- BYD HUD navigation with arrows, distance and street names on verified firmware.
-- Car hotspot support, improved audio buffering and saved receive diagnostics.
-- Automatic address discovery, fixed-channel Wi-Fi fallbacks and successful-configuration memory.
-- Icon/text size, resolution and frame rate; applying a display change reconnects CarPlay.
-- Local diagnostic export. Reports are sent only if you choose to share them.
-- Separate installation alongside DiAuto and DiPlay. Run one projection app at a time.
+CarPlay fills the browser video area. Tap its **TiPlay** icon to open the portal while keeping the session connected. Window changes fit immediately; after the size settles, TiPlay automatically reconnects CarPlay at the matching resolution. The portal also offers **Apply and reconnect** for a manual retry.
 
-This is **not an Apple-certified product**. The APK bundles an experimental accessory identity recovered from public Carlinkit firmware, not a newly provisioned MFi identity for DiPlay or TiPlay. A bundled private key is extractable. Acceptance after future iOS updates, reliability across head units and suitability of that identity for general distribution are unresolved. The head-unit mode invites community testing; it is not a guarantee of universal compatibility.
+The app has **Main settings** and **Advanced settings**. Main settings holds the connection and browser controls. Advanced settings holds frame rate, HEVC, driving side, diagnostic reports and permissions. Frame rate defaults to 60 fps on a fresh install; saved choices remain. HEVC defaults on without a saved codec choice; turn it off for H.264 compatibility. Advanced video/control changes save immediately for the next connection; **Return and apply** returns to the main page and reconnects a running session.
 
-DiPlay releases were tested on the development DiLink5.1 car: live windshield guidance and street names work, Car hotspot now starts CarPlay, and Wi-Fi Direct performance is substantially improved. Occasional audio cutouts remain and are deferred to a later update. The floating-map test build was installed on the development DiLink 5.1 car; feedback led to the pinch corrections in 0.2.9. Earlier wheel-speed and video contributions were tested on a BYD Tang with DiLink 5.0 and an iPhone 15 Pro on iOS 27; wheel-speed dead reckoning in tunnels remains unverified. Broader head-unit and iOS compatibility is not guaranteed. The HUD firmware scope and cleanup limits are documented in [BYD navigation](docs/BYD_NAVIGATION.md).
+**Connect automatically after boot** is saved immediately and requests a connection when Android starts. Android or device background-launch restrictions can prevent it. Enable the hotspot separately.
 
-### Inherited from DiPlay 0.2.13
+## Limitations and help
 
-- Android 9 Wi-Fi Direct, IPv4-first hotspot endpoints, safer Auto channel ordering and wireless startup without unused NSD/USB services.
-- Guarded rendered-video handoff fallback, safe wireless-to-USB switching and checked, cancellable permission setup.
-- Narrow USBMUX trailer recovery that preserves valid payload replies.
-- Optional live dock/split-screen areas and square-canvas rotation, plus the selected-decoder capability check and default-off experimental side panel.
-- DiLink 4 casting/calibration and live cluster picture controls; checked DiLink 3 projection entry with compensation.
-- Recent turn-card retention across wireless replacement, a finer dashboard map choice, battery-protocol fallback and eligible wheel-service recovery.
-- The observed Siri microphone timestamp correction and TCP_NODELAY touch events, with device-specific performance limits.
-- **Off by default:** independent experimental DiLink 3 call keys/dashboard calls and AAC-LC buffered music. Read their firmware/audio/restoration limits before opting in. Eligible hotspot join repair is a separately confirmed Check/Apply/Restore action.
-- Clearer settings, saved-menu behavior, car-button customization and day/night-aware waiting screens.
-- Traditional Chinese (Taiwan), bringing both the app and release website to seven languages.
+This is an experimental, **non-Apple-certified** product. Compatibility with future iOS versions is uncertain. See the [identity notice](docs/THIRD_PARTY_NOTICES.md#experimental-authentication-data).
 
-See [DiPlay 0.2.13 release notes](docs/RELEASE-NOTES-0.2.13.md) and [validation](docs/VALIDATION.md) for all reviewed contributions, hardware evidence and remaining physical tests. Higher resolution and large square canvases cost more decoder/GPU work. General stutter, calls/Siri, decoder, old-iOS startup and model-specific reports remain under investigation. [DiPlay 0.2.12 notes](docs/RELEASE-NOTES-0.2.12.md) remain available as historical guidance.
+For a problem, reproduce it on the latest TiPlay build and use **Advanced settings → Save diagnostic report**. Android 10+ normally saves to **Downloads/TiPlay**; Android 9 uses a document picker. If saving falls back to app storage, the confirmation identifies the location and offers **View report** and **Share**. Reports upload only when you choose to share them. Review the text and never post your hotspot password.
 
-## Report a problem
+Attach the report to an [existing issue](https://github.com/uJZk/DiPlay/issues) or [create one](https://github.com/uJZk/DiPlay/issues/new/choose). Include Android device/version, car/browser version, iPhone/iOS, connection method, reproduction steps and failure time. Report TiPlay problems here, not to upstream DiPlay.
 
-Report TiPlay problems in this repository, not in the DiPlay tracker. Reproduce the problem on the latest TiPlay build, then use **CarPlay settings → More Diagnostics settings → Save diagnostic report**. Android 10+ normally saves to **Downloads/TiPlay**; Android 9 uses the document picker. If unavailable, use **View report** or **Share** from the confirmation, which identifies external/private fallback storage. Review the `.txt` and add it to a matching [existing issue](https://github.com/uJZk/DiPlay/issues), or [create one](https://github.com/uJZk/DiPlay/issues/new/choose). Include vehicle/head-unit model, exact firmware and Android/DiLink, phone/iOS, connection backend, relevant settings, steps and failure time. Reports are shared only when you choose; never post your hotspot password.
-
-## Documentation
-
-[Existing Wi-Fi / Same LAN](docs/EXISTING_WIFI.md) keeps the iPhone and head unit
-on an external router. See the guide for setup, build requirements and the
-BYD DiLink 4.0 / Android 10 clean-install validation result.
-
-- [Install and connect](docs/INSTALL.md)
-- [Compatibility and troubleshooting](docs/COMPATIBILITY.md)
-- [Smooth wireless CarPlay](docs/SMOOTH_WIRELESS.md)
+- [Existing Wi-Fi setup](docs/EXISTING_WIFI.md)
 - [Privacy and diagnostic reports](docs/PRIVACY.md)
-- [Build from source](docs/BUILD.md) — select `mobile` for the main TiPlay app; `maphost` is a map sample.
-- [Tesla browser: setup and car tests](docs/TESLA_BROWSER.md)
-- [Tesla browser plan](docs/todo.md) (Chinese)
-- [Validation](docs/VALIDATION.md)
-- [Release notes](CHANGELOG.md)
-- [Credits and licenses](docs/THIRD_PARTY_NOTICES.md)
+- [Changes](CHANGELOG.md)
 
-The app and release website are available in English, Arabic, Russian, Ukrainian, Spanish, Simplified Chinese and Traditional Chinese (Taiwan). Traditional Chinese uses Taiwan wording; the app also recognizes Hong Kong/Macao and explicit Hant selections without claiming separate regional translations. Choose the app language in Settings; on Android 13+, it stays synchronized with Android’s per-app language setting.
+The app and download website offer English, Arabic, Russian, Ukrainian, Spanish, Simplified Chinese and Traditional Chinese (Taiwan). Hong Kong/Macao and Hant selections use the Taiwan translation. Choose the app language in Main settings; Android 13+ synchronizes it with Android's per-app language setting.
 
-## Source and credits
+## Credits and licenses
 
-TiPlay is a modified version of [DiPlay](https://github.com/shihabal3amri/DiPlay) by shihabal3amri, GPL-3.0, renamed in October 2026. DiPlay is based on [xcertplay](https://github.com/shilapi/xcertplay), GPL-3.0. The home/settings UI and website adapt [DiAuto](https://github.com/shihabal3amri/DiAuto), AGPL-3.0; that license is included in `docs/licenses`. Preserve those notices when distributing modifications. DiPlay's changelog entries and release notes keep their original name. Tesla is a trademark of Tesla, Inc. CarPlay and its icon belong to Apple Inc. No Tesla, Apple or BYD affiliation or endorsement is implied.
-
-This repository starts with a clean public source snapshot. Local research, tester reports and release-signing secrets are excluded. The complete source corresponding to the APK is provided with every release; experimental runtime identity assets are described separately in the build instructions and notices.
-
-## Local release packaging
-
-The release APK intentionally contains the experimental accessory identity. The Git repository and source archive exclude all accessory and Android signing keys; tests generate synthetic identities at runtime. Source/CI builds omit runtime identity assets by default. Local release builds explicitly select an external asset directory. Publishing the APK makes its bundled identity extractable; building locally does not preserve that identity's confidentiality.
+TiPlay is based on [DiPlay](https://github.com/shihabal3amri/DiPlay) by shihabal3amri and [xcertplay](https://github.com/shilapi/xcertplay), GPL-3.0. Its home/settings UI and website adapt [DiAuto](https://github.com/shihabal3amri/DiAuto), AGPL-3.0. See [credits and licenses](docs/THIRD_PARTY_NOTICES.md). TiPlay is not affiliated with or endorsed by Tesla, Apple or BYD. Tesla and CarPlay are trademarks of their respective owners.

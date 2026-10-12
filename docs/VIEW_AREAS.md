@@ -1,6 +1,6 @@
 # CarPlay view areas: dock position, split screen and a turning screen
 
-This guide describes the retained head-unit display controls and contributor tests. Current TiPlay forces the phone + browser profile, saves the split-screen adaptation setting as enabled and hides the dock, split-screen and turning-screen settings. The settings paths below refer to the retained head-unit UI.
+This guide describes the retained upstream head-unit display controls and contributor tests. Current TiPlay forces the phone + browser profile, saves the split-screen adaptation setting as enabled and hides the dock, split-screen and turning-screen settings. The settings paths and hardware results below refer to upstream compatibility, not current product support or acceptance requirements. Browser resizing follows [the browser session lifecycle](TESLA_BROWSER.md#browser-session-lifecycle), which negotiates a replacement display rather than switching these native view areas.
 
 A CarPlay accessory may declare several **view areas** inside the main screen's video stream and tell the iPhone which one to draw in. TiPlay uses this for three settings. Once negotiated, view-area transitions can run without reconnecting CarPlay:
 

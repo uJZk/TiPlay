@@ -1,6 +1,6 @@
 # Build TiPlay
 
-Use this procedure to build the TiPlay browser receiver for an Android device. Head-unit implementations remain in source for upstream compatibility.
+Use this procedure to build the TiPlay receiver on an Android phone for the car browser. Head-unit implementations remain in source for upstream compatibility.
 Run the commands from the repository root, where `gradlew` and `settings.gradle.kts` are located.
 
 ## Select the application
@@ -11,9 +11,9 @@ Select `mobile` to build the main TiPlay app.
 | Gradle module | Purpose | Debug APK |
 | --- | --- | --- |
 | `:mobile` | Main TiPlay app (current browser receiver profile) | `mobile/build/outputs/apk/debug/mobile-debug.apk` |
-| `:maphost` | Sample application that displays a map from TiPlay | `samples/maphost/build/outputs/apk/debug/maphost-debug.apk` |
-| `:home` | Optional TiPlay Home launcher | `samples/home/build/outputs/apk/debug/home-debug.apk` |
-| `:automotive` | Separate Android Automotive application inherited from xcertplay | `automotive/build/outputs/apk/debug/automotive-debug.apk` |
+| `:maphost` | Retained upstream map-host sample | `samples/maphost/build/outputs/apk/debug/maphost-debug.apk` |
+| `:home` | Retained upstream launcher sample | `samples/home/build/outputs/apk/debug/home-debug.apk` |
+| `:automotive` | Retained upstream Android Automotive application | `automotive/build/outputs/apk/debug/automotive-debug.apk` |
 
 The `:common` and `:shared` modules are libraries.
 The applications use these libraries.
@@ -96,15 +96,22 @@ Select the APK from the `mobile` output directory.
 
 ## Check the source build
 
-Run the unit tests, lint checks, and main debug build:
+Run the required source checks from [AGENTS.md](../AGENTS.md) and CI:
 
 ```sh
-./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :mobile:lintDebug :mobile:assembleDebug
+node --test tests/web/*.test.mjs
+python3 scripts/check_public_tree.py
+./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :home:testDebugUnitTest \
+  :mobile:lintDebug :home:lintDebug :maphost:lintDebug \
+  :mobile:assembleDebug :home:assembleDebug :maphost:assembleDebug
 ```
 
 Check that Gradle reports `BUILD SUCCESSFUL`.
 For the complete CI procedure, see [the Android workflow](../.github/workflows/android.yml).
-That workflow also checks and builds the `home` and `maphost` applications.
+The retained `home` and `maphost` checks protect upstream compatibility; they do not
+make native head-unit products part of TiPlay's supported phone + browser scope.
+Optional local Chromium E2E commands and their simulation limits are documented in
+[the browser E2E guide](../tests/web-e2e/README.md); CI does not run them.
 
 ## Build a standalone car-test APK
 
@@ -275,13 +282,13 @@ Create a draft rather than a public release:
   cd "$RELEASE_OUTPUT_DIR"
   sha256sum "TiPlay-$RELEASE_VERSION.apk" "TiPlay-$RELEASE_VERSION-source.zip" > SHA256SUMS.txt
 )
-gh release create "v$RELEASE_VERSION" --repo uJZk/TiPlay --draft \
+gh release create "v$RELEASE_VERSION" --repo uJZk/DiPlay --draft \
   --target "$RELEASE_COMMIT" --title "TiPlay $RELEASE_VERSION" \
   --notes-file "$RELEASE_NOTES_FILE" \
   "$RELEASE_OUTPUT_DIR/TiPlay-$RELEASE_VERSION.apk" \
   "$RELEASE_OUTPUT_DIR/TiPlay-$RELEASE_VERSION-source.zip" \
   "$RELEASE_OUTPUT_DIR/SHA256SUMS.txt"
-gh release view "v$RELEASE_VERSION" --repo uJZk/TiPlay --json isDraft,assets,url
+gh release view "v$RELEASE_VERSION" --repo uJZk/DiPlay --json isDraft,assets,url
 ```
 
 A failed upload can leave a created draft without attachments. Inspect the draft

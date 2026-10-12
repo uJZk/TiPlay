@@ -1,0 +1,29 @@
+{
+  "shared": {
+    "report_files": 191,
+    "tests": 1225,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "common": {
+    "report_files": 136,
+    "tests": 1035,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "samples/home": {
+    "report_files": 1,
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "total": {
+    "tests": 2264,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  }
+}

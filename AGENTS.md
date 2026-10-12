@@ -10,6 +10,10 @@ Phone settings, connection drafts, explicit apply/reconnect and boot behavior fo
 
 ## Current progress
 
+See `docs/docs-sweep-2026-10-12/README.md` for the incremental documentation sweep,
+user-focused English/Chinese READMEs, checks and unresolved destination/label policies.
+`docs/docs-sweep-2026-10-12/TIE-UP.md` records its integration and delivery progress.
+
 See `docs/WEB-DEBUG-2026-10-12.md` for the current four-field Debug overlay, browser theme delivery,
 peer-initiated clock synchronization, Android lifecycle repairs and validation limits.
 The browser page is hosted over HTTPS only; the APK does not bundle it and the phone has no local `/play/` route.

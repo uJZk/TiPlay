@@ -1,4 +1,4 @@
-> Historical engineering notes: Local hotspot is no longer offered in the app. Saved local-hotspot selections migrate to built-in car hotspot; the internal transport code remains for compatibility. Use [Connection setup](CONNECTION_SETUP.md) for current instructions.
+> Historical native-head-unit engineering notes, including 27 September 2026 device evidence. Local hotspot is no longer offered in TiPlay; saved selections map to the manual-hotspot transport, labelled Android hotspot in the current browser profile. The internal code remains for upstream compatibility. Current TiPlay supports Android phone + car browser only; use [Tesla browser setup](TESLA_BROWSER.md) for current instructions.
 
 # Standalone 5 GHz local hotspot
 
@@ -10,10 +10,10 @@ Select **Settings → Wireless link → Local hotspot · experimental**. On DiLi
 
 ## In-car evidence, 27 September 2026
 
-- The initial hotspot builds selected the wrong interface and then advertised automatic channel 0. Those builds did not connect. The current build requires the actual AP interface and reads its settled live channel/BSSID with the permitted LOHS radio callback. Ethernet, station and ambiguous interfaces are rejected.
+- The initial hotspot builds selected the wrong interface and then advertised automatic channel 0. Those builds did not connect. The later build tested in this record required the actual AP interface and read its settled live channel/BSSID with the permitted LOHS radio callback. Ethernet, station and ambiguous interfaces are rejected.
 - 5 GHz with the car Wi-Fi client enabled connected but still stuttered/froze. BYD changed AP channel 40 to 149 even after accepting a fixed channel-40 request.
 - With the Wi-Fi client off, an existing session had 23 consecutive five-second audio windows with zero underruns or packet loss. A separate cold launch connected both screens and had another 22 clean windows: main display median 33.8 fps, cluster 17 fps. Re-enabling car Wi-Fi reproduced stutters and a 7.7-second receive gap without changing the rendering code.
-- The control socket now has TCP health deadlines. A real dead connection timed out and automatically reconnected during testing. This prevents the observed indefinite freeze; it does not hide all short network stalls or guarantee uninterrupted playback.
+- The control socket in the tested build had TCP health deadlines. A real dead connection timed out and automatically reconnected during testing. This prevents the observed indefinite freeze; it does not hide all short network stalls or guarantee uninterrupted playback.
 
 A final installed-build check through the ordinary BYD Wi-Fi switch repeated the result for approximately five minutes: 58 audio windows, no underruns/packet loss, no reconnects, main median 33.6 fps and cluster 18.4 fps. Enabling car Wi-Fi reproduced underruns within five seconds.
 

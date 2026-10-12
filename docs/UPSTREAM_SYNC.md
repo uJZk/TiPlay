@@ -107,10 +107,13 @@ If the hook no longer fits, change the TiPlay file that the hook calls, not upst
   `onStartCommand`, `onDestroy` and `onTaskRemoved`. Keep these calls after upstream's changes.
   `onDestroy()` is TiPlay's own override. If upstream adds one too, merge the two bodies into one function.
 - `common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt`:
-  TiPlay adds the `run_mode` and `car_bluetooth_audio` keys with their load and save functions, and sets
+  TiPlay adds the `run_mode` and `car_bluetooth_audio` keys with their load and save functions, and uses a 60 fps default for new installations while preserving saved frame rates. It sets
   `DEFAULT_MANUFACTURER` and `DEFAULT_MODEL` to TiPlay. Keep the keys of both sides. Each key string must stay unique.
-- `common/src/main/java/com/shilapi/xcertplay/BootReceiver.kt`, `CarPlayCallKeys.kt` and `WheelKeyService.kt`
-  (same folder): one phone-mode gate each.
+- `common/src/main/java/com/shilapi/xcertplay/BootReceiver.kt`: phone mode launches
+  `CarPlaySettingsNavigation.mainIntent()` with `BrowserBootConnectionSettings.CONNECT_AFTER_BOOT`,
+  preserving the explicit boot connection request independently of connect-on-open. Keep startup diagnostics
+  and the separate retained head-unit launch path.
+- `CarPlayCallKeys.kt` and `WheelKeyService.kt` (same folder): retain their phone-mode gates.
 - `shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayConfig.kt`, `AirPlayInfoPlist.kt` and `AirPlaySession.kt`:
   car Bluetooth sound. `/info` leaves out `audioFormats`, and the session declines audio streams when `receivesAudio`
   is false. If upstream adds an audio stream type or changes the `/info` audio entries, apply the `receivesAudio` gate
@@ -135,8 +138,9 @@ If the hook no longer fits, change the TiPlay file that the hook calls, not upst
 
 ### Build files and manifests
 
-- `common/build.gradle.kts`: the `BundleBrowserPage` task at the end copies the browser page into the app's assets.
-  Keep it after upstream's changes.
+- `common/build.gradle.kts`: TiPlay no longer bundles the browser page in the APK. Preserve the removal of
+  `BundleBrowserPage`; do not restore `assets/play/` or local page routes. The hosted HTTPS page and phone API
+  are separate.
 - `mobile/build.gradle.kts`: keep `applicationId = "com.ujzk.tiplay"`.
   While TiPlay has no release of its own, it uses DiPlay's version numbers: take upstream's `versionCode` and
   `versionName`.
@@ -158,7 +162,7 @@ If the hook no longer fits, change the TiPlay file that the hook calls, not upst
 ### Documents and site
 
 - `README.md` and `README.zh-CN.md`: TiPlay rewrote them. Keep TiPlay's version.
-  Copy upstream's new facts into the head-unit mode section, and update the DiPlay version that TiPlay starts from.
+  Keep the root guides limited to supported phone + browser use, setup, limitations and help; preserve essential credits. Put inherited head-unit facts in the upstream records, not a supported product section.
 - `CHANGELOG.md`: "TiPlay — unreleased" is first, then DiPlay's history.
   Put upstream's new DiPlay entries below the TiPlay section, unchanged: they keep the DiPlay name and the bare upstream
   issue numbers. Add a line to the TiPlay section that names the merged DiPlay version.
@@ -337,7 +341,7 @@ Normal TiPlay entry applies `BrowserSettingsPolicy.activate()`: phone + browser 
       historical records keep DiPlay. No `sed` was used.
 - [ ] New upstream issue numbers in guides link to DiPlay.
 - [ ] The site pages were generated again.
-- [ ] `README.md`, `README.zh-CN.md` and `CHANGELOG.md` name the merged DiPlay version.
+- [ ] `CHANGELOG.md` and `docs/RELEASE-NOTES-NEXT.md` name the merged DiPlay version; root READMEs remain user-facing.
 - [ ] The CI command, the page tests and the public tree check pass.
 - [ ] A fresh install starts in phone + browser mode.
 - [ ] `main` moved forward to the branch and was pushed to `origin` only.

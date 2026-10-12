@@ -36,6 +36,27 @@ Bluetooth and reports `STEP handoff/complete`, as it does for the normal tunnel-
 path. The fallback does not confirm the connection in saved history
 without the existing authenticated-tunnel proof.
 
+## Browser display reconnect diagnostics
+
+A wireless browser viewport change can replace the AirPlay display session while
+retaining the hotspot/existing Wi-Fi link, AirPlay listener, Bonjour registries and
+MFi session. `browser display reconnect retaining wireless transport` identifies
+this path; it is separate from a full connection restart. Expected teardown of the
+retiring display and its tunnel does not by itself indicate a network failure.
+Before the replacement accepts its display configuration, pending viewport changes
+can be coalesced. Later changes wait for the replacement’s first frame before a
+further size check. The retiring session’s frames cannot complete that recovery.
+
+The retained Bluetooth bootstrap owns its socket, duplex stream and iAP2 channel.
+Replacement, controller shutdown and tunnel readiness close its resources; late
+resources arriving after closure are rejected and closed. Logs such as `bootstrap
+ready` or `StartSession sent` prove a bootstrap milestone, not rendered output or
+successful vehicle-browser resize recovery. Export a report if the replacement
+never produces a frame and record the visible symptom and viewport change. See
+[browser resize validation](BROWSER-RESIZE-2026-10-11.md) for recorded phone checks
+and remaining vehicle/recovery limits; no new device run was performed for this
+2026-10-12 documentation review.
+
 ## Association limits
 
 Wireless CarPlay's local Wi-Fi transport can coexist with cellular internet. A missing Wi-Fi indicator/checkmark is not proof of failed association, and manually joining the hotspot is not required for normal CarPlay.

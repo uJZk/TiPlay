@@ -1,5 +1,12 @@
 # Connection reliability validation
 
+> Historical compatibility investigation and 2026-10-06 software results. Current
+> TiPlay supports Android phone + car browser only. Native head-unit setups and
+> acceptance rows below remain upstream evidence, not a supported second product
+> or new release requirement. See [Tesla browser setup](TESLA_BROWSER.md) for the
+> current flow and [browser resize record](BROWSER-RESIZE-2026-10-11.md) for later
+> retained-wireless work. No device acceptance was added by this review.
+
 Android 9 / API 28 is the installation minimum. A head unit's firmware, USB driver,
 Bluetooth service, Wi-Fi implementation and video compositor also determine whether
 a CarPlay session can run. Record the actual firmware and failed connection stage;
@@ -33,7 +40,7 @@ Lint has zero errors/fatal findings; existing warning counts are 18, five, two a
 respectively. All four APKs contain no runtime credential assets. Public-tree and
 whitespace checks pass. These are automated source checks, not vehicle acceptance.
 
-## Vehicle acceptance before release
+## Historical compatibility acceptance checklist
 
 Use a [standalone test build](BUILD.md#build-a-standalone-car-test-apk) with an explicit runtime
 identity. An identity-free source/CI APK cannot establish iPhone connection success.

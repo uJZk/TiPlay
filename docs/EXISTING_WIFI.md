@@ -1,14 +1,22 @@
 # Existing Wi-Fi
 
-Connect the Android receiver and iPhone to the same third-party router or portable
-Wi-Fi in system settings. On the TiPlay main page, select
-**Existing Wi-Fi**, enter the exact SSID, choose WPA2 security and enter its password, then save.
-For an open network, choose Open; the password field is hidden. Keep Bluetooth enabled and the iPhone
-paired with the receiver, then start wireless CarPlay as usual.
+Connect the Android phone, iPhone and car browser to the same third-party router or
+portable Wi-Fi in system settings. On the TiPlay main page, select **Existing Wi-Fi**,
+enter the exact SSID, choose the network’s security type and enter its password.
+The choices are Open, WPA2, WPA3 transition (WPA2/WPA3 mixed mode) and WPA3.
+For Open, the password field is hidden.
+Keep Bluetooth enabled and pair the iPhone with the Android phone. Tap **Connect phone**
+or **Save and reconnect** to save and start the connection; editing the fields alone
+does not change a running session. See [Tesla browser setup](TESLA_BROWSER.md) for
+browser address and reachability limits on an existing network.
 
-Use WPA2-Personal or WPA2/WPA3 mixed mode. WPA3-only, enterprise authentication and
-captive portals are outside this mode’s current scope. Both clients must be able to
-communicate; allow multicast DNS for service discovery. Prefer 5 GHz when supported.
+WPA2-Personal, WPA2/WPA3 transition and WPA3-Personal are represented by distinct
+bootstrap security values. On Android 12/API 31 and later, a readable negotiated
+security type must match the selection; transition mode accepts either PSK or SAE.
+Older Android or an unknown/redacted security type cannot verify that match.
+Enterprise authentication and captive portals are outside this mode’s current scope.
+Clients must be able to communicate; disable client isolation and allow multicast DNS
+for service discovery. Prefer 5 GHz when supported.
 
 TiPlay attaches to the existing connection without creating an AP, joining another
 network or changing the default route. The router supplies Internet access.
@@ -58,13 +66,16 @@ address scope and family selection, callback cleanup, settings persistence, dual
 publication/listening, port fallback, mode transitions and bootstrap encoding. Existing
 P2P and hotspot tests run alongside them.
 
-The contributor reports a successful clean install of the final implementation on a
+Historical contributor evidence retained from the earlier head-unit implementation:
+a successful clean install was reported on a
 2022 BYD Han DM-i with DiLink 4.0 / Android 10 (API 29), firmware
 21.1.21.2401160.1: the previous test app was uninstalled, the standalone test APK was
 installed and configured normally, and Same LAN entered CarPlay with no issues noticed
 during use. This validates that setup; it does not establish compatibility with every
-receiver, iOS version or router. Open and WPA2/WPA3 mixed networks have not been
-separately validated on hardware.
+receiver, iOS version or router. Open, WPA2/WPA3 transition and WPA3-only networks have not been
+separately validated on hardware in this record. This earlier native-head-unit run
+is not acceptance of the current phone + browser product; no new device run was
+performed for the 2026-10-12 documentation review.
 For a device check, confirm that both devices keep the existing Wi-Fi connection,
 CarPlay starts, and the iPhone can use online services. For failures, save one diagnostic
 report with the attempt time and the iPhone’s actual Wi-Fi connection. An absence of

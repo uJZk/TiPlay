@@ -1,0 +1,49 @@
+{
+  "entry": [
+    "AGENTS.md",
+    "README.md",
+    "README.zh-CN.md",
+    "CHANGELOG.md",
+    "docs/INSTALL.md",
+    "docs/RELEASE-NOTES-NEXT.md",
+    "docs/todo.md",
+    "docs/UPSTREAM_SYNC.md"
+  ],
+  "main": [
+    "docs/APP-MAIN-PAGE-DESIGN.md",
+    "docs/APP-MAIN-PAGE-IMPLEMENTATION.md",
+    "docs/WEB-PAIRING-DESIGN.md"
+  ],
+  "connection": [
+    "docs/ANDROID9_WIFI_DIRECT.md",
+    "docs/CONNECTION_SETUP.md",
+    "docs/EXISTING_WIFI.md",
+    "docs/HOTSPOT_ADDRESS.md",
+    "docs/CONNECTION_RELIABILITY.md",
+    "docs/SMOOTH_WIRELESS.md",
+    "docs/WIRELESS_DIAGNOSTICS.md",
+    "docs/WIRELESS_HOTSPOT_JOIN.md",
+    "docs/HOTSPOT_JOIN_VALIDATION.md",
+    "docs/LOCAL_HOTSPOT_TEST.md"
+  ],
+  "browser": [
+    "docs/TESLA_BROWSER.md",
+    "docs/PRIVACY.md",
+    "docs/BUFFERED_AUDIO.md",
+    "docs/VIEW_AREAS.md",
+    "docs/SIDE_PANEL.md"
+  ],
+  "records": [
+    "docs/APK-RELEASE-2026-10-11.md",
+    "docs/BROWSER-RESIZE-2026-10-11.md",
+    "docs/RECONNECT-UX-2026-10-11.md",
+    "docs/SETTINGS-UX-2026-10-11.md",
+    "docs/UI-REDESIGN-2026-10-11.md",
+    "docs/WEB-DEBUG-2026-10-11.md"
+  ],
+  "tooling": [
+    "docs/BUILD.md",
+    "docs/TESTING.md",
+    "tests/web-e2e/README.md"
+  ]
+}
