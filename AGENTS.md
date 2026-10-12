@@ -17,6 +17,7 @@ user-focused English/Chinese READMEs, checks and unresolved destination/label po
 See `docs/AIRPLAY.md` for the experimental ordinary AirPlay mirror/video receiver,
 the pinned UxPlay reference, retained CarPlay display pause/resume contract and validation limits.
 See `docs/AIRPLAY-TIE-UP-2026-10-12.md` for verification, integration and remaining device checks.
+See `docs/todo.md` under "AirPlay 轻量信任设备机制" for the pending approval, remembered-device and takeover-protection work; it is not implemented yet.
 
 See `docs/WEB-DEBUG-2026-10-12.md` for the current four-field Debug overlay, browser theme delivery,
 peer-initiated clock synchronization, Android lifecycle repairs and validation limits.
