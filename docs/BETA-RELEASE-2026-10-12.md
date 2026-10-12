@@ -84,6 +84,15 @@ GitHub integration returned HTTP 403, so their presence could not be established
 Workflow YAML, shell and embedded Python syntax checks passed. A local signed
 release rebuild and release lint passed in 51s. The previous beta draft's exact
 APK and matching source inputs remain preserved separately.
+
+The release-build workflow was committed and pushed as `beb37772`. Run
+https://github.com/uJZk/TiPlay/actions/runs/38204537123 failed at the signing-input
+check before Java/SDK setup or compilation. The integration could not retrieve
+the runner logs because their download host was denied by network policy, so
+the exact missing secret names were not established. Configure the four signing
+repository secrets, then rerun this workflow. The user explicitly stopped local
+release builds; continue with GitHub Actions only. Do not resume the separate
+Contents-write upload workflow without its required authorization.
 Session inputs, logs and deliverables are outside Git in
 `/workspace/release-beta-2026-10-12/`.
 
