@@ -47,6 +47,17 @@ class CarPlayNightModeControllerTest {
         }
     }
 
+    @Test fun browserSystemAppearanceUpdatesWhileThePhoneActivityIsPaused() {
+        val f = Fixture()
+        f.controller.configure(CarPlayNightMode.SYSTEM, false)
+        f.controller.pause()
+        f.controller.systemChanged(true)
+        f.controller.systemChanged(true)
+        f.controller.systemChanged(false)
+        assertEquals(listOf(true, false), f.output)
+        assertTrue(f.clock.tasks.isEmpty())
+    }
+
     @Test fun stableOnChangeReadingTransitionsOnlyAfterFiveSeconds() {
         val f = Fixture()
         f.light.emit(19f)

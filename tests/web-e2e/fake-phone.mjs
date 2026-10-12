@@ -1,15 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // A stand-in for the phone's BrowserLinkServer (protocol v1, §2–§4 of the browser-link contract), enough for the page:
-// /hello, /video with records, /control with status, /bye, OPTIONS with CORS and Private Network Access headers,
-// and optionally the page itself under /play/ (§7.2).
-import { existsSync, readFileSync } from 'node:fs';
+// /hello, /video with records, /control with status, /bye, OPTIONS with CORS and Private Network Access headers.
 import { createServer } from 'node:http';
-import { extname, join } from 'node:path';
 import { History, listen, closeServer } from './resources.mjs';
 import { RECORD, FLAG, encodeRecord } from '../../site/play/link.js';
-
-const PAGE_TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
-const PAGE_CSP = "default-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 
 const json = (res, status, body) => {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -36,9 +30,9 @@ export function parseIvf(buffer) {
 
 /**
  * Starts the fake phone. `frames` loop at `fps`; every stream starts at frame 0, which must be a key frame.
- * Events from /control land in `events` as `{s, q, event}`. With `pageDir` it also serves the page under /play/.
+ * Events from /control land in `events` as `{s, q, event}`.
  */
-export function startFakePhone({ code, frames, width, height, fps = 30, codec = 'vp8', host = '127.0.0.1', pageDir = null }) {
+export function startFakePhone({ code, frames, width, height, fps = 30, codec = 'vp8', host = '127.0.0.1' }) {
   let portalRevision = 0;
   const events = new History(), requests = new History(), preflights = new History();
   let current = null, lastSeen = 0, video = null, fit = false, viewport = null, videoCount = 0, corrupt = false, framesWritten = 0;
@@ -159,7 +153,6 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
       return res.end();
     }
     const route = `${req.method} ${url.pathname}`;
-    if (pageDir && req.method === 'GET' && (url.pathname === '/' || url.pathname.startsWith('/play/'))) return servePage(res, url.pathname);
     if (route === 'GET /hello') return json(res, 200, { app: 'TiPlay', protocol: 1, clockMs: performance.now() });
     if (route === 'GET /video') {
       if (authorize(res, url.searchParams.get('c'), url.searchParams.get('s'))) streamVideo(res, url.searchParams.get('timing') === '1');
@@ -192,14 +185,6 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     if (['/hello', '/video', '/control', '/bye'].includes(url.pathname)) return json(res, 405, { error: 'method' });
     json(res, 404, { error: 'not-found' });
   });
-
-  function servePage(res, path) {
-    if (path === '/') return res.writeHead(302, { Location: '/play/' }).end();
-    const name = path === '/play/' ? 'index.html' : path.slice('/play/'.length);
-    if (name.includes('/') || !existsSync(join(pageDir, name))) return json(res, 404, { error: 'not-found' });
-    res.writeHead(200, { 'Content-Type': PAGE_TYPES[extname(name)] ?? 'application/octet-stream', 'Cache-Control': 'no-cache', 'Content-Security-Policy': PAGE_CSP });
-    res.end(readFileSync(join(pageDir, name)));
-  }
 
   return listen(server, host).then(() => ({
     port: server.address().port,

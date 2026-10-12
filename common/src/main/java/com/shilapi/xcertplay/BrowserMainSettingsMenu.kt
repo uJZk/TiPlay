@@ -43,7 +43,7 @@ internal class BrowserMainSettingsMenu(
         isFillViewport = true; setBackgroundColor(ui.background); addView(content)
         ui.protectSystemInsets(this)
     }
-    val status = text(activity.getString(R.string.ready_when_you_are), 18f).also(ui::emphasize)
+    val status = text("", 18f).also(ui::emphasize)
     val hotspotStatus = text("").also(ui::emphasize)
     private val error = text("").apply { visibility = View.GONE }.also(ui::emphasize)
     private val action: Button
@@ -51,11 +51,13 @@ internal class BrowserMainSettingsMenu(
     private val network = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
     private var baseline = BrowserConnectionDraft.load(activity)
     private var active = false
+    private var idle = true
     private var stopping = false
     private var failed = false
     private var phone: Button
     private lateinit var connectionMode: Button
     private var networkStatus: TextView? = null
+    private var networkReadiness: Int? = null
     private var wifiSettings: Button? = null
     private var refreshAddress: () -> Unit = {}
     private lateinit var refreshBrowser: () -> Unit
@@ -106,7 +108,8 @@ internal class BrowserMainSettingsMenu(
         connectionMode = BrowserSettingsPresentation.connectionMode(activity, { draft.wireless }) {
             draft.wireless = it; renderNetwork(); updateActions()
         }
-        transport.addView(connectionMode)
+        connectionMode.minHeight = dp(48)
+        transport.addView(connectionMode, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         if (wide) {
             for (i in 0 until transport.childCount) {
                 transport.getChildAt(i).layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {
@@ -146,6 +149,7 @@ internal class BrowserMainSettingsMenu(
             else LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) }
         val version = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
         content.addView(text(version).also(ui::emphasize))
+        updateActions()
     }
     private fun phoneLabel() = if (draft.phoneAddress.isNullOrBlank()) activity.getString(R.string.choose_iphone)
         else activity.getString(R.string.settings_selected_iphone, draft.phoneName)
@@ -181,7 +185,7 @@ internal class BrowserMainSettingsMenu(
         }
     }
     private fun renderNetwork() {
-        network.removeAllViews(); networkStatus = null; wifiSettings = null
+        network.removeAllViews(); networkStatus = null; wifiSettings = null; networkReadiness = null
         refreshAddress = {}
         heading(R.string.settings_browser_network_configuration, network)
         val group = RadioGroup(activity).apply { orientation = RadioGroup.HORIZONTAL }
@@ -248,15 +252,18 @@ internal class BrowserMainSettingsMenu(
         renderNetwork(); updateActions()
     }
     fun refresh() {
-        refreshAddress(); refreshBrowser(); refreshNetwork(); phone.text = phoneLabel()
+        refreshAddress(); refreshBrowser(); refreshNetwork(); phone.text = phoneLabel(); updateActions()
     }
     fun refreshNetwork() {
         if (draft.source == BrowserConnectionDraft.Source.LOCAL) {
-            hotspotStatus.setText(when (com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(activity)) {
+            val enabled = com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(activity)
+            hotspotStatus.setText(when (enabled) {
                 true -> R.string.settings_browser_hotspot_on
                 false -> R.string.settings_browser_hotspot_off
                 null -> R.string.settings_browser_hotspot_unknown
             })
+            networkReadiness = if (enabled == false) R.string.hotspot_details_off else null
+            updateIdleStatus()
             return
         }
         val connectivity = activity.getSystemService(ConnectivityManager::class.java)
@@ -266,10 +273,13 @@ internal class BrowserMainSettingsMenu(
             .getOrNull()?.takeUnless { it == "<unknown ssid>" }
         val matches = wifi && ssid == draft.externalSsid
         networkStatus?.setText(if (matches) R.string.settings_external_ap_ready else R.string.settings_external_ap_check)
+        networkReadiness = if (matches) null else R.string.settings_external_ap_check
+        updateIdleStatus()
     }
-    fun update(stage: String, hasSession: Boolean) {
+    fun update(stage: String, hasSession: Boolean, idle: Boolean = false) {
         active = hasSession
-        status.text = stage
+        this.idle = idle && !hasSession
+        status.text = if (stopping) activity.getString(R.string.settings_main_stopping) else stage
         updateActions(); refreshNetwork()
     }
     fun showConnectionError(message: String?) {
@@ -279,7 +289,24 @@ internal class BrowserMainSettingsMenu(
         updateActions()
     }
     fun committed() { baseline = draft.copy(); failed = false; error.visibility = View.GONE; updateActions() }
+    private fun updateIdleStatus() {
+        if (!idle || stopping) return
+        val invalid = draft.validationError()
+        val requirement = when {
+            !draft.wireless -> null
+            draft.phoneAddress.isNullOrBlank() -> R.string.choose_your_iphone
+            invalid != null -> invalid
+            Build.VERSION.SDK_INT >= 31 &&
+                activity.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED ->
+                R.string.allow_the_connection_permission_to_continue
+            runCatching { activity.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled }.getOrNull() != true ->
+                R.string.turn_on_bluetooth
+            else -> networkReadiness
+        }
+        status.setText(requirement ?: R.string.ready_when_you_are)
+    }
     private fun updateActions() {
+        if (stopping) status.setText(R.string.settings_main_stopping) else updateIdleStatus()
         val dirty = draft != baseline
         action.setText(if (dirty || active) R.string.save_and_reconnect else R.string.connect_phone)
         action.visibility = if (!active || dirty || failed) View.VISIBLE else View.GONE

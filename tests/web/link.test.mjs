@@ -49,7 +49,7 @@ test('built links put a phone other than the default in ?t= for bookmarks and th
   assert.equal(buildLink('https://example.test/?t=1.2.3.4&lang=zh', { host: DEFAULT_HOST, code: '9876' }),
     'https://example.test/?lang=zh#c=9876', 'an older t goes for the default phone');
   assert.equal(normalizeHost(' 192.168.1.20:9000 '), '192.168.1.20:9000');
-  assert.equal(normalizeHost('LOCALHOST'), 'localhost:8080', 'the page the phone serves may be opened on the phone itself');
+  assert.equal(normalizeHost('LOCALHOST'), 'localhost:8080', 'local diagnostics can target the loopback protocol server');
 });
 
 test('the address names the phone in ?t=, else a pairing link names the default phone, else the saved one stays', () => {
@@ -65,8 +65,6 @@ test('the address names the phone in ?t=, else a pairing link names the default 
     'the older #h= still names the phone');
   assert.deepEqual(linkFromAddress('?t=100.64.0.1', '#h=100.64.0.2&c=1234', saved), { host: '100.64.0.1:8080', code: '1234' },
     '?t= wins over #h=');
-  assert.deepEqual(linkFromAddress('', '#c=1234', { host: DEFAULT_HOST, code: null }, '10.0.0.5:8080'),
-    { host: '10.0.0.5:8080', code: '1234' }, 'on the page the phone serves, a link without t is for that phone');
   assert.deepEqual(linkFromAddress('?t=bad', '#c=1234', saved), { host: DEFAULT_HOST, code: '1234' }, 'an invalid t names no phone');
   assert.equal(linkFromAddress('?t=bad', '#c=12', saved), null);
 });
@@ -93,8 +91,8 @@ test('the address bar keeps ?t= for bookmarks of a phone other than the default 
   assert.equal(linkLocation('/play/', '?t=1.2.3.4&lang=zh', '100.64.0.1:9000'), '/play/?t=100.64.0.1:9000&lang=zh');
   assert.equal(linkLocation('/play/', '?t', '100.64.0.1:8080'), '/play/?t=100.64.0.1', 'a bare t is replaced');
   assert.equal(linkLocation('/play/', '?tab=1', '100.64.0.1:8080'), '/play/?t=100.64.0.1&tab=1', 'only t itself is replaced');
-  assert.equal(linkLocation('/play/', '?t=1.2.3.4', '10.0.0.5:8080', '10.0.0.5:8080'), '/play/',
-    'the page the phone serves talks to its own origin and needs no t');
+  assert.equal(linkLocation('/', '?t=1.2.3.4', '10.0.0.5:8080'), '/?t=10.0.0.5',
+    'the hosted page keeps the selected phone address');
 });
 
 test('the declared address space matches what Chrome resolves for the host', () => {

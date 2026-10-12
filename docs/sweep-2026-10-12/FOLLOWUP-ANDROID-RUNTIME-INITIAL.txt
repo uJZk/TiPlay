@@ -1,0 +1,216 @@
+Reusing configuration cache.
+> Task :shared:preBuild UP-TO-DATE
+> Task :common:preBuild UP-TO-DATE
+> Task :shared:preDebugBuild UP-TO-DATE
+> Task :shared:processDebugNavigationResources UP-TO-DATE
+> Task :shared:javaPreCompileDebug UP-TO-DATE
+> Task :shared:generateDebugResources UP-TO-DATE
+> Task :shared:preDebugUnitTestBuild UP-TO-DATE
+> Task :shared:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :common:preDebugBuild UP-TO-DATE
+> Task :shared:packageDebugResources UP-TO-DATE
+> Task :common:generateDebugResources UP-TO-DATE
+> Task :shared:parseDebugLocalResources UP-TO-DATE
+> Task :common:packageDebugResources UP-TO-DATE
+> Task :shared:generateDebugRFile UP-TO-DATE
+> Task :common:processDebugNavigationResources UP-TO-DATE
+> Task :shared:generateDebugUnitTestStubRFile UP-TO-DATE
+> Task :common:parseDebugLocalResources UP-TO-DATE
+> Task :common:generateDebugRFile UP-TO-DATE
+> Task :common:javaPreCompileDebug UP-TO-DATE
+> Task :common:preDebugUnitTestBuild UP-TO-DATE
+> Task :common:writeDebugAarMetadata UP-TO-DATE
+> Task :shared:writeDebugAarMetadata UP-TO-DATE
+> Task :shared:compileDebugKotlin UP-TO-DATE
+> Task :shared:compileDebugJavaWithJavac NO-SOURCE
+> Task :shared:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :shared:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :shared:compileDebugUnitTestKotlin UP-TO-DATE
+> Task :shared:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :shared:processDebugJavaRes UP-TO-DATE
+> Task :shared:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :common:checkDebugUnitTestAarMetadata UP-TO-DATE
+> Task :shared:testDebugUnitTest UP-TO-DATE
+> Task :common:mapDebugSourceSetPaths UP-TO-DATE
+> Task :common:compileDebugLibraryResources UP-TO-DATE
+> Task :common:mapDebugUnitTestSourceSetPaths UP-TO-DATE
+> Task :common:generateDebugUnitTestResources UP-TO-DATE
+> Task :common:mergeDebugUnitTestResources UP-TO-DATE
+> Task :common:extractDeepLinksDebug UP-TO-DATE
+> Task :common:processDebugManifest UP-TO-DATE
+> Task :shared:extractDeepLinksDebug UP-TO-DATE
+> Task :shared:processDebugManifest UP-TO-DATE
+> Task :common:mergeDebugUnitTestManifest UP-TO-DATE
+> Task :common:processDebugUnitTestManifest UP-TO-DATE
+> Task :shared:mapDebugSourceSetPaths UP-TO-DATE
+> Task :shared:compileDebugLibraryResources UP-TO-DATE
+> Task :common:processDebugUnitTestResources UP-TO-DATE
+> Task :common:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :common:generateDebugUnitTestAssets UP-TO-DATE
+> Task :common:generateDebugAssets UP-TO-DATE
+> Task :common:mergeDebugAssets UP-TO-DATE
+> Task :shared:generateDebugAssets UP-TO-DATE
+> Task :shared:mergeDebugAssets UP-TO-DATE
+> Task :common:mergeDebugUnitTestAssets UP-TO-DATE
+> Task :common:packageDebugUnitTestForUnitTest UP-TO-DATE
+> Task :common:generateDebugUnitTestConfig UP-TO-DATE
+> Task :home:preBuild UP-TO-DATE
+> Task :home:preDebugBuild UP-TO-DATE
+> Task :home:generateDebugResources UP-TO-DATE
+> Task :home:packageDebugResources UP-TO-DATE
+> Task :common:compileDebugKotlin UP-TO-DATE
+> Task :common:compileDebugJavaWithJavac NO-SOURCE
+> Task :common:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :home:processDebugNavigationResources UP-TO-DATE
+> Task :common:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :common:processDebugJavaRes UP-TO-DATE
+> Task :home:parseDebugLocalResources UP-TO-DATE
+> Task :home:generateDebugRFile UP-TO-DATE
+> Task :home:compileDebugKotlin UP-TO-DATE
+> Task :home:javaPreCompileDebug UP-TO-DATE
+> Task :home:compileDebugJavaWithJavac NO-SOURCE
+> Task :home:checkDebugAarMetadata UP-TO-DATE
+> Task :home:mapDebugSourceSetPaths UP-TO-DATE
+> Task :home:compileDebugNavigationResources UP-TO-DATE
+> Task :home:mergeDebugResources UP-TO-DATE
+> Task :home:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :home:extractDeepLinksDebug UP-TO-DATE
+> Task :home:processDebugMainManifest UP-TO-DATE
+> Task :home:processDebugManifest UP-TO-DATE
+> Task :home:processDebugManifestForPackage UP-TO-DATE
+> Task :home:processDebugResources UP-TO-DATE
+> Task :home:bundleDebugClassesToRuntimeJar UP-TO-DATE
+> Task :home:bundleDebugClassesToCompileJar UP-TO-DATE
+> Task :home:preDebugUnitTestBuild UP-TO-DATE
+> Task :home:compileDebugUnitTestKotlin UP-TO-DATE
+> Task :home:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :home:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :home:generateDebugAssets UP-TO-DATE
+> Task :home:mergeDebugAssets UP-TO-DATE
+> Task :home:packageDebugUnitTestForUnitTest UP-TO-DATE
+> Task :home:mergeDebugUnitTestManifest UP-TO-DATE
+> Task :home:processDebugUnitTestManifest UP-TO-DATE
+> Task :home:generateDebugUnitTestConfig UP-TO-DATE
+> Task :home:processDebugJavaRes UP-TO-DATE
+> Task :home:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :home:testDebugUnitTest UP-TO-DATE
+> Task :common:checkDebugAarMetadata UP-TO-DATE
+> Task :common:extractDebugAnnotations
+> Task :common:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :common:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :common:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :common:prepareDebugArtProfile UP-TO-DATE
+> Task :common:prepareLintJarForPublish UP-TO-DATE
+> Task :common:mergeDebugJavaResource UP-TO-DATE
+> Task :common:compileDebugUnitTestKotlin
+> Task :common:syncDebugLibJars
+> Task :common:bundleDebugLocalLintAar
+> Task :shared:checkDebugAarMetadata UP-TO-DATE
+> Task :shared:extractDebugAnnotations UP-TO-DATE
+> Task :shared:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :shared:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :shared:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :shared:prepareDebugArtProfile UP-TO-DATE
+> Task :shared:prepareLintJarForPublish UP-TO-DATE
+> Task :shared:mergeDebugJavaResource UP-TO-DATE
+> Task :shared:syncDebugLibJars
+> Task :shared:bundleDebugLocalLintAar
+> Task :common:createFullJarDebug
+> Task :common:preDebugAndroidTestBuild UP-TO-DATE
+> Task :common:writeDebugLintModelMetadata UP-TO-DATE
+> Task :shared:createFullJarDebug
+> Task :shared:writeDebugLintModelMetadata UP-TO-DATE
+> Task :common:generateDebugAndroidTestLintModel
+> Task :common:extractProguardFiles UP-TO-DATE
+> Task :shared:extractProguardFiles UP-TO-DATE
+> Task :shared:generateDebugLintModel
+> Task :common:generateDebugLintModel
+> Task :common:generateDebugUnitTestLintModel
+> Task :shared:lintAnalyzeDebug
+
+> Task :common:compileDebugUnitTestKotlin
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/AppLocaleTest.kt:57:22 'constructor(p0: String!): Locale' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/CarButtonImagePickerTest.kt:150:42 'fun addResolveInfoForIntent(p0: Intent!, p1: ResolveInfo!): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/CarButtonImagePickerTest.kt:152:42 'fun addResolveInfoForIntent(p0: Intent!, p1: ResolveInfo!): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/CarPlayBonjourDualStackTest.kt:79:20 'fun getInterface(): InetAddress!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/CarPlayBonjourDualStackTest.kt:93:34 'fun getInterface(): InetAddress!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:50:29 'val allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:55:21 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:77:26 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:88:29 'val allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:187:29 'val allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:192:21 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:218:29 'val allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/InterfaceSizeTest.kt:113:95 'constructor(p0: String!): Locale' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/LocalNetworkPermissionTest.kt:43:60 'constructor(): PermissionInfo' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/LocationReportingSettingsTest.kt:71:18 'fun onRequestPermissionsResult(p0: Int, p1: Array<(out) String!>, p2: IntArray): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/LocationReportingSettingsTest.kt:83:18 'fun onRequestPermissionsResult(p0: Int, p1: Array<(out) String!>, p2: IntArray): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/PhoneBrowserSessionServiceTest.kt:69:22 'fun withIntent(p0: Intent!): ServiceController<DiPlaySessionService!>!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/PreparationLayoutTest.kt:50:106 'field scaledDensity: Float' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/UsbAutoConfirmServiceTest.kt:94:19 'fun recycle(): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:40:14 'var isWifiEnabled: Boolean' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:41:23 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:42:23 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:46:70 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:59:70 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:173:68 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:183:68 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:195:68 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:278:78 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:282:68 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:391:59 'var isWifiEnabled: Boolean' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:465:13 'static fun shadowOf(p0: WifiP2pGroup!): ShadowWifiP2pGroup!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:466:13 'static fun shadowOf(p0: WifiP2pGroup!): ShadowWifiP2pGroup!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:467:13 'static fun shadowOf(p0: WifiP2pGroup!): ShadowWifiP2pGroup!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt:468:13 'static fun shadowOf(p0: WifiP2pGroup!): ShadowWifiP2pGroup!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pLegacyGroupManagerTest.kt:46:14 'var isWifiEnabled: Boolean' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pLegacyGroupManagerTest.kt:47:23 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pLegacyGroupManagerTest.kt:48:23 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pLegacyGroupManagerTest.kt:312:13 'static fun shadowOf(p0: WifiP2pGroup!): ShadowWifiP2pGroup!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pLegacyGroupManagerTest.kt:313:13 'static fun shadowOf(p0: WifiP2pGroup!): ShadowWifiP2pGroup!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pLegacyGroupManagerTest.kt:314:13 'static fun shadowOf(p0: WifiP2pGroup!): ShadowWifiP2pGroup!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WifiP2pLegacyGroupManagerTest.kt:315:13 'static fun shadowOf(p0: WifiP2pGroup!): ShadowWifiP2pGroup!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WirelessHandoffWatchdogTest.kt:60:31 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type 'Array<(out) CapturedType(*)!>?'.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/settings/SettingsWidgetsTest.kt:66:77 'field scaledDensity: Float' is deprecated. Deprecated in Java.
+
+> Task :common:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :common:processDebugUnitTestJavaRes UP-TO-DATE
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.conscrypt.NativeLibraryUtil in an unnamed module (file:/workspace/.tiplay-tools/gradle/caches/modules-2/files-2.1/org.conscrypt/conscrypt-openjdk-uber/2.6.2/65c5977595ee9cc12e6017b9d43b1d2e3d1bab63/conscrypt-openjdk-uber-2.6.2.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+> Task :common:testDebugUnitTest
+
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.conscrypt.NativeLibraryUtil in an unnamed module (file:/workspace/.tiplay-tools/gradle/caches/modules-2/files-2.1/org.conscrypt/conscrypt-openjdk-uber/2.6.2/65c5977595ee9cc12e6017b9d43b1d2e3d1bab63/conscrypt-openjdk-uber-2.6.2.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+
+> Task :common:lintAnalyzeDebug
+
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+
+> Task :common:testDebugUnitTest
+
+SmoothVideoHostLifecycleTest > aTimedOutRestartKeepsItsSinkUntilTheCodecIsReleased FAILED
+    java.lang.AssertionError at SmoothVideoHostLifecycleTest.kt:241
+
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+
+> Task :common:testDebugUnitTest
+
+1026 tests completed, 1 failed
+
+> Task :common:testDebugUnitTest FAILED

@@ -10,8 +10,11 @@ Phone settings, connection drafts, explicit apply/reconnect and boot behavior fo
 
 ## Current progress
 
-See `docs/WEB-DEBUG-2026-10-11.md` for the five-field Debug overlay, rolling statistics,
-synchronized frame timing, removal of the MSE/video fallback and measurement validation limits.
+See `docs/WEB-DEBUG-2026-10-12.md` for the current four-field Debug overlay, browser theme delivery,
+peer-initiated clock synchronization, Android lifecycle repairs and validation limits.
+The browser page is hosted over HTTPS only; the APK does not bundle it and the phone has no local `/play/` route.
+`docs/WEB-DEBUG-2026-10-11.md` retains the earlier implementation and playback-path history.
+See `docs/sweep-2026-10-12/TIE-UP.md` for main integration, final verification and delivery progress.
 
 See `docs/RECONNECT-UX-2026-10-11.md` for the pre-rendered reconnect wallpaper,
 portal integration, verification and delivery progress. Follow `docs/WEB-PAIRING-DESIGN.md`

@@ -425,6 +425,8 @@ class HotspotExtraAddressSettingsTest {
 
         assertEquals(HotspotAddressMethod.VPN, HotspotExtraAddressSettings.method(context))
         assertEquals(listOf(defaultAddress), VpnProbe.starts)
+        assertEquals("android.net.vpn.CONSENT", shadowOf(screen).nextStartedActivityForResult.intent.action)
+        // Robolectric keeps separate result-launch and application launch queues.
         assertEquals("android.net.vpn.CONSENT", shadowOf(screen).nextStartedActivity?.action)
         assertTrue(KeeperProbe.starts.isEmpty())
         assertTrue(screen.getString(R.string.settings_hotspot_vpn_consent) in shown(screen))
@@ -436,7 +438,7 @@ class HotspotExtraAddressSettingsTest {
         val allow = texts(again).filterIsInstance<Button>().single { it.text.toString() == again.getString(R.string.settings_hotspot_vpn_allow) }
         assertTrue(allow.isShown)
         allow.performClick()
-        assertEquals("android.net.vpn.CONSENT", shadowOf(again).nextStartedActivity?.action)
+        assertEquals("android.net.vpn.CONSENT", shadowOf(again).nextStartedActivityForResult.intent.action)
     }
 
     @Test fun anotherVpnOrTheWiredCarPlayVpnIsNeverReplaced() {

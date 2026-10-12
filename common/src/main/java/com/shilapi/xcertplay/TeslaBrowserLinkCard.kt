@@ -96,7 +96,7 @@ internal class TeslaBrowserLinkCard(
         }
         val vpnListener: (HotspotAddressVpn.State) -> Unit = { keeperListener(HotspotExtraAddressKeeper.state) }
         // Only while the rows are on screen; a new render replaces them.
-        status.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+        val attachment = object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(view: View) {
                 TeslaBrowserLink.addListener(stateListener)
                 HotspotExtraAddressKeeper.addListener(keeperListener)
@@ -112,7 +112,10 @@ internal class TeslaBrowserLinkCard(
                 HotspotExtraAddressKeeper.removeListener(keeperListener)
                 HotspotAddressVpn.removeListener(vpnListener)
             }
-        })
+        }
+        status.addOnAttachStateChangeListener(attachment)
+        // A refresh may build these rows inside a parent that is already on screen.
+        if (status.isAttachedToWindow) attachment.onViewAttachedToWindow(status)
     }
 
     private fun showState(line: TextView, state: TeslaBrowserLink.State) {

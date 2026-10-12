@@ -1,0 +1,105 @@
+{
+  "modules": {
+    "shared": {
+      "tests": 1227,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "common": {
+      "tests": 1027,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "samples/home": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "total_tests": 2258,
+  "regression_suites": {
+    "TEST-com.shilapi.xcertplay.orchestration.CarPlayControllerHeadUnitIntegrationsTest.xml": {
+      "name": "com.shilapi.xcertplay.orchestration.CarPlayControllerHeadUnitIntegrationsTest",
+      "tests": "4",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-11T17:27:31.781Z",
+      "hostname": "554b6a867d7c",
+      "time": "0.276"
+    },
+    "TEST-com.shilapi.xcertplay.airplay.PeerInitiatedTimingTest.xml": {
+      "name": "com.shilapi.xcertplay.airplay.PeerInitiatedTimingTest",
+      "tests": "1",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-11T17:26:54.831Z",
+      "hostname": "554b6a867d7c",
+      "time": "2.021"
+    },
+    "TEST-com.shilapi.xcertplay.CarPlayNightModeControllerTest.xml": {
+      "name": "com.shilapi.xcertplay.CarPlayNightModeControllerTest",
+      "tests": "23",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-11T17:50:47.503Z",
+      "hostname": "554b6a867d7c",
+      "time": "0.073"
+    },
+    "TEST-com.shilapi.xcertplay.HotspotExtraAddressSettingsTest.xml": {
+      "name": "com.shilapi.xcertplay.HotspotExtraAddressSettingsTest",
+      "tests": "31",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-11T17:46:32.093Z",
+      "hostname": "554b6a867d7c",
+      "time": "161.154"
+    },
+    "TEST-com.shilapi.xcertplay.TeslaBrowserLinkTest.xml": {
+      "name": "com.shilapi.xcertplay.TeslaBrowserLinkTest",
+      "tests": "24",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-11T17:52:58.043Z",
+      "hostname": "554b6a867d7c",
+      "time": "8.435"
+    },
+    "TEST-com.shilapi.xcertplay.BrowserSettingsLifecycleTest.xml": {
+      "name": "com.shilapi.xcertplay.BrowserSettingsLifecycleTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-11T17:49:41.707Z",
+      "hostname": "554b6a867d7c",
+      "time": "9.709"
+    },
+    "TEST-com.shilapi.xcertplay.BrowserMainPageTest.xml": {
+      "name": "com.shilapi.xcertplay.BrowserMainPageTest",
+      "tests": "27",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-11T17:49:54.275Z",
+      "hostname": "554b6a867d7c",
+      "time": "20.936"
+    },
+    "TEST-com.shilapi.xcertplay.BrowserMainHostTest.xml": {
+      "name": "com.shilapi.xcertplay.BrowserMainHostTest",
+      "tests": "10",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-11T17:49:25.586Z",
+      "hostname": "554b6a867d7c",
+      "time": "16.002"
+    }
+  }
+}

@@ -13,8 +13,6 @@ import java.net.URISyntaxException
  *   `buildLink` in `site/play/link.js` makes. `t` names the phone (`:port` only when it is not 8080) and stays in the
  *   address bar, so a bookmark reopens the same phone. It is left out for the page's default phone at port 8080, so
  *   the usual link is the page address and the code.
- * - The page the phone serves itself, for other browsers (Safari, Firefox): `http://<address>:8080/play/#c=<code>`.
- *   It talks to its own origin, so it needs no `t`.
  *
  * The code is always in the fragment, which never reaches the page host; the page saves it and removes the fragment,
  * so it stays out of bookmarks and the browser history.
@@ -69,6 +67,4 @@ internal object TeslaBrowserPageLinks {
         return path + (if (query.isEmpty()) "" else query.joinToString("&", prefix = "?")) + "#c=$code"
     }
 
-    /** The page the phone serves at [address], for browsers without the HTTPS page's features. */
-    fun phoneLink(address: String, code: String, port: Int): String = "http://$address:$port/play/#c=$code"
 }

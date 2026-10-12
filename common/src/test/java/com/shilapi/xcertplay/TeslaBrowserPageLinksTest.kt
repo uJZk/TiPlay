@@ -54,11 +54,6 @@ class TeslaBrowserPageLinksTest {
         }
     }
 
-    @Test fun theOtherBrowsersLinkOpensThePhonesOwnCopyOfThePage() {
-        assertEquals("http://10.176.81.135:8080/play/#c=1234", TeslaBrowserPageLinks.phoneLink("10.176.81.135", "1234", 8080))
-        assertEquals("http://100.109.220.253:8080/play/#c=000001", TeslaBrowserPageLinks.phoneLink("100.109.220.253", "000001", 8080))
-    }
-
     @Test fun aPageAddressIsAnHttpsUrlWithAHostAndNoFragment() {
         assertEquals("https://ujzk.github.io/DiPlay/", TeslaBrowserPageLinks.pageAddress("  https://ujzk.github.io/DiPlay/ "))
         assertEquals("https://car.example", TeslaBrowserPageLinks.pageAddress("https://car.example"))

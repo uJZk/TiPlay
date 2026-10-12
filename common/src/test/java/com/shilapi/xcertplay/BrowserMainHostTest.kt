@@ -100,6 +100,15 @@ class BrowserMainHostTest {
         assertFalse(AirPlayPersistence.loadHevcEnabled(activity))
     }
 
+    @Test fun idleReadinessDoesNotClaimReadyBeforeAnIphoneIsSelected() {
+        val main = field("browserMainPage") as BrowserMainSettingsMenu
+        main.draft.wireless = true
+        main.draft.phoneAddress = null
+        setField("browserConnectionRequested", false)
+        invoke("updateDebugOverlays")
+        assertEquals(activity.getString(com.shilapi.xcertplay.host.R.string.choose_your_iphone), main.status.text.toString())
+    }
+
     @Test fun savingConnectionDraftDoesNotOverwriteCustomResolution() {
         val draft = (field("browserMainPage") as BrowserMainSettingsMenu).draft
         draft.wireless = false

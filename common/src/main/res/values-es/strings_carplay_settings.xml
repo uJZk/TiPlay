@@ -13,4 +13,7 @@
     <string name="settings_startup_and_connection">Inicio y conexión</string>
     <string name="settings_connect_on_open_hint">Al abrir TiPlay, conectar con el modo guardado para el iPhone. Este interruptor se guarda inmediatamente.</string>
     <string name="settings_connection_mode_hint">Elige inalámbrico o USB. Se aplica al guardar y reconectar o en la próxima conexión.</string>
+    <string name="settings_hotspot_reading">Leyendo la información del punto de acceso…</string>
+    <string name="settings_hotspot_read_success">Información del punto de acceso leída. Comprueba el nombre y la contraseña antes de conectar.</string>
+    <string name="settings_hotspot_read_partial">Nombre del punto de acceso leído. La contraseña no está disponible; introdúcela manualmente.</string>
 </resources>

@@ -13,4 +13,7 @@
     <string name="settings_startup_and_connection">启动与连接</string>
     <string name="settings_connect_on_open_hint">打开 TiPlay 时，按保存的 iPhone 连接模式自动连接。此开关立即保存。</string>
     <string name="settings_connection_mode_hint">选择无线或 USB。点击“保存并重新连接”后生效，未连接时用于下次连接。</string>
+    <string name="settings_hotspot_reading">正在读取本机热点信息…</string>
+    <string name="settings_hotspot_read_success">已读取本机热点信息。连接前请检查名称和密码。</string>
+    <string name="settings_hotspot_read_partial">已读取热点名称，无法读取密码，请手动输入。</string>
 </resources>

@@ -203,7 +203,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private val browserLinkHost: TeslaBrowserLink.Host = object : TeslaBrowserLink.Host {
         override fun log(message: String) = AsyncDiagnosticLog.append(sessionLog, message)
         override fun onBrowserTheme(night: Boolean) {
-            nightModeController.systemChanged(night)
+            if (!headUnitIntegrations() && !shuttingDown.get()) nightModeController.systemChanged(night)
         }
         override fun onBrowserViewport(viewport: com.shilapi.xcertplay.web.BrowserViewport) {
             // TeslaBrowserLink already delivers this callback on the main thread.
@@ -4937,10 +4937,12 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun updateDebugOverlays() {
+        val idle = activeScreenStreamTypes.isEmpty() && !browserConnectionRequested && controller == null && !shuttingDown.get()
         browserMainPage?.update(
             if (activeScreenStreamTypes.isNotEmpty()) getString(R.string.carplay_connected)
-            else if (!browserConnectionRequested && controller == null) getString(R.string.ready_when_you_are)
+            else if (idle) getString(R.string.ready_when_you_are)
             else friendlyStage(latestStage), controller != null,
+            idle = idle,
         )
         statusScrollView?.visibility = View.GONE
         connectionPanel?.visibility = if (activeScreenStreamTypes.isEmpty()) View.VISIBLE else View.GONE

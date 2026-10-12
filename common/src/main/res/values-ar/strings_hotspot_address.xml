@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_hotspot_address_checking">جارٍ البحث عن نقطة اتصال هذا الهاتف…</string>
+    <string name="settings_hotspot_address_checking">جارٍ البحث عن عنوان نقطة اتصال هذا الجهاز…</string>
     <string name="settings_hotspot_current_address">عنوان نقطة الاتصال الحالي: %1$s</string>
     <string name="settings_hotspot_address_blocked">غالبًا لا يستطيع متصفح Tesla فتح هذا العنوان. اختر أدناه طريقة أخرى لعنوان نقطة الاتصال.</string>
     <string name="settings_hotspot_not_found">لم يُعثر على نقطة اتصال. شغّل نقطة اتصال هذا الهاتف.</string>

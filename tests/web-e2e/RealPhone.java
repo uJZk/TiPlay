@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The phone side of the browser link for phone-run.mjs, made of the app's own :shared classes: BrowserLinkServer with an
-// asset loader over a page directory, and a WebVideoHub fed through VideoTeeMediaSink → WebMediaSink with an H.264
+// API-only server, and a WebVideoHub fed through VideoTeeMediaSink → WebMediaSink with an H.264
 // Annex-B clip, the way CarPlayHostActivity.createMediaEngine wires a phone + browser session. Not part of CI; see
 // README.md.
 //
 // Single-file launch (JDK 17 or later):
-//   java -cp <shared classes>:<kotlin-stdlib.jar> tests/web-e2e/RealPhone.java --page site/play --port 0 \
+//   java -cp <shared classes>:<kotlin-stdlib.jar> tests/web-e2e/RealPhone.java --port 0 \
 //     --code 2718 --width 1280 --height 720 --fps 30 [--clip clip.h264] [--bind 0.0.0.0]
 // Without --clip it streams hand-made SPS/PPS and fake slices, which are enough for the transport.
-// stdout: one JSON object per line. stdin commands: restart, fit-on, fit-off, quit.
+// stdout: one JSON object per line. stdin commands: restart, portal, fit-on, fit-off, quit.
 import com.shilapi.xcertplay.airplay.AirPlayContact;
 import com.shilapi.xcertplay.airplay.MediaSink;
 import com.shilapi.xcertplay.airplay.VideoCodec;
 import com.shilapi.xcertplay.media.VideoTeeMediaSink;
 import com.shilapi.xcertplay.web.BrowserLinkServer;
 import com.shilapi.xcertplay.web.BrowserLinkStatus;
+import com.shilapi.xcertplay.web.BrowserPortalSignal;
 import com.shilapi.xcertplay.web.BrowserSize;
 import com.shilapi.xcertplay.web.BrowserViewport;
 import com.shilapi.xcertplay.web.WebMediaSink;
@@ -24,7 +25,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -68,7 +68,6 @@ public class RealPhone {
     private static void run(String[] args) throws Exception {
         Map<String, String> options = new HashMap<>();
         for (int i = 0; i + 1 < args.length; i += 2) options.put(args[i].replaceFirst("^--", ""), args[i + 1]);
-        Path page = Paths.get(options.getOrDefault("page", "site/play")).toAbsolutePath().normalize();
         String code = options.getOrDefault("code", "2718");
         int width = Integer.parseInt(options.getOrDefault("width", "1280"));
         int height = Integer.parseInt(options.getOrDefault("height", "720"));
@@ -99,7 +98,8 @@ public class RealPhone {
                         info == null ? null : new BrowserSize(info.getWidth(), info.getHeight()),
                         last == null ? null : last.getSize(),
                         true,
-                        Map.of("harness", "RealPhone"));
+                        Map.of("harness", "RealPhone"),
+                        BrowserPortalSignal.INSTANCE.getRevision());
                 }
 
                 @Override public boolean onTouch(List<AirPlayContact> contacts) {
@@ -126,17 +126,7 @@ public class RealPhone {
                 @Override public void log(String message) { emit("log", "source", "server", "message", message); }
             };
             server = new BrowserLinkServer(hub, callbacks, options.getOrDefault("bind", "0.0.0.0"),
-                Integer.parseInt(options.getOrDefault("port", "0")), () -> System.nanoTime() / 1_000_000, name -> {
-                    Path file = page.resolve(name).normalize();
-                    boolean inside = page.equals(file.getParent());
-                    emit("asset", "name", name, "inside", inside);
-                    if (!inside || !Files.isRegularFile(file)) return null;
-                    try {
-                        return Files.readAllBytes(file);
-                    } catch (Exception error) {
-                        return null;
-                    }
-                });
+                Integer.parseInt(options.getOrDefault("port", "0")), () -> System.nanoTime() / 1_000_000);
             // start() returns kotlin.Result<Int>, an inline class, so its JVM name is mangled.
             BrowserLinkServer.class.getMethod("start-d1pmJ48").invoke(server);
             if (server.getLocalPort() <= 0) {
@@ -167,7 +157,7 @@ public class RealPhone {
                 next.set((index + 1) % clip.units().size());
                 current.engineSink().onVideoFrame(MAIN_SCREEN, unit.bytes(), ++count[0] * frameNanos, System.nanoTime());
             }, frameNanos, frameNanos, TimeUnit.NANOSECONDS);
-            emit("listening", "port", server.getLocalPort(), "page", page.toString());
+            emit("listening", "port", server.getLocalPort());
 
             BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
             for (String line; (line = input.readLine()) != null; ) {
@@ -184,6 +174,7 @@ public class RealPhone {
                         retired.engineSink().onVideoConfig(MAIN_SCREEN, clip.avcC());
                         emit("restarted", "session", session.number());
                     }
+                    case "portal" -> BrowserPortalSignal.INSTANCE.request();
                     case "fit-on" -> reportViewport = true;
                     case "fit-off" -> reportViewport = false;
                     case "quit" -> {

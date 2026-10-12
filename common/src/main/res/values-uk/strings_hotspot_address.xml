@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_hotspot_address_checking">Пошук точки доступу цього телефону…</string>
+    <string name="settings_hotspot_address_checking">Пошук адреси точки доступу цього пристрою…</string>
     <string name="settings_hotspot_current_address">Поточна адреса точки доступу: %1$s</string>
     <string name="settings_hotspot_address_blocked">Браузер Tesla, імовірно, не відкриє цю адресу. Виберіть нижче інший спосіб адреси точки доступу.</string>
     <string name="settings_hotspot_not_found">Точку доступу не знайдено. Увімкніть точку доступу на цьому телефоні.</string>

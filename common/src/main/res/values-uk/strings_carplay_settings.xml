@@ -13,4 +13,7 @@
     <string name="settings_startup_and_connection">Запуск і підключення</string>
     <string name="settings_connect_on_open_hint">Під час відкриття TiPlay підключатися у збереженому режимі iPhone. Цей перемикач зберігається одразу.</string>
     <string name="settings_connection_mode_hint">Виберіть бездротове підключення або USB. Застосовується після збереження й повторного підключення або під час наступного підключення.</string>
+    <string name="settings_hotspot_reading">Читання даних точки доступу…</string>
+    <string name="settings_hotspot_read_success">Дані точки доступу прочитано. Перевірте назву й пароль перед підключенням.</string>
+    <string name="settings_hotspot_read_partial">Назву точки доступу прочитано. Пароль недоступний; введіть його вручну.</string>
 </resources>

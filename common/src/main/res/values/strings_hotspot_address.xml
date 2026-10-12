@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_hotspot_address_checking">Looking for this phone’s hotspot…</string>
+    <string name="settings_hotspot_address_checking">Looking for this device’s hotspot address…</string>
     <string name="settings_hotspot_current_address">Current hotspot address: %1$s</string>
     <string name="settings_hotspot_address_blocked">The Tesla browser probably cannot open this address. Choose another hotspot address method below.</string>
     <string name="settings_hotspot_not_found">No hotspot found. Turn on this phone’s hotspot.</string>

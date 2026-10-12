@@ -43,7 +43,7 @@ class TeslaBrowserLinkTest {
     private val context get() = RuntimeEnvironment.getApplication()
 
     /** A server whose bind answers from [binds]; it records its callbacks and every start and stop. */
-    private inner class FakeServer(val callbacks: BrowserLinkServer.Callbacks, val assets: (String) -> ByteArray?) :
+    private inner class FakeServer(val callbacks: BrowserLinkServer.Callbacks) :
         TeslaBrowserLink.Server {
         val stops = AtomicInteger()
         override fun start(): Result<Int> = binds.poll() ?: Result.success(TeslaBrowserLink.PORT)
@@ -57,9 +57,10 @@ class TeslaBrowserLinkTest {
 
     @Before fun setUp() {
         TeslaBrowserLink.resetForTest()
+        BrowserAppearance.update(mapOf("themeDark" to false))
         context.getSharedPreferences("tiplay_browser_link", 0).edit().clear().commit()
-        TeslaBrowserLink.serverFactory = TeslaBrowserLink.ServerFactory { _, callbacks, assets ->
-            FakeServer(callbacks, assets).also { servers += it }
+        TeslaBrowserLink.serverFactory = TeslaBrowserLink.ServerFactory { _, callbacks ->
+            FakeServer(callbacks).also { servers += it }
         }
         TeslaBrowserLink.backoffMillis = { 20L }
         TeslaBrowserLink.addListener(stateListener)
@@ -95,7 +96,7 @@ class TeslaBrowserLinkTest {
         assertTrue(context is TiPlayTestApplication)
         TeslaBrowserLink.serverFactory = TiPlayTestApplication.noSocketServers
         assertEquals(Result.success(8080), TiPlayTestApplication.noSocketServers.create(TeslaBrowserLink.hub,
-            org.mockito.Mockito.mock(BrowserLinkServer.Callbacks::class.java)) { null }.start())
+            org.mockito.Mockito.mock(BrowserLinkServer.Callbacks::class.java)).start())
     }
 
     @Test fun startListensOnceAndStopFreesThePort() {
@@ -296,6 +297,54 @@ class TeslaBrowserLinkTest {
         verify(session).requestSiri()
     }
 
+    @Test fun appearanceChangesReachTheMainThreadWithoutTheStatsLogThrottle() {
+        val server = started()
+        val seen = mutableListOf<Boolean>()
+        TeslaBrowserLink.attachHost(object : TeslaBrowserLink.Host {
+            override fun log(message: String) = Unit
+            override fun onBrowserFit() = Unit
+            override fun onBrowserTheme(night: Boolean) {
+                assertEquals(Looper.getMainLooper(), Looper.myLooper())
+                assertEquals(night, BrowserAppearance.night)
+                seen += night
+            }
+        })
+        shadowOf(Looper.getMainLooper()).idle()
+        seen.clear()
+        Thread {
+            server.callbacks.onBrowserStats(mapOf("themeDark" to true))
+            server.callbacks.onBrowserStats(mapOf("themeDark" to false))
+            server.callbacks.onBrowserStats(mapOf("themeDark" to "true"))
+        }.apply { start(); join() }
+        assertTrue(seen.isEmpty())
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf(true, false), seen)
+    }
+
+    @Test fun detachedAppearanceReachesTheRetainedPhoneSessionAndTheNextHost() {
+        val server = started()
+        val session = storeSession(phoneBrowser = true)
+        server.callbacks.onBrowserStats(mapOf("themeDark" to true))
+        shadowOf(Looper.getMainLooper()).idle()
+        verify(session).sendNightMode(true)
+        val seen = mutableListOf<Boolean>()
+        TeslaBrowserLink.attachHost(object : TeslaBrowserLink.Host {
+            override fun log(message: String) = Unit
+            override fun onBrowserFit() = Unit
+            override fun onBrowserTheme(night: Boolean) { seen += night }
+        })
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf(true), seen)
+    }
+
+    @Test fun detachedBrowserAppearanceDoesNotOverrideARetainedHeadUnitSession() {
+        val server = started()
+        val session = storeSession(phoneBrowser = false)
+        server.callbacks.onBrowserStats(mapOf("themeDark" to true))
+        shadowOf(Looper.getMainLooper()).idle()
+        verify(session, org.mockito.Mockito.never()).sendNightMode(true)
+    }
+
     @Test fun theStatusFollowsTheSessionTheStreamAndTheViewport() {
         val server = started()
         val idle = server.callbacks.status()
@@ -363,14 +412,8 @@ class TeslaBrowserLinkTest {
             TeslaBrowserLink.statsLine(emptyMap()))
     }
 
-    @Test fun thePageComesFromTheBundledAssets() {
-        val server = started()
-        // The build copies site/play/ into the generated assets (common/build.gradle.kts); unit tests see them merged.
-        val page = java.io.File("../site/play")
-        for (name in page.list()!!) {
-            assertTrue(name, server.assets(name)!!.contentEquals(java.io.File(page, name).readBytes()))
-        }
-        assertNull(server.assets("missing-file.js"))
+    @Test fun theAppDoesNotBundleTheBrowserPage() {
+        assertFalse(context.assets.list("")!!.contains("play"))
     }
 
     @Test fun headUnitSessionsGetTheAndroidSinkItself() {

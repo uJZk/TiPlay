@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_hotspot_address_checking">正在尋找這支手機的熱點…</string>
+    <string name="settings_hotspot_address_checking">正在尋找本機熱點位址…</string>
     <string name="settings_hotspot_current_address">目前熱點位址：%1$s</string>
     <string name="settings_hotspot_address_blocked">特斯拉瀏覽器很可能無法開啟這個位址。請在下方選擇其他熱點位址方式。</string>
     <string name="settings_hotspot_not_found">找不到熱點。請開啟這支手機的熱點。</string>

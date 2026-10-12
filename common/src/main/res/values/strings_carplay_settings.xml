@@ -13,4 +13,7 @@
     <string name="settings_startup_and_connection">Startup and connection</string>
     <string name="settings_connect_on_open_hint">When TiPlay opens, connect using the saved iPhone connection mode. This switch is saved immediately.</string>
     <string name="settings_connection_mode_hint">Choose Wireless or USB. The mode applies after Save and reconnect, or to the next connection.</string>
+    <string name="settings_hotspot_reading">Reading hotspot information…</string>
+    <string name="settings_hotspot_read_success">Hotspot information read. Check the name and password before connecting.</string>
+    <string name="settings_hotspot_read_partial">Hotspot name read. The password is unavailable; enter it manually.</string>
 </resources>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_hotspot_address_checking">正在查找这台手机的热点…</string>
+    <string name="settings_hotspot_address_checking">正在查找本机热点地址…</string>
     <string name="settings_hotspot_current_address">当前热点地址：%1$s</string>
     <string name="settings_hotspot_address_blocked">特斯拉浏览器很可能无法访问这个地址。请在下方选择其他热点地址方式。</string>
     <string name="settings_hotspot_not_found">未找到热点。请打开这台手机的热点。</string>

@@ -84,7 +84,7 @@
   分辨率按浏览器上报的视口 × DPR 协商；当前帧率新安装默认 30 fps，可在 CarPlay 设置中选 60 fps 后保存并重新连接。未保存编码选择时 HEVC 默认开启，显示分组保留关闭选项供 H.264 兼容。
   代码已完成（`TeslaBrowserLink`、`TeslaBrowserCanvas`，在 `CarPlayHostActivity` 的 `createMediaEngine` 分出视频），实车测试见 [TESLA_BROWSER.md](TESLA_BROWSER.md) 的清单。
 - [x] 网络：按下面"热点地址"和"传输层"的决定实现。
-  代码已完成：手机在所有 IPv4 地址的 8080 端口提供协议接口，也提供自带的页面副本（`http://<地址>:8080/play/`，给其他浏览器）；端口被占用时退避重试；Android 17 申请本地网络权限；连接期间持有唤醒锁和低延迟 Wi-Fi 锁。实车测试待做。
+  代码已完成：手机在所有 IPv4 地址的 8080 端口提供协议接口，不再打包或提供网页副本；端口被占用时退避重试；Android 17 申请本地网络权限；连接期间持有唤醒锁和低延迟 Wi-Fi 锁。实车测试待做。
 - [x] 触摸：Pointer Events 多点触控，每次 `requestAnimationFrame` 合并发送一次，换算后调用 `CarPlayController.sendTouch`。
   代码已完成（页面 `site/play/`，手机端 `BrowserTouchSlots` → `CarPlayController.sendTouch`；Home、返回和 Siri 键也已接通）。实车测试待做。
 
@@ -100,7 +100,7 @@
       旧地址 `play/` 只做转发（带上 `?t=` 和 `#c=`，并注销旧的 Service Worker）。默认手机地址 `100.109.220.253:8080` 不写 `?t=`，
       链接就是 `https://<页面地址>#c=<配对码>`；其他地址才加 `?t=<地址>`（端口不是 8080 时加 `:端口`）。带配对码、不带 `?t=` 的链接
       一律指默认地址，不沿用浏览器之前保存的地址。配对码仍然必需，只在 `#c=` 里出现一次，页面保存后删掉，所以首次打开后再加书签。
-      手机自带页面的链接不变（`http://<地址>:8080/play/#c=<配对码>`）。
+      App 内置页面及本地 `/play/` 入口已按用户要求移除，所有浏览器使用托管的 HTTPS 页面。
     - 站点地址由仓库变量 `SITE_BASE_URL` 决定（下载页的 canonical 等链接用它），换自定义域名的步骤见 [TESLA_BROWSER.md](TESLA_BROWSER.md) 第 1 节。
       国内：不用 `workers.dev`；`github.io` 不开代理可能不稳定；自定义域名指向 GitHub Pages 时仍由 GitHub 提供服务，要在车上不开代理实测。
     - [ ] 决定是否用自定义域名：需要一个域名，并在车上不开代理测试首次加载。

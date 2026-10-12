@@ -11,6 +11,8 @@ import com.shilapi.xcertplay.host.R
 /** Optional import alongside the original editable fields. Results never overwrite concurrent typing. */
 internal object LocalHotspotAutofill {
     private val probes = LatestSettingsProbe<LocalHotspotSettings.Credentials?>("tiplay-hotspot-read")
+    internal fun awaitProbesForTest(): Boolean = probes.awaitIdle()
+
     fun attach(parent: LinearLayout, ssid: EditText, password: EditText, controlsParent: LinearLayout = parent,
         showHint: Boolean = true): LinearLayout {
         val status = TextView(parent.context).apply {
@@ -29,14 +31,22 @@ internal object LocalHotspotAutofill {
         var token: LatestSettingsProbe.Token? = null
         fun read(replace: Boolean) {
             if (!parent.isShown || !parent.isAttachedToWindow) return
+            button.isEnabled = false
+            status.setText(R.string.settings_hotspot_reading)
+            status.visibility = if (showHint || replace) View.VISIBLE else View.GONE
             val beforeName = ssid.text.toString()
             val beforePassword = password.text.toString()
             token = probes.request(
                 work = { runCatching { LocalHotspotSettings.read(app) }.getOrNull() },
                 deliver = { result ->
+                    button.isEnabled = true
                     if (parent.isShown && parent.isAttachedToWindow) {
-                        status.setText(if (result == null) R.string.settings_hotspot_read_unavailable else R.string.settings_hotspot_read_hint)
-                        status.visibility = if (showHint || result == null) View.VISIBLE else View.GONE
+                        status.setText(when {
+                            result == null -> R.string.settings_hotspot_read_unavailable
+                            result.password == null -> R.string.settings_hotspot_read_partial
+                            else -> R.string.settings_hotspot_read_success
+                        })
+                        status.visibility = if (showHint || replace || result == null) View.VISIBLE else View.GONE
                         if (result != null) {
                             if (ssid.text.toString() == beforeName && (replace || beforeName.isBlank())) ssid.setText(result.ssid)
                             if (password.text.toString() == beforePassword && (replace || beforePassword.isBlank())) {
@@ -53,6 +63,7 @@ internal object LocalHotspotAutofill {
             override fun onViewDetachedFromWindow(view: View) {
                 probes.cancel(token)
                 token = null
+                button.isEnabled = true
             }
         })
         if (parent.isAttachedToWindow) parent.post { read(false) }

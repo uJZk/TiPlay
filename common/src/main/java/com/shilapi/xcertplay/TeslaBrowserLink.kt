@@ -15,7 +15,6 @@ import com.shilapi.xcertplay.web.BrowserSize
 import com.shilapi.xcertplay.web.BrowserViewport
 import com.shilapi.xcertplay.web.WebMediaSink
 import com.shilapi.xcertplay.web.WebVideoHub
-import java.io.FileNotFoundException
 import java.net.BindException
 import java.security.SecureRandom
 import java.util.Collections
@@ -35,7 +34,7 @@ import kotlin.math.floor
  * Phone + browser mode: the link between TiPlay and the car's browser (integration E1, protocol v1). Process-wide.
  *
  * It owns the [hub] that the CarPlay screen feeds ([tee]) and the [BrowserLinkServer] on port 8080 of every IPv4
- * address, which also serves the bundled page from the `play/` assets. [sync] runs the server while the run mode in
+ * address. [sync] runs the server while the run mode in
  * effect is phone + browser; binding happens on the link's own thread and is retried with a backoff while the port is
  * taken. The page's touches and keys go to the running CarPlay session; its viewport is saved for the next connection,
  * and its "Apply and reconnect" goes to the CarPlay screen ([Host]) on the main thread.
@@ -57,7 +56,7 @@ internal object TeslaBrowserLink {
     }
 
     fun interface ServerFactory {
-        fun create(hub: WebVideoHub, callbacks: BrowserLinkServer.Callbacks, assets: (String) -> ByteArray?): Server
+        fun create(hub: WebVideoHub, callbacks: BrowserLinkServer.Callbacks): Server
     }
 
     /** The CarPlay screen's part: its session log, and the browser's requests, on the main thread. */
@@ -71,8 +70,6 @@ internal object TeslaBrowserLink {
 
     const val PORT = BrowserLinkServer.DEFAULT_PORT
     const val STATS_LOG_INTERVAL_MILLIS = 10_000L
-    /** Where the build puts the copy of `site/play/` (see common/build.gradle.kts). */
-    const val ASSET_DIRECTORY = "play"
 
     private const val TAG = "TiPlayBrowserLink"
     private const val PREFS = "tiplay_browser_link"
@@ -97,9 +94,9 @@ internal object TeslaBrowserLink {
     private val SAFE_TEXT = Regex("[A-Za-z0-9._-]{1,32}")
 
     /** The app's server: every IPv4 address, so it answers on the hotspot's own and its extra address alike. */
-    val appServers = ServerFactory { hub, callbacks, assets ->
+    val appServers = ServerFactory { hub, callbacks ->
         val port = app?.let(BrowserEndpointSettings::port) ?: PORT
-        val server = BrowserLinkServer(hub, callbacks, "0.0.0.0", port, assets = assets)
+        val server = BrowserLinkServer(hub, callbacks, "0.0.0.0", port)
         object : Server {
             override fun start() = server.start()
             override fun stop() = server.stop()
@@ -377,7 +374,15 @@ internal object TeslaBrowserLink {
             }
         }
         override fun onBrowserStats(stats: Map<String, Any?>) {
-            BrowserAppearance.update(stats)?.let { night -> main.post { host.get()?.onBrowserTheme(night) } }
+            val reportedNight = stats["themeDark"] as? Boolean
+            if (reportedNight != null) main.post {
+                // Cache and deliver in the same order, even with concurrent browser requests.
+                BrowserAppearance.update(mapOf("themeDark" to reportedNight))
+                val screen = host.get()
+                if (screen != null) screen.onBrowserTheme(reportedNight)
+                else CarPlayBackgroundSession.snapshot()?.controller
+                    ?.takeIf { it.phoneBrowserMode() }?.sendNightMode(reportedNight)
+            }
             val now = clock()
             synchronized(statsLock) {
                 val last = lastStatsLog
@@ -401,7 +406,7 @@ internal object TeslaBrowserLink {
         }
         if (server != null) return
         val candidate = try {
-            serverFactory.create(hub, callbacks, ::asset)
+            serverFactory.create(hub, callbacks)
         } catch (error: Exception) {
             log("Browser link: server could not be created (${error.javaClass.simpleName})")
             null
@@ -439,15 +444,6 @@ internal object TeslaBrowserLink {
         app?.let { saveViewport(it, next) }
         log("Browser link: viewport ${TeslaBrowserCanvas.describe(next)}")
         main.post { host.get()?.onBrowserViewport(next) }
-    }
-
-    private fun asset(name: String): ByteArray? {
-        val app = app ?: return null
-        return try {
-            app.assets.open("$ASSET_DIRECTORY/$name").use { it.readBytes() }
-        } catch (_: FileNotFoundException) {
-            null
-        }
     }
 
     private fun log(message: String) {

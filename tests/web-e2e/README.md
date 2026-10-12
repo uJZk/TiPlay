@@ -42,8 +42,7 @@ even when the environment configures a system proxy.
 8. A `zh-CN` browser gets the Chinese page.
 9. The default phone (`100.109.220.253:8080`) leaves only the page address in the address bar, another phone keeps
    `?t=`, a link with a code and no `?t=` is for the default phone even after another one was saved, and the bare page
-   address keeps the saved phone. These run on `http://page.localhost`: the page treats a plain-HTTP IPv4 origin as the
-   phone's own copy, and a `*.localhost` name as the public page.
+   address keeps the saved phone. These run on `http://page.localhost`, a secure page origin separate from the phone.
 10. Each fallback rung decodes and maps a tap, with one feature taken away per run: `worker-chunks` (streams not
     transferable), `worker-frames` (no `OffscreenCanvas`) and `main` (no `VideoDecoder` in workers). Each run takes
     the display over, and the first page says so and stops instead of taking it back.
@@ -51,9 +50,7 @@ even when the environment configures a system proxy.
     requests; with the page server stopped the download page does not open.
 12. With the page server stopped, a reload and the pairing link (with `#c=`) are served by the Service Worker and decode
     again.
-13. Plain HTTP on a non-loopback LAN address disables Connect and names the secure WebCodecs requirement;
-    no `<video>` element or MSE/fMP4 playback path remains.
-14. The Debug switch shows five fields at the top center, does not intercept touches or replace the video session,
+13. The Debug switch shows four fields at the top center, does not intercept touches or replace the video session,
     and hides the overlay when disabled. Worker-stream, worker-chunk, worker-frame and main-thread paths all collect
     rolling presentation FPS and synthetic timestamp-to-draw latency. Synthetic timestamps validate the plumbing,
     not an actual iPhone capture-to-screen measurement.
@@ -61,11 +58,12 @@ even when the environment configures a system proxy.
 ## Real phone side (`phone-run.mjs`)
 
 `phone-run.mjs` checks the app's own phone side instead of the fake phone. `RealPhone.java` runs the compiled `:shared`
-classes the way a phone + browser session wires them: `BrowserLinkServer` with an asset loader over the page directory
-(as the app does over its bundled `assets/play/`), and a `WebVideoHub` fed through `VideoTeeMediaSink` → `WebMediaSink`
-with an H.264 Annex-B clip. Headless Chromium then opens the page that this server serves. CI does not run it.
+classes the way a phone + browser session wires them: an API-only `BrowserLinkServer`, and a `WebVideoHub` fed
+through `VideoTeeMediaSink` → `WebMediaSink` with an H.264 Annex-B clip. A separate static server hosts the page,
+matching the production HTTPS page + phone API arrangement. CI does not run it.
 
-The secure-context run checks the unsupported-H.264 message using the recorded Chromium build; the LAN run checks that unsupported non-secure contexts cannot start playback. The script then repeats with a
+The secure-context run checks the unsupported-H.264 message using the recorded Chromium build; a separate LAN
+page host checks that unsupported non-secure contexts cannot start playback. The script then repeats with a
 `VideoDecoder` stand-in inside the decoder worker that checks every chunk and outputs a plain frame.
 
 ### Requirements
@@ -76,7 +74,7 @@ The secure-context run checks the unsupported-H.264 message using the recorded C
 - The Kotlin standard library of the version in `gradle/libs.versions.toml`, found in the Gradle cache (set
   `KOTLIN_STDLIB` to the jar otherwise).
 - Optional: `ffmpeg` with libx264 for a real clip; without it `RealPhone.java` streams hand-made SPS/PPS and slices.
-- `PAGE_DIR` serves another copy of the page, for example the APK's: `common/build/generated/assets/bundleDebugBrowserPage/play`.
+- `PAGE_DIR` selects the separately hosted page source (default `site/play/`); the APK has no browser page assets.
 
 ### Run
 
@@ -86,12 +84,11 @@ NODE_PATH=/tmp/pw/node_modules node tests/web-e2e/phone-run.mjs
 
 ### What it checks
 
-1. `GET /` answers `302` to `/play/`; the page's files have their types, `no-cache`, `nosniff` and the page policy;
-   `/hello` keeps `no-store`; a foreign `Host` gets `421`.
-2. Loopback (a secure context): `/` keeps `#c=` through the redirect, the page stores the code and removes the fragment,
+1. `GET /`, `/play` and `/play/*` answer `404` without redirects; `/hello` keeps `no-store`; a foreign `Host` gets `421`.
+2. A separate loopback page host (a secure context): the page stores the explicit `?t=` phone address and code, removes the fragment,
    takes the Tesla path (worker), opens `/video` with the code, gets the config record (codec and canvas), says
    "This browser cannot decode H.264.", reports its viewport (CSS × DPR), sends a `/control` heartbeat every 400 ms and
-   a stats event, and registers its Service Worker under the served policy.
+   a stats event, and registers its Service Worker.
 3. The LAN address is not a secure context: Connect is disabled, the page explains the WebCodecs requirement,
    and no removed video element opens.
 4. With the decoder stand-in: the page's `dec` reaches the session's diagnostic handler as `first frame rendered`; key
@@ -103,8 +100,8 @@ NODE_PATH=/tmp/pw/node_modules node tests/web-e2e/phone-run.mjs
 5. The page from another origin (a static server with the page at its root, as the car opens the public HTTPS page)
    with `?t=`: it decodes a new session and its `dec` reaches that session, the phone echoes the page's origin with
    `Vary: Origin` and `no-store` on `/hello`, `/video` and `/control`, and a tap reaches `onTouch`.
-6. In every run: all requests go to the page's own origin (the phone's, for the page the phone serves), only `/video`
-   carries the code in its URL, no request sends a `Referer`, there are no CSP violations or page errors, and the phone
+6. In every run: requests go only to the page host and the phone, only `/video`
+   carries the code in its URL, no phone request sends a `Referer`, there are no CSP violations or page errors, and the phone
    never answers busy. The phone side never logs the code or a page session id.
 
 The script removes its Playwright request routes before it leaves the page: Playwright's interception can drop a

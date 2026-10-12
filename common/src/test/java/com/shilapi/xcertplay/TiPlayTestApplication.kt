@@ -16,7 +16,7 @@ class TiPlayTestApplication : Application() {
     }
 
     internal companion object {
-        val noSocketServers = TeslaBrowserLink.ServerFactory { _, _, _ ->
+        val noSocketServers = TeslaBrowserLink.ServerFactory { _, _ ->
             object : TeslaBrowserLink.Server {
                 override fun start(): Result<Int> = Result.success(TeslaBrowserLink.PORT)
                 override fun stop() = Unit

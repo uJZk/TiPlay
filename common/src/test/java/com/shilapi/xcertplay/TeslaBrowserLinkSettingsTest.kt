@@ -54,7 +54,7 @@ class TeslaBrowserLinkSettingsTest {
         HotspotProbe.reset()
         KeeperProbe.reset()
         TeslaBrowserLink.backoffMillis = { 10L }
-        TeslaBrowserLink.serverFactory = TeslaBrowserLink.ServerFactory { _, _, _ ->
+        TeslaBrowserLink.serverFactory = TeslaBrowserLink.ServerFactory { _, _ ->
             servers.incrementAndGet()
             object : TeslaBrowserLink.Server {
                 override fun start(): Result<Int> = if (failBinds.getAndDecrement() > 0) {
@@ -312,7 +312,7 @@ class TeslaBrowserLinkSettingsTest {
 
     @Test fun theAndroidAddressUsesTheConfiguredPort() {
         BrowserEndpointSettings.savePort(context, 8081)
-        TeslaBrowserLink.serverFactory = TeslaBrowserLink.ServerFactory { _, _, _ ->
+        TeslaBrowserLink.serverFactory = TeslaBrowserLink.ServerFactory { _, _ ->
             object : TeslaBrowserLink.Server {
                 override fun start() = Result.success(8081)
                 override fun stop() = Unit

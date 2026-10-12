@@ -88,6 +88,22 @@ class CarPlayControllerHeadUnitIntegrationsTest {
         assertTrue(home.hasCategory(Intent.CATEGORY_HOME))
     }
 
+    @Test fun detachedBrowserThemeUsesTheCurrentSessionAndStopsWithTheController() {
+        val controller = controller(headUnitIntegrations = false)
+        assertFalse(controller.sendNightMode(true))
+        val phone = phone()
+        sessionListener(controller).onSessionActive(phone)
+        assertTrue(controller.sendNightMode(true))
+        val commands = ReflectionHelpers.getField<java.util.concurrent.ExecutorService>(controller, "touchExecutor")
+        commands.submit {}.get(2, java.util.concurrent.TimeUnit.SECONDS)
+        // Before the event channel is ready AirPlay retains the command for its normal retry.
+        assertEquals(true, ReflectionHelpers.getField<Boolean?>(phone, "pendingNightMode"))
+        sessionListener(controller).onSessionEnded(phone)
+        assertFalse(controller.sendNightMode(false))
+        controller.close()
+        assertFalse(controller.sendNightMode(false))
+    }
+
     @Test fun headUnitIntegrationsStayOnByDefault() {
         assertTrue(CarPlayRuntimeConfig(mfiTarget = MfiTarget.LOCAL, identification = identification).headUnitIntegrations)
     }

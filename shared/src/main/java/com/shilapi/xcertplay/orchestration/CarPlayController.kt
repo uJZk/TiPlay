@@ -538,6 +538,22 @@ class CarPlayController(
         }
     }
 
+    /** Browser appearance still follows the car while the Android activity is detached. */
+    fun sendNightMode(night: Boolean): Boolean {
+        if (closed) return false
+        val session = activeSession ?: return false
+        return try {
+            touchExecutor.execute {
+                if (!closed && activeSession === session) {
+                    session.setNightMode(night)
+                }
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun sendTouch(contacts: List<AirPlayContact>): Boolean {
         if (closed) return false
         val session = activeSession ?: return false

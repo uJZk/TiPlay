@@ -23,7 +23,7 @@ export function isCode(value) {
 
 /**
  * Returns `a.b.c.d:port` or `localhost:port` (port 8080 when omitted), or null. The phone answers only IPv4 literals,
- * and `localhost` for the page it serves itself.
+ * and `localhost` for local diagnostics.
  */
 export function normalizeHost(value) {
   const match = HOST.exec(String(value ?? '').trim());
@@ -52,12 +52,12 @@ export function parseLinkSearch(search) {
 /**
  * The phone and code that the page's address names over the `saved` link, or null when it names neither. `?t=` (or the
  * older `#h=`) names the phone. A link with a code but no phone is a pairing link for DEFAULT_HOST, because links leave
- * `t` out for it; on the page the phone serves, it is for that phone. Without a code (a bookmark) the saved phone stays.
+ * `t` out for it. Without a code (a bookmark) the saved phone stays.
  */
-export function linkFromAddress(search, hash, saved, pageHost = null) {
+export function linkFromAddress(search, hash, saved) {
   const { host: bookmarked } = parseLinkSearch(search), linked = parseLinkHash(hash);
   if (!bookmarked && !linked.host && !linked.code) return null;
-  const host = bookmarked ?? linked.host ?? (linked.code ? pageHost ?? DEFAULT_HOST : saved.host);
+  const host = bookmarked ?? linked.host ?? (linked.code ? DEFAULT_HOST : saved.host);
   return { host, code: linked.code ?? saved.code };
 }
 
@@ -69,11 +69,11 @@ export function hostParam(host) {
 /**
  * The address-bar path for the current phone address: `?t=` names the phone so a bookmark reopens it, other query
  * parameters stay, and the fragment (which may hold the pairing code) is dropped. `t` is left out for DEFAULT_HOST, so
- * the usual link is the page's own address, and on a page the phone serves itself, which talks to its own origin.
+ * the usual link is the page's own address.
  */
-export function linkLocation(pathname, search, host, pageHost = null) {
+export function linkLocation(pathname, search, host) {
   const params = String(search ?? '').replace(/^\?/, '').split('&').filter(part => part && !/^t(=|$)/.test(part));
-  if (host && host !== DEFAULT_HOST && host !== pageHost) params.unshift(`t=${hostParam(host)}`);
+  if (host && host !== DEFAULT_HOST) params.unshift(`t=${hostParam(host)}`);
   return `${pathname}${params.length ? `?${params.join('&')}` : ''}`;
 }
 

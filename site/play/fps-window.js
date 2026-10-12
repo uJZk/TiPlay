@@ -23,9 +23,10 @@ export function createFpsWindow({ now = () => performance.now(), windowMs = 5000
     reset() { previous = null; samples = []; latencies = []; },
     stats(at = now()) {
       prune(at);
-      const average = (values, from, to) => {
-        const sorted = [...values].sort((a, b) => a.duration - b.duration);
-        const total = sorted.reduce((sum, sample) => sum + sample.count, 0);
+      const sortedSamples = [...samples].sort((a, b) => a.duration - b.duration);
+      const sortedLatencies = [...latencies].sort((a, b) => a.duration - b.duration);
+      const sampleCount = samples.reduce((sum, sample) => sum + sample.count, 0);
+      const average = (sorted, total, from, to) => {
         let position = 0, weightTotal = 0, sum = 0;
         // Fractional boundary weights keep percentages exact during warm-up.
         for (const sample of sorted) {
@@ -36,17 +37,17 @@ export function createFpsWindow({ now = () => performance.now(), windowMs = 5000
       };
       const fps = duration => duration > 0 ? 1000 / duration : null;
       return {
-        fps90: fps(average(samples, .05, .95)), fpsLow5: fps(average(samples, .95, 1)),
-        fpsSamples: samples.reduce((sum, sample) => sum + sample.count, 0),
-        latency90: average(latencies, .05, .95), latencyHigh5: average(latencies, .95, 1),
+        fps90: fps(average(sortedSamples, sampleCount, .05, .95)), fpsLow5: fps(average(sortedSamples, sampleCount, .95, 1)),
+        fpsSamples: sampleCount,
+        latency90: average(sortedLatencies, latencies.length, .05, .95), latencyHigh5: average(sortedLatencies, latencies.length, .95, 1),
         latencySamples: latencies.length,
       };
     },
   };
 }
 
+/** Codec and five-second presentation statistics for the Debug banner. */
 export function formatDebugFps(codec, stats = {}) {
-  const fps = value => Number.isFinite(value) && value >= 0 ? value.toFixed(1) : '—';
-  const ms = value => Number.isFinite(value) && value >= 0 ? `${value.toFixed(1)} ms` : '—';
-  return `${codec} • ${fps(stats.fps90)} • ${fps(stats.fpsLow5)} • ${ms(stats.latency90)} • ${ms(stats.latencyHigh5)}`;
+  const number = value => Number.isFinite(value) && value >= 0 ? String(Math.round(value)) : '—';
+  return `${codec} · ${number(stats.fps90)} fps · ${number(stats.latency90)} ms · ${number(stats.latencyHigh5)} ms`;
 }

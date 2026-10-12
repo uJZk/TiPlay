@@ -788,7 +788,7 @@ class AirPlaySession(
 
     private fun openTiming(peerPort: Int): Int {
         val port = ntp.listen()
-        if (peerPort > 0) peerAddress?.let { ntp.start(it, peerPort) }
+        peerAddress?.let { ntp.start(it, peerPort) }
         return port
     }
 

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { History, listen, closeServer } from './resources.mjs';
 // End-to-end check of the real phone side: RealPhone.java runs the app's BrowserLinkServer, WebVideoHub,
-// VideoTeeMediaSink and WebMediaSink (compiled :shared classes) with an H.264 clip, serves the page from a page
-// directory like the app does from its assets, and headless Chromium opens it. Not part of CI; see README.md.
+// VideoTeeMediaSink and WebMediaSink (compiled :shared classes) with an H.264 clip. A separate static server
+// hosts the browser page, matching the HTTPS page + phone protocol split. Not part of CI; see README.md.
 //
 // The first run forces an unsupported H.264 decoder to check transport and the page's message independently of
 // installed codecs. The LAN run checks the secure-context requirement; the third uses a decoder stand-in to verify chunks.
@@ -26,10 +26,6 @@ const JAVA = process.env.JAVA ?? 'java';
 const FFMPEG = process.env.FFMPEG ?? 'ffmpeg';
 const PAGE_DIR = process.env.PAGE_DIR ?? join(ROOT, 'site/play');
 const SHARED_CLASSES = process.env.SHARED_CLASSES ?? join(ROOT, 'shared/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes');
-/** The page's served policy, as BrowserLinkServer.PAGE_POLICY sends it. */
-const PAGE_POLICY = "default-src 'self'; connect-src 'self' http:; media-src 'none'; img-src 'self' data:; style-src 'self'; " +
-  "script-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
-
 // A VideoDecoder stand-in for the decoder worker: it checks the chunks the phone sent and draws a plain frame for each.
 const DECODER_STAND_IN = `(() => {
   const info = { chunks: 0, keys: 0, firstKeyTypes: null, firstDeltaTypes: null, badStartCodes: 0, failures: 0, configs: [], configsOverflow: 0 };
@@ -152,7 +148,7 @@ function encodeClip(dir) {
 /** Starts RealPhone.java and collects its JSON events. */
 async function startPhone(clip) {
   for (const path of [SHARED_CLASSES, PAGE_DIR]) if (!existsSync(path)) throw new Error(`${path} is missing; build :shared first (see README.md)`);
-  const args = ['-cp', `${SHARED_CLASSES}:${kotlinStdlib()}`, join(ROOT, 'tests/web-e2e/RealPhone.java'), '--page', PAGE_DIR, '--port', '0',
+  const args = ['-cp', `${SHARED_CLASSES}:${kotlinStdlib()}`, join(ROOT, 'tests/web-e2e/RealPhone.java'), '--port', '0',
     '--bind', '0.0.0.0', '--code', CODE, '--width', String(WIDTH), '--height', String(HEIGHT), '--fps', String(FPS)];
   if (clip) args.push('--clip', clip);
   const child = spawn(JAVA, args, { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -225,56 +221,47 @@ function watch(page) {
   return seen;
 }
 
-/** The checks every run shares: own origin only, the code only in /video, no Referer, no CSP or script errors. */
+/** Separate page/phone origins; the code only in /video, no Referer to the phone, no CSP or script errors. */
 async function checkRequests(page, seen, origin, label) {
   const counts = (await stats(page)).phone?.link?.counts ?? {};
   check(!counts.busy, `${label}: the phone never answered busy (${JSON.stringify(counts)})`);
   for (const history of Object.values(seen)) history.assertComplete();
-  const foreign = seen.requests.filter(request => new URL(request.url).origin !== origin);
-  check(!foreign.length, `${label}: every request goes to the phone's own origin ${origin}${foreign.length ? `, not ${foreign[0].url}` : ''}`);
+  const pageOrigin = new URL(page.url()).origin;
+  const foreign = seen.requests.filter(request => ![pageOrigin, origin].includes(new URL(request.url).origin));
+  check(!foreign.length, `${label}: requests go only to the page host and phone${foreign.length ? `, not ${foreign[0].url}` : ''}`);
   const leaks = seen.requests.filter(request => request.url.includes(CODE) && new URL(request.url).pathname !== '/video');
   check(!leaks.length, `${label}: only /video carries the pairing code in its URL${leaks.length ? `, not ${leaks[0].url}` : ''}`);
-  const referred = seen.requests.filter(request => request.headers.referer);
+  const referred = seen.requests.filter(request => new URL(request.url).origin === origin && request.headers.referer);
   check(!referred.length, `${label}: no request sends a Referer${referred.length ? ` (${referred[0].url})` : ''}`);
   const problems = seen.problems.filter(text => !/Failed to load resource|ERR_CONNECTION_RESET|ERR_EMPTY_RESPONSE|network error/i.test(text));
   check(!problems.length, `${label}: no CSP violations or page errors${problems.length ? `: ${problems.join(' | ')}` : ''}`);
 }
 
-/** Opens `${origin}/#c=CODE`: the redirect keeps the fragment, the page stores the code and drops the fragment. */
-async function openPage(context, origin, label) {
+/** Opens the separately hosted page with an explicit phone address and pairing fragment. */
+async function openPage(context, origin, phoneOrigin, label) {
   const page = await context.newPage();
   const seen = watch(page);
-  await page.goto(`${origin}/#c=${CODE}`);
+  const phoneHost = new URL(phoneOrigin).host;
+  await page.goto(`${origin}/?t=${phoneHost}#c=${CODE}`);
   const state = await page.evaluate(() => ({ href: location.href, hash: location.hash, link: localStorage.getItem('tiplay.link') }));
-  check(state.href === `${origin}/play/` && state.hash === '',
-    `${label}: / redirects to /play/ and the page removes #c= from the address (${state.href})`);
+  check(state.href === `${origin}/?t=${phoneHost}` && state.hash === '',
+    `${label}: the hosted page keeps the phone address and removes #c= (${state.href})`);
   const stored = JSON.parse(state.link ?? 'null');
-  check(stored?.code === CODE && stored?.host === new URL(origin).host, `${label}: the code is stored and the phone address is the page's own (${stored?.host})`);
+  check(stored?.code === CODE && stored?.host === phoneHost, `${label}: the code and explicit phone address are stored (${stored?.host})`);
   return { page, seen };
 }
 
-async function checkAssets(origin) {
-  const root = await fetch(`${origin}/`, { redirect: 'manual' });
-  check(root.status === 302 && root.headers.get('location') === '/play/', `GET / answers 302 to ${root.headers.get('location')}`);
-  await root.arrayBuffer();
-  for (const [path, type] of [['/play/', 'text/html; charset=utf-8'], ['/play/app.js', 'text/javascript; charset=utf-8'],
-    ['/play/sw.js', 'text/javascript; charset=utf-8'], ['/play/style.css', 'text/css; charset=utf-8'], ['/play/icon.svg', 'image/svg+xml'], ['/play/reconnect-wallpaper-blurred.png', 'image/png']]) {
-    const response = await fetch(`${origin}${path}`);
-    const headers = Object.fromEntries(response.headers);
-    check(response.status === 200 && headers['content-type'] === type && headers['cache-control'] === 'no-cache' &&
-      headers['x-content-type-options'] === 'nosniff' && headers['content-security-policy'] === PAGE_POLICY,
-    `${path} is served as ${headers['content-type']} with no-cache, nosniff and the page policy`);
-    const body = Buffer.from(await response.arrayBuffer());
-    if (path.endsWith('.png')) {
-      check(body.equals(readFileSync(join(PAGE_DIR, 'reconnect-wallpaper-blurred.png'))),
-        'the phone serves the wallpaper bytes unchanged');
-    }
+async function checkProtocolOnly(origin) {
+  for (const path of ['/', '/play', '/play/', '/play/app.js', '/play/sw.js', '/play/reconnect-wallpaper-blurred.png']) {
+    const response = await fetch(`${origin}${path}`, { redirect: 'manual' });
+    check(response.status === 404 && !response.headers.has('location') &&
+      await response.json().then(value => value.error === 'not-found'), `${path} no longer serves or redirects to a bundled page`);
   }
   const hello = await fetch(`${origin}/hello`);
-  check(hello.headers.get('cache-control') === 'no-store' && !hello.headers.get('content-security-policy') &&
+  check(hello.headers.get('cache-control') === 'no-store' &&
     await hello.json().then(value => value.app === 'TiPlay' && value.protocol === 1 && Number.isFinite(value.clockMs)), '/hello keeps no-store and names TiPlay protocol 1');
-  const foreignHost = await rawStatus(origin, 'GET /play/ HTTP/1.1\r\nHost: tiplay.example\r\nConnection: close\r\n\r\n');
-  check(foreignHost === 421, `a page request for Host tiplay.example answers ${foreignHost} (DNS-rebinding defence)`);
+  const foreignHost = await rawStatus(origin, 'GET /hello HTTP/1.1\r\nHost: tiplay.example\r\nConnection: close\r\n\r\n');
+  check(foreignHost === 421, `a protocol request for Host tiplay.example answers ${foreignHost} (DNS-rebinding defence)`);
 }
 
 /** Sends a raw request and returns the response status. */
@@ -327,7 +314,7 @@ function startPageHost() {
     res.writeHead(200, { 'Content-Type': types[name.split('.').pop()] ?? 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(readFileSync(file));
   });
-  return listen(server, '127.0.0.1');
+  return listen(server, '0.0.0.0');
 }
 
 /** Stats keys that TeslaBrowserLink.statsLine puts in the session log (its STATS_FIELDS). */
@@ -339,7 +326,7 @@ function statsLogKeys() {
 
 async function main() {
   const dir = mkdtempSync(join(tmpdir(), 'tiplay-phone-e2e-'));
-  let phone, browser;
+  let phone, browser, pageHost;
   try {
     const clip = encodeClip(dir);
     phone = await startPhone(clip);
@@ -355,7 +342,9 @@ async function main() {
     const sessions = new Set();
     let standInSession;
     const local = `http://127.0.0.1:${phone.port}`;
-    await checkAssets(local);
+    await checkProtocolOnly(local);
+    pageHost = await startPageHost();
+    const pageOrigin = `http://127.0.0.1:${pageHost.address().port}`;
 
     // 1. Secure context (loopback): explicitly test the unsupported-codec branch on the Tesla path.
     {
@@ -365,7 +354,7 @@ async function main() {
         await route.fulfill({ response, body: `if (self.VideoDecoder) self.VideoDecoder.isConfigSupported = async config => ({ supported: false, config });\n${await response.text()}` });
       });
       const mark = phone.events.length;
-      const { page, seen } = await openPage(context, local, 'loopback');
+      const { page, seen } = await openPage(context, pageOrigin, local, 'loopback');
       const opened = await waitFor('the video stream', () => phone.logs(mark).find(text => text.startsWith('Browser link: video stream opened')));
       check(true, `the page opened /video with the code (${opened})`);
       const first = await waitFor('the config record', async () => {
@@ -397,7 +386,7 @@ async function main() {
         `onBrowserStats got the page's stats with path and the unsupported codec (${Object.keys(st.values).length} fields)`);
       const registered = await waitFor('the service worker', () => page.evaluate(() =>
         navigator.serviceWorker.getRegistration().then(registration => Boolean(registration?.active))), 8000).catch(() => false);
-      check(registered, 'the service worker registers under the served policy');
+      check(registered, 'the separately hosted page registers its service worker');
       const video = seen.requests.find(request => new URL(request.url).pathname === '/video');
       sessions.add(new URL(video.url).searchParams.get('s'));
       await checkRequests(page, seen, local, 'loopback');
@@ -406,7 +395,7 @@ async function main() {
 
     // 2. Plain HTTP outside loopback does not offer a video/MSE fallback.
     if (address) {
-      const lan = `http://${address}:${phone.port}`;
+      const lan = `http://${address}:${pageHost.address().port}`;
       const context = await browser.newContext();
       const page = await context.newPage();
       await page.goto(lan);
@@ -426,7 +415,7 @@ async function main() {
       phone.command('restart');
       standInSession = (await waitFor('the stand-in session', () => phone.since(startMark, 'restarted').at(-1))).session;
       const mark = phone.events.length;
-      const { page, seen } = await openPage(context, local, 'stand-in');
+      const { page, seen } = await openPage(context, pageOrigin, local, 'stand-in');
       const rendered = await waitFor('"first frame rendered"', () => phone.since(mark, 'diagnostic').find(event => event.message === 'first frame rendered'));
       check(rendered.session === standInSession, 'the page decoded the fresh epoch and its "dec" reached the session\'s diagnostic handler as "first frame rendered"');
       await waitFor('decoded frames', async () => (await stats(page)).page.video.decodedFps > 0);
@@ -450,6 +439,10 @@ async function main() {
       const size = await page.evaluate(() => window.tiplayStats && JSON.stringify(window.tiplayStats.page).length);
       log(`stats snapshot ${size} bytes; st event ${JSON.stringify(st.values).length} bytes of 2048`);
 
+      // The action lives in the portal; the CarPlay icon opens it through the real status revision.
+      await waitFor('a canvas mismatch', async () => (await stats(page)).status.fit === true);
+      phone.command('portal');
+      await page.waitForSelector('#panel:not([hidden])');
       // "Apply and reconnect" shows while status.fit is true and sends {"k":"fit"}.
       await page.waitForSelector('#fit:not([hidden])', { timeout: 5000 });
       const fitMark = phone.events.length;
@@ -459,6 +452,8 @@ async function main() {
       phone.command('fit-off');
       await page.waitForSelector('#fit', { state: 'hidden', timeout: 5000 });
       check(true, 'the button hides once the status no longer asks to fit');
+      await page.click('#connect');
+      await page.waitForSelector('#stage:not([hidden])');
 
       // A decoder error: the page asks for a key frame, the hub asks the session, and the picture comes back.
       const keyMark = phone.events.length;
@@ -474,7 +469,8 @@ async function main() {
       const restartMark = phone.events.length;
       phone.command('restart');
       const second = await waitFor('"first frame rendered" for the next session',
-        () => phone.since(restartMark, 'diagnostic').find(event => event.session === standInSession + 1 && event.message === 'first frame rendered'));
+        () => phone.since(restartMark, 'diagnostic').find(event => event.session === standInSession + 1 && event.message === 'first frame rendered'))
+        .catch(async error => { throw new Error(`${error.message}; restart evidence ${JSON.stringify(phone.events.slice(restartMark).filter(event => ['restarted', 'diagnostic', 'keyframe-request', 'log'].includes(event.event)))}; page ${JSON.stringify(await stats(page))}`); });
       check(Boolean(second) && phone.logs(restartMark).filter(text => text.startsWith('Web video: stream started')).length === 1,
         'after a restart the page decoded the next epoch of the new session; the retired session\'s late screen did not take the hub');
       const decodedAfterRestart = (await stats(page)).page.video.decoded;
@@ -495,7 +491,7 @@ async function main() {
       await context.unrouteAll();
       await page.goto('about:blank');
       await waitFor('the bye', () => phone.logs(byeMark).includes('Browser link: session ended by the page'))
-        .catch(error => { throw new Error(`${error.message}; the phone logged ${JSON.stringify(phone.events.slice(byeMark).filter(event => event.event !== 'asset'))}; bye ${byes}`); });
+        .catch(error => { throw new Error(`${error.message}; the phone logged ${JSON.stringify(phone.events.slice(byeMark))}; bye ${byes}`); });
       byes.assertComplete();
       check(true, 'leaving the page ends its session with /bye');
       await context.close();
@@ -557,7 +553,11 @@ async function main() {
     log('all checks passed');
   } finally {
     try { await browser?.close(); } finally {
-      try { await phone?.close(); } finally { rmSync(dir, { recursive: true, force: true }); }
+      try { await phone?.close(); } finally {
+        try { if (pageHost) await closeServer(pageHost); } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      }
     }
     if (phone?.stderr.length) log(`RealPhone stderr:\n${phone.stderr.join('\n')}`);
   }

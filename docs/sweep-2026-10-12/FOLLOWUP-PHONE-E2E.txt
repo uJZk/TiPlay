@@ -1,0 +1,56 @@
+[phone-e2e] RealPhone listens on port 40351 with 90 access units (file), page /workspace/TiPlay/site/play
+[phone-e2e] ok - / no longer serves or redirects to a bundled page
+[phone-e2e] ok - /play no longer serves or redirects to a bundled page
+[phone-e2e] ok - /play/ no longer serves or redirects to a bundled page
+[phone-e2e] ok - /play/app.js no longer serves or redirects to a bundled page
+[phone-e2e] ok - /play/sw.js no longer serves or redirects to a bundled page
+[phone-e2e] ok - /play/reconnect-wallpaper-blurred.png no longer serves or redirects to a bundled page
+[phone-e2e] ok - /hello keeps no-store and names TiPlay protocol 1
+[phone-e2e] ok - a protocol request for Host tiplay.example answers 421 (DNS-rebinding defence)
+[phone-e2e] ok - loopback: the hosted page keeps the phone address and removes #c= (http://127.0.0.1:35623/?t=127.0.0.1:40351)
+[phone-e2e] ok - loopback: the code and explicit phone address are stored (127.0.0.1:40351)
+[phone-e2e] ok - the page opened /video with the code (Browser link: video stream opened codecs=avc1,vp8,vp09,av01)
+[phone-e2e] ok - a secure context takes the Tesla path (worker)
+[phone-e2e] ok - the page got the config record: avc1.42c01f 1280x720
+[phone-e2e] ok - without an H.264 decoder the page says "This browser cannot decode H.264."
+[phone-e2e] ok - onViewport got 1500x1050 (css 1000x700, dpr 1.5) for the video area
+[phone-e2e] ok - 4 /control requests in 2 s (one heartbeat every 400 ms)
+[phone-e2e] ok - onBrowserStats got the page's stats with path and the unsupported codec (40 fields)
+[phone-e2e] ok - the separately hosted page registers its service worker
+[phone-e2e] ok - loopback: the phone never answered busy ({"control":16,"configRecords":1,"frameRecords":134})
+[phone-e2e] ok - loopback: requests go only to the page host and phone
+[phone-e2e] ok - loopback: only /video carries the pairing code in its URL
+[phone-e2e] ok - loopback: no request sends a Referer
+[phone-e2e] ok - loopback: no CSP violations or page errors
+[phone-e2e] ok - LAN page explains the secure WebCodecs requirement
+[phone-e2e] ok - LAN page has no removed video element
+[phone-e2e] ok - stand-in: the hosted page keeps the phone address and removes #c= (http://127.0.0.1:35623/?t=127.0.0.1:40351)
+[phone-e2e] ok - stand-in: the code and explicit phone address are stored (127.0.0.1:40351)
+[phone-e2e] ok - the page decoded the fresh epoch and its "dec" reached the session's diagnostic handler as "first frame rendered"
+[phone-e2e] ok - key frames arrive as SPS, PPS and IDR slices, deltas as slices, all with 4-byte start codes (14 chunks, 1 keys)
+[phone-e2e] ok - the decoder config evidence remains complete
+[phone-e2e] ok - VideoDecoder is configured as avc1.42c01f 1280x720, without a description
+[phone-e2e] ok - the status line reads "H.264 · 2 fps"
+[phone-e2e] ok - stand-in: a tap at 0.25/0.75 reaches onTouch as [[0,0.25,0.75,true],[1,0,0,false]] then [[0,0.25,0.75,false],[1,0,0,false]]
+[phone-e2e] ok - the page's st event has every field of the session log line (link.path, video.codec, video.decodedFps, video.decodeMsP95, video.gaps, video.dropped, video.decodeErrors, link.reconnects)
+[phone-e2e] stats snapshot 926 bytes; st event 1042 bytes of 2048
+[phone-e2e] ok - "Apply and reconnect" reaches onFit
+[phone-e2e] ok - the button hides once the status no longer asks to fit
+[phone-e2e] ok - after a decoder error the page's "kf" reached the session's recovery handler; the repeated config kept the epoch
+[phone-e2e] ok - after a restart the page decoded the next epoch of the new session; the retired session's late screen did not take the hub
+[phone-e2e] ok - the page keeps decoding the new session
+[phone-e2e] ok - stand-in: the phone never answered busy ({"control":90,"configRecords":3,"frameRecords":760})
+[phone-e2e] ok - stand-in: requests go only to the page host and phone
+[phone-e2e] ok - stand-in: only /video carries the pairing code in its URL
+[phone-e2e] ok - stand-in: no request sends a Referer
+[phone-e2e] ok - stand-in: no CSP violations or page errors
+[phone-e2e] ok - leaving the page ends its session with /bye
+[phone-e2e] ok - a page from another origin decodes the new session and its "dec" reaches that session
+[phone-e2e] ok - the phone echoes the page's origin with Vary: Origin and no-store on /hello, /control, /video
+[phone-e2e] ok - other origin: a tap at 0.6/0.3 reaches onTouch as [[0,0.6,0.3,true],[1,0,0,false]] then [[0,0.6,0.3,false],[1,0,0,false]]
+[phone-e2e] ok - other origin: only /video carries the code in its URL, and no request to the phone sends a Referer
+[phone-e2e] ok - other origin: the phone never answered busy
+[phone-e2e] ok - the phone side never logs or reports the pairing code
+[phone-e2e] ok - the phone side never logs a page session id (3 sessions)
+[phone-e2e] ok - no tap or server failures
+[phone-e2e] all checks passed

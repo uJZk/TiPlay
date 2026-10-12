@@ -32,7 +32,7 @@ test('warm-up, expiration and reset never retain stale data', () => {
   window.frame(6000, 1, -1);
   assert.equal(window.stats(6000).fps90, null);
   assert.equal(window.stats(6000).latency90, null);
-  assert.equal(formatDebugFps('H.264'), 'H.264 • — • — • — • —');
+  assert.equal(formatDebugFps('H.264'), 'H.264 · — fps · — ms · — ms');
 });
 
 test('browser clock bridge rejects missing, slow, expired and future timestamps', () => {
@@ -44,4 +44,11 @@ test('browser clock bridge rejects missing, slow, expired and future timestamps'
   assert.equal(captureTime(90, clock, 16021), null);
   assert.equal(captureTime(1000, clock, 1030), null);
   assert.equal(captureTime(90, null, 1030), null);
+});
+
+test('Debug has exactly four fields without hardware/software labels', () => {
+  const stats = { fps90: 59.8, fpsLow5: 12, latency90: 5.2, latencyHigh5: 34.1, acceleration: 'prefer-hardware' };
+  assert.equal(formatDebugFps('HEVC', stats), 'HEVC · 60 fps · 5 ms · 34 ms');
+  assert.equal(formatDebugFps('HEVC', { ...stats, acceleration: 'prefer-software' }), 'HEVC · 60 fps · 5 ms · 34 ms');
+  assert.equal(formatDebugFps('HEVC', stats).split(' · ').length, 4);
 });

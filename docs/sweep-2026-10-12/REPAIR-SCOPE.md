@@ -1,0 +1,47 @@
+# Authorized repair scope
+
+The user explicitly requested these behavior repairs alongside incremental cleanup. Adjacent/new regression files are included only to verify those repairs. See RESULT-* for ownership and reasons. Original upstream identifiers and retained compatibility sources stay intact.
+
+- `AGENTS.md`
+- `common/src/main/java/com/shilapi/xcertplay/BrowserMainSettingsMenu.kt`
+- `common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt`
+- `common/src/main/java/com/shilapi/xcertplay/HotspotExtraAddressCard.kt`
+- `common/src/main/java/com/shilapi/xcertplay/LocalHotspotAutofill.kt`
+- `common/src/main/java/com/shilapi/xcertplay/TeslaBrowserLink.kt`
+- `common/src/main/java/com/shilapi/xcertplay/TeslaBrowserLinkCard.kt`
+- `common/src/main/res/values-ar/strings_carplay_settings.xml`
+- `common/src/main/res/values-ar/strings_hotspot_address.xml`
+- `common/src/main/res/values-es/strings_carplay_settings.xml`
+- `common/src/main/res/values-es/strings_hotspot_address.xml`
+- `common/src/main/res/values-ru/strings_carplay_settings.xml`
+- `common/src/main/res/values-ru/strings_hotspot_address.xml`
+- `common/src/main/res/values-uk/strings_carplay_settings.xml`
+- `common/src/main/res/values-uk/strings_hotspot_address.xml`
+- `common/src/main/res/values-zh-rCN/strings_carplay_settings.xml`
+- `common/src/main/res/values-zh-rCN/strings_hotspot_address.xml`
+- `common/src/main/res/values-zh-rTW/strings_carplay_settings.xml`
+- `common/src/main/res/values-zh-rTW/strings_hotspot_address.xml`
+- `common/src/main/res/values/strings_carplay_settings.xml`
+- `common/src/main/res/values/strings_hotspot_address.xml`
+- `common/src/test/java/com/shilapi/xcertplay/BrowserMainHostTest.kt`
+- `common/src/test/java/com/shilapi/xcertplay/BrowserMainPageTest.kt`
+- `common/src/test/java/com/shilapi/xcertplay/CarPlayNightModeControllerTest.kt`
+- `common/src/test/java/com/shilapi/xcertplay/HotspotExtraAddressSettingsTest.kt`
+- `common/src/test/java/com/shilapi/xcertplay/TeslaBrowserLinkTest.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlaySession.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/NtpClock.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/orchestration/CarPlayControllerHeadUnitIntegrationsTest.kt`
+- `site/play/app.js`
+- `site/play/fps-window.js`
+- `site/play/sw.js`
+- `site/play/video.js`
+- `tests/web-e2e/README.md`
+- `tests/web-e2e/RealPhone.java`
+- `tests/web-e2e/phone-run.mjs`
+- `tests/web-e2e/run.mjs`
+- `tests/web/debug-window.test.mjs`
+- `tests/web/video.test.mjs`
+- `common/src/test/java/com/shilapi/xcertplay/BrowserSettingsLifecycleTest.kt`
+- `docs/WEB-DEBUG-2026-10-12.md`
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/PeerInitiatedTimingTest.kt`

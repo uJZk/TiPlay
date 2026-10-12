@@ -7,8 +7,9 @@ USB does not remove the browser's network configuration. Audio stays on the iPho
 ## Hosting and playback
 
 The hosted page needs HTTPS because WebCodecs requires a secure context. The phone relays the iPhone's encoded video
-without re-encoding it and receives browser touch input. Plain HTTP at a LAN address can load the bundled page but
-cannot provide the secure context needed for playback; localhost is a browser exception. Do not restore a video/MSE
+without re-encoding it and receives browser touch input. The app does not bundle or serve the browser page. It
+provides `/hello`, `/video`, `/control` and `/bye`; GET `/`, `/play` and `/play/*` return `404`. Plain HTTP at a LAN
+address cannot provide the secure context needed for playback; localhost is a browser exception. Do not restore a video/MSE
 fallback: vehicle browsers can pause that path while driving.
 
 The App's page address and the deployment's public base URL must agree. Their authoritative sources are
@@ -45,7 +46,7 @@ Only one browser presents CarPlay at a time; a newly paired browser can take ove
 otherwise correct requests during its lockout, so repeated retries are not a recovery strategy. The limits are defined
 by [the pairing gate](../shared/src/main/java/com/shilapi/xcertplay/web/BrowserPairingGate.kt), rather than duplicated here.
 
-The static page and discovery response are reachable without a pairing code; video and control require authentication.
+The separately hosted static page and the phone's discovery response are reachable without a pairing code; video and control require authentication.
 The local video transport is not encrypted. An HTTPS page protects static-page delivery and enables WebCodecs; it does
 not turn the HTTP connection to the phone into TLS. Protect the shared network with its Wi-Fi security.
 
@@ -73,8 +74,11 @@ CarPlay has no product header over its canvas. Its TiPlay icon returns to the po
 the portal returns to the picture without creating a second connection. Connect appears above Disconnect on the portal.
 Disconnect explicitly stops both the connection and automatic retries; returning to settings does not.
 
-Debug measures canvas submission and synchronized frame timing. It cannot establish the physical display's presentation
+Debug shows exactly four fields: codec, five-second middle-90% FPS, middle-90% latency and slowest-5% latency,
+for example `HEVC · 60 fps · 5 ms · 34 ms`. Hardware/software labels are omitted. Debug measures canvas submission
+and synchronized frame timing. It cannot establish the physical display's presentation
 time. Missing or expired timing data must remain unknown rather than substituting transport arrival time as latency.
+See [current implementation and verification](WEB-DEBUG-2026-10-12.md).
 
 ## Browser session lifecycle
 

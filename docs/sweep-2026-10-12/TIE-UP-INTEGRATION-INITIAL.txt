@@ -1,0 +1,138 @@
+Calculating task graph as no cached configuration is available for tasks: :common:testDebugUnitTest --tests *SmoothVideoHostLifecycleTest.aTimedOutRestartKeepsItsSinkUntilTheCodecIsReleased* --tests *BrowserMainPageTest* --tests *BrowserSettingsLifecycleTest* --tests *HotspotExtraAddressSettingsTest* --tests *TeslaBrowserLinkSettingsTest* --tests *TeslaBrowserPageLinksTest*
+> Task :common:preBuild UP-TO-DATE
+> Task :common:preDebugBuild UP-TO-DATE
+> Task :common:generateDebugResources
+> Task :common:packageDebugResources
+> Task :common:processDebugNavigationResources
+> Task :common:parseDebugLocalResources
+> Task :common:generateDebugRFile
+> Task :shared:preBuild UP-TO-DATE
+> Task :shared:preDebugBuild UP-TO-DATE
+> Task :shared:generateDebugResources UP-TO-DATE
+> Task :shared:packageDebugResources UP-TO-DATE
+> Task :shared:processDebugNavigationResources UP-TO-DATE
+> Task :shared:parseDebugLocalResources UP-TO-DATE
+> Task :shared:generateDebugRFile UP-TO-DATE
+
+> Task :shared:compileDebugKotlin
+w: file:///workspace/TiPlay/shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt:72:41 'val allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java.
+
+> Task :shared:javaPreCompileDebug UP-TO-DATE
+> Task :shared:compileDebugJavaWithJavac NO-SOURCE
+> Task :shared:bundleLibCompileToJarDebug
+> Task :common:compileDebugKotlin
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/BrowserMainSettingsMenu.kt:270:34 'val allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt:1694:22 Condition is always 'false'.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt:3497:73 'val defaultDisplay: Display!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt:3497:88 'fun getRealMetrics(p0: DisplayMetrics!): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt:4335:77 'val defaultDisplay: Display!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt:4335:92 'fun getRealMetrics(p0: DisplayMetrics!): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt:310:16 'var statusBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt:310:44 'var navigationBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt:1034:62 Type argument for reified type parameter 'T' was inferred to the intersection of ['Drawable' & 'Drawable.Callback']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt:1085:62 Type argument for reified type parameter 'T' was inferred to the intersection of ['Drawable' & 'Drawable.Callback']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt:2272:85 'static field SOFT_INPUT_ADJUST_RESIZE: Int' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt:4190:13 'constructor(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int): AudioTrack' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/TiPlayNativeUi.kt:45:25 'var statusBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/TiPlayNativeUi.kt:46:25 'var navigationBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/BrowserMainSettingsMenu.kt:270:34 'val allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt:1694:22 Condition is always 'false'.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt:3497:73 'val defaultDisplay: Display!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt:3497:88 'fun getRealMetrics(p0: DisplayMetrics!): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt:4335:77 'val defaultDisplay: Display!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt:4335:92 'fun getRealMetrics(p0: DisplayMetrics!): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt:310:16 'var statusBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt:310:44 'var navigationBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt:1034:62 Type argument for reified type parameter 'T' was inferred to the intersection of ['Drawable' & 'Drawable.Callback']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt:1085:62 Type argument for reified type parameter 'T' was inferred to the intersection of ['Drawable' & 'Drawable.Callback']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt:2272:85 'static field SOFT_INPUT_ADJUST_RESIZE: Int' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt:4190:13 'constructor(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int): AudioTrack' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/TiPlayNativeUi.kt:45:25 'var statusBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/main/java/com/shilapi/xcertplay/TiPlayNativeUi.kt:46:25 'var navigationBarColor: Int' is deprecated. Deprecated in Java.
+
+> Task :common:javaPreCompileDebug UP-TO-DATE
+> Task :common:compileDebugJavaWithJavac NO-SOURCE
+> Task :common:bundleLibRuntimeToJarDebug
+> Task :common:bundleLibCompileToJarDebug
+> Task :common:preDebugUnitTestBuild UP-TO-DATE
+> Task :common:writeDebugAarMetadata UP-TO-DATE
+> Task :shared:writeDebugAarMetadata UP-TO-DATE
+> Task :common:checkDebugUnitTestAarMetadata UP-TO-DATE
+> Task :common:mapDebugSourceSetPaths
+> Task :common:compileDebugLibraryResources
+> Task :common:mapDebugUnitTestSourceSetPaths UP-TO-DATE
+> Task :common:generateDebugUnitTestResources UP-TO-DATE
+> Task :common:mergeDebugUnitTestResources
+> Task :common:extractDeepLinksDebug UP-TO-DATE
+> Task :common:processDebugManifest UP-TO-DATE
+> Task :shared:extractDeepLinksDebug UP-TO-DATE
+> Task :shared:processDebugManifest UP-TO-DATE
+> Task :common:mergeDebugUnitTestManifest UP-TO-DATE
+> Task :common:processDebugUnitTestManifest UP-TO-DATE
+> Task :shared:mapDebugSourceSetPaths UP-TO-DATE
+> Task :shared:compileDebugLibraryResources UP-TO-DATE
+> Task :common:processDebugUnitTestResources
+
+> Task :common:compileDebugUnitTestKotlin
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/CarButtonImagePickerTest.kt:150:42 'fun addResolveInfoForIntent(p0: Intent!, p1: ResolveInfo!): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/CarButtonImagePickerTest.kt:152:42 'fun addResolveInfoForIntent(p0: Intent!, p1: ResolveInfo!): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:51:29 'val allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:56:21 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:78:26 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:89:29 'val allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:200:29 'val allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:205:21 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/ExistingWifiManagerTest.kt:231:29 'val allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/LocationReportingSettingsTest.kt:71:18 'fun onRequestPermissionsResult(p0: Int, p1: Array<(out) String!>, p2: IntArray): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/LocationReportingSettingsTest.kt:83:18 'fun onRequestPermissionsResult(p0: Int, p1: Array<(out) String!>, p2: IntArray): Unit' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/PreparationLayoutTest.kt:50:106 'field scaledDensity: Float' is deprecated. Deprecated in Java.
+w: file:///workspace/TiPlay/common/src/test/java/com/shilapi/xcertplay/WirelessHandoffWatchdogTest.kt:60:31 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type 'Array<(out) CapturedType(*)!>?'.
+
+> Task :common:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :common:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :common:generateDebugUnitTestAssets UP-TO-DATE
+> Task :common:generateDebugAssets UP-TO-DATE
+> Task :common:mergeDebugAssets UP-TO-DATE
+> Task :shared:generateDebugAssets UP-TO-DATE
+> Task :shared:mergeDebugAssets UP-TO-DATE
+> Task :common:mergeDebugUnitTestAssets UP-TO-DATE
+> Task :common:packageDebugUnitTestForUnitTest
+> Task :common:generateDebugUnitTestConfig
+> Task :common:processDebugJavaRes UP-TO-DATE
+> Task :common:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :shared:bundleLibRuntimeToJarDebug
+> Task :shared:processDebugJavaRes UP-TO-DATE
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.conscrypt.NativeLibraryUtil in an unnamed module (file:/workspace/.tiplay-tools/gradle/caches/modules-2/files-2.1/org.conscrypt/conscrypt-openjdk-uber/2.6.2/65c5977595ee9cc12e6017b9d43b1d2e3d1bab63/conscrypt-openjdk-uber-2.6.2.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+> Task :common:testDebugUnitTest
+
+BrowserMainPageTest > editingInvalidDraftDoesNotReplaceActiveSessionStatus FAILED
+    org.junit.ComparisonFailure at BrowserMainPageTest.kt:164
+
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+
+> Task :common:testDebugUnitTest
+
+91 tests completed, 1 failed
+
+> Task :common:testDebugUnitTest FAILED
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':common:testDebugUnitTest'.
+> There were failing tests. See the report at: file:///workspace/TiPlay/common/build/reports/tests/testDebugUnitTest/index.html
+
+* Try:
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+
+BUILD FAILED in 3m 56s
+46 actionable tasks: 19 executed, 27 up-to-date
+Configuration cache entry stored.

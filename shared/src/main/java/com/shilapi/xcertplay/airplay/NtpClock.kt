@@ -24,7 +24,8 @@ class NtpClock : Closeable {
     private var socket: DatagramSocket? = null
     private var receiver: Thread? = null
     private var sender: Thread? = null
-    private var peer: InetSocketAddress? = null
+    @Volatile private var peer: InetSocketAddress? = null
+    @Volatile private var peerAddress: InetAddress? = null
 
     private var clockOffsetNs = wallClockNtpOffsetNs(System.nanoTime())
     private val delays = DoubleArray(DELAY_WINDOW) { Double.POSITIVE_INFINITY }
@@ -47,8 +48,9 @@ class NtpClock : Closeable {
     }
 
     fun start(peerAddress: InetAddress, port: Int) {
-        require(port > 0) { "timing port must be positive" }
-        peer = InetSocketAddress(peerAddress, port)
+        require(port in 0..65535) { "timing port must be valid" }
+        this.peerAddress = peerAddress
+        peer = if (port > 0) InetSocketAddress(peerAddress, port) else null
         sender = Thread(::runSender, "airplay-ntp-tx").apply { isDaemon = true; start() }
     }
 
@@ -122,7 +124,12 @@ class NtpClock : Closeable {
 
     private fun handleMessage(message: ByteArray, source: InetSocketAddress) {
         when (message[1].toInt() and 0xff) {
-            PT_REQUEST -> respondToRequest(message, source)
+            PT_REQUEST -> {
+                respondToRequest(message, source)
+                // Some senders initiate timing without advertising a SETUP timingPort. A reply alone
+                // cannot synchronize us: learn that RTSP peer's endpoint and perform our own exchange.
+                if (peer == null && source.address == peerAddress) peer = source
+            }
             PT_RESPONSE -> handleResponse(message)
         }
     }

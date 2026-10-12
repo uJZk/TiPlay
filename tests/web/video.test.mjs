@@ -136,3 +136,37 @@ test('the presenter closes retained and failed frames on stop/dispose', async ()
   presenter.dispose();
   assert.equal(second.closed, true);
 });
+
+test('synchronized frame timestamps reach presentation; absent clocks never become arrival-time latency', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  FakeDecoder.instances = [];
+  FakeDecoder.gate = null;
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const presented = [];
+  const pipeline = createDecoderPipeline({ post() {}, present: (frame, info, id, timing) => presented.push(timing) });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1));
+  await settle();
+  const now = performance.timeOrigin + performance.now();
+  pipeline.clock({ offset: now - 1000, at: now, rtt: 2 });
+  const payload = new Uint8Array(8);
+  new DataView(payload.buffer).setFloat64(0, 900, true);
+  const timing = () => encodeRecord({ kind: RECORD.TIMING, epoch: 1, payload });
+  controller.enqueue(timing());
+  controller.enqueue(keyFrame(1));
+  await settle();
+  FakeDecoder.instances.at(-1).output(videoFrame(0));
+  assert.equal(presented[0], now - 100);
+  pipeline.clock(null);
+  controller.enqueue(timing());
+  controller.enqueue(keyFrame(1));
+  await settle();
+  FakeDecoder.instances.at(-1).output(videoFrame(0));
+  assert.equal(presented[1], null);
+  assert.equal(pipeline.stats().timingRecords, 2);
+  assert.equal(pipeline.stats().timingRejected, 1);
+});

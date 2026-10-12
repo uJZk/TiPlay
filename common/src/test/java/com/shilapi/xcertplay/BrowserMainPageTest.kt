@@ -1,6 +1,8 @@
 package com.shilapi.xcertplay
 
 import android.app.Activity
+import android.bluetooth.BluetoothManager
+import android.net.wifi.WifiManager
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
@@ -21,6 +23,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
+import org.robolectric.shadows.ShadowWifiManager
 import org.robolectric.shadows.ShadowAlertDialog
 
 @RunWith(RobolectricTestRunner::class)
@@ -98,6 +103,65 @@ class BrowserMainPageTest {
         page = BrowserMainSettingsMenu(activity, BrowserConnectionDraft.load(activity, state), {}, {}, {}, {}, {})
         activity.setContentView(page.view)
         assertChoice()
+    }
+    @Test fun firstThreeConnectionButtonsHaveEqualFullWidthSpacing() {
+        val width = activity.resources.displayMetrics.widthPixels
+        val height = activity.resources.displayMetrics.heightPixels
+        page.view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+        page.view.layout(0, 0, width, height)
+        val buttons = views().filterIsInstance<Button>().take(3).toList()
+        val gap = (8 * activity.resources.displayMetrics.density).toInt()
+        val minimumTouchHeight = (48 * activity.resources.displayMetrics.density).toInt()
+        assertEquals(gap, buttons[1].top - buttons[0].bottom)
+        assertEquals(gap, buttons[2].top - buttons[1].bottom)
+        for (button in buttons) {
+            assertEquals(buttons[0].left, button.left)
+            assertEquals(buttons[0].right, button.right)
+            assertTrue(button.height >= minimumTouchHeight)
+        }
+    }
+    @Test fun idleReadinessTracksPhoneSelectionAndDraftRequirements() {
+        assertEquals(activity.getString(R.string.choose_your_iphone), page.status.text.toString())
+        page.draft.phoneAddress = "02:00:00:00:00:01"
+        shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(false)
+        page.refresh()
+        assertEquals(activity.getString(R.string.turn_on_bluetooth), page.status.text.toString())
+        views().filterIsInstance<EditText>().first().setText("")
+        assertEquals(activity.getString(requireNotNull(page.draft.validationError())), page.status.text.toString())
+        views().filterIsInstance<EditText>().first().setText("Phone hotspot")
+        views().filterIsInstance<EditText>().last().setText("short")
+        assertEquals(activity.getString(requireNotNull(page.draft.validationError())), page.status.text.toString())
+        page.update("Connecting", false)
+        views().filterIsInstance<EditText>().last().setText("password1")
+        assertEquals("Connecting", page.status.text.toString())
+        page.update("", false, idle = true)
+        assertEquals(activity.getString(R.string.turn_on_bluetooth), page.status.text.toString())
+        page.draft.phoneAddress = null
+        page.transportSelected(false)
+        assertEquals(activity.getString(R.string.ready_when_you_are), page.status.text.toString())
+    }
+    @Config(shadows = [DisabledHotspot::class])
+    @Test fun idleReadinessReportsKnownHotspotOffAndUnmatchedExistingWifi() {
+        page.draft.phoneAddress = "02:00:00:00:00:01"
+        shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(true)
+        page.refresh()
+        assertEquals(activity.getString(R.string.hotspot_details_off), page.status.text.toString())
+        choose(BrowserConnectionDraft.Source.LAN)
+        views().filterIsInstance<EditText>().first().setText("Car AP")
+        assertEquals(activity.getString(R.string.settings_external_ap_check), page.status.text.toString())
+    }
+    @Implements(WifiManager::class)
+    class DisabledHotspot : ShadowWifiManager() {
+        @Implementation fun getWifiApState(): Int = 11
+    }
+    @Test fun editingInvalidDraftDoesNotReplaceActiveSessionStatus() {
+        page.update("Connected", true)
+        views().filterIsInstance<EditText>().first().setText("")
+        assertEquals("Connected", page.status.text.toString())
+        button(R.string.disconnect).performClick()
+        views().filterIsInstance<EditText>().first().setText("Another network")
+        assertEquals(activity.getString(R.string.settings_main_stopping), page.status.text.toString())
     }
     @Test fun editingNetworkPreservesTheSavedConfigurationAndActiveConnection() {
         page.update("Connected", true)

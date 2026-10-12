@@ -92,7 +92,7 @@ internal class HotspotExtraAddressCard(
             activity.runOnUiThread { if (status.isAttachedToWindow) refresh() }
         }
         // Only while the rows are on screen; a new render replaces them.
-        status.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+        val attachment = object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(view: View) {
                 HotspotExtraAddressKeeper.addListener(keeperListener)
                 HotspotAddressVpn.addListener(vpnListener)
@@ -105,7 +105,10 @@ internal class HotspotExtraAddressCard(
                 HotspotExtraAddressKeeper.removeListener(keeperListener)
                 HotspotAddressVpn.removeListener(vpnListener)
             }
-        })
+        }
+        status.addOnAttachStateChangeListener(attachment)
+        // A refresh may build these rows inside a parent that is already on screen.
+        if (status.isAttachedToWindow) attachment.onViewAttachedToWindow(status)
     }
 
     /** The chooser's label; the VPN gets a second line where Android drops hotspot traffic to its address. */
@@ -286,9 +289,10 @@ internal class HotspotExtraAddressCard(
             HotspotExtraAddressSettings.sync(app)
             return
         }
-        // The dialog records the answer itself; onResume starts the tunnel when it was allowed.
+        // Android identifies the requesting package through the result recipient.
+        // The dialog records consent; the host resumes and starts the tunnel.
         try {
-            activity.startActivity(consent)
+            activity.startActivityForResult(consent, VPN_CONSENT_REQUEST)
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(activity, R.string.settings_hotspot_vpn_no_consent_screen, Toast.LENGTH_LONG).show()
         }
@@ -366,6 +370,7 @@ internal class HotspotExtraAddressCard(
     }
 
     companion object {
+        private const val VPN_CONSENT_REQUEST = 0x4856
         private val probes = LatestSettingsProbe<HotspotAddresses.Current?>("tiplay-hotspot-probe")
 
         internal fun awaitProbesForTest(): Boolean = probes.awaitIdle()

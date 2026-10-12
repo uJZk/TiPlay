@@ -108,15 +108,12 @@ const renderReconnect = createReconnectOverlay({
 document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
 for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
 
-// The copy of this page that the phone serves over plain HTTP talks to its own origin.
-const pageHost = location.protocol === 'http:' ? normalizeHost(location.host) : null;
-
 function loadLink() {
   try {
     const saved = JSON.parse(localStorage.getItem(LINK_KEY) || 'null');
-    return { host: normalizeHost(saved?.host) ?? pageHost ?? DEFAULT_HOST, code: isCode(saved?.code) ? saved.code : null };
+    return { host: normalizeHost(saved?.host) ?? DEFAULT_HOST, code: isCode(saved?.code) ? saved.code : null };
   } catch (_) {
-    return { host: pageHost ?? DEFAULT_HOST, code: null };
+    return { host: DEFAULT_HOST, code: null };
   }
 }
 
@@ -125,13 +122,13 @@ function saveLink() {
 }
 
 let link = loadLink();
-const addressed = linkFromAddress(location.search, location.hash, link, pageHost);
+const addressed = linkFromAddress(location.search, location.hash, link);
 if (addressed) {
   link = addressed;
   saveLink();
 }
 // `?t=` keeps a phone other than the default in bookmarks; the pairing code stays out of history entries and copied URLs.
-const showLink = () => history.replaceState(null, '', linkLocation(location.pathname, location.search, link.host, pageHost));
+const showLink = () => history.replaceState(null, '', linkLocation(location.pathname, location.search, link.host));
 showLink();
 
 const slots = createTouchSlots();
@@ -139,7 +136,8 @@ let session = null, active = false, phase = 'ready', notice = null;
 let attempt = 0, reconnects = 0, retryTimer = null, retryAt = 0, streamId = 0, videoAbort = null, lastError = null;
 let config = null, live = false, status = null, unsupported = null, videoStats = {};
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
-const reportAppearance = followAppearance(window.matchMedia('(prefers-color-scheme: dark)'), () => outbox);
+const appearance = window.matchMedia('(prefers-color-scheme: dark)');
+const reportAppearance = followAppearance(appearance, () => outbox);
 let movePending = false, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
 let statsVisible = false;
 try { statsVisible = localStorage.getItem(STATS_KEY) === '1'; } catch (_) {}
@@ -315,7 +313,7 @@ function start() {
   outbox = createControlOutbox({ send: postControl, heldContacts: () => slots.contacts(), onStatus: applyStatus, onError: controlFailed });
   reportAppearance();
   heartbeatTimer = setInterval(() => outbox.heartbeat(), 400);
-  statsTimer = setInterval(() => outbox.push({ k: 'st', v: flatStats(pageStats()) }, 'latest'), 5000);
+  statsTimer = setInterval(() => outbox.push({ k: 'st', v: { ...flatStats(pageStats()), themeDark: appearance.matches } }, 'latest'), 5000);
   outbox.heartbeat();
   resizeCanvas();
   scheduleViewport();
@@ -408,6 +406,7 @@ async function connectVideo() {
       }, 5000);
       abort.signal.addEventListener('abort', () => clearInterval(clockTimer), { once: true });
     }
+    reportAppearance();
     phase = 'waiting';
     // A phone that restarted while this page stayed open has forgotten the viewport; repeat it once per stream.
     lastViewport = '';
@@ -527,6 +526,7 @@ function statusText() {
 
 function pageStats() {
   return {
+    themeDark: appearance.matches,
     link: { path: videoPath.path, fallback: videoPath.reason, codecs: probedCodecs, phase, attempt, reconnects, live, unsupported },
     video: videoStats,
     control: outbox?.stats() ?? null,
@@ -653,7 +653,7 @@ function keepScreenOn() {
 $('link-form').addEventListener('submit', event => {
   event.preventDefault();
   if (active) { resumeCarPlay(); return; }
-  const code = $('code').value.trim(), host = normalizeHost($('host').value || pageHost || DEFAULT_HOST);
+  const code = $('code').value.trim(), host = normalizeHost($('host').value || DEFAULT_HOST);
   if (!isCode(code)) {
     stop('invalidCode');
     $('code').focus();

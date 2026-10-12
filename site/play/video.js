@@ -20,7 +20,7 @@ export function createDecoderPipeline({ post: send, present }) {
   const captureTimes = new Map();
   let clock = null;
   const decodeMs = new Samples();
-  const totals = { decoded: 0, dropped: 0, decodeErrors: 0, backlogResets: 0, keyRequests: 0 };
+  const totals = { decoded: 0, dropped: 0, decodeErrors: 0, backlogResets: 0, keyRequests: 0, timingRecords: 0, timingRejected: 0 };
   let decoder = null, decoderConfig = null, config = null, codecSupported = null;
   let streamId = null, timer = null;
   let needKey = true, reportedEpoch = null, lastKeyRequest = -Infinity, failures = 0;
@@ -30,7 +30,10 @@ export function createDecoderPipeline({ post: send, present }) {
       if (record.kind === RECORD.CONFIG) return configure(record, signal);
       if (record.kind === RECORD.TIMING && record.payload.byteLength === 8) {
         const captured = new DataView(record.payload.buffer, record.payload.byteOffset, 8).getFloat64(0, true);
-        captureTimes.set(`${record.epoch}:${record.timestampUs}`, captureTime(captured, clock));
+        const mapped = captureTime(captured, clock);
+        totals.timingRecords++;
+        if (mapped === null) totals.timingRejected++;
+        captureTimes.set(`${record.epoch}:${record.timestampUs}`, mapped);
         if (captureTimes.size > 120) captureTimes.delete(captureTimes.keys().next().value);
       }
       if (record.kind === RECORD.FRAME) decodeFrame(record);
@@ -203,7 +206,9 @@ export function createDecoderPipeline({ post: send, present }) {
       clockRttMs: clock && performance.timeOrigin + performance.now() - clock.at <= 15000 ? clock.rtt : null,
       width: config?.width ?? null,
       height: config?.height ?? null,
+      // This is the requested hint; the actual decoder implementation is not exposed by WebCodecs.
       acceleration: decoderConfig?.hardwareAcceleration ?? null,
+      decoderImplementation: 'unknown',
       decodeQueueSize: decoder?.decodeQueueSize ?? 0,
       ...rates,
       decodeMsP50: decodeMs.percentile(50),

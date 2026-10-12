@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import { networkInterfaces, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseIvf, startFakePhone } from './fake-phone.mjs';
@@ -209,18 +209,13 @@ async function checkPath(browser, url, phone, expected, prepare) {
   await context.close();
   return link;
 }
-
-function lanAddress() {
-  return Object.values(networkInterfaces()).flat().find(entry => entry.family === 'IPv4' && !entry.internal)?.address ?? null;
-}
-
 async function main() {
   let pageServer, browser;
   const phoneServers = [];
   try {
     pageServer = await startPageServer();
     const origin = `http://127.0.0.1:${pageServer.address().port}`;
-    // These servers are local, including the non-loopback address used by the unsupported-context check.
+    // Both the page host and phone protocol server are local test servers.
     browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-proxy-server'] });
     const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 1.5, hasTouch: true, locale: 'en-US' });
     let frames = encodeIvf('libvpx');
@@ -280,9 +275,9 @@ async function main() {
       return { text: element.textContent, x: rect.x + rect.width / 2, y: rect.y,
         inert: getComputedStyle(element).pointerEvents === 'none' };
     });
-    check(debugLayout.text.split(' • ').length === 5 && debugLayout.text.includes('ms') &&
+    check(debugLayout.text.split(' · ').length === 4 && debugLayout.text.includes('ms') &&
       Math.abs(debugLayout.x - 500) < 1 && debugLayout.y <= 16 && debugLayout.inert,
-      'Debug has five fields centered above CarPlay without intercepting touches');
+      'Debug has four fields centered above CarPlay without intercepting touches');
     check(phone.videoCount === streamsAtPortal, 'returning to CarPlay keeps the same video connection');
     phone.requestPortal();
     await page.waitForSelector('#panel:not([hidden])');
@@ -302,6 +297,7 @@ async function main() {
       .find(event => event.v['video.decodedFps'] > 0 && event.v['link.path'] === 'worker'), 8000);
     check(JSON.stringify(st.v).length <= 2048 && st.v['video.decodedFps'] > 0 && st.v['link.path'] === 'worker',
       `stats event with ${Object.keys(st.v).length} fields, including the path`);
+    check(st.v.themeDark === false, 'periodic decoded stats preserve Boolean browser appearance');
 
     const decodedBefore = eventsOf(phone, 'dec').length, streamsBefore = phone.videoCount, viewportsBefore = eventsOf(phone, 'vp').length;
     check(await page.locator('#reconnect').isHidden(), 'the reconnect surface is hidden after the first decoded frame');
@@ -322,8 +318,12 @@ async function main() {
     await page.waitForSelector('#reconnect:not([hidden])');
     check(phone.videoCount === streamsBeforeResume, 'resuming from the portal does not replace the reconnect session');
     check(await page.locator('#browser-settings, #bar, #fullscreen').count() === 0, 'no redundant modal, playback header or fullscreen control remains');
-    for (const colorScheme of ['light', 'dark']) {
+    for (const colorScheme of ['dark', 'light']) {
+      const appearanceEventsBefore = eventsOf(phone, 'st').length;
       await page.emulateMedia({ colorScheme });
+      const appearanceReport = await waitFor(`${colorScheme} authenticated appearance report`, () =>
+        eventsOf(phone, 'st').slice(appearanceEventsBefore).find(entry => entry.event.v.themeDark === (colorScheme === 'dark')), 3000);
+      check(typeof appearanceReport.event.v.themeDark === 'boolean', `${colorScheme}: theme change reaches the phone as a Boolean while reconnecting`);
       for (const viewport of [{ width: 1000, height: 700 }, { width: 390, height: 844 }, { width: 640, height: 240 }]) {
         await page.setViewportSize(viewport);
         const layout = await page.evaluate(() => {
@@ -350,6 +350,10 @@ async function main() {
     await waitFor('a new /video request', () => phone.videoCount > streamsBefore);
     await waitFor('decoding after the reconnect', () => eventsOf(phone, 'dec').length > decodedBefore);
     check(await page.locator('#reconnect').isHidden(), 'the reconnect surface disappears after recovery decodes a frame');
+    const statsAfterRecovery = eventsOf(phone, 'st').length;
+    await waitFor('periodic appearance after recovery', () => eventsOf(phone, 'st').slice(statsAfterRecovery)
+      .some(entry => entry.event.v['video.decodedFps'] > 0 && entry.event.v.themeDark === false), 8000);
+    check(true, 'periodic decoded stats keep Boolean appearance after reconnect');
     check(true, `the page reopened /video after the drop (${phone.videoCount} streams) and decoded again`);
     await waitFor('the viewport after the reconnect', () => eventsOf(phone, 'vp').length > viewportsBefore, 3000).catch(() => {});
     check(eventsOf(phone, 'vp').length > viewportsBefore, 'the page repeats its viewport on the new stream, for a phone that restarted');
@@ -378,8 +382,7 @@ async function main() {
     await zh.close();
 
     // The default phone needs no ?t=, and a pairing link without it is for that phone, whatever was saved before.
-    // A plain-HTTP page at an IPv4 address is the phone's own copy to the page, so this origin is a *.localhost name:
-    // still a secure context, and the page treats it as the public HTTPS page.
+    // A *.localhost page host is a secure context separate from the phone.
     const publicOrigin = `http://page.localhost:${pageServer.address().port}`;
     const short = await browser.newContext({ locale: 'en-US', serviceWorkers: 'block' });
     await short.route(/^http:\/\/100\./, route => route.abort());
@@ -439,20 +442,6 @@ async function main() {
     check(relinked.fromServiceWorker() && await linked.evaluate(() => location.hash === ''),
       'without the page server the pairing link (#c=) opens the cached page, which decodes again');
     await linked.close();
-
-    // Plain HTTP on a LAN address is unsupported: do not open an MSE/video fallback.
-    const address = lanAddress();
-    if (address) {
-      const served = await startFakePhone({ code: CODE, frames, width: WIDTH, height: HEIGHT, fps: FPS, host: address, pageDir: PLAY });
-      phoneServers.push(served);
-      const context = await browser.newContext();
-      const bare = await context.newPage();
-      await bare.goto(`http://${address}:${served.port}/play/#c=${CODE}`);
-      await waitFor('unsupported HTTP page', async () => bare.isDisabled('#connect'));
-      check((await bare.textContent('#message')).includes('not a secure context'), 'insecure HTTP names the WebCodecs requirement');
-      check(await bare.locator('video').count() === 0 && served.videoCount === 0, 'no video element or removed playback path opens');
-      await context.close();
-    }
 
     const unexpected = failures.filter(text => !/Failed to load resource|ERR_CONNECTION_RESET|ERR_EMPTY_RESPONSE|network error/i.test(text));
     check(!unexpected.length, `no unexpected page errors${unexpected.length ? `: ${unexpected.join(' | ')}` : ''}`);
