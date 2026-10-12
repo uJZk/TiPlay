@@ -12,8 +12,15 @@ The user explicitly invoked `tie-up` after requesting codec-only Debug and remov
 - A process-interruption request was rejected by automatic review because PID ownership had not been established. Subsequent inspection found that PID already exited; no interruption or approval remains necessary.
 - Final Node browser suite: 65/65 passed, public-tree and whitespace checks passed. Final E2Es passed; full Android CI succeeded in 11m 47s with 2268 unit tests (shared 1219, common 1045, home 4), zero failures/errors/skips, all three lint tasks and all three debug builds. TIE-UP-TEST-SUMMARY.json and final validation logs record the results. All three APKs have zero assets/play/ entries (TIE-UP-APK-ASSETS.json).
 
-## Remaining delivery
+## Delivery
 
-Final results are archived and all three APKs contain no browser page assets. Remaining delivery: clean session scratch files and the session stash, commit on `work`, fast-forward default `main` and delete `work`, push normally, then verify the Publish site workflow for that source commit. The current Pages API confirms `https://ujzk.github.io/TiPlay/` and workflow deployment.
+1. Cleanup: archived final and initial-failure evidence, removed the session's work/ scripts/logs and obsolete generated browser-page copies. Both E2E services exit through their cleanup paths. The session recovery stash was dropped after verified integration; toolchains and unrelated retained inputs are preserved.
+2. Build: the complete required Android task set passed; all three debug APKs contain zero assets/play/ entries. This is a source-only debug build, not a new signed Android Release.
+3. Quick verify: 2268 Android unit tests, three lint tasks, 65 browser unit tests and both final E2Es passed. No further source changes followed these checks.
+4. Documentation: current implementation, follow-up, validation and this delivery record are linked from AGENTS.md. Historical initial failures and measurement/device limits remain explicit.
+5. Commit: `e08907eee9480638b59af8540e710a4a28933a5b` — Fix CarPlay browser state and remove the bundled page. A documentation-only follow-up records the delivery result without repeating source builds.
+6. Merge: created tracking default main, fast-forwarded it from `5449de24` to the verified source commit, then deleted the merged work branch. No extra worktree was created.
+7. Push: normal push advanced origin/main from `5449de24` to `e08907ee`; no force push. The subsequent documentation-only commit records this result and is pushed normally.
+8. Deploy: Publish site succeeded for the source commit: https://github.com/uJZk/TiPlay/actions/runs/38187213840 . The published URL is https://ujzk.github.io/TiPlay/ . A direct GET of sw.js was blocked by the configured network proxy with tunnel 403; no network-policy workaround was used and no direct live-content verification is claimed. The source commit's Android Actions run is still in progress: https://github.com/uJZk/TiPlay/actions/runs/38187213838 . Local full CI is green; a remote completion is not yet claimed.
 
 The original sweep baseline stays at the initial HEAD: incoming main changes outside our integration checks were not a delegated code sweep. The next sweep must include those imports and the follow-up changes rather than silently treating them as swept.
