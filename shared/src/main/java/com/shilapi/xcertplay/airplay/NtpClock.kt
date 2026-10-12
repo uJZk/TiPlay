@@ -16,7 +16,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * transmit stamps. The resulting offset and round-trip time steer a local monotonic clock onto
  * the phone's media-clock domain, which /feedback reports.
  */
-class NtpClock(log: (String) -> Unit = {}) : Closeable {
+class NtpClock(private val wireTimeline: NtpWireTimeline? = null, log: (String) -> Unit = {}) : Closeable {
+    constructor(log: (String) -> Unit) : this(null, log)
     private val diagnostics = MediaClockDiagnostics(log)
     private val running = AtomicBoolean(false)
     private val socketLock = Any()
@@ -29,6 +30,7 @@ class NtpClock(log: (String) -> Unit = {}) : Closeable {
     @Volatile private var peerAddress: InetAddress? = null
 
     private var clockOffsetNs = wallClockNtpOffsetNs(System.nanoTime())
+    private val wireOffsetNs = wireTimeline?.offset(clockOffsetNs)
     private val delays = DoubleArray(DELAY_WINDOW) { Double.POSITIVE_INFINITY }
     private var delayIndex = 0
     private var pickCount = PICK_COUNT
@@ -59,6 +61,10 @@ class NtpClock(log: (String) -> Unit = {}) : Closeable {
     fun syncedNtp(): BigInteger = synchronized(clockLock) {
         ntpFromNanos(System.nanoTime() + clockOffsetNs)
     }
+
+    private fun wireNtp(): BigInteger = wireOffsetNs?.let {
+        ntpFromNanos(System.nanoTime() + it)
+    } ?: syncedNtp()
 
     /** Maps a synchronized phone media timestamp to our monotonic clock; stale/unsynced clocks are unusable. */
     fun mediaTimeNanos(senderNanos: Long): Long? {
@@ -117,7 +123,7 @@ class NtpClock(log: (String) -> Unit = {}) : Closeable {
         packet[0] = 0x80.toByte()
         packet[1] = PT_REQUEST.toByte()
         writeU16Be(packet, 2, 7)
-        val t1 = syncedNtp()
+        val t1 = wireNtp()
         synchronized(clockLock) { pendingT1 = t1 }
         ntpBytes(t1).copyInto(packet, NTP_TRANSMIT_OFFSET)
         currentSocket()?.send(DatagramPacket(packet, packet.size, destination))
@@ -162,13 +168,13 @@ class NtpClock(log: (String) -> Unit = {}) : Closeable {
         response[1] = PT_RESPONSE.toByte()
         writeU16Be(response, 2, 7)
         request.copyInto(response, NTP_ORIGINATE_OFFSET, NTP_TRANSMIT_OFFSET, NTP_PACKET_BYTES)
-        ntpBytes(syncedNtp()).copyInto(response, NTP_RECEIVE_OFFSET)
-        ntpBytes(syncedNtp()).copyInto(response, NTP_TRANSMIT_OFFSET)
+        ntpBytes(wireNtp()).copyInto(response, NTP_RECEIVE_OFFSET)
+        ntpBytes(wireNtp()).copyInto(response, NTP_TRANSMIT_OFFSET)
         currentSocket()?.send(DatagramPacket(response, response.size, source))
     }
 
     private fun handleResponse(response: ByteArray) {
-        val t4 = syncedNtp()
+        val t4 = wireNtp()
         val t1 = readNtp(response, NTP_ORIGINATE_OFFSET)
         val t2 = readNtp(response, NTP_RECEIVE_OFFSET)
         val t3 = readNtp(response, NTP_TRANSMIT_OFFSET)
@@ -201,7 +207,7 @@ class NtpClock(log: (String) -> Unit = {}) : Closeable {
             val useSample = delays.all { selectedRtt <= it }
             delays[delayIndex] = selectedRtt
             delayIndex = (delayIndex + 1) % DELAY_WINDOW
-            if (useSample) applyOffset(selectedOffset)
+            if (useSample) applyOffset(wireTimeline?.correction(selectedOffset, clockOffsetNs) ?: selectedOffset)
         }
     }
 

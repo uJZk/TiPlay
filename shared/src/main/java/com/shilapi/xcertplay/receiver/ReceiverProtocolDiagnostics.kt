@@ -54,6 +54,15 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
                 else -> "OTHER"
             }
         }.orEmpty().joinToString(",")
+        (dict["streams"] as? List<*>)?.take(16)?.forEach { entry ->
+            val stream = entry as? Map<*, *> ?: return@forEach
+            if ((stream["type"] as? Number)?.toInt() == 96) {
+                fun bounded(name: String, maximum: Long): String =
+                    (stream[name] as? Number)?.toLong()?.takeIf { it in 0..maximum }?.toString() ?: "ABSENT_OR_INVALID"
+                emit("c=$connection stage=AUDIO_SETUP ct=${bounded("ct", 255)} " +
+                    "audioFormat=${bounded("audioFormat", 0x3fffffc)} spf=${bounded("spf", 65535)}")
+            }
+        }
         val timingProtocol = when ((dict["timingProtocol"] as? String)?.uppercase()) {
             null -> if (dict.containsKey("timingProtocol")) "OTHER" else "ABSENT"
             "NTP" -> "NTP"

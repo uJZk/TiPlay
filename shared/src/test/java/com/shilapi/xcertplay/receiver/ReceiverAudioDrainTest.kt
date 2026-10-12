@@ -1,0 +1,85 @@
+package com.shilapi.xcertplay.receiver
+
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.util.concurrent.CopyOnWriteArrayList
+import org.junit.Assert.*
+import org.junit.Test
+
+class ReceiverAudioDrainTest {
+    @Test fun drainsBothChannelsWithoutPayloadLoggingAndReleasesBothPortsOnRepeatedClose() {
+        val peer = InetAddress.getByName("127.0.0.1")
+        val logs = CopyOnWriteArrayList<String>()
+        val drain = ReceiverAudioDrain(peer, logs::add)
+        val ports = drain.start()
+        try {
+            assertTrue(ports.first > 0 && ports.second > 0 && ports.first != ports.second)
+            DatagramSocket(0, peer).use { sender ->
+                val payload = "secret encrypted audio https://private.example".toByteArray()
+                send(sender, peer, ports.first, payload)
+                send(sender, peer, ports.second, payload)
+                awaitLogs(logs, "stage=DRAINED channel=DATA packets=1 bytes=${payload.size}",
+                    "stage=DRAINED channel=CONTROL packets=1 bytes=${payload.size}")
+                drain.close()
+                drain.close()
+                assertEquals(1, logs.count { it.contains("stage=END") })
+                assertTrue(logs.last().contains("dataPackets=1 dataBytes=${payload.size} dataRejected=0 dataFailures=0"))
+                assertTrue(logs.last().contains("controlPackets=1 controlBytes=${payload.size} controlRejected=0 controlFailures=0"))
+                assertFalse(logs.any { it.contains("secret") || it.contains("private.example") || it.contains(requireNotNull(peer.hostAddress)) })
+            }
+            for (port in listOf(ports.first, ports.second)) {
+                DatagramSocket(null).use { rebound ->
+                    rebound.bind(InetSocketAddress(InetAddress.getByName("::"), port))
+                    assertEquals(port, rebound.localPort)
+                }
+            }
+        } finally { drain.close() }
+    }
+
+    @Test fun rejectsPacketsFromOtherPeersAndReceivesIpv6() {
+        val peer = InetAddress.getByName("::1")
+        val wrongPeer = InetAddress.getByName("127.0.0.1")
+        val logs = CopyOnWriteArrayList<String>()
+        ReceiverAudioDrain(peer, logs::add).use { drain ->
+            val ports = drain.start()
+            DatagramSocket(0, wrongPeer).use { sender ->
+                for (port in listOf(ports.first, ports.second)) send(sender, wrongPeer, port, ByteArray(7))
+            }
+            awaitLogs(logs, "stage=REJECTED channel=DATA rejected=1", "stage=REJECTED channel=CONTROL rejected=1")
+            assertFalse(logs.any { it.contains("stage=DRAINED") })
+            DatagramSocket(0, peer).use { sender ->
+                for (port in listOf(ports.first, ports.second)) send(sender, peer, port, ByteArray(9))
+            }
+            awaitLogs(logs, "stage=DRAINED channel=DATA packets=1 bytes=9", "stage=DRAINED channel=CONTROL packets=1 bytes=9")
+            drain.close()
+            assertTrue(logs.last().contains("dataPackets=1 dataBytes=9 dataRejected=1"))
+            assertTrue(logs.last().contains("controlPackets=1 controlBytes=9 controlRejected=1"))
+        }
+    }
+
+    @Test fun closeBeforeStartIsIdempotentAndPreventsOpeningPorts() {
+        val logs = CopyOnWriteArrayList<String>()
+        val drain = ReceiverAudioDrain(InetAddress.getLoopbackAddress(), logs::add)
+        drain.close()
+        drain.close()
+        assertEquals(1, logs.size)
+        try {
+            drain.start()
+            fail("A closed drain must not open sockets")
+        } catch (_: IllegalStateException) { }
+    }
+
+    private fun send(sender: DatagramSocket, address: InetAddress, port: Int, payload: ByteArray) {
+        sender.send(DatagramPacket(payload, payload.size, address, port))
+    }
+
+    private fun awaitLogs(logs: List<String>, vararg expected: String) {
+        val deadline = System.nanoTime() + 2_000_000_000L
+        while (!expected.all { text -> logs.any { it.contains(text) } } && System.nanoTime() < deadline) {
+            Thread.sleep(5)
+        }
+        for (text in expected) assertTrue("Missing drain counter: $text", logs.any { it.contains(text) })
+    }
+}

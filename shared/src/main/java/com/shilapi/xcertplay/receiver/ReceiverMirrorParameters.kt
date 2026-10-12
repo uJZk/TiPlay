@@ -10,7 +10,7 @@ internal object ReceiverMirrorParameters {
         if (contentType != null && !contentType.equals("text/parameters", ignoreCase = true)) return unsupported()
         val parameters = request.body.toString(Charsets.US_ASCII).lineSequence().map(String::trim).filter(String::isNotEmpty).toList()
         if (parameters.isEmpty() || parameters.any { it != "volume" }) return unsupported()
-        // Legacy muted value: this receiver offers no audio output or audio codec.
+        // Legacy muted value: accepted audio is discarded without decoding or playback.
         return RtspMessage.Response(headers = mapOf("Content-Type" to "text/parameters"),
             body = "volume: -144.0\r\n".toByteArray(Charsets.US_ASCII))
     }

@@ -22,12 +22,25 @@ class ReceiverPairingTest {
         val clientSignature = AirPlayCrypto.ed25519Sign(signing.privateKey, curve.publicKey + serverCurve)
         assertEquals(0, receiver.verify(ByteArray(4) + cipher.update(clientSignature)).size)
         assertArrayEquals(secret, receiver.sharedSecret)
+        assertThrows(ReceiverPairingFailure::class.java) { receiver.verify(ByteArray(0)) }
+        assertNull(receiver.sharedSecret)
     }
 
     @Test fun badProofCannotAuthorizeMedia() {
         val receiver = ReceiverPairing(AirPlayIdentity.generate())
         receiver.verify(byteArrayOf(1, 0, 0, 0) + AirPlayCrypto.x25519Generate().publicKey + AirPlayCrypto.ed25519Generate().publicKey)
         assertThrows(IllegalArgumentException::class.java) { receiver.verify(ByteArray(68)) }
+        assertNull(receiver.sharedSecret)
+        // A failed proof also destroys its cipher/pending state; retrying the old step cannot succeed.
+        assertThrows(ReceiverPairingFailure::class.java) { receiver.verify(ByteArray(68)) }
+        assertNull(receiver.sharedSecret)
+    }
+
+    @Test fun invalidSetupDiscardsAnInProgressVerification() {
+        val receiver = ReceiverPairing(AirPlayIdentity.generate())
+        receiver.verify(byteArrayOf(1, 0, 0, 0) + AirPlayCrypto.x25519Generate().publicKey + AirPlayCrypto.ed25519Generate().publicKey)
+        assertThrows(ReceiverPairingFailure::class.java) { receiver.setup(ByteArray(31)) }
+        assertThrows(ReceiverPairingFailure::class.java) { receiver.verify(ByteArray(68)) }
         assertNull(receiver.sharedSecret)
     }
 

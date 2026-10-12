@@ -53,6 +53,59 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
     private val resources = ConcurrentHashMap<Long, PendingResource>()
     val port: Int get() = server.localPort
 
+    internal fun reportTrial(stage: UnifiedAirPlayStage) { runCatching { listener.log("unifiedTrial stage=$stage") } }
+
+    fun openConnection(socket: Socket, featuresOverride: Long? = null, deviceIdOverride: String? = null): ReceiverRequestConnection {
+        check(!closed.get() && slots.tryAcquire()) { "Receiver unavailable" }
+        sockets.add(socket)
+        if (closed.get()) {
+            sockets.remove(socket); slots.release(); socket.close()
+            error("Receiver closed")
+        }
+        val connection = try {
+            socket.setSoLinger(false, 0)
+            socket.soTimeout = 120_000
+            Connection(socket, featuresOverride, deviceIdOverride)
+        } catch (error: Exception) {
+            sockets.remove(socket); slots.release(); socket.close()
+            throw error
+        }
+        val finished = AtomicBoolean(false)
+        diagnostics.stage(connection.diagnosticId, ReceiverProtocolDiagnostics.Stage.ACCEPT)
+        return object : ReceiverRequestConnection {
+            override fun handle(request: RtspMessage.Request): RtspMessage.Response {
+                check(!finished.get() && !closed.get())
+                diagnostics.request(connection.diagnosticId, request)
+                val response = try { connection.dispatch(request) }
+                catch (error: IllegalArgumentException) {
+                    diagnostics.failure(connection.diagnosticId, ReceiverProtocolDiagnostics.Stage.DISPATCH, error)
+                    RtspMessage.Response(status = 400)
+                } catch (error: IllegalStateException) {
+                    diagnostics.failure(connection.diagnosticId, ReceiverProtocolDiagnostics.Stage.DISPATCH, error)
+                    RtspMessage.Response(status = 400)
+                } catch (error: Exception) {
+                    diagnostics.failure(connection.diagnosticId, ReceiverProtocolDiagnostics.Stage.DISPATCH, error)
+                    RtspMessage.Response(status = 500)
+                }
+                diagnostics.response(connection.diagnosticId, response)
+                return response.copy(headers = response.headers + ("Server" to "AirTunes/220.68"))
+            }
+
+            override fun responseSent(response: RtspMessage.Response) {
+                if (response.status == 101) {
+                    connection.enableReverse()
+                    socket.soTimeout = 0
+                }
+            }
+
+            override fun close() {
+                if (!finished.compareAndSet(false, true)) return
+                try { connection.finish() }
+                finally { sockets.remove(socket); slots.release() }
+            }
+        }
+    }
+
     fun start(): Int {
         server.reuseAddress = true
         server.bind(InetSocketAddress(InetAddress.getByName("::"), 0))
@@ -141,17 +194,19 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
         finally { resources.remove(requestId, pending) }
     }
 
-    private inner class Connection(private val socket: Socket) {
+    private inner class Connection(private val socket: Socket, private val featuresOverride: Long? = null,
+                                   private val deviceIdOverride: String? = null) {
         private val pairing = ReceiverPairing(config.identity)
         private var handshake: ByteArray? = null
         private var key: ByteArray? = null
         private var mirror: ReceiverMirrorStream? = null
         private var mirrorToken: Any? = null
+        private var audio: ReceiverAudioDrain? = null
         private var timing: NtpClock? = null
         private val output = socket.getOutputStream()
         private var reverseId: String? = null
         private val peer = socket.inetAddress
-        private val diagnosticId = connectionIds.incrementAndGet()
+        val diagnosticId = connectionIds.incrementAndGet()
 
         fun run() {
             var stage = ReceiverProtocolDiagnostics.Stage.ACCEPT
@@ -168,7 +223,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                     if (request.method.startsWith("HTTP/")) continue
                     diagnostics.request(diagnosticId, request)
                     stage = ReceiverProtocolDiagnostics.Stage.DISPATCH
-                    val response = try { handle(request) }
+                    val response = try { dispatch(request) }
                     catch (error: IllegalArgumentException) {
                         diagnostics.failure(diagnosticId, stage, error); RtspMessage.Response(status = 400)
                     }
@@ -190,29 +245,38 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                     if (response.status == 101) {
                         socket.soTimeout = 0
                     }
-                    if (request.method == "TEARDOWN") break
+                    if (response.headers["Connection"] == "close") break
                 }
             } catch (error: Exception) {
                 diagnostics.failure(diagnosticId, stage, error)
                 // Malformed requests and peer disconnects are confined to their own connection.
             } finally {
-                diagnostics.stage(diagnosticId, ReceiverProtocolDiagnostics.Stage.CLOSE)
-                runCatching { socket.close() }
-                reverseId?.let { id ->
-                    if (reverse.remove(id, this)) synchronized(ownership) {
-                        if (playbackId == id && playbackPeer == peer) finishPlayback()
-                    }
-                }
-                synchronized(ownership) {
-                    closeMedia()
-                    if (owner === this) { owner = null; listener.status("listening") }
+                finish()
+            }
+        }
+
+        fun finish() {
+            diagnostics.stage(diagnosticId, ReceiverProtocolDiagnostics.Stage.CLOSE)
+            runCatching { socket.close() }
+            reverseId?.let { id ->
+                if (reverse.remove(id, this)) synchronized(ownership) {
+                    if (playbackId == id && playbackPeer == peer) finishPlayback()
                 }
             }
+            synchronized(ownership) {
+                closeMedia()
+                if (owner === this) { owner = null; listener.status("listening") }
+            }
+        }
+
+        fun enableReverse() {
+            reverseId?.let { reverse.put(it, this)?.takeIf { old -> old !== this }?.socket?.close() }
         }
 
         fun closeMedia() {
             mirrorToken = null
             mirror?.close(); mirror = null
+            audio?.close(); audio = null
             timing?.close(); timing = null
             key = null; handshake = null
         }
@@ -228,31 +292,28 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
             runCatching { synchronized(output) { output.write(headers.toByteArray()); output.write(body); output.flush() } }
         }
 
-        private fun handle(request: RtspMessage.Request): RtspMessage.Response {
+        fun dispatch(request: RtspMessage.Request): RtspMessage.Response {
             val path = request.path.substringBefore('?')
             val query = receiverQuery(request.path)
             val id = request.headers["x-apple-session-id"] ?: "default"
             require(id.matches(Regex("[A-Za-z0-9._-]{1,128}")))
             when {
                 path == "/info" -> {
-                    val info = config.info().toMutableMap()
-                    if (request.body.isNotEmpty()) {
-                        val dict = BplistCodec.decode(request.body) as? Map<*, *>
-                        if ((dict?.get("qualifier") as? List<*>)?.contains("txtAirPlay") == true) {
-                            info["txtAirPlay"] = config.txt.entries.fold(ByteArray(0)) { bytes, (k, v) ->
-                                val entry = "$k=$v".toByteArray(); bytes + byteArrayOf(entry.size.toByte()) + entry
-                            }
-                        }
-                    }
-                    return plist(info)
+                    return ReceiverInfoProtocol.response(config, request, featuresOverride ?: config.features,
+                        deviceIdOverride ?: config.deviceId)
                 }
-                path == "/server-info" -> return xml(config.serverInfo())
-                path == "/pair-setup" -> return octets(pairing.setup(request.body))
-                path == "/pair-verify" -> return octets(pairing.verify(request.body))
+                path == "/server-info" -> return xml(config.serverInfo().toMutableMap().also { info ->
+                    featuresOverride?.let { info["features"] = it }
+                    deviceIdOverride?.let { info["deviceid"] = it; info["macAddress"] = it }
+                })
+                path == "/pair-setup" -> return ReceiverHandshake.pairing { pairing.setup(request.body) }
+                path == "/pair-verify" -> return ReceiverHandshake.pairing { pairing.verify(request.body) }
                 path == "/fp-setup" -> {
-                    val reply = fairPlayReply(request.body) ?: return RtspMessage.Response(status = 400)
-                    handshake = if (request.body.size == 164) request.body.copyOf() else null
-                    return octets(reply)
+                    val response = ReceiverHandshake.fairPlay(request.body, fairPlayReply)
+                    if (response.status == 200) {
+                        handshake = if (request.body.size == 164) request.body.copyOf() else null
+                    }
+                    return response
                 }
                 request.method == "OPTIONS" -> return RtspMessage.Response(headers = mapOf("Public" to
                     "SETUP, RECORD, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER, FLUSH"))
@@ -260,7 +321,20 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                 request.method == "RECORD" -> return RtspMessage.Response(headers = mapOf("Audio-Latency" to "0"))
                 request.method == "TEARDOWN" -> {
                     synchronized(ownership) {
-                        closeMedia()
+                        val types = receiverTeardownTypes(request.body)
+                        if (types == null) {
+                            closeMedia()
+                        } else {
+                            if (96 in types) { audio?.close(); audio = null }
+                            if (110 in types) {
+                                mirrorToken = null
+                                val hadMirror = mirror != null
+                                mirror?.close(); mirror = null
+                                if (hadMirror && owner === this) listener.status("listening")
+                            }
+                            if (audio != null || mirror != null) return RtspMessage.Response()
+                            closeMedia()
+                        }
                         if (owner === this) { owner = null; listener.status("listening") }
                     }
                     return RtspMessage.Response(headers = mapOf("Connection" to "close"))
@@ -324,7 +398,10 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                     return RtspMessage.Response()
                 }
                 request.method == "GET_PARAMETER" -> return ReceiverMirrorParameters.reply(request)
-                request.method in listOf("SET_PARAMETER", "FLUSH") || path == "/feedback" -> return RtspMessage.Response()
+                request.method == "SET_PARAMETER" -> return ReceiverMetadata.receive(request) {
+                    listener.log("c=$diagnosticId $it")
+                }
+                request.method == "FLUSH" || path == "/feedback" -> return RtspMessage.Response()
                 else -> return RtspMessage.Response(status = 404)
             }
         }
@@ -333,16 +410,33 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
             if (closed.get() || (owner != null && owner !== this) || playbackPeer != null) return busy()
             val dict = BplistCodec.decode(request.body) as? Map<*, *> ?: error("setup must be dictionary")
             diagnostics.setup(diagnosticId, dict, pairing.sharedSecret != null, handshake?.size ?: 0)
+            val requestedStreams = dict["streams"]?.let { value ->
+                require(value is List<*> && value.size <= 16)
+                val entries = value.map { it as? Map<*, *> ?: error("invalid stream") }
+                val types = entries.map { (it["type"] as? Number)?.toInt() }
+                require(types.all { it == 96 || it == 110 } && types.distinct().size == types.size)
+                entries.filter { (it["type"] as Number).toInt() == 96 }.forEach(ReceiverAudioCapabilities::validateStream)
+                entries.filter { (it["type"] as Number).toInt() == 110 }.forEach {
+                    require(it["streamConnectionID"] is Number) { "missing connection id" }
+                }
+                entries
+            }
             val response = linkedMapOf<String, Any?>()
             val encrypted = dict["ekey"] as? ByteArray
             if (encrypted != null) {
                 val iv = dict["eiv"] as? ByteArray
                 require(iv?.size == 16)
                 val shared = pairing.sharedSecret ?: return RtspMessage.Response(status = 403, statusText = "Forbidden")
-                val raw = fairPlayDecrypt(requireNotNull(handshake), encrypted) ?: error("invalid transport key")
+                val transportHandshake = requireNotNull(handshake)
+                val raw = fairPlayDecrypt(transportHandshake, encrypted) ?: error("invalid transport key")
+                val hadMirror = mirror != null
+                closeMedia()
+                if (owner === this) owner = null
+                handshake = transportHandshake
+                if (hadMirror) listener.status("listening")
                 key = AirPlayCrypto.sha512(raw, shared).copyOf(16)
-                timing?.close()
-                val clock = NtpClock { listener.log("c=$diagnosticId $it") }
+                val clock = NtpClock(log = { listener.log("c=$diagnosticId $it") },
+                    wireTimeline = com.shilapi.xcertplay.airplay.NtpWireTimeline())
                 timing = clock
                 response["timingPort"] = clock.listen()
                 val timingPort = (dict["timingPort"] as? Number)?.toInt() ?: 0
@@ -350,12 +444,20 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                 clock.start(peer, timingPort)
                 // Legacy mirroring has no separate event channel; do not point it at the control listener.
                 response["eventPort"] = 0
-                owner = this
             }
-            (dict["streams"] as? List<*>)?.let { streams ->
+            requestedStreams?.let { streams ->
                 response["streams"] = streams.mapNotNull { entry ->
-                    val stream = entry as? Map<*, *> ?: error("invalid stream")
-                    if ((stream["type"] as? Number)?.toInt() != 110) return@mapNotNull null
+                    val stream = entry
+                    if ((stream["type"] as Number).toInt() == 96) {
+                        requireNotNull(key)
+                        requireNotNull(timing)
+                        val receiver = ReceiverAudioDrain(peer) { listener.log("c=$diagnosticId $it") }
+                        val ports = receiver.start()
+                        audio?.close()
+                        audio = receiver
+                        owner = this
+                        return@mapNotNull mapOf("type" to 96, "dataPort" to ports.first, "controlPort" to ports.second)
+                    }
                     val streamKey = requireNotNull(key)
                     val clock = requireNotNull(timing)
                     val connectionId = (stream["streamConnectionID"] as? Number)?.toLong() ?: error("missing connection id")
@@ -363,16 +465,16 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                     val token = Any()
                     mirrorToken = token
                     val receiver = ReceiverMirrorStream(streamKey, connectionId, peer, listener.mirrorSink(), clock,
-                        log = { listener.log("c=$diagnosticId $it") }) {
+                        log = { listener.log("c=$diagnosticId $it") }, hevcEnabled = config.hevcEnabled) {
                         synchronized(ownership) {
                             if (owner === this && mirrorToken === token) {
                                 timing?.reportVideoEnd()
                                 mirror = null
                                 mirrorToken = null
-                                owner = null
+                                owner = if (audio != null) this else null
                                 // A data-channel EOF ends the picture, not the RTSP session. Keep timing
                                 // and transport keys until TEARDOWN/control EOF, allowing its reply or
-                                // another SETUP on this connection (as ordinary UxPlay mirroring does).
+                                // another SETUP on this connection.
                                 listener.status("listening")
                             }
                         }
@@ -390,7 +492,6 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
 
 private fun busy() = RtspMessage.Response(status = 453, statusText = "Not Enough Bandwidth")
 private fun plist(dict: Map<String, Any?>) = RtspMessage.Response(headers = mapOf("Content-Type" to "application/x-apple-binary-plist"), body = BplistCodec.encode(dict))
-private fun octets(bytes: ByteArray) = RtspMessage.Response(headers = mapOf("Content-Type" to "application/octet-stream"), body = bytes)
 private fun xml(dict: Map<String, Any?>) = RtspMessage.Response(headers = mapOf("Content-Type" to "text/x-apple-plist+xml"), body = receiverXml(dict))
 
 /** Bound allocation before passing framing to the shared RTSP parser. */

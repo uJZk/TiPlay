@@ -20,6 +20,8 @@ import com.shilapi.xcertplay.receiver.ReceiverBonjour
 import com.shilapi.xcertplay.receiver.ReceiverConfig
 import com.shilapi.xcertplay.receiver.ReceiverPlay
 import com.shilapi.xcertplay.receiver.ReceiverServer
+import com.shilapi.xcertplay.receiver.UnifiedAirPlayTrial
+import com.shilapi.xcertplay.network.UnifiedAirPlayEndpoint
 import com.shilapi.xcertplay.web.WebMediaSink
 import java.security.SecureRandom
 import java.util.concurrent.Executors
@@ -36,12 +38,16 @@ class AirPlayReceiverService : Service() {
     private val displayLock = Any()
     @Volatile private var mirrorOutput: WebMediaSink? = null
     private var discovery: ReceiverBonjour? = null // worker only
+    private var sharedEntry: UnifiedAirPlayEndpoint? = null // worker only
     @Volatile private var destroyed = false
+    private var unifiedTrial = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        unifiedTrial = UnifiedAirPlayEndpoint.current != null || UnifiedAirPlayTrialSettings.enabled(this)
+        UnifiedAirPlayTrial.configure(unifiedTrial)
         player = AirPlayCastPlayer(this, { url -> server?.loadResource(url) }) { state ->
             server?.playbackEvent(if (state == "failed") "stopped" else state)
             if (!destroyed && state in listOf("failed", "stopped")) {
@@ -103,9 +109,16 @@ class AirPlayReceiverService : Service() {
                     }
                 })
                 server = receiver
-                discovery = ReceiverBonjour(receiverConfig, receiver.start())
+                if (unifiedTrial) {
+                    UnifiedAirPlayTrial.install(receiver, receiverConfig)
+                    sharedEntry = UnifiedAirPlayEndpoint.acquire(receiver, receiverConfig, applicationContext) {
+                        Log.i("tiplay-airplay", it)
+                    }
+                } else {
+                    discovery = ReceiverBonjour(receiverConfig, receiver.start())
+                    worker.scheduleWithFixedDelay(::refreshDiscovery, 0, 5, TimeUnit.SECONDS)
+                }
                 publish("listening")
-                worker.scheduleWithFixedDelay(::refreshDiscovery, 0, 5, TimeUnit.SECONDS)
             } catch (_: Exception) {
                 publish("failed")
                 stopSelf()
@@ -115,6 +128,11 @@ class AirPlayReceiverService : Service() {
     }
 
     private fun identity(): ReceiverConfig {
+        if (unifiedTrial) {
+            val shared = AirPlayPersistence.loadIdentity(this)
+            return ReceiverConfig("TiPlay", DiPlayBootstrap.deviceId(shared), shared,
+                hevcEnabled = AirPlayPersistence.loadHevcEnabled(this))
+        }
         val prefs = getSharedPreferences("tiplay_airplay_receiver", MODE_PRIVATE)
         val private = prefs.getString("private", null)
         val public = prefs.getString("public", null)
@@ -128,7 +146,8 @@ class AirPlayReceiverService : Service() {
         val deviceId = prefs.getString("device", null) ?: ByteArray(6).also {
             SecureRandom().nextBytes(it); it[0] = ((it[0].toInt() or 2) and 0xfe).toByte()
         }.joinToString(":") { "%02X".format(it.toInt() and 255) }.also { prefs.edit().putString("device", it).apply() }
-        return ReceiverConfig("TiPlay", deviceId, identity)
+        return ReceiverConfig("TiPlay AirPlay", deviceId, identity,
+            hevcEnabled = AirPlayPersistence.loadHevcEnabled(this))
     }
 
     private fun refreshDiscovery() {
@@ -150,7 +169,13 @@ class AirPlayReceiverService : Service() {
         runCatching { multicast?.release() }; multicast = null
         player.close()
         worker.execute {
-            server?.close(); server = null
+            server?.let { receiver ->
+                UnifiedAirPlayTrial.remove(receiver)
+                sharedEntry?.releaseReceiver(receiver)
+                receiver.close()
+            }
+            sharedEntry = null
+            server = null
             discovery?.close(); discovery = null
             publish("stopped")
         }

@@ -2416,8 +2416,8 @@ class CarPlayController(
 
             closeBluetoothBootstrapTransport()
 
-            // Let the iPhone observe the lost session while Bonjour sends its goodbye records.
-            // Replacement discovery still waits for the full stack cleanup below to finish.
+            // End this run's CarPlay sessions before releasing discovery. A shared ordinary receiver
+            // owns its listener and publication separately and survives this detach.
             if (service != null && owner != null) closeBestEffort("AirPlay service") { service.detachWireless(owner) }
 
             val activeBonjour = bonjour

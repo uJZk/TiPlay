@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer: InetAddress,
                            private val sink: WebMediaSink, private val clock: NtpClock,
                            log: (String) -> Unit = {},
+                           private val hevcEnabled: Boolean = false,
                            private val ended: () -> Unit) : Closeable {
     private val closed = AtomicBoolean(false)
     private val server = ServerSocket()
@@ -41,6 +42,11 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
     private fun run() {
         var stage = ReceiverMirrorDiagnostics.Stage.ACCEPT
         var reason = ReceiverMirrorDiagnostics.End.CLOSED
+        var codec = VideoCodec.H264
+        var lengthBytes = 4
+        var suspended = false
+        var configuredWidth: Int? = null
+        var configuredHeight: Int? = null
         try {
             var accepted: Socket
             do {
@@ -71,8 +77,8 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
                     0 -> {
                         stage = ReceiverMirrorDiagnostics.Stage.DECRYPT
                         val plain = cipher.update(body)
-                        if (plain != null && plain.isNotEmpty()) {
-                            val frame = ScreenCodec.lengthPrefixedToAnnexB(plain)
+                        if (plain != null && plain.isNotEmpty() && !suspended) {
+                            val frame = ReceiverMirrorCodec.annexB(plain, lengthBytes)
                             stage = ReceiverMirrorDiagnostics.Stage.PUBLISH
                             val senderNanos = ScreenCodec.senderNanos(header)
                             val publishStart = System.nanoTime()
@@ -80,24 +86,36 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
                             val publishNanos = System.nanoTime() - publishStart
                             val annexB = frame.size >= 5 && frame[0] == 0.toByte() && frame[1] == 0.toByte() &&
                                 (frame[2] == 1.toByte() || (frame[2] == 0.toByte() && frame[3] == 1.toByte()))
-                            diagnostics.forwarded(frame.size, WebVideoCodecs.isKeyFrame(VideoCodec.H264, frame), annexB)
+                            diagnostics.forwarded(frame.size, WebVideoCodecs.isKeyFrame(codec, frame), annexB)
                             diagnostics.timing(senderNanos, arrivalNanos, arrivalNanos - bodyStart, publishNanos)
                         }
                     }
                     1 -> {
                         stage = ReceiverMirrorDiagnostics.Stage.CONFIG
+                        suspended = ReceiverMirrorCodec.suspended(header[6].toInt() and 255, suspended)
+                        if (body.isEmpty() && suspended) continue
                         val width = data.getFloat(56).toInt()
                         val height = data.getFloat(60).toInt()
                         diagnostics.geometry(width, height)
                         require(width in 16..8192 && height in 16..8192)
-                        sink.updateCanvas(width, height)
-                        sink.onScreenStreamActive(110, true)
-                        val config = ScreenCodec.describeConfig(body)
+                        val config = ReceiverMirrorCodec.config(body, hevcEnabled)
                         diagnostics.config(config.codec, config.record.size)
-                        require(config.codec == VideoCodec.H264) // no multi-codec capability advertised
+                        codec = config.codec
+                        lengthBytes = config.lengthBytes
+                        if (suspended) continue
                         stage = ReceiverMirrorDiagnostics.Stage.PUBLISH
+                        val geometryChanged = width != configuredWidth || height != configuredHeight
+                        if (geometryChanged) {
+                            sink.onScreenStreamActive(110, false)
+                            sink.updateCanvas(width, height)
+                        }
                         sink.onVideoCodec(110, config.codec)
+                        if (geometryChanged) sink.onScreenStreamActive(110, true)
+                        // The sender repeats its configuration around sleep/resume without an IDR.
+                        // Keep the live prediction chain; the hub itself detects actual record changes.
                         sink.onVideoConfig(110, config.record)
+                        configuredWidth = width
+                        configuredHeight = height
                     }
                 }
             }

@@ -1,21 +1,21 @@
 # AirPlay 屏幕镜像与视频投放
 
-手机 + 车载浏览器模式的实验性接收器，使用独立的 Bonjour 名称、监听端口和配对身份。AirPlay 默认开启，打开 TiPlay 时自动启动接收器；本地网络权限未授予时不会启动。
+手机 + 车载浏览器模式的实验性接收器，默认使用独立的 Bonjour 名称、监听端口和配对身份；统一入口试验的例外见下文。AirPlay 默认开启，打开 TiPlay 时自动启动接收器；本地网络权限未授予时不会启动。
 
 ## 使用
 
 1. 让 iPhone、安卓手机和车载浏览器处于同一局域网。可以使用安卓手机热点；启动接收器不会更改当前 Wi-Fi、热点或 CarPlay 连接方式。
 2. 打开已配对的 TiPlay HTTPS 浏览器页面。特斯拉的热点附加地址和本地网络权限要求沿用 [TESLA_BROWSER.md](TESLA_BROWSER.md) 与 [HOTSPOT_ADDRESS.md](HOTSPOT_ADDRESS.md)。
 3. 打开安卓端 TiPlay，接收器会自动开始监听。
-4. 屏幕镜像：在 iPhone 控制中心的屏幕镜像中选择 **TiPlay**。
-5. 视频投放：在支持 AirPlay 的视频应用中选择 **TiPlay**。暂停、继续和拖动进度在 iPhone 上操作。
+4. 屏幕镜像：在 iPhone 控制中心的屏幕镜像中选择 **TiPlay AirPlay**。
+5. 视频投放：在支持 AirPlay 的视频应用中选择 **TiPlay AirPlay**。暂停、继续和拖动进度在 iPhone 上操作。
 6. 在 iPhone 上结束镜像/投放，恢复浏览器中的 CarPlay 画面。需要关闭接收器时，打开安卓端高级设置中的 **禁用 AirPlay**。
 
 安卓端 **高级设置 → AirPlay（实验性）→ 禁用 AirPlay** 开关默认关闭。
 打开后立即停止正在运行的 AirPlay 接收器，恢复仍有效的 CarPlay 画面，并禁止再次启动 AirPlay。
 关闭开关立即重新启用接收器；此设置会保留，不要求重新连接 CarPlay。主页面与通知栏没有单独的 AirPlay 菜单或停止按钮。
 
-这是仅输出视频的预览版，未提供 AirPlay 音频接收或浏览器音频。按用户要求，Audio-supported bit 9 先行开启用于兼容性验证；音频接收实现在 [TODO](todo.md) 中跟踪，能力位不等于功能已经完成。它不会宣称支持 DRM 视频；Apple TV+ 等需要 FairPlay Streaming 许可的内容不在支持范围内。
+这是仅输出视频的预览版。普通 AirPlay 音频通过独立 UDP 通道接收后立即丢弃，不解密、不解码、不播放，也不传给浏览器；浏览器音频仍在 [TODO](todo.md) 中跟踪。它不会宣称支持 DRM 视频；Apple TV+ 等需要 FairPlay Streaming 许可的内容不在支持范围内。
 
 ## 保留 CarPlay 并恢复画面
 
@@ -25,28 +25,50 @@
 
 这里保留的是 TiPlay 端的会话。iOS 如果主动终止 CarPlay 或更换网络，接收器无法恢复已经结束的会话；真车恢复行为仍需按具体设备验证。
 
+保留 CarPlay 会话不保证 iPhone 同时提供普通镜像的视频源。CarPlay 活跃时，iPhone 可能只建立普通 AirPlay 控制连接并发送心跳，尚未请求镜像视频流；此时接收端没有画面可供切换。控制连接成功或 iPhone 的勾选状态不能证明镜像媒体已经启动，共享 Bonjour 发布器也不能替代媒体协商。
+
 显式 `TEARDOWN` 必须在清除镜像归属时通知监听状态，触发 CarPlay 显示恢复；只清除归属会使后续断连回调无法再恢复画面。恢复只由当前镜像所有者触发，旧连接不能结束新镜像。
 
-镜像数据通道结束立即释放画面，但不主动关闭对应的 RTSP 控制连接、计时服务或传输密钥。控制连接仍可回复 `TEARDOWN`，或在同一连接上接受新的镜像 `SETUP`；由 `TEARDOWN`、控制连接结束或接收器停止统一清理会话。控制连接保留原有读取超时，数据通道结束不会导致无限持有空闲会话。该边界与 UxPlay 的普通镜像处理一致，避免在 iPhone 发送停止请求前抢先截断控制回复。
+初始 SETUP 仅协商密钥与计时端口时不占用媒体归属；只有实际建立类型 96 或 110 才占用。没有媒体的控制连接可以继续发心跳，但不能阻挡另一条连接请求媒体。重新协商密钥释放自己的旧媒体归属，不关闭其他连接。
+
+iPhone 锁屏与解锁可能重复发送相同镜像配置而不发送新的 IDR。尺寸与配置未改变时，接收器必须保留当前画布、解码 epoch 和预测链；无条件重建画布会让网页等待不存在的新关键帧。暂停期间仍消费密文以保持 CTR 位置，恢复后继续接收预测帧。
+
+镜像数据通道结束立即释放画面，但不主动关闭对应的 RTSP 控制连接、计时服务或传输密钥。控制连接仍可回复 `TEARDOWN`，或在同一连接上接受新的镜像 `SETUP`；由 `TEARDOWN`、控制连接结束或接收器停止统一清理会话。控制连接保留原有读取超时，数据通道结束不会导致无限持有空闲会话。保留控制连接避免在 iPhone 发送停止请求前抢先截断控制回复。UxPlay 在完整包边界的 EOF 后还会继续监听原数据端口；TiPlay 需要新的 `SETUP`，不支持直接重连旧数据端口。
 
 正常停止或连接关闭立即触发恢复。静默掉线使用现有 TCP 存活检测：Android 10+ 尝试启用约 20 秒的失联检测窗口，不以没有视频帧判断断线；系统不支持调优时退回其 TCP 行为。它不是实测恢复时延保证。
 
 ## 实现与开源依据
 
-维护情况核对于 2026-10-12：`FDH2/UxPlay` 最新提交为 2026-10-11；`antimof/UxPlay` 最新提交为 2026-04-04；`FD-/RPiPlay` 最新代码提交为 2022-03-14。因此以 [FDH2/UxPlay](https://github.com/FDH2/UxPlay) 的 `ec203121355220dd90278a369eeabb0b8ba4f14a` 为主要协议参考，固定版本便于后续对照更新。
+以 [FDH2/UxPlay](https://github.com/FDH2/UxPlay) 的 `ec203121355220dd90278a369eeabb0b8ba4f14a` 为主要协议参考，固定版本便于核对实际处理路径，不能仅凭功能位名称或源码中的声明认定功能已实现。
 
 复用 UxPlay 的 `playfair` 镜像传输密钥模块及传输握手回复表，保留许可证和出处；Android 侧的协议、发现、媒体和浏览器适配为 TiPlay 新文件。没有将 UxPlay 的桌面应用或 GStreamer 播放器搬入 Android。详见 [第三方说明](THIRD_PARTY_NOTICES.md) 和 [native 来源记录](../shared/src/main/jni/airplay/README.md)。
 
-- 屏幕镜像：独立的 legacy pair-setup / pair-verify、镜像传输密钥协商、SETUP / RECORD / TEARDOWN、NTP 计时和 AES-CTR 屏幕流。H.264 配置与解密后的帧直接进入 `WebVideoHub`，按镜像头里的尺寸适配横竖屏，不在安卓端重新编码。该接收器未声明 HEVC 镜像能力。
+- 屏幕镜像：独立的 legacy pair-setup / pair-verify、镜像传输密钥协商、SETUP / RECORD / TEARDOWN、NTP 计时和 AES-CTR 屏幕流。H.264 或 HEVC 配置与解密后的帧直接进入 `WebVideoHub`，按镜像头里的尺寸适配横竖屏，不在安卓端重新编码。HEVC 声明跟随现有 HEVC 设置，支持普通镜像的 `hvc1` 配置封装；浏览器仍必须支持对应 WebCodecs 解码器。横竖屏尺寸变化不等于实现了独立的 ScreenRotate 协议。镜像暂停标志保留最后画面并继续消费密文，恢复时不重置 CTR 状态。
 - 视频投放：HTTP `/play`、`/reverse`、`/rate`、`/scrub`、`/stop`、`/playback-info`。沿用 UxPlay 的 `unhandledURLRequest` / `/action` FCUP 交换，让 iPhone 应用提供其持有的 HLS 播放列表和资源；请求按会话、对端、URL 和请求 ID 关联，并在停止或断连时取消。不会通过资源加载器请求 `skd` 密钥或安卓本地文件。
 - 视频播放：Media3 加载未受 DRM 保护的 MP4 / HLS，解码到独立 SurfaceTexture，通过 EGL 按比例绘制到编码器 Surface，生成 1280×720、30 fps H.264，传入既有浏览器画布链路。视频投放会转码，其耗电与延迟不同于 CarPlay/屏幕镜像。解码与编码使用独立 Surface，避免缓冲尺寸耦合导致解码已输出但编码器无帧；释放时先关闭 EGL 生产者，再结束编码输出线程，清理不阻塞安卓主线程。
 - 后台与发现：默认启用的 connected-device 前台服务、CPU/Wi-Fi/多播锁；每个物理 IPv4 局域网接口使用一个主地址发布 Bonjour，定期跟踪热点地址变化。浏览器专用附加地址及接口别名不另建 Bonjour 实例，避免同一热点上的接收器互相判定名称冲突；不同物理接口使用不同主机名。接收器不需要 CarPlay 的 MFi 认证身份。启动期间允许同一局域网中的 iPhone 发起连接，不设置 AirPlay PIN；浏览器配对仍使用原有配对码。
 
 所有功能仅面向安卓手机 + 车载浏览器，没有增加原生车机产品流程。
 
-Bonjour 的功能位 30 表示同一 `_airplay` 端口也提供 RTSP 镜像入口，因此不需要另行发布 `_raop`（AirTunes）服务；它与音频支持位 9 及功能位 26（Unified Advertiser 信息）不同。接收器的 HTTP 视频接口与 RTSP 配对、镜像共用监听端口，发现记录、`/info` 与 `/server-info` 保持此声明一致。音频支持位 9 已按用户要求开启；音频格式位保持关闭，不发布音频编解码器或音频服务，实际接收实现仍待后续工作。该发现语义依据 [公开功能位说明](https://openairplay.github.io/airplay-spec/features.html) 和固定 UxPlay 的 [端口与功能位实现](https://github.com/FDH2/UxPlay/blob/ec203121355220dd90278a369eeabb0b8ba4f14a/uxplay.cpp)。UxPlay 的 `-a` 仅关闭音频渲染，仍接收音频并发布 AirTunes，不能将它视为无音频协议声明的范例。
+普通接收器发布为 `TiPlay AirPlay`，CarPlay 发布为 `TiPlay`。两者同属 `_airplay._tcp`，但端口和能力不同，必须使用不同的服务实例名，避免 Bonjour 名称冲突及客户端缓存混用。
 
-Legacy 镜像初始 SETUP 的 `eventPort` 为 0，不能填写接收器控制监听端口。iPhone 仍可能查询 `GET_PARAMETER volume`；接收器返回静音参数；此回复本身不代表音频接收已经实现。`/feedback` 是心跳，不能用它冒充关键帧请求。网页加入视频流必须等待可独立解码的 IDR；收到配置或持续转发加密流解出的帧，都不能单独证明网页已有画面。诊断仅记录帧数、IDR 数与 Annex B 格式计数，不记录媒体内容或密钥。
+默认关闭的统一入口验证开关见 [UnifiedAirPlayTrialSettings](../common/src/main/java/com/shilapi/xcertplay/UnifiedAirPlayTrialSettings.kt)。启用后 [共享入口](../shared/src/main/java/com/shilapi/xcertplay/network/UnifiedAirPlayEndpoint.kt) 持有同一监听端口、配对身份和 `TiPlay` 发现记录；普通接收器与 CarPlay 分别持有租约。断开 CarPlay 仅撤销其协议上下文，普通入口和镜像不随之关闭；禁用普通接收器仅停止普通会话，仍有效的 CarPlay 入口改用 CarPlay 公告。最后一个租约释放时关闭端口及公告。保持入口不能保持已被关闭的热点，iPhone 与安卓仍须处于同一网络。
+
+每条 TCP 连接按握手独立选择普通 AirPlay 或 CarPlay，已进入加密 CarPlay 的连接不能直接切换为明文普通镜像。更改试验开关后需要重启接收服务和 CarPlay 公告；关闭开关保留原有独立身份，恢复双入口。共享发布器只发布服务，不主动发现或连接 iPhone；CarPlay 控制服务发现仍由 CarPlay 连接流程管理。
+
+普通接收器可用时，统一公告和普通 `/info`、`/server-info` 不声明 `isCarPlay`；完成 CarPlay 握手后的 `/info` 合并原有 CarPlay 与共享入口实际支持的普通能力，避免同一身份被缓存为仅支持 CarPlay 的设备。协议未确定的 `/info` 探测使用与公告一致的普通配置，不锁定后续握手类型。无线 CarPlay 使用热点 BSSID 作为设备 ID；共享发布器采用该别名并在 CarPlay 断开后保留，普通响应跟随公告。密钥与配对身份必须一致，不能用公钥派生的启动 ID 拒绝采用热点别名的连接。
+
+能力声明的权威来源是 [ReceiverCapabilities](../shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverCapabilities.kt)。UxPlay 的图片、幻灯片和图片缓存位没有对应的独立协议处理入口；其 HLS 缓存不是播放队列、音频抖动缓冲不是 AirPlay 2 缓冲音频、UDP 重传不是 RFC2198。TiPlay 不复制这些声明。封面、DMAP 文本和进度通过有界 `SET_PARAMETER` 解析后立即丢弃，不保存内容或提供元数据显示；它们与普通音频一样属于接收能力。配对失败清除临时状态并关闭对应连接；不支持的 FairPlay 传输版本返回 501，损坏报文返回 400。
+
+普通镜像保留 bit 14 的 legacy FairPlay 传输认证声明；关闭它可能使 iPhone 在配对后、传输密钥协商前结束连接。这不代表 DRM 视频支持；FairPlay Streaming 与 AES-GCM 能力仍不声明。
+
+RFC2198 不在接收器支持范围内，bit 61 保持关闭；普通 UDP 音频接收不代表实现了 RED 解析或冗余恢复。
+
+Bonjour 的功能位 30 表示同一 `_airplay` 端口也提供 RTSP 镜像入口；它与音频支持位 9 及功能位 26（Unified Advertiser 信息）不同。接收器的 HTTP 视频接口与 RTSP 配对、镜像共用监听端口，发现记录、`/info` 与 `/server-info` 保持此声明一致。音频支持位和格式位对应接收后丢弃的传输能力，不代表解码或播放；`/info` 的音频输入格式为零，不提供麦克风。接收器在统一 RTSP 入口处理类型 96，返回已绑定的音频数据和控制 UDP 端口，仅消费当前对端的数据。单独停止类型 96 不结束仍有效的镜像；完整会话结束时释放两个端口。尚未实现旧式 RAOP 的独立握手，因此不发布 `_raop`（AirTunes）服务。该发现语义依据 [公开功能位说明](https://openairplay.github.io/airplay-spec/features.html) 和固定 UxPlay 的 [端口与功能位实现](https://github.com/FDH2/UxPlay/blob/ec203121355220dd90278a369eeabb0b8ba4f14a/uxplay.cpp)。UxPlay 的 `-a` 仅关闭音频渲染，仍接收音频并发布 AirTunes，不能将它视为无音频协议声明的范例。
+
+Legacy 镜像初始 SETUP 的 `eventPort` 为 0，不能填写接收器控制监听端口。iPhone 仍可能查询 `GET_PARAMETER volume`；接收器返回静音参数。`/feedback` 是心跳，不能用它冒充关键帧请求。网页加入视频流必须等待可独立解码的 IDR；收到配置或持续转发加密流解出的帧，都不能单独证明网页已有画面。诊断仅记录帧数、IDR 数、Annex B 格式计数和音频报文数量，不记录媒体内容或密钥。
+
+普通 AirPlay 的 NTP 报文使用固定本地时间基准，视频时间映射单独跟随 iPhone 时钟。iPhone 的计时基准可能是开机时间加 NTP 纪元，与安卓墙钟相差很大；同步视频时不能把这个偏移直接加到后续报文时间。每次计时样本得到的绝对偏移必须先扣除已应用的媒体偏移，再用于校正，否则持续同步会重复累加偏移。此路径不改变保留的 CarPlay 计时行为。
 
 ## 验证
 

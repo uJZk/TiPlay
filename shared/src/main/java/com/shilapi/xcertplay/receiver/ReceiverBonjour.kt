@@ -8,9 +8,21 @@ import javax.jmdns.JmDNS
 import javax.jmdns.ServiceInfo
 
 /** Advertise on hotspot/LAN interfaces, including those created after the receiver starts. Worker-owned. */
-class ReceiverBonjour(private val config: ReceiverConfig, private val port: Int) : Closeable {
+class ReceiverBonjour(private val config: ReceiverConfig, private val port: Int,
+                      private val configProvider: (() -> ReceiverConfig)? = null,
+                      private val txtProvider: (() -> Map<String, String>)? = null) : Closeable {
     private val instances = linkedMapOf<String, JmDNS>()
+    private var advertisedTxt: Map<String, String>? = null
+    private var advertisedName: String? = null
     fun refresh(): Boolean {
+        val current = configProvider?.invoke() ?: config
+        val txt = txtProvider?.invoke() ?: current.txt
+        if (advertisedTxt != txt || advertisedName != current.name) {
+            BonjourMdnsCleanup.closeAll(instances.values.toList())
+            instances.clear()
+            advertisedTxt = txt
+            advertisedName = current.name
+        }
         val interfaces = NetworkInterface.getNetworkInterfaces().toList().filter {
             it.isUp && !it.isLoopback && it.supportsMulticast() && !it.name.startsWith("tun") && !it.name.startsWith("wg")
         }.flatMap { network -> network.interfaceAddresses.mapNotNull { bound ->
@@ -25,8 +37,8 @@ class ReceiverBonjour(private val config: ReceiverConfig, private val port: Int)
             if (key in instances) continue
             var dns: JmDNS? = null
             try {
-                dns = JmDNS.create(selected.address, ReceiverDiscoveryInterfaces.hostname(config.deviceId, selected.physicalName))
-                dns.registerService(ServiceInfo.create("_airplay._tcp.local.", config.name, port, 0, 0, config.txt))
+                dns = JmDNS.create(selected.address, ReceiverDiscoveryInterfaces.hostname(current.deviceId, selected.physicalName))
+                dns.registerService(ServiceInfo.create("_airplay._tcp.local.", current.name, port, 0, 0, txt))
                 instances[key] = dns
             } catch (_: Exception) { dns?.let { BonjourMdnsCleanup.closeAll(listOf(it)) } }
         }

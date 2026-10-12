@@ -6,6 +6,9 @@ import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
+/** Signals a failed legacy handshake that must end its control connection. */
+class ReceiverPairingFailure : IllegalArgumentException("invalid legacy pairing")
+
 /** Legacy AirPlay pairing; independent of CarPlay's TLV8 and encrypted control channel. */
 class ReceiverPairing(private val identity: AirPlayIdentity) {
     private var peerCurve: ByteArray? = null
@@ -17,15 +20,25 @@ class ReceiverPairing(private val identity: AirPlayIdentity) {
         private set
 
     fun setup(body: ByteArray): ByteArray {
-        require(body.size == 32)
+        clearState()
+        if (body.size != 32) throw ReceiverPairingFailure()
         return identity.publicKey.copyOf()
     }
 
     fun verify(body: ByteArray): ByteArray {
+        return try {
+            verifyStep(body)
+        } catch (_: Exception) {
+            clearState()
+            throw ReceiverPairingFailure()
+        }
+    }
+
+    private fun verifyStep(body: ByteArray): ByteArray {
         require(body.size >= 4 && body.sliceArray(1..3).all { it == 0.toByte() })
         if (body[0] == 1.toByte()) {
+            clearState()
             require(body.size == 68)
-            sharedSecret = null
             peerCurve = body.copyOfRange(4, 36)
             peerSigning = body.copyOfRange(36, 68)
             val own = AirPlayCrypto.x25519Generate()
@@ -45,9 +58,24 @@ class ReceiverPairing(private val identity: AirPlayIdentity) {
         val signature = cipher.update(body.copyOfRange(4, 68))
         exchange = null
         require(AirPlayCrypto.ed25519Verify(requireNotNull(peerSigning), requireNotNull(peerCurve) + requireNotNull(ownCurve), signature))
-        sharedSecret = pendingSecret
-        pendingSecret = null
+        sharedSecret = requireNotNull(pendingSecret).copyOf()
+        clearEphemeral()
         return ByteArray(0)
+    }
+
+    private fun clearState() {
+        sharedSecret?.fill(0)
+        sharedSecret = null
+        clearEphemeral()
+    }
+
+    private fun clearEphemeral() {
+        peerCurve = null
+        peerSigning = null
+        ownCurve = null
+        exchange = null
+        pendingSecret?.fill(0)
+        pendingSecret = null
     }
 }
 

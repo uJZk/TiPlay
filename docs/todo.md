@@ -1,19 +1,27 @@
 # TODO
 
-## AirPlay 停止镜像延迟与约一分钟自动断开
+## common 模块独立 lint
 
-- [ ] 排查 iPhone 点击“停止镜像”后仍持续发送镜像、延迟发出 RTSP `TEARDOWN`，以及无停止操作也约一分钟自动断开的情况；iOS 端问题只是待验证的可能原因。对照 iPhone 停止动作、类型 110 的销毁请求、TCP 关闭及 Audio-supported bit 9 的兼容性；不要用无视频帧超时替代协议停止。
-- [ ] 验证镜像视频 TCP 约 5 秒后由发送端关闭、iPhone 约 60 秒后取消勾选的问题。下一次复现对照 `VIDEO_END` 的 NTP 数值诊断及保留 RTSP 控制连接后的 `TEARDOWN` 回复；不能把控制连接清理修复视为已解决发送端断流。
-- [ ] 对照 [UxPlay](https://github.com/fdh2/uxplay) 的音频协商与 NTP 行为定位断流。UxPlay 禁用声音输出仍接收音频；TiPlay 仅开放 bit 9，尚未实现音频传输。音频与计时差异均需实机证据，未经确认不扩展能力声明。
+- [ ] 排查并修复 `:common:lintDebug` 的权限与 API 使用错误。先核对库模块与应用合并后的权限上下文，再补齐真实调用点的权限检查；包括 `BrowserMainSettingsMenu` 读取 `BluetoothAdapter.bondedDevices` 前的 `BLUETOOTH_CONNECT` 检查。验证口径仍以 [Android CI](../.github/workflows/android.yml) 为准，独立库 lint 通过后再考虑加入 CI。
+
+## AirPlay 停止与 CarPlay 共存
+
+- [ ] 验证共享入口的冷启动、CarPlay 断开／重连、热点变化及禁用／重新启用普通 AirPlay；关注同名记录、旧 TXT 缓存和实际监听端口的一致性，合同见 [AIRPLAY.md](AIRPLAY.md)。
 
 ## 独立图片／视频 AirPlay
 
 - [ ] 验证 iPhone 应用的 iOS AirPlay 入口发现和首次投放：Bilibili／YouTube 未发现接收器，相册首次投放转圈、再次选择才可输出。HTTP 视频解码到网页的验证不代表这些应用的协议入口已兼容。
-- [ ] 补齐纯图片 AirPlay 协议；不要将相册使用类型 110 的镜像媒体输出视为纯图片协议已实现。
+- [ ] 补齐纯图片、幻灯片及缓存显示的完整协议与浏览器呈现；固定 UxPlay 只有能力声明，没有对应处理入口，不能直接搬用其功能位。相册使用类型 110 不代表纯图片协议已实现。
+- [ ] 实现独立视频播放队列及队列控制；固定 UxPlay 的 HLS 播放列表缓存与恢复不能作为队列实现。完成前不声明 bit 33。
 
-## 普通 AirPlay 音频接收（待实现）
+## 普通 AirPlay 音频验证与网页播放
 
-- [ ] 实现普通 AirPlay 音频协商及接收，当前阶段在安卓端丢弃音频，后续再实现网页音频。按用户要求先开启 Audio-supported bit 9；该能力位不代表音频接收或网页播放已经实现。接入音频传输前不额外声明未实现的音频格式、服务或控制路径。
+- [ ] 实机验证类型 96 的格式选择、UDP 数据／控制接收与断连清理；当前阶段在安卓端立即丢弃音频，契约见 [AIRPLAY.md](AIRPLAY.md)。
+- [ ] 实现网页音频。接收后丢弃不代表已能解密、解码或播放；不要额外声明未实现的服务或控制路径。
+- [ ] 音频播放接入时移植 UxPlay 的 UDP 序号、丢包检测与类型 85／86 重传恢复，再开启 bit 11；当前立即丢弃的数据通道不请求重传。
+- [ ] 接入 AirPlay 2 缓冲音频的完整会话：参考 [Shairport Sync](https://github.com/mikebrady/shairport-sync) 的现代配对、加密控制及事件通道、`shk` 会话密钥、类型 103 的 TCP 长度分帧与控制通道、时间锚点和 `FLUSHBUFFERED`。与 [openairplay/airplay2-receiver](https://github.com/openairplay/airplay2-receiver) 对照协议，但其音频核心未找到明确复用许可，不直接复制。单独增加 TCP 接收器或普通音频抖动缓冲不构成 bit 40；需核实关闭 PTP 时的可用同步方案，完成前保持关闭。
+- [ ] 如需要展示曲目、封面和播放进度，在现有有界元数据接收上接入媒体状态与浏览器展示；当前解析后丢弃，不保存内容。
+- [ ] 实机验证普通镜像 HEVC 的配置封装、暂停／恢复、横竖屏变化和浏览器解码兼容性；关闭 HEVC 后必须恢复 H.264 声明。
 
 ## AirPlay 轻量信任设备机制（待实现，2026-10-12）
 

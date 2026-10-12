@@ -135,6 +135,10 @@ can send their goodbye records concurrently, but cleanup still waits for every i
 early risks stale discovery records; reducing the shutdown timeout is not an equivalent optimization.
 The old AirPlay listener closes before Bonjour cleanup so the iPhone can detect the lost connection while goodbye
 records are being sent; this does not permit replacement advertisements before cleanup completes.
+With the unified AirPlay entry enabled, CarPlay shutdown releases only its protocol context and control discovery.
+The shared listener and receiver advertisement stay alive while the ordinary AirPlay service holds its lease.
+Disabling ordinary AirPlay instead keeps any active CarPlay lease and switches the shared advertisement to CarPlay's
+profile. The final lease closes the entry; keeping a lease does not keep a separately owned hotspot running.
 
 While connected, TiPlay keeps the CPU awake and requests low-latency Wi-Fi operation so the browser can retain its
 picture with the phone screen off. Platform-required local network permissions govern access from both the iPhone and

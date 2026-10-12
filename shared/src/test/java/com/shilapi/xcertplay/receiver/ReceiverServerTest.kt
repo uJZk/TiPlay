@@ -9,6 +9,9 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.net.InetAddress
 import java.net.Socket
+import java.net.DatagramSocket
+import java.net.InetSocketAddress
+import java.net.BindException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.CopyOnWriteArrayList
@@ -89,7 +92,17 @@ class ReceiverServerTest {
 
     @Test fun mirrorDataEofKeepsControlAndTimingUntilTeardownAndAllowsAnotherSetup() = encryptedMirrorProbe(false, true)
 
-    private fun encryptedMirrorProbe(teardown: Boolean, dataEofRecovery: Boolean = false) {
+    @Test fun combinedAudioAndMirrorSetupHasRealUdpPortsAndAudioTeardownKeepsThePicture() =
+        encryptedMirrorProbe(false, audioDrain = true)
+
+    @Test fun mirrorEofWithAudioStillRunningKeepsSessionOwnershipUntilTeardown() =
+        encryptedMirrorProbe(false, dataEofRecovery = true, audioDrain = true)
+
+    @Test fun sleepResumeWithRepeatedConfigurationKeepsThePredictionChainAndCipherPosition() =
+        encryptedMirrorProbe(false, sleepResume = true)
+
+    private fun encryptedMirrorProbe(teardown: Boolean, dataEofRecovery: Boolean = false, audioDrain: Boolean = false,
+                                     sleepResume: Boolean = false) {
         val identity = AirPlayIdentity.generate()
         val listener = Listener()
         val rawKey = ByteArray(16) { (it + 1).toByte() }
@@ -107,14 +120,22 @@ class ReceiverServerTest {
                 AirPlayCrypto.sha512("Pair-Verify-AES-IV".toByteArray(), secret).copyOf(16))
             verifyCipher.update(reply.copyOfRange(32, 96))
             assertEquals(200, control.status("POST", "/pair-verify", ByteArray(4) + verifyCipher.update(AirPlayCrypto.ed25519Sign(signing.privateKey, curve.publicKey + serverCurve))))
-            assertEquals(142, control.send("POST", "/fp-setup", ByteArray(16)).body.size)
-            assertEquals(32, control.send("POST", "/fp-setup", ByteArray(164)).body.size)
+            fun fairPlay(size: Int, sequence: Int) = ByteArray(size).apply {
+                byteArrayOf(0x46, 0x50, 0x4c, 0x59, 3, 1, sequence.toByte(), 0).copyInto(this)
+                java.nio.ByteBuffer.wrap(this, 8, 4).putInt(size - 12)
+            }
+            assertEquals(142, control.send("POST", "/fp-setup", fairPlay(16, 1)).body.size)
+            assertEquals(32, control.send("POST", "/fp-setup", fairPlay(164, 3)).body.size)
             val setup = mapOf("eiv" to ByteArray(16), "ekey" to ByteArray(72), "timingPort" to 0)
             val initialSetup = control.send("SETUP", "rtsp://receiver/stream", BplistCodec.encode(setup))
             assertEquals("200", initialSetup.path)
             val initialPorts = BplistCodec.decode(initialSetup.body) as Map<*, *>
             assertEquals(0, (initialPorts["eventPort"] as Number).toInt())
             assertTrue((initialPorts["timingPort"] as Number).toInt() > 0)
+            connect(receiver.port).use { probe ->
+                // Key/timing-only negotiation has no media lease, so another control session is not busy.
+                assertEquals(200, probe.status("SETUP", "/", BplistCodec.encode(emptyMap<String, Any?>())))
+            }
             assertEquals(200, control.status("GET", "/info"))
             val volume = control.send("GET_PARAMETER", "rtsp://receiver/stream", "volume\r\n".toByteArray(), contentType = "text/parameters")
             assertEquals("200", volume.path)
@@ -122,13 +143,26 @@ class ReceiverServerTest {
             assertEquals("volume: -144.0\r\n", volume.body.toString(Charsets.US_ASCII))
             assertEquals("volume: -144.0\r\n", control.send("GET_PARAMETER", "rtsp://receiver/stream",
                 "volume\r\n".toByteArray()).body.toString(Charsets.US_ASCII))
-            val stream = BplistCodec.decode(control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(mapOf("type" to 110, "streamConnectionID" to 1234L))))).body) as Map<*, *>
-            val port = (((stream["streams"] as List<*>).single() as Map<*, *>)["dataPort"] as Number).toInt()
+            val requested = listOf(mapOf("type" to 110, "streamConnectionID" to 1234L)) +
+                if (audioDrain) listOf(mapOf("type" to 96, "ct" to 8, "audioFormat" to 0x1000000L, "spf" to 480)) else emptyList()
+            val stream = BplistCodec.decode(control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to requested))).body) as Map<*, *>
+            val ports = (stream["streams"] as List<*>).map { it as Map<*, *> }
+            val port = (ports.single { (it["type"] as Number).toInt() == 110 }["dataPort"] as Number).toInt()
+            val audioPorts = ports.find { (it["type"] as Number).toInt() == 96 }?.let {
+                listOf((it["dataPort"] as Number).toInt(), (it["controlPort"] as Number).toInt())
+            }.orEmpty()
+            for (audioPort in audioPorts) {
+                try {
+                    DatagramSocket(null).use { it.bind(InetSocketAddress(InetAddress.getByName("::"), audioPort)) }
+                    fail("Advertised audio port must already be bound")
+                } catch (_: BindException) { /* Receiver owns the real UDP port. */ }
+            }
             val subscription = listener.hub.subscribe()
             connect(port).use { data ->
-                fun packet(op: Int, body: ByteArray): ByteArray {
+                fun packet(op: Int, body: ByteArray, flag: Int = 0): ByteArray {
                     val header = ByteBuffer.allocate(128).order(ByteOrder.LITTLE_ENDIAN)
                     header.putInt(0, body.size); header.put(4, op.toByte()); header.putFloat(56, 720f); header.putFloat(60, 1280f)
+                    header.put(6, flag.toByte())
                     return header.array() + body
                 }
                 val avcc = byteArrayOf(1, 0x42, 0, 0x1f, -1, -31, 0, 4, 0x67, 0x42, 0, 0x1f, 1, 0, 2, 0x68, 1)
@@ -143,9 +177,34 @@ class ReceiverServerTest {
                 val second = byteArrayOf(0, 0, 0, 2, 0x41, 1)
                 data.getOutputStream().write(packet(0, encryption.update(first)) + packet(0, encryption.update(second)))
                 assertNotNull(subscription.take(5000)); assertNotNull(subscription.take(5000))
-                if (dataEofRecovery) {
+                if (sleepResume) {
+                    val epoch = listener.hub.info()!!.epoch
+                    data.getOutputStream().write(packet(1, avcc, 0x56) +
+                        packet(0, encryption.update(second)) + packet(1, avcc, 0x16) +
+                        packet(0, encryption.update(second)))
+                    assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_FRAME, subscription.take(5000)!!.kind)
+                    assertEquals(epoch, listener.hub.info()!!.epoch)
+                }
+                if (audioDrain && !dataEofRecovery) {
+                    assertEquals(200, control.status("TEARDOWN", "/", BplistCodec.encode(mapOf("streams" to listOf(mapOf("type" to 96))))))
+                    assertEquals(200, control.status("OPTIONS", "/"))
+                    assertNotNull(listener.hub.info())
+                    assertFalse(listener.logs.any { it.contains("Media clock final:") })
+                    for (audioPort in audioPorts) {
+                        DatagramSocket(null).use { it.bind(InetSocketAddress(InetAddress.getByName("::"), audioPort)) }
+                    }
+                    data.getOutputStream().write(packet(0, encryption.update(second)))
+                    assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_FRAME, subscription.take(5000)!!.kind)
+                    assertEquals(200, control.status("TEARDOWN", "/"))
+                    assertNull(readReceiverRequest(control.getInputStream()))
+                } else if (dataEofRecovery) {
                     data.close()
                     assertTrue(listener.ended.await(5, TimeUnit.SECONDS))
+                    if (audioDrain) connect(receiver.port).use { competing ->
+                        assertEquals(453, competing.status("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(
+                            mapOf("type" to 110, "streamConnectionID" to 999L),
+                        )))))
+                    }
                     assertNull(listener.hub.info())
                     assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_IDLE, subscription.take(5000)!!.kind)
                     assertEquals(200, control.status("OPTIONS", "/"))
