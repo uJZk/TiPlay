@@ -14,6 +14,9 @@ secret transfer and host ADB boundaries, are in [docs/WLSC.md](docs/WLSC.md).
 
 ## Current progress
 
+Browser permission and retry-countdown verification evidence and the local delivery handoff are in ignored
+`agent_docs/merge-all/HANDOFF.md`. Browser permission compatibility follows `docs/TESLA_BROWSER.md`.
+
 See `docs/CARPLAY-CONNECTION-UX-2026-10-12.md` for continuous CarPlay recovery,
 the 1/2/4/8/16-second Bluetooth arrival retry policy, USB-first All mode, independent
 CarPlay opt-out, TiPlay mode copy, privileged USB attempts and Android 16 virtual validation.

@@ -32,6 +32,13 @@ demand retries permission if needed. Browsers that block autoplay resume sound o
 gesture; there are no separate sound or microphone enable buttons. A vehicle browser without `getUserMedia` cannot provide call or Siri microphone input. Permission granted
 in a desktop or phone browser does not establish support in the car browser.
 
+Browser support for querying microphone permission is separate from capture support. Where the Permissions API
+exposes microphone changes, granting permission clears the old denial and resumes an outstanding iPhone input
+demand without waiting for another status change. Otherwise, a page touch or key gesture retries the failed
+permission check. A known denied permission is not requested again on every touch or status heartbeat.
+Microphone recovery does not clear an independent playback failure, and playback recovery does not clear a
+microphone failure. An idle permission check still releases its temporary recording tracks.
+
 The phone decodes audio to PCM without playing it locally. Audio has its own authenticated HTTP stream so it
 cannot block video writes. Live queues are bounded and discard stale audio; buffered music uses backpressure
 instead of dropping ordered frames. The browser holds the playback buffer. Microphone uploads are short,
