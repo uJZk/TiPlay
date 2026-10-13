@@ -1,3 +1,16 @@
+# Validation records
+
+The release sections below preserve dated DiPlay evidence and its original scope;
+their package IDs, defaults and head-unit checks are not current TiPlay contracts.
+TiPlay now supports Android phone + car browser only. For the current build and
+acceptance procedure, see [BUILD.md](BUILD.md) and [TESTING.md](TESTING.md).
+The October 13 media verification and its pending iPhone/vehicle checks are recorded
+in [the media report](BROWSER-MEDIA-2026-10-13.md) and
+[its delivery record](BROWSER-MEDIA-TIE-UP-2026-10-13.md).
+Current browser sessions offer buffered music whenever audio is enabled and use
+Android demand-driven HFP/SCO capture; historical opt-in buffering and native
+microphone descriptions below remain historical evidence.
+
 # DiPlay 0.2.13 — 2026-10-06
 
 - Production-signed source commit `6fb0fa4a09e77a84a437da5159147a6f6141ed61`, tree `2065f45e57475d4dc51b9b9cd1f955ad3faccdec`, was clean before and after Gradle. APK metadata embeds that exact revision. Later release preparation changes documentation and merge history only; publication checks require application code/build inputs to remain unchanged. The release tag and source ZIP identify the final release commit.

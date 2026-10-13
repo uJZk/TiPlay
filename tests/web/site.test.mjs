@@ -33,6 +33,14 @@ test('the page is the site root and the download pages are in download/', () => 
   }
 });
 
+test('download metadata and project actions use the TiPlay destinations', () => {
+  const html = readFileSync(join(SITE, 'index.html'), 'utf8');
+  assert.ok(html.includes('rel="canonical" href="https://ujzk.github.io/TiPlay/download/"'));
+  assert.ok(html.includes('href="https://github.com/uJZk/TiPlay/releases/latest"'));
+  assert.ok(html.includes('href="https://github.com/uJZk/TiPlay/issues"'));
+  assert.ok(!html.includes('https://github.com/uJZk/DiPlay'));
+});
+
 test('the former addresses forward: play/ to the root with ?t= and #c=, a language page to download/', () => {
   const { out, done } = assemble();
   try {

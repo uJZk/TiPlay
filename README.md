@@ -6,11 +6,11 @@ TiPlay runs on an Android phone and sends the iPhone's CarPlay picture and audio
 
 TiPlay supports the Android phone + car browser flow only. Native Android head units are not supported.
 
-[Releases](https://github.com/uJZk/DiPlay/releases) · [Report a problem](https://github.com/uJZk/DiPlay/issues/new/choose) · [中文说明](README.zh-CN.md)
+[Releases](https://github.com/uJZk/TiPlay/releases) · [Report a problem](https://github.com/uJZk/TiPlay/issues/new/choose) · [中文说明](README.zh-CN.md)
 
 ## Status and requirements
 
-TiPlay is experimental and has no publicly published release yet. Check [Releases](https://github.com/uJZk/DiPlay/releases) for available APKs and follow the [installation guide](docs/INSTALL.md).
+TiPlay is experimental. Check [Releases](https://github.com/uJZk/TiPlay/releases) for available APKs and follow the [installation guide](docs/INSTALL.md).
 
 You need an Android 9+ phone, an iPhone and a compatible car browser. TiPlay installs alongside DiPlay and does not reuse its settings or pairing records. Run one projection app at a time.
 
@@ -18,11 +18,13 @@ On the tested Model Y, probe pages decoded 1080p60 H.264 and HEVC in hardware, a
 
 ## Install and connect
 
-1. Park the car and install TiPlay on the Android phone. Grant the requested permissions for the features you use.
+1. Park the car and install TiPlay on the Android phone. Grant the requested permissions for the features you use. For calls/Siri through TiPlay, pair the Android phone with the car Bluetooth telephone profile and grant Android microphone permission.
 2. Pair the iPhone with the Android phone for wireless CarPlay. To use the car's Bluetooth for audio instead, pair the iPhone with the car, select it for audio and calls, and enable **Disable CarPlay audio** in TiPlay's advanced settings.
-3. In TiPlay's **Main settings**, choose the iPhone and **CarPlay connection mode → Wireless / USB**. For wireless, choose **Android hotspot** and enter its name, security and password, or choose **Existing Wi-Fi** with all three devices on the same network. Enable the hotspot in Android settings; TiPlay does not enable it for you.
+3. In TiPlay's **Main settings**, choose the iPhone and **CarPlay connection mode → All (USB first) / Wireless / USB**. For wireless, choose **Android hotspot** and enter its name, security and password, or choose **Existing Wi-Fi** with all three devices on the same network. Enable the hotspot in Android settings; TiPlay does not enable it for you.
 4. Connect the car to the same network. Tesla browsers need a reachable phone address outside the blocked private ranges; the tested route uses 100.64.0.0/10. See [Hotspot address](docs/HOTSPOT_ADDRESS.md) for root, Shizuku and experimental VPN requirements and limits.
 5. The Android app keeps trying to connect CarPlay and applies valid settings automatically. Use **Reconnect CarPlay** when needed. Open the TiPlay page in the car browser, use the link/code shown by the app, then tap **Connect** on the page.
+
+Open [TiPlay in the car browser](https://ujzk.github.io/TiPlay/play/). If you change the hotspot address or port in Android, tap **Disconnect** on the browser page, update **Android address**, then tap **Connect**, or open the updated pairing link. TiPlay does not update browser addresses or bookmarks automatically.
 
 Follow [Install and connect](docs/INSTALL.md) and [Tesla browser setup](docs/TESLA_BROWSER.md) for the page address, USB permissions, pairing and troubleshooting. The page needs HTTPS and a browser with WebCodecs; first load requires internet access, then its cache can support offline use.
 
@@ -30,9 +32,9 @@ Follow [Install and connect](docs/INSTALL.md) and [Tesla browser setup](docs/TES
 
 CarPlay fills the browser video area. Tap its **TiPlay** icon to open the portal while keeping the session connected. Window changes fit immediately; after the size settles, TiPlay automatically reconnects CarPlay at the matching resolution. The portal also offers **Apply and reconnect** for a manual retry.
 
-The app has **Main settings** and **Advanced settings**. Main settings holds the connection and browser controls. Advanced settings holds frame rate, HEVC, driving side, diagnostic reports and permissions. Frame rate defaults to 60 fps on a fresh install; saved choices remain. HEVC defaults on without a saved codec choice; turn it off for H.264 compatibility. Advanced video/control changes save immediately for the next connection; **Return and apply** returns to the main page and reconnects a running session.
+The app has **Main settings** and **Advanced settings**. Main settings holds the connection and browser controls. Advanced settings holds frame rate, HEVC, driving side, diagnostic reports and permissions. Frame rate defaults to 60 fps on a fresh install; saved choices remain. HEVC defaults on without a saved codec choice; turn it off for H.264 compatibility. Valid advanced video/control changes save and apply immediately; TiPlay reconnects automatically when negotiation is needed and keeps the settings page open. When CarPlay is enabled, valid idle edits can resume connection preparation; **Disable CarPlay** stops startup and retries.
 
-Experimental [AirPlay mirroring and video casting](docs/AIRPLAY.md) is available from Main settings. It temporarily pauses the CarPlay picture and restores a still-connected session when casting ends. **Advanced settings → Disable AirPlay** defaults off and stops the receiver immediately when enabled. This preview is video-only and still needs real iPhone/car validation.
+Experimental [AirPlay mirroring and video casting](docs/AIRPLAY.md) starts by default. Main settings shows its receiver status. It temporarily pauses the CarPlay picture and restores a still-connected session when casting ends. **Advanced settings → Disable AirPlay** defaults off and stops the receiver immediately when enabled. Compatible AAC-ELD mirroring companion audio and URL-video soundtracks are supported; standalone audio-only AirPlay is unsupported. HEVC mirroring is supported when enabled, subject to browser/device compatibility. This preview still needs real iPhone/car validation.
 
 **Start on boot** is saved immediately and starts TiPlay when Android starts. **Disable CarPlay** in Advanced settings stops CarPlay connections and retries. Android or device background-launch restrictions can prevent it. Enable the hotspot separately.
 
@@ -42,7 +44,7 @@ This is an experimental, **non-Apple-certified** product. Compatibility with fut
 
 For a problem, reproduce it on the latest TiPlay build and use **Advanced settings → Save diagnostic report**. Android 10+ normally saves to **Downloads/TiPlay**; Android 9 uses a document picker. If saving falls back to app storage, the confirmation identifies the location and offers **View report** and **Share**. Reports upload only when you choose to share them. Review the text and never post your hotspot password.
 
-Attach the report to an [existing issue](https://github.com/uJZk/DiPlay/issues) or [create one](https://github.com/uJZk/DiPlay/issues/new/choose). Include Android device/version, car/browser version, iPhone/iOS, connection method, reproduction steps and failure time. Report TiPlay problems here, not to upstream DiPlay.
+Attach the report to an [existing issue](https://github.com/uJZk/TiPlay/issues) or [create one](https://github.com/uJZk/TiPlay/issues/new/choose). Include Android device/version, car/browser version, iPhone/iOS, connection method, reproduction steps and failure time. Report TiPlay problems here, not to upstream DiPlay.
 
 - [Existing Wi-Fi setup](docs/EXISTING_WIFI.md)
 - [Privacy and diagnostic reports](docs/PRIVACY.md)

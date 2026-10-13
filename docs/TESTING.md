@@ -10,7 +10,8 @@ Run the required Android, Node 22 browser and public-tree checks in [Build TiPla
 The command includes retained `home`/`maphost` module checks required by AGENTS.md and CI.
 [Browser E2E](../tests/web-e2e/README.md) documents the optional fake-phone and compiled-phone harnesses;
 CI does not run them. They check WebCodecs playback, pairing, touch, resize reporting, the Debug overlay and
-reconnect/portal layout. The MSE/fMP4 and `<video>` fallback has been removed; plain HTTP on a LAN address must
+reconnect/portal layout. The CarPlay MSE/fMP4 and `<video>` fallback has been removed; AirPlay URL video uses
+its separate Video.js HTML player. For CarPlay, plain HTTP on a LAN address must
 show the secure-context requirement rather than start playback. Local harness results do not establish
 vehicle routing, real iPhone display renegotiation or physical display latency.
 
@@ -20,17 +21,33 @@ With the car parked, record the exact APK/build, Android phone/OS, iPhone/iOS, c
 iPhone transport (wireless or USB), browser network and any untested setup.
 
 - Check picture, letterboxed touch mapping and music with a fresh connection for each supported transport/network
-  setup. Confirm page opening requests microphone permission without enable buttons, then check navigation ducking,
-  phone/Siri audio and continuous microphone delivery. If autoplay is blocked, a normal page touch must resume sound. Separately
+  setup. Confirm the foreground Android connection requests microphone permission when needed; the browser
+  must not request microphone access. With permission denied, check that browser playback remains available
+  and CarPlay does not advertise a microphone. If autoplay is blocked, a normal page touch must resume sound. Separately
   enable **Disable CarPlay audio** and confirm the iPhone uses the car's Bluetooth for all sound and calls.
   Disconnect/reconnect and repeat with the phone screen off.
-- In **Main settings**, change the selected iPhone, connection mode or network fields without applying. Opening
-  **Advanced settings** and returning must preserve that connection draft. A running session must continue until
-  **Save and reconnect** is selected; an unchanged fresh connection uses **Connect phone**. Confirm an invalid draft shows an error.
+- In **Main settings**, change the selected iPhone, connection mode or network fields. Valid edits save and apply
+  automatically; text fields settle after a short debounce. A change needing negotiation reconnects a running
+  session while keeping settings open. With CarPlay enabled, idle edits may resume continuous connection
+  preparation; disabling CarPlay must block all startup and retries. Opening **Advanced settings** and returning
+  must preserve saved values. Invalid network input must not replace the saved valid configuration; an explicit
+  reconnect must report its validation error.
 - In **Advanced settings**, change frame rate, HEVC, driving side or CarPlay audio. Valid changes save immediately;
-  changes needing negotiation reconnect a running session while keeping the settings page open. Idle changes must
-  not start a connection. Buffered music is off by default; verify Apple Music pause/resume and track changes when
-  enabled. Check permission rows after returning from Android settings and export through **Save diagnostic report**.
+  changes needing negotiation reconnect a running session while keeping the settings page open. Enabled
+  CarPlay may resume preparation after idle changes; disabled CarPlay must stay stopped. Buffered music is
+  always offered while CarPlay audio is enabled, with no user toggle; check pause/resume and track changes when
+  the iPhone negotiates the type-103 stream. Check permission rows after returning from Android settings and
+  export through **Save diagnostic report**.
+- With CarPlay audio enabled, check calls and Siri request the car HFP/SCO route only during microphone demand.
+  Browser PCM and URL-video sound must mute during the transition; speech and capture start only after both
+  Android input/output routes are confirmed as SCO. Check navigation at fixed 0.25 gain during that route,
+  music discarded during demand, and only fresh browser sound after confirmed release. Denied permissions,
+  unavailable/ambiguous HFP devices or route loss must fail without phone/browser microphone fallback. Repeat
+  with the phone screen off; record vehicle echo quality and routing/teardown limits. TiPlay adds no software AEC.
+- Change the Android phone endpoint address/port and confirm it applies immediately while preserving the pairing
+  code. The browser receives no proactive endpoint notification and does not migrate automatically. On the browser,
+  select **Disconnect**, edit the Android address and select **Connect**, or open the updated pairing link. Check
+  the old address is not silently rewritten and record reachability at the new endpoint.
 - Pair using the copied link, then confirm the code fragment disappears from the address bar. Reopen the saved page,
   test a new browser taking over and return through the CarPlay TiPlay icon to the portal. The portal Connect button,
   labeled **Return to CarPlay** while active, must resume the same connection; **Disconnect** must stop retries.
@@ -38,7 +55,8 @@ iPhone transport (wireless or USB), browser network and any untested setup.
 - Resize the browser window in both directions and confirm the picture fills its available area and touches match
   after replacement video starts. Record any display that remains pending; resize retains the wireless network stack
   and has no timed full-stack recovery fallback. See [browser session lifecycle](TESLA_BROWSER.md#browser-session-lifecycle).
-- Enable **Debug** in the browser portal. Check the four fields at the top center, uninterrupted touch and playback,
+- Enable **Debug** in the browser portal. Check the one-line codec, current draw FPS, central-90% signed presentation-offset average and
+  slowest-5% signed presentation-offset average at the top center, uninterrupted touch and playback,
   and hiding the overlay when disabled. Missing timing remains unknown. Synthetic harness timing and canvas submission
   statistics do not establish physical capture-to-screen latency.
 

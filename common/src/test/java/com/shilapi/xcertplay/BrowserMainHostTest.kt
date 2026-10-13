@@ -67,7 +67,7 @@ class BrowserMainHostTest {
         controllers.close()
     }
 
-    @Test fun idleMainPageDoesNotStartCarPlayBeforeTheUserRequestsConnection() {
+    @Test fun idleMainPageWithoutAConnectionRequestDoesNotStartCarPlay() {
         setField("browserConnectionRequested", false)
         setField("wirelessPermissionsReady", true)
         setField("microphonePermissionResolved", true)
@@ -76,6 +76,22 @@ class BrowserMainHostTest {
         invoke("maybeStartCarPlay")
         assertTrue(controllers.constructed().isEmpty())
         assertNull(field("controller"))
+    }
+
+    @Test fun enabledSettingsResumeIdleConnectionPreparation() {
+        setField("browserConnectionRequested", false)
+        setField("startupRetryStopped", true)
+        // Hold startup at permission preparation so the test observes the idle request transition.
+        setField("awaitingLocationPermission", true)
+        setField("locationPermissionAvailable", false)
+        AirPlayPersistence.saveLocationReportingEnabled(activity, true)
+
+        invoke("applyBrowserSettings")
+
+        assertTrue(field("browserConnectionRequested") as Boolean)
+        assertFalse(field("startupRetryStopped") as Boolean)
+        assertNull(field("controller"))
+        assertTrue(controllers.constructed().isEmpty())
     }
 
     @Test fun disablingCarPlayClosesTheStackAndBlocksPendingStartup() {

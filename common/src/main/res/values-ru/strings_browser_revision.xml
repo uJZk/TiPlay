@@ -22,7 +22,7 @@
     <string name="settings_browser_hotspot_endpoint">Адрес точки доступа: %1$s</string>
     <string name="settings_browser_more">Ещё</string>
     <string name="settings_selected_iphone">iPhone · %1$s</string>
-    <string name="settings_browser_vpn_endpoint_hint">Диапазоны адресов: 169.254.0.0/16, порты 1024–65535, например 169.254.111.111:8080. Подключённый браузер обновляет адрес автоматически. Если он отключён, введите новый адрес Android на странице. Оставьте поле пустым для 169.254.111.111; сохранённый порт остаётся.</string>
+    <string name="settings_browser_vpn_endpoint_hint">Диапазоны адресов: 169.254.0.0/16, порты 1024–65535, например 169.254.111.111:8080. После изменения вручную введите новый адрес Android на странице браузера и нажмите «Подключить». Оставьте поле пустым для 169.254.111.111; сохранённый порт остаётся.</string>
     <string name="settings_browser_vpn_endpoint_invalid">Введите адрес из 169.254.0.0/16 и порт (1024–65535), например 169.254.111.111:8080.</string>
     <string name="settings_browser_hotspot_address_explanation">Выберите, как TiPlay обеспечивает доступ из браузера автомобиля и разрешает USB. Стандартный режим использует адрес текущей сети; другие режимы предлагают обходные варианты с разными правами и ограничениями.</string>
 </resources>

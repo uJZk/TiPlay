@@ -511,7 +511,6 @@ class BrowserLinkServer(
             "viewport" to status.viewport?.let { mapOf("w" to it.width, "h" to it.height) },
             "fit" to status.fit,
             "portalRevision" to status.portalRevision,
-            "endpoint" to status.endpoint,
             "audio" to (audioHub?.enabled == true),
             "voice" to (audioHub?.voiceStatus() ?: mapOf("state" to "idle", "muted" to false, "revision" to 0)),
             "airplay" to AirPlayBrowserPlayback.snapshot(),

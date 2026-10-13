@@ -1,6 +1,6 @@
 # Merge upstream DiPlay
 
-TiPlay (https://github.com/uJZk/DiPlay) is a fork of DiPlay (https://github.com/shihabal3amri/DiPlay).
+TiPlay (https://github.com/uJZk/TiPlay) is a fork of DiPlay (https://github.com/shihabal3amri/DiPlay).
 Use this procedure to merge new DiPlay commits into TiPlay.
 The merge goes one way only. TiPlay sends no pull requests or patches to DiPlay.
 
@@ -24,7 +24,7 @@ git config remote.upstream.tagOpt --no-tags
 
 The second command makes an accidental push to DiPlay fail.
 The third command stops `git fetch upstream` from copying DiPlay's release tags (`v0.1.0` to `v0.2.16` and later)
-into the clone. TiPlay uses DiPlay's version numbers, so those tags could clash with TiPlay's own `v<version>` tags or
+into the clone. Those tags could clash with TiPlay's own `v<version>` tags or
 be pushed to `origin` by `git push --tags`.
 
 ## 2. Fetch and look at the changes
@@ -102,8 +102,9 @@ If the hook no longer fits, change the TiPlay file that the hook calls, not upst
   `phoneBrowserAirPlayConfig()` repeats the `AirPlayConfig(...)` call of `createAirPlayConfig()`.
   When upstream adds a field there, git shows no conflict. Add the field to `phoneBrowserAirPlayConfig()` too.
 - `common/src/main/java/com/shilapi/xcertplay/DiPlaySessionService.kt`:
-  TiPlay takes the notification title from `R.string.app_name`, leaves out the microphone service type for car
-  Bluetooth sound, and calls `PhoneBrowserLocks`, `TeslaBrowserLink` and `HotspotExtraAddressSettings` in
+  TiPlay takes the notification title from `R.string.app_name`, gates the microphone service type by permission
+  and the phone's CarPlay audio opt-out (or retained head-unit audio route), and calls `PhoneBrowserLocks`,
+  `TeslaBrowserLink` and `HotspotExtraAddressSettings` in
   `onStartCommand`, `onDestroy` and `onTaskRemoved`. Keep these calls after upstream's changes.
   `onDestroy()` is TiPlay's own override. If upstream adds one too, merge the two bodies into one function.
 - `common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt`:
@@ -111,13 +112,16 @@ If the hook no longer fits, change the TiPlay file that the hook calls, not upst
   `DEFAULT_MANUFACTURER` and `DEFAULT_MODEL` to TiPlay. Keep the keys of both sides. Each key string must stay unique.
 - `common/src/main/java/com/shilapi/xcertplay/BootReceiver.kt`: phone mode launches
   `CarPlaySettingsNavigation.mainIntent()` with `BrowserBootConnectionSettings.CONNECT_AFTER_BOOT`,
-  preserving the explicit boot connection request independently of connect-on-open. Keep startup diagnostics
+  preserving the boot launch marker and saved connection mode. Phone mode connects continuously unless CarPlay is disabled;
+  it no longer exposes a separate connect-on-open choice. Keep startup diagnostics
   and the separate retained head-unit launch path.
 - `CarPlayCallKeys.kt` and `WheelKeyService.kt` (same folder): retain their phone-mode gates.
 - `shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayConfig.kt`, `AirPlayInfoPlist.kt` and `AirPlaySession.kt`:
-  car Bluetooth sound. `/info` leaves out `audioFormats`, and the session declines audio streams when `receivesAudio`
-  is false. If upstream adds an audio stream type or changes the `/info` audio entries, apply the `receivesAudio` gate
-  to it as well.
+  audio routing. `/info` leaves out `audioFormats` when `audioViaCarBluetooth` is true, and the session declines ordinary
+  audio streams when `receivesAudio` is false. Buffered audio additionally follows `bufferedAudioOutputEnabled`.
+  Phone mode defaults to received audio with buffered music; `BrowserCarPlayAudioSettings` independently opts out to
+  the iPhone's car Bluetooth path. If upstream adds an audio stream type or changes the `/info` audio entries,
+  preserve the corresponding offer and receive gates.
 - `shared/src/main/java/com/shilapi/xcertplay/airplay/ScreenStream.kt`: `describeConfig()` and `configDiagnostic()`
   describe each video configuration once.
 - `shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt`:
@@ -141,9 +145,9 @@ If the hook no longer fits, change the TiPlay file that the hook calls, not upst
 - `common/build.gradle.kts`: TiPlay no longer bundles the browser page in the APK. Preserve the removal of
   `BundleBrowserPage`; do not restore `assets/play/` or local page routes. The hosted HTTPS page and phone API
   are separate.
-- `mobile/build.gradle.kts`: keep `applicationId = "com.ujzk.tiplay"`.
-  While TiPlay has no release of its own, it uses DiPlay's version numbers: take upstream's `versionCode` and
-  `versionName`.
+- `mobile/build.gradle.kts`: keep `applicationId = "com.ujzk.tiplay"` and TiPlay's release version/update sequence.
+  TiPlay now publishes its own beta versions; do not blindly replace `versionCode` or `versionName` with upstream's
+  values. Reconcile an upstream version change with the TiPlay release plan and installed APK update requirements.
 - `common/src/main/AndroidManifest.xml`: TiPlay adds the `WAKE_LOCK` and `ACCESS_LOCAL_NETWORK` permissions.
   Keep the permissions of both sides.
 - `mobile/src/debug/AndroidManifest.xml`, `samples/home/src/main/AndroidManifest.xml` and
@@ -190,7 +194,7 @@ If the hook no longer fits, change the TiPlay file that the hook calls, not upst
   ```
 
 - `.github/ISSUE_TEMPLATE/bug.yml`, `.github/ISSUE_TEMPLATE/config.yml`, `.github/workflows/build-android-tv.yml` and
-  `SECURITY.md`: keep the TiPlay names and the `uJZk/DiPlay` links.
+  `SECURITY.md`: keep the TiPlay names and the `uJZk/TiPlay` links. The official site is `https://ujzk.github.io/TiPlay/`.
 
 ### Tests
 
@@ -310,7 +314,29 @@ To check the page with a fake phone in headless Chromium, follow `tests/web-e2e/
 
 ## 9. The phone + browser product profile
 
-Normal TiPlay entry applies `BrowserSettingsPolicy.activate()`: phone + browser mode, car Bluetooth audio on, system day/night mode, location reporting off and the split-screen adaptation setting on. Head-unit configuration remains only for upstream compatibility. A merge must preserve this profile and `BrowserSettingsPolicy.hiddenSections`; an already running session keeps its negotiated configuration.
+Normal TiPlay entry applies `BrowserSettingsPolicy.activate()`: phone + browser mode, system day/night mode,
+location reporting off, split-screen adaptation on and automatic hotspot band/channel hints. The policy no longer
+forces the retained `car_bluetooth_audio` preference. Phone-mode CarPlay audio instead defaults to received audio
+with buffered music and follows the independent `BrowserCarPlayAudioSettings` opt-out. Head-unit configuration remains
+only for upstream compatibility. A merge must preserve this profile and `BrowserSettingsPolicy.hiddenSections`;
+an already running session keeps its negotiated configuration until settings or recovery renegotiate it.
+
+- Preserve the two browser menus: `BrowserMainSettingsMenu` for connection controls and the consolidated advanced
+  page with `BrowserAdvancedSettings` and `BrowserNativeSettingsUi`. Saved valid edits apply immediately; negotiation
+  changes notify the host through `BrowserSettingsChanges` without navigating away. Enabled CarPlay continuously
+  recovers, including after valid idle edits; CarPlay opt-out stops startup and retry. Keep `BrowserCarPlayRetry`'s
+  1/2/4/8/16-second arrival burst and the 16-second idle checks.
+- Keep the current concise HEVC, AirPlay and VPN labels in the phone flow without adding an experimental suffix.
+  Retained upstream labels keep their existing forms.
+- Manual phone address/port changes apply immediately and never notify the browser to migrate. Preserve the
+  browser's explicit Disconnect, Android address edit and Connect flow, or opening an updated copied pairing link,
+  with the pairing code retained. Do not restore an endpoint announcement, delayed handoff or automatic bookmark update.
+- Do not restore the removed privileged USB permission helper to phone startup or mode selection. Root/Shizuku mode
+  remains for hotspot address compatibility; the current phone USB path uses Android's ordinary permission prompt.
+- Preserve the upstream remote-MFi, Bonjour and controller cleanup paths when merging. Keep the browser media tap
+  retirement hook alongside sink retirement so an old session cannot publish into the next session. Phone audio
+  keeps mandatory negotiated music buffering and idle browser playback; voice/capture acquires verified car HFP/SCO
+  only on demand, with navigation mixed at 0.25 gain and no browser or handset microphone fallback.
 
 - `PhoneBrowserModeSettingsTest` must pass. `AirPlayPersistence.loadRunMode` must still fall back to
   `CarPlayRunMode.PHONE_BROWSER`.
@@ -326,7 +352,8 @@ Normal TiPlay entry applies `BrowserSettingsPolicy.activate()`: phone + browser 
 - An upstream test that expects head-unit behavior can fail in the default mode. Call `useHeadUnitMode()` in its setup
   (`common/src/test/java/com/shilapi/xcertplay/HeadUnitRunMode.kt`). Do not change the default to make a test pass.
 - On a phone, install a fresh debug build and open TiPlay normally. Verify that the browser profile is applied,
-  audio stays on the car’s Bluetooth connection and the retained head-unit settings are hidden.
+  CarPlay audio defaults to the browser with buffered music, its opt-out preserves the iPhone's car Bluetooth path,
+  and the retained head-unit settings are hidden.
   The former **Phone and car browser** choice is no longer a user-facing mode switch.
 
 ## Checklist

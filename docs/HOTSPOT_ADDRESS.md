@@ -5,11 +5,11 @@ own hotspot. The current setup guidance treats the private ranges
 (10/8, 172.16/12, 192.168/16) as blocked by the Tesla browser and uses a link-local
 extra phone address. Root and Shizuku also support the CGNAT range.
 On the TiPlay main page, select **Android hotspot** under **Network configuration**,
-then choose **Hotspot address modification**. The chooser explains why the Tesla browser needs this:
+then choose **TiPlay mode** above the CarPlay connection mode. Each option describes its address behavior:
 
 | Method | Needs | What TiPlay does | When the driver leaves it |
 |---|---|---|---|
-| None (default) | nothing | Adds nothing. Shows the hotspot's IPv4 and warns when it is outside the supported link-local and CGNAT ranges. For other car browsers, or an already accessible hotspot address. | — |
+| Standard (default) | nothing | Adds nothing. Shows the hotspot's IPv4 and warns when it is outside the supported link-local and CGNAT ranges. For other car browsers, or an already accessible hotspot address. | — |
 | Root | root (Magisk, KernelSU …) | `ip -4 addr replace <address>/32 dev <iface>` through `su`, again after every hotspot restart | `ip -4 addr del …`: the address goes at once |
 | VPN | Android's VPN permission (asked once); no other VPN at the same time | A VPN that holds the address and nothing else | The VPN closes |
 | Shizuku | Shizuku (ADB) or Sui (root), running and allowing TiPlay; without root, Shizuku must be started again after every phone restart (wireless debugging needs Wi-Fi, or a computer over USB) | `INetworkManagementService.setInterfaceConfig("<iface>:tp", <address>/32)`, again after every hotspot restart | The address stays until the hotspot restarts: the shell user cannot remove it. A toast says so, except when the driver switches to Root, which takes the address over and removes it when left |
@@ -21,23 +21,29 @@ The default address is defined in [the address policy](../shared/src/main/java/c
 both phone and browser use it.
 Ports must be 1024–65535. An empty address uses the default while preserving the
 saved port. An address without a port also preserves the saved port. Saving a changed address moves
-the selected method to it; changing the port restarts the browser listener. An active authenticated
-browser learns the new endpoint before the address/listener moves and keeps the same session;
-a disconnected browser needs the updated endpoint entered manually. Connection settings apply immediately and reconnect
-automatically when needed. None shows the live hotspot endpoint without an edit row.
+the selected method to it; changing the port restarts the browser listener. Android applies manual edits immediately,
+without a browser endpoint announcement or delayed handoff. The browser does not automatically change its address,
+bookmark or connection. On the browser page, **Disconnect**, update **Android address**, then **Connect**;
+alternatively open the newly copied pairing link from the phone. The pairing code stays the same.
+Valid CarPlay connection settings apply immediately and may resume continuous recovery when CarPlay is enabled;
+disabled CarPlay blocks startup and retries. Standard shows the live hotspot endpoint without an edit row.
 The stored address is shared between methods. VPN uses the default link-local address when
 the saved address is outside its supported range, without overwriting the saved value.
 Switching back to Root or Shizuku restores the saved address.
 The first root prompt, Shizuku permission request and VPN consent come only from
 a tap in the chooser or its buttons; building the settings search index touches none of them.
 
-Hotspot credential import uses only the selected Root or Shizuku method. Root reads
+The current main page offers hotspot credential import only in Root mode. Root reads
 the system Wi-Fi configuration through a read-only `app_process` helper after an
-explicit tap; opening settings never launches `su`. Shizuku reads through its already
-authorized binder. Neither path changes the hotspot or persists/logs the returned
+explicit tap; opening settings never launches `su`. The retained Shizuku reader uses its already
+authorized binder, but the main page hides that import button because it is not a reliable product function.
+Neither path changes the hotspot or persists/logs the returned
 credentials outside the editable settings. Ordinary app Wi-Fi APIs and local ADB
 are not credential-import fallbacks. A refused or timed-out read leaves the existing
 fields intact, and a missing password never clears a manually entered one.
+
+Root and Shizuku no longer attempt privileged USB authorization in the phone flow.
+USB uses Android's ordinary permission prompt; the retained upstream USB setup is not a browser-profile setting.
 
 Code: `shared/src/main/java/com/shilapi/xcertplay/network/` (`HotspotExtraAddressKeeper`, `HotspotAddressBackend`,
 `ShizukuHotspotAddress.kt`, `HotspotAddressVpn`, `HotspotAddressVpnService`) and

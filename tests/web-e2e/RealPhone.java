@@ -102,7 +102,7 @@ public class RealPhone {
                         last == null ? null : last.getSize(),
                         true,
                         Map.of("harness", "RealPhone"),
-                        BrowserPortalSignal.INSTANCE.getRevision(), null);
+                        BrowserPortalSignal.INSTANCE.getRevision());
                 }
 
                 @Override public boolean onTouch(List<AirPlayContact> contacts) {

@@ -1,7 +1,7 @@
 /*! SPDX-License-Identifier: GPL-3.0-only
  * Adapted from WheelPlay (https://github.com/fython/wheelplay), GPL-3.0-only,
  * common/src/main/assets/web/app.js at commit c1bd077 (pointer handling, viewport report, reconnect loop, stats getter).
- * Modified for TiPlay, 2026-10. Source code: https://github.com/uJZk/DiPlay
+ * Modified for TiPlay, 2026-10. Source code: https://github.com/uJZk/TiPlay
  *
  * Main thread of the TiPlay browser link (protocol v1). The video fetch starts here so it gets the page's
  * local-network treatment. On the Tesla path its body is transferred to decoder-worker.js, which draws on the
@@ -495,28 +495,9 @@ async function postControl(q, events) {
   return response.json();
 }
 
-function migrateEndpoint(value) {
-  const host = normalizeHost(value);
-  if (!active || !host || host === link.host) return;
-  releaseTouches();
-  link = { ...link, host };
-  $('host').value = host;
-  saveLink();
-  showLink();
-  // Keep the authenticated session and control sequence while the phone moves its listener/address.
-  // Ignore the retired stream's asynchronous end notification before aborting it.
-  streamId++;
-  videoAbort?.abort();
-  sink?.stop();
-  live = false;
-  attempt = 0;
-  scheduleRetry(1500);
-}
-
 function applyStatus(next) {
   browserAudio.status(next);
   airplayControls.update(next.airplay);
-  if (next.endpoint) migrateEndpoint(next.endpoint);
   if (Number.isSafeInteger(next.portalRevision)) {
     if (portalRevision !== null && next.portalRevision !== portalRevision) showPortal();
     portalRevision = next.portalRevision;
