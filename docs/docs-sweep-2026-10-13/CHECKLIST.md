@@ -1,6 +1,6 @@
 # Documentation checklist — recovered authorized sweep
 
-Source standard: current project AGENTS.md, UPSTREAM_SYNC.md, previous docs-sweep checklist, and explicit user corrections in this conversation. No prose standard invented.
+Source standard: current project AGENTS.md and docs/Upstream.md (replacing historical UPSTREAM_SYNC.md), previous docs-sweep checklist, and explicit user corrections in this conversation. No prose standard invented.
 
 - Current product TiPlay; preserve DiPlay in historical releases/audits/upstream credits and internal packages/classes/resources/actions/preferences.
 - User READMEs contain purpose/requirements/install/use/limits/help/credits; align English and Chinese, no internal delivery/build detail.

@@ -16,7 +16,7 @@ fallback: vehicle browsers can pause that path while driving.
 
 Playback requires WebCodecs and support for the negotiated codec. The remaining paths use a worker or the main
 thread for decoding and canvas drawing, depending on browser capabilities. CarPlay and ordinary AirPlay mirroring keep canvas drawing; AirPlay URL
-video uses Video.js/HTML video with Android resource proxying. Do not add an HTML video fallback to CarPlay.
+video uses a hidden HTML video decoded by Video.js and presents frames on Canvas, with Android resource proxying. Do not add an HTML video fallback to CarPlay.
 These capability checks do not establish support for a particular vehicle or browser version. In the phone profile,
 CarPlay encoded video bypasses the Android decoder and local video surface; the phone retains its native settings and status UI.
 Ordinary AirPlay mirroring also forwards encoded H.264 or enabled HEVC to the browser; still photos use an Android

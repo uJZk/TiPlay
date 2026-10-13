@@ -57,3 +57,7 @@ Previous completed baseline `84123f908ae9e620e5aa58b07cbc2471e2024464`; recovery
 - `docs/TESTING.md`
 - `docs/VALIDATION.md`
 - `tests/web-e2e/README.md`
+
+## Integrated-main mapping
+
+Main consolidated `APP-MAIN-PAGE-DESIGN.md` into [APP-MAIN-PAGE-IMPLEMENTATION.md](../APP-MAIN-PAGE-IMPLEMENTATION.md) and replaced `UPSTREAM_SYNC.md` with [Upstream.md](../Upstream.md). Preserve these deletions; the original paths above record the review scope, not current navigation. Canvas URL-video behavior from remote main is retained.
