@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_carplay_mode_all">Усі (пріоритет USB)</string>
+    <string name="settings_carplay_reconnect">Перепідключити CarPlay</string>
+    <string name="settings_carplay_disable">Вимкнути CarPlay</string>
+    <string name="settings_carplay_disable_description">Зупиняє підключення й повторні спроби CarPlay. AirPlay працює незалежно.</string>
+    <string name="settings_carplay_disabled">CarPlay вимкнено</string>
+    <string name="settings_carplay_ready">CarPlay готовий</string>
+    <string name="settings_carplay_searching">CarPlay шукає</string>
+    <string name="settings_airplay_ready_status">AirPlay готовий</string>
+    <string name="settings_airplay_disabled_status">AirPlay вимкнено</string>
+</resources>

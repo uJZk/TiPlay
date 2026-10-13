@@ -158,7 +158,7 @@
     <string name="cluster_map_size">仪表盘地图大小</string>
     <string name="common_cancel">取消</string>
     <string name="connect">连接</string>
-    <string name="connect_phone">连接手机</string>
+    <string name="connect_phone">连接 CarPlay</string>
     <string name="connect_when_diplay_opens">打开 TiPlay 时连接</string>
     <string name="connect_with_usb">通过 USB 连接</string>
     <string name="connect_your_iphone_with_a_usb_cable">请使用 USB 数据线连接 iPhone</string>
@@ -263,7 +263,7 @@
     <string name="nearby_devices_connects_your_iphone_microphone_enables_sir">“附近的设备”权限用于连接 iPhone；麦克风权限用于 Siri 和通话。较旧的 Android 版本还需要位置权限来设置无线连接。USB 模式可能会请求建立本地 VPN 连接。</string>
     <string name="nothing_is_sent_automatically_protocol_payloads_and_creden">报告不会自动发送，不包含协议数据和凭据。</string>
     <string name="oem_label">OEM 标签</string>
-    <string name="on_your_iphone_open_settings_bluetooth_and_pair_with_the_c">在 iPhone 上打开“设置 → 蓝牙”并与本机配对。然后返回 TiPlay，点击“连接手机”。</string>
+    <string name="on_your_iphone_open_settings_bluetooth_and_pair_with_the_c">在 iPhone 上打开“设置 → 蓝牙”并与本机配对。返回 TiPlay，未禁用 CarPlay 时会自动连接。</string>
     <string name="one_time_setup_on_this_car">在此本机上一次性设置</string>
     <string name="open">开放</string>
     <string name="open_after_the_car_starts">本机启动后打开</string>
@@ -290,7 +290,7 @@
     <string name="prefer_a_cable">想用数据线？</string>
     <string name="preparing_mfi_authentication">正在准备 MFi 认证</string>
     <string name="ready">就绪</string>
-    <string name="ready_when_you_are">一切就绪</string>
+    <string name="ready_when_you_are">CarPlay 就绪</string>
     <string name="receiver_based_on_xcertplay_licensed_under_gpl_3_0_diplay">TiPlay 是 DiPlay（github.com/shihabal3amri/DiPlay）的修改版本，采用 GPL-3.0 许可。DiPlay 的接收器基于采用 GPL-3.0 许可的 xcertplay，界面沿用采用 AGPL-3.0 许可的 DiAuto 设计。\n\n项目包含 AndroidX、Bouncy Castle、JmDNS、Shizuku API 和 SLF4J。本版本附有源代码和许可声明。\n\nCarPlay 和 CarPlay 图标归 Apple Inc. 所有。Tesla 是 Tesla, Inc. 的商标。TiPlay 是独立项目，与 Apple 和 Tesla 无关。</string>
     <string name="reconnecting_to_your_iphone">正在重新连接 iPhone…</string>
     <string name="remote">远程</string>

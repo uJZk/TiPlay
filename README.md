@@ -22,7 +22,7 @@ On the tested Model Y, probe pages decoded 1080p60 H.264 and HEVC in hardware, a
 2. Pair the iPhone with the Android phone for wireless CarPlay. To use the car's Bluetooth for audio instead, pair the iPhone with the car, select it for audio and calls, and enable **Disable CarPlay audio** in TiPlay's advanced settings.
 3. In TiPlay's **Main settings**, choose the iPhone and **CarPlay connection mode → Wireless / USB**. For wireless, choose **Android hotspot** and enter its name, security and password, or choose **Existing Wi-Fi** with all three devices on the same network. Enable the hotspot in Android settings; TiPlay does not enable it for you.
 4. Connect the car to the same network. Tesla browsers need a reachable phone address outside the blocked private ranges; the tested route uses 100.64.0.0/10. See [Hotspot address](docs/HOTSPOT_ADDRESS.md) for root, Shizuku and experimental VPN requirements and limits.
-5. In the Android app, tap **Connect phone**, or **Save and reconnect** after editing connection settings. Open the TiPlay page in the car browser, use the link/code shown by the app, then tap **Connect** on the page.
+5. The Android app keeps trying to connect CarPlay and applies valid settings automatically. Use **Reconnect CarPlay** when needed. Open the TiPlay page in the car browser, use the link/code shown by the app, then tap **Connect** on the page.
 
 Follow [Install and connect](docs/INSTALL.md) and [Tesla browser setup](docs/TESLA_BROWSER.md) for the page address, USB permissions, pairing and troubleshooting. The page needs HTTPS and a browser with WebCodecs; first load requires internet access, then its cache can support offline use.
 
@@ -34,7 +34,7 @@ The app has **Main settings** and **Advanced settings**. Main settings holds the
 
 Experimental [AirPlay mirroring and video casting](docs/AIRPLAY.md) is available from Main settings. It temporarily pauses the CarPlay picture and restores a still-connected session when casting ends. **Advanced settings → Disable AirPlay** defaults off and stops the receiver immediately when enabled. This preview is video-only and still needs real iPhone/car validation.
 
-**Connect automatically after boot** is saved immediately and requests a connection when Android starts. Android or device background-launch restrictions can prevent it. Enable the hotspot separately.
+**Start on boot** is saved immediately and starts TiPlay when Android starts. **Disable CarPlay** in Advanced settings stops CarPlay connections and retries. Android or device background-launch restrictions can prevent it. Enable the hotspot separately.
 
 ## Limitations and help
 

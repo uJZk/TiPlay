@@ -12,6 +12,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
+import org.robolectric.Shadows.shadowOf
+import java.time.Duration
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
@@ -51,29 +53,40 @@ class WirelessStartupRecoveryTest {
         report()
         report()
         report(status = CarPlayStatus.Failed("Bluetooth socket closed"))
-        assertEquals(1, budget().retries)
+        assertEquals(0, budget().retries)
         assertEquals(1, ReflectionHelpers.getField<Int>(activity, "reconnectAttempts"))
     }
 
-    @Test fun exhaustedBudgetStopsAutomaticRecoveryAndExposesRetry() {
-        repeat(6) { generation ->
+    @Test fun repeatedFailuresKeepRecoveringWithoutAManualRetryButton() {
+        repeat(12) { generation ->
             ReflectionHelpers.setField(activity, "restartGeneration", generation)
             ReflectionHelpers.setField(activity, "reconnectScheduled", false)
             report(generation)
         }
-        assertEquals(5, budget().retries)
-        assertTrue(ReflectionHelpers.getField(activity, "startupRetryStopped"))
-        assertFalse(ReflectionHelpers.getField(activity, "reconnectScheduled"))
-        assertEquals(View.VISIBLE, retry.visibility)
-        report(5, CarPlayStatus.Failed("Bluetooth socket closed"))
-        assertFalse(ReflectionHelpers.getField(activity, "reconnectScheduled"))
+        assertEquals(0, budget().retries)
+        assertEquals(12, ReflectionHelpers.getField<Int>(activity, "reconnectAttempts"))
+        assertFalse(ReflectionHelpers.getField(activity, "startupRetryStopped"))
+        assertTrue(ReflectionHelpers.getField(activity, "reconnectScheduled"))
+        assertEquals(View.GONE, retry.visibility)
     }
 
-    @Test fun unrecoverableConfigurationDoesNotAutomaticallyRetry() {
-        report(status = CarPlayStatus.Failed("Permission missing", startupFailure = WirelessStartupFailure.HOTSPOT_CONFIGURATION))
+    @Test fun configurationFailureCanRecoverAutomaticallyAfterTheUserFixesSettings() {
+        report(status = CarPlayStatus.Failed("Hotspot missing", startupFailure = WirelessStartupFailure.HOTSPOT_CONFIGURATION))
         assertEquals(0, budget().retries)
+        assertTrue(ReflectionHelpers.getField(activity, "reconnectScheduled"))
+        assertEquals(View.GONE, retry.visibility)
+    }
+
+    @Test fun bluetoothArrivalReplacesThePendingSlowRetryWithOneSecond() {
+        report()
+        assertTrue(ReflectionHelpers.getField(activity, "reconnectScheduled"))
+        ReflectionHelpers.callInstanceMethod<Unit>(activity, "onBrowserBluetoothConnected")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(999))
+        assertTrue(ReflectionHelpers.getField(activity, "reconnectScheduled"))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1))
         assertFalse(ReflectionHelpers.getField(activity, "reconnectScheduled"))
-        assertEquals(View.VISIBLE, retry.visibility)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(16))
+        assertEquals(2, ReflectionHelpers.getField<Int>(activity, "reconnectAttempts"))
     }
 
     @Test fun staleGenerationUserDisconnectMenuAndDifferentOwnerCannotSchedule() {

@@ -124,6 +124,10 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private var connectionPanel: View? = null
     private var wifiRecoveryButton: View? = null
+    private var browserCarPlayWaiting = false
+    private var reconnectTask: Runnable? = null
+    private val browserCarPlayRetry = BrowserCarPlayRetry()
+    private var browserCarPlayWatch: BrowserCarPlayWatch? = null
     private var reconnectAttempts = 0
     private val siriKey = WheelSiriKey()
     private val siriKeyPresses = WheelKeyPresses()
@@ -619,9 +623,11 @@ class CarPlayHostActivity : ComponentActivity() {
         MapMirrors.sink = mirrorSink
         MapMirrors.onChanged = mirrorsChanged
         languagePreferenceAtCreate = AppLocale.preference(this)
-        if (isIphoneUsbAttachment(intent)) {
+        if (isIphoneUsbAttachment(intent) && !BrowserCarPlaySettings.disabled(this) &&
+            BrowserCarPlaySettings.mode(this) != BrowserCarPlaySettings.Mode.WIRELESS) {
             browserConnectionRequested = true
-            AirPlayPersistence.saveWirelessEnabled(this, false)
+            if (BrowserCarPlaySettings.mode(this) != BrowserCarPlaySettings.Mode.ALL)
+                AirPlayPersistence.saveWirelessEnabled(this, false)
         }
         if (!intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false) &&
             savedInstanceState?.getBoolean(CarPlaySettingsNavigation.MENU) != true &&
@@ -647,10 +653,9 @@ class CarPlayHostActivity : ComponentActivity() {
         loadPersistedSettings()
         browserMainState = savedInstanceState
         browserSettingsChanges = BrowserSettingsChanges.listen(this, ::applyBrowserSettings)
-        browserConnectionRequested = savedInstanceState?.getBoolean("browser_connection_requested")
-            ?: (!intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false) &&
-                (DiPlayPreferences.autoConnect(this) ||
-                    intent.getBooleanExtra(BrowserBootConnectionSettings.CONNECT_AFTER_BOOT, false)))
+        browserConnectionRequested = if (!headUnitIntegrations()) !BrowserCarPlaySettings.disabled(this)
+            else savedInstanceState?.getBoolean("browser_connection_requested") ?: DiPlayPreferences.autoConnect(this)
+        if (!headUnitIntegrations()) browserCarPlayWatch = BrowserCarPlayWatch(this, ::onBrowserBluetoothConnected, ::checkBrowserCarPlay)
         locationPermissionAvailable = hasFineLocationPermission()
         setContentView(buildContentView())
         applyFullscreenMode()
@@ -759,7 +764,7 @@ class CarPlayHostActivity : ComponentActivity() {
      * mode, hotspot and MFI settings that were current when this screen was first opened.
      */
     private fun loadConnectionSettings() {
-        wirelessEnabled = AirPlayPersistence.loadWirelessEnabled(this)
+        wirelessEnabled = if (!headUnitIntegrations()) BrowserCarPlaySettings.wireless(this) else AirPlayPersistence.loadWirelessEnabled(this)
         mfiTarget = AirPlayPersistence.loadMfiTarget(this)
         mfiI2cPath = AirPlayPersistence.loadMfiI2cPath(this)
         remoteMfiServer = AirPlayPersistence.loadRemoteMfiServer(this)
@@ -862,19 +867,20 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         if (browserMainPage != null && (intent.getBooleanExtra(CarPlaySettingsNavigation.MAIN, false) ||
                 DiPlayActivity.isLauncherIntent(intent)) &&
-            controller == null && (DiPlayPreferences.autoConnect(this) ||
-                intent.getBooleanExtra(BrowserBootConnectionSettings.CONNECT_AFTER_BOOT, false))) {
+            controller == null && !BrowserCarPlaySettings.disabled(this)) {
             if (runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isSuccess) {
                 browserConnectionRequested = true
                 requestStartupPrerequisites()
             } else browserMainPage?.showConnectionError(getString(R.string.setup_error_auth))
         }
-        if (isIphoneUsbAttachment(intent)) {
+        if (isIphoneUsbAttachment(intent) && !BrowserCarPlaySettings.disabled(this) &&
+            BrowserCarPlaySettings.mode(this) != BrowserCarPlaySettings.Mode.WIRELESS) {
             browserConnectionRequested = true
             browserMainPage?.transportSelected(false)
             if (wirelessEnabled) {
                 if (menuOpen) cancelSettingsEdits()
-                AirPlayPersistence.saveWirelessEnabled(this, false)
+                if (BrowserCarPlaySettings.mode(this) != BrowserCarPlaySettings.Mode.ALL)
+                    AirPlayPersistence.saveWirelessEnabled(this, false)
                 wirelessEnabled = false
                 wirelessPermissionsReady = true
                 if (controller != null) {
@@ -1414,6 +1420,8 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        browserCarPlayWatch?.close()
+        browserCarPlayWatch = null
         browserSettingsChanges?.close()
         browserSettingsChanges = null
         browserMainPage?.dispose()
@@ -2130,13 +2138,15 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun applyBrowserSettings() {
         if (headUnitIntegrations() || shuttingDown.get()) return
+        browserConnectionRequested = !BrowserCarPlaySettings.disabled(this)
+        startupRetryStopped = false
         loadPersistedSettings()
         browserMainPage?.refresh()
         if (controller != null) {
-            browserConnectionRequested = true
             restartCarPlay("Settings changed; reconnecting")
         }
         if (browserConnectionRequested) requestStartupPrerequisites()
+        updateDebugOverlays()
     }
 
     private fun buildBrowserSettingsMenu(): View {
@@ -2145,6 +2155,9 @@ class CarPlayHostActivity : ComponentActivity() {
         val page = BrowserMainSettingsMenu(this, draft,
             requestPermissions = { wirelessPermissions.launch(it) },
             connect = submit@{
+                if (BrowserCarPlaySettings.disabled(this)) return@submit
+                startupRetryStopped = false
+                reconnectAttempts = 0
                 if (runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isFailure) {
                     browserMainPage?.showConnectionError(getString(R.string.setup_error_auth))
                     return@submit
@@ -2158,14 +2171,11 @@ class CarPlayHostActivity : ComponentActivity() {
                 requestStartupPrerequisites()
             },
             disconnect = {
-                browserConnectionRequested = false
-                shutdown(false, "Main page disconnect") {
-                    // A shut-down host owns closed executors; recreate it as an idle receiver.
-                    if (!isDestroyed && !isFinishing) {
-                        intent.putExtra(CarPlaySettingsNavigation.MENU, true)
-                        recreate()
-                    }
-                }
+                browserConnectionRequested = !BrowserCarPlaySettings.disabled(this)
+                startupRetryStopped = false
+                reconnectAttempts = 0
+                if (controller != null) restartCarPlay("Manual CarPlay reconnect")
+                else checkBrowserCarPlay()
             },
             advanced = { openAdditionalSettings(SettingsCategory.ADVANCED) },
             settingsChanged = ::applyBrowserSettings,
@@ -3854,6 +3864,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     activeAirPlaySession = session
                     browserDisplayReconnectHost.sessionActive(controller, session)
                     CarPlayBackgroundSession.active = true
+                    browserCarPlayRetry.sessionConnected()
                     reconnectAttempts = 0
                     logThemeState(ThemeModeDiagnostics.Source.SESSION_ACTIVE, resources.configuration)
                     syncAirPlayDarkMode(ThemeModeDiagnostics.Source.SESSION_ACTIVE)
@@ -3969,6 +3980,7 @@ class CarPlayHostActivity : ComponentActivity() {
             if (status is CarPlayStatus.Failed) failurePendingAfterMenu = status
             return@report
         }
+        browserCarPlayWaiting = BrowserCarPlayStatus.waiting(status)
         updateHotspotStatus(status)
         val description = status.describe()
         browserMainPage?.showConnectionError(if (status is CarPlayStatus.Failed) {
@@ -4078,6 +4090,7 @@ class CarPlayHostActivity : ComponentActivity() {
         if (CarPlayBackgroundSession.hasSession() && !CarPlayBackgroundSession.isOwner(this)) return
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || controller != null) return
         val controllerGeneration = restartGeneration
+        PrivilegedUsbAutoConfirm.prepare(this)
         val config = createRuntimeConfig()
         val effectiveSize = if (isMultiWindowActive() && !AirPlayPersistence.loadAdaptPipResolution(this) &&
             maximumDetectedWidthPixels >= size.width && maximumDetectedHeightPixels >= size.height &&
@@ -4444,7 +4457,39 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveMaximumDetectedDisplay(this, width, height)
     }
 
+    private fun onBrowserBluetoothConnected() {
+        if (BrowserCarPlaySettings.disabled(this)) return
+        browserCarPlayRetry.bluetoothConnected()
+        if (reconnectScheduled && activeScreenStreamTypes.isEmpty()) {
+            reconnectTask?.let(mainHandler::removeCallbacks)
+            reconnectTask = null
+            reconnectScheduled = false
+            reconnectAfterLoss("Selected iPhone Bluetooth connected")
+        }
+    }
+
+    private fun checkBrowserCarPlay() {
+        if (isDestroyed || isFinishing || shuttingDown.get() || menuOpen || handshakeResetInProgress ||
+            BrowserCarPlaySettings.disabled(this)) return
+        val wireless = BrowserCarPlaySettings.wireless(this)
+        if (wireless != wirelessEnabled) {
+            applyBrowserSettings()
+            return
+        }
+        if (controller != null) return
+        if (locationReportingEnabled && !hasFineLocationPermission()) return
+        if ((wireless && BrowserConnectionDraft.load(this).validationError() != null) ||
+            (wireless && DiPlayPreferences.phoneAddress(this).isNullOrBlank())) return
+        if (runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isFailure) return
+        browserConnectionRequested = true
+        // Retry only with existing grants; do not repeatedly open permission dialogs.
+        if (wireless && !hasRequiredWirelessPermissions()) return
+        if (!wireless && CarPlayVpnService.prepare(this) != null) return
+        requestStartupPrerequisites()
+    }
+
     private fun maybeStartCarPlay() {
+        if (!headUnitIntegrations() && BrowserCarPlaySettings.disabled(this)) return
         if (browserMainPage != null && !browserConnectionRequested) return
         if (shuttingDown.get()) return
         if (CarPlayBackgroundSession.hasSession() && !CarPlayBackgroundSession.isOwner(this)) {
@@ -4480,13 +4525,14 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun reconnectAfterLoss(reason: String, startupFailure: WirelessStartupFailure? = null) {
+        if (!headUnitIntegrations() && BrowserCarPlaySettings.disabled(this)) return
         if (!CarPlayBackgroundSession.isOwner(this)) return
         if (menuOpen) recoveryPendingAfterMenu = true
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || startupRetryStopped) return
         if (reconnectScheduled) return
-        val startupDelay = if (startupFailure != null && startupFailure != WirelessStartupFailure.HOTSPOT_CONFIGURATION)
+        val startupDelay = if (headUnitIntegrations() && startupFailure != null && startupFailure != WirelessStartupFailure.HOTSPOT_CONFIGURATION)
             startupRetryBudget.nextDelayMillis() else null
-        if (startupFailure != null && startupDelay == null) {
+        if (headUnitIntegrations() && startupFailure != null && startupDelay == null) {
             startupRetryStopped = true
             startupRetryButton?.visibility = View.VISIBLE
             setConnectionStage(if (startupFailure == WirelessStartupFailure.HOTSPOT_CONFIGURATION) reason
@@ -4496,7 +4542,9 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         reconnectScheduled = true
         val generation = restartGeneration
-        val delayMillis = if (startupDelay != null) {
+        val delayMillis = if (!headUnitIntegrations()) {
+            browserCarPlayRetry.nextDelayMillis()
+        } else if (startupDelay != null) {
             startupDelay
         } else if (reason.contains("AirPlay iAP tunnel", ignoreCase = true)) {
             IAP_TUNNEL_RECONNECT_DELAY_MILLIS
@@ -4505,22 +4553,18 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         reconnectAttempts += 1
         appendLog("$reason; retrying in ${delayMillis}ms generation=$generation startupFailure=$startupFailure startupRetries=${startupRetryBudget.retries}")
-        mainHandler.postDelayed(
-            {
-                reconnectScheduled = false
-                if (menuOpen && generation == restartGeneration) recoveryPendingAfterMenu = true
-                if (
-                    shuttingDown.get() ||
-                    menuOpen ||
-                    handshakeResetInProgress || startupRetryStopped ||
-                    generation != restartGeneration
-                ) {
-                    return@postDelayed
-                }
-                restartCarPlay("Reconnecting after $reason")
-            },
-            delayMillis,
-        )
+        val task = Runnable {
+            reconnectTask = null
+            reconnectScheduled = false
+            if (menuOpen && generation == restartGeneration) recoveryPendingAfterMenu = true
+            if (shuttingDown.get() || menuOpen || handshakeResetInProgress || startupRetryStopped ||
+                generation != restartGeneration || (!headUnitIntegrations() && BrowserCarPlaySettings.disabled(this))) {
+                return@Runnable
+            }
+            restartCarPlay("Reconnecting after $reason")
+        }
+        reconnectTask = task
+        mainHandler.postDelayed(task, delayMillis)
     }
 
     /** Full-stack fallback when an AirPlay-only reconnect is unavailable. */
@@ -4528,6 +4572,9 @@ class CarPlayHostActivity : ComponentActivity() {
         if (!CarPlayBackgroundSession.isOwner(this)) return
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress) return
         val size = activeDisplaySize ?: return
+        reconnectTask?.let(mainHandler::removeCallbacks)
+        reconnectTask = null
+        reconnectScheduled = false
         browserDisplayReconnectHost.cancel()
         startupRetryBudget.disconnected()
         startupRetryButton?.visibility = View.GONE
@@ -4950,8 +4997,9 @@ class CarPlayHostActivity : ComponentActivity() {
         val idle = activeScreenStreamTypes.isEmpty() && !browserConnectionRequested && controller == null && !shuttingDown.get()
         browserMainPage?.update(
             if (activeScreenStreamTypes.isNotEmpty()) getString(R.string.carplay_connected)
-            else if (idle) getString(R.string.ready_when_you_are)
-            else friendlyStage(latestStage), controller != null,
+            else if (BrowserCarPlaySettings.disabled(this)) getString(R.string.settings_carplay_disabled)
+            else if (idle || !wirelessEnabled || browserCarPlayWaiting) getString(R.string.settings_carplay_ready)
+            else getString(R.string.settings_carplay_searching), controller != null,
             idle = idle,
         )
         statusScrollView?.visibility = View.GONE

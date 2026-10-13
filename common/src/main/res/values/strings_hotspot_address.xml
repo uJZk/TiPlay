@@ -5,14 +5,14 @@
     <string name="settings_hotspot_address_blocked">The Tesla browser probably cannot open this address. Choose another hotspot address method below.</string>
     <string name="settings_hotspot_not_found">No hotspot found. Turn on this phone’s hotspot.</string>
     <string name="settings_hotspot_address_method">Hotspot address</string>
-    <string name="settings_hotspot_method_normal">None</string>
+    <string name="settings_hotspot_method_normal">Standard</string>
     <string name="settings_hotspot_method_root">Root</string>
     <string name="settings_hotspot_method_vpn">VPN</string>
     <string name="settings_hotspot_method_shizuku">Shizuku</string>
     <string name="settings_hotspot_method_normal_description">For other car browsers, or when the hotspot address is already in 169.254.0.0/16 or 100.64.0.0/10.</string>
-    <string name="settings_hotspot_method_root_description">Needs root. Adds %1$s to this phone’s hotspot so the Tesla browser can reach TiPlay, and adds it again after the hotspot restarts. Applies at once; no reconnect needed.</string>
+    <string name="settings_hotspot_method_root_description">Requires root. Adds %1$s to the hotspot and restores it after hotspot restarts. Can read hotspot credentials and enable automatic confirmation of TiPlay USB prompts. Firmware restrictions may prevent these operations.</string>
     <string name="settings_hotspot_method_vpn_description">No root. Holds %1$s on a VPN that only TiPlay uses, so other apps are not affected. Android asks once to allow the VPN, and no other VPN can be on at the same time. Applies at once; no reconnect needed.</string>
-    <string name="settings_hotspot_method_shizuku_description">No root, but needs Shizuku running with TiPlay allowed. Start Shizuku again after every phone restart, through wireless debugging (needs Wi-Fi) or from a computer over USB. Adds %1$s to this phone’s hotspot, and adds it again after the hotspot restarts. Shizuku cannot remove it, so after you choose another method it stays until the hotspot restarts. Applies at once; no reconnect needed.</string>
+    <string name="settings_hotspot_method_shizuku_description">Requires a running, authorized Shizuku. Tries to add %1$s to the hotspot and grant TiPlay USB access. Firmware may reject these operations. Hotspot credentials must be entered manually. The added address remains until the hotspot restarts. Restart Shizuku after reboot.</string>
     <string name="settings_hotspot_extra_address_value">Address</string>
     <string name="settings_hotspot_extra_address_value_hint">Root/Shizuku: 169.254.0.0/16 or 100.64.0.0/10. VPN: 169.254.0.0/16 only. Leave blank to use 169.254.111.111. Applies at once.</string>
     <string name="settings_hotspot_extra_address_invalid">Enter an address in 100.64.0.0/10 or 169.254.0.0/16, for example 169.254.111.111.</string>

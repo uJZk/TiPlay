@@ -29,6 +29,23 @@ internal object BrowserSettingsPresentation {
         }
     }
 
+    fun carPlayMode(context: Context, draft: BrowserConnectionDraft, changed: () -> Unit) = Button(context).apply {
+        isAllCaps = false
+        val labels = arrayOf(context.getString(R.string.settings_carplay_mode_all),
+            context.getString(R.string.default_connection_wireless), context.getString(R.string.default_connection_usb))
+        fun index() = if (draft.allTransports) 0 else if (draft.wireless) 1 else 2
+        fun refresh() { text = context.getString(R.string.settings_browser_carplay_connection_mode) + " · " + labels[index()] }
+        refresh()
+        setOnClickListener {
+            AlertDialog.Builder(context).setTitle(R.string.settings_browser_carplay_connection_mode)
+                .setSingleChoiceItems(labels, index()) { dialog, selected ->
+                    draft.allTransports = selected == 0
+                    draft.wireless = selected != 2
+                    changed(); refresh(); dialog.dismiss()
+                }.setNegativeButton(android.R.string.cancel, null).create().also { TiPlayNativeUi(context).showDialog(it) }
+        }
+    }
+
     fun frameRate(context: Context, current: () -> Int, changed: (Int) -> Unit) = Button(context).apply {
         isAllCaps = false
         fun refresh() { text = "${context.getString(R.string.frame_rate)} · ${current()} fps" }

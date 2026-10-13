@@ -45,6 +45,8 @@ class BrowserMainPageTest {
         controller.setup()
         activity.getSharedPreferences("diplay", 0).edit().clear().commit()
         activity.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
+        activity.getSharedPreferences("tiplay_carplay", 0).edit().clear().commit()
+        activity.getSharedPreferences("tiplay_airplay_receiver", 0).edit().clear().commit()
         activity.getSharedPreferences("tiplay_browser_network", 0).edit().clear().commit()
         activity.getSharedPreferences("tiplay_hotspot_address", 0).edit().clear().commit()
         AirPlayPersistence.saveWirelessHotspotMode(activity, WirelessHotspotMode.MANUAL)
@@ -62,7 +64,7 @@ class BrowserMainPageTest {
     }
     @Test fun mainPageHasOneConnectionActionAndNoLegacyNavigationOrVideoControls() {
         val labels = views().filterIsInstance<TextView>().map { it.text.toString() }.toList()
-        assertEquals(1, labels.count { it == activity.getString(R.string.connect_phone) })
+        assertEquals(1, labels.count { it == activity.getString(R.string.settings_carplay_reconnect) })
         assertEquals(1, labels.count { it == activity.getString(R.string.settings_browser_boot_connect) })
         for (id in listOf(R.string.settings, R.string.settings_main, R.string.exit_application,
             R.string.back, R.string.settings_gesture_fingers_label, R.string.settings_hevc_experimental,
@@ -74,7 +76,7 @@ class BrowserMainPageTest {
         page.update("Connected to car browser", true)
         val labels = views().filterIsInstance<TextView>().map { it.text.toString() }.toList()
         assertFalse(labels.contains(activity.getString(R.string.settings_browser_connection_status)))
-        assertEquals("Connected to car browser", page.status.text.toString())
+        assertEquals("Connected to car browser | AirPlay ready", page.status.text.toString())
         assertTrue(page.status.isShown)
     }
     @Test fun aPlaceholderPhoneNameDoesNotPretendThatAnIphoneWasSelected() {
@@ -113,7 +115,10 @@ class BrowserMainPageTest {
         page.view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
         page.view.layout(0, 0, width, height)
-        val buttons = views().filterIsInstance<Button>().take(3).toList()
+        val buttons = views().filterIsInstance<Button>().filter {
+            it.text.toString().startsWith(activity.getString(R.string.settings_browser_carplay_connection_mode)) ||
+                it.text == activity.getString(R.string.choose_iphone) || it.text == activity.getString(R.string.settings_carplay_reconnect)
+        }.toList()
         val gap = (8 * activity.resources.displayMetrics.density).toInt()
         val minimumTouchHeight = (48 * activity.resources.displayMetrics.density).toInt()
         assertEquals(gap, buttons[1].top - buttons[0].bottom)
@@ -124,35 +129,26 @@ class BrowserMainPageTest {
             assertTrue(button.height >= minimumTouchHeight)
         }
     }
-    @Test fun idleReadinessTracksPhoneSelectionAndDraftRequirements() {
-        assertEquals(activity.getString(R.string.choose_your_iphone), page.status.text.toString())
+    @Test fun receiverStatusKeepsActionableRequirementsInSeparateText() {
+        assertEquals("CarPlay ready | AirPlay ready", page.status.text.toString())
+        assertTrue(views().filterIsInstance<TextView>().any { it.isShown && it.text == activity.getString(R.string.choose_your_iphone) })
         page.draft.phoneAddress = "02:00:00:00:00:01"
         shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(false)
         page.refresh()
-        assertEquals(activity.getString(R.string.turn_on_bluetooth), page.status.text.toString())
-        views().filterIsInstance<EditText>().first().setText("")
-        assertEquals(activity.getString(requireNotNull(page.draft.validationError())), page.status.text.toString())
-        views().filterIsInstance<EditText>().first().setText("Phone hotspot")
-        views().filterIsInstance<EditText>().last().setText("short")
-        assertEquals(activity.getString(requireNotNull(page.draft.validationError())), page.status.text.toString())
-        page.update("Connecting", false)
-        views().filterIsInstance<EditText>().last().setText("password1")
-        assertEquals("Connecting", page.status.text.toString())
-        page.update("", false, idle = true)
-        assertEquals(activity.getString(R.string.turn_on_bluetooth), page.status.text.toString())
-        page.draft.phoneAddress = null
+        assertTrue(views().filterIsInstance<TextView>().any { it.isShown && it.text == activity.getString(R.string.turn_on_bluetooth) })
         page.transportSelected(false)
-        assertEquals(activity.getString(R.string.ready_when_you_are), page.status.text.toString())
+        assertFalse(views().filterIsInstance<Button>().any { it.isShown && it.text == activity.getString(R.string.settings_selected_iphone, page.draft.phoneName) })
+        assertEquals("CarPlay ready | AirPlay ready", page.status.text.toString())
     }
     @Config(shadows = [DisabledHotspot::class])
     @Test fun idleReadinessReportsKnownHotspotOffAndUnmatchedExistingWifi() {
         page.draft.phoneAddress = "02:00:00:00:00:01"
         shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(true)
         page.refresh()
-        assertEquals(activity.getString(R.string.hotspot_details_off), page.status.text.toString())
+        assertTrue(views().filterIsInstance<TextView>().any { it.isShown && it.text == activity.getString(R.string.hotspot_details_off) })
         choose(BrowserConnectionDraft.Source.LAN)
         views().filterIsInstance<EditText>().first().setText("Car AP")
-        assertEquals(activity.getString(R.string.settings_external_ap_check), page.status.text.toString())
+        assertTrue(views().filterIsInstance<TextView>().any { it.isShown && it.text == activity.getString(R.string.settings_external_ap_check) })
     }
     @Implements(WifiManager::class)
     class DisabledHotspot : ShadowWifiManager() {
@@ -161,10 +157,10 @@ class BrowserMainPageTest {
     @Test fun editingInvalidDraftDoesNotReplaceActiveSessionStatus() {
         page.update("Connected", true)
         views().filterIsInstance<EditText>().first().setText("")
-        assertEquals("Connected", page.status.text.toString())
-        button(R.string.disconnect).performClick()
+        assertEquals("Connected | AirPlay ready", page.status.text.toString())
+        button(R.string.settings_carplay_reconnect).performClick()
         views().filterIsInstance<EditText>().first().setText("Another network")
-        assertEquals(activity.getString(R.string.settings_main_stopping), page.status.text.toString())
+        assertEquals("Connected | AirPlay ready", page.status.text.toString())
     }
     @Test fun editingNetworkSavesAndAppliesAutomaticallyOnceTypingSettles() {
         page.update("Connected", true)
@@ -178,8 +174,8 @@ class BrowserMainPageTest {
         assertEquals(0, disconnects)
         assertEquals("New hotspot", AirPlayPersistence.loadManualHotspotSsid(activity))
         assertFalse(views().filterIsInstance<Button>().any { it.text == activity.getString(R.string.save_and_reconnect) })
-        assertFalse(button(R.string.connect_phone).isShown)
-        assertTrue(button(R.string.disconnect).isShown)
+        assertTrue(button(R.string.settings_carplay_reconnect).isShown)
+        assertTrue(button(R.string.settings_carplay_reconnect).isShown)
     }
     @Test fun existingWifiUsesTheExistingNetworkTransportAndActualCredentials() {
         choose(BrowserConnectionDraft.Source.LAN)
@@ -187,7 +183,7 @@ class BrowserMainPageTest {
         selectSecurity(1)
         val fields = views().filterIsInstance<EditText>().toList()
         fields[0].setText("Car AP"); fields[1].setText("external123")
-        button(R.string.connect_phone).performClick()
+        button(R.string.settings_carplay_reconnect).performClick()
         assertEquals(1, connections)
         assertEquals(WirelessHotspotMode.EXISTING_WIFI, AirPlayPersistence.loadWirelessHotspotMode(activity))
         assertEquals("Car AP", AirPlayPersistence.loadExistingWifiSsid(activity))
@@ -207,7 +203,7 @@ class BrowserMainPageTest {
     }
     @Test fun invalidCredentialsShowAnErrorWithoutStartingOrSaving() {
         views().filterIsInstance<EditText>().first().setText("")
-        button(R.string.connect_phone).performClick()
+        button(R.string.settings_carplay_reconnect).performClick()
         assertEquals(0, connections)
         assertEquals("Phone hotspot", AirPlayPersistence.loadManualHotspotSsid(activity))
         assertTrue(views().filterIsInstance<TextView>().any { it.isShown && it.text == activity.getString(com.shilapi.xcertplay.orchestration.ManualHotspotValidation.Error.EMPTY_NAME.messageResource()) })
@@ -255,27 +251,31 @@ class BrowserMainPageTest {
         assertTrue(button(R.string.open_car_hotspot_settings).isShown)
         HotspotExtraAddressSettings.saveMethod(activity, HotspotAddressMethod.SHIZUKU)
         choose(BrowserConnectionDraft.Source.LAN); choose(BrowserConnectionDraft.Source.LOCAL)
+        assertFalse(views().filterIsInstance<Button>().any { it.text == activity.getString(R.string.settings_hotspot_read) })
+        assertTrue(button(R.string.open_car_hotspot_settings).isShown)
+        HotspotExtraAddressSettings.saveMethod(activity, HotspotAddressMethod.ROOT)
+        choose(BrowserConnectionDraft.Source.LAN); choose(BrowserConnectionDraft.Source.LOCAL)
         assertTrue(button(R.string.settings_hotspot_read).isShown)
-        assertFalse(views().filterIsInstance<Button>().any { it.text == activity.getString(R.string.open_car_hotspot_settings) })
     }
     @Test fun mainPageOffersOnlyPhoneHotspotAndExistingWifi() {
         val choices = views().filterIsInstance<RadioButton>().toList()
         assertEquals(listOf(BrowserConnectionDraft.Source.LOCAL, BrowserConnectionDraft.Source.LAN), choices.map { it.tag })
         assertEquals(listOf(activity.getString(R.string.built_in_car_hotspot), activity.getString(R.string.existing_wifi_title)), choices.map { it.text.toString() })
     }
-    @Test fun connectionModePrecedesConnectAndHotspotAddressOnlyFollowsLocalNetworkChoice() {
+    @Test fun tiPlayModePrecedesCarPlayModeAndPhoneChoiceFollowsIt() {
         val controls = views().toList()
         val mode = controls.filterIsInstance<Button>().single {
             it.text.toString().startsWith(activity.getString(R.string.settings_browser_carplay_connection_mode) + " · ")
         }
-        assertTrue(controls.indexOf(mode) < controls.indexOf(button(R.string.connect_phone)))
+        assertTrue(controls.indexOf(mode) < controls.indexOf(button(R.string.settings_carplay_reconnect)))
         fun addressButtons() = views().filterIsInstance<Button>().filter {
             it.text.toString().startsWith(activity.getString(R.string.settings_browser_hotspot_address_repair) + " · ")
         }.toList()
         val source = controls.filterIsInstance<RadioButton>().first()
-        assertTrue(controls.indexOf(source) < controls.indexOf(addressButtons().single()))
+        assertTrue(controls.indexOf(addressButtons().single()) < controls.indexOf(mode))
+        assertTrue(controls.indexOf(mode) < controls.indexOf(button(R.string.choose_iphone)))
         choose(BrowserConnectionDraft.Source.LAN)
-        assertTrue(addressButtons().isEmpty())
+        assertEquals(1, addressButtons().size)
         choose(BrowserConnectionDraft.Source.LOCAL)
         assertEquals(1, addressButtons().size)
         page.transportSelected(false)
@@ -307,7 +307,7 @@ class BrowserMainPageTest {
         assertFalse(views().filterIsInstance<EditText>().last().isShown)
         assertEquals("password1", page.draft.localPassword)
         assertNull(page.draft.validationError())
-        button(R.string.connect_phone).performClick()
+        button(R.string.settings_carplay_reconnect).performClick()
         assertEquals(1, connections)
         assertEquals(ManualHotspotSecurity.OPEN, AirPlayPersistence.loadManualHotspotSecurity(activity))
         assertEquals("", AirPlayPersistence.loadManualHotspotPassphrase(activity))
@@ -337,6 +337,8 @@ class BrowserMainPageTest {
     @Test fun legacyExternalApPreferenceMigratesToExistingWifiAndPreservesCredentials() {
         AirPlayPersistence.saveWirelessHotspotMode(activity, WirelessHotspotMode.EXISTING_WIFI)
         AirPlayPersistence.saveExistingWifiCredentials(activity, "Saved car AP", "savedsecret1")
+        activity.getSharedPreferences("tiplay_carplay", 0).edit().clear().commit()
+        activity.getSharedPreferences("tiplay_airplay_receiver", 0).edit().clear().commit()
         activity.getSharedPreferences("tiplay_browser_network", 0).edit().putString("source", "EXTERNAL_AP").commit()
         val migrated = BrowserConnectionDraft.load(activity)
         assertEquals(BrowserConnectionDraft.Source.LAN, migrated.source)
@@ -359,11 +361,12 @@ class BrowserMainPageTest {
         assertEquals("Phone hotspot", AirPlayPersistence.loadManualHotspotSsid(activity))
         assertEquals(WirelessHotspotMode.MANUAL, AirPlayPersistence.loadWirelessHotspotMode(activity))
     }
-    @Test fun disconnectIsExplicitAndHasNoExitApplicationAction() {
+    @Test fun reconnectIsExplicitAndHasNoExitApplicationAction() {
         page.update("Connected", true)
-        button(R.string.disconnect).performClick()
-        assertEquals(1, disconnects); assertEquals(0, connections)
-        assertFalse(button(R.string.settings_main_stopping).isEnabled)
+        button(R.string.settings_carplay_reconnect).performClick()
+        assertEquals(0, disconnects); assertEquals(1, connections)
+        assertTrue(button(R.string.settings_carplay_reconnect).isEnabled)
+        assertFalse(views().filterIsInstance<Button>().any { it.text == activity.getString(R.string.connect_phone) })
     }
     @Test fun launcherGoesDirectlyToTheUnifiedHostPage() {
         val screen = Robolectric.buildActivity(DiPlayActivity::class.java,
@@ -379,7 +382,7 @@ class BrowserMainPageTest {
         page.view.layout(0, 0, width, height)
         assertTrue(views().filterIsInstance<EditText>().count() >= 2)
         assertTrue(button(R.string.settings_advanced).height > 0)
-        assertTrue(button(R.string.connect_phone).height > 0)
+        assertTrue(button(R.string.settings_carplay_reconnect).height > 0)
     }
     @Test fun usbAttachmentUpdatesTheChoiceWithoutDiscardingOtherDraftFields() {
         page.update("Connected", true)
@@ -388,7 +391,7 @@ class BrowserMainPageTest {
         assertFalse(page.draft.wireless)
         assertEquals("Incomplete hotspot", page.draft.localSsid)
         assertTrue(views().filterIsInstance<EditText>().any())
-        assertFalse(button(R.string.connect_phone).isShown)
+        assertTrue(button(R.string.settings_carplay_reconnect).isShown)
     }
     @Test fun validIdleEditsSaveWithoutStartingAConnection() {
         views().filterIsInstance<EditText>().first().setText("Another hotspot")
@@ -396,16 +399,16 @@ class BrowserMainPageTest {
         assertEquals("Another hotspot", AirPlayPersistence.loadManualHotspotSsid(activity))
         assertEquals(1, settingsChanges)
         assertEquals(0, connections)
-        assertTrue(button(R.string.connect_phone).isShown)
+        assertTrue(button(R.string.settings_carplay_reconnect).isShown)
     }
     @Test fun connectionFailureKeepsDisconnectAvailableWithoutAnApplyAction() {
         page.update("Retrying", true)
         page.showConnectionError("Check Wi-Fi")
-        assertFalse(button(R.string.connect_phone).isShown)
-        assertTrue(button(R.string.disconnect).isShown)
+        assertTrue(button(R.string.settings_carplay_reconnect).isShown)
+        assertTrue(button(R.string.settings_carplay_reconnect).isShown)
         assertTrue(views().filterIsInstance<TextView>().any { it.isShown && it.text == "Check Wi-Fi" })
         page.showConnectionError(null)
-        assertFalse(button(R.string.connect_phone).isShown)
+        assertTrue(button(R.string.settings_carplay_reconnect).isShown)
     }
     @Config(qualifiers = "en-w1000dp-h700dp")
     @Test fun wideWindowShowsConnectionActionsAndKeepsNetworkInputsReachableByScrolling() {
@@ -414,7 +417,7 @@ class BrowserMainPageTest {
         page.view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
         page.view.layout(0, 0, width, height)
         val essentials = views().filter { it is TextView &&
-            (it.text == activity.getString(R.string.connect_phone) ||
+            (it.text == activity.getString(R.string.settings_carplay_reconnect) ||
             it.text == activity.getString(R.string.settings_browser_boot_connect) ||
             it.text == activity.getString(R.string.choose_iphone) ||
             it.text.toString().startsWith(activity.getString(R.string.settings_browser_carplay_connection_mode) + " · ")) }.toList()
@@ -449,7 +452,7 @@ class BrowserMainPageTest {
         page.update("Connected", true)
         settleEdits()
         assertEquals("Phone hotspot", AirPlayPersistence.loadManualHotspotSsid(activity))
-        assertFalse(button(R.string.connect_phone).isShown)
+        assertTrue(button(R.string.settings_carplay_reconnect).isShown)
         assertEquals("", views().filterIsInstance<EditText>().first().text.toString())
     }
     @Test fun ordinaryAirPlayHasNoMainPageNavigationEntry() {

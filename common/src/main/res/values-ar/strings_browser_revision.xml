@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_browser_boot_connect">الاتصال تلقائيًا بعد التشغيل</string>
+    <string name="settings_browser_boot_connect">بدء التشغيل عند الإقلاع</string>
     <string name="settings_browser_network_configuration">إعداد الشبكة</string>
     <string name="settings_browser_connection_status">حالة الاتصال</string>
     <string name="settings_browser_carplay_connection_mode">وضع اتصال CarPlay</string>
@@ -17,12 +17,12 @@
     <string name="settings_report_copy_full_text">نسخ النص الكامل</string>
     <string name="settings_report_saved_at">تم حفظ التقرير في:</string>
     <string name="settings_browser_hevc_title">HEVC (H.265)</string>
-    <string name="settings_browser_hotspot_address_repair">تعديل عنوان نقطة الاتصال</string>
+    <string name="settings_browser_hotspot_address_repair">وضع TiPlay</string>
     <string name="settings_browser_hotspot_address">عنوان نقطة الاتصال</string>
     <string name="settings_browser_hotspot_endpoint">عنوان نقطة الاتصال: %1$s</string>
     <string name="settings_browser_more">المزيد</string>
     <string name="settings_selected_iphone">iPhone · %1$s</string>
     <string name="settings_browser_vpn_endpoint_hint">نطاق العناوين 169.254.0.0/16، والمنافذ 1024–65535، مثل 169.254.111.111:8080. يحدّث المتصفح المتصل عنوانه تلقائيًا. إذا كان غير متصل فأدخل عنوان أندرويد الجديد في الصفحة. اتركه فارغًا لاستخدام 169.254.111.111 مع الاحتفاظ بالمنفذ المحفوظ.</string>
     <string name="settings_browser_vpn_endpoint_invalid">أدخل عنوانًا ضمن 169.254.0.0/16 ومنفذًا (1024–65535)، مثل 169.254.111.111:8080.</string>
-    <string name="settings_browser_hotspot_address_explanation">يحظر متصفح Tesla عناوين نقطة الاتصال الخاصة المعتادة. عدّل العنوان ليتمكن المتصفح من الوصول إلى TiPlay.</string>
+    <string name="settings_browser_hotspot_address_explanation">اختر كيف يتيح TiPlay الوصول من متصفح السيارة ويتعامل مع إذن USB. يستخدم الوضع القياسي عنوان الشبكة الحالي؛ توفر الأوضاع الأخرى حلولاً بصلاحيات وقيود مختلفة.</string>
 </resources>

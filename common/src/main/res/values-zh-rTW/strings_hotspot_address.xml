@@ -5,14 +5,14 @@
     <string name="settings_hotspot_address_blocked">特斯拉瀏覽器很可能無法開啟這個位址。請在下方選擇其他熱點位址方式。</string>
     <string name="settings_hotspot_not_found">找不到熱點。請開啟這支手機的熱點。</string>
     <string name="settings_hotspot_address_method">熱點位址</string>
-    <string name="settings_hotspot_method_normal">無</string>
+    <string name="settings_hotspot_method_normal">標準</string>
     <string name="settings_hotspot_method_root">Root</string>
     <string name="settings_hotspot_method_vpn">VPN</string>
     <string name="settings_hotspot_method_shizuku">Shizuku</string>
     <string name="settings_hotspot_method_normal_description">適用於其他車機瀏覽器，或熱點位址本身就在 169.254.0.0/16 或 100.64.0.0/10 內的情況。</string>
-    <string name="settings_hotspot_method_root_description">需要 root。為這支手機的熱點加上 %1$s，讓特斯拉瀏覽器連上 TiPlay；熱點重新啟動後會自動重新加入。立即生效，不需要重新連線。</string>
+    <string name="settings_hotspot_method_root_description">需要 Root。為熱點加入 %1$s，熱點重新啟動後自動恢復；支援讀取熱點名稱和密碼，並嘗試啟用 TiPlay USB 彈窗自動確認。部分系統可能限制這些功能。</string>
     <string name="settings_hotspot_method_vpn_description">不需要 root。透過只供 TiPlay 使用的 VPN 提供位址 %1$s，不影響其他應用程式。第一次使用時 Android 會請你允許 VPN；開啟期間不能同時使用其他 VPN。立即生效，不需要重新連線。</string>
-    <string name="settings_hotspot_method_shizuku_description">不需要 root，但需要 Shizuku 正在執行並已授權 TiPlay。每次手機重新啟動後都要重新啟動 Shizuku：用無線偵錯啟動（需要連上 Wi-Fi），或透過 USB 連接電腦啟動。為這支手機的熱點加上 %1$s，熱點重新啟動後會自動重新加入。Shizuku 無法移除這個位址，所以改用其他方式後，它會保留到熱點重新啟動為止。立即生效，不需要重新連線。</string>
+    <string name="settings_hotspot_method_shizuku_description">需要 Shizuku 運作並授權 TiPlay。嘗試為熱點加入 %1$s、自動授權 TiPlay 的 USB 連線，部分系統可能拒絕。熱點名稱和密碼需手動填寫；加入的位址會保留到熱點重新啟動。手機重新啟動後需重新啟動 Shizuku。</string>
     <string name="settings_hotspot_extra_address_value">位址</string>
     <string name="settings_hotspot_extra_address_value_hint">Root / Shizuku：169.254.0.0/16 或 100.64.0.0/10；VPN：僅 169.254.0.0/16。留空使用 169.254.111.111。立即生效。</string>
     <string name="settings_hotspot_extra_address_invalid">請輸入 100.64.0.0/10 或 169.254.0.0/16 內的位址，例如 169.254.111.111。</string>
