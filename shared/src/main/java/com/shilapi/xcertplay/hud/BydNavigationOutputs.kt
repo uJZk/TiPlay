@@ -11,6 +11,7 @@ object BydNavigationOutputs {
      * but no output or vehicle reading starts.
      */
     fun onAppOpened(context: Context, headUnitIntegrations: Boolean = true) {
+        if (headUnitIntegrations) BydBluetoothSuspend.onAppOpened(context)
         BydOemClusterNavi.restoreIfNeeded(context)
         BydDiLink3ClusterOutput.restoreIfNeeded(context)
         com.shilapi.xcertplay.network.WifiScanPause.restoreIfNeeded(context)
@@ -34,6 +35,7 @@ object BydNavigationOutputs {
     private val standalone = NavigationOutputWorker("diplay-standalone-output", BydStandaloneNavigationBridge::clear)
     private val hud = NavigationOutputWorker("diplay-hud-output", BydHudBridge::clear)
     private val cluster = NavigationOutputWorker("diplay-cluster-output", BydClusterBridge::clear)
+    private val fceCluster = NavigationOutputWorker("diplay-fce-cluster-output", FceClusterBridge::clear)
 
     /** The host reports whether its CarPlay map window is on the cluster (see [BydClusterMapPause]). */
     fun setClusterMapShown(shown: Boolean) {
@@ -43,6 +45,15 @@ object BydNavigationOutputs {
 
     /** The running CarPlay session: told every second whether the cluster currently shows the map. */
     fun setClusterStreamControl(control: (Boolean) -> Unit) { BydClusterMapPause.streamControl = control }
+
+    /** Latest ADB wheel-menu navi mode, or null when it cannot be read. */
+    fun clusterNaviMode(): BydClusterNaviMode? = BydClusterMapPause.lastNaviMode
+
+    /** Called whenever the ADB navi mode changes. Pass null to stop following. */
+    fun setClusterNaviModeListener(listener: ((BydClusterNaviMode?) -> Unit)?) {
+        BydClusterMapPause.onNaviMode = listener
+        listener?.invoke(BydClusterMapPause.lastNaviMode)
+    }
 
     fun clearClusterStreamControl(control: (Boolean) -> Unit) {
         if (BydClusterMapPause.streamControl == control) BydClusterMapPause.streamControl = null
@@ -69,6 +80,7 @@ object BydNavigationOutputs {
             hud.start { BydHudBridge.initialize(app) }
             cluster.start { BydClusterBridge.initialize(app) }
         }
+        if (FceClusterBridge.available()) fceCluster.start { FceClusterBridge.initialize(app) }
         BydClusterMapPause.initialize(app)
         BydClusterSong.attach(app)
         BydCarPlayCall.attach(app)
@@ -87,6 +99,7 @@ object BydNavigationOutputs {
             frame.messageId != BydHudRouteState.ROUTE_GUIDANCE_MANEUVER_UPDATE) return
         val owned = frame // Iap2Frame is immutable and defensively copies its payload.
         updateOverlay(owned)
+        fceCluster.submit { FceClusterBridge.onFrame(owned) }
         if (useStandalone) standalone.submit { BydStandaloneNavigationBridge.onFrame(owned) }
         else {
             hud.submit { BydHudBridge.onFrame(owned) }
@@ -148,12 +161,14 @@ object BydNavigationOutputs {
 
     /** Best effort while alive; Android does not guarantee callbacks before force-stop. */
     fun endNow(preserveTurnOverlay: Boolean = false) {
-        standalone.clear(); hud.clear(); cluster.clear(); BydClusterSong.end(); BydCarPlayCall.end()
+        standalone.clear(); hud.clear(); cluster.clear(); fceCluster.clear(); BydClusterSong.end(); BydCarPlayCall.end()
         // Only a wireless session replacement retains the card. Explicit controller close
         // and wired disconnect still clear it immediately.
         if (!preserveTurnOverlay) {
             synchronized(overlayLock) { overlayRoute.clear() }
             refreshTurnOverlay()
+        } else {
+            synchronized(overlayLock) { overlayRoute.holdAcrossDrop() }
         }
     }
 }

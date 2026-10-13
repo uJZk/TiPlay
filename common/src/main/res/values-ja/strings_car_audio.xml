@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_browser_car_bluetooth_audio">車の Bluetooth で音声を再生（実験的）</string>
+    <string name="settings_car_bluetooth_audio_off">オフ</string>
+    <string name="settings_car_bluetooth_audio_on">オン</string>
+    <string name="settings_car_bluetooth_audio_alternative">オン（代替方法）</string>
+    <string name="settings_browser_car_bluetooth_audio_description">Tesla など、車載ブラウザーに CarPlay を表示する車向けです。音楽、ナビ、Siri、通話は iPhone と車の Bluetooth 接続で再生し、TiPlay は映像のみを表示します。先に iPhone を車の Bluetooth とペア設定してください。車から音が出ない場合は代替方法を試してください。次の CarPlay 接続から適用されます。</string>
+</resources>

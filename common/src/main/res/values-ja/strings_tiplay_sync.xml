@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_external_ap_hint">Android、iPhone、車載ブラウザーを同じ外部 Wi-Fi に接続してください。この方法では Android のホットスポットを起動しません。オープンまたは WPA2 ネットワークを使用してください。ブラウザーからアクセスできない場合は AP のクライアント分離を確認してください。</string>
+    <string name="settings_external_ap_wifi">システムの Wi-Fi 設定を開く</string>
+    <string name="settings_external_ap_ready">この端末は目的の Wi-Fi に接続しています。</string>
+    <string name="settings_external_ap_check">この端末は目的の Wi-Fi に接続していません。</string>
+    <string name="settings_android_address">Android のアドレス：%1$s</string>
+    <string name="settings_main_stopping">切断中…</string>
+    <string name="settings_airplay_title">AirPlay</string>
+    <string name="settings_airplay_listening">iPhone を待機中 · TiPlay</string>
+    <string name="settings_airplay_disable">AirPlay を無効にする</string>
+    <string name="settings_airplay_disable_description" />
+    <string name="settings_disable_carplay_audio">CarPlay の音声を無効にする</string>
+    <string name="settings_disable_carplay_audio_description" />
+</resources>

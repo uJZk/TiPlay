@@ -4,6 +4,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbRequest
+import android.os.Build
 import java.lang.reflect.InvocationTargetException
 import java.nio.ByteBuffer
 import java.util.ArrayDeque
@@ -28,6 +29,18 @@ import org.robolectric.util.ReflectionHelpers.ClassParameter
     shadows = [CompatibilityUsbConnectionShadow::class, CompatibilityUsbRequestShadow::class])
 class UsbReadQueueCompatibilityTest {
     @Before fun reset() { UsbQueueReplay.reset() }
+
+    @Test fun cachedSixteenKRejectionRetriesEightKInBothPipes() {
+        UsbQueueReplay.outcomes.addAll(listOf(false, true, false, true, true))
+        val pipe = pipe()
+        try { repeat(3) { assertArrayEquals(payload, pipe.read(100)) } } finally { pipe.close() }
+        assertEquals(listOf(65_536, 16_384, 16_384, 8_192, 8_192), UsbQueueReplay.sizes)
+        UsbQueueReplay.reset()
+        UsbQueueReplay.outcomes.addAll(listOf(false, true, false, true, true))
+        val ncm = ncm()
+        try { repeat(3) { assertEquals(payload.size, readChunk(ncm)) } } finally { ncm.close() }
+        assertEquals(listOf(32_768, 16_384, 16_384, 8_192, 8_192), UsbQueueReplay.sizes)
+    }
 
     @Test fun normalUsbmuxAndNcmRequestsKeepTheirOriginalSizes() {
         val diagnostics = mutableListOf<String>()
@@ -67,7 +80,7 @@ class UsbReadQueueCompatibilityTest {
         val frame = ByteArray(32_740) { (it * 31).toByte() }
         val followingFrame = byteArrayOf(0x33, 0x33, 0, 0, 0, 1, 0x86.toByte(), 0xdd.toByte())
         val block = Ntb16Codec.build(frame, 7)
-        assertEquals(32_769, block.size) // Two 16 KiB reads, then the required short-packet pad.
+        assertEquals(32_769, block.size) // Two 16 KiB reads, then the optional short-packet pad.
         UsbQueueReplay.transfer = block + Ntb16Codec.build(followingFrame, 8)
         UsbQueueReplay.outcomes.addAll(listOf(false, true))
         val diagnostics = mutableListOf<String>()
@@ -93,16 +106,16 @@ class UsbReadQueueCompatibilityTest {
         try { assertEquals(payload.size, readChunk(ncm)) } finally { ncm.close() }
     }
 
-    @Test fun bothQueueRejectionsFailWithEndpointApiAndAttemptedSizes() {
+    @Test fun everyLadderRejectionFailsWithEndpointApiAndAttemptedSizes() {
         val pipe = pipe()
-        UsbQueueReplay.outcomes.addAll(listOf(false, false))
+        UsbQueueReplay.outcomes.addAll(listOf(false, false, false, false, false))
         try { checkQueueFailure { pipe.read(100) } } finally { pipe.close() }
-        assertEquals(listOf(65_536, 16_384), UsbQueueReplay.sizes)
+        assertEquals(listOf(65_536, 16_384, 8_192, 4_096, 2_048), UsbQueueReplay.sizes)
         UsbQueueReplay.reset()
         val ncm = ncm()
-        UsbQueueReplay.outcomes.addAll(listOf(false, false))
+        UsbQueueReplay.outcomes.addAll(listOf(false, false, false, false, false))
         try { checkQueueFailure { readChunk(ncm) } } finally { ncm.close() }
-        assertEquals(listOf(32_768, 16_384), UsbQueueReplay.sizes)
+        assertEquals(listOf(32_768, 16_384, 8_192, 4_096, 2_048), UsbQueueReplay.sizes)
     }
 
     @Test fun queueExceptionDoesNotTriggerCompatibilityRetryInEitherPipe() {
@@ -160,7 +173,7 @@ class UsbReadQueueCompatibilityTest {
         assertTrue(error.message!!.contains("api=28"))
         assertTrue(error.message!!.contains("endpoint=0x85"))
         assertTrue(error.message!!.contains("firstBytes="))
-        assertTrue(error.message!!.contains("fallbackBytes=16384"))
+        assertTrue(error.message!!.contains("fallbackBytes=2048"))
     }
 
     private fun checkFallbackDiagnostic(diagnostics: List<String>, pipe: String, firstBytes: Int) {
@@ -208,10 +221,18 @@ object UsbQueueReplay {
     var transfer: ByteArray? = null
     var transferOffset = 0
     val completedBytes = mutableListOf<Int>()
+    @Volatile var untimedWaits = 0
+    /** Timed waits that time out once each before a completion is returned. */
+    var timeouts = 0
+    var cancelResult = true
+    /** The next completion carries no bytes, as a cancelled read does. */
+    var emptyCompletion = false
+    var cancels = 0
     fun reset() {
         outcomes.clear(); sizes.clear(); buffers.clear(); request = null; buffer = null
         queueException = null; timeout = false; onQueue = null
-        transfer = null; transferOffset = 0; completedBytes.clear()
+        transfer = null; transferOffset = 0; completedBytes.clear(); untimedWaits = 0
+        timeouts = 0; cancelResult = true; emptyCompletion = false; cancels = 0
     }
 }
 
@@ -219,23 +240,42 @@ object UsbQueueReplay {
 class CompatibilityUsbRequestShadow {
     @RealObject lateinit var request: UsbRequest
     @Implementation fun initialize(connection: UsbDeviceConnection, endpoint: UsbEndpoint) = true
-    @Implementation fun queue(buffer: ByteBuffer): Boolean {
+    @Implementation(minSdk = 26) fun queue(buffer: ByteBuffer): Boolean {
         UsbQueueReplay.sizes.add(buffer.remaining())
         UsbQueueReplay.buffers.add(buffer)
+        if (Build.VERSION.SDK_INT in 26..27) {
+            require(buffer.remaining() <= 16_384) { "number of remaining bytes is out of range [0, 16384]" }
+        }
         UsbQueueReplay.queueException?.let { throw it }
         UsbQueueReplay.onQueue?.invoke(request)
         val queued = UsbQueueReplay.outcomes.pollFirst() ?: true
         if (queued) { UsbQueueReplay.request = request; UsbQueueReplay.buffer = buffer }
         return queued
     }
-    @Implementation fun cancel() = true
+    /** Android 7.x queue; the buffer is filled from position 0 up to [length]. */
+    @Implementation fun queue(buffer: ByteBuffer, length: Int): Boolean {
+        check(buffer.position() == 0 && buffer.remaining() == length) { "Unexpected Android 7 queue range" }
+        return queue(buffer)
+    }
+    @Implementation fun cancel(): Boolean {
+        UsbQueueReplay.cancels += 1
+        return UsbQueueReplay.cancelResult
+    }
     @Implementation fun close() = Unit
 }
 
 @Implements(UsbDeviceConnection::class)
 class CompatibilityUsbConnectionShadow {
-    @Implementation fun requestWait(timeoutMillis: Long): UsbRequest {
+    @Implementation(minSdk = 26) fun requestWait(timeoutMillis: Long): UsbRequest {
         if (UsbQueueReplay.timeout) throw TimeoutException()
+        if (UsbQueueReplay.timeouts > 0) {
+            UsbQueueReplay.timeouts -= 1
+            throw TimeoutException()
+        }
+        if (UsbQueueReplay.emptyCompletion) {
+            UsbQueueReplay.emptyCompletion = false
+            return UsbQueueReplay.request!!
+        }
         val buffer = UsbQueueReplay.buffer!!
         val transfer = UsbQueueReplay.transfer
         if (transfer == null) {
@@ -248,6 +288,11 @@ class CompatibilityUsbConnectionShadow {
             UsbQueueReplay.completedBytes.add(count)
         }
         return UsbQueueReplay.request!!
+    }
+    /** Android 7.x blocking wait. */
+    @Implementation fun requestWait(): UsbRequest {
+        UsbQueueReplay.untimedWaits += 1
+        return requestWait(Long.MAX_VALUE)
     }
     @Implementation fun close() = Unit
 }

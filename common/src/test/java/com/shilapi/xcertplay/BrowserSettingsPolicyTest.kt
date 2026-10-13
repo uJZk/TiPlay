@@ -22,7 +22,7 @@ class BrowserSettingsPolicyTest {
     @Test fun openingTheProductMigratesOldChoicesWithoutChangingManualCredentials() {
         val context = RuntimeEnvironment.getApplication()
         AirPlayPersistence.saveRunMode(context, CarPlayRunMode.HEAD_UNIT)
-        AirPlayPersistence.saveCarBluetoothAudio(context, CarBluetoothAudio.OFF)
+        CarBluetoothAudio.save(context, CarBluetoothAudio.OFF)
         AirPlayPersistence.saveCarPlayNightMode(context, CarPlayNightMode.SCHEDULE)
         AirPlayPersistence.saveLocationReportingEnabled(context, true)
         AirPlayPersistence.saveManualHotspotSsid(context, "Manual phone hotspot")
@@ -32,7 +32,7 @@ class BrowserSettingsPolicyTest {
         AirPlayPersistence.saveManualHotspotChannel(context, 149)
         BrowserSettingsPolicy.activate(context)
         assertEquals(CarPlayRunMode.PHONE_BROWSER, AirPlayPersistence.loadRunMode(context))
-        assertEquals(CarBluetoothAudio.OFF, AirPlayPersistence.loadCarBluetoothAudio(context))
+        assertEquals(CarBluetoothAudio.OFF, CarBluetoothAudio.load(context))
         assertFalse(BrowserCarPlayAudioSettings.disabled(context))
         assertEquals(CarPlayNightMode.SYSTEM, AirPlayPersistence.loadCarPlayNightMode(context))
         assertTrue(SplitScreenSettings.enabled(context))

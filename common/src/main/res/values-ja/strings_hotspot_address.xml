@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_hotspot_address_checking">この端末のホットスポットのアドレスを検索中…</string>
+    <string name="settings_hotspot_current_address">現在のホットスポットのアドレス：%1$s</string>
+    <string name="settings_hotspot_address_blocked">Tesla のブラウザーではこのアドレスを開けない可能性があります。下の別の方法を選んでください。</string>
+    <string name="settings_hotspot_not_found">ホットスポットが見つかりません。このスマートフォンのホットスポットをオンにしてください。</string>
+    <string name="settings_hotspot_address_method">ホットスポットのアドレス</string>
+    <string name="settings_hotspot_method_normal">標準</string>
+    <string name="settings_hotspot_method_root">Root</string>
+    <string name="settings_hotspot_method_vpn">VPN</string>
+    <string name="settings_hotspot_method_shizuku">Shizuku</string>
+    <string name="settings_hotspot_method_normal_description">現在のホットスポットのアドレスを使用します。</string>
+    <string name="settings_hotspot_method_root_description">root 権限で %1$s を追加します。ホットスポットの接続情報も読み取れます。</string>
+    <string name="settings_hotspot_method_vpn_description">ローカル VPN で %1$s を使用します。他の VPN と同時には使用できません。</string>
+    <string name="settings_hotspot_method_shizuku_description">Shizuku で %1$s を追加します。権限が必要です。</string>
+    <string name="settings_hotspot_extra_address_value">アドレス</string>
+    <string name="settings_hotspot_extra_address_value_hint">Root／Shizuku：169.254.0.0/16 または 100.64.0.0/10。VPN：169.254.0.0/16 のみ。空欄なら 169.254.111.111 を使用します。すぐに適用されます。</string>
+    <string name="settings_hotspot_extra_address_invalid">100.64.0.0/10 または 169.254.0.0/16 のアドレスを入力してください。例：169.254.111.111。</string>
+    <string name="settings_hotspot_extra_address_root_checking">root 権限を要求中…</string>
+    <string name="settings_hotspot_extra_address_root_refused">TiPlay に root 権限がないため、方法を変更しませんでした。Magisk などの管理アプリで TiPlay を許可し、もう一度 Root を選んでください。</string>
+    <string name="settings_hotspot_extra_address_added">%1$s にアドレスを追加しました。</string>
+    <string name="settings_hotspot_extra_address_waiting">このスマートフォンのホットスポットを待機中。</string>
+    <string name="settings_hotspot_extra_address_no_root">root 権限が拒否されたため、試行を停止しました。再試行するには Root を選び直してください。</string>
+    <string name="settings_hotspot_extra_address_failed">アドレスを追加できませんでした。まもなく再試行します。</string>
+    <string name="settings_hotspot_extra_address_paused">一時停止中。TiPlay を開くか接続すると再びアドレスを追加します。</string>
+    <string name="settings_hotspot_extra_address_manual_only">接続方法が「%1$s」の場合のみ使用できます。</string>
+    <string name="settings_hotspot_shizuku_not_running">Shizuku が動作していません。スマートフォンの再起動後は、ワイヤレスデバッグ（Wi-Fi が必要）またはパソコンから USB で起動してください。</string>
+    <string name="settings_hotspot_shizuku_permission">Shizuku はまだ TiPlay を許可していません。</string>
+    <string name="settings_hotspot_shizuku_allow">Shizuku で TiPlay を許可</string>
+    <string name="settings_hotspot_shizuku_denied">Shizuku が TiPlay を許可しませんでした。Shizuku アプリで許可してから戻ってください。</string>
+    <string name="settings_hotspot_shizuku_blocked">このスマートフォンでは Shizuku によるアドレスの変更ができません。他の方法を選んでください。</string>
+    <string name="settings_hotspot_shizuku_left">Shizuku で追加したアドレスを削除できません。ホットスポットを再起動すると削除されます。</string>
+    <string name="settings_hotspot_vpn_up">%1$s で VPN が動作しています。</string>
+    <string name="settings_hotspot_vpn_starting">VPN を起動中…</string>
+    <string name="settings_hotspot_vpn_consent">Android はまだ TiPlay の VPN を許可していません。</string>
+    <string name="settings_hotspot_vpn_allow">VPN を許可</string>
+    <string name="settings_hotspot_vpn_other">別の VPN が動作中です。TiPlay は置き換えません。その VPN をオフにしてから戻ってください。</string>
+    <string name="settings_hotspot_vpn_wired">有線 CarPlay が VPN を使用中です。その接続が終了するとアドレス用 VPN が起動します。</string>
+    <string name="settings_hotspot_vpn_revoked">Android の設定または別の VPN アプリにより VPN がオフになりました。</string>
+    <string name="settings_hotspot_vpn_failed">VPN を起動できませんでした。TiPlay を開くか接続すると再試行します。繰り返し失敗する場合は他の方法を選んでください。</string>
+    <string name="settings_hotspot_vpn_no_consent_screen">このスマートフォンでは Android の VPN 権限画面を表示できません。</string>
+</resources>

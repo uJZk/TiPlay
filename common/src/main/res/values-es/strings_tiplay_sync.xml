@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_external_ap_hint">Conecta Android, el iPhone y el navegador del coche a la misma red Wi-Fi externa. Este modo no inicia un punto de acceso en Android. Usa una red abierta o WPA2. Si el navegador no puede acceder a Android, comprueba el aislamiento de clientes del AP.</string>
+    <string name="settings_external_ap_wifi">Abrir ajustes de Wi-Fi del sistema</string>
+    <string name="settings_external_ap_ready">Este dispositivo está conectado a la red Wi-Fi indicada.</string>
+    <string name="settings_external_ap_check">Este dispositivo no está conectado a la red Wi-Fi indicada.</string>
+    <string name="settings_android_address">Dirección de Android: %1$s</string>
+    <string name="settings_main_stopping">Desconectando…</string>
+    <string name="settings_airplay_title">AirPlay</string>
+    <string name="settings_airplay_listening">Esperando al iPhone · TiPlay</string>
+    <string name="settings_airplay_disable">Desactivar AirPlay</string>
+    <string name="settings_airplay_disable_description">Se aplica de inmediato. AirPlay está activado por defecto. Esta opción detiene AirPlay y restaura CarPlay; al desactivarla, el receptor vuelve a iniciarse.</string>
+    <string name="settings_disable_carplay_audio">Desactivar audio de CarPlay</string>
+    <string name="settings_disable_carplay_audio_description">Mantén música, navegación, llamadas y Siri en la conexión Bluetooth del iPhone con el coche. Conecta primero el iPhone al Bluetooth del coche. CarPlay se reconecta después del cambio.</string>
+</resources>

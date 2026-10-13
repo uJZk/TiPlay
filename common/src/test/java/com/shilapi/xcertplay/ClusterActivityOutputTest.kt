@@ -39,6 +39,39 @@ class ClusterActivityOutputTest {
         } finally { ClusterActivityOutput.stop(owner) }
     }
 
+    @Test fun theRouteSettlesWhenTheWindowConfirmsOrTheShellRejectsTheLaunch() {
+        val app = org.robolectric.RuntimeEnvironment.getApplication()
+        AirPlayPersistence.saveAdbClusterEnabled(app, true)
+        val owner = Any()
+        ClusterActivityOutput.bind(owner, 4) { }
+        val token = "01234567-89ab-cdef-0123-456789abcdef"
+        fun admit(display: Int) {
+            ClusterActivityOutput::class.java.getDeclaredField("launchToken")
+                .apply { isAccessible = true }.set(ClusterActivityOutput, token)
+            ClusterActivityOutput::class.java.getDeclaredField("expectedDisplay")
+                .apply { isAccessible = true }.setInt(ClusterActivityOutput, display)
+        }
+        val activity = org.robolectric.Robolectric.buildActivity(AdbClusterActivity::class.java).get()
+        try {
+            assertFalse(ClusterActivityOutput.routeSettling())
+            ClusterActivityOutput.launchPending = true
+            assertTrue(ClusterActivityOutput.routeSettling())
+            admit(display = 1)
+            ClusterActivityOutput.completeLaunch(token, current = true, accepted = true) { }
+            // The shell accepted the launch; the window has not reported its display yet.
+            assertTrue(ClusterActivityOutput.routeSettling())
+            assertTrue(ClusterActivityOutput.confirm(activity, token, 1))
+            assertFalse(ClusterActivityOutput.routeSettling())
+
+            ClusterActivityOutput.stopForSettings()
+            ClusterActivityOutput.bind(owner, 4) { }
+            admit(display = 1)
+            ClusterActivityOutput.launchPending = true
+            ClusterActivityOutput.completeLaunch(token, current = true, accepted = false) { }
+            assertFalse(ClusterActivityOutput.routeSettling())
+        } finally { ClusterActivityOutput.stop(owner) }
+    }
+
     @Test fun rejectedShellLaunchInvalidatesAdmissionBeforeRestoringOemState() {
         val owner = Any()
         ClusterActivityOutput.bind(owner, 4) { }
@@ -120,4 +153,51 @@ class ClusterActivityOutputTest {
             firstTexture.release(); secondTexture.release()
         }
     }
+    @Test fun legacyRetryCompletesOnlyForItsValidActiveOutputAndResetsOnStop() {
+        val app = org.robolectric.RuntimeEnvironment.getApplication()
+        AirPlayPersistence.saveLegacyClusterEnabled(app, true)
+        val owner = org.robolectric.Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
+        ClusterActivityOutput.bind(owner, 4) {}
+        val token = "01234567-89ab-cdef-0123-456789abcdef"
+        ClusterActivityOutput::class.java.getDeclaredField("launchToken")
+            .apply { isAccessible = true }.set(ClusterActivityOutput, token)
+        ClusterActivityOutput::class.java.getDeclaredField("expectedDisplay")
+            .apply { isAccessible = true }.setInt(ClusterActivityOutput, 7)
+        val window = org.robolectric.Robolectric.buildActivity(AdbClusterActivity::class.java).get()
+        val stale = org.robolectric.Robolectric.buildActivity(AdbClusterActivity::class.java).get()
+        val presented = ClusterActivityOutput::class.java.getDeclaredField("legacyPresented")
+            .apply { isAccessible = true }
+        val texture = SurfaceTexture(0)
+        val output = Surface(texture)
+        try {
+            assertTrue(ClusterActivityOutput.confirm(window, token, 7))
+            assertFalse(presented.getBoolean(ClusterActivityOutput))
+            ClusterActivityOutput.attach(window, output)
+            ClusterActivityOutput.presented(window)
+            assertFalse(presented.getBoolean(ClusterActivityOutput))
+            ClusterActivityOutput.setStreamActive(true)
+            ClusterActivityOutput.presented(stale)
+            assertFalse(presented.getBoolean(ClusterActivityOutput))
+            assertTrue(output.isValid)
+            ClusterActivityOutput.presented(window)
+            assertTrue(presented.getBoolean(ClusterActivityOutput))
+            ClusterActivityOutput.activity.clear()
+            ClusterActivityOutput.ensure(owner)
+            assertFalse(ClusterActivityOutput.launchPending)
+            assertTrue(presented.getBoolean(ClusterActivityOutput))
+            ClusterActivityOutput.retry(force = true)
+            assertFalse(presented.getBoolean(ClusterActivityOutput))
+            assertTrue(ClusterActivityOutput.confirm(window, token, 7))
+            ClusterActivityOutput.presented(window)
+            assertTrue(presented.getBoolean(ClusterActivityOutput))
+            ClusterActivityOutput.stop(owner)
+            assertFalse(presented.getBoolean(ClusterActivityOutput))
+            assertFalse(ClusterActivityOutput.acceptsToken(token))
+        } finally {
+            ClusterActivityOutput.stop(owner)
+            output.release(); texture.release()
+            AirPlayPersistence.saveLegacyClusterEnabled(app, false)
+        }
+    }
+
 }

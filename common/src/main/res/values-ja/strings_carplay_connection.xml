@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_carplay_mode_all">すべて（USB 優先）</string>
+    <string name="settings_carplay_reconnect">CarPlay を再接続</string>
+    <string name="settings_carplay_disable">CarPlay を無効にする</string>
+    <string name="settings_carplay_disable_description" />
+    <string name="settings_carplay_disabled">CarPlay は無効です</string>
+    <string name="settings_carplay_ready">CarPlay は準備完了です</string>
+    <string name="settings_carplay_searching">CarPlay を検索中</string>
+    <string name="settings_airplay_ready_status">AirPlay は準備完了です</string>
+    <string name="settings_airplay_disabled_status">AirPlay は無効です</string>
+</resources>

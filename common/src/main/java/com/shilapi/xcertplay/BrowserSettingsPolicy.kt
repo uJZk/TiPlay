@@ -8,6 +8,7 @@ import com.shilapi.xcertplay.orchestration.ManualHotspotBand
 internal object BrowserSettingsPolicy {
     /** Apply the product profile on entry. A running session keeps its negotiated configuration. */
     fun activate(context: Context) {
+        CarBluetoothAudio.load(context) // Migrate the browser enum before upstream Boolean readers run.
         AirPlayPersistence.saveRunMode(context, CarPlayRunMode.PHONE_BROWSER)
         // Migrate the old independent launch-mode preference to the single saved connection choice.
         if (DiPlayPreferences.defaultConnectionMode(context) != DefaultConnectionMode.LAST_USED) {

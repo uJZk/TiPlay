@@ -1,0 +1,5 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_ignore_battery_optimization">バッテリー最適化を無視</string>
+    <string name="settings_battery_settings_unavailable">この端末ではバッテリー設定を開けません。</string>
+</resources>

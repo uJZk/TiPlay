@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_external_ap_hint">Подключите Android, iPhone и браузер автомобиля к одной внешней сети Wi-Fi. Этот режим не создаёт точку доступа на Android. Используйте открытую сеть или WPA2. Если браузер не видит Android, проверьте изоляцию клиентов точки доступа.</string>
+    <string name="settings_external_ap_wifi">Открыть системные настройки Wi-Fi</string>
+    <string name="settings_external_ap_ready">Устройство подключено к нужной сети Wi-Fi.</string>
+    <string name="settings_external_ap_check">Устройство не подключено к нужной сети Wi-Fi.</string>
+    <string name="settings_android_address">Адрес Android: %1$s</string>
+    <string name="settings_main_stopping">Отключение…</string>
+    <string name="settings_airplay_title">AirPlay</string>
+    <string name="settings_airplay_listening">Ожидание iPhone · TiPlay</string>
+    <string name="settings_airplay_disable">Отключить AirPlay</string>
+    <string name="settings_airplay_disable_description">Действует сразу. AirPlay включён по умолчанию. Этот переключатель останавливает AirPlay и возвращает экран CarPlay; выключение переключателя снова запускает приёмник.</string>
+    <string name="settings_disable_carplay_audio">Отключить звук CarPlay</string>
+    <string name="settings_disable_carplay_audio_description">Музыка, навигация, звонки и Siri используют Bluetooth-соединение iPhone с автомобилем. Сначала подключите iPhone к Bluetooth автомобиля. После изменения CarPlay переподключается.</string>
+</resources>

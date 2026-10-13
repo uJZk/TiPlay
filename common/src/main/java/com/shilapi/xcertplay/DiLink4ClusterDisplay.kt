@@ -8,9 +8,12 @@ import com.shilapi.xcertplay.airplay.SafeAreaRect
 internal object DiLink4ClusterDisplay {
     const val NAME = "fission_bg_xdjaVirtualSurface"
 
-    // Exact name and geometry only. Do not select arbitrary virtual or passenger displays.
+    // Controller 13 and 17 firmware list the same 1920x720 cluster surface under other names (#552).
+    private val FULL_PANEL_NAMES = setOf(NAME, "fission_magicsentry", "sission_magicsentry")
+
+    // Exact names and geometry only. Do not select arbitrary virtual or passenger displays.
     fun matches(name: String, width: Int, height: Int): Boolean =
-        name == NAME && width == 1920 && height == 720
+        name in FULL_PANEL_NAMES && width == 1920 && height == 720
 
     /**
      * Also recognize the 1280x480 projection surface reported by a DiLink 3 car. This
@@ -18,23 +21,28 @@ internal object DiLink4ClusterDisplay {
      * limited to observed geometries: an aspect ratio alone does not identify a cluster.
      */
     fun accepts(name: String, width: Int, height: Int): Boolean =
-        name == NAME && ((width == 1920 && height == 720) || (width == 1280 && height == 480))
+        matches(name, width, height) || (name == NAME && width == 1280 && height == 480)
 
     const val STREAM_WIDTH = 1920
     const val STREAM_HEIGHT = 720
 
     // Reuse DiLink 5 marker-safe margins as a calibration starting point.
     // Draw outside remains enabled so the map background still fills the activity.
+    // A marker placed in percent (the settings sliders) takes precedence over the legacy steps.
     fun streamConfig(content: CarPlayClusterDisplay.Content, horizontalStep: Int = 0, verticalStep: Int = 0,
-        safeAreaRect: SafeAreaRect? = null): com.shilapi.xcertplay.airplay.AirPlayDisplayConfig {
+        safeAreaRect: SafeAreaRect? = null, markerXPercent: Int? = null,
+        markerYPercent: Int? = null): com.shilapi.xcertplay.airplay.AirPlayDisplayConfig {
         val config = CarPlayClusterDisplay.config(STREAM_WIDTH, STREAM_HEIGHT, scalePercent = 100,
-            horizontalStep = horizontalStep, verticalStep = verticalStep, content = content)
+            horizontalStep = horizontalStep, verticalStep = verticalStep, content = content,
+            markerXPercent = markerXPercent, markerYPercent = markerYPercent)
         return if (safeAreaRect == null) config else config.copy(safeArea = AirPlaySafeArea.toInsets(
             safeAreaRect, STREAM_WIDTH, STREAM_HEIGHT, STREAM_WIDTH, STREAM_HEIGHT))
     }
 
-    fun defaultSafeAreaRect(horizontalStep: Int = 0, verticalStep: Int = 0): SafeAreaRect {
-        val insets = streamConfig(CarPlayClusterDisplay.Content.MAP, horizontalStep, verticalStep).safeArea!!
+    fun defaultSafeAreaRect(horizontalStep: Int = 0, verticalStep: Int = 0,
+        markerXPercent: Int? = null, markerYPercent: Int? = null): SafeAreaRect {
+        val insets = streamConfig(CarPlayClusterDisplay.Content.MAP, horizontalStep, verticalStep,
+            markerXPercent = markerXPercent, markerYPercent = markerYPercent).safeArea!!
         return SafeAreaRect(insets.left, insets.top, STREAM_WIDTH - insets.right, STREAM_HEIGHT - insets.bottom)
     }
 }

@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_external_ap_hint">Connect Android, iPhone and the car browser to the same external Wi-Fi. This mode does not start an Android hotspot. Use an open or WPA2 network. If the browser cannot reach Android, check AP client isolation.</string>
+    <string name="settings_external_ap_wifi">Open system Wi-Fi settings</string>
+    <string name="settings_external_ap_ready">This device is connected to the target Wi-Fi.</string>
+    <string name="settings_external_ap_check">This device is not connected to the target Wi-Fi.</string>
+    <string name="settings_android_address">Android address: %1$s</string>
+    <string name="settings_main_stopping">Disconnecting…</string>
+    <string name="settings_airplay_title">AirPlay</string>
+    <string name="settings_airplay_listening">Waiting for iPhone · TiPlay</string>
+    <string name="settings_airplay_disable">Disable AirPlay</string>
+    <string name="settings_airplay_disable_description" />
+    <string name="settings_disable_carplay_audio">Disable CarPlay audio</string>
+    <string name="settings_disable_carplay_audio_description" />
+</resources>

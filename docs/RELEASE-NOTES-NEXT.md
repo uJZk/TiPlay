@@ -1,6 +1,6 @@
 # TiPlay next release notes
 
-TiPlay is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay). Changes through DiPlay 0.2.13 are documented in [DiPlay 0.2.13 release notes](RELEASE-NOTES-0.2.13.md). Measured checks are in [VALIDATION.md](VALIDATION.md). Add future unreleased changes here.
+TiPlay is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay). The source includes DiPlay 0.2.19 and subsequent main fixes through `c30d3f0df`; see [upstream sync](UPSTREAM-SYNC-2026-10-14.md) and [DiPlay 0.2.19 release notes](RELEASE-NOTES-0.2.19.md). Measured checks are in [VALIDATION.md](VALIDATION.md). Add future unreleased changes here.
 
 ## Rename
 
@@ -8,15 +8,16 @@ TiPlay is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay). Changes t
 
 ## Browser receiver profile
 
-- TiPlay applies the phone + browser profile when opening the app or CarPlay screen. There is no run-mode switch. The car browser shows CarPlay; BYD HUD/dashboard, ADB and wheel-key controls stay hidden.
-- CarPlay's car button shows the packaged TiPlay logo and the label "TiPlay" while the saved name is still "BYD". Custom icons and names are kept. Applies at the next CarPlay connection.
-- The profile selects car Bluetooth sound, browser light/dark appearance, no Android location reporting and split-screen areas. Existing sessions keep their negotiated configuration. Advanced settings retains frame-rate and HEVC choices, saved for the next connection; **Return and apply** reconnects a running session.
+- TiPlay supports Android phone + car browser use. Main and Advanced settings save valid changes immediately and reconnect CarPlay when negotiation changes; BYD, head-unit ADB and wheel-key settings stay hidden.
+- Music uses the bounded browser audio relay. Microphone demand switches capture and voice playback to car HFP/SCO, then restores browser playback. Disabling CarPlay audio retains the direct iPhone-to-car Bluetooth route.
+- CarPlay uses the browser viewport, saved frame rate and HEVC preference; phone hardware video-decoder availability does not limit the browser codec offer.
 
-## Sound through car Bluetooth
+## Source sync and audio reliability
 
-- The browser profile selects the Carlinkit-style Bluetooth audio route: `/info` omits `audioFormats` while retaining audio latencies, feature bits and Bluetooth IDs. TiPlay declines audio streams the iPhone still opens and starts no audio output, microphone, echo canceller or audio focus. The complete iPhone-to-car Bluetooth audio flow still needs vehicle validation.
-- The earlier audio-route choice and its alternative variant remain in source, but the current interface hides audio-routing controls and selects the standard route on entry.
-- Diagnostic reports show the saved route, the audio declaration and each audio stream the iPhone requests.
+- Fully merge upstream DiPlay source through `c30d3f0df`, preserving the merge history. Adopt USB framing, startup/reconnect, Bluetooth compatibility, address recovery, diagnostic crash records and inherited compatibility code; keep phone + browser product gates.
+- Use separate RTP and decode rates for feedback and browser audio presentation. Retain immediate browser microphone startup, bound SCO empty-read/read-error recovery to three restarts, and use the upstream Opus encoder fallback.
+- Preserve saved browser audio choices while separating their enum key from the new upstream Boolean setting. Add Japanese browser settings translations.
+- This source integration does not publish a new APK or advance the TiPlay beta version. Actual iPhone/vehicle acceptance remains required.
 
 ## Connection reliability
 

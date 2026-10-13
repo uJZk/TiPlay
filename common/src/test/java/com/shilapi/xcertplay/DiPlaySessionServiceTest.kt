@@ -30,7 +30,7 @@ class DiPlaySessionServiceTest {
             CarBluetoothAudio.ON to true,
             CarBluetoothAudio.ALTERNATIVE to true,
         )) {
-            AirPlayPersistence.saveCarBluetoothAudio(app, mode)
+            CarBluetoothAudio.save(app, mode)
             assertEquals(mode.name, microphone, startedWithMicrophone())
         }
     }
@@ -52,7 +52,7 @@ class DiPlaySessionServiceTest {
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO)
         useHeadUnitMode(app)
         for (mode in CarBluetoothAudio.entries) {
-            AirPlayPersistence.saveCarBluetoothAudio(app, mode)
+            CarBluetoothAudio.save(app, mode)
             assertTrue(mode.name, startedWithMicrophone())
         }
     }
@@ -62,7 +62,7 @@ class DiPlaySessionServiceTest {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO)
         AirPlayPersistence.saveRunMode(app, CarPlayRunMode.PHONE_BROWSER)
-        AirPlayPersistence.saveCarBluetoothAudio(app, CarBluetoothAudio.ON)
+        CarBluetoothAudio.save(app, CarBluetoothAudio.ON)
         CarPlayBackgroundSession.store(mock(CarPlayController::class.java), mock(AndroidMediaSink::class.java), 800, 480,
             Any(), CarPlaySessionDisplay(800, 480, Surface.ROTATION_0, false, false, 800, 480)) { it() }
         try {

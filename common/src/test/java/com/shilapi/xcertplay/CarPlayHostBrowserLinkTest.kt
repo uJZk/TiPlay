@@ -107,7 +107,7 @@ class CarPlayHostBrowserLinkTest {
     }
 
     @Test fun phoneModePlaysAudioWithoutMicrophonePermissionAndOffersCaptureOnlyAfterGrant() {
-        AirPlayPersistence.saveCarBluetoothAudio(activity, CarBluetoothAudio.OFF)
+        CarBluetoothAudio.save(activity, CarBluetoothAudio.OFF)
         AirPlayPersistence.saveMainBufferedAudio(activity, true)
         BrowserCarPlayAudioSettings.saveDisabled(activity, false)
         set("microphoneAvailable", false)

@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_browser_link_listening">ポート %1$d で車載ブラウザーの接続を待機中。</string>
+    <string name="settings_browser_link_starting">車載ブラウザーへの接続を起動中…</string>
+    <string name="settings_browser_link_port_in_use">別のアプリがポート %1$d を使用しているため接続できません。TiPlay は再試行します。</string>
+    <string name="settings_browser_link_failed">車載ブラウザーへの接続を起動できませんでした。再試行します。</string>
+    <string name="settings_browser_link_stopped">車載ブラウザーへの接続は停止しています。</string>
+    <string name="settings_browser_local_network_granted">ローカルネットワークへのアクセス：許可済み。</string>
+    <string name="settings_browser_local_network_denied">ローカルネットワークへのアクセスがないため、車載ブラウザーと iPhone は TiPlay に接続できません。</string>
+    <string name="settings_browser_local_network_allow">ローカルネットワークへのアクセスを許可</string>
+    <string name="settings_browser_page_address">ページのアドレス</string>
+    <string name="settings_browser_page_address_hint">TiPlay ページの HTTPS アドレスです。自分で公開する場合のみ変更してください。次に開くリンクから使用します。</string>
+    <string name="settings_browser_page_address_invalid">https:// で始まり、# を含まないアドレスを入力してください。</string>
+    <string name="settings_browser_pairing_code">ペア設定コード</string>
+    <string name="settings_browser_pairing_code_description">CarPlay を表示するにはコード %1$s が必要です。新しいコードを作成したらページに入力してください。</string>
+    <string name="settings_browser_pairing_code_new">新しいコード</string>
+    <string name="settings_browser_link_car">車載ブラウザーでこのリンクを開いてください：</string>
+    <string name="settings_browser_link_other">Safari や Firefox など他のブラウザーでは、このスマートフォンのホットスポット上の端末で次のリンクを開いてください：</string>
+    <string name="settings_browser_link_copy">リンクをコピー</string>
+    <string name="settings_browser_link_copied">リンクをコピーしました</string>
+    <string name="settings_browser_android_address">ホットスポットのアドレス：</string>
+</resources>

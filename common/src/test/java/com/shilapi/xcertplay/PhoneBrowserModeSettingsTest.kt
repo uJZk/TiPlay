@@ -132,8 +132,8 @@ class PhoneBrowserModeSettingsTest {
         assertFalse(screen.getString(R.string.settings_phone_browser_mode) in phone)
         assertTrue(screen.getString(R.string.settings_tesla_browser) in phone)
         // Car Bluetooth sound is the other way round: only a car browser offers it.
-        assertFalse(screen.getString(R.string.settings_car_bluetooth_audio) in headUnit)
-        assertFalse(screen.getString(R.string.settings_car_bluetooth_audio) in phone)
+        assertFalse(screen.getString(R.string.settings_browser_car_bluetooth_audio) in headUnit)
+        assertFalse(screen.getString(R.string.settings_browser_car_bluetooth_audio) in phone)
     }
 
     @Test fun phoneModeHidesTheHeadUnitCardsWhereDriversLook() {

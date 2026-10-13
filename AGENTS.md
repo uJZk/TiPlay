@@ -20,6 +20,7 @@ Project `AGENTS.md` files and each child document under `docs/` MUST NOT exceed
 index, link every new child here, and update affected navigation links. Prefer concise
 instructions; do not duplicate detailed rules in the index.
 
+- [Archived upstream Traditional Chinese README](docs/UPSTREAM-README.zh-TW.md): inherited head-unit documentation, outside TiPlay product scope.
 - [Upstream maintenance](docs/Upstream.md): DiPlay, Video.js and UxPlay tracking and update rules.
 - [October 13 sweep scope](docs/sweep-2026-10-13/SCOPE.md): baseline and split-entry index.
 - [October 13 sweep scope, part 1](docs/sweep-2026-10-13/SCOPE-PART-1.md): retained file/commit entries.
@@ -27,6 +28,8 @@ instructions; do not duplicate detailed rules in the index.
 - [October 13 sweep scope, part 3](docs/sweep-2026-10-13/SCOPE-PART-3.md): retained file/commit entries.
 
 ## Current progress
+
+See [docs/UPSTREAM-SYNC-2026-10-14.md](docs/UPSTREAM-SYNC-2026-10-14.md) for the full DiPlay source merge, browser product gates, audio-clock and microphone adaptations, preference migration, and validation.
 
 See [docs/AIRPLAY-CANVAS-TIE-UP-2026-10-14.md](docs/AIRPLAY-CANVAS-TIE-UP-2026-10-14.md)
 for Video.js Canvas presentation, cache v36, browser verification, Android toolchain limits,

@@ -1,10 +1,11 @@
 package com.shilapi.xcertplay
 
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Looper
 import android.view.Surface
+import com.shilapi.xcertplay.compat.AudioFocusRequestCompat
 import com.shilapi.xcertplay.media.AndroidMediaSink
+import com.shilapi.xcertplay.media.CarPlayNowPlaying
 import com.shilapi.xcertplay.orchestration.CarPlayController
 import org.junit.After
 import org.junit.Before
@@ -20,14 +21,15 @@ import org.robolectric.annotation.LooperMode
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28, 33], manifest = Config.NONE)
+@Config(sdk = [25, 28, 33], manifest = Config.NONE)
 @LooperMode(LooperMode.Mode.PAUSED)
 class CarPlayMediaFocusForwardingTest {
     private val app get() = RuntimeEnvironment.getApplication()
     private val controllers = mutableListOf<CarPlayController>()
     private val sinks = mutableListOf<AndroidMediaSink>()
 
-    @Before fun resetFocusResponse() {
+    @Before fun enableFocusAndGrantRequests() {
+        AirPlayPersistence.saveDisableMediaKeyAudioFocus(app, false)
         shadowOf(app.getSystemService(AudioManager::class.java))
             .setNextFocusRequestResponse(AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
     }
@@ -36,6 +38,7 @@ class CarPlayMediaFocusForwardingTest {
         controllers.forEach(CarPlayMediaKeys::detach)
         sinks.forEach(AndroidMediaSink::close)
         CarPlayBackgroundSession.clear()
+        AirPlayPersistence.saveDisableMediaKeyAudioFocus(app, false)
         shadowOf(Looper.getMainLooper()).idle()
     }
 
@@ -140,13 +143,14 @@ class CarPlayMediaFocusForwardingTest {
 
     private fun start(controller: CarPlayController, sink: AndroidMediaSink,
         clearInitialGrant: Boolean = true): AudioManager.OnAudioFocusChangeListener {
+        `when`(controller.nowPlayingSnapshot()).thenReturn(CarPlayNowPlaying())
         CarPlayBackgroundSession.store(controller, sink, 800, 480, Any(),
             CarPlaySessionDisplay(800, 480, Surface.ROTATION_0, false, false, 800, 480)) {}
         CarPlayMediaKeys.attach(app, controller)
         CarPlayMediaKeys.onMediaAudioChanged(true)
         shadowOf(Looper.getMainLooper()).idle()
         if (clearInitialGrant) clearInvocations(sink)
-        val request = ReflectionHelpers.getField<AudioFocusRequest>(CarPlayMediaKeys, "focusRequest")
-        return ReflectionHelpers.callInstanceMethod(request, "getOnAudioFocusChangeListener")
+        val request = ReflectionHelpers.getField<AudioFocusRequestCompat>(CarPlayMediaKeys, "focusRequest")
+        return ReflectionHelpers.getField(request, "listener")
     }
 }

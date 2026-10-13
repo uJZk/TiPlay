@@ -135,14 +135,14 @@ class CarPlayHostResolutionTest {
     @Test fun browserAudioUsesTheExplicitOptOutRatherThanLegacyBluetoothPreferences() {
         set("microphoneAvailable", true)
         AirPlayPersistence.saveRunMode(activity, com.shilapi.xcertplay.orchestration.CarPlayRunMode.PHONE_BROWSER)
-        assertEquals(CarBluetoothAudio.OFF, AirPlayPersistence.loadCarBluetoothAudio(activity))
+        assertEquals(CarBluetoothAudio.OFF, CarBluetoothAudio.load(activity))
         BrowserCarPlayAudioSettings.saveDisabled(activity, false)
         for ((mode, expected) in listOf(
             CarBluetoothAudio.OFF to listOf(false, false, true, true),
             CarBluetoothAudio.ON to listOf(false, false, true, true),
             CarBluetoothAudio.ALTERNATIVE to listOf(false, false, true, true),
         )) {
-            AirPlayPersistence.saveCarBluetoothAudio(activity, mode)
+            CarBluetoothAudio.save(activity, mode)
             val airPlay = config(100)
             assertEquals(mode.name, expected,
                 listOf(airPlay.audioViaCarBluetooth, airPlay.disableAudioOutput, airPlay.microphone, airPlay.receivesAudio))
@@ -154,7 +154,7 @@ class CarPlayHostResolutionTest {
         set("microphoneAvailable", true)
         useHeadUnitMode(activity)
         for (mode in CarBluetoothAudio.entries) {
-            AirPlayPersistence.saveCarBluetoothAudio(activity, mode)
+            CarBluetoothAudio.save(activity, mode)
             val airPlay = config(100)
             assertEquals(mode.name, listOf(false, false, true, true),
                 listOf(airPlay.audioViaCarBluetooth, airPlay.disableAudioOutput, airPlay.microphone, airPlay.receivesAudio))
@@ -164,7 +164,7 @@ class CarPlayHostResolutionTest {
     // Like the other head-unit gates, a running session keeps the run mode it connected with.
     @Test fun carBluetoothSoundFollowsTheRunModeOfTheRunningSession() {
         set("microphoneAvailable", true)
-        AirPlayPersistence.saveCarBluetoothAudio(activity, CarBluetoothAudio.ON)
+        CarBluetoothAudio.save(activity, CarBluetoothAudio.ON)
         BrowserCarPlayAudioSettings.saveDisabled(activity, true)
         try {
             AirPlayPersistence.saveRunMode(activity, com.shilapi.xcertplay.orchestration.CarPlayRunMode.PHONE_BROWSER)

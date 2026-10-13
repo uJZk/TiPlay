@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config
 class CarPlayAudioStreamIsolationTest {
     @Test fun siriMicrophoneStartsAtSetupWithoutWaitingForDownlinkAndStopsOnSessionClose() {
         val events = mutableListOf<String>()
-        val engine = CarPlayMediaEngine(object : MediaSink {
+        val engine = CarPlayMediaEngine(object : MediaSink, BrowserBufferedAudioPolicy {
             override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) {
                 events += "start"
                 assertEquals(5000, config.port)
@@ -42,7 +42,7 @@ class CarPlayAudioStreamIsolationTest {
 
     @Test fun guidanceSetupAndMediaReplacementKeepTheOtherAudioStreamAlive() {
         val session = session()
-        val engine = CarPlayMediaEngine(object : MediaSink {})
+        val engine = CarPlayMediaEngine(object : MediaSink, BrowserBufferedAudioPolicy {})
         try {
             assertNotNull(engine.onAudio(session, 100, setup("media")))
             val streams = streams(engine)
@@ -65,7 +65,7 @@ class CarPlayAudioStreamIsolationTest {
 
     @Test fun typeTeardownClosesEveryVariantButKeepsOtherTypes() {
         val stopped = mutableListOf<AudioStreamId>()
-        val engine = CarPlayMediaEngine(object : MediaSink {
+        val engine = CarPlayMediaEngine(object : MediaSink, BrowserBufferedAudioPolicy {
             override fun onAudioStopped(id: AudioStreamId) { stopped.add(id) }
         })
         val session = session()

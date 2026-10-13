@@ -42,7 +42,7 @@ class Iap2WiredControlClient(
         if (identified.vehicleStatusEnabled != identification.vehicleStatusEnabled) {
             onProgress("iap2 no battery reading: not declaring an electric vehicle")
         }
-        Iap2IdentificationClient(session).identify(identified, requireRemaining(deadlineNanos))
+        Iap2IdentificationClient(session).identify(identified, requireRemaining(deadlineNanos), onProgress)
         onProgress("iap2 identification accepted")
         var stage = Iap2WiredControlStage.IDENTIFIED
         mfi.run(session, requireRemaining(deadlineNanos), onProgress)
@@ -53,9 +53,10 @@ class Iap2WiredControlClient(
         send(powerSourceUpdate(availableCurrentMilliAmps), deadlineNanos)
         for (subscription in subscriptions()) send(subscription, deadlineNanos)
         stage = Iap2WiredControlStage.SUBSCRIBED
-        onProgress("iap2 power/subscriptions sent")
+        onProgress("iap2 power/subscriptions sent availableCurrentMa=$availableCurrentMilliAmps")
 
         var forwardedFrames = 0
+        val rxLog = Iap2RxLog()
         var carPlayStartSessions = 0
         val location = Iap2LocationReporter(locationProvider, onProgress)
         val vehicleStatus = Iap2VehicleStatusReporter(vehicleStatusProvider, onProgress)
@@ -110,7 +111,7 @@ class Iap2WiredControlClient(
                     }
 
                     else -> {
-                        onProgress("iap2 rx=0x${incoming.messageId.toString(16).padStart(4, '0')}")
+                        rxLog.line(incoming.messageId)?.let(onProgress)
                         onIncoming(incoming)
                         forwardedFrames++
                     }

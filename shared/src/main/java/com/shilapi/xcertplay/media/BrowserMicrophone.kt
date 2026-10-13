@@ -14,7 +14,7 @@ internal class BrowserMicrophone(private val config: MicrophoneConfig, private v
     val sampleRate: Int get() = if (config.codec == AudioCodecKind.OPUS) 48_000 else config.sampleRate
     init { require(config.channels == 1); require(config.codec in listOf(AudioCodecKind.OPUS, AudioCodecKind.LPCM)) }
     private val socket = DatagramSocket()
-    private val encoder = if (config.codec == AudioCodecKind.OPUS) OpusEncoder(config.bitrate ?: 48_000) else null
+    private val encoder = if (config.codec == AudioCodecKind.OPUS) MicrophoneOpusEncoders.create(config.bitrate ?: 48_000) else null
     private var pending = ByteArray(0)
     private var closed = false
     private var uploadedBytes = 0L
@@ -25,7 +25,7 @@ internal class BrowserMicrophone(private val config: MicrophoneConfig, private v
     private var reportAt = System.nanoTime()
 
     init {
-        if (encoder != null && !encoder.available) { socket.close(); encoder.close(); error("microphone encoder unavailable") }
+        if (config.codec == AudioCodecKind.OPUS && encoder == null) { socket.close(); error("microphone encoder unavailable") }
         Log.i(TAG, "start codec=${config.codec} captureRate=$sampleRate rtpRate=${config.opusClockRate} frameBytes=${config.frameBytes}")
     }
 

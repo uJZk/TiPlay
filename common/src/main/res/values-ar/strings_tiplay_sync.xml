@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_external_ap_hint">وصّل جهاز Android وiPhone ومتصفح السيارة بشبكة Wi-Fi خارجية واحدة. لا يشغّل هذا الوضع نقطة اتصال على Android. استخدم شبكة مفتوحة أو WPA2. إذا تعذّر على المتصفح الوصول إلى Android، فتحقق من عزل الأجهزة في نقطة الوصول.</string>
+    <string name="settings_external_ap_wifi">فتح إعدادات Wi-Fi في النظام</string>
+    <string name="settings_external_ap_ready">هذا الجهاز متصل بشبكة Wi-Fi المطلوبة.</string>
+    <string name="settings_external_ap_check">هذا الجهاز غير متصل بشبكة Wi-Fi المطلوبة.</string>
+    <string name="settings_android_address">عنوان Android: %1$s</string>
+    <string name="settings_main_stopping">جارٍ قطع الاتصال…</string>
+    <string name="settings_airplay_title">AirPlay</string>
+    <string name="settings_airplay_listening">بانتظار iPhone · TiPlay</string>
+    <string name="settings_airplay_disable">تعطيل AirPlay</string>
+    <string name="settings_airplay_disable_description">يسري فورًا. AirPlay مفعّل افتراضيًا. يوقف هذا الخيار AirPlay ويعيد عرض CarPlay؛ إيقاف الخيار يعيد تشغيل المستقبل.</string>
+    <string name="settings_disable_carplay_audio">تعطيل صوت CarPlay</string>
+    <string name="settings_disable_carplay_audio_description">إبقاء الموسيقى والملاحة والمكالمات وSiri على اتصال Bluetooth بين iPhone والسيارة. وصّل iPhone ببلوتوث السيارة أولاً. يُعاد توصيل CarPlay بعد التغيير.</string>
+</resources>

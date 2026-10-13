@@ -14,6 +14,14 @@ Normal route end, disconnect, disabling navigation output and stale guidance tri
 
 Enable BYD navigation in settings. In DiAuto it is opt-in under Navigation; in TiPlay it is enabled by default when available. Debug-only receivers/demos require Android's DUMP permission and are absent from release manifests. Development starter and vendor-access experiments are not part of the production navigation path.
 
+## Cluster guidance on FCE head units (needs no ADB)
+
+Some head units built on the FCE/Coagent T7 platform have an instrument cluster with a CAN navigation view. The stock head-unit service sends that view only navigation start and stop and drops each guidance update, so it stays empty. When the head unit has the stock `fce_misc_service_hal_property` service, DiPlay writes the guidance there as its normal Android UID through `ICarProperty.setProperty` (transaction 5): navigation status 2 (`0x214000a5`), the next-turn glyph (`0x21400099`), and the distance in metres (`0x21400098`). The cluster formats kilometres itself. The second icon set (`0x2140009a`) is held at 0, because a leftover value blanks the U-turn and roundabout glyphs.
+
+The output is off by default. It needs **Navigation on HUD and dashboard** and its own switch, **Guidance in the FCE cluster (experimental)**, in the same card: the property IDs were confirmed on one car, and another head unit with the same service could give them other meanings. On these head units, that card appears even without a BYD receiver. Apple maneuvers map to the cluster's AutoNavi glyphs: turns, slight and sharp turns, U-turns by driving side, roundabout exits 1–10, arrival and straight. The view is unlocked as soon as the iPhone reports an active route or names a navigation app (RouteGuidanceUpdate state or source name), even when that app sends no maneuvers, as Google Maps did on an older iPhone. Arrows and distance appear only with a maneuver. An unknown maneuver shows no arrow, never a wrong one. Distance is rounded to 10 m below 1 km and to 100 m above. Arrival, no route set, an empty source name, turning the switch off and the end of the session clear the view with the stock end sequence (icon 0, distance 0, status 1 then 0). A force-stopped DiPlay can leave the last arrow until navigation runs again.
+
+Basis: on a car with this head unit and cluster, the property sequence, the glyph codes and the no-root Binder path were confirmed by another app that fed it Android Auto guidance; 2,500 m showed as "2.5 km". The CarPlay integration has not yet run in a car. Street names, lanes, the speed-limit sign and switching the cluster to its navigation page are not available on this path. The driver selects that page once, and the cluster remembers it. Left-hand-traffic roundabout glyphs are unknown.
+
 ## DiLink 3.0 cluster guidance and map (experimental, needs ADB)
 
 DiLink 3.0 head units (Android 10, Qualcomm 6125, "1for2" cluster) have no SOME/IP service and ship the stock AMap adapter as `com.example.amapservice` instead of `com.byd.amapservice`. TiPlay sends it the same navigation broadcasts. That adapter shows preformatted text rather than the numeric extras, so TiPlay also sends `SEG_REMAIN_DIS_AUTO` ("250 m"), `ROUTE_REMAIN_DIS_AUTO` ("5.4 km"), `ROUTE_REMAIN_TIME_AUTO` ("10 min") and `ETA_TEXT` ("15:55"); without them the cluster shows -1. The cluster keeps its stock view until it is switched, so TiPlay also runs, through its adb shell, the calls the stock ClusterDebug app uses (`service call AutoContainer 2 i32 1000 i32 <command> s16 ""`):
@@ -101,6 +109,8 @@ On the Tang the console's volume control sends exactly the same codes, scan code
 
 BYD's settings have no accessibility page. The "Turn on the wheel key service · ADB" button adds TiPlay's service to `enabled_accessibility_services` through the head unit's own adbd (the car asks once to allow TiPlay's key) and keeps services already listed. The service only receives key events; it declares no window-content access.
 
+The diagnostic report shows what the service was given. After the `Wheel key service:` line, `Wheel keys since DiPlay started:` counts the presses, how many DiPlay kept and how many it left to the head unit, and up to 40 `Wheel keys:` lines follow with the time, `key <code>/<scan code>`, the input device number and the outcome. A volume key that navigation volume left alone carries the reason. `presses=0` with the service bound means the head unit handles its wheel keys before Android sees them, so DiPlay cannot use them. The lines are kept in memory and start again when DiPlay's process does. A key that writes text is counted (`textKeysNotListed`) and never listed.
+
 ### CarPlay joystick on the steering wheel (optional)
 
 TiPlay already declares a rotary knob for CarPlay's main screen (HID `xcertplay Knob`). Checked with Apple Maps and lists on a Tang: only the knob's turn moves CarPlay's focus (the first turn opens the Maps side panel with search, pinned places and recents), select activates the focused item and back closes the screen; the knob's x/y nudges only pan a focused map, so the joystick does not use them.
@@ -159,10 +169,10 @@ that every vehicle feature id/value or partial-write outcome is correct on a par
 
 The microphone already follows the iPhone's stream type: a call records with `VOICE_COMMUNICATION` and the platform's echo canceller and noise suppressor in communication mode, Siri with `VOICE_RECOGNITION`.
 
-BYD plays a third-party call as media, so the car's own echo canceller never sees it and the amplifier's bass applies to the voice. Two call settings, on by default and applied at the next connection, compensate inside TiPlay:
+BYD plays a third-party call as media, so the car's own echo canceller never sees it and the amplifier's bass applies to the voice. Two experimental call settings, off by default and applied at the next connection, can compensate inside DiPlay:
 
-- **Call echo cancelling** runs SpeexDSP's echo canceller (250 ms tail, BSD licensed, `shared/src/main/jni/speexdsp`) on the call microphone, using what TiPlay itself just played as the reference. It needs mono capture at the downlink sample rate; otherwise the call continues with the platform effects only (`microphone echo canceller enabled=false` in the log).
-- **Call voice filter** removes the lows below 200 Hz from the caller's voice (4th-order high-pass) before playback.
+- **Call echo cancellation** runs SpeexDSP's echo canceller (250 ms tail, BSD licensed, `shared/src/main/jni/speexdsp`) on the call microphone, using what DiPlay itself just played as the reference. It needs mono capture at the downlink sample rate; otherwise the call continues with the platform effects only (`microphone echo canceller enabled=false` in the log).
+- **Clearer call voices** removes the lows below 200 Hz from the caller's voice (4th-order high-pass) before playback.
 
 With **CarPlay calls on the dashboard** on, TiPlay arms the call watcher when a CarPlay session starts, so the first call's caller name reaches the cluster and HUD without waiting for the watcher to launch. An armed watcher makes no vehicle writes; it is cancelled when the session ends or the setting is turned off.
 
@@ -170,6 +180,20 @@ Both experimental settings default off. The opt-in feature is included for relea
 physical acceptance still needs confirmation on each target firmware: answering/ending a real call
 from the wheel, caller card and timer on cluster/HUD, microphone routing, cancellation/disable and
 process-death cleanup. The reported live key codes alone do not prove these behaviors.
+
+### Car phone audio (experimental)
+
+Two more settings under **Settings → Advanced → Video and audio**, off by default, let the car's own call processing handle the echo instead of DiPlay's canceller. On a GCC Han (DiLink 3, Android 10) the car's audio layer has a phone state that BYD's Telecom enters for any call (`AudioManager.setCallState(CALL_CLIENT_BT, MODE_IN_CALL)` in the Telecom log). Measured with a test app, not yet with a real CarPlay call:
+
+- Outside that state the `VOICE_COMMUNICATION` microphone has an always-on automatic gain of about +14 to +27 dB and clips, so the echo comes back loud and no software canceller can model it (SpeexDSP removed 0.7 dB).
+- Inside it the same microphone returned digital silence for the far end's echo (100% of 609 frames with the cabin quiet) and still passed a voice, but clipped it harder (about 13% of samples in a 14 s count, against under 1% outside it). The plain `MIC` source is muted in the state.
+
+Any app may register a self-managed Telecom call with the normal permission `MANAGE_OWN_CALLS`, so DiPlay holds one while a call needs the state:
+
+- **Car phone audio for CarPlay calls** holds the call from the iPhone's first call frame until the call ends, plus two seconds so back-to-back calls do not leave the state. While it is on, DiPlay's own echo canceller and the platform effects stay out of the CarPlay call microphone. If Telecom refuses the call, DiPlay's canceller is used again for five minutes (`Telecom refused the call that selects the car's phone audio state` in the log). Applies at the next call.
+- **Car phone audio for VoIP calls in other apps** does the same while another app both records from `VOICE_COMMUNICATION` and plays with the matching usage, which is how WhatsApp, Telegram, Teams, Zoom and similar apps hold a call. A recording alone is not enough: while the state lasts BYD's own audio layer keeps `VOICE_RECOGNITION` and `VOICE_COMMUNICATION` recorders open, so they never end on their own. Voice notes, video, assistants and any other recording use other sources and are never routed, because the car mutes the plain microphone in the state. It needs DiPlay running outside a CarPlay session as well, so turning it on also enables the wheel-key accessibility service, and it only watches while that service, the app or a CarPlay session keeps DiPlay alive.
+
+Log tag `DiPlay-PhoneAudio` shows when the state is entered and left. If the car's hands-free link is connected, Telecom already holds a managed call for the iPhone and may refuse a second one; pausing the car's Bluetooth radio during CarPlay avoids that. The louder, clipped voice is the main open question and needs a listening test on the far end.
 
 ## ADB vehicle-data settings and firmware scope
 

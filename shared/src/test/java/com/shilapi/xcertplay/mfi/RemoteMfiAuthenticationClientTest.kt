@@ -63,9 +63,10 @@ class RemoteMfiAuthenticationClientTest {
             val body = exchange.requestBody.readText()
             signRequests += body
             if (signRequests.size == 1) {
-                // Trigger a real retry deterministically, independent of localhost/CI scheduling.
-                exchange.respond(503, "{\"detail\":\"try again\"}")
-            } else exchange.respond(
+                // Longer than the read timeout, so the client retries with the same request ID.
+                Thread.sleep(1_500)
+            }
+            exchange.respond(
                 200,
                 "{\"signature\":\"${Base64.getEncoder().encodeToString(signature)}\"}",
             )
@@ -74,7 +75,8 @@ class RemoteMfiAuthenticationClientTest {
         val client = RemoteMfiAuthenticationClient(
             serverAddress = serverAddress(),
             token = "test-token",
-            readTimeoutMillis = 5_000,
+            // 50 ms timed out the unretried reset on a busy CI runner; only the delayed sign must.
+            readTimeoutMillis = 750,
         )
         client.reset()
         assertEquals(3, client.protocolMajor())

@@ -29,6 +29,15 @@ data class AirPlayDisplayConfig(
     val viewAreas: List<AirPlayViewArea>? = null,
     /** The area CarPlay starts in, an index into [viewAreas]. */
     val initialViewArea: Int = 0,
+    /**
+     * When true, CarPlay video stream fills the entire display with right-angled corners.
+     * With corner masks advertised, iOS sends an unclipped rectangular video stream alongside
+     * corner mask PNG assets for blending. On rectangular vehicle screens, advertising true allows
+     * the video stream to fill the entire display as right angles without requiring additional clipping.
+     */
+    val mainDisplayCornerMasks: Boolean? = null,
+    /** When true, do not declare safeArea in viewAreas dictionary to avoid conflict with cornerMasks. */
+    val mainDisplayDisableSafeArea: Boolean = (mainDisplayCornerMasks == true),
 )
 
 /**
@@ -65,6 +74,12 @@ data class AirPlayConfig(
     val hevc: Boolean = false,
     val disableAudioOutput: Boolean = false,
     val microphone: Boolean = false,
+    /**
+     * Whether to offer Opus alongside PCM for the microphone. Both platform and bundled software
+     * encoding count toward [com.shilapi.xcertplay.media.OpusEncoderSupport]; an older Android
+     * version or absent MediaCodec encoder alone must not remove the wireless Opus formats.
+     */
+    val microphoneOpus: Boolean = true,
     val manufacturer: String = "xcertplay",
     val model: String = "xcertplay",
     val oemLabel: String = "xcertplay",
@@ -77,13 +92,13 @@ data class AirPlayConfig(
      */
     val mainBufferedAudio: Boolean = false,
     /**
-     * Car Bluetooth sound (docs/todo.md): /info omits only audioFormats, as Carlinkit's BtAudio=1 does, so the
-     * iPhone keeps music, navigation, Siri and calls on its own Bluetooth link to the car. audioLatencies,
-     * features and bluetoothIDs stay. TiPlay then declines audio streams and opens no microphone.
+     * Over USB the iPhone sent navigation prompts as 8 kHz PCM, the lowest rate offered for the
+     * default stream (#148, #341). When set, 8 and 16 kHz are not offered for default and alert audio.
      */
+    val speechWithout8And16Khz: Boolean = false,
+    /** Browser profile: retain the iPhone-to-car audio route. */
     val audioViaCarBluetooth: Boolean = false,
 ) {
-    /** False when sound stays on the iPhone's Bluetooth link to the car, or audio output is disabled. */
     val receivesAudio: Boolean get() = !audioViaCarBluetooth && !disableAudioOutput
 }
 

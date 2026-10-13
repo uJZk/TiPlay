@@ -7,7 +7,7 @@ TiPlay supports Android phone + car browser use only.
 
 | Upstream | Used for | Current baseline / provenance |
 | --- | --- | --- |
-| [DiPlay](https://github.com/shihabal3amri/DiPlay) | CarPlay receiver and shared Android code | Git merge ancestry; see `CHANGELOG.md` for merged releases. |
+| [DiPlay](https://github.com/shihabal3amri/DiPlay) | CarPlay receiver and shared Android code | `c30d3f0df` (0.2.19 plus main fixes through 2026-10-13); full Git merge ancestry. See [sync record](UPSTREAM-SYNC-2026-10-14.md). |
 | [Video.js](https://github.com/videojs/video.js) | Browser MP4/HLS playback, including bundled VHS | `8.24.1`; [vendored files and update instructions](../site/play/vendor/videojs/README.md). |
 | [UxPlay](https://github.com/FDH2/UxPlay) | Ordinary AirPlay protocol reference, `playfair` transport keys and FairPlay reply tables | `ec203121355220dd90278a369eeabb0b8ba4f14a`; [native provenance](../shared/src/main/jni/airplay/README.md). |
 
@@ -46,6 +46,8 @@ git remote add upstream https://github.com/shihabal3amri/DiPlay.git
 git remote set-url --push upstream DISABLED
 git config remote.upstream.tagOpt --no-tags
 ```
+
+Prefer a full source merge at each upstream release or a short regular interval, then retain the phone + browser product gates. This preserves ancestry and avoids accumulating untracked selective ports.
 
 Start from a clean worktree, fetch both remotes, review the upstream changelog and diff,
 then merge on a branch:

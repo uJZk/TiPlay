@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_tesla_browser">車載ブラウザー</string>
+    <string name="settings_phone_browser_mode">車載ブラウザーに CarPlay を表示</string>
+    <string name="settings_phone_browser_mode_description">車とホットスポットを共有する Android 端末向けです。車載ブラウザーに CarPlay を表示し、BYD HUD、メーター、ADB、ステアリング操作は無効にします。車載 Android 端末ではオフにしてください。次の接続から適用されます。</string>
+</resources>

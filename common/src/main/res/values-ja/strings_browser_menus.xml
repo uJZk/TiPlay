@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_main">メイン設定</string>
+    <string name="settings_browser_advanced_summary">フレームレート、HEVC、車両操作、ログと診断レポート。</string>
+    <string name="settings_browser_next_connection_hint">変更はすぐに適用され、必要に応じて CarPlay が自動で再接続します。</string>
+    <string name="settings_browser_video">映像</string>
+    <string name="settings_browser_endpoint_hint">169.254.0.0/16 または 100.64.0.0/10、ポート 1024～65535。アドレスを空欄にすると既定値を使用します。</string>
+    <string name="settings_browser_endpoint_invalid">169.254.0.0/16 または 100.64.0.0/10 のアドレスとポート（1024～65535）を入力してください。例：169.254.111.111:8080。</string>
+    <string name="settings_browser_boot_hint">Android の起動時に TiPlay を開きます。Android や端末の設定により、バックグラウンド起動が制限される場合があります。</string>
+</resources>

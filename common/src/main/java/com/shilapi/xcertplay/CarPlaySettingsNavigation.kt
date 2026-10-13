@@ -45,6 +45,8 @@ internal object CarPlaySettingsNavigation {
             SettingsCategory.VEHICLE -> R.string.settings_vehicle
             SettingsCategory.DIAGNOSTICS -> R.string.diagnostics
             SettingsCategory.ADVANCED -> R.string.settings_advanced
+            SettingsCategory.LANGUAGE -> R.string.language_section_title
+            SettingsCategory.ABOUT -> R.string.about
             SettingsCategory.OVERVIEW -> error("Overview is not an additional settings page")
         })
         parent.addView(Button(context).apply {

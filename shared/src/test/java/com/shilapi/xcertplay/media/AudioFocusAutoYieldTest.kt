@@ -19,7 +19,7 @@ import org.robolectric.annotation.Implements
 import org.robolectric.annotation.RealObject
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28, 33], manifest = Config.NONE, shadows = [AudioFocusAutoYieldTest.VolumeTrackingAudioTrack::class])
+@Config(sdk = [25, 28, 33], manifest = Config.NONE, shadows = [AudioFocusAutoYieldTest.VolumeTrackingAudioTrack::class])
 class AudioFocusAutoYieldTest {
     private val context: Context get() = RuntimeEnvironment.getApplication()
     private val manager get() = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -107,6 +107,21 @@ class AudioFocusAutoYieldTest {
         coordinator.acquire(second, AudioChannel.MEDIA, attributes)
         oldListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
         assertEquals(listOf(0f), volumes(first))
+        assertTrue(volumes(second).isEmpty())
+    }
+
+    @Test fun droppedQueuedFocusCallbackReportsWhyWithoutChangingNewMedia() {
+        val diagnostics = mutableListOf<String>()
+        val coordinator = AudioFocusCoordinator(context, true, true, diagnostics::add).also(coordinators::add)
+        val first = track(); val second = track()
+        coordinator.acquire(first, AudioChannel.MEDIA, attributes)
+        val oldListener = coordinator.listener
+        coordinator.release(first)
+        oldListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
+        assertTrue(diagnostics.last().contains("dropped stale=true noRequest=true activeTracks=0"))
+        coordinator.acquire(second, AudioChannel.MEDIA, attributes)
+        oldListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        assertTrue(diagnostics.last().contains("dropped stale=true noRequest=false activeTracks=1"))
         assertTrue(volumes(second).isEmpty())
     }
 

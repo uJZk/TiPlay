@@ -37,7 +37,7 @@ class BrowserBatteryOptimizationSettingsTest {
         assertNull(intent.data)
         assertFalse(intent.hasExtra("package"))
         val otherSection = LinearLayout(activity)
-        render.invoke(activity, otherSection, setOf(SettingsSection.ABOUT))
+        render.invoke(activity, otherSection, setOf(SettingsSection.DIAGNOSTICS))
         assertFalse(descendants(otherSection).filterIsInstance<Button>().any { it.text.toString() == label })
     }
 

@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_more_options">%1$s のその他の設定</string>
+    <string name="settings_additional_save_hint">このページの変更は個別に保存されます。CarPlay を再接続する設定は説明またはボタンに表示されます。このページを開いている間も CarPlay メニューの未保存の変更は保持されます。</string>
+    <string name="settings_hotspot_read">端末のホットスポット情報を読み取る</string>
+    <string name="settings_hotspot_read_hint">ホットスポット情報の読み取りを試します。名前とパスワードは編集できます。パスワードを取得できない場合は手動で入力してください。「読み取る」を選ぶまで保存済みの値を保持します。</string>
+    <string name="settings_hotspot_read_unavailable">システムがホットスポット情報の読み取りを許可しませんでした。名前とパスワードを手動で入力してください。</string>
+    <string name="settings_browser_canvas">ブラウザーの描画領域</string>
+    <string name="settings_video_reconnect_hint">映像の変更は「保存して再接続」を選ぶと適用されます。</string>
+    <string name="settings_browser_permissions">付近のデバイスの権限で iPhone を接続します。車載ブラウザーにはローカルネットワークのアクセスを許可してください。音声は車の Bluetooth 接続で再生します。</string>
+    <string name="settings_hevc_experimental">HEVC（H.265）</string>
+    <string name="settings_iphone_connection_mode">iPhone との接続方法</string>
+    <string name="settings_startup_and_connection">起動と接続</string>
+    <string name="settings_connect_on_open_hint">TiPlay を開くと保存済みの iPhone 接続方法で接続します。このスイッチはすぐに保存されます。</string>
+    <string name="settings_connection_mode_hint">ワイヤレスまたは USB を選びます。「保存して再接続」の後、または次の接続から適用されます。</string>
+    <string name="settings_hotspot_reading">ホットスポット情報を読み取り中…</string>
+    <string name="settings_hotspot_read_success">ホットスポット情報を読み取りました。接続前に名前とパスワードを確認してください。</string>
+    <string name="settings_hotspot_read_partial">ホットスポットの名前を読み取りました。パスワードは取得できないため、手動で入力してください。</string>
+</resources>

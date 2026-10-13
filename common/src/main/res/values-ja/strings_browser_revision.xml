@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_browser_boot_connect">起動時に開始</string>
+    <string name="settings_browser_network_configuration">ネットワーク設定</string>
+    <string name="settings_browser_connection_status">接続状態</string>
+    <string name="settings_browser_carplay_connection_mode">CarPlay の接続方法</string>
+    <string name="settings_browser_hotspot_on">端末のホットスポットはオンです</string>
+    <string name="settings_browser_hotspot_off">端末のホットスポットはオフです</string>
+    <string name="settings_browser_hotspot_unknown">端末のホットスポットの状態を取得できません</string>
+    <string name="settings_permission_bluetooth">Bluetooth</string>
+    <string name="settings_permission_microphone">マイク</string>
+    <string name="settings_permission_notifications">通知</string>
+    <string name="settings_permission_local_network">ローカルネットワーク</string>
+    <string name="settings_permission_location">位置情報</string>
+    <string name="settings_permission_group">権限</string>
+    <string name="settings_report_save_failed">保存できませんでした！</string>
+    <string name="settings_report_copy_full_text">全文をコピー</string>
+    <string name="settings_report_saved_at">レポートの保存先：</string>
+    <string name="settings_browser_hevc_title">HEVC（H.265）</string>
+    <string name="settings_browser_hotspot_address_repair">TiPlay モード</string>
+    <string name="settings_browser_hotspot_address">ホットスポットのアドレス</string>
+    <string name="settings_browser_hotspot_endpoint">ホットスポットのアドレス：%1$s</string>
+    <string name="settings_browser_more">その他</string>
+    <string name="settings_selected_iphone">iPhone · %1$s</string>
+    <string name="settings_browser_vpn_endpoint_hint">169.254.0.0/16、ポート 1024～65535。アドレスを空欄にすると既定値を使用します。</string>
+    <string name="settings_browser_vpn_endpoint_invalid">169.254.0.0/16 のアドレスとポート（1024～65535）を入力してください。例：169.254.111.111:8080。</string>
+    <string name="settings_browser_hotspot_address_explanation">車載ブラウザーからのアクセスと USB 権限を TiPlay が扱う方法を選びます。「標準」は現在のアドレスを使用します。他の方法は異なる権限と制限でアドレスの問題に対処します。</string>
+</resources>

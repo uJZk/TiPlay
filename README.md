@@ -48,7 +48,7 @@ Attach the report to an [existing issue](https://github.com/uJZk/DiPlay/issues) 
 - [Privacy and diagnostic reports](docs/PRIVACY.md)
 - [Changes](CHANGELOG.md)
 
-The app and download website offer English, Arabic, Russian, Ukrainian, Spanish, Simplified Chinese and Traditional Chinese (Taiwan). Hong Kong/Macao and Hant selections use the Taiwan translation. Choose the app language in Main settings; Android 13+ synchronizes it with Android's per-app language setting.
+The app and download website offer English, Arabic, Russian, Ukrainian, Spanish, Japanese, Simplified Chinese and Traditional Chinese (Taiwan). Hong Kong/Macao and Hant selections use the Taiwan translation. Choose the app language in Main settings; Android 13+ synchronizes it with Android's per-app language setting.
 
 ## Credits and licenses
 

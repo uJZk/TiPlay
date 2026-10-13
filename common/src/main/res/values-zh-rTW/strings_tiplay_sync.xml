@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_external_ap_hint">讓本機、iPhone 和車機瀏覽器使用同一外部網路。本模式不會啟動安卓熱點。使用開放或 WPA2 網路；瀏覽器無法存取安卓時，請檢查 AP 的裝置互訪設定。</string>
+    <string name="settings_external_ap_wifi">開啟系統 Wi-Fi 設定</string>
+    <string name="settings_external_ap_ready">本機已連線目標 Wi-Fi。</string>
+    <string name="settings_external_ap_check">本機未連線目標 Wi-Fi。</string>
+    <string name="settings_android_address">安卓位址：%1$s</string>
+    <string name="settings_main_stopping">正在中斷連線…</string>
+    <string name="settings_airplay_title">AirPlay</string>
+    <string name="settings_airplay_listening">等待 iPhone · TiPlay</string>
+    <string name="settings_airplay_disable">停用 AirPlay</string>
+    <string name="settings_airplay_disable_description" />
+    <string name="settings_disable_carplay_audio">停用 CarPlay 音訊</string>
+    <string name="settings_disable_carplay_audio_description" />
+</resources>

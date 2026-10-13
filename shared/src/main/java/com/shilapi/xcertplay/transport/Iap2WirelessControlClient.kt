@@ -47,7 +47,7 @@ class Iap2WirelessControlClient(
         if (identified.vehicleStatusEnabled != identification.vehicleStatusEnabled) {
             onProgress("iap2 no battery reading: not declaring an electric vehicle")
         }
-        Iap2IdentificationClient(session).identify(identified, deadline.requireRemaining())
+        Iap2IdentificationClient(session).identify(identified, deadline.requireRemaining(), onProgress)
         onProgress("iap2 identification accepted")
         var stage = Iap2WirelessControlStage.IDENTIFIED
 
@@ -67,6 +67,7 @@ class Iap2WirelessControlClient(
         }
 
         var forwardedFrames = 0
+        val rxLog = Iap2RxLog()
         var wifiConfigurationsSent = 0
         var carPlayStartSessionsSent = 0
         var preTransportWiFiConfigurationsSent = 0
@@ -218,7 +219,7 @@ class Iap2WirelessControlClient(
                     }
 
                     else -> {
-                        onProgress("iap2 rx=0x${incoming.messageId.toString(16).padStart(4, '0')}")
+                        rxLog.line(incoming.messageId)?.let(onProgress)
                         onIncoming(incoming)
                         forwardedFrames++
                     }
