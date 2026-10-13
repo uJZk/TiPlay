@@ -273,7 +273,7 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
         private val thread: Thread
         private val frameTimes = AirPlayCastFrameTimes()
         private val timelineLock = Any()
-        private val submittedTimes = linkedSetOf<Long>()
+        private val submittedTimes = AirPlayCastSubmissions()
         private var configRecord: ByteArray? = null
 
         init {
@@ -296,7 +296,9 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                 }
             }
             sink.onScreenStreamActive(110, true)
-            sink.setVideoClockHandler(110) { it.takeIf { nanos -> nanos > 0 } }
+            sink.setVideoClockHandler(110) { nanos ->
+                if (timedVideo) submittedTimes.peek(nanos / 1000)?.sourceNanos else nanos.takeIf { it > 0 }
+            }
             bridge = try { AirPlayVideoSurfaceBridge(surface, 1280, 720, ready, failed,
                 if (timedVideo) ::framePresentation else null) }
             catch (error: Exception) {
@@ -313,10 +315,9 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
         }
 
         private fun framePresentation(surfaceNanos: Long): Long? = synchronized(timelineLock) {
-            frameTimes.take(surfaceNanos)?.also {
-                submittedTimes.add(it / 1000)
-                while (submittedTimes.size > 120) submittedTimes.remove(submittedTimes.first())
-            }
+            // Encoder PTS is a transport identity, independent of optional source-clock metadata.
+            // Missing metadata must not suppress the picture or manufacture a source timestamp.
+            submittedTimes.submit(System.nanoTime(), frameTimes.take(surfaceNanos))
         }
 
         fun resetTimeline() = synchronized(timelineLock) {
@@ -358,11 +359,14 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                                     synchronized(timelineLock) {
                                         // Reset also retires frames already queued in the encoder. Surface submit
                                         // registers before swap; a reset between registration and swap invalidates it.
-                                        if (!timedVideo || submittedTimes.remove(info.presentationTimeUs))
+                                        val submission = if (timedVideo) submittedTimes.peek(info.presentationTimeUs) else null
+                                        if (!timedVideo || submission != null) {
                                             sink.onVideoFrame(110, annexB, info.presentationTimeUs * 1000, System.nanoTime())
+                                            if (timedVideo) submittedTimes.take(info.presentationTimeUs)
+                                            frames++
+                                            if (frames == 1L || frames % 120 == 0L) diagnostics.stage(AirPlayVideoDiagnostics.Stage.ENCODED_FRAME, frames)
+                                        }
                                     }
-                                    frames++
-                                    if (frames == 1L || frames % 120 == 0L) diagnostics.stage(AirPlayVideoDiagnostics.Stage.ENCODED_FRAME, frames)
                                 }
                             }
                         } finally { encoder.releaseOutputBuffer(index, false) }

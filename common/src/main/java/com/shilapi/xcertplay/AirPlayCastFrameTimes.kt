@@ -12,6 +12,9 @@ internal class AirPlayCastFrameTimes {
 
     @Synchronized fun take(surfaceNanos: Long): Long? {
         val frame = frames.firstOrNull { it.releaseNanos == surfaceNanos || it.mediaNanos == surfaceNanos }
+            // Some codec/surface paths quantize scheduled release times to microseconds.
+            ?: frames.firstOrNull { kotlin.math.abs(it.releaseNanos - surfaceNanos) < 1000 ||
+                kotlin.math.abs(it.mediaNanos - surfaceNanos) < 1000 }
             ?: return null
         // SurfaceTexture may coalesce outputs. Retire metadata for all superseded pictures.
         while (frames.isNotEmpty()) if (frames.removeFirst() === frame) break
