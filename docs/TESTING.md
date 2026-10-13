@@ -20,7 +20,8 @@ With the car parked, record the exact APK/build, Android phone/OS, iPhone/iOS, c
 iPhone transport (wireless or USB), browser network and any untested setup.
 
 - Check picture, letterboxed touch mapping and music with a fresh connection for each supported transport/network
-  setup. Enable browser sound, then check navigation ducking, phone/Siri audio and microphone permission. Separately
+  setup. Confirm page opening requests microphone permission without enable buttons, then check navigation ducking,
+  phone/Siri audio and continuous microphone delivery. If autoplay is blocked, a normal page touch must resume sound. Separately
   enable **Disable CarPlay audio** and confirm the iPhone uses the car's Bluetooth for all sound and calls.
   Disconnect/reconnect and repeat with the phone screen off.
 - In **Main settings**, change the selected iPhone, connection mode or network fields without applying. Opening

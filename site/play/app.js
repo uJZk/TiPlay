@@ -143,15 +143,14 @@ const reportAppearance = followAppearance(appearance, () => outbox);
 const browserAudio = createBrowserAudio({
   fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }),
   onState(state) {
-    $('audio-enable').hidden = !active || !state.supported || !state.enabled || state.sound;
-    $('microphone-enable').hidden = !active || !state.sound || !state.micRequested || state.microphone;
     $('audio-message').textContent = state.error ? (lang === 'zh' ? '声音或麦克风不可用，请检查浏览器权限或重新连接。' : 'Sound or microphone unavailable. Check browser permissions or reconnect.') : '';
   },
 });
-$('audio-enable').textContent = lang === 'zh' ? '启用车机声音' : 'Enable car sound';
-$('microphone-enable').textContent = lang === 'zh' ? '启用车机麦克风' : 'Enable car microphone';
-$('audio-enable').addEventListener('click', () => browserAudio.activate());
-$('microphone-enable').addEventListener('click', () => browserAudio.activateMicrophone());
+browserAudio.start();
+// Pairing, touching CarPlay and using page controls already provide activation.
+// Resume here without requiring a separate audio permission button.
+document.addEventListener('pointerdown', () => browserAudio.gesture(), { capture: true, passive: true });
+document.addEventListener('keydown', () => browserAudio.gesture(), { capture: true });
 const airplayControls = createAirPlayControls($('stage'), event => outbox?.push(event), lang);
 let movePending = false, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
 let statsVisible = false;

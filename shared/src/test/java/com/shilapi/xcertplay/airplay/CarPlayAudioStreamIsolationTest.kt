@@ -2,6 +2,8 @@ package com.shilapi.xcertplay.airplay
 
 import java.io.Closeable
 import java.net.Socket
+import java.net.InetSocketAddress
+import java.net.SocketAddress
 import java.security.SecureRandom
 import org.junit.Assert.*
 import org.junit.Test
@@ -12,6 +14,32 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], manifest = Config.NONE)
 class CarPlayAudioStreamIsolationTest {
+    @Test fun siriMicrophoneStartsAtSetupWithoutWaitingForDownlinkAndStopsOnSessionClose() {
+        val events = mutableListOf<String>()
+        val engine = CarPlayMediaEngine(object : MediaSink {
+            override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) {
+                events += "start"
+                assertEquals(5000, config.port)
+                assertEquals(AudioCodecKind.OPUS, config.codec)
+                assertEquals(480, config.rtpSamplesPerPacket)
+            }
+            override fun onMicrophoneStopped(id: AudioStreamId) { events += "stop" }
+        }, microphoneEnabled = true)
+        val session = session()
+        try {
+            assertNotNull(engine.onAudio(session, 100, mapOf(
+                "audioType" to "speechrecognition", "audioFormat" to 0x20000000L,
+                "streamConnectionID" to 42L, "dataPort" to 5000L,
+            )))
+            assertEquals(listOf("start"), events)
+            engine.onSessionClosed(session)
+            assertEquals(listOf("start", "stop"), events)
+        } finally {
+            engine.onSessionClosed(session)
+            session.close()
+        }
+    }
+
     @Test fun guidanceSetupAndMediaReplacementKeepTheOtherAudioStreamAlive() {
         val session = session()
         val engine = CarPlayMediaEngine(object : MediaSink {})
@@ -68,7 +96,9 @@ class CarPlayAudioStreamIsolationTest {
 
     private fun session(): AirPlaySession {
         val session = AirPlaySession(
-            socket = Socket(),
+            socket = object : Socket() {
+                override fun getRemoteSocketAddress(): SocketAddress = InetSocketAddress("127.0.0.1", 5001)
+            },
             config = AirPlayConfig(
                 deviceName = "test", deviceId = "02:00:00:00:00:02", btMac = "02:00:00:00:00:01",
                 sourceVersion = "1.0", main = AirPlayDisplayConfig(widthPixels = 800, heightPixels = 480),

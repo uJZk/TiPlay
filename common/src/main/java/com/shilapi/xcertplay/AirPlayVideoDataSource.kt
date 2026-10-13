@@ -16,6 +16,7 @@ import java.net.URI
 @OptIn(UnstableApi::class)
 internal class AirPlayVideoDataSource(private val upstream: DataSource,
                                     private val diagnostics: AirPlayVideoDiagnostics = AirPlayVideoDiagnostics {},
+                                    private val onPlaylist: () -> Unit = {},
                                     private val onIphone: (String) -> ReceiverResource?) : DataSource {
     private var current: DataSource? = null
     private val transfers = mutableListOf<TransferListener>()
@@ -60,6 +61,10 @@ internal class AirPlayVideoDataSource(private val upstream: DataSource,
         }
         if (resolved.status != null && resolved.status != 0 && resolved.status !in 200..299) throw IOException("iPhone rejected video resource")
         val bytes = resolved.bytes ?: throw IOException("iPhone sent no video resource")
+        if (AirPlayVideoContent.kind(bytes) == AirPlayVideoContent.Kind.HLS) {
+            diagnostics.stage(AirPlayVideoDiagnostics.Stage.RESOURCE_HLS)
+            onPlaylist()
+        }
         return use(ByteArrayDataSource(bytes).also { source -> transfers.forEach(source::addTransferListener) }, spec)
     }
 

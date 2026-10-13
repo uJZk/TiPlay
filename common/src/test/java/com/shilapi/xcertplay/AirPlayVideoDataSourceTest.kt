@@ -42,6 +42,19 @@ class AirPlayVideoDataSourceTest {
         source.close()
     }
 
+    @Test fun opaqueAppPlaylistSelectsHlsWithoutDependingOnTheUrlExtension() {
+        val upstream = Unreachable()
+        var playlists = 0
+        val payload = "#EXTM3U\n#EXT-X-ENDLIST\n".toByteArray()
+        val source = AirPlayVideoDataSource(upstream, onPlaylist = { playlists++ }) {
+            ReceiverResource(payload, 0, null)
+        }
+        assertEquals(payload.size.toLong(), source.open(DataSpec(Uri.parse("mlhls://app/opaque-resource"))))
+        assertEquals(1, playlists)
+        assertEquals(0, upstream.opened)
+        source.close()
+    }
+
     @Test fun failedHttpDelegateIsClosedBeforeIphoneFallbackAndRangesAreRespected() {
         val upstream = Unreachable()
         val source = AirPlayVideoDataSource(upstream) { ReceiverResource(byteArrayOf(1, 2, 3, 4), 200, null) }

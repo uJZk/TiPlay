@@ -24,16 +24,16 @@ test('PCM framing survives arbitrary network boundaries and skips keepalives', a
 });
 
 function mockBrowser() {
-  const messages = [], contexts = [];
+  const messages = [], contexts = [], sources = [];
   const oldContext = globalThis.AudioContext, oldNode = globalThis.AudioWorkletNode;
   globalThis.AudioContext = class {
     constructor() { this.state = 'suspended'; this.audioWorklet = { addModule: async () => {} }; contexts.push(this); }
     async resume() { this.state = 'running'; }
     async close() { this.state = 'closed'; }
-    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createMediaStreamSource() { const source = { connect(node) { this.connected = node; }, disconnect() { this.connected = null; } }; sources.push(source); return source; }
   };
   globalThis.AudioWorkletNode = class { constructor() { this.port = { postMessage: value => messages.push(value) }; } connect() {} };
-  return { messages, contexts, done() { globalThis.AudioContext = oldContext; globalThis.AudioWorkletNode = oldNode; } };
+  return { messages, contexts, sources, done() { globalThis.AudioContext = oldContext; globalThis.AudioWorkletNode = oldNode; } };
 }
 
 test('audio disable and connection stop release capture and reset speaker credit', async () => {
@@ -82,11 +82,57 @@ test('malformed and truncated PCM frames fail before publication', async () => {
   }
 });
 
+test('page startup requests permission, releases idle capture, and new demand captures automatically', async () => {
+  const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let requests = 0, stopped = 0;
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: async () => {
+    requests++; return { getTracks: () => [{ stop() { stopped++; } }] };
+  } } } });
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: body([]) }) });
+  try {
+    audio.start(); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests, 1); assert.equal(stopped, 1); assert.equal(audio.stats().microphone, false);
+    audio.attach(new AbortController().signal, { audio: true });
+    audio.status({ mic: { active: true, sampleRate: 48000 } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests, 2); assert.equal(audio.stats().microphone, true);
+    assert.ok(browser.sources[0].connected, 'capture source is connected to the processing node');
+    assert.ok(browser.messages.some(value => value.captureRate === 48000));
+    audio.status({ mic: { active: false, sampleRate: 48000 } });
+    assert.equal(stopped, 2);
+  } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
+});
+
+test('denied capture retries on next demand without prompting on status heartbeats', async () => {
+  const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let requests = 0;
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: async () => { requests++; throw new Error('Permission denied'); } } } });
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: body([]) }) });
+  try {
+    await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
+    audio.status({ mic: { active: true, sampleRate: 16000 } });
+    await new Promise(resolve => setImmediate(resolve));
+    for (let i = 0; i < 20; i++) audio.status({ mic: { active: true, sampleRate: 16000 } });
+    assert.equal(requests, 1);
+    audio.status({ mic: { active: false, sampleRate: 16000 } });
+    audio.status({ mic: { active: true, sampleRate: 16000 } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests, 2);
+  } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
+});
+
 test('capture resampling retains phase and emits exact 20 ms mono packets', () => {
   const sent = [], capture = new PcmCapture(48000, 16000, pcm => sent.push(new Int16Array(pcm)));
   for (let i = 0; i < 375; i++) capture.push(new Float32Array(128).fill(0.5));
   assert.equal(sent.length, 50);
   assert.ok(sent.every(packet => packet.length === 320 && packet.every(value => value === 16384)));
+});
+
+test('capture keeps producing packets after transferring each PCM buffer to the main thread', () => {
+  const sent = [], capture = new PcmCapture(48000, 48000, pcm => sent.push(new Int16Array(structuredClone(pcm, { transfer: [pcm] }))));
+  for (let i = 0; i < 375; i++) capture.push(new Float32Array(128).fill(0.5));
+  assert.equal(sent.length, 49);
+  assert.ok(sent.every(packet => packet.length === 960 && packet.every(value => value === 16384)));
 });
 
 test('worklet mixes separate streams and bounds an unpaced music producer', async () => {

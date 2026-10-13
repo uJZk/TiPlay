@@ -4,10 +4,15 @@ import com.shilapi.xcertplay.airplay.*
 import com.shilapi.xcertplay.web.WebAudioHub
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [29], manifest = Config.NONE)
 class BrowserAudioMediaSinkTest {
     @Test fun aNewPausedCarPlaySinkDoesNotTakeAudioFromAirPlay() {
         val hub = WebAudioHub()

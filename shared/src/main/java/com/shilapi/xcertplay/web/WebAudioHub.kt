@@ -13,6 +13,11 @@ class WebAudioHub {
     private var subscription: Subscription? = null
     private var microphoneHandler: ((ByteArray) -> Unit)? = null
     private var microphoneRate = 0
+    private var microphoneUploads = 0L
+    private var microphoneBytes = 0L
+    private var microphoneRejected = 0L
+    private var microphoneFailures = 0L
+    private var microphonePeak = 0
     @Volatile var enabled = true
         set(value) = synchronized(this) {
             field = value
@@ -61,10 +66,16 @@ class WebAudioHub {
         if (this.owner !== owner) return
         microphoneHandler = handler.takeIf { enabled && sampleRate in 8000..48000 }
         microphoneRate = if (microphoneHandler == null) 0 else sampleRate
+        if (microphoneHandler != null) {
+            microphoneUploads = 0; microphoneBytes = 0; microphoneRejected = 0
+            microphoneFailures = 0; microphonePeak = 0
+        }
     }
 
     @Synchronized fun microphoneStatus(): Map<String, Any?> =
-        mapOf("active" to (enabled && microphoneHandler != null), "sampleRate" to microphoneRate)
+        mapOf("active" to (enabled && microphoneHandler != null), "sampleRate" to microphoneRate,
+            "uploads" to microphoneUploads, "bytes" to microphoneBytes,
+            "rejected" to microphoneRejected, "failures" to microphoneFailures, "peak" to microphonePeak)
 
     fun flush(owner: Any, id: Int) {
         synchronized(this) {
@@ -77,11 +88,30 @@ class WebAudioHub {
     /** A bounded batch of mono PCM uploads. No Android capture or playback device is accessed. */
     fun acceptMicrophone(pcm: ByteArray): Boolean {
         val handler = synchronized(this) {
-            val handler = microphoneHandler?.takeIf { enabled } ?: return false
-            if (pcm.isEmpty() || pcm.size % 2 != 0 || pcm.size > microphoneRate * 2 / 10) return false
+            val handler = microphoneHandler?.takeIf { enabled } ?: run { microphoneRejected++; return false }
+            if (pcm.isEmpty() || pcm.size % 2 != 0 || pcm.size > microphoneRate * 2 / 10) {
+                microphoneRejected++; return false
+            }
             handler
         }
-        handler(pcm)
+        try {
+            handler(pcm)
+        } catch (failure: Exception) {
+            synchronized(this) { if (microphoneHandler === handler) microphoneFailures++ }
+            throw failure
+        }
+        // Numerical diagnostics only; no microphone samples are retained or logged.
+        var peak = 0
+        for (offset in pcm.indices step 2) {
+            val sample = (pcm[offset].toInt() and 255) or (pcm[offset + 1].toInt() shl 8)
+            peak = maxOf(peak, kotlin.math.abs(sample))
+        }
+        synchronized(this) {
+            if (microphoneHandler === handler) {
+                microphoneUploads++; microphoneBytes += pcm.size
+                microphonePeak = maxOf(microphonePeak, peak)
+            }
+        }
         return true
     }
 

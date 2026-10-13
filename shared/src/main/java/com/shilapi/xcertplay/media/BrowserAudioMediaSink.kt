@@ -6,8 +6,6 @@ import android.util.Log
 import com.shilapi.xcertplay.airplay.*
 import com.shilapi.xcertplay.web.WebAudioHub
 import java.io.Closeable
-import java.net.DatagramPacket
-import java.net.DatagramSocket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ArrayBlockingQueue
@@ -51,7 +49,13 @@ class BrowserAudioMediaSink(private val video: MediaSink, private val hub: WebAu
     @Synchronized override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) {
         if (closed) return
         microphone?.close()
-        val capture = runCatching { BrowserMicrophone(config) }.getOrNull() ?: return
+        microphone = null
+        microphoneId = null
+        hub.microphone(this, 0, null)
+        val capture = try { BrowserMicrophone(config) } catch (error: Exception) {
+            Log.w("tiplay-microphone", "browser microphone start failed codec=${config.codec} error=${error.javaClass.simpleName}")
+            return
+        }
         microphone = capture
         microphoneId = id
         hub.microphone(this, capture.sampleRate) { capture.accept(it) }
@@ -189,37 +193,4 @@ class BrowserAudioMediaSink(private val video: MediaSink, private val hub: WebAu
             catch (error: Exception) { codec.release(); throw error }
         }
     }
-}
-
-/** Browser capture is already echo-cancelled by getUserMedia; do not apply a second Android echo canceller. */
-private class BrowserMicrophone(private val config: MicrophoneConfig) : Closeable {
-    val sampleRate: Int get() = if (config.codec == AudioCodecKind.OPUS) 48_000 else config.sampleRate
-    init { require(config.channels == 1); require(config.codec in listOf(AudioCodecKind.OPUS, AudioCodecKind.LPCM)) }
-    private val socket = DatagramSocket()
-    private val encoder = if (config.codec == AudioCodecKind.OPUS) OpusEncoder(config.bitrate ?: 48_000) else null
-    private val counters = MicrophoneCounters()
-    private var pending = ByteArray(0)
-    private var closed = false
-
-    init {
-        if (encoder != null && !encoder.available) { socket.close(); encoder.close(); error("microphone encoder unavailable") }
-    }
-
-    @Synchronized fun accept(pcm: ByteArray) {
-        if (closed || pcm.size % 2 != 0 || pcm.size > config.frameBytes * 5) return
-        val data = pending + pcm
-        var offset = 0
-        while (offset + config.frameBytes <= data.size) {
-            val frame = data.copyOfRange(offset, offset + config.frameBytes)
-            val payloads = encoder?.encode(frame) ?: listOf(MicrophonePacketizer.toWirePcm(frame))
-            for (payload in payloads) {
-                val packet = MicrophonePacketizer.sealPacket(config.key, config.payloadType, counters, payload, config.rtpSamplesPerPacket)
-                socket.send(DatagramPacket(packet, packet.size, config.host, config.port))
-            }
-            offset += config.frameBytes
-        }
-        pending = data.copyOfRange(offset, data.size)
-    }
-
-    @Synchronized override fun close() { closed = true; pending = ByteArray(0); socket.close(); encoder?.close() }
 }

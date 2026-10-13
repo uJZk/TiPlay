@@ -9,7 +9,11 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.port.onmessage = ({ data }) => {
       if (data.reset) this.streams.clear();
       if (data.captureRate !== undefined) this.capture = data.captureRate
-        ? new PcmCapture(sampleRate, data.captureRate, pcm => this.port.postMessage({ microphone: pcm }, [pcm])) : null;
+        ? new PcmCapture(sampleRate, data.captureRate, pcm => {
+          let peak = 0;
+          for (const sample of new Int16Array(pcm)) peak = Math.max(peak, Math.abs(sample));
+          this.port.postMessage({ microphone: pcm, peak }, [pcm]);
+        }) : null;
       if (!data.pcm) return;
       const maximum = data.rate * (data.flags & 1 ? 2 : 0.25);
       let stream = this.streams.get(data.type);

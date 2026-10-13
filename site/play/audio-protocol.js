@@ -60,8 +60,11 @@ export class PcmCapture {
       const value = Math.max(-1, Math.min(1, a + (b - a) * fraction));
       this.packet[this.used++] = Math.round(value * (value < 0 ? 32768 : 32767));
       if (this.used === this.packet.length) {
-        this.send(this.packet.buffer);
-        this.packet = new Int16Array(this.packet.length); this.used = 0;
+        const packet = this.packet;
+        // send transfers the buffer from the audio worklet, detaching packet.
+        // Allocate the successor while its length is still available.
+        this.packet = new Int16Array(packet.length); this.used = 0;
+        this.send(packet.buffer);
       }
       this.position += this.step;
     }

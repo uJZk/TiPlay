@@ -196,7 +196,6 @@ class CarPlayMediaEngine(
                     meta.firstSample = firstSample
                     meta.originNs = System.nanoTime()
                     sink.onAudioStarted(streamId, format, firstSample)
-                    microphone?.let { sink.onMicrophoneStarted(streamId, it) }
                 }
 
                 override fun onRtp(rtp: ByteArray, sample: Int) =
@@ -214,6 +213,9 @@ class CarPlayMediaEngine(
         )
         streams[streamKey] = audio
         audioMeta[streamKey] = meta
+        // Siri may wait for input before emitting any downlink audio. SETUP already negotiates
+        // the input endpoint; waiting for the first downlink packet deadlocks an input-only turn.
+        microphone?.let { sink.onMicrophoneStarted(streamId, it) }
         return linkedMapOf(
             "type" to type,
             "dataPort" to dataPort,
@@ -492,7 +494,11 @@ class CarPlayMediaEngine(
             .forEach { sink.onScreenStreamActive(it.type, false) }
         sessionStreams.forEach { streams.remove(it)?.close() }
         audioMeta.clear()
-        pendingMicrophone.clear()
+        pendingMicrophone.keys.filter { it.session === session }.forEach { key ->
+            if (pendingMicrophone.remove(key) != null) {
+                sink.onMicrophoneStopped(AudioStreamId(key.type, key.audioType))
+            }
+        }
         audioCaptures.values.forEach(AudioPacketCapture::close)
         audioCaptures.clear()
     }

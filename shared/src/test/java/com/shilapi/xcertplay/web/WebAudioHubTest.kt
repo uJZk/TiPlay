@@ -78,4 +78,22 @@ class WebAudioHubTest {
         assertEquals(2, reset[7].toInt() and 2)
         assertNull(reader.take(1))
     }
+
+    @Test fun microphoneDiagnosticsDistinguishSilenceRejectionAndDeliveryFailureWithoutRetainingSamples() {
+        val hub = WebAudioHub(); val owner = Any()
+        hub.begin(owner)
+        hub.microphone(owner, 16000) {}
+        assertTrue(hub.acceptMicrophone(byteArrayOf(0, 0, 0, 0x80.toByte())))
+        assertFalse(hub.acceptMicrophone(byteArrayOf(1)))
+        val status = hub.microphoneStatus()
+        assertEquals(1L, status["uploads"])
+        assertEquals(4L, status["bytes"])
+        assertEquals(32768, status["peak"])
+        assertEquals(1L, status["rejected"])
+        hub.microphone(owner, 16000) { throw IllegalStateException("test failure") }
+        try { hub.acceptMicrophone(ByteArray(640)); fail("expected delivery failure") }
+        catch (_: IllegalStateException) {}
+        assertEquals(1L, hub.microphoneStatus()["failures"])
+        assertEquals(0L, hub.microphoneStatus()["uploads"])
+    }
 }

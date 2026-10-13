@@ -6,10 +6,11 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let context = null, node = null, ready = null, connection = null, request = null;
   let support = false, enabled = true, microphone = null, source = null, micDemand = null;
   let queuedBytes = 0, capacity = null, captureGeneration = 0, uploading = false, error = null;
-  let microphoneAllowed = false, capturePending = false, microphoneQueue = [], droppedMicrophonePackets = 0;
+  let permissionPending = null, capturePending = false, microphoneQueue = [], droppedMicrophonePackets = 0;
   let retryTimer = null;
   let microphoneAbort = null;
-  const snapshot = () => ({ supported: support, enabled, sound: context?.state === 'running', microphone: Boolean(microphone), micRequested: Boolean(micDemand?.active), droppedMicrophonePackets, error });
+  let capturedMicrophonePackets = 0, uploadedMicrophonePackets = 0, rejectedMicrophoneUploads = 0, microphonePeak = 0;
+  const snapshot = () => ({ supported: support, enabled, sound: context?.state === 'running', microphone: Boolean(microphone), micRequested: Boolean(micDemand?.active), droppedMicrophonePackets, capturedMicrophonePackets, uploadedMicrophonePackets, rejectedMicrophoneUploads, microphonePeak, error });
   const notify = () => onState(snapshot());
   const auth = () => { const { code, session } = credentials(); return `c=${encodeURIComponent(code)}&s=${encodeURIComponent(session)}`; };
   function stopMicrophone() {
@@ -32,7 +33,10 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     currentConnection.addEventListener('abort', stop, { once: true });
     const timer = setTimeout(stop, 1000);
     fetchPhone(`/microphone?${auth()}`, { method: 'POST', body: bytes, signal: abort.signal })
-      .then(response => { if (!response.ok) throw new Error(`Microphone HTTP ${response.status}`); })
+      .then(response => {
+        if (!response.ok) { rejectedMicrophoneUploads++; throw new Error(`Microphone HTTP ${response.status}`); }
+        uploadedMicrophonePackets += packets.length;
+      })
       .catch(failure => { if (generation === captureGeneration && !abort.signal.aborted) { error = failure.message; stopMicrophone(); notify(); } })
       .finally(() => { if (microphoneAbort === abort) microphoneAbort = null; uploading = false; clearTimeout(timer); currentConnection.removeEventListener('abort', stop); uploadMicrophone(); });
   }
@@ -86,33 +90,54 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
             queuedBytes = Math.max(0, queuedBytes - data.consumed); capacity?.(); capacity = null;
           }
           if (!data.microphone || !microphone || !connection || connection.aborted) return;
+          capturedMicrophonePackets++;
+          microphonePeak = data.peak ?? 0;
           if (microphoneQueue.length >= 5) { microphoneQueue.shift(); droppedMicrophonePackets++; }
           microphoneQueue.push(data.microphone); uploadMicrophone();
         };
       });
-      await Promise.all([resumed, ready]);
-      stream(connection); notify();
+      // Autoplay may keep resume pending until the first gesture; loading the worklet
+      // and requesting microphone permission must not wait for that gesture.
+      resumed.then(() => { stream(connection); notify(); }).catch(failure => { error = failure.message; notify(); });
+      await ready;
+      await activateMicrophone();
+      notify();
     } catch (failure) { error = failure.message; notify(); }
   }
   async function activateMicrophone() {
-    if (!micDemand?.active || !node || microphone || capturePending || !connection || connection.aborted) return;
+    if (!enabled || !micDemand?.active || !node || microphone || capturePending || !connection || connection.aborted) return;
     const generation = ++captureGeneration;
     capturePending = true;
     try {
-      const captured = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+      // Wait for the startup permission probe rather than opening a second prompt.
+      if (permissionPending) await permissionPending;
+      if (generation !== captureGeneration || !micDemand?.active || !connection || connection.aborted) return;
+      const captured = await navigator.mediaDevices.getUserMedia(captureConstraints);
       if (generation !== captureGeneration || !micDemand?.active || connection.aborted) {
         captured.getTracks().forEach(track => track.stop()); return;
       }
       microphone = captured;
-      microphoneAllowed = true;
       source = context.createMediaStreamSource(captured); source.connect(node);
       node.port.postMessage({ captureRate: micDemand.sampleRate });
       error = null; notify();
     } catch (failure) { error = failure.message; notify(); }
     finally { if (generation === captureGeneration) capturePending = false; }
   }
+  const captureConstraints = { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false };
+  function requestPermission() {
+    if (permissionPending) return permissionPending;
+    // Ask on page open, but do not leave a recording indicator on while Siri/calls
+    // are idle. Demand reopens the capture device using the granted permission.
+    permissionPending = Promise.resolve().then(() => navigator.mediaDevices.getUserMedia(captureConstraints))
+      .then(captured => { captured.getTracks().forEach(track => track.stop()); })
+      .catch(failure => { error = failure.message; notify(); })
+      .finally(() => { permissionPending = null; });
+    return permissionPending;
+  }
   return {
     activate, activateMicrophone, stats: snapshot,
+    start() { requestPermission(); activate(); },
+    gesture() { if (context?.state !== 'running') activate(); },
     attach(signal, hello) {
       this.stop(); connection = signal; support = hello.audio === true;
       signal.addEventListener('abort', () => { if (connection === signal) this.stop(); }, { once: true });
@@ -123,11 +148,13 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       enabled = status.audio !== false;
       const rawDemand = status.mic;
       const demand = rawDemand && Number.isInteger(rawDemand.sampleRate) && rawDemand.sampleRate >= 8000 && rawDemand.sampleRate <= 48000 ? rawDemand : null;
+      const newDemand = demand?.active && (!micDemand?.active || demand.sampleRate !== micDemand?.sampleRate);
       if (!demand?.active || demand.sampleRate !== micDemand?.sampleRate) stopMicrophone();
       micDemand = demand;
       if (!enabled) { stopStream(); stopMicrophone(); }
       else if (changed) stream(connection);
-      if (enabled && microphoneAllowed && micDemand?.active) activateMicrophone();
+      // Retry permission on a new iPhone demand, never on each status heartbeat.
+      if (enabled && (newDemand || changed) && micDemand?.active) activateMicrophone();
       notify();
     },
     stop() { connection = null; stopStream(); stopMicrophone(); micDemand = null; notify(); },

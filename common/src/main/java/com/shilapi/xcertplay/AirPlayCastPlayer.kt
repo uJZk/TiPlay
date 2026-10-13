@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.C
@@ -105,7 +106,11 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
     private fun startPlayer(item: ReceiverPlay, token: Long, surface: android.view.Surface) {
         val next = video ?: return
         val http = DefaultHttpDataSource.Factory().setConnectTimeoutMs(5000).setReadTimeoutMs(10_000)
-        val data = DataSource.Factory { AirPlayVideoDataSource(http.createDataSource(), diagnostics, resource) }
+        val playlistDetected = AtomicBoolean(false)
+        var hlsSourceSelected = false
+        val data = DataSource.Factory {
+            AirPlayVideoDataSource(http.createDataSource(), diagnostics, { playlistDetected.set(true) }, resource)
+        }
         val renderers = object : DefaultRenderersFactory(context) {
             override fun buildAudioSink(context: Context, enableFloatOutput: Boolean,
                                         enableAudioTrackPlaybackParams: Boolean): AudioSink =
@@ -164,6 +169,18 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                 update(); stateChanged(if (isPlaying) "playing" else "paused")
             } }
             override fun onPlayerError(error: PlaybackException) { if (generation == token) {
+                // An app's opaque URL may select the progressive source before FCUP returns HLS.
+                // Retry only a positively identified playlist, once, with the correct source type.
+                if (error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED &&
+                    playlistDetected.get() && !hlsSourceSelected) {
+                    hlsSourceSelected = true
+                    diagnostics.stage(AirPlayVideoDiagnostics.Stage.SOURCE_HLS)
+                    exo.setMediaItem(MediaItem.Builder().setUri(item.url)
+                        .setMimeType(MimeTypes.APPLICATION_M3U8).build())
+                    exo.playWhenReady = requestedPlaying
+                    exo.prepare()
+                    return
+                }
                 diagnostics.failure(AirPlayVideoDiagnostics.Stage.PREPARE, error, error.errorCode)
                 // Cause types distinguish resource, DRM and codec failures without their messages.
                 (error.cause as? Exception)?.let { diagnostics.failure(AirPlayVideoDiagnostics.Stage.PREPARE, it) }
