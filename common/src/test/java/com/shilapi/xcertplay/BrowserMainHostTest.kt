@@ -46,6 +46,7 @@ class BrowserMainHostTest {
         (field("teardownExecutor") as ExecutorService).shutdownNow()
         setField("teardownExecutor", PausedExecutorService())
         setField("airPlayIdentity", AirPlayIdentity.generate())
+        setField("microphonePermissionResolved", true)
         val sizeClass = Class.forName("com.shilapi.xcertplay.CarPlayHostActivity\$DisplaySize")
         val size = sizeClass.getDeclaredConstructor(Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
             .apply { isAccessible = true }.newInstance(1920, 990)

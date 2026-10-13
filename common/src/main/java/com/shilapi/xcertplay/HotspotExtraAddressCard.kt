@@ -43,6 +43,7 @@ internal class HotspotExtraAddressCard(
     /** A plain action button, added to the parent and returned. */
     private val actionButton: (parent: LinearLayout, text: String, click: () -> Unit) -> Button,
     private val rerender: () -> Unit,
+    private val showEndpoint: Boolean = true,
 ) {
     data class Colors(val muted: Int, val warning: Int, val ready: Int)
 
@@ -62,17 +63,17 @@ internal class HotspotExtraAddressCard(
             visibility = View.GONE
         }
         settingRow(parent, "${activity.getString(R.string.settings_browser_hotspot_address_repair)} · ${label(method)}", ::chooseMethod)
-        if (method != HotspotAddressMethod.NORMAL) {
-            settingRow(parent, "${activity.getString(R.string.settings_browser_hotspot_address)} · " +
-                "$text:${BrowserEndpointSettings.port(app)}", ::editAddress)
-        } else {
-            parent.addView(current)
-            parent.addView(blocked)
+        if (showEndpoint) {
+            if (method != HotspotAddressMethod.NORMAL) {
+                settingRow(parent, "${activity.getString(R.string.settings_browser_hotspot_address)} · " +
+                    "$text:${BrowserEndpointSettings.port(app)}", ::editAddress)
+            } else parent.addView(current)
         }
+        if (method == HotspotAddressMethod.NORMAL) parent.addView(blocked)
         if (indexing) return
         val status = note("").also(parent::addView)
         // Keep the probe anchor attached for repaired addresses too, without a duplicate address line.
-        if (method != HotspotAddressMethod.NORMAL) parent.addView(current)
+        if (!showEndpoint || method != HotspotAddressMethod.NORMAL) parent.addView(current.apply { visibility = View.GONE })
         val action = when (method) {
             HotspotAddressMethod.SHIZUKU -> actionButton(parent, activity.getString(R.string.settings_hotspot_shizuku_allow), ::allowShizuku)
             HotspotAddressMethod.VPN -> actionButton(parent, activity.getString(R.string.settings_hotspot_vpn_allow), ::allowVpn)
@@ -140,11 +141,13 @@ internal class HotspotExtraAddressCard(
     private fun showHotspot(current: TextView, blocked: TextView, hotspot: HotspotAddresses.Current?,
         method: HotspotAddressMethod) {
         if (hotspot == null || hotspot.ipv4.isEmpty()) {
+            if (!showEndpoint && method == HotspotAddressMethod.NORMAL) current.visibility = View.VISIBLE
             current.text = activity.getString(R.string.settings_hotspot_not_found)
             current.setTextColor(colors.warning)
             blocked.visibility = View.GONE
             return
         }
+        if (!showEndpoint) current.visibility = View.GONE
         current.text = if (AirPlayPersistence.isPhoneBrowserMode(activity)) {
             activity.getString(R.string.settings_browser_hotspot_endpoint,
                 hotspot.ipv4.joinToString(", ") { "${it.hostAddress.orEmpty()}:${BrowserEndpointSettings.port(app)}" })
@@ -218,7 +221,6 @@ internal class HotspotExtraAddressCard(
             val padding = TiPlayNativeUi(activity).dp(24)
             setPadding(padding, padding / 2, padding, 0)
             addView(TiPlayNativeUi(activity).label(activity.getString(R.string.settings_browser_hotspot_address_repair), heading = true))
-            addView(note(activity.getString(R.string.settings_browser_hotspot_address_explanation)))
         }
         val dialog = AlertDialog.Builder(activity)
             .setCustomTitle(body)
@@ -327,7 +329,7 @@ internal class HotspotExtraAddressCard(
         }, "tiplay-shizuku-permission").start()
     }
 
-    private fun editAddress() {
+    internal fun editAddress() {
         val method = HotspotExtraAddressSettings.method(app)
         val vpn = method == HotspotAddressMethod.VPN
         val errorMessage = if (vpn) R.string.settings_browser_vpn_endpoint_invalid else R.string.settings_browser_endpoint_invalid

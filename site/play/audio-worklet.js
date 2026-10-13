@@ -1,6 +1,5 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 import { PcmTimeline } from './pcm-timeline.js';
-import { PcmCapture } from './audio-protocol.js';
 import { initialPlaybackPlans, audioDelayAt } from './playback-window.js';
 
 class TiPlayAudio extends AudioWorkletProcessor {
@@ -8,24 +7,20 @@ class TiPlayAudio extends AudioWorkletProcessor {
     super();
     this.streams = new Map();
     this.timelines = new Map(); this.epochs = new Map(); this.delayPlans = initialPlaybackPlans(); this.clockBase = null;
-    this.capture = null;
+    this.muted = false;
     this.port.onmessage = ({ data }) => {
       if (data.plans) this.delayPlans = data.plans;
       if (data.clockBase !== undefined) this.clockBase = data.clockBase;
-      if (data.reset) {
+      if (data.muted !== undefined) this.muted = Boolean(data.muted);
+      if (data.reset || data.muted === true) {
         for (const stream of this.streams.values()) for (const pcm of stream.queue) this.port.postMessage({ consumed: pcm.byteLength, generation: pcm.generation });
         this.streams.clear();
         for (const timeline of this.timelines.values()) timeline.clear();
         this.timelines.clear();
         this.epochs.clear();
       }
-      if (data.captureRate !== undefined) this.capture = data.captureRate
-        ? new PcmCapture(sampleRate, data.captureRate, pcm => {
-          let peak = 0;
-          for (const sample of new Int16Array(pcm)) peak = Math.max(peak, Math.abs(sample));
-          this.port.postMessage({ microphone: pcm, peak }, [pcm]);
-        }) : null;
       if (!data.pcm) return;
+      if (this.muted) { this.port.postMessage({ consumed: data.pcm.byteLength, generation: data.generation }); return; }
       const previousEpoch = this.epochs.get(data.type);
       if (previousEpoch !== undefined && ((data.epoch - previousEpoch) | 0) < 0) { this.port.postMessage({ consumed: data.pcm.byteLength, generation: data.generation }); return; }
       if (previousEpoch !== undefined && previousEpoch !== data.epoch) {
@@ -70,6 +65,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
   process(inputs, outputs) {
     const output = outputs[0];
     for (const channel of output) channel.fill(0);
+    if (this.muted) return true;
     let voiceActive = false;
     for (const [type, stream] of this.streams) if (type !== 0 && stream.queue.length > 0) { voiceActive = true; break; }
     for (const [type, stream] of this.streams) {
@@ -100,7 +96,6 @@ class TiPlayAudio extends AudioWorkletProcessor {
       for (const [type, timeline] of this.timelines) for (let c = 0; c < output.length; c++) output[c][i] += timeline.sample(time, c) * (type === 0 && voice ? 0.2 : 1);
     }
     for (const channel of output) for (let i = 0; i < channel.length; i++) channel[i] = Math.max(-1, Math.min(1, channel[i]));
-    if (this.capture && inputs[0]?.[0]) this.capture.push(inputs[0][0]);
     return true;
   }
 }

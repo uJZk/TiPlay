@@ -4,5 +4,4 @@ package com.shilapi.xcertplay.web
 enum class BrowserPlaybackMode(val wireName: String, val audioFlags: Int) {
     CARPLAY("carplay", 0),
     AIRPLAY_MIRROR("airplay-mirror", 4),
-    AIRPLAY_VIDEO("airplay-video", 8),
 }

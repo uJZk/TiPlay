@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PcmCapture, readAudioRecords } from '../../site/play/audio-protocol.js';
+import { readAudioRecords } from '../../site/play/audio-protocol.js';
 import { createBrowserAudio } from '../../site/play/audio.js';
 import { audioDelayAt } from '../../site/play/playback-window.js';
 import { createFramePresenter } from '../../site/play/video.js';
@@ -27,7 +27,7 @@ test('PCM framing survives arbitrary network boundaries and skips keepalives', a
 });
 
 test('audio mode flags retain buffered/reset flags and notify policy before timing without video config', async () => {
-  for (const [bits, mode] of [[0, 'carplay'], [4, 'airplay-mirror'], [8, 'airplay-video']]) {
+  for (const [bits, mode] of [[0, 'carplay'], [4, 'airplay-mirror']]) {
     const records = [];
     for await (const value of readAudioRecords(body([record([1], { flags: bits | 3 })]))) records.push(value);
     assert.equal(records[0].mode, mode); assert.equal(records[0].flags & 3, 3);
@@ -38,10 +38,10 @@ test('audio mode flags retain buffered/reset flags and notify policy before timi
     await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
     await new Promise(resolve => setImmediate(resolve));
     const now = performance.timeOrigin + performance.now(); audio.clock({ offset: now - 1000, at: now, rtt: 2 });
-    const timed = record([1, 2], { flags: 9 }); new DataView(timed.buffer).setFloat64(20, 950);
+    const timed = record([1, 2], { flags: 5 }); new DataView(timed.buffer).setFloat64(20, 950);
     controller.enqueue(record([], { flags: 2 })); controller.enqueue(timed);
     await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(events, [['mode', 'airplay-video'], ['timing']], 'empty reset cannot select CarPlay; the real audio selects its policy before measurement');
+    assert.deepEqual(events, [['mode', 'airplay-mirror'], ['timing']], 'empty reset cannot select CarPlay; the real audio selects its policy before measurement');
   } finally { audio.dispose(); browser.done(); }
 });
 
@@ -72,44 +72,82 @@ function mockBrowser() {
   return { messages, contexts, sources, nodes, done() { globalThis.AudioContext = oldContext; globalThis.AudioWorkletNode = oldNode; } };
 }
 
-test('audio disable and connection stop release capture and reset speaker credit', async () => {
-  const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
-  let stopped = 0;
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() { stopped++; } }] }) } } });
-  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: body([]) }) });
+test('startup and Bluetooth demand never ask the browser for capture or permissions', async () => {
+  const browser = mockBrowser(), descriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let prompts = 0;
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {
+    mediaDevices: { getUserMedia() { prompts++; throw new Error('Unexpected browser capture'); } },
+    permissions: { query() { prompts++; throw new Error('Unexpected browser permission'); } },
+  } });
+  const routes = [];
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
+    fetchPhone: async route => { routes.push(route); return { ok: true, body: body([]) }; } });
   try {
-    await audio.activate();
-    const connection = new AbortController(); audio.attach(connection.signal, { audio: true });
-    audio.status({ audio: true, mic: { active: true, sampleRate: 16000 } });
-    await audio.activateMicrophone();
-    assert.equal(audio.stats().microphone, true);
-    audio.status({ audio: false, mic: { active: true, sampleRate: 16000 } });
-    assert.equal(audio.stats().microphone, false); assert.equal(stopped, 1);
-    assert.ok(browser.messages.some(value => value.reset));
-    audio.status({ audio: true, mic: { active: true, sampleRate: 24000 } });
+    audio.start(); await new Promise(resolve => setImmediate(resolve));
+    audio.attach(new AbortController().signal, { audio: true });
+    audio.status({ voice: { revision: 1, state: 'connecting', muted: true } });
+    audio.gesture();
+    audio.status({ voice: { revision: 2, state: 'active', muted: true } });
     await new Promise(resolve => setImmediate(resolve));
-    assert.ok(browser.messages.some(value => value.captureRate === 24000), 'previously granted capture follows next negotiated rate');
-    connection.abort(); assert.equal(audio.stats().microphone, false); assert.equal(stopped, 2);
-  } finally {
-    audio.dispose(); browser.done();
-    Object.defineProperty(globalThis, 'navigator', oldNavigator);
-  }
+    assert.equal(prompts, 0);
+    assert.ok(routes.every(route => route.startsWith('/audio?')));
+    assert.equal(audio.stats().browserMuted, true);
+    assert.equal(audio.stats().sound, false);
+  } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', descriptor); }
 });
 
-test('capture permission resolving after microphone demand ends stops every track', async () => {
-  const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
-  let resolveCapture, stopped = 0;
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: () => new Promise(resolve => { resolveCapture = resolve; }) } } });
-  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: body([]) }) });
+test('ordered route records clear buffered music, discard demand audio, and resume only fresh PCM', async () => {
+  const browser = mockBrowser(); let controller;
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
+    fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
+  const route = (revision, muted) => {
+    const bytes = record([], { flags: muted ? 16 : 0 }); bytes[5] = 5;
+    new DataView(bytes.buffer).setUint32(16, revision); return bytes;
+  };
   try {
     await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
-    audio.status({ mic: { active: true, sampleRate: 16000 } });
-    const pending = audio.activateMicrophone();
-    audio.status({ mic: { active: false, sampleRate: 16000 } });
-    resolveCapture({ getTracks: () => [{ stop() { stopped++; } }] });
-    await pending;
-    assert.equal(stopped, 1); assert.equal(audio.stats().microphone, false);
-  } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
+    await new Promise(resolve => setImmediate(resolve));
+    controller.enqueue(record([10, 10], { flags: 1 }));
+    controller.enqueue(route(1, true)); controller.enqueue(record([20, 20]));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(audio.stats().queuedBytes, 0);
+    assert.equal(audio.stats().browserMuted, true);
+    assert.equal(browser.messages.filter(value => value.pcm?.byteLength).length, 1);
+    controller.enqueue(route(3, false)); controller.enqueue(route(2, true)); controller.enqueue(record([30, 30]));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(audio.stats().browserMuted, false, 'retired mute cannot undo release');
+    const pcm = browser.messages.filter(value => value.pcm?.byteLength);
+    assert.equal(pcm.length, 2); assert.deepEqual([...new Int16Array(pcm.at(-1).pcm)], [30, 30]);
+  } finally { audio.dispose(); browser.done(); }
+});
+
+test('route status overtaking an HTTP body retires it and reports failure without a capture fallback', async () => {
+  const browser = mockBrowser(), requests = [];
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
+    fetchPhone: async (_, { signal }) => { let controller;
+      const response = { ok: true, body: new ReadableStream({ start(value) { controller = value; } }) };
+      requests.push({ signal, controller }); return response;
+    } });
+  try {
+    await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
+    await new Promise(resolve => setImmediate(resolve));
+    const old = requests.at(-1);
+    audio.status({ voice: { revision: 1, muted: true, state: 'connecting' } });
+    old.controller.enqueue(record([99]));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(old.signal.aborted, true);
+    assert.equal(browser.messages.filter(value => value.pcm?.byteLength).length, 0);
+    audio.status({ voice: { revision: 2, muted: true, state: 'failed', error: 'car-bluetooth-unavailable' } });
+    assert.equal(audio.stats().error, 'car-bluetooth-unavailable');
+    audio.status({ voice: { revision: 3, muted: true, state: 'releasing' } });
+    assert.equal(audio.stats().browserMuted, true);
+    audio.status({ voice: { revision: 4, muted: false, state: 'idle', error: null } });
+    await new Promise(resolve => setImmediate(resolve));
+    requests.at(-1).controller.enqueue(record([7]));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(audio.stats().error, null);
+    assert.deepEqual([...new Int16Array(browser.messages.filter(value => value.pcm?.byteLength).at(-1).pcm)], [7]);
+  } finally { audio.dispose(); browser.done(); }
 });
 
 test('malformed and truncated PCM frames fail before publication', async () => {
@@ -117,225 +155,6 @@ test('malformed and truncated PCM frames fail before publication', async () => {
     await assert.rejects(async () => { for await (const _ of readAudioRecords(body([bytes]))) {} });
   }
 });
-
-test('page startup requests permission, releases idle capture, and new demand captures automatically', async () => {
-  const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
-  let requests = 0, stopped = 0;
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: async () => {
-    requests++; return { getTracks: () => [{ stop() { stopped++; } }] };
-  } } } });
-  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: body([]) }) });
-  try {
-    audio.start(); await new Promise(resolve => setImmediate(resolve));
-    assert.equal(requests, 1); assert.equal(stopped, 1); assert.equal(audio.stats().microphone, false);
-    audio.attach(new AbortController().signal, { audio: true });
-    audio.status({ mic: { active: true, sampleRate: 48000 } });
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(requests, 2); assert.equal(audio.stats().microphone, true);
-    assert.ok(browser.sources[0].connected, 'capture source is connected to the processing node');
-    assert.ok(browser.messages.some(value => value.captureRate === 48000));
-    audio.status({ mic: { active: false, sampleRate: 48000 } });
-    assert.equal(stopped, 2);
-  } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
-});
-
-test('denied capture retries on next demand without prompting on status heartbeats', async () => {
-  const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
-  let requests = 0;
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: async () => { requests++; throw new Error('Permission denied'); } } } });
-  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: body([]) }) });
-  try {
-    await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
-    audio.status({ mic: { active: true, sampleRate: 16000 } });
-    await new Promise(resolve => setImmediate(resolve));
-    for (let i = 0; i < 20; i++) audio.status({ mic: { active: true, sampleRate: 16000 } });
-    assert.equal(requests, 1);
-    audio.status({ mic: { active: false, sampleRate: 16000 } });
-    audio.status({ mic: { active: true, sampleRate: 16000 } });
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(requests, 2);
-  } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
-});
-
-function permissionBrowser({ observe = true, fetchPhone = async () => ({ ok: true, body: body([]) }) } = {}) {
-  const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
-  const permission = new EventTarget(); permission.state = 'denied';
-  let allowed = false, requests = 0, stopped = 0, listeners = 0;
-  const add = permission.addEventListener.bind(permission), remove = permission.removeEventListener.bind(permission);
-  permission.addEventListener = (...args) => { listeners++; add(...args); };
-  permission.removeEventListener = (...args) => { listeners--; remove(...args); };
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {
-    ...(observe ? { permissions: { query: async () => permission } } : {}),
-    mediaDevices: { getUserMedia: async () => {
-      requests++;
-      if (!allowed) throw new Error('Permission denied');
-      return { getTracks: () => [{ stop() { stopped++; } }] };
-    } },
-  } });
-  const states = [], audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone, onState: state => states.push(state) });
-  return {
-    audio, states, settle: () => new Promise(resolve => setImmediate(resolve)),
-    grant() { allowed = true; permission.state = 'granted'; permission.dispatchEvent(new Event('change')); },
-    counts: () => ({ requests, stopped, listeners }),
-    done() { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); },
-  };
-}
-
-test('granting microphone permission clears an idle denial and publishes the recovered state', async () => {
-  const fixture = permissionBrowser();
-  try {
-    fixture.audio.start(); await fixture.settle();
-    assert.equal(fixture.audio.stats().error, 'Permission denied');
-    for (let i = 0; i < 20; i++) fixture.audio.gesture();
-    await fixture.settle();
-    assert.equal(fixture.counts().requests, 1, 'normal screen taps cannot repeat a known denied permission prompt');
-    fixture.grant(); await fixture.settle();
-    assert.equal(fixture.audio.stats().error, null);
-    assert.equal(fixture.states.at(-1).error, null);
-    assert.equal(fixture.audio.stats().microphone, false);
-    assert.equal(fixture.counts().requests, 1, 'the permission observer must not start an idle recording');
-  } finally { fixture.done(); }
-});
-
-test('granting microphone permission resumes an existing demand without another status transition', async () => {
-  const fixture = permissionBrowser();
-  try {
-    fixture.audio.start(); await fixture.settle();
-    fixture.audio.attach(new AbortController().signal, { audio: true });
-    fixture.audio.status({ mic: { active: true, sampleRate: 16000 } }); await fixture.settle();
-    assert.equal(fixture.audio.stats().microphone, false);
-    fixture.grant(); await fixture.settle();
-    assert.equal(fixture.audio.stats().microphone, true);
-    assert.equal(fixture.audio.stats().error, null);
-    const requests = fixture.counts().requests;
-    for (let i = 0; i < 20; i++) fixture.audio.status({ mic: { active: true, sampleRate: 16000 } });
-    assert.equal(fixture.counts().requests, requests);
-  } finally { fixture.done(); }
-});
-
-test('a user gesture retries an idle permission denial without a Permissions API and stops the probe', async () => {
-  const fixture = permissionBrowser({ observe: false });
-  try {
-    fixture.audio.start(); await fixture.settle();
-    fixture.grant();
-    fixture.audio.gesture(); await fixture.settle();
-    assert.equal(fixture.audio.stats().error, null);
-    assert.equal(fixture.states.at(-1).error, null);
-    assert.equal(fixture.audio.stats().microphone, false);
-    assert.deepEqual(fixture.counts(), { requests: 2, stopped: 1, listeners: 0 });
-    fixture.audio.gesture(); await fixture.settle();
-    assert.equal(fixture.counts().requests, 2, 'successful permission does not need another probe');
-  } finally { fixture.done(); }
-});
-
-test('microphone permission recovery preserves an unrelated speaker stream failure', async () => {
-  const fixture = permissionBrowser({ fetchPhone: async () => ({ ok: false, status: 503 }) });
-  try {
-    fixture.audio.start(); await fixture.settle();
-    fixture.audio.attach(new AbortController().signal, { audio: true }); await fixture.settle();
-    assert.equal(fixture.audio.stats().error, 'Audio HTTP 503');
-    fixture.grant(); await fixture.settle();
-    assert.equal(fixture.audio.stats().error, 'Audio HTTP 503');
-    fixture.audio.status({ mic: { active: true, sampleRate: 16000 } }); await fixture.settle();
-    assert.equal(fixture.audio.stats().microphone, true);
-    assert.equal(fixture.audio.stats().error, 'Audio HTTP 503');
-  } finally { fixture.done(); }
-});
-
-test('disposing audio removes the permission observer and prevents permission recovery callbacks', async () => {
-  const fixture = permissionBrowser();
-  try {
-    fixture.audio.start(); await fixture.settle();
-    assert.equal(fixture.counts().listeners, 1);
-    fixture.audio.dispose();
-    const notifications = fixture.states.length;
-    fixture.grant(); fixture.audio.gesture(); await fixture.settle();
-    assert.equal(fixture.counts().listeners, 0);
-    assert.equal(fixture.counts().requests, 1);
-    assert.equal(fixture.states.length, notifications);
-  } finally { fixture.done(); }
-});
-
-test('late permission observer and idle probe completion after disposal release resources without notifying', async () => {
-  const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
-  let resolvePermission, resolveCapture, stopped = 0, listeners = 0;
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {
-    permissions: { query: () => new Promise(resolve => { resolvePermission = resolve; }) },
-    mediaDevices: { getUserMedia: () => new Promise(resolve => { resolveCapture = resolve; }) },
-  } });
-  const states = [], audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: body([]) }), onState: state => states.push(state) });
-  try {
-    audio.start(); await new Promise(resolve => setImmediate(resolve));
-    audio.dispose(); const notifications = states.length;
-    resolvePermission({ state: 'granted', addEventListener() { listeners++; } });
-    resolveCapture({ getTracks: () => [{ stop() { stopped++; } }] });
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(stopped, 1); assert.equal(listeners, 0); assert.equal(states.length, notifications);
-    assert.equal(audio.stats().microphone, false);
-  } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
-});
-
-test('successful speaker recovery publishes its state while preserving a denied microphone', async () => {
-  let resolveResponse;
-  const fixture = permissionBrowser({ fetchPhone: () => new Promise(resolve => { resolveResponse = resolve; }) });
-  try {
-    fixture.audio.start(); await fixture.settle();
-    fixture.audio.attach(new AbortController().signal, { audio: true }); await fixture.settle();
-    resolveResponse({ ok: false, status: 503 }); await fixture.settle();
-    assert.equal(fixture.audio.stats().error, 'Audio HTTP 503');
-    fixture.audio.attach(new AbortController().signal, { audio: true }); await fixture.settle();
-    resolveResponse({ ok: true, body: body([]) }); await fixture.settle();
-    assert.equal(fixture.audio.stats().error, 'Permission denied');
-    assert.equal(fixture.states.at(-1).error, 'Permission denied');
-  } finally { fixture.done(); }
-});
-
-test('inactive microphone HTTP reply ends capture quietly while other upload failures remain visible', async () => {
-  for (const reply of ['microphone-inactive', 'other-conflict']) {
-    const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
-    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } } });
-    const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async route => route.startsWith('/microphone?')
-      ? { ok: false, status: 409, json: async () => ({ error: reply }) } : { ok: true, body: body([]) } });
-    try {
-      await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
-      audio.status({ mic: { active: true, sampleRate: 16000 } });
-      await new Promise(resolve => setImmediate(resolve));
-      for (let i = 0; i < 2; i++) browser.nodes[0].port.onmessage({ data: { microphone: new Int16Array(320).buffer, peak: 0 } });
-      await new Promise(resolve => setImmediate(resolve));
-      assert.equal(audio.stats().microphone, false);
-      assert.equal(audio.stats().rejectedMicrophoneUploads, 1);
-      assert.equal(audio.stats().error, reply === 'microphone-inactive' ? null : 'Microphone HTTP 409');
-    } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
-  }
-});
-
-test('late inactive upload response from a retired capture cannot stop the next demand', async () => {
-  const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
-  let resolveUpload;
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } } });
-  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async route => route.startsWith('/microphone?')
-    ? new Promise(resolve => { resolveUpload = resolve; }) : { ok: true, body: body([]) } });
-  try {
-    await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
-    audio.status({ mic: { active: true, sampleRate: 16000 } });
-    await new Promise(resolve => setImmediate(resolve));
-    for (let i = 0; i < 2; i++) browser.nodes[0].port.onmessage({ data: { microphone: new Int16Array(320).buffer, peak: 0 } });
-    audio.status({ mic: { active: false, sampleRate: 16000 } });
-    audio.status({ mic: { active: true, sampleRate: 16000 } });
-    await new Promise(resolve => setImmediate(resolve));
-    resolveUpload({ ok: false, status: 409, json: async () => ({ error: 'microphone-inactive' }) });
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(audio.stats().microphone, true); assert.equal(audio.stats().error, null);
-  } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
-});
-
-test('capture resampling retains phase and emits exact 20 ms mono packets', () => {
-  const sent = [], capture = new PcmCapture(48000, 16000, pcm => sent.push(new Int16Array(pcm)));
-  for (let i = 0; i < 375; i++) capture.push(new Float32Array(128).fill(0.5));
-  assert.equal(sent.length, 50);
-  assert.ok(sent.every(packet => packet.length === 320 && packet.every(value => value === 16384)));
-});
-
 test('speaker credit is isolated across resets and the context clock is anchored once', async () => {
   const browser = mockBrowser(); let controller;
   const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
@@ -371,13 +190,6 @@ test('two seconds of buffered music cannot block a following low-rate navigation
     assert.equal(sent.length, 101);
     assert.equal(sent.at(-1).type, 1, 'navigation posts without waiting for any music completion');
   } finally { audio.dispose(); browser.done(); }
-});
-
-test('capture keeps producing packets after transferring each PCM buffer to the main thread', () => {
-  const sent = [], capture = new PcmCapture(48000, 48000, pcm => sent.push(new Int16Array(structuredClone(pcm, { transfer: [pcm] }))));
-  for (let i = 0; i < 375; i++) capture.push(new Float32Array(128).fill(0.5));
-  assert.equal(sent.length, 49);
-  assert.ok(sent.every(packet => packet.length === 960 && packet.every(value => value === 16384)));
 });
 
 test('worklet mixes separate streams and bounds an unpaced music producer', async () => {

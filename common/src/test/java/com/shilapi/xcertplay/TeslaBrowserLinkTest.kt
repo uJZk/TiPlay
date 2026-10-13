@@ -350,7 +350,7 @@ class TeslaBrowserLinkTest {
             carPlay.onScreenStreamActive(110, true)
             assertEquals(498, TeslaBrowserLink.hub.info()!!.width)
             assertFalse(server.callbacks.status().touchAvailable)
-            assertFalse(TeslaBrowserLink.audioHub.microphoneStatus()["active"] as Boolean)
+            assertFalse(TeslaBrowserLink.audioHub.voiceStatus()["muted"] as Boolean)
             TeslaBrowserLink.releaseTap(retained.sink)
             assertEquals(498, TeslaBrowserLink.hub.info()!!.width)
             assertTrue(TeslaBrowserLink.active)

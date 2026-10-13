@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Explicitly started LAN receiver, on its own port and identity, separate from CarPlay. */
-class ReceiverServer(private val config: ReceiverConfig, private val listener: Listener,
+class ReceiverServer(@Volatile private var config: ReceiverConfig, private val listener: Listener,
                      private val fairPlayReply: (ByteArray) -> ByteArray? = { ReceiverFairPlay.reply(it) },
                      private val fairPlayDecrypt: (ByteArray, ByteArray) -> ByteArray? = { message, key -> ReceiverFairPlay.decrypt(message, key) }) : Closeable {
     interface Listener {
@@ -59,6 +59,18 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                                        val future: CompletableFuture<ReceiverResource?> = CompletableFuture())
     private val resources = ConcurrentHashMap<Long, PendingResource>()
     val port: Int get() = server.localPort
+
+    val displayConfig: ReceiverConfig get() = config
+
+    /** Renegotiate only mirroring. URL playback has its own browser clock and is unaffected. */
+    fun updateDisplay(fps: Int, hevc: Boolean): ReceiverConfig = synchronized(ownership) {
+        if (config.fps != fps || config.hevcEnabled != hevc) {
+            config = config.copy(fps = fps, hevcEnabled = hevc)
+            owner?.let { mirror -> mirror.finish() }
+            owner = null
+        }
+        config
+    }
 
     internal fun reportTrial(stage: UnifiedAirPlayStage) { runCatching { listener.log("unifiedTrial stage=$stage") } }
 
@@ -368,7 +380,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                         owner?.closeMedia(); owner = null
                         resources.values.forEach { it.future.complete(null) }; resources.clear()
                         playbackPeer = peer; playbackId = id
-                        listener.play(item); listener.status("video")
+                        listener.play(item.copy(iphoneHost = peer.hostAddress)); listener.status("video")
                     }
                     return RtspMessage.Response()
                 }

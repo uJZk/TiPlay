@@ -25,10 +25,5 @@ internal object BrowserCarPlayAudioSettings {
             saveDisabled(context, it)
             changed()
         }
-        toggle(parent, context.getString(R.string.main_buffered_audio),
-            context.getString(R.string.main_buffered_audio_description), AirPlayPersistence.loadMainBufferedAudio(context)) {
-            AirPlayPersistence.saveMainBufferedAudio(context, it)
-            changed()
-        }
     }
 }

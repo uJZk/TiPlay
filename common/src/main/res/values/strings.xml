@@ -612,7 +612,7 @@
     <string name="adb_cluster_routed">Cluster task routed; waiting for iPhone map</string>
     <string name="adb_cluster_route_failed">Cluster launch failed; export diagnostics.</string>
     <string name="open_diplay_settings_hint">In CarPlay, swipe down with %1$d fingers to open TiPlay settings.</string>
-    <string name="carplay_controls">CarPlay controls</string>
+    <string name="carplay_controls">CarPlay</string>
     <string name="settings_gesture_fingers">Open settings · swipe with %1$d fingers (tap to change)</string>
     <string name="settings_gesture_fingers_label">Open settings · swipe-down fingers</string>
     <string name="settings_gesture_fingers_option">%1$d fingers</string>
@@ -734,10 +734,10 @@
     <string name="settings_external_ap_check">This device is not connected to the target Wi-Fi.</string>
     <string name="settings_android_address">Android address: %1$s</string>
     <string name="settings_main_stopping">Disconnecting…</string>
-    <string name="settings_airplay_title">AirPlay (experimental)</string>
+    <string name="settings_airplay_title">AirPlay</string>
     <string name="settings_airplay_listening">Waiting for iPhone · TiPlay</string>
     <string name="settings_airplay_disable">Disable AirPlay</string>
-    <string name="settings_airplay_disable_description">Takes effect immediately. AirPlay is enabled by default. Disabling it stops AirPlay and restores the connected CarPlay display; turning this switch off restarts the receiver.</string>
+    <string name="settings_airplay_disable_description"></string>
     <string name="settings_disable_carplay_audio">Disable CarPlay audio</string>
-    <string name="settings_disable_carplay_audio_description">Keep music, navigation, calls and Siri on the iPhoneʼs Bluetooth connection to the car. Connect the iPhone to the carʼs Bluetooth first. CarPlay reconnects after a change.</string>
+    <string name="settings_disable_carplay_audio_description"></string>
 </resources>

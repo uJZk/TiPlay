@@ -31,7 +31,7 @@ class ReceiverAudioDrainTest {
             }
             for (port in listOf(ports.first, ports.second)) {
                 DatagramSocket(null).use { rebound ->
-                    rebound.bind(InetSocketAddress(InetAddress.getByName("::"), port))
+                    awaitReleasedUdpPort(rebound, InetSocketAddress(InetAddress.getByName("::"), port))
                     assertEquals(port, rebound.localPort)
                 }
             }

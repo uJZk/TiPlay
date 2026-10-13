@@ -63,8 +63,8 @@ test('the first timestamp after fallback playback cannot jump the effective dela
   now = 1086; assert.ok(Math.abs(timing.delay('audio') - 60.02) < 0.000001);
 });
 
-test('CarPlay, AirPlay mirror and AirPlay video use their own shared delay caps', () => {
-  for (const [mode, limit] of [['carplay', 0], ['airplay-mirror', 200], ['airplay-video', 500]]) {
+test('CarPlay and AirPlay mirror use their own shared delay caps', () => {
+  for (const [mode, limit] of [['carplay', 0], ['airplay-mirror', 200]]) {
     const changes = [], timing = createMediaTiming(plan => changes.push(plan), () => 1000);
     timing.mode(mode); timing.observe('audio', 0); timing.observe('video', 0);
     assert.equal(timing.limit(), limit); assert.equal(timing.delay(), Math.max(0, limit - 20)); assert.equal(timing.plan().to, Math.max(0, limit - 20));
@@ -76,7 +76,7 @@ test('CarPlay, AirPlay mirror and AirPlay video use their own shared delay caps'
 test('mode switches discard an old high delay plan without clearing independent audio queues', () => {
   let now = 1000;
   const timing = createMediaTiming(() => {}, () => now), audio = new PcmTimeline(8000, 1, () => {}, 2500);
-  timing.mode('airplay-video'); timing.observe('video', 0); timing.observe('audio', 0);
+  timing.mode('airplay-mirror'); timing.observe('video', 0); timing.observe('audio', 0);
   audio.push({ sourceTime: 1000, sequence: 0, pcm: new Int16Array(160).fill(16384).buffer });
   timing.mode('airplay-mirror'); assert.equal(timing.delay(), 180); assert.equal(timing.plan().previous, undefined);
   timing.mode('carplay'); assert.equal(timing.delay(), 0); assert.equal(timing.plan().previous, undefined);
@@ -209,7 +209,7 @@ test('video presents ready frames without slow audio and drops only raw cap viol
   now = 1100; frames.present(late, { mode: 'carplay' }, 1, 960); assert.equal(late.closed, true);
   assert.equal(frames.stats().scheduledExpiredFrames, 1);
   assert.equal(videoExpired(1000, 'carplay', 1000), false); assert.equal(videoExpired(1000, 'carplay', 1000.01), true);
-  assert.equal(videoExpired(1000, 'airplay-mirror', 1200.01), true); assert.equal(videoExpired(1000, 'airplay-video', 1500.01), true);
+  assert.equal(videoExpired(1000, 'airplay-mirror', 1200.01), true);
   frames.reset();
 });
 

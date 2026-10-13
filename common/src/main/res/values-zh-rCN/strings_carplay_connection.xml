@@ -3,7 +3,7 @@
     <string name="settings_carplay_mode_all">全部（USB 优先）</string>
     <string name="settings_carplay_reconnect">重新连接 CarPlay</string>
     <string name="settings_carplay_disable">禁用 CarPlay</string>
-    <string name="settings_carplay_disable_description">停止 CarPlay 连接和重试；AirPlay 独立运行。</string>
+    <string name="settings_carplay_disable_description"></string>
     <string name="settings_carplay_disabled">CarPlay 已禁用</string>
     <string name="settings_carplay_ready">CarPlay 就绪</string>
     <string name="settings_carplay_searching">CarPlay 搜索中</string>

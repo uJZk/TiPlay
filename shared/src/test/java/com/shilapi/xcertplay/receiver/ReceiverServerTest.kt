@@ -191,7 +191,7 @@ class ReceiverServerTest {
                     assertNotNull(listener.hub.info())
                     assertFalse(listener.logs.any { it.contains("Media clock final:") })
                     for (audioPort in audioPorts) {
-                        DatagramSocket(null).use { it.bind(InetSocketAddress(InetAddress.getByName("::"), audioPort)) }
+                        DatagramSocket(null).use { awaitReleasedUdpPort(it, InetSocketAddress(InetAddress.getByName("::"), audioPort)) }
                     }
                     data.getOutputStream().write(packet(0, encryption.update(second)))
                     assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_FRAME, subscription.take(5000)!!.kind)

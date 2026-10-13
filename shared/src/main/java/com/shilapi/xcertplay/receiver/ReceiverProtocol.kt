@@ -36,7 +36,7 @@ data class ReceiverConfig(val name: String, val deviceId: String, val identity: 
     )
 }
 
-data class ReceiverPlay(val url: String, val start: Double, val fraction: Boolean) {
+data class ReceiverPlay(val url: String, val start: Double, val fraction: Boolean, val iphoneHost: String? = null) {
     companion object {
         fun parse(request: RtspMessage.Request): ReceiverPlay {
             val binary = request.body.take(8).toByteArray().contentEquals("bplist00".toByteArray())

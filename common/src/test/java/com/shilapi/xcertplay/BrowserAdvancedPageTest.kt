@@ -95,7 +95,7 @@ class BrowserAdvancedPageTest {
         for (id in listOf(R.string.settings_browser_next_connection_hint, R.string.settings_browser_advanced_summary,
             R.string.choose_save_location, R.string.wireless_connection_help, R.string.choose_image))
             assertFalse(labels.contains(activity.getString(id)))
-        assertFalse(labels.any { it.startsWith(activity.getString(R.string.settings_permission_microphone) + " ") })
+        assertTrue(labels.any { it.startsWith(activity.getString(R.string.settings_permission_microphone) + " ") })
         button(R.string.save_diagnostic_report).performClick()
         assertEquals(1, reportSaves)
     }

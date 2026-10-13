@@ -106,7 +106,7 @@ class CarPlayHostBrowserLinkTest {
         assertTrue(DisplayDiagnosticSnapshot.report(activity).contains("Phone + browser canvas=1182x920"))
     }
 
-    @Test fun phoneModeReceivesAudioWithBrowserMicrophoneWithoutAndroidPermission() {
+    @Test fun phoneModePlaysAudioWithoutMicrophonePermissionAndOffersCaptureOnlyAfterGrant() {
         AirPlayPersistence.saveCarBluetoothAudio(activity, CarBluetoothAudio.OFF)
         AirPlayPersistence.saveMainBufferedAudio(activity, true)
         BrowserCarPlayAudioSettings.saveDisabled(activity, false)
@@ -114,11 +114,13 @@ class CarPlayHostBrowserLinkTest {
         val config = config(1080, 2200)
         assertFalse(config.audioViaCarBluetooth)
         assertTrue(config.receivesAudio)
-        assertTrue(config.microphone)
+        assertFalse(config.microphone)
         assertTrue(config.mainBufferedAudio)
+        set("microphoneAvailable", true)
+        assertTrue(config(1080, 2200).microphone)
     }
 
-    @Test fun disabledAudioAlsoDeclinesBufferedMusicAndBrowserMicrophone() {
+    @Test fun disabledAudioAlsoDeclinesBufferedMusicAndBluetoothMicrophone() {
         BrowserCarPlayAudioSettings.saveDisabled(activity, true)
         AirPlayPersistence.saveMainBufferedAudio(activity, true)
         val config = config(1080, 2200)

@@ -36,11 +36,12 @@ class DiPlaySessionService : Service() {
             .addAction(Notification.Action.Builder(null, "Disconnect", stop).build()).build()
         if (Build.VERSION.SDK_INT >= 29) {
             var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-            // Car Bluetooth sound opens no microphone: Siri and calls use the car's microphone over the iPhone's Bluetooth.
-            // It applies only in phone + browser mode; a head unit keeps its microphone.
+            // Arm microphone foreground access while the user starts the connection in the app.
+            // Actual capture still opens only on CarPlay demand, using the car Bluetooth route.
+            val session = CarPlayBackgroundSession.snapshot()?.controller
+            val phoneBrowser = AirPlayPersistence.isPhoneBrowserMode(this, session)
             if (Build.VERSION.SDK_INT >= 30 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
-                !AirPlayPersistence.isPhoneBrowserMode(this, CarPlayBackgroundSession.snapshot()?.controller) &&
-                CarBluetoothAudio.effective(this, CarPlayBackgroundSession.snapshot()?.controller) == CarBluetoothAudio.OFF) {
+                (if (phoneBrowser) !BrowserCarPlayAudioSettings.disabled(this) else CarBluetoothAudio.effective(this, session) == CarBluetoothAudio.OFF)) {
                 types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             }
             // Without it Android stops location updates while another car app (the reversing camera,

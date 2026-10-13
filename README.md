@@ -2,7 +2,7 @@
 
 **CarPlay in the car browser from an Android phone.**
 
-TiPlay runs on an Android phone and sends the iPhone's CarPlay picture and audio to the car browser. Touches and browser microphone input return to the iPhone through TiPlay. Advanced settings can disable CarPlay audio so that the iPhone uses the car's Bluetooth connection for all sound and calls.
+TiPlay runs on an Android phone and sends the iPhone's CarPlay picture and audio to the car browser. Touches return through the browser. Microphone demand switches Android to the car Bluetooth telephone channel for capture and call/Siri/navigation playback; other audio is discarded until browser playback resumes. Advanced settings can disable CarPlay audio so that the iPhone uses the car's Bluetooth connection for all sound and calls.
 
 TiPlay supports the Android phone + car browser flow only. Native Android head units are not supported.
 
@@ -14,7 +14,7 @@ TiPlay is experimental and has no publicly published release yet. Check [Release
 
 You need an Android 9+ phone, an iPhone and a compatible car browser. TiPlay installs alongside DiPlay and does not reuse its settings or pairing records. Run one projection app at a time.
 
-On the tested Model Y, probe pages decoded 1080p60 H.264 and HEVC in hardware, and an HTTPS page reached the phone's hotspot at a 100.64 address. These were browser probes: complete CarPlay operation and browser speaker/microphone use in a Tesla remain unverified. Browser and Android behavior can vary with software updates.
+On the tested Model Y, probe pages decoded 1080p60 H.264 and HEVC in hardware, and an HTTPS page reached the phone's hotspot at a 100.64 address. These were browser probes: complete CarPlay operation and browser playback and Android-to-car Bluetooth capture/switching in a Tesla remain unverified. Browser and Android behavior can vary with software updates.
 
 ## Install and connect
 

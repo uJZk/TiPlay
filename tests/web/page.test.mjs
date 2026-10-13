@@ -19,6 +19,7 @@ test('the initial clock reaches a video sink whose setup finishes after hello', 
     const videoPath = {};
     const browserAudio = { attach() {}, clock: value => events.push(['audio-clock', value]) };
     const mediaTiming = { reset: () => events.push('timing-reset') };
+    const airplayControls = { update() {} };
     const render = () => {}, reportAppearance = () => {}, scheduleViewport = () => {};
     const setInterval = () => 0, clearInterval = () => {};
     const stop = reason => { throw new Error(reason); };
@@ -65,6 +66,7 @@ function retryPage(lastError) {
     let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null;
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
     const statsVisible = false, link = { code: '1234' }, stage = {};
+    const airplayControls = { update() {}, videoActive: () => false };
     const browserAudio = { stop() {} }, sink = { stop() {} }, slots = { releaseAll() {} };
     const cancelViewport = () => {}, cancelMove = () => {}, renderStats = () => {};
     const t = (key, ...args) => args.length ? key + ':' + args.join(',') : key;
@@ -164,7 +166,7 @@ test('disconnect is a separate full-width row immediately below connect', () => 
 
 test('the service worker precaches every page file', () => {
   const assets = JSON.parse(/const ASSETS = (\[[^\]]*\]);/.exec(read('sw.js'))[1].replaceAll("'", '"'));
-  const files = readdirSync(play).filter(name => name !== 'sw.js');
+  const files = readdirSync(play, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile() && entry.name !== 'sw.js').map(entry => (entry.parentPath.slice(new URL(play).pathname.replace(/\/$/, '').length) + '/' + entry.name).replace(/^\/+/, ''));
   assert.deepEqual([...assets].filter(name => name !== './').sort(), files.sort());
 });
 
@@ -199,7 +201,7 @@ test('the page loads only relative, same-origin resources', () => {
   const html = read('index.html');
   for (const [, url] of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
     if (url === 'https://github.com/uJZk/DiPlay') continue; // the GPL source link
-    assert.match(url, /^[a-z][\w.-]*$/, url);
+    assert.match(url, /^[a-z][\w./-]*$/, url);
   }
   for (const name of ['app.js', 'decoder-worker.js', 'style.css']) {
     assert.doesNotMatch(read(name), /(?:import|from|url\()\s*['"(]?(?:https?:)?\/\//, name);

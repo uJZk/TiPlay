@@ -531,7 +531,7 @@
     <string name="turn_card_distance_km">%1$.1f km</string>
     <string name="turn_card_exit">Salida %1$d</string>
     <string name="open_diplay_settings_hint">En CarPlay, desliza hacia abajo con %1$d dedos para abrir los ajustes de TiPlay.</string>
-    <string name="carplay_controls">Controles de CarPlay</string>
+    <string name="carplay_controls">CarPlay</string>
     <string name="settings_gesture_fingers">Abrir ajustes · deslizar con %1$d dedos (toca para cambiar)</string>
     <string name="settings_gesture_fingers_label">Abrir ajustes · dedos del deslizamiento</string>
     <string name="settings_gesture_fingers_option">%1$d dedos</string>
@@ -637,7 +637,7 @@
     <string name="settings_external_ap_check">Este dispositivo no está conectado a la red Wi-Fi indicada.</string>
     <string name="settings_android_address">Dirección de Android: %1$s</string>
     <string name="settings_main_stopping">Desconectando…</string>
-    <string name="settings_airplay_title">AirPlay (experimental)</string>
+    <string name="settings_airplay_title">AirPlay</string>
     <string name="settings_airplay_listening">Esperando al iPhone · TiPlay</string>
     <string name="settings_airplay_disable">Desactivar AirPlay</string>
     <string name="settings_airplay_disable_description">Se aplica de inmediato. AirPlay está activado por defecto. Esta opción detiene AirPlay y restaura CarPlay; al desactivarla, el receptor vuelve a iniciarse.</string>

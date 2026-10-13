@@ -108,7 +108,7 @@ internal class BrowserMainSettingsMenu(
         val modeRows = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         session.addView(modeRows)
         refreshAddress = BrowserSettingsMenu.addHotspotAddress(modeRows, activity,
-            onMethodChanged = { refreshAddress(); renderNetwork() })
+            onMethodChanged = { refreshAddress(); refreshBrowser(); renderNetwork() })
         connectionMode = BrowserSettingsPresentation.carPlayMode(activity, draft) {
             BrowserCarPlaySettings.saveMode(activity, if (draft.allTransports) BrowserCarPlaySettings.Mode.ALL
                 else if (draft.wireless) BrowserCarPlaySettings.Mode.WIRELESS else BrowserCarPlaySettings.Mode.USB)

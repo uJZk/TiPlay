@@ -41,7 +41,6 @@ self.onmessage = ({ data }) => {
   }
   else if (data.type === 'canvas') presenter = createFramePresenter(data.canvas, {
     applyTimingPolicy: true,
-    onPresentation: sample => self.postMessage({ type: 'presentation', id: activeId, sample }),
   });
   else if (data.type === 'resize') presenter?.resize(data.width, data.height);
   else if (data.type === 'stream' || data.type === 'feed') {

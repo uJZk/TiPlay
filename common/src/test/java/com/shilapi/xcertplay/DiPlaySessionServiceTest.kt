@@ -21,18 +21,29 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class DiPlaySessionServiceTest {
-    @Test fun carBluetoothSoundLeavesTheMicrophoneOutOfTheForegroundService() {
+    @Test fun phoneBrowserArmsBackgroundMicrophoneRegardlessOfOldIphoneBluetoothChoice() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO)
         AirPlayPersistence.saveRunMode(app, CarPlayRunMode.PHONE_BROWSER)
         for ((mode, microphone) in listOf(
-            CarBluetoothAudio.OFF to false,
-            CarBluetoothAudio.ON to false,
-            CarBluetoothAudio.ALTERNATIVE to false,
+            CarBluetoothAudio.OFF to true,
+            CarBluetoothAudio.ON to true,
+            CarBluetoothAudio.ALTERNATIVE to true,
         )) {
             AirPlayPersistence.saveCarBluetoothAudio(app, mode)
             assertEquals(mode.name, microphone, startedWithMicrophone())
         }
+    }
+
+    @Test fun disabledCarPlayAudioOrDeniedPermissionDoesNotArmBackgroundRecording() {
+        val app = RuntimeEnvironment.getApplication()
+        AirPlayPersistence.saveRunMode(app, CarPlayRunMode.PHONE_BROWSER)
+        shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        BrowserCarPlayAudioSettings.saveDisabled(app, true)
+        assertEquals(false, startedWithMicrophone())
+        BrowserCarPlayAudioSettings.saveDisabled(app, false)
+        shadowOf(app).denyPermissions(Manifest.permission.RECORD_AUDIO)
+        assertEquals(false, startedWithMicrophone())
     }
 
     // Car Bluetooth sound applies only in phone + browser mode: a head unit keeps its microphone, whatever was saved.

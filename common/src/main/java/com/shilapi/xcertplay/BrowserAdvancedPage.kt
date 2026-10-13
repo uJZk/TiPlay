@@ -43,7 +43,6 @@ internal class BrowserAdvancedPage(
 
     init {
         button(activity.getString(R.string.back), returnToMain)
-        heading(R.string.settings_browser_video)
         val rates = (AirPlayDisplaySettings.MIN_FPS..AirPlayDisplaySettings.MAX_FPS
             step AirPlayDisplaySettings.FPS_STEP).toList()
         lateinit var frameRate: Button
@@ -58,23 +57,22 @@ internal class BrowserAdvancedPage(
                     dialog.dismiss()
                 }.setNegativeButton(R.string.cancel, null).show()
         }
+        heading(R.string.carplay_controls)
+        BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_carplay_disable),
+            activity.getString(R.string.settings_carplay_disable_description), BrowserCarPlaySettings.disabled(activity), true) {
+            BrowserCarPlaySettings.setDisabled(activity, it)
+        }
         BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_browser_hevc_title),
             "", AirPlayPersistence.loadHevcEnabled(activity), true) {
             AirPlayPersistence.saveHevcEnabled(activity, it)
             configurationChanged()
         }
-        heading(R.string.audio)
         BrowserCarPlayAudioSettings.addControls(activity, content,
             toggle = { parent, title, description, value, save ->
                 BrowserNativeSettingsUi(activity).toggle(parent, title, description, value, true, save)
                 Unit
             }, changed = ::configurationChanged,
         )
-        heading(R.string.carplay_controls)
-        BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_carplay_disable),
-            activity.getString(R.string.settings_carplay_disable_description), BrowserCarPlaySettings.disabled(activity), true) {
-            BrowserCarPlaySettings.setDisabled(activity, it)
-        }
         BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.right_hand_drive),
             activity.getString(R.string.place_carplay_s_controls_closer_to_the_driver),
             AirPlayPersistence.loadRightHandDrive(activity), true) {

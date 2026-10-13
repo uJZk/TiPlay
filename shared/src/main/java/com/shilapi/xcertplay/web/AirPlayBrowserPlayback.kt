@@ -9,15 +9,18 @@ object AirPlayBrowserPlayback {
                      val ready: Boolean, val buffering: Boolean, val seekable: Boolean,
                      val kind: String = "video")
     private data class Entry(val id: Long, val state: () -> State,
-                             val control: (String, Double?) -> Unit)
+                             val control: (String, Double?) -> Unit, val video: AirPlayVideoPlayback?)
     private val ids = AtomicLong()
     private var current: Entry? = null
 
     @Synchronized
-    fun register(state: () -> State, control: (String, Double?) -> Unit): Closeable {
-        val entry = Entry(ids.incrementAndGet(), state, control)
+    fun register(state: () -> State, video: AirPlayVideoPlayback? = null, control: (String, Double?) -> Unit): Closeable {
+        val entry = Entry(ids.incrementAndGet(), state, control, video)
         current = entry
-        return Closeable { synchronized(this) { if (current === entry) current = null } }
+        return Closeable {
+            synchronized(this) { if (current === entry) current = null }
+            entry.video?.close()
+        }
     }
 
     @Synchronized
@@ -26,8 +29,14 @@ object AirPlayBrowserPlayback {
         val state = entry.state()
         return mapOf("id" to entry.id, "duration" to state.duration, "position" to state.position,
             "playing" to state.playing, "ready" to state.ready, "buffering" to state.buffering,
-            "seekable" to state.seekable, "kind" to state.kind)
+            "seekable" to state.seekable, "kind" to state.kind) + (entry.video?.source() ?: emptyMap())
     }
+
+    @Synchronized
+    fun video(id: Long): AirPlayVideoPlayback? = current?.takeIf { it.id == id }?.video
+
+    @Synchronized
+    fun report(id: Long, fields: Map<*, *>): Boolean = current?.takeIf { it.id == id }?.video?.report(fields) ?: false
 
     /** The playback ID prevents a delayed browser command controlling the next iPhone item. */
     @Synchronized

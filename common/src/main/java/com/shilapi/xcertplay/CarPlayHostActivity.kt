@@ -254,6 +254,11 @@ class CarPlayHostActivity : ComponentActivity() {
     private val wirelessPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             awaitingWirelessPermissions = false
+            val microphoneGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            val microphoneChanged = microphoneAvailable != microphoneGranted
+            microphoneAvailable = microphoneGranted
+            if (microphoneGranted) microphonePermissionResolved = true
+            if (microphoneChanged && browserConnectionRequested && controller != null) restartCarPlay("Microphone permission changed")
             wirelessPermissionsReady = hasRequiredWirelessPermissions()
             appendLog(
                 if (wirelessPermissionsReady) {
@@ -693,7 +698,7 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         microphoneAvailable =
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        microphonePermissionResolved = microphoneAvailable || !headUnitIntegrations()
+        microphonePermissionResolved = microphoneAvailable
         if (intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false) ||
             savedInstanceState?.getBoolean(CarPlaySettingsNavigation.MENU) == true) {
             settingsOnlyLaunch = savedInstanceState?.getBoolean("settings_only_launch") ?: !reusedBackgroundSession
@@ -781,6 +786,11 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun requestStartupPrerequisites() {
+        if (!headUnitIntegrations() && BrowserCarPlayAudioSettings.disabled(this)) microphonePermissionResolved = true
+        if (!microphonePermissionResolved && !BrowserCarPlayAudioSettings.disabled(this)) {
+            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
         if (locationReportingEnabled && !locationPermissionAvailable) {
             requestLocationPermission()
             return
@@ -912,6 +922,13 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!headUnitIntegrations()) {
+            val granted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            val changed = microphoneAvailable != granted
+            microphoneAvailable = granted
+            if (granted) microphonePermissionResolved = true
+            if (changed && controller != null) restartCarPlay("Microphone permission changed")
+        }
         AirPlayReceiverSettings.sync(this)
         if (!headUnitIntegrations()) syncBrowserAdvancedSettings()
         browserMainPage?.refresh()
@@ -3633,13 +3650,13 @@ class CarPlayHostActivity : ComponentActivity() {
             cluster = null,
             rightHandDrive = rightHandDrive,
             hevc = hevcEnabled,
-            microphone = !BrowserCarPlayAudioSettings.disabled(this),
+            microphone = microphoneAvailable && !BrowserCarPlayAudioSettings.disabled(this),
             manufacturer = normalizedManufacturer(),
             model = normalizedModel(),
             oemLabel = CarButtonDefaults.label(oemLabel, phoneBrowser = true),
             icons = listOf(loadAirPlayIcon()),
             videoInCar = false,
-            mainBufferedAudio = AirPlayPersistence.loadMainBufferedAudio(this) && !BrowserCarPlayAudioSettings.disabled(this),
+            mainBufferedAudio = !BrowserCarPlayAudioSettings.disabled(this),
             audioViaCarBluetooth = BrowserCarPlayAudioSettings.disabled(this),
         )
     }
@@ -3847,7 +3864,7 @@ class CarPlayHostActivity : ComponentActivity() {
         CarPlayMediaEngine(
             // Phone + browser mode: the main screen also goes to the car's browser, untouched.
             sink = TeslaBrowserLink.tee(sink, phoneBrowser = !headUnitIntegrations(), sink.videoWidth, sink.videoHeight, fps),
-            microphoneEnabled = receivesAudio && (!headUnitIntegrations() || microphoneAvailable),
+            microphoneEnabled = receivesAudio && microphoneAvailable,
             audioCaptureDirectory = if (receivesAudio) audioCaptureDirectory() else null,
         )
 
@@ -4090,7 +4107,6 @@ class CarPlayHostActivity : ComponentActivity() {
         if (CarPlayBackgroundSession.hasSession() && !CarPlayBackgroundSession.isOwner(this)) return
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || controller != null) return
         val controllerGeneration = restartGeneration
-        PrivilegedUsbAutoConfirm.prepare(this)
         val config = createRuntimeConfig()
         val effectiveSize = if (isMultiWindowActive() && !AirPlayPersistence.loadAdaptPipResolution(this) &&
             maximumDetectedWidthPixels >= size.width && maximumDetectedHeightPixels >= size.height &&

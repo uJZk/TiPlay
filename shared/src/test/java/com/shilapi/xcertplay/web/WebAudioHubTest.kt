@@ -6,22 +6,40 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class WebAudioHubTest {
-    @Test fun retiredProducerCannotPublishOrDeactivateReplacementMicrophone() {
+    @Test fun voiceTransitionsDiscardBufferedPcmAndSurviveAudioOwnershipUntilHardwareRelease() {
+        val hub = WebAudioHub(); val carPlay = Any(); val airPlay = Any()
+        hub.begin(carPlay); val reader = hub.subscribe()
+        hub.publish(carPlay, 0, 48000, 1, byteArrayOf(1, 0), buffered = true)
+        assertTrue(hub.voiceRoute(carPlay, "connecting", true))
+        val route = reader.take(10)!!
+        assertEquals(5, route[5].toInt()); assertEquals(16, route[7].toInt() and 16)
+        assertNull(reader.take(10))
+        hub.end(carPlay); hub.begin(airPlay)
+        val nextReader = hub.subscribe()
+        assertEquals(5, nextReader.take(10)!![5].toInt())
+        hub.publish(airPlay, 0, 48000, 1, byteArrayOf(2, 0))
+        assertNull(nextReader.take(10))
+        assertFalse(hub.voiceRoute(airPlay, "idle", false))
+        assertTrue(hub.voiceRoute(carPlay, "idle", false))
+        val released = nextReader.take(10)!!
+        assertEquals(0, released[7].toInt() and 16)
+        hub.publish(airPlay, 0, 48000, 1, byteArrayOf(3, 0))
+        assertEquals(3, nextReader.take(10)!![28].toInt())
+        nextReader.close()
+    }
+    @Test fun retiredProducerCannotPublishOrDeactivateReplacementAudio() {
         val hub = WebAudioHub()
         val old = Any(); val current = Any()
         hub.begin(old)
         val subscriber = hub.subscribe()
         hub.begin(current)
         repeat(5) { assertEquals(2, subscriber.take(1)!![7].toInt() and 2) }
-        var samples = 0
-        hub.microphone(current, 16000) { samples += it.size / 2 }
         hub.publish(old, 0, 48000, 2, ByteArray(8))
         hub.end(old)
         assertNull(subscriber.take(1))
-        assertTrue(hub.acceptMicrophone(ByteArray(640)))
-        assertEquals(320, samples)
+        hub.publish(current, 0, 48000, 1, byteArrayOf(4, 0))
+        assertEquals(4, subscriber.take(10)!![28].toInt())
         hub.end(current)
-        assertFalse(hub.acceptMicrophone(ByteArray(640)))
     }
 
     @Test fun recordMatchesBrowserFormatAndKeepsPcmLittleEndian() {
@@ -51,17 +69,13 @@ class WebAudioHubTest {
         assertNull(reader.take(1))
     }
 
-    @Test fun disabledAudioAndInvalidMicrophoneUploadsCannotReachIPhone() {
+    @Test fun disabledAudioRetiresTheReaderAndCannotPublishPcm() {
         val hub = WebAudioHub(); val owner = Any()
         hub.begin(owner); val reader = hub.subscribe()
-        var uploads = 0
-        hub.microphone(owner, 16000) { uploads++ }
-        assertFalse(hub.acceptMicrophone(ByteArray(3)))
-        assertFalse(hub.acceptMicrophone(ByteArray(3202)))
         hub.enabled = false
         assertTrue(reader.closed)
-        assertFalse(hub.acceptMicrophone(ByteArray(640)))
-        assertEquals(0, uploads)
+        hub.publish(owner, 0, 48000, 1, byteArrayOf(3, 0))
+        assertNull(reader.take(10))
     }
 
     @Test fun realtimeOverflowNeverDiscardsBufferedMusicAndFlushRetiresQueuedMedia() {
@@ -77,24 +91,6 @@ class WebAudioHubTest {
         assertEquals(28, reset.size)
         assertEquals(2, reset[7].toInt() and 2)
         assertNull(reader.take(1))
-    }
-
-    @Test fun microphoneDiagnosticsDistinguishSilenceRejectionAndDeliveryFailureWithoutRetainingSamples() {
-        val hub = WebAudioHub(); val owner = Any()
-        hub.begin(owner)
-        hub.microphone(owner, 16000) {}
-        assertTrue(hub.acceptMicrophone(byteArrayOf(0, 0, 0, 0x80.toByte())))
-        assertFalse(hub.acceptMicrophone(byteArrayOf(1)))
-        val status = hub.microphoneStatus()
-        assertEquals(1L, status["uploads"])
-        assertEquals(4L, status["bytes"])
-        assertEquals(32768, status["peak"])
-        assertEquals(1L, status["rejected"])
-        hub.microphone(owner, 16000) { throw IllegalStateException("test failure") }
-        try { hub.acceptMicrophone(ByteArray(640)); fail("expected delivery failure") }
-        catch (_: IllegalStateException) {}
-        assertEquals(1L, hub.microphoneStatus()["failures"])
-        assertEquals(0L, hub.microphoneStatus()["uploads"])
     }
 
     @Test fun presentationTimeAndStreamEpochSurvivePcmTransport() {

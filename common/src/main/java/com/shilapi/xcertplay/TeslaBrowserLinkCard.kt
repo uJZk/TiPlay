@@ -40,6 +40,7 @@ internal class TeslaBrowserLinkCard(
     private val actionRow: (parent: LinearLayout, text: String, click: () -> Unit) -> Unit,
     private val requestLocalNetwork: () -> Unit,
     private val rerender: () -> Unit,
+    private val compactEndpoint: Boolean = false,
 ) {
     private val app = activity.applicationContext
     private var probeToken: LatestSettingsProbe.Token? = null
@@ -64,11 +65,25 @@ internal class TeslaBrowserLinkCard(
         parent.addView(linkText(pageAddress))
         actionRow(parent, activity.getString(R.string.settings_browser_link_copy)) { copy(copyPageLink) }
         settingRow(parent, "${activity.getString(R.string.settings_browser_pairing_code)} · $code") { showPairingCode() }
-        parent.addView(note(activity.getString(R.string.settings_browser_android_address)).withTopPadding())
-        // Show the configured endpoint immediately while the hotspot probe is pending.
         val initialAddress = TeslaBrowserLink.browserAddress(app, null)
             ?: TeslaBrowserPageLinks.PAGE_DEFAULT_PHONE_ADDRESS
-        val endpoint = linkText("$initialAddress:${BrowserEndpointSettings.port(app)}").also(parent::addView)
+        val editable = HotspotExtraAddressSettings.method(app) != HotspotAddressMethod.NORMAL
+        val endpoint: TextView
+        if (!compactEndpoint) {
+            parent.addView(note(activity.getString(R.string.settings_browser_android_address)).withTopPadding())
+            endpoint = linkText("$initialAddress:${BrowserEndpointSettings.port(app)}").also(parent::addView)
+        } else if (editable) {
+            settingRow(parent, "${activity.getString(R.string.settings_browser_hotspot_address)} · $initialAddress:${BrowserEndpointSettings.port(app)}") {
+                HotspotExtraAddressCard(activity, indexing, colors, note, settingRow,
+                    { target, title, click -> android.widget.Button(activity).apply {
+                        text = title; setOnClickListener { click() }; target.addView(this)
+                    } }, rerender).editAddress()
+            }
+            endpoint = parent.getChildAt(parent.childCount - 1) as TextView
+        } else {
+            endpoint = linkText(activity.getString(R.string.settings_browser_hotspot_endpoint,
+                "$initialAddress:${BrowserEndpointSettings.port(app)}")).also(parent::addView)
+        }
         parent.addView(status)
         localNetworkRows(parent)
 
@@ -79,7 +94,8 @@ internal class TeslaBrowserLinkCard(
                 copyPageLink = connectionLink(hotspot)
                 val address = TeslaBrowserLink.browserAddress(app, hotspot)
                     ?: TeslaBrowserPageLinks.PAGE_DEFAULT_PHONE_ADDRESS
-                endpoint.text = "$address:${BrowserEndpointSettings.port(app)}"
+                endpoint.text = if (!compactEndpoint) "$address:${BrowserEndpointSettings.port(app)}" else if (editable) "${activity.getString(R.string.settings_browser_hotspot_address)} · $address:${BrowserEndpointSettings.port(app)}"
+                    else activity.getString(R.string.settings_browser_hotspot_endpoint, "$address:${BrowserEndpointSettings.port(app)}")
             }
         }
 
