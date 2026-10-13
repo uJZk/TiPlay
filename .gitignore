@@ -45,3 +45,6 @@ release-signing.properties
 
 # Local agent toolchains, build logs and scratch files
 /work/
+
+# Local browser vendor build dependencies
+/scripts/videojs/node_modules/

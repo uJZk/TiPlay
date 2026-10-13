@@ -47,13 +47,13 @@ iPhone 锁屏与解锁可能重复发送相同镜像配置而不发送新的 IDR
 
 复用 UxPlay 的 `playfair` 镜像传输密钥模块及传输握手回复表，保留许可证和出处；Android 侧的协议、发现、媒体和浏览器适配为 TiPlay 新文件。没有将 UxPlay 的桌面应用或 GStreamer 播放器搬入 Android。详见 [第三方说明](THIRD_PARTY_NOTICES.md) 和 [native 来源记录](../shared/src/main/jni/airplay/README.md)。
 
-保持这个边界便于跟进 UxPlay 的协议修复。URL 视频使用随网页发布的 Video.js 8.24.1 和 VHS：安卓端仅处理协议及资源反代，网页通过 HTML 视频播放器解码、控制并管理缓冲。播放状态沿已配对的控制通道反馈给 iPhone，播放 ID 和命令版本隔离过期状态。控制栏使用原生加载图标，没有全屏按钮；视频缓冲不会显示全屏等待界面。
+保持这个边界便于跟进 UxPlay 的协议修复。URL 视频使用随网页发布的 Video.js 10.1.0、v10 控件和官方 hls.js 适配器：安卓端仅处理协议及资源反代，网页通过 HTML 视频播放器解码、控制并管理缓冲。播放状态沿已配对的控制通道反馈给 iPhone，播放 ID 和命令版本隔离过期状态。控制栏使用 v10 加载图标，没有全屏按钮；视频缓冲不会显示全屏等待界面。
 
 - 屏幕镜像：独立的 legacy pair-setup / pair-verify、镜像传输密钥协商、SETUP / RECORD / TEARDOWN、NTP 计时和 AES-CTR 屏幕流。H.264 或 HEVC 配置与解密后的帧直接进入 `WebVideoHub`，按镜像头里的尺寸适配横竖屏，不在安卓端重新编码。HEVC 声明跟随现有 HEVC 设置，支持普通镜像的 `hvc1` 配置封装；浏览器仍必须支持对应 WebCodecs 解码器。横竖屏尺寸变化不等于实现了独立的 ScreenRotate 协议。镜像暂停标志保留最后画面并继续消费密文，恢复时不重置 CTR 状态。
 - 视频投放：HTTP `/play`、`/reverse`、`/rate`、`/scrub`、`/stop`、`/playback-info`。沿用 UxPlay 的 `unhandledURLRequest` / `/action` FCUP 交换，让 iPhone 应用提供其持有的 HLS 播放列表和资源；请求按播放会话、对端、URL 和请求 ID 关联。播放或会话结束、被新播放替换时取消对应请求。不会通过资源加载器请求 `skd` 密钥或安卓本地文件。
   加载被中断时，同一播放会话、对端和 URL 的后续加载在原有有界截止时间内复用仍待完成的请求；等待超时后释放。已消费的 FCUP 正文不做跨请求缓存。安卓端检测资源内容确定 HLS，不依赖扩展名，递归改写子清单、片段、初始化段和普通 AES-128 密钥到配对验证的会话资源 ID，保留 Range 和受限跳转。媒体按需流式转发，只有有大小上限的清单／FCUP 响应在内存中处理。当前 iPhone 对端的 HTTP(S) 地址跳过安卓反代；网页直连需要 iPhone 提供可用的 CORS 和网络条件。
 
-- 视频播放：网页 Video.js／VHS 解码未受 DRM 保护的 MP4／HLS；安卓不进行 URL 视频解码、转码或 PCM 输出。初始位置在网页元数据可用时应用，iPhone 滑块请求有短时合并；独立 seek 版本避免随后 pause／play 把新进度回滚。浏览器报告实际位置、准备状态、连续缓冲终点和可定位范围，缓冲期间保留播放意图，不伪造缓冲已满。
+- 视频播放：网页 Video.js／hls.js 解码未受 DRM 保护的 MP4／HLS；安卓不进行 URL 视频解码、转码或 PCM 输出。初始位置在网页元数据可用时应用，iPhone 滑块请求有短时合并；独立 seek 版本避免随后 pause／play 把新进度回滚。浏览器报告实际位置、准备状态、连续缓冲终点和可定位范围，缓冲期间保留播放意图，不伪造缓冲已满。
 - 图片投放：HTTP `PUT /photo` 接收 JPEG/PNG，支持会话隔离的 `cacheOnly` / `displayCached`；输入大小、缓存总量、键长度与解码尺寸均有界。后台缩小图片后通过相同 Surface 链路呈现，并低频重复静态帧以允许新加入浏览器获取关键帧。停止后清空缓存；不实现幻灯片调度。
 - 镜像声轨：参考 UxPlay `raop_buffer` 的逐包 CBC 解密及 `audio_renderer` 的 AAC-ELD AudioSpecificConfig。RTP 的 CSRC、扩展头与填充有边界检查，重复及迟到包丢弃，小幅乱序有有界等待；不请求 UDP 重传。不将 CarPlay 的 ChaCha20 音频解密套用到普通镜像。解码队列只保留短时实时音频，浏览器承担输出；当前声画同步依赖接收与浏览器实时调度，尚未将 RTP/NTP 时间锚点纳入音频呈现协议，不能宣称精确声画同步。
 - 后台与发现：默认启用的 connected-device 前台服务、CPU/Wi-Fi/多播锁；每个物理 IPv4 局域网接口使用一个主地址发布 Bonjour，定期跟踪热点地址变化。浏览器专用附加地址及接口别名不另建 Bonjour 实例，避免同一热点上的接收器互相判定名称冲突；不同物理接口使用不同主机名。接收器不需要 CarPlay 的 MFi 认证身份。启动期间允许同一局域网中的 iPhone 发起连接，不设置 AirPlay PIN；浏览器配对仍使用原有配对码。
@@ -80,7 +80,7 @@ Legacy 镜像初始 SETUP 的 `eventPort` 为 0，不能填写接收器控制监
 
 URL 视频的音画同步、解码队列和抗抖动由 Video.js／浏览器播放器管理。旧的安卓 Media3 播放、转码、PTS／Surface 时间映射，以及网页 URL 视频专用延迟策略已经删除。全局帧率设置仅影响 CarPlay 和 AirPlay 镜像，不改变 URL 视频的源帧率。修改帧率或 HEVC 更新镜像协商，不停止当前 URL 视频。
 
-URL 视频画面由 [airplay-canvas.js](../site/play/airplay-canvas.js) 呈现到独立 Canvas，复用 CarPlay 的 WebGL2／WebGL 绘制器，无法创建 WebGL 时回退到 2D。底层 `<video>` 保持运行但隐藏画面，Video.js 的控制栏、加载图标、字幕和声音继续工作。支持时使用 `requestVideoFrameCallback()`；兼容路径按动画回调检查视频帧计数，避免重复绘制。暂停保留最后画面，跳转完成、视频尺寸或容器尺寸变化时重绘；绘制缓冲不超过源视频的有效分辨率，不读取像素到 JavaScript。结束、换源和图片接管释放回调、尺寸观察器与 GPU 资源；WebGL 上下文恢复后重建绘制器。
+URL 视频画面由 [airplay-canvas.js](../site/play/airplay-canvas.js) 呈现到独立 Canvas，复用 CarPlay 的 WebGL2／WebGL 绘制器，无法创建 WebGL 时回退到 2D。底层 `<video>` 保持运行但隐藏画面，Video.js 的控制栏、加载图标和声音继续工作，原生／HLS 字幕由独立文本层呈现。支持时使用 `requestVideoFrameCallback()`；兼容路径按动画回调检查视频帧计数，避免重复绘制。暂停保留最后画面，跳转完成、视频尺寸或容器尺寸变化时重绘；绘制缓冲不超过源视频的有效分辨率，不读取像素到 JavaScript。结束、换源和图片接管释放回调、尺寸观察器与 GPU 资源；WebGL 上下文恢复后重建绘制器。
 
 2026-10-13 的 Chromium 验证覆盖 MP4 的 WebGL、2D、无视频帧回调三条路径及 HLS 的 WebGL 路径，检查实际动态像素、等比留黑、暂停／跳转／调整尺寸、上下文恢复、蓝牙静音、换源与释放。画布增加纹理上传和绘制成本；实际特斯拉浏览器的帧率、资源占用与音画偏差仍需实车测量。缓存版本为 v36。完整 Android CI 已尝试，但环境缺少 JDK 25，自动下载的 `api.foojay.io` 请求被网络策略以 HTTP 403 拒绝。
 

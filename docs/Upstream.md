@@ -8,7 +8,7 @@ TiPlay supports Android phone + car browser use only.
 | Upstream | Used for | Current baseline / provenance |
 | --- | --- | --- |
 | [DiPlay](https://github.com/shihabal3amri/DiPlay) | CarPlay receiver and shared Android code | `c30d3f0df` (0.2.19 plus main fixes through 2026-10-13); full Git merge ancestry. See [sync record](UPSTREAM-SYNC-2026-10-14.md). |
-| [Video.js](https://github.com/videojs/video.js) | Browser MP4/HLS playback, including bundled VHS | `8.24.1`; [vendored files and update instructions](../site/play/vendor/videojs/README.md). |
+| [Video.js](https://github.com/videojs/video.js) | Browser MP4/HLS playback and controls | `10.1.0` (`@videojs/html` and official hls.js adapter); [vendored files and update instructions](../site/play/vendor/videojs/README.md). |
 | [UxPlay](https://github.com/FDH2/UxPlay) | Ordinary AirPlay protocol reference, `playfair` transport keys and FairPlay reply tables | `ec203121355220dd90278a369eeabb0b8ba4f14a`; [native provenance](../shared/src/main/jni/airplay/README.md). |
 
 When updating these components, review upstream releases and changes since the recorded baseline,
@@ -75,8 +75,8 @@ integration branch and push only to `origin`.
 ## Updating Video.js and UxPlay
 
 **Video.js:** select an explicit release, download its official npm tarball and verify published
-integrity. Update the JS, CSS, translations and license together under `site/play/vendor/videojs/`.
-Review bundled VHS changes. Verify MP4/HLS playback, seeking, buffering, resource proxying,
+integrity. Use the pinned npm build inputs in `scripts/videojs/` and update the self-hosted ESM bundle,
+translations and licenses under `site/play/vendor/videojs/`. Review Video.js and hls.js adapter/engine changes. Verify MP4/HLS playback, seeking, buffering, resource proxying,
 iPhone playback controls and offline assets. Keep the deployed version pinned; use no runtime CDN.
 
 **UxPlay:** compare against the pinned commit and port relevant protocol fixes into TiPlay's

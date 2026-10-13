@@ -1,0 +1,15 @@
+{
+  "name": "tiplay-videojs-vendor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@videojs/html": "10.1.0",
+    "@videojs/hlsjs-video": "10.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

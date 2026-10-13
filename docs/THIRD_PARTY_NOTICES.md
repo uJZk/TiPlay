@@ -71,7 +71,8 @@ The maneuver PNGs under `shared/src/main/assets/byd-hud-icons` were imported fro
 
 ## Browser media
 
-- Video.js 8.24.1 and its bundled Video.js HTTP Streaming (VHS): Apache-2.0.
-  Distributed with the website under `site/play/vendor/videojs/`, with LICENSE and provenance.
+- Video.js 10.1.0 (`@videojs/html`, official `@videojs/hlsjs-video` adapter) and hls.js 1.6.19: Apache-2.0.
+  Distributed as a self-hosted ESM bundle under `site/play/vendor/videojs/`, with LICENSE,
+  dependency license texts, retained bundle notices and integrity-pinned build inputs.
 - Retained native SpeexDSP 1.2.1 compatibility code: BSD-style licence under
   `shared/src/main/jni/speexdsp/COPYING`. The browser ships no Speex/WASM AEC.

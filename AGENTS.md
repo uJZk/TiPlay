@@ -114,6 +114,9 @@ device installation, verification results and remaining vehicle checks.
 `docs/E2E-VALIDATION-2026-10-10.md` records the earlier local browser E2E results
 and system-proxy fix.
 
+See `docs/VIDEOJS-10-2026-10-14.md` for the v10 player migration, pinned self-hosted
+build, Canvas/caption integration and browser regression checks.
+
 ## Checks
 
 Run the CI command from `.github/workflows/android.yml` before you report a change as done:

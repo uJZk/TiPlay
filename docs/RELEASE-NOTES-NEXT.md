@@ -2,6 +2,10 @@
 
 TiPlay is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay). The source includes DiPlay 0.2.19 and subsequent main fixes through `c30d3f0df`; see [upstream sync](UPSTREAM-SYNC-2026-10-14.md) and [DiPlay 0.2.19 release notes](RELEASE-NOTES-0.2.19.md). Measured checks are in [VALIDATION.md](VALIDATION.md). Add future unreleased changes here.
 
+## Browser player
+
+- Migrate MP4/HLS playback to Video.js 10.1.0 and the official hls.js adapter. Retain Canvas rendering, iPhone playback state and commands, Bluetooth mute and captions; ship all assets and translations locally for offline opening.
+
 ## Rename
 
 - The project is now called TiPlay, with the package `com.ujzk.tiplay`. It installs alongside DiPlay and does not reuse DiPlay's settings or pairing records.

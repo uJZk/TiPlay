@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: GPL-3.0-only
+import '@videojs/html/video/player';
+import '@videojs/html/ui/container';
+import '@videojs/html/ui/controls';
+import '@videojs/html/ui/controls-content';
+import '@videojs/html/ui/play-button';
+import '@videojs/html/ui/seek-button';
+import '@videojs/html/ui/mute-button';
+import '@videojs/html/ui/captions-button';
+import '@videojs/html/ui/time-slider';
+import '@videojs/html/ui/volume-slider';
+import '@videojs/html/ui/slider-track';
+import '@videojs/html/ui/slider-buffer';
+import '@videojs/html/ui/slider-fill';
+import '@videojs/html/ui/slider-thumb';
+import '@videojs/html/ui/time';
+import '@videojs/html/ui/buffering-indicator';
+import '@videojs/html/media/hlsjs-video';
+import '@videojs/html/i18n';
+import '@videojs/html/i18n/locales/zh-CN/register';
+export { VERSION } from '@videojs/html';

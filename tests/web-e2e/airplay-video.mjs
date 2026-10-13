@@ -21,7 +21,7 @@ const server = createServer((req, res) => {
   if (path === '/harness') {
     res.setHeader('Content-Type', 'text/html');
     const csp=readFileSync(root+'/index.html','utf8').match(/<meta http-equiv="Content-Security-Policy"[^>]+>/)[0];
-    res.end(`${csp}<link rel="stylesheet" href="/vendor/videojs/video-js.min.css"><link rel="stylesheet" href="/airplay-controls.css"><script src="/vendor/videojs/video.min.js"></script><script src="/vendor/videojs/zh-CN.js"></script><div id="stage" style="position:relative;width:800px;height:480px"></div>`); return;
+    res.end(`${csp}<link rel="stylesheet" href="/airplay-controls.css"><div id="stage" style="position:relative;width:800px;height:480px"></div>`); return;
   }
   try { const data = readFileSync(root + path); res.setHeader('Content-Type', ({ '.js':'text/javascript', '.css':'text/css', '.wasm':'application/wasm' })[extname(path)] ?? 'application/octet-stream'); res.end(data); }
   catch { res.statusCode = 404; res.end(); }
@@ -38,7 +38,9 @@ try {
       HTMLVideoElement.prototype.cancelVideoFrameCallback = undefined;
     }
     window.pictures = [];
+    window.actualVideo = () => document.querySelector('hlsjs-video')?.target ?? document.querySelector('video');
     window.mediaResource = mode === 'hls' ? 'hls' : '0';
+    window.playerLanguage = mode === 'hls' ? 'zh' : 'en';
     const original = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = function(type, options) {
       if (mode === '2d' && type.startsWith('webgl')) return null;
@@ -60,49 +62,53 @@ try {
           hash = (Math.imul(hash, 31) + pixels[i] + 3 * pixels[i + 1] + 7 * pixels[i + 2]) | 0;
         }
         pictures.push({ type, hash, colored, width: canvas.width, height: canvas.height,
-          time: document.querySelector('video').currentTime, corner: Array.from(pixels.slice(0, 3)) });
+          time: actualVideo().currentTime, corner: Array.from(pixels.slice(0, 3)) });
         return result;
       };
       return context;
     };
   }, mode);
   const errors=[];page.on('pageerror', e=>errors.push(e.message));
+  page.on('console', message => { if (message.type() === 'error') console.log('console:',message.text()); });
+
   await page.goto(url+'/harness');
   const result = await page.evaluate(async () => {
     const {createAirPlayControls} = await import('/airplay-controls.js');
     window.events=[];
-    window.controls=createAirPlayControls(document.getElementById('stage'),event=>events.push(event),'en', {
+    window.controls=createAirPlayControls(document.getElementById('stage'),event=>events.push(event),playerLanguage, {
       fetchPhone:(route,init)=>fetch(route,init),
       credentials:()=>({code:'1234',session:'session'}),host:()=>location.host,
     });
     controls.update({id:1,resource:mediaResource,revision:0,seekRevision:0,target:0,fraction:false,playing:true});
-    await new Promise(r=>setTimeout(r,200));
-    const player=Object.values(videojs.getPlayers()).find(Boolean);
-    return {version:videojs.VERSION,active:controls.videoActive(),fullscreen:document.querySelectorAll('.vjs-fullscreen-control').length,
-      stop:document.querySelectorAll('.airplay-stop').length,spinner:document.querySelectorAll('.vjs-loading-spinner').length,
-      fill:player.hasClass('vjs-fill')};
+    for (let i=0; i<100 && !document.querySelector('video-player') && !events.some(e=>e.failed); i++) await new Promise(r=>setTimeout(r,50));
+    const player=document.querySelector('hlsjs-video') ?? actualVideo();
+    return {version:document.querySelector('video-player')?.dataset.version,active:controls.videoActive(),fullscreen:document.querySelectorAll('media-fullscreen-button,media-pip-button').length,
+      stop:document.querySelectorAll('.airplay-stop').length,spinner:document.querySelectorAll('media-buffering-indicator').length,
+      fill:document.querySelector('media-container')?.clientHeight === 480};
   });
   console.log(JSON.stringify({result,errors}));
-  if(errors.length || result.fullscreen!==0 || result.stop!==1 || result.spinner!==1 || !result.fill) throw new Error('Player integration failed');
+  if(result.version !== '10.1.0' || errors.length || result.fullscreen!==0 || result.stop!==1 || result.spinner!==1 || !result.fill) throw new Error('Player integration failed');
   await page.waitForFunction(()=>events.some(event=>event.k==='ap-state' && event.ready && event.duration>0));
   await page.waitForFunction(()=>new Set(pictures.filter(p=>p.colored).map(p=>p.hash)).size>=2);
-  const picture = await page.evaluate(() => ({ ...pictures.at(-1), opacity: getComputedStyle(document.querySelector('video')).opacity,
+  const picture = await page.evaluate(() => ({ ...pictures.at(-1), opacity: getComputedStyle(actualVideo()).opacity,
     canvases: document.querySelectorAll('.airplay-canvas').length }));
   if (!picture.colored || picture.opacity !== '0' || picture.canvases !== 1 || picture.width > 320 || picture.corner.some(Boolean))
     throw new Error('Canvas pixels, source resolution cap, native video hiding or letterboxing failed');
   if ((mode === '2d') !== (picture.type === '2d')) throw new Error('Unexpected canvas renderer');
   console.log(`${mode}: moving video pictures reached the canvas with native video hidden`);
+  if (mode === 'hls' && !/[\u4e00-\u9fff]/.test(await page.locator('media-play-button').getAttribute('aria-label')))
+    throw new Error('Chinese controls did not use the bundled locale');
   const progress = await page.evaluate(() => {
-    const player=Object.values(videojs.getPlayers()).find(Boolean);
-    player.pause(); player.currentTime(Math.min(0.25,player.duration()/3)); const before=player.currentTime();
+    const player=document.querySelector('hlsjs-video') ?? actualVideo();
+    player.pause(); player.currentTime = Math.min(0.25,player.duration/3); const before=player.currentTime;
     controls.update({id:1,resource:mediaResource,revision:1,seekRevision:0,target:0,fraction:false,playing:false});
-    const paused=player.currentTime();
-    const target=Math.min(0.4,player.duration()/2);
+    const paused=player.currentTime;
+    const target=Math.min(0.4,player.duration/2);
     controls.update({id:1,resource:mediaResource,revision:2,seekRevision:1,target,fraction:false,playing:false});
-    return {before,paused,target,seeked:player.currentTime()};
+    return {before,paused,target,seeked:player.currentTime};
   });
   if(Math.abs(progress.before-progress.paused)>0.01||Math.abs(progress.target-progress.seeked)>0.01)throw new Error('Rate change rolled back progress or new seek was ignored');
-  await page.waitForFunction(target => !document.querySelector('video').seeking && Math.abs(pictures.at(-1).time-target)<0.03, progress.target);
+  await page.waitForFunction(target => !actualVideo().seeking && Math.abs(pictures.at(-1).time-target)<0.03, progress.target);
   await page.waitForTimeout(150);
   const pausedFrames = await page.evaluate(()=>pictures.length);
   await page.waitForTimeout(150);
@@ -121,27 +127,46 @@ try {
     await page.waitForFunction(()=>pictures.length>beforeRestore && pictures.at(-1).colored);
   }
   const muted = await page.evaluate(async () => {
-    const player=Object.values(videojs.getPlayers()).find(Boolean);
-    controls.audioMuted(true); const blocked=player.muted();
-    player.muted(false); await new Promise(resolve=>setTimeout(resolve,50)); const enforced=player.muted();
-    controls.audioMuted(false); return {blocked,enforced,restored:!player.muted()};
+    const player=document.querySelector('hlsjs-video') ?? actualVideo();
+    controls.audioMuted(true); const blocked=player.muted;
+    player.muted = false; await new Promise(resolve=>setTimeout(resolve,50)); const enforced=player.muted;
+    controls.audioMuted(false); return {blocked,enforced,restored:!player.muted};
   });
   if(!muted.blocked || !muted.enforced || !muted.restored) throw new Error('Bluetooth route did not gate HTML video audio');
-  await page.locator('.vjs-play-control').click();
-  await page.waitForFunction(target=>!document.querySelector('video').paused && pictures.at(-1).time>target+0.05, progress.target);
-  await page.locator('.vjs-play-control').click();
-  if(!await page.evaluate(()=>document.querySelector('video').paused)) throw new Error('Canvas intercepted player controls');
-  await page.evaluate(()=>{
-    const player=Object.values(videojs.getPlayers()).find(Boolean);
-    player.currentTime(player.duration()-0.15); player.play();
+  await page.evaluate(() => {
+    const track = actualVideo().addTextTrack('captions', 'English', 'en');
+    track.addCue(new VTTCue(0, 3, '<b>caption</b>')); track.mode = 'showing';
   });
-  await page.waitForFunction(()=>document.querySelector('video').ended);
+  await page.waitForFunction(() => document.querySelector('.airplay-captions')?.textContent === 'caption');
+  if (mode === 'webgl' && process.env.TEST_PLAYER_SCREENSHOT)
+    await page.screenshot({ path: process.env.TEST_PLAYER_SCREENSHOT, fullPage: true });
+  if (await page.locator('.airplay-captions b').count()) throw new Error('Caption text was interpreted as markup');
+  await page.locator('media-captions-button').click();
+  await page.waitForFunction(() => document.querySelector('.airplay-captions').hidden);
+
+  await page.locator('media-play-button').click();
+  await page.waitForFunction(target=>!actualVideo().paused && pictures.at(-1).time>target+0.05, progress.target);
+  await page.locator('media-play-button').click();
+  if(!await page.evaluate(()=>actualVideo().paused)) throw new Error('Canvas intercepted player controls');
+  const slider = page.locator('media-time-slider');
+  const bounds = await slider.boundingBox();
+  await slider.click({ position: { x: bounds.width * 0.55, y: bounds.height / 2 } });
+  await page.waitForFunction(() => Math.abs(actualVideo().currentTime / actualVideo().duration - 0.55) < 0.05);
+
+  await page.evaluate(()=>{
+    const player=document.querySelector('hlsjs-video') ?? actualVideo();
+    player.currentTime = player.duration-0.15; player.play();
+  });
+  await page.waitForFunction(()=>actualVideo().ended);
   await page.waitForTimeout(100);
   const endedFrames=await page.evaluate(()=>pictures.length);
   await page.waitForTimeout(100);
   if(await page.evaluate(()=>pictures.length)!==endedFrames) throw new Error('Ended video keeps drawing');
+  await page.locator('.airplay-stop').click();
+  if (!await page.evaluate(() => events.some(event => event.k === 'ap' && event.id === 1 && event.a === 'stop')))
+    throw new Error('Stop control did not reach the iPhone');
   await page.evaluate(()=>controls.update(null));
-  if(await page.locator('.video-js').count()) throw new Error('Player not disposed');
+  if(await page.locator('video-player').count()) throw new Error('Player not disposed');
   if(await page.locator('.airplay-canvas').count()) throw new Error('Canvas not disposed');
   const disposedFrames=await page.evaluate(()=>pictures.length);
   await page.waitForTimeout(100);
@@ -160,4 +185,5 @@ try {
   if(errors.length) throw new Error(`Browser errors: ${errors.join('; ')}`);
   await page.close();
   }
+  console.log('AirPlay MP4/HLS Video.js v10 checks passed');
 } finally {await browser.close();await new Promise(r=>server.close(r));}

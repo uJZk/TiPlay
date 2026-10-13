@@ -432,6 +432,10 @@ async function main() {
     await page.reload();
     await waitFor('decoding from the cached page', () => eventsOf(phone, 'dec').length > decodedOnline);
     check(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)), 'the page reloaded from the Service Worker cache and decoded again');
+    check(await page.evaluate(async () => {
+      await import('./videojs-player.js');
+      return Boolean(customElements.get('video-player') && customElements.get('hlsjs-video'));
+    }), 'Video.js v10 and the HLS adapter load from the offline cache');
     const offline = await download.goto(`${origin}${DOWNLOAD_PATH}`).then(() => null, error => error.message.split('\n')[0]);
     check(offline !== null, `without the page server the download page stays offline (${offline}): the worker never caches it`);
     await download.close();
