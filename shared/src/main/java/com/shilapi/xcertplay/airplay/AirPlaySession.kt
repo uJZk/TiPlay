@@ -613,10 +613,7 @@ class AirPlaySession(
                         "audioLatencies=${(info["audioLatencies"] as? List<*>)?.size ?: 0}",
                 )
                 debugLog(AirPlayAudioDiagnostics.info(config, info))
-                debugLog(
-                    "airplay /info videoInCar=${config.videoInCar} " +
-                        "videoPlaybackAllowed=${if (config.videoInCar) VideoInCar.allowed else "not-offered"}",
-                )
+                debugLog("airplay /info videoInCar=${config.videoInCar}")
                 debugLog("airplay /info displays=${info["displays"]}")
                 RtspMessage.Response(
                     headers = mapOf("Content-Type" to PLIST_CONTENT_TYPE),

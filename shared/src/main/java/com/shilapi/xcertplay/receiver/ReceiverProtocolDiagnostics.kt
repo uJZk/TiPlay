@@ -5,7 +5,7 @@ import com.shilapi.xcertplay.airplay.RtspMessage
 /** Control-flow metadata only. Never formats headers, payloads, identities, URLs or exception messages. */
 internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
     enum class Stage { ACCEPT, READ, DISPATCH, WRITE, CLOSE }
-    enum class ResourceStage { UNAVAILABLE, REQUEST, RESPONSE, COMPLETE, TIMEOUT, CANCELLED, FAILURE }
+    enum class ResourceStage { UNAVAILABLE, REQUEST, REUSED, RESPONSE, COMPLETE, TIMEOUT, CANCELLED, FAILURE }
 
     fun resource(stage: ResourceStage, requestId: Long = 0, status: Int? = null, bytes: Int? = null) {
         emit("resource stage=$stage request=$requestId" + (status?.let { " status=$it" } ?: "") +
@@ -16,8 +16,11 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
 
     fun request(connection: Long, request: RtspMessage.Request) {
         val method = request.method.takeIf { it in METHODS } ?: "OTHER"
-        val path = request.path.substringBefore('?').takeIf { it in PATHS } ?: "OTHER"
+        val path = receiverRequestPath(request.path).takeIf { it in PATHS } ?: "OTHER"
         emit("c=$connection stage=REQUEST method=$method path=$path bodyBytes=${request.body.size}")
+        if (path in ReceiverVideoControlDiagnostics.paths || path == "OTHER") {
+            emit("c=$connection stage=VIDEO_CONTROL ${ReceiverVideoControlDiagnostics.describe(request.path)}")
+        }
         if (method == "GET_PARAMETER") {
             val parameters = request.body.toString(Charsets.US_ASCII).lineSequence()
                 .filter(String::isNotBlank).take(16).map { line ->
@@ -82,6 +85,7 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
         private val METHODS = setOf("GET", "POST", "PUT", "OPTIONS", "SETUP", "RECORD", "TEARDOWN",
             "GET_PARAMETER", "SET_PARAMETER", "FLUSH", "ANNOUNCE")
         private val PATHS = setOf("/", "/info", "/server-info", "/pair-setup", "/pair-verify", "/fp-setup",
-            "/reverse", "/play", "/action", "/stop", "/scrub", "/rate", "/playback-info", "/feedback")
+            "/reverse", "/play", "/action", "/stop", "/scrub", "/rate", "/playback-info", "/feedback",
+            "/getProperty", "/setProperty", "/fp-setup2", "/auth-setup", "/audioMode", "/command", "/event", "/volume")
     }
 }

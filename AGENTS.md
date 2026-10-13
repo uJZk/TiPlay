@@ -35,6 +35,7 @@ See `docs/AIRPLAY.md` for the experimental ordinary AirPlay mirror/video receive
 the pinned UxPlay reference, retained CarPlay display pause/resume contract and validation limits.
 Remaining receiver compatibility, CarPlay audio continuity, browser audio timestamp scheduling and vehicle checks are in `docs/todo.md`.
 Local device evidence and the next-session handoff are in ignored `agent_docs/adb-fixes/HANDOFF.md`; keep secrets and device captures out of commits.
+Ordinary AirPlay video routing, app-specific device evidence and the next playback-architecture handoff are in ignored `agent_docs/airplay-route/HANDOFF.md`.
 See `docs/AIRPLAY-TIE-UP-2026-10-12.md` for verification, integration and remaining device checks.
 See `docs/todo.md` under "AirPlay 轻量信任设备机制" for the pending approval, remembered-device and takeover-protection work; it is not implemented yet.
 

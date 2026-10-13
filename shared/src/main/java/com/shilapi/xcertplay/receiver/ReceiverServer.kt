@@ -15,7 +15,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
-import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
@@ -52,12 +52,9 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
     private var photoSession: Pair<InetAddress, String>? = null
     private var photos = ReceiverPhotos()
     private val reverse = ConcurrentHashMap<String, Connection>()
-    private val resourceIds = AtomicLong()
     private val connectionIds = AtomicLong()
     private val diagnostics = ReceiverProtocolDiagnostics(listener::log)
-    private data class PendingResource(val session: String, val peer: InetAddress, val url: String,
-                                       val future: CompletableFuture<ReceiverResource?> = CompletableFuture())
-    private val resources = ConcurrentHashMap<Long, PendingResource>()
+    private val resources = ReceiverResourceRequests()
     val port: Int get() = server.localPort
 
     internal fun reportTrial(stage: UnifiedAirPlayStage) { runCatching { listener.log("unifiedTrial stage=$stage") } }
@@ -146,7 +143,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
             listener.stopPlayback()
         }
         reverse.clear()
-        resources.values.forEach { it.future.complete(null) }; resources.clear()
+        resources.clear()
     }
 
     /** Playback updates use the iPhone's reverse HTTP channel, never the browser's control channel. */
@@ -160,7 +157,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
         playbackEvent("stopped")
         playbackPeer = null; playbackId = null
         photos = ReceiverPhotos(); photoSession = null
-        resources.values.forEach { it.future.complete(null) }; resources.clear()
+        resources.clear()
         listener.stopPlayback()
         listener.status("listening")
     }
@@ -168,39 +165,52 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
     /** An iPhone app may own its HLS playlists. Request them on reverse HTTP, as UxPlay does. */
     fun loadResource(url: String): ReceiverResource? {
         if (!com.shilapi.xcertplay.airplay.VideoInCar.isPlayableUrl(url, iphoneLoadsAppSchemes = true)) return null
-        val (requestId, pending, channel) = synchronized(ownership) {
-            if (closed.get() || resources.size >= 16) return null
-            val pending = PendingResource(playbackId ?: return null, playbackPeer ?: return null, url)
-            val channel = reverse[pending.session] ?: run {
+        val (acquisition, channel) = synchronized(ownership) {
+            if (closed.get()) return null
+            val session = playbackId ?: return null
+            val peer = playbackPeer ?: return null
+            val channel = reverse[session] ?: run {
                 diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.UNAVAILABLE)
                 return null
             }
-            val requestId = resourceIds.incrementAndGet()
-            resources[requestId] = pending
-            Triple(requestId, pending, channel)
+            val acquisition = resources.acquire(session, peer, url) ?: return null
+            acquisition to channel
         }
+        val pending = acquisition.pending
+        val requestId = pending.id
+        var interrupted = false
         try {
-            diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.REQUEST, requestId)
-            channel.sendEvent(receiverXml(mapOf("sessionID" to 1, "type" to "unhandledURLRequest", "request" to mapOf(
-                "FCUP_Response_ClientInfo" to 1, "FCUP_Response_ClientRef" to 40030004,
-                "FCUP_Response_RequestID" to requestId, "FCUP_Response_URL" to url,
-                "FCUP_Response_IsContentKeyRequest" to false, "sessionID" to 1,
-                "FCUP_Response_Headers" to mapOf("X-Playback-Session-Id" to pending.session,
-                    "User-Agent" to "AppleCoreMedia/1.0.0.11B554a (Apple TV; U; CPU OS 7_0_4 like Mac OS X; en_us)"),
-            ))), pending.session)
-            return pending.future.get(10, TimeUnit.SECONDS).also {
+            diagnostics.resource(if (acquisition.created) ReceiverProtocolDiagnostics.ResourceStage.REQUEST
+                else ReceiverProtocolDiagnostics.ResourceStage.REUSED, requestId)
+            if (acquisition.created) {
+                channel.sendEvent(receiverXml(mapOf("sessionID" to 1, "type" to "unhandledURLRequest", "request" to mapOf(
+                    "FCUP_Response_ClientInfo" to 1, "FCUP_Response_ClientRef" to 40030004,
+                    "FCUP_Response_RequestID" to requestId, "FCUP_Response_URL" to url,
+                    "FCUP_Response_IsContentKeyRequest" to false, "sessionID" to 1,
+                    "FCUP_Response_Headers" to mapOf("X-Playback-Session-Id" to pending.session,
+                        "User-Agent" to "AppleCoreMedia/1.0.0.11B554a (Apple TV; U; CPU OS 7_0_4 like Mac OS X; en_us)"),
+                ))), pending.session)
+            }
+            return pending.future.get(resources.remainingNanos(pending), TimeUnit.NANOSECONDS).also {
                 diagnostics.resource(if (it == null) ReceiverProtocolDiagnostics.ResourceStage.CANCELLED
                     else ReceiverProtocolDiagnostics.ResourceStage.COMPLETE, requestId)
             }
         } catch (_: InterruptedException) {
+            interrupted = true
             diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.CANCELLED, requestId)
             Thread.currentThread().interrupt(); return null
         } catch (_: TimeoutException) {
+            resources.expire(pending)
             diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.TIMEOUT, requestId); return null
+        } catch (error: ExecutionException) {
+            diagnostics.resource(if (error.cause is TimeoutException) ReceiverProtocolDiagnostics.ResourceStage.TIMEOUT
+                else ReceiverProtocolDiagnostics.ResourceStage.FAILURE, requestId)
+            return null
         } catch (_: Exception) {
             diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.FAILURE, requestId); return null
         }
-        finally { resources.remove(requestId, pending) }
+        // Interrupted loaders leave the exchange available for the next seek load until its deadline.
+        finally { if (!interrupted && pending.future.isDone) resources.remove(pending) }
     }
 
     private inner class Connection(private val socket: Socket, private val featuresOverride: Long? = null,
@@ -305,7 +315,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
         }
 
         fun dispatch(request: RtspMessage.Request): RtspMessage.Response {
-            val path = request.path.substringBefore('?')
+            val path = receiverRequestPath(request.path)
             val query = receiverQuery(request.path)
             val id = request.headers["x-apple-session-id"] ?: "default"
             require(id.matches(Regex("[A-Za-z0-9._-]{1,128}")))
@@ -366,7 +376,7 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                         if (closed.get()) return busy()
                         if ((owner != null && owner !== this) || (playbackPeer != null && playbackPeer != peer)) return busy()
                         owner?.closeMedia(); owner = null
-                        resources.values.forEach { it.future.complete(null) }; resources.clear()
+                        resources.clear()
                         playbackPeer = peer; playbackId = id
                         listener.play(item); listener.status("video")
                     }
@@ -403,6 +413,14 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                     pending.future.complete(ReceiverResource(params["FCUP_Response_Data"] as? ByteArray,
                         (params["FCUP_Response_StatusCode"] as? Number)?.toInt(), location))
                     return RtspMessage.Response()
+                }
+                ReceiverVideoProperties.handles(request) -> {
+                    synchronized(ownership) {
+                        if (path != "/fp-setup2" && (playbackPeer != peer || playbackId != id)) {
+                            return RtspMessage.Response(status = 403, statusText = "Forbidden")
+                        }
+                        return ReceiverVideoProperties.response(request)
+                    }
                 }
                 path in listOf("/stop", "/scrub", "/rate", "/playback-info") -> {
                     synchronized(ownership) {

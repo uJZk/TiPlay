@@ -1,8 +1,5 @@
 package com.shilapi.xcertplay.airplay
 
-import java.math.BigInteger
-import java.util.Base64
-
 /** Whether the latest video availability update was sent now or retained for a later AirPlay stage. */
 internal enum class VideoPlaybackDelivery { SENT, QUEUED, UNCHANGED }
 
@@ -61,7 +58,7 @@ internal class VideoPlaybackAvailability(
  * drives playback; the head unit plays it in its own player. Observed with an iPhone on iOS 27 and
  * checked against Apple's CarPlay Simulator (Additional Tools for Xcode 27) and its AirPlay web app.
  *
- * - /info carries [info] (videoPlaybackInfo); SETUP then enables the [FEATURE] the iPhone proposes.
+ * - SETUP enables the [FEATURE] when configured and proposed by the iPhone.
  * - The iPhone opens a [SETTINGS_CHANNEL_UUID] data stream (see VideoSettingsChannel) and, to play,
  *   a remote control session without a socket ([REMOTE_CONTROL_UUIDS], controlType 1). Its messages
  *   arrive as POST /command with X-Apple-StreamID and {params: {data: bplist}} and are answered the
@@ -89,9 +86,6 @@ object VideoInCar {
     /** Whether video may play now; the host sets it from the car's gear (P only). */
     @Volatile var allowed = false
 
-    /** Bits the AirPlay web app's manifest adds to the legacy feature bits (featureList.additionalAirPlayFeatures). */
-    private val ADDITIONAL_FEATURE_BITS = listOf(0, 64)
-
     /** A URL scheme an app could serve through its resource loader. */
     private val APP_SCHEME = Regex("[a-z][a-z0-9+.-]*")
 
@@ -104,32 +98,6 @@ object VideoInCar {
         return scheme == "http" || scheme == "https" ||
             (iphoneLoadsAppSchemes && APP_SCHEME.matches(scheme) && scheme !in NOT_APP_SCHEMES)
     }
-
-    /** The legacy AirPlay feature bits plus [ADDITIONAL_FEATURE_BITS], as base64 of the little-endian bit set. */
-    fun featuresEx(legacyFeatures: Long): String {
-        var bits = BigInteger.valueOf(legacyFeatures)
-        ADDITIONAL_FEATURE_BITS.forEach { bits = bits.setBit(it) }
-        val littleEndian = bits.toByteArray().reversedArray().dropLastWhile { it == 0.toByte() }.toByteArray()
-        return Base64.getEncoder().encodeToString(littleEndian)
-    }
-
-    /**
-     * /info videoPlaybackInfo. The capabilities follow the web app's playerCapabilities, with what this
-     * player cannot do turned off.
-     */
-    fun info(legacyFeatures: Long, allowed: Boolean): Map<String, Any?> = linkedMapOf(
-        "videoPlaybackAllowed" to allowed,
-        "featuresEx" to featuresEx(legacyFeatures),
-        "playbackCapabilities" to linkedMapOf(
-            "supportsOfflineHLS" to false,
-            "supportsAirPlayVideoWithSharePlay" to false,
-            "supportsInterstitials" to false,
-            "supportsIntegratedTimeline" to false,
-            "supportsAVMetrics" to false,
-            "supportsUIForAudioOnlyContent" to true,
-            "supportsFPSSecureStop" to false,
-        ),
-    )
 
     /** A queued media item the car can play. */
     data class Item(val uuid: Any?, val url: String, val startMillis: Int)

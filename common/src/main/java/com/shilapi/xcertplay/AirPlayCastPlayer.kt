@@ -51,6 +51,23 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
     private var closed = false
     private var requestedPlaying = true
     private var requestedSeek: Double? = null
+    private val initialSeek = AirPlayCastInitialSeek()
+    private val playback = AirPlayCastPlayback()
+    private var reportedState: String? = null
+    private val iphoneSeek = AirPlaySeekCoalescer(
+        schedule = { task, delay -> main.postDelayed(task, delay) },
+        cancelScheduled = main::removeCallbacks,
+    ) { seconds ->
+        if (!closed) {
+            player?.let {
+                initialSeek.applied(seconds)
+                diagnostics.seek(AirPlayVideoDiagnostics.SeekOrigin.IPHONE, (seconds * 1000).toLong(),
+                    it.currentPosition, it.duration)
+                it.seekTo((seconds * 1000).toLong())
+            }
+            update()
+        }
+    }
     private var browserControls: Closeable? = null
     @Volatile private var seekable = false
     @Volatile var state = ReceiverPlayback()
@@ -69,7 +86,17 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
             if (!closed && generation == token) when (action) {
                 "play" -> setPlaying(true)
                 "pause" -> setPlaying(false)
-                "seek" -> { requestedSeek = value; player?.seekTo((requireNotNull(value) * 1000).toLong()) }
+                "seek" -> {
+                    iphoneSeek.cancel()
+                    requestedSeek = value
+                    val seconds = requireNotNull(value)
+                    initialSeek.applied(seconds)
+                    val current = player
+                    diagnostics.seek(AirPlayVideoDiagnostics.SeekOrigin.BROWSER, (seconds * 1000).toLong(),
+                        current?.currentPosition, current?.duration)
+                    current?.seekTo((seconds * 1000).toLong())
+                    update()
+                }
                 "stop" -> { stopNow(); stateChanged("stopped") }
             }
         } })
@@ -166,19 +193,17 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                 })
                 if (playbackState == Player.STATE_READY && !initialSeekDone) {
                     initialSeekDone = true
-                    val seconds = requestedSeek ?: if (item.fraction && exo.duration > 0) item.start.coerceAtMost(1.0) * exo.duration / 1000.0 else item.start
-                    if (seconds > 0) exo.seekTo((seconds * 1000).toLong())
+                    iphoneSeek.cancel()
+                    initialSeek.afterReadyMillis(item, exo.duration, requestedSeek)?.let { millis ->
+                        diagnostics.stage(AirPlayVideoDiagnostics.Stage.INITIAL_SEEK, millis)
+                        exo.seekTo(millis)
+                    }
                 }
-                update()
-                stateChanged(when (playbackState) {
-                    Player.STATE_ENDED -> "stopped"
-                    Player.STATE_BUFFERING -> "loading"
-                    else -> if (exo.isPlaying) "playing" else "paused"
-                })
+                reportPlaybackState()
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) { if (generation == token) {
                 diagnostics.stage(if (isPlaying) AirPlayVideoDiagnostics.Stage.PLAYING else AirPlayVideoDiagnostics.Stage.PAUSED)
-                update(); stateChanged(if (isPlaying) "playing" else "paused")
+                reportPlaybackState()
             } }
             override fun onPlayerError(error: PlaybackException) { if (generation == token) {
                 // An app's opaque URL may select the progressive source before FCUP returns HLS.
@@ -188,7 +213,8 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                     hlsSourceSelected = true
                     diagnostics.stage(AirPlayVideoDiagnostics.Stage.SOURCE_HLS)
                     exo.setMediaItem(MediaItem.Builder().setUri(item.url)
-                        .setMimeType(MimeTypes.APPLICATION_M3U8).build())
+                        .setMimeType(MimeTypes.APPLICATION_M3U8).build(),
+                        initialSeek.preparationMillis(item, requestedSeek))
                     exo.playWhenReady = requestedPlaying
                     exo.prepare()
                     return
@@ -199,7 +225,9 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                 fail()
             } }
         })
-        exo.setMediaItem(MediaItem.fromUri(item.url))
+        val startMillis = initialSeek.preparationMillis(item, requestedSeek)
+        diagnostics.stage(AirPlayVideoDiagnostics.Stage.PREPARE_POSITION, startMillis)
+        exo.setMediaItem(MediaItem.fromUri(item.url), startMillis)
         diagnostics.stage(AirPlayVideoDiagnostics.Stage.PREPARE)
         exo.playWhenReady = requestedPlaying
         exo.prepare()
@@ -215,21 +243,23 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
     private fun update() {
         val current = player ?: return
         seekable = current.isCurrentMediaItemSeekable && current.duration > 0
-        state = ReceiverPlayback(
-            duration = (current.duration.coerceAtLeast(0) / 1000.0),
-            position = current.currentPosition.coerceAtLeast(0) / 1000.0,
-            rate = if (current.isPlaying) 1.0 else 0.0,
-            ready = current.playbackState == Player.STATE_READY,
-            buffering = current.playbackState == Player.STATE_BUFFERING,
-        )
+        state = playback.snapshot(current.playbackState, current.duration, current.currentPosition,
+            current.bufferedPosition, requestedPlaying, seekable)
+    }
+
+    private fun reportPlaybackState() {
+        update()
+        val current = player ?: return
+        val next = playback.event(current.playbackState, requestedPlaying)
+        if (next != reportedState) { reportedState = next; stateChanged(next) }
     }
 
     fun seek(seconds: Double) = main.post { if (!closed) {
         requestedSeek = seconds
-        player?.seekTo((seconds * 1000).toLong()); update()
+        iphoneSeek.request(seconds)
     } }
     fun rate(value: Double) = main.post { if (!closed) {
-        setPlaying(value != 0.0); update()
+        setPlaying(value != 0.0)
     } }
 
     private fun setPlaying(playing: Boolean) {
@@ -239,11 +269,16 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
         if (playing && !requestedPlaying && current != null) current.seekTo(current.currentPosition)
         requestedPlaying = playing
         current?.playWhenReady = playing
+        reportPlaybackState()
     }
-    fun stop() = main.post { stopNow() }
+    fun stop(afterStop: () -> Unit = {}) = main.post { stopNow(); afterStop() }
     private fun fail() { stopNow(); stateChanged("failed") }
     private fun stopNow() {
         browserControls?.close(); browserControls = null
+        iphoneSeek.cancel()
+        initialSeek.reset()
+        playback.reset()
+        reportedState = null
         seekable = false
         if (player != null || video != null) diagnostics.stage(AirPlayVideoDiagnostics.Stage.STOP)
         generation++

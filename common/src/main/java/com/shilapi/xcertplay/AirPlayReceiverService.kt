@@ -37,6 +37,7 @@ class AirPlayReceiverService : Service() {
     @Volatile private var server: ReceiverServer? = null // worker creates/closes; callbacks may read
     private lateinit var player: AirPlayCastPlayer
     private val displayLock = Any()
+    private var displayGeneration = 0L // guarded by displayLock
     @Volatile private var mirrorOutput: WebMediaSink? = null
     private var mirrorAudio: AirPlayMirrorAudio? = null
     private var discovery: ReceiverBonjour? = null // worker only
@@ -88,6 +89,7 @@ class AirPlayReceiverService : Service() {
                     override fun log(message: String) { Log.i("tiplay-airplay", message) }
                     override fun mirrorSink(): WebMediaSink = synchronized(displayLock) {
                         check(!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService))
+                        displayGeneration++
                         mirrorAudio?.close(); mirrorAudio = null
                         TeslaBrowserLink.pauseCarPlayDisplay()
                         WebMediaSink(TeslaBrowserLink.hub, receiverConfig.width, receiverConfig.height, receiverConfig.fps,
@@ -100,11 +102,23 @@ class AirPlayReceiverService : Service() {
                     override fun play(item: ReceiverPlay) {
                         synchronized(displayLock) {
                             if (!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService)) {
+                                displayGeneration++
                                 TeslaBrowserLink.pauseCarPlayDisplay(); player.play(item)
                             }
                         }
                     }
-                    override fun stopPlayback() { player.stop() }
+                    override fun stopPlayback() {
+                        val stoppedGeneration = synchronized(displayLock) { displayGeneration }
+                        player.stop {
+                            synchronized(displayLock) {
+                                // Playback cleanup runs on main. Restore only after its sink releases
+                                // the canvas, and never undo a newer AirPlay session's display pause.
+                                if (!destroyed && displayGeneration == stoppedGeneration) {
+                                    TeslaBrowserLink.resumeCarPlayDisplay()
+                                }
+                            }
+                        }
+                    }
                     override fun mirrorAudioTimed(format: ReceiverMirrorAudioFormat, payload: ByteArray, sample: Long, presentationNanos: Long?) {
                         synchronized(displayLock) {
                             if (!destroyed && mirrorOutput != null && format.sampleRate == 44100 && format.channels == 2) {
@@ -119,6 +133,7 @@ class AirPlayReceiverService : Service() {
                     override fun photo(bytes: ByteArray) {
                         synchronized(displayLock) {
                             if (!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService)) {
+                                displayGeneration++
                                 TeslaBrowserLink.pauseCarPlayDisplay(); player.photo(bytes)
                             }
                         }
@@ -195,11 +210,11 @@ class AirPlayReceiverService : Service() {
             destroyed = true
             mirrorOutput?.close(); mirrorOutput = null
             mirrorAudio?.close(); mirrorAudio = null
+            player.close() // Service destruction runs on main; release the cast canvas before restore.
             TeslaBrowserLink.resumeCarPlayDisplay() // do not wait for mDNS registration/goodbye timers
         }
         locks.release()
         runCatching { multicast?.release() }; multicast = null
-        player.close()
         worker.execute {
             server?.let { receiver ->
                 UnifiedAirPlayTrial.remove(receiver)

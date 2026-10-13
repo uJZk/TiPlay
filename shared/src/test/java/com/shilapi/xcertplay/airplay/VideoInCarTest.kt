@@ -16,22 +16,6 @@ class VideoInCarTest {
     )
 
     @Test
-    fun featuresExAddsTheWebAppBitsToTheLegacyFeatures() {
-        // What the iPhone accepted from DiPlay's legacy features 0x615653aee2 plus bits 0 and 64.
-        assertEquals("465TVmEAAAAB", VideoInCar.featuresEx(0x615653aee2L))
-    }
-
-    @Test
-    fun videoPlaybackInfoIsDeclaredOnlyWhenEnabled() {
-        assertFalse(AirPlayInfoPlist.build(config).containsKey("videoPlaybackInfo"))
-
-        val info = AirPlayInfoPlist.build(config.copy(videoInCar = true))["videoPlaybackInfo"] as Map<*, *>
-        assertEquals(false, info["videoPlaybackAllowed"])
-        assertEquals("465TVmEAAAAB", info["featuresEx"])
-        assertEquals(false, (info["playbackCapabilities"] as Map<*, *>)["supportsFPSSecureStop"])
-    }
-
-    @Test
     fun setupEnablesVideoOnlyWhenConfiguredAndProposed() {
         val proposed = listOf("iAPChannel", "videoPlayback")
         assertFalse("videoPlayback" in setupEnabledFeatures(config, proposed))

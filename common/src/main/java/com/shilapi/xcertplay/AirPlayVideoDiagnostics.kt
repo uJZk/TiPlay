@@ -4,11 +4,19 @@ package com.shilapi.xcertplay
 internal class AirPlayVideoDiagnostics(private val log: (String) -> Unit) {
     enum class Stage {
         START, ENCODER_READY, PREPARE, BUFFERING, READY, ENDED, PLAYING, PAUSED,
+        PREPARE_POSITION, INITIAL_SEEK, SEEK,
         RESOURCE_OPEN, RESOURCE_DIRECT, RESOURCE_IPHONE, RESOURCE_REDIRECT, RESOURCE_HLS, SOURCE_HLS,
         ENCODER_CONFIG, ENCODED_FRAME, STOP, FAILURE,
         VIDEO_TRACKS, VIDEO_SIZE, VIDEO_FIRST_FRAME, VIDEO_DISABLED, VIDEO_CODEC,
         AUDIO_TRACKS, AUDIO_PCM, AUDIO_SIGNAL, AUDIO_CODEC,
     }
+
+    enum class SeekOrigin { IPHONE, BROWSER }
+
+    fun seek(origin: SeekOrigin, targetMillis: Long, positionMillis: Long?, durationMillis: Long?) =
+        emit("video stage=SEEK value=$targetMillis origin=$origin " +
+            "positionMs=${positionMillis?.coerceAtLeast(0) ?: 0} " +
+            "durationMs=${durationMillis?.coerceAtLeast(0) ?: 0}")
 
     fun stage(stage: Stage, value: Long? = null) = emit("video stage=$stage" + (value?.let { " value=$it" } ?: ""))
 

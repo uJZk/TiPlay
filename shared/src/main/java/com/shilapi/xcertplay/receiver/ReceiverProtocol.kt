@@ -64,12 +64,17 @@ internal fun receiverQuery(path: String): Map<String, String> = path.substringAf
     .filter { it.contains('=') }.associate { it.substringBefore('=') to URLDecoder.decode(it.substringAfter('='), "UTF-8") }
 
 data class ReceiverPlayback(val duration: Double = 0.0, val position: Double = 0.0,
-                            val rate: Double = 0.0, val ready: Boolean = false, val buffering: Boolean = false) {
+                            val rate: Double = 0.0, val ready: Boolean = false, val buffering: Boolean = false,
+                            val bufferedPosition: Double = position, val seekable: Boolean = duration > 0) {
     fun info(): Map<String, Any?> = mapOf(
         "duration" to duration, "position" to position, "rate" to rate, "readyToPlay" to ready,
-        "playbackBufferEmpty" to buffering, "playbackBufferFull" to !buffering,
+        "playbackBufferEmpty" to (buffering && bufferedPosition <= position),
+        // Media3 does not expose buffer capacity. Claim full only when the entire remaining item is loaded.
+        "playbackBufferFull" to (ready && duration > 0 && bufferedPosition >= duration),
         "playbackLikelyToKeepUp" to (ready && !buffering),
-        "loadedTimeRanges" to listOf(mapOf("start" to position, "duration" to 0.0)),
-        "seekableTimeRanges" to listOf(mapOf("start" to 0.0, "duration" to duration)),
+        "loadedTimeRanges" to if (bufferedPosition > position)
+            listOf(mapOf("start" to position, "duration" to bufferedPosition - position)) else emptyList<Map<String, Double>>(),
+        "seekableTimeRanges" to if (seekable && duration > 0)
+            listOf(mapOf("start" to 0.0, "duration" to duration)) else emptyList<Map<String, Double>>(),
     )
 }

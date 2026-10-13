@@ -237,6 +237,45 @@ class ReceiverServerTest {
         } finally { control.close(); receiver.close() }
     }
 
+    @Test fun seekCancellationKeepsTheIphoneExchangeForTheReplacementLoader() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                val url = "mlhls://app/master.m3u8"
+                assertEquals(200, control.status("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to url))))
+                connect(receiver.port).use { reverse ->
+                    reverse.getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: test\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                    assertEquals("101", readReceiverRequest(reverse.getInputStream())!!.path)
+                    val interrupted = java.util.concurrent.atomic.AtomicBoolean(false)
+                    val oldLoader = Thread {
+                        assertNull(receiver.loadResource(url))
+                        interrupted.set(Thread.currentThread().isInterrupted)
+                    }
+                    oldLoader.start()
+                    val xml = readReceiverRequest(reverse.getInputStream())!!.body.toString(Charsets.UTF_8)
+                    val requestId = Regex("<key>FCUP_Response_RequestID</key><integer>([0-9]+)</integer>").find(xml)!!.groupValues[1].toLong()
+                    oldLoader.interrupt()
+                    oldLoader.join(2000)
+                    assertFalse(oldLoader.isAlive)
+                    assertTrue(interrupted.get())
+                    val replacement = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(url) }
+                    val bytes = "#EXTM3U\n#EXT-X-ENDLIST\n".toByteArray()
+                    val answer = BplistCodec.encode(mapOf("type" to "unhandledURLResponse", "params" to mapOf(
+                        "FCUP_Response_RequestID" to requestId, "FCUP_Response_URL" to url,
+                        "FCUP_Response_Data" to bytes, "FCUP_Response_StatusCode" to 0,
+                    )))
+                    assertEquals(200, control.status("POST", "/action", answer))
+                    assertArrayEquals(bytes, replacement.get(2, TimeUnit.SECONDS)!!.bytes)
+                    assertEquals(1, listener.logs.count { it.startsWith("resource stage=REQUEST ") })
+                    assertTrue(listener.logs.any { it == "resource stage=REUSED request=$requestId" })
+                    assertEquals(404, control.status("POST", "/action", answer))
+                }
+            }
+        } finally { receiver.close() }
+    }
+
     @Test fun iphoneResourcesAreCorrelatedAndReverseDisconnectCancelsWaitingLoadsAndRestoresDisplay() {
         val listener = Listener()
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)

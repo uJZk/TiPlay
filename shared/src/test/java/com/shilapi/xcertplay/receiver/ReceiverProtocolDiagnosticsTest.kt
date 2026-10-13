@@ -44,6 +44,22 @@ class ReceiverProtocolDiagnosticsTest {
         assertEquals("c=1 stage=RESPONSE status=200 bodyBytes=0", messages.single())
     }
 
+    @Test fun videoControlDiagnosticsRecognizeAbsoluteTargetsAndHideUnknownQueryValues() {
+        val messages = mutableListOf<String>()
+        val diagnostics = ReceiverProtocolDiagnostics(messages::add)
+        diagnostics.request(3, RtspMessage.Request("POST", "http://private-host/scrub?position=123.5&token=private-secret",
+            "HTTP/1.1", emptyMap(), ByteArray(0)))
+        diagnostics.request(3, RtspMessage.Request("POST", "/getProperty?playbackAccessLog&private-secret",
+            "HTTP/1.1", emptyMap(), ByteArray(0)))
+        val output = messages.joinToString("\n")
+        assertTrue(output.contains("path=/scrub"))
+        assertTrue(output.contains("target=ABSOLUTE route=/scrub selectors=[position,OTHER] position=123.5"))
+        assertTrue(output.contains("route=/getProperty selectors=[playbackAccessLog,OTHER]"))
+        assertFalse(output.contains("private-host"))
+        assertFalse(output.contains("private-secret"))
+        assertFalse(output.contains("token"))
+    }
+
     @Test fun setupTimingMetadataUsesOnlyPresenceAndWhitelistedProtocol() {
         val messages = mutableListOf<String>()
         val diagnostics = ReceiverProtocolDiagnostics(messages::add)
