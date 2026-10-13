@@ -26,7 +26,11 @@ APK SHA256：`b9b7034fe4e44897cc15bdfbb9a2a7b06ae00dd1f92ffa350dcffb38cdec1a5f`�
 
 随后只修改网页资源打开失败的反馈版本，确保加载期间的新 pause／play 命令不使失败被视为旧状态。Node 22 114/114 和真实 Video.js E2E 均再次通过，包括该失败竞态。安卓源码和签名 APK 不受这项网页修改影响；APK 未打包网页。网页部署将使用包含该修复的后续提交。
 
-main 推送、Pages 部署和临时交付分支清理待补充。
+main 已推送至 6c6fdd48dbe2f3d425b2668603c405ba9eb3e3a3，未 force-push。[Pages 工作流 38391512605](https://github.com/uJZk/TiPlay/actions/runs/38391512605) 成功；github-pages deployment 7037406148 的状态为 success，发布源 SHA 与该提交相同，地址 https://ujzk.github.io/TiPlay/。实站 HTTP 读取受当前执行环境域名策略限制，发布结果通过 GitHub Actions／deployment API 核验；不把这项记录等同于实车页面验证。
+
+work 本地分支和临时远程 delivery/browser-media-2026-10-13 分支均已删除，主分支工作区干净。签名 APK 保留在现有流程生成的 beta.2 prerelease 草稿中，没有公开发布或安装到设备；网页用户需配套升级 APK。GitHub 对 main 的自动 Android 检查见 [38391512500](https://github.com/uJZk/TiPlay/actions/runs/38391512500)；本地整合验证和签名工作流证据已记录在上文。
+
+本收尾记录随后单独提交；该文档更新不会改变已部署的网页或 e6bb1a49 构建的 APK。
 
 ## 下一步
 
