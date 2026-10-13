@@ -21,7 +21,13 @@
 
 ## 交付状态
 
-待本次收尾提交合并到 `main` 并推送。既有 `.github/workflows/pages.yml` 会发布网站；部署结果和提交将在收尾完成后补记。
+实现提交 [`8e94b16a`](https://github.com/uJZk/TiPlay/commit/8e94b16a78f00deb41419f9f805e6adf28400018) 已从 `work` 快进合并到 `main` 并推送，`work` 已删除。工作区没有额外 worktree。
+
+既有 [Publish site 运行](https://github.com/uJZk/TiPlay/actions/runs/38428679017) 成功，GitHub Pages 确认此提交已部署至 [TiPlay 网页](https://ujzk.github.io/TiPlay/)，包含 Canvas 模块和缓存 v36。
+
+远程 [Android checks](https://github.com/uJZk/TiPlay/actions/runs/38428678932) 的网页测试、公共源码检查和发布工具测试通过，安卓单元测试／lint／debug 构建步骤返回 failure。用户随后明确要求跳过 Android 构建结果，因此本次不调查或修复此步骤，以已通过的网页验证和 Pages 部署完成收尾；不将安卓检查描述为通过。若后续修改安卓代码，再单独处理安卓构建与回归。
+
+最终交付记录单独提交并推送，使用 `[skip ci]` 避免文档状态更新再次启动 Android 构建。部署后清理本地 `_site` 组装产物；保留忽略目录中的验证证据。没有新增 APK 或第二次网页发布。
 
 ## 待验证
 
