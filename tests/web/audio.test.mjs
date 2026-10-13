@@ -24,7 +24,7 @@ test('PCM framing survives arbitrary network boundaries and skips keepalives', a
 });
 
 function mockBrowser() {
-  const messages = [], contexts = [], sources = [];
+  const messages = [], contexts = [], sources = [], nodes = [];
   const oldContext = globalThis.AudioContext, oldNode = globalThis.AudioWorkletNode;
   globalThis.AudioContext = class {
     constructor() { this.state = 'suspended'; this.audioWorklet = { addModule: async () => {} }; contexts.push(this); }
@@ -32,8 +32,8 @@ function mockBrowser() {
     async close() { this.state = 'closed'; }
     createMediaStreamSource() { const source = { connect(node) { this.connected = node; }, disconnect() { this.connected = null; } }; sources.push(source); return source; }
   };
-  globalThis.AudioWorkletNode = class { constructor() { this.port = { postMessage: value => messages.push(value) }; } connect() {} };
-  return { messages, contexts, sources, done() { globalThis.AudioContext = oldContext; globalThis.AudioWorkletNode = oldNode; } };
+  globalThis.AudioWorkletNode = class { constructor() { this.port = { postMessage: value => messages.push(value) }; nodes.push(this); } connect() {} };
+  return { messages, contexts, sources, nodes, done() { globalThis.AudioContext = oldContext; globalThis.AudioWorkletNode = oldNode; } };
 }
 
 test('audio disable and connection stop release capture and reset speaker credit', async () => {
@@ -118,6 +118,45 @@ test('denied capture retries on next demand without prompting on status heartbea
     audio.status({ mic: { active: true, sampleRate: 16000 } });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(requests, 2);
+  } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
+});
+
+test('inactive microphone HTTP reply ends capture quietly while other upload failures remain visible', async () => {
+  for (const reply of ['microphone-inactive', 'other-conflict']) {
+    const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } } });
+    const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async route => route.startsWith('/microphone?')
+      ? { ok: false, status: 409, json: async () => ({ error: reply }) } : { ok: true, body: body([]) } });
+    try {
+      await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
+      audio.status({ mic: { active: true, sampleRate: 16000 } });
+      await new Promise(resolve => setImmediate(resolve));
+      for (let i = 0; i < 2; i++) browser.nodes[0].port.onmessage({ data: { microphone: new Int16Array(320).buffer, peak: 0 } });
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(audio.stats().microphone, false);
+      assert.equal(audio.stats().rejectedMicrophoneUploads, 1);
+      assert.equal(audio.stats().error, reply === 'microphone-inactive' ? null : 'Microphone HTTP 409');
+    } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
+  }
+});
+
+test('late inactive upload response from a retired capture cannot stop the next demand', async () => {
+  const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let resolveUpload;
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } } });
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async route => route.startsWith('/microphone?')
+    ? new Promise(resolve => { resolveUpload = resolve; }) : { ok: true, body: body([]) } });
+  try {
+    await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
+    audio.status({ mic: { active: true, sampleRate: 16000 } });
+    await new Promise(resolve => setImmediate(resolve));
+    for (let i = 0; i < 2; i++) browser.nodes[0].port.onmessage({ data: { microphone: new Int16Array(320).buffer, peak: 0 } });
+    audio.status({ mic: { active: false, sampleRate: 16000 } });
+    audio.status({ mic: { active: true, sampleRate: 16000 } });
+    await new Promise(resolve => setImmediate(resolve));
+    resolveUpload({ ok: false, status: 409, json: async () => ({ error: 'microphone-inactive' }) });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(audio.stats().microphone, true); assert.equal(audio.stats().error, null);
   } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
 });
 

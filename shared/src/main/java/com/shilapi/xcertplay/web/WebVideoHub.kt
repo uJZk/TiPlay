@@ -50,6 +50,7 @@ class WebVideoHub(
     internal val lock = ReentrantLock()
     private val performance = VideoPerformance(nanoTime)
     private var owner: Any? = null
+    private val displayOwner = BrowserDisplayOwner()
     private var stream: Stream? = null
     private var config: Config? = null
     private var lastCodec: VideoCodec? = null
@@ -69,8 +70,13 @@ class WebVideoHub(
      * Makes [owner] the producer. [requestKeyFrame] asks the iPhone for a key frame (blocking); [report] is the
      * stream's video diagnostic handler, which turns `first frame rendered` into the wireless connection proof.
      */
-    fun beginStream(owner: Any, width: Int, height: Int, fps: Int, requestKeyFrame: () -> Unit, report: (String) -> Unit) {
+    fun beginStream(owner: Any, width: Int, height: Int, fps: Int, requestKeyFrame: () -> Unit, report: (String) -> Unit,
+                    source: BrowserDisplaySource = BrowserDisplaySource.CARPLAY) {
         lock.withLock {
+            if (!displayOwner.acquire(owner, source)) {
+                log("Web video: stream deferred source=$source current=${displayOwner.source}")
+                return
+            }
             this.owner = owner
             stream = Stream(width, height, fps, requestKeyFrame, report)
             pendingKeyFrame = null
@@ -80,7 +86,7 @@ class WebVideoHub(
             lastKeyFrameRequestNanos = null
             subscription?.queue?.requireKeyFrame(nanoTime())
         }
-        log("Web video: stream started size=${width}x$height fps=$fps")
+        log("Web video: stream started source=$source size=${width}x$height fps=$fps")
     }
 
     fun configure(owner: Any, codec: VideoCodec, record: ByteArray) {
@@ -151,6 +157,7 @@ class WebVideoHub(
     fun endStream(owner: Any) {
         lock.withLock {
             if (owner !== this.owner) return
+            displayOwner.release(owner)
             this.owner = null
             stream = null
             pendingKeyFrame = null
@@ -161,6 +168,8 @@ class WebVideoHub(
         }
         log("Web video: stream ended")
     }
+
+    fun hasAirPlayDisplay(): Boolean = lock.withLock { displayOwner.source == BrowserDisplaySource.AIRPLAY }
 
     /**
      * Asks at most once per 500 ms unless [force]. One worker and one pending request bound bursts,

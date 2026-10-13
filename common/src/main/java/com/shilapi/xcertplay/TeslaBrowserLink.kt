@@ -139,6 +139,8 @@ internal object TeslaBrowserLink {
     }
 
     fun resumeCarPlayDisplay() = synchronized(taps) {
+        // A stale receiver status or a concurrent CarPlay start must not revoke a live mirror.
+        if (hub.hasAirPlayDisplay()) return@synchronized
         carPlayDisplayPaused = false
         audioHub.enabled = app?.let { !BrowserCarPlayAudioSettings.disabled(it) } ?: true
         CarPlayBackgroundSession.snapshot()?.sink?.let { audioTaps[it]?.resumeAudio() }
@@ -218,15 +220,15 @@ internal object TeslaBrowserLink {
      */
     fun tee(sink: MediaSink, phoneBrowser: Boolean, width: Int, height: Int, fps: Int = TeslaBrowserCanvas.FPS): MediaSink {
         if (!phoneBrowser) return sink
-        val web = WebMediaSink(hub, width, height, fps)
-        synchronized(taps) {
+        return synchronized(taps) {
+            val web = WebMediaSink(hub, width, height, fps)
             if (carPlayDisplayPaused) web.pauseDisplay()
             taps[sink] = web
+            if (!carPlayDisplayPaused) audioHub.enabled = app?.let { !BrowserCarPlayAudioSettings.disabled(it) } ?: true
+            val audio = BrowserAudioMediaSink(web, audioHub, initiallyPaused = carPlayDisplayPaused)
+            audioTaps.put(sink, audio)?.close()
+            BrowserOnlyMediaSink(sink, audio)
         }
-        if (!carPlayDisplayPaused) audioHub.enabled = app?.let { !BrowserCarPlayAudioSettings.disabled(it) } ?: true
-        val audio = BrowserAudioMediaSink(web, audioHub, initiallyPaused = carPlayDisplayPaused)
-        audioTaps.put(sink, audio)?.close()
-        return BrowserOnlyMediaSink(sink, audio)
     }
 
     /** Ends the browser's stream of [sink]'s session, which is being retired; the next session starts a new one. */

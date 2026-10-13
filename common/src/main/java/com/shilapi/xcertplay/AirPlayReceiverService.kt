@@ -90,8 +90,11 @@ class AirPlayReceiverService : Service() {
                         check(!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService))
                         mirrorAudio?.close(); mirrorAudio = null
                         TeslaBrowserLink.pauseCarPlayDisplay()
-                        WebMediaSink(TeslaBrowserLink.hub, receiverConfig.width, receiverConfig.height, receiverConfig.fps).also {
+                        WebMediaSink(TeslaBrowserLink.hub, receiverConfig.width, receiverConfig.height, receiverConfig.fps,
+                            com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY).also {
                             mirrorOutput = it
+                            // Reserve ordinary AirPlay priority at SETUP, before its first CONFIG.
+                            it.onScreenStreamActive(110, true)
                         }
                     }
                     override fun play(item: ReceiverPlay) {
@@ -126,8 +129,12 @@ class AirPlayReceiverService : Service() {
                     override fun status(state: String) {
                         if (destroyed) return
                         if (state == "listening") {
-                            synchronized(displayLock) { mirrorAudio?.close(); mirrorAudio = null; mirrorOutput = null }
-                            TeslaBrowserLink.resumeCarPlayDisplay()
+                            synchronized(displayLock) {
+                                mirrorAudio?.close(); mirrorAudio = null; mirrorOutput = null
+                                // Release and restore in one transition. A new mirror's SETUP must not
+                                // pause CarPlay between cleanup and a delayed old session's resume.
+                                TeslaBrowserLink.resumeCarPlayDisplay()
+                            }
                         }
                         publish(state)
                     }

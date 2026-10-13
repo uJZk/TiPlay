@@ -7,6 +7,7 @@ internal class AirPlayVideoDiagnostics(private val log: (String) -> Unit) {
         RESOURCE_OPEN, RESOURCE_DIRECT, RESOURCE_IPHONE, RESOURCE_REDIRECT, RESOURCE_HLS, SOURCE_HLS,
         ENCODER_CONFIG, ENCODED_FRAME, STOP, FAILURE,
         VIDEO_TRACKS, VIDEO_SIZE, VIDEO_FIRST_FRAME, VIDEO_DISABLED, VIDEO_CODEC,
+        AUDIO_TRACKS, AUDIO_PCM, AUDIO_SIGNAL, AUDIO_CODEC,
     }
 
     fun stage(stage: Stage, value: Long? = null) = emit("video stage=$stage" + (value?.let { " value=$it" } ?: ""))
@@ -17,6 +18,9 @@ internal class AirPlayVideoDiagnostics(private val log: (String) -> Unit) {
     }
 
     fun videoSize(width: Int, height: Int) = emit("video stage=VIDEO_SIZE width=$width height=$height")
+
+    fun audioFormat(sampleRate: Int, channels: Int, encoding: Int) =
+        emit("video stage=AUDIO_FORMAT sampleRate=$sampleRate channels=$channels encoding=$encoding")
 
     fun decoded(rendered: Int, skipped: Int, dropped: Int) =
         emit("video stage=VIDEO_DISABLED rendered=$rendered skipped=$skipped dropped=$dropped")

@@ -15,6 +15,7 @@ class WebMediaSink(
     private var width: Int,
     private var height: Int,
     private val fps: Int,
+    private val source: BrowserDisplaySource = BrowserDisplaySource.CARPLAY,
 ) : MediaSink {
     @Volatile private var mediaClock: ((Long) -> Long?)? = null
     @Volatile private var codec: VideoCodec? = null
@@ -35,7 +36,7 @@ class WebMediaSink(
         if (closed || !paused) return@synchronized
         paused = false
         if (!active) return@synchronized
-        hub.beginStream(this, width, height, fps, requestKeyFrame = { recovery?.invoke() }, report = { diagnostics?.invoke(it) })
+        hub.beginStream(this, width, height, fps, requestKeyFrame = { recovery?.invoke() }, report = { diagnostics?.invoke(it) }, source = source)
         val codec = codec
         if (codec != null) retainedConfig?.let { hub.configure(this, codec, it) }
         hub.requestKeyFrame(force = true)
@@ -86,10 +87,10 @@ class WebMediaSink(
             // Under the same lock as close(): a retired session's screen that comes up late, while its stack is still
             // closing, must not take the hub from the next session's sink.
             synchronized(this) {
-                if (closed) return
+                if (closed || this.active) return
                 this.active = true
                 if (paused) return
-                hub.beginStream(this, width, height, fps, requestKeyFrame = { recovery?.invoke() }, report = { diagnostics?.invoke(it) })
+                hub.beginStream(this, width, height, fps, requestKeyFrame = { recovery?.invoke() }, report = { diagnostics?.invoke(it) }, source = source)
             }
         } else {
             synchronized(this) { this.active = false; retainedConfig = null; hub.endStream(this) }

@@ -33,8 +33,17 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     currentConnection.addEventListener('abort', stop, { once: true });
     const timer = setTimeout(stop, 1000);
     fetchPhone(`/microphone?${auth()}`, { method: 'POST', body: bytes, signal: abort.signal })
-      .then(response => {
-        if (!response.ok) { rejectedMicrophoneUploads++; throw new Error(`Microphone HTTP ${response.status}`); }
+      .then(async response => {
+        if (!response.ok) {
+          rejectedMicrophoneUploads++;
+          // Siri can finish before its inactive status reaches the browser.
+          // A final in-flight packet then receives this normal teardown reply.
+          if (response.status === 409 && (await response.json().catch(() => null))?.error === 'microphone-inactive') {
+            if (generation === captureGeneration) { error = null; stopMicrophone(); notify(); }
+            return;
+          }
+          throw new Error(`Microphone HTTP ${response.status}`);
+        }
         uploadedMicrophonePackets += packets.length;
       })
       .catch(failure => { if (generation === captureGeneration && !abort.signal.aborted) { error = failure.message; stopMicrophone(); notify(); } })

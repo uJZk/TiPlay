@@ -336,6 +336,31 @@ class TeslaBrowserLinkTest {
         TeslaBrowserLink.releaseTap(retained.sink)
     }
 
+    @Test fun newCarPlayTapAndDelayedResumeCannotStealAMirrorWhileItsConfigIsPending() {
+        val server = started()
+        storeSession(phoneBrowser = true)
+        val retained = CarPlayBackgroundSession.snapshot()!!
+        TeslaBrowserLink.pauseCarPlayDisplay()
+        val mirror = com.shilapi.xcertplay.web.WebMediaSink(TeslaBrowserLink.hub, 498, 1080, 60,
+            com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY)
+        try {
+            mirror.onScreenStreamActive(110, true)
+            TeslaBrowserLink.resumeCarPlayDisplay()
+            val carPlay = TeslaBrowserLink.tee(retained.sink, true, 1920, 1080, 60)
+            carPlay.onScreenStreamActive(110, true)
+            assertEquals(498, TeslaBrowserLink.hub.info()!!.width)
+            assertFalse(server.callbacks.status().touchAvailable)
+            assertFalse(TeslaBrowserLink.audioHub.microphoneStatus()["active"] as Boolean)
+            TeslaBrowserLink.releaseTap(retained.sink)
+            assertEquals(498, TeslaBrowserLink.hub.info()!!.width)
+            assertTrue(TeslaBrowserLink.active)
+        } finally {
+            mirror.close()
+            TeslaBrowserLink.resumeCarPlayDisplay()
+            TeslaBrowserLink.releaseTap(retained.sink)
+        }
+    }
+
     @Test fun appearanceChangesReachTheMainThreadWithoutTheStatsLogThrottle() {
         val server = started()
         val seen = mutableListOf<Boolean>()

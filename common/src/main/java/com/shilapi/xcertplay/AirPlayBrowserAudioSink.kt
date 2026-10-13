@@ -15,6 +15,7 @@ import java.nio.ByteBuffer
 /** Media3 PCM output with a monotonic media clock; never opens an Android audio device. */
 @OptIn(UnstableApi::class)
 internal class AirPlayBrowserAudioSink(private val hub: WebAudioHub,
+                                       private val diagnostics: AirPlayVideoDiagnostics = AirPlayVideoDiagnostics {},
                                        private val nowNanos: () -> Long = System::nanoTime) : AudioSink {
     private var format: Format? = null
     private var attributes = AudioAttributes.DEFAULT
@@ -25,16 +26,26 @@ internal class AirPlayBrowserAudioSink(private val hub: WebAudioHub,
     private var ended = false
     private var resetPacket = true
     private var ownsHub = false
+    private var pcmPackets = 0L
+    private var nonzeroReported = false
 
     override fun setListener(listener: AudioSink.Listener) {}
     override fun supportsFormat(format: Format) = getFormatSupport(format) != AudioSink.SINK_FORMAT_UNSUPPORTED
     override fun getFormatSupport(format: Format): Int = if (format.sampleMimeType == MimeTypes.AUDIO_RAW &&
-        format.pcmEncoding == C.ENCODING_PCM_16BIT && format.channelCount in 1..2 &&
-        format.sampleRate in 8000..96000) AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY else AudioSink.SINK_FORMAT_UNSUPPORTED
+        format.pcmEncoding == C.ENCODING_PCM_16BIT &&
+        (format.channelCount == Format.NO_VALUE || format.channelCount in 1..2) &&
+        (format.sampleRate == Format.NO_VALUE || format.sampleRate in 8000..96000))
+        AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY else AudioSink.SINK_FORMAT_UNSUPPORTED
 
     override fun configure(inputFormat: Format, specifiedBufferSize: Int, outputChannels: IntArray?) {
-        if (!supportsFormat(inputFormat)) throw AudioSink.ConfigurationException("Browser needs stereo/mono PCM16", inputFormat)
+        // Media3 probes decoded PCM using HLS manifest fields before they are known. Capability
+        // checks permit NO_VALUE, but an actual decoder configuration must always be concrete.
+        if (!supportsFormat(inputFormat) || inputFormat.channelCount !in 1..2 ||
+            inputFormat.sampleRate !in 8000..96000) {
+            throw AudioSink.ConfigurationException("Browser needs stereo/mono PCM16", inputFormat)
+        }
         format = inputFormat
+        diagnostics.audioFormat(inputFormat.sampleRate, inputFormat.channelCount, inputFormat.pcmEncoding)
         flush()
         if (!ownsHub) { hub.enabled = true; hub.begin(this); ownsHub = true }
     }
@@ -71,6 +82,12 @@ internal class AirPlayBrowserAudioSink(private val hub: WebAudioHub,
             if (size == 0) { buffer.position(buffer.limit()); break }
             val pcm = ByteArray(size); buffer.get(pcm)
             hub.publish(this, 0, output.sampleRate, output.channelCount, pcm, reset = resetPacket)
+            pcmPackets++
+            if (pcmPackets == 1L || pcmPackets % 120L == 0L) diagnostics.stage(AirPlayVideoDiagnostics.Stage.AUDIO_PCM, pcmPackets)
+            if (!nonzeroReported && pcm.any { it != 0.toByte() }) {
+                nonzeroReported = true
+                diagnostics.stage(AirPlayVideoDiagnostics.Stage.AUDIO_SIGNAL)
+            }
             resetPacket = false
             frames += size / frameBytes
             submittedUntilUs = presentationTimeUs + frames * 1_000_000 / output.sampleRate
@@ -99,6 +116,7 @@ internal class AirPlayBrowserAudioSink(private val hub: WebAudioHub,
     }
     override fun reset() {
         flush(); format = null
+        pcmPackets = 0; nonzeroReported = false
         if (ownsHub) { hub.end(this); ownsHub = false }
     }
     override fun release() = reset()

@@ -114,13 +114,16 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
         val renderers = object : DefaultRenderersFactory(context) {
             override fun buildAudioSink(context: Context, enableFloatOutput: Boolean,
                                         enableAudioTrackPlaybackParams: Boolean): AudioSink =
-                AirPlayBrowserAudioSink(TeslaBrowserLink.audioHub)
+                AirPlayBrowserAudioSink(TeslaBrowserLink.audioHub, diagnostics)
         }
         val exo = ExoPlayer.Builder(context, renderers).setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(data)).build()
         player = exo
         exo.setVideoSurface(surface)
         exo.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT)
         exo.addAnalyticsListener(object : AnalyticsListener {
+            override fun onAudioCodecError(eventTime: AnalyticsListener.EventTime, audioCodecError: Exception) {
+                if (generation == token) diagnostics.failure(AirPlayVideoDiagnostics.Stage.AUDIO_CODEC, audioCodecError)
+            }
             override fun onVideoCodecError(eventTime: AnalyticsListener.EventTime, videoCodecError: Exception) {
                 if (generation == token) diagnostics.failure(AirPlayVideoDiagnostics.Stage.VIDEO_CODEC, videoCodecError)
             }
@@ -133,8 +136,12 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
         var initialSeekDone = false
         exo.addListener(object : Player.Listener {
             override fun onTracksChanged(tracks: Tracks) {
-                if (generation == token) diagnostics.stage(AirPlayVideoDiagnostics.Stage.VIDEO_TRACKS,
-                    tracks.groups.count { it.type == C.TRACK_TYPE_VIDEO && it.isSelected }.toLong())
+                if (generation == token) {
+                    diagnostics.stage(AirPlayVideoDiagnostics.Stage.VIDEO_TRACKS,
+                        tracks.groups.count { it.type == C.TRACK_TYPE_VIDEO && it.isSelected }.toLong())
+                    diagnostics.stage(AirPlayVideoDiagnostics.Stage.AUDIO_TRACKS,
+                        tracks.groups.count { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }.toLong())
+                }
             }
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 if (generation == token) {
@@ -243,7 +250,8 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                                private val failed: (Exception) -> Unit) : Closeable {
         private val stopped = AtomicBoolean(false)
         private val closing = AtomicBoolean(false)
-        private val sink = WebMediaSink(TeslaBrowserLink.hub, 1280, 720, 30)
+        private val sink = WebMediaSink(TeslaBrowserLink.hub, 1280, 720, 30,
+            com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY)
         private val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         private val surface: android.view.Surface
         private val bridge: AirPlayVideoSurfaceBridge
