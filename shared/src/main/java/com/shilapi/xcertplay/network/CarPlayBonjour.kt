@@ -84,14 +84,14 @@ object CarPlayBonjourProtocol {
         identity: AirPlayIdentity,
     ): Map<String, String> = linkedMapOf(
         "deviceid" to config.deviceId,
-        "features" to featuresTxt(com.shilapi.xcertplay.receiver.UnifiedAirPlayTrial.bonjourFeatures(AirPlayInfoPlist.features(config))),
+        "features" to featuresTxt(AirPlayInfoPlist.features(config)),
         "flags" to "0x4",
         "model" to config.model,
         "srcvers" to config.sourceVersion,
         "protovers" to "1.1",
         "pi" to identity.pairingId,
         "pk" to identity.publicKeyHex,
-    ).let(com.shilapi.xcertplay.receiver.UnifiedAirPlayTrial::txtRecords)
+    )
 
     fun connectProbeRequest(
         host: String,
@@ -266,7 +266,7 @@ class CarPlayBonjour(
         }
     }
 
-    /** Starts control discovery; the shared entry owns publication when present. Idempotent. */
+    /** Starts publication and discovery. Calling this more than once is harmless. */
     fun start() {
         synchronized(lifecycleLock) {
             check(!closed) { "CarPlayBonjour is closed" }
@@ -283,8 +283,8 @@ class CarPlayBonjour(
                         val dns = JmDNS.create(address, "carplay-${config.deviceId.replace(":", "")}")
                         interfaceMdns.add(dns)
                         dns.addServiceListener("$CARPLAY_CONTROL_SERVICE_TYPE.local.", interfaceListener)
-                        if (UnifiedAirPlayEndpoint.current == null) dns.registerService(ServiceInfo.create(
-                            "$AIRPLAY_SERVICE_TYPE.local.", com.shilapi.xcertplay.receiver.UnifiedAirPlayTrial.advertisedName(config.deviceName), config.port,
+                        dns.registerService(ServiceInfo.create(
+                            "$AIRPLAY_SERVICE_TYPE.local.", config.deviceName, config.port,
                             0, 0, CarPlayBonjourProtocol.airPlayTxtRecords(config, identity),
                         ))
                     }
@@ -292,10 +292,8 @@ class CarPlayBonjour(
                         if (it is Inet4Address) "IPv4" else "IPv6"
                     }
                 } else {
-                    if (UnifiedAirPlayEndpoint.current == null) {
-                        registerAirPlay()
-                        registrationRequested = true
-                    }
+                    registerAirPlay()
+                    registrationRequested = true
                     nsdManager.discoverServices(
                         CARPLAY_CONTROL_SERVICE_TYPE,
                         NsdManager.PROTOCOL_DNS_SD,
@@ -362,7 +360,7 @@ class CarPlayBonjour(
     @Suppress("DEPRECATION")
     private fun registerAirPlay() {
         val serviceInfo = NsdServiceInfo().apply {
-            serviceName = com.shilapi.xcertplay.receiver.UnifiedAirPlayTrial.advertisedName(config.deviceName)
+            serviceName = config.deviceName
             serviceType = AIRPLAY_SERVICE_TYPE
             port = config.port
             CarPlayBonjourProtocol.airPlayTxtRecords(config, identity).forEach { (key, value) ->

@@ -65,7 +65,6 @@ class CarPlayVpnService : VpnService() {
     private var bridge: Ipv6NcmBridge? = null
     private var tun: ParcelFileDescriptor? = null
     private var attachGeneration = 0
-    private var sharedWireless: UnifiedAirPlayWirelessLease? = null
 
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -147,19 +146,11 @@ class CarPlayVpnService : VpnService() {
         active.set(true)
         val generation = ++attachGeneration
         return try {
-            if (UnifiedAirPlayWirelessLease.enabled(applicationContext)) {
-                val lease = UnifiedAirPlayWirelessLease(config, identity, pairings, mfi, listener, media,
-                    listenerIdentity, applicationContext)
-                sharedWireless = lease
-                attachment = AirPlayAttachment(bindAddress, config.copy(port = lease.port), identity, pairings,
-                    mfi, listener, media, additionalBindAddresses, listenerIdentity)
-            } else {
-                startAirPlayServer(
-                    generation,
-                    AirPlayAttachment(bindAddress, config, identity, pairings, mfi, listener, media,
-                        additionalBindAddresses, listenerIdentity),
-                )
-            }
+            startAirPlayServer(
+                generation,
+                AirPlayAttachment(bindAddress, config, identity, pairings, mfi, listener, media,
+                    additionalBindAddresses, listenerIdentity),
+            )
             AttachResult.Started
         } catch (error: Exception) {
             releaseLocked()
@@ -187,11 +178,6 @@ class CarPlayVpnService : VpnService() {
     ): (() -> Unit)? {
         val current = attachment ?: return null
         if (!active.get() || current.listenerIdentity !== owner || expectedSession.isClosed) return null
-        sharedWireless?.let { lease ->
-            val closeDisplay = lease.prepareDisplayReconnect(display, expectedSession) ?: return null
-            attachment = current.copy(config = current.config.copy(main = display))
-            return closeDisplay
-        }
         val peer = expectedSession.remoteAddress ?: return null
         val local = expectedSession.localAddress ?: return null
         if (isInternalAirPlayPeer(peer, local)) return null
@@ -209,11 +195,6 @@ class CarPlayVpnService : VpnService() {
     ): Boolean {
         val current = attachment ?: return false
         if (!active.get() || current.listenerIdentity !== owner) return false
-        sharedWireless?.let { lease ->
-            if (!lease.updatePendingDisplay(display, retiringSession)) return false
-            attachment = current.copy(config = current.config.copy(main = display))
-            return true
-        }
         val replacementAccepted = synchronized(sessionsLock) {
             sessions.any { session ->
                 session !== retiringSession && !session.isClosed &&
@@ -326,7 +307,7 @@ class CarPlayVpnService : VpnService() {
 
                             override fun onSessionEnded(session: AirPlaySession) {
                                 removeSession(session)
-                                if (!session.isUnifiedOrdinary && (current.listenerIdentity == null || !internalPeer)) current.listener.onSessionEnded(session)
+                                if (current.listenerIdentity == null || !internalPeer) current.listener.onSessionEnded(session)
                             }
                         },
                         media = current.media,
@@ -394,9 +375,6 @@ class CarPlayVpnService : VpnService() {
         attachGeneration += 1
         active.set(false)
         attachment = null
-        val shared = sharedWireless
-        sharedWireless = null
-        shared?.close()
         serverSocket?.close()
         serverSocket = null
         additionalServers.forEach { it.close() }

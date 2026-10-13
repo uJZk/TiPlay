@@ -12,8 +12,6 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Base64
 import android.util.Log
-import androidx.annotation.OptIn
-import androidx.media3.common.util.UnstableApi
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.receiver.ReceiverBonjour
@@ -21,15 +19,12 @@ import com.shilapi.xcertplay.receiver.ReceiverConfig
 import com.shilapi.xcertplay.receiver.ReceiverPlay
 import com.shilapi.xcertplay.receiver.ReceiverServer
 import com.shilapi.xcertplay.receiver.ReceiverMirrorAudioFormat
-import com.shilapi.xcertplay.receiver.UnifiedAirPlayTrial
-import com.shilapi.xcertplay.network.UnifiedAirPlayEndpoint
 import com.shilapi.xcertplay.web.WebMediaSink
 import java.security.SecureRandom
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /** The default AirPlay receiver; CarPlay retains its controller while AirPlay borrows the canvas. */
-@OptIn(UnstableApi::class)
 class AirPlayReceiverService : Service() {
     private val worker = Executors.newSingleThreadScheduledExecutor { Thread(it, "tiplay-airplay-service").apply { isDaemon = true } }
     private val locks by lazy { PhoneBrowserLocks(this) }
@@ -42,24 +37,16 @@ class AirPlayReceiverService : Service() {
     @Volatile private var mirrorOutput: WebMediaSink? = null
     private var mirrorAudio: AirPlayMirrorAudio? = null
     private var discovery: ReceiverBonjour? = null // worker only
-    private var sharedEntry: UnifiedAirPlayEndpoint? = null // worker only
     @Volatile private var destroyed = false
-    private var unifiedTrial = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        unifiedTrial = UnifiedAirPlayEndpoint.current != null || UnifiedAirPlayTrialSettings.enabled(this)
-        UnifiedAirPlayTrial.configure(unifiedTrial)
         settingsSubscription = BrowserSettingsChanges.listen(this) {
             worker.execute {
                 if (!destroyed) server?.let { receiver ->
-                    val config = receiver.updateDisplay(AirPlayPersistence.loadFps(this), AirPlayPersistence.loadHevcEnabled(this))
-                    if (unifiedTrial) {
-                        UnifiedAirPlayTrial.install(receiver, config)
-                        sharedEntry?.addReceiver(receiver, config)
-                    }
+                    receiver.updateDisplay(AirPlayPersistence.loadFps(this), AirPlayPersistence.loadHevcEnabled(this))
                     refreshDiscovery()
                 }
             }
@@ -173,15 +160,8 @@ class AirPlayReceiverService : Service() {
                     }
                 })
                 server = receiver
-                if (unifiedTrial) {
-                    UnifiedAirPlayTrial.install(receiver, receiverConfig)
-                    sharedEntry = UnifiedAirPlayEndpoint.acquire(receiver, receiverConfig, applicationContext) {
-                        Log.i("tiplay-airplay", it)
-                    }
-                } else {
-                    discovery = ReceiverBonjour(receiverConfig, receiver.start(), { receiver.displayConfig })
-                    worker.scheduleWithFixedDelay(::refreshDiscovery, 0, 5, TimeUnit.SECONDS)
-                }
+                discovery = ReceiverBonjour(receiverConfig, receiver.start(), { receiver.displayConfig })
+                worker.scheduleWithFixedDelay(::refreshDiscovery, 0, 5, TimeUnit.SECONDS)
                 publish("listening")
             } catch (_: Exception) {
                 publish("failed")
@@ -192,11 +172,6 @@ class AirPlayReceiverService : Service() {
     }
 
     private fun identity(): ReceiverConfig {
-        if (unifiedTrial) {
-            val shared = AirPlayPersistence.loadIdentity(this)
-            return ReceiverConfig("TiPlay", DiPlayBootstrap.deviceId(shared), shared,
-                fps = AirPlayPersistence.loadFps(this), hevcEnabled = AirPlayPersistence.loadHevcEnabled(this))
-        }
         val prefs = getSharedPreferences("tiplay_airplay_receiver", MODE_PRIVATE)
         val private = prefs.getString("private", null)
         val public = prefs.getString("public", null)
@@ -235,12 +210,7 @@ class AirPlayReceiverService : Service() {
         locks.release()
         runCatching { multicast?.release() }; multicast = null
         worker.execute {
-            server?.let { receiver ->
-                UnifiedAirPlayTrial.remove(receiver)
-                sharedEntry?.releaseReceiver(receiver)
-                receiver.close()
-            }
-            sharedEntry = null
+            server?.close()
             server = null
             discovery?.close(); discovery = null
             publish("stopped")

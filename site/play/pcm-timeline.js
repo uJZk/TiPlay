@@ -14,7 +14,13 @@ export class PcmTimeline {
     this.sequences.add(packet.sequence); this.queue.push(packet); this.queue.sort((a, b) => a.start - b.start);
     while (this.queue.length > 160 || (this.queue.length > 1 && this.queue.at(-1).end - this.queue[0].start > this.maximumMs)) this.discard(this.queue.shift());
   }
-  active(time) { return this.queue.some(packet => packet.start <= time && packet.end > time); }
+  active(time) {
+    for (let i = 0; i < this.queue.length; i++) {
+      const packet = this.queue[i];
+      if (packet.start <= time && packet.end > time) return true;
+    }
+    return false;
+  }
   sample(time, channel) {
     // A discontinuous/backwards clock must never replay samples; normal delay plans advance continuously.
     if (time < this.through) return 0;

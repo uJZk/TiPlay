@@ -21,7 +21,6 @@ import com.shilapi.xcertplay.web.WebMediaSink
 import com.shilapi.xcertplay.web.WebVideoHub
 import java.net.BindException
 import java.security.SecureRandom
-import java.util.Collections
 import java.util.Locale
 import java.util.WeakHashMap
 import java.util.concurrent.CopyOnWriteArraySet
@@ -128,19 +127,22 @@ internal object TeslaBrowserLink {
     private val requested = AtomicBoolean(false)
     private val host = AtomicReference<Host?>(null)
     private val listeners = CopyOnWriteArraySet<(State) -> Unit>()
-    private val taps = Collections.synchronizedMap(WeakHashMap<MediaSink, WebMediaSink>())
-    private val audioTaps = Collections.synchronizedMap(WeakHashMap<MediaSink, BrowserAudioMediaSink>())
+    // Both maps and their display transitions share one monitor; retirement detaches the pair
+    // before closing it outside this monitor. Sink teardown remains owner-specific.
+    private val tapLock = Any()
+    private val taps = WeakHashMap<MediaSink, WebMediaSink>() // guarded by tapLock
+    private val audioTaps = WeakHashMap<MediaSink, BrowserAudioMediaSink>() // guarded by tapLock
     @Volatile private var carPlayDisplayPaused = false
 
     /** AirPlay borrows the canvas; the CarPlay controller and its Wi-Fi/session resources stay alive. */
-    fun pauseCarPlayDisplay() = synchronized(taps) {
+    fun pauseCarPlayDisplay() = synchronized(tapLock) {
         if (!carPlayDisplayPaused) CarPlayBackgroundSession.snapshot()?.controller?.sendTouch(emptyList())
         carPlayDisplayPaused = true
         audioTaps.values.forEach { it.pauseAudio() }
         taps.values.forEach { it.pauseDisplay() }
     }
 
-    fun resumeCarPlayDisplay() = synchronized(taps) {
+    fun resumeCarPlayDisplay() = synchronized(tapLock) {
         // A stale receiver status or a concurrent CarPlay start must not revoke a live mirror.
         if (hub.hasAirPlayDisplay() || com.shilapi.xcertplay.web.AirPlayBrowserPlayback.snapshot()?.get("resource") != null) return@synchronized
         carPlayDisplayPaused = false
@@ -222,27 +224,31 @@ internal object TeslaBrowserLink {
      */
     fun tee(sink: MediaSink, phoneBrowser: Boolean, width: Int, height: Int, fps: Int = TeslaBrowserCanvas.FPS): MediaSink {
         if (!phoneBrowser) return sink
-        return synchronized(taps) {
+        val replacement = synchronized(tapLock) {
             val web = WebMediaSink(hub, width, height, fps)
             if (carPlayDisplayPaused) web.pauseDisplay()
             taps[sink] = web
             if (!carPlayDisplayPaused) audioHub.enabled = app?.let { !BrowserCarPlayAudioSettings.disabled(it) } ?: true
             val audio = BrowserAudioMediaSink(web, audioHub, initiallyPaused = carPlayDisplayPaused,
                 voiceFactory = app?.let { context -> BluetoothVoiceFactory { state -> AndroidBluetoothVoiceChannel(context, state) } })
-            audioTaps.put(sink, audio)?.close()
-            BrowserOnlyMediaSink(sink, audio)
+            val previous = audioTaps.put(sink, audio)
+            BrowserOnlyMediaSink(sink, audio) to previous
         }
+        replacement.second?.close()
+        return replacement.first
     }
 
     /** Ends the browser's stream of [sink]'s session, which is being retired; the next session starts a new one. */
     fun releaseTap(sink: MediaSink) {
-        audioTaps.remove(sink)?.close()
-        taps.remove(sink)?.close()
+        val retired = synchronized(tapLock) { audioTaps.remove(sink) to taps.remove(sink) }
+        retired.first?.close()
+        retired.second?.close()
     }
 
     /** A retained wireless engine starts its next stream with the replacement display's negotiated canvas. */
     fun updateCanvas(sink: MediaSink, width: Int, height: Int) {
-        taps[sink]?.updateCanvas(width, height)
+        val tap = synchronized(tapLock) { taps[sink] }
+        tap?.updateCanvas(width, height)
     }
 
     /** The 4-digit pairing code; created (SecureRandom) and saved the first time. */
@@ -551,10 +557,16 @@ internal object TeslaBrowserLink {
         synchronized(statsLock) { lastStatsLog = null }
         host.set(null)
         listeners.clear()
-        synchronized(audioTaps) { audioTaps.values.forEach { it.close() }; audioTaps.clear() }
+        val retired = synchronized(tapLock) {
+            val previous = audioTaps.values.toList() to taps.values.toList()
+            audioTaps.clear()
+            taps.clear()
+            carPlayDisplayPaused = false
+            previous
+        }
+        retired.first.forEach { it.close() }
+        retired.second.forEach { it.close() }
         audioHub.enabled = true
-        taps.clear()
-        carPlayDisplayPaused = false
         app = null
     }
 

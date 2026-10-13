@@ -1,0 +1,7 @@
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.008s
+
+OK
+https://github.com/example/repo/releases/draft
+https://github.com/example/repo/releases/draft

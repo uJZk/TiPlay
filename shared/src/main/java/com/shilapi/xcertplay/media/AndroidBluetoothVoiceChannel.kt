@@ -260,8 +260,9 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
                 val begun = SystemClock.elapsedRealtime()
                 outputThread = Thread({
                     try {
+                        val silence = ShortArray(mixer.rate / 50)
                         while (running.get()) {
-                            val samples = if (ready.get()) mixer.next() else ShortArray(mixer.rate / 50)
+                            val samples = if (ready.get()) mixer.next() else silence
                             var offset = 0
                             while (running.get() && offset < samples.size) {
                                 val count = audio.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
@@ -285,7 +286,7 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
                         ready.set(true)
                         main.post { if (token == generation && wanted === config && running.get()) state(BluetoothVoiceState("active")) }
                     }
-                    val converted = resampler.convert(samples.copyOf(count))
+                    val converted = resampler.convert(if (count == samples.size) samples else samples.copyOf(count))
                     val pcm = ByteArray(converted.size * 2)
                     converted.forEachIndexed { i, sample -> pcm[2 * i] = sample.toByte(); pcm[2 * i + 1] = (sample.toInt() shr 8).toByte() }
                     sender.accept(pcm)

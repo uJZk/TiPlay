@@ -6,6 +6,8 @@ import com.shilapi.xcertplay.web.WebVideoCodecs
 
 /** Ordinary mirror configuration, including UxPlay's hvc1 sample-entry envelope. */
 internal object ReceiverMirrorCodec {
+    private val START_CODE = byteArrayOf(0, 0, 0, 1)
+
     data class Config(val codec: VideoCodec, val record: ByteArray, val lengthBytes: Int)
 
     fun config(payload: ByteArray, hevcEnabled: Boolean): Config {
@@ -37,7 +39,7 @@ internal object ReceiverMirrorCodec {
             cursor += lengthBytes
             require(size > 0 && size <= payload.size - cursor)
             require(output.size() <= 8 * 1024 * 1024 - size - 4)
-            output.write(byteArrayOf(0, 0, 0, 1))
+            output.write(START_CODE)
             output.write(payload, cursor, size)
             cursor += size
         }

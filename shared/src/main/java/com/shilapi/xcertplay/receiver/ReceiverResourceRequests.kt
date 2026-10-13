@@ -5,7 +5,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
-/** A seek cancels the Media3 waiter, but cannot cancel the iPhone's in-flight FCUP exchange. */
+/** Shares bounded iPhone FCUP exchanges across callers without extending their original deadlines. */
 internal class ReceiverResourceRequests(
     private val timeoutNanos: Long = TimeUnit.SECONDS.toNanos(30),
     private val maximumPending: Int = 16,

@@ -20,7 +20,10 @@ fun interface BluetoothVoiceFactory {
 
 /** CarPlay guidance uses default/compatibility on the low-rate stream, not the media stream. */
 object BluetoothVoicePolicy {
-    fun navigation(id: AudioStreamId): Boolean = id.type !in setOf(102, 103) &&
-        id.audioType.lowercase() in setOf("navigation", "default", "compatibility")
-    fun allowed(id: AudioStreamId): Boolean = navigation(id) || id.audioType.lowercase() in setOf("telephony", "speechrecognition")
+    private val mediaTypes = setOf(102, 103)
+    private val navigationPurposes = setOf("navigation", "default", "compatibility")
+    private val voicePurposes = setOf("telephony", "speechrecognition")
+    fun navigation(id: AudioStreamId): Boolean = id.type !in mediaTypes &&
+        id.audioType.lowercase() in navigationPurposes
+    fun allowed(id: AudioStreamId): Boolean = navigation(id) || id.audioType.lowercase() in voicePurposes
 }

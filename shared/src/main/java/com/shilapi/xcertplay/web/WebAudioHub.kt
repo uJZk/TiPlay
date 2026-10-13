@@ -8,6 +8,20 @@ import java.util.concurrent.TimeUnit
 
 /** PCM handoff only: the browser owns playback. Live producers never wait; music feeders apply backpressure. */
 class WebAudioHub {
+    /** A decoder's publication lease; retiring it cannot wait for buffered music capacity. */
+    class Publication internal constructor(private val hub: WebAudioHub, internal val owner: Any) : Closeable {
+        @Volatile internal var active = true
+            private set
+        override fun close() {
+            synchronized(hub) {
+                active = false
+                hub.subscription?.discard(this)
+            }
+        }
+    }
+
+    internal fun publication(owner: Any) = Publication(this, owner)
+
     private var owner: Any? = null
     private var sequence = 0
     private var voiceOwner: Any? = null
@@ -41,11 +55,13 @@ class WebAudioHub {
     fun publish(owner: Any, id: Int, sampleRate: Int, channels: Int, pcm: ByteArray,
                               buffered: Boolean = false, reset: Boolean = false,
                               presentationNanos: Long? = null,
-                              mode: BrowserPlaybackMode = BrowserPlaybackMode.CARPLAY) {
+                              mode: BrowserPlaybackMode = BrowserPlaybackMode.CARPLAY,
+                              publication: Publication? = null) {
         if (id !in 0..4 || channels !in 1..2 || sampleRate !in 8000..96000 ||
             (pcm.isEmpty() && !reset) || pcm.size > MAX_PCM || pcm.size % (channels * 2) != 0) return
         val delivery = synchronized(this) {
             if (!enabled || this.owner !== owner || (voiceMuted && pcm.isNotEmpty())) return
+            if (publication != null && (!publication.active || publication.owner !== owner)) return
             val target = subscription ?: return
             if (reset) epochs[id]++
             Delivery(target, sequence++, target.generation, epochs[id])
@@ -55,7 +71,7 @@ class WebAudioHub {
             .put(((if (buffered) 1 else 0) or (if (reset) 2 else 0) or mode.audioFlags).toByte())
             .putInt(sampleRate).putInt(delivery.sequence).putInt(delivery.epoch)
             .putDouble(presentationNanos?.div(1e6) ?: Double.NaN).put(pcm).array()
-        delivery.target.offer(record, buffered, delivery.generation)
+        delivery.target.offer(record, buffered, delivery.generation, publication)
     }
 
     @Synchronized fun subscribe(): Subscription {
@@ -94,28 +110,47 @@ class WebAudioHub {
     }
 
     class Subscription internal constructor() : Closeable {
-        private data class Packet(val generation: Long, val bytes: ByteArray)
+        private data class Packet(val generation: Long, val bytes: ByteArray, val publication: Publication?)
         private val live = ArrayBlockingQueue<Packet>(16)
         private val music = ArrayBlockingQueue<Packet>(16)
         @Volatile internal var generation = 0L
             private set
         @Volatile var closed = false
             private set
-        internal fun offer(record: ByteArray, buffered: Boolean, generation: Long) {
-            if (closed || generation != this.generation) return
-            val packet = Packet(generation, record)
+        internal fun offer(record: ByteArray, buffered: Boolean, generation: Long, publication: Publication? = null) {
+            if (closed || generation != this.generation || publication?.active == false) return
+            val packet = Packet(generation, record, publication)
             if (buffered) {
                 // Preserve ordered music. Waiting happens on the decoder feeder, outside the hub monitor.
                 // A stalled HTTP writer is retired instead of corrupting the stream by dropping music.
-                if (!music.offer(packet, 1000, TimeUnit.MILLISECONDS) && generation == this.generation) close()
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+                while (!closed && generation == this.generation && publication?.active != false) {
+                    val remaining = deadline - System.nanoTime()
+                    if (remaining <= 0L) {
+                        synchronized(this) {
+                            if (generation == this.generation && publication?.active != false) close()
+                        }
+                        return
+                    }
+                    // Queue bulk removals need not wake an offer, and other producers may still fill it.
+                    // Recheck cancellation without interrupting caller-owned threads or extending the deadline.
+                    if (music.offer(packet, minOf(remaining, 10_000_000L), TimeUnit.NANOSECONDS)) {
+                        if (closed || generation != this.generation || publication?.active == false) music.remove(packet)
+                        return
+                    }
+                }
                 return
             }
-            if (!live.offer(packet)) {
-                live.clear()
-                // A stalled reader gets fresh audio and resets its browser queue, never a stale backlog.
-                record[7] = (record[7].toInt() or 2).toByte()
-                live.offer(packet)
+            synchronized(this) {
+                if (closed || generation != this.generation || publication?.active == false) return
+                if (!live.offer(packet)) {
+                    live.clear()
+                    // A stalled reader gets fresh audio and resets its browser queue, never a stale backlog.
+                    record[7] = (record[7].toInt() or 2).toByte()
+                    live.offer(packet)
+                }
             }
+            if (closed || generation != this.generation || publication?.active == false) live.remove(packet)
         }
         fun take(timeoutMillis: Long): ByteArray? {
             val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
@@ -124,16 +159,20 @@ class WebAudioHub {
                 val remaining = maxOf(0L, deadline - System.nanoTime())
                 val packet = live.poll() ?: music.poll(minOf(remaining, 10_000_000L), TimeUnit.NANOSECONDS)
                 if (packet == null) { if (System.nanoTime() >= deadline) return null else continue }
-                if (packet.generation == generation) return packet.bytes
+                if (packet.generation == generation && packet.publication?.active != false) return packet.bytes
             }
             return null
         }
-        internal fun clearStream(id: Int) {
+        @Synchronized internal fun clearStream(id: Int) {
             live.removeIf { it.bytes[5].toInt() == id }
             music.removeIf { it.bytes[5].toInt() == id }
         }
-        internal fun clear() { generation++; live.clear(); music.clear() }
-        override fun close() { closed = true; clear() }
+        @Synchronized internal fun discard(publication: Publication) {
+            live.removeIf { it.publication === publication }
+            music.removeIf { it.publication === publication }
+        }
+        @Synchronized internal fun clear() { generation++; live.clear(); music.clear() }
+        @Synchronized override fun close() { closed = true; clear() }
     }
 
     private data class Delivery(val target: Subscription, val sequence: Int, val generation: Long, val epoch: Int)

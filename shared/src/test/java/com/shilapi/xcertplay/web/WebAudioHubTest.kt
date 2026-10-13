@@ -6,6 +6,98 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class WebAudioHubTest {
+    @Test fun aRetiredPublicationCannotEnqueueOrAdvanceTheReplacementEpoch() {
+        val hub = WebAudioHub(); val owner = Any()
+        hub.begin(owner); val reader = hub.subscribe()
+        val old = hub.publication(owner)
+        val ready = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val delayed = java.util.concurrent.CompletableFuture.runAsync {
+            ready.countDown()
+            check(release.await(2, java.util.concurrent.TimeUnit.SECONDS))
+            hub.publish(owner, 0, 48000, 1, byteArrayOf(99, 0), reset = true, publication = old)
+        }
+        try {
+            assertTrue(ready.await(1, java.util.concurrent.TimeUnit.SECONDS))
+            old.close()
+            val current = hub.publication(owner)
+            hub.publish(owner, 0, 48000, 1, byteArrayOf(1, 0), reset = true, publication = current)
+            val epoch = ByteBuffer.wrap(reader.take(100)!!).getInt(16)
+            release.countDown(); delayed.get(1, java.util.concurrent.TimeUnit.SECONDS)
+            assertNull(reader.take(10))
+            hub.publish(owner, 0, 48000, 1, byteArrayOf(2, 0), publication = current)
+            val next = reader.take(100)!!
+            assertEquals(2, next[28].toInt())
+            assertEquals(epoch, ByteBuffer.wrap(next).getInt(16))
+            assertEquals(0, next[7].toInt() and 2)
+            current.close()
+        } finally { release.countDown(); reader.close() }
+    }
+
+    @Test fun retiringAFullPublicationReleasesItsQueuedAndWaitingMusicBeforeReplacement() {
+        val hub = WebAudioHub(); val owner = Any()
+        hub.begin(owner); val reader = hub.subscribe()
+        val old = hub.publication(owner)
+        repeat(16) { hub.publish(owner, 0, 48000, 1, byteArrayOf(99, 0), buffered = true, publication = old) }
+        val producer = Thread {
+            hub.publish(owner, 0, 48000, 1, byteArrayOf(100, 0), buffered = true, publication = old)
+        }
+        producer.start()
+        try {
+            assertTrue(awaitBufferedWaiters(listOf(producer)))
+            old.close()
+            producer.join(500)
+            assertFalse(producer.isAlive)
+            assertNull(reader.take(10))
+            assertFalse(reader.closed)
+            val current = hub.publication(owner)
+            hub.publish(owner, 0, 48000, 1, byteArrayOf(3, 0), buffered = true, reset = true, publication = current)
+            assertEquals(3, reader.take(100)!![28].toInt())
+            current.close()
+        } finally { old.close(); producer.interrupt(); producer.join(1000); reader.close() }
+    }
+
+    @Test fun retiringAPublicationCancelsEveryWaiterEvenWhenOtherMusicKeepsTheQueueFull() {
+        val hub = WebAudioHub(); val owner = Any()
+        hub.begin(owner); val reader = hub.subscribe()
+        val current = hub.publication(owner)
+        repeat(16) { hub.publish(owner, 0, 48000, 1, byteArrayOf(it.toByte(), 0), buffered = true, publication = current) }
+        val old = hub.publication(owner)
+        val done = java.util.concurrent.CountDownLatch(3)
+        val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+        val producers = List(3) {
+            Thread {
+                try { hub.publish(owner, 0, 48000, 1, byteArrayOf(99, 0), buffered = true, publication = old) }
+                catch (error: Throwable) { failure.compareAndSet(null, error) }
+                finally { done.countDown() }
+            }.apply { start() }
+        }
+        try {
+            assertTrue(awaitBufferedWaiters(producers))
+            old.close()
+            assertTrue("All retired producers must leave backpressure without an external interrupt", done.await(500, java.util.concurrent.TimeUnit.MILLISECONDS))
+            assertNull(failure.get())
+            assertFalse(reader.closed)
+            repeat(16) { assertEquals(it, reader.take(100)!![28].toInt()) }
+            assertNull(reader.take(10))
+            hub.publish(owner, 0, 48000, 1, byteArrayOf(42, 0), buffered = true, publication = current)
+            assertEquals(42, reader.take(100)!![28].toInt())
+        } finally {
+            old.close(); current.close()
+            producers.forEach { it.interrupt(); it.join(1000) }
+            reader.close()
+        }
+    }
+
+    private fun awaitBufferedWaiters(producers: List<Thread>): Boolean {
+        val deadline = System.nanoTime() + 500_000_000L
+        while (System.nanoTime() < deadline) {
+            if (producers.all { it.state == Thread.State.TIMED_WAITING }) return true
+            Thread.sleep(1)
+        }
+        return false
+    }
+
     @Test fun voiceTransitionsDiscardBufferedPcmAndSurviveAudioOwnershipUntilHardwareRelease() {
         val hub = WebAudioHub(); val carPlay = Any(); val airPlay = Any()
         hub.begin(carPlay); val reader = hub.subscribe()

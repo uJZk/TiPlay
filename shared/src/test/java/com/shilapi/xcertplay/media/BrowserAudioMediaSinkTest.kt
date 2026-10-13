@@ -16,6 +16,83 @@ import java.nio.ByteOrder
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], manifest = Config.NONE)
 class BrowserAudioMediaSinkTest {
+    @Test fun replacingADecoderBlockedOnMusicCapacityRetiresItsPendingResetWithoutClosingTheReader() {
+        val hub = WebAudioHub()
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub)
+        val reader = hub.subscribe()
+        val id = AudioStreamId(103, "media")
+        val format = AudioFormat(AudioCodecKind.LPCM, 16000, 1, id.type, id.audioType)
+        try {
+            repeat(16) { hub.publish(sink, 0, 16000, 1, byteArrayOf(it.toByte(), 0), buffered = true) }
+            sink.onAudioStarted(id, format, 0)
+            val old = decoderThread(sink, id)
+            sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, 99), 0)
+            awaitMusicWait(old)
+            val replacement = java.util.concurrent.CompletableFuture.runAsync { sink.onAudioStarted(id, format, 0) }
+            replacement.get(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+            old.join(500)
+            assertFalse("Retired decoder must leave its full-buffer wait", old.isAlive)
+            repeat(16) { assertEquals(it, reader.take(100)!![28].toInt()) }
+            assertNull(reader.take(20))
+            assertFalse(reader.closed)
+            sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, 77), 0)
+            val fresh = reader.take(1000)!!
+            assertEquals(77, fresh[28].toInt())
+            assertEquals(2, fresh[7].toInt() and 2)
+            val epoch = ByteBuffer.wrap(fresh).getInt(16)
+            sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, 78), 1)
+            val next = reader.take(1000)!!
+            assertEquals(78, next[28].toInt())
+            assertEquals(epoch, ByteBuffer.wrap(next).getInt(16))
+            assertEquals(0, next[7].toInt() and 2)
+        } finally { sink.close(); reader.close() }
+    }
+
+    @Test fun pausingAFullMusicDecoderReturnsPromptlyAndResumeStartsOnlyFreshPcm() {
+        val hub = WebAudioHub()
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub)
+        val reader = hub.subscribe()
+        val id = AudioStreamId(103, "media")
+        val format = AudioFormat(AudioCodecKind.LPCM, 16000, 1, id.type, id.audioType)
+        try {
+            repeat(16) { hub.publish(sink, 0, 16000, 1, byteArrayOf(1, 0), buffered = true) }
+            sink.onAudioStarted(id, format, 0)
+            val old = decoderThread(sink, id)
+            sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, 99), 0)
+            awaitMusicWait(old)
+            java.util.concurrent.CompletableFuture.runAsync { sink.pauseAudio() }
+                .get(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+            old.join(500)
+            assertFalse(old.isAlive)
+            sink.resumeAudio()
+            while (reader.take(10) != null) Unit
+            sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, 42), 0)
+            val fresh = reader.take(1000)!!
+            assertEquals(42, fresh[28].toInt())
+            assertEquals(2, fresh[7].toInt() and 2)
+            assertNull(reader.take(20))
+            assertFalse(reader.closed)
+        } finally { sink.close(); reader.close() }
+    }
+
+    private fun decoderThread(sink: BrowserAudioMediaSink, id: AudioStreamId): Thread {
+        val renderers = BrowserAudioMediaSink::class.java.getDeclaredField("renderers").apply { isAccessible = true }
+            .get(sink) as Map<*, *>
+        val decoder = requireNotNull(renderers[id])
+        return decoder.javaClass.getDeclaredField("thread").apply { isAccessible = true }.get(decoder) as Thread
+    }
+
+    private fun awaitMusicWait(thread: Thread) {
+        val deadline = System.nanoTime() + 2_000_000_000L
+        while (System.nanoTime() < deadline) {
+            val stack = thread.stackTrace
+            if (stack.any { it.className == "java.util.concurrent.ArrayBlockingQueue" && it.methodName == "offer" } &&
+                stack.any { it.className == "com.shilapi.xcertplay.web.WebAudioHub\$Subscription" }) return
+            Thread.sleep(1)
+        }
+        fail("Decoder did not enter buffered publication backpressure")
+    }
+
     @Test fun aNewPausedCarPlaySinkDoesNotTakeAudioFromAirPlay() {
         val hub = WebAudioHub()
         val airPlay = Any()

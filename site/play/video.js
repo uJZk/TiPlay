@@ -235,7 +235,7 @@ export function createDecoderPipeline({ post: send, present }) {
  * It keeps the last frame (closing the one before) so a resize can redraw a still CarPlay screen.
  */
 export function createFramePresenter(canvas, { now = () => performance.timeOrigin + performance.now(),
-  applyTimingPolicy = false, onPresentation = () => {} } = {}) {
+  applyTimingPolicy = false } = {}) {
   const drawMs = new Samples();
   const fpsWindow = createFpsWindow();
   let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null, expiredFrames = 0, untimedFrames = 0;
@@ -273,7 +273,6 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       const offset = Number.isFinite(timing) ? performance.timeOrigin + at - timing : null;
       if (drawn) {
         fpsWindow.frame(at, 1, offset);
-        onPresentation({ sourceTime: Number.isFinite(timing) ? timing : null, submittedTime: performance.timeOrigin + at, offsetMs: offset });
       }
       lastFrame?.close();
       lastFrame = frame;
@@ -350,7 +349,7 @@ function glRenderer(gl) {
     kind: typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext ? 'webgl2' : 'webgl',
     draw(frame, box, allowed = () => true) {
       if (gl.isContextLost()) return false;
-      const { width, height } = gl.canvas;
+      const { height } = gl.canvas;
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
       gl.viewport(box.x, height - box.y - box.height, box.width, box.height);
       if (!allowed()) return false;

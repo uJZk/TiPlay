@@ -35,7 +35,7 @@ export async function* readAudioRecords(body) {
       const header = new DataView(bytes.buffer);
       const channels = bytes[2], rate = header.getUint32(4);
       const headerSize = 24;
-      if (bytes[0] !== 2 || bytes[1] > 5 || (bytes[1] === 5 && size !== headerSize) || size < headerSize || (bytes[3] & 12) > 4 || channels < 1 || channels > 2 || rate < 8000 || rate > 96000 || (size - headerSize) % (channels * 2)) {
+      if (bytes[0] !== 2 || bytes[1] > 5 || (bytes[1] === 5 && size !== headerSize) || (bytes[3] & 12) > 4 || channels < 1 || channels > 2 || rate < 8000 || rate > 96000 || (size - headerSize) % (channels * 2)) {
         throw new Error('invalid audio format');
       }
       yield { type: bytes[1], channels, rate, flags: bytes[3], mode: ['carplay', 'airplay-mirror'][(bytes[3] & 12) >> 2], sequence: header.getUint32(8), epoch: header.getUint32(12), presentationMs: header.getFloat64(16), pcm: bytes.slice(headerSize).buffer };

@@ -26,8 +26,6 @@ data class AirPlayDeviceInfo(
 /** Session lifecycle and command callbacks for the driver/UI layer. */
 interface AirPlaySessionListener {
     fun onTcpAccepted(event: AirPlayTcpAccepted) {}
-    /** Shared listeners wait for a CarPlay handshake before reporting a TCP connection to its owner. */
-    fun onControlProtocolSelected(session: AirPlaySession) {}
     fun onSessionActive(session: AirPlaySession) {}
     fun onSessionEnded(session: AirPlaySession) {}
     fun onVideoFrameRendered(session: AirPlaySession) {}
@@ -82,12 +80,6 @@ class AirPlaySession(
     internal var encBuf = ByteArray(0)
     internal var deviceBtMac = ""
     internal val activeStreams = linkedSetOf<Int>()
-    private val unifiedReceiver = com.shilapi.xcertplay.receiver.UnifiedAirPlayTrial.connection(socket, config, identity)
-    internal val isUnifiedOrdinary: Boolean get() = unifiedReceiver?.isOrdinary == true
-    @Volatile private var carPlayHandshakeSelected = false
-    private val protocolSelectionNotified = AtomicBoolean(false)
-    internal val isUnifiedCarPlay: Boolean get() = unifiedReceiver?.isCarPlay == true ||
-        carPlayHandshakeSelected || cipher != null
     /** Audio streams the iPhone asked for, as "type/audioType", for the summary at close. */
     private val audioSetups = AirPlayAudioSetupDiagnostics()
     @Volatile private var recorded = false
@@ -155,9 +147,8 @@ class AirPlaySession(
         mainScreenToken = null
         clearClusterContent()
         safeClose(socket)
-        unifiedReceiver?.close()
         try {
-            if (!isUnifiedOrdinary) media.onSessionClosed(this)
+            media.onSessionClosed(this)
         } catch (error: Exception) {
             Log.w(TAG, "airplay media stream teardown failed", error)
         }
@@ -479,28 +470,8 @@ class AirPlaySession(
                 val parsed = RtspMessage.parseMessages(accumulated)
                 accumulated = parsed.rest
                 for (request in parsed.messages) {
-                    if (isUnifiedOrdinary && request.method.startsWith("HTTP/")) continue
-                    // Legacy pairing and media remain independent of the encrypted CarPlay control state.
-                    // Handle them before the retained CarPlay trace path, which formats raw payloads.
-                    val ordinaryResponse = unifiedReceiver?.handle(request)
-                    if (ordinaryResponse != null) {
-                        output.write(RtspMessage.buildResponse(request, ordinaryResponse))
-                        output.flush()
-                        unifiedReceiver.responseSent(ordinaryResponse)
-                        if (ordinaryResponse.headers["Connection"] == "close") return
-                        continue
-                    }
                     val cseq = request.headers["cseq"] ?: "-"
                     val path = request.path.lowercase()
-                    if (unifiedReceiver == null && request.method == "POST" &&
-                        (path.endsWith("/auth-setup") ||
-                            (path.endsWith("/pair-setup") && request.body.size != 32) ||
-                            (path.endsWith("/pair-verify") && request.body.size != 68))) {
-                        carPlayHandshakeSelected = true
-                    }
-                    if (isUnifiedCarPlay && protocolSelectionNotified.compareAndSet(false, true)) {
-                        listener.onControlProtocolSelected(this)
-                    }
                     val showInDebugOverlay =
                         !path.endsWith("/feedback") &&
                             !(request.method == "POST" && path.endsWith("/command"))
@@ -596,8 +567,7 @@ class AirPlaySession(
                 else RtspMessage.Response(headers = mapOf("Content-Type" to OCTET_CONTENT_TYPE), body = body)
             }
             path.endsWith("/info") -> {
-                val info = AirPlayInfoPlist.build(config).toMutableMap()
-                unifiedReceiver?.decorateCarPlayInfo(info)
+                val info = AirPlayInfoPlist.build(config)
                 if (request.body.isNotEmpty()) {
                     val requestInfo = try {
                         BplistCodec.decode(request.body).toString()

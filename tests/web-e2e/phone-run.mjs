@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { History, listen, closeServer } from './resources.mjs';
 // End-to-end check of the real phone side: RealPhone.java runs the app's BrowserLinkServer, WebVideoHub,
-// VideoTeeMediaSink and WebMediaSink (compiled :shared classes) with an H.264 clip. A separate static server
+// BrowserOnlyMediaSink and WebMediaSink (compiled :shared classes) with an H.264 clip. A separate static server
 // hosts the browser page, matching the HTTPS page + phone protocol split. Not part of CI; see README.md.
 //
 // The first run forces an unsupported H.264 decoder to check transport and the page's message independently of
 // installed codecs. The LAN run checks the secure-context requirement; the third uses a decoder stand-in to verify chunks.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { connect } from 'node:net';
 import { homedir, networkInterfaces, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
@@ -221,7 +221,7 @@ function watch(page) {
   return seen;
 }
 
-/** Separate page/phone origins; the code only in /video, no Referer to the phone, no CSP or script errors. */
+/** Separate page/phone origins; the code only in authenticated media streams, no Referer to the phone, no CSP or script errors. */
 async function checkRequests(page, seen, origin, label) {
   const counts = (await stats(page)).phone?.link?.counts ?? {};
   check(!counts.busy, `${label}: the phone never answered busy (${JSON.stringify(counts)})`);
@@ -229,8 +229,8 @@ async function checkRequests(page, seen, origin, label) {
   const pageOrigin = new URL(page.url()).origin;
   const foreign = seen.requests.filter(request => ![pageOrigin, origin].includes(new URL(request.url).origin));
   check(!foreign.length, `${label}: requests go only to the page host and phone${foreign.length ? `, not ${foreign[0].url}` : ''}`);
-  const leaks = seen.requests.filter(request => request.url.includes(CODE) && new URL(request.url).pathname !== '/video');
-  check(!leaks.length, `${label}: only /video carries the pairing code in its URL${leaks.length ? `, not ${leaks[0].url}` : ''}`);
+  const leaks = seen.requests.filter(request => request.url.includes(CODE) && !['/video', '/audio'].includes(new URL(request.url).pathname));
+  check(!leaks.length, `${label}: only authenticated /video or /audio carries the pairing code in its URL${leaks.length ? `, not ${leaks[0].url}` : ''}`);
   const referred = seen.requests.filter(request => new URL(request.url).origin === origin && request.headers.referer);
   check(!referred.length, `${label}: no request sends a Referer${referred.length ? ` (${referred[0].url})` : ''}`);
   const problems = seen.problems.filter(text => !/Failed to load resource|ERR_CONNECTION_RESET|ERR_EMPTY_RESPONSE|network error/i.test(text));
@@ -309,8 +309,8 @@ function startPageHost() {
   const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', svg: 'image/svg+xml', png: 'image/png' };
   const server = createServer((req, res) => {
     const name = new URL(req.url, 'http://page').pathname.slice(1) || 'index.html';
-    const file = join(PAGE_DIR, name);
-    if (name.includes('/') || !existsSync(file)) return res.writeHead(404).end();
+    const file = resolve(PAGE_DIR, name);
+    if (!file.startsWith(resolve(PAGE_DIR) + sep) || !existsSync(file) || !statSync(file).isFile()) return res.writeHead(404).end();
     res.writeHead(200, { 'Content-Type': types[name.split('.').pop()] ?? 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(readFileSync(file));
   });
@@ -386,7 +386,7 @@ async function main() {
         `onBrowserStats got the page's stats with path and the unsupported codec (${Object.keys(st.values).length} fields)`);
       const registered = await waitFor('the service worker', () => page.evaluate(() =>
         navigator.serviceWorker.getRegistration().then(registration => Boolean(registration?.active))), 8000).catch(() => false);
-      check(registered, 'the separately hosted page registers its service worker');
+      check(registered, `the separately hosted page registers its service worker${registered ? '' : `; responses ${seen.responses.join(', ')}; errors ${seen.problems.join(', ')}`}`);
       const video = seen.requests.find(request => new URL(request.url).pathname === '/video');
       sessions.add(new URL(video.url).searchParams.get('s'));
       await checkRequests(page, seen, local, 'loopback');
@@ -419,6 +419,7 @@ async function main() {
       const rendered = await waitFor('"first frame rendered"', () => phone.since(mark, 'diagnostic').find(event => event.message === 'first frame rendered'));
       check(rendered.session === standInSession, 'the page decoded the fresh epoch and its "dec" reached the session\'s diagnostic handler as "first frame rendered"');
       await waitFor('decoded frames', async () => (await stats(page)).page.video.decodedFps > 0);
+      await waitFor('scheduled frames actually drawn', async () => (await stats(page)).page.video.currentFps > 0);
       const standIn = await page.evaluate(() => window.__standIn);
       const [sps, pps, ...idr] = standIn.firstKeyTypes ?? [];
       check(sps === 7 && pps === 8 && idr.length && idr.every(type => type === 5) && standIn.firstDeltaTypes?.every(type => type === 1) &&
@@ -435,7 +436,7 @@ async function main() {
       const st = await waitFor('a stats event while decoding', () => phone.since(mark, 'stats').find(event => event.values['video.decoded'] > 0), 8000);
       const keys = statsLogKeys();
       const missing = keys.filter(key => !(key in st.values));
-      check(keys.length >= 5 && !missing.length, `the page's st event has every field of the session log line (${keys.join(', ')})${missing.length ? `; missing ${missing}` : ''}`);
+      check(keys.length >= 5 && !missing.length, `the page's st event has every field of the session log line (${keys.join(', ')})${missing.length ? `; missing ${missing}; captured stats ${JSON.stringify(st.values)}` : ''}`);
       const size = await page.evaluate(() => window.tiplayStats && JSON.stringify(window.tiplayStats.page).length);
       log(`stats snapshot ${size} bytes; st event ${JSON.stringify(st.values).length} bytes of 2048`);
 
@@ -473,8 +474,13 @@ async function main() {
         .catch(async error => { throw new Error(`${error.message}; restart evidence ${JSON.stringify(phone.events.slice(restartMark).filter(event => ['restarted', 'diagnostic', 'keyframe-request', 'log'].includes(event.event)))}; page ${JSON.stringify(await stats(page))}`); });
       check(Boolean(second) && phone.logs(restartMark).filter(text => text.startsWith('Web video: stream started')).length === 1,
         'after a restart the page decoded the next epoch of the new session; the retired session\'s late screen did not take the hub');
-      const decodedAfterRestart = (await stats(page)).page.video.decoded;
-      await waitFor('decoding after the restart', async () => (await stats(page)).page.video.decoded > decodedAfterRestart + 20);
+      const restartedStats = await waitFor('new-session decoder statistics', async () => {
+        const video = (await stats(page)).page.video;
+        return Number.isFinite(video.decoded) && video;
+      });
+      const decodedAfterRestart = restartedStats.decoded;
+      await waitFor('decoding after the restart', async () => (await stats(page)).page.video.decoded > decodedAfterRestart + 20)
+        .catch(async error => { throw new Error(`${error.message}; initial decoded ${decodedAfterRestart}; page ${JSON.stringify(await stats(page))}; restart events ${JSON.stringify(phone.events.slice(restartMark))}`); });
       check((await stats(page)).page.video.codec === codec, 'the page keeps decoding the new session');
 
       const video = seen.requests.find(request => new URL(request.url).pathname === '/video');
@@ -528,8 +534,8 @@ async function main() {
         await checkTap(page, phone, 0.6, 0.3, 'other origin');
         const phoneRequests = seen.requests.filter(request => new URL(request.url).port === String(phone.port));
         check(phoneRequests.every(request => !request.headers.referer) &&
-          phoneRequests.filter(request => request.url.includes(CODE)).every(request => new URL(request.url).pathname === '/video'),
-        'other origin: only /video carries the code in its URL, and no request to the phone sends a Referer');
+          phoneRequests.filter(request => request.url.includes(CODE)).every(request => ['/video', '/audio'].includes(new URL(request.url).pathname)),
+        'other origin: only authenticated /video or /audio carries the code in its URL, and no request to the phone sends a Referer');
         const video = phoneRequests.find(request => new URL(request.url).pathname === '/video');
         sessions.add(new URL(video.url).searchParams.get('s'));
         const counts = (await stats(page)).phone?.link?.counts ?? {};

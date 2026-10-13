@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The phone side of the browser link for phone-run.mjs, made of the app's own :shared classes: BrowserLinkServer with an
-// API-only server, and a WebVideoHub fed through VideoTeeMediaSink → WebMediaSink with an H.264
+// API-only server, and a WebVideoHub fed through BrowserOnlyMediaSink → WebMediaSink with an H.264
 // Annex-B clip, the way CarPlayHostActivity.createMediaEngine wires a phone + browser session. Not part of CI; see
 // README.md.
 //
@@ -12,7 +12,7 @@
 import com.shilapi.xcertplay.airplay.AirPlayContact;
 import com.shilapi.xcertplay.airplay.MediaSink;
 import com.shilapi.xcertplay.airplay.VideoCodec;
-import com.shilapi.xcertplay.media.VideoTeeMediaSink;
+import com.shilapi.xcertplay.media.BrowserOnlyMediaSink;
 import com.shilapi.xcertplay.web.BrowserLinkServer;
 import com.shilapi.xcertplay.web.BrowserLinkStatus;
 import com.shilapi.xcertplay.web.BrowserPortalSignal;
@@ -20,6 +20,9 @@ import com.shilapi.xcertplay.web.BrowserSize;
 import com.shilapi.xcertplay.web.BrowserViewport;
 import com.shilapi.xcertplay.web.WebMediaSink;
 import com.shilapi.xcertplay.web.WebVideoHub;
+import com.shilapi.xcertplay.web.WebAudioHub;
+import com.shilapi.xcertplay.web.BrowserDisplaySource;
+import com.shilapi.xcertplay.web.BrowserPlaybackMode;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStreamReader;
@@ -50,7 +53,7 @@ public class RealPhone {
 
     record Clip(byte[] avcC, List<AccessUnit> units) {}
 
-    /** One CarPlay session's media path: the engine's sink (the tee) and the browser tap inside it. */
+    /** One CarPlay session's media path: the engine's browser-only sink and its browser tap. */
     record Session(int number, MediaSink engineSink, WebMediaSink tap) {}
 
     private static final AsyncLog OUT = new AsyncLog();
@@ -99,7 +102,7 @@ public class RealPhone {
                         last == null ? null : last.getSize(),
                         true,
                         Map.of("harness", "RealPhone"),
-                        BrowserPortalSignal.INSTANCE.getRevision());
+                        BrowserPortalSignal.INSTANCE.getRevision(), null);
                 }
 
                 @Override public boolean onTouch(List<AirPlayContact> contacts) {
@@ -126,7 +129,7 @@ public class RealPhone {
                 @Override public void log(String message) { emit("log", "source", "server", "message", message); }
             };
             server = new BrowserLinkServer(hub, callbacks, options.getOrDefault("bind", "0.0.0.0"),
-                Integer.parseInt(options.getOrDefault("port", "0")), () -> System.nanoTime() / 1_000_000);
+                Integer.parseInt(options.getOrDefault("port", "0")), () -> System.nanoTime() / 1_000_000, new WebAudioHub());
             // start() returns kotlin.Result<Int>, an inline class, so its JVM name is mangled.
             BrowserLinkServer.class.getMethod("start-d1pmJ48").invoke(server);
             if (server.getLocalPort() <= 0) {
@@ -137,7 +140,9 @@ public class RealPhone {
             startSession(hub, clip, width, height, fps);
             AtomicInteger next = new AtomicInteger();
             long frameNanos = 1_000_000_000L / fps;
-            long syntheticSourceOrigin = System.nanoTime() - 50_000_000L;
+            // CarPlay's raw deadline is zero: model scheduled presentation ahead of arrival,
+            // so the real presenter can submit early instead of correctly expiring every fixture frame.
+            long syntheticSourceOrigin = System.nanoTime() + 250_000_000L;
             long[] count = {0};
             feeder.scheduleAtFixedRate(() -> {
                 Session current = session;
@@ -209,29 +214,26 @@ public class RealPhone {
     /** A new session's engine sink, as CarPlayMediaEngine drives it: handlers first, then the screen, codec and config. */
     private static void startSession(WebVideoHub hub, Clip clip, int width, int height, int fps) {
         int number = sessions.incrementAndGet();
-        WebMediaSink tap = new WebMediaSink(hub, width, height, fps);
+        WebMediaSink tap = new WebMediaSink(hub, width, height, fps, BrowserDisplaySource.CARPLAY, BrowserPlaybackMode.CARPLAY);
         boolean published = false;
         try {
             MediaSink androidSink = new MediaSink() {}; // stands in for AndroidMediaSink, which needs Android
-            MediaSink tee = new VideoTeeMediaSink(androidSink, tap, error -> {
-                emit("tap-error", "session", number, "error", error.getClass().getSimpleName());
-                return Unit.INSTANCE;
-            });
+            MediaSink engineSink = new BrowserOnlyMediaSink(androidSink, tap);
             // This harness supplies synthetic source PTS in the local clock domain, independently of frame arrival.
-            tee.setVideoClockHandler(MAIN_SCREEN, senderNanos -> senderNanos);
-            tee.setVideoRecoveryHandler(MAIN_SCREEN, () -> {
+            engineSink.setVideoClockHandler(MAIN_SCREEN, senderNanos -> senderNanos);
+            engineSink.setVideoRecoveryHandler(MAIN_SCREEN, () -> {
                 emit("keyframe-request", "session", number);
                 if (session != null && session.number() == number) keyRequested.set(true);
                 return Unit.INSTANCE;
             });
-            tee.setVideoDiagnosticHandler(MAIN_SCREEN, message -> {
+            engineSink.setVideoDiagnosticHandler(MAIN_SCREEN, message -> {
                 emit("diagnostic", "session", number, "message", message);
                 return Unit.INSTANCE;
             });
-            tee.onScreenStreamActive(MAIN_SCREEN, true);
-            tee.onVideoCodec(MAIN_SCREEN, VideoCodec.H264);
-            tee.onVideoConfig(MAIN_SCREEN, clip.avcC());
-            session = new Session(number, tee, tap);
+            engineSink.onScreenStreamActive(MAIN_SCREEN, true);
+            engineSink.onVideoCodec(MAIN_SCREEN, VideoCodec.H264);
+            engineSink.onVideoConfig(MAIN_SCREEN, clip.avcC());
+            session = new Session(number, engineSink, tap);
             published = true;
         } finally {
             if (!published) tap.close();

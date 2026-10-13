@@ -50,7 +50,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
     }
 
     fun open(id: String, range: String?, route: (String) -> String): Resource? {
-        if (range != null && !Regex("bytes=(?:[0-9]{1,18}-[0-9]{0,18}|-[0-9]{1,18})").matches(range))
+        if (range != null && !BYTE_RANGE.matches(range))
             return Resource(416, "application/octet-stream", emptyList(), ByteArrayInputStream(ByteArray(0)))
         val url = synchronized(this) { if (closed.get()) null else if (id == rootId) root else urls[id] } ?: return null
         val resource = load(url, range, route, 0)
@@ -103,7 +103,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
                     }
                 }
                 if (status == 416) {
-                    val headers = connection.getHeaderField("Content-Range")?.takeIf { Regex("bytes \\*/[0-9]+").matches(it) }
+                    val headers = connection.getHeaderField("Content-Range")?.takeIf { UNSATISFIED_RANGE.matches(it) }
                         ?.let { listOf("Content-Range" to it) } ?: emptyList()
                     connection.disconnect(); connections -= connection
                     return Resource(416, "application/octet-stream", headers, ByteArrayInputStream(ByteArray(0)))
@@ -159,6 +159,9 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
     companion object {
         private const val MAX_PLAYLIST = 2 * 1024 * 1024
         private val URI_ATTRIBUTE = Regex("URI=\"([^\"]*)\"")
+        private val BYTE_RANGE = Regex("bytes=(?:[0-9]{1,18}-[0-9]{0,18}|-[0-9]{1,18})")
+        private val UNSATISFIED_RANGE = Regex("bytes \\*/[0-9]+")
+        private val CONTENT_TYPE = Regex("[a-z0-9.+-]+/[a-z0-9.+-]+")
         fun query(value: String): String = URLEncoder.encode(value, "UTF-8")
         private fun requirePlayable(url: String) {
             if (!VideoInCar.isPlayableUrl(url, iphoneLoadsAppSchemes = true) || URI(url).userInfo != null)
@@ -184,7 +187,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
         }
         private fun contentType(url: String, supplied: String?): String {
             val type = supplied?.substringBefore(';')?.lowercase()
-            if (type != null && Regex("[a-z0-9.+-]+/[a-z0-9.+-]+").matches(type) && type != "application/octet-stream") return type
+            if (type != null && CONTENT_TYPE.matches(type) && type != "application/octet-stream") return type
             return when (URI(url).path.orEmpty().substringAfterLast('.').lowercase()) {
                 "mp4", "m4v", "m4s" -> "video/mp4"; "ts" -> "video/mp2t"; "aac" -> "audio/aac"
                 "m3u8" -> "application/vnd.apple.mpegurl"; else -> "application/octet-stream"

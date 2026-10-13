@@ -59,12 +59,12 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
             TcpLiveness.configure(accepted) {}
             accepted.tcpNoDelay = true
             val input = accepted.getInputStream()
+            val header = ByteArray(128)
+            val data = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
             while (!closed.get()) {
                 stage = ReceiverMirrorDiagnostics.Stage.HEADER
-                val header = ByteArray(128)
                 if (!readPacket(input, header)) { reason = ReceiverMirrorDiagnostics.End.HEADER_EOF; break }
-                val data = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
-                val size = data.int
+                val size = data.getInt(0)
                 require(size in 0..8 * 1024 * 1024)
                 val type = header[4].toInt() and 0xff
                 diagnostics.packet(type, size)

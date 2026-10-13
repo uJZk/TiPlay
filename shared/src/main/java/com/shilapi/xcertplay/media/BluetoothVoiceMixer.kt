@@ -30,9 +30,9 @@ internal class BluetoothVoiceMixer(val rate: Int = 48_000) {
             (sum / channels).toShort()
         }
         val converted = stream.resampler.convert(mono)
-        converted.takeLast(maximum).forEach { sample ->
+        for (index in (converted.size - maximum).coerceAtLeast(0) until converted.size) {
             if (stream.samples.size == maximum) stream.samples.removeFirst()
-            stream.samples.addLast(sample)
+            stream.samples.addLast(converted[index])
         }
     }
     @Synchronized fun clear(id: AudioStreamId) { streams.remove(id) }

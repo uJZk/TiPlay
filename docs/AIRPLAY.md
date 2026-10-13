@@ -1,6 +1,6 @@
 # AirPlay 屏幕镜像与视频投放
 
-手机 + 车载浏览器模式的实验性接收器，默认使用独立的 Bonjour 名称、监听端口和配对身份；统一入口试验的例外见下文。AirPlay 默认开启，打开 TiPlay 时自动启动接收器；本地网络权限未授予时不会启动。
+手机 + 车载浏览器模式的实验性接收器，使用独立的 Bonjour 名称、监听端口和配对身份。AirPlay 默认开启，打开 TiPlay 时自动启动接收器；本地网络权限未授予时不会启动。
 
 ## 使用
 
@@ -61,12 +61,6 @@ iPhone 锁屏与解锁可能重复发送相同镜像配置而不发送新的 IDR
 所有功能仅面向安卓手机 + 车载浏览器，没有增加原生车机产品流程。
 
 普通接收器发布为 `TiPlay AirPlay`，CarPlay 发布为 `TiPlay`。两者同属 `_airplay._tcp`，但端口和能力不同，必须使用不同的服务实例名，避免 Bonjour 名称冲突及客户端缓存混用。
-
-默认关闭的统一入口验证开关见 [UnifiedAirPlayTrialSettings](../common/src/main/java/com/shilapi/xcertplay/UnifiedAirPlayTrialSettings.kt)。启用后 [共享入口](../shared/src/main/java/com/shilapi/xcertplay/network/UnifiedAirPlayEndpoint.kt) 持有同一监听端口、配对身份和 `TiPlay` 发现记录；普通接收器与 CarPlay 分别持有租约。断开 CarPlay 仅撤销其协议上下文，普通入口和镜像不随之关闭；禁用普通接收器仅停止普通会话，仍有效的 CarPlay 入口改用 CarPlay 公告。最后一个租约释放时关闭端口及公告。保持入口不能保持已被关闭的热点，iPhone 与安卓仍须处于同一网络。
-
-每条 TCP 连接按握手独立选择普通 AirPlay 或 CarPlay，已进入加密 CarPlay 的连接不能直接切换为明文普通镜像。更改试验开关后需要重启接收服务和 CarPlay 公告；关闭开关保留原有独立身份，恢复双入口。共享发布器只发布服务，不主动发现或连接 iPhone；CarPlay 控制服务发现仍由 CarPlay 连接流程管理。
-
-普通接收器可用时，统一公告和普通 `/info`、`/server-info` 不声明 `isCarPlay`；完成 CarPlay 握手后的 `/info` 合并原有 CarPlay 与共享入口实际支持的普通能力，避免同一身份被缓存为仅支持 CarPlay 的设备。协议未确定的 `/info` 探测使用与公告一致的普通配置，不锁定后续握手类型。无线 CarPlay 使用热点 BSSID 作为设备 ID；共享发布器采用该别名并在 CarPlay 断开后保留，普通响应跟随公告。密钥与配对身份必须一致，不能用公钥派生的启动 ID 拒绝采用热点别名的连接。
 
 能力声明的权威来源是 [ReceiverCapabilities](../shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverCapabilities.kt)。图片能力来自 TiPlay 的 `/photo` 路径；不复制 UxPlay 的幻灯片或播放队列声明，其 HLS 缓存不等于播放队列。封面、DMAP 文本和进度通过有界 `SET_PARAMETER` 解析后立即丢弃，不保存内容或提供元数据显示。配对失败清除临时状态并关闭对应连接；不支持的 FairPlay 传输版本返回 501，损坏报文返回 400。
 

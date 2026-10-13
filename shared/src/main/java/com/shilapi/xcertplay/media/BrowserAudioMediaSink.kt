@@ -162,6 +162,7 @@ class BrowserAudioMediaSink(
         private var reset = true
         private var outputRate = format.sampleRate
         private var outputChannels = format.channels
+        private val publication = hub.publication(this@BrowserAudioMediaSink)
         private val thread = Thread(::run, "browser-audio-decode").apply { isDaemon = true; start() }
 
         fun offer(rtp: ByteArray, sample: Int) {
@@ -186,6 +187,7 @@ class BrowserAudioMediaSink(
             var codec: MediaCodec? = null
             try {
                 if (format.codec != AudioCodecKind.LPCM) codec = decoder(format)
+                val info = MediaCodec.BufferInfo()
                 while (running) {
                     if (id.type != 103) synchronized(order) { order.drain().forEach(::enqueue) }
                     val packet = packets.poll(10, TimeUnit.MILLISECONDS)
@@ -197,7 +199,7 @@ class BrowserAudioMediaSink(
                         } else {
                             val decoder = codec ?: continue
                             var index = decoder.dequeueInputBuffer(10_000)
-                            while (running && index < 0) { drain(decoder); index = decoder.dequeueInputBuffer(10_000) }
+                            while (running && index < 0) { drain(decoder, info); index = decoder.dequeueInputBuffer(10_000) }
                             if (!running) break
                             val input = decoder.getInputBuffer(index) ?: error("decoder input unavailable")
                             input.clear()
@@ -208,19 +210,19 @@ class BrowserAudioMediaSink(
                             decoder.queueInputBuffer(index, 0, data.size, timeUs, 0)
                         }
                     }
-                    codec?.let(::drain)
+                    codec?.let { drain(it, info) }
                 }
             } catch (_: InterruptedException) {
             } catch (error: Exception) {
                 Log.w("TiPlayBrowserAudio", "Browser audio decoder ended codec=${format.codec}", error)
             } finally {
                 running = false
+                publication.close()
                 runCatching { codec?.stop() }; runCatching { codec?.release() }
             }
         }
 
-        private fun drain(codec: MediaCodec) {
-            val info = MediaCodec.BufferInfo()
+        private fun drain(codec: MediaCodec, info: MediaCodec.BufferInfo) {
             while (running) {
                 val index = codec.dequeueOutputBuffer(info, 0)
                 if (index == MediaCodec.INFO_TRY_AGAIN_LATER) return
@@ -243,19 +245,22 @@ class BrowserAudioMediaSink(
             }
         }
 
-        @Synchronized private fun send(pcm: ByteArray, presentationNanos: Long?) {
-            if (!running || paused || epoch != routeEpoch) return
-            if (voiceMuted) {
-                if (voiceActive && BluetoothVoicePolicy.allowed(id)) voice?.play(id, outputRate, outputChannels, pcm)
-                return
+        private fun send(pcm: ByteArray, presentationNanos: Long?) {
+            val needsReset = synchronized(this) {
+                if (!running || paused || epoch != routeEpoch) return
+                if (voiceMuted) {
+                    if (voiceActive && BluetoothVoicePolicy.allowed(id)) voice?.play(id, outputRate, outputChannels, pcm)
+                    return
+                }
+                reset
             }
             val type = semanticType(id)
-            hub.publish(this@BrowserAudioMediaSink, type, outputRate, outputChannels, pcm, buffered = id.type == 103, reset = reset,
-                presentationNanos = presentationNanos)
-            reset = false
+            hub.publish(this@BrowserAudioMediaSink, type, outputRate, outputChannels, pcm, buffered = id.type == 103, reset = needsReset,
+                presentationNanos = presentationNanos, publication = publication)
+            synchronized(this) { reset = false }
         }
 
-        @Synchronized override fun close() { running = false; packets.clear(); thread.interrupt() }
+        @Synchronized override fun close() { running = false; publication.close(); packets.clear(); thread.interrupt() }
     }
 
     private companion object {

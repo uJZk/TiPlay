@@ -19,6 +19,110 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class ReceiverServerTest {
+    private class BlockedEventOutput(private val output: java.io.OutputStream) : java.io.OutputStream() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        private val first = java.util.concurrent.atomic.AtomicBoolean(true)
+        override fun write(value: Int) = write(byteArrayOf(value.toByte()), 0, 1)
+        override fun write(bytes: ByteArray, offset: Int, length: Int) {
+            if (first.compareAndSet(true, false)) {
+                entered.countDown()
+                if (!release.await(5, TimeUnit.SECONDS)) throw java.io.IOException("Blocked test writer was not released")
+            }
+            output.write(bytes, offset, length)
+        }
+        override fun flush() = output.flush()
+    }
+
+    /** Replace only the reverse socket's output with a controlled slow writer after its real upgrade. */
+    private fun blockReverseOutput(receiver: ReceiverServer, id: String = "test"): BlockedEventOutput {
+        val reverse = ReceiverServer::class.java.getDeclaredField("reverse").apply { isAccessible = true }
+            .get(receiver) as Map<*, *>
+        val connection = requireNotNull(reverse[id])
+        val field = connection.javaClass.getDeclaredField("output").apply { isAccessible = true }
+        return BlockedEventOutput(field.get(connection) as java.io.OutputStream).also { field.set(connection, it) }
+    }
+
+    private fun Socket.upgradeReverse() {
+        getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: test\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
+        assertEquals("101", readReceiverRequest(getInputStream())!!.path)
+    }
+
+    @Test fun blockedReverseWritesDoNotHoldPlaybackOwnershipAndQueuedEventsKeepTheirOrder() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        var blocked: BlockedEventOutput? = null
+        try {
+            connect(receiver.port).use { control ->
+                assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
+                connect(receiver.port).use { reverse ->
+                    reverse.upgradeReverse()
+                    val writer = blockReverseOutput(receiver).also { blocked = it }
+                    receiver.playbackEvent("playing")
+                    assertTrue(writer.entered.await(1, TimeUnit.SECONDS))
+                    java.util.concurrent.CompletableFuture.runAsync { receiver.playbackEvent("paused") }
+                        .get(500, TimeUnit.MILLISECONDS)
+                    val resource = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource("mlhls://app/master.m3u8") }
+                    val deadline = System.nanoTime() + 1_000_000_000L
+                    while (listener.logs.none { it.startsWith("resource stage=REQUEST ") } && System.nanoTime() < deadline) Thread.sleep(1)
+                    assertTrue(listener.logs.any { it.startsWith("resource stage=REQUEST ") })
+                    val stopped = java.util.concurrent.CompletableFuture.supplyAsync { control.status("POST", "/stop") }
+                    assertEquals(200, stopped.get(500, TimeUnit.MILLISECONDS).toInt())
+                    assertNull(resource.get(500, TimeUnit.MILLISECONDS))
+                    assertEquals(1, listener.stopped)
+                    assertEquals("listening", listener.states.last())
+                    connect(receiver.port).use { next ->
+                        assertEquals(200, next.status("POST", "/play", "Content-Location: https://example.org/next.mp4\r\n".toByteArray()))
+                    }
+                    writer.release.countDown()
+                    for (state in listOf("playing", "paused", "unhandledURLRequest", "stopped")) {
+                        val event = requireNotNull(readReceiverRequest(reverse.getInputStream()))
+                        assertEquals("POST", event.method)
+                        assertEquals("/event", event.path)
+                        assertTrue(event.body.toString(Charsets.UTF_8).contains("<string>$state</string>"))
+                    }
+                }
+            }
+        } finally { blocked?.release?.countDown(); receiver.close() }
+    }
+
+    @Test fun queuedStoppedEventsCannotReachAReplacementReverseChannelAndCloseDoesNotWaitForItsWriter() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        val blocked = mutableListOf<BlockedEventOutput>()
+        try {
+            connect(receiver.port).use { control ->
+                val play = "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()
+                assertEquals(200, control.status("POST", "/play", play))
+                connect(receiver.port).use { oldReverse ->
+                    oldReverse.upgradeReverse()
+                    val oldWriter = blockReverseOutput(receiver).also { blocked.add(it) }
+                    receiver.playbackEvent("playing")
+                    assertTrue(oldWriter.entered.await(1, TimeUnit.SECONDS))
+                    assertEquals(200, java.util.concurrent.CompletableFuture.supplyAsync { control.status("POST", "/stop") }
+                        .get(500, TimeUnit.MILLISECONDS).toInt())
+                    assertEquals(200, control.status("POST", "/play", play))
+                    connect(receiver.port).use { replacement ->
+                        replacement.upgradeReverse()
+                        oldWriter.release.countDown()
+                        receiver.playbackEvent("playing")
+                        val event = requireNotNull(readReceiverRequest(replacement.getInputStream()))
+                        assertTrue(event.body.toString(Charsets.UTF_8).contains("<string>playing</string>"))
+                        replacement.soTimeout = 100
+                        assertThrows(java.net.SocketTimeoutException::class.java) { readReceiverRequest(replacement.getInputStream()) }
+                        replacement.soTimeout = 5000
+                        val currentWriter = blockReverseOutput(receiver).also { blocked.add(it) }
+                        receiver.playbackEvent("paused")
+                        assertTrue(currentWriter.entered.await(1, TimeUnit.SECONDS))
+                        java.util.concurrent.CompletableFuture.runAsync { receiver.close() }.get(500, TimeUnit.MILLISECONDS)
+                        assertNull(readReceiverRequest(replacement.getInputStream()))
+                    }
+                }
+            }
+        } finally { blocked.forEach { it.release.countDown() }; receiver.close() }
+    }
+
     private class Listener : ReceiverServer.Listener {
         val hub = WebVideoHub()
         val items = CopyOnWriteArrayList<ReceiverPlay>()

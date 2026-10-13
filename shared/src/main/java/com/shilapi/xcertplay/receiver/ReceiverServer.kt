@@ -14,6 +14,9 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.Semaphore
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
@@ -69,59 +72,6 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         config
     }
 
-    internal fun reportTrial(stage: UnifiedAirPlayStage) { runCatching { listener.log("unifiedTrial stage=$stage") } }
-
-    fun openConnection(socket: Socket, featuresOverride: Long? = null, deviceIdOverride: String? = null): ReceiverRequestConnection {
-        check(!closed.get() && slots.tryAcquire()) { "Receiver unavailable" }
-        sockets.add(socket)
-        if (closed.get()) {
-            sockets.remove(socket); slots.release(); socket.close()
-            error("Receiver closed")
-        }
-        val connection = try {
-            socket.setSoLinger(false, 0)
-            socket.soTimeout = 120_000
-            Connection(socket, featuresOverride, deviceIdOverride)
-        } catch (error: Exception) {
-            sockets.remove(socket); slots.release(); socket.close()
-            throw error
-        }
-        val finished = AtomicBoolean(false)
-        diagnostics.stage(connection.diagnosticId, ReceiverProtocolDiagnostics.Stage.ACCEPT)
-        return object : ReceiverRequestConnection {
-            override fun handle(request: RtspMessage.Request): RtspMessage.Response {
-                check(!finished.get() && !closed.get())
-                diagnostics.request(connection.diagnosticId, request)
-                val response = try { connection.dispatch(request) }
-                catch (error: IllegalArgumentException) {
-                    diagnostics.failure(connection.diagnosticId, ReceiverProtocolDiagnostics.Stage.DISPATCH, error)
-                    RtspMessage.Response(status = 400)
-                } catch (error: IllegalStateException) {
-                    diagnostics.failure(connection.diagnosticId, ReceiverProtocolDiagnostics.Stage.DISPATCH, error)
-                    RtspMessage.Response(status = 400)
-                } catch (error: Exception) {
-                    diagnostics.failure(connection.diagnosticId, ReceiverProtocolDiagnostics.Stage.DISPATCH, error)
-                    RtspMessage.Response(status = 500)
-                }
-                diagnostics.response(connection.diagnosticId, response)
-                return response.copy(headers = response.headers + ("Server" to "AirTunes/220.68"))
-            }
-
-            override fun responseSent(response: RtspMessage.Response) {
-                if (response.status == 101) {
-                    connection.enableReverse()
-                    socket.soTimeout = 0
-                }
-            }
-
-            override fun close() {
-                if (!finished.compareAndSet(false, true)) return
-                try { connection.finish() }
-                finally { sockets.remove(socket); slots.release() }
-            }
-        }
-    }
-
     fun start(): Int {
         server.reuseAddress = true
         server.bind(InetSocketAddress(InetAddress.getByName("::"), 0))
@@ -159,8 +109,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     }
 
     /** Playback updates use the iPhone's reverse HTTP channel, never the browser's control channel. */
-    fun playbackEvent(state: String) {
-        val id = synchronized(ownership) { playbackId } ?: return
+    fun playbackEvent(state: String) = synchronized(ownership) {
+        val id = playbackId ?: return@synchronized
         reverse[id]?.event(state, id)
     }
 
@@ -177,7 +127,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     /** An iPhone app may own its HLS playlists. Request them on reverse HTTP, as UxPlay does. */
     fun loadResource(url: String): ReceiverResource? {
         if (!com.shilapi.xcertplay.airplay.VideoInCar.isPlayableUrl(url, iphoneLoadsAppSchemes = true)) return null
-        val (acquisition, channel) = synchronized(ownership) {
+        val acquisition = synchronized(ownership) {
             if (closed.get()) return null
             val session = playbackId ?: return null
             val peer = playbackPeer ?: return null
@@ -186,7 +136,17 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 return null
             }
             val acquisition = resources.acquire(session, peer, url) ?: return null
-            acquisition to channel
+            if (acquisition.created) {
+                val pending = acquisition.pending
+                channel.sendEvent(receiverXml(mapOf("sessionID" to 1, "type" to "unhandledURLRequest", "request" to mapOf(
+                    "FCUP_Response_ClientInfo" to 1, "FCUP_Response_ClientRef" to 40030004,
+                    "FCUP_Response_RequestID" to pending.id, "FCUP_Response_URL" to url,
+                    "FCUP_Response_IsContentKeyRequest" to false, "sessionID" to 1,
+                    "FCUP_Response_Headers" to mapOf("X-Playback-Session-Id" to pending.session,
+                        "User-Agent" to "AppleCoreMedia/1.0.0.11B554a (Apple TV; U; CPU OS 7_0_4 like Mac OS X; en_us)"),
+                ))), pending.session)
+            }
+            acquisition
         }
         val pending = acquisition.pending
         val requestId = pending.id
@@ -194,15 +154,6 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         try {
             diagnostics.resource(if (acquisition.created) ReceiverProtocolDiagnostics.ResourceStage.REQUEST
                 else ReceiverProtocolDiagnostics.ResourceStage.REUSED, requestId)
-            if (acquisition.created) {
-                channel.sendEvent(receiverXml(mapOf("sessionID" to 1, "type" to "unhandledURLRequest", "request" to mapOf(
-                    "FCUP_Response_ClientInfo" to 1, "FCUP_Response_ClientRef" to 40030004,
-                    "FCUP_Response_RequestID" to requestId, "FCUP_Response_URL" to url,
-                    "FCUP_Response_IsContentKeyRequest" to false, "sessionID" to 1,
-                    "FCUP_Response_Headers" to mapOf("X-Playback-Session-Id" to pending.session,
-                        "User-Agent" to "AppleCoreMedia/1.0.0.11B554a (Apple TV; U; CPU OS 7_0_4 like Mac OS X; en_us)"),
-                ))), pending.session)
-            }
             return pending.future.get(resources.remainingNanos(pending), TimeUnit.NANOSECONDS).also {
                 diagnostics.resource(if (it == null) ReceiverProtocolDiagnostics.ResourceStage.CANCELLED
                     else ReceiverProtocolDiagnostics.ResourceStage.COMPLETE, requestId)
@@ -225,8 +176,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         finally { if (!interrupted && pending.future.isDone) resources.remove(pending) }
     }
 
-    private inner class Connection(private val socket: Socket, private val featuresOverride: Long? = null,
-                                   private val deviceIdOverride: String? = null) {
+    private inner class Connection(private val socket: Socket) {
         private val pairing = ReceiverPairing(config.identity)
         private var handshake: ByteArray? = null
         private var key: ByteArray? = null
@@ -236,6 +186,10 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         private var audioIv: ByteArray? = null
         private var timing: NtpClock? = null
         private val output = socket.getOutputStream()
+        // One ordered, bounded writer per connection; neither ownership nor shutdown waits for its I/O.
+        private val events = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue<Runnable>(32)) {
+            Thread(it, "tiplay-airplay-events").apply { isDaemon = true }
+        }
         private var reverseId: String? = null
         private val peer = socket.inetAddress
         val diagnosticId = connectionIds.incrementAndGet()
@@ -289,6 +243,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
 
         fun finish() {
             diagnostics.stage(diagnosticId, ReceiverProtocolDiagnostics.Stage.CLOSE)
+            events.shutdownNow()
             runCatching { socket.close() }
             reverseId?.let { id ->
                 if (reverse.remove(id, this)) synchronized(ownership) {
@@ -299,10 +254,6 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 closeMedia()
                 if (owner === this) { owner = null; listener.status("listening") }
             }
-        }
-
-        fun enableReverse() {
-            reverseId?.let { reverse.put(it, this)?.takeIf { old -> old !== this }?.socket?.close() }
         }
 
         fun closeMedia() {
@@ -323,7 +274,19 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         fun sendEvent(body: ByteArray, id: String) {
             val headers = "POST /event HTTP/1.1\r\nContent-Type: text/x-apple-plist+xml\r\n" +
                 "X-Apple-Session-ID: $id\r\nContent-Length: ${body.size}\r\n\r\n"
-            runCatching { synchronized(output) { output.write(headers.toByteArray()); output.write(body); output.flush() } }
+            try {
+                events.execute {
+                    runCatching {
+                        synchronized(output) {
+                            output.write(headers.toByteArray()); output.write(body); output.flush()
+                        }
+                    }
+                }
+            } catch (_: RejectedExecutionException) {
+                // A peer that cannot drain its bounded event backlog must release this connection.
+                // Never redirect captured events to a replacement reverse channel with the same session ID.
+                runCatching { socket.close() }
+            }
         }
 
         fun dispatch(request: RtspMessage.Request): RtspMessage.Response {
@@ -333,13 +296,9 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             require(id.matches(Regex("[A-Za-z0-9._-]{1,128}")))
             when {
                 path == "/info" -> {
-                    return ReceiverInfoProtocol.response(config, request, featuresOverride ?: config.features,
-                        deviceIdOverride ?: config.deviceId)
+                    return ReceiverInfoProtocol.response(config, request)
                 }
-                path == "/server-info" -> return xml(config.serverInfo().toMutableMap().also { info ->
-                    featuresOverride?.let { info["features"] = it }
-                    deviceIdOverride?.let { info["deviceid"] = it; info["macAddress"] = it }
-                })
+                path == "/server-info" -> return xml(config.serverInfo())
                 path == "/pair-setup" -> return ReceiverHandshake.pairing { pairing.setup(request.body) }
                 path == "/pair-verify" -> return ReceiverHandshake.pairing { pairing.verify(request.body) }
                 path == "/fp-setup" -> {

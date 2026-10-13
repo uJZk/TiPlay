@@ -14,6 +14,11 @@ secret transfer and host ADB boundaries, are in [docs/WLSC.md](docs/WLSC.md).
 
 ## Current progress
 
+See `docs/sweep-2026-10-13/README.md` for single-Bonjour trial retirement, incremental
+and post-merge code cleanup, and the requested tap-map/reverse-notification/audio-cancellation repairs.
+`docs/sweep-2026-10-13/TIE-UP.md` records main integration, concurrency regressions,
+final verification, commit/push/Pages delivery and remaining follow-up decisions.
+
 See `docs/BROWSER-MEDIA-TIE-UP-2026-10-13.md` for authorized cleanup, main integration,
 0.2.14-beta.2 delivery and Pages deployment status.
 

@@ -84,7 +84,7 @@ test('mode switches discard an old high delay plan without clearing independent 
   now = 2000; timing.observe('video', 0); assert.equal(timing.plan().to, 0);
 });
 
-test('AirPlay video deadlines and decoded buffering fit the 500ms submission limit', () => {
+test('fallback video deadlines and decoded buffering fit the 500ms submission limit', () => {
   let now = 1000;
   const frames = createTimedFrames(frame => { frame.shown = true; }, { now: () => now, schedule: () => 1, cancel() {} });
   const plan = constantDelay(480), first = { close() { this.closed = true; } };

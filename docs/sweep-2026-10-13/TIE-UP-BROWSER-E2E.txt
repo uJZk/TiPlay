@@ -1,0 +1,84 @@
+[e2e] encoded 60 VP8 frames with ffmpeg/libvpx
+[e2e] ok - the browser loads and decodes the actual wallpaper asset
+[e2e] ok - the fake phone heard "dec" for epoch 1
+[e2e] ok - Chromium takes the Tesla path: worker, transferred stream, OffscreenCanvas
+[e2e] ok - decodedFps 29.9 with renderer webgl2 (no-preference)
+[e2e] ok - tiplayStats never contains the pairing code
+[e2e] ok - the link fragment was removed from the address
+[e2e] ok - the address bar keeps ?t= so a bookmark reopens this phone
+[e2e] ok - the link was stored
+[e2e] ok - status line reads "VP8 · 30 fps"
+[e2e] ok - viewport event {"k":"vp","w":1500,"h":1050,"cw":1000,"ch":700,"dpr":1.5} matches the video area
+[e2e] ok - worker: the canvas backing store is 1500x1050 for a 1500x1050 video area
+[e2e] ok - CarPlay has no header or fullscreen button
+[e2e] ok - the CarPlay picture starts at the top of the window
+[e2e] ok - TiPlay icon returns to the portal
+[e2e] ok - Debug is a persistent switch
+[e2e] ok - Debug has four presentation statistics centered above CarPlay without recording times or intercepted touches
+[e2e] ok - returning to CarPlay keeps the same video connection
+[e2e] ok - turning Debug off hides the overlay and keeps decoding
+[e2e] ok - Debug toggles do not replace the video session
+[e2e] ok - the picture follows the entire resized window
+[e2e] ok - worker: a tap at 0.25/0.75 arrives as touch down [0,0.25,0.75,1] then up [0,0.25,0.75,0]
+[e2e] ok - stats event with 60 fields, including the path
+[e2e] ok - periodic decoded stats preserve Boolean browser appearance
+[e2e] ok - the reconnect surface is hidden after the first decoded frame
+[e2e] ok - the reconnect action is Setting
+[e2e] ok - Setting returns to the pairing portal without stopping the current reconnect
+[e2e] ok - the portal remains usable while the reconnect continues
+[e2e] ok - the portal preserves the active connection parameters
+[e2e] ok - the portal can resume the active reconnect
+[e2e] ok - resuming from the portal does not replace the reconnect session
+[e2e] ok - no redundant modal, playback header or fullscreen control remains
+[e2e] ok - dark: theme change reaches the phone as a Boolean while reconnecting
+[e2e] ok - dark 1000×700: full viewport, centered logo, reachable action and blocked CarPlay input
+[e2e] ok - dark: shared low-luminance material
+[e2e] ok - dark: the same pre-rendered wallpaper without a runtime filter
+[e2e] ok - dark 390×844: full viewport, centered logo, reachable action and blocked CarPlay input
+[e2e] ok - dark: shared low-luminance material
+[e2e] ok - dark: the same pre-rendered wallpaper without a runtime filter
+[e2e] ok - dark 640×240: full viewport, centered logo, reachable action and blocked CarPlay input
+[e2e] ok - dark: shared low-luminance material
+[e2e] ok - dark: the same pre-rendered wallpaper without a runtime filter
+[e2e] ok - light: theme change reaches the phone as a Boolean while reconnecting
+[e2e] ok - light 1000×700: full viewport, centered logo, reachable action and blocked CarPlay input
+[e2e] ok - light: shared low-luminance material
+[e2e] ok - light: the same pre-rendered wallpaper without a runtime filter
+[e2e] ok - light 390×844: full viewport, centered logo, reachable action and blocked CarPlay input
+[e2e] ok - light: shared low-luminance material
+[e2e] ok - light: the same pre-rendered wallpaper without a runtime filter
+[e2e] ok - light 640×240: full viewport, centered logo, reachable action and blocked CarPlay input
+[e2e] ok - light: shared low-luminance material
+[e2e] ok - light: the same pre-rendered wallpaper without a runtime filter
+[e2e] ok - the reconnect surface disappears after recovery decodes a frame
+[e2e] ok - periodic decoded stats keep Boolean appearance after reconnect
+[e2e] ok - the page reopened /video after the drop (2 streams) and decoded again
+[e2e] ok - the page repeats its viewport on the new stream, for a phone that restarted
+[e2e] ok - after a decoder error the page asked for a key frame and decodes again
+[e2e] ok - "Apply and reconnect" appears when status.fit is true
+[e2e] ok - the button sends {"k":"fit"}
+[e2e] ok - a zh-CN browser gets the Chinese page
+[e2e] ok - the default phone leaves just the page address in the address bar ({"search":"","hash":"","host":"169.254.111.111:8080"})
+[e2e] ok - another phone keeps ?t= ({"search":"?t=100.64.0.1","hash":"","host":"100.64.0.1:8080"})
+[e2e] ok - a pairing link without ?t= is for the default phone, not the one saved before ({"search":"","hash":"","host":"169.254.111.111:8080"})
+[e2e] ok - the bare page address (a bookmark) keeps the saved phone ({"search":"","hash":"","host":"169.254.111.111:8080"})
+[e2e] ok - path worker-chunks (streams are not transferable) decodes at 29.9 fps with renderer webgl2
+[e2e] ok - worker-chunks: the canvas backing store is 900x640 for a 900x640 video area
+[e2e] ok - worker-chunks: current one-second draw rate and signed scheduled-presentation-to-draw offsets reach the main page
+[e2e] ok - worker-chunks: a tap at 0.6/0.3 arrives as touch down [0,0.6,0.3,1] then up [0,0.6,0.3,0]
+[e2e] ok - path worker-frames (no OffscreenCanvas) decodes at 29.8 fps with renderer webgl2
+[e2e] ok - worker-frames: the canvas backing store is 900x640 for a 900x640 video area
+[e2e] ok - worker-frames: current one-second draw rate and signed scheduled-presentation-to-draw offsets reach the main page
+[e2e] ok - worker-frames: a tap at 0.6/0.3 arrives as touch down [0,0.6,0.3,1] then up [0,0.6,0.3,0]
+[e2e] ok - path main (no VideoDecoder in workers) decodes at 29.7 fps with renderer webgl2
+[e2e] ok - main: the canvas backing store is 900x640 for a 900x640 video area
+[e2e] ok - main: current one-second draw rate and signed scheduled-presentation-to-draw offsets reach the main page
+[e2e] ok - main: a tap at 0.6/0.3 arrives as touch down [0,0.6,0.3,1] then up [0,0.6,0.3,0]
+[e2e] ok - the first page, replaced by the others, says so and stops
+[e2e] ok - the download page beside the page loads with its stylesheet
+[e2e] ok - the page's Service Worker controls the download page but answers none of its requests
+[e2e] ok - the page reloaded from the Service Worker cache and decoded again
+[e2e] ok - without the page server the download page stays offline (page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:45257/nested/deeper/download/): the worker never caches it
+[e2e] ok - without the page server the pairing link (#c=) opens the cached page, which decodes again
+[e2e] ok - no unexpected page errors
+[e2e] all checks passed

@@ -17,7 +17,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Keeps decoder buffer geometry separate from the encoder's fixed input dimensions. */
+/** Transfers the fixed-size photo canvas into the encoder on its GL owner thread. */
 internal class AirPlayVideoSurfaceBridge(
     encoderSurface: Surface,
     private val width: Int,
@@ -35,7 +35,6 @@ internal class AirPlayVideoSurfaceBridge(
     private var program = 0
     private var texture: SurfaceTexture? = null
     private var decoderSurface: Surface? = null
-    private var sourceAspect = width.toFloat() / height
     private var positionLocation = -1
     private var coordinateLocation = -1
     private var transformLocation = -1
@@ -68,11 +67,6 @@ internal class AirPlayVideoSurfaceBridge(
                 if (failureReported.compareAndSet(false, true)) failed(error)
             }
         }
-    }
-
-    fun setVideoSize(width: Int, height: Int, pixelRatio: Float, rotation: Int) {
-        val aspect = AirPlayVideoLayout.aspect(width, height, pixelRatio, rotation) ?: return
-        handler.post { sourceAspect = aspect }
     }
 
     private fun initialize(encoderSurface: Surface) {
@@ -126,8 +120,6 @@ internal class AirPlayVideoSurfaceBridge(
             GLES20.glViewport(0, 0, width, height)
             GLES20.glClearColor(0f, 0f, 0f, 1f)
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-            val viewport = AirPlayVideoLayout.fit(width, height, sourceAspect)
-            GLES20.glViewport(viewport.x, viewport.y, viewport.width, viewport.height)
             GLES20.glUseProgram(program)
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
             GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)

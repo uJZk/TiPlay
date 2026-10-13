@@ -71,7 +71,7 @@ not the iPhone's replacement-display negotiation or real vehicle routing, recove
 
 `phone-run.mjs` checks the app's own phone side instead of the fake phone. `RealPhone.java` runs the compiled `:shared`
 classes the way a phone + browser session wires them: an API-only `BrowserLinkServer`, and a `WebVideoHub` fed
-through `VideoTeeMediaSink` → `WebMediaSink` with an H.264 Annex-B clip. A separate static server hosts the page,
+through `BrowserOnlyMediaSink` → `WebMediaSink` with an H.264 Annex-B clip. A separate static server hosts the page,
 matching the production HTTPS page + phone API arrangement. CI does not run it.
 
 The secure-context run forces `VideoDecoder.isConfigSupported` to return unsupported

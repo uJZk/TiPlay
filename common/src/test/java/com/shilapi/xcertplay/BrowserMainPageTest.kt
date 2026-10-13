@@ -22,7 +22,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
@@ -175,7 +174,6 @@ class BrowserMainPageTest {
         assertEquals("New hotspot", AirPlayPersistence.loadManualHotspotSsid(activity))
         assertFalse(views().filterIsInstance<Button>().any { it.text == activity.getString(R.string.save_and_reconnect) })
         assertTrue(button(R.string.settings_carplay_reconnect).isShown)
-        assertTrue(button(R.string.settings_carplay_reconnect).isShown)
     }
     @Test fun existingWifiUsesTheExistingNetworkTransportAndActualCredentials() {
         choose(BrowserConnectionDraft.Source.LAN)
@@ -271,7 +269,6 @@ class BrowserMainPageTest {
         fun addressButtons() = views().filterIsInstance<Button>().filter {
             it.text.toString().startsWith(activity.getString(R.string.settings_browser_hotspot_address_repair) + " · ")
         }.toList()
-        val source = controls.filterIsInstance<RadioButton>().first()
         assertTrue(controls.indexOf(addressButtons().single()) < controls.indexOf(mode))
         assertTrue(controls.indexOf(mode) < controls.indexOf(button(R.string.choose_iphone)))
         choose(BrowserConnectionDraft.Source.LAN)
@@ -401,10 +398,9 @@ class BrowserMainPageTest {
         assertEquals(0, connections)
         assertTrue(button(R.string.settings_carplay_reconnect).isShown)
     }
-    @Test fun connectionFailureKeepsDisconnectAvailableWithoutAnApplyAction() {
+    @Test fun connectionFailureKeepsReconnectAvailableWithoutAnApplyAction() {
         page.update("Retrying", true)
         page.showConnectionError("Check Wi-Fi")
-        assertTrue(button(R.string.settings_carplay_reconnect).isShown)
         assertTrue(button(R.string.settings_carplay_reconnect).isShown)
         assertTrue(views().filterIsInstance<TextView>().any { it.isShown && it.text == "Check Wi-Fi" })
         page.showConnectionError(null)

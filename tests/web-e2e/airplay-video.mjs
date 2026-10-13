@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { resolve, extname } from 'node:path';
+import { extname } from 'node:path';
 const { chromium } = createRequire(import.meta.url)('playwright-core');
 const root = fileURLToPath(new URL('../../site/play/', import.meta.url)).replace(/\/$/, '');
 const sample = process.env.TEST_VIDEO_MP4;

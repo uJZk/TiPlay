@@ -1,0 +1,97 @@
+{
+  "shared": {
+    "tests": 1327,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "selected_suites": [
+      {
+        "name": "com.shilapi.xcertplay.receiver.ReceiverAudioDrainTest",
+        "timestamp": "2026-10-13T12:11:37.522Z",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.shilapi.xcertplay.media.BrowserAudioMediaSinkTest",
+        "timestamp": "2026-10-13T12:11:27.761Z",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.shilapi.xcertplay.receiver.ReceiverInfoProtocolTest",
+        "timestamp": "2026-10-13T12:11:37.547Z",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.shilapi.xcertplay.receiver.ReceiverServerTest",
+        "timestamp": "2026-10-13T12:10:46.945Z",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.shilapi.xcertplay.receiver.ReceiverMirrorCodecTest",
+        "timestamp": "2026-10-13T12:11:37.563Z",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ]
+  },
+  "common": {
+    "tests": 1093,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "selected_suites": [
+      {
+        "name": "com.shilapi.xcertplay.CarPlayBonjourDualStackTest",
+        "timestamp": "2026-10-13T12:11:24.257Z",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.shilapi.xcertplay.AirPlayVideoLayoutTest",
+        "timestamp": "2026-10-13T12:11:49.519Z",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.shilapi.xcertplay.BrowserMainPageTest",
+        "timestamp": "2026-10-13T12:11:16.921Z",
+        "tests": 34,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.shilapi.xcertplay.BrowserMainHostTest",
+        "timestamp": "2026-10-13T12:11:55.144Z",
+        "tests": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ]
+  },
+  "samples/home": {
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "selected_suites": []
+  }
+}

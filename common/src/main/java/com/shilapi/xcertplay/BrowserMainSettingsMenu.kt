@@ -63,7 +63,6 @@ internal class BrowserMainSettingsMenu(
     private lateinit var connectionMode: Button
     private var networkStatus: TextView? = null
     private var networkReadiness: Int? = null
-    private var wifiSettings: Button? = null
     private var refreshAddress: () -> Unit = {}
     private lateinit var refreshBrowser: () -> Unit
     private fun button(parent: LinearLayout, label: String, click: () -> Unit) = Button(activity).apply {
@@ -186,7 +185,7 @@ internal class BrowserMainSettingsMenu(
         }
     }
     private fun renderNetwork() {
-        network.removeAllViews(); networkStatus = null; wifiSettings = null; networkReadiness = null
+        network.removeAllViews(); networkStatus = null; networkReadiness = null
         heading(R.string.settings_browser_network_configuration, network)
         val group = RadioGroup(activity).apply { orientation = RadioGroup.HORIZONTAL }
         val labels = listOf(R.string.built_in_car_hotspot, R.string.existing_wifi_title)
@@ -227,13 +226,13 @@ internal class BrowserMainSettingsMenu(
         if (local) {
             val privileged = HotspotExtraAddressSettings.method(activity) == HotspotAddressMethod.ROOT
             if (privileged) LocalHotspotAutofill.attach(fields, ssid, password, controlsParent = actions, showHint = false)
-            else wifiSettings = button(actions, activity.getString(R.string.open_car_hotspot_settings)) {
+            else button(actions, activity.getString(R.string.open_car_hotspot_settings)) {
                 activity.startActivity(Intent("android.settings.TETHER_SETTINGS"))
             }
             refreshNetwork()
         } else {
             networkStatus = text("").also(fields::addView)
-            wifiSettings = button(fields, activity.getString(R.string.settings_external_ap_wifi)) {
+            button(fields, activity.getString(R.string.settings_external_ap_wifi)) {
                 activity.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
             }
             refreshNetwork()

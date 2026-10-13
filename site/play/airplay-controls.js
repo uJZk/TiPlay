@@ -5,11 +5,6 @@ export function playbackState(value) {
   const position = Number.isFinite(value.position) ? Math.min(duration, Math.max(0, value.position)) : 0;
   return { ...value, duration, position, seekable: value.seekable === true && duration > 0 };
 }
-export function timeLabel(seconds) {
-  const total = Math.floor(Math.max(0, Number.isFinite(seconds) ? seconds : 0));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-}
-
 /** Video.js owns MP4/HLS decoding, controls, buffering and the media clock. */
 export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, credentials, host } = {}) {
   const layer = document.createElement('div');

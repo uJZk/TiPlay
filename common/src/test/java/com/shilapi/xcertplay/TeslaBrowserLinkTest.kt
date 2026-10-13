@@ -7,6 +7,7 @@ import com.shilapi.xcertplay.airplay.AirPlayKnobState
 import com.shilapi.xcertplay.airplay.MediaSink
 import com.shilapi.xcertplay.airplay.VideoCodec
 import com.shilapi.xcertplay.media.AndroidMediaSink
+import com.shilapi.xcertplay.media.BrowserAudioMediaSink
 import com.shilapi.xcertplay.media.BrowserOnlyMediaSink
 import com.shilapi.xcertplay.orchestration.CarPlayController
 import com.shilapi.xcertplay.orchestration.CarPlayRunMode
@@ -17,6 +18,7 @@ import com.shilapi.xcertplay.web.BrowserViewport
 import java.net.BindException
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
@@ -383,6 +385,101 @@ class TeslaBrowserLinkTest {
         assertTrue(seen.isEmpty())
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(listOf(true, false), seen)
+    }
+
+    @Test fun concurrentRetirementCannotInvalidateAnInProgressAudioPauseIteration() {
+        val sinks = List(3) { mock(MediaSink::class.java) }
+        val streams = sinks.map { TeslaBrowserLink.tee(it, true, 1182, 920) }
+        streams.last().onScreenStreamActive(110, true)
+        val entries = audioTapsAtRest()
+        val firstAudio = entries.first().second
+        val retiringSink = entries[1].first
+        val retiringStream = streams[sinks.indexOf(retiringSink)]
+        val locked = CountDownLatch(1)
+        val continuePause = CountDownLatch(1)
+        val failures = ConcurrentLinkedQueue<Throwable>()
+        val workers = mutableListOf<Thread>()
+        fun worker(name: String, action: () -> Unit) = Thread({
+            try { action() } catch (error: Throwable) { failures.add(error) }
+        }, name).apply { isDaemon = true; workers.add(this); start() }
+
+        try {
+            worker("hold-first-audio") {
+                synchronized(firstAudio) {
+                    locked.countDown()
+                    assertTrue("Release the paused audio worker", continuePause.await(5, TimeUnit.SECONDS))
+                }
+            }
+            assertTrue(locked.await(5, TimeUnit.SECONDS))
+            val pausing = worker("pause-all-taps", TeslaBrowserLink::pauseCarPlayDisplay)
+            // pauseAudio uses the real sink monitor, so the map iterator has already yielded
+            // its first entry when this worker blocks. All keys remain strongly held above.
+            eventually("pause reached the first audio tap") { pausing.state == Thread.State.BLOCKED }
+            val retiring = worker("retire-another-tap") { TeslaBrowserLink.releaseTap(retiringSink) }
+            eventually("retirement reached the in-progress transition") { retiring.state == Thread.State.BLOCKED }
+        } finally {
+            continuePause.countDown()
+            workers.forEach { it.join(5_000) }
+        }
+        assertTrue("No transition deadlocked", workers.none { it.isAlive })
+        assertTrue("Pause and retirement must both succeed: $failures", failures.isEmpty())
+        assertNull("All remaining displays were paused", TeslaBrowserLink.hub.info())
+
+        storeSession(phoneBrowser = true)
+        val retained = CarPlayBackgroundSession.snapshot()!!
+        val next = TeslaBrowserLink.tee(retained.sink, true, 1920, 1080)
+        try {
+            next.onScreenStreamActive(110, true)
+            assertNull("A new tap inherits the active AirPlay pause", TeslaBrowserLink.hub.info())
+            TeslaBrowserLink.resumeCarPlayDisplay()
+            assertEquals(1920, TeslaBrowserLink.hub.info()?.width)
+            retiringStream.onScreenStreamActive(110, true)
+            TeslaBrowserLink.releaseTap(retiringSink)
+            assertEquals("A retired tap cannot take or clear the replacement", 1920, TeslaBrowserLink.hub.info()?.width)
+        } finally {
+            TeslaBrowserLink.releaseTap(retained.sink)
+            sinks.forEach(TeslaBrowserLink::releaseTap)
+        }
+    }
+
+    @Test fun delayedRetiredAudioCloseDoesNotHoldTheTapRegistryOrCloseTheReplacement() {
+        val sink = mock(MediaSink::class.java)
+        TeslaBrowserLink.tee(sink, true, 1182, 920).onScreenStreamActive(110, true)
+        val audio = audioTapsAtRest().single().second
+        val nextSink = mock(MediaSink::class.java)
+        val failures = ConcurrentLinkedQueue<Throwable>()
+        val created = CountDownLatch(1)
+        val workers = mutableListOf<Thread>()
+        fun worker(name: String, action: () -> Unit) = Thread({
+            try { action() } catch (error: Throwable) { failures.add(error) }
+        }, name).apply { isDaemon = true; workers.add(this); start() }
+        try {
+            synchronized(audio) {
+                val retiring = worker("retire-blocked-audio") { TeslaBrowserLink.releaseTap(sink) }
+                eventually("retirement reached sink teardown") { retiring.state == Thread.State.BLOCKED }
+                worker("create-replacement-tap") {
+                    TeslaBrowserLink.tee(nextSink, true, 1920, 1080).onScreenStreamActive(110, true)
+                    created.countDown()
+                }
+                assertTrue("New taps do not wait for detached audio teardown", created.await(5, TimeUnit.SECONDS))
+                assertEquals(1920, TeslaBrowserLink.hub.info()?.width)
+            }
+        } finally {
+            workers.forEach { it.join(5_000) }
+        }
+        assertTrue("No transition deadlocked", workers.none { it.isAlive })
+        assertTrue("Retirement and replacement must both succeed: $failures", failures.isEmpty())
+        assertEquals("Late old video teardown is owner-specific", 1920, TeslaBrowserLink.hub.info()?.width)
+        TeslaBrowserLink.releaseTap(nextSink)
+        assertNull(TeslaBrowserLink.hub.info())
+    }
+
+    /** Obtain actual runtime monitors before starting workers, without a production test hook. */
+    @Suppress("UNCHECKED_CAST")
+    private fun audioTapsAtRest(): List<Pair<MediaSink, BrowserAudioMediaSink>> {
+        val field = TeslaBrowserLink::class.java.getDeclaredField("audioTaps").apply { isAccessible = true }
+        val taps = field.get(TeslaBrowserLink) as Map<MediaSink, BrowserAudioMediaSink>
+        return taps.entries.map { it.key to it.value }
     }
 
     @Test fun detachedAppearanceReachesTheRetainedPhoneSessionAndTheNextHost() {

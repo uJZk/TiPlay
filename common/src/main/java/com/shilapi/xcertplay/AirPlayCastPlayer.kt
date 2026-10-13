@@ -115,7 +115,6 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
         private val bridge: AirPlayVideoSurfaceBridge
         private val thread: Thread
         private val timelineLock = Any()
-        private var configRecord: ByteArray? = null
 
         init {
             var allocatedSurface: android.view.Surface? = null
@@ -155,9 +154,9 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
                         val buffers = listOfNotNull(format.getByteBuffer("csd-0"), format.getByteBuffer("csd-1"))
                             .map { buffer -> ByteArray(buffer.remaining()).also { buffer.duplicate().get(it) } }
                         synchronized(timelineLock) {
-                            configRecord = ReceiverAvc.record(*buffers.toTypedArray())
+                            val configRecord = ReceiverAvc.record(*buffers.toTypedArray())
                             sink.onVideoCodec(110, VideoCodec.H264)
-                            sink.onVideoConfig(110, requireNotNull(configRecord))
+                            sink.onVideoConfig(110, configRecord)
                         }
                         diagnostics.stage(AirPlayVideoDiagnostics.Stage.ENCODER_CONFIG)
                     } else if (index >= 0) {

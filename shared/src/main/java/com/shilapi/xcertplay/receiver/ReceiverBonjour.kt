@@ -9,14 +9,13 @@ import javax.jmdns.ServiceInfo
 
 /** Advertise on hotspot/LAN interfaces, including those created after the receiver starts. Worker-owned. */
 class ReceiverBonjour(private val config: ReceiverConfig, private val port: Int,
-                      private val configProvider: (() -> ReceiverConfig)? = null,
-                      private val txtProvider: (() -> Map<String, String>)? = null) : Closeable {
+                      private val configProvider: (() -> ReceiverConfig)? = null) : Closeable {
     private val instances = linkedMapOf<String, JmDNS>()
     private var advertisedTxt: Map<String, String>? = null
     private var advertisedName: String? = null
     fun refresh(): Boolean {
         val current = configProvider?.invoke() ?: config
-        val txt = txtProvider?.invoke() ?: current.txt
+        val txt = current.txt
         if (advertisedTxt != txt || advertisedName != current.name) {
             BonjourMdnsCleanup.closeAll(instances.values.toList())
             instances.clear()
