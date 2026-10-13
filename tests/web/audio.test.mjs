@@ -157,6 +157,139 @@ test('denied capture retries on next demand without prompting on status heartbea
   } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
 });
 
+function permissionBrowser({ observe = true, fetchPhone = async () => ({ ok: true, body: body([]) }) } = {}) {
+  const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const permission = new EventTarget(); permission.state = 'denied';
+  let allowed = false, requests = 0, stopped = 0, listeners = 0;
+  const add = permission.addEventListener.bind(permission), remove = permission.removeEventListener.bind(permission);
+  permission.addEventListener = (...args) => { listeners++; add(...args); };
+  permission.removeEventListener = (...args) => { listeners--; remove(...args); };
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {
+    ...(observe ? { permissions: { query: async () => permission } } : {}),
+    mediaDevices: { getUserMedia: async () => {
+      requests++;
+      if (!allowed) throw new Error('Permission denied');
+      return { getTracks: () => [{ stop() { stopped++; } }] };
+    } },
+  } });
+  const states = [], audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone, onState: state => states.push(state) });
+  return {
+    audio, states, settle: () => new Promise(resolve => setImmediate(resolve)),
+    grant() { allowed = true; permission.state = 'granted'; permission.dispatchEvent(new Event('change')); },
+    counts: () => ({ requests, stopped, listeners }),
+    done() { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); },
+  };
+}
+
+test('granting microphone permission clears an idle denial and publishes the recovered state', async () => {
+  const fixture = permissionBrowser();
+  try {
+    fixture.audio.start(); await fixture.settle();
+    assert.equal(fixture.audio.stats().error, 'Permission denied');
+    for (let i = 0; i < 20; i++) fixture.audio.gesture();
+    await fixture.settle();
+    assert.equal(fixture.counts().requests, 1, 'normal screen taps cannot repeat a known denied permission prompt');
+    fixture.grant(); await fixture.settle();
+    assert.equal(fixture.audio.stats().error, null);
+    assert.equal(fixture.states.at(-1).error, null);
+    assert.equal(fixture.audio.stats().microphone, false);
+    assert.equal(fixture.counts().requests, 1, 'the permission observer must not start an idle recording');
+  } finally { fixture.done(); }
+});
+
+test('granting microphone permission resumes an existing demand without another status transition', async () => {
+  const fixture = permissionBrowser();
+  try {
+    fixture.audio.start(); await fixture.settle();
+    fixture.audio.attach(new AbortController().signal, { audio: true });
+    fixture.audio.status({ mic: { active: true, sampleRate: 16000 } }); await fixture.settle();
+    assert.equal(fixture.audio.stats().microphone, false);
+    fixture.grant(); await fixture.settle();
+    assert.equal(fixture.audio.stats().microphone, true);
+    assert.equal(fixture.audio.stats().error, null);
+    const requests = fixture.counts().requests;
+    for (let i = 0; i < 20; i++) fixture.audio.status({ mic: { active: true, sampleRate: 16000 } });
+    assert.equal(fixture.counts().requests, requests);
+  } finally { fixture.done(); }
+});
+
+test('a user gesture retries an idle permission denial without a Permissions API and stops the probe', async () => {
+  const fixture = permissionBrowser({ observe: false });
+  try {
+    fixture.audio.start(); await fixture.settle();
+    fixture.grant();
+    fixture.audio.gesture(); await fixture.settle();
+    assert.equal(fixture.audio.stats().error, null);
+    assert.equal(fixture.states.at(-1).error, null);
+    assert.equal(fixture.audio.stats().microphone, false);
+    assert.deepEqual(fixture.counts(), { requests: 2, stopped: 1, listeners: 0 });
+    fixture.audio.gesture(); await fixture.settle();
+    assert.equal(fixture.counts().requests, 2, 'successful permission does not need another probe');
+  } finally { fixture.done(); }
+});
+
+test('microphone permission recovery preserves an unrelated speaker stream failure', async () => {
+  const fixture = permissionBrowser({ fetchPhone: async () => ({ ok: false, status: 503 }) });
+  try {
+    fixture.audio.start(); await fixture.settle();
+    fixture.audio.attach(new AbortController().signal, { audio: true }); await fixture.settle();
+    assert.equal(fixture.audio.stats().error, 'Audio HTTP 503');
+    fixture.grant(); await fixture.settle();
+    assert.equal(fixture.audio.stats().error, 'Audio HTTP 503');
+    fixture.audio.status({ mic: { active: true, sampleRate: 16000 } }); await fixture.settle();
+    assert.equal(fixture.audio.stats().microphone, true);
+    assert.equal(fixture.audio.stats().error, 'Audio HTTP 503');
+  } finally { fixture.done(); }
+});
+
+test('disposing audio removes the permission observer and prevents permission recovery callbacks', async () => {
+  const fixture = permissionBrowser();
+  try {
+    fixture.audio.start(); await fixture.settle();
+    assert.equal(fixture.counts().listeners, 1);
+    fixture.audio.dispose();
+    const notifications = fixture.states.length;
+    fixture.grant(); fixture.audio.gesture(); await fixture.settle();
+    assert.equal(fixture.counts().listeners, 0);
+    assert.equal(fixture.counts().requests, 1);
+    assert.equal(fixture.states.length, notifications);
+  } finally { fixture.done(); }
+});
+
+test('late permission observer and idle probe completion after disposal release resources without notifying', async () => {
+  const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let resolvePermission, resolveCapture, stopped = 0, listeners = 0;
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {
+    permissions: { query: () => new Promise(resolve => { resolvePermission = resolve; }) },
+    mediaDevices: { getUserMedia: () => new Promise(resolve => { resolveCapture = resolve; }) },
+  } });
+  const states = [], audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: body([]) }), onState: state => states.push(state) });
+  try {
+    audio.start(); await new Promise(resolve => setImmediate(resolve));
+    audio.dispose(); const notifications = states.length;
+    resolvePermission({ state: 'granted', addEventListener() { listeners++; } });
+    resolveCapture({ getTracks: () => [{ stop() { stopped++; } }] });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(stopped, 1); assert.equal(listeners, 0); assert.equal(states.length, notifications);
+    assert.equal(audio.stats().microphone, false);
+  } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', oldNavigator); }
+});
+
+test('successful speaker recovery publishes its state while preserving a denied microphone', async () => {
+  let resolveResponse;
+  const fixture = permissionBrowser({ fetchPhone: () => new Promise(resolve => { resolveResponse = resolve; }) });
+  try {
+    fixture.audio.start(); await fixture.settle();
+    fixture.audio.attach(new AbortController().signal, { audio: true }); await fixture.settle();
+    resolveResponse({ ok: false, status: 503 }); await fixture.settle();
+    assert.equal(fixture.audio.stats().error, 'Audio HTTP 503');
+    fixture.audio.attach(new AbortController().signal, { audio: true }); await fixture.settle();
+    resolveResponse({ ok: true, body: body([]) }); await fixture.settle();
+    assert.equal(fixture.audio.stats().error, 'Permission denied');
+    assert.equal(fixture.states.at(-1).error, 'Permission denied');
+  } finally { fixture.done(); }
+});
+
 test('inactive microphone HTTP reply ends capture quietly while other upload failures remain visible', async () => {
   for (const reply of ['microphone-inactive', 'other-conflict']) {
     const browser = mockBrowser(), oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
