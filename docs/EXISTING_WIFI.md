@@ -5,10 +5,15 @@ portable Wi-Fi in system settings. On the TiPlay main page, select **Existing Wi
 enter the exact SSID, choose the network’s security type and enter its password.
 The choices are Open, WPA2, WPA3 transition (WPA2/WPA3 mixed mode) and WPA3.
 For Open, the password field is hidden.
-Keep Bluetooth enabled and pair the iPhone with the Android phone. Tap **Connect phone**
-or **Save and reconnect** to save and start the connection; editing the fields alone
-does not change a running session. See [Tesla browser setup](TESLA_BROWSER.md) for
-browser address and reachability limits on an existing network.
+Keep Bluetooth enabled, pair the iPhone with the Android phone and select it with
+**Choose iPhone**. Valid network changes save automatically after typing settles;
+an active CarPlay session reconnects while the settings page stays open. Invalid or
+incomplete fields remain editable without replacing the saved configuration. When
+CarPlay is enabled, the host maintains connection recovery and saved changes can
+resume a connection attempt even when no session is active. Use **Reconnect CarPlay**
+for an explicit retry. There is no **Save and reconnect** action. See
+[Tesla browser setup](TESLA_BROWSER.md) for browser address and reachability limits
+on an existing network.
 
 WPA2-Personal, WPA2/WPA3 transition and WPA3-Personal are represented by distinct
 bootstrap security values. On Android 12/API 31 and later, a readable negotiated
@@ -76,8 +81,9 @@ receiver, iOS version or router. Open, WPA2/WPA3 transition and WPA3-only networ
 separately validated on hardware in this record. This earlier native-head-unit run
 is not acceptance of the current phone + browser product; no new device run was
 performed for the 2026-10-12 documentation review.
-For a device check, confirm that both devices keep the existing Wi-Fi connection,
-CarPlay starts, and the iPhone can use online services. For failures, save one diagnostic
+For a current phone + browser device check, confirm that the Android phone and
+iPhone keep the existing Wi-Fi connection, the car browser remains reachable and
+displays CarPlay, and the iPhone can use online services. For failures, save one diagnostic
 report with the attempt time and the iPhone’s actual Wi-Fi connection. An absence of
 Bonjour control-service events alone does not prove that CarPlay discovery failed.
 

@@ -59,8 +59,7 @@ Vehicle CarPlay acceptance and complete Bluetooth audio flow remain unverified.
 ## Delivery and next steps
 
 The TiPlay repository URL below records the actual draft destination from that
-session. It conflicts with the `uJZk/DiPlay` destination required by `AGENTS.md`;
-this record does not resolve that policy conflict. Local paths and the private
+session. Current project destinations are unified on TiPlay. Local paths and the private
 Page describe session assets, whose continued availability has not been checked
 in this documentation sweep.
 

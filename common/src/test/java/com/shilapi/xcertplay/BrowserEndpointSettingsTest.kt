@@ -2,8 +2,6 @@ package com.shilapi.xcertplay
 
 import java.net.ServerSocket
 import java.net.Socket
-import java.time.Duration
-import android.os.Looper
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,7 +11,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -91,22 +88,4 @@ class BrowserEndpointSettingsTest {
         }
     }
 
-    @Test fun endpointChangesAnnounceTheLatestTargetBeforeMovingTheListener() {
-        TeslaBrowserLink.resetForTest()
-        TeslaBrowserLink.serverFactory = TeslaBrowserLink.appServers
-        val oldPort = ServerSocket(0).use { it.localPort }
-        BrowserEndpointSettings.savePort(context, oldPort)
-        TeslaBrowserLink.start(context)
-        assertTrue(TeslaBrowserLink.awaitIdle())
-        val newPort = ServerSocket(0).use { it.localPort }
-        BrowserEndpointSettings.savePort(context, newPort)
-        BrowserEndpointChanges.apply(context, portChanged = true)
-        assertEquals("169.254.111.111:$newPort", TeslaBrowserLink.status().endpoint)
-        assertEquals(TeslaBrowserLink.State.Listening(oldPort), TeslaBrowserLink.state)
-        // A second address edit must not lose the pending listener restart.
-        BrowserEndpointChanges.apply(context)
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1200))
-        assertTrue(TeslaBrowserLink.awaitIdle())
-        assertEquals(TeslaBrowserLink.State.Listening(newPort), TeslaBrowserLink.state)
-    }
 }

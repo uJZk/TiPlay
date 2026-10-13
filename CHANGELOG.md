@@ -1,3 +1,13 @@
+# TiPlay unreleased — after 0.2.14-beta.1
+
+- Apply valid browser settings immediately and reconnect automatically when negotiation is needed, keeping the settings page open. Main settings offers Reconnect CarPlay and All (USB first) / Wireless / USB; enabled CarPlay continuously recovers and valid idle edits may resume preparation. Start on boot launches TiPlay, while Disable CarPlay blocks startup and retries.
+- Play CarPlay music through mandatory buffered browser audio by default. Recording demand switches capture and call/Siri/navigation playback to the Android-to-car Bluetooth telephone channel, with navigation at fixed 25% gain; other audio is discarded until browser playback resumes. Disable CarPlay audio instead uses the iPhone-to-car Bluetooth route. Vehicle validation remains pending.
+- Use Video.js for non-DRM AirPlay URL video, with authenticated Android resource proxying and direct iPhone resources. Support compatible AAC-ELD mirroring companion audio, URL-video soundtracks and enabled HEVC mirroring; standalone audio-only AirPlay remains unsupported. AirPlay remains experimental.
+- Remove URL-video timing diagnostics; the current Debug overlay shows codec, FPS and two signed presentation-offset averages.
+- Apply hotspot address/port edits immediately on Android without notifying or migrating browser endpoints. Reconnect manually with the updated Android address or pairing link; pairing codes remain.
+
+The entries below record release behavior at their dates. The newer settings/audio/AirPlay behavior above supersedes beta.1 descriptions; past validation and release evidence remains historical. Beta.2's draft status is recorded in the dated 2026-10-13 delivery record and is not a new public-release claim.
+
 # TiPlay 0.2.14-beta.1 — 2026-10-12
 
 - Publish the first TiPlay beta for Android phone + car browser use, with a signed APK and matching source archive.

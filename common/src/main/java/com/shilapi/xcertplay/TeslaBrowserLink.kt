@@ -387,7 +387,6 @@ internal object TeslaBrowserLink {
             viewport = viewport?.let { TeslaBrowserCanvas.size(it.size) },
             touchAvailable = !carPlayDisplayPaused && snapshot != null && CarPlayBackgroundSession.active,
             phone = linkedMapOf("localNetworkPermission" to (app?.let { LocalNetworkPermission.state(it).wire })),
-            endpoint = BrowserEndpointChanges.endpoint,
         )
     }
 
@@ -546,7 +545,6 @@ internal object TeslaBrowserLink {
 
     /** Tests: stop, wait for the link's thread and forget what this process cached. */
     internal fun resetForTest() {
-        BrowserEndpointChanges.clear()
         stop()
         awaitIdle()
         synchronized(this) {

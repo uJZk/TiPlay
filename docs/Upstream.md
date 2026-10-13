@@ -28,6 +28,8 @@ upstream does not mean automatically upgrading it or merging its entire applicat
   `com.shilapi.xcertplay`, `com.shihab.diplay.action.EMBED_MAP` and
   `com.shihab.diplay.DISCONNECT`; TiPlay's application ID remains `com.ujzk.tiplay`
   (`.hudtest` for debug). Keep TiPlay preference and browser storage keys stable too.
+- Current issues, releases and downloads point to `https://github.com/uJZk/TiPlay`; the hosted page is `https://ujzk.github.io/TiPlay/`. Preserve dated destinations and upstream provenance.
+- Browser HEVC, AirPlay and VPN labels are intentionally concise, without experimental suffixes. Preserve inherited locale text unless explicitly changed.
 - User-visible names use TiPlay. Keep DiPlay in credits, archived READMEs, historical
   release/audit records and source comments. Never globally replace DiPlay with TiPlay.
   Link numbered upstream issues, PRs and commits to their original repository.

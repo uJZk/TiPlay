@@ -1,0 +1,22 @@
+# Browser documentation recovery — 2026-10-13
+
+Restored review and fixes for `TESLA_BROWSER.md`, `WEB-DEBUG-2026-10-12.md`, `WEB-DEBUG-2026-10-11.md`, `PRIVACY.md` and `BROWSER-RESIZE-2026-10-11.md` after the environment reset. Source baseline: `1db90a7c`; the parent owns the subsequent implementation of explicit user decisions and all checks. No code/configuration changes, tests, commits or pushes by this worker.
+
+## Checklist and fixes
+
+- Current product and scope remain TiPlay on Android phone + car browser. Internal identifiers, legal material and native upstream compatibility are unchanged. Entry-page content/Chinese alignment and broader setting translations/boot contracts belong to other tasks.
+- Restored user-confirmed official project/Pages destinations and removed obsolete DiPlay destination-conflict warnings from the two historical browser records. Historical deployment URLs, commits, cache versions, measured timings and test totals remain intact. Custom HTTPS page addresses remain supported.
+- Concise HEVC/AirPlay/VPN labels are the user's intended policy; no experimental-suffix finding or invented prose standard added.
+- Replaced proactive endpoint handoff/migration instructions with immediate Android application and manual browser Disconnect → update Android address → Connect, or opening a newly copied pairing link. Pairing code survives the address/port edit; the phone does not notify the browser or update its saved endpoint/bookmark. This follows the user's explicit correction; the parent implements removal of the baseline's announcement/migration code.
+- Clarified enabled CarPlay idle edits may resume preparation and disabled CarPlay blocks startup/retry. Running-session settings retain automatic renegotiation when needed, with browser endpoint edits requiring the explicit browser steps. Broader settings implementation verification is coordinated by the parent/settings worker.
+- Restored Privacy's actual idle-browser PCM playback and demand-only verified HFP/SCO capture contract, microphone foreground permission, playback without capture permission, no handset/browser microphone fallback and audio opt-out. Added audio/proxied-resource HTTP privacy and sender-media-service behavior.
+- Qualified direct video/decoder bypass: CarPlay and ordinary H.264/enabled-HEVC mirror video are forwarded to the browser. Mirror companion AAC-ELD audio is Android-decoded; URL video/audio are browser-decoded; still photos use an Android Surface/encoder bridge. The original broad mirror/photo decoder-bridge wording was refined against the recovered source.
+- Four-field Debug remains codec / actual one-second drawn FPS / middle-90% signed presentation offset / largest-5% signed offset. October 11 five-field Debug, old capture-time/future-time wording, bundled webpage and former HTML-video/CSP restrictions are explicitly historical. October 12's interface list and validation totals are explicitly dated; current `/audio` and `/airplay-resource` are linked.
+- Added active-browser retry countdown, wrong-code/takeover recovery, Disconnect cancellation and browser permission limitations. Existing producer-idle/end-record distinction, viewport renegotiation, Bonjour lease/shutdown and route-release qualifications remain.
+- Repaired the AirPlay timing heading link to `AIRPLAY.md#音画时间与播放策略`; checked assigned documents' local file links and retained BYD heading reference. No outside-scope document edited.
+
+## Evidence and limits
+
+Rechecked `site/play/fps-window.js`, `AirPlayReceiverService`, `AirPlayCastPlayer`, `AirPlayVideoSurfaceBridge`, `DiPlaySessionService`, `WebVideoHub`, `TeslaBrowserLink`, `BrowserEndpointChanges`, page endpoint handling and page/deployment defaults against the recovered checkout, using the prior task's detailed source/test review for unchanged contracts. `WebVideoHub` still offers producer-idle without ending the authenticated response and bounds keyframe retirement; the parent retains current media/Bonjour retirement work.
+
+Scoped local file links and `git diff --check` passed. No fresh test run or device/public-host validation was performed by this worker; final CI belongs to the parent. Physical latency, car microphone quality/AEC, screen-off capture, vehicle permission/resize behavior and failed renegotiation recovery remain qualified. Repository source does not prove remote deployment contents or settings. The user's canonical destination and manual endpoint decisions supersede the baseline defaults/handoff behavior being changed by the parent.

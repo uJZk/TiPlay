@@ -3,9 +3,12 @@
 This records the `d77eef4` resize iteration and its October 11 validation. The
 measurements and workflow results below are historical, not tests of the current
 checkout. Later UI and Debug changes are recorded in [UI redesign](UI-REDESIGN-2026-10-11.md)
-and [Web Debug](WEB-DEBUG-2026-10-11.md). The TiPlay workflow/site URLs below record
-the actual delivery destination; they conflict with the `uJZk/DiPlay` destination
-required by `AGENTS.md`, which remains unresolved.
+and [Web Debug](WEB-DEBUG-2026-10-11.md). The workflow/site URLs below record
+the actual delivery destination.
+
+The audio suppression described below was the October 11 implementation. Current browser PCM playback and
+demand-switched Android HFP/SCO capture supersede it; see [audio and microphone routing](TESLA_BROWSER.md#audio-and-microphone).
+These resize measurements do not validate the later audio path.
 
 The browser profile suppresses Android audio and microphone processing. Window resize reports the newest
 viewport on the next animation frame, then replaces the iPhone display session by reopening only Bluetooth control.

@@ -22,7 +22,7 @@
     <string name="settings_browser_hotspot_endpoint">Dirección del punto de acceso: %1$s</string>
     <string name="settings_browser_more">Más</string>
     <string name="settings_selected_iphone">iPhone · %1$s</string>
-    <string name="settings_browser_vpn_endpoint_hint">Rangos de dirección: 169.254.0.0/16; puertos: 1024–65535, por ejemplo 169.254.111.111:8080. El navegador conectado actualiza la dirección automáticamente. Si está desconectado, introduce la nueva dirección de Android en la página. Déjalo vacío para usar 169.254.111.111 y conservar el puerto guardado.</string>
+    <string name="settings_browser_vpn_endpoint_hint">Rangos de dirección: 169.254.0.0/16; puertos: 1024–65535, por ejemplo 169.254.111.111:8080. Después del cambio, introduce manualmente la nueva dirección de Android en la página y pulsa Conectar. Déjalo vacío para usar 169.254.111.111 y conservar el puerto guardado.</string>
     <string name="settings_browser_vpn_endpoint_invalid">Introduce una dirección de 169.254.0.0/16 y un puerto (1024–65535), por ejemplo 169.254.111.111:8080.</string>
     <string name="settings_browser_hotspot_address_explanation">Elige cómo TiPlay permite el acceso desde el navegador del coche y gestiona el permiso USB. El modo estándar usa la dirección de la red; los demás ofrecen soluciones con distintos permisos y límites.</string>
 </resources>

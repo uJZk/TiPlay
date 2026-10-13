@@ -200,7 +200,7 @@ test('the service worker answers only its own files, so the download pages in it
 test('the page loads only relative, same-origin resources', () => {
   const html = read('index.html');
   for (const [, url] of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
-    if (url === 'https://github.com/uJZk/DiPlay') continue; // the GPL source link
+    if (url === 'https://github.com/uJZk/TiPlay') continue; // the GPL source link
     assert.match(url, /^[a-z][\w./-]*$/, url);
   }
   for (const name of ['app.js', 'decoder-worker.js', 'style.css']) {

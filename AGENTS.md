@@ -5,8 +5,8 @@ Instructions for coding agents that work on TiPlay.
 Browser resize, portal and discovery shutdown contracts are documented in `docs/TESLA_BROWSER.md`
 under "Browser session lifecycle".
 
-Phone settings, connection drafts, apply/reconnect and boot behavior follow
-[docs/APP-MAIN-PAGE-IMPLEMENTATION.md](docs/APP-MAIN-PAGE-IMPLEMENTATION.md).
+Phone settings, validated drafts, immediate apply/automatic reconnect and boot behavior follow
+`docs/APP-MAIN-PAGE-IMPLEMENTATION.md`.
 
 Build prerequisites, runtime identity, signing and APK update contracts are documented
 in [docs/BUILD.md](docs/BUILD.md). Windows WSLC container supplements, including filesystem,
@@ -36,6 +36,8 @@ See [docs/UPSTREAM-DOCS-TIE-UP-2026-10-13.md](docs/UPSTREAM-DOCS-TIE-UP-2026-10-
 for upstream tracking, concise maintenance rules, document length limits, scope splitting,
 verification and the Android toolchain access limitation.
 
+See [docs/docs-sweep-2026-10-13/TIE-UP.md](docs/docs-sweep-2026-10-13/TIE-UP.md) for the recovered documentation sweep, user-confirmed destination/settings/endpoint policies and delivery handoff.
+
 See `docs/sweep-2026-10-13/README.md` for single-Bonjour trial retirement, incremental
 and post-merge code cleanup, and the requested tap-map/reverse-notification/audio-cancellation repairs.
 `docs/sweep-2026-10-13/TIE-UP.md` records main integration, concurrency regressions,
@@ -57,13 +59,17 @@ the 1/2/4/8/16-second Bluetooth arrival retry policy, USB-first All mode, indepe
 CarPlay opt-out, TiPlay mode copy, privileged USB attempts and Android 16 virtual validation.
 
 See `docs/SETTINGS-IMMEDIATE-APPLY-2026-10-12.md` for immediate settings application,
-default AirPlay startup, hotspot address handoff, verification and device follow-up.
+default AirPlay startup, historical hotspot address handoff, verification and device follow-up.
+Current hotspot address/port edits apply immediately on Android and NEVER proactively notify or migrate
+the browser. The user selects Disconnect, edits Android address and selects Connect, or opens the
+updated pairing link. Preserve the pairing code; do not update bookmarks automatically.
 
 See `docs/BETA-RELEASE-2026-10-12.md` for the 0.2.14-beta.1 release inputs,
 upstream CarPlay identity provenance, validation and publication status.
 
 See `docs/docs-sweep-2026-10-12/README.md` for the incremental documentation sweep,
-user-focused English/Chinese READMEs, checks and unresolved destination/label policies.
+user-focused English/Chinese READMEs, checks and historically unresolved destination/label policies.
+The user-confirmed TiPlay destinations and concise browser labels below supersede those open questions.
 `docs/docs-sweep-2026-10-12/TIE-UP.md` records its integration and delivery progress.
 
 See `docs/AIRPLAY.md` for the experimental ordinary AirPlay mirror/video receiver,
@@ -74,7 +80,7 @@ Ordinary AirPlay video routing, app-specific device evidence and the next playba
 See `docs/AIRPLAY-TIE-UP-2026-10-12.md` for verification, integration and remaining device checks.
 See `docs/todo.md` under "AirPlay 轻量信任设备机制" for the pending approval, remembered-device and takeover-protection work; it is not implemented yet.
 
-See `docs/WEB-DEBUG-2026-10-12.md` for the current four-field Debug overlay, browser theme delivery,
+See `docs/WEB-DEBUG-2026-10-12.md` for the dated four-field Debug overlay, browser theme delivery,
 peer-initiated clock synchronization, Android lifecycle repairs and validation limits.
 The browser page is hosted over HTTPS only; the APK does not bundle it and the phone has no local `/play/` route.
 `docs/WEB-DEBUG-2026-10-11.md` retains the earlier implementation and playback-path history.
@@ -94,7 +100,7 @@ See `docs/APK-RELEASE-2026-10-11.md` for the signed 0.2.13 APK, upstream runtime
 identity provenance, test results, download delivery and pending Release attachment upload.
 `docs/BUILD.md` includes extraction, verification and draft-upload procedures.
 
-See `docs/SETTINGS-UX-2026-10-11.md` for the current main-menu ordering, connection-mode
+See `docs/SETTINGS-UX-2026-10-11.md` for the dated main-menu ordering, connection-mode
 migration, automatic radio hints, codec defaults, shared branding, verification and delivery progress.
 Its final section records the two-menu browser UI, editable `address:port`, the
 stopped Termux probe, the corrected Pages URL and the latest signed installation.
@@ -106,7 +112,7 @@ verification and remaining link-policy/vehicle-validation limits;
 See `docs/sweep-2026-10-10/FOLLOWUP-2026-10-11.md` for the completed queue/resource lifecycle fixes and verification;
 `docs/sweep-2026-10-10/TIE-UP-2026-10-11.md` records commit, merge, push and Pages deployment progress.
 
-See `docs/SETTINGS-VALIDATION-2026-10-10.md` for the current browser settings profile,
+See `docs/SETTINGS-VALIDATION-2026-10-10.md` for the dated browser settings profile,
 device installation, verification results and remaining vehicle checks.
 `docs/E2E-VALIDATION-2026-10-10.md` records the earlier local browser E2E results
 and system-proxy fix.
@@ -159,8 +165,9 @@ A control that fixes a common problem and is safe at its default (for example th
 Exception: a gated control that only its own audience sees, and that completes an everyday goal, stays in that goal's category.
 Example: auto car hotspot needs ADB but appears only for car-hotspot users, so it is in Connection.
 
-Mark an experimental setting or card with the title suffix ` (experimental)`, never `· experimental`, a dash, or an `Experimental …` prefix.
-Each locale MUST use its existing form: `(تجريبي)`, `(experimental)`, `(экспериментально)`, `(експериментально)`, `（实验性）`, `（實驗性）`.
+Browser HEVC, AirPlay and VPN controls intentionally use concise titles without an experimental suffix.
+Preserve existing experimental suffixes on retained upstream controls and their translated forms; do not
+restore suffixes to these browser controls. Documentation may still explain experimental compatibility limits.
 
 ### Add the code
 
@@ -172,7 +179,8 @@ Each locale MUST use its existing form: `(تجريبي)`, `(experimental)`, `(э
    Overview quick settings are the only duplicates. They MUST use the same persistence as the full control. Overview SHOULD NOT have more than four quick settings.
 5. Browser settings save and apply valid changes immediately. Changes requiring new negotiation MUST call
    `markReconnectNeeded()` after saving; in phone + browser mode it notifies the host to reconnect automatically
-   while keeping the current settings page open. Idle edits MUST NOT start a connection.
+   while keeping the current settings page open. When CarPlay is enabled, valid idle edits MAY resume
+   connection preparation and continuous recovery. Disabled CarPlay MUST block startup and retries.
    Do not add "Save and reconnect" or "Return and apply" actions to browser settings.
    Retained upstream native settings keep their existing explicit reconnect behavior.
 6. Add each new string to `common/src/main/res/values/` and to every `values-xx` locale folder.
@@ -190,7 +198,8 @@ Do not add a new setting to Overview. Add it to its category. Then promote it to
 
 The product is TiPlay. Use TiPlay in every name a user can see: strings in all locales, guides, the site and issue templates.
 The application ID is `com.ujzk.tiplay`; debug builds add `.hudtest`.
-Link issues, releases, downloads and the site to https://github.com/uJZk/DiPlay.
+Link issues, releases and downloads to https://github.com/uJZk/TiPlay, and the official site to
+https://ujzk.github.io/TiPlay/. Preserve dated historical destinations. Keep links to numbered upstream issues, pull requests and commits, and credits, on https://github.com/shihabal3amri/DiPlay.
 
 ## Product scope
 

@@ -246,7 +246,6 @@ internal class HotspotExtraAddressCard(
     }
 
     private fun apply(next: HotspotAddressMethod, previous: HotspotAddressMethod, retry: Boolean = false) {
-        BrowserEndpointChanges.clearAnnouncement()
         HotspotExtraAddressSettings.saveMethod(app, next)
         HotspotExtraAddressSettings.sync(app, retry) // starts the new method, cleans up the old one
         // Root takes the address over (and removes it when the driver leaves Root), so only the others leave it behind.
@@ -370,7 +369,8 @@ internal class HotspotExtraAddressCard(
                     HotspotExtraAddressSettings.saveAddress(app, endpoint.address)
                 }
                 val portChanged = BrowserEndpointSettings.savePort(app, endpoint.port)
-                if (endpoint.address != saved || portChanged) BrowserEndpointChanges.apply(app, portChanged)
+                if (endpoint.address != saved) HotspotExtraAddressSettings.sync(app)
+                if (portChanged) TeslaBrowserLink.onPortChanged()
                 rerender()
             }
         }
