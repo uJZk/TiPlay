@@ -16,6 +16,24 @@ import java.nio.ByteOrder
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], manifest = Config.NONE)
 class BrowserAudioMediaSinkTest {
+    @Test fun presentationUsesTheRtpClockWhilePcmKeepsItsDecodeSampleRate() {
+        for (clock in listOf(16000, 24000, 48000)) {
+            val hub = WebAudioHub()
+            val sink = BrowserAudioMediaSink(object : MediaSink {}, hub)
+            val reader = hub.subscribe()
+            val id = AudioStreamId(100, "media")
+            val format = AudioFormat(AudioCodecKind.LPCM, 48000, 1, id.type, id.audioType, rtpClockRate = clock)
+            try {
+                sink.onAudioStarted(id, format, 100)
+                sink.onAudioClock(id, 100, 1_000_000_000L)
+                sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, 1), 100 + clock)
+                val packet = ByteBuffer.wrap(requireNotNull(reader.take(1000)))
+                assertEquals(48000, packet.getInt(8))
+                assertEquals(2000.0, packet.getDouble(20), 0.001)
+            } finally { sink.close(); reader.close() }
+        }
+    }
+
     @Test fun replacingADecoderBlockedOnMusicCapacityRetiresItsPendingResetWithoutClosingTheReader() {
         val hub = WebAudioHub()
         val sink = BrowserAudioMediaSink(object : MediaSink {}, hub)

@@ -154,7 +154,7 @@ class BrowserAudioMediaSink(
         resetDecoders()
     }
 
-    private inner class Decoder(val id: AudioStreamId, val format: AudioFormat, val timeline: RtpAudioTimeline = RtpAudioTimeline(format.sampleRate)) : Closeable {
+    private inner class Decoder(val id: AudioStreamId, val format: AudioFormat, val timeline: RtpAudioTimeline = RtpAudioTimeline(format.rtpClockRate)) : Closeable {
         private val epoch = routeEpoch
         private val packets = ArrayBlockingQueue<Pair<ByteArray, Int>>(24)
         private val order = AudioPacketOrder<Pair<ByteArray, Int>>()
@@ -206,7 +206,7 @@ class BrowserAudioMediaSink(
                             val data = if (format.codec == AudioCodecKind.AAC_LC) MediaCodecSupport.adtsFrame(payload, format.sampleRate, format.channels) else payload
                             if (data.size > input.remaining()) error("audio packet too large")
                             input.put(data)
-                            val timeUs = sample * 1_000_000L / format.sampleRate
+                            val timeUs = sample * 1_000_000L / format.rtpClockRate
                             decoder.queueInputBuffer(index, 0, data.size, timeUs, 0)
                         }
                     }
@@ -236,7 +236,7 @@ class BrowserAudioMediaSink(
                         if (info.size > 0 && info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
                             val buffer = codec.getOutputBuffer(index) ?: error("decoder output unavailable")
                             buffer.position(info.offset); buffer.limit(info.offset + info.size)
-                            val scaled = info.presentationTimeUs * format.sampleRate
+                            val scaled = info.presentationTimeUs * format.rtpClockRate
                             val sample = (scaled + if (scaled < 0) -500_000L else 500_000L) / 1_000_000L
                             send(ByteArray(info.size).also { buffer.get(it) }, timeline.presentation(sample))
                         }

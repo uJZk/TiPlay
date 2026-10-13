@@ -194,7 +194,7 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
         devices = null; workerRetiring = true
         retiring.running.set(false)
         // Stop can unblock a blocking read; releasing belongs to the worker after it exits.
-        runCatching { retiring.record?.stop() }
+        runCatching { synchronized(retiring) { retiring.record?.stop() } }
         runCatching { retiring.track?.pause(); retiring.track?.flush() }
     }
     private fun release() {
@@ -273,10 +273,27 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
                 }, "tiplay-bluetooth-speaker").apply { isDaemon = true; start() }
                 val resampler = VoicePcmResampler(rate, sender.sampleRate)
                 val samples = ShortArray(rate / 50)
+                val recovery = BluetoothMicrophoneRecovery()
                 while (running.get()) {
-                    val count = capture.read(samples, 0, samples.size, AudioRecord.READ_BLOCKING)
+                    // A stalled SCO input must not hold shutdown or recovery in a blocking read.
+                    val count = capture.read(samples, 0, samples.size, AudioRecord.READ_NON_BLOCKING)
                     if (!running.get()) break
-                    check(count > 0) { "Bluetooth recording stopped" }
+                    when (recovery.read(count)) {
+                        BluetoothMicrophoneRecovery.Action.WAIT -> { Thread.sleep(5); continue }
+                        BluetoothMicrophoneRecovery.Action.RESTART -> {
+                            synchronized(this) {
+                                if (!running.get()) return@Thread
+                                capture.stop()
+                                check(capture.setPreferredDevice(input))
+                                capture.startRecording()
+                            }
+                            Log.i("TiPlayBluetoothVoice", "Microphone restarted attempt=${recovery.restarts} reason=${if (count == 0) "no-audio" else "read-error"} code=$count")
+                            Thread.sleep(5)
+                            continue
+                        }
+                        BluetoothMicrophoneRecovery.Action.FAIL -> error("Bluetooth microphone recovery exhausted")
+                        BluetoothMicrophoneRecovery.Action.CONTINUE -> Unit
+                    }
                     val routed = matches(capture.routedDevice, input) && matches(audio.routedDevice, output)
                     if (!routed) {
                         if (ready.get() || SystemClock.elapsedRealtime() - begun >= 2000) error("Bluetooth duplex route unavailable")
