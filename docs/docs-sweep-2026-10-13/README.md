@@ -1,6 +1,6 @@
 # Documentation sweep — 2026-10-13
 
-- status: review and integrated verification complete; delivery tracked in [TIE-UP.md](TIE-UP.md)
+- status: complete — review, verification, main integration, push and Pages deployment; delivery tracked in [TIE-UP.md](TIE-UP.md)
 - base-commit: `1db90a7c3bc4cf7faf07bf9718a40ba54c61d345`
 - Previous baseline: `84123f908ae9e620e5aa58b07cbc2471e2024464`
 - Scope: 38 original documents plus user-authorized code/website/policy corrections; see SCOPE.md and CHECKLIST.md.

@@ -36,7 +36,7 @@ See [docs/UPSTREAM-DOCS-TIE-UP-2026-10-13.md](docs/UPSTREAM-DOCS-TIE-UP-2026-10-
 for upstream tracking, concise maintenance rules, document length limits, scope splitting,
 verification and the Android toolchain access limitation.
 
-See [docs/docs-sweep-2026-10-13/TIE-UP.md](docs/docs-sweep-2026-10-13/TIE-UP.md) for the recovered documentation sweep, user-confirmed destination/settings/endpoint policies and delivery handoff. Integrated source 08a1c079 passed 2,423 Android tests, all required lint/debug builds and 116 browser tests with the available JDK 25 toolchain; current page cache is v37.
+See [docs/docs-sweep-2026-10-13/TIE-UP.md](docs/docs-sweep-2026-10-13/TIE-UP.md) for the recovered documentation sweep, user-confirmed destination/settings/endpoint policies and delivery handoff. Integrated source 08a1c079 passed 2,423 Android tests, all required lint/debug builds and 116 browser tests with the available JDK 25 toolchain; current page cache is v37. Main ce3a7050 was pushed and Publish site run 38435442241 succeeded.
 
 See `docs/sweep-2026-10-13/README.md` for single-Bonjour trial retirement, incremental
 and post-merge code cleanup, and the requested tap-map/reverse-notification/audio-cancellation repairs.
