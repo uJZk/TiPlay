@@ -1,7 +1,7 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 export const MAX_AUDIO_RECORD = 256 * 1024;
 
-/** PCM transport is independent of video: stalls cannot delay the picture. */
+/** Separate PCM transport; presentation timestamps feed the shared audio/video scheduler. */
 export async function* readAudioRecords(body) {
   const reader = body.getReader();
   let chunk = new Uint8Array(), offset = 0;
@@ -29,15 +29,16 @@ export async function* readAudioRecords(body) {
       if (!length) return;
       const size = new DataView(length.buffer).getUint32(0);
       if (!size) continue;
-      if (size < 16 || size > MAX_AUDIO_RECORD) throw new Error('invalid audio size');
+      if (size < 24 || size > MAX_AUDIO_RECORD) throw new Error('invalid audio size');
       const bytes = await read(size);
       if (!bytes) throw new Error('truncated audio');
       const header = new DataView(bytes.buffer);
       const channels = bytes[2], rate = header.getUint32(4);
-      if (bytes[0] !== 1 || channels < 1 || channels > 2 || rate < 8000 || rate > 96000 || (size - 16) % (channels * 2)) {
+      const headerSize = 24;
+      if (bytes[0] !== 2 || size < headerSize || (bytes[3] & 12) === 12 || channels < 1 || channels > 2 || rate < 8000 || rate > 96000 || (size - headerSize) % (channels * 2)) {
         throw new Error('invalid audio format');
       }
-      yield { type: bytes[1], channels, rate, flags: bytes[3], sequence: header.getUint32(8), pcm: bytes.slice(16).buffer };
+      yield { type: bytes[1], channels, rate, flags: bytes[3], mode: ['carplay', 'airplay-mirror', 'airplay-video'][(bytes[3] & 12) >> 2], sequence: header.getUint32(8), epoch: header.getUint32(12), presentationMs: header.getFloat64(16), pcm: bytes.slice(headerSize).buffer };
     }
   } finally {
     await reader.cancel().catch(() => {});

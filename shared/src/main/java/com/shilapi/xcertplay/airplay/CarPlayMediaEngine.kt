@@ -28,6 +28,7 @@ interface MediaSink {
     fun setVideoDiagnosticHandler(type: Int, handler: (String) -> Unit) {}
     fun onScreenStreamActive(type: Int, active: Boolean) {}
     fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) {}
+    fun onAudioClock(id: AudioStreamId, sample: Int, presentationNanos: Long) {}
     fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {}
     fun onAudioStopped(id: AudioStreamId) {}
     fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) {}
@@ -196,6 +197,7 @@ class CarPlayMediaEngine(
                     meta.firstSample = firstSample
                     meta.originNs = System.nanoTime()
                     sink.onAudioStarted(streamId, format, firstSample)
+                    sink.onAudioClock(streamId, firstSample, requireNotNull(meta.originNs) + meta.playoutLatencyMs * 1_000_000L)
                 }
 
                 override fun onRtp(rtp: ByteArray, sample: Int) =
@@ -245,7 +247,8 @@ class CarPlayMediaEngine(
         }
         val peer = session.remoteAddress ?: return null
         val buffered = try {
-            BufferedAudioStream(key, format, sink, session::logDebug, expectedPeer = peer)
+            BufferedAudioStream(key, format, sink, session::logDebug, expectedPeer = peer,
+                mapNtp = session::ntpTimeNanos)
         } catch (error: Exception) {
             Log.w(TAG, "buffered audio listener failed", error)
             return null

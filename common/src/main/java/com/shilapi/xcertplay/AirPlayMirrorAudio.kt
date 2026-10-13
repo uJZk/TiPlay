@@ -14,7 +14,9 @@ import java.util.concurrent.TimeUnit
 /** AAC-ELD mirror soundtrack only. ALAC/standalone AirTunes are deliberately excluded. */
 internal class AirPlayMirrorAudio(private val format: ReceiverMirrorAudioFormat,
                                   private val hub: WebAudioHub) : Closeable {
-    private val packets = ArrayBlockingQueue<ByteArray>(24)
+    private data class Packet(val payload: ByteArray, val sample: Long, val presentationNanos: Long?)
+    private val packets = ArrayBlockingQueue<Packet>(24)
+    private val presentation = java.util.TreeMap<Long, Long?>()
     @Volatile private var running = true
     private var reset = true
     private val thread: Thread
@@ -25,9 +27,10 @@ internal class AirPlayMirrorAudio(private val format: ReceiverMirrorAudioFormat,
         thread = Thread(::decode, "tiplay-airplay-mirror-audio").apply { isDaemon = true; start() }
     }
 
-    fun offer(payload: ByteArray) {
+    fun offer(payload: ByteArray, sample: Long, presentationNanos: Long?) {
         if (!running || payload.isEmpty() || payload.size > 65536) return
-        if (!packets.offer(payload)) { packets.poll(); packets.offer(payload) }
+        val packet = Packet(payload, sample, presentationNanos)
+        if (!packets.offer(packet)) { packets.poll(); packets.offer(packet) }
     }
 
     private fun decode() {
@@ -44,16 +47,17 @@ internal class AirPlayMirrorAudio(private val format: ReceiverMirrorAudioFormat,
             codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
             codec.configure(media, null, null, 0); codec.start()
             val info = MediaCodec.BufferInfo()
-            var timeUs = 0L
             while (running) {
                 val packet = packets.poll(10, TimeUnit.MILLISECONDS)
                 if (packet != null) {
                     var input = codec.dequeueInputBuffer(10_000)
                     while (running && input < 0) { drain(codec, info); input = codec.dequeueInputBuffer(10_000) }
                     if (!running) break
-                    val buffer = requireNotNull(codec.getInputBuffer(input)); buffer.clear(); buffer.put(packet)
-                    codec.queueInputBuffer(input, 0, packet.size, timeUs, 0)
-                    timeUs += 480_000_000L / format.sampleRate
+                    val buffer = requireNotNull(codec.getInputBuffer(input)); buffer.clear(); buffer.put(packet.payload)
+                    val timeUs = packet.sample * 1_000_000L / format.sampleRate
+                    presentation[timeUs] = packet.presentationNanos
+                    while (presentation.size > 128) presentation.pollFirstEntry()
+                    codec.queueInputBuffer(input, 0, packet.payload.size, timeUs, 0)
                 }
                 drain(codec, info)
             }
@@ -78,7 +82,11 @@ internal class AirPlayMirrorAudio(private val format: ReceiverMirrorAudioFormat,
                 try {
                     if (info.size > 0) {
                         val buffer = requireNotNull(codec.getOutputBuffer(index)); buffer.position(info.offset); buffer.limit(info.offset + info.size)
-                        hub.publish(this, 0, format.sampleRate, format.channels, ByteArray(info.size).also { buffer.get(it) }, reset = reset)
+                        val anchor = presentation.floorEntry(info.presentationTimeUs)
+                        val mapped = anchor?.value?.let { it + (info.presentationTimeUs - anchor.key) * 1000L }
+                        if (anchor != null) presentation.headMap(anchor.key, false).clear()
+                        hub.publish(this, 0, format.sampleRate, format.channels, ByteArray(info.size).also { buffer.get(it) }, reset = reset,
+                            presentationNanos = mapped, mode = com.shilapi.xcertplay.web.BrowserPlaybackMode.AIRPLAY_MIRROR)
                         reset = false
                     }
                 } finally { codec.releaseOutputBuffer(index, false) }

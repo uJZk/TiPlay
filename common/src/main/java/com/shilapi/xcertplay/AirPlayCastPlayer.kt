@@ -67,8 +67,8 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                 playback.ready, playback.buffering, seekable)
         }, control = { action, value -> main.post {
             if (!closed && generation == token) when (action) {
-                "play" -> { requestedPlaying = true; player?.playWhenReady = true }
-                "pause" -> { requestedPlaying = false; player?.playWhenReady = false }
+                "play" -> setPlaying(true)
+                "pause" -> setPlaying(false)
                 "seek" -> { requestedSeek = value; player?.seekTo((requireNotNull(value) * 1000).toLong()) }
                 "stop" -> { stopNow(); stateChanged("stopped") }
             }
@@ -99,7 +99,7 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
         try {
             video = EncodedVideo(diagnostics, ready = { surface -> main.post {
                 if (!closed && generation == token) photoFrames = AirPlayPhotoFrames(surface, bytes, failure)
-            } }, failed = failure)
+            } }, failed = failure, timedVideo = false)
         } catch (error: Exception) { failure(error) }
     }
 
@@ -111,13 +111,18 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
         val data = DataSource.Factory {
             AirPlayVideoDataSource(http.createDataSource(), diagnostics, { playlistDetected.set(true) }, resource)
         }
+        val audio = AirPlayBrowserAudioSink(TeslaBrowserLink.audioHub, diagnostics, timelineChanged = next::resetTimeline)
         val renderers = object : DefaultRenderersFactory(context) {
             override fun buildAudioSink(context: Context, enableFloatOutput: Boolean,
                                         enableAudioTrackPlaybackParams: Boolean): AudioSink =
-                AirPlayBrowserAudioSink(TeslaBrowserLink.audioHub, diagnostics)
+                audio
         }
         val exo = ExoPlayer.Builder(context, renderers).setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(data)).build()
         player = exo
+        exo.setVideoFrameMetadataListener { presentationTimeUs, releaseTimeNs, _, _ ->
+            next.frameMetadata(presentationTimeUs, releaseTimeNs,
+                audio.presentationTimeNanos(presentationTimeUs) ?: releaseTimeNs)
+        }
         exo.setVideoSurface(surface)
         exo.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT)
         exo.addAnalyticsListener(object : AnalyticsListener {
@@ -224,9 +229,17 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
         player?.seekTo((seconds * 1000).toLong()); update()
     } }
     fun rate(value: Double) = main.post { if (!closed) {
-        requestedPlaying = value != 0.0
-        player?.playWhenReady = requestedPlaying; update()
+        setPlaying(value != 0.0); update()
     } }
+
+    private fun setPlaying(playing: Boolean) {
+        val current = player
+        // Pause flushes the browser, including decoded PCM ahead of the Media3 clock.
+        // Re-prime both renderers at that position so resume does not skip the discarded soundtrack.
+        if (playing && !requestedPlaying && current != null) current.seekTo(current.currentPosition)
+        requestedPlaying = playing
+        current?.playWhenReady = playing
+    }
     fun stop() = main.post { stopNow() }
     private fun fail() { stopNow(); stateChanged("failed") }
     private fun stopNow() {
@@ -247,15 +260,21 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
 
     private class EncodedVideo(private val diagnostics: AirPlayVideoDiagnostics,
                                ready: (android.view.Surface) -> Unit,
-                               private val failed: (Exception) -> Unit) : Closeable {
+                               private val failed: (Exception) -> Unit,
+                               private val timedVideo: Boolean = true) : Closeable {
         private val stopped = AtomicBoolean(false)
         private val closing = AtomicBoolean(false)
         private val sink = WebMediaSink(TeslaBrowserLink.hub, 1280, 720, 30,
-            com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY)
+            com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY,
+            com.shilapi.xcertplay.web.BrowserPlaybackMode.AIRPLAY_VIDEO)
         private val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         private val surface: android.view.Surface
         private val bridge: AirPlayVideoSurfaceBridge
         private val thread: Thread
+        private val frameTimes = AirPlayCastFrameTimes()
+        private val timelineLock = Any()
+        private val submittedTimes = linkedSetOf<Long>()
+        private var configRecord: ByteArray? = null
 
         init {
             var allocatedSurface: android.view.Surface? = null
@@ -277,7 +296,9 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                 }
             }
             sink.onScreenStreamActive(110, true)
-            bridge = try { AirPlayVideoSurfaceBridge(surface, 1280, 720, ready, failed) }
+            sink.setVideoClockHandler(110) { it.takeIf { nanos -> nanos > 0 } }
+            bridge = try { AirPlayVideoSurfaceBridge(surface, 1280, 720, ready, failed,
+                if (timedVideo) ::framePresentation else null) }
             catch (error: Exception) {
                 sink.close(); runCatching { encoder.stop() }; encoder.release(); surface.release(); throw error
             }
@@ -286,6 +307,27 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
 
         fun setVideoSize(size: VideoSize) = bridge.setVideoSize(size.width, size.height,
             size.pixelWidthHeightRatio, size.unappliedRotationDegrees)
+
+        fun frameMetadata(mediaUs: Long, releaseNanos: Long, presentationNanos: Long) = synchronized(timelineLock) {
+            frameTimes.add(mediaUs, releaseNanos, presentationNanos)
+        }
+
+        private fun framePresentation(surfaceNanos: Long): Long? = synchronized(timelineLock) {
+            frameTimes.take(surfaceNanos)?.also {
+                submittedTimes.add(it / 1000)
+                while (submittedTimes.size > 120) submittedTimes.remove(submittedTimes.first())
+            }
+        }
+
+        fun resetTimeline() = synchronized(timelineLock) {
+            if (closing.get()) return@synchronized
+            frameTimes.clear()
+            submittedTimes.clear()
+            sink.onScreenStreamActive(110, false)
+            sink.onScreenStreamActive(110, true)
+            configRecord?.let { sink.onVideoConfig(110, it) }
+            runCatching { encoder.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) }) }
+        }
 
         private fun drain() {
             val info = MediaCodec.BufferInfo()
@@ -297,8 +339,11 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                         val format = encoder.outputFormat
                         val buffers = listOfNotNull(format.getByteBuffer("csd-0"), format.getByteBuffer("csd-1"))
                             .map { buffer -> ByteArray(buffer.remaining()).also { buffer.duplicate().get(it) } }
-                        sink.onVideoCodec(110, VideoCodec.H264)
-                        sink.onVideoConfig(110, ReceiverAvc.record(*buffers.toTypedArray()))
+                        synchronized(timelineLock) {
+                            configRecord = ReceiverAvc.record(*buffers.toTypedArray())
+                            sink.onVideoCodec(110, VideoCodec.H264)
+                            sink.onVideoConfig(110, requireNotNull(configRecord))
+                        }
                         diagnostics.stage(AirPlayVideoDiagnostics.Stage.ENCODER_CONFIG)
                     } else if (index >= 0) {
                         try {
@@ -310,7 +355,12 @@ internal class AirPlayCastPlayer(private val context: Context, private val resou
                                     (bytes[2] == 1.toByte() || (bytes[2] == 0.toByte() && bytes[3] == 1.toByte()))) bytes
                                     else MediaCodecSupport.toAnnexB(bytes)
                                 if (annexB.isNotEmpty()) {
-                                    sink.onVideoFrame(110, annexB)
+                                    synchronized(timelineLock) {
+                                        // Reset also retires frames already queued in the encoder. Surface submit
+                                        // registers before swap; a reset between registration and swap invalidates it.
+                                        if (!timedVideo || submittedTimes.remove(info.presentationTimeUs))
+                                            sink.onVideoFrame(110, annexB, info.presentationTimeUs * 1000, System.nanoTime())
+                                    }
                                     frames++
                                     if (frames == 1L || frames % 120 == 0L) diagnostics.stage(AirPlayVideoDiagnostics.Stage.ENCODED_FRAME, frames)
                                 }

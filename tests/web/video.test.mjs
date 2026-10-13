@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FLAG, RECORD, encodeRecord } from '../../site/play/link.js';
-import { createDecoderPipeline } from '../../site/play/video.js';
+import { createDecoderPipeline, createFramePresenter } from '../../site/play/video.js';
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
@@ -28,8 +28,8 @@ class FakeDecoder {
   close() { this.state = 'closed'; }
 }
 
-const config = epoch => encodeRecord({
-  kind: RECORD.CONFIG, codec: 1, epoch, payload: new TextEncoder().encode(JSON.stringify({ codec: 'avc1.640028', width: 1182, height: 920, fps: 60 })),
+const config = (epoch, mode = 'carplay') => encodeRecord({
+  kind: RECORD.CONFIG, codec: 1, epoch, payload: new TextEncoder().encode(JSON.stringify({ mode, codec: 'avc1.640028', width: 1182, height: 920, fps: 60 })),
 });
 const keyFrame = epoch => encodeRecord({ kind: RECORD.FRAME, flags: FLAG.KEY, codec: 1, epoch, payload: Uint8Array.of(0, 0, 0, 1, 0x65) });
 const videoFrame = timestamp => ({ timestamp, closed: false, close() { this.closed = true; } });
@@ -210,6 +210,24 @@ test('scheduled source timestamps reach presentation; absent clocks never become
   assert.equal(pipeline.stats().timingRejected, 1);
 });
 
+test('video pipeline preserves source mode in CONFIG messages and presented frame configuration', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const messages = [], presented = [];
+  const pipeline = createDecoderPipeline({ post: message => messages.push(message), present: (frame, info) => presented.push(info.mode) });
+  t.after(() => pipeline.stop());
+  let controller; pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  for (const [i, mode] of ['carplay', 'airplay-mirror', 'airplay-video'].entries()) {
+    controller.enqueue(config(i + 1, mode)); controller.enqueue(keyFrame(i + 1)); await settle();
+    FakeDecoder.instances.at(-1).output(videoFrame(0));
+    assert.equal(messages.filter(message => message.type === 'config').at(-1).config.mode, mode);
+  }
+  assert.deepEqual(presented, ['carplay', 'airplay-mirror', 'airplay-video']);
+});
+
 test('canvas submission reports an early source presentation as a signed offset', async () => {
   const { createFramePresenter } = await import('../../site/play/video.js');
   const context = { fillRect() {}, drawImage() {} };
@@ -221,4 +239,33 @@ test('canvas submission reports an early source presentation as a signed offset'
   assert.equal(stats.presentationOffsetSamples, 1);
   assert.ok(stats.presentationOffset90 < 0 && stats.presentationOffset90 >= -40);
   presenter.dispose();
+});
+
+test('the presenter rejects frames delayed by main-thread delivery and rechecks before drawing', () => {
+  let now = 1101, draws = 0, clears = 0, clockReads = 0, preparationExpires = false;
+  const context = { fillRect() { clears++; }, drawImage() { draws++; } };
+  const canvas = { width: 800, height: 480, getContext: type => type === '2d' ? context : null, removeEventListener() {} };
+  const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => { if (preparationExpires && ++clockReads >= 2) now = 1101; return now; } });
+  const expired = videoFrame(0); presenter.present(expired, { mode: 'carplay' }, 1000);
+  assert.equal(expired.closed, true); assert.equal(draws, 0);
+  now = 1099; preparationExpires = true;
+  const crossed = videoFrame(1); presenter.present(crossed, { mode: 'carplay' }, 1000);
+  assert.equal(crossed.closed, true); assert.equal(draws, 0, 'canvas submission check catches time spent preparing the draw');
+  assert.equal(clears, 0, 'an expired frame never clears the retained picture');
+  preparationExpires = false; presenter.present(videoFrame(2), { mode: 'carplay' }, null);
+  assert.equal(draws, 1, 'missing timestamps retain explicit fallback playback');
+  assert.equal(presenter.stats().expiredFrames, 2); assert.equal(presenter.stats().untimedFrames, 1);
+  presenter.dispose();
+});
+
+test('an expired GPU texture upload never clears or submits the canvas', () => {
+  let now = 1099;
+  const calls = [], canvas = { width: 800, height: 480, addEventListener() {}, removeEventListener() {} }, gl = { canvas, isContextLost: () => false };
+  for (const name of ['createProgram', 'createShader', 'shaderSource', 'compileShader', 'attachShader', 'deleteShader', 'linkProgram', 'useProgram', 'createBuffer', 'bindBuffer', 'bufferData', 'getAttribLocation', 'enableVertexAttribArray', 'vertexAttribPointer', 'createTexture', 'bindTexture', 'texParameteri', 'getUniformLocation', 'uniform1i', 'viewport', 'clearColor', 'clear', 'drawArrays', 'deleteTexture', 'deleteBuffer', 'deleteProgram']) gl[name] = () => { calls.push(name); return {}; };
+  gl.texImage2D = () => { calls.push('upload'); now = 1101; };
+  canvas.getContext = type => type === 'webgl2' ? gl : null;
+  const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => now });
+  const frame = videoFrame(0); presenter.present(frame, { mode: 'carplay' }, 1000);
+  assert.ok(calls.includes('upload')); assert.equal(calls.includes('clear'), false); assert.equal(calls.includes('drawArrays'), false);
+  assert.equal(frame.closed, true); assert.equal(presenter.stats().expiredFrames, 1); presenter.dispose();
 });

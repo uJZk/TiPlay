@@ -32,13 +32,13 @@ class WebAudioHubTest {
         hub.publish(owner, 0, 44100, 2, pcm, buffered = true, reset = true)
         val bytes = reader.take(1)!!
         val record = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN)
-        assertEquals(20, record.int)
-        assertEquals(1, record.get().toInt())
+        assertEquals(28, record.int)
+        assertEquals(2, record.get().toInt())
         assertEquals(0, record.get().toInt())
         assertEquals(2, record.get().toInt())
         assertEquals(3, record.get().toInt())
         assertEquals(44100, record.int)
-        assertArrayEquals(pcm, bytes.copyOfRange(20, bytes.size))
+        assertArrayEquals(pcm, bytes.copyOfRange(28, bytes.size))
     }
 
     @Test fun slowRealtimeReaderResetsToFreshAudioWithoutGrowingQueue() {
@@ -47,7 +47,7 @@ class WebAudioHubTest {
         repeat(17) { hub.publish(owner, 1, 16000, 1, byteArrayOf(it.toByte(), 0)) }
         val record = reader.take(1)!!
         assertEquals(2, record[7].toInt() and 2)
-        assertEquals(16, record[20].toInt())
+        assertEquals(16, record[28].toInt())
         assertNull(reader.take(1))
     }
 
@@ -70,11 +70,11 @@ class WebAudioHubTest {
         repeat(16) { hub.publish(owner, 0, 48000, 2, byteArrayOf(it.toByte(), 0, 0, 0), buffered = true) }
         repeat(17) { hub.publish(owner, 1, 16000, 1, byteArrayOf(it.toByte(), 0)) }
         assertEquals(1, reader.take(1)!![5].toInt())
-        repeat(16) { assertEquals(it, reader.take(1)!![20].toInt()) }
+        repeat(16) { assertEquals(it, reader.take(1)!![28].toInt()) }
         hub.publish(owner, 0, 48000, 2, ByteArray(4), buffered = true)
         hub.flush(owner, 0)
         val reset = reader.take(1)!!
-        assertEquals(20, reset.size)
+        assertEquals(28, reset.size)
         assertEquals(2, reset[7].toInt() and 2)
         assertNull(reader.take(1))
     }
@@ -95,5 +95,32 @@ class WebAudioHubTest {
         catch (_: IllegalStateException) {}
         assertEquals(1L, hub.microphoneStatus()["failures"])
         assertEquals(0L, hub.microphoneStatus()["uploads"])
+    }
+
+    @Test fun presentationTimeAndStreamEpochSurvivePcmTransport() {
+        val hub = WebAudioHub(); val owner = Any()
+        hub.begin(owner)
+        val reader = hub.subscribe()
+        hub.publish(owner, 0, 48000, 2, ByteArray(4), reset = true, presentationNanos = 1_234_567_890L)
+        val first = ByteBuffer.wrap(requireNotNull(reader.take(1))).order(ByteOrder.BIG_ENDIAN)
+        val epoch = first.getInt(16)
+        assertEquals(1234.56789, first.getDouble(20), 0.000001)
+        hub.publish(owner, 0, 48000, 2, ByteArray(4), presentationNanos = 1_235_567_890L)
+        assertEquals(epoch, ByteBuffer.wrap(requireNotNull(reader.take(1))).getInt(16))
+        hub.flush(owner, 0)
+        val reset = ByteBuffer.wrap(requireNotNull(reader.take(1)))
+        assertTrue(reset.getInt(16) != epoch)
+        assertTrue(reset.getDouble(20).isNaN())
+    }
+
+    @Test fun audioIdentifiesItsModeBeforeTheIndependentVideoConfigurationArrives() {
+        val hub = WebAudioHub(); val owner = Any()
+        hub.begin(owner)
+        val reader = hub.subscribe()
+        for (mode in BrowserPlaybackMode.entries) {
+            hub.publish(owner, 0, 48000, 2, ByteArray(4), buffered = true, reset = true, mode = mode)
+            val packet = requireNotNull(reader.take(1))
+            assertEquals(mode.audioFlags or 3, packet[7].toInt())
+        }
     }
 }

@@ -76,7 +76,7 @@ object WebVideoRecords {
     fun end(reason: String) = WebVideoRecord(KIND_END, 0, CODEC_NONE, 0, 0, 0L, reason.toByteArray(Charsets.UTF_8))
 
     /**
-     * The config payload: `{"codec","width","height","fps","format":"annexb","marker","nalLengthBytes","record"}`.
+     * The config payload: `{"codec","width","height","fps","mode","format":"annexb","marker","nalLengthBytes","record"}`.
      * [width] and [height] are the negotiated CarPlay canvas; the page maps touches against it.
      */
     fun configPayload(
@@ -87,12 +87,14 @@ object WebVideoRecords {
         codec: VideoCodec,
         nalLengthBytes: Int?,
         record: ByteArray,
+        mode: BrowserPlaybackMode = BrowserPlaybackMode.CARPLAY,
     ): ByteArray = WebJson.write(
         linkedMapOf(
             "codec" to codecString,
             "width" to width,
             "height" to height,
             "fps" to fps,
+            "mode" to mode.wireName,
             "format" to "annexb",
             "marker" to if (codec == VideoCodec.H264) "avcC" else "hvcC",
             "nalLengthBytes" to nalLengthBytes,

@@ -17,7 +17,8 @@ test('the initial clock reaches a video sink whose setup finishes after hello', 
     let streamId = 0, sink = null, retryTimer, videoAbort, live, phase, lastViewport;
     const link = { code: '1234' }, session = 'session', PROTOCOL = 1;
     const videoPath = {};
-    const browserAudio = { attach() {} };
+    const browserAudio = { attach() {}, clock: value => events.push(['audio-clock', value]) };
+    const mediaTiming = { reset: () => events.push('timing-reset') };
     const render = () => {}, reportAppearance = () => {}, scheduleViewport = () => {};
     const setInterval = () => 0, clearInterval = () => {};
     const stop = reason => { throw new Error(reason); };
@@ -41,8 +42,10 @@ test('the initial clock reaches a video sink whose setup finishes after hello', 
   finishSetup('avc1');
   await run.pending;
   assert.deepEqual(events[1], ['clock', { offset: 10, rtt: 2, at: 100 }]);
-  assert.match(events[2], /^\/video\?/);
-  assert.equal(events[3], 'open');
+  assert.deepEqual(events[2], ['audio-clock', { offset: 10, rtt: 2, at: 100 }], 'audio receives the same initial clock as video');
+  assert.equal(events[3], 'timing-reset');
+  assert.match(events[4], /^\/video\?/);
+  assert.equal(events[5], 'open');
 });
 
 test('blank and whitespace address fields connect to the default phone', () => {

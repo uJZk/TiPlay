@@ -40,7 +40,7 @@ footer a{color:#d5e6ff;text-underline-offset:4px;text-decoration-color:rgba(213,
 #screen,#touch{position:absolute;inset:0;width:100%;height:100%}
 #screen{display:block}
 #touch{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
-#stats{position:absolute;top:max(8px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);margin:0;max-width:calc(100% - 24px);width:max-content;padding:6px 10px;border:1px solid #ffffff26;border-radius:999px;background:#101b2be6;color:#e5efff;font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;text-align:center;pointer-events:none}
+#stats{position:absolute;top:max(8px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);margin:0;max-width:calc(100% - 24px);width:max-content;padding:6px 10px;border:1px solid #ffffff26;border-radius:14px;background:#101b2be6;color:#e5efff;font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;text-align:center;white-space:pre-line;pointer-events:none}
 /* A Liquid Glass settings row; the switch stays distinct from action buttons. */
 #stats-toggle{display:flex;align-items:center;justify-content:space-between;gap:20px;width:100%;min-height:64px;margin-top:16px;padding:14px 16px;border:1px solid rgba(255,255,255,.14);border-radius:20px;background:linear-gradient(150deg,rgba(255,255,255,.09),rgba(255,255,255,.025));box-shadow:inset 0 1px 0 rgba(255,255,255,.1);font-size:16px;font-weight:500;text-align:left}
 #stats-toggle:active{transform:none;background:rgba(255,255,255,.1)}

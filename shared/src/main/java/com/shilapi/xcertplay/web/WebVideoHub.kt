@@ -37,6 +37,7 @@ class WebVideoHub(
         val fps: Int,
         val requestKeyFrame: () -> Unit,
         val report: (String) -> Unit,
+        val mode: BrowserPlaybackMode,
     )
 
     private class Config(
@@ -71,14 +72,16 @@ class WebVideoHub(
      * stream's video diagnostic handler, which turns `first frame rendered` into the wireless connection proof.
      */
     fun beginStream(owner: Any, width: Int, height: Int, fps: Int, requestKeyFrame: () -> Unit, report: (String) -> Unit,
-                    source: BrowserDisplaySource = BrowserDisplaySource.CARPLAY) {
+                    source: BrowserDisplaySource = BrowserDisplaySource.CARPLAY,
+                    mode: BrowserPlaybackMode = if (source == BrowserDisplaySource.AIRPLAY)
+                        BrowserPlaybackMode.AIRPLAY_MIRROR else BrowserPlaybackMode.CARPLAY) {
         lock.withLock {
             if (!displayOwner.acquire(owner, source)) {
                 log("Web video: stream deferred source=$source current=${displayOwner.source}")
                 return
             }
             this.owner = owner
-            stream = Stream(width, height, fps, requestKeyFrame, report)
+            stream = Stream(width, height, fps, requestKeyFrame, report, mode)
             pendingKeyFrame = null
             config = null
             lastCodec = null
@@ -105,7 +108,7 @@ class WebVideoHub(
             }
             val epoch = ++epochs
             val payload = WebVideoRecords.configPayload(
-                codecString, stream.width, stream.height, stream.fps, codec, WebVideoCodecs.nalLengthSize(codec, copy), copy,
+                codecString, stream.width, stream.height, stream.fps, codec, WebVideoCodecs.nalLengthSize(codec, copy), copy, stream.mode,
             )
             val next = Config(epoch, codec, codecString, parameterSets, WebVideoRecords.config(epoch, codec, payload))
             config = next

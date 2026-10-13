@@ -49,7 +49,7 @@ class WebVideoHubTest {
         val records = subscription.drain()
         assertEquals(listOf(WebVideoRecords.KIND_CONFIG, WebVideoRecords.KIND_FRAME, WebVideoRecords.KIND_FRAME), records.map { it.kind })
         val config = String(records[0].payload, Charsets.UTF_8)
-        assertTrue(config, config.startsWith("""{"codec":"avc1.640028","width":1182,"height":920,"fps":60,"format":"annexb""""))
+        assertTrue(config, config.startsWith("""{"codec":"avc1.640028","width":1182,"height":920,"fps":60,"mode":"carplay","format":"annexb""""))
         assertEquals(1, records[0].epoch)
         assertEquals(WebVideoRecords.FLAG_KEY_FRAME or WebVideoRecords.FLAG_PARAMETER_SETS, records[1].flags)
         assertEquals(listOf(3, 4), records.drop(1).map { it.sequence })

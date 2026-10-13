@@ -276,9 +276,10 @@ async function main() {
       return { text: element.textContent, x: rect.x + rect.width / 2, y: rect.y,
         inert: getComputedStyle(element).pointerEvents === 'none' };
     });
-    check(debugLayout.text.split(' · ').length === 4 && debugLayout.text.includes('ms') &&
+    const debugLines = debugLayout.text.split('\n');
+    check(debugLines[0].split(' · ').length === 4 && debugLines[1]?.includes('源预期') && debugLayout.text.includes('ms') &&
       Math.abs(debugLayout.x - 500) < 1 && debugLayout.y <= 16 && debugLayout.inert,
-      'Debug has four fields centered above CarPlay without intercepting touches');
+      'Debug has presentation statistics and per-frame recording times centered above CarPlay without intercepting touches');
     check(phone.videoCount === streamsAtPortal, 'returning to CarPlay keeps the same video connection');
     phone.requestPortal();
     await page.waitForSelector('#panel:not([hidden])');

@@ -16,6 +16,7 @@ class BrowserOnlyMediaSink(
     override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) = browser.onAudioStarted(id, format, firstSample)
 
     override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) = browser.onAudioRtp(id, format, rtp, sample)
+    override fun onAudioClock(id: AudioStreamId, sample: Int, presentationNanos: Long) = browser.onAudioClock(id, sample, presentationNanos)
 
     override fun onAudioStopped(id: AudioStreamId) = browser.onAudioStopped(id)
 

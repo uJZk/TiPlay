@@ -105,11 +105,11 @@ class AirPlayReceiverService : Service() {
                         }
                     }
                     override fun stopPlayback() { player.stop() }
-                    override fun mirrorAudio(format: ReceiverMirrorAudioFormat, payload: ByteArray) {
+                    override fun mirrorAudioTimed(format: ReceiverMirrorAudioFormat, payload: ByteArray, sample: Long, presentationNanos: Long?) {
                         synchronized(displayLock) {
                             if (!destroyed && mirrorOutput != null && format.sampleRate == 44100 && format.channels == 2) {
                                 val soundtrack = mirrorAudio ?: AirPlayMirrorAudio(format, TeslaBrowserLink.audioHub).also { mirrorAudio = it }
-                                soundtrack.offer(payload)
+                                soundtrack.offer(payload, sample, presentationNanos)
                             }
                         }
                     }

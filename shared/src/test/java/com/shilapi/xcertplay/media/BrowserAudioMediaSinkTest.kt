@@ -10,6 +10,8 @@ import org.robolectric.annotation.Config
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], manifest = Config.NONE)
@@ -37,14 +39,17 @@ class BrowserAudioMediaSinkTest {
             val id = AudioStreamId(100, "telephony")
             val format = AudioFormat(AudioCodecKind.LPCM, 16000, 1, 100, "telephony")
             sink.onAudioStarted(id, format, 0)
+            sink.onAudioClock(id, 0, 1_000_000_000L)
             sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0x12, 0x34, 0x56, 0x78), 0)
             val packet = subscription.take(1000)!!
             assertEquals(2, packet[5].toInt())
             assertEquals(2, packet[7].toInt() and 2)
-            assertArrayEquals(byteArrayOf(0x34, 0x12, 0x78, 0x56), packet.copyOfRange(20, packet.size))
+            assertEquals(2, packet[4].toInt())
+            assertEquals(1000.0, ByteBuffer.wrap(packet).order(ByteOrder.BIG_ENDIAN).getDouble(20), 0.0)
+            assertArrayEquals(byteArrayOf(0x34, 0x12, 0x78, 0x56), packet.copyOfRange(28, packet.size))
             sink.onAudioStopped(id)
             val stopped = subscription.take(1000)!!
-            assertEquals(20, stopped.size)
+            assertEquals(28, stopped.size)
             assertEquals(2, stopped[7].toInt() and 2)
             sink.onAudioRtp(id, format, ByteArray(14), 0)
             assertNull(subscription.take(30))

@@ -1,16 +1,22 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
+import { presentationTime } from './clock-sync.js';
 import { readAudioRecords } from './audio-protocol.js';
+import { initialPlaybackPlans } from './playback-window.js';
+
+const MAX_AUDIO_AHEAD_BYTES = 1024 * 1024;
 
 /** Owns speaker/capture resources; capture exists only during an iPhone microphone demand. */
-export function createBrowserAudio({ fetchPhone, credentials, onState = () => {} }) {
+export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {} }) {
   let context = null, node = null, ready = null, connection = null, request = null;
   let support = false, enabled = true, microphone = null, source = null, micDemand = null;
   let queuedBytes = 0, capacity = null, captureGeneration = 0, uploading = false, error = null;
   let permissionPending = null, capturePending = false, microphoneQueue = [], droppedMicrophonePackets = 0;
   let retryTimer = null;
+  let clock = null, delayPlans = initialPlaybackPlans(), timedPackets = 0, fallbackPackets = 0;
+  let clockBase = null, playbackGeneration = 0;
   let microphoneAbort = null;
   let capturedMicrophonePackets = 0, uploadedMicrophonePackets = 0, rejectedMicrophoneUploads = 0, microphonePeak = 0;
-  const snapshot = () => ({ supported: support, enabled, sound: context?.state === 'running', microphone: Boolean(microphone), micRequested: Boolean(micDemand?.active), droppedMicrophonePackets, capturedMicrophonePackets, uploadedMicrophonePackets, rejectedMicrophoneUploads, microphonePeak, error });
+  const snapshot = () => ({ supported: support, enabled, sound: context?.state === 'running', microphone: Boolean(microphone), micRequested: Boolean(micDemand?.active), droppedMicrophonePackets, capturedMicrophonePackets, uploadedMicrophonePackets, rejectedMicrophoneUploads, microphonePeak, error, timedPackets, fallbackPackets, queuedBytes });
   const notify = () => onState(snapshot());
   const auth = () => { const { code, session } = credentials(); return `c=${encodeURIComponent(code)}&s=${encodeURIComponent(session)}`; };
   function stopMicrophone() {
@@ -50,6 +56,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       .finally(() => { if (microphoneAbort === abort) microphoneAbort = null; uploading = false; clearTimeout(timer); currentConnection.removeEventListener('abort', stop); uploadMicrophone(); });
   }
   function stopStream() {
+    playbackGeneration++; clockBase = null;
     clearTimeout(retryTimer); retryTimer = null;
     request?.abort(); request = null;
     node?.port.postMessage({ reset: true });
@@ -67,13 +74,25 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       error = null;
       for await (const record of readAudioRecords(response.body)) {
         if (abort.signal.aborted) break;
-        // At most roughly one second of stereo PCM ahead; TCP reads inherit this credit.
-        while (queuedBytes >= record.rate * record.channels * 2 && !abort.signal.aborted) {
+        // Read through the producer's two-second music lead so the same HTTP stream
+        // can deliver a following navigation/call packet without waiting for music.
+        while ((record.flags & 1) && queuedBytes >= MAX_AUDIO_AHEAD_BYTES && !abort.signal.aborted) {
           await new Promise(resolve => { capacity = resolve; });
         }
         if (abort.signal.aborted) break;
+        if (record.pcm.byteLength) onMode(record.mode);
+        record.sourceTime = presentationTime(record.presentationMs, clock);
+        const hasPcm = record.pcm.byteLength > 0;
+        if (hasPcm) {
+          if (Number.isFinite(record.sourceTime)) { timedPackets++; onTiming(record.sourceTime); }
+          else fallbackPackets++;
+        }
+        clockBase ??= performance.timeOrigin + performance.now() - context.currentTime * 1000;
+        node.port.postMessage({ plans: delayPlans, clockBase });
+        record.generation = playbackGeneration;
         queuedBytes += record.pcm.byteLength;
         node.port.postMessage(record, [record.pcm]);
+        if (hasPcm) onQueued();
       }
     } catch (failure) {
       if (!abort.signal.aborted) { error = String(failure.message); notify(); }
@@ -95,7 +114,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
         node = new AudioWorkletNode(context, 'tiplay-audio', { outputChannelCount: [2], channelCount: 1 });
         node.connect(context.destination);
         node.port.onmessage = ({ data }) => {
-          if (data.consumed) {
+          if (data.consumed && data.generation === playbackGeneration) {
             queuedBytes = Math.max(0, queuedBytes - data.consumed); capacity?.(); capacity = null;
           }
           if (!data.microphone || !microphone || !connection || connection.aborted) return;
@@ -145,6 +164,9 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   }
   return {
     activate, activateMicrophone, stats: snapshot,
+    clock(value) { clock = value; },
+    delay(value) { delayPlans = value; node?.port.postMessage({ plans: delayPlans }); },
+    reset() { playbackGeneration++; clockBase = null; queuedBytes = 0; node?.port.postMessage({ reset: true }); capacity?.(); capacity = null; },
     start() { requestPermission(); activate(); },
     gesture() { if (context?.state !== 'running') activate(); },
     attach(signal, hello) {

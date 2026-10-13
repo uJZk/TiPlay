@@ -30,6 +30,8 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
         fun play(item: ReceiverPlay)
         fun photo(bytes: ByteArray) {}
         fun mirrorAudio(format: ReceiverMirrorAudioFormat, payload: ByteArray) {}
+        fun mirrorAudioTimed(format: ReceiverMirrorAudioFormat, payload: ByteArray, sample: Long, presentationNanos: Long?) =
+            mirrorAudio(format, payload)
         fun stopMirrorAudio() {}
         fun stopPlayback()
         fun seek(seconds: Double)
@@ -479,16 +481,20 @@ class ReceiverServer(private val config: ReceiverConfig, private val listener: L
                         val format = ReceiverMirrorAudioFormat.parse(stream)
                         val audioKey = requireNotNull(key).copyOf()
                         val iv = audioIv?.copyOf()
-                        val order = ReceiverMirrorAudioOrder()
+                        val order = ReceiverMirrorAudioTiming(format?.sampleRate ?: 44100, requireNotNull(timing)::ntpTimeNanos)
+                        fun deliver(packets: List<ReceiverMirrorAudioTiming.Packet>) {
+                            if (format != null && synchronized(ownership) { mirror != null && owner === this }) {
+                                packets.forEach { listener.mirrorAudioTimed(format, it.payload, it.sample, it.presentationNanos) }
+                            }
+                        }
                         val receiver = ReceiverAudioDrain(peer, { listener.log("c=$diagnosticId $it") }, packetReceived = { packet ->
                             // Ordinary audio without an active mirror is deliberately not a product mode.
                             if (format != null && iv != null && synchronized(ownership) { mirror != null && owner === this }) {
                                 ReceiverMirrorAudioPacket.decrypt(packet, audioKey, iv)?.let { payload ->
-                                    val sequence = ((packet[2].toInt() and 0xff) shl 8) or (packet[3].toInt() and 0xff)
-                                    order.offer(sequence, payload).forEach { listener.mirrorAudio(format, it) }
+                                    deliver(order.offer(packet, payload))
                                 }
                             }
-                        })
+                        }, controlReceived = order::sync, idle = { deliver(order.drain()) })
                         val ports = receiver.start()
                         audio?.close()
                         audio = receiver

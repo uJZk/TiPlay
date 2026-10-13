@@ -29,6 +29,7 @@ internal class BufferedAudioStream(
     private val log: (String) -> Unit = {},
     private val nanoTime: () -> Long = System::nanoTime,
     private val expectedPeer: InetAddress = InetAddress.getLoopbackAddress(),
+    private val mapNtp: ((BigInteger) -> Long?)? = null,
 ) : Closeable {
     internal class Frame(val sequence: Int, val timestamp: Long, val rtp: ByteArray)
 
@@ -60,6 +61,7 @@ internal class BufferedAudioStream(
     private var flushUntil: Long? = null
     private var anchorRtp: Long? = null
     private var anchorNtp: BigInteger? = null
+    private var anchorMonotonic: Long? = null
     private var feedStartTimestamp: Long? = null
     private var feedStartNs = 0L
     private var fedSamples = 0L
@@ -181,6 +183,10 @@ internal class BufferedAudioStream(
                                 feedStartNs = nanoTime()
                                 fedSamples = 0
                                 sink.onAudioStarted(id, format, frame.timestamp.toInt())
+                                val sample = anchorRtp
+                                val at = anchorMonotonic
+                                if (!closed.get() && rate != 0 && generation == outputGeneration && sample != null && at != null)
+                                    sink.onAudioClock(id, sample.toInt(), at)
                             }
                             // A sink may synchronously report state back to its owner. Respect a
                             // reentrant pause/flush/close just as a control call on another thread.
@@ -219,11 +225,15 @@ internal class BufferedAudioStream(
             restartOutputLocked()
             anchorRtp = start
             anchorNtp = nowNtp.add(millisToNtp(START_LATENCY_MILLIS))
+            // SETRATE creates this receiver-owned playback anchor, not a packet-arrival estimate.
+            anchorMonotonic = mapNtp?.invoke(requireNotNull(anchorNtp))
+                ?: (nanoTime() + START_LATENCY_MILLIS * 1_000_000L)
         } else {
             val position = positionLocked()
             restoreFedLocked()
             position?.let { anchorRtp = it; dropBeforeLocked(it) }
             anchorNtp = nowNtp
+            anchorMonotonic = null
             restartOutputLocked()
         }
         rate = newRate.coerceIn(0, 1)

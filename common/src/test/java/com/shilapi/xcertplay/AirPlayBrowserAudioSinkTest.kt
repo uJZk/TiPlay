@@ -77,10 +77,51 @@ class AirPlayBrowserAudioSinkTest {
             now = 5_000_000
             sink.pause()
             val reset = requireNotNull(stream.take(20))
-            assertEquals(20, reset.size)
+            assertEquals(28, reset.size)
             assertEquals(2, reset[7].toInt())
             now = 100_000_000
             assertEquals(5000L, sink.getCurrentPositionUs(false))
+            sink.reset()
+        }
+    }
+
+    @Test fun splitPcmPacketsRetainTheirMediaPresentationTimesAndResumeUsesTheNewClock() {
+        var now = 1_000_000_000L
+        val hub = WebAudioHub()
+        val sink = AirPlayBrowserAudioSink(hub) { now }
+        sink.configure(format, 0, null)
+        hub.subscribe().use { stream ->
+            sink.play()
+            sink.handleBuffer(ByteBuffer.wrap(ByteArray(96_000)), 2_000_000, 1)
+            val first = ByteBuffer.wrap(requireNotNull(stream.take(20)))
+            val second = ByteBuffer.wrap(requireNotNull(stream.take(20)))
+            assertEquals(8, first.get(7).toInt() and 12)
+            assertEquals(1, first.get(7).toInt() and 1)
+            assertEquals(1000.0, first.getDouble(20), 0.001)
+            assertEquals(1000.0 + (65536 / 4) * 1000.0 / 48000, second.getDouble(20), 0.001)
+            assertEquals(1_250_000_000L, sink.presentationTimeNanos(2_250_000))
+            now = 1_100_000_000L
+            sink.pause()
+            stream.take(20)
+            now = 3_000_000_000L
+            sink.play()
+            assertEquals(3_150_000_000L, sink.presentationTimeNanos(2_250_000))
+            sink.reset()
+        }
+    }
+
+    @Test fun decoderUnderrunRebasesTimestampsWithoutDiscardingTheMediaPosition() {
+        var now = 1_000_000_000L
+        val hub = WebAudioHub()
+        val sink = AirPlayBrowserAudioSink(hub) { now }
+        sink.configure(format, 0, null)
+        hub.subscribe().use { stream ->
+            sink.play()
+            sink.handleBuffer(ByteBuffer.wrap(ByteArray(1920)), 0, 1)
+            stream.take(20)
+            now = 2_000_000_000L
+            sink.handleBuffer(ByteBuffer.wrap(ByteArray(1920)), 10_000, 1)
+            assertEquals(2000.0, ByteBuffer.wrap(requireNotNull(stream.take(20))).getDouble(20), 0.001)
             sink.reset()
         }
     }

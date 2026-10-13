@@ -159,10 +159,10 @@ class BrowserLinkServerTest {
             client.get("/audio?c=$code&s=$session")
             assertEquals(200, client.response().status)
             audioHub.begin(owner)
-            repeat(5) { client.bytes(20) } // source switch resets every semantic stream
+            repeat(5) { client.bytes(28) } // source switch resets every semantic stream
             audioHub.publish(owner, 0, 48000, 2, byteArrayOf(1, 2, 3, 4))
-            val packet = client.bytes(24)
-            assertArrayEquals(byteArrayOf(1, 2, 3, 4), packet.copyOfRange(20, 24))
+            val packet = client.bytes(32)
+            assertArrayEquals(byteArrayOf(1, 2, 3, 4), packet.copyOfRange(28, 32))
             assertEquals(204, post("/bye", """{"c":"$code","s":"$session"}""").status)
             assertTrue(client.closedByServer())
         }

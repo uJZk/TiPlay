@@ -32,6 +32,10 @@ class BrowserAudioMediaSink(private val video: MediaSink, private val hub: WebAu
         renderer.offer(rtp, sample)
     }
 
+    @Synchronized override fun onAudioClock(id: AudioStreamId, sample: Int, presentationNanos: Long) {
+        renderers[id]?.timeline?.anchor(sample, presentationNanos)
+    }
+
     @Synchronized override fun onAudioStopped(id: AudioStreamId) {
         renderers.remove(id)?.close()
         hub.flush(this, semanticType(id))
@@ -81,6 +85,8 @@ class BrowserAudioMediaSink(private val video: MediaSink, private val hub: WebAu
 
     private inner class Decoder(val id: AudioStreamId, val format: AudioFormat) : Closeable {
         private val packets = ArrayBlockingQueue<Pair<ByteArray, Int>>(24)
+        val timeline = RtpAudioTimeline(format.sampleRate)
+        private val order = AudioPacketOrder<Pair<ByteArray, Int>>()
         @Volatile private var running = true
         private var reset = true
         private var outputRate = format.sampleRate
@@ -89,11 +95,19 @@ class BrowserAudioMediaSink(private val video: MediaSink, private val hub: WebAu
 
         fun offer(rtp: ByteArray, sample: Int) {
             if (!running || rtp.size <= 12) return
+            if (id.type == 103) enqueue(rtp to sample)
+            else {
+                val sequence = ((rtp[2].toInt() and 255) shl 8) or (rtp[3].toInt() and 255)
+                synchronized(order) { order.offer(sequence, rtp to sample).forEach(::enqueue) }
+            }
+        }
+
+        private fun enqueue(packet: Pair<ByteArray, Int>) {
             if (id.type == 103) {
-                while (running && !packets.offer(rtp to sample, 100, TimeUnit.MILLISECONDS)) Unit
-            } else if (!packets.offer(rtp to sample)) {
+                while (running && !packets.offer(packet, 100, TimeUnit.MILLISECONDS)) Unit
+            } else if (!packets.offer(packet)) {
                 packets.poll()
-                packets.offer(rtp to sample)
+                packets.offer(packet)
             }
         }
 
@@ -102,11 +116,13 @@ class BrowserAudioMediaSink(private val video: MediaSink, private val hub: WebAu
             try {
                 if (format.codec != AudioCodecKind.LPCM) codec = decoder(format)
                 while (running) {
+                    if (id.type != 103) synchronized(order) { order.drain().forEach(::enqueue) }
                     val packet = packets.poll(10, TimeUnit.MILLISECONDS)
                     if (packet != null) {
+                        val sample = timeline.unwrap(packet.second)
                         val payload = packet.first.copyOfRange(12, packet.first.size)
                         if (format.codec == AudioCodecKind.LPCM) {
-                            send(MicrophonePacketizer.toWirePcm(payload)) // endian conversion is symmetric
+                            send(MicrophonePacketizer.toWirePcm(payload), timeline.presentation(sample)) // endian conversion is symmetric
                         } else {
                             val decoder = codec ?: continue
                             var index = decoder.dequeueInputBuffer(10_000)
@@ -117,7 +133,7 @@ class BrowserAudioMediaSink(private val video: MediaSink, private val hub: WebAu
                             val data = if (format.codec == AudioCodecKind.AAC_LC) MediaCodecSupport.adtsFrame(payload, format.sampleRate, format.channels) else payload
                             if (data.size > input.remaining()) error("audio packet too large")
                             input.put(data)
-                            val timeUs = (packet.second.toLong() and 0xffffffffL) * 1_000_000L / format.sampleRate
+                            val timeUs = sample * 1_000_000L / format.sampleRate
                             decoder.queueInputBuffer(index, 0, data.size, timeUs, 0)
                         }
                     }
@@ -147,17 +163,20 @@ class BrowserAudioMediaSink(private val video: MediaSink, private val hub: WebAu
                         if (info.size > 0 && info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
                             val buffer = codec.getOutputBuffer(index) ?: error("decoder output unavailable")
                             buffer.position(info.offset); buffer.limit(info.offset + info.size)
-                            send(ByteArray(info.size).also { buffer.get(it) })
+                            val scaled = info.presentationTimeUs * format.sampleRate
+                            val sample = (scaled + if (scaled < 0) -500_000L else 500_000L) / 1_000_000L
+                            send(ByteArray(info.size).also { buffer.get(it) }, timeline.presentation(sample))
                         }
                     } finally { codec.releaseOutputBuffer(index, false) }
                 }
             }
         }
 
-        @Synchronized private fun send(pcm: ByteArray) {
+        @Synchronized private fun send(pcm: ByteArray, presentationNanos: Long?) {
             if (!running || paused) return
             val type = semanticType(id)
-            hub.publish(this@BrowserAudioMediaSink, type, outputRate, outputChannels, pcm, buffered = id.type == 103, reset = reset)
+            hub.publish(this@BrowserAudioMediaSink, type, outputRate, outputChannels, pcm, buffered = id.type == 103, reset = reset,
+                presentationNanos = presentationNanos)
             reset = false
         }
 

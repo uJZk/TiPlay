@@ -62,6 +62,15 @@ class NtpClock(private val wireTimeline: NtpWireTimeline? = null, log: (String) 
         ntpFromNanos(System.nanoTime() + clockOffsetNs)
     }
 
+    /** Full NTP64 anchor from a media control packet; never substitutes its arrival time. */
+    fun ntpTimeNanos(timestamp: BigInteger): Long? = synchronized(clockLock) {
+        if (!synced || timestamp.signum() <= 0 || timestamp.bitLength() > 64 ||
+            System.nanoTime() - lastSyncNanos > 10_000_000_000L) return@synchronized null
+        val mapped = timestamp.multiply(NANOS_PER_SECOND).shiftRight(32)
+            .subtract(BigInteger.valueOf(clockOffsetNs))
+        if (mapped.bitLength() > 63) null else mapped.toLong()
+    }
+
     private fun wireNtp(): BigInteger = wireOffsetNs?.let {
         ntpFromNanos(System.nanoTime() + it)
     } ?: syncedNtp()

@@ -133,6 +133,7 @@ class AirPlaySession(
 
     fun syncedNtp(): BigInteger = ntp.syncedNtp()
     fun mediaTimeNanos(senderNanos: Long): Long? = ntp.mediaTimeNanos(senderNanos)
+    fun ntpTimeNanos(timestamp: BigInteger): Long? = ntp.ntpTimeNanos(timestamp)
 
     internal fun logDebug(message: String) = debugLog(message)
 

@@ -4,6 +4,7 @@
 import { FLAG, RECORD, RecordError, Samples, chooseDecoderConfig, createRecordStream, letterbox } from './link.js';
 import { createFpsWindow } from './fps-window.js';
 import { presentationTime } from './clock-sync.js';
+import { videoExpired, videoMissedDeadline } from './playback-window.js';
 
 const KEY_REQUEST_INTERVAL_MS = 1000;
 const MAX_DECODE_QUEUE = 30; // half a second at 60 fps; beyond that, drop to the next key frame instead of lagging
@@ -67,7 +68,7 @@ export function createDecoderPipeline({ post: send, present }) {
     } catch (_) {
       throw new RecordError('config is not JSON');
     }
-    const next = { epoch: record.epoch, codec: String(info.codec), width: info.width | 0, height: info.height | 0, fps: info.fps | 0 };
+    const next = { epoch: record.epoch, mode: info.mode ?? null, codec: String(info.codec), width: info.width | 0, height: info.height | 0, fps: info.fps | 0 };
     post({ type: 'config', config: next });
     // The phone repeats a byte-identical config at every stream start; keep the decoder then.
     const same = config && decoder?.state === 'configured' && ['epoch', 'codec', 'width', 'height'].every(key => config[key] === next[key]);
@@ -233,14 +234,15 @@ export function createDecoderPipeline({ post: send, present }) {
  * Draws frames letterboxed with the aspect of the negotiated CarPlay canvas, which is what touch mapping assumes.
  * It keeps the last frame (closing the one before) so a resize can redraw a still CarPlay screen.
  */
-export function createFramePresenter(canvas) {
+export function createFramePresenter(canvas, { now = () => performance.timeOrigin + performance.now(), videoPlan = () => null,
+  applyTimingPolicy = false, onPresentation = () => {} } = {}) {
   const drawMs = new Samples();
   const fpsWindow = createFpsWindow();
-  let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null;
+  let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null, expiredFrames = 0, untimedFrames = 0;
 
-  function draw(frame) {
+  function draw(frame, allowed) {
     const width = lastConfig?.width || frame.displayWidth, height = lastConfig?.height || frame.displayHeight;
-    return renderer.draw(frame, letterbox(canvas.width, canvas.height, width, height));
+    return renderer.draw(frame, letterbox(canvas.width, canvas.height, width, height), allowed);
   }
 
   const lost = event => event.preventDefault();
@@ -256,15 +258,23 @@ export function createFramePresenter(canvas) {
 
   return {
     present(frame, config, timing) {
+      const late = () => { const at = now(); return applyTimingPolicy && (videoExpired(timing, config?.mode, at) || videoMissedDeadline(timing, videoPlan(), at)); };
+      if (late()) { expiredFrames++; frame.close(); return; }
       if (lastConfig?.epoch !== config?.epoch) fpsWindow.reset();
       lastConfig = config;
       const started = performance.now();
       let drawn;
-      try { drawn = draw(frame) !== false; } catch (error) { frame.close(); throw error; }
+      let expired = false;
+      try { drawn = draw(frame, () => { expired = late(); return !expired; }) !== false; } catch (error) { frame.close(); throw error; }
+      if (expired) { expiredFrames++; frame.close(); return; }
+      if (!Number.isFinite(timing)) untimedFrames++;
       drawMs.add(performance.now() - started);
       const at = performance.now();
       const offset = Number.isFinite(timing) ? performance.timeOrigin + at - timing : null;
-      if (drawn) fpsWindow.frame(at, 1, offset);
+      if (drawn) {
+        fpsWindow.frame(at, 1, offset);
+        onPresentation({ sourceTime: Number.isFinite(timing) ? timing : null, submittedTime: performance.timeOrigin + at, offsetMs: offset });
+      }
       lastFrame?.close();
       lastFrame = frame;
     },
@@ -287,7 +297,7 @@ export function createFramePresenter(canvas) {
       canvas.removeEventListener('webglcontextrestored', restored);
       renderer.dispose?.();
     },
-    stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), ...fpsWindow.stats() }),
+    stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), expiredFrames, untimedFrames, ...fpsWindow.stats() }),
   };
 }
 
@@ -298,7 +308,8 @@ function createRenderer(canvas) {
   const context = canvas.getContext('2d', { alpha: false, desynchronized: true });
   return {
     kind: '2d',
-    draw(frame, box) {
+    draw(frame, box, allowed = () => true) {
+      if (!allowed()) return false;
       context.fillStyle = '#000';
       context.fillRect(0, 0, canvas.width, canvas.height);
       context.drawImage(frame, box.x, box.y, box.width, box.height);
@@ -337,13 +348,15 @@ function glRenderer(gl) {
       gl.deleteProgram(program);
     },
     kind: typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext ? 'webgl2' : 'webgl',
-    draw(frame, box) {
+    draw(frame, box, allowed = () => true) {
       if (gl.isContextLost()) return false;
       const { width, height } = gl.canvas;
-      gl.viewport(0, 0, width, height);
-      gl.clear(gl.COLOR_BUFFER_BIT);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
       gl.viewport(box.x, height - box.y - box.height, box.width, box.height);
+      if (!allowed()) return false;
+      // Clearing and submitting the picture form one operation after the final
+      // deadline check; an expired upload must leave the retained picture intact.
+      gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     },
   };

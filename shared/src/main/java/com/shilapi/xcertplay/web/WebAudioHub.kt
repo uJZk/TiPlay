@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit
 class WebAudioHub {
     private var owner: Any? = null
     private var sequence = 0
+    private val epochs = IntArray(5)
     private var subscription: Subscription? = null
     private var microphoneHandler: ((ByteArray) -> Unit)? = null
     private var microphoneRate = 0
@@ -42,19 +43,23 @@ class WebAudioHub {
     }
 
     fun publish(owner: Any, id: Int, sampleRate: Int, channels: Int, pcm: ByteArray,
-                              buffered: Boolean = false, reset: Boolean = false) {
+                              buffered: Boolean = false, reset: Boolean = false,
+                              presentationNanos: Long? = null,
+                              mode: BrowserPlaybackMode = BrowserPlaybackMode.CARPLAY) {
         if (id !in 0..4 || channels !in 1..2 || sampleRate !in 8000..96000 ||
             (pcm.isEmpty() && !reset) || pcm.size > MAX_PCM || pcm.size % (channels * 2) != 0) return
-        val (target, nextSequence, generation) = synchronized(this) {
+        val delivery = synchronized(this) {
             if (!enabled || this.owner !== owner) return
             val target = subscription ?: return
-            Triple(target, sequence++, target.generation)
+            if (reset) epochs[id]++
+            Delivery(target, sequence++, target.generation, epochs[id])
         }
-        val record = ByteBuffer.allocate(20 + pcm.size).order(ByteOrder.BIG_ENDIAN)
-            .putInt(16 + pcm.size).put(1).put(id.toByte()).put(channels.toByte())
-            .put(((if (buffered) 1 else 0) or (if (reset) 2 else 0)).toByte())
-            .putInt(sampleRate).putInt(nextSequence).putInt(0).put(pcm).array()
-        target.offer(record, buffered, generation)
+        val record = ByteBuffer.allocate(28 + pcm.size).order(ByteOrder.BIG_ENDIAN)
+            .putInt(24 + pcm.size).put(2).put(id.toByte()).put(channels.toByte())
+            .put(((if (buffered) 1 else 0) or (if (reset) 2 else 0) or mode.audioFlags).toByte())
+            .putInt(sampleRate).putInt(delivery.sequence).putInt(delivery.epoch)
+            .putDouble(presentationNanos?.div(1e6) ?: Double.NaN).put(pcm).array()
+        delivery.target.offer(record, buffered, delivery.generation)
     }
 
     @Synchronized fun subscribe(): Subscription {
@@ -157,6 +162,8 @@ class WebAudioHub {
         internal fun clear() { generation++; live.clear(); music.clear() }
         override fun close() { closed = true; clear() }
     }
+
+    private data class Delivery(val target: Subscription, val sequence: Int, val generation: Long, val epoch: Int)
 
     companion object { const val MAX_PCM = 64 * 1024 }
 }

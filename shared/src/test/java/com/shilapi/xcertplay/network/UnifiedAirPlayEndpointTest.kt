@@ -157,12 +157,17 @@ class UnifiedAirPlayEndpointTest {
 
         fun assertEntryStopped() {
             assertNull(UnifiedAirPlayEndpoint.current)
-            Socket().use { probe ->
-                try {
-                    probe.connect(InetSocketAddress("127.0.0.1", port), 1000)
-                    fail("The last lease must close the listening socket")
-                } catch (_: ConnectException) { /* No listener remains. */ }
+            val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(1)
+            // JDK pre-closes a socket with an in-flight accept; its descriptor is released
+            // when that operation exits. Check the eventual port release, not thread scheduling.
+            while (System.nanoTime() < deadline) {
+                Socket().use { probe ->
+                    try { probe.connect(InetSocketAddress("127.0.0.1", port), 200) }
+                    catch (_: ConnectException) { return }
+                }
+                Thread.sleep(10)
             }
+            fail("The last lease must close the listening socket")
         }
 
         override fun close() {

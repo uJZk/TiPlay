@@ -50,7 +50,8 @@ even when the environment configures a system proxy.
     requests; with the page server stopped the download page does not open.
 12. With the page server stopped, a reload and the pairing link (with `#c=`) are served by the Service Worker and decode
     again.
-13. The Debug switch shows four fields at the top center, does not intercept touches or replace the video session,
+13. The Debug switch shows four statistics and a second line of per-frame source/submission times at the top center,
+    does not intercept touches or replace the video session,
     and hides the overlay when disabled. Worker-stream, worker-chunk, worker-frame and main-thread paths all collect
     actual draw counts in the last second and signed offsets from synthetic scheduled presentation times to canvas submission.
     Negative offsets mean early submission; positive offsets mean late submission. Synthetic timestamps validate

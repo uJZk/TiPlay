@@ -5,12 +5,15 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /** Legacy UDP transport; optional mirror soundtrack consumer, otherwise packets are discarded. */
 class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String) -> Unit = {},
-                         private val packetReceived: ((ByteArray) -> Unit)? = null) : Closeable {
+                         private val packetReceived: ((ByteArray) -> Unit)? = null,
+                         private val controlReceived: ((ByteArray) -> Unit)? = null,
+                         private val idle: (() -> Unit)? = null) : Closeable {
     private class Counts {
         val packets = AtomicLong()
         val bytes = AtomicLong()
@@ -32,6 +35,7 @@ class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String
             data = bind()
             control = bind()
             val dataSocket = requireNotNull(data)
+            if (idle != null) dataSocket.soTimeout = 10
             val controlSocket = requireNotNull(control)
             worker("DATA", dataSocket, dataCounts)
             worker("CONTROL", controlSocket, controlCounts)
@@ -75,8 +79,11 @@ class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String
                 }
                 val bytes = counts.bytes.addAndGet(packet.length.toLong())
                 if (channel == "DATA") packetReceived?.invoke(buffer.copyOf(packet.length))
+                else controlReceived?.invoke(buffer.copyOf(packet.length))
                 val packets = counts.packets.incrementAndGet()
                 if (sample(packets)) emit("audioDrain stage=DRAINED channel=$channel packets=$packets bytes=$bytes")
+            } catch (_: SocketTimeoutException) {
+                if (!closed.get() && channel == "DATA") idle?.invoke()
             } catch (_: Exception) {
                 if (!closed.get()) {
                     counts.failures.incrementAndGet()

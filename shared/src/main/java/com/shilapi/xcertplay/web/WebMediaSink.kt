@@ -16,6 +16,8 @@ class WebMediaSink(
     private var height: Int,
     private val fps: Int,
     private val source: BrowserDisplaySource = BrowserDisplaySource.CARPLAY,
+    private val mode: BrowserPlaybackMode = if (source == BrowserDisplaySource.AIRPLAY)
+        BrowserPlaybackMode.AIRPLAY_MIRROR else BrowserPlaybackMode.CARPLAY,
 ) : MediaSink {
     @Volatile private var mediaClock: ((Long) -> Long?)? = null
     @Volatile private var codec: VideoCodec? = null
@@ -36,7 +38,7 @@ class WebMediaSink(
         if (closed || !paused) return@synchronized
         paused = false
         if (!active) return@synchronized
-        hub.beginStream(this, width, height, fps, requestKeyFrame = { recovery?.invoke() }, report = { diagnostics?.invoke(it) }, source = source)
+        hub.beginStream(this, width, height, fps, requestKeyFrame = { recovery?.invoke() }, report = { diagnostics?.invoke(it) }, source = source, mode = mode)
         val codec = codec
         if (codec != null) retainedConfig?.let { hub.configure(this, codec, it) }
         hub.requestKeyFrame(force = true)
@@ -90,7 +92,7 @@ class WebMediaSink(
                 if (closed || this.active) return
                 this.active = true
                 if (paused) return
-                hub.beginStream(this, width, height, fps, requestKeyFrame = { recovery?.invoke() }, report = { diagnostics?.invoke(it) }, source = source)
+                hub.beginStream(this, width, height, fps, requestKeyFrame = { recovery?.invoke() }, report = { diagnostics?.invoke(it) }, source = source, mode = mode)
             }
         } else {
             synchronized(this) { this.active = false; retainedConfig = null; hub.endStream(this) }

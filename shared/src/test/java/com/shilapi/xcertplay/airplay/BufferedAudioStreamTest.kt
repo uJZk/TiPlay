@@ -365,7 +365,11 @@ class BufferedAudioStreamTest {
     @Test
     fun setRateStartsPlaybackFromItsTimeAndPausesAndFlushesStopTheOutput() {
         val sink = RecordingSink()
-        val stream = BufferedAudioStream(key, format, sink)
+        var mappedAnchor: BigInteger? = null
+        val stream = BufferedAudioStream(key, format, sink, mapNtp = {
+            mappedAnchor = it
+            9_000_000_000L
+        })
         try {
             stream.start()
             assertNull(stream.anchor())
@@ -390,6 +394,8 @@ class BufferedAudioStreamTest {
                 // The frame before rtpTime was dropped; playback starts at it.
                 assertEquals(listOf(2_024L, 3_048L, 4_072L), sink.rtp.map { it.toLong() and 0xffff_ffffL })
                 assertEquals(1, sink.started.size)
+                assertEquals(listOf(2024 to 9_000_000_000L), sink.clocks.toList())
+                assertEquals(anchor["networkTimeFrac"], mappedAnchor!!.and(BigInteger.ONE.shiftLeft(32).subtract(BigInteger.ONE)).shiftLeft(32))
 
                 val paused = stream.setRate(rtpTime = null, newRate = 0, nowNtp = now)!!
                 assertEquals(0, paused["rate"])
@@ -427,9 +433,11 @@ class BufferedAudioStreamTest {
 
     private class RecordingSink : MediaSink {
         val started = CopyOnWriteArrayList<Int>()
+        val clocks = CopyOnWriteArrayList<Pair<Int, Long>>()
         val rtp = CopyOnWriteArrayList<Int>()
         @Volatile var stopped = 0
         override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) { started += firstSample }
+        override fun onAudioClock(id: AudioStreamId, sample: Int, presentationNanos: Long) { clocks += sample to presentationNanos }
         override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) { this.rtp += sample }
         override fun onAudioStopped(id: AudioStreamId) { stopped++ }
     }

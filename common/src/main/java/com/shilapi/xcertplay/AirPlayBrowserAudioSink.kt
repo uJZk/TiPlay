@@ -16,6 +16,7 @@ import java.nio.ByteBuffer
 @OptIn(UnstableApi::class)
 internal class AirPlayBrowserAudioSink(private val hub: WebAudioHub,
                                        private val diagnostics: AirPlayVideoDiagnostics = AirPlayVideoDiagnostics {},
+                                       private val timelineChanged: () -> Unit = {},
                                        private val nowNanos: () -> Long = System::nanoTime) : AudioSink {
     private var format: Format? = null
     private var attributes = AudioAttributes.DEFAULT
@@ -56,22 +57,31 @@ internal class AirPlayBrowserAudioSink(private val hub: WebAudioHub,
         return minOf(submittedUntilUs, positionUs + elapsed)
     }
 
+    /** Same Media3 media clock used to schedule video; browser buffering is added to both downstream. */
+    fun presentationTimeNanos(mediaUs: Long): Long? = if (positionUs == AudioSink.CURRENT_POSITION_NOT_SET) null
+        else clockAt + (mediaUs - positionUs) * 1000
+
     override fun play() {
         if (!playing) { positionUs = getCurrentPositionUs(false); clockAt = nowNanos(); playing = true }
     }
     override fun pause() {
         positionUs = getCurrentPositionUs(false); clockAt = nowNanos(); playing = false
         if (ownsHub) hub.flush(this, 0)
+        timelineChanged()
     }
     override fun handleDiscontinuity() {
         positionUs = AudioSink.CURRENT_POSITION_NOT_SET; resetPacket = true
         if (ownsHub) hub.flush(this, 0)
+        timelineChanged()
     }
 
     override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
         val output = format ?: return false
         if (positionUs == AudioSink.CURRENT_POSITION_NOT_SET) {
             positionUs = presentationTimeUs; submittedUntilUs = presentationTimeUs; clockAt = nowNanos()
+        } else if (playing && positionUs + (nowNanos() - clockAt) / 1000 > submittedUntilUs) {
+            // A Media3 underrun freezes its media position. Rebase instead of stamping new PCM in the past.
+            positionUs = submittedUntilUs; clockAt = nowNanos()
         }
         // Keep Media3 from decoding the whole item into HTTP/browser queues at once.
         if (presentationTimeUs > getCurrentPositionUs(false) + 80_000) return false
@@ -81,7 +91,9 @@ internal class AirPlayBrowserAudioSink(private val hub: WebAudioHub,
             val size = minOf(buffer.remaining(), WebAudioHub.MAX_PCM) / frameBytes * frameBytes
             if (size == 0) { buffer.position(buffer.limit()); break }
             val pcm = ByteArray(size); buffer.get(pcm)
-            hub.publish(this, 0, output.sampleRate, output.channelCount, pcm, reset = resetPacket)
+            hub.publish(this, 0, output.sampleRate, output.channelCount, pcm, buffered = true, reset = resetPacket,
+                presentationNanos = presentationTimeNanos(presentationTimeUs + frames * 1_000_000 / output.sampleRate),
+                mode = com.shilapi.xcertplay.web.BrowserPlaybackMode.AIRPLAY_VIDEO)
             pcmPackets++
             if (pcmPackets == 1L || pcmPackets % 120L == 0L) diagnostics.stage(AirPlayVideoDiagnostics.Stage.AUDIO_PCM, pcmPackets)
             if (!nonzeroReported && pcm.any { it != 0.toByte() }) {
@@ -113,6 +125,7 @@ internal class AirPlayBrowserAudioSink(private val hub: WebAudioHub,
     override fun flush() {
         positionUs = AudioSink.CURRENT_POSITION_NOT_SET; submittedUntilUs = 0; ended = false; resetPacket = true
         if (ownsHub) hub.flush(this, 0)
+        timelineChanged()
     }
     override fun reset() {
         flush(); format = null

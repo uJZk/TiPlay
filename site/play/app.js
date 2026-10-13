@@ -15,7 +15,9 @@ import { followAppearance } from './appearance.js';
 import { createReconnectOverlay } from './reconnect.js';
 import { pumpChunkStream } from './transport.js';
 import { formatDebugFps } from './fps-window.js';
+import { formatPresentation } from './presentation-debug.js';
 import { sampleClock } from './clock-sync.js';
+import { createMediaTiming, createImmediateFrames, createVideoEpochGuard } from './media-timing.js';
 import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
 
@@ -136,11 +138,15 @@ showLink();
 const slots = createTouchSlots();
 let session = null, active = false, phase = 'ready', notice = null;
 let attempt = 0, reconnects = 0, retryTimer = null, retryAt = 0, streamId = 0, videoAbort = null, lastError = null;
-let config = null, live = false, status = null, unsupported = null, videoStats = {};
+let config = null, live = false, status = null, unsupported = null, videoStats = {}, latestPresentation = null;
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 const appearance = window.matchMedia('(prefers-color-scheme: dark)');
 const reportAppearance = followAppearance(appearance, () => outbox);
+const mediaTiming = createMediaTiming(delay => { sink?.delay(delay); browserAudio.delay(delay); });
 const browserAudio = createBrowserAudio({
+  onMode: mode => mediaTiming.mode(mode),
+  onTiming: source => mediaTiming.observe('audio', source),
+  onQueued: () => mediaTiming.started(),
   fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }),
   onState(state) {
     $('audio-message').textContent = state.error ? (lang === 'zh' ? '声音或麦克风不可用，请检查浏览器权限或重新连接。' : 'Sound or microphone unavailable. Check browser permissions or reconnect.') : '';
@@ -229,7 +235,7 @@ async function setUpVideo() {
       const offscreen = canvas.transferControlToOffscreen();
       worker.postMessage({ type: 'canvas', canvas: offscreen }, [offscreen]);
     } else {
-      presenter = (await import('./video.js')).createFramePresenter(canvas);
+      presenter = (await import('./video.js')).createFramePresenter(canvas, { onPresentation: recordPresentation });
     }
     worker.onmessage = ({ data }) => {
       if (data.type === 'frame') {
@@ -250,6 +256,7 @@ async function setUpVideo() {
     worker.onerror = () => stop('noVideo', 'decoder worker failed');
     sink = {
       clock(clock) { worker.postMessage({ type: 'clock', clock }); },
+      delay() {}, // Recording: the decoder's output is not held for a video deadline.
       open(id, body, signal) {
         if (path.feed === 'stream') worker.postMessage({ type: 'stream', id, stream: body }, [body]);
         else {
@@ -264,15 +271,19 @@ async function setUpVideo() {
     };
   } else if (path.decode === 'main') {
     const { createDecoderPipeline, createFramePresenter } = await import('./video.js');
-    const presenter = createFramePresenter(canvas);
+    const presenter = createFramePresenter(canvas, { onPresentation: recordPresentation });
+    const immediate = createImmediateFrames((frame, config, id, timing) => presenter.present(frame, config, timing),
+      (source, ready) => mediaTiming.observe('video', source, ready));
+    const epochs = createVideoEpochGuard(() => { presenter.close(); });
     const pipeline = createDecoderPipeline({ post: message => {
-      if (message.type === 'idle' && active && message.id === streamId) presenter.close();
+      epochs.message(message);
       onVideoMessage(message);
-    }, present: (frame, config, id, timing) => presenter.present(frame, config, timing) });
+    }, present: immediate.present });
     let timer = null;
-    const stop = () => { clearInterval(timer); pipeline.stop(); presenter.close(); };
+    const stop = () => { clearInterval(timer); epochs.reset(); pipeline.stop(); };
     sink = {
       clock: pipeline.clock,
+      delay() {},
       open(id, body) {
         stop();
         pipeline.read(id, body);
@@ -400,7 +411,7 @@ async function connectVideo() {
       return;
     }
     // The first hello can finish before asynchronous worker setup creates the sink.
-    sink.clock(clock);
+    sink.clock(clock); browserAudio.clock(clock); mediaTiming.reset();
     const response = await phoneFetch(`/video?c=${link.code}&s=${session}&codecs=${codecs}&timing=1&lifecycle=1`, { signal: abort.signal });
     clearTimeout(timer);
     if (id !== streamId) {
@@ -425,7 +436,7 @@ async function connectVideo() {
             const sample = sampleClock(hello.clockMs, start, performance.timeOrigin + performance.now());
             if (sample && (!best || sample.rtt < best.rtt)) best = sample;
           }
-          if (!abort.signal.aborted && id === streamId) sink?.clock(best);
+          if (!abort.signal.aborted && id === streamId) { sink?.clock(best); browserAudio.clock(best); }
         } catch (_) { /* Expired clock samples produce unavailable presentation offsets, never guessed values. */ }
         finally { busy = false; }
       }, 5000);
@@ -519,11 +530,18 @@ function controlFailed(error) {
 
 function onVideoMessage(message) {
   if (!active || message.id !== streamId) return;
+  if (message.type === 'media-ready') { mediaTiming.observe('video', message.source, message.ready); return; }
+  if (message.type === 'presentation') { recordPresentation(message.sample); return; }
   if (message.type === 'alive' && message.id === streamId) attempt = 0;
   else if (message.type === 'config') {
+    if (config?.epoch !== message.config.epoch) latestPresentation = null;
+    mediaTiming.mode(message.config.mode);
+    // Audio has its own ordered per-type reset/epoch. Its HTTP response may deliver
+    // the new producer's PCM before this config, so video cannot clear that audio.
     config = message.config;
     unsupported = null;
   } else if (message.type === 'idle') {
+    latestPresentation = null;
     config = null;
     live = false;
     unsupported = null;
@@ -532,6 +550,7 @@ function onVideoMessage(message) {
     unsupported = message.codec;
     live = false;
   } else if (message.type === 'decoded') {
+    mediaTiming.started();
     live = true;
     outbox?.push({ k: 'dec', ep: message.epoch }, 'latest'); // repeated if its POST fails: the phone's connection proof
     keepScreenOn();
@@ -557,8 +576,16 @@ function render() {
   $('host').disabled = active;
   $('stats').hidden = !(active && live && statsVisible);
   if (active && statsVisible) {
-    $('stats').textContent = formatDebugFps(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats);
+    renderStats();
   }
+}
+
+function recordPresentation(sample) {
+  latestPresentation = sample;
+  if (active && statsVisible) renderStats();
+}
+function renderStats() {
+  $('stats').textContent = `${formatDebugFps(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats)}\n${formatPresentation(latestPresentation, lang)}`;
 }
 
 function statusText() {

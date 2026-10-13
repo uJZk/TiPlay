@@ -72,7 +72,7 @@ class WebVideoRecordsTest {
     @Test fun configPayloadIsTheContractJson() {
         val payload = WebVideoRecords.configPayload("avc1.640028", 1182, 920, 60, VideoCodec.H264, 4, bytes(1, 2, 3))
         assertEquals(
-            """{"codec":"avc1.640028","width":1182,"height":920,"fps":60,"format":"annexb","marker":"avcC",""" +
+            """{"codec":"avc1.640028","width":1182,"height":920,"fps":60,"mode":"carplay","format":"annexb","marker":"avcC",""" +
                 """"nalLengthBytes":4,"record":"AQID"}""",
             String(payload, Charsets.UTF_8),
         )
@@ -80,6 +80,14 @@ class WebVideoRecordsTest {
         assertTrue(hevc.contains(""""marker":"hvcC""""))
         val config = WebVideoRecords.config(3, VideoCodec.H265, payload)
         assertEquals(WebVideoRecords.Header(payload.size, 1, 0, 2, 1, 0, 3, 0), WebVideoRecords.readHeader(WebVideoRecords.encode(config)))
+    }
+
+    @Test fun everyPlaybackModeIdentifiesItsBufferingPolicyInTheConfiguration() {
+        for (mode in BrowserPlaybackMode.entries) {
+            val payload = WebVideoRecords.configPayload("avc1.640028", 1182, 920, 60, VideoCodec.H264, 4,
+                bytes(1, 2, 3), mode)
+            assertTrue(String(payload).contains("\"mode\":\"${mode.wireName}\""))
+        }
     }
 
     @Test fun heartbeatAndEndCarryNoCodec() {
