@@ -17,7 +17,7 @@ import { pumpChunkStream } from './transport.js';
 import { formatDebugFps } from './fps-window.js';
 import { formatPresentation } from './presentation-debug.js';
 import { sampleClock } from './clock-sync.js';
-import { createMediaTiming, createImmediateFrames, createVideoEpochGuard } from './media-timing.js';
+import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from './media-timing.js';
 import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
 
@@ -235,7 +235,7 @@ async function setUpVideo() {
       const offscreen = canvas.transferControlToOffscreen();
       worker.postMessage({ type: 'canvas', canvas: offscreen }, [offscreen]);
     } else {
-      presenter = (await import('./video.js')).createFramePresenter(canvas, { onPresentation: recordPresentation });
+      presenter = (await import('./video.js')).createFramePresenter(canvas, { applyTimingPolicy: true, onPresentation: recordPresentation });
     }
     worker.onmessage = ({ data }) => {
       if (data.type === 'frame') {
@@ -256,7 +256,8 @@ async function setUpVideo() {
     worker.onerror = () => stop('noVideo', 'decoder worker failed');
     sink = {
       clock(clock) { worker.postMessage({ type: 'clock', clock }); },
-      delay() {}, // Recording: the decoder's output is not held for a video deadline.
+      delay(plans) { worker.postMessage({ type: 'delay', plan: plans.video }); },
+      ready(token, plan) { worker.postMessage({ type: 'media-ready-ack', id: streamId, token, plan }); },
       open(id, body, signal) {
         if (path.feed === 'stream') worker.postMessage({ type: 'stream', id, stream: body }, [body]);
         else {
@@ -271,23 +272,24 @@ async function setUpVideo() {
     };
   } else if (path.decode === 'main') {
     const { createDecoderPipeline, createFramePresenter } = await import('./video.js');
-    const presenter = createFramePresenter(canvas, { onPresentation: recordPresentation });
-    const immediate = createImmediateFrames((frame, config, id, timing) => presenter.present(frame, config, timing),
-      (source, ready) => mediaTiming.observe('video', source, ready));
-    const epochs = createVideoEpochGuard(() => { presenter.close(); });
+    const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, onPresentation: recordPresentation });
+    const frames = createTimedFrames((frame, config, id, timing) => presenter.present(frame, config, timing), {
+      observe(source, ready) { mediaTiming.observe('video', source, ready); },
+    });
+    const epochs = createVideoEpochGuard(() => { frames.reset(); presenter.close(); });
     const pipeline = createDecoderPipeline({ post: message => {
       epochs.message(message);
       onVideoMessage(message);
-    }, present: immediate.present });
+    }, present: frames.present });
     let timer = null;
     const stop = () => { clearInterval(timer); epochs.reset(); pipeline.stop(); };
     sink = {
       clock: pipeline.clock,
-      delay() {},
+      delay(plans) { frames.delay(plans.video); },
       open(id, body) {
         stop();
         pipeline.read(id, body);
-        timer = setInterval(() => onVideoMessage({ type: 'stats', id, stats: { ...pipeline.stats(), ...presenter.stats() } }), 1000);
+        timer = setInterval(() => onVideoMessage({ type: 'stats', id, stats: { ...pipeline.stats(), ...frames.stats(), ...presenter.stats() } }), 1000);
       },
       stop,
       dispose() { stop(); presenter.dispose(); },
@@ -530,7 +532,11 @@ function controlFailed(error) {
 
 function onVideoMessage(message) {
   if (!active || message.id !== streamId) return;
-  if (message.type === 'media-ready') { mediaTiming.observe('video', message.source, message.ready); return; }
+  if (message.type === 'media-ready') {
+    mediaTiming.observe('video', message.source, message.ready);
+    sink?.ready?.(message.token, mediaTiming.plan());
+    return;
+  }
   if (message.type === 'presentation') { recordPresentation(message.sample); return; }
   if (message.type === 'alive' && message.id === streamId) attempt = 0;
   else if (message.type === 'config') {

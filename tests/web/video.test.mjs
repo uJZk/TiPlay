@@ -242,13 +242,13 @@ test('canvas submission reports an early source presentation as a signed offset'
 });
 
 test('the presenter rejects frames delayed by main-thread delivery and rechecks before drawing', () => {
-  let now = 1101, draws = 0, clears = 0, clockReads = 0, preparationExpires = false;
+  let now = 1001, draws = 0, clears = 0, clockReads = 0, preparationExpires = false;
   const context = { fillRect() { clears++; }, drawImage() { draws++; } };
   const canvas = { width: 800, height: 480, getContext: type => type === '2d' ? context : null, removeEventListener() {} };
-  const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => { if (preparationExpires && ++clockReads >= 2) now = 1101; return now; } });
+  const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => { if (preparationExpires && ++clockReads >= 2) now = 1001; return now; } });
   const expired = videoFrame(0); presenter.present(expired, { mode: 'carplay' }, 1000);
   assert.equal(expired.closed, true); assert.equal(draws, 0);
-  now = 1099; preparationExpires = true;
+  now = 999; preparationExpires = true;
   const crossed = videoFrame(1); presenter.present(crossed, { mode: 'carplay' }, 1000);
   assert.equal(crossed.closed, true); assert.equal(draws, 0, 'canvas submission check catches time spent preparing the draw');
   assert.equal(clears, 0, 'an expired frame never clears the retained picture');
@@ -259,10 +259,10 @@ test('the presenter rejects frames delayed by main-thread delivery and rechecks 
 });
 
 test('an expired GPU texture upload never clears or submits the canvas', () => {
-  let now = 1099;
+  let now = 999;
   const calls = [], canvas = { width: 800, height: 480, addEventListener() {}, removeEventListener() {} }, gl = { canvas, isContextLost: () => false };
   for (const name of ['createProgram', 'createShader', 'shaderSource', 'compileShader', 'attachShader', 'deleteShader', 'linkProgram', 'useProgram', 'createBuffer', 'bindBuffer', 'bufferData', 'getAttribLocation', 'enableVertexAttribArray', 'vertexAttribPointer', 'createTexture', 'bindTexture', 'texParameteri', 'getUniformLocation', 'uniform1i', 'viewport', 'clearColor', 'clear', 'drawArrays', 'deleteTexture', 'deleteBuffer', 'deleteProgram']) gl[name] = () => { calls.push(name); return {}; };
-  gl.texImage2D = () => { calls.push('upload'); now = 1101; };
+  gl.texImage2D = () => { calls.push('upload'); now = 1001; };
   canvas.getContext = type => type === 'webgl2' ? gl : null;
   const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => now });
   const frame = videoFrame(0); presenter.present(frame, { mode: 'carplay' }, 1000);

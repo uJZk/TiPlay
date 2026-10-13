@@ -6,11 +6,17 @@ export function initialPlaybackPlans(at = 0) {
 }
 export const VIDEO_SUBMIT_MARGIN_MS = 20;
 export const AUDIO_PLANNED_EARLY_MS = AUDIO_EARLY_MS - VIDEO_SUBMIT_MARGIN_MS;
+export function videoSubmissionMargin(plan) {
+  return Math.max(0, VIDEO_SUBMIT_MARGIN_MS - Math.max(plan.from, plan.to));
+}
 
 /** Clamp against matching video deadlines, including the video clock's recent history. */
 export function audioDelayAt(plans, wallTime) {
   const earliest = delayAt(plans.video, wallTime + AUDIO_PLANNED_EARLY_MS) - AUDIO_PLANNED_EARLY_MS;
-  const latest = delayAt(plans.video, wallTime - AUDIO_LATE_MS) + AUDIO_LATE_MS;
+  // Video may be submitted early to reserve drawing time, so retain that
+  // reservation inside the audio late tolerance as well.
+  const late = AUDIO_LATE_MS - videoSubmissionMargin(plans.video);
+  const latest = delayAt(plans.video, wallTime - late) + late;
   return Math.min(latest, Math.max(earliest, delayAt(plans.audio, wallTime)));
 }
 
@@ -19,9 +25,4 @@ export function videoLimit(mode) { return MEDIA_DELAY_LIMITS[mode] ?? MAX_MEDIA_
 /** The available timestamp measures source presentation to canvas submission, not capture. */
 export function videoExpired(source, mode, wallTime) {
   return Number.isFinite(source) && wallTime - source > videoLimit(mode);
-}
-
-export function videoMissedDeadline(source, videoPlan, wallTime) {
-  const deadlineBefore = wallTime - VIDEO_SUBMIT_MARGIN_MS;
-  return Number.isFinite(source) && videoPlan && source < deadlineBefore - delayAt(videoPlan, deadlineBefore);
 }

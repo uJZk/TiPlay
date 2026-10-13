@@ -2,16 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { formatPresentation } from '../../site/play/presentation-debug.js';
-import { createImmediateFrames } from '../../site/play/media-timing.js';
 import { createFramePresenter } from '../../site/play/video.js';
-
-test('recording output is immediate even for future or old scheduled times', () => {
-  const drawn = [], observed = [];
-  const path = createImmediateFrames(frame => drawn.push(frame), source => { observed.push(source); return false; }, () => 1000);
-  for (const source of [1500, 100, null]) path.present(source, {}, 1, source);
-  assert.deepEqual(drawn, [1500, 100, null]);
-  assert.deepEqual(observed, drawn);
-});
 
 test('the recorder reports the actual drawn frame and never invents an unavailable source', () => {
   const samples = [], context = { fillRect() {}, drawImage() {} };

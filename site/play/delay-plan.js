@@ -1,7 +1,7 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 export const INITIAL_MEDIA_DELAY = 60;
-export const MAX_MEDIA_DELAY = 400;
-export const MEDIA_DELAY_LIMITS = Object.freeze({ carplay: 100, 'airplay-mirror': 200, 'airplay-video': 400 });
+export const MAX_MEDIA_DELAY = 500;
+export const MEDIA_DELAY_LIMITS = Object.freeze({ carplay: 0, 'airplay-mirror': 200, 'airplay-video': 500 });
 export const AUDIO_EARLY_MS = 45;
 export const AUDIO_LATE_MS = 125;
 export const DELAY_PLAN_LEAD_MS = 85;

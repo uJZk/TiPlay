@@ -1,15 +1,8 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 import { INITIAL_MEDIA_DELAY, MAX_MEDIA_DELAY, MEDIA_DELAY_LIMITS, constantDelay, delayAt, mediaDeadline, planDelay } from './delay-plan.js';
-import { initialPlaybackPlans, audioDelayAt, videoExpired, videoMissedDeadline, AUDIO_PLANNED_EARLY_MS, VIDEO_SUBMIT_MARGIN_MS } from './playback-window.js';
+import { initialPlaybackPlans, audioDelayAt, videoExpired, videoSubmissionMargin, AUDIO_PLANNED_EARLY_MS, VIDEO_SUBMIT_MARGIN_MS } from './playback-window.js';
 import { AUDIO_LATE_MS } from './delay-plan.js';
 export { INITIAL_MEDIA_DELAY, MAX_MEDIA_DELAY } from './delay-plan.js';
-
-/** Recording calibration: report source timing, then draw now without a scheduling handshake. */
-export function createImmediateFrames(present, observe = () => {}, now = () => performance.timeOrigin + performance.now()) {
-  return {
-    present(frame, config, id, timing) { observe(timing, now()); present(frame, config, id, timing); },
-  };
-}
 
 /** A repeated configuration is not a new presentation epoch. */
 export function createVideoEpochGuard(clear) {
@@ -40,12 +33,12 @@ export function createMediaTiming(change = () => {}, now = () => performance.tim
       tracks.set(track, { delay: Math.max(0, ready - source, (previous?.delay ?? 0) - elapsed * 0.005), at: ready });
       const videoEstimate = tracks.get('video');
       const videoTarget = track === 'video'
-        ? Math.min(limit - VIDEO_SUBMIT_MARGIN_MS, Math.max(INITIAL_MEDIA_DELAY, (videoEstimate?.delay ?? 0) + 20))
+        ? Math.min(Math.max(0, limit - VIDEO_SUBMIT_MARGIN_MS), Math.max(INITIAL_MEDIA_DELAY, (videoEstimate?.delay ?? 0) + 20))
         : plans.video.to;
       let changed = targetPlan('video', videoTarget);
       const audioEstimate = tracks.get('audio');
       if (audioEstimate) {
-        const audioTarget = Math.min(videoTarget + AUDIO_LATE_MS, Math.max(Math.max(0, videoTarget - AUDIO_PLANNED_EARLY_MS), audioEstimate.delay + 20));
+        const audioTarget = Math.min(videoTarget + AUDIO_LATE_MS - videoSubmissionMargin(plans.video), Math.max(Math.max(0, videoTarget - AUDIO_PLANNED_EARLY_MS), audioEstimate.delay + 20));
         changed = targetPlan('audio', audioTarget) || changed;
       }
       if (changed) change(plans);
@@ -56,7 +49,7 @@ export function createMediaTiming(change = () => {}, now = () => performance.tim
       const video = delayAt(plans.video, now()), audio = audioDelayAt(plans, now());
       if (mode !== null) tracks.clear();
       mode = value; limit = MEDIA_DELAY_LIMITS[value];
-      plans = { video: constantDelay(Math.min(video, limit - 20), now()), audio: constantDelay(audio, now()) };
+      plans = { video: constantDelay(Math.max(0, Math.min(video, limit - VIDEO_SUBMIT_MARGIN_MS)), now()), audio: constantDelay(audio, now()) };
       change(plans);
     },
     reset() { tracks.clear(); first = { video: true, audio: true }; mode = null; limit = MAX_MEDIA_DELAY; plans = initialPlaybackPlans(now()); change(plans); },
@@ -73,15 +66,18 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
   function pump() {
     if (timer !== null) cancel(timer);
     timer = null;
-    const at = now(), cutoff = at - delayAt(plan, at);
+    // A zero-delay plan cannot reserve drawing time by becoming negative. Submit
+    // those frames early instead; the final presenter still checks the raw cap.
+    const margin = videoSubmissionMargin(plan);
+    const at = now(), cutoff = at - delayAt(plan, at) + margin;
     let selected = null;
     while (queue.length && queue[0].ready && queue[0].timing <= cutoff) {
       const item = queue.shift();
-      if (videoExpired(item.timing, item.config?.mode, at) || videoMissedDeadline(item.timing, plan, at)) { expiredFrames++; item.frame.close(); continue; }
+      if (videoExpired(item.timing, item.config?.mode, at)) { expiredFrames++; item.frame.close(); continue; }
       selected?.frame.close(); selected = item;
     }
     if (selected) { last = selected.timing; present(selected.frame, selected.config, selected.id, selected.timing); }
-    if (queue[0]?.ready) timer = schedule(pump, Math.max(1, mediaDeadline(queue[0].timing, plan, now()) - now()));
+    if (queue[0]?.ready) timer = schedule(pump, Math.max(1, mediaDeadline(queue[0].timing - margin, plan, now()) - now()));
   }
   return {
     present(frame, config, id, timing) {

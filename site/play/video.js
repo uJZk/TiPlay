@@ -4,7 +4,7 @@
 import { FLAG, RECORD, RecordError, Samples, chooseDecoderConfig, createRecordStream, letterbox } from './link.js';
 import { createFpsWindow } from './fps-window.js';
 import { presentationTime } from './clock-sync.js';
-import { videoExpired, videoMissedDeadline } from './playback-window.js';
+import { videoExpired } from './playback-window.js';
 
 const KEY_REQUEST_INTERVAL_MS = 1000;
 const MAX_DECODE_QUEUE = 30; // half a second at 60 fps; beyond that, drop to the next key frame instead of lagging
@@ -234,7 +234,7 @@ export function createDecoderPipeline({ post: send, present }) {
  * Draws frames letterboxed with the aspect of the negotiated CarPlay canvas, which is what touch mapping assumes.
  * It keeps the last frame (closing the one before) so a resize can redraw a still CarPlay screen.
  */
-export function createFramePresenter(canvas, { now = () => performance.timeOrigin + performance.now(), videoPlan = () => null,
+export function createFramePresenter(canvas, { now = () => performance.timeOrigin + performance.now(),
   applyTimingPolicy = false, onPresentation = () => {} } = {}) {
   const drawMs = new Samples();
   const fpsWindow = createFpsWindow();
@@ -258,7 +258,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
 
   return {
     present(frame, config, timing) {
-      const late = () => { const at = now(); return applyTimingPolicy && (videoExpired(timing, config?.mode, at) || videoMissedDeadline(timing, videoPlan(), at)); };
+      const late = () => applyTimingPolicy && videoExpired(timing, config?.mode, now());
       if (late()) { expiredFrames++; frame.close(); return; }
       if (lastConfig?.epoch !== config?.epoch) fpsWindow.reset();
       lastConfig = config;
