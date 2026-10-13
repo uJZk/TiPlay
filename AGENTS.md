@@ -28,6 +28,10 @@ instructions; do not duplicate detailed rules in the index.
 
 ## Current progress
 
+See [docs/AIRPLAY-CANVAS-TIE-UP-2026-10-14.md](docs/AIRPLAY-CANVAS-TIE-UP-2026-10-14.md)
+for Video.js Canvas presentation, cache v36, browser verification, Android toolchain limits,
+main integration and Pages delivery. Vehicle performance and audio/video alignment still need measurement.
+
 See [docs/UPSTREAM-DOCS-TIE-UP-2026-10-13.md](docs/UPSTREAM-DOCS-TIE-UP-2026-10-13.md)
 for upstream tracking, concise maintenance rules, document length limits, scope splitting,
 verification and the Android toolchain access limitation.

@@ -3,5 +3,7 @@
 .airplay-player[hidden], .airplay-photo-stop[hidden] { display:none; }
 .airplay-player .video-js { width:100%; height:100%; }
 .airplay-player .vjs-tech { object-fit:contain; }
+.airplay-player .airplay-canvas-mode .vjs-tech { opacity:0; }
+.airplay-player .airplay-canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .airplay-player .airplay-stop .vjs-icon-placeholder::before { content:'■'; }
 .airplay-photo-stop { position:absolute; z-index:3; bottom:max(16px,env(safe-area-inset-bottom)); right:max(16px,env(safe-area-inset-right)); }

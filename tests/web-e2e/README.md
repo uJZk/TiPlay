@@ -67,6 +67,28 @@ even when the environment configures a system proxy.
 These runs use a fake phone and local browser. They verify browser resize reporting and layout,
 not the iPhone's replacement-display negotiation or real vehicle routing, recovery or physical screen presentation.
 
+## AirPlay URL canvas (`airplay-video.mjs`)
+
+This separate harness uses the bundled Video.js under the production CSP. It checks changing video pixels in WebGL,
+forced 2D and the animation fallback without `requestVideoFrameCallback`, plus optional HLS playback. It also checks
+letterboxing, the source-resolution cap, paused seeking and resizing, WebGL context restoration, clickable controls,
+Bluetooth audio muting, end-of-video scheduling, replacement, photo handoff and disposal. Pixel readback exists only
+in test instrumentation. These checks do not measure vehicle performance or physical audio/video synchronization.
+
+Generate the expected 320×180 moving fixture with audio and optionally an HLS copy:
+
+```sh
+mkdir -p work/canvas
+ffmpeg -f lavfi -i testsrc2=size=320x180:rate=30 -f lavfi -i sine=frequency=440:sample_rate=48000 \
+  -t 4 -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart -y work/canvas/sample.mp4
+ffmpeg -i work/canvas/sample.mp4 -c copy -hls_time 1 -hls_playlist_type vod \
+  -hls_segment_filename work/canvas/part%d.ts -y work/canvas/sample.m3u8
+TEST_VIDEO_MP4="$PWD/work/canvas/sample.mp4" TEST_VIDEO_HLS="$PWD/work/canvas/sample.m3u8" \
+  node tests/web-e2e/airplay-video.mjs
+```
+
+Set `CHROMIUM` and `NODE_PATH` as needed. Omit `TEST_VIDEO_HLS` to run only the MP4 cases.
+
 ## Real phone side (`phone-run.mjs`)
 
 `phone-run.mjs` checks the app's own phone side instead of the fake phone. `RealPhone.java` runs the compiled `:shared`

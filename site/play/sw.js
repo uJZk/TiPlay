@@ -7,9 +7,9 @@
  * not get the page's local-network and mixed-content treatment.
  *
  * Bump VERSION whenever a file in ASSETS changes; the new worker caches the new files and deletes older caches. */
-const VERSION = 'v35';
+const VERSION = 'v36';
 const CACHE = `tiplay-play-${VERSION}`;
-const ASSETS = ['./', 'airplay-controls.css', 'airplay-controls.js', 'app.js', 'appearance.js', 'audio-protocol.js', 'audio-worklet.js', 'audio.js', 'clock-sync.js', 'decoder-worker.js', 'delay-plan.js', 'fps-window.js', 'icon.svg', 'index.html', 'link.js', 'media-timing.js', 'pcm-timeline.js', 'playback-window.js', 'reconnect-wallpaper-blurred.png', 'reconnect.css', 'reconnect.js', 'style.css', 'transport.js', 'vendor/videojs/LICENSE', 'vendor/videojs/README.md', 'vendor/videojs/video-js.min.css', 'vendor/videojs/video.min.js', 'vendor/videojs/zh-CN.js', 'video.js'];
+const ASSETS = ['./', 'airplay-canvas.js', 'airplay-controls.css', 'airplay-controls.js', 'app.js', 'appearance.js', 'audio-protocol.js', 'audio-worklet.js', 'audio.js', 'clock-sync.js', 'decoder-worker.js', 'delay-plan.js', 'fps-window.js', 'icon.svg', 'index.html', 'link.js', 'media-timing.js', 'pcm-timeline.js', 'playback-window.js', 'reconnect-wallpaper-blurred.png', 'reconnect.css', 'reconnect.js', 'style.css', 'transport.js', 'vendor/videojs/LICENSE', 'vendor/videojs/README.md', 'vendor/videojs/video-js.min.css', 'vendor/videojs/video.min.js', 'vendor/videojs/zh-CN.js', 'video.js'];
 const OWN = new Set(ASSETS.map(path => new URL(path, self.location).href));
 
 self.addEventListener('install', event => {

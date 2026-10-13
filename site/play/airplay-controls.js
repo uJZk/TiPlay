@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import { createVideoCanvas } from './airplay-canvas.js';
 export function playbackState(value) {
   if (!value || !Number.isSafeInteger(value.id) || value.id < 1) return null;
   const duration = Number.isFinite(value.duration) ? Math.max(0, value.duration) : 0;
@@ -12,7 +13,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   const photoStop = document.createElement('button');
   photoStop.className = 'airplay-photo-stop'; photoStop.textContent = lang === 'zh' ? '结束投放' : 'Stop casting';
   photoStop.hidden = true; stage.append(layer, photoStop);
-  let state = null, player = null, loading = null, key = null, appliedRevision = -1, appliedSeekRevision = -1, metadata = false, timer = null;
+  let state = null, player = null, picture = null, loading = null, key = null, appliedRevision = -1, appliedSeekRevision = -1, metadata = false, timer = null;
   let directive = null, disposed = false, routeMuted = false, savedMute = false;
   const stop = () => { if (state) send({ k: 'ap', id: state.id, a: 'stop' }); };
   photoStop.addEventListener('click', stop);
@@ -21,6 +22,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   function clear() {
     loading?.abort(); loading = null;
     clearInterval(timer); timer = null;
+    picture?.dispose(); picture = null;
     player?.dispose(); player = null; layer.replaceChildren();
     key = null; metadata = false; appliedRevision = appliedSeekRevision = -1;
     layer.hidden = photoStop.hidden = true;
@@ -89,6 +91,9 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       end.on('click', stop); player.getChild('controlBar').addChild(end);
       player.on('loadedmetadata', () => { metadata = true; applyDirective(); report(); });
       player.on(['play', 'pause', 'waiting', 'playing', 'seeked', 'ended', 'error'], report);
+      picture = createVideoCanvas(player.el().querySelector('video'), player.el(), () => {
+        player?.error({ code: 3, message: lang === 'zh' ? '无法显示视频画面' : 'Unable to display video' });
+      });
       player.src({ src: next.directUrl ?? `http://${host()}${route}`, ...(type === 'application/octet-stream' ? {} : { type }) });
       timer = setInterval(report, 400);
     } catch (_) {

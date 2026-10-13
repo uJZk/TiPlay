@@ -300,7 +300,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
   };
 }
 
-function createRenderer(canvas) {
+export function createRenderer(canvas) {
   const options = { alpha: false, antialias: false, depth: false, desynchronized: true, powerPreference: 'high-performance' };
   const gl = canvas.getContext('webgl2', options) || canvas.getContext('webgl', options);
   if (gl) return glRenderer(gl);
