@@ -26,3 +26,7 @@ No additional tests retired. Incoming replacements reflect the current Bluetooth
 ## Open decisions
 
 No newly established behavioral defect or proposed behavior change from C3. Direct-media/proxy compatibility and physical Bluetooth routing still need their existing browser/device acceptance; this cleanup does not claim to validate those environments.
+
+## Final integrated coordinator checks
+
+The final source commit 91430639 passed the complete Android task set: 1352 shared + 1067 common + 4 home = 2423 tests, zero failures/errors/skips, and all three lint/debug-build tasks. Final Node suite 113/113; fake-phone, compiled-phone and real Video.js MP4 Chromium E2Es all passed. Changed fixture constructors/root serving/synthetic schedule/restart-counter and current audio privacy contract are documented in D2/TIE-UP reports without production changes or relaxed thresholds. Source committed, merged and normally pushed; Pages deployment succeeded. See TIE-UP.md for delivery and remaining new static findings.

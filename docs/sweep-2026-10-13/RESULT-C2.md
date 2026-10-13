@@ -21,3 +21,7 @@ Source/diff review completed; targeted `git diff --check` passed. No Gradle invo
 
 - The pre-Android-31 Bluetooth profile listener checks shared `profilePending`/`wanted` flags but has no attempt token. A delayed callback from an earlier attempt can satisfy the flags for a newer attempt after stop/start; its disconnect callback also acts on any currently acquired route. Generation-scoping these callbacks would be a separate lifecycle fix with deterministic stale-callback regression coverage. It is not changed by this behavior-preserving cleanup.
 - Resampling still creates filtered/output arrays and the bounded mixer queue still boxes samples. Replacing those structures needs ownership/numeric equivalence review and measurement; this pass deliberately keeps their algorithms and queue policy.
+
+## Final integrated coordinator checks
+
+The final source commit 91430639 passed the complete Android task set: 1352 shared + 1067 common + 4 home = 2423 tests, zero failures/errors/skips, and all three lint/debug-build tasks. Final Node suite 113/113; fake-phone, compiled-phone and real Video.js MP4 Chromium E2Es all passed. Changed fixture constructors/root serving/synthetic schedule/restart-counter and current audio privacy contract are documented in D2/TIE-UP reports without production changes or relaxed thresholds. Source committed, merged and normally pushed; Pages deployment succeeded. See TIE-UP.md for delivery and remaining new static findings.

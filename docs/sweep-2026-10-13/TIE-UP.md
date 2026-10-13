@@ -1,6 +1,6 @@
 # Sweep tie-up and authorized risk repairs
 
-Status: all final checks passed; committing and delivering.
+Status: complete — verified source committed, merged and pushed; Pages deployed successfully. The documentation-only follow-up records these confirmed results and is pushed normally.
 
 User invoked tie-up, authorizing session cleanup, docs, commit, merge to main, normal push and existing Pages deployment. User then directed “修复三项潜在风险”; resolve all three before delivery. No new release/signing workflow is requested.
 
@@ -9,7 +9,7 @@ User invoked tie-up, authorizing session cleanup, docs, commit, merge to main, n
 - Sweep started at 37e810ee339da79ed53dc106138c7a80ee6c0680 on work with a clean tree.
 - Read-only fetch found origin/main at 98d88d93f17cc17742ef68d39c0f3b6306970d12, with four later commits and browser media/Bluetooth changes.
 - Session edits saved in recovery stash `397ef47bdeb84bc6e520e72ecb584cb2aae4b4b5`; work fast-forwarded to incoming main and stash reapplied. Six conflicts resolved preserving incoming product behavior and single-Bonjour retirement. Recovery stash retained until verified delivery.
-- Original completed sweep base-commit remains 37e810ee: incoming 128-file main update is an integration input, not a delegated sweep. Include it in the next sweep.
+- Original completion baseline was 37e810ee. The subsequent explicit post-merge sweep reviewed incoming code via INTEGRATION-SCOPE.md; final next-sweep base is now the verified source commit 91430639.
 
 User further requested “合并后再次对代码进行整理/清理”: INTEGRATION-SCOPE.md records incoming files/commits, and TASKS.md adds disjoint C1–C3 reviews alongside R1–R3. Original 128-file incoming integration is now explicitly reviewed for code cleanup; completion/next-sweep baseline will be recorded after all tasks and final checks.
 
@@ -53,7 +53,7 @@ Android: BUILD SUCCESSFUL in 4m 13s; 2423 tests (1352 shared, 1067 common, 4 unc
 
 The old phone fixture had constructor, nested-vendor, synthetic timestamp and optional-before-first-stats assumptions. Corrected only its fixture/host: current constructors/BrowserOnly, nested files limited to host root, current future scheduled presentation under zero CarPlay raw cap, finite post-restart counter followed by 20 further frames. Updated current authenticated audio/video URL assertion while retaining no-Referer, other-path leakage/CSP and isolation checks. Production defaults, budgets and runtime assertions were not loosened.
 
-Verified owned idle Gradle and Kotlin compiler processes stopped. Removed only this session's temporary Playwright install, generated MP4, local assembled Pages tree, temporary init script and scratch logs; permanent test/result reports, caches and toolchain retained. All E2E services exited via their cleanup paths. Recovery stash retained until source push is confirmed.
+Verified owned idle Gradle and Kotlin compiler processes stopped. Removed only this session's temporary Playwright install, generated MP4, local assembled Pages tree, temporary init script and scratch logs; permanent test/result reports, caches and toolchain retained. All E2E services exited via their cleanup paths. Recovery stash was dropped after the source push was confirmed.
 
 ## Delivery steps
 
@@ -61,7 +61,11 @@ Verified owned idle Gradle and Kotlin compiler processes stopped. Removed only t
 2. Build: required Android debug outputs and existing Pages assembly passed; signed/release build skipped (no release change requested).
 3. Quick verify: complete; no production changes after final passing checks.
 4. Docs: README, scopes/results/TASKS and this record updated; handoff linked from AGENTS.md.
-5. Commit: pending.
-6. Merge: work to default main pending; delete work after verified merge.
-7. Push: normal origin/main push pending; never force.
-8. Deploy: existing Publish site path applies; await source commit's Pages run after push.
+5. Commit: `91430639a7c617934a4e7c778976360f7853140d` — Retire Bonjour trial and fix media retirement concurrency. Follow-up records only documentation/status; no source changes or repeated builds needed.
+6. Merge: created tracking default main, fast-forwarded 98d88d93 to verified 91430639, deleted merged work branch; no extra worktree.
+7. Push: normal origin/main push succeeded (98d88d93 → 91430639); no force push. This delivery-only documentation follow-up is pushed normally; its code tree is identical to the verified/deployed source.
+8. Deploy: automatic Publish site run https://github.com/uJZk/TiPlay/actions/runs/38404545585 completed successfully (build, assembly, artifact and deploy steps all success); published URL https://ujzk.github.io/TiPlay/ . Source Android Actions: https://github.com/uJZk/TiPlay/actions/runs/38404545720 . Local full CI passed; remote completion is not yet claimed.
+
+The final phone fixture progress check now waits for a finite decode sample before requiring 20 further frames; original timeouts remain. Current `/audio` and `/video` are the only allowed pairing-query routes, with no Referer, stats/nonce exposure, CSP or session-isolation violations. Final compiled-phone E2E passed all scenarios after these concrete fixes.
+
+Pages deployment is confirmed by its completed successful workflow, not an unverified live-content GET. Local site assembly and final browser/E2E checks covered the delivered asset tree. Permanent toolchain/caches retained; recovery stash dropped and working tree is clean after this documentation follow-up.

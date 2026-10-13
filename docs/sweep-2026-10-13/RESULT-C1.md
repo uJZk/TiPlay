@@ -29,3 +29,7 @@ No feature change, public-interface change, timeout change or new dependency. No
 ## Open decisions
 
 Incoming `AirPlayCastPlayer.browserVideo` is written on Android main but read via `player.state` from `AirPlayReceiverService.Listener.playback()` on receiver threads. The `AirPlayVideoPlayback.playback` value is volatile, but its enclosing `browserVideo` reference is not; the old player exposed a volatile state snapshot. This is a potential cross-thread visibility gap requiring a separate behavioral repair/review, not a mechanical cleanup. It was reported to the coordinator and left unchanged under rule 14.
+
+## Final integrated coordinator checks
+
+The final source commit 91430639 passed the complete Android task set: 1352 shared + 1067 common + 4 home = 2423 tests, zero failures/errors/skips, and all three lint/debug-build tasks. Final Node suite 113/113; fake-phone, compiled-phone and real Video.js MP4 Chromium E2Es all passed. Changed fixture constructors/root serving/synthetic schedule/restart-counter and current audio privacy contract are documented in D2/TIE-UP reports without production changes or relaxed thresholds. Source committed, merged and normally pushed; Pages deployment succeeded. See TIE-UP.md for delivery and remaining new static findings.

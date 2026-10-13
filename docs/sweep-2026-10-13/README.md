@@ -1,11 +1,11 @@
 # Code sweep 2026-10-13
 
-Status: complete — integrated main, three-risk repairs and post-merge/retired-code cleanup verified; delivery in progress in TIE-UP.md.
+Status: complete — integrated main, three-risk repairs and post-merge/retired-code cleanup verified; source committed/merged/pushed and Pages deployment successful; see TIE-UP.md.
 
 - Previous completed sweep: docs/sweep-2026-10-12.
 - Initial baseline: `477801f5e2fde2b48d064bcd06dc2df71f312514`.
 - Initial HEAD: `37e810ee339da79ed53dc106138c7a80ee6c0680`; integrated main: `98d88d93f17cc17742ef68d39c0f3b6306970d12`.
-- base-commit: `98d88d93f17cc17742ef68d39c0f3b6306970d12` (verified integrated HEAD before this delivery commit; update to source commit after committing).
+- base-commit: `91430639a7c617934a4e7c778976360f7853140d` (final verified source commit after integrated cleanup; next sweep excludes delivery-only documentation).
 - Initial working tree: clean. No commit, push, signing, release or deployment authorized.
 - Scope: SCOPE.md records files/touch counts/commits; HISTORY.txt and DIFFSTAT.txt retain history evidence.
 - Standards: STANDARDS.md, AGENTS.md and docs/UPSTREAM_SYNC.md.

@@ -25,3 +25,7 @@ Node 22.23.3: `node --test --experimental-test-isolation=none tests/web/airplay-
 ## Open decisions
 
 None introduced. Current timing and media behavior was retained; only exclusively retired browser support was removed.
+
+## Final integrated coordinator checks
+
+The final source commit 91430639 passed the complete Android task set: 1352 shared + 1067 common + 4 home = 2423 tests, zero failures/errors/skips, and all three lint/debug-build tasks. Final Node suite 113/113; fake-phone, compiled-phone and real Video.js MP4 Chromium E2Es all passed. Changed fixture constructors/root serving/synthetic schedule/restart-counter and current audio privacy contract are documented in D2/TIE-UP reports without production changes or relaxed thresholds. Source committed, merged and normally pushed; Pages deployment succeeded. See TIE-UP.md for delivery and remaining new static findings.
