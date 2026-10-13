@@ -98,8 +98,8 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       timer = setInterval(report, 400);
     } catch (_) {
       if (!abort.signal.aborted && state?.id === next.id) {
-        appliedRevision = next.revision;
-        send({ k: 'ap-state', id: next.id, revision: next.revision, duration: 0, position: 0,
+        appliedRevision = state.revision;
+        send({ k: 'ap-state', id: state.id, revision: state.revision, duration: 0, position: 0,
           playing: false, ready: false, buffering: false, seekable: false, failed: true });
       }
     }

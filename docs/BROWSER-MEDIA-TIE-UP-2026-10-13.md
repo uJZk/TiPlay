@@ -18,7 +18,15 @@
 
 已发布版本为 0.2.14-beta.1；本轮改为 0.2.14-beta.2／versionCode 34。签名 APK、精确源码 ZIP 和 SHA256 按现有 android-release.yml 工作流生成到 Release 草稿，不覆盖已发布附件。网页通过 pages.yml 部署，地址为 https://ujzk.github.io/TiPlay/。
 
-本轮实现提交为 1fc43f58；主分支整合已完成验证。下一步将精确合并提交推送至临时交付分支，运行签名 APK 草稿流程，然后推送 main 触发 Pages，完成后删除临时分支。结果将在本记录补充。
+本轮实现提交为 1fc43f58，主分支合并提交为 e6bb1a497347df00ebdad4e9b416bef25e79246f；work 本地分支已删除，本轮 Gradle 构建守护进程已停止。
+
+[签名与草稿工作流 38390036655](https://github.com/uJZk/TiPlay/actions/runs/38390036655) 的 release 和 draft 两个 job 均成功。签名输入、源码、上游身份、release lint／构建、APK／源码校验和附件上传检查均通过。[beta.2 Release 草稿](https://github.com/uJZk/TiPlay/releases/tag/untagged-ed9874c4a2861f3d95eb) 保持 prerelease draft，精确指向 e6bb1a49，附 APK、源码 ZIP 和 SHA256SUMS.txt 三项，不修改已发布 beta.1。
+
+APK SHA256：`b9b7034fe4e44897cc15bdfbb9a2a7b06ae00dd1f92ffa350dcffb38cdec1a5f`。源码 ZIP SHA256：`f8044e6a71aded5085f3bda41457860c3428ec8319ed430ef214e876edddbce0`。
+
+随后只修改网页资源打开失败的反馈版本，确保加载期间的新 pause／play 命令不使失败被视为旧状态。Node 22 114/114 和真实 Video.js E2E 均再次通过，包括该失败竞态。安卓源码和签名 APK 不受这项网页修改影响；APK 未打包网页。网页部署将使用包含该修复的后续提交。
+
+main 推送、Pages 部署和临时交付分支清理待补充。
 
 ## 下一步
 

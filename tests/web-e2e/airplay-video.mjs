@@ -9,6 +9,9 @@ const sample = process.env.TEST_VIDEO_MP4;
 if (!sample) throw new Error('Set TEST_VIDEO_MP4 to an ordinary playable MP4 fixture');
 const server = createServer((req, res) => {
   const path = req.url.split('?')[0];
+  if(path === '/airplay-resource' && new URL(req.url,'http://localhost').searchParams.get('r')==='broken') {
+    setTimeout(()=>{res.statusCode=502;res.end();},100);return;
+  }
   if (path === '/airplay-resource') { const data=readFileSync(sample); res.setHeader('Content-Type','video/mp4'); res.setHeader('Accept-Ranges','bytes'); const match=/bytes=(\d+)-(\d*)/.exec(req.headers.range??''); if(match){const start=+match[1],end=match[2]?+match[2]:data.length-1;res.statusCode=206;res.setHeader('Content-Range',`bytes ${start}-${end}/${data.length}`);res.end(data.subarray(start,end+1));}else res.end(data);return; }
   if (path === '/harness') {
     res.setHeader('Content-Type', 'text/html');
@@ -62,4 +65,10 @@ try {
   if(!muted.blocked || !muted.enforced || !muted.restored) throw new Error('Bluetooth route did not gate HTML video audio');
   await page.evaluate(()=>controls.update(null));
   if(await page.locator('.video-js').count()) throw new Error('Player not disposed');
+  await page.evaluate(()=>{
+    controls.update({id:2,resource:'broken',revision:0,seekRevision:0,target:0,fraction:false,playing:true});
+    controls.update({id:2,resource:'broken',revision:1,seekRevision:0,target:0,fraction:false,playing:false});
+  });
+  await page.waitForFunction(()=>events.some(event=>event.id===2&&event.revision===1&&event.failed));
+  await page.evaluate(()=>controls.update(null));
 } finally {await browser.close();await new Promise(r=>server.close(r));}
