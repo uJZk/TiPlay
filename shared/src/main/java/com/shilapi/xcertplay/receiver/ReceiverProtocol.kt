@@ -36,7 +36,7 @@ data class ReceiverConfig(val name: String, val deviceId: String, val identity: 
     )
 }
 
-data class ReceiverPlay(val url: String, val start: Double, val fraction: Boolean) {
+data class ReceiverPlay(val url: String, val start: Double, val fraction: Boolean, val iphoneHost: String? = null) {
     companion object {
         fun parse(request: RtspMessage.Request): ReceiverPlay {
             val binary = request.body.take(8).toByteArray().contentEquals("bplist00".toByteArray())
@@ -69,7 +69,7 @@ data class ReceiverPlayback(val duration: Double = 0.0, val position: Double = 0
     fun info(): Map<String, Any?> = mapOf(
         "duration" to duration, "position" to position, "rate" to rate, "readyToPlay" to ready,
         "playbackBufferEmpty" to (buffering && bufferedPosition <= position),
-        // Media3 does not expose buffer capacity. Claim full only when the entire remaining item is loaded.
+        // Claim full only when the entire remaining item is loaded.
         "playbackBufferFull" to (ready && duration > 0 && bufferedPosition >= duration),
         "playbackLikelyToKeepUp" to (ready && !buffering),
         "loadedTimeRanges" to if (bufferedPosition > position)

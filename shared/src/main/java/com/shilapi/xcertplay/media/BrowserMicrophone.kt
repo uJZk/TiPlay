@@ -9,13 +9,12 @@ import java.io.Closeable
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 
-/** Browser capture supplies echo-cancelled mono PCM; Android only encodes and seals the uplink. */
-internal class BrowserMicrophone(private val config: MicrophoneConfig) : Closeable {
+/** Packetizes mono capture PCM for the negotiated CarPlay uplink; no software AEC. */
+internal class BrowserMicrophone(private val config: MicrophoneConfig, private val counters: MicrophoneCounters = MicrophoneCounters()) : Closeable {
     val sampleRate: Int get() = if (config.codec == AudioCodecKind.OPUS) 48_000 else config.sampleRate
     init { require(config.channels == 1); require(config.codec in listOf(AudioCodecKind.OPUS, AudioCodecKind.LPCM)) }
     private val socket = DatagramSocket()
     private val encoder = if (config.codec == AudioCodecKind.OPUS) OpusEncoder(config.bitrate ?: 48_000) else null
-    private val counters = MicrophoneCounters()
     private var pending = ByteArray(0)
     private var closed = false
     private var uploadedBytes = 0L

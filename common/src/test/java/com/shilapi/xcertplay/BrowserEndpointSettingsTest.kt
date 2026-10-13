@@ -83,7 +83,7 @@ class BrowserEndpointSettingsTest {
         assertTrue(TeslaBrowserLink.awaitIdle())
         assertEquals(TeslaBrowserLink.State.Listening(second), TeslaBrowserLink.state)
         assertEquals(code, TeslaBrowserLink.pairingCode(context))
-        ServerSocket(first).use { assertTrue(it.isBound) }
+        ServerSocket().apply { reuseAddress = true; bind(java.net.InetSocketAddress(first)) }.use { assertTrue(it.isBound) }
         Socket("127.0.0.1", second).use { socket ->
             socket.soTimeout = 3000
             socket.getOutputStream().write("GET /hello HTTP/1.1\r\nHost: 127.0.0.1:$second\r\nConnection: close\r\n\r\n".toByteArray())

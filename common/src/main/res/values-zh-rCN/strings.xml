@@ -575,7 +575,7 @@
     <string name="adb_cluster_routed">仪表窗口已移动，等待 iPhone 地图</string>
     <string name="adb_cluster_route_failed">仪表启动失败，请导出诊断。</string>
     <string name="open_diplay_settings_hint">CarPlay 中用 %1$d 指下滑打开 TiPlay 设置。</string>
-    <string name="carplay_controls">CarPlay 操作</string>
+    <string name="carplay_controls">CarPlay</string>
     <string name="settings_gesture_fingers">打开设置 · %1$d 指下滑（点按切换）</string>
     <string name="settings_gesture_fingers_label">打开设置 · 下滑手指数</string>
     <string name="settings_gesture_fingers_option">%1$d 指</string>
@@ -697,10 +697,10 @@
     <string name="settings_external_ap_check">本机未连接目标 Wi-Fi。</string>
     <string name="settings_android_address">安卓地址：%1$s</string>
     <string name="settings_main_stopping">正在断开连接…</string>
-    <string name="settings_airplay_title">AirPlay（实验性）</string>
+    <string name="settings_airplay_title">AirPlay</string>
     <string name="settings_airplay_listening">等待 iPhone · TiPlay</string>
     <string name="settings_airplay_disable">禁用 AirPlay</string>
-    <string name="settings_airplay_disable_description">立即生效。AirPlay 默认开启。打开此开关会停止 AirPlay 并恢复仍连接的 CarPlay 画面；关闭此开关会重新启用接收器。</string>
+    <string name="settings_airplay_disable_description"></string>
     <string name="settings_disable_carplay_audio">禁用 CarPlay 音频</string>
-    <string name="settings_disable_carplay_audio_description">音乐、导航、电话和 Siri 均使用 iPhone 与车机的蓝牙连接。请先将 iPhone 连接到车机蓝牙。更改后会重新连接 CarPlay。</string>
+    <string name="settings_disable_carplay_audio_description"></string>
 </resources>

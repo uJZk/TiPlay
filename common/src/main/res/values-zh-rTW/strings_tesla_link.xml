@@ -18,5 +18,5 @@
     <string name="settings_browser_link_other">其他瀏覽器（如 Safari、Firefox）：在連上本機熱點的裝置上開啟此連結：</string>
     <string name="settings_browser_link_copy">複製連結</string>
     <string name="settings_browser_link_copied">已複製連結</string>
-    <string name="settings_browser_android_address">Android 端位址：</string>
+    <string name="settings_browser_android_address">熱點位址：</string>
 </resources>

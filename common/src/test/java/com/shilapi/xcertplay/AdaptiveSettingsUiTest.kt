@@ -393,7 +393,7 @@ class AdaptiveSettingsUiTest {
                 CarPlaySettingsNavigation.pageIntent(context, SettingsCategory.ADVANCED)))
         val browserAdvanced = texts(screen).map { it.text.toString() }.toList()
         assertTrue(text(R.string.settings_disable_carplay_audio) in browserAdvanced)
-        assertTrue(text(R.string.main_buffered_audio) in browserAdvanced)
+        assertFalse(text(R.string.main_buffered_audio) in browserAdvanced)
         assertTrue(browserAdvanced.any { it.startsWith(text(R.string.frame_rate) + " · ") })
         assertTrue(text(R.string.settings_browser_hevc_title) in browserAdvanced)
         assertTrue(text(R.string.right_hand_drive) in browserAdvanced)
@@ -453,13 +453,10 @@ class AdaptiveSettingsUiTest {
             CarPlaySettingsNavigation.pageIntent(context, SettingsCategory.ADVANCED)).setup().get().also { activity = it }
         val controls = descendants(screen.window.decorView).filterIsInstance<Switch>().toList()
         val disable = controls.single { it.contentDescription == screen.getString(R.string.settings_disable_carplay_audio) }
-        val buffered = controls.single { it.contentDescription == screen.getString(R.string.main_buffered_audio) }
+        assertFalse(controls.any { it.contentDescription == screen.getString(R.string.main_buffered_audio) })
         assertFalse(disable.isChecked)
-        assertFalse(buffered.isChecked)
         disable.performClick()
-        buffered.performClick()
         assertTrue(BrowserCarPlayAudioSettings.disabled(context))
-        assertTrue(AirPlayPersistence.loadMainBufferedAudio(context))
         assertFalse(CarPlayBackgroundSession.hasSession())
         assertEquals(null, shadowOf(screen).nextStartedActivity)
     }

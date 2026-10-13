@@ -3,6 +3,8 @@ package com.shilapi.xcertplay.media
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.util.Log
+import android.os.Handler
+import android.os.Looper
 import com.shilapi.xcertplay.airplay.*
 import com.shilapi.xcertplay.web.WebAudioHub
 import java.io.Closeable
@@ -11,13 +13,24 @@ import java.nio.ByteOrder
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 
-/** Decodes on bounded workers, without AudioTrack or AudioRecord. The car browser owns playback/capture. */
-class BrowserAudioMediaSink(private val video: MediaSink, private val hub: WebAudioHub, initiallyPaused: Boolean = false) : MediaSink by video, Closeable {
+/** Bounded decoding: browser playback when idle, verified Android HFP duplex during microphone demand. */
+class BrowserAudioMediaSink(
+    private val video: MediaSink,
+    private val hub: WebAudioHub,
+    initiallyPaused: Boolean = false,
+    private val voiceFactory: BluetoothVoiceFactory? = null,
+) : MediaSink by video, Closeable {
     private val renderers = mutableMapOf<AudioStreamId, Decoder>()
-    private var microphone: BrowserMicrophone? = null
+    private val microphoneDemands = linkedMapOf<AudioStreamId, MicrophoneConfig>()
     private var microphoneId: AudioStreamId? = null
-    private var closed = false
+    private var voice: BluetoothVoiceChannel? = null
+    @Volatile private var closed = false
     @Volatile private var paused = initiallyPaused
+    @Volatile private var voiceMuted = false
+    @Volatile private var voiceActive = false
+    @Volatile private var routeEpoch = 0
+    private val routeHandler = Handler(Looper.getMainLooper())
+    private val routeRetry = Runnable { synchronized(this) { if (!closed && !paused && microphoneDemands.isNotEmpty()) selectMicrophone(force = true) } }
 
     init { if (!paused) hub.begin(this) }
 
@@ -28,6 +41,7 @@ class BrowserAudioMediaSink(private val video: MediaSink, private val hub: WebAu
     }
 
     override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {
+        if (paused || (voiceMuted && !BluetoothVoicePolicy.allowed(id))) return
         val renderer = synchronized(this) { if (closed) null else renderers[id] } ?: return
         renderer.offer(rtp, sample)
     }
@@ -38,54 +52,111 @@ class BrowserAudioMediaSink(private val video: MediaSink, private val hub: WebAu
 
     @Synchronized override fun onAudioStopped(id: AudioStreamId) {
         renderers.remove(id)?.close()
+        voice?.clear(id)
         hub.flush(this, semanticType(id))
     }
 
-    @Synchronized fun pauseAudio() { paused = true; hub.end(this) }
+    @Synchronized fun pauseAudio() {
+        paused = true
+        microphoneId = null
+        stopVoice()
+        hub.end(this)
+        resetDecoders()
+    }
 
     @Synchronized fun resumeAudio() {
         if (closed || !paused) return
         paused = false
+        resetDecoders()
         hub.begin(this)
-        microphone?.let { capture -> hub.microphone(this, capture.sampleRate) { capture.accept(it) } }
+        selectMicrophone()
     }
 
     @Synchronized override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) {
         if (closed) return
-        microphone?.close()
-        microphone = null
-        microphoneId = null
-        hub.microphone(this, 0, null)
-        val capture = try { BrowserMicrophone(config) } catch (error: Exception) {
-            Log.w("tiplay-microphone", "browser microphone start failed codec=${config.codec} error=${error.javaClass.simpleName}")
-            return
-        }
-        microphone = capture
-        microphoneId = id
-        hub.microphone(this, capture.sampleRate) { capture.accept(it) }
+        microphoneDemands[id] = config
+        if (!paused) selectMicrophone(force = microphoneId == id)
     }
 
     @Synchronized override fun onMicrophoneStopped(id: AudioStreamId) {
-        if (microphoneId != id) return
-        hub.microphone(this, 0, null)
-        microphone?.close()
-        microphone = null
-        microphoneId = null
+        microphoneDemands.remove(id)
+        if (!paused) selectMicrophone()
+    }
+
+    private fun selectMicrophone(force: Boolean = false) {
+        // A call takes priority over a simultaneous assistant demand; ending one never ends the other.
+        val entry = microphoneDemands.entries.lastOrNull { it.key.audioType.equals("telephony", true) }
+            ?: microphoneDemands.entries.lastOrNull()
+        if (!force && microphoneId == entry?.key) return
+        microphoneId = entry?.key
+        if (entry == null) { stopVoice(); return }
+        voiceMuted = true; voiceActive = false
+        resetDecoders()
+        if (!hub.voiceRoute(this, "connecting", true)) {
+            // Reconnect can create the next tap before the previous tap has actually released SCO.
+            routeHandler.removeCallbacks(routeRetry)
+            routeHandler.postDelayed(routeRetry, 100)
+            return
+        }
+        routeHandler.removeCallbacks(routeRetry)
+        val factory = voiceFactory
+        if (factory == null) { hub.voiceRoute(this, "failed", true, "car-bluetooth-unavailable"); return }
+        try {
+            voice = voice ?: factory.create(::voiceState)
+            voice?.start(entry.value)
+        } catch (_: Exception) { voiceState(BluetoothVoiceState("failed", "bluetooth-start-failed", released = true)) }
+    }
+
+    private fun stopVoice() {
+        routeHandler.removeCallbacks(routeRetry)
+        resetDecoders()
+        voiceActive = false
+        if (voice == null) {
+            voiceMuted = false
+            hub.voiceRoute(this, "idle", false)
+        } else {
+            voiceMuted = true
+            hub.voiceRoute(this, "releasing", true)
+            voice?.stop()
+        }
+    }
+
+    @Synchronized private fun voiceState(next: BluetoothVoiceState) {
+        val demanded = !closed && !paused && microphoneId != null
+        val muted = demanded || !next.released
+        val active = demanded && next.state == "active"
+        if (voiceMuted != muted || voiceActive != active) resetDecoders()
+        voiceMuted = muted; voiceActive = active
+        hub.voiceRoute(this, if (demanded || !next.released) next.state else "idle", muted,
+            next.error.takeIf { demanded || !next.released })
+    }
+
+    /** Retire workers and codec input/output, not just transport queues; in-flight PCM belongs to the old route. */
+    private fun resetDecoders() {
+        routeEpoch++
+        val previous = renderers.toMap()
+        renderers.clear()
+        previous.forEach { (id, decoder) ->
+            decoder.close()
+            if (!closed) renderers[id] = Decoder(id, decoder.format, decoder.timeline)
+        }
     }
 
     @Synchronized override fun close() {
         if (closed) return
         closed = true
+        routeHandler.removeCallbacks(routeRetry)
+        microphoneDemands.clear(); microphoneId = null
+        voiceActive = false
+        voice?.close()
+        if (voice == null) hub.voiceRoute(this, "idle", false)
         hub.end(this)
-        microphone?.close()
-        microphone = null
-        renderers.values.forEach { it.close() }
-        renderers.clear()
+        resetDecoders()
     }
 
-    private inner class Decoder(val id: AudioStreamId, val format: AudioFormat) : Closeable {
+    private inner class Decoder(val id: AudioStreamId, val format: AudioFormat, val timeline: RtpAudioTimeline = RtpAudioTimeline(format.sampleRate)) : Closeable {
+        private val epoch = routeEpoch
         private val packets = ArrayBlockingQueue<Pair<ByteArray, Int>>(24)
-        val timeline = RtpAudioTimeline(format.sampleRate)
         private val order = AudioPacketOrder<Pair<ByteArray, Int>>()
         @Volatile private var running = true
         private var reset = true
@@ -173,7 +244,11 @@ class BrowserAudioMediaSink(private val video: MediaSink, private val hub: WebAu
         }
 
         @Synchronized private fun send(pcm: ByteArray, presentationNanos: Long?) {
-            if (!running || paused) return
+            if (!running || paused || epoch != routeEpoch) return
+            if (voiceMuted) {
+                if (voiceActive && BluetoothVoicePolicy.allowed(id)) voice?.play(id, outputRate, outputChannels, pcm)
+                return
+            }
             val type = semanticType(id)
             hub.publish(this@BrowserAudioMediaSink, type, outputRate, outputChannels, pcm, buffered = id.type == 103, reset = reset,
                 presentationNanos = presentationNanos)

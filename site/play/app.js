@@ -15,7 +15,6 @@ import { followAppearance } from './appearance.js';
 import { createReconnectOverlay } from './reconnect.js';
 import { pumpChunkStream } from './transport.js';
 import { formatDebugFps } from './fps-window.js';
-import { formatPresentation } from './presentation-debug.js';
 import { sampleClock } from './clock-sync.js';
 import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from './media-timing.js';
 import { createBrowserAudio } from './audio.js';
@@ -33,8 +32,6 @@ const STRINGS = {
     connect: 'Connect',
     disconnect: 'Disconnect',
     settings: 'Setting',
-    fullscreen: 'Full screen',
-    exitFullscreen: 'Exit full screen',
     stats: 'Debug',
     fit: 'Apply and reconnect',
     fitPending: 'Reconnecting…',
@@ -70,8 +67,6 @@ const STRINGS = {
     connect: '连接',
     disconnect: '断开',
     settings: '设置',
-    fullscreen: '全屏',
-    exitFullscreen: '退出全屏',
     stats: 'Debug',
     fit: '应用并重新连接',
     fitPending: '正在重新连接…',
@@ -139,7 +134,7 @@ const slots = createTouchSlots();
 let session = null, active = false, phase = 'ready', notice = null;
 let attempt = 0, reconnects = 0, retryTimer = null, retryAt = 0, streamId = 0, videoAbort = null, lastError = null;
 let retryCountdownTimer = null;
-let config = null, live = false, status = null, unsupported = null, videoStats = {}, latestPresentation = null;
+let config = null, live = false, status = null, unsupported = null, videoStats = {};
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 const appearance = window.matchMedia('(prefers-color-scheme: dark)');
 const reportAppearance = followAppearance(appearance, () => outbox);
@@ -150,15 +145,15 @@ const browserAudio = createBrowserAudio({
   onQueued: () => mediaTiming.started(),
   fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }),
   onState(state) {
-    $('audio-message').textContent = state.error ? (lang === 'zh' ? '声音或麦克风不可用，请检查浏览器权限或重新连接。' : 'Sound or microphone unavailable. Check browser permissions or reconnect.') : '';
+    airplayControls.audioMuted(state.browserMuted);
   },
 });
-browserAudio.start();
 // Pairing, touching CarPlay and using page controls already provide activation.
-// Resume here without requiring a separate audio permission button.
+// Resume playback on ordinary page gestures when autoplay is restricted.
 document.addEventListener('pointerdown', () => browserAudio.gesture(), { capture: true, passive: true });
 document.addEventListener('keydown', () => browserAudio.gesture(), { capture: true });
-const airplayControls = createAirPlayControls($('stage'), event => outbox?.push(event), lang);
+const airplayControls = createAirPlayControls($('stage'), event => outbox?.push(event), lang, { fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }), host: () => link.host });
+browserAudio.start();
 let movePending = false, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
 let statsVisible = false;
 try { statsVisible = localStorage.getItem(STATS_KEY) === '1'; } catch (_) {}
@@ -236,7 +231,7 @@ async function setUpVideo() {
       const offscreen = canvas.transferControlToOffscreen();
       worker.postMessage({ type: 'canvas', canvas: offscreen }, [offscreen]);
     } else {
-      presenter = (await import('./video.js')).createFramePresenter(canvas, { applyTimingPolicy: true, onPresentation: recordPresentation });
+      presenter = (await import('./video.js')).createFramePresenter(canvas, { applyTimingPolicy: true });
     }
     worker.onmessage = ({ data }) => {
       if (data.type === 'frame') {
@@ -273,7 +268,7 @@ async function setUpVideo() {
     };
   } else if (path.decode === 'main') {
     const { createDecoderPipeline, createFramePresenter } = await import('./video.js');
-    const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, onPresentation: recordPresentation });
+    const presenter = createFramePresenter(canvas, { applyTimingPolicy: true });
     const frames = createTimedFrames((frame, config, id, timing) => presenter.present(frame, config, timing), {
       observe(source, ready) { mediaTiming.observe('video', source, ready); },
     });
@@ -362,6 +357,7 @@ function stop(key = null, ...args) {
   notice = key ? { key, args } : null;
   active = false;
   browserAudio.stop();
+  airplayControls.update(null);
   phase = 'ready';
   streamId++;
   clearTimeout(retryTimer);
@@ -542,17 +538,14 @@ function onVideoMessage(message) {
     sink?.ready?.(message.token, mediaTiming.plan());
     return;
   }
-  if (message.type === 'presentation') { recordPresentation(message.sample); return; }
   if (message.type === 'alive' && message.id === streamId) attempt = 0;
   else if (message.type === 'config') {
-    if (config?.epoch !== message.config.epoch) latestPresentation = null;
     mediaTiming.mode(message.config.mode);
     // Audio has its own ordered per-type reset/epoch. Its HTTP response may deliver
     // the new producer's PCM before this config, so video cannot clear that audio.
     config = message.config;
     unsupported = null;
   } else if (message.type === 'idle') {
-    latestPresentation = null;
     config = null;
     live = false;
     unsupported = null;
@@ -581,7 +574,7 @@ function render() {
   $('message').textContent = !active && notice && notice.key !== 'stopped' ? t(notice.key, ...notice.args) : '';
   $('status').textContent = text;
   $('status').hidden = Boolean($('message').textContent);
-  renderReconnect({ active, live, phase, pending: fitRequestedAt > 0, text });
+  renderReconnect({ active, live: live || airplayControls.videoActive(), phase: airplayControls.videoActive() ? 'waiting' : phase, pending: !airplayControls.videoActive() && fitRequestedAt > 0, text });
   $('connect').textContent = t(active ? 'resume' : 'connect');
   $('code').disabled = active;
   $('host').disabled = active;
@@ -591,12 +584,8 @@ function render() {
   }
 }
 
-function recordPresentation(sample) {
-  latestPresentation = sample;
-  if (active && statsVisible) renderStats();
-}
 function renderStats() {
-  $('stats').textContent = `${formatDebugFps(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats)}\n${formatPresentation(latestPresentation, lang)}`;
+  $('stats').textContent = formatDebugFps(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats);
 }
 
 function statusText() {
@@ -626,6 +615,7 @@ function pageStats() {
 /** Full diagnostics remain available to tools; never include the pairing code or the session id. */
 function snapshot() {
   const { phone = null, ...rest } = status ?? {};
+  if (rest.airplay) { const { directUrl, ...airplay } = rest.airplay; rest.airplay = airplay; }
   return { page: pageStats(), status: status ? rest : null, phone };
 }
 Object.defineProperty(window, 'tiplayStats', { configurable: true, get: () => JSON.parse(JSON.stringify(snapshot())) });

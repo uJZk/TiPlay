@@ -10,9 +10,9 @@
     <string name="settings_hotspot_method_vpn">VPN</string>
     <string name="settings_hotspot_method_shizuku">Shizuku</string>
     <string name="settings_hotspot_method_normal_description">Para otros navegadores de coches, o si la dirección ya está en 169.254.0.0/16 o 100.64.0.0/10.</string>
-    <string name="settings_hotspot_method_root_description">Requiere root. Añade %1$s al punto de acceso y restaura la dirección al reiniciarlo. Permite leer sus credenciales e intenta activar la confirmación automática de los diálogos USB de TiPlay. El sistema puede impedir estas operaciones.</string>
+    <string name="settings_hotspot_method_root_description">Root · %1$s</string>
     <string name="settings_hotspot_method_vpn_description">Sin root. Mantiene %1$s en una VPN que solo usa TiPlay, así que no afecta a otras apps. Android pide una vez permiso para la VPN, y no puede haber otra VPN activa a la vez. Se aplica al instante; no hace falta reconectar.</string>
-    <string name="settings_hotspot_method_shizuku_description">Requiere Shizuku activo y autorizado. Intenta añadir %1$s al punto de acceso y conceder acceso USB a TiPlay; el sistema puede impedirlo. Introduce el nombre y la contraseña del punto de acceso manualmente. La dirección permanece hasta reiniciar el punto de acceso. Reinicia Shizuku tras reiniciar el teléfono.</string>
+    <string name="settings_hotspot_method_shizuku_description">Shizuku · %1$s</string>
     <string name="settings_hotspot_extra_address_value">Dirección</string>
     <string name="settings_hotspot_extra_address_value_hint">Root/Shizuku: 169.254.0.0/16 o 100.64.0.0/10. VPN: solo 169.254.0.0/16. Déjalo vacío para usar 169.254.111.111. Se aplica al instante.</string>
     <string name="settings_hotspot_extra_address_invalid">Introduce una dirección dentro de 100.64.0.0/10 o 169.254.0.0/16, por ejemplo 169.254.111.111.</string>

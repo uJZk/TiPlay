@@ -2,7 +2,7 @@
 import { History, listen, closeServer } from './resources.mjs';
 // End-to-end check of site/play against the fake phone in headless Chromium. Not part of CI; see README.md.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -20,7 +20,7 @@ const PLAY = fileURLToPath(new URL('../../site/play/', import.meta.url));
 // beside it in download/.
 const PAGE_PATH = '/nested/deeper/';
 const DOWNLOAD_PATH = `${PAGE_PATH}download/`;
-const DEFAULT_HOST = '100.109.220.253:8080';
+import { DEFAULT_HOST } from '../../site/play/link.js';
 const CHROMIUM = process.env.CHROMIUM ?? ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find(existsSync);
 const FFMPEG = process.env.FFMPEG ?? 'ffmpeg';
 
@@ -120,7 +120,7 @@ async function encodeInBrowser(context, origin) {
 
 
 function startPageServer() {
-  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
+  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.wasm': 'application/wasm' };
   const server = createServer((req, res) => {
     const path = new URL(req.url, 'http://page').pathname;
     if (path === '/blank') return res.writeHead(200, { 'Content-Type': 'text/html' }).end('<!doctype html><title>blank</title>');
@@ -130,7 +130,7 @@ function startPageServer() {
     }
     if (path === `${DOWNLOAD_PATH}assets/site.css`) return res.writeHead(200, { 'Content-Type': 'text/css' }).end('body { color: rgb(1, 2, 3); }');
     const name = path === PAGE_PATH ? 'index.html' : path.startsWith(PAGE_PATH) ? path.slice(PAGE_PATH.length) : null;
-    if (!name || name.includes('/') || !existsSync(join(PLAY, name))) return res.writeHead(404).end();
+    if (!name || name.split('/').some(part => part === '..' || part === '.') || !existsSync(join(PLAY, name)) || !statSync(join(PLAY, name)).isFile()) return res.writeHead(404).end();
     res.writeHead(200, { 'Content-Type': types[extname(name)] ?? 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(readFileSync(join(PLAY, name)));
   });
@@ -277,9 +277,9 @@ async function main() {
         inert: getComputedStyle(element).pointerEvents === 'none' };
     });
     const debugLines = debugLayout.text.split('\n');
-    check(debugLines[0].split(' · ').length === 4 && debugLines[1]?.includes('源预期') && debugLayout.text.includes('ms') &&
+    check(debugLines[0].split(' · ').length === 4 && debugLines.length === 1 && !debugLayout.text.includes('源预期') && debugLayout.text.includes('ms') &&
       Math.abs(debugLayout.x - 500) < 1 && debugLayout.y <= 16 && debugLayout.inert,
-      'Debug has presentation statistics and per-frame recording times centered above CarPlay without intercepting touches');
+      'Debug has four presentation statistics centered above CarPlay without recording times or intercepted touches');
     check(phone.videoCount === streamsAtPortal, 'returning to CarPlay keeps the same video connection');
     phone.requestPortal();
     await page.waitForSelector('#panel:not([hidden])');
@@ -392,7 +392,7 @@ async function main() {
     const shortState = () => shortPage.evaluate(() => ({
       search: location.search, hash: location.hash, host: JSON.parse(localStorage.getItem('tiplay.link'))?.host,
     }));
-    await shortPage.goto(`${publicOrigin}${PAGE_PATH}?t=100.109.220.253:8080#c=${CODE}`);
+    await shortPage.goto(`${publicOrigin}${PAGE_PATH}?t=${DEFAULT_HOST}#c=${CODE}`);
     let state = await shortState();
     check(state.search === '' && state.hash === '' && state.host === DEFAULT_HOST,
       `the default phone leaves just the page address in the address bar (${JSON.stringify(state)})`);
@@ -416,7 +416,7 @@ async function main() {
     check(/Another browser took over/.test(await page.textContent('#status')), 'the first page, replaced by the others, says so and stops');
 
     // The worker's scope is the site root, which also holds the download pages: it must leave them to the network.
-    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.evaluate(() => Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => setTimeout(() => reject(new Error('Service worker activation timed out')), 15000))]));
     const download = await context.newPage();
     const fromWorker = new History();
     download.on('response', response => { if (response.fromServiceWorker()) fromWorker.push(response.url()); });
@@ -427,8 +427,7 @@ async function main() {
       `the page's Service Worker controls the download page but answers none of its requests${fromWorker.length ? `: ${fromWorker.join(', ')}` : ''}`);
 
     // The cached page opens without the page server; the phone requests still reach the fake phone.
-    await new Promise(resolve => pageServer.close(resolve));
-    pageServer.closeAllConnections();
+    await closeServer(pageServer);
     const decodedOnline = eventsOf(phone, 'dec').length;
     await page.reload();
     await waitFor('decoding from the cached page', () => eventsOf(phone, 'dec').length > decodedOnline);

@@ -4,7 +4,7 @@
     <string name="settings_browser_advanced_summary">Frame rate, HEVC, vehicle controls, logs and diagnostic reports.</string>
     <string name="settings_browser_next_connection_hint">Changes apply immediately; CarPlay reconnects automatically when needed.</string>
     <string name="settings_browser_video">Video</string>
-    <string name="settings_browser_endpoint_hint">Address ranges: 169.254.0.0/16 / 100.64.0.0/10. Ports: 1024–65535, for example 169.254.111.111:8080. The connected browser updates its address automatically. If disconnected, enter the updated Android address on the page. Leave blank to use 169.254.111.111 (the saved port stays).</string>
+    <string name="settings_browser_endpoint_hint">169.254.0.0/16 or 100.64.0.0/10; port 1024–65535. Leave the address blank for the default.</string>
     <string name="settings_browser_endpoint_invalid">Enter an address in 169.254.0.0/16 / 100.64.0.0/10 and a port (1024–65535), for example 169.254.111.111:8080.</string>
     <string name="settings_browser_boot_hint">Open TiPlay when Android starts. Android or device settings may restrict background startup.</string>
 </resources>

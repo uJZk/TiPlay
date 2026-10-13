@@ -24,7 +24,6 @@ internal class AirPlayVideoSurfaceBridge(
     private val height: Int,
     private val ready: (Surface) -> Unit,
     private val failed: (Exception) -> Unit,
-    private val presentationTime: ((Long) -> Long?)? = null,
 ) : Closeable {
     private val thread = HandlerThread("tiplay-airplay-cast-surface").apply { start() }
     private val handler = Handler(thread.looper)
@@ -141,7 +140,7 @@ internal class AirPlayVideoSurfaceBridge(
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             check(GLES20.glGetError() == GLES20.GL_NO_ERROR)
             // Unknown metadata never substitutes a network/decoder arrival time for source timing.
-            val presentation = if (presentationTime == null) current.timestamp else presentationTime.invoke(current.timestamp) ?: return
+            val presentation = current.timestamp
             check(EGLExt.eglPresentationTimeANDROID(display, window, presentation))
             check(EGL14.eglSwapBuffers(display, window))
         } catch (error: Exception) {

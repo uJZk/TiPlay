@@ -45,7 +45,7 @@ internal object BrowserSettingsMenu {
             HotspotExtraAddressCard(activity, indexing = false, colors = colors(activity),
                 note = { note(activity, it) },
                 settingRow = { target, text, click -> button(target, text, click); Unit },
-                actionButton = ::button, rerender = onMethodChanged ?: ::render,
+                actionButton = ::button, rerender = onMethodChanged ?: ::render, showEndpoint = false,
             ).build(rows)
             // Put the method chooser before status/explanation lines.
             val chooser = (0 until rows.childCount).map(rows::getChildAt).firstOrNull { it is Button }
@@ -70,7 +70,7 @@ internal object BrowserSettingsMenu {
                 note = { note(activity, it) },
                 settingRow = { target, text, click -> button(target, text, click); Unit },
                 actionRow = { target, text, click -> button(target, text, click); Unit },
-                requestLocalNetwork = requestLocalNetwork, rerender = ::render,
+                requestLocalNetwork = requestLocalNetwork, rerender = ::render, compactEndpoint = true,
             ).build(rows)
         }
         render()

@@ -10,6 +10,8 @@ import com.shilapi.xcertplay.airplay.AirPlayKnobState
 import com.shilapi.xcertplay.airplay.MediaSink
 import com.shilapi.xcertplay.media.BrowserOnlyMediaSink
 import com.shilapi.xcertplay.media.BrowserAudioMediaSink
+import com.shilapi.xcertplay.media.AndroidBluetoothVoiceChannel
+import com.shilapi.xcertplay.media.BluetoothVoiceFactory
 import com.shilapi.xcertplay.web.WebAudioHub
 import com.shilapi.xcertplay.web.BrowserLinkServer
 import com.shilapi.xcertplay.web.BrowserLinkStatus
@@ -140,7 +142,7 @@ internal object TeslaBrowserLink {
 
     fun resumeCarPlayDisplay() = synchronized(taps) {
         // A stale receiver status or a concurrent CarPlay start must not revoke a live mirror.
-        if (hub.hasAirPlayDisplay()) return@synchronized
+        if (hub.hasAirPlayDisplay() || com.shilapi.xcertplay.web.AirPlayBrowserPlayback.snapshot()?.get("resource") != null) return@synchronized
         carPlayDisplayPaused = false
         audioHub.enabled = app?.let { !BrowserCarPlayAudioSettings.disabled(it) } ?: true
         CarPlayBackgroundSession.snapshot()?.sink?.let { audioTaps[it]?.resumeAudio() }
@@ -225,7 +227,8 @@ internal object TeslaBrowserLink {
             if (carPlayDisplayPaused) web.pauseDisplay()
             taps[sink] = web
             if (!carPlayDisplayPaused) audioHub.enabled = app?.let { !BrowserCarPlayAudioSettings.disabled(it) } ?: true
-            val audio = BrowserAudioMediaSink(web, audioHub, initiallyPaused = carPlayDisplayPaused)
+            val audio = BrowserAudioMediaSink(web, audioHub, initiallyPaused = carPlayDisplayPaused,
+                voiceFactory = app?.let { context -> BluetoothVoiceFactory { state -> AndroidBluetoothVoiceChannel(context, state) } })
             audioTaps.put(sink, audio)?.close()
             BrowserOnlyMediaSink(sink, audio)
         }

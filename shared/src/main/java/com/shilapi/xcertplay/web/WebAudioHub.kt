@@ -10,27 +10,24 @@ import java.util.concurrent.TimeUnit
 class WebAudioHub {
     private var owner: Any? = null
     private var sequence = 0
+    private var voiceOwner: Any? = null
+    private var voiceRevision = 0
+    private var voiceMuted = false
+    private var voiceState = "idle"
+    private var voiceError: String? = null
     private val epochs = IntArray(5)
     private var subscription: Subscription? = null
-    private var microphoneHandler: ((ByteArray) -> Unit)? = null
-    private var microphoneRate = 0
-    private var microphoneUploads = 0L
-    private var microphoneBytes = 0L
-    private var microphoneRejected = 0L
-    private var microphoneFailures = 0L
-    private var microphonePeak = 0
     @Volatile var enabled = true
         set(value) = synchronized(this) {
             field = value
-            if (!value) { subscription?.close(); subscription = null; microphoneHandler = null; microphoneRate = 0 }
+            if (!value) { subscription?.close(); subscription = null }
         }
 
     @Synchronized fun begin(owner: Any) {
         this.owner = owner
         subscription?.clear()
         for (id in 0..4) flush(owner, id)
-        microphoneHandler = null
-        microphoneRate = 0
+        if (voiceRevision != 0) subscription?.let(::routeRecord)
     }
 
     @Synchronized fun end(owner: Any) {
@@ -38,8 +35,7 @@ class WebAudioHub {
         subscription?.clear()
         for (id in 0..4) flush(owner, id)
         this.owner = null
-        microphoneHandler = null
-        microphoneRate = 0
+        if (voiceRevision != 0) subscription?.let(::routeRecord)
     }
 
     fun publish(owner: Any, id: Int, sampleRate: Int, channels: Int, pcm: ByteArray,
@@ -49,7 +45,7 @@ class WebAudioHub {
         if (id !in 0..4 || channels !in 1..2 || sampleRate !in 8000..96000 ||
             (pcm.isEmpty() && !reset) || pcm.size > MAX_PCM || pcm.size % (channels * 2) != 0) return
         val delivery = synchronized(this) {
-            if (!enabled || this.owner !== owner) return
+            if (!enabled || this.owner !== owner || (voiceMuted && pcm.isNotEmpty())) return
             val target = subscription ?: return
             if (reset) epochs[id]++
             Delivery(target, sequence++, target.generation, epochs[id])
@@ -64,23 +60,30 @@ class WebAudioHub {
 
     @Synchronized fun subscribe(): Subscription {
         subscription?.close()
-        return Subscription().also { subscription = it }
+        return Subscription().also { subscription = it; if (voiceRevision != 0) routeRecord(it) }
     }
 
-    @Synchronized fun microphone(owner: Any, sampleRate: Int, handler: ((ByteArray) -> Unit)?) {
-        if (this.owner !== owner) return
-        microphoneHandler = handler.takeIf { enabled && sampleRate in 8000..48000 }
-        microphoneRate = if (microphoneHandler == null) 0 else sampleRate
-        if (microphoneHandler != null) {
-            microphoneUploads = 0; microphoneBytes = 0; microphoneRejected = 0
-            microphoneFailures = 0; microphonePeak = 0
-        }
+    /** A separate route owner survives display/audio ownership changes until SCO is really released. */
+    @Synchronized fun voiceRoute(owner: Any, state: String, muted: Boolean, error: String? = null): Boolean {
+        if (voiceOwner != null && voiceOwner !== owner) return false
+        voiceOwner = owner.takeIf { muted }
+        voiceState = state; voiceError = error; voiceMuted = muted; voiceRevision++
+        subscription?.clear()
+        for (id in epochs.indices) epochs[id]++
+        subscription?.let(::routeRecord)
+        return true
     }
 
-    @Synchronized fun microphoneStatus(): Map<String, Any?> =
-        mapOf("active" to (enabled && microphoneHandler != null), "sampleRate" to microphoneRate,
-            "uploads" to microphoneUploads, "bytes" to microphoneBytes,
-            "rejected" to microphoneRejected, "failures" to microphoneFailures, "peak" to microphonePeak)
+    @Synchronized fun voiceStatus(): Map<String, Any?> = mapOf(
+        "source" to "bluetooth", "state" to voiceState, "muted" to voiceMuted,
+        "revision" to voiceRevision, "error" to voiceError)
+
+    private fun routeRecord(target: Subscription) {
+        val bytes = ByteBuffer.allocate(28).order(ByteOrder.BIG_ENDIAN)
+            .putInt(24).put(2).put(5).put(1).put((if (voiceMuted) 16 else 0).toByte())
+            .putInt(48000).putInt(sequence++).putInt(voiceRevision).putDouble(Double.NaN).array()
+        target.offer(bytes, false, target.generation)
+    }
 
     fun flush(owner: Any, id: Int) {
         synchronized(this) {
@@ -88,36 +91,6 @@ class WebAudioHub {
             subscription?.clearStream(id)
             publish(owner, id, 48000, 2, ByteArray(0), reset = true)
         }
-    }
-
-    /** A bounded batch of mono PCM uploads. No Android capture or playback device is accessed. */
-    fun acceptMicrophone(pcm: ByteArray): Boolean {
-        val handler = synchronized(this) {
-            val handler = microphoneHandler?.takeIf { enabled } ?: run { microphoneRejected++; return false }
-            if (pcm.isEmpty() || pcm.size % 2 != 0 || pcm.size > microphoneRate * 2 / 10) {
-                microphoneRejected++; return false
-            }
-            handler
-        }
-        try {
-            handler(pcm)
-        } catch (failure: Exception) {
-            synchronized(this) { if (microphoneHandler === handler) microphoneFailures++ }
-            throw failure
-        }
-        // Numerical diagnostics only; no microphone samples are retained or logged.
-        var peak = 0
-        for (offset in pcm.indices step 2) {
-            val sample = (pcm[offset].toInt() and 255) or (pcm[offset + 1].toInt() shl 8)
-            peak = maxOf(peak, kotlin.math.abs(sample))
-        }
-        synchronized(this) {
-            if (microphoneHandler === handler) {
-                microphoneUploads++; microphoneBytes += pcm.size
-                microphonePeak = maxOf(microphonePeak, peak)
-            }
-        }
-        return true
     }
 
     class Subscription internal constructor() : Closeable {

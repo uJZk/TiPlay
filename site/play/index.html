@@ -6,12 +6,15 @@
 <meta name="theme-color" content="#0c121c">
 <meta name="referrer" content="no-referrer">
 <!-- CSP host sources cannot express IP ranges, so connect-src allows the driver's HTTP phone address. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' http:; media-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' http: https:; media-src 'self' http: https: blob:; img-src 'self' data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>TiPlay</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="reconnect.css">
+<link rel="stylesheet" href="vendor/videojs/video-js.min.css">
 <link rel="stylesheet" href="airplay-controls.css">
+<script defer src="vendor/videojs/video.min.js"></script>
+<script defer src="vendor/videojs/zh-CN.js"></script>
 <script type="module" src="app.js"></script>
 </head>
 <body>
@@ -52,10 +55,7 @@
 <section id="stage" hidden>
 <canvas id="screen"></canvas>
 <div id="touch" aria-hidden="true"></div>
-<div id="audio-controls">
-<p id="audio-message" role="status" aria-live="polite" aria-atomic="true"></p>
-</div>
-<output id="stats" aria-label="Debug: codec, FPS, presentation statistics; drawn frame source expected time, submission time and offset" hidden></output>
+<output id="stats" aria-label="Debug: codec, FPS, presentation statistics" hidden></output>
 </section>
 </main>
 <section id="reconnect" aria-label="TiPlay" hidden>

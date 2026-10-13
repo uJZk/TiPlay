@@ -103,25 +103,6 @@ object RootShell {
         }
     }
 
-    /** Fixed, validated USB accessibility setup; preserve all other enabled services. */
-    fun enableUsbAutoConfirm(packageName: String): Result {
-        check(!onMainThread()) { "USB permission setup must not run on the main thread" }
-        return executeValidated(listOf("su"), usbAutoConfirmScript(packageName), DEFAULT_TIMEOUT_MILLIS)
-    }
-
-    internal fun usbAutoConfirmScript(packageName: String): String {
-        require(Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+").matches(packageName))
-        val service = "$packageName/com.shilapi.xcertplay.UsbAutoConfirmService"
-        val script = """current=${'$'}(settings get secure enabled_accessibility_services) || exit 1
-            case "${'$'}current" in null|"") current="";; esac
-            case "${'$'}current" in *[!a-zA-Z0-9_./:]* ) exit 1;; esac
-            case ":${'$'}current:" in *":$service:"*) ;; *)
-              if [ -n "${'$'}current" ]; then current="${'$'}current:$service"; else current="$service"; fi;; esac
-            settings put secure enabled_accessibility_services "${'$'}current" && settings put secure accessibility_enabled 1
-        """.trimIndent()
-        return script
-    }
-
     /** The text written to `su`: the script, then its exit status behind [EXIT_MARKER]. */
     internal fun wrap(script: String): String =
         "$script\nstatus=\$?\nprintf '\\n%s%s\\n' '$EXIT_MARKER' \"\$status\"\nexit\n"

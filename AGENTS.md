@@ -14,6 +14,14 @@ secret transfer and host ADB boundaries, are in [docs/WLSC.md](docs/WLSC.md).
 
 ## Current progress
 
+See `docs/BROWSER-MEDIA-TIE-UP-2026-10-13.md` for authorized cleanup, main integration,
+0.2.14-beta.2 delivery and Pages deployment status.
+
+See `docs/BROWSER-MEDIA-2026-10-13.md` for compact settings, mandatory buffered music,
+Video.js URL playback with authenticated resource proxying and direct iPhone resources,
+removed URL-video timing code, and demand-switched car HFP/SCO audio and capture
+with fixed navigation attenuation (no browser/software AEC).
+
 Browser permission and retry-countdown verification evidence and the local delivery handoff are in ignored
 `agent_docs/merge-all/HANDOFF.md`. Browser permission compatibility follows `docs/TESLA_BROWSER.md`.
 

@@ -42,3 +42,6 @@ release-signing.properties
 *.key
 *.apk
 *.aab
+
+# Local agent toolchains, build logs and scratch files
+/work/

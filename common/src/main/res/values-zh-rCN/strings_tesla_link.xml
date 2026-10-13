@@ -18,5 +18,5 @@
     <string name="settings_browser_link_other">其他浏览器（如 Safari、Firefox）：在连接本机热点的设备上打开此链接：</string>
     <string name="settings_browser_link_copy">复制链接</string>
     <string name="settings_browser_link_copied">已复制链接</string>
-    <string name="settings_browser_android_address">本机地址：</string>
+    <string name="settings_browser_android_address">热点地址：</string>
 </resources>

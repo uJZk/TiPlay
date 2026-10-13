@@ -35,41 +35,13 @@ export async function* readAudioRecords(body) {
       const header = new DataView(bytes.buffer);
       const channels = bytes[2], rate = header.getUint32(4);
       const headerSize = 24;
-      if (bytes[0] !== 2 || size < headerSize || (bytes[3] & 12) === 12 || channels < 1 || channels > 2 || rate < 8000 || rate > 96000 || (size - headerSize) % (channels * 2)) {
+      if (bytes[0] !== 2 || bytes[1] > 5 || (bytes[1] === 5 && size !== headerSize) || size < headerSize || (bytes[3] & 12) > 4 || channels < 1 || channels > 2 || rate < 8000 || rate > 96000 || (size - headerSize) % (channels * 2)) {
         throw new Error('invalid audio format');
       }
-      yield { type: bytes[1], channels, rate, flags: bytes[3], mode: ['carplay', 'airplay-mirror', 'airplay-video'][(bytes[3] & 12) >> 2], sequence: header.getUint32(8), epoch: header.getUint32(12), presentationMs: header.getFloat64(16), pcm: bytes.slice(headerSize).buffer };
+      yield { type: bytes[1], channels, rate, flags: bytes[3], mode: ['carplay', 'airplay-mirror'][(bytes[3] & 12) >> 2], sequence: header.getUint32(8), epoch: header.getUint32(12), presentationMs: header.getFloat64(16), pcm: bytes.slice(headerSize).buffer };
     }
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();
-  }
-}
-
-/** Streaming linear resampler; retains fractional position across capture quanta. */
-export class PcmCapture {
-  constructor(inputRate, outputRate, send) {
-    this.step = inputRate / outputRate;
-    this.position = 0; this.previous = 0;
-    this.packet = new Int16Array(Math.round(outputRate / 50));
-    this.used = 0; this.send = send;
-  }
-  push(input) {
-    while (this.position < input.length - 1) {
-      const i = Math.floor(this.position), fraction = this.position - i;
-      const a = i < 0 ? this.previous : input[i], b = input[i + 1];
-      const value = Math.max(-1, Math.min(1, a + (b - a) * fraction));
-      this.packet[this.used++] = Math.round(value * (value < 0 ? 32768 : 32767));
-      if (this.used === this.packet.length) {
-        const packet = this.packet;
-        // send transfers the buffer from the audio worklet, detaching packet.
-        // Allocate the successor while its length is still available.
-        this.packet = new Int16Array(packet.length); this.used = 0;
-        this.send(packet.buffer);
-      }
-      this.position += this.step;
-    }
-    this.position -= input.length;
-    this.previous = input[input.length - 1];
   }
 }

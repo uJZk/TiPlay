@@ -226,7 +226,7 @@ class BrowserLinkServer(
             "/hello" -> respond(output, request, json(200, WebDebugTiming.hello(System.nanoTime(), audio = audioHub != null)))
             "/video" -> streamVideo(request, socket, output)
             "/audio" -> streamAudio(request, socket, output)
-            "/microphone" -> respond(output, request, microphone(request))
+            "/airplay-resource" -> streamAirPlayResource(request, output)
             "/control" -> respond(output, request, control(request))
             else -> respond(output, request, bye(request))
         }
@@ -239,7 +239,7 @@ class BrowserLinkServer(
         }
         val headers = mutableListOf(
             "Access-Control-Allow-Methods" to "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers" to "Content-Type",
+            "Access-Control-Allow-Headers" to "Content-Type, Range",
             "Access-Control-Max-Age" to "600",
         )
         if (request.headers["access-control-request-private-network"].equals("true", ignoreCase = true)) {
@@ -333,15 +333,33 @@ class BrowserLinkServer(
         return false
     }
 
-    private fun microphone(request: Request): Response {
-        val hub = audioHub ?: return refuse(404, "unavailable")
-        val session = request.query["s"]?.takeIf(BrowserPairingGate::isSessionId) ?: return refuse(400, "bad-request")
-        synchronized(lock) {
-            admitLocked(request.query["c"], session)?.let { return it }
+    private fun streamAirPlayResource(request: Request, output: OutputStream): Boolean {
+        val session = request.query["s"]?.takeIf(BrowserPairingGate::isSessionId)
+            ?: return respond(output, request, refuse(400, "bad-request"))
+        synchronized(lock) { admitLocked(request.query["c"], session)?.let { return respond(output, request, it) } }
+        val id = request.query["id"]?.toLongOrNull() ?: return respond(output, request, refuse(400, "bad-request"))
+        val playback = AirPlayBrowserPlayback.video(id) ?: return respond(output, request, refuse(404, "not-found"))
+        val resourceId = request.query["r"] ?: return respond(output, request, refuse(400, "bad-request"))
+        playback.proxy.directResource(resourceId)?.let { direct ->
+            return respond(output, request, Response(307, headers = listOf("Location" to direct)))
         }
-        // Encoding and UDP writes must not hold the session/control lock.
-        return if (gate.current == session && hub.acceptMicrophone(request.body)) Response(204)
-            else refuse(409, "microphone-inactive")
+        val resource = try {
+            playback.proxy.open(resourceId, request.headers["range"]) { child ->
+                "/airplay-resource?id=$id&r=${AirPlayVideoProxy.query(child)}&c=${AirPlayVideoProxy.query(request.query["c"].orEmpty())}&s=${AirPlayVideoProxy.query(session)}"
+            }
+        } catch (_: Exception) { return respond(output, request, refuse(502, "media-unavailable")) }
+            ?: return respond(output, request, refuse(404, "not-found"))
+        resource.use {
+            output.write(head(it.status, request, it.headers + listOf("Content-Type" to it.type,
+                "Access-Control-Expose-Headers" to "Content-Type, Content-Length, Content-Range, Accept-Ranges", "Connection" to "close")))
+            val buffer = ByteArray(32 * 1024)
+            while (running.get() && gate.current == session && AirPlayBrowserPlayback.video(id) === playback) {
+                val count = it.body.read(buffer)
+                if (count < 0) break
+                output.write(buffer, 0, count)
+            }
+        }
+        return false
     }
 
     private fun control(request: Request): Response {
@@ -441,6 +459,10 @@ class BrowserLinkServer(
                 val stats = stats(fields["v"])
                 if (stats == null) performance.count("statsRejected") else callbacks.onBrowserStats(stats)
             }
+            "ap-state" -> {
+                val id = fields["id"].wholeNumber() ?: return
+                AirPlayBrowserPlayback.report(id, fields)
+            }
             "ap" -> {
                 val id = fields["id"].wholeNumber() ?: return
                 val action = fields["a"] as? String ?: return
@@ -491,7 +513,7 @@ class BrowserLinkServer(
             "portalRevision" to status.portalRevision,
             "endpoint" to status.endpoint,
             "audio" to (audioHub?.enabled == true),
-            "mic" to (audioHub?.microphoneStatus() ?: mapOf("active" to false, "sampleRate" to 0)),
+            "voice" to (audioHub?.voiceStatus() ?: mapOf("state" to "idle", "muted" to false, "revision" to 0)),
             "airplay" to AirPlayBrowserPlayback.snapshot(),
             "touch" to if (status.touchAvailable) "ok" else "unavailable",
             "phone" to status.phone + mapOf("video" to hub.snapshot(), "link" to performance.snapshot()),
@@ -681,7 +703,7 @@ class BrowserLinkServer(
         private const val TOKEN_CHARACTERS = "!#$%&'*+-.^_`|~"
         private val HEADER_NAME_PATTERN = Regex("[a-z0-9-]{1,48}")
         private val KEYS = setOf("home", "back", "siri")
-        private val ROUTES = mapOf("/hello" to "GET", "/video" to "GET", "/audio" to "GET", "/microphone" to "POST", "/control" to "POST", "/bye" to "POST")
+        private val ROUTES = mapOf("/airplay-resource" to "GET", "/hello" to "GET", "/video" to "GET", "/audio" to "GET", "/control" to "POST", "/bye" to "POST")
         private val RECORD_NAMES = mapOf(
             WebVideoRecords.KIND_CONFIG to "configRecords",
             WebVideoRecords.KIND_FRAME to "frameRecords",
@@ -690,7 +712,7 @@ class BrowserLinkServer(
             WebVideoRecords.KIND_IDLE to "idleRecords",
         )
         private val REASONS = mapOf(
-            200 to "OK", 204 to "No Content", 400 to "Bad Request", 401 to "Unauthorized", 404 to "Not Found",
+            200 to "OK", 206 to "Partial Content", 307 to "Temporary Redirect", 416 to "Range Not Satisfiable", 502 to "Bad Gateway", 204 to "No Content", 400 to "Bad Request", 401 to "Unauthorized", 404 to "Not Found",
             405 to "Method Not Allowed", 409 to "Conflict", 421 to "Misdirected Request", 429 to "Too Many Requests",
             503 to "Service Unavailable",
         )

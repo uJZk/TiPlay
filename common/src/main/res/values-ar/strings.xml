@@ -531,7 +531,7 @@
     <string name="turn_card_distance_km">%1$.1f كم</string>
     <string name="turn_card_exit">مخرج %1$d</string>
     <string name="open_diplay_settings_hint">في CarPlay، اسحب لأسفل بـ %1$d أصابع لفتح إعدادات TiPlay.</string>
-    <string name="carplay_controls">تحكم CarPlay</string>
+    <string name="carplay_controls">CarPlay</string>
     <string name="settings_gesture_fingers">فتح الإعدادات · سحب بـ %1$d أصابع (انقر للتبديل)</string>
     <string name="settings_gesture_fingers_label">فتح الإعدادات · عدد أصابع السحب لأسفل</string>
     <string name="settings_gesture_fingers_option">%1$d أصابع</string>
@@ -637,7 +637,7 @@
     <string name="settings_external_ap_check">هذا الجهاز غير متصل بشبكة Wi-Fi المطلوبة.</string>
     <string name="settings_android_address">عنوان Android: %1$s</string>
     <string name="settings_main_stopping">جارٍ قطع الاتصال…</string>
-    <string name="settings_airplay_title">AirPlay (تجريبي)</string>
+    <string name="settings_airplay_title">AirPlay</string>
     <string name="settings_airplay_listening">بانتظار iPhone · TiPlay</string>
     <string name="settings_airplay_disable">تعطيل AirPlay</string>
     <string name="settings_airplay_disable_description">يسري فورًا. AirPlay مفعّل افتراضيًا. يوقف هذا الخيار AirPlay ويعيد عرض CarPlay؛ إيقاف الخيار يعيد تشغيل المستقبل.</string>

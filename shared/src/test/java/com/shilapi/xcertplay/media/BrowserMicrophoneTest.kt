@@ -2,6 +2,7 @@ package com.shilapi.xcertplay.media
 
 import com.shilapi.xcertplay.airplay.AirPlayCrypto
 import com.shilapi.xcertplay.airplay.MicrophoneConfig
+import com.shilapi.xcertplay.airplay.MicrophoneCounters
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -14,7 +15,28 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], manifest = Config.NONE)
 class BrowserMicrophoneTest {
-    @Test fun partialBrowserUploadsBecomeAuthenticatedOrderedMicrophoneDatagrams() {
+    @Test fun resumingTheSameBluetoothDemandKeepsRtpCountersAndNeverReusesAnEncryptionNonce() {
+        val host = InetAddress.getLoopbackAddress()
+        DatagramSocket(0, host).use { receiver ->
+            receiver.soTimeout = 1000
+            val key = ByteArray(32) { it.toByte() }
+            val config = MicrophoneConfig("telephony", 16000, 1, 100, 20, host, receiver.localPort, key)
+            val counters = MicrophoneCounters()
+            repeat(2) { number ->
+                BrowserMicrophone(config, counters).use { it.accept(ByteArray(config.frameBytes)) }
+                val packet = DatagramPacket(ByteArray(4096), 4096)
+                receiver.receive(packet)
+                val wire = packet.data.copyOf(packet.length)
+                assertEquals(number, wire[3].toInt())
+                assertEquals(number.toLong(), java.nio.ByteBuffer.wrap(wire, wire.size - 8, 8).order(java.nio.ByteOrder.LITTLE_ENDIAN).long)
+                assertEquals(number * 320, java.nio.ByteBuffer.wrap(wire, 4, 4).int)
+                val nonce = ByteArray(12).also { wire.copyInto(it, 4, wire.size - 8, wire.size) }
+                assertEquals(config.frameBytes, AirPlayCrypto.chachaOpen(key, nonce,
+                    wire.copyOfRange(12, wire.size - 8), wire.copyOfRange(4, 12)).size)
+            }
+        }
+    }
+    @Test fun partialBluetoothCaptureReadsBecomeAuthenticatedOrderedMicrophoneDatagrams() {
         val host = InetAddress.getLoopbackAddress()
         DatagramSocket(0, host).use { receiver ->
             receiver.soTimeout = 1000

@@ -168,17 +168,10 @@ class BrowserLinkServerTest {
         }
     }
 
-    @Test fun microphoneRequiresPairingAndCurrentIPhoneDemand() {
-        audioHub.begin(owner)
-        var received = 0
-        audioHub.microphone(owner, 16000) { received += it.size }
-        assertEquals(401, post("/microphone?c=wrong&s=$session", "aa").status)
-        assertEquals(400, post("/microphone?c=$code", "aa").status)
-        assertEquals(204, post("/microphone?c=$code&s=$session", "aa").status)
-        assertEquals(2, received)
-        audioHub.microphone(owner, 0, null)
-        assertEquals(409, post("/microphone?c=$code&s=$session", "aa").status)
-        assertEquals(2, received)
+    @Test fun removedBrowserMicrophoneUploadEndpointAlwaysReturnsNotFound() {
+        assertEquals(404, post("/microphone?c=wrong&s=$session", "aa").status)
+        assertEquals(404, post("/microphone?c=$code&s=$session", "aa").status)
+        assertEquals(404, get("/microphone").status)
     }
 
     private fun beginStream() {
@@ -231,7 +224,7 @@ class BrowserLinkServerTest {
         }
         assertEquals(204, response.status)
         assertEquals("GET, POST, OPTIONS", response.headers["access-control-allow-methods"])
-        assertEquals("Content-Type", response.headers["access-control-allow-headers"])
+        assertEquals("Content-Type, Range", response.headers["access-control-allow-headers"])
         assertEquals("600", response.headers["access-control-max-age"])
         assertEquals("true", response.headers["access-control-allow-private-network"])
         assertEquals("0", response.headers["content-length"])
@@ -660,6 +653,27 @@ class BrowserLinkServerTest {
         repeat(20) { assertTrue(BrowserLinkServer(hub, callbacks, "127.0.0.1", port).start().isFailure) }
         val after = descriptors.list()!!.size
         assertTrue("descriptors grew from $before to $after", after - before < 5)
+    }
+
+    @Test fun airplayResourcesRequirePairingAndCannotOutliveTheirPlaybackId() {
+        val requests = AtomicInteger()
+        val playback = AirPlayVideoPlayback(com.shilapi.xcertplay.receiver.ReceiverPlay("mlhls://localhost/video", 0.0, false), {
+            requests.incrementAndGet()
+            com.shilapi.xcertplay.receiver.ReceiverResource(byteArrayOf(1, 2, 3), 200, null)
+        }) {}
+        val binding = AirPlayBrowserPlayback.register(playback::state, playback, playback::control)
+        try {
+            val id = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
+            val path = "/airplay-resource?id=$id&r=${playback.proxy.rootId}&s=$session"
+            assertEquals(401, get("$path&c=0000").status)
+            assertEquals(0, requests.get())
+            val response = get("$path&c=$code")
+            assertEquals(200, response.status)
+            assertArrayEquals(byteArrayOf(1, 2, 3), response.body)
+            binding.close()
+            assertEquals(404, get("$path&c=$code").status)
+            assertEquals(1, requests.get())
+        } finally { binding.close(); playback.close() }
     }
 
     @Test fun diagnosticsNeverCarryTheCodeTheSessionOrAddresses() {

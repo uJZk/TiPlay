@@ -49,6 +49,7 @@ internal class BrowserPermissionsPage(
             listOf(Manifest.permission.NEARBY_WIFI_DEVICES, Manifest.permission.BLUETOOTH_CONNECT))
         else if (Build.VERSION.SDK_INT >= 31) permission(R.string.nearby_devices,
             listOf(Manifest.permission.BLUETOOTH_CONNECT))
+        permission(R.string.settings_permission_microphone, listOf(Manifest.permission.RECORD_AUDIO))
         if (Build.VERSION.SDK_INT < 33) permission(R.string.settings_permission_location,
             listOf(Manifest.permission.ACCESS_FINE_LOCATION))
         if (Build.VERSION.SDK_INT >= 33) permission(R.string.settings_permission_notifications,

@@ -21,7 +21,7 @@ function assemble() {
 test('the page is the site root and the download pages are in download/', () => {
   const { out, done } = assemble();
   try {
-    for (const name of readdirSync(join(SITE, 'play'))) {
+    for (const name of readdirSync(join(SITE, 'play'), { recursive: true, withFileTypes: true }).filter(entry => entry.isFile()).map(entry => join(entry.parentPath, entry.name).slice(join(SITE, 'play').length + 1))) {
       assert.deepEqual(readFileSync(join(out, name)), readFileSync(join(SITE, 'play', name)), name);
     }
     for (const name of ['index.html', 'zh-Hans/index.html', 'assets/site.css']) {

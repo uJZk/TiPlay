@@ -35,6 +35,7 @@ class AirPlayReceiverService : Service() {
     private val locks by lazy { PhoneBrowserLocks(this) }
     private var multicast: WifiManager.MulticastLock? = null
     @Volatile private var server: ReceiverServer? = null // worker creates/closes; callbacks may read
+    private var settingsSubscription: AutoCloseable? = null
     private lateinit var player: AirPlayCastPlayer
     private val displayLock = Any()
     private var displayGeneration = 0L // guarded by displayLock
@@ -51,11 +52,27 @@ class AirPlayReceiverService : Service() {
         super.onCreate()
         unifiedTrial = UnifiedAirPlayEndpoint.current != null || UnifiedAirPlayTrialSettings.enabled(this)
         UnifiedAirPlayTrial.configure(unifiedTrial)
-        player = AirPlayCastPlayer(this, { url -> server?.loadResource(url) }) { state ->
-            server?.playbackEvent(if (state == "failed") "stopped" else state)
-            if (!destroyed && state in listOf("failed", "stopped")) {
-                worker.execute {
-                    if (!destroyed) {
+        settingsSubscription = BrowserSettingsChanges.listen(this) {
+            worker.execute {
+                if (!destroyed) server?.let { receiver ->
+                    val config = receiver.updateDisplay(AirPlayPersistence.loadFps(this), AirPlayPersistence.loadHevcEnabled(this))
+                    if (unifiedTrial) {
+                        UnifiedAirPlayTrial.install(receiver, config)
+                        sharedEntry?.addReceiver(receiver, config)
+                    }
+                    refreshDiscovery()
+                }
+            }
+        }
+        player = AirPlayCastPlayer({ url -> server?.loadResource(url) }) { state ->
+            val epoch = player.playbackEpoch
+            val ended = state in listOf("failed", "stopped")
+            if (!destroyed && ended) TeslaBrowserLink.resumeCarPlayDisplay()
+            if (!destroyed) worker.execute {
+                if (!destroyed && player.playbackEpoch == epoch) {
+                    // Reverse HTTP writes can block on the iPhone. Keep them off Android's UI thread.
+                    server?.playbackEvent(if (state == "failed") "stopped" else state)
+                    if (ended) {
                         server?.finishPlayback()
                         if (state == "failed") publish("playback-failed")
                     }
@@ -92,7 +109,8 @@ class AirPlayReceiverService : Service() {
                         displayGeneration++
                         mirrorAudio?.close(); mirrorAudio = null
                         TeslaBrowserLink.pauseCarPlayDisplay()
-                        WebMediaSink(TeslaBrowserLink.hub, receiverConfig.width, receiverConfig.height, receiverConfig.fps,
+                        val display = server?.displayConfig ?: receiverConfig
+                        WebMediaSink(TeslaBrowserLink.hub, display.width, display.height, display.fps,
                             com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY).also {
                             mirrorOutput = it
                             // Reserve ordinary AirPlay priority at SETUP, before its first CONFIG.
@@ -161,7 +179,7 @@ class AirPlayReceiverService : Service() {
                         Log.i("tiplay-airplay", it)
                     }
                 } else {
-                    discovery = ReceiverBonjour(receiverConfig, receiver.start())
+                    discovery = ReceiverBonjour(receiverConfig, receiver.start(), { receiver.displayConfig })
                     worker.scheduleWithFixedDelay(::refreshDiscovery, 0, 5, TimeUnit.SECONDS)
                 }
                 publish("listening")
@@ -177,7 +195,7 @@ class AirPlayReceiverService : Service() {
         if (unifiedTrial) {
             val shared = AirPlayPersistence.loadIdentity(this)
             return ReceiverConfig("TiPlay", DiPlayBootstrap.deviceId(shared), shared,
-                hevcEnabled = AirPlayPersistence.loadHevcEnabled(this))
+                fps = AirPlayPersistence.loadFps(this), hevcEnabled = AirPlayPersistence.loadHevcEnabled(this))
         }
         val prefs = getSharedPreferences("tiplay_airplay_receiver", MODE_PRIVATE)
         val private = prefs.getString("private", null)
@@ -193,7 +211,7 @@ class AirPlayReceiverService : Service() {
             SecureRandom().nextBytes(it); it[0] = ((it[0].toInt() or 2) and 0xfe).toByte()
         }.joinToString(":") { "%02X".format(it.toInt() and 255) }.also { prefs.edit().putString("device", it).apply() }
         return ReceiverConfig("TiPlay AirPlay", deviceId, identity,
-            hevcEnabled = AirPlayPersistence.loadHevcEnabled(this))
+            fps = AirPlayPersistence.loadFps(this), hevcEnabled = AirPlayPersistence.loadHevcEnabled(this))
     }
 
     private fun refreshDiscovery() {
@@ -206,6 +224,7 @@ class AirPlayReceiverService : Service() {
     }
 
     override fun onDestroy() {
+        settingsSubscription?.close(); settingsSubscription = null
         synchronized(displayLock) {
             destroyed = true
             mirrorOutput?.close(); mirrorOutput = null

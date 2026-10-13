@@ -120,3 +120,20 @@ NODE_PATH=/tmp/pw/node_modules node tests/web-e2e/phone-run.mjs
 The script removes its Playwright request routes before it leaves the page: Playwright's interception can drop a
 `keepalive` request of a page that is going away, which looked like a lost `/bye`.
 
+
+## AirPlay HTML video and Bluetooth audio gating
+
+`airplay-video.mjs` checks the actual Video.js player under the page's CSP, native
+buffering UI, removed fullscreen control, MP4 decoding, playback status delivery,
+Bluetooth route muting (including preventing a user unmute), restoration and player disposal. Supply
+an ordinary unprotected MP4 fixture; it is never uploaded to an external service.
+
+```sh
+NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chrome \
+  TEST_VIDEO_MP4=/path/to/short-test.mp4 node tests/web-e2e/airplay-video.mjs
+```
+
+This is a desktop Chromium simulation, not a Tesla device or acoustic test.
+HLS URL rewriting, Range handling, peer direct access and stale playback reports
+are covered by shared module tests. Actual iPhone HLS/FCUP playback and vehicle
+microphone/call quality still need device validation.

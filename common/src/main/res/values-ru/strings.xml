@@ -531,7 +531,7 @@
     <string name="turn_card_distance_km">%1$.1f км</string>
     <string name="turn_card_exit">Съезд %1$d</string>
     <string name="open_diplay_settings_hint">В CarPlay проведите вниз %1$d пальцами, чтобы открыть настройки TiPlay.</string>
-    <string name="carplay_controls">Управление CarPlay</string>
+    <string name="carplay_controls">CarPlay</string>
     <string name="settings_gesture_fingers">Открыть настройки · свайп %1$d пальцами (нажмите для смены)</string>
     <string name="settings_gesture_fingers_label">Открыть настройки · количество пальцев</string>
     <string name="settings_gesture_fingers_option">%1$d пальцев</string>
@@ -637,7 +637,7 @@
     <string name="settings_external_ap_check">Устройство не подключено к нужной сети Wi-Fi.</string>
     <string name="settings_android_address">Адрес Android: %1$s</string>
     <string name="settings_main_stopping">Отключение…</string>
-    <string name="settings_airplay_title">AirPlay (экспериментально)</string>
+    <string name="settings_airplay_title">AirPlay</string>
     <string name="settings_airplay_listening">Ожидание iPhone · TiPlay</string>
     <string name="settings_airplay_disable">Отключить AirPlay</string>
     <string name="settings_airplay_disable_description">Действует сразу. AirPlay включён по умолчанию. Этот переключатель останавливает AirPlay и возвращает экран CarPlay; выключение переключателя снова запускает приёмник.</string>

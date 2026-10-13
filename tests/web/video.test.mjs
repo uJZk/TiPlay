@@ -220,12 +220,12 @@ test('video pipeline preserves source mode in CONFIG messages and presented fram
   const pipeline = createDecoderPipeline({ post: message => messages.push(message), present: (frame, info) => presented.push(info.mode) });
   t.after(() => pipeline.stop());
   let controller; pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
-  for (const [i, mode] of ['carplay', 'airplay-mirror', 'airplay-video'].entries()) {
+  for (const [i, mode] of ['carplay', 'airplay-mirror'].entries()) {
     controller.enqueue(config(i + 1, mode)); controller.enqueue(keyFrame(i + 1)); await settle();
     FakeDecoder.instances.at(-1).output(videoFrame(0));
     assert.equal(messages.filter(message => message.type === 'config').at(-1).config.mode, mode);
   }
-  assert.deepEqual(presented, ['carplay', 'airplay-mirror', 'airplay-video']);
+  assert.deepEqual(presented, ['carplay', 'airplay-mirror']);
 });
 
 test('canvas submission reports an early source presentation as a signed offset', async () => {
