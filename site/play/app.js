@@ -46,9 +46,9 @@ const STRINGS = {
     unreachable: 'The Android device does not answer. Retrying in {0} s…',
     lost: 'Connection lost. Retrying in {0} s…',
     throttled: 'Too many wrong pairing codes. Retrying in {0} s…',
-    waitingPhone: 'Connected. Waiting for the iPhone…',
-    phoneConnecting: 'The iPhone is connecting…',
-    waitingVideo: 'Waiting for the picture…',
+    waitingPhone: 'Connected to the Android device. Waiting for the iPhone…',
+    phoneConnecting: 'CarPlay is connecting…',
+    waitingVideo: 'AirPlay is connecting…',
     streaming: '{0} · {1} fps',
     badCode: 'The pairing code is wrong. Check it in TiPlay on the Android device.',
     replaced: 'Another browser took over the display. Connect again to take it back.',
@@ -83,9 +83,9 @@ const STRINGS = {
     unreachable: '安卓端没有响应，{0} 秒后重试…',
     lost: '连接中断，{0} 秒后重试…',
     throttled: '配对码错误次数过多，{0} 秒后重试…',
-    waitingPhone: '已连接，等待 iPhone…',
-    phoneConnecting: 'iPhone 正在连接…',
-    waitingVideo: '等待画面…',
+    waitingPhone: '已连接安卓端，等待 iPhone…',
+    phoneConnecting: 'CarPlay 正在连接…',
+    waitingVideo: 'AirPlay 正在连接…',
     streaming: '{0} · {1} fps',
     badCode: '配对码不正确，请在安卓端上的 TiPlay 中核对。',
     replaced: '另一个浏览器接管了画面。再次连接即可收回。',
@@ -138,6 +138,7 @@ showLink();
 const slots = createTouchSlots();
 let session = null, active = false, phase = 'ready', notice = null;
 let attempt = 0, reconnects = 0, retryTimer = null, retryAt = 0, streamId = 0, videoAbort = null, lastError = null;
+let retryCountdownTimer = null;
 let config = null, live = false, status = null, unsupported = null, videoStats = {}, latestPresentation = null;
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 const appearance = window.matchMedia('(prefers-color-scheme: dark)');
@@ -365,6 +366,7 @@ function stop(key = null, ...args) {
   streamId++;
   clearTimeout(retryTimer);
   clearInterval(heartbeatTimer);
+  clearInterval(retryCountdownTimer);
   clearInterval(statsTimer);
   videoAbort?.abort();
   sink?.stop();
@@ -389,6 +391,7 @@ async function connectVideo() {
   const id = ++streamId;
   sink?.stop();
   clearTimeout(retryTimer);
+  clearInterval(retryCountdownTimer);
   videoAbort?.abort();
   live = false;
   phase = 'connecting';
@@ -479,6 +482,8 @@ function scheduleRetry(delay) {
   phase = 'retry';
   retryAt = Date.now() + delay;
   clearTimeout(retryTimer);
+  clearInterval(retryCountdownTimer);
+  retryCountdownTimer = setInterval(render, 1000);
   retryTimer = setTimeout(() => {
     reconnects++;
     connectVideo();

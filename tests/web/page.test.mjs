@@ -14,7 +14,7 @@ test('the initial clock reaches a video sink whose setup finishes after hello', 
   const codecsReady = new Promise(resolve => { finishSetup = resolve; });
   const events = [];
   const run = new Function('codecsReady', 'events', `
-    let streamId = 0, sink = null, retryTimer, videoAbort, live, phase, lastViewport;
+    let streamId = 0, sink = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastViewport;
     const link = { code: '1234' }, session = 'session', PROTOCOL = 1;
     const videoPath = {};
     const browserAudio = { attach() {}, clock: value => events.push(['audio-clock', value]) };
@@ -46,6 +46,88 @@ test('the initial clock reaches a video sink whose setup finishes after hello', 
   assert.equal(events[3], 'timing-reset');
   assert.match(events[4], /^\/video\?/);
   assert.equal(events[5], 'open');
+});
+
+function retryPage(lastError) {
+  const app = read('app.js');
+  const extract = name => new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{([\\s\\S]*?)\\n\\}`).exec(app)[0];
+  let now = 0, nextId = 0;
+  const timers = new Map(), elements = new Map(), overlays = [];
+  const $ = id => {
+    if (!elements.has(id)) elements.set(id, { setAttribute() {} });
+    return elements.get(id);
+  };
+  const setTimer = (callback, delay, repeat) => {
+    const id = ++nextId; timers.set(id, { callback, at: now + delay, repeat }); return id;
+  };
+  const page = new Function('$', 'Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'renderReconnect', 'lastError', `
+    let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort;
+    let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null;
+    let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
+    const statsVisible = false, link = { code: '1234' }, stage = {};
+    const browserAudio = { stop() {} }, sink = { stop() {} }, slots = { releaseAll() {} };
+    const cancelViewport = () => {}, cancelMove = () => {}, renderStats = () => {};
+    const t = (key, ...args) => args.length ? key + ':' + args.join(',') : key;
+    const phoneFetch = () => new Promise(() => {});
+    ${['statusText', 'render', 'scheduleRetry', 'stop', 'connectVideo'].map(extract).join('\n')}
+    return { scheduleRetry, stop, connectVideo, reconnects: () => reconnects };
+  `)($, { now: () => now }, (callback, delay) => setTimer(callback, delay, 0), id => timers.delete(id),
+    (callback, delay) => setTimer(callback, delay, delay), id => timers.delete(id), value => overlays.push(value.text), lastError);
+  return {
+    ...page, overlays, text: () => $('status').textContent,
+    intervals: () => [...timers.values()].filter(timer => timer.repeat).length,
+    advance(milliseconds) {
+      const target = now + milliseconds;
+      for (;;) {
+        const next = [...timers.entries()].filter(([, timer]) => timer.at <= target).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!next) break;
+        const [id, timer] = next; now = timer.at;
+        if (timer.repeat) timer.at += timer.repeat; else timers.delete(id);
+        timer.callback();
+      }
+      now = target;
+    },
+  };
+}
+
+test('retry messages count down every second without receiving a phone heartbeat', () => {
+  for (const [error, key] of [[null, 'lost'], [{ status: 503 }, 'unreachable'], [{ status: 429 }, 'throttled']]) {
+    const page = retryPage(error);
+    page.scheduleRetry(3000);
+    assert.equal(page.text(), `${key}:3`);
+    page.advance(1000); assert.equal(page.text(), `${key}:2`);
+    page.advance(1000); assert.equal(page.text(), `${key}:1`);
+    assert.deepEqual(page.overlays, [`${key}:3`, `${key}:2`, `${key}:1`], 'both waiting overlay and settings status receive the actual countdown');
+    page.advance(1000);
+    assert.equal(page.text(), 'connecting'); assert.equal(page.reconnects(), 1);
+    assert.equal(page.intervals(), 0, 'the connection attempt clears the countdown timer');
+  }
+});
+
+test('replacing a retry schedule cancels the previous countdown and reconnect attempt', () => {
+  const page = retryPage(null);
+  page.scheduleRetry(3000); page.advance(500);
+  page.scheduleRetry(4000);
+  assert.equal(page.intervals(), 1);
+  const notifications = page.overlays.length;
+  page.advance(500);
+  assert.equal(page.overlays.length, notifications, 'the old one-second timer must be cancelled');
+  page.advance(500); assert.equal(page.text(), 'lost:3');
+  page.advance(1500); assert.equal(page.reconnects(), 0, 'the original reconnect deadline must be cancelled');
+  page.advance(1500); assert.equal(page.reconnects(), 1); assert.equal(page.intervals(), 0);
+});
+
+test('stopping or manually connecting clears the retry countdown immediately', () => {
+  for (const action of ['stop', 'connectVideo']) {
+    const page = retryPage(null);
+    page.scheduleRetry(3000); page.advance(1000);
+    page[action]();
+    assert.equal(page.intervals(), 0);
+    const notifications = page.overlays.length;
+    page.advance(3000);
+    assert.equal(page.overlays.length, notifications, action);
+    assert.equal(page.reconnects(), 0, 'cancelled retry cannot start another connection');
+  }
 });
 
 test('blank and whitespace address fields connect to the default phone', () => {
