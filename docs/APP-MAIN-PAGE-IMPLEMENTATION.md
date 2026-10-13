@@ -1,6 +1,6 @@
 # 安卓端会话与设置边界
 
-页面原则见 [主页面契约](APP-MAIN-PAGE-DESIGN.md)，浏览器协作与关闭顺序见 [浏览器会话生命周期](TESLA_BROWSER.md#browser-session-lifecycle)。
+浏览器协作与关闭顺序见 [浏览器会话生命周期](TESLA_BROWSER.md#browser-session-lifecycle)。
 
 ## 启动与任务
 

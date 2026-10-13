@@ -6,7 +6,7 @@
 
 持久契约与维护入口：
 
-- [主页面设计](APP-MAIN-PAGE-DESIGN.md)与[设置、会话边界](APP-MAIN-PAGE-IMPLEMENTATION.md)。
+- [设置、会话边界](APP-MAIN-PAGE-IMPLEMENTATION.md)。
 - [热点地址机制](HOTSPOT_ADDRESS.md)与[浏览器协议](TESLA_BROWSER.md)。
 - [普通 AirPlay](AIRPLAY.md)。
 

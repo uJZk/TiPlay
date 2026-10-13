@@ -1,6 +1,6 @@
 # Documentation checklist
 
-Sources: [AGENTS.md](../../AGENTS.md) and [UPSTREAM_SYNC.md](../UPSTREAM_SYNC.md). No separate prose-style standard was found; use these explicit project rules without inventing one.
+Sources: [AGENTS.md](../../AGENTS.md) and [Upstream.md](../Upstream.md). No separate prose-style standard was found; use these explicit project rules without inventing one.
 
 - [x] User request: README.md contains only user-needed information (purpose, installation, connection/use, limitations and help); keep essential credits and align the Chinese README. Remove developer implementation/build/delivery detail from the entry page.
 - [x] Current user-facing product names use TiPlay; preserve DiPlay in historical release/changelog/audit/validation records, upstream copies and credits.

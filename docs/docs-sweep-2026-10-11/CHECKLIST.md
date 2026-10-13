@@ -1,6 +1,6 @@
 # Documentation checklist
 
-Sources: [AGENTS.md](../../AGENTS.md), especially Naming and Upstream; [UPSTREAM_SYNC.md](../UPSTREAM_SYNC.md). No separate prose style standard exists in the project or available user configuration. Do not invent one.
+Sources: [AGENTS.md](../../AGENTS.md), especially Naming and Upstream; [Upstream.md](../Upstream.md). No separate prose style standard exists in the project or available user configuration. Do not invent one.
 
 - [x] User-facing current product names use TiPlay. Preserve DiPlay in historical changelog/release notes, audits/reviews/validation records, upstream README copies and credits.
 - [x] Current project issue/release/download/site links follow the explicit AGENTS.md target `https://github.com/uJZk/DiPlay`. Preserve numbered upstream issue/PR/commit references and credits on `shihabal3amri/DiPlay`. If current configuration conflicts with this requirement, flag it instead of silently choosing a new policy.

@@ -1,6 +1,6 @@
 # Code standards
 
-Source of truth for this sweep; reuse AGENTS.md and docs/UPSTREAM_SYNC.md requirements.
+Source of truth for this sweep; reuse AGENTS.md and docs/Upstream.md requirements.
 
 1. Scope: only files listed in SCOPE.md, and only TiPlay additions/modified hunks since e837efa in inherited files. Preserve upstream identifiers, files, formatting and internal names. Do not rename/move/delete inherited code. No feature additions or behavior changes.
 2. Kotlin: follow neighboring four-space formatting and existing naming; remove demonstrably unused imports, variables and private helpers only in fork-owned code. Prefer named constants for duplicated protocol values where semantics are identical. Avoid broad structural refactors of upstream hooks.

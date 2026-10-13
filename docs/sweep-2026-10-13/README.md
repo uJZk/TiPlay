@@ -8,7 +8,7 @@ Status: complete — integrated main, three-risk repairs and post-merge/retired-
 - base-commit: `91430639a7c617934a4e7c778976360f7853140d` (final verified source commit after integrated cleanup; next sweep excludes delivery-only documentation).
 - Initial working tree: clean. No commit, push, signing, release or deployment authorized.
 - Scope: SCOPE.md records files/touch counts/commits; HISTORY.txt and DIFFSTAT.txt retain history evidence.
-- Standards: STANDARDS.md, AGENTS.md and docs/UPSTREAM_SYNC.md.
+- Standards: STANDARDS.md, AGENTS.md and docs/Upstream.md.
 - Resume: TASKS.md and RESULT-T1–T4.md identify owners, final changes and verification; ENVIRONMENT.md reproduces toolchain/checks.
 - User focus: obsolete/completed experiment code and potential performance problems. User clarified single entry means a single Bonjour broadcast service and subsequently directed its code removal. RETIREMENT-SCOPE.md records that explicit behavior authorization; no launcher/UI entry contract was retired.
 

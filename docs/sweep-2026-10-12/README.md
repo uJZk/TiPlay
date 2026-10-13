@@ -8,7 +8,7 @@ Status: complete — incremental cleanup and user-authorized repairs verified.
 - base-commit: `477801f5e2fde2b48d064bcd06dc2df71f312514` (original sweep completion HEAD; later main imports and follow-up changes remain in the next sweep scope).
 - Initial working tree: clean. At original sweep completion the source/test changes were uncommitted. The follow-up tie-up records later integration and delivery; include those changes and imported main commits in the next sweep.
 - Scope and file/commit history: SCOPE.md, HISTORY.txt, DIFFSTAT.txt; user-authorized adjacent repairs: REPAIR-SCOPE.md.
-- Standards: STANDARDS.md, AGENTS.md, docs/UPSTREAM_SYNC.md. Explicit repairs are distinguished from behavior-preserving cleanup.
+- Standards: STANDARDS.md, AGENTS.md, docs/Upstream.md. Explicit repairs are distinguished from behavior-preserving cleanup.
 - Resume/reference: TASKS.md and RESULT-*.md preserve disjoint ownership, reviewer/model choices, findings and checks. Both Android UI/UX reviews completed.
 - Current product summary: ../WEB-DEBUG-2026-10-12.md. Verification tools/commands: ENVIRONMENT.md.
 

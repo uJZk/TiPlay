@@ -2,7 +2,7 @@
 
 Reviewed on 2026-10-12 against current source, for the incremental range `92cc2efca3a27c87f064f3ea63303dc266226b89` → `5449de24d399f9e4e1ce1124e7066d906df98813`. Model: inherited GPT-6; requested Sonnet/Opus models were unavailable. No delegation, source/configuration edits, commits or pushes.
 
-Owned documents: [main-page design](../APP-MAIN-PAGE-DESIGN.md), [main-page implementation](../APP-MAIN-PAGE-IMPLEMENTATION.md), [web pairing](../WEB-PAIRING-DESIGN.md).
+Owned documents: `APP-MAIN-PAGE-DESIGN.md` (historical design document, since deleted), [main-page implementation](../APP-MAIN-PAGE-IMPLEMENTATION.md), [web pairing](../WEB-PAIRING-DESIGN.md).
 
 ## Checklist results
 

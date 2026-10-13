@@ -5,14 +5,32 @@ Instructions for coding agents that work on TiPlay.
 Browser resize, portal and discovery shutdown contracts are documented in `docs/TESLA_BROWSER.md`
 under "Browser session lifecycle".
 
-Phone settings, connection drafts, explicit apply/reconnect and boot behavior follow
-`docs/APP-MAIN-PAGE-DESIGN.md` and `docs/APP-MAIN-PAGE-IMPLEMENTATION.md`.
+Phone settings, connection drafts, apply/reconnect and boot behavior follow
+[docs/APP-MAIN-PAGE-IMPLEMENTATION.md](docs/APP-MAIN-PAGE-IMPLEMENTATION.md).
 
 Build prerequisites, runtime identity, signing and APK update contracts are documented
 in [docs/BUILD.md](docs/BUILD.md). Windows WSLC container supplements, including filesystem,
 secret transfer and host ADB boundaries, are in [docs/WLSC.md](docs/WLSC.md).
 
+## Documentation size and index
+
+Project `AGENTS.md` files and each child document under `docs/` MUST NOT exceed
+8,192 words per file. If a file exceeds that limit, split it by topic into files under
+`docs/`, targeting 4,096 words per new child file. Keep this root `AGENTS.md` as the
+index, link every new child here, and update affected navigation links. Prefer concise
+instructions; do not duplicate detailed rules in the index.
+
+- [Upstream maintenance](docs/Upstream.md): DiPlay, Video.js and UxPlay tracking and update rules.
+- [October 13 sweep scope](docs/sweep-2026-10-13/SCOPE.md): baseline and split-entry index.
+- [October 13 sweep scope, part 1](docs/sweep-2026-10-13/SCOPE-PART-1.md): retained file/commit entries.
+- [October 13 sweep scope, part 2](docs/sweep-2026-10-13/SCOPE-PART-2.md): retained file/commit entries.
+- [October 13 sweep scope, part 3](docs/sweep-2026-10-13/SCOPE-PART-3.md): retained file/commit entries.
+
 ## Current progress
+
+See [docs/UPSTREAM-DOCS-TIE-UP-2026-10-13.md](docs/UPSTREAM-DOCS-TIE-UP-2026-10-13.md)
+for upstream tracking, concise maintenance rules, document length limits, scope splitting,
+verification and the Android toolchain access limitation.
 
 See `docs/sweep-2026-10-13/README.md` for single-Bonjour trial retirement, incremental
 and post-merge code cleanup, and the requested tap-map/reverse-notification/audio-cancellation repairs.
@@ -60,7 +78,7 @@ See `docs/sweep-2026-10-12/TIE-UP.md` for main integration, final verification a
 
 See `docs/RECONNECT-UX-2026-10-11.md` for the pre-rendered reconnect wallpaper,
 portal integration, verification and delivery progress. Follow `docs/WEB-PAIRING-DESIGN.md`
-and `docs/APP-MAIN-PAGE-DESIGN.md` for layout contracts.
+and `docs/APP-MAIN-PAGE-IMPLEMENTATION.md` for browser and phone contracts.
 See `docs/APP-MAIN-PAGE-IMPLEMENTATION.md` for draft/session behavior and upstream compatibility.
 See `docs/UI-REDESIGN-2026-10-11.md` for the Liquid Glass web UI,
 native Android controls, safe window bounds and shared pre-rendered wallpaper.
@@ -167,11 +185,8 @@ Do not add a new setting to Overview. Add it to its category. Then promote it to
 ## Naming
 
 The product is TiPlay. Use TiPlay in every name a user can see: strings in all locales, guides, the site and issue templates.
-Keep DiPlay in `docs/RELEASE-NOTES-0.2.*.md`, past `CHANGELOG.md` entries, audit, review and validation records, upstream README copies and credits to the upstream project.
-Keep these internal names unchanged, so that upstream changes still merge: Kotlin packages (`com.shilapi.xcertplay`), class and file names (`DiPlayActivity`), Android resource names, SharedPreferences names, log tags, thread names, intent actions (`com.shihab.diplay.action.EMBED_MAP`, `com.shihab.diplay.DISCONNECT`), `DIPLAY_AUTH_ASSETS_DIR` and `rootProject.name`.
-Do not edit Kotlin comments or KDoc only to rename DiPlay.
 The application ID is `com.ujzk.tiplay`; debug builds add `.hudtest`.
-Link issues, releases, downloads and the site to https://github.com/uJZk/DiPlay. Keep links to numbered upstream issues, pull requests and commits, and credits, on https://github.com/shihabal3amri/DiPlay.
+Link issues, releases, downloads and the site to https://github.com/uJZk/DiPlay.
 
 ## Product scope
 
@@ -183,9 +198,4 @@ permission and connection contracts that the phone + browser flow actually uses.
 
 ## Upstream
 
-TiPlay merges upstream DiPlay and contributes nothing back: send no pull requests or patches to https://github.com/shihabal3amri/DiPlay.
-在不影响复用上游后续代码更新可能的前提下，移除冗余代码。
-Clean up TiPlay-owned duplicate or unused code while preserving the ability to reuse future upstream updates.
-Retain upstream files, identifiers and compatibility paths; prefer small hooks into new product-specific files.
-
-Put new features in new files. Give upstream files only small hook edits, and do not rename, move or delete upstream files or identifiers. Follow `docs/UPSTREAM_SYNC.md` to merge.
+Follow [docs/Upstream.md](docs/Upstream.md) for upstream maintenance rules, preserved identifiers, historical names and the one-way merge procedure.
