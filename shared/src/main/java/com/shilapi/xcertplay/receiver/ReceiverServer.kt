@@ -28,6 +28,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 class ReceiverServer(@Volatile private var config: ReceiverConfig, private val listener: Listener,
                      private val fairPlayReply: (ByteArray) -> ByteArray? = { ReceiverFairPlay.reply(it) },
                      private val fairPlayDecrypt: (ByteArray, ByteArray) -> ByteArray? = { message, key -> ReceiverFairPlay.decrypt(message, key) }) : Closeable {
+    enum class PlaybackFinishReason(val wire: String) {
+        IPHONE_STOP("iphone-stop"), REVERSE_CLOSE("reverse-close"), BROWSER_ENDED("browser-ended"),
+        BROWSER_FAILED("browser-failed"), SHUTDOWN("shutdown"),
+    }
+
     interface Listener {
         fun mirrorSink(): WebMediaSink
         fun play(item: ReceiverPlay)
@@ -100,6 +105,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         sockets.forEach { runCatching { it.close() } }
         synchronized(ownership) {
             owner?.closeMedia(); owner = null
+            if (playbackPeer != null) diagnostics.finish(PlaybackFinishReason.SHUTDOWN, playbackId?.let { reverse[it]?.diagnosticId })
             playbackPeer = null; playbackId = null
             photos = ReceiverPhotos(); photoSession = null
             listener.stopPlayback()
@@ -111,11 +117,15 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     /** Playback updates use the iPhone's reverse HTTP channel, never the browser's control channel. */
     fun playbackEvent(state: String) = synchronized(ownership) {
         val id = playbackId ?: return@synchronized
-        reverse[id]?.event(state, id)
+        val channel = reverse[id]
+        diagnostics.playbackEvent(channel?.diagnosticId, state)
+        channel?.event(state, id)
     }
 
-    fun finishPlayback() = synchronized(ownership) {
+    fun finishPlayback(reason: PlaybackFinishReason = PlaybackFinishReason.BROWSER_ENDED,
+                       reverseConnection: Long? = null) = synchronized(ownership) {
         if (playbackPeer == null) return@synchronized
+        diagnostics.finish(reason, reverseConnection ?: playbackId?.let { reverse[it]?.diagnosticId })
         playbackEvent("stopped")
         playbackPeer = null; playbackId = null
         photos = ReceiverPhotos(); photoSession = null
@@ -247,7 +257,10 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             runCatching { socket.close() }
             reverseId?.let { id ->
                 if (reverse.remove(id, this)) synchronized(ownership) {
-                    if (playbackId == id && playbackPeer == peer) finishPlayback()
+                    if (playbackId == id && playbackPeer == peer) finishPlayback(
+                        if (closed.get()) PlaybackFinishReason.SHUTDOWN else PlaybackFinishReason.REVERSE_CLOSE,
+                        diagnosticId,
+                    )
                 }
             }
             synchronized(ownership) {
@@ -280,9 +293,12 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         synchronized(output) {
                             output.write(headers.toByteArray()); output.write(body); output.flush()
                         }
+                    }.onFailure { error ->
+                        if (error is Exception) diagnostics.failure(diagnosticId, ReceiverProtocolDiagnostics.Stage.WRITE, error)
                     }
                 }
-            } catch (_: RejectedExecutionException) {
+            } catch (error: RejectedExecutionException) {
+                diagnostics.failure(diagnosticId, ReceiverProtocolDiagnostics.Stage.WRITE, error)
                 // A peer that cannot drain its bounded event backlog must release this connection.
                 // Never redirect captured events to a replacement reverse channel with the same session ID.
                 runCatching { socket.close() }
@@ -349,6 +365,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         owner?.closeMedia(); owner = null
                         resources.clear()
                         playbackPeer = peer; playbackId = id
+                        diagnostics.play(diagnosticId, item)
                         listener.play(item.copy(iphoneHost = peer.hostAddress)); listener.status("video")
                     }
                     return RtspMessage.Response()
@@ -397,7 +414,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                     synchronized(ownership) {
                         if (playbackPeer != peer || playbackId != id) return RtspMessage.Response(status = 403, statusText = "Forbidden")
                         when (path) {
-                            "/stop" -> finishPlayback()
+                            "/stop" -> finishPlayback(PlaybackFinishReason.IPHONE_STOP)
                             "/scrub" -> if (request.method == "POST") {
                                 val value = query["position"]?.toDoubleOrNull()
                                 require(value != null && value.isFinite() && value >= 0); listener.seek(value)

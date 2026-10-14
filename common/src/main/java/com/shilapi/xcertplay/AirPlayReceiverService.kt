@@ -32,6 +32,7 @@ class AirPlayReceiverService : Service() {
     @Volatile private var server: ReceiverServer? = null // worker creates/closes; callbacks may read
     private var settingsSubscription: AutoCloseable? = null
     private lateinit var player: AirPlayCastPlayer
+    private val playbackDiagnostics = AirPlayVideoDiagnostics { Log.i("tiplay-airplay", it) }
     private val displayLock = Any()
     private var displayGeneration = 0L // guarded by displayLock
     @Volatile private var mirrorOutput: WebMediaSink? = null
@@ -53,6 +54,7 @@ class AirPlayReceiverService : Service() {
         }
         player = AirPlayCastPlayer({ url -> server?.loadResource(url) }) { state ->
             val epoch = player.playbackEpoch
+            playbackDiagnostics.callback(state, epoch)
             val ended = state in listOf("failed", "stopped")
             if (!destroyed && ended) TeslaBrowserLink.resumeCarPlayDisplay()
             if (!destroyed) worker.execute {
@@ -60,7 +62,8 @@ class AirPlayReceiverService : Service() {
                     // Reverse HTTP writes can block on the iPhone. Keep them off Android's UI thread.
                     server?.playbackEvent(if (state == "failed") "stopped" else state)
                     if (ended) {
-                        server?.finishPlayback()
+                        server?.finishPlayback(if (state == "failed") ReceiverServer.PlaybackFinishReason.BROWSER_FAILED
+                            else ReceiverServer.PlaybackFinishReason.BROWSER_ENDED)
                         if (state == "failed") publish("playback-failed")
                     }
                 }

@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.receiver
 
 import com.shilapi.xcertplay.airplay.RtspMessage
+import com.shilapi.xcertplay.diagnostics.DiagnosticErrorText
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -11,7 +12,8 @@ class ReceiverProtocolDiagnosticsTest {
         val secret = "private-key-secret"
         diagnostics.request(1, RtspMessage.Request(secret, "https://private-host/$secret?token=$secret", "RTSP/1.0",
             mapOf("authorization" to secret), secret.toByteArray()))
-        diagnostics.failure(1, ReceiverProtocolDiagnostics.Stage.DISPATCH, IllegalArgumentException(secret))
+        val failureText = "Invalid request token=$secret"
+        diagnostics.failure(1, ReceiverProtocolDiagnostics.Stage.DISPATCH, IllegalArgumentException(failureText))
         diagnostics.setup(1, mapOf("ekey" to secret.toByteArray(), "eiv" to ByteArray(16),
             "streams" to listOf(mapOf("type" to 110), mapOf("type" to 96), mapOf("type" to secret)),
             "deviceID" to secret), true, 164)
@@ -24,7 +26,9 @@ class ReceiverProtocolDiagnosticsTest {
         assertFalse(output.contains("private-host"))
         assertFalse(output.contains("authorization"))
         assertTrue(output.contains("method=OTHER path=OTHER"))
-        assertTrue(output.contains("exception=IllegalArgumentException"))
+        assertEquals("c=1 stage=DISPATCH exception=IllegalArgumentException errorText=${DiagnosticErrorText.sanitize(failureText)}",
+            messages.first { it.contains("exception=") })
+        assertTrue(output.contains("Invalid request"))
         assertTrue(output.contains("streams=[110,96,OTHER]"))
         assertTrue(output.contains("status=403"))
         assertTrue(output.contains("names=[volume,progress,OTHER]"))
@@ -84,5 +88,28 @@ class ReceiverProtocolDiagnosticsTest {
         assertEquals(listOf("resource stage=REQUEST request=7",
             "resource stage=RESPONSE request=7 status=200 bodyBytes=1024",
             "resource stage=TIMEOUT request=8"), messages)
+    }
+
+    @Test fun playbackLifecycleIncludesSafeOffsetsReasonsAndReverseChannelAvailability() {
+        val messages = mutableListOf<String>()
+        val diagnostics = ReceiverProtocolDiagnostics(messages::add)
+        diagnostics.play(4, ReceiverPlay("https://private-host/media?token=secret", 12.5, false))
+        diagnostics.play(4, ReceiverPlay("mlhls://private-secret", Double.NaN, true))
+        diagnostics.finish(ReceiverServer.PlaybackFinishReason.REVERSE_CLOSE, 9)
+        diagnostics.playbackEvent(9, "playing")
+        diagnostics.playbackEvent(null, "private-state-secret")
+        assertEquals(listOf(
+            "c=4 video stage=START start=12.5 fraction=false",
+            "c=4 video stage=START start=INVALID fraction=true",
+            "video stage=FINISH reason=reverse-close reverse=9",
+            "video stage=EVENT state=playing reverse=9 available=true",
+            "video stage=EVENT state=OTHER reverse=0 available=false",
+        ), messages)
+        assertFalse(messages.joinToString().contains("secret"))
+        assertFalse(messages.joinToString().contains("private-host"))
+        val unavailable = ReceiverProtocolDiagnostics { error("logger unavailable") }
+        unavailable.play(1, ReceiverPlay("https://example.test/media", 0.0, true))
+        unavailable.finish(ReceiverServer.PlaybackFinishReason.BROWSER_FAILED, null)
+        unavailable.playbackEvent(null, "stopped")
     }
 }

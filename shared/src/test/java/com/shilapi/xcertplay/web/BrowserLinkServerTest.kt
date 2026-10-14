@@ -676,6 +676,25 @@ class BrowserLinkServerTest {
         } finally { binding.close(); playback.close() }
     }
 
+    @Test fun airplayBrowserDiagnosticsRequirePairingAndDoNotControlPlayback() {
+        val playback = AirPlayVideoPlayback(com.shilapi.xcertplay.receiver.ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
+        val binding = AirPlayBrowserPlayback.register(playback::state, playback, playback::control)
+        try {
+            val id = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
+            val event = """{"k":"ap-diag","id":$id,"revision":0,"event":"play-rejected","errorName":"NotAllowedError","message":"private-secret","url":"https://private.test/secret"}"""
+            assertEquals(401, control(1, event, c = "0000").status)
+            assertFalse(logs.any { it.contains("stage=EVENT") })
+            assertEquals(200, control(1, event).status)
+            assertTrue(logs.any { it.contains("event=play-rejected active=true") && it.contains("errorName=NotAllowedError") })
+            assertTrue(playback.state().playing)
+            assertFalse(logs.any { it.contains("private-secret") || it.contains("private.test") })
+            control(2, """{"k":"ap-state","id":$id,"revision":0,"duration":100,"position":0,"playing":false,"ready":true,"buffering":false,"seekable":true,"ended":false,"failed":false}""")
+            assertTrue(logs.any { it.contains("stage=REPORT") && it.contains("accepted=true") && it.contains("playing=false") })
+            control(3, """{"k":"ap","id":$id,"a":"seek","v":50}""")
+            assertTrue(logs.any { it.contains("stage=COMMAND") && it.contains("action=seek target=50.0 accepted=true") })
+        } finally { binding.close(); playback.close() }
+    }
+
     @Test fun diagnosticsNeverCarryTheCodeTheSessionOrAddresses() {
         beginStream()
         control(1, """{"k":"t","p":[[0,0.5,0.5,1]]}""")

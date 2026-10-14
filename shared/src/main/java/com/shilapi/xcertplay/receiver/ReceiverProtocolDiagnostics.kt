@@ -1,8 +1,9 @@
 package com.shilapi.xcertplay.receiver
 
 import com.shilapi.xcertplay.airplay.RtspMessage
+import com.shilapi.xcertplay.diagnostics.DiagnosticErrorText
 
-/** Control-flow metadata only. Never formats headers, payloads, identities, URLs or exception messages. */
+/** Control metadata and sanitized failures; headers, payloads, identities and raw URLs stay out. */
 internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
     enum class Stage { ACCEPT, READ, DISPATCH, WRITE, CLOSE }
     enum class ResourceStage { UNAVAILABLE, REQUEST, REUSED, RESPONSE, COMPLETE, TIMEOUT, CANCELLED, FAILURE }
@@ -10,6 +11,17 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
     fun resource(stage: ResourceStage, requestId: Long = 0, status: Int? = null, bytes: Int? = null) {
         emit("resource stage=$stage request=$requestId" + (status?.let { " status=$it" } ?: "") +
             (bytes?.let { " bodyBytes=$it" } ?: ""))
+    }
+
+    fun play(connection: Long, item: ReceiverPlay) =
+        emit("c=$connection video stage=START start=${position(item.start)} fraction=${item.fraction}")
+
+    fun finish(reason: ReceiverServer.PlaybackFinishReason, reverseConnection: Long?) =
+        emit("video stage=FINISH reason=${reason.wire} reverse=${reverseConnection ?: 0}")
+
+    fun playbackEvent(connection: Long?, state: String) {
+        val safeState = state.takeIf { it in setOf("loading", "playing", "paused", "stopped") } ?: "OTHER"
+        emit("video stage=EVENT state=$safeState reverse=${connection ?: 0} available=${connection != null}")
     }
 
     fun stage(connection: Long, stage: Stage) = emit("c=$connection stage=$stage")
@@ -45,7 +57,7 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
 
     fun failure(connection: Long, stage: Stage, error: Exception) {
         val type = error.javaClass.simpleName.filter { it.isLetterOrDigit() || it == '_' }.take(64)
-        emit("c=$connection stage=$stage exception=$type")
+        emit("c=$connection stage=$stage exception=$type errorText=${DiagnosticErrorText.sanitize(runCatching { error.message }.getOrNull())}")
     }
 
     fun setup(connection: Long, dict: Map<*, *>, verified: Boolean, handshakeBytes: Int) {
@@ -80,6 +92,9 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
     }
 
     private fun emit(message: String) { runCatching { log(message) } }
+
+    private fun position(value: Double): String =
+        value.takeIf { it.isFinite() && it in 0.0..1_000_000_000.0 }?.toString() ?: "INVALID"
 
     companion object {
         private val METHODS = setOf("GET", "POST", "PUT", "OPTIONS", "SETUP", "RECORD", "TEARDOWN",

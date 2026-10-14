@@ -162,6 +162,7 @@ class ReceiverServerTest {
                 assertEquals(404, control.status("GET", "/unknown"))
                 assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\nStart-Position: 0\r\n".toByteArray()))
                 assertEquals(1, listener.items.size)
+                assertTrue(listener.logs.any { it.contains("video stage=START start=0.0 fraction=true") })
                 assertEquals(403, control.status("POST", "/stop", id = "another"))
                 assertEquals(0, listener.stopped)
                 assertEquals(200, control.status("POST", "/scrub?position=12.5"))
@@ -180,6 +181,7 @@ class ReceiverServerTest {
                     assertTrue(event.body.toString(Charsets.UTF_8).contains("<string>playing</string>"))
                     assertEquals(200, control.status("POST", "/stop"))
                     assertEquals(1, listener.stopped)
+                    assertTrue(listener.logs.any { it.contains("video stage=FINISH reason=iphone-stop") })
                     assertEquals("listening", listener.states.last())
                     receiver.close()
                     // One stopped event may already be buffered before the orderly close.
@@ -188,6 +190,38 @@ class ReceiverServerTest {
                 }
             }
         } finally { receiver.close() }
+    }
+
+    @Test fun playbackFinishLogsDistinguishBrowserEndsReverseDisconnectAndShutdown() {
+        for (reason in listOf(ReceiverServer.PlaybackFinishReason.BROWSER_ENDED,
+            ReceiverServer.PlaybackFinishReason.BROWSER_FAILED, ReceiverServer.PlaybackFinishReason.REVERSE_CLOSE,
+            ReceiverServer.PlaybackFinishReason.SHUTDOWN)) {
+            val listener = Listener()
+            val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+            receiver.start()
+            try {
+                connect(receiver.port).use { control ->
+                    assertEquals(200, control.status("POST", "/play",
+                        "Content-Location: https://private-host/movie.mp4?token=secret\r\nStart-Position-Seconds: 12.5\r\n".toByteArray()))
+                    when (reason) {
+                        ReceiverServer.PlaybackFinishReason.REVERSE_CLOSE -> {
+                            connect(receiver.port).use { it.upgradeReverse() }
+                            assertTrue(listener.ended.await(1, TimeUnit.SECONDS))
+                        }
+                        ReceiverServer.PlaybackFinishReason.SHUTDOWN -> receiver.close()
+                        else -> receiver.finishPlayback(reason)
+                    }
+                    assertEquals(1, listener.stopped)
+                    assertTrue(listener.logs.any { it.contains("video stage=START start=12.5 fraction=false") })
+                    val finishes = listener.logs.filter { it.contains("video stage=FINISH") }
+                    assertEquals(1, finishes.size)
+                    assertTrue(finishes.single().contains("reason=${reason.wire}"))
+                    if (reason == ReceiverServer.PlaybackFinishReason.REVERSE_CLOSE) assertFalse(finishes.single().endsWith("reverse=0"))
+                    assertFalse(listener.logs.joinToString().contains("private-host"))
+                    assertFalse(listener.logs.joinToString().contains("secret"))
+                }
+            } finally { receiver.close() }
+        }
     }
 
     @Test fun encryptedMirrorUsesIndependentKeyAndGeometryAndControlDisconnectEndsStream() = encryptedMirrorProbe(false)

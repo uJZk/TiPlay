@@ -7,6 +7,14 @@ const { chromium } = createRequire(import.meta.url)('playwright-core');
 const root = fileURLToPath(new URL('../../site/play/', import.meta.url)).replace(/\/$/, '');
 const sample = process.env.TEST_VIDEO_MP4;
 const hls = process.env.TEST_VIDEO_HLS;
+const diagnosticFields = new Set(['k', 'id', 'revision', 'event', 'position', 'duration', 'paused', 'ended',
+  'seeking', 'dragging', 'readyState', 'networkState', 'errorCode', 'errorName', 'errorText']);
+function checkDiagnostics(entries) {
+  if (!entries.length || entries.some(entry => Object.keys(entry).some(key => !diagnosticFields.has(key))))
+    throw new Error('AirPlay diagnostic schema contains an unexpected field');
+  if (JSON.stringify(entries).includes('private.example') || JSON.stringify(entries).includes('private-session'))
+    throw new Error('AirPlay diagnostics exposed private resource or exception text');
+}
 if (!sample) throw new Error('Set TEST_VIDEO_MP4 to an ordinary playable MP4 fixture');
 const server = createServer((req, res) => {
   const path = req.url.split('?')[0];
@@ -28,7 +36,7 @@ const server = createServer((req, res) => {
 });
 await new Promise(r => server.listen(0,'127.0.0.1',r));
 const url = `http://127.0.0.1:${server.address().port}`;
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', headless:true, args:['--no-sandbox','--autoplay-policy=no-user-gesture-required'] });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', headless:true, args:['--no-sandbox','--no-proxy-server','--autoplay-policy=no-user-gesture-required'] });
 try {
   for (const mode of ['webgl', '2d', 'animation', ...(hls ? ['hls'] : [])]) {
   const page = await browser.newPage();
@@ -89,6 +97,11 @@ try {
   console.log(JSON.stringify({result,errors}));
   if(result.version !== '10.1.0' || errors.length || result.fullscreen!==0 || result.stop!==1 || result.spinner!==1 || !result.fill) throw new Error('Player integration failed');
   await page.waitForFunction(()=>events.some(event=>event.k==='ap-state' && event.ready && event.duration>0));
+  await page.waitForFunction(()=>events.some(event=>event.k==='ap-diag' && event.event==='play-resolved'));
+  const openingDiagnostics = await page.evaluate(()=>events.filter(event=>event.k==='ap-diag'));
+  checkDiagnostics(openingDiagnostics);
+  for (const expected of ['open', 'probe-start', 'probe-ready', 'loadedmetadata', 'directive-seek', 'directive-play', 'play', 'playing', 'play-resolved'])
+    if (!openingDiagnostics.some(entry=>entry.event===expected)) throw new Error(`Missing initial AirPlay diagnostic: ${expected}`);
   await page.waitForFunction(()=>new Set(pictures.filter(p=>p.colored).map(p=>p.hash)).size>=2);
   const picture = await page.evaluate(() => ({ ...pictures.at(-1), opacity: getComputedStyle(actualVideo()).opacity,
     canvases: document.querySelectorAll('.airplay-canvas').length }));
@@ -113,6 +126,10 @@ try {
   const pausedFrames = await page.evaluate(()=>pictures.length);
   await page.waitForTimeout(150);
   if(await page.evaluate(()=>pictures.length)!==pausedFrames) throw new Error('Paused video keeps drawing');
+  const pausedDiagnostics = await page.evaluate(()=>events.filter(event=>event.k==='ap-diag').length);
+  await page.waitForTimeout(500);
+  if(await page.evaluate(()=>events.filter(event=>event.k==='ap-diag').length)!==pausedDiagnostics)
+    throw new Error('Periodic AirPlay reports emitted extra diagnostics');
   await page.evaluate(()=>document.getElementById('stage').style.height='800px');
   await page.waitForFunction(()=>pictures.at(-1).width===320 && pictures.at(-1).height===320);
   if(mode==='webgl') {
@@ -149,9 +166,25 @@ try {
   await page.locator('media-play-button').click();
   if(!await page.evaluate(()=>actualVideo().paused)) throw new Error('Canvas intercepted player controls');
   const slider = page.locator('media-time-slider');
+  await slider.scrollIntoViewIfNeeded();
   const bounds = await slider.boundingBox();
   await slider.click({ position: { x: bounds.width * 0.55, y: bounds.height / 2 } });
   await page.waitForFunction(() => Math.abs(actualVideo().currentTime / actualVideo().duration - 0.55) < 0.05);
+  const dragMark = await page.evaluate(()=>events.length);
+  await page.mouse.move(bounds.x + bounds.width * 0.2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * 0.65, bounds.y + bounds.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForFunction(mark=>events.slice(mark).some(event=>event.k==='ap-diag' && event.event==='drag-end'), dragMark);
+  await page.waitForFunction(()=>!actualVideo().seeking && Math.abs(actualVideo().currentTime / actualVideo().duration - 0.65)<0.05);
+  const dragDiagnostics = await page.evaluate(mark=>events.slice(mark).filter(event=>event.k==='ap-diag'), dragMark);
+  if (dragDiagnostics.filter(entry=>entry.event==='drag-start' && entry.dragging).length!==1 ||
+      dragDiagnostics.filter(entry=>entry.event==='drag-end' && !entry.dragging).length!==1 ||
+      !dragDiagnostics.some(entry=>entry.event==='seeking' && entry.seeking) ||
+      !dragDiagnostics.some(entry=>entry.event==='seeked' && !entry.seeking))
+    throw new Error('Time-slider gesture or seek edges were not diagnosed');
+  console.log(JSON.stringify({mode, drag:dragDiagnostics.map(({event,position,duration,seeking,dragging})=>
+    ({event,position,duration,seeking,dragging}))}));
 
   await page.evaluate(()=>{
     const player=document.querySelector('hlsjs-video') ?? actualVideo();
@@ -165,7 +198,17 @@ try {
   await page.locator('.airplay-stop').click();
   if (!await page.evaluate(() => events.some(event => event.k === 'ap' && event.id === 1 && event.a === 'stop')))
     throw new Error('Stop control did not reach the iPhone');
-  await page.evaluate(()=>controls.update(null));
+  if (!await page.evaluate(()=>events.some(event=>event.k==='ap-diag' && event.event==='ended' && event.ended) &&
+      events.some(event=>event.k==='ap-diag' && event.event==='explicit-stop')))
+    throw new Error('Media completion and explicit stop were not distinguished');
+  const retiredDiagnostics = await page.evaluate(()=>{
+    const retired = document.querySelector('hlsjs-video') ?? actualVideo();
+    controls.update(null);
+    const mark=events.filter(event=>event.k==='ap-diag').length;
+    for (const type of ['play','pause','loadedmetadata','seeking','seeked','ended','error']) retired.dispatchEvent(new Event(type));
+    return {mark,after:events.filter(event=>event.k==='ap-diag').length};
+  });
+  if (retiredDiagnostics.mark!==retiredDiagnostics.after) throw new Error('Retired player emitted late diagnostics');
   if(await page.locator('video-player').count()) throw new Error('Player not disposed');
   if(await page.locator('.airplay-canvas').count()) throw new Error('Canvas not disposed');
   const disposedFrames=await page.evaluate(()=>pictures.length);
@@ -181,9 +224,73 @@ try {
     controls.update({id:2,resource:'broken',revision:1,seekRevision:0,target:0,fraction:false,playing:false});
   });
   await page.waitForFunction(()=>events.some(event=>event.id===2&&event.revision===1&&event.failed));
+  if (!await page.evaluate(()=>events.some(event=>event.k==='ap-diag' && event.id===2 && event.revision===1 && event.event==='open-error')))
+    throw new Error('Resource-open failure did not preserve its active revision');
+  checkDiagnostics(await page.evaluate(()=>events.filter(event=>event.k==='ap-diag')));
   await page.evaluate(()=>controls.update(null));
   if(errors.length) throw new Error(`Browser errors: ${errors.join('; ')}`);
   await page.close();
+  }
+  for (const scenario of ['autoplay-rejection', 'canvas-failure', 'retired-play-promise']) {
+    const page=await browser.newPage();
+    const errors=[]; page.on('pageerror', error=>errors.push(error.message));
+    await page.addInitScript(scenario=>{
+      const secret='https://private.example/media?code=private-code&session=private-session';
+      if (scenario==='canvas-failure') {
+        const original=HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext=function(type,options){
+          if(type.startsWith('webgl'))return null;
+          const context=original.call(this,type,options);
+          if(context)context.drawImage=()=>{throw new DOMException(secret,'SecurityError');};
+          return context;
+        };
+      } else {
+        window.originalPlay=HTMLMediaElement.prototype.play;
+        HTMLMediaElement.prototype.play=function(){
+          window.retiredMedia=this;
+          if(scenario==='autoplay-rejection')return Promise.reject(new DOMException(secret,'NotAllowedError'));
+          return new Promise((resolve,reject)=>{window.rejectRetiredPlay=()=>reject(new DOMException(secret,'AbortError'));});
+        };
+      }
+    },scenario);
+    await page.goto(url+'/harness');
+    await page.evaluate(async()=>{
+      const {createAirPlayControls}=await import('/airplay-controls.js');
+      window.events=[];
+      window.controls=createAirPlayControls(document.getElementById('stage'),event=>events.push(event),'en',{
+        fetchPhone:(route,init)=>fetch(route,init), credentials:()=>({code:'private-code',session:'private-session'}),host:()=>location.host,
+      });
+      controls.update({id:9,resource:'0',revision:0,seekRevision:0,target:0,fraction:false,playing:true});
+    });
+    if(scenario==='retired-play-promise'){
+      await page.waitForFunction(()=>typeof rejectRetiredPlay==='function');
+      const retired=await page.evaluate(async()=>{
+        controls.update(null); const mark=events.length;
+        rejectRetiredPlay();
+        for(const type of ['ended','error','seeked'])retiredMedia.dispatchEvent(new Event(type));
+        await new Promise(resolve=>setTimeout(resolve,50));
+        HTMLMediaElement.prototype.play=originalPlay;
+        return {mark,after:events.length};
+      });
+      if(retired.mark!==retired.after)throw new Error('Retired play promise reported into a closed player');
+    }else{
+      const expected=scenario==='autoplay-rejection'?'play-rejected':'canvas-error';
+      const errorName=scenario==='autoplay-rejection'?'NotAllowedError':'SecurityError';
+      await page.waitForFunction(expected=>events.some(event=>event.k==='ap-diag' && event.event===expected),expected);
+      if(!await page.evaluate(({expected,errorName})=>events.some(event=>event.k==='ap-diag' && event.event===expected && event.errorName===errorName),{expected,errorName}))
+        throw new Error('Failure diagnostic omitted its safe exception name');
+      if(scenario==='autoplay-rejection' && !await page.evaluate(()=>document.querySelector('video').paused && !events.some(event=>event.k==='ap-state' && event.failed)))
+        throw new Error('Autoplay rejection diagnostics changed playback failure behavior');
+      if(scenario==='canvas-failure' && !await page.evaluate(()=>events.some(event=>event.k==='ap-state' && event.failed)))
+        throw new Error('Canvas failure no longer reached the existing playback report');
+      console.log(JSON.stringify({scenario, failure:await page.evaluate(expected=>events.find(event=>
+        event.k==='ap-diag' && event.event===expected),expected)}));
+    }
+    checkDiagnostics(await page.evaluate(()=>events.filter(event=>event.k==='ap-diag')));
+    await page.evaluate(()=>controls.dispose());
+    if(errors.length)throw new Error(`Diagnostic scenario browser errors: ${errors.join('; ')}`);
+    await page.close();
+    console.log(`${scenario}: safe diagnostic edges and existing playback behavior verified`);
   }
   console.log('AirPlay MP4/HLS Video.js v10 checks passed');
 } finally {await browser.close();await new Promise(r=>server.close(r));}

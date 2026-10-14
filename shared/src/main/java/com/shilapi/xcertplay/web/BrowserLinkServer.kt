@@ -99,6 +99,7 @@ class BrowserLinkServer(
     private val audios = ConcurrentHashMap.newKeySet<AudioStream>()
     private val preflightLogged = AtomicBoolean(false)
     private val performance = VideoPerformance()
+    private val airplayDiagnostics = AirPlayPlaybackDiagnostics(callbacks::log)
     private val gate = BrowserPairingGate(callbacks::code)
     private val touch = BrowserTouchSlots(callbacks::onTouch)
     private val lock = Any()
@@ -461,13 +462,19 @@ class BrowserLinkServer(
             }
             "ap-state" -> {
                 val id = fields["id"].wholeNumber() ?: return
-                AirPlayBrowserPlayback.report(id, fields)
+                val accepted = AirPlayBrowserPlayback.report(id, fields)
+                airplayDiagnostics.report(id, fields, accepted)
+            }
+            "ap-diag" -> {
+                val id = fields["id"].wholeNumber()?.takeIf { it > 0 } ?: return
+                airplayDiagnostics.event(id, fields, AirPlayBrowserPlayback.video(id) != null)
             }
             "ap" -> {
                 val id = fields["id"].wholeNumber() ?: return
                 val action = fields["a"] as? String ?: return
                 val value = (fields["v"] as? Number)?.toDouble()?.takeIf { it.isFinite() }
-                AirPlayBrowserPlayback.command(id, action, value)
+                val accepted = AirPlayBrowserPlayback.command(id, action, value)
+                airplayDiagnostics.command(id, action, value, accepted)
             }
         }
     }

@@ -35,19 +35,24 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
     private val iphoneSeek = AirPlaySeekCoalescer(
         schedule = { task, delay -> main.postDelayed(task, delay) }, cancelScheduled = main::removeCallbacks,
     ) { seconds ->
-        if (!closed) browserVideo?.control("seek", seconds)
+        if (!closed) browserVideo?.let { playback ->
+            diagnostics.control(AirPlayVideoDiagnostics.ControlSource.IPHONE, "seek", seconds, generation)
+            playback.control("seek", seconds)
+        }
     }
     private var browserControls: Closeable? = null
     val state: ReceiverPlayback get() = browserVideo?.playback ?: ReceiverPlayback()
 
     fun play(item: ReceiverPlay) = main.post {
         if (closed) return@post
-        stopNow()
+        stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED)
         TeslaBrowserLink.pauseCarPlayDisplay()
         val token = generation
         val playback = AirPlayVideoPlayback(item, resource) { event -> main.post {
             if (!closed && generation == token) {
-                if (event == "stopped" || event == "failed") stopNow()
+                if (event == "stopped" || event == "failed") stopNow(
+                    if (event == "failed") AirPlayVideoDiagnostics.StopReason.BROWSER_FAILED else AirPlayVideoDiagnostics.StopReason.BROWSER_ENDED,
+                )
                 stateChanged(event)
             }
         } }
@@ -55,7 +60,8 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
         browserControls = AirPlayBrowserPlayback.register(state = playback::state, video = playback,
             control = { action, value -> main.post {
                 if (!closed && generation == token) {
-                    if (action == "stop") { stopNow(); stateChanged("stopped") }
+                    diagnostics.control(AirPlayVideoDiagnostics.ControlSource.BROWSER, action, value, generation)
+                    if (action == "stop") { stopNow(AirPlayVideoDiagnostics.StopReason.BROWSER_STOP); stateChanged("stopped") }
                     else {
                         if (action == "seek") iphoneSeek.cancel()
                         playback.control(action, value)
@@ -67,13 +73,16 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
 
     fun photo(bytes: ByteArray) = main.post {
         if (closed) return@post
-        stopNow()
+        stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED)
         TeslaBrowserLink.pauseCarPlayDisplay()
         val token = generation
         browserControls = AirPlayBrowserPlayback.register(state = {
             AirPlayBrowserPlayback.State(0.0, 0.0, false, true, false, false, "photo")
         }, control = { action, _ -> if (action == "stop") main.post {
-            if (!closed && generation == token) { stopNow(); stateChanged("stopped") }
+            if (!closed && generation == token) {
+                diagnostics.control(AirPlayVideoDiagnostics.ControlSource.BROWSER, "stop", null, generation)
+                stopNow(AirPlayVideoDiagnostics.StopReason.BROWSER_STOP); stateChanged("stopped")
+            }
         } })
         val failure: (Exception) -> Unit = { error -> main.post {
             if (!closed && generation == token) { diagnostics.failure(AirPlayVideoDiagnostics.Stage.PREPARE, error); fail() }
@@ -86,10 +95,17 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
     }
 
     fun seek(seconds: Double) = main.post { if (!closed) iphoneSeek.request(seconds) }
-    fun rate(value: Double) = main.post { browserVideo?.control(if (value == 0.0) "pause" else "play", null) }
-    fun stop(afterStop: () -> Unit = {}) = main.post { stopNow(); afterStop() }
-    private fun fail() { stopNow(); stateChanged("failed") }
-    private fun stopNow() {
+    fun rate(value: Double) = main.post {
+        val action = if (value == 0.0) "pause" else "play"
+        browserVideo?.let { playback ->
+            diagnostics.control(AirPlayVideoDiagnostics.ControlSource.IPHONE, action, value, generation)
+            playback.control(action, null)
+        }
+    }
+    fun stop(afterStop: () -> Unit = {}) = main.post { stopNow(AirPlayVideoDiagnostics.StopReason.RECEIVER_STOP); afterStop() }
+    private fun fail() { stopNow(AirPlayVideoDiagnostics.StopReason.PHOTO_FAILED); stateChanged("failed") }
+    private fun stopNow(reason: AirPlayVideoDiagnostics.StopReason) {
+        if (browserControls != null || browserVideo != null || photoFrames != null || video != null) diagnostics.stopped(reason, generation)
         iphoneSeek.cancel()
         browserControls?.close(); browserControls = null
         browserVideo?.close(); browserVideo = null
@@ -98,8 +114,8 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
         video?.close(); video = null
     }
     override fun close() {
-        if (Looper.myLooper() == main.looper) { closed = true; stopNow() }
-        else main.post { closed = true; stopNow() }
+        if (Looper.myLooper() == main.looper) { closed = true; stopNow(AirPlayVideoDiagnostics.StopReason.SHUTDOWN) }
+        else main.post { closed = true; stopNow(AirPlayVideoDiagnostics.StopReason.SHUTDOWN) }
     }
 
     private class EncodedVideo(private val diagnostics: AirPlayVideoDiagnostics,
