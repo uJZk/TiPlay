@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' data:; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>TiPlay · 音频自动播放测试</title>
+  <link rel="stylesheet" href="../airplay-controls.css">
+  <link rel="stylesheet" href="test.css">
+</head>
+<body>
+<main>
+  <header><a href="../">TiPlay</a><span>车载浏览器测试</span></header>
+  <h1>同一个音频上下文，<br>能否直接开始视频？</h1>
+  <p class="intro">先解锁 Web Audio，再延迟启动一个新视频，模拟连接 CarPlay 后开始 AirPlay 视频投放。</p>
+  <section class="setup">
+    <div><h2>1. 解锁音频</h2><p>点击后应听到一声短音。后续测试复用这个 AudioContext，不重新创建。</p></div>
+    <button id="unlock">解锁音频 · 播放短音</button>
+  </section>
+  <section class="setup">
+    <div><h2>2. 选择对照</h2><p>每次都会创建新 Video.js 播放器。静音组用于检查静音是否也切断 Web Audio 信号。</p></div>
+    <label for="mode">音频路径</label>
+    <select id="mode">
+      <option value="shared">B · 视频接入已解锁的 Web Audio</option>
+      <option value="native">A · 原生视频声音（对照）</option>
+      <option value="shared-muted">C · 静音视频接入 Web Audio</option>
+    </select>
+    <button id="start" disabled>8 秒后自动开始视频</button>
+    <p id="countdown" role="status">先完成第 1 步。等待期间不要触碰页面。</p>
+  </section>
+  <section class="results" aria-label="测试状态">
+    <div><span>AudioContext</span><strong id="context">尚未创建</strong></div>
+    <div><span>自动播放请求</span><strong id="play-result">尚未测试</strong></div>
+    <div><span>视频进度</span><strong id="progress">—</strong></div>
+    <div><span>Web Audio 信号</span><strong id="signal">—</strong></div>
+  </section>
+  <div id="stage"><div id="player-layer" class="airplay-player" hidden></div><p id="placeholder">测试视频将在这里出现</p></div>
+  <section class="setup observations">
+    <div><h2>3. 记录听到的结果</h2><p>有音频信号不等于车内一定出声，请按实际听到的情况记录。可在视频结束后再选。</p></div>
+    <div class="actions"><button id="heard">听到了声音</button><button id="silent">没有声音</button><button id="copy">复制测试记录</button></div>
+    <p id="copy-result" role="status"></p>
+  </section>
+  <details><summary>测试记录</summary><pre id="log"></pre></details>
+  <p class="note">这是独立验证页，用同一个 AudioContext 播放短音并接收视频音轨；正式 TiPlay 播放页尚未接入该路径。视频为本地生成的画面和测试音，不连接手机、不上传测试记录。</p>
+</main>
+<script type="module" src="test.js"></script>
+</body>
+</html>

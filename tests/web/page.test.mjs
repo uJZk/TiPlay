@@ -164,10 +164,11 @@ test('disconnect is a separate full-width row immediately below connect', () => 
   assert.match(read('style.css'), /#disconnect\{margin-top:8px\}/);
 });
 
-test('the service worker precaches every page file', () => {
+test('the service worker precaches playback files while the independent audio test stays online', () => {
   const assets = JSON.parse(/const ASSETS = (\[[^\]]*\]);/.exec(read('sw.js'))[1].replaceAll("'", '"'));
   const files = readdirSync(play, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile() && entry.name !== 'sw.js').map(entry => (entry.parentPath.slice(new URL(play).pathname.replace(/\/$/, '').length) + '/' + entry.name).replace(/^\/+/, ''));
-  assert.deepEqual([...assets].filter(name => name !== './').sort(), files.sort());
+  // The standalone car-browser experiment must not enlarge the offline playback cache.
+  assert.deepEqual([...assets].filter(name => name !== './').sort(), files.filter(name => !name.startsWith('audio-test/')).sort());
 });
 
 test('the service worker answers only its own files, so the download pages in its scope reach the network', () => {

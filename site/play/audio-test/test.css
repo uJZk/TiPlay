@@ -1,0 +1,29 @@
+:root { color-scheme: dark; font-family: system-ui,sans-serif; color:#eaf0f9; background:#0c121c; }
+* { box-sizing:border-box; }
+body { margin:0; }
+main { max-width:1000px; margin:auto; padding:24px; }
+header { display:flex; justify-content:space-between; align-items:center; color:#94a5bc; }
+header a { color:#eaf0f9; font-size:22px; font-weight:750; text-decoration:none; }
+h1 { font-size:clamp(26px,4vw,40px); line-height:1.25; margin:28px 0 12px; }
+h2 { font-size:19px; margin:0 0 8px; }
+p { line-height:1.6; color:#b9c6d8; margin:8px 0 16px; }
+.intro { max-width:700px; }
+.setup { padding:20px; background:#172232; border:1px solid #2b3d54; border-radius:16px; margin:16px 0; }
+button,select { font:inherit; border-radius:10px; min-height:48px; padding:10px 16px; color:#fff; border:1px solid #537194; background:#243a54; cursor:pointer; }
+button:disabled { opacity:.45; cursor:default; }
+button:focus-visible,select:focus-visible { outline:3px solid #7cbcff; outline-offset:3px; }
+#unlock,#start { background:#2861a4; }
+select { width:100%; margin:8px 0 14px; }
+label { color:#b9c6d8; }
+.results { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:20px 0; }
+.results div { padding:14px; background:#172232; border-radius:12px; overflow-wrap:anywhere; }
+.results span { display:block; font-size:13px; color:#94a5bc; margin-bottom:8px; }
+.results strong { font-size:17px; font-weight:650; }
+#stage { height:clamp(220px,42vw,460px); position:relative; border-radius:16px; overflow:hidden; background:#000; display:grid; place-items:center; }
+#placeholder { color:#8292a6; padding:20px; }
+.actions { display:flex; flex-wrap:wrap; gap:10px; }
+details { margin:20px 0; }
+summary { cursor:pointer; padding:12px 0; }
+pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; background:#080d14; padding:16px; border-radius:12px; max-height:360px; overflow:auto; }
+.note { font-size:13px; }
+@media(max-width:650px) { main { padding:16px; } .results { grid-template-columns:repeat(2,1fr); } .setup { padding:16px; } }
