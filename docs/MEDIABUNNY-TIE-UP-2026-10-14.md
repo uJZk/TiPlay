@@ -49,10 +49,20 @@ caches were removed; local drivers, fixtures and logs remain ignored under
 
 ## Delivery and follow-up
 
-The source starts on main, so no worktree or feature-branch merge is needed.
-Commits use `[skip ci]` to honor the requested build skip; the existing
-`pages.yml` workflow is dispatched separately for the exact main commit.
-Its static site assembly publishes the already generated browser dependencies.
+Source commit `d1e605a8ff07f8af550d4198a8a59a5b487f2c65` was committed on main
+and pushed without force, including all nine requested screenshot deletions.
+No worktree or feature-branch merge was needed. Commits use `[skip ci]` to
+honor the requested build skip; the existing `pages.yml` workflow was dispatched
+separately for that exact main commit. Its static site assembly published the
+already generated browser dependencies.
+
+[Pages run 38572007863](https://github.com/uJZk/TiPlay/actions/runs/38572007863)
+succeeded. All 44 published page/offline assets, including cache-v42 `sw.js`,
+match the committed source byte-for-byte by SHA-256 at
+https://ujzk.github.io/TiPlay/. This is deployment evidence, not vehicle acceptance.
+Final delivery documentation is a separate `[skip ci]` commit; runtime assets
+remain those verified above. The tracked worktree is clean after delivery.
+
 No APK rebuild, draft replacement, APK release or device installation is part
 of this tie-up. The existing downloadable APK therefore keeps its previous
 Android rate-feedback behavior until a later APK delivery.
