@@ -24,7 +24,9 @@ GitHub confirms beta.2 is already published. Do not rerun its draft workflow or 
 published assets. Beta.3/versionCode 35 packages the new Android fixes using the existing
 signing and runtime-input workflow, remaining a prerelease draft. There is no public APK
 release in this tie-up. The download website's version label stays at downloadable beta.2
-until beta.3 is published; Pages ships the compatible v10 browser update.
+until beta.3 is published; Pages ships the compatible v10 browser update. GitHub
+`/releases/latest` excludes prereleases and returned 404; current download buttons
+explicitly target published `v0.2.14-beta.2`, verified through the release API.
 
 The runtime identity is still copied unchanged from the pinned, hash-verified DiPlay
 0.2.18 APK. Updating source ancestry does not change that identity provenance.
@@ -74,10 +76,10 @@ https://ujzk.github.io/TiPlay/. This verifies deployment status, not a real-car 
 
 [Signed beta.3 workflow 38489034087](https://github.com/uJZk/TiPlay/actions/runs/38489034087)
 succeeded, including release lint/build, signature/runtime checks, exact source ZIP,
-checksums, upload and temporary-input cleanup. [Beta.3 draft](https://github.com/uJZk/TiPlay/releases/tag/untagged-fa4527e80a814c115f93)
+checksums, upload and temporary-input cleanup. The initial beta.3 draft
 (ID `412219550`) remains a prerelease draft targeting the source commit above, with
-exactly APK, matching source ZIP and `SHA256SUMS.txt`. The checksum attachment matches
-the remote asset digests:
+exactly APK, matching source ZIP and `SHA256SUMS.txt`. Its initial artifact digests
+are retained here as historical evidence; the corrected current build is recorded below:
 
 - APK SHA-256: `ec94351f7a10f747cf4a87f475c9257f54607dabc07c8045cfc85925fa571b44`.
 - Source ZIP SHA-256: `de8aacb147319e9f4b57b59233c5fd166acab87d8106db08a09f3bd938bc87e8`.
@@ -100,3 +102,37 @@ published by this tie-up, and published beta.2 assets are unchanged.
 Real iPhone/car checks remain pending: USB/wireless negotiation, car HFP/SCO recording
 recovery, call/Siri/navigation timing, long playback, Safari/vehicle browser compatibility
 and direct iPhone resource CORS/reachability. Desktop tests do not establish those results.
+
+
+## Corrected delivery
+
+Clock-close fix source: `0ed8d97d3ad85e9222370ceb4802cd923fade38c`.
+[Signed workflow 38491762214](https://github.com/uJZk/TiPlay/actions/runs/38491762214)
+succeeded; the existing beta.3 draft was updated to this exact source commit, preserving
+its draft/prerelease status and exactly three verified attachments.
+
+Current [beta.3 draft](https://github.com/uJZk/TiPlay/releases/tag/untagged-34af6e02a718bad17591) (ID `412219550`):
+
+- APK SHA-256: `37d5c07271b9d18d8356108cf924dc0da032f74ff39815c4ca4a8f3b67868c4a`.
+- Source ZIP SHA-256: `c4449c8de8e55177e78454fdd7ca17d96ba81abb75cf74d95f54018729e53038`.
+
+The checksum attachment matches both remote digests. Published beta.2 is unchanged.
+
+Download-link source `792f4cbb8580eeb8e1ae40679cb9675395ee2d99` changes only website
+links and their test expectation. Browser tests passed 116/116 again. [Pages run
+38492165922](https://github.com/uJZk/TiPlay/actions/runs/38492165922) succeeded; deployment
+`7053790412` reports success for that commit at https://ujzk.github.io/TiPlay/.
+The v10 browser assets remain identical to the earlier deployment, with cache v38.
+
+[Corrected remote CI 38491762793](https://github.com/uJZk/TiPlay/actions/runs/38491762793)
+succeeded: browser/public-tree/release checks and the complete Android tests, lint and
+three-app debug assembly all passed. The post-push UDP rebind failure is resolved.
+A transient GitHub job-status HTTP 503 interrupted only the watcher; querying the
+existing run and resuming observation confirmed success without rerunning the build.
+
+Final delivery documentation is committed separately with `[skip ci]`. Application code
+still matches the signed/source build at `0ed8d97d3`; browser assets still match the
+Pages build at `792f4cbb8`. Default main is pushed without force, its worktree is clean,
+and temporary branches, fixtures, assembly output and build daemons are gone. Evidence
+under ignored `agent_docs/upstream-videojs-2026-10-14/` remains for follow-up. The draft
+has not been published, and iPhone/vehicle acceptance remains pending.
