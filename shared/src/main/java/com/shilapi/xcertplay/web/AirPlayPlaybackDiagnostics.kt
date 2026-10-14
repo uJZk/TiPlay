@@ -31,7 +31,8 @@ internal class AirPlayPlaybackDiagnostics(
         emit("browser video stage=EVENT id=$id revision=${whole(fields["revision"])} event=$event active=$active " +
             times(fields) + " " + EVENT_FLAGS.joinToString(" ") { "$it=${flag(fields[it])}" } +
             " readyState=${bounded(fields["readyState"], 4)} networkState=${bounded(fields["networkState"], 3)}" +
-            " errorCode=${bounded(fields["errorCode"], 5)} errorName=$error" +
+            // The saved-report privacy filter reserves name= fields for personal device names.
+            " errorCode=${bounded(fields["errorCode"], 5)} errorType=$error" +
             " errorText=${DiagnosticErrorText.sanitize(fields["errorText"] as? String)}")
     }
 

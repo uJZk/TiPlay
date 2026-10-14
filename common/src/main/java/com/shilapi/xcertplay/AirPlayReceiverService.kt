@@ -32,7 +32,7 @@ class AirPlayReceiverService : Service() {
     @Volatile private var server: ReceiverServer? = null // worker creates/closes; callbacks may read
     private var settingsSubscription: AutoCloseable? = null
     private lateinit var player: AirPlayCastPlayer
-    private val playbackDiagnostics = AirPlayVideoDiagnostics { Log.i("tiplay-airplay", it) }
+    private val playbackDiagnostics = AirPlayVideoDiagnostics(::logDiagnostic)
     private val displayLock = Any()
     private var displayGeneration = 0L // guarded by displayLock
     @Volatile private var mirrorOutput: WebMediaSink? = null
@@ -59,8 +59,8 @@ class AirPlayReceiverService : Service() {
             if (!destroyed && ended) TeslaBrowserLink.resumeCarPlayDisplay()
             if (!destroyed) worker.execute {
                 if (!destroyed && player.playbackEpoch == epoch) {
-                    // Reverse HTTP writes can block on the iPhone. Keep them off Android's UI thread.
-                    server?.playbackEvent(if (state == "failed") "stopped" else state)
+                    // UxPlay reports ongoing video state through /playback-info. Reserve reverse
+                    // HTTP for FCUP instead of interleaving unsolicited playback state requests.
                     if (ended) {
                         server?.finishPlayback(if (state == "failed") ReceiverServer.PlaybackFinishReason.BROWSER_FAILED
                             else ReceiverServer.PlaybackFinishReason.BROWSER_ENDED)
@@ -93,7 +93,7 @@ class AirPlayReceiverService : Service() {
             try {
                 val receiverConfig = identity()
                 val receiver = ReceiverServer(receiverConfig, object : ReceiverServer.Listener {
-                    override fun log(message: String) { Log.i("tiplay-airplay", message) }
+                    override fun log(message: String) = logDiagnostic(message)
                     override fun mirrorSink(): WebMediaSink = synchronized(displayLock) {
                         check(!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService))
                         displayGeneration++
@@ -172,6 +172,11 @@ class AirPlayReceiverService : Service() {
             }
         }
         return START_NOT_STICKY
+    }
+
+    private fun logDiagnostic(message: String) {
+        Log.i("tiplay-airplay", message)
+        TeslaBrowserLink.persistDiagnostic(message)
     }
 
     private fun identity(): ReceiverConfig {

@@ -69,6 +69,7 @@ internal object TeslaBrowserLink {
         fun onBrowserFit()
         fun onBrowserViewport(viewport: BrowserViewport) {}
         fun onBrowserTheme(night: Boolean) {}
+        fun onAirPlayEnded() {}
     }
 
     const val PORT = BrowserLinkServer.DEFAULT_PORT
@@ -134,6 +135,9 @@ internal object TeslaBrowserLink {
     private val audioTaps = WeakHashMap<MediaSink, BrowserAudioMediaSink>() // guarded by tapLock
     @Volatile private var carPlayDisplayPaused = false
 
+    /** Includes URL/photo preparation before a browser entry or mirror CONFIG is published. */
+    val airPlayActive: Boolean get() = carPlayDisplayPaused
+
     /** AirPlay borrows the canvas; the CarPlay controller and its Wi-Fi/session resources stay alive. */
     fun pauseCarPlayDisplay() = synchronized(tapLock) {
         if (!carPlayDisplayPaused) CarPlayBackgroundSession.snapshot()?.controller?.sendTouch(emptyList())
@@ -145,10 +149,12 @@ internal object TeslaBrowserLink {
     fun resumeCarPlayDisplay() = synchronized(tapLock) {
         // A stale receiver status or a concurrent CarPlay start must not revoke a live mirror.
         if (hub.hasAirPlayDisplay() || com.shilapi.xcertplay.web.AirPlayBrowserPlayback.snapshot()?.get("resource") != null) return@synchronized
+        val ended = carPlayDisplayPaused
         carPlayDisplayPaused = false
         audioHub.enabled = app?.let { !BrowserCarPlayAudioSettings.disabled(it) } ?: true
         CarPlayBackgroundSession.snapshot()?.sink?.let { audioTaps[it]?.resumeAudio() }
         CarPlayBackgroundSession.snapshot()?.sink?.let { taps[it]?.resumeDisplay() }
+        if (ended) main.post { if (!carPlayDisplayPaused) host.get()?.onAirPlayEnded() }
     }
     private val statsLock = Any()
 
@@ -494,6 +500,11 @@ internal object TeslaBrowserLink {
 
     private fun log(message: String) {
         Log.i(TAG, message)
+        persistDiagnostic(message)
+    }
+
+    /** Keep receiver metadata in the saved report when host logcat is unavailable. */
+    internal fun persistDiagnostic(message: String) {
         host.get()?.log(message)
     }
 

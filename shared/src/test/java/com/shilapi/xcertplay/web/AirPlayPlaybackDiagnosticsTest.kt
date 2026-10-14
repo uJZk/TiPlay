@@ -41,7 +41,7 @@ class AirPlayPlaybackDiagnosticsTest {
         diagnostics.report(1, hostile, false)
         assertEquals(3, lines.size)
         lines.forEach { assertFalse(it.contains("secret")); assertFalse(it.contains('\n')) }
-        assertTrue(lines[0].contains("errorName=OTHER"))
+        assertTrue(lines[0].contains("errorType=OTHER"))
         assertTrue(lines[0].contains("readyState=unknown"))
         assertTrue(lines[1].contains("action=OTHER target=unknown"))
     }
@@ -54,7 +54,7 @@ class AirPlayPlaybackDiagnosticsTest {
             "dragging" to false, "readyState" to 4, "networkState" to 1, "errorCode" to 0,
             "errorName" to "NotAllowedError", "errorText" to "play() failed for https://private.test/video?token=hidden"), true)
         assertTrue(lines.single().contains("event=play-rejected active=true"))
-        assertTrue(lines.single().contains("errorName=NotAllowedError"))
+        assertTrue(lines.single().contains("errorType=NotAllowedError"))
         assertTrue(lines.single().contains("duration=120.0"))
         assertTrue(lines.single().contains("errorText=play() failed for [url]"))
         assertFalse(lines.single().contains("private.test"))

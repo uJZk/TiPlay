@@ -67,14 +67,17 @@ data class ReceiverPlayback(val duration: Double = 0.0, val position: Double = 0
                             val rate: Double = 0.0, val ready: Boolean = false, val buffering: Boolean = false,
                             val bufferedPosition: Double = position, val seekable: Boolean = duration > 0) {
     fun info(): Map<String, Any?> = mapOf(
-        "duration" to duration, "position" to position, "rate" to rate, "readyToPlay" to ready,
-        "playbackBufferEmpty" to (buffering && bufferedPosition <= position),
-        // Claim full only when the entire remaining item is loaded.
-        "playbackBufferFull" to (ready && duration > 0 && bufferedPosition >= duration),
-        "playbackLikelyToKeepUp" to (ready && !buffering),
+        // Legacy HTTP video receivers encode these flags as plist integers, as UxPlay does.
+        "duration" to duration, "position" to position, "rate" to rate, "readyToPlay" to flag(ready),
+        "playbackBufferEmpty" to flag(buffering && bufferedPosition <= position),
+        // This describes the current playback buffer, not a complete download of the item.
+        "playbackBufferFull" to flag(ready && !buffering && bufferedPosition > position),
+        "playbackLikelyToKeepUp" to flag(ready && !buffering),
         "loadedTimeRanges" to if (bufferedPosition > position)
             listOf(mapOf("start" to position, "duration" to bufferedPosition - position)) else emptyList<Map<String, Double>>(),
         "seekableTimeRanges" to if (seekable && duration > 0)
             listOf(mapOf("start" to 0.0, "duration" to duration)) else emptyList<Map<String, Double>>(),
     )
+
+    private fun flag(value: Boolean): Long = if (value) 1L else 0L
 }

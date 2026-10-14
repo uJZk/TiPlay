@@ -48,6 +48,36 @@ class ReceiverServerTest {
         assertEquals("101", readReceiverRequest(getInputStream())!!.path)
     }
 
+    @Test fun reverseChannelAcceptsHttpAndEventStatusRepliesWithoutAnsweringThemAsRequests() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
+                connect(receiver.port).use { reverse ->
+                    reverse.upgradeReverse()
+                    for ((protocol, kind) in listOf("HTTP/1.1" to "HTTP", "EVENT/1.0" to "EVENT")) {
+                        receiver.playbackEvent("playing")
+                        val event = requireNotNull(readReceiverRequest(reverse.getInputStream()))
+                        assertEquals("POST", event.method)
+                        assertEquals("/event", event.path)
+                        reverse.getOutputStream().write("$protocol 200 OK\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                        val deadline = System.nanoTime() + 1_000_000_000L
+                        while (listener.logs.none { it.contains("stage=REVERSE_REPLY kind=$kind status=200") } && System.nanoTime() < deadline) Thread.sleep(1)
+                        assertTrue(listener.logs.any { it.contains("stage=REVERSE_REPLY kind=$kind status=200") })
+                        reverse.soTimeout = 100
+                        assertThrows(java.net.SocketTimeoutException::class.java) { readReceiverRequest(reverse.getInputStream()) }
+                        reverse.soTimeout = 5000
+                        assertEquals(200, control.status("GET", "/playback-info"))
+                        assertEquals(0, listener.stopped)
+                    }
+                    assertFalse(listener.logs.any { it.contains("stage=RESPONSE status=404") })
+                }
+            }
+        } finally { receiver.close() }
+    }
+
     @Test fun blockedReverseWritesDoNotHoldPlaybackOwnershipAndQueuedEventsKeepTheirOrder() {
         val listener = Listener()
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
@@ -373,6 +403,46 @@ class ReceiverServerTest {
             }
             subscription.close()
         } finally { control.close(); receiver.close() }
+    }
+
+    @Test fun parallelIphoneResourceLoadsSendTheNextEventOnlyAfterTheActionResponse() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                assertEquals(200, control.status("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to "mlhls://app/master.m3u8"))))
+                connect(receiver.port).use { reverse ->
+                    reverse.upgradeReverse()
+                    val urls = listOf("mlhls://app/video.m3u8", "mlhls://app/audio.m3u8")
+                    val first = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(urls[0]) }
+                    val firstXml = readReceiverRequest(reverse.getInputStream())!!.body.toString(Charsets.UTF_8)
+                    val idPattern = Regex("<key>FCUP_Response_RequestID</key><integer>([0-9]+)</integer>")
+                    val firstId = idPattern.find(firstXml)!!.groupValues[1].toLong()
+                    val second = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(urls[1]) }
+                    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+                    while (listener.logs.count { it.startsWith("resource stage=QUEUED ") } < 2 && System.nanoTime() < deadline) Thread.sleep(1)
+                    assertEquals(2, listener.logs.count { it.startsWith("resource stage=QUEUED ") })
+                    reverse.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                    reverse.soTimeout = 100
+                    assertThrows(java.net.SocketTimeoutException::class.java) { readReceiverRequest(reverse.getInputStream()) }
+                    reverse.soTimeout = 5000
+                    fun answer(id: Long, url: String) = BplistCodec.encode(mapOf("type" to "unhandledURLResponse", "params" to mapOf(
+                        "FCUP_Response_RequestID" to id, "FCUP_Response_URL" to url,
+                        "FCUP_Response_Data" to byteArrayOf(1), "FCUP_Response_StatusCode" to 0,
+                    )))
+                    assertEquals(200, control.status("POST", "/action", answer(firstId, urls[0])))
+                    assertArrayEquals(byteArrayOf(1), first.get(2, TimeUnit.SECONDS)!!.bytes)
+                    val secondXml = readReceiverRequest(reverse.getInputStream())!!.body.toString(Charsets.UTF_8)
+                    val secondId = idPattern.find(secondXml)!!.groupValues[1].toLong()
+                    assertNotEquals(firstId, secondId)
+                    assertTrue(secondXml.contains(urls[1]))
+                    assertEquals(200, control.status("POST", "/action", answer(secondId, urls[1])))
+                    assertArrayEquals(byteArrayOf(1), second.get(2, TimeUnit.SECONDS)!!.bytes)
+                    assertEquals(2, listener.logs.count { it.startsWith("resource stage=REQUEST ") })
+                }
+            }
+        } finally { receiver.close() }
     }
 
     @Test fun seekCancellationKeepsTheIphoneExchangeForTheReplacementLoader() {

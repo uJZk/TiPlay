@@ -8,6 +8,41 @@ import java.util.concurrent.TimeUnit
 class ReceiverResourceRequestsTest {
     private val peer = InetAddress.getLoopbackAddress()
 
+    @Test fun parallelMediaLoadsWaitForTheirPredecessorResourceAndShareRetries() {
+        val requests = ReceiverResourceRequests()
+        val first = requests.acquire("session", peer, "mlhls://app/video.m3u8")!!.pending
+        val second = requests.acquire("session", peer, "mlhls://app/audio.m3u8")!!.pending
+        val third = requests.acquire("session", peer, "mlhls://app/subtitles.m3u8")!!.pending
+        assertSame(first, requests.nextToDispatch("session", peer))
+        assertNull(requests.nextToDispatch("session", peer))
+        assertSame(second, requests.acquire("session", peer, second.url)!!.pending)
+        first.future.complete(ReceiverResource(byteArrayOf(1), 0, null))
+        assertSame(second, requests.nextToDispatch("session", peer))
+        assertNull(requests.nextToDispatch("session", peer))
+        second.future.complete(ReceiverResource(byteArrayOf(2), 0, null))
+        assertSame(third, requests.nextToDispatch("session", peer))
+    }
+
+    @Test fun expiryAdvancesTheQueueWithoutRestartingQueuedDeadlinesAndStopDiscardsIt() {
+        var now = 0L
+        val requests = ReceiverResourceRequests(nowNanos = { now })
+        val first = requests.acquire("session", peer, "mlhls://app/video.m3u8")!!.pending
+        assertSame(first, requests.nextToDispatch("session", peer))
+        now = TimeUnit.SECONDS.toNanos(10)
+        val second = requests.acquire("session", peer, "mlhls://app/audio.m3u8")!!.pending
+        // Even without a surviving first waiter, the queued caller wakes at t=30 rather than t=40.
+        assertEquals(TimeUnit.SECONDS.toNanos(20), requests.waitNanos(second))
+        now = TimeUnit.SECONDS.toNanos(30)
+        assertSame(second, requests.nextToDispatch("session", peer))
+        assertTrue(first.future.isCompletedExceptionally)
+        assertEquals(TimeUnit.SECONDS.toNanos(10), requests.remainingNanos(second))
+        requests.clear()
+        assertNull(second.future.get())
+        assertNull(requests.nextToDispatch("session", peer))
+        val replacement = requests.acquire("session", peer, first.url)!!.pending
+        assertSame(replacement, requests.nextToDispatch("session", peer))
+    }
+
     @Test fun cancelledWaiterCanReuseTheSameExchangeAfterTheOldTenSecondLimit() {
         var now = 0L
         val requests = ReceiverResourceRequests(nowNanos = { now })

@@ -6,7 +6,7 @@ import com.shilapi.xcertplay.diagnostics.DiagnosticErrorText
 /** Control metadata and sanitized failures; headers, payloads, identities and raw URLs stay out. */
 internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
     enum class Stage { ACCEPT, READ, DISPATCH, WRITE, CLOSE }
-    enum class ResourceStage { UNAVAILABLE, REQUEST, REUSED, RESPONSE, COMPLETE, TIMEOUT, CANCELLED, FAILURE }
+    enum class ResourceStage { UNAVAILABLE, QUEUED, REQUEST, REUSED, RESPONSE, COMPLETE, TIMEOUT, CANCELLED, FAILURE }
 
     fun resource(stage: ResourceStage, requestId: Long = 0, status: Int? = null, bytes: Int? = null) {
         emit("resource stage=$stage request=$requestId" + (status?.let { " status=$it" } ?: "") +
@@ -15,6 +15,16 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
 
     fun play(connection: Long, item: ReceiverPlay) =
         emit("c=$connection video stage=START start=${position(item.start)} fraction=${item.fraction}")
+
+    fun playbackInfo(connection: Long, state: ReceiverPlayback) {
+        val info = state.info()
+        val full = info["playbackBufferFull"] == 1L
+        val flagType = if (info["readyToPlay"] is Long) "INTEGER" else "OTHER"
+        emit("c=$connection video stage=PLAYBACK_INFO duration=${position(state.duration)} " +
+            "position=${position(state.position)} rate=${position(state.rate)} ready=${state.ready} " +
+            "buffering=${state.buffering} bufferedPosition=${position(state.bufferedPosition)} " +
+            "bufferFull=$full seekable=${state.seekable} flagType=$flagType")
+    }
 
     fun finish(reason: ReceiverServer.PlaybackFinishReason, reverseConnection: Long?) =
         emit("video stage=FINISH reason=${reason.wire} reverse=${reverseConnection ?: 0}")
@@ -25,6 +35,12 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
     }
 
     fun stage(connection: Long, stage: Stage) = emit("c=$connection stage=$stage")
+
+    fun reverseReply(connection: Long, reply: RtspMessage.Request) {
+        val kind = if (reply.method == "EVENT/1.0") "EVENT" else "HTTP"
+        val status = reply.path.toIntOrNull()?.takeIf { it in 100..599 }
+        emit("c=$connection stage=REVERSE_REPLY kind=$kind status=${status ?: "INVALID"} bodyBytes=${reply.body.size}")
+    }
 
     fun request(connection: Long, request: RtspMessage.Request) {
         val method = request.method.takeIf { it in METHODS } ?: "OTHER"

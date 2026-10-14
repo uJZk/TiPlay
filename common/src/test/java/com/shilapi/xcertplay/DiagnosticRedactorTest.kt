@@ -5,6 +5,27 @@ import org.junit.Test
 import java.nio.file.Files
 
 class DiagnosticRedactorTest {
+    @Test fun airPlayEventsAndReverseRepliesSurviveSavedReportsWithoutDeviceNames() {
+        val lines = listOf(
+            "browser video stage=EVENT id=1 revision=0 event=play-rejected active=true position=0.0 duration=120.0 bufferedPosition=0.0 paused=true ended=false seeking=false dragging=false readyState=4 networkState=1 errorCode=0 errorType=NotAllowedError errorText=play() failed for [url]",
+            "browser video stage=EVENT id=2 revision=0 event=error active=true position=0.0 duration=unknown bufferedPosition=0.0 paused=true ended=false seeking=false dragging=false readyState=0 networkState=3 errorCode=2 errorType=OTHER errorText=A network error (status 502) prevented playback of [url]",
+            "receiver protocol c=12 stage=REVERSE_REPLY kind=EVENT status=200 bodyBytes=0",
+            "receiver protocol c=12 stage=FINISH reason=BROWSER_FAILED epoch=2",
+        )
+        val folder = Files.createTempDirectory("tiplay-airplay-report").toFile()
+        try {
+            val file = folder.resolve("diplay.log")
+            SessionLogFile(file).use { log ->
+                log.reset("started")
+                lines.forEach { log.append(it) }
+                log.append("phoneName=private-phone-name")
+            }
+            val report = file.readText()
+            lines.forEach { assertTrue(it, report.contains(it)) }
+            assertFalse(report.contains("private-phone-name"))
+        } finally { folder.deleteRecursively() }
+    }
+
     @Test fun additionalTroubleshootingMetadataSurvivesSavedReportWithoutPayloads() {
         val lines = listOf(
             "wireless startup elapsedMs=10000 authenticated=true wifiConfigs=2 startRequests=1 tcpAccepted=0 sessionActive=false waitingFor=WiFi_discovery_or_AirPlay_TCP startRequestAgeMs=9000 firstTcpAfterStartMs=none",

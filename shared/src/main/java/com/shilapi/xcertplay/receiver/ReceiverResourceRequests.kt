@@ -5,7 +5,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
-/** Shares bounded iPhone FCUP exchanges across callers without extending their original deadlines. */
+/** Shares bounded FCUP exchanges and sends one at a time without extending original deadlines. */
 internal class ReceiverResourceRequests(
     private val timeoutNanos: Long = TimeUnit.SECONDS.toNanos(30),
     private val maximumPending: Int = 16,
@@ -18,6 +18,7 @@ internal class ReceiverResourceRequests(
     data class Acquisition(val pending: Pending, val created: Boolean)
 
     private val requests = linkedMapOf<Long, Pending>()
+    private val dispatched = hashSetOf<Long>()
     private var nextId = 0L
 
     init { require(timeoutNanos > 0 && maximumPending > 0) }
@@ -39,17 +40,39 @@ internal class ReceiverResourceRequests(
         return pending
     }
 
+    /** A reverse HTTP acknowledgement does not complete the exchange; wait for its /action resource. */
+    @Synchronized fun nextToDispatch(session: String, peer: InetAddress): Pending? {
+        requests.values.filter { remainingNanos(it) == 0L }.forEach(::expire)
+        if (requests.values.any { it.id in dispatched && !it.future.isDone }) return null
+        val pending = requests.values.firstOrNull {
+            it.session == session && it.peer == peer && it.id !in dispatched && !it.future.isDone
+        } ?: return null
+        dispatched += pending.id
+        return pending
+    }
+
     fun remainingNanos(pending: Pending): Long =
         (timeoutNanos - (nowNanos() - pending.startedNanos)).coerceAtLeast(0)
 
-    @Synchronized fun remove(pending: Pending) { requests.remove(pending.id, pending) }
+    /** A queued loader also wakes when an abandoned in-flight exchange reaches its deadline. */
+    @Synchronized fun waitNanos(pending: Pending): Long =
+        requests.values.filter { it.id in dispatched && !it.future.isDone }
+            .fold(remainingNanos(pending)) { wait, active -> minOf(wait, remainingNanos(active)) }
+
+    @Synchronized fun remove(pending: Pending) {
+        if (requests.remove(pending.id, pending)) dispatched -= pending.id
+    }
 
     @Synchronized fun expire(pending: Pending) {
-        if (requests.remove(pending.id, pending)) pending.future.completeExceptionally(TimeoutException())
+        if (requests.remove(pending.id, pending)) {
+            dispatched -= pending.id
+            pending.future.completeExceptionally(TimeoutException())
+        }
     }
 
     @Synchronized fun clear() {
         requests.values.forEach { it.future.complete(null) }
         requests.clear()
+        dispatched.clear()
     }
 }

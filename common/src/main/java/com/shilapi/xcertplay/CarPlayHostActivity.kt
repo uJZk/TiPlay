@@ -230,11 +230,15 @@ class CarPlayHostActivity : ComponentActivity() {
         override fun onBrowserTheme(night: Boolean) {
             if (!headUnitIntegrations() && !shuttingDown.get()) nightModeController.systemChanged(night)
         }
+        override fun onAirPlayEnded() {
+            if (!resumeCarPlayRecoveryAfterAirPlay(castingEnded = true)) onBrowserFit()
+        }
         override fun onBrowserViewport(viewport: com.shilapi.xcertplay.web.BrowserViewport) {
             // TeslaBrowserLink already delivers this callback on the main thread.
             if (!headUnitIntegrations() && !shuttingDown.get()) onBrowserFit()
         }
         override fun onBrowserFit() {
+            if (TeslaBrowserLink.airPlayActive || BrowserCarPlaySettings.disabled(this@CarPlayHostActivity)) return
             val running = sessionDisplay?.takeIf { controller != null && !headUnitIntegrations() }
             TeslaBrowserLink.fitReason(this@CarPlayHostActivity,
                 running?.let { com.shilapi.xcertplay.web.BrowserSize(it.width, it.height) })?.let {
@@ -607,6 +611,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private var gestureStartX = 0f
     private var gestureStartY = 0f
     private var recoveryPendingAfterMenu = false
+    private var recoveryPendingAfterAirPlay = false
+    private var carPlayRebuildPendingAfterAirPlay = false
     private var failurePendingAfterMenu: CarPlayStatus.Failed? = null
     private val shuttingDown = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -5258,6 +5264,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     callPopupSessionReady = false
                     updateCallPopupGuard()
                     startupRetryBudget.disconnected()
+                    if (!headUnitIntegrations()) carPlayRebuildPendingAfterAirPlay = true
                     if (menuOpen) {
                         recoveryPendingAfterMenu = true
                         return@runOnUiThread
@@ -5299,6 +5306,8 @@ class CarPlayHostActivity : ComponentActivity() {
         if (status is CarPlayStatus.Failed || status is CarPlayStatus.ControlEnded) {
             callPopupSessionReady = false
             updateCallPopupGuard()
+            if (!headUnitIntegrations()) carPlayRebuildPendingAfterAirPlay = true
+            if (status is CarPlayStatus.ControlEnded) deferCarPlayRecoveryForAirPlay()
         }
         if (menuOpen) {
             if (status is CarPlayStatus.Failed) failurePendingAfterMenu = status
@@ -5418,6 +5427,9 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun startCarPlay(size: DisplaySize) {
         if (CarPlayBackgroundSession.hasSession() && !CarPlayBackgroundSession.isOwner(this)) return
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || controller != null) return
+        if (deferCarPlayRecoveryForAirPlay()) return
+        recoveryPendingAfterAirPlay = false
+        carPlayRebuildPendingAfterAirPlay = false
         val controllerGeneration = restartGeneration
         // Settings → Connection can change the target while this screen stays open (#696).
         mfiTarget = AirPlayPersistence.loadMfiTarget(this)
@@ -5817,6 +5829,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun checkBrowserCarPlay() {
         if (isDestroyed || isFinishing || shuttingDown.get() || menuOpen || handshakeResetInProgress ||
             BrowserCarPlaySettings.disabled(this)) return
+        if (TeslaBrowserLink.airPlayActive) return
+        if (resumeCarPlayRecoveryAfterAirPlay()) return
         val wireless = BrowserCarPlaySettings.wireless(this)
         if (wireless != wirelessEnabled) {
             applyBrowserSettings()
@@ -5878,11 +5892,39 @@ class CarPlayHostActivity : ComponentActivity() {
         startCarPlay(size)
     }
 
+    private fun deferCarPlayRecoveryForAirPlay(): Boolean {
+        if (headUnitIntegrations() || !TeslaBrowserLink.airPlayActive) return false
+        if (!recoveryPendingAfterAirPlay) appendLog("CarPlay recovery deferred while ordinary AirPlay is active")
+        recoveryPendingAfterAirPlay = true
+        return true
+    }
+
+    private fun resumeCarPlayRecoveryAfterAirPlay(castingEnded: Boolean = false): Boolean {
+        if ((!recoveryPendingAfterAirPlay && !(castingEnded && reconnectScheduled)) || TeslaBrowserLink.airPlayActive ||
+            isDestroyed || isFinishing || shuttingDown.get() || menuOpen || handshakeResetInProgress ||
+            BrowserCarPlaySettings.disabled(this) || !CarPlayBackgroundSession.isOwner(this)) return false
+        recoveryPendingAfterAirPlay = false
+        val rebuildRequired = carPlayRebuildPendingAfterAirPlay
+        carPlayRebuildPendingAfterAirPlay = false
+        if (!rebuildRequired && controller?.activeAirPlaySessionToken() != null) {
+            reconnectTask?.let(mainHandler::removeCallbacks)
+            reconnectTask = null
+            reconnectScheduled = false
+            appendLog("Ordinary AirPlay ended; keeping the active CarPlay session")
+            return false
+        }
+        appendLog("CarPlay recovery resumed after ordinary AirPlay ended")
+        // The retry already waited before/during casting; do not add another backoff after release.
+        restartCarPlay("Ordinary AirPlay ended; resuming CarPlay")
+        return true
+    }
+
     private fun reconnectAfterLoss(reason: String, startupFailure: WirelessStartupFailure? = null, englishReason: String = reason) {
         if (!headUnitIntegrations() && BrowserCarPlaySettings.disabled(this)) return
         if (!CarPlayBackgroundSession.isOwner(this)) return
         if (menuOpen) recoveryPendingAfterMenu = true
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || startupRetryStopped) return
+        if (deferCarPlayRecoveryForAirPlay()) return
         if (reconnectScheduled) return
         val startupDelay = if (headUnitIntegrations() && startupFailure != null && startupFailure.retryable)
             startupRetryBudget.nextDelayMillis() else null
@@ -5921,6 +5963,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 generation != restartGeneration || (!headUnitIntegrations() && BrowserCarPlaySettings.disabled(this))) {
                 return@Runnable
             }
+            if (deferCarPlayRecoveryForAirPlay()) return@Runnable
             restartCarPlay("Reconnecting after $reason")
         }
         reconnectTask = task
@@ -5931,6 +5974,10 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun restartCarPlay(reason: String) {
         if (!CarPlayBackgroundSession.isOwner(this)) return
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress) return
+        if (deferCarPlayRecoveryForAirPlay()) {
+            carPlayRebuildPendingAfterAirPlay = true
+            return
+        }
         val size = activeDisplaySize ?: return
         reconnectTask?.let(mainHandler::removeCallbacks)
         reconnectTask = null

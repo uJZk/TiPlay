@@ -10,6 +10,33 @@ import org.junit.Test
 import java.io.ByteArrayInputStream
 
 class ReceiverProtocolTest {
+    @Test fun playbackBufferFullDescribesReadyPlaybackWithoutClaimingTheWholeVideoIsLoaded() {
+        val state = ReceiverPlayback(duration = 100.0, position = 50.0, rate = 1.0,
+            ready = true, buffering = false, bufferedPosition = 60.0)
+        assertEquals(1L, state.info()["playbackBufferFull"])
+        assertEquals(listOf(mapOf("start" to 50.0, "duration" to 10.0)), state.info()["loadedTimeRanges"])
+        assertEquals(0L, state.copy(buffering = true).info()["playbackBufferFull"])
+        assertEquals(0L, state.copy(ready = false).info()["playbackBufferFull"])
+        assertEquals(0L, state.copy(bufferedPosition = 50.0).info()["playbackBufferFull"])
+    }
+
+    @Test fun legacyPlaybackInfoEncodesFlagsAsIntegersAndKeepsRealPlaybackValues() {
+        val ready = ReceiverPlayback(duration = 100.0, position = 50.0, rate = 1.0,
+            ready = true, buffering = false, bufferedPosition = 60.0)
+        val readyXml = receiverXml(ready.info()).toString(Charsets.UTF_8)
+        for ((key, value) in mapOf("readyToPlay" to 1, "playbackBufferEmpty" to 0,
+            "playbackBufferFull" to 1, "playbackLikelyToKeepUp" to 1)) {
+            assertTrue(readyXml.contains("<key>$key</key><integer>$value</integer>"))
+        }
+        val loadingXml = receiverXml(ReceiverPlayback(buffering = true).info()).toString(Charsets.UTF_8)
+        for ((key, value) in mapOf("readyToPlay" to 0, "playbackBufferEmpty" to 1,
+            "playbackBufferFull" to 0, "playbackLikelyToKeepUp" to 0)) {
+            assertTrue(loadingXml.contains("<key>$key</key><integer>$value</integer>"))
+        }
+        assertTrue(readyXml.contains("<key>position</key><real>50.0</real>"))
+        assertEquals(listOf(mapOf("start" to 50.0, "duration" to 10.0)), ready.info()["loadedTimeRanges"])
+    }
+
     @Test fun discoveryAndInfoAgreeWithDiscardedAudioWithoutClaimingCarPlayOrDrm() {
         val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate())
         assertEquals(config.features, config.info()["features"])

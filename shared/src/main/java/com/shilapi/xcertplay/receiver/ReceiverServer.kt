@@ -141,30 +141,21 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             if (closed.get()) return null
             val session = playbackId ?: return null
             val peer = playbackPeer ?: return null
-            val channel = reverse[session] ?: run {
+            if (reverse[session] == null) {
                 diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.UNAVAILABLE)
                 return null
             }
             val acquisition = resources.acquire(session, peer, url) ?: return null
-            if (acquisition.created) {
-                val pending = acquisition.pending
-                channel.sendEvent(receiverXml(mapOf("sessionID" to 1, "type" to "unhandledURLRequest", "request" to mapOf(
-                    "FCUP_Response_ClientInfo" to 1, "FCUP_Response_ClientRef" to 40030004,
-                    "FCUP_Response_RequestID" to pending.id, "FCUP_Response_URL" to url,
-                    "FCUP_Response_IsContentKeyRequest" to false, "sessionID" to 1,
-                    "FCUP_Response_Headers" to mapOf("X-Playback-Session-Id" to pending.session,
-                        "User-Agent" to "AppleCoreMedia/1.0.0.11B554a (Apple TV; U; CPU OS 7_0_4 like Mac OS X; en_us)"),
-                ))), pending.session)
-            }
+            diagnostics.resource(if (acquisition.created) ReceiverProtocolDiagnostics.ResourceStage.QUEUED
+                else ReceiverProtocolDiagnostics.ResourceStage.REUSED, acquisition.pending.id)
+            dispatchNextResource()
             acquisition
         }
         val pending = acquisition.pending
         val requestId = pending.id
         var interrupted = false
         try {
-            diagnostics.resource(if (acquisition.created) ReceiverProtocolDiagnostics.ResourceStage.REQUEST
-                else ReceiverProtocolDiagnostics.ResourceStage.REUSED, requestId)
-            return pending.future.get(resources.remainingNanos(pending), TimeUnit.NANOSECONDS).also {
+            return awaitResource(pending).also {
                 diagnostics.resource(if (it == null) ReceiverProtocolDiagnostics.ResourceStage.CANCELLED
                     else ReceiverProtocolDiagnostics.ResourceStage.COMPLETE, requestId)
             }
@@ -183,7 +174,42 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.FAILURE, requestId); return null
         }
         // Interrupted loaders leave the exchange available for the next seek load until its deadline.
-        finally { if (!interrupted && pending.future.isDone) resources.remove(pending) }
+        finally {
+            if (!interrupted && pending.future.isDone) {
+                resources.remove(pending)
+                dispatchNextResource()
+            }
+        }
+    }
+
+    private fun awaitResource(pending: ReceiverResourceRequests.Pending): ReceiverResource? {
+        while (true) {
+            try { return pending.future.get(resources.waitNanos(pending), TimeUnit.NANOSECONDS) }
+            catch (error: TimeoutException) {
+                // A previous seek's only waiter may have been interrupted. Expire that exchange
+                // before waiting again, keeping this loader's own original deadline.
+                dispatchNextResource()
+                if (resources.remainingNanos(pending) == 0L) throw error
+            }
+        }
+    }
+
+    private fun dispatchNextResource() = synchronized(ownership) {
+        if (closed.get()) return@synchronized
+        val session = playbackId ?: return@synchronized
+        val peer = playbackPeer ?: return@synchronized
+        val channel = reverse[session] ?: return@synchronized
+        // Back-to-back FCUP events can strand app-owned audio/subtitle playlists on iOS.
+        // Keep one exchange outstanding, including when its browser waiter was interrupted.
+        val pending = resources.nextToDispatch(session, peer) ?: return@synchronized
+        diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.REQUEST, pending.id)
+        channel.sendEvent(receiverXml(mapOf("sessionID" to 1, "type" to "unhandledURLRequest", "request" to mapOf(
+            "FCUP_Response_ClientInfo" to 1, "FCUP_Response_ClientRef" to 40030004,
+            "FCUP_Response_RequestID" to pending.id, "FCUP_Response_URL" to pending.url,
+            "FCUP_Response_IsContentKeyRequest" to false, "sessionID" to 1,
+            "FCUP_Response_Headers" to mapOf("X-Playback-Session-Id" to pending.session,
+                "User-Agent" to "AppleCoreMedia/1.0.0.11B554a (Apple TV; U; CPU OS 7_0_4 like Mac OS X; en_us)"),
+        ))), pending.session)
     }
 
     private inner class Connection(private val socket: Socket) {
@@ -215,8 +241,13 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 while (!closed.get() && !socket.isClosed) {
                     stage = ReceiverProtocolDiagnostics.Stage.READ
                     val request = readReceiverRequest(input) ?: break
-                    // Replies to our POST /event have the same framing, but are not requests.
-                    if (request.method.startsWith("HTTP/")) continue
+                    // iOS can acknowledge POST /event with either HTTP or EVENT status lines.
+                    val eventReply = reverseId != null && request.method == "EVENT/1.0" &&
+                        request.path.toIntOrNull()?.let { it in 100..599 } == true
+                    if (request.method.startsWith("HTTP/") || eventReply) {
+                        diagnostics.reverseReply(diagnosticId, request)
+                        continue
+                    }
                     diagnostics.request(diagnosticId, request)
                     stage = ReceiverProtocolDiagnostics.Stage.DISPATCH
                     val response = try { dispatch(request) }
@@ -389,7 +420,10 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                     if (message["type"] != "unhandledURLResponse") return RtspMessage.Response(status = 501, statusText = "Not Implemented")
                     val params = message["params"] as? Map<*, *> ?: error("missing params")
                     val requestId = (params["FCUP_Response_RequestID"] as? Number)?.toLong() ?: error("missing request id")
-                    val pending = resources[requestId] ?: return RtspMessage.Response(status = 404)
+                    val pending = resources[requestId] ?: run {
+                        dispatchNextResource()
+                        return RtspMessage.Response(status = 404)
+                    }
                     if (pending.session != id || pending.peer != peer || pending.url != params["FCUP_Response_URL"]) {
                         return RtspMessage.Response(status = 403, statusText = "Forbidden")
                     }
@@ -400,6 +434,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         (params["FCUP_Response_Data"] as? ByteArray)?.size)
                     pending.future.complete(ReceiverResource(params["FCUP_Response_Data"] as? ByteArray,
                         (params["FCUP_Response_StatusCode"] as? Number)?.toInt(), location))
+                    dispatchNextResource()
                     return RtspMessage.Response()
                 }
                 ReceiverVideoProperties.handles(request) -> {
@@ -424,7 +459,11 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                                     body = "duration: ${state.duration}\r\nposition: ${state.position}\r\n".toByteArray())
                             }
                             "/rate" -> { val value = query["value"]?.toDoubleOrNull(); require(value == 0.0 || value == 1.0); listener.rate(value!!) }
-                            "/playback-info" -> return xml(listener.playback().info())
+                            "/playback-info" -> {
+                                val state = listener.playback()
+                                diagnostics.playbackInfo(diagnosticId, state)
+                                return xml(state.info())
+                            }
                         }
                     }
                     return RtspMessage.Response()

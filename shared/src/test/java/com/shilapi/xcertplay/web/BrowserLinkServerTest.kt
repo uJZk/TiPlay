@@ -685,7 +685,7 @@ class BrowserLinkServerTest {
             assertEquals(401, control(1, event, c = "0000").status)
             assertFalse(logs.any { it.contains("stage=EVENT") })
             assertEquals(200, control(1, event).status)
-            assertTrue(logs.any { it.contains("event=play-rejected active=true") && it.contains("errorName=NotAllowedError") })
+            assertTrue(logs.any { it.contains("event=play-rejected active=true") && it.contains("errorType=NotAllowedError") })
             assertTrue(playback.state().playing)
             assertFalse(logs.any { it.contains("private-secret") || it.contains("private.test") })
             control(2, """{"k":"ap-state","id":$id,"revision":0,"duration":100,"position":0,"playing":false,"ready":true,"buffering":false,"seekable":true,"ended":false,"failed":false}""")
