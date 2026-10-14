@@ -163,9 +163,6 @@ const browserAudio = createBrowserAudio({
   onTiming: (source, mode) => timingFor(mode).observe('audio', source),
   onQueued: mode => timingFor(mode).started(),
   fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }),
-  onState(state) {
-    airplayControls.audioMuted(state.browserMuted);
-  },
 });
 mediaTiming = timingFor('carplay');
 // Pairing, touching CarPlay and using page controls already provide activation.

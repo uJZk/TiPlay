@@ -155,13 +155,6 @@ try {
     });
     await page.waitForFunction(()=>pictures.length>beforeRestore && pictures.at(-1).colored);
   }
-  const muted = await page.evaluate(async () => {
-    const player=actualVideo();
-    controls.audioMuted(true); const blocked=player.muted;
-    player.muted = false; await new Promise(resolve=>setTimeout(resolve,50)); const enforced=player.muted;
-    controls.audioMuted(false); return {blocked,enforced,restored:!player.muted};
-  });
-  if(!muted.blocked || !muted.enforced || !muted.restored) throw new Error('Bluetooth route did not gate HTML video audio');
   if (mode === 'hls') {
     await page.evaluate(() => { actualVideo().currentTime = 1.35; });
     await page.waitForFunction(() => !actualVideo().seeking && document.querySelector('.airplay-captions')?.textContent === 'HLS caption');

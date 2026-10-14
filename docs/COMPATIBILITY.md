@@ -4,7 +4,7 @@ This public preview is an independent receiver, not an Apple-certified CarPlay a
 
 | Area | Current scope |
 | --- | --- |
-| Current TiPlay profile | Android phone + car browser. Enabled CarPlay audio plays in the browser; Siri/call microphone demand temporarily uses verified car Bluetooth HFP/SCO for capture, voice and navigation. Head-unit-only display/audio/navigation/vehicle controls are hidden. |
+| Current TiPlay profile | Android phone + car browser. Enabled CarPlay audio plays in the browser; Siri/call microphone demand uses verified car Bluetooth HFP/SCO for capture, voice and navigation while browser music and AirPlay audio continue. Head-unit-only display/audio/navigation/vehicle controls are hidden. |
 | Retained upstream head-unit code | Compatibility files and historical evidence only; not a supported TiPlay product or current acceptance requirement. The legacy Android 9 Wi-Fi Direct path has unverified requested frequency; Android 10+ can verify frequency. |
 | Phone | Standard, non-jailbroken iPhone with CarPlay enabled; device/iOS compatibility varies |
 | Historical physical evidence | Previous private native-head-unit builds: wired and wireless picture, touch and audio confirmed on the development car with iPhone XS / iOS 18.7.10; this does not validate the current browser media path. |

@@ -4,12 +4,12 @@ TiPlay is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay). The sourc
 
 ## Browser player
 
-- Migrate MP4/HLS playback to Video.js 10.1.0 and the official hls.js adapter. Retain Canvas rendering, iPhone playback state and commands, Bluetooth mute and captions; ship all assets and translations locally for offline opening.
+- Migrate MP4/HLS playback to Video.js 10.1.0 and the official hls.js adapter. Retain Canvas rendering, iPhone playback state and commands, and captions; ship all assets and translations locally for offline opening.
 
 ## Source sync and audio reliability
 
 - Fully merge upstream DiPlay source through `c30d3f0df`, preserving the merge history. Adopt USB framing, startup/reconnect, Bluetooth compatibility, address recovery, diagnostic crash records and inherited compatibility code; keep phone + browser product gates.
-- Use separate RTP and decode rates for feedback and browser audio presentation. Retain immediate browser microphone startup, bound SCO empty-read/read-error recovery to three restarts, and use the upstream Opus encoder fallback.
+- Use separate RTP and decode rates for feedback and browser audio presentation. Retain immediate demand-driven Android microphone startup for browser sessions, bound SCO empty-read/read-error recovery to three restarts, and use the upstream Opus encoder fallback.
 - Preserve saved browser audio choices while separating their enum key from the new upstream Boolean setting. Add Japanese browser settings translations.
 - Beta.3/versionCode 35 packages this integration as a signed prerelease draft; published beta.2 remains unchanged. Actual iPhone/vehicle acceptance remains required.
 
@@ -25,7 +25,7 @@ TiPlay is a fork of [DiPlay](https://github.com/shihabal3amri/DiPlay). The sourc
 
 ## Browser and car Bluetooth sound
 
-- CarPlay music uses mandatory buffered audio in the browser. Recording demand switches Android capture and call/Siri/navigation playback to the car Bluetooth telephone channel, with navigation at fixed 25% gain; other audio is discarded until recording ends and browser playback resumes. Android microphone permission and a paired car telephone profile are required. No browser/handset microphone fallback or browser/software echo canceller is used. Vehicle validation remains pending.
+- CarPlay music uses mandatory buffered audio in the browser. Recording demand routes Android capture and call/Siri/navigation playback only through the car Bluetooth telephone channel, with navigation at fixed 25% gain; browser music, other audio outside that mix and AirPlay audio continue through Bluetooth connection, failure and release without clearing their queues or restarting their decoders. Navigation without microphone demand still plays in the browser. Android microphone permission and a paired car telephone profile are required. No browser/handset microphone fallback or browser/software echo canceller is used. Vehicle validation remains pending.
 - **Advanced settings → Disable CarPlay audio** leaves all sound and calls on the iPhone's Bluetooth connection to the car. In this mode `/info` omits `audioFormats` while retaining latencies, feature bits and Bluetooth IDs; TiPlay declines audio streams and opens no microphone. Select the iPhone for car audio/calls. This complete route also needs vehicle validation.
 - The earlier alternative Bluetooth variant remains in source for upstream compatibility; the current interface exposes the audio opt-out.
 - Diagnostic reports show the saved route, the audio declaration and each audio stream the iPhone requests.

@@ -38,10 +38,10 @@ class WebAudioHubTest {
         hub.publish(mirror, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(30, 0),
             mode = BrowserPlaybackMode.AIRPLAY_MIRROR)
         hub.endMirror(mirror)
-        assertEquals(20, reader.take(100)!![28].toInt())
         val reset = reader.take(100)!!
         assertEquals(WebAudioHub.AIRPLAY_MIRROR_STREAM, reset[5].toInt())
         assertEquals(BrowserPlaybackMode.AIRPLAY_MIRROR.audioFlags or 2, reset[7].toInt())
+        assertEquals(20, reader.take(100)!![28].toInt())
         assertEquals(10, reader.take(100)!![28].toInt())
         hub.publish(carPlay, 0, 48000, 1, byteArrayOf(40, 0), buffered = true)
         assertEquals(40, reader.take(100)!![28].toInt())
@@ -178,26 +178,132 @@ class WebAudioHubTest {
         return false
     }
 
-    @Test fun voiceTransitionsDiscardBufferedPcmAndSurviveAudioOwnershipUntilHardwareRelease() {
+    @Test fun voiceTransitionsPreservePcmEpochsAndHoldTheRouteUntilHardwareRelease() {
         val hub = WebAudioHub(); val carPlay = Any(); val airPlay = Any()
         hub.begin(carPlay); val reader = hub.subscribe()
-        hub.publish(carPlay, 0, 48000, 1, byteArrayOf(1, 0), buffered = true)
+        hub.publish(carPlay, 0, 48000, 1, byteArrayOf(1, 0), buffered = true, reset = true)
+        val epoch = ByteBuffer.wrap(reader.take(100)!!).getInt(16)
+        hub.publish(carPlay, 0, 48000, 1, byteArrayOf(2, 0), buffered = true)
         assertTrue(hub.voiceRoute(carPlay, "connecting", true))
-        val route = reader.take(10)!!
-        assertEquals(5, route[5].toInt()); assertEquals(16, route[7].toInt() and 16)
-        assertNull(reader.take(10))
+        val route = reader.take(100)!!
+        assertEquals(5, route[5].toInt()); assertEquals(0, route[7].toInt())
+        val queued = reader.take(100)!!
+        assertEquals(2, queued[28].toInt())
+        assertEquals(epoch, ByteBuffer.wrap(queued).getInt(16))
+        assertEquals(false, hub.voiceStatus()["muted"])
+        assertEquals("connecting", hub.voiceStatus()["state"])
         hub.end(carPlay); hub.begin(airPlay)
         val nextReader = hub.subscribe()
-        assertEquals(5, nextReader.take(10)!![5].toInt())
-        hub.publish(airPlay, 0, 48000, 1, byteArrayOf(2, 0))
-        assertNull(nextReader.take(10))
-        assertFalse(hub.voiceRoute(airPlay, "idle", false))
-        assertTrue(hub.voiceRoute(carPlay, "idle", false))
-        val released = nextReader.take(10)!!
-        assertEquals(0, released[7].toInt() and 16)
+        assertEquals(5, nextReader.take(100)!![5].toInt())
         hub.publish(airPlay, 0, 48000, 1, byteArrayOf(3, 0))
-        assertEquals(3, nextReader.take(10)!![28].toInt())
+        assertEquals(3, nextReader.take(100)!![28].toInt())
+        assertFalse(hub.voiceRoute(airPlay, "connecting", true))
+        assertFalse(hub.voiceRoute(airPlay, "idle", false))
+        assertTrue(hub.voiceRoute(carPlay, "releasing", true))
+        assertFalse(hub.voiceRoute(airPlay, "connecting", true))
+        assertTrue(hub.voiceRoute(carPlay, "idle", false))
+        val released = nextReader.take(100)!!
+        assertEquals(0, released[7].toInt())
+        assertTrue(hub.voiceRoute(airPlay, "active", true))
+        assertFalse(hub.voiceRoute(carPlay, "idle", false))
+        assertEquals("active", hub.voiceStatus()["state"])
         nextReader.close()
+    }
+
+    @Test fun repeatedRouteNotificationsNeverDiscardLiveMusicOrMirrorPcm() {
+        val hub = WebAudioHub(); val carPlay = Any(); val mirror = Any()
+        hub.begin(carPlay); hub.beginMirror(mirror); val reader = hub.subscribe()
+        try {
+            repeat(16) { hub.publish(carPlay, 4, 16000, 1, byteArrayOf(it.toByte(), 0)) }
+            hub.publish(carPlay, 0, 48000, 1, byteArrayOf(40, 0), buffered = true)
+            hub.publish(mirror, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(30, 0),
+                mode = BrowserPlaybackMode.AIRPLAY_MIRROR)
+            repeat(100) { assertTrue(hub.voiceRoute(carPlay, "connecting", true)) }
+            val route = reader.take(100)!!
+            assertEquals(5, route[5].toInt())
+            assertEquals(100, ByteBuffer.wrap(route).getInt(16))
+            assertEquals(0, route[7].toInt())
+            repeat(16) {
+                val prompt = reader.take(100)!!
+                assertEquals(it, prompt[28].toInt())
+                assertEquals(0, prompt[7].toInt())
+            }
+            assertEquals(30, reader.take(100)!![28].toInt())
+            assertEquals(40, reader.take(100)!![28].toInt())
+            assertNull(reader.take(10))
+            assertFalse(reader.closed)
+        } finally { reader.close() }
+    }
+
+    @Test fun streamResetControlsNeverEvictOtherStreamsFromAFullRealtimeQueue() {
+        val hub = WebAudioHub(); val carPlay = Any(); val mirror = Any()
+        hub.begin(carPlay); hub.beginMirror(mirror); val reader = hub.subscribe()
+        try {
+            repeat(16) { hub.publish(carPlay, 0, 16000, 1, byteArrayOf(it.toByte(), 0)) }
+            hub.publish(mirror, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(30, 0),
+                mode = BrowserPlaybackMode.AIRPLAY_MIRROR)
+            repeat(100) { hub.flush(carPlay, 1); hub.flush(carPlay, 2); hub.flush(carPlay, 3) }
+            for (id in 1..3) {
+                val reset = reader.take(100)!!
+                assertEquals(id, reset[5].toInt())
+                assertEquals(28, reset.size)
+                assertEquals(2, reset[7].toInt())
+            }
+            repeat(16) {
+                val music = reader.take(100)!!
+                assertEquals(0, music[5].toInt())
+                assertEquals(it, music[28].toInt())
+                assertEquals(0, music[7].toInt())
+            }
+            assertEquals(30, reader.take(100)!![28].toInt())
+            assertNull(reader.take(10))
+            assertFalse(reader.closed)
+        } finally { reader.close() }
+    }
+
+    @Test fun repeatedFlushKeepsOnlyItsLatestResetBeforeNewPcmAndRejectsALateOldReset() {
+        val hub = WebAudioHub(); val owner = Any()
+        hub.begin(owner); val reader = hub.subscribe()
+        try {
+            hub.flush(owner, 1)
+            val oldReset = reader.take(100)!!
+            val oldGeneration = reader.streamGeneration(1)
+            hub.publish(owner, 1, 16000, 1, byteArrayOf(41, 0))
+            hub.flush(owner, 1)
+            hub.publish(owner, 1, 16000, 1, byteArrayOf(42, 0))
+            hub.flush(owner, 1)
+            hub.publish(owner, 1, 16000, 1, byteArrayOf(43, 0), reset = true)
+            reader.offer(oldReset, false, reader.generation, oldGeneration)
+            val reset = reader.take(100)!!
+            assertEquals(28, reset.size)
+            assertTrue(ByteBuffer.wrap(reset).getInt(16) > ByteBuffer.wrap(oldReset).getInt(16))
+            val fresh = reader.take(100)!!
+            assertEquals(43, fresh[28].toInt())
+            assertTrue(ByteBuffer.wrap(fresh).getInt(16) > ByteBuffer.wrap(reset).getInt(16))
+            assertNull(reader.take(10))
+        } finally { reader.close() }
+    }
+
+    @Test fun aResetQueuedWhileTheReaderWaitsForMusicCannotArriveAfterItsFreshPcm() {
+        repeat(10) {
+            val hub = WebAudioHub(); val owner = Any()
+            hub.begin(owner); val reader = hub.subscribe()
+            val result = java.util.concurrent.atomic.AtomicReference<ByteArray?>()
+            val consumer = Thread { result.set(reader.take(1000)) }.apply { start() }
+            try {
+                assertTrue(awaitBufferedWaiters(listOf(consumer)))
+                hub.flush(owner, 0)
+                hub.publish(owner, 0, 48000, 1, byteArrayOf(44, 0), buffered = true)
+                consumer.join(1000)
+                assertFalse(consumer.isAlive)
+                val first = requireNotNull(result.get())
+                val fresh = if (first.size == 28) reader.take(100)!! else first
+                assertEquals(44, fresh[28].toInt())
+                assertEquals(2, first[7].toInt() and 2)
+                assertEquals(ByteBuffer.wrap(first).getInt(16), ByteBuffer.wrap(fresh).getInt(16))
+                assertNull(reader.take(10))
+            } finally { consumer.interrupt(); consumer.join(1000); reader.close() }
+        }
     }
     @Test fun retiredProducerCannotPublishOrDeactivateReplacementAudio() {
         val hub = WebAudioHub()

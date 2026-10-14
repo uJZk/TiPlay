@@ -42,8 +42,8 @@
 - [ ] 排查 CarPlay 声音断续而画面正常的问题：区分上游 RTP 丢包、解码停顿、HTTP 抖动与网页队列欠载，补齐数值诊断；验证现有有界抖动缓冲与欠载恢复，验证连续播放与电话/Siri 延迟。
 - [ ] 实车验证现有 CarPlay RTP 采样时间戳 → `RtpAudioTimeline` → 网页 PCM 呈现时间与调度链路，关注有效时钟锚点、漂移、回绕、乱序、丢包和流切换；源码已传送时间戳，不再作为未实现功能列出。
 
-- [ ] 在实车验证网页播放、安卓麦克风权限、按需 HFP/SCO 录音／切换、导航固定衰减、电话/Siri 往返时延、车机回声处理与连接恢复；ADB 安卓测试不能替代车辆浏览器与 iPhone 的路由验证。
-- [ ] 验证高级设置“禁用 CarPlay 音频”后所有声音是否稳定交给 iPhone 与车辆之间的蓝牙；重新启用后验证闲时网页播放，录音期间由安卓蓝牙电话通道承载通话、Siri、固定衰减的导航和麦克风。完整音频合同见 [TESLA_BROWSER.md](TESLA_BROWSER.md)。
+- [ ] 在实车验证网页播放、安卓麦克风权限、按需 HFP/SCO 录音／切换、导航固定衰减、电话/Siri 往返时延、车机回声处理与连接恢复；电话／Siri 麦克风需求期间，通话／Siri／导航只走蓝牙，网页音乐及 AirPlay 声音在蓝牙连接、失败和释放时持续播放，不因路由切换清空队列或重启解码；无麦克风需求时导航仍由网页播放。ADB 安卓测试不能替代车辆浏览器与 iPhone 的路由验证。
+- [ ] 验证高级设置“禁用 CarPlay 音频”后所有声音是否稳定交给 iPhone 与车辆之间的蓝牙；重新启用后验证网页音乐持续播放，录音期间由安卓蓝牙电话通道承载通话、Siri、固定衰减的导航和麦克风。完整音频合同见 [TESLA_BROWSER.md](TESLA_BROWSER.md)。
 - [ ] 验证网页端固定协商的 CarPlay 缓冲音乐在网络波动、暂停、跳转和长时间播放下的背压与连续性，设计依据见 [BUFFERED_AUDIO.md](BUFFERED_AUDIO.md)。
 
 ## 特斯拉浏览器 CarPlay：其余待定事项
@@ -110,7 +110,7 @@
 - **以 DiPlay 为基础开发，不以 [WheelPlay](https://github.com/fython/wheelplay) 为基础**：
   - WheelPlay 基于较旧的 DiPlay 快照，没有共同 git 历史，缺少后来的热点和无线可靠性修复，难以再合并上游修复。
   - 它的主视频路线是 WebRTC → `<video>` → `drawImage`，按其他项目的报告，特斯拉挂挡后 `<video>` 会暂停（推断，未在本车验证）。
-  - 当时的“声音走车辆蓝牙”方案已被取代：当前闲时网页播放固定缓冲音乐，麦克风需求期间使用安卓到车辆的 HFP/SCO 通道；“禁用 CarPlay 音频”是独立退出选项。
+  - 当时的“声音走车辆蓝牙”方案已被取代：当前网页持续播放固定缓冲音乐，麦克风需求期间通话／Siri／导航使用安卓到车辆的 HFP/SCO 通道；“禁用 CarPlay 音频”是独立退出选项。
 - [ ] 评估是否还需要从 WheelPlay 移植以下组件（GPL-3.0，保留署名）；当前已用 `BrowserLinkServer`、`BrowserPairingGate`、`WebMediaSink` 和触摸/统计实现对应主要功能，未完成标记不表示这些功能缺失：
   - `LanWebServer`：手机端 HTTP 服务器（只提供视频流和控制接口，页面改为公网静态托管）。`LanTls` 不再需要。
   - `QrPairing`、`RememberedBrowsers`、`TouchLease`：扫码配对、记住已配对浏览器、单一控制端。

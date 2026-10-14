@@ -5,6 +5,9 @@ Instructions for coding agents that work on TiPlay.
 Browser resize, portal and discovery shutdown contracts are documented in `docs/TESLA_BROWSER.md`
 under "Browser session lifecycle".
 
+Browser music continuity and microphone-demand HFP/SCO routing follow
+[Audio and microphone](docs/TESLA_BROWSER.md#audio-and-microphone).
+
 Phone settings, validated drafts, immediate apply/automatic reconnect and boot behavior follow
 `docs/APP-MAIN-PAGE-IMPLEMENTATION.md`.
 

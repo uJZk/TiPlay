@@ -99,12 +99,13 @@ test('startup and Bluetooth demand never ask the browser for capture or permissi
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(prompts, 0);
     assert.ok(routes.every(route => route.startsWith('/audio?')));
-    assert.equal(audio.stats().browserMuted, true);
-    assert.equal(audio.stats().sound, false);
+    assert.equal(audio.stats().browserMuted, false);
+    assert.equal(audio.stats().sound, true);
+    assert.equal(audio.stats().bluetooth, 'active');
   } finally { audio.dispose(); browser.done(); Object.defineProperty(globalThis, 'navigator', descriptor); }
 });
 
-test('ordered route records clear buffered music, discard demand audio, and resume only fresh PCM', async () => {
+test('Bluetooth route records preserve buffered music, playback credit and the running clock', async () => {
   const browser = mockBrowser(); let controller;
   const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
     fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
@@ -116,20 +117,29 @@ test('ordered route records clear buffered music, discard demand audio, and resu
     await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
     await new Promise(resolve => setImmediate(resolve));
     controller.enqueue(record([10, 10], { flags: 1 }));
+    await new Promise(resolve => setImmediate(resolve));
+    const resets = browser.messages.filter(value => value.reset).length;
+    const first = browser.messages.find(value => value.pcm?.byteLength);
+    const clockBase = browser.messages.find(value => value.clockBase !== undefined).clockBase;
     controller.enqueue(route(1, true)); controller.enqueue(record([20, 20]));
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(audio.stats().queuedBytes, 0);
-    assert.equal(audio.stats().browserMuted, true);
-    assert.equal(browser.messages.filter(value => value.pcm?.byteLength).length, 1);
+    assert.equal(audio.stats().queuedBytes, 8);
+    assert.equal(audio.stats().browserMuted, false);
+    assert.equal(browser.messages.filter(value => value.pcm?.byteLength).length, 2);
     controller.enqueue(route(3, false)); controller.enqueue(route(2, true)); controller.enqueue(record([30, 30]));
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(audio.stats().browserMuted, false, 'retired mute cannot undo release');
+    assert.equal(audio.stats().browserMuted, false);
     const pcm = browser.messages.filter(value => value.pcm?.byteLength);
-    assert.equal(pcm.length, 2); assert.deepEqual([...new Int16Array(pcm.at(-1).pcm)], [30, 30]);
+    assert.equal(pcm.length, 3); assert.deepEqual([...new Int16Array(pcm.at(-1).pcm)], [30, 30]);
+    assert.equal(pcm.at(-1).generation, first.generation, 'route changes retain queued playback');
+    assert.equal(browser.messages.filter(value => value.reset).length, resets);
+    assert.equal(browser.messages.filter(value => value.clockBase !== undefined).at(-1).clockBase, clockBase);
+    browser.nodes[0].port.onmessage({ data: { consumed: 4, generation: first.generation } });
+    assert.equal(audio.stats().queuedBytes, 8, 'pre-call music still releases its playback credit');
   } finally { audio.dispose(); browser.done(); }
 });
 
-test('route status overtaking an HTTP body retires it and reports failure without a capture fallback', async () => {
+test('Bluetooth state and failures preserve the audio connection while rejecting obsolete status', async () => {
   const browser = mockBrowser(), requests = [];
   const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
     fetchPhone: async (_, { signal }) => { let controller;
@@ -139,21 +149,29 @@ test('route status overtaking an HTTP body retires it and reports failure withou
   try {
     await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
     await new Promise(resolve => setImmediate(resolve));
-    const old = requests.at(-1);
+    const current = requests.at(-1), requestCount = requests.length;
+    const resets = browser.messages.filter(value => value.reset).length;
     audio.status({ voice: { revision: 1, muted: true, state: 'connecting' } });
-    old.controller.enqueue(record([99]));
+    current.controller.enqueue(record([99]));
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(old.signal.aborted, true);
-    assert.equal(browser.messages.filter(value => value.pcm?.byteLength).length, 0);
+    assert.equal(current.signal.aborted, false);
+    assert.equal(requests.length, requestCount);
+    assert.equal(browser.messages.filter(value => value.pcm?.byteLength).length, 1);
     audio.status({ voice: { revision: 2, muted: true, state: 'failed', error: 'car-bluetooth-unavailable' } });
     assert.equal(audio.stats().error, 'car-bluetooth-unavailable');
     audio.status({ voice: { revision: 3, muted: true, state: 'releasing' } });
-    assert.equal(audio.stats().browserMuted, true);
+    assert.equal(audio.stats().browserMuted, false);
+    assert.equal(audio.stats().bluetooth, 'releasing');
+    assert.equal(audio.stats().sound, true);
     audio.status({ voice: { revision: 4, muted: false, state: 'idle', error: null } });
-    await new Promise(resolve => setImmediate(resolve));
-    requests.at(-1).controller.enqueue(record([7]));
+    audio.status({ voice: { revision: 2, muted: true, state: 'failed', error: 'obsolete-error' } });
+    current.controller.enqueue(record([7]));
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(audio.stats().error, null);
+    assert.equal(audio.stats().bluetooth, 'idle');
+    assert.equal(audio.stats().queuedBytes, 4);
+    assert.equal(requests.length, requestCount);
+    assert.equal(browser.messages.filter(value => value.reset).length, resets);
     assert.deepEqual([...new Int16Array(browser.messages.filter(value => value.pcm?.byteLength).at(-1).pcm)], [7]);
   } finally { audio.dispose(); browser.done(); }
 });

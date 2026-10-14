@@ -22,7 +22,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   photoStop.className = 'airplay-photo-stop'; photoStop.textContent = lang === 'zh' ? '结束投放' : 'Stop casting';
   photoStop.hidden = true; stage.append(layer, photoStop);
   let state = null, player = null, loading = null, key = null, appliedRevision = -1, appliedSeekRevision = -1, metadata = false, timer = null;
-  let directive = null, disposed = false, routeMuted = false, savedMute = false, waiting = false, sourceReady = false;
+  let directive = null, disposed = false, waiting = false, sourceReady = false;
   let diagnostics = null;
   const stop = () => {
     if (!state) return;
@@ -116,8 +116,6 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       const opened = player;
       const media = player.media;
       observation.monitor(media, player.surface);
-      if (routeMuted) media.muted = true;
-      media.addEventListener('volumechange', () => { if (player === opened && routeMuted && !media.muted) media.muted = true; });
       media.addEventListener('loadedmetadata', () => { if (player !== opened) return; metadata = true; applyDirective(); report(); });
       for (const event of ['play', 'pause', 'waiting', 'playing', 'seeking', 'seeked', 'ratechange', 'ended', 'error'])
         media.addEventListener(event, () => {
@@ -152,12 +150,6 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       const nextKey = `${next.id}:${host()}:${next.resource}`;
       if (key !== nextKey) open(next);
       else applyDirective();
-    },
-    audioMuted(value) {
-      if (routeMuted === value) return;
-      if (value) savedMute = player?.media.muted ?? false;
-      routeMuted = value;
-      if (player) player.media.muted = value ? true : savedMute;
     },
     videoActive: () => Boolean(state?.resource) && state?.outputAllowed !== false,
     dispose() { disposed = true; clear(); layer.remove(); photoStop.remove(); },

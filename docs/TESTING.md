@@ -39,9 +39,11 @@ iPhone transport (wireless or USB), browser network and any untested setup.
   the iPhone negotiates the type-103 stream. Check permission rows after returning from Android settings and
   export through **Save diagnostic report**.
 - With CarPlay audio enabled, check calls and Siri request the car HFP/SCO route only during microphone demand.
-  Browser PCM and URL-video sound must mute during the transition; speech and capture start only after both
-  Android input/output routes are confirmed as SCO. Check navigation at fixed 0.25 gain during that route,
-  music discarded during demand, and only fresh browser sound after confirmed release. Denied permissions,
+  Browser music, alerts, buffered music and AirPlay mirror/URL-video sound must continue through connection,
+  failure and release without a queue reset or decoder restart caused by the route change. Speech and capture
+  start only after both Android input/output routes are confirmed as SCO. During microphone demand, check
+  call/Siri/navigation sound only on SCO, with navigation at fixed 0.25 gain. Check navigation in the browser
+  without microphone demand, and speech/guidance returning there only after confirmed release. Denied permissions,
   unavailable/ambiguous HFP devices or route loss must fail without phone/browser microphone fallback. Repeat
   with the phone screen off; record vehicle echo quality and routing/teardown limits. TiPlay adds no software AEC.
 - Change the Android phone endpoint address/port and confirm it applies immediately while preserving the pairing

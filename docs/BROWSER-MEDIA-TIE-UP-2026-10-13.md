@@ -36,4 +36,4 @@ work 本地分支和临时远程 delivery/browser-media-2026-10-13 分支均已�
 
 ## 下一步
 
-实车确认安卓与车辆 HFP 配对／接通、手机后台和熄屏录音、Siri／通话优先级、导航固定衰减、旧音乐丢弃、SCO 释放、车机回声处理及失败诊断。实际 iPhone HLS／FCUP 与 iPhone 资源直连的 CORS／可达性也需要验证。桌面测试不能代替这些条件。
+实车音频检查以 [当前测试清单](TESTING.md#phone--browser-vehicle-checks) 为准。实际 iPhone HLS／FCUP 与 iPhone 资源直连的 CORS／可达性也需要验证。桌面测试不能代替这些条件。

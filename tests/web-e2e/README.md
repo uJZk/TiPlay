@@ -74,7 +74,7 @@ This harness exercises the actual Mediabunny/WebCodecs and TiPlay playback engin
 with native Video.js controls and its self-hosted skin. It checks changing video pixels in WebGL and forced 2D,
 plus optional HLS playback, authenticated WebVTT discovery and pure-text subtitle timing. It also checks
 letterboxing, the source-resolution cap, paused seeking and resizing, WebGL context restoration, actual timeline
-clicks, speed/rate feedback, native caption selection, Bluetooth mute enforcement/restoration, ended playback,
+clicks, speed/rate feedback, native caption selection, ended playback,
 replacement, photo handoff, safe diagnostics and disposal. Pixel readback exists only in test instrumentation.
 
 Generate the expected 320×180 moving fixture with audio and optionally an HLS copy:

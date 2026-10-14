@@ -185,7 +185,7 @@ class BrowserAudioMediaSinkTest {
         assertEquals(count, voice.audio.size)
     }
 
-    @Test fun demandGatesBrowserAndKeepsOnlyCallAssistantAndGuidanceUntilActualRelease() {
+    @Test fun demandKeepsMusicPromptsAndMirrorInBrowserWhileSpeechUsesOnlyBluetooth() {
         val hub = WebAudioHub(); lateinit var voice: Voice
         val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
             voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } })
@@ -194,24 +194,112 @@ class BrowserAudioMediaSinkTest {
         try {
             packet(sink, media, 1); assertNotNull(pcm(reader))
             sink.onMicrophoneStarted(call, config("telephony"))
-            assertEquals(true, hub.voiceStatus()["muted"])
+            assertEquals(false, hub.voiceStatus()["muted"])
+            packet(sink, call, 99)
             packet(sink, media, 2)
+            assertArrayEquals(byteArrayOf(2, 0), pcm(reader)!!.let { it.copyOfRange(28, it.size) })
+            assertNull(pcm(reader))
             voice.ready()
             for (id in listOf(call, AudioStreamId(100, "speechrecognition"), AudioStreamId(100, "default"),
-                AudioStreamId(100, "alert"), AudioStreamId(102, "compatibility"))) packet(sink, id, 3)
-            awaitAudio(voice, 3)
+                AudioStreamId(100, "navigation"))) packet(sink, id, 3)
+            awaitAudio(voice, 4)
             assertTrue(voice.audio.all { BluetoothVoicePolicy.allowed(it.first) })
-            assertNull(reader.take(20)?.takeIf { it.size > 28 })
+            packet(sink, AudioStreamId(100, "alert"), 6)
+            packet(sink, AudioStreamId(102, "compatibility"), 7)
+            val browserValues = List(2) { pcm(reader)!![28].toInt() }.toSet()
+            assertEquals(setOf(6, 7), browserValues)
+            val mirror = Any(); hub.beginMirror(mirror)
+            hub.publish(mirror, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(8, 0),
+                mode = com.shilapi.xcertplay.web.BrowserPlaybackMode.AIRPLAY_MIRROR)
+            assertEquals(8, pcm(reader)!![28].toInt())
+            assertNull(pcm(reader))
             sink.onMicrophoneStopped(call)
             assertEquals("releasing", hub.voiceStatus()["state"])
-            assertEquals(true, hub.voiceStatus()["muted"])
+            assertEquals(false, hub.voiceStatus()["muted"])
+            packet(sink, call, 99)
             packet(sink, media, 4)
+            assertEquals(4, pcm(reader)!![28].toInt())
+            assertNull(pcm(reader))
             voice.released()
             assertEquals(false, hub.voiceStatus()["muted"])
             packet(sink, media, 5)
             val fresh = pcm(reader)!!
             assertArrayEquals(byteArrayOf(5, 0), fresh.copyOfRange(28, fresh.size))
         } finally { sink.close(); voice.released(); reader.close() }
+    }
+
+    @Test fun microphoneTransitionsKeepTheMusicDecoderItsPendingPublicationAndStreamEpoch() {
+        val hub = WebAudioHub(); lateinit var voice: Voice
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+            voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } })
+        val reader = hub.subscribe()
+        val media = AudioStreamId(103, "media"); val call = AudioStreamId(100, "telephony")
+        val format = AudioFormat(AudioCodecKind.LPCM, 16000, 1, media.type, media.audioType)
+        try {
+            sink.onAudioStarted(media, format, 0)
+            sink.onAudioRtp(media, format, ByteArray(12) + byteArrayOf(0, 1), 0)
+            val epoch = ByteBuffer.wrap(pcm(reader)!!).getInt(16)
+            val worker = decoderThread(sink, media)
+            repeat(16) { hub.publish(sink, 0, 16000, 1, byteArrayOf(it.toByte(), 0), buffered = true) }
+            sink.onAudioRtp(media, format, ByteArray(12) + byteArrayOf(0, 99), 1)
+            awaitMusicWait(worker)
+            sink.onMicrophoneStarted(call, config("telephony"))
+            voice.ready()
+            sink.onMicrophoneStopped(call)
+            voice.released()
+            assertSame(worker, decoderThread(sink, media))
+            assertTrue(worker.isAlive)
+            repeat(16) {
+                val queued = pcm(reader)!!
+                assertEquals(it, queued[28].toInt())
+                assertEquals(epoch, ByteBuffer.wrap(queued).getInt(16))
+            }
+            val pending = pcm(reader)!!
+            assertEquals(99, pending[28].toInt())
+            assertEquals(epoch, ByteBuffer.wrap(pending).getInt(16))
+            assertEquals(0, pending[7].toInt() and 2)
+            assertFalse(reader.closed)
+        } finally { sink.close(); voice.released(); reader.close() }
+    }
+
+    @Test fun microphoneSpeechResetsPreserveAFullRealtimeMusicQueueIncludingCompatibilityAudio() {
+        for (media in listOf(AudioStreamId(100, "media"), AudioStreamId(102, "default"), AudioStreamId(102, "compatibility"))) {
+            val hub = WebAudioHub(); lateinit var voice: Voice
+            val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+                voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } })
+            val reader = hub.subscribe()
+            val call = AudioStreamId(100, "telephony")
+            val format = AudioFormat(AudioCodecKind.LPCM, 16000, 1, media.type, media.audioType)
+            try {
+                packet(sink, AudioStreamId(100, "navigation"), 77)
+                assertEquals(1, pcm(reader)!![5].toInt())
+                sink.onAudioStarted(media, format, 0)
+                val worker = decoderThread(sink, media)
+                repeat(16) { sequence ->
+                    val rtp = ByteArray(12) + byteArrayOf(0, sequence.toByte())
+                    rtp[3] = sequence.toByte()
+                    sink.onAudioRtp(media, format, rtp, sequence)
+                }
+                val live = reader.javaClass.getDeclaredField("live").apply { isAccessible = true }
+                    .get(reader) as java.util.concurrent.BlockingQueue<*>
+                val deadline = System.nanoTime() + 1_000_000_000L
+                while (live.size < 16 && System.nanoTime() < deadline) Thread.sleep(1)
+                assertEquals(16, live.size)
+                sink.onMicrophoneStarted(call, config("telephony"))
+                voice.ready()
+                sink.onMicrophoneStopped(call)
+                voice.released()
+                assertSame(worker, decoderThread(sink, media))
+                repeat(16) {
+                    val music = pcm(reader)!!
+                    assertEquals(0, music[5].toInt())
+                    assertEquals(it, music[28].toInt())
+                    assertEquals(if (it == 0) 2 else 0, music[7].toInt() and 2)
+                }
+                assertNull(pcm(reader))
+                assertFalse(reader.closed)
+            } finally { sink.close(); voice.released(); reader.close() }
+        }
     }
 
     @Test fun overlappingDemandsGiveCallsPriorityAndEndingOneDoesNotReleaseTheOther() {
@@ -246,7 +334,8 @@ class BrowserAudioMediaSinkTest {
         sink.pauseAudio()
         val airPlay = Any(); hub.begin(airPlay); val reader = hub.subscribe()
         hub.publish(airPlay, 0, 48000, 1, byteArrayOf(7, 0))
-        assertEquals(true, hub.voiceStatus()["muted"])
+        assertEquals(false, hub.voiceStatus()["muted"])
+        assertArrayEquals(byteArrayOf(7, 0), pcm(reader)!!.let { it.copyOfRange(28, it.size) })
         voice.released()
         sink.close(); voice.released()
         hub.publish(airPlay, 0, 48000, 1, byteArrayOf(8, 0))
@@ -254,18 +343,26 @@ class BrowserAudioMediaSinkTest {
         reader.close()
     }
 
-    @Test fun unavailableBluetoothNeverActivatesBrowserOrHandsetCapture() {
+    @Test fun unavailableBluetoothKeepsMusicButNeverFallsBackToBrowserSpeechOrHandsetCapture() {
         val hub = WebAudioHub(); lateinit var voice: Voice
         val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
             voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } })
         val call = AudioStreamId(100, "telephony")
-        sink.onMicrophoneStarted(call, config("telephony")); voice.failed()
-        assertEquals("failed", hub.voiceStatus()["state"])
-        assertEquals("car-bluetooth-unavailable", hub.voiceStatus()["error"])
-        assertEquals(true, hub.voiceStatus()["muted"])
-        sink.onMicrophoneStopped(call); voice.released()
-        assertEquals(false, hub.voiceStatus()["muted"])
-        sink.close(); voice.released()
+        val reader = hub.subscribe()
+        try {
+            sink.onMicrophoneStarted(call, config("telephony")); voice.failed()
+            assertEquals("failed", hub.voiceStatus()["state"])
+            assertEquals("car-bluetooth-unavailable", hub.voiceStatus()["error"])
+            assertEquals(false, hub.voiceStatus()["muted"])
+            assertFalse(hub.voiceRoute(Any(), "connecting", true))
+            packet(sink, call, 99)
+            packet(sink, AudioStreamId(103, "media"), 7)
+            assertEquals(7, pcm(reader)!![28].toInt())
+            assertNull(pcm(reader))
+            assertTrue(voice.audio.isEmpty())
+            sink.onMicrophoneStopped(call); voice.released()
+            assertEquals("idle", hub.voiceStatus()["state"])
+        } finally { sink.close(); voice.released(); reader.close() }
     }
 
     @Test fun reconnectWaitsForTheRetiringTapToReallyReleaseBluetoothBeforeStartingCapture() {
@@ -284,6 +381,8 @@ class BrowserAudioMediaSinkTest {
             assertNotNull(second)
             assertEquals(1, second!!.starts.size)
             second!!.ready()
+            assertEquals("active", hub.voiceStatus()["state"])
+            first.released()
             assertEquals("active", hub.voiceStatus()["state"])
         } finally { next.close(); second?.released() }
     }

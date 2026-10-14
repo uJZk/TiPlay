@@ -8,13 +8,11 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.streams = new Map();
     this.timelines = new Map(); this.epochs = new Map(); this.delayPlans = initialPlaybackPlans(); this.clockBase = null;
     this.plansByMode = {};
-    this.muted = false;
     this.port.onmessage = ({ data }) => {
       if (data.plans) this.delayPlans = data.plans;
       if (data.plansByMode) this.plansByMode = data.plansByMode;
       if (data.clockBase !== undefined) this.clockBase = data.clockBase;
-      if (data.muted !== undefined) this.muted = Boolean(data.muted);
-      if (data.reset || data.muted === true) {
+      if (data.reset) {
         for (const stream of this.streams.values()) for (const pcm of stream.queue) this.port.postMessage({ consumed: pcm.byteLength, generation: pcm.generation });
         this.streams.clear();
         for (const timeline of this.timelines.values()) timeline.clear();
@@ -22,7 +20,6 @@ class TiPlayAudio extends AudioWorkletProcessor {
         this.epochs.clear();
       }
       if (!data.pcm) return;
-      if (this.muted) { this.port.postMessage({ consumed: data.pcm.byteLength, generation: data.generation }); return; }
       const previousEpoch = this.epochs.get(data.type);
       if (previousEpoch !== undefined && ((data.epoch - previousEpoch) | 0) < 0) { this.port.postMessage({ consumed: data.pcm.byteLength, generation: data.generation }); return; }
       if (previousEpoch !== undefined && previousEpoch !== data.epoch) {
@@ -68,7 +65,6 @@ class TiPlayAudio extends AudioWorkletProcessor {
   process(inputs, outputs) {
     const output = outputs[0];
     for (const channel of output) channel.fill(0);
-    if (this.muted) return true;
     let voiceActive = false;
     for (const [type, stream] of this.streams) if (type >= 1 && type <= 4 && stream.queue.length > 0) { voiceActive = true; break; }
     for (const [type, stream] of this.streams) {

@@ -2,8 +2,9 @@
 
 TiPlay runs on an Android phone and shows CarPlay in the car browser. The iPhone uses wireless CarPlay or USB;
 the browser reaches the Android device through its hotspot or an existing Wi-Fi network. These are separate choices:
-USB does not remove the browser's network configuration. Idle CarPlay audio plays through the browser;
-when CarPlay requests microphone input, Android switches speech and capture to the car HFP/SCO channel;
+USB does not remove the browser's network configuration. CarPlay music plays through the browser;
+when CarPlay requests microphone input, Android routes speech, navigation and capture to the car HFP/SCO channel
+while browser music continues;
 advanced settings can disable CarPlay audio and leave all sound and calls on the iPhone-to-car Bluetooth connection.
 
 ## Hosting and playback
@@ -27,7 +28,8 @@ audio and video are decoded by the browser player. See [AirPlay implementation](
 
 CarPlay negotiates media, navigation, telephone and assistant streams independently. These format declarations
 alone do not select Bluetooth devices. Android receives all enabled CarPlay audio and makes the routing decision
-locally: browser playback when idle, HFP/SCO duplex only during an iPhone microphone demand.
+locally: browser playback without an iPhone microphone demand; during demand, HFP/SCO carries telephone,
+Siri and navigation while media, buffered music and other audio outside the SCO mix remain in the browser.
 
 The browser AudioWorklet only plays PCM. The page never requests microphone permission, opens capture tracks,
 or runs AEC. Android requests RECORD_AUDIO while connecting in the foreground, and the existing connection
@@ -36,25 +38,28 @@ opens only on demand. Regranting permission requires a CarPlay renegotiation; pl
 Browser autoplay restrictions still use the next page touch or key gesture to resume sound. Some browsers still
 request local-network access for the Android endpoint; removing microphone capture does not remove that network requirement.
 
-On demand, Android mutes and flushes browser audio, retires old decoding workers and codecs, and selects the unique
-available HFP device. Android 12+ uses setCommunicationDevice; older releases use the HEADSET profile and SCO
+On demand, Android selects the unique available HFP device. Browser music, ordinary AirPlay mirror audio and
+URL-video audio continue throughout connection, failure and release; these route transitions do not clear their
+queues or restart their decoders. Android 12+ uses setCommunicationDevice; older releases use the HEADSET profile and SCO
 connection broadcasts. Both AudioRecord and AudioTrack must actually route to Bluetooth before speech/capture
 flows. Existing communication sessions and ambiguous headsets are refused, not preempted. There is no handset
 or browser microphone fallback. Lost permission, focus or route stops the devices and produces an audio error.
 
-During SCO, retain only telephone, Siri and navigation/default guidance; navigation always has 0.25 gain, even
-when it is the only sound. Drop media, alerts and unknown-purpose audio. Bounded mono mixing runs in 20 ms blocks;
+During microphone demand, telephone, Siri and navigation/default guidance are excluded from browser output and
+use only SCO. Navigation without microphone demand still plays in the browser. The SCO mix accepts only these
+speech/guidance streams; navigation always has 0.25 gain, even when it is the only SCO sound. Media, alerts and
+unknown-purpose audio stay in the browser. Bounded mono mixing runs in 20 ms blocks;
 Android converts the playback rate to the negotiated SCO rate. RTP/nonce counters survive resuming the same
 microphone demand. The car's telephone audio processing owns echo cancellation; TiPlay adds no software AEC.
 
-Releasing SCO is asynchronous. Keep browser PCM and Video.js output muted until the owned communication route
-is actually gone; timeout produces a persistent error while release remains pending. Route revisions in status
-and empty type-5 audio records reject delayed state. A status overtaking the audio HTTP body retires that body.
-Restore only newly received PCM, never queued pre-call music. Route ownership survives an AirPlay display takeover.
+Releasing SCO is asynchronous. Keep the routed speech/guidance streams out of browser output until the owned
+communication route is actually gone; timeout produces a persistent error while release remains pending.
+Browser music and AirPlay output continue independently. Route revisions in status and empty type-5 audio
+records reject delayed state without replacing the music HTTP body. Route ownership survives an AirPlay display takeover.
 
-Audio has its own authenticated HTTP stream so it cannot block video writes. Idle live queues are bounded;
-buffered music applies backpressure instead of dropping ordered frames. While voice routing is active, music
-is consumed and discarded. The obsolete `/microphone` API, browser microphone status and upload diagnostics are removed. Full vehicle behavior, microphone quality, phone-screen-off capture and car-side AEC require
+Audio has its own authenticated HTTP stream so it cannot block video writes. Live queues are bounded;
+buffered music applies backpressure instead of dropping ordered frames, including during voice routing.
+The obsolete `/microphone` API, browser microphone status and upload diagnostics are removed. Full vehicle behavior, microphone quality, phone-screen-off capture and car-side AEC require
 an actual car test. See [the current media implementation](BROWSER-MEDIA-2026-10-13.md).
 
 The App's page address and the deployment's public base URL must agree. Their authoritative sources are
