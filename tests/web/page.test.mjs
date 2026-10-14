@@ -166,10 +166,10 @@ test('disconnect is a separate full-width row immediately below connect', () => 
   assert.match(read('style.css'), /#disconnect\{margin-top:8px\}/);
 });
 
-test('the service worker precaches every page file', () => {
+test('the service worker precaches every playback file and leaves the location probe independent', () => {
   const assets = JSON.parse(/const ASSETS = (\[[^\]]*\]);/.exec(read('sw.js'))[1].replaceAll("'", '"'));
   const files = readdirSync(play, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile() && entry.name !== 'sw.js').map(entry => (entry.parentPath.slice(new URL(play).pathname.replace(/\/$/, '').length) + '/' + entry.name).replaceAll('\\', '/').replace(/^\/+/, ''));
-  assert.deepEqual([...assets].filter(name => name !== './').sort(), files.sort());
+  assert.deepEqual([...assets].filter(name => name !== './').sort(), files.filter(name => !name.startsWith('nav-test/')).sort());
 });
 
 test('the service worker answers only its own files, so the download pages in its scope reach the network', () => {
@@ -190,6 +190,8 @@ test('the service worker answers only its own files, so the download pages in it
   }
   for (const url of ['https://example.test/DiPlay/download/', 'https://example.test/DiPlay/download/zh-Hans/',
     'https://example.test/DiPlay/download/assets/site.css', 'https://example.test/DiPlay/download/index.html',
+    'https://example.test/DiPlay/nav-test/', 'https://example.test/DiPlay/nav-test/index.html',
+    'https://example.test/DiPlay/nav-test/app.js', 'https://example.test/DiPlay/nav-test/helpers.js',
     'https://example.test/DiPlay/download/#install', 'https://example.test/DiPlay/play/', 'https://example.test/DiPlay/play/#c=1234',
     'https://example.test/DiPlay/play/sw.js', 'https://example.test/DiPlay/sw.js',
     'https://example.test/DiPlay/app.js/', 'https://example.test/app.js', 'https://other.test/DiPlay/app.js',

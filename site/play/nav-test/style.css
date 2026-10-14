@@ -1,0 +1,32 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+:root { color-scheme: dark; font-family: system-ui, -apple-system, sans-serif; color: #f4f6fb; background: #10141e; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1100px; margin: 0 auto; padding: 28px 24px 48px; }
+header { padding: 0 4px 14px; }
+h1 { margin: 8px 0 12px; font-size: clamp(28px, 4vw, 42px); letter-spacing: -.03em; }
+h2 { font-size: 20px; margin: 0 0 16px; }
+p { line-height: 1.6; margin: 10px 0; }
+.eyebrow { color: #a3c6ff; font-weight: 600; font-size: 14px; }
+.hint { font-size: 14px; color: #abb7c9; }
+.card { border: 1px solid #303a4b; background: #1a2130; border-radius: 18px; padding: 22px; margin: 14px 0; }
+.fields, .columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.columns .card { margin-top: 0; }
+label { display: flex; flex-direction: column; gap: 8px; font-size: 15px; color: #c9d2e2; }
+input { width: 100%; min-height: 48px; border: 1px solid #596579; border-radius: 10px; background: #101722; color: #fff; font: inherit; padding: 10px 13px; }
+input:disabled { color: #9fb0c9; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0 12px; }
+button { min-height: 48px; padding: 10px 18px; border: 1px solid transparent; border-radius: 10px; background: #bdd4ff; color: #102447; font: inherit; font-weight: 650; cursor: pointer; }
+button.secondary { background: #29364b; border-color: #4a5c79; color: #edf3ff; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid #88b6ff; outline-offset: 3px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; line-height: 1.5; color: #cbdaf2; max-height: 330px; overflow: auto; background: #111923; padding: 14px; border-radius: 10px; margin: 14px 0 0; }
+.metrics { display: flex; flex-wrap: wrap; gap: 24px; margin: 20px 0 14px; }
+.metrics div { min-width: 90px; }
+dt { font-size: 13px; color: #abb7c9; }
+dd { margin: 5px 0 0; font-size: 26px; font-variant-numeric: tabular-nums; }
+details { margin: 16px 0 0; }
+summary { min-height: 36px; cursor: pointer; color: #c6d9fa; }
+.error { color: #ffb4a9; }
+.okay { color: #abe7c3; }
+@media (max-width: 680px) { main { padding: 18px 14px 36px; } .fields, .columns { grid-template-columns: 1fr; gap: 8px; } .card { padding: 18px; border-radius: 14px; } .actions button { flex-grow: 1; } }
