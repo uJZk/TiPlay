@@ -80,4 +80,9 @@ data class ReceiverPlayback(val duration: Double = 0.0, val position: Double = 0
     )
 
     private fun flag(value: Boolean): Long = if (value) 1L else 0L
+
+    companion object {
+        fun supportsRate(rate: Double, allowPause: Boolean = true): Boolean =
+            rate.isFinite() && (rate in 0.25..4.0 || allowPause && rate == 0.0)
+    }
 }

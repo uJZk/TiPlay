@@ -28,6 +28,13 @@ class AirPlayVideoDiagnosticsTest {
         diagnostics.callback("failed", 4)
     }
 
+    @Test fun speedControlsKeepTheirActualNumericRateInDiagnostics() {
+        val messages = mutableListOf<String>()
+        val diagnostics = AirPlayVideoDiagnostics(messages::add)
+        diagnostics.control(AirPlayVideoDiagnostics.ControlSource.IPHONE, "rate", 1.5, 3)
+        assertEquals("video stage=CONTROL source=iphone action=rate generation=3 value=1.5", messages.single())
+    }
+
     @Test fun playbackLifecycleRejectsUntrustedActionsStatesAndNumbers() {
         val messages = mutableListOf<String>()
         val diagnostics = AirPlayVideoDiagnostics(messages::add)

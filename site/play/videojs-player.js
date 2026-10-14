@@ -1,42 +1,79 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { VERSION } from './vendor/videojs/player.min.js';
+import { VERSION, MediaAttachMixin, HTMLVideoAdapter } from './vendor/videojs/player.min.js';
 import { createVideoCaptions } from './airplay-captions.js';
+import { createMediaEngine } from './airplay-media.js';
+import { createMediaTextTracks } from './airplay-text-tracks.js';
+
+/** Register a native-like media surface with Video.js; TiPlay owns its clock and output. */
+class TiPlayMedia extends MediaAttachMixin(HTMLElement) {
+  getMediaTarget() { return this.adapter; }
+  initialize(engine) {
+    this.engine = engine;
+    this.adapter = new HTMLVideoAdapter();
+    this.adapter.attach(engine);
+  }
+}
+// Use the official adapter's public surface rather than a second media element/clock.
+for (let prototype = HTMLVideoAdapter.prototype; prototype !== EventTarget.prototype; prototype = Object.getPrototypeOf(prototype)) {
+  for (const name of Object.getOwnPropertyNames(prototype)) {
+    if (name in TiPlayMedia.prototype || ['constructor', 'attach', 'detach', 'destroy'].includes(name)) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+    Object.defineProperty(TiPlayMedia.prototype, name, descriptor.get ? {
+      get() { return this.adapter?.[name]; },
+      ...(descriptor.set ? { set(value) { this.adapter[name] = value; } } : {}),
+    } : { value(...args) { return this.adapter[name](...args); } });
+  }
+}
+customElements.define('tiplay-media', TiPlayMedia);
+let playerSequence = 0;
 
 /** TiPlay's control layout, composed from Video.js v10 elements. */
-export function createVideoPlayer(layer, { hls, lang, stop, stopText }) {
+export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, signal, onCanvasError }) {
+  const captionsMenu = `tiplay-captions-${++playerSequence}`;
   const locale = document.createElement('media-i18n');
   locale.lang = lang === 'zh' ? 'zh-CN' : 'en';
-  locale.innerHTML = `<video-player data-version="${VERSION}"><media-container>
-    <media-buffering-indicator><span></span></media-buffering-indicator>
+  locale.innerHTML = `<video-player data-version="${VERSION}"><media-container class="media-skin video-skin" data-theme="neutral" data-preset="video">
+    <media-buffering-indicator class="media-buffering-indicator"><media-icon family="neutral" name="spinner" class="media-buffering-indicator-spinner-icon"></media-icon></media-buffering-indicator>
     <media-controls><media-controls-content><div class="airplay-control-bar">
-      <media-play-button><span class="play-icon" aria-hidden="true">▶︎</span><span class="pause-icon" aria-hidden="true">Ⅱ</span></media-play-button>
-      <media-seek-button seconds="-10"><span aria-hidden="true">↶10</span></media-seek-button>
-      <media-seek-button seconds="10"><span aria-hidden="true">10↷</span></media-seek-button>
+      <media-play-button class="media-button media-play-button"><media-icon family="neutral" name="restart" class="media-button-icon media-play-button-restart-icon"></media-icon><media-icon family="neutral" name="play" class="media-button-icon media-play-button-play-icon"></media-icon><media-icon family="neutral" name="pause" class="media-button-icon media-play-button-pause-icon"></media-icon></media-play-button>
       <media-time type="current"></media-time>
-      <media-time-slider><media-slider-track><media-slider-buffer></media-slider-buffer><media-slider-fill></media-slider-fill></media-slider-track><media-slider-thumb></media-slider-thumb></media-time-slider>
+      <media-time-slider class="media-slider media-time-slider"><media-slider-track class="media-slider-track"><media-slider-buffer class="media-slider-buffer"></media-slider-buffer><media-slider-fill class="media-slider-fill"></media-slider-fill></media-slider-track><media-slider-thumb class="media-slider-thumb"></media-slider-thumb></media-time-slider>
       <media-time type="duration"></media-time>
-      <media-captions-button><span aria-hidden="true">CC</span></media-captions-button>
-      <div class="airplay-volume"><media-mute-button><span aria-hidden="true">♪</span></media-mute-button>
-        <media-volume-slider><media-slider-track><media-slider-fill></media-slider-fill></media-slider-track><media-slider-thumb></media-slider-thumb></media-volume-slider></div>
-      <button class="airplay-stop" type="button"></button>
+      <media-playback-rate-button class="media-button airplay-rate"></media-playback-rate-button>
+      <media-captions-button menu-for="${captionsMenu}" class="media-button media-captions-button"><media-icon family="neutral" name="captions-off" class="media-button-icon media-captions-button-off-icon"></media-icon><media-icon family="neutral" name="captions-on" class="media-button-icon media-captions-button-on-icon"></media-icon></media-captions-button>
+      <media-menu id="${captionsMenu}" side="top" align="end" class="media-popup media-popup-surface media-menu-popup"><media-menu-content class="media-menu-content"><media-captions-radio-group class="media-menu-radio-group"><template><media-menu-radio-item class="media-menu-radio-item"><span data-part="label"></span><media-menu-item-indicator force-mount class="media-menu-item-indicator"><media-icon family="neutral" name="check" class="media-menu-radio-item-icon"></media-icon></media-menu-item-indicator></media-menu-radio-item></template></media-captions-radio-group></media-menu-content></media-menu>
+      <button class="media-button airplay-stop" type="button"><svg class="media-button-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor"/></svg></button>
     </div></media-controls-content></media-controls>
     <p class="airplay-error" role="alert" hidden></p>
   </media-container></video-player>`;
   const element = locale.querySelector('video-player');
   const surface = locale.querySelector('media-container');
-  const media = document.createElement(hls ? 'hlsjs-video' : 'video');
-  const video = hls ? media.target : media;
-  for (const name of ['playsinline', 'disablepictureinpicture']) media.setAttribute(name, '');
-  media.setAttribute('crossorigin', 'anonymous'); media.setAttribute('preload', 'auto');
-  surface.prepend(media);
+  const elementMedia = document.createElement('tiplay-media');
+  let subtitles, disposed = false, sourceSerial = 0;
+  const media = createMediaEngine(surface, { fetchResource, signal, onCanvasError,
+    onClock: time => subtitles?.update(time),
+  });
+  media.querySelectorAll = selectors => elementMedia.querySelectorAll(selectors);
+  media.querySelector = selectors => elementMedia.querySelector(selectors);
+  subtitles = createMediaTextTracks({ fetchResource, signal });
+  Object.defineProperty(media, 'textTracks', { get: () => subtitles.tracks });
+  media.addTextTrack = (...args) => subtitles.addTextTrack(...args);
+  elementMedia.initialize(media);
+  surface.prepend(elementMedia);
+  const captionClock = () => subtitles.update(media.currentTime);
+  for (const type of ['timeupdate', 'seeked', 'loadeddata']) media.addEventListener(type, captionClock);
   const end = locale.querySelector('.airplay-stop');
-  end.textContent = '■'; end.setAttribute('aria-label', stopText); end.title = stopText;
+  end.setAttribute('aria-label', stopText); end.title = stopText;
   end.addEventListener('click', stop);
   layer.append(locale);
-  const captions = createVideoCaptions(video, surface);
+  const captions = createVideoCaptions(media, surface);
+  const menu = locale.querySelector('media-menu');
+  // v10 adds commandfor only once a second track appears; rediscover the native menu trigger.
+  const menuTrigger = new MutationObserver(() => menu.requestUpdate());
+  menuTrigger.observe(locale.querySelector('media-captions-button'), { attributes: true, attributeFilter: ['commandfor'] });
   let failure = null;
   return {
-    element, surface, media, video, volume: locale.querySelector('.airplay-volume'),
+    element, surface, media,
     error: () => failure || media.error,
     fail(message) {
       failure = { message };
@@ -44,16 +81,28 @@ export function createVideoPlayer(layer, { hls, lang, stop, stopText }) {
       const error = locale.querySelector('.airplay-error');
       error.textContent = message; error.hidden = false;
     },
-    source(src, type) {
-      if (hls) media.source = { src, type, preferPlayback: 'mse' };
-      else video.src = src;
+    async source(src, type) {
+      const serial = ++sourceSerial;
+      subtitles.clear();
+      await media.load(src, type);
+      if (!disposed && serial === sourceSerial && !signal?.aborted) {
+        // Independent discovery cannot hold video preparation or iPhone directives hostage.
+        void subtitles.load(src, type).then(() => {
+          if (!disposed && serial === sourceSerial) captionClock();
+        }, () => {
+          if (!disposed && serial === sourceSerial && !signal?.aborted) subtitles.tracks.dispatchEvent(new Event('error'));
+        });
+      }
     },
     dispose() {
+      if (disposed) return;
+      disposed = true; sourceSerial++;
+      menuTrigger.disconnect();
       captions.dispose();
-      media.pause();
+      subtitles.dispose();
+      for (const type of ['timeupdate', 'seeked', 'loadeddata']) media.removeEventListener(type, captionClock);
+      media.dispose(); elementMedia.adapter.destroy();
       locale.remove();
-      // Removing the custom element destroys its engine; release progressive downloads too.
-      video.removeAttribute('src'); video.load();
     },
   };
 }

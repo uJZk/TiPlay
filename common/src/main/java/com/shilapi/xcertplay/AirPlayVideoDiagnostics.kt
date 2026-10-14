@@ -20,7 +20,7 @@ internal class AirPlayVideoDiagnostics(private val log: (String) -> Unit) {
     }
 
     fun control(source: ControlSource, action: String, value: Double?, generation: Long) {
-        val safeAction = action.takeIf { it in setOf("play", "pause", "seek", "stop") } ?: "OTHER"
+        val safeAction = action.takeIf { it in setOf("play", "pause", "seek", "rate", "stop") } ?: "OTHER"
         val numeric = value?.takeIf { it.isFinite() && it in 0.0..1_000_000_000.0 }
         emit("video stage=CONTROL source=${source.wire} action=$safeAction generation=$generation" +
             (value?.let { " value=${numeric ?: "INVALID"}" } ?: ""))

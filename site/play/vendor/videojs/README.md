@@ -1,19 +1,19 @@
-# Video.js 10.1.0
+# Video.js controls and media adapter
 
-Self-hosted ESM bundle built from the official npm packages `@videojs/html@10.1.0`
-and `@videojs/hlsjs-video@10.1.0` (Apache-2.0). The HLS adapter uses
-`hls.js@1.6.19`; VHS and the v8 `videojs()` API are no longer used.
+Self-hosted ESM controls and native neutral-skin CSS from the official Video.js
+HTML and media packages (Apache-2.0). TiPlay's native-like media adapter exposes
+its own Canvas/Web Audio playback engine to these controls.
 
 Source: https://github.com/videojs/video.js
-HLS engine: https://github.com/video-dev/hls.js
 Version-matched migration documentation is bundled in `@videojs/html/docs/`.
 
 The owned [build inputs](../../../../scripts/videojs/) and npm lockfile pin all packages
 and published tarball integrity. npm verifies that integrity during `npm ci`.
-`player.min.js` registers only the required player, media and UI components, with the
+`player.min.js` registers only the required player and UI components, with the
 Chinese locale included. There are no runtime CDN dependencies. `LICENSE`,
 `APACHE-2.0.txt`, `THIRD_PARTY_LICENSES.txt` and `player.min.js.LEGAL.txt` retain licenses and notices.
 TiPlay's control layout lives in `videojs-player.js` and `airplay-controls.css`.
+The same build creates the [media toolkit bundle](../mediabunny/README.md).
 
 Rebuild with Node 22:
 

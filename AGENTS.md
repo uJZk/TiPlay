@@ -30,6 +30,10 @@ instructions; do not duplicate detailed rules in the index.
 
 ## Current progress
 
+See [docs/MEDIABUNNY-TIE-UP-2026-10-14.md](docs/MEDIABUNNY-TIE-UP-2026-10-14.md)
+for the URL playback engine, native controls, WebVTT subtitles, validation,
+build-skipping delivery and remaining iPhone/vehicle checks.
+
 See [docs/UPSTREAM-VIDEOJS-TIE-UP-2026-10-14.md](docs/UPSTREAM-VIDEOJS-TIE-UP-2026-10-14.md)
 for remote main integration, final checks, beta.3 signing/draft delivery and Pages cache v38.
 
@@ -128,8 +132,8 @@ device installation, verification results and remaining vehicle checks.
 `docs/E2E-VALIDATION-2026-10-10.md` records the earlier local browser E2E results
 and system-proxy fix.
 
-See `docs/VIDEOJS-10-2026-10-14.md` for the v10 player migration, pinned self-hosted
-build, Canvas/caption integration and browser regression checks.
+See `docs/VIDEOJS-10-2026-10-14.md` for URL playback engine/control boundaries,
+shared timing, caption integration, self-hosted dependencies and acceptance limits.
 
 ## Checks
 

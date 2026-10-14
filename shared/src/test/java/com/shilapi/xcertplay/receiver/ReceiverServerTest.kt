@@ -197,9 +197,14 @@ class ReceiverServerTest {
                 assertEquals(0, listener.stopped)
                 assertEquals(200, control.status("POST", "/scrub?position=12.5"))
                 assertEquals(12.5, listener.sought, 0.0)
-                assertEquals(200, control.status("POST", "/rate?value=0"))
-                assertEquals(0.0, listener.speed, 0.0)
-                assertEquals(400, control.status("POST", "/rate?value=NaN"))
+                for (rate in listOf(0.0, 0.25, 1.0, 1.5, 4.0)) {
+                    assertEquals(200, control.status("POST", "/rate?value=$rate"))
+                    assertEquals(rate, listener.speed, 0.0)
+                }
+                for (rate in listOf("NaN", "Infinity", "-1", "0.24", "4.01")) {
+                    assertEquals(400, control.status("POST", "/rate?value=$rate"))
+                    assertEquals(4.0, listener.speed, 0.0)
+                }
                 assertTrue(listener.logs.any { it.contains("exception=IllegalArgumentException") })
                 assertFalse(listener.logs.any { it.contains("example.org") || it.contains("value=NaN") })
                 connect(receiver.port).use { reverse ->
@@ -213,10 +218,11 @@ class ReceiverServerTest {
                     assertEquals(1, listener.stopped)
                     assertTrue(listener.logs.any { it.contains("video stage=FINISH reason=iphone-stop") })
                     assertEquals("listening", listener.states.last())
+                    // Shutdown intentionally does not drain the asynchronous event writer.
+                    val stopped = requireNotNull(readReceiverRequest(reverse.getInputStream()))
+                    assertTrue(stopped.body.toString(Charsets.UTF_8).contains("<string>stopped</string>"))
                     receiver.close()
-                    // One stopped event may already be buffered before the orderly close.
-                    val stopped = readReceiverRequest(reverse.getInputStream())
-                    if (stopped != null) assertNull(readReceiverRequest(reverse.getInputStream()))
+                    assertNull(readReceiverRequest(reverse.getInputStream()))
                 }
             }
         } finally { receiver.close() }

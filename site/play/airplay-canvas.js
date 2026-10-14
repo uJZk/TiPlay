@@ -2,82 +2,55 @@
 import { createRenderer } from './video.js';
 import { letterbox } from './link.js';
 
-/** Video.js keeps the media clock and audio; only the picture moves to this canvas. */
-export function createVideoCanvas(video, container, onError) {
+/** Takes ownership of decoded Mediabunny samples, including the retained paused picture. */
+export function createFrameCanvas(container, onError) {
   const canvas = document.createElement('canvas');
-  canvas.className = 'airplay-canvas';
-  canvas.setAttribute('aria-hidden', 'true');
-  let renderer = createRenderer(canvas), callback = null, disposed = false, contextLost = false, lastFrame = null;
-  const frameCallbacks = typeof video.requestVideoFrameCallback === 'function';
-
-  function cancel() {
-    if (callback === null) return;
-    if (frameCallbacks) video.cancelVideoFrameCallback(callback);
-    else cancelAnimationFrame(callback);
-    callback = null;
-  }
+  canvas.className = 'airplay-canvas'; canvas.setAttribute('aria-hidden', 'true');
+  let renderer = createRenderer(canvas), last = null, disposed = false, contextLost = false, oriented = null;
   function draw() {
-    if (disposed || contextLost || video.readyState < 2 || video.seeking || !video.videoWidth || !video.videoHeight) return;
-    const width = container.clientWidth, height = container.clientHeight;
-    if (!width || !height) return;
-    const box = letterbox(width, height, video.videoWidth, video.videoHeight);
-    // Pass the native video source directly to the renderer; cap the buffer at the source resolution.
-    const scale = Math.min(window.devicePixelRatio || 1, video.videoWidth / box.width);
-    const targetWidth = Math.max(1, Math.round(width * scale)), targetHeight = Math.max(1, Math.round(height * scale));
+    if (disposed || contextLost || !last || !container.clientWidth || !container.clientHeight) return;
+    const width = last.displayWidth, height = last.displayHeight;
+    const box = letterbox(container.clientWidth, container.clientHeight, width, height);
+    const scale = Math.min(globalThis.devicePixelRatio || 1, width / box.width);
+    const targetWidth = Math.max(1, Math.round(container.clientWidth * scale));
+    const targetHeight = Math.max(1, Math.round(container.clientHeight * scale));
     if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
       canvas.width = targetWidth; canvas.height = targetHeight;
     }
+    const target = letterbox(canvas.width, canvas.height, width, height);
     try {
-      renderer.draw(video, letterbox(canvas.width, canvas.height, video.videoWidth, video.videoHeight));
-    } catch (error) {
-      dispose(); onError(error);
-    }
+      if (last.rotation || last.flip) {
+        // Keep the GPU presenter; materialize orientation only for samples that require a transform.
+        oriented ||= typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(width, height) : document.createElement('canvas');
+        if (oriented.width !== width) oriented.width = width;
+        if (oriented.height !== height) oriented.height = height;
+        last.draw(oriented.getContext('2d', { alpha: false }), 0, 0, width, height);
+        renderer.draw(oriented, target);
+      } else {
+        const frame = last.toVideoFrame();
+        try { renderer.draw(frame, target); } finally { frame.close(); }
+      }
+    } catch (error) { dispose(); onError(error); }
   }
-  function tick() {
-    callback = null;
-    if (disposed) return;
-    if (frameCallbacks) draw();
-    else {
-      const frame = video.getVideoPlaybackQuality?.().totalVideoFrames ?? video.currentTime;
-      if (frame !== lastFrame) { lastFrame = frame; draw(); }
-    }
-    schedule();
-  }
-  function schedule() {
-    if (disposed || contextLost || callback !== null || video.paused || video.ended || video.seeking) return;
-    callback = frameCallbacks ? video.requestVideoFrameCallback(tick) : requestAnimationFrame(tick);
-  }
-  function refresh() { lastFrame = null; draw(); schedule(); }
-  function stop() { cancel(); draw(); }
-  function reset() {
-    cancel(); lastFrame = null;
-    // Clear the previous source without changing the selected rendering context.
-    canvas.width = canvas.width;
-  }
-  function lost(event) { event.preventDefault(); contextLost = true; cancel(); }
+  function lost(event) { event.preventDefault(); contextLost = true; }
   function restored() {
     if (disposed) return;
-    renderer.dispose?.(); renderer = createRenderer(canvas); contextLost = false; refresh();
+    renderer.dispose?.(); renderer = createRenderer(canvas); contextLost = false; draw();
   }
-  const listeners = { loadeddata: refresh, seeked: refresh, resize: refresh, playing: refresh,
-    pause: stop, ended: stop, seeking: cancel, waiting: cancel, emptied: reset, error: cancel };
-  for (const [type, listener] of Object.entries(listeners)) video.addEventListener(type, listener);
-  canvas.addEventListener('webglcontextlost', lost);
-  canvas.addEventListener('webglcontextrestored', restored);
-  const observer = new ResizeObserver(refresh);
-  observer.observe(container);
-  video.after(canvas);
-  container.classList.add('airplay-canvas-mode');
-  refresh();
-
+  canvas.addEventListener('webglcontextlost', lost); canvas.addEventListener('webglcontextrestored', restored);
+  const observer = new ResizeObserver(draw); observer.observe(container);
+  container.prepend(canvas); container.classList.add('airplay-canvas-mode');
+  function clear() { last?.close(); last = null; canvas.width = canvas.width; }
   function dispose() {
     if (disposed) return;
-    disposed = true; cancel(); observer.disconnect();
-    for (const [type, listener] of Object.entries(listeners)) video.removeEventListener(type, listener);
-    canvas.removeEventListener('webglcontextlost', lost);
-    canvas.removeEventListener('webglcontextrestored', restored);
-    renderer.dispose?.(); canvas.remove();
+    disposed = true; observer.disconnect(); clear(); renderer.dispose?.(); oriented = null;
+    canvas.removeEventListener('webglcontextlost', lost); canvas.removeEventListener('webglcontextrestored', restored);
+    canvas.remove();
     container.classList.remove('airplay-canvas-mode');
   }
-  return { dispose };
+  return {
+    canvas,
+    present(sample) { if (disposed) { sample.close(); return; } const previous = last; last = sample; previous?.close(); draw(); },
+    redraw: draw, clear, dispose,
+  };
 }

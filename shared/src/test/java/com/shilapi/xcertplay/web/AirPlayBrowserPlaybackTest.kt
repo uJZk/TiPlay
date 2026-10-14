@@ -6,6 +6,30 @@ import org.junit.Test
 class AirPlayBrowserPlaybackTest {
     private val state = AirPlayBrowserPlayback.State(100.0, 5.0, true, true, false, true)
 
+    @Test fun snapshotKeepsRateSeparateFromPlayingAndRateCommandsStayBoundedToVideo() {
+        var current = state.copy(playing = false, rate = 1.5)
+        val rates = mutableListOf<Double?>()
+        val binding = AirPlayBrowserPlayback.register({ current }) { action, value ->
+            assertEquals("rate", action)
+            rates.add(value)
+        }
+        try {
+            val snapshot = AirPlayBrowserPlayback.snapshot()!!
+            val id = snapshot["id"] as Long
+            assertEquals(false, snapshot["playing"])
+            assertEquals(1.5, snapshot["rate"])
+            for (rate in listOf(null, Double.NaN, Double.POSITIVE_INFINITY, -1.0, 0.24, 4.01)) {
+                assertFalse(AirPlayBrowserPlayback.command(id, "rate", rate))
+            }
+            for (rate in listOf(0.0, 0.25, 1.5, 4.0)) {
+                assertTrue(AirPlayBrowserPlayback.command(id, "rate", rate))
+            }
+            assertEquals(listOf(0.0, 0.25, 1.5, 4.0), rates)
+            current = current.copy(kind = "photo")
+            assertFalse(AirPlayBrowserPlayback.command(id, "rate", 1.0))
+        } finally { binding.close() }
+    }
+
     @Test fun staleCommandsAndStaleCloseCannotAffectANewItem() {
         val first = AirPlayBrowserPlayback.register({ state }) { _, _ -> fail("stale item controlled") }
         val oldId = AirPlayBrowserPlayback.snapshot()!!["id"] as Long

@@ -458,7 +458,11 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                                 return RtspMessage.Response(headers = mapOf("Content-Type" to "text/parameters"),
                                     body = "duration: ${state.duration}\r\nposition: ${state.position}\r\n".toByteArray())
                             }
-                            "/rate" -> { val value = query["value"]?.toDoubleOrNull(); require(value == 0.0 || value == 1.0); listener.rate(value!!) }
+                            "/rate" -> {
+                                val value = query["value"]?.toDoubleOrNull()
+                                require(value != null && ReceiverPlayback.supportsRate(value))
+                                listener.rate(value)
+                            }
                             "/playback-info" -> {
                                 val state = listener.playback()
                                 diagnostics.playbackInfo(diagnosticId, state)

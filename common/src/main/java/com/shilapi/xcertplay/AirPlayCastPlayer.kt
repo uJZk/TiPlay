@@ -111,10 +111,10 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
         }
     }
     fun rate(value: Double) = main.post {
-        val action = if (value == 0.0) "pause" else "play"
+        if (closed || !ReceiverPlayback.supportsRate(value)) return@post
         browserVideo?.let { playback ->
-            diagnostics.control(AirPlayVideoDiagnostics.ControlSource.IPHONE, action, value, generation)
-            playback.control(action, null)
+            diagnostics.control(AirPlayVideoDiagnostics.ControlSource.IPHONE, "rate", value, generation)
+            playback.control("rate", value)
         }
     }
     fun stop(afterStop: () -> Unit = {}) = main.post { stopNow(AirPlayVideoDiagnostics.StopReason.RECEIVER_STOP); afterStop() }

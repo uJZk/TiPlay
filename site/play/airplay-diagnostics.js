@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 const EVENTS = new Set(['open', 'probe-start', 'probe-ready', 'open-error',
   'directive-seek', 'directive-play', 'directive-pause', 'play-resolved', 'play-rejected',
-  'loadedmetadata', 'play', 'pause', 'waiting', 'playing', 'seeking', 'seeked', 'ended', 'error',
+  'loadedmetadata', 'play', 'pause', 'waiting', 'playing', 'seeking', 'seeked', 'ratechange', 'ended', 'error',
   'drag-start', 'drag-end', 'drag-cancel', 'canvas-error', 'explicit-stop']);
 const ERROR_NAMES = new Set(['NotAllowedError', 'AbortError', 'NotSupportedError', 'InvalidStateError',
   'SecurityError', 'TypeError', 'RangeError', 'NetworkError', 'EncodingError']);
-const MEDIA_EVENTS = ['loadedmetadata', 'play', 'pause', 'waiting', 'playing', 'seeking', 'seeked', 'ended', 'error'];
+const MEDIA_EVENTS = ['loadedmetadata', 'play', 'pause', 'waiting', 'playing', 'seeking', 'seeked', 'ratechange', 'ended', 'error'];
 
 /** Match Android's DiagnosticErrorText; redact complete values before limiting the output. */
 export function sanitizeErrorText(value) {
@@ -37,7 +37,7 @@ export function airplayDiagnostic(event, state, { media, dragging = false, error
   if (!EVENTS.has(event) || !Number.isSafeInteger(state?.id) || state.id < 1 ||
       !Number.isSafeInteger(state.revision) || state.revision < 0) return null;
   const result = { k: 'ap-diag', id: state.id, revision: state.revision, event, dragging: dragging === true };
-  for (const [field, value] of [['position', media?.currentTime], ['duration', media?.duration]])
+  for (const [field, value] of [['position', media?.currentTime], ['duration', media?.duration], ['rate', media?.playbackRate]])
     if (Number.isFinite(value) && value >= 0) result[field] = value;
   for (const field of ['paused', 'ended', 'seeking'])
     if (typeof media?.[field] === 'boolean') result[field] = media[field];

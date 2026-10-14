@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { createVideoCanvas } from './airplay-canvas.js';
 import { createAirPlayDiagnostics } from './airplay-diagnostics.js';
 export function playbackState(value) {
   if (!value || !Number.isSafeInteger(value.id) || value.id < 1) return null;
@@ -7,15 +6,23 @@ export function playbackState(value) {
   const position = Number.isFinite(value.position) ? Math.min(duration, Math.max(0, value.position)) : 0;
   return { ...value, duration, position, seekable: value.seekable === true && duration > 0 };
 }
-/** Video.js owns MP4/HLS decoding, controls, buffering and the media clock. */
+/** A paused item is idle; only an unfinished seek can still be buffering while paused. */
+export function playbackBuffering(media, waiting = false) {
+  return !media.ended && (!media.paused || media.seeking) && (waiting || media.seeking || media.readyState < 3);
+}
+/** Older APK directives omit rate; their play/pause commands preserve the browser's selected speed. */
+export function applyDirectiveRate(media, directive) {
+  if (Number.isFinite(directive.rate)) media.playbackRate = directive.rate;
+}
+/** TiPlay owns playback; Video.js controls and iPhone directives share its measured clock. */
 export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, credentials, host } = {}) {
   const layer = document.createElement('div');
   layer.className = 'airplay-player'; layer.hidden = true;
   const photoStop = document.createElement('button');
   photoStop.className = 'airplay-photo-stop'; photoStop.textContent = lang === 'zh' ? '结束投放' : 'Stop casting';
   photoStop.hidden = true; stage.append(layer, photoStop);
-  let state = null, player = null, picture = null, loading = null, key = null, appliedRevision = -1, appliedSeekRevision = -1, metadata = false, timer = null;
-  let directive = null, disposed = false, routeMuted = false, savedMute = false, waiting = false;
+  let state = null, player = null, loading = null, key = null, appliedRevision = -1, appliedSeekRevision = -1, metadata = false, timer = null;
+  let directive = null, disposed = false, routeMuted = false, savedMute = false, waiting = false, sourceReady = false;
   let diagnostics = null;
   const stop = () => {
     if (!state) return;
@@ -29,9 +36,8 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     diagnostics?.dispose(); diagnostics = null;
     loading?.abort(); loading = null;
     clearInterval(timer); timer = null;
-    picture?.dispose(); picture = null;
     const retiring = player; player = null; retiring?.dispose(); layer.replaceChildren();
-    key = null; metadata = false; waiting = false; appliedRevision = appliedSeekRevision = -1;
+    key = null; metadata = sourceReady = false; waiting = false; appliedRevision = appliedSeekRevision = -1;
     layer.hidden = photoStop.hidden = true;
   }
   function report() {
@@ -48,13 +54,13 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     send({ k: 'ap-state', id: state.id, revision: appliedRevision,
       duration: Number.isFinite(duration) ? Math.max(0, duration) : 0,
       position: Number.isFinite(position) ? Math.max(0, position) : 0,
-      bufferedPosition, playing: !media.paused, ready: media.readyState >= 2,
-      buffering: waiting || media.readyState < 3,
+      bufferedPosition, playing: !media.paused, rate: media.playbackRate, ready: media.readyState >= 2,
+      buffering: !player.error() && playbackBuffering(media, waiting),
       seekable: Number.isFinite(duration) && duration > 0 && media.seekable.length > 0,
       ended: media.ended, failed: Boolean(player.error()) });
   }
   function applyDirective() {
-    if (!player || !metadata || !directive || directive.revision === appliedRevision) return;
+    if (!player || !metadata || !sourceReady || !directive || directive.revision === appliedRevision) return;
     const command = directive, observation = diagnostics;
     // Seek is applied only for a new iPhone command; status polling never moves the local media clock.
     const seekRevision = directive.seekRevision ?? directive.revision;
@@ -68,6 +74,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       appliedSeekRevision = seekRevision;
     }
     appliedRevision = directive.revision;
+    applyDirectiveRate(player.media, directive);
     if (directive.playing) {
       observation?.event('directive-play', undefined, command);
       player.media.play()?.then(() => observation?.event('play-resolved', undefined, command), error => {
@@ -100,30 +107,29 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       observation.event('probe-ready');
       const { createVideoPlayer } = await import('./videojs-player.js');
       if (abort.signal.aborted || key !== currentKey || disposed) return;
-      const hls = /(?:mpegurl|m3u8)/i.test(type) || /\.m3u8(?:[?#]|$)/i.test(next.directUrl ?? '');
-      player = createVideoPlayer(layer, { hls, lang, stop, stopText: photoStop.textContent });
+      player = createVideoPlayer(layer, { lang, stop, stopText: photoStop.textContent, signal: abort.signal,
+        onCanvasError: error => observation.event('canvas-error', error),
+        fetchResource: (url, init) => next.directUrl ? fetch(url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' })
+          : new URL(url).origin === `http://${host()}` ? fetchPhone(new URL(url).pathname + new URL(url).search, init)
+            : fetch(url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' }),
+      });
       const opened = player;
       const media = player.media;
       observation.monitor(media, player.surface);
-      if (routeMuted) { media.muted = true; player.volume.hidden = true; }
+      if (routeMuted) media.muted = true;
       media.addEventListener('volumechange', () => { if (player === opened && routeMuted && !media.muted) media.muted = true; });
       media.addEventListener('loadedmetadata', () => { if (player !== opened) return; metadata = true; applyDirective(); report(); });
-      for (const event of ['play', 'pause', 'waiting', 'playing', 'seeked', 'ended', 'error'])
+      for (const event of ['play', 'pause', 'waiting', 'playing', 'seeking', 'seeked', 'ratechange', 'ended', 'error'])
         media.addEventListener(event, () => {
           if (player !== opened) return;
-          if (event === 'waiting') waiting = true;
-          else if (['playing', 'seeked', 'ended', 'error'].includes(event)) waiting = false;
+          if (event === 'waiting' || event === 'seeking') waiting = true;
+          else if (['pause', 'playing', 'seeked', 'ended', 'error'].includes(event)) waiting = false;
           if (event === 'error') player?.fail(lang === 'zh' ? '无法播放视频' : 'Unable to play video');
           report();
         });
-      picture = createVideoCanvas(player.video, player.surface, error => {
-        if (player !== opened) return;
-        observation.event('canvas-error', error);
-        player.fail(lang === 'zh' ? '无法显示视频画面' : 'Unable to display video'); report();
-      });
-      // HLS hosts its native video in shadow DOM; keep the canvas on the common media surface.
-      player.surface.append(player.video.nextElementSibling);
-      player.source(next.directUrl ?? `http://${host()}${route}`, type);
+      await player.source(next.directUrl ?? `http://${host()}${route}`, type);
+      if (abort.signal.aborted || player !== opened) return;
+      sourceReady = true; applyDirective(); report();
       timer = setInterval(report, 400);
     } catch (error) {
       if (!abort.signal.aborted && state?.id === next.id) {
@@ -149,7 +155,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       if (routeMuted === value) return;
       if (value) savedMute = player?.media.muted ?? false;
       routeMuted = value;
-      if (player) { player.media.muted = value ? true : savedMute; player.volume.hidden = value; }
+      if (player) player.media.muted = value ? true : savedMute;
     },
     videoActive: () => Boolean(state?.resource),
     dispose() { disposed = true; clear(); layer.remove(); photoStop.remove(); },

@@ -12,7 +12,7 @@ internal class AirPlayPlaybackDiagnostics(
 
     @Synchronized fun report(id: Long, fields: Map<*, *>, accepted: Boolean) {
         val flags = "id=$id revision=${whole(fields["revision"])} accepted=$accepted " +
-            REPORT_FLAGS.joinToString(" ") { "$it=${flag(fields[it])}" }
+            REPORT_FLAGS.joinToString(" ") { "$it=${flag(fields[it])}" } + " rate=${number(fields["rate"])}"
         val now = nowMillis()
         if (flags == lastReport && now - lastReportMillis < 5_000) return
         lastReport = flags
@@ -50,12 +50,12 @@ internal class AirPlayPlaybackDiagnostics(
     private fun emit(message: String) { runCatching { log(message) } }
 
     companion object {
-        private val ACTIONS = setOf("play", "pause", "seek", "stop")
+        private val ACTIONS = setOf("play", "pause", "seek", "rate", "stop")
         private val REPORT_FLAGS = listOf("playing", "ready", "buffering", "seekable", "ended", "failed")
         private val EVENT_FLAGS = listOf("paused", "ended", "seeking", "dragging")
         private val EVENTS = setOf("open", "probe-start", "probe-ready", "open-error", "directive-seek",
             "directive-play", "directive-pause", "play-resolved", "play-rejected", "loadedmetadata",
-            "play", "pause", "waiting", "playing", "seeking", "seeked", "ended", "error",
+            "play", "pause", "waiting", "playing", "seeking", "seeked", "ratechange", "ended", "error",
             "drag-start", "drag-end", "drag-cancel", "canvas-error", "explicit-stop")
         private val ERRORS = setOf("NotAllowedError", "AbortError", "NotSupportedError", "InvalidStateError",
             "SecurityError", "TypeError", "RangeError", "NetworkError", "EncodingError")

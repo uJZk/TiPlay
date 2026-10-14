@@ -7,7 +7,12 @@
   },
   "dependencies": {
     "@videojs/html": "10.1.0",
-    "@videojs/hlsjs-video": "10.1.0"
+    "@videojs/media": "10.1.0",
+    "hls.js": "1.6.19",
+    "@svta/common-media-library": "0.17.1",
+    "url-toolkit": "2.2.5",
+    "mediabunny": "1.61.4",
+    "@soundtouchjs/core": "2.1.1"
   },
   "devDependencies": {
     "esbuild": "0.25.12"

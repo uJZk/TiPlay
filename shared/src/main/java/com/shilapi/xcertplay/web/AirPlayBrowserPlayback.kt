@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.web
 
+import com.shilapi.xcertplay.receiver.ReceiverPlayback
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicLong
 
@@ -7,7 +8,7 @@ import java.util.concurrent.atomic.AtomicLong
 object AirPlayBrowserPlayback {
     data class State(val duration: Double, val position: Double, val playing: Boolean,
                      val ready: Boolean, val buffering: Boolean, val seekable: Boolean,
-                     val kind: String = "video")
+                     val kind: String = "video", val rate: Double = 1.0)
     private data class Entry(val id: Long, val state: () -> State,
                              val control: (String, Double?) -> Unit, val video: AirPlayVideoPlayback?)
     private val ids = AtomicLong()
@@ -29,7 +30,7 @@ object AirPlayBrowserPlayback {
         val state = entry.state()
         return mapOf("id" to entry.id, "duration" to state.duration, "position" to state.position,
             "playing" to state.playing, "ready" to state.ready, "buffering" to state.buffering,
-            "seekable" to state.seekable, "kind" to state.kind) + (entry.video?.source() ?: emptyMap())
+            "seekable" to state.seekable, "kind" to state.kind, "rate" to state.rate) + (entry.video?.source() ?: emptyMap())
     }
 
     @Synchronized
@@ -49,6 +50,7 @@ object AirPlayBrowserPlayback {
                 if (!state.seekable || value == null || !value.isFinite() || value < 0 ||
                     value > state.duration) return false
             }
+            "rate" -> if (entry.state().kind != "video" || value == null || !ReceiverPlayback.supportsRate(value)) return false
             else -> return false
         }
         entry.control(action, value)

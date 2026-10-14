@@ -28,6 +28,28 @@ in the disposable build copy. `sh ./gradlew` handles a missing executable bit bu
 does not repair CRLF. Preserve the selected source's wrapper JAR and distribution
 properties; replacing them with a cached wrapper can select a different Gradle build.
 
+## Bound validation memory
+
+JVM heap limits do not bound process RSS. Robolectric native graphics allocations,
+compiler caches and long-lived Gradle/Kotlin daemons can retain substantial memory
+after tests finish. When host memory is constrained, use a hard limit on the build
+container and verify its effective cgroup limit before starting Gradle. A requested
+limit that the container runtime did not apply is not sufficient protection.
+
+Run Gradle tasks serially with one worker and no persistent daemon; compile Kotlin
+in-process to avoid an additional compiler JVM. Configure test forks to run
+serially with bounded heaps and to retire after a bounded number of test classes,
+so native allocations are released. Keep these resource settings in the local
+validation driver rather than changing application behavior to accommodate a
+test machine. If a temporary container limit is restored afterward, first verify
+that no build JVM is still active.
+
+Stopping JVMs may leave memory in the WSLC VM's filesystem cache. Terminating the
+specific WSLC session releases that memory to Windows while preserving its
+container storage. Do not use a blanket WSL shutdown when unrelated distributions
+are active. On container restart, check network-namespace prerequisites such as
+IPv6 before interpreting protocol-test socket failures as source regressions.
+
 ## Pass signing inputs without logging them
 
 A host vault does not need to be mounted into the container. A local PowerShell

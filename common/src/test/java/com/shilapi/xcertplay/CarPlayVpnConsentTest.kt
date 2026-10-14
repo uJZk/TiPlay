@@ -35,6 +35,7 @@ class CarPlayVpnConsentTest {
     private var launches = 0
 
     @Before fun setUp() {
+        DiagnosticLogs.resetForTest()
         useHeadUnitMode()
         VpnConsentTestShadow.failure = null
         VpnConsentTestShadow.consent = Intent().setClassName(
@@ -53,6 +54,7 @@ class CarPlayVpnConsentTest {
         ReflectionHelpers.getField<ExecutorService>(activity, "teardownExecutor").shutdownNow()
         ReflectionHelpers.getField<ExecutorService>(activity, "airPlayCommandExecutor").shutdownNow()
         CarPlayBackgroundSession.clear()
+        DiagnosticLogs.resetForTest()
     }
 
     @Test fun missingConsentDialogDoesNotCrashOrLeaveAuthorizationPending() {
@@ -151,7 +153,10 @@ class CarPlayVpnConsentTest {
     }
 
     private fun field(name: String): Boolean = ReflectionHelpers.getField(activity, name)
-    private fun log() = File(activity.filesDir, "logs/diplay.log").readText()
+    private fun log(): String {
+        assertTrue("VPN consent diagnostics did not finish writing", AsyncDiagnosticLog.awaitIdle(2_000))
+        return File(activity.filesDir, "logs/diplay.log").readText()
+    }
     private fun invoke(name: String) {
         try { activity.javaClass.getDeclaredMethod(name).apply { isAccessible = true }.invoke(activity) }
         catch (error: InvocationTargetException) { throw error.targetException }

@@ -5,6 +5,81 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayVideoPlaybackTest {
+    private fun rateReport(revision: Long = 0L, rate: Double = 1.0, playing: Boolean = true) =
+        mapOf("revision" to revision, "duration" to 100.0, "position" to 20.0, "bufferedPosition" to 30.0,
+            "rate" to rate, "playing" to playing, "ready" to true, "buffering" to false, "seekable" to true)
+
+    @Test fun actualRateSurvivesBufferingAndPauseKeepsTheSelectedSpeed() {
+        val events = mutableListOf<String>()
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }, events::add)
+        try {
+            assertTrue(video.report(rateReport(rate = 1.5)))
+            assertEquals(1.5, video.playback.rate, 0.0)
+            assertEquals(1.5, video.playback.info()["rate"])
+            assertTrue(video.report(rateReport(rate = 1.5) + mapOf("ready" to false, "buffering" to true)))
+            assertEquals(1.5, video.receiverPlayback().rate, 0.0)
+            assertTrue(video.playback.ready)
+            assertTrue(video.report(rateReport(rate = 2.0, playing = false)))
+            assertEquals(0.0, video.playback.rate, 0.0)
+            assertEquals(2.0, video.state().rate, 0.0)
+            assertFalse(video.state().playing)
+            assertEquals(listOf("playing", "loading", "paused"), events)
+            assertTrue(video.report(rateReport(rate = 2.0) + ("ended" to true)))
+            assertEquals(0.0, video.playback.rate, 0.0)
+        } finally { video.close() }
+    }
+
+    @Test fun iphoneSpeedCommandsCannotUndoPendingSeekOrAcceptStaleReports() {
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
+        try {
+            assertTrue(video.report(rateReport()))
+            video.control("seek", 80.0)
+            video.control("rate", 1.5)
+            video.control("rate", 0.0)
+            video.control("play", null)
+            assertEquals(1L, video.source()["seekRevision"])
+            assertEquals(4L, video.source()["revision"])
+            assertEquals(80.0, video.source()["target"])
+            assertEquals(1.5, video.state().rate, 0.0)
+            assertTrue(video.state().playing)
+            assertFalse(video.report(rateReport(revision = 1L)))
+            assertEquals(80.0, video.receiverPlayback().position, 0.0)
+            assertTrue(video.report(rateReport(revision = 4L, rate = 1.5) +
+                mapOf("position" to 80.0, "bufferedPosition" to 80.0, "buffering" to true)))
+            assertEquals(80.0, video.receiverPlayback().position, 0.0)
+            assertTrue(video.report(rateReport(revision = 4L, rate = 1.5) +
+                mapOf("position" to 83.0, "bufferedPosition" to 90.0)))
+            assertEquals(83.0, video.receiverPlayback().position, 0.0)
+            assertEquals(1.5, video.receiverPlayback().rate, 0.0)
+        } finally { video.close() }
+    }
+
+    @Test fun invalidRatesCannotMutatePlaybackAndLegacyReportsStillUseOneOrZero() {
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
+        try {
+            assertTrue(video.report(rateReport(rate = 1.5)))
+            val accepted = video.playback
+            for (rate in listOf(null, "1.5", 0.0, 0.24, 4.01, -1.0, Double.NaN, Double.POSITIVE_INFINITY)) {
+                assertFalse(video.report(rateReport() + ("rate" to rate)))
+                assertEquals(accepted, video.playback)
+            }
+            for (rate in listOf(null, -1.0, 0.24, 4.01, Double.NaN, Double.POSITIVE_INFINITY)) {
+                video.control("rate", rate)
+                assertEquals(0L, video.source()["revision"])
+                assertEquals(1.5, video.state().rate, 0.0)
+            }
+            for (rate in listOf(0.25, 4.0)) {
+                assertTrue(video.report(rateReport(rate = rate)))
+                assertEquals(rate, video.playback.rate, 0.0)
+            }
+            assertTrue(video.report(rateReport() - "rate"))
+            assertEquals(1.0, video.playback.rate, 0.0)
+            assertTrue(video.report(rateReport(playing = false) - "rate"))
+            assertEquals(0.0, video.playback.rate, 0.0)
+            assertEquals(1.0, video.state().rate, 0.0)
+        } finally { video.close() }
+    }
+
     @Test fun queuedSeekReadbackAcknowledgesTheTargetUntilTheBrowserAppliesItsRevision() {
         val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
         try {

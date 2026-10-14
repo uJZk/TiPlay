@@ -55,6 +55,4 @@ mobile、home、maphost 的 `lintDebug` 與 `assembleDebug` 也全部通過。�
 - 開啟音訊焦點後，新增「暫時失去音訊焦點時將媒體靜音」及完整說明可見；已檢視實機截圖，這兩個新增字串沒有截斷。
 - 檢查後將音訊焦點恢復為原本的關閉狀態，保留繁體中文選擇，並將手機停在設定概覽。
 
-實機截圖：[繁體中文語言頁](screenshots/zh-TW/android14-language.png)、[進階音訊焦點](screenshots/zh-TW/android14-audio-focus.png)。
-
 此原始碼 debug APK 沒有配件認證素材，因此會顯示「無法載入 CarPlay 認證」；這是預期限制，不影響上述介面檢查。尚未進行實車或 iPhone／CarPlay 連線驗證，也尚未發布網站。手機實測與自動化文字省略檢查不能保證每種字型與車機都沒有顯示問題。

@@ -71,8 +71,11 @@ The maneuver PNGs under `shared/src/main/assets/byd-hud-icons` were imported fro
 
 ## Browser media
 
-- Video.js 10.1.0 (`@videojs/html`, official `@videojs/hlsjs-video` adapter) and hls.js 1.6.19: Apache-2.0.
-  Distributed as a self-hosted ESM bundle under `site/play/vendor/videojs/`, with LICENSE,
-  dependency license texts, retained bundle notices and integrity-pinned build inputs.
+- Video.js native controls, skin and media adapter helpers: Apache-2.0, self-hosted under
+  `site/play/vendor/videojs/` with license texts and retained bundle notices.
+- Mediabunny and SoundTouchJS: MPL-2.0. hls.js WebVTT parsing helpers: Apache-2.0 with
+  retained notices for their Mozilla-derived parser. The media bundle, full dependency
+  licenses and source provenance are under `site/play/vendor/mediabunny/`; the source
+  packages and their integrity are pinned in `scripts/videojs/package-lock.json`.
 - Retained native SpeexDSP 1.2.1 compatibility code: BSD-style licence under
   `shared/src/main/jni/speexdsp/COPYING`. The browser ships no Speex/WASM AEC.

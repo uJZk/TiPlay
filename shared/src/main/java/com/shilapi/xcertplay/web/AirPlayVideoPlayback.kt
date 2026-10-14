@@ -16,6 +16,7 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
     private var seekRevision = 0L
     private var prepared = false
     private var requestedPlaying = true
+    private var requestedRate = 1.0
     private var target = item.start
     private var fraction = item.fraction
     private var seekable = false
@@ -53,7 +54,7 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
     }
 
     @Synchronized fun state() = AirPlayBrowserPlayback.State(playback.duration, playback.position,
-        requestedPlaying, playback.ready, playback.buffering, seekable)
+        requestedPlaying, playback.ready, playback.buffering, seekable, rate = requestedRate)
 
     @Synchronized fun source(): Map<String, Any?> = mapOf("resource" to proxy.rootId,
         "directUrl" to proxy.directUrl(itemUrl), "revision" to revision, "seekRevision" to seekRevision, "target" to target, "fraction" to fraction)
@@ -63,6 +64,11 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
         when (action) {
             "play" -> requestedPlaying = true
             "pause" -> requestedPlaying = false
+            "rate" -> {
+                val rate = value?.takeIf { ReceiverPlayback.supportsRate(it) } ?: return
+                requestedPlaying = rate > 0.0
+                if (requestedPlaying) requestedRate = rate
+            }
             "seek" -> {
                 val seconds = requireNotNull(value)
                 applySeek(seconds)
@@ -81,6 +87,10 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
         val position = number("position") ?: return false
         if (position > duration && duration > 0) return false
         val playing = fields["playing"] as? Boolean ?: return false
+        // Old browser reports only playing; their non-paused rate remains 1x.
+        val rate = if (fields.containsKey("rate")) {
+            number("rate")?.takeIf { ReceiverPlayback.supportsRate(it, allowPause = false) } ?: return false
+        } else 1.0
         val ready = fields["ready"] as? Boolean ?: return false
         val buffering = fields["buffering"] as? Boolean ?: return false
         val buffered = if (fields.containsKey("bufferedPosition")) number("bufferedPosition") ?: return false else position
@@ -88,8 +98,9 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
         val previous = playback
         seekable = fields["seekable"] == true && duration > 0
         requestedPlaying = playing
+        requestedRate = rate
         prepared = prepared || ready
-        playback = ReceiverPlayback(duration, position, if (playing && fields["ended"] != true) 1.0 else 0.0,
+        playback = ReceiverPlayback(duration, position, if (playing && fields["ended"] != true) rate else 0.0,
             prepared, buffering, buffered, seekable)
         // The page reports this revision only after applying its directive. A queued, undispatched
         // seek must survive current reports; older dispatched revisions are rejected above.

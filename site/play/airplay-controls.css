@@ -3,30 +3,24 @@
 .airplay-player [hidden], .airplay-player[hidden], .airplay-photo-stop[hidden] { display:none; }
 .airplay-player media-i18n, .airplay-player video-player { display:contents; }
 .airplay-player media-container { display:block; position:relative; width:100%; height:100%; overflow:hidden; }
-.airplay-player video { width:100%; height:100%; object-fit:contain; }
-.airplay-player hlsjs-video { display:contents; }
-.airplay-player .airplay-canvas-mode video, .airplay-player .airplay-canvas-mode hlsjs-video::part(video) { opacity:0; }
+.airplay-player tiplay-media { display:contents; }
 .airplay-player .airplay-canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .airplay-control-bar { position:absolute; inset:auto 0 0; z-index:2; display:flex; align-items:center; gap:8px; padding:12px; padding-bottom:max(12px,env(safe-area-inset-bottom)); background:linear-gradient(transparent,rgba(0,0,0,.85)); }
-.airplay-control-bar :is(media-play-button,media-seek-button,media-mute-button,media-captions-button,button) { display:grid; place-items:center; min-width:44px; min-height:44px; cursor:pointer; border:0; border-radius:12px; color:inherit; background:rgba(255,255,255,.1); font:inherit; touch-action:manipulation; }
+.airplay-control-bar .media-button { display:grid; place-items:center; flex-shrink:0; min-width:44px; min-height:44px; border:0; font:inherit; }
+.airplay-control-bar .airplay-rate::after { content:attr(data-rate) "\00d7"; }
 .airplay-control-bar :focus-visible { outline:2px solid #fff; outline-offset:2px; }
 .airplay-control-bar media-time { font:12px monospace; white-space:nowrap; }
 .airplay-control-bar media-time-slider { flex:1; min-width:40px; }
-.airplay-control-bar :is(media-time-slider,media-volume-slider) { display:block; position:relative; height:44px; cursor:pointer; touch-action:none; }
+.airplay-control-bar media-time-slider { display:block; position:relative; height:44px; cursor:pointer; touch-action:none; }
 .airplay-control-bar media-slider-track { position:absolute; top:20px; left:0; width:100%; height:4px; border-radius:4px; background:rgba(255,255,255,.25); }
 .airplay-control-bar :is(media-slider-buffer,media-slider-fill) { display:block; position:absolute; inset:0 auto 0 0; width:var(--media-slider-fill,0%); border-radius:inherit; background:#fff; }
 .airplay-control-bar media-slider-buffer { width:var(--media-slider-buffer,0%); background:rgba(255,255,255,.45); }
 .airplay-control-bar media-slider-thumb { position:absolute; top:16px; left:var(--media-slider-fill,0%); width:12px; height:12px; border-radius:50%; background:#fff; transform:translateX(-50%); }
-.airplay-volume { display:flex; align-items:center; gap:8px; }
-.airplay-volume media-volume-slider { width:64px; }
-media-play-button[data-paused] .pause-icon, media-play-button:not([data-paused]) .play-icon { display:none; }
 .airplay-player media-buffering-indicator { position:absolute; inset:0; z-index:1; display:none; place-items:center; pointer-events:none; }
 .airplay-player media-buffering-indicator[data-visible] { display:grid; }
-.airplay-player media-buffering-indicator span { width:40px; height:40px; border:3px solid #ffffff55; border-top-color:#fff; border-radius:50%; animation:airplay-spin 1s linear infinite; }
 .airplay-error { position:absolute; inset:40% 16px auto; text-align:center; pointer-events:none; }
 .airplay-photo-stop { position:absolute; z-index:3; bottom:max(16px,env(safe-area-inset-bottom)); right:max(16px,env(safe-area-inset-right)); }
-@keyframes airplay-spin { to { transform:rotate(360deg); } }
-@media (max-width:600px) { .airplay-control-bar { gap:4px; padding-inline:8px; } .airplay-volume media-volume-slider { display:none; } .airplay-control-bar media-time[type=duration] { display:none; } }
+@media (max-width:600px) { .airplay-control-bar { gap:4px; padding-inline:8px; } .airplay-control-bar media-time[type=duration] { display:none; } }
 
 .airplay-captions { position:absolute; inset:auto 10% 84px; z-index:1; text-align:center; white-space:pre-line; color:#fff; font:20px sans-serif; text-shadow:0 1px 3px #000,0 -1px 3px #000; pointer-events:none; }
 .airplay-player media-controls, .airplay-player media-controls-content { display:contents; }

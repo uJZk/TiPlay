@@ -70,11 +70,12 @@ not the iPhone's replacement-display negotiation or real vehicle routing, recove
 
 ## AirPlay URL canvas (`airplay-video.mjs`)
 
-This separate harness uses the bundled Video.js under the production CSP. It checks changing video pixels in WebGL,
-forced 2D and the animation fallback without `requestVideoFrameCallback`, plus optional HLS playback. It also checks
-letterboxing, the source-resolution cap, paused seeking and resizing, WebGL context restoration, clickable controls,
-Bluetooth audio muting, end-of-video scheduling, replacement, photo handoff and disposal. Pixel readback exists only
-in test instrumentation. These checks do not measure vehicle performance or physical audio/video synchronization.
+This harness exercises the actual Mediabunny/WebCodecs and TiPlay playback engine under the production CSP,
+with native Video.js controls and its self-hosted skin. It checks changing video pixels in WebGL and forced 2D,
+plus optional HLS playback, authenticated WebVTT discovery and pure-text subtitle timing. It also checks
+letterboxing, the source-resolution cap, paused seeking and resizing, WebGL context restoration, actual timeline
+clicks, speed/rate feedback, native caption selection, Bluetooth mute enforcement/restoration, ended playback,
+replacement, photo handoff, safe diagnostics and disposal. Pixel readback exists only in test instrumentation.
 
 Generate the expected 320×180 moving fixture with audio and optionally an HLS copy:
 
@@ -144,24 +145,8 @@ The script removes its Playwright request routes before it leaves the page: Play
 `keepalive` request of a page that is going away, which looked like a lost `/bye`.
 
 
-## AirPlay URL Canvas (`airplay-video.mjs`)
-
-`airplay-video.mjs` checks the actual Video.js 10.1.0 player under the page's CSP, native
-buffering UI, removed fullscreen control, MP4 decoding, playback status delivery,
-pause without position rollback, explicit seek revisions and failed-state reporting,
-Bluetooth route muting (including preventing a user unmute), restoration and player disposal.
-It also checks WebGL, forced 2D and the no-video-frame-callback fallback, caption display/toggle,
-Chinese labels, actual timeline clicks and Stop casting. Set `TEST_VIDEO_HLS` to include the HLS adapter path. Supply
-an ordinary unprotected MP4 fixture; it is never uploaded to an external service.
-
-```sh
-NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chrome \
-  TEST_VIDEO_MP4=/path/to/short-test.mp4 node tests/web-e2e/airplay-video.mjs
-```
-
-This is a desktop Chromium simulation, not a Tesla device or acoustic test. It
-forces autoplay permission and uses a local resource stub, so it does not verify
-production autoplay policy, authenticated proxying or the Android HFP/SCO transition.
-HLS URL rewriting, Range handling, peer direct access and stale playback reports
-are covered by shared module tests. Actual iPhone HLS/FCUP playback and vehicle
-microphone/call quality still need device validation.
+The URL-video harness above is a desktop Chromium simulation, not a Tesla device or acoustic test.
+It forces autoplay permission and uses a local resource stub, so production autoplay policy,
+Android HFP/SCO transitions, actual iPhone FCUP access and vehicle performance remain device checks.
+HLS URL rewriting, Range handling, peer direct access and stale playback reports are also covered
+by shared module tests. Codec support in native HTML video does not establish WebCodecs support.

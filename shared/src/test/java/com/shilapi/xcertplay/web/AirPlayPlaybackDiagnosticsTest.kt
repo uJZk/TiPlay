@@ -4,6 +4,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayPlaybackDiagnosticsTest {
+    @Test fun rateChangesReportImmediatelyWithoutLoggingUntrustedRateOrActionText() {
+        val lines = mutableListOf<String>()
+        val diagnostics = AirPlayPlaybackDiagnostics(lines::add) { 0L }
+        val fields = mapOf("revision" to 0L, "playing" to true, "rate" to 1.0)
+        diagnostics.report(1, fields, true)
+        diagnostics.report(1, fields + ("rate" to 1.5), true)
+        diagnostics.report(1, fields + ("rate" to 1.5), true)
+        assertEquals(2, lines.size)
+        assertTrue(lines.last().contains("rate=1.5"))
+        diagnostics.command(1, "rate", 1.5, true)
+        assertTrue(lines.last().contains("action=rate target=1.5 accepted=true"))
+        diagnostics.report(1, fields + ("rate" to "password=secret"), false)
+        assertTrue(lines.last().contains("rate=unknown"))
+        assertFalse(lines.joinToString().contains("secret"))
+    }
     @Test fun reportsTransitionsImmediatelyAndStablePlaybackAtMostEveryFiveSeconds() {
         val lines = mutableListOf<String>()
         var now = 0L
