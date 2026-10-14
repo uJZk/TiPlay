@@ -22,8 +22,7 @@ internal class AirPlayMirrorAudio(private val format: ReceiverMirrorAudioFormat,
     private val thread: Thread
 
     init {
-        hub.enabled = true
-        hub.begin(this)
+        hub.beginMirror(this)
         thread = Thread(::decode, "tiplay-airplay-mirror-audio").apply { isDaemon = true; start() }
     }
 
@@ -67,6 +66,7 @@ internal class AirPlayMirrorAudio(private val format: ReceiverMirrorAudioFormat,
         } finally {
             running = false
             runCatching { codec?.stop() }; runCatching { codec?.release() }
+            hub.endMirror(this)
         }
     }
 
@@ -85,7 +85,7 @@ internal class AirPlayMirrorAudio(private val format: ReceiverMirrorAudioFormat,
                         val anchor = presentation.floorEntry(info.presentationTimeUs)
                         val mapped = anchor?.value?.let { it + (info.presentationTimeUs - anchor.key) * 1000L }
                         if (anchor != null) presentation.headMap(anchor.key, false).clear()
-                        hub.publish(this, 0, format.sampleRate, format.channels, ByteArray(info.size).also { buffer.get(it) }, reset = reset,
+                        hub.publish(this, WebAudioHub.AIRPLAY_MIRROR_STREAM, format.sampleRate, format.channels, ByteArray(info.size).also { buffer.get(it) }, reset = reset,
                             presentationNanos = mapped, mode = com.shilapi.xcertplay.web.BrowserPlaybackMode.AIRPLAY_MIRROR)
                         reset = false
                     }
@@ -94,5 +94,5 @@ internal class AirPlayMirrorAudio(private val format: ReceiverMirrorAudioFormat,
         }
     }
 
-    override fun close() { running = false; packets.clear(); thread.interrupt(); hub.end(this) }
+    override fun close() { running = false; packets.clear(); thread.interrupt(); hub.endMirror(this) }
 }

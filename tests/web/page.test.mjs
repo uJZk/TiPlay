@@ -18,7 +18,9 @@ test('the initial clock reaches a video sink whose setup finishes after hello', 
     const link = { code: '1234' }, session = 'session', PROTOCOL = 1;
     const videoPath = {};
     const browserAudio = { attach() {}, clock: value => events.push(['audio-clock', value]) };
-    const mediaTiming = { reset: () => events.push('timing-reset') };
+    let mediaTiming;
+    const mediaTimings = new Map([['carplay', { reset: () => events.push('timing-reset'), mode() {} }]]);
+    const timingFor = mode => mediaTimings.get(mode);
     const airplayControls = { update() {} };
     const render = () => {}, reportAppearance = () => {}, scheduleViewport = () => {};
     const setInterval = () => 0, clearInterval = () => {};
@@ -166,7 +168,7 @@ test('disconnect is a separate full-width row immediately below connect', () => 
 
 test('the service worker precaches every page file', () => {
   const assets = JSON.parse(/const ASSETS = (\[[^\]]*\]);/.exec(read('sw.js'))[1].replaceAll("'", '"'));
-  const files = readdirSync(play, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile() && entry.name !== 'sw.js').map(entry => (entry.parentPath.slice(new URL(play).pathname.replace(/\/$/, '').length) + '/' + entry.name).replace(/^\/+/, ''));
+  const files = readdirSync(play, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile() && entry.name !== 'sw.js').map(entry => (entry.parentPath.slice(new URL(play).pathname.replace(/\/$/, '').length) + '/' + entry.name).replaceAll('\\', '/').replace(/^\/+/, ''));
   assert.deepEqual([...assets].filter(name => name !== './').sort(), files.sort());
 });
 

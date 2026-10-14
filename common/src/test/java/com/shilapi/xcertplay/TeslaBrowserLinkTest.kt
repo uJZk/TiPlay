@@ -4,6 +4,8 @@ import android.os.Looper
 import android.view.Surface
 import com.shilapi.xcertplay.airplay.AirPlayContact
 import com.shilapi.xcertplay.airplay.AirPlayKnobState
+import com.shilapi.xcertplay.airplay.CarPlayScreenBorrowState
+import com.shilapi.xcertplay.airplay.CarPlayScreenOwner
 import com.shilapi.xcertplay.airplay.MediaSink
 import com.shilapi.xcertplay.airplay.VideoCodec
 import com.shilapi.xcertplay.media.AndroidMediaSink
@@ -21,6 +23,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -307,14 +310,16 @@ class TeslaBrowserLinkTest {
         val contacts = listOf(AirPlayContact(0, 0.25, 0.75, true))
         `when`(controller.sendTouch(contacts)).thenReturn(true)
         TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         assertTrue(CarPlayBackgroundSession.hasSession())
         assertFalse(server.callbacks.status().touchAvailable)
         assertFalse(server.callbacks.onTouch(contacts))
         server.callbacks.onKey("home")
-        verify(controller).sendTouch(emptyList())
+        verify(controller, org.mockito.Mockito.atLeastOnce()).sendTouch(emptyList())
         verify(controller, org.mockito.Mockito.never()).sendTouch(contacts)
         verify(controller, org.mockito.Mockito.never()).sendKnob(AirPlayKnobState(home = true))
         TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         assertTrue(server.callbacks.status().touchAvailable)
         assertTrue(server.callbacks.onTouch(contacts))
     }
@@ -327,10 +332,12 @@ class TeslaBrowserLinkTest {
         carPlay.onScreenStreamActive(110, true)
         carPlay.onVideoCodec(110, VideoCodec.H264); carPlay.onVideoConfig(110, avcc)
         TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         val borrowed = com.shilapi.xcertplay.web.WebMediaSink(TeslaBrowserLink.hub, 720, 1280, 60)
         borrowed.onScreenStreamActive(110, true)
         val service = org.robolectric.Robolectric.buildService(AirPlayReceiverService::class.java).create()
         service.destroy()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         assertEquals(1920, TeslaBrowserLink.hub.info()!!.width)
         assertEquals("avc1.640028", TeslaBrowserLink.hub.info()!!.codec)
         assertTrue(CarPlayBackgroundSession.hasSession())
@@ -339,16 +346,113 @@ class TeslaBrowserLinkTest {
         TeslaBrowserLink.releaseTap(retained.sink)
     }
 
+    @Test fun screenLoanWaitsForOwnershipAndReturnsWithoutPausingCarPlayAudio() {
+        started()
+        val controller = storeSession(phoneBrowser = true)
+        val retained = CarPlayBackgroundSession.snapshot()!!
+        val carPlay = TeslaBrowserLink.tee(retained.sink, true, 1920, 1080, 60)
+        carPlay.onScreenStreamActive(110, true)
+        carPlay.onVideoCodec(110, VideoCodec.H264)
+        carPlay.onVideoConfig(110, byteArrayOf(1, 0x64, 0, 0x28, -1, -31, 0, 4, 0x67, 0x64, 0, 0x28, 1, 0, 2, 0x68, -18))
+        val audio = audioTapsAtRest().single().second
+        val reader = TeslaBrowserLink.audioHub.subscribe()
+        val screen = AtomicReference(CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Controller, true))
+        val changed = AtomicReference<(() -> Unit)?>(null)
+        `when`(controller.screenBorrowState).thenAnswer { screen.get() }
+        org.mockito.Mockito.doAnswer { call ->
+            changed.set(call.getArgument(0))
+            java.io.Closeable { changed.set(null) }
+        }.`when`(controller).listenScreenBorrow(org.mockito.ArgumentMatchers.any<() -> Unit>() ?: {})
+        val ended = AtomicInteger()
+        TeslaBrowserLink.attachHost(object : TeslaBrowserLink.Host {
+            override fun log(message: String) {}
+            override fun onBrowserFit() {}
+            override fun onAirPlayEnded() { ended.incrementAndGet() }
+        })
+        val availability = CopyOnWriteArrayList<Boolean>()
+        val mirror = com.shilapi.xcertplay.web.WebMediaSink(TeslaBrowserLink.hub, 720, 1280, 60,
+            com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY)
+        fun assertCarPlayAudioContinues() {
+            TeslaBrowserLink.audioHub.publish(audio, 0, 48000, 1, byteArrayOf(42, 0))
+            assertEquals(42, reader.take(100)!![28].toInt())
+        }
+        try {
+            TeslaBrowserLink.pauseCarPlayDisplay { ready ->
+                availability += ready
+                if (ready) { mirror.resumeDisplay(); mirror.onScreenStreamActive(110, true) }
+                else mirror.pauseDisplay()
+            }
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            verify(controller).setScreenBorrowed(true)
+            assertEquals(listOf(false), availability)
+            assertEquals("A pending request retains the actual CarPlay owner", 1920, TeslaBrowserLink.hub.info()?.width)
+            assertFalse(TeslaBrowserLink.airPlayDisplayReady)
+            assertCarPlayAudioContinues()
+
+            screen.set(CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Accessory, false))
+            changed.get()!!.invoke()
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            assertEquals(listOf(false, true), availability)
+            assertEquals(720, TeslaBrowserLink.hub.info()?.width)
+            assertTrue(TeslaBrowserLink.airPlayDisplayReady)
+            assertCarPlayAudioContinues()
+
+            screen.set(CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Controller, false))
+            changed.get()!!.invoke()
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            assertEquals(listOf(false, true, false), availability)
+            assertEquals("Revoking the loan releases the mirror before restoring CarPlay", 1920, TeslaBrowserLink.hub.info()?.width)
+            assertFalse(TeslaBrowserLink.airPlayDisplayReady)
+            assertTrue("AirPlay keeps its request while the iPhone owns the screen", TeslaBrowserLink.airPlayActive)
+            assertCarPlayAudioContinues()
+
+            screen.set(CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Accessory, false))
+            changed.get()!!.invoke()
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            assertEquals(listOf(false, true, false, true), availability)
+            assertEquals("A new ownership grant resumes the existing mirror", 720, TeslaBrowserLink.hub.info()?.width)
+            assertTrue(TeslaBrowserLink.airPlayDisplayReady)
+            assertCarPlayAudioContinues()
+
+            mirror.close()
+            screen.set(CarPlayScreenBorrowState(false, false, CarPlayScreenOwner.Accessory, true))
+            TeslaBrowserLink.resumeCarPlayDisplay()
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            verify(controller).setScreenBorrowed(false)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertNull("Returning the screen waits for modesChanged", TeslaBrowserLink.hub.info())
+            assertTrue(TeslaBrowserLink.airPlayActive)
+            assertEquals(0, ended.get())
+            assertCarPlayAudioContinues()
+
+            screen.set(CarPlayScreenBorrowState(false, false, CarPlayScreenOwner.Controller, false))
+            changed.get()!!.invoke()
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(1920, TeslaBrowserLink.hub.info()?.width)
+            assertEquals("avc1.640028", TeslaBrowserLink.hub.info()?.codec)
+            assertFalse(TeslaBrowserLink.airPlayActive)
+            assertEquals(1, ended.get())
+            assertCarPlayAudioContinues()
+        } finally {
+            mirror.close()
+            reader.close()
+            TeslaBrowserLink.releaseTap(retained.sink)
+        }
+    }
+
     @Test fun newCarPlayTapAndDelayedResumeCannotStealAMirrorWhileItsConfigIsPending() {
         val server = started()
         storeSession(phoneBrowser = true)
         val retained = CarPlayBackgroundSession.snapshot()!!
         TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         val mirror = com.shilapi.xcertplay.web.WebMediaSink(TeslaBrowserLink.hub, 498, 1080, 60,
             com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY)
         try {
             mirror.onScreenStreamActive(110, true)
             TeslaBrowserLink.resumeCarPlayDisplay()
+            assertTrue(TeslaBrowserLink.awaitIdle())
             val carPlay = TeslaBrowserLink.tee(retained.sink, true, 1920, 1080, 60)
             carPlay.onScreenStreamActive(110, true)
             assertEquals(498, TeslaBrowserLink.hub.info()!!.width)
@@ -360,6 +464,7 @@ class TeslaBrowserLinkTest {
         } finally {
             mirror.close()
             TeslaBrowserLink.resumeCarPlayDisplay()
+            assertTrue(TeslaBrowserLink.awaitIdle())
             TeslaBrowserLink.releaseTap(retained.sink)
         }
     }
@@ -388,7 +493,7 @@ class TeslaBrowserLinkTest {
         assertEquals(listOf(true, false), seen)
     }
 
-    @Test fun concurrentRetirementCannotInvalidateAnInProgressAudioPauseIteration() {
+    @Test fun screenLoanDoesNotWaitForAudioAndConcurrentRetirementRemainsSafe() {
         val sinks = List(3) { mock(MediaSink::class.java) }
         val streams = sinks.map { TeslaBrowserLink.tee(it, true, 1182, 920) }
         streams.last().onScreenStreamActive(110, true)
@@ -397,7 +502,9 @@ class TeslaBrowserLinkTest {
         val retiringSink = entries[1].first
         val retiringStream = streams[sinks.indexOf(retiringSink)]
         val locked = CountDownLatch(1)
-        val continuePause = CountDownLatch(1)
+        val releaseAudio = CountDownLatch(1)
+        val displayChanged = CountDownLatch(1)
+        val retired = CountDownLatch(1)
         val failures = ConcurrentLinkedQueue<Throwable>()
         val workers = mutableListOf<Thread>()
         fun worker(name: String, action: () -> Unit) = Thread({
@@ -408,18 +515,23 @@ class TeslaBrowserLinkTest {
             worker("hold-first-audio") {
                 synchronized(firstAudio) {
                     locked.countDown()
-                    assertTrue("Release the paused audio worker", continuePause.await(5, TimeUnit.SECONDS))
+                    assertTrue("Release the held audio monitor", releaseAudio.await(5, TimeUnit.SECONDS))
                 }
             }
             assertTrue(locked.await(5, TimeUnit.SECONDS))
-            val pausing = worker("pause-all-taps", TeslaBrowserLink::pauseCarPlayDisplay)
-            // pauseAudio uses the real sink monitor, so the map iterator has already yielded
-            // its first entry when this worker blocks. All keys remain strongly held above.
-            eventually("pause reached the first audio tap") { pausing.state == Thread.State.BLOCKED }
-            val retiring = worker("retire-another-tap") { TeslaBrowserLink.releaseTap(retiringSink) }
-            eventually("retirement reached the in-progress transition") { retiring.state == Thread.State.BLOCKED }
+            worker("lend-screen") {
+                TeslaBrowserLink.pauseCarPlayDisplay()
+                assertTrue(TeslaBrowserLink.awaitIdle())
+                displayChanged.countDown()
+            }
+            worker("retire-another-tap") {
+                TeslaBrowserLink.releaseTap(retiringSink)
+                retired.countDown()
+            }
+            assertTrue("Screen borrowing does not acquire an audio sink monitor", displayChanged.await(2, TimeUnit.SECONDS))
+            assertTrue("Another tap can retire while audio remains locked", retired.await(2, TimeUnit.SECONDS))
         } finally {
-            continuePause.countDown()
+            releaseAudio.countDown()
             workers.forEach { it.join(5_000) }
         }
         assertTrue("No transition deadlocked", workers.none { it.isAlive })
@@ -433,6 +545,7 @@ class TeslaBrowserLinkTest {
             next.onScreenStreamActive(110, true)
             assertNull("A new tap inherits the active AirPlay pause", TeslaBrowserLink.hub.info())
             TeslaBrowserLink.resumeCarPlayDisplay()
+            assertTrue(TeslaBrowserLink.awaitIdle())
             assertEquals(1920, TeslaBrowserLink.hub.info()?.width)
             retiringStream.onScreenStreamActive(110, true)
             TeslaBrowserLink.releaseTap(retiringSink)

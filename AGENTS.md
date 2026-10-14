@@ -85,7 +85,7 @@ The user-confirmed TiPlay destinations and concise browser labels below supersed
 `docs/docs-sweep-2026-10-12/TIE-UP.md` records its integration and delivery progress.
 
 See `docs/AIRPLAY.md` for the experimental ordinary AirPlay mirror/video receiver,
-the pinned UxPlay reference, retained CarPlay display pause/resume contract and validation limits.
+the pinned UxPlay reference, confirmed CarPlay screen borrow/return and mixed audio contracts, and validation limits.
 Remaining receiver compatibility, CarPlay audio continuity, browser audio timestamp scheduling and vehicle checks are in `docs/todo.md`.
 Local device evidence and the next-session handoff are in ignored `agent_docs/adb-fixes/HANDOFF.md`; keep secrets and device captures out of commits.
 Ordinary AirPlay video routing, app-specific device evidence and the next playback-architecture handoff are in ignored `agent_docs/airplay-route/HANDOFF.md`.

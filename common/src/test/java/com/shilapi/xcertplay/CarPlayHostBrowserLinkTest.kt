@@ -6,6 +6,8 @@ import android.view.Surface
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
 import com.shilapi.xcertplay.airplay.AirPlaySession
+import com.shilapi.xcertplay.airplay.CarPlayScreenBorrowState
+import com.shilapi.xcertplay.airplay.CarPlayScreenOwner
 import com.shilapi.xcertplay.airplay.MediaSink
 import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.airplay.VideoCodec
@@ -204,6 +206,7 @@ class CarPlayHostBrowserLinkTest {
         val current = queueRecoveryBeforeAirPlay()
 
         TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(20))
 
         assertSame("A queued retry must not tear down the retained controller during casting", current, get("controller"))
@@ -213,6 +216,7 @@ class CarPlayHostBrowserLinkTest {
         assertFalse(get("reconnectScheduled") as Boolean)
 
         TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         shadowOf(Looper.getMainLooper()).idle()
 
         assertFalse(get("recoveryPendingAfterAirPlay") as Boolean)
@@ -224,10 +228,12 @@ class CarPlayHostBrowserLinkTest {
     @Test fun airPlayRecoveryCannotRestartDisabledCarPlay() {
         val current = queueRecoveryBeforeAirPlay()
         TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(20))
         BrowserCarPlaySettings.setDisabled(activity, true)
 
         TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         shadowOf(Looper.getMainLooper()).idle()
 
         assertFalse(get("reconnectScheduled") as Boolean)
@@ -240,7 +246,9 @@ class CarPlayHostBrowserLinkTest {
     @Test fun airPlayEndingCancelsTheRemainingRetryDelay() {
         queueRecoveryBeforeAirPlay()
         TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals("Even a short cast must not leave the old retry timer running", 1, get("restartGeneration"))
         assertFalse(get("reconnectScheduled") as Boolean)
@@ -259,9 +267,11 @@ class CarPlayHostBrowserLinkTest {
     @Test fun airPlayEndingPreservesAHealthyCarPlaySessionThatReturnedDuringCasting() {
         val current = queueRecoveryBeforeAirPlay()
         TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(20))
         org.mockito.Mockito.`when`(current.activeAirPlaySessionToken()).thenReturn(Any())
         TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         shadowOf(Looper.getMainLooper()).idle()
         assertSame(current, get("controller"))
         assertEquals(0, get("restartGeneration"))
@@ -273,20 +283,43 @@ class CarPlayHostBrowserLinkTest {
         val current = queueRecoveryBeforeAirPlay()
         org.mockito.Mockito.`when`(current.activeAirPlaySessionToken()).thenReturn(Any())
         TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         reportStatus(com.shilapi.xcertplay.orchestration.CarPlayStatus.Failed("Wireless iAP2 tunnel closed"))
         TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(1, get("restartGeneration"))
         assertNull("A surviving display token cannot hide a failed control channel", get("controller"))
+    }
+
+    @Test fun airPlayEndingPreservesControlWhenOnlyTheMainScreenStreamWasTornDown() {
+        val current = queueRecoveryBeforeAirPlay()
+        TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(20))
+        org.mockito.Mockito.`when`(current.screenBorrowState).thenReturn(
+            CarPlayScreenBorrowState(false, false, CarPlayScreenOwner.Controller, false))
+        assertNull(current.activeAirPlaySessionToken())
+
+        TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertSame("A main-screen TEARDOWN leaves the CarPlay control session connected", current, get("controller"))
+        assertEquals(0, get("restartGeneration"))
+        assertFalse(get("recoveryPendingAfterAirPlay") as Boolean)
+        org.mockito.Mockito.verify(current, org.mockito.Mockito.never()).close()
     }
 
     @Test fun airPlayEndingRecoversAControlOnlyDisconnectDuringCasting() {
         val current = queueRecoveryBeforeAirPlay()
         org.mockito.Mockito.`when`(current.activeAirPlaySessionToken()).thenReturn(Any())
         TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         reportStatus(com.shilapi.xcertplay.orchestration.CarPlayStatus.ControlEnded)
         assertTrue(get("recoveryPendingAfterAirPlay") as Boolean)
         TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(1, get("restartGeneration"))
         assertNull(get("controller"))
@@ -304,6 +337,7 @@ class CarPlayHostBrowserLinkTest {
         val window = size(1080, 2200)
         set("activeDisplaySize", window)
         TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
         activity.javaClass.getDeclaredMethod("startCarPlay", sizeClass)
             .apply { isAccessible = true }.invoke(activity, window)
         assertTrue("Initial startup must not begin another iPhone handshake during AirPlay", controllerConstruction.constructed().isEmpty())

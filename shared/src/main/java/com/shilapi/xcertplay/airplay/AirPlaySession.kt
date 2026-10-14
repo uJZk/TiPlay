@@ -33,6 +33,7 @@ interface AirPlaySessionListener {
     fun onDeviceInfo(session: AirPlaySession, info: AirPlayDeviceInfo) {}
     fun onHostUiRequested(session: AirPlaySession) {}
     fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {}
+    fun onScreenBorrowChanged(session: AirPlaySession, state: CarPlayScreenBorrowState) {}
     /** Video in car: a playback message on a remote control session (X-Apple-StreamID). */
     fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) {}
     /** Video in car: requestUI "videoplayback:", the iPhone asks the car to show its video player. */
@@ -105,6 +106,9 @@ class AirPlaySession(
     private var keepAliveThread: Thread? = null
     private val eventWriteLock = Any()
     private val eventThreads = CopyOnWriteArrayList<Thread>()
+    private val screenBorrow = CarPlayScreenBorrow(send = ::sendCommand)
+    private val screenBorrowNotificationLock = Any()
+    private var lastScreenBorrowNotification = CarPlayScreenBorrowState()
 
     val host: String = socket.inetAddress?.hostAddress ?: ""
     val localAddress: InetAddress? = socket.localAddress
@@ -144,6 +148,8 @@ class AirPlaySession(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        screenBorrow.close()
+        notifyScreenBorrowChanged()
         mainScreenToken = null
         clearClusterContent()
         safeClose(socket)
@@ -293,6 +299,26 @@ class AirPlaySession(
 
     fun sendCommand(command: Map<String, Any?>): Boolean = synchronized(eventWriteLock) {
         sendCommandLocked(command)
+    }
+
+    val screenBorrowState: CarPlayScreenBorrowState get() = screenBorrow.snapshot()
+
+    /** Borrow only the screen; the controller, streams, iAP tunnel, timing and audio remain alive. */
+    fun setScreenBorrowed(borrowed: Boolean): CarPlayScreenBorrowState {
+        screenBorrow.setDesired(borrowed)
+        notifyScreenBorrowChanged()
+        return screenBorrowState
+    }
+
+    private fun notifyScreenBorrowChanged() {
+        val state = synchronized(screenBorrowNotificationLock) {
+            val next = screenBorrowState
+            if (next == lastScreenBorrowNotification) return
+            lastScreenBorrowNotification = next
+            next
+        }
+        debugLog("CarPlay screen desired=${state.desired} sent=${state.sent} owner=${state.owner} pending=${state.pending}")
+        listener.onScreenBorrowChanged(this, state)
     }
 
     /**
@@ -741,6 +767,10 @@ class AirPlaySession(
         val type = string(body["type"])
         val params = asMap(body["params"]) ?: emptyMap()
         debugLog("airplay command type=$type keys=${params.keys.sorted()}")
+        if (type == "modesChanged") {
+            screenBorrow.onModesChanged(params)
+            notifyScreenBorrowChanged()
+        }
         val streamId = request.headers["x-apple-streamid"]?.toLongOrNull()
         val data = params["data"] as? ByteArray
         if (streamId != null && data != null) {
@@ -821,6 +851,7 @@ class AirPlaySession(
     }
 
     private fun teardown() {
+        screenBorrow.setEventReady(false)
         videoPlaybackAvailability.setEventReady(false)
         videoPlaybackAvailability.setFeatureEnabled(false)
         ntp.close()
@@ -871,6 +902,8 @@ class AirPlaySession(
             }
             val videoDelivery = videoPlaybackAvailability.setEventReady(true)
             debugLog("airplay video event ready availability=$videoDelivery")
+            screenBorrow.setEventReady(true)
+            notifyScreenBorrowChanged()
             reapplyClusterContent()
             runEventRead(socket)
         } catch (error: Exception) {
@@ -908,7 +941,15 @@ class AirPlaySession(
                     debugLog(
                         "airplay event rx ${message.method} ${message.path} cseq=${message.headers["cseq"] ?: "-"} body=${message.body.size}",
                     )
-                    val response = RtspMessage.buildResponse(message, RtspMessage.Response(status = 200))
+                    val reply = try {
+                        if (message.method == "POST" && message.path.lowercase().endsWith("/command")) {
+                            handleCommand(message)
+                        } else RtspMessage.Response(status = 200)
+                    } catch (error: Exception) {
+                        Log.e(TAG, "airplay event command failed", error)
+                        RtspMessage.Response(status = 500)
+                    }
+                    val response = RtspMessage.buildResponse(message, reply)
                     trace(
                         "airplay event rx headers=${message.headers} " +
                             "bodyHex=${message.body.toHex()}",
@@ -924,6 +965,8 @@ class AirPlaySession(
             if (!closed.get()) Log.e(TAG, "airplay event read failed", error)
         } finally {
             debugLog("airplay event connection closed")
+            screenBorrow.setEventReady(false)
+            notifyScreenBorrowChanged()
             videoPlaybackAvailability.setEventReady(false)
             if (eventSocket === socket) eventSocket = null
             eventCipher = null

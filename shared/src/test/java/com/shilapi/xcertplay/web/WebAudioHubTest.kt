@@ -6,6 +6,86 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class WebAudioHubTest {
+    @Test fun disablingCarPlayDiscardsOnlyItsAudioAndKeepsMirrorConnected() {
+        val hub = WebAudioHub(); val carPlay = Any(); val mirror = Any()
+        hub.begin(carPlay); hub.beginMirror(mirror); val reader = hub.subscribe()
+        hub.publish(carPlay, 0, 48000, 1, byteArrayOf(10, 0), buffered = true)
+        hub.publish(carPlay, 1, 16000, 1, byteArrayOf(20, 0))
+        hub.publish(mirror, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(30, 0),
+            mode = BrowserPlaybackMode.AIRPLAY_MIRROR)
+        hub.carPlayEnabled = false
+        assertFalse(reader.closed)
+        repeat(5) { assertEquals(it, reader.take(100)!![5].toInt()) }
+        assertEquals(30, reader.take(100)!![28].toInt())
+        hub.publish(carPlay, 0, 48000, 1, byteArrayOf(99, 0), buffered = true)
+        assertNull(reader.take(10))
+        hub.publish(mirror, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(40, 0),
+            mode = BrowserPlaybackMode.AIRPLAY_MIRROR)
+        assertEquals(40, reader.take(100)!![28].toInt())
+        hub.carPlayEnabled = true
+        repeat(5) { reader.take(100) }
+        hub.publish(carPlay, 0, 48000, 1, byteArrayOf(50, 0), buffered = true)
+        assertEquals(50, reader.take(100)!![28].toInt())
+        reader.close()
+    }
+
+    @Test fun mirrorStartAndStopPreserveCarPlayMusicAndPrompts() {
+        val hub = WebAudioHub(); val carPlay = Any(); val mirror = Any()
+        hub.begin(carPlay); val reader = hub.subscribe()
+        hub.publish(carPlay, 0, 48000, 1, byteArrayOf(10, 0), buffered = true)
+        hub.publish(carPlay, 1, 16000, 1, byteArrayOf(20, 0))
+        hub.beginMirror(mirror)
+        hub.publish(mirror, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(30, 0),
+            mode = BrowserPlaybackMode.AIRPLAY_MIRROR)
+        hub.endMirror(mirror)
+        assertEquals(20, reader.take(100)!![28].toInt())
+        val reset = reader.take(100)!!
+        assertEquals(WebAudioHub.AIRPLAY_MIRROR_STREAM, reset[5].toInt())
+        assertEquals(BrowserPlaybackMode.AIRPLAY_MIRROR.audioFlags or 2, reset[7].toInt())
+        assertEquals(10, reader.take(100)!![28].toInt())
+        hub.publish(carPlay, 0, 48000, 1, byteArrayOf(40, 0), buffered = true)
+        assertEquals(40, reader.take(100)!![28].toInt())
+        reader.close()
+    }
+
+    @Test fun mirrorOverflowAndRetiredMirrorCannotDiscardCarPlayAudio() {
+        val hub = WebAudioHub(); val carPlay = Any(); val old = Any(); val current = Any()
+        hub.begin(carPlay); hub.beginMirror(old); val reader = hub.subscribe()
+        hub.publish(carPlay, 1, 16000, 1, byteArrayOf(20, 0))
+        repeat(17) { hub.publish(old, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(it.toByte(), 0),
+            mode = BrowserPlaybackMode.AIRPLAY_MIRROR) }
+        assertEquals(20, reader.take(100)!![28].toInt())
+        val fresh = reader.take(100)!!
+        assertEquals(16, fresh[28].toInt()); assertEquals(2, fresh[7].toInt() and 2)
+        hub.beginMirror(current)
+        reader.take(100)
+        hub.endMirror(old)
+        hub.publish(old, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(99, 0),
+            mode = BrowserPlaybackMode.AIRPLAY_MIRROR)
+        assertNull(reader.take(10))
+        hub.publish(current, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(30, 0),
+            mode = BrowserPlaybackMode.AIRPLAY_MIRROR)
+        assertEquals(30, reader.take(100)!![28].toInt())
+        reader.close()
+    }
+
+    @Test fun replacingCarPlayCancelsItsWaitingProducerAndPreservesMirror() {
+        val hub = WebAudioHub(); val old = Any(); val current = Any(); val mirror = Any()
+        hub.begin(old); hub.beginMirror(mirror); val reader = hub.subscribe()
+        repeat(16) { hub.publish(old, 0, 48000, 1, byteArrayOf(99, 0), buffered = true) }
+        val producer = Thread { hub.publish(old, 0, 48000, 1, byteArrayOf(100, 0), buffered = true) }.apply { start() }
+        try {
+            assertTrue(awaitBufferedWaiters(listOf(producer)))
+            hub.publish(mirror, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(30, 0),
+                mode = BrowserPlaybackMode.AIRPLAY_MIRROR)
+            hub.begin(current)
+            producer.join(500); assertFalse(producer.isAlive)
+            repeat(5) { assertEquals(it, reader.take(100)!![5].toInt()) }
+            assertEquals(30, reader.take(100)!![28].toInt())
+            assertNull(reader.take(10)); assertFalse(reader.closed)
+        } finally { producer.interrupt(); producer.join(1000); reader.close() }
+    }
+
     @Test fun aRetiredPublicationCannotEnqueueOrAdvanceTheReplacementEpoch() {
         val hub = WebAudioHub(); val owner = Any()
         hub.begin(owner); val reader = hub.subscribe()

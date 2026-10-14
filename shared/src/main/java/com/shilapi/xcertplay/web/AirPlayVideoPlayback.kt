@@ -21,6 +21,7 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
     private var fraction = item.fraction
     private var seekable = false
     private var closed = false
+    private var outputAllowed = true
     private data class PendingSeek(val token: Long, val position: Double, val dispatchedRevision: Long? = null)
     private var seekRequests = 0L
     private var pendingSeek: PendingSeek? = null
@@ -54,10 +55,18 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
     }
 
     @Synchronized fun state() = AirPlayBrowserPlayback.State(playback.duration, playback.position,
-        requestedPlaying, playback.ready, playback.buffering, seekable, rate = requestedRate)
+        requestedPlaying && outputAllowed, playback.ready, playback.buffering, seekable,
+        rate = requestedRate, outputAllowed = outputAllowed)
 
     @Synchronized fun source(): Map<String, Any?> = mapOf("resource" to proxy.rootId,
-        "directUrl" to proxy.directUrl(itemUrl), "revision" to revision, "seekRevision" to seekRevision, "target" to target, "fraction" to fraction)
+        "directUrl" to proxy.directUrl(itemUrl), "revision" to revision, "seekRevision" to seekRevision,
+        "target" to target, "fraction" to fraction, "outputAllowed" to outputAllowed)
+
+    @Synchronized fun setOutputAllowed(allowed: Boolean) {
+        if (closed || outputAllowed == allowed) return
+        outputAllowed = allowed
+        revision++
+    }
 
     @Synchronized fun control(action: String, value: Double?) {
         if (closed) return
@@ -97,7 +106,7 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
         if (buffered < position || (duration > 0 && buffered > duration)) return false
         val previous = playback
         seekable = fields["seekable"] == true && duration > 0
-        requestedPlaying = playing
+        if (outputAllowed) requestedPlaying = playing
         requestedRate = rate
         prepared = prepared || ready
         playback = ReceiverPlayback(duration, position, if (playing && fields["ended"] != true) rate else 0.0,

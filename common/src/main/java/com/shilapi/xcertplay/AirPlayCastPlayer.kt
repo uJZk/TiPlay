@@ -30,11 +30,13 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
         TeslaBrowserLink.persistDiagnostic(it)
     }
     @Volatile private var browserVideo: AirPlayVideoPlayback? = null
-    private var video: EncodedVideo? = null
+    @Volatile private var video: EncodedVideo? = null
     private var photoFrames: AirPlayPhotoFrames? = null
     @Volatile private var generation = 0L
     val playbackEpoch: Long get() = generation
     private var closed = false
+    private val outputLock = Any()
+    @Volatile private var outputAllowed = false
     private data class QueuedSeek(val playback: AirPlayVideoPlayback, val token: Long)
     private var iphoneSeekRequest: QueuedSeek? = null // main thread
     private val iphoneSeek = AirPlaySeekCoalescer(
@@ -52,7 +54,6 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
     fun play(item: ReceiverPlay) = main.post {
         if (closed) return@post
         stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED)
-        TeslaBrowserLink.pauseCarPlayDisplay()
         val token = generation
         val playback = AirPlayVideoPlayback(item, resource) { event -> main.post {
             if (!closed && generation == token) {
@@ -62,7 +63,10 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
                 stateChanged(event)
             }
         } }
-        browserVideo = playback
+        synchronized(outputLock) {
+            browserVideo = playback
+            playback.setOutputAllowed(outputAllowed)
+        }
         browserControls = AirPlayBrowserPlayback.register(state = playback::state, video = playback,
             control = { action, value -> main.post {
                 if (!closed && generation == token) {
@@ -80,10 +84,9 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
     fun photo(bytes: ByteArray) = main.post {
         if (closed) return@post
         stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED)
-        TeslaBrowserLink.pauseCarPlayDisplay()
         val token = generation
         browserControls = AirPlayBrowserPlayback.register(state = {
-            AirPlayBrowserPlayback.State(0.0, 0.0, false, true, false, false, "photo")
+            AirPlayBrowserPlayback.State(0.0, 0.0, false, true, false, false, "photo", outputAllowed = outputAllowed)
         }, control = { action, _ -> if (action == "stop") main.post {
             if (!closed && generation == token) {
                 diagnostics.control(AirPlayVideoDiagnostics.ControlSource.BROWSER, "stop", null, generation)
@@ -94,9 +97,13 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
             if (!closed && generation == token) { diagnostics.failure(AirPlayVideoDiagnostics.Stage.PREPARE, error); fail() }
         } }
         try {
-            video = EncodedVideo(diagnostics, ready = { surface -> main.post {
+            val encoded = EncodedVideo(diagnostics, ready = { surface -> main.post {
                 if (!closed && generation == token) photoFrames = AirPlayPhotoFrames(surface, bytes, failure)
             } }, failed = failure)
+            synchronized(outputLock) {
+                video = encoded
+                encoded.setOutputAllowed(outputAllowed)
+            }
         } catch (error: Exception) { failure(error) }
     }
 
@@ -116,6 +123,13 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
             diagnostics.control(AirPlayVideoDiagnostics.ControlSource.IPHONE, "rate", value, generation)
             playback.control("rate", value)
         }
+    }
+    fun setOutputAllowed(allowed: Boolean) = synchronized(outputLock) {
+        // The hub must release a photo before the resource worker resumes CarPlay.
+        // Codec/config callbacks use WebMediaSink's own monitor and remain owner-specific.
+        outputAllowed = allowed
+        browserVideo?.setOutputAllowed(allowed)
+        video?.setOutputAllowed(allowed)
     }
     fun stop(afterStop: () -> Unit = {}) = main.post { stopNow(AirPlayVideoDiagnostics.StopReason.RECEIVER_STOP); afterStop() }
     private fun fail() { stopNow(AirPlayVideoDiagnostics.StopReason.PHOTO_FAILED); stateChanged("failed") }
@@ -149,6 +163,7 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
         private val timelineLock = Any()
 
         init {
+            sink.pauseDisplay()
             var allocatedSurface: android.view.Surface? = null
             try {
                 val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1280, 720).apply {
@@ -229,6 +244,10 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
             if (!closing.compareAndSet(false, true)) return
             sink.close()
             bridge.close { stopped.set(true); thread.interrupt() }
+        }
+
+        fun setOutputAllowed(allowed: Boolean) {
+            if (allowed) sink.resumeDisplay() else sink.pauseDisplay()
         }
     }
 }
