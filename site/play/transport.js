@@ -90,18 +90,18 @@ export async function pumpChunkStream(body, port, signal) {
 
 /** At most one transferred frame awaits acknowledgement and one frame waits here (the newest). */
 export function createFrameDelivery(send) {
-  let inFlight = null, pending = null, sequence = 0;
+  let inFlight = null, pending = null, sequence = 0, droppedFrames = 0;
   function flush() {
     if (inFlight !== null || !pending) return;
     const next = pending;
     pending = null;
     inFlight = ++sequence;
     try { send({ ...next, frameId: inFlight }); }
-    catch (_) { next.frame.close(); inFlight = null; }
+    catch (_) { droppedFrames++; next.frame.close(); inFlight = null; }
   }
   return {
     present(frame, config, id, timing) {
-      pending?.frame.close();
+      if (pending) { droppedFrames++; pending.frame.close(); }
       pending = { frame, config, id, timing };
       flush();
     },
@@ -113,7 +113,9 @@ export function createFrameDelivery(send) {
     stop() {
       pending?.frame.close();
       pending = null;
+      droppedFrames = 0;
       // The transferred frame still belongs to the main thread; keep its credit until it acknowledges.
     },
+    stats: () => ({ transferDroppedFrames: droppedFrames }),
   };
 }

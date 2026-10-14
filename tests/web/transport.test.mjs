@@ -72,8 +72,10 @@ test('frame delivery keeps one transferred and one latest pending frame across s
   for (let n = 2; n <= 100; n++) delivery.present(frame(n), { epoch: 1 }, 1);
   assert.equal(sent.length, 1, 'a blocked main thread receives no unbounded transferred frames');
   assert.deepEqual(closed, Array.from({ length: 98 }, (_, i) => i + 2));
+  assert.equal(delivery.stats().transferDroppedFrames, 98);
   delivery.stop();
   assert.equal(closed.at(-1), 100);
+  assert.equal(delivery.stats().transferDroppedFrames, 0, 'new stream starts at zero and teardown is not a drop');
   delivery.present(frame(101), { epoch: 2 }, 2);
   assert.equal(sent.length, 1, 'stop does not invent a credit while the old transfer is outstanding');
   delivery.acknowledge(sent[0].frameId);

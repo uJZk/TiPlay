@@ -172,6 +172,7 @@ test('the presenter closes retained and failed frames on stop/dispose', async ()
   assert.throws(() => presenter.present(failed), /draw failed/);
   assert.equal(failed.closed, true);
   assert.equal(presenter.stats().currentFps, 1, 'a failed draw does not contribute to current FPS');
+  assert.equal(presenter.stats().renderDroppedFrames, 1);
   presenter.dispose();
   assert.equal(second.closed, true);
 });
@@ -210,6 +211,40 @@ test('scheduled source timestamps reach presentation; absent clocks never become
   assert.equal(pipeline.stats().timingRejected, 1);
 });
 
+test('decoder drop count tracks rejected inputs and resets only for a new producer epoch or response', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const pipeline = createDecoderPipeline({ post() {}, present() {} });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1));
+  await settle();
+  const delta = epoch => encodeRecord({ kind: RECORD.FRAME, codec: 1, epoch, payload: Uint8Array.of(0, 0, 0, 1, 0x41) });
+  controller.enqueue(delta(1));
+  await settle();
+  assert.equal(pipeline.stats().decodeDroppedFrames, 1);
+  t.mock.method(FakeDecoder.instances.at(-1), 'decode', () => { throw new Error('rejected input'); });
+  controller.enqueue(keyFrame(1));
+  await settle();
+  assert.equal(pipeline.stats().decodeDroppedFrames, 2, 'a synchronous rejection adds exactly its input');
+  controller.enqueue(config(1));
+  await settle();
+  assert.equal(pipeline.stats().decodeDroppedFrames, 2, 'repeated configuration does not erase current-epoch drops');
+  controller.enqueue(config(2));
+  await settle();
+  assert.equal(pipeline.stats().decodeDroppedFrames, 0);
+  controller.enqueue(delta(2));
+  await settle();
+  assert.equal(pipeline.stats().decodeDroppedFrames, 1);
+  pipeline.read(2, new ReadableStream({ start(value) { value.enqueue(config(2)); } }));
+  await settle();
+  assert.equal(pipeline.stats().decodeDroppedFrames, 0, 'new HTTP response starts a fresh count');
+});
+
 test('video pipeline preserves source mode in CONFIG messages and presented frame configuration', async t => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   FakeDecoder.instances = []; FakeDecoder.gate = null;
@@ -238,6 +273,7 @@ test('canvas submission reports an early source presentation as a signed offset'
   const stats = presenter.stats();
   assert.equal(stats.presentationOffsetSamples, 1);
   assert.ok(stats.presentationOffset90 < 0 && stats.presentationOffset90 >= -40);
+  assert.equal(stats.currentDelta, stats.presentationOffset90, 'single submitted frame is the current Delta');
   presenter.dispose();
 });
 
@@ -255,6 +291,7 @@ test('the presenter rejects frames delayed by main-thread delivery and rechecks 
   preparationExpires = false; presenter.present(videoFrame(2), { mode: 'carplay' }, null);
   assert.equal(draws, 1, 'missing timestamps retain explicit fallback playback');
   assert.equal(presenter.stats().expiredFrames, 2); assert.equal(presenter.stats().untimedFrames, 1);
+  assert.equal(presenter.stats().renderDroppedFrames, 2);
   presenter.dispose();
 });
 

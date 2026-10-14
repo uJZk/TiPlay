@@ -2,9 +2,20 @@ package com.shilapi.xcertplay
 
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Before
+import org.junit.After
 import java.nio.file.Files
 
 class DiagnosticRedactorTest {
+    private var previousLevel = DiagnosticLogLevel.STANDARD
+
+    @Before fun includeAllSafeMetadata() {
+        previousLevel = DiagnosticLogPolicy.level
+        DiagnosticLogPolicy.level = DiagnosticLogLevel.DEBUG
+    }
+
+    @After fun restoreLogLevel() { DiagnosticLogPolicy.level = previousLevel }
+
     @Test fun airPlayEventsAndReverseRepliesSurviveSavedReportsWithoutDeviceNames() {
         val lines = listOf(
             "browser video stage=EVENT id=1 revision=0 event=play-rejected active=true position=0.0 duration=120.0 bufferedPosition=0.0 paused=true ended=false seeking=false dragging=false readyState=4 networkState=1 errorCode=0 errorType=NotAllowedError errorText=play() failed for [url]",
@@ -103,6 +114,16 @@ class DiagnosticRedactorTest {
         val line = DiagnosticRedactor.redact("connected peer=C0:A6:00:29:58:0A ip=192.168.31.71 id=0123456789abcdef0123456789abcdef ipv6=fe80::1234:5678:abcd:9%p2p0")!!
         assertTrue(line.contains("connected"))
         assertFalse(line.contains("C0:A6")); assertFalse(line.contains("192.168")); assertFalse(line.contains("012345")); assertFalse(line.contains("fe80"))
+    }
+
+    @Test fun passedStatesSurviveAndRawResourceLocationsAndAdditionalCredentialsAreRemoved() {
+        assertEquals("USB preflight passed action=bypass-cache", DiagnosticRedactor.redact("USB preflight passed action=bypass-cache"))
+        assertEquals("Browser link: pairingCode=yes", DiagnosticRedactor.redact("Browser link: pairingCode=yes"))
+        assertEquals("Browser link: pairingCode=no active=false", DiagnosticRedactor.redact("Browser link: pairingCode=no active=false"))
+        assertEquals("Playback failed source=[url]", DiagnosticRedactor.redact("Playback failed source=https://example.test/video?code=private"))
+        for (line in listOf("Authorization: Bearer private", "cookie=private", "pairingCode=private", "pairingCode= 123456", "pairingCode=yes-private", "api-key=private", "error\u2028private")) {
+            assertNull(line, DiagnosticRedactor.redact(line))
+        }
     }
     @Test fun logRotationIsBoundedAndRedactionHappensBeforeDisk() {
         val folder = Files.createTempDirectory("diplay-log-test").toFile()

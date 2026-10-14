@@ -136,25 +136,29 @@ CarPlay has no product header over its canvas. Its TiPlay icon returns to the po
 the portal returns to the picture without creating a second connection. Connect appears above Disconnect on the portal.
 Disconnect explicitly stops both the connection and automatic retries; returning to settings does not.
 
-The first line of **Debug** shows four fields: codec, current FPS, middle-90% presentation offset and
-slowest-5% presentation offset, for example `HEVC · 60 fps · -40 ms · -10 ms`.
+The **Performance monitor** shows four fields: codec, current FPS, current Delta and explicit dropped
+frames, for example `HEVC · 60 fps · -40 ms · 3 drops`. Its overlay is outside the video surface;
+enabling it must not affect viewport negotiation or touch mapping.
 Current FPS counts frames actually drawn in the last second, including during startup; it becomes zero when
 no frames have been drawn for a second. Coalesced or dropped source frames do not add to the draw count.
-The two presentation offset fields retain their five-second windows.
-The offset is browser canvas submission time minus the iPhone's synchronized scheduled presentation time.
+Delta is the most recent drawn frame's browser canvas submission time minus the iPhone's synchronized
+scheduled presentation time. After a second without a new draw it displays `—`.
 Negative values mean the browser submitted the frame early; positive values mean it submitted it late.
-The slowest tail contains the largest signed offsets, including when every sample is negative.
 This measures presentation scheduling, not capture-to-display latency or physical screen illumination.
-The recording line adds the drawn frame's source expected time, actual submission time and signed offset.
+The dropped-frame count covers explicit input rejection, scheduler discards, frame transfer replacement
+and presentation failure in the current video configuration. It cannot measure loss inside a decoder or
+before browser input. New configurations, producer idle and reconnection reset the monitor's counters.
+The five-second presentation distributions remain in diagnostics.
 Unavailable source synchronization is labelled explicitly; it never displays arrival time as the source time.
 Screen headers omit the NTP epoch present in timing-port timestamps; video clock mapping restores that epoch
 before applying the synchronized offset. Missing or expired synchronization, or timestamps outside the ten-second
 window in either direction, display `—`. Transport arrival time never substitutes for source presentation time.
-See [current implementation and verification](WEB-DEBUG-2026-10-12.md).
+The App's Standard/Debug diagnostic log detail is independent of monitor visibility.
+See [the diagnostics contracts](DIAGNOSTICS.md).
 
 The recording calibration path submits decoded video immediately, without extra browser video buffering or rejecting
-pictures against an uncalibrated source-time deadline. Video never waits for audio readiness. Debug reports source
-expected presentation time and actual submission time from the same drawn frame, rather than a periodic stale sample.
+pictures against an uncalibrated source-time deadline. Video never waits for audio readiness. The monitor derives
+Delta from the same drawn frame's expected presentation time and actual submission time.
 PCM retains its sample timeline across reordered packets and missing data.
 CarPlay live audio follows the receiver-owned sample/latency anchor reported to the sender;
 buffered music follows its SETRATE anchor and retains backpressure. Neither path substitutes each packet's arrival

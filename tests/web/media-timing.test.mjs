@@ -225,6 +225,7 @@ test('zero-cap CarPlay buffers future frames, reserves draw time, and accepts th
   frames.present(earlier, { mode: 'carplay' }, 1, 1040);
   frames.present(duplicate, { mode: 'carplay' }, 1, 1040);
   assert.equal(duplicate.closed, true); assert.deepEqual(shown, []);
+  assert.equal(frames.stats().scheduledDroppedFrames, 1);
   assert.ok(Math.abs(pending.at - 1020) < 0.000001);
   now = pending.at; pending.callback(); assert.equal(shown[0].frame, earlier); assert.equal(shown[0].at, 1020);
   now = pending.at; pending.callback(); assert.equal(shown[1].frame, later); assert.equal(shown[1].at, 1040);
@@ -235,7 +236,9 @@ test('zero-cap CarPlay buffers future frames, reserves draw time, and accepts th
   assert.equal(late.closed, undefined, 'a future frame inside the draw reservation may already be submitted');
   const expired = item(); frames.present(expired, { mode: 'carplay' }, 1, 1100.005);
   assert.equal(expired.closed, true); assert.equal(frames.stats().scheduledExpiredFrames, 1);
+  assert.equal(frames.stats().scheduledDroppedFrames, 2);
   frames.reset();
+  assert.equal(frames.stats().scheduledDroppedFrames, 0, 'epoch reset excludes normal teardown');
 });
 
 test('late readiness inside a raw cap is drawn despite missing the adaptive target', () => {

@@ -86,6 +86,11 @@ internal class BrowserAdvancedPage(
             AirPlayReceiverSettings.setDisabled(activity, it)
         }
         heading(R.string.diagnostics)
+        BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_debug_logging),
+            "", AirPlayPersistence.loadDiagnosticLogLevel(activity) == DiagnosticLogLevel.DEBUG, true) {
+            AirPlayPersistence.saveDiagnosticLogLevel(activity,
+                if (it) DiagnosticLogLevel.DEBUG else DiagnosticLogLevel.STANDARD)
+        }
         reportButton = button(activity.getString(R.string.save_diagnostic_report), saveReport)
         heading(R.string.settings_permission_group)
         permissions = BrowserPermissionsPage(activity, content, requestPermissions)

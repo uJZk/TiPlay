@@ -14,7 +14,7 @@ import {
 import { followAppearance } from './appearance.js';
 import { createReconnectOverlay } from './reconnect.js';
 import { pumpChunkStream } from './transport.js';
-import { formatDebugFps } from './fps-window.js';
+import { formatPerformanceMonitor, performanceStats } from './fps-window.js';
 import { sampleClock } from './clock-sync.js';
 import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from './media-timing.js';
 import { createBrowserAudio } from './audio.js';
@@ -32,7 +32,8 @@ const STRINGS = {
     connect: 'Connect',
     disconnect: 'Disconnect',
     settings: 'Setting',
-    stats: 'Debug',
+    stats: 'Performance monitor',
+    statsLabel: 'Performance monitor: codec, current FPS, current Delta, dropped frames',
     fit: 'Apply and reconnect',
     fitPending: 'Reconnecting…',
     source: 'TiPlay',
@@ -67,7 +68,8 @@ const STRINGS = {
     connect: '连接',
     disconnect: '断开',
     settings: '设置',
-    stats: 'Debug',
+    stats: '性能监视器',
+    statsLabel: '性能监视器：编码、当前 FPS、当前 Delta、丢帧计数',
     fit: '应用并重新连接',
     fitPending: '正在重新连接…',
     source: 'TiPlay',
@@ -106,6 +108,7 @@ const renderReconnect = createReconnectOverlay({
 
 document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
 for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
+$('stats').setAttribute('aria-label', t('statsLabel'));
 
 function loadLink() {
   try {
@@ -524,6 +527,7 @@ function onVideoMessage(message) {
     mediaTiming.mode(message.config.mode);
     // Audio has its own ordered per-type reset/epoch. Its HTTP response may deliver
     // the new producer's PCM before this config, so video cannot clear that audio.
+    if (config?.epoch !== message.config.epoch) videoStats = {};
     config = message.config;
     unsupported = null;
   } else if (message.type === 'idle') {
@@ -541,7 +545,7 @@ function onVideoMessage(message) {
     keepScreenOn();
   } else if (message.type === 'keyframe') outbox?.push({ k: 'kf' }, 'latest');
   else if (message.type === 'end' && message.id === streamId) streamEnded(message.reason);
-  else if (message.type === 'stats') videoStats = message.stats;
+  else if (message.type === 'stats') videoStats = performanceStats(message.stats);
   render();
 }
 
@@ -559,14 +563,14 @@ function render() {
   $('connect').textContent = t(active ? 'resume' : 'connect');
   $('code').disabled = active;
   $('host').disabled = active;
-  $('stats').hidden = !(active && live && statsVisible);
+  $('stats').hidden = !(active && live && statsVisible && !stage.hidden);
   if (active && statsVisible) {
     renderStats();
   }
 }
 
 function renderStats() {
-  $('stats').textContent = formatDebugFps(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats);
+  $('stats').textContent = formatPerformanceMonitor(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats);
 }
 
 function statusText() {

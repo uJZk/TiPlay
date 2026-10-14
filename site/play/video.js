@@ -22,6 +22,8 @@ export function createDecoderPipeline({ post: send, present }) {
   let clock = null;
   const decodeMs = new Samples();
   const totals = { decoded: 0, dropped: 0, decodeErrors: 0, backlogResets: 0, keyRequests: 0, timingRecords: 0, timingRejected: 0 };
+  let decodeDroppedFrames = 0;
+  const dropped = () => { totals.dropped++; decodeDroppedFrames++; };
   let decoder = null, decoderConfig = null, config = null, codecSupported = null;
   let streamId = null, timer = null;
   let needKey = true, reportedEpoch = null, lastKeyRequest = -Infinity, failures = 0;
@@ -74,6 +76,7 @@ export function createDecoderPipeline({ post: send, present }) {
     const same = config && decoder?.state === 'configured' && ['epoch', 'codec', 'width', 'height'].every(key => config[key] === next[key]);
     config = next;
     if (same) return;
+    decodeDroppedFrames = 0;
     reportedEpoch = null;
     // Late output of the old decoder would otherwise be drawn and reported as the first frame of the new epoch.
     closeDecoder();
@@ -139,7 +142,7 @@ export function createDecoderPipeline({ post: send, present }) {
   function decodeFrame(record) {
     const key = (record.flags & FLAG.KEY) !== 0;
     if (decoder?.state !== 'configured' || (needKey && !key)) {
-      totals.dropped++;
+      dropped();
       if (decoder) requestKeyFrame();
       return;
     }
@@ -150,7 +153,7 @@ export function createDecoderPipeline({ post: send, present }) {
       decodeStarts.clear();
       needKey = true;
       if (!key) {
-        totals.dropped++;
+        dropped();
         requestKeyFrame(true);
         return;
       }
@@ -161,6 +164,7 @@ export function createDecoderPipeline({ post: send, present }) {
     try {
       decoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp: record.timestampUs, data: record.payload }));
     } catch (_) {
+      dropped(); // This input was rejected; decoder-internal reset losses are not observable.
       failed();
     }
   }
@@ -203,6 +207,7 @@ export function createDecoderPipeline({ post: send, present }) {
     clock(value) { clock = value; },
     read(id, stream) {
       stop();
+      decodeDroppedFrames = 0;
       streamId = id;
       lastTick = { at: performance.now(), decoded: totals.decoded, bytes: records.stats().bytes };
       timer = setInterval(tick, 1000);
@@ -226,6 +231,7 @@ export function createDecoderPipeline({ post: send, present }) {
       decodeMsP95: decodeMs.percentile(95),
       ...records.stats(),
       ...totals,
+      decodeDroppedFrames,
     }),
   };
 }
@@ -238,7 +244,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
   applyTimingPolicy = false } = {}) {
   const drawMs = new Samples();
   const fpsWindow = createFpsWindow();
-  let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null, expiredFrames = 0, untimedFrames = 0;
+  let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null, expiredFrames = 0, untimedFrames = 0, renderDroppedFrames = 0;
 
   function draw(frame, allowed) {
     const width = lastConfig?.width || frame.displayWidth, height = lastConfig?.height || frame.displayHeight;
@@ -258,15 +264,20 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
 
   return {
     present(frame, config, timing) {
-      const late = () => applyTimingPolicy && videoExpired(timing, config?.mode, now());
-      if (late()) { expiredFrames++; frame.close(); return; }
-      if (lastConfig?.epoch !== config?.epoch) fpsWindow.reset();
+      if (lastConfig?.epoch !== config?.epoch) {
+        fpsWindow.reset();
+        expiredFrames = untimedFrames = renderDroppedFrames = 0;
+      }
       lastConfig = config;
+      const late = () => applyTimingPolicy && videoExpired(timing, config?.mode, now());
+      if (late()) { expiredFrames++; renderDroppedFrames++; frame.close(); return; }
       const started = performance.now();
       let drawn;
       let expired = false;
-      try { drawn = draw(frame, () => { expired = late(); return !expired; }) !== false; } catch (error) { frame.close(); throw error; }
-      if (expired) { expiredFrames++; frame.close(); return; }
+      try { drawn = draw(frame, () => { expired = late(); return !expired; }) !== false; }
+      catch (error) { renderDroppedFrames++; frame.close(); throw error; }
+      if (expired) { expiredFrames++; renderDroppedFrames++; frame.close(); return; }
+      if (!drawn) { renderDroppedFrames++; frame.close(); return; }
       if (!Number.isFinite(timing)) untimedFrames++;
       drawMs.add(performance.now() - started);
       const at = performance.now();
@@ -287,6 +298,8 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       fpsWindow.reset();
       lastFrame?.close();
       lastFrame = null;
+      lastConfig = null;
+      expiredFrames = untimedFrames = renderDroppedFrames = 0;
     },
     dispose() {
       fpsWindow.reset();
@@ -296,7 +309,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       canvas.removeEventListener('webglcontextrestored', restored);
       renderer.dispose?.();
     },
-    stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), expiredFrames, untimedFrames, ...fpsWindow.stats() }),
+    stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), expiredFrames, untimedFrames, renderDroppedFrames, ...fpsWindow.stats() }),
   };
 }
 

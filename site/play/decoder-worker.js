@@ -48,7 +48,7 @@ self.onmessage = ({ data }) => {
     activeId = data.id;
     pipeline?.read(data.id, data.type === 'stream' ? data.stream : createChunkStream(data.port));
     timer = setInterval(() => {
-      if (pipeline) self.postMessage({ type: 'stats', id: activeId, stats: { ...pipeline.stats(), ...frames.stats(), ...presenter?.stats() } });
+      if (pipeline) self.postMessage({ type: 'stats', id: activeId, stats: { ...pipeline.stats(), ...frames.stats(), ...delivery.stats(), ...presenter?.stats() } });
     }, 1000);
   } else if (data.type === 'frame-ack') delivery.acknowledge(data.frameId);
   else if (data.type === 'stop') stop();

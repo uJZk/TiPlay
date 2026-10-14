@@ -35,12 +35,15 @@ class CarPlayHostThemeDiagnosticsTest {
         commands = PausedExecutorService()
         setField("airPlayCommandExecutor", commands)
         logFile = folder.newFile("diplay.log")
+        DiagnosticLogPolicy.level = DiagnosticLogLevel.DEBUG
         setField("sessionLog", SessionLogFile(logFile))
         setField("darkMode", true)
         setField("lastConfiguration", configuration(Configuration.UI_MODE_NIGHT_YES))
     }
 
     @After fun tearDown() {
+        assertTrue(AsyncDiagnosticLog.awaitIdle(2_000))
+        DiagnosticLogPolicy.level = DiagnosticLogLevel.STANDARD
         commands.shutdownNow()
         (getField("teardownExecutor") as ExecutorService).shutdownNow()
         (getField("sessionLog") as SessionLogFile).close()
@@ -51,6 +54,7 @@ class CarPlayHostThemeDiagnosticsTest {
         commands.runAll()
 
         assertEquals(true, getField("darkMode"))
+        assertTrue(AsyncDiagnosticLog.awaitIdle(2_000))
         assertTrue(logFile.readText().contains("reported=undefined applied=dark sessionActive=false"))
         assertTrue(!logFile.readText().contains("THEME_DIAGNOSTIC send"))
     }
@@ -65,6 +69,7 @@ class CarPlayHostThemeDiagnosticsTest {
 
         assertEquals(false, getField("darkMode"))
         verify(session, times(1)).setNightMode(false)
+        assertTrue(AsyncDiagnosticLog.awaitIdle(2_000))
         val log = logFile.readText()
         assertTrue(log.contains("source=configuration-callback"))
         assertTrue(log.contains("reported=light applied=light sessionActive=true"))
@@ -84,6 +89,7 @@ class CarPlayHostThemeDiagnosticsTest {
         assertEquals(false, getField("darkMode"))
         verify(session, times(1)).setNightMode(false)
         verify(session, times(0)).setNightMode(true)
+        assertTrue(AsyncDiagnosticLog.awaitIdle(2_000))
         assertTrue(logFile.readText().contains("reported=dark applied=light sessionActive=true"))
     }
 

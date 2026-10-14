@@ -22,6 +22,7 @@ instructions; do not duplicate detailed rules in the index.
 
 - [Archived upstream Traditional Chinese README](docs/UPSTREAM-README.zh-TW.md): inherited head-unit documentation, outside TiPlay product scope.
 - [Upstream maintenance](docs/Upstream.md): DiPlay, Video.js and UxPlay tracking and update rules.
+- [Diagnostics](docs/DIAGNOSTICS.md): performance monitor semantics, log detail, process lifecycle and collection completeness.
 - [October 13 sweep scope](docs/sweep-2026-10-13/SCOPE.md): baseline and split-entry index.
 - [October 13 sweep scope, part 1](docs/sweep-2026-10-13/SCOPE-PART-1.md): retained file/commit entries.
 - [October 13 sweep scope, part 2](docs/sweep-2026-10-13/SCOPE-PART-2.md): retained file/commit entries.
@@ -89,7 +90,8 @@ Local playback diagnostics, device verification and signed-build handoff are in 
 See `docs/AIRPLAY-TIE-UP-2026-10-12.md` for verification, integration and remaining device checks.
 See `docs/todo.md` under "AirPlay 轻量信任设备机制" for the pending approval, remembered-device and takeover-protection work; it is not implemented yet.
 
-See `docs/WEB-DEBUG-2026-10-12.md` for the dated four-field Debug overlay, browser theme delivery,
+See `docs/DIAGNOSTICS.md` for the performance monitor and diagnostic logging contracts.
+See `docs/WEB-DEBUG-2026-10-12.md` for browser theme delivery,
 peer-initiated clock synchronization, Android lifecycle repairs and validation limits.
 The browser page is hosted over HTTPS only; the APK does not bundle it and the phone has no local `/play/` route.
 `docs/WEB-DEBUG-2026-10-11.md` retains the earlier implementation and playback-path history.

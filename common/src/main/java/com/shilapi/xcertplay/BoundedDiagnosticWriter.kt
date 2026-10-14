@@ -6,6 +6,8 @@ import java.util.ArrayDeque
 /** One daemon writer, with at most [maxPending] queued entries plus its active write. */
 internal class BoundedDiagnosticWriter<T : Any>(
     private val maxPending: Int = 64,
+    private val onDropped: (T) -> Unit = {},
+    private val onWriteFailure: (T) -> Unit = {},
     private val write: (T) -> Unit,
 ) : Closeable {
     private val monitor = Object()
@@ -13,6 +15,7 @@ internal class BoundedDiagnosticWriter<T : Any>(
     private var closed = false
     private var active = false
     private var dropped = 0L
+    private var failed = 0L
 
     init {
         require(maxPending > 0)
@@ -26,8 +29,9 @@ internal class BoundedDiagnosticWriter<T : Any>(
     fun enqueue(entry: T): Boolean = synchronized(monitor) {
         if (closed) return@synchronized false
         if (pending.size == maxPending) {
-            pending.removeFirst()
+            val discarded = pending.removeFirst()
             dropped++
+            runCatching { onDropped(discarded) }
         }
         pending.addLast(entry)
         monitor.notifyAll()
@@ -36,6 +40,7 @@ internal class BoundedDiagnosticWriter<T : Any>(
 
     internal val pendingCount: Int get() = synchronized(monitor) { pending.size }
     internal val droppedCount: Long get() = synchronized(monitor) { dropped }
+    internal val failedCount: Long get() = synchronized(monitor) { failed }
 
     private fun drain() {
         while (true) {
@@ -47,7 +52,10 @@ internal class BoundedDiagnosticWriter<T : Any>(
             }
             // Disk failures or a broken diagnostic callback must not stop later writes.
             try {
-                runCatching { write(next) }
+                runCatching { write(next) }.onFailure {
+                    synchronized(monitor) { failed++ }
+                    runCatching { onWriteFailure(next) }
+                }
             } finally {
                 synchronized(monitor) {
                     active = false

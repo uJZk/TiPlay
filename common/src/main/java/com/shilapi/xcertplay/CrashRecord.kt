@@ -61,7 +61,10 @@ internal object CrashRecord {
 /** Installs [CrashRecord] when the process starts, before any activity, receiver or service runs. */
 class CrashRecordInstaller : ContentProvider() {
     override fun onCreate(): Boolean {
-        context?.let(CrashRecord::install)
+        context?.let {
+            CrashRecord.install(it)
+            DiagnosticLogs.initialize(it, AirPlayPersistence.loadDiagnosticLogLevel(it))
+        }
         return true
     }
 

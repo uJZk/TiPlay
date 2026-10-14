@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFpsWindow, formatDebugFps } from '../../site/play/fps-window.js';
+import { createFpsWindow, formatPerformanceMonitor, performanceStats } from '../../site/play/fps-window.js';
 import { sampleClock, presentationTime } from '../../site/play/clock-sync.js';
 
 test('middle 90% excludes both tails, slow FPS and worst presentation offset use the upper duration tail', () => {
@@ -32,7 +32,7 @@ test('warm-up, expiration and reset never retain stale data', () => {
   window.frame(6000, 1, -1);
   assert.equal(window.stats(6000).fps90, null);
   assert.equal(window.stats(6000).presentationOffset90, -1);
-  assert.equal(formatDebugFps('H.264'), 'H.264 · — fps · — ms · — ms');
+  assert.equal(formatPerformanceMonitor('H.264'), 'H.264 · — fps · — ms · — drops');
 });
 
 test('browser clock bridge preserves scheduled future presentation and rejects unrelated clocks', () => {
@@ -47,11 +47,13 @@ test('browser clock bridge preserves scheduled future presentation and rejects u
   assert.equal(presentationTime(90, null, 1030), null);
 });
 
-test('Debug has exactly four fields without hardware/software labels', () => {
-  const stats = { currentFps: 60, fps90: 99, fpsLow5: 12, presentationOffset90: 5.2, presentationOffsetHigh5: 34.1, acceleration: 'prefer-hardware' };
-  assert.equal(formatDebugFps('HEVC', stats), 'HEVC · 60 fps · 5 ms · 34 ms');
-  assert.equal(formatDebugFps('HEVC', { ...stats, acceleration: 'prefer-software' }), 'HEVC · 60 fps · 5 ms · 34 ms');
-  assert.equal(formatDebugFps('HEVC', stats).split(' · ').length, 4);
+test('performance monitor has codec, current FPS, current Delta and explicit dropped-frame total', () => {
+  const stats = { currentFps: 60, currentDelta: 5.2, presentationOffset90: 99, presentationOffsetHigh5: 34.1,
+    decodeDroppedFrames: 1, scheduledDroppedFrames: 2, transferDroppedFrames: 3, renderDroppedFrames: 4 };
+  assert.equal(formatPerformanceMonitor('HEVC', stats), 'HEVC · 60 fps · 5 ms · 10 drops');
+  assert.equal(formatPerformanceMonitor('HEVC', stats).split(' · ').length, 4);
+  assert.equal(performanceStats(stats).droppedFrames, 10);
+  assert.equal(performanceStats({ decoded: 100, expiredFrames: 20 }).droppedFrames, null, 'unrelated counts never imply drops');
 });
 
 test('early presentation stays negative and the slowest tail contains the largest signed offsets', () => {
@@ -61,7 +63,7 @@ test('early presentation stays negative and the slowest tail contains the larges
   const stats = window.stats(at);
   assert.equal(stats.presentationOffset90, -40);
   assert.equal(stats.presentationOffsetHigh5, -10);
-  assert.equal(formatDebugFps('HEVC', stats), 'HEVC · 20 fps · -40 ms · -10 ms');
+  assert.equal(formatPerformanceMonitor('HEVC', stats), 'HEVC · 20 fps · -10 ms · — drops');
 });
 
 test('current FPS counts actual draws in a rolling second and reaches zero while offsets retain their five-second window', () => {
@@ -80,8 +82,23 @@ test('current FPS counts actual draws in a rolling second and reaches zero while
   now = 1500;
   assert.equal(window.stats().currentFps, 0);
   assert.equal(window.stats().presentationOffset90, -40);
-  assert.equal(formatDebugFps('HEVC', window.stats()), 'HEVC · 0 fps · -40 ms · -40 ms');
+  assert.equal(formatPerformanceMonitor('HEVC', window.stats()), 'HEVC · 0 fps · — ms · — drops');
   window.reset();
   assert.equal(window.stats().currentFps, 0);
   assert.equal(window.stats().presentationOffset90, null);
+});
+
+test('current Delta belongs to the latest successful draw and never reuses a previous timed frame', () => {
+  const window = createFpsWindow();
+  window.frame(0, 1, -40);
+  window.frame(20, 1, 7);
+  assert.equal(window.stats(20).currentDelta, 7);
+  window.frame(40, 1, null);
+  assert.equal(window.stats(40).currentDelta, null);
+  assert.ok(Number.isFinite(window.stats(40).presentationOffset90), 'older window diagnostics remain available');
+  window.frame(60, 1, 0);
+  assert.equal(window.stats(60).currentDelta, 0);
+  assert.equal(window.stats(1060).currentDelta, null);
+  window.reset();
+  assert.equal(window.stats(1060).currentDelta, null);
 });

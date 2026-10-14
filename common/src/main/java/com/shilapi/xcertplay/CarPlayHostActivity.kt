@@ -118,9 +118,7 @@ import com.shilapi.xcertplay.transport.IphoneUsbMatcher
 import com.shilapi.xcertplay.transport.UsbDeviceId
 import com.shilapi.xcertplay.transport.VehicleSpeedLocationProvider
 import java.io.File
-import java.text.SimpleDateFormat
 import java.util.ArrayDeque
-import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -226,7 +224,7 @@ class CarPlayHostActivity : ComponentActivity() {
     // Phone + browser mode: the car browser's link logs into this session and asks it to fit the browser's size.
     // Browser resize reconnects automatically after settling; the portal also offers a manual retry.
     private val browserLinkHost: TeslaBrowserLink.Host = object : TeslaBrowserLink.Host {
-        override fun log(message: String) = AsyncDiagnosticLog.append(sessionLog, message)
+        override fun log(message: String) = appendLog(message)
         override fun onBrowserTheme(night: Boolean) {
             if (!headUnitIntegrations() && !shuttingDown.get()) nightModeController.systemChanged(night)
         }
@@ -599,7 +597,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private val activeScreenStreamTypes = mutableSetOf<Int>()
     private var handshakeResetInProgress = false
     private var startAfterHandshakeReset = false
-    private var restartGeneration = 0
+    @Volatile private var restartGeneration = 0
     private var reconnectScheduled = false
     private var requestedSmallWindowForStream: Boolean? = null
     @Volatile private var adbNaviMode: com.shilapi.xcertplay.hud.BydClusterNaviMode? = null
@@ -1853,8 +1851,7 @@ class CarPlayHostActivity : ComponentActivity() {
         fallbackVideoView = null
         fallbackVideoBounds = null
         TeslaBrowserLink.detachHost(browserLinkHost)
-        sessionLog?.append("Activity destroyed")
-        sessionLog?.close()
+        AsyncDiagnosticLog.append(sessionLog, "CarPlay host Activity destroyed; process diagnostics retained")
         sessionLog = null
         super.onDestroy()
     }
@@ -5132,11 +5129,7 @@ class CarPlayHostActivity : ComponentActivity() {
             },
             mediaBufferMillis = AirPlayPersistence.loadMediaBufferMillis(this),
             onAudioDiagnostic = { message ->
-                if (message.startsWith("Microphone: ")) {
-                    AsyncDiagnosticLog.append(diagnosticLog, message)
-                } else {
-                    diagnosticLog?.append(formattedLogLine(message, System.currentTimeMillis()))
-                }
+                AsyncDiagnosticLog.append(diagnosticLog, message)
             },
             onMediaAudioChanged = CarPlayMediaKeys::onMediaAudioChanged,
             callEchoCancellation = receivesAudio && AirPlayPersistence.loadCallEchoCancellation(this),
@@ -5278,23 +5271,20 @@ class CarPlayHostActivity : ComponentActivity() {
             }
 
             override fun onDebugLog(message: String) {
-                if (DiagnosticRedactor.redact(message) == null) return
                 if (message.startsWith(CarPlayController.CONNECTION_DIAGNOSTIC_PREFIX + " ")) {
                     // Retain old-controller teardown evidence without accepting its UI/session state.
                     AsyncDiagnosticLog.append(diagnosticLog, message)
                     return
                 }
+                if (controllerGeneration != restartGeneration) return
+                // Settings navigation must not suppress transport or media diagnostics.
+                AsyncDiagnosticLog.append(diagnosticLog, message)
+                val safe = DiagnosticRedactor.redact(message) ?: return
                 runOnUiThread {
                     if (controllerGeneration != restartGeneration) {
                         return@runOnUiThread
                     }
-                    DisplayDiagnosticSnapshot.record(this@CarPlayHostActivity, displayDiagnosticAttempt, message)
-                    if (menuOpen) return@runOnUiThread
-                    if (message.startsWith(PROTOCOL_TRACE_PREFIX)) {
-                        appendFileLog(message)
-                    } else {
-                        appendLog(message)
-                    }
+                    DisplayDiagnosticSnapshot.record(this@CarPlayHostActivity, displayDiagnosticAttempt, safe)
                 }
             }
         }
@@ -6225,6 +6215,7 @@ class CarPlayHostActivity : ComponentActivity() {
         sink = null
         sessionDisplay = null
         discardLastPicture()
+        appendLog("Shutdown reason=$reason terminateProcess=$terminateProcess")
         Log.i(TAG, "shutdown reason=$reason terminateProcess=$terminateProcess")
         teardownExecutor.execute {
             oldController?.close()
@@ -6235,10 +6226,14 @@ class CarPlayHostActivity : ComponentActivity() {
                 applicationContext.stopService(Intent(applicationContext, CarPlayVpnService::class.java))
             }
             Log.i(TAG, "shutdown complete clean=$clean")
+            appendLog("Shutdown complete clean=$clean")
             applicationContext.stopService(Intent(applicationContext, DiPlaySessionService::class.java))
             teardownExecutor.shutdown()
             mainHandler.post { completion() }
-            if (terminateProcess) Process.killProcess(Process.myPid())
+            if (terminateProcess) {
+                AsyncDiagnosticLog.awaitIdle(1_500)
+                Process.killProcess(Process.myPid())
+            }
         }
     }
 
@@ -6589,28 +6584,13 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun appendLog(message: String) {
-        val safe = DiagnosticRedactor.redact(message) ?: return
-        sessionLog?.append(formattedLogLine(safe, System.currentTimeMillis()))
+        val target = sessionLog
+        if (target != null) AsyncDiagnosticLog.append(target, message) else DiagnosticLogs.append(message)
     }
-
-    private fun appendFileLog(message: String) {
-        sessionLog?.append(formattedLogLine(message, System.currentTimeMillis()))
-    }
-
-    private fun formattedLogLine(message: String, nowMillis: Long): String =
-        "${SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date(nowMillis))}  $message"
 
     private fun initializeSessionLog() {
-        val logFile = File(File(filesDir, "logs"), "diplay.log")
-        val activeLog = SessionLogFile(logFile)
-        runCatching {
-            activeLog.reset(
-                "TiPlay log started " +
-                    "${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())} " +
-                    "pid=${Process.myPid()} path=${logFile.absolutePath}",
-            )
-        }
-        sessionLog = activeLog
+        sessionLog = DiagnosticLogs.initialize(this, AirPlayPersistence.loadDiagnosticLogLevel(this))
+        appendLog("CarPlay host Activity created")
     }
 
     private fun refreshLogView(nowMillis: Long) {
@@ -6732,7 +6712,6 @@ class CarPlayHostActivity : ComponentActivity() {
         const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L
         const val AUDIO_CAPTURE_MARKER = "audio-capture.enabled"
         const val AUDIO_CAPTURE_DIRECTORY = "audio-captures"
-        const val PROTOCOL_TRACE_PREFIX = "TRACE "
         const val SETTINGS_SWIPE_DISTANCE_DP = 72
         const val SETTINGS_SWIPE_DIRECTION_RATIO = 1.15f
         const val MAX_SETTINGS_MENU_WIDTH_DP = 720

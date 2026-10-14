@@ -41,7 +41,10 @@ class BrowserAdvancedPageTest {
         activity.setContentView(page.view)
     }
 
-    @After fun cleanup() { activity.finish() }
+    @After fun cleanup() {
+        DiagnosticLogPolicy.level = DiagnosticLogLevel.STANDARD
+        activity.finish()
+    }
 
     private fun create() = BrowserAdvancedPage(activity,
         requestPermissions = { requested = it.toList() }, changed = { changes++ },
@@ -87,6 +90,23 @@ class BrowserAdvancedPageTest {
         assertTrue(recreated.isChecked)
         recreated.performClick()
         assertFalse(AirPlayReceiverSettings.isDisabled(activity))
+    }
+
+    @Test fun debugLoggingDefaultsOffAndAppliesWithoutReconnectingCarPlay() {
+        assertEquals(DiagnosticLogLevel.STANDARD, AirPlayPersistence.loadDiagnosticLogLevel(activity))
+        val title = activity.getString(R.string.settings_debug_logging)
+        val toggle = views(page.view).filterIsInstance<Switch>().single { it.text == title }
+        assertFalse(toggle.isChecked)
+        toggle.performClick()
+        assertEquals(DiagnosticLogLevel.DEBUG, AirPlayPersistence.loadDiagnosticLogLevel(activity))
+        assertEquals(DiagnosticLogLevel.DEBUG, DiagnosticLogPolicy.level)
+        assertEquals(0, changes)
+        page = create()
+        val recreated = views(page.view).filterIsInstance<Switch>().single { it.text == title }
+        assertTrue(recreated.isChecked)
+        recreated.performClick()
+        assertEquals(DiagnosticLogLevel.STANDARD, DiagnosticLogPolicy.level)
+        assertEquals(0, changes)
     }
 
     @Test fun productAdvancedHasOnlyRequestedDescriptionsAndOneReportAction() {

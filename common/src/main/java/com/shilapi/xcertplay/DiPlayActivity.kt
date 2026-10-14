@@ -378,6 +378,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false) ||
             AirPlayPersistence.isPhoneBrowserMode(this)) setTheme(R.style.Theme_TiPlayNative)
         super.onCreate(savedInstanceState)
+        DiagnosticLogs.initialize(this, AirPlayPersistence.loadDiagnosticLogLevel(this))
         // Normal entry and the host's pages use TiPlay's browser profile. Keep the upstream internal page API.
         if (isLauncherIntent(intent) || !intent.hasExtra("page") || intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false)) {
             BrowserSettingsPolicy.activate(this)
@@ -5648,13 +5649,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         appendLine("--- Last crash recorded by TiPlay ---")
         appendLine(CrashRecord.report(appContext))
         appendLine()
-        for (name in SessionLogFile.REPORT_NAMES) {
-            val file = File(appContext.filesDir, "logs/$name")
-            if (file.isFile) {
-                appendLine("--- $name ---")
-                file.useLines { lines -> lines.forEach { line -> DiagnosticRedactor.redact(line)?.let { appendLine(it) } } }
-            }
-        }
+        DiagnosticLogSnapshot.appendTo(this, File(appContext.filesDir, "logs"))
     }
 
     private fun showDiagnosticReport(report: String) {

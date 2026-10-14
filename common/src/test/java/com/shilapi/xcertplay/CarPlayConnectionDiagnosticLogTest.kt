@@ -2,7 +2,6 @@ package com.shilapi.xcertplay
 
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
 import com.shilapi.xcertplay.orchestration.CarPlayController
-import java.io.Closeable
 import java.io.File
 import java.util.concurrent.ExecutorService
 import org.junit.After
@@ -22,6 +21,7 @@ class CarPlayConnectionDiagnosticLogTest {
     private val log get() = File(activity.filesDir, "logs/diplay.log").readText()
 
     @Before fun prepareOldControllerListener() {
+        DiagnosticLogs.resetForTest()
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
         activity.javaClass.getDeclaredMethod("initializeSessionLog").apply { isAccessible = true }.invoke(activity)
         activity.javaClass.getDeclaredField("restartGeneration").apply { isAccessible = true }.set(activity, 2)
@@ -31,8 +31,7 @@ class CarPlayConnectionDiagnosticLogTest {
 
     @After fun cleanup() {
         assertTrue(AsyncDiagnosticLog.awaitIdle(2_000))
-        activity.javaClass.getDeclaredField("sessionLog").apply { isAccessible = true }
-            .get(activity).let { (it as Closeable).close() }
+        DiagnosticLogs.resetForTest()
         for (field in listOf("teardownExecutor", "airPlayCommandExecutor")) {
             (activity.javaClass.getDeclaredField(field).apply { isAccessible = true }
                 .get(activity) as ExecutorService).shutdownNow()
@@ -52,5 +51,21 @@ class CarPlayConnectionDiagnosticLogTest {
         listener.onDebugLog("${CarPlayController.CONNECTION_DIAGNOSTIC_PREFIX} attempt=1 token=private-token")
         assertTrue(AsyncDiagnosticLog.awaitIdle(2_000))
         assertFalse(log.contains("private-token"))
+    }
+
+    @Test fun settingsNavigationKeepsCurrentControllerDiagnostics() {
+        activity.javaClass.getDeclaredField("menuOpen").apply { isAccessible = true }.set(activity, true)
+        activity.javaClass.getDeclaredField("restartGeneration").apply { isAccessible = true }.set(activity, 1)
+        listener.onDebugLog("CarPlay transport error while settings are open")
+        assertTrue(AsyncDiagnosticLog.awaitIdle(2_000))
+        assertTrue(log.contains("CarPlay transport error while settings are open"))
+    }
+
+    @Test fun shutdownCompletionStillReachesProcessLogAfterHostDetaches() {
+        activity.javaClass.getDeclaredField("sessionLog").apply { isAccessible = true }.set(activity, null)
+        activity.javaClass.getDeclaredMethod("appendLog", String::class.java)
+            .apply { isAccessible = true }.invoke(activity, "Shutdown complete clean=true")
+        assertTrue(AsyncDiagnosticLog.awaitIdle(2_000))
+        assertTrue(log.contains("Shutdown complete clean=true"))
     }
 }

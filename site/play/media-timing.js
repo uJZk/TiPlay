@@ -62,7 +62,8 @@ export function createMediaTiming(change = () => {}, now = () => performance.tim
 }
 /** Orders decoded frames only. Encoded video remains in decoder dependency order. */
 export function createTimedFrames(present, { now = () => performance.timeOrigin + performance.now(), schedule = setTimeout, cancel = clearTimeout, observe = () => {} } = {}) {
-  let queue = [], timer = null, plan = constantDelay(), last = -Infinity, serial = 0, expiredFrames = 0;
+  let queue = [], timer = null, plan = constantDelay(), last = -Infinity, serial = 0, expiredFrames = 0, droppedFrames = 0;
+  const drop = frame => { droppedFrames++; frame.close(); };
   function pump() {
     if (timer !== null) cancel(timer);
     timer = null;
@@ -73,8 +74,9 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
     let selected = null;
     while (queue.length && queue[0].ready && queue[0].timing <= cutoff) {
       const item = queue.shift();
-      if (videoExpired(item.timing, item.config?.mode, at)) { expiredFrames++; item.frame.close(); continue; }
-      selected?.frame.close(); selected = item;
+      if (videoExpired(item.timing, item.config?.mode, at)) { expiredFrames++; drop(item.frame); continue; }
+      if (selected) drop(selected.frame);
+      selected = item;
     }
     if (selected) { last = selected.timing; present(selected.frame, selected.config, selected.id, selected.timing); }
     if (queue[0]?.ready) timer = schedule(pump, Math.max(1, mediaDeadline(queue[0].timing - margin, plan, now()) - now()));
@@ -82,17 +84,17 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
   return {
     present(frame, config, id, timing) {
       if (!Number.isFinite(timing)) { present(frame, config, id, null); return; }
-      if (timing <= last || queue.some(item => item.timing === timing)) { frame.close(); return; }
+      if (timing <= last || queue.some(item => item.timing === timing)) { drop(frame); return; }
       const token = ++serial, item = { frame, config, id, timing, token, ready: false };
       queue.push(item); queue.sort((a, b) => a.timing - b.timing);
       item.ready = observe(timing, now(), token) !== false;
-      while (queue.length > 60) queue.shift().frame.close();
+      while (queue.length > 60) drop(queue.shift().frame);
       pump();
     },
     delay(value) { plan = value; pump(); },
     ready(token, value) { const item = queue.find(item => item.token === token); if (!item) return; plan = value; item.ready = true; pump(); },
-    stats: () => ({ scheduledExpiredFrames: expiredFrames }),
+    stats: () => ({ scheduledExpiredFrames: expiredFrames, scheduledDroppedFrames: droppedFrames }),
     plan: () => plan,
-    reset() { if (timer !== null) cancel(timer); timer = null; for (const item of queue) item.frame.close(); queue = []; last = -Infinity; },
+    reset() { if (timer !== null) cancel(timer); timer = null; for (const item of queue) item.frame.close(); queue = []; last = -Infinity; expiredFrames = droppedFrames = 0; },
   };
 }

@@ -52,9 +52,10 @@
 <section id="stage" hidden>
 <canvas id="screen"></canvas>
 <div id="touch" aria-hidden="true"></div>
-<output id="stats" aria-label="Debug: codec, FPS, presentation statistics" hidden></output>
 </section>
 </main>
+<!-- The monitor is outside the negotiated video surface and never consumes its layout space. -->
+<output id="stats" aria-label="Performance monitor: codec, current FPS, current Delta, dropped frames" hidden></output>
 <section id="reconnect" aria-label="TiPlay" hidden>
 <img id="reconnect-wallpaper" src="reconnect-wallpaper-blurred.png" alt="" referrerpolicy="no-referrer">
 <img id="reconnect-logo" src="icon.svg" alt="TiPlay" width="128" height="128">

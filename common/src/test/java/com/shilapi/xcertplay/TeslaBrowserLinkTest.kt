@@ -69,6 +69,7 @@ class TeslaBrowserLinkTest {
     }
 
     @After fun tearDown() {
+        DiagnosticLogPolicy.level = DiagnosticLogLevel.STANDARD
         TeslaBrowserLink.resetForTest()
         TeslaBrowserLink.serverFactory = TiPlayTestApplication.noSocketServers
         TeslaBrowserLink.backoffMillis = { failures -> minOf(30_000L, 1_000L shl minOf(failures, 5)) }
@@ -548,6 +549,7 @@ class TeslaBrowserLinkTest {
 
     @Test fun browserStatsReachTheSessionLogAtMostEvery10Seconds() {
         val server = started()
+        DiagnosticLogPolicy.level = DiagnosticLogLevel.DEBUG
         val logs = CopyOnWriteArrayList<String>()
         TeslaBrowserLink.attachHost(object : TeslaBrowserLink.Host {
             override fun log(message: String) { logs += message }
@@ -556,6 +558,7 @@ class TeslaBrowserLinkTest {
         var now = 100_000L
         TeslaBrowserLink.clock = { now }
         val stats = mapOf("link.path" to "worker-stream", "video.codec" to "avc1.640028", "video.decodedFps" to 59.9,
+            "video.currentFps" to 58, "video.currentDelta" to -35.25, "video.droppedFrames" to 4L,
             "video.decodeMsP95" to 1.52, "video.gaps" to 0L, "video.dropped" to 3L, "video.decodeErrors" to 0L,
             "video.timingRecords" to 120L, "video.timingRejected" to 2L, "video.clockRttMs" to 4.25,
             "video.presentationOffset90" to -40.25, "video.presentationOffsetHigh5" to -10.5,
@@ -568,12 +571,39 @@ class TeslaBrowserLinkTest {
         server.callbacks.onBrowserStats(stats + ("video.codec" to "x".repeat(40)))
         val lines = logs.filter { it.startsWith("Browser:") }
         assertEquals(listOf(
-            "Browser: path=worker-stream codec=avc1.640028 fps=59.9 decodeP95Ms=1.5 timingRecords=120 timingRejected=2 clockRttMs=4.3 presentationOffset90=-40.3 presentationOffsetHigh5=-10.5 presentationOffsetSamples=118 gaps=0 dropped=3 errors=0 reconnects=1",
-            "Browser: path=worker-stream codec=? fps=59.9 decodeP95Ms=1.5 timingRecords=120 timingRejected=2 clockRttMs=4.3 presentationOffset90=-40.3 presentationOffsetHigh5=-10.5 presentationOffsetSamples=118 gaps=0 dropped=3 errors=0 reconnects=1",
+            "Browser: path=worker-stream codec=avc1.640028 fps=59.9 currentFps=58 deltaMs=-35.3 droppedFrames=4 decodeP95Ms=1.5 timingRecords=120 timingRejected=2 clockRttMs=4.3 presentationOffset90=-40.3 presentationOffsetHigh5=-10.5 presentationOffsetSamples=118 gaps=0 dropped=3 errors=0 reconnects=1 audioBluetooth=- audioSound=- audioTimedPackets=- audioFallbackPackets=- audioQueuedBytes=-",
+            "Browser: path=worker-stream codec=? fps=59.9 currentFps=58 deltaMs=-35.3 droppedFrames=4 decodeP95Ms=1.5 timingRecords=120 timingRejected=2 clockRttMs=4.3 presentationOffset90=-40.3 presentationOffsetHigh5=-10.5 presentationOffsetSamples=118 gaps=0 dropped=3 errors=0 reconnects=1 audioBluetooth=- audioSound=- audioTimedPackets=- audioFallbackPackets=- audioQueuedBytes=-",
         ), lines)
         for (line in lines) assertEquals(line, DiagnosticRedactor.redact(line))
-        assertEquals("Browser: path=- codec=- fps=- decodeP95Ms=- timingRecords=- timingRejected=- clockRttMs=- presentationOffset90=- presentationOffsetHigh5=- presentationOffsetSamples=- gaps=- dropped=- errors=- reconnects=-",
+        assertEquals("Browser: path=- codec=- fps=- currentFps=- deltaMs=- droppedFrames=- decodeP95Ms=- timingRecords=- timingRejected=- clockRttMs=- presentationOffset90=- presentationOffsetHigh5=- presentationOffsetSamples=- gaps=- dropped=- errors=- reconnects=- audioBluetooth=- audioSound=- audioTimedPackets=- audioFallbackPackets=- audioQueuedBytes=-",
             TeslaBrowserLink.statsLine(emptyMap()))
+    }
+
+    @Test fun standardBrowserStatsRecordOnlyNewAnomaliesAndKeepThemeDelivery() {
+        val server = started()
+        DiagnosticLogPolicy.level = DiagnosticLogLevel.STANDARD
+        val logs = CopyOnWriteArrayList<String>()
+        TeslaBrowserLink.attachHost(object : TeslaBrowserLink.Host {
+            override fun log(message: String) { logs += message }
+            override fun onBrowserFit() = Unit
+        })
+        var now = 100_000L
+        TeslaBrowserLink.clock = { now }
+        fun report(drops: Long) {
+            server.callbacks.onBrowserStats(mapOf("video.droppedFrames" to drops, "themeDark" to true))
+            now += TeslaBrowserLink.STATS_LOG_INTERVAL_MILLIS
+        }
+        report(0)
+        report(3)
+        report(3)
+        report(4)
+        report(0) // A replacement video stream resets its counters.
+        report(0)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf("Browser anomaly: dropped=3", "Browser anomaly: dropped=1"),
+            logs.filter { it.startsWith("Browser anomaly:") })
+        assertFalse(logs.any { it.startsWith("Browser:") })
+        assertTrue(BrowserAppearance.night)
     }
 
     @Test fun theAppDoesNotBundleTheBrowserPage() {

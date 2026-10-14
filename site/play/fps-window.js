@@ -1,7 +1,7 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 /** Recent actual draws and five-second presentation statistics, independent of decode/transport stats. */
 export function createFpsWindow({ now = () => performance.now(), windowMs = 5000 } = {}) {
-  let previous = null, samples = [], offsets = [], draws = [];
+  let previous = null, latest = null, samples = [], offsets = [], draws = [];
   const prune = at => {
     while (draws.length && draws[0] <= at - 1000) draws.shift();
     while (samples.length && samples[0].at <= at - windowMs) samples.shift();
@@ -13,6 +13,7 @@ export function createFpsWindow({ now = () => performance.now(), windowMs = 5000
       prune(at);
       // One successful presenter call is one draw, even when delivery coalesced several source frames.
       draws.push(at);
+      latest = { at, offset: Number.isFinite(offset) && Math.abs(offset) <= 10000 ? offset : null };
       if (draws.length > 4096) draws.shift();
       if (Number.isFinite(offset) && Math.abs(offset) <= 10000) {
         offsets.push({ at, duration: offset, count: 1 });
@@ -24,7 +25,7 @@ export function createFpsWindow({ now = () => performance.now(), windowMs = 5000
       }
       if (previous === null || at > previous) previous = at;
     },
-    reset() { previous = null; samples = []; offsets = []; draws = []; },
+    reset() { previous = latest = null; samples = []; offsets = []; draws = []; },
     stats(at = now()) {
       prune(at);
       const sortedSamples = [...samples].sort((a, b) => a.duration - b.duration);
@@ -42,6 +43,7 @@ export function createFpsWindow({ now = () => performance.now(), windowMs = 5000
       const fps = duration => duration > 0 ? 1000 / duration : null;
       return {
         currentFps: draws.length,
+        currentDelta: latest && latest.at > at - 1000 ? latest.offset : null,
         fps90: fps(average(sortedSamples, sampleCount, .05, .95)), fpsLow5: fps(average(sortedSamples, sampleCount, .95, 1)),
         fpsSamples: sampleCount,
         presentationOffset90: average(sortedLatencies, offsets.length, .05, .95), presentationOffsetHigh5: average(sortedLatencies, offsets.length, .95, 1),
@@ -51,8 +53,15 @@ export function createFpsWindow({ now = () => performance.now(), windowMs = 5000
   };
 }
 
-/** Codec, current draw rate and five-second signed presentation offsets for Debug. */
-export function formatDebugFps(codec, stats = {}) {
+/** Only explicit browser discards count; decoder-internal loss and phone/network loss remain unknown. */
+export function performanceStats(stats = {}) {
+  const counters = ['decodeDroppedFrames', 'scheduledDroppedFrames', 'transferDroppedFrames', 'renderDroppedFrames']
+    .map(key => stats[key]).filter(Number.isFinite);
+  return { ...stats, droppedFrames: counters.length ? counters.reduce((sum, count) => sum + count, 0) : null };
+}
+
+/** Codec, actual draw rate, latest synchronized submission delta and explicit dropped frames. */
+export function formatPerformanceMonitor(codec, stats = {}) {
   const number = value => Number.isFinite(value) ? String(Math.round(value)) : '—';
-  return `${codec} · ${number(stats.currentFps)} fps · ${number(stats.presentationOffset90)} ms · ${number(stats.presentationOffsetHigh5)} ms`;
+  return `${codec} · ${number(stats.currentFps)} fps · ${number(stats.currentDelta)} ms · ${number(performanceStats(stats).droppedFrames)} drops`;
 }

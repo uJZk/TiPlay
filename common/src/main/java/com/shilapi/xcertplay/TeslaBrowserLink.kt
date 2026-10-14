@@ -89,6 +89,9 @@ internal object TeslaBrowserLink {
         "path" to "link.path",
         "codec" to "video.codec",
         "fps" to "video.decodedFps",
+        "currentFps" to "video.currentFps",
+        "deltaMs" to "video.currentDelta",
+        "droppedFrames" to "video.droppedFrames",
         "decodeP95Ms" to "video.decodeMsP95",
         "timingRecords" to "video.timingRecords",
         "timingRejected" to "video.timingRejected",
@@ -100,6 +103,11 @@ internal object TeslaBrowserLink {
         "dropped" to "video.dropped",
         "errors" to "video.decodeErrors",
         "reconnects" to "link.reconnects",
+        "audioBluetooth" to "audio.bluetooth",
+        "audioSound" to "audio.sound",
+        "audioTimedPackets" to "audio.timedPackets",
+        "audioFallbackPackets" to "audio.fallbackPackets",
+        "audioQueuedBytes" to "audio.queuedBytes",
     )
     private val SAFE_TEXT = Regex("[A-Za-z0-9._-]{1,32}")
 
@@ -168,6 +176,7 @@ internal object TeslaBrowserLink {
     @Volatile private var viewport: BrowserViewport? = null
     @Volatile private var viewportLoaded = false
     private var lastStatsLog: Long? = null
+    private var lastStatsCounters = emptyMap<String, Long>() // guarded by statsLock
 
     /** What the server is doing; listeners hear every change on the link's thread. */
     @Volatile var state: State = State.Stopped
@@ -204,6 +213,7 @@ internal object TeslaBrowserLink {
     /** Idempotent. Creates the pairing code on first use; the socket work happens on the link's thread. */
     fun start(context: Context) {
         val app = context.applicationContext
+        DiagnosticLogs.initialize(app, AirPlayPersistence.loadDiagnosticLogLevel(app))
         this.app = app
         pairingCode(app)
         lastViewport(app)
@@ -436,12 +446,25 @@ internal object TeslaBrowserLink {
                     ?.takeIf { it.phoneBrowserMode() }?.sendNightMode(reportedNight)
             }
             val now = clock()
+            val anomalies: Map<String, Long>
             synchronized(statsLock) {
                 val last = lastStatsLog
                 if (last != null && now - last < STATS_LOG_INTERVAL_MILLIS) return
                 lastStatsLog = now
+                val counters = mapOf(
+                    "dropped" to counter(stats["video.droppedFrames"] ?: stats["video.dropped"]),
+                    "errors" to counter(stats["video.decodeErrors"]),
+                    "gaps" to counter(stats["video.gaps"]),
+                    "reconnects" to counter(stats["link.reconnects"]),
+                )
+                anomalies = counters.mapValues { (key, value) ->
+                    (value - (lastStatsCounters[key] ?: 0L)).coerceAtLeast(0L)
+                }.filterValues { it > 0 }
+                lastStatsCounters = counters
             }
-            log(statsLine(stats))
+            if (DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG) log(statsLine(stats))
+            else if (anomalies.isNotEmpty()) log("Browser anomaly: " +
+                anomalies.entries.joinToString(" ") { (key, count) -> "$key=$count" })
         }
         override fun log(message: String) = this@TeslaBrowserLink.log(message)
     }
@@ -480,6 +503,7 @@ internal object TeslaBrowserLink {
         if (state == next) return
         state = next
         Log.i(TAG, "state=$next")
+        persistDiagnostic("Browser link: state=$next")
         for (listener in listeners) {
             try {
                 listener(next)
@@ -499,13 +523,16 @@ internal object TeslaBrowserLink {
     }
 
     private fun log(message: String) {
-        Log.i(TAG, message)
-        persistDiagnostic(message)
+        val safe = DiagnosticRedactor.redact(message) ?: return
+        if (!DiagnosticLogPolicy.shouldRecord(safe)) return
+        Log.i(TAG, safe)
+        persistDiagnostic(safe)
     }
 
     /** Keep receiver metadata in the saved report when host logcat is unavailable. */
     internal fun persistDiagnostic(message: String) {
-        host.get()?.log(message)
+        val screen = host.get()
+        if (screen != null) screen.log(message) else DiagnosticLogs.append(message)
     }
 
     private fun stopQuietly(server: Server) {
@@ -541,6 +568,9 @@ internal object TeslaBrowserLink {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    private fun counter(value: Any?): Long = (value as? Number)?.toDouble()
+        ?.takeIf { it.isFinite() && it >= 0.0 }?.toLong() ?: 0L
+
     private fun statValue(value: Any?): String = when (value) {
         is Number -> value.toDouble().let { number ->
             when {
@@ -563,7 +593,7 @@ internal object TeslaBrowserLink {
             viewport = null
             viewportLoaded = false
         }
-        synchronized(statsLock) { lastStatsLog = null }
+        synchronized(statsLock) { lastStatsLog = null; lastStatsCounters = emptyMap() }
         host.set(null)
         listeners.clear()
         val retired = synchronized(tapLock) {

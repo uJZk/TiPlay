@@ -60,9 +60,29 @@ class BoundedDiagnosticWriterTest {
             release.countDown()
             assertTrue(writer.awaitIdle(2_000))
             assertEquals(listOf(1), written)
+            assertEquals(1L, writer.failedCount)
         } finally {
             release.countDown()
             writer.close()
         }
+    }
+
+    @Test(timeout = 5_000) fun discardedTargetsReceiveLossAccountingWithoutBlockingLaterWrites() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val discarded = mutableListOf<Int>()
+        val writer = BoundedDiagnosticWriter<Int>(maxPending = 1, onDropped = { discarded.add(it) }) { value ->
+            if (value == -1) { entered.countDown(); release.await() }
+        }
+        try {
+            writer.enqueue(-1)
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            writer.enqueue(1)
+            writer.enqueue(2)
+            assertEquals(listOf(1), discarded)
+            assertEquals(1L, writer.droppedCount)
+            release.countDown()
+            assertTrue(writer.awaitIdle(2_000))
+        } finally { release.countDown(); writer.close() }
     }
 }
