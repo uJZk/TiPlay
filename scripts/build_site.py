@@ -22,7 +22,8 @@ BASE = SITE_URL + 'download/'
 REPO = 'https://github.com/uJZk/TiPlay'
 VERSION = '0.2.14-beta.2'
 RELEASE = REPO + '/releases'
-DOWNLOAD = REPO + '/releases/latest'
+# GitHub /latest excludes prereleases; point to the published version displayed below.
+DOWNLOAD = REPO + '/releases/tag/v' + VERSION
 for lang, d in data.items():
     folder = SITE if lang == 'en' else SITE / lang
     folder.mkdir(exist_ok=True)
