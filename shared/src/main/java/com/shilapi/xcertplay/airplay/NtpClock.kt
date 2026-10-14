@@ -102,8 +102,8 @@ class NtpClock(private val wireTimeline: NtpWireTimeline? = null, log: (String) 
             socket?.close()
             socket = null
         }
-        sender?.interrupt()
-        receiver?.interrupt()
+        // Join outside both locks so native I/O can finish releasing the timing port.
+        retireNtpClockWorkers(sender, receiver)
         val syncState = synchronized(clockLock) { synced to lastSyncNanos }
         diagnostics.ended(System.nanoTime(), syncState.first, syncState.second)
     }

@@ -3,6 +3,7 @@
 - Merge the complete upstream DiPlay source through `c30d3f0df` (0.2.19 and subsequent main fixes), retaining Android phone + car browser scope and merge ancestry.
 - Align audio feedback and browser presentation with negotiated RTP clocks, recover stalled SCO microphone reads, preserve browser audio settings during upstream key migration, and add Japanese browser translations.
 - Migrate URL video playback to Video.js 10.1.0 controls and its official hls.js adapter, retaining Canvas, iPhone commands, captions, Bluetooth mute and offline assets.
+- Wait for timing-socket workers to retire on close, preventing transient UDP port retention during reconnect and preserving cancellation state.
 - Source validation and device limits are recorded in [upstream sync](docs/UPSTREAM-SYNC-2026-10-14.md). Signed beta.3 delivery remains a draft; published beta.2 is unchanged.
 
 

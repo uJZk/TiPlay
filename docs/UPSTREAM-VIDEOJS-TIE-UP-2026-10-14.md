@@ -65,9 +65,37 @@ its daemon after checks. This prevents blind reruns and bounds build concurrency
 
 ## Delivery status
 
-Main merge/push, Pages and signed beta.3 draft results will be recorded here as the
-workflows complete. Use the existing `pages.yml` and `android-release.yml`; do not
-publish the draft or force-push main. Record exact source/run/deployment identities.
+Initial integrated source commit `3df7c27c45a72a4c7174907bcccb968ebfb3bd28` was pushed without force.
+Local work and upstream integration branches were deleted; there is one main worktree.
+
+[Pages run 38488994798](https://github.com/uJZk/TiPlay/actions/runs/38488994798) succeeded.
+GitHub Pages deployment `7053293554` reports success for the same source commit at
+https://ujzk.github.io/TiPlay/. This verifies deployment status, not a real-car visit.
+
+[Signed beta.3 workflow 38489034087](https://github.com/uJZk/TiPlay/actions/runs/38489034087)
+succeeded, including release lint/build, signature/runtime checks, exact source ZIP,
+checksums, upload and temporary-input cleanup. [Beta.3 draft](https://github.com/uJZk/TiPlay/releases/tag/untagged-fa4527e80a814c115f93)
+(ID `412219550`) remains a prerelease draft targeting the source commit above, with
+exactly APK, matching source ZIP and `SHA256SUMS.txt`. The checksum attachment matches
+the remote asset digests:
+
+- APK SHA-256: `ec94351f7a10f747cf4a87f475c9257f54607dabc07c8045cfc85925fa571b44`.
+- Source ZIP SHA-256: `de8aacb147319e9f4b57b59233c5fd166acab87d8106db08a09f3bd938bc87e8`.
+
+[Remote Android checks 38488994847](https://github.com/uJZk/TiPlay/actions/runs/38488994847)
+failed one shared test: `MediaClockDiagnosticsTest.failingFinalLoggerCannotPreventSocketRelease`
+reported `BindException` immediately after closing a timing socket. Local stress reproduced
+72 immediate rebind failures in 5,000 closes. Native datagram I/O can retain the descriptor
+until its receiving worker returns, even after `DatagramSocket.close()`.
+
+The follow-up adds bounded worker retirement outside the socket/clock locks, preserving
+caller interruption and avoiding a self-join. Existing immediate-rebind coverage now runs
+100 times and a cancellation case is added. The same 5,000-close probe has zero failures
+after the fix. Targeted clock tests passed, including cancellation preservation. Final local full CI
+passed shared 1,823, common 1,475 and Home 6 (3,304 total), zero failures/errors/skips,
+plus three-app lint/debug assembly. Corrected draft delivery and remote CI are next. The first beta.3 artifact above will be replaced in its unpublished
+draft by an exact build/source pair for the corrected commit. No APK is publicly
+published by this tie-up, and published beta.2 assets are unchanged.
 
 Real iPhone/car checks remain pending: USB/wireless negotiation, car HFP/SCO recording
 recovery, call/Siri/navigation timing, long playback, Safari/vehicle browser compatibility

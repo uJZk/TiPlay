@@ -21,10 +21,27 @@ class MediaClockDiagnosticsTest {
     }
 
     @Test fun failingFinalLoggerCannotPreventSocketRelease() {
-        val clock = NtpClock { throw IllegalStateException("logger unavailable") }
+        repeat(100) {
+            val clock = NtpClock { throw IllegalStateException("logger unavailable") }
+            val port = clock.listen()
+            Thread.yield()
+            clock.close()
+            clock.close()
+            DatagramSocket(port).use { rebound -> assertEquals(port, rebound.localPort) }
+        }
+    }
+
+    @Test fun interruptedCloserReleasesTheTimingPortAndPreservesCancellation() {
+        val clock = NtpClock()
         val port = clock.listen()
-        clock.close()
-        clock.close()
+        Thread.currentThread().interrupt()
+        try {
+            clock.close()
+            assertTrue(Thread.currentThread().isInterrupted)
+        } finally {
+            Thread.interrupted()
+            clock.close()
+        }
         DatagramSocket(port).use { rebound -> assertEquals(port, rebound.localPort) }
     }
 
