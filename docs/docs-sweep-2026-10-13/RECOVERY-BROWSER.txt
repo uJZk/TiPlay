@@ -1,0 +1,690 @@
+TAP version 13
+# Subtest: receiver controls reject invalid IDs and normalize untrusted media times
+ok 1 - receiver controls reject invalid IDs and normalize untrusted media times
+  ---
+  duration_ms: 2.99351
+  type: 'test'
+  ...
+# Subtest: theme changes and each reconnection report the current browser theme
+ok 2 - theme changes and each reconnection report the current browser theme
+  ---
+  duration_ms: 2.087153
+  type: 'test'
+  ...
+# Subtest: older browser matchMedia listener is supported
+ok 3 - older browser matchMedia listener is supported
+  ---
+  duration_ms: 0.277293
+  type: 'test'
+  ...
+# Subtest: PCM framing survives arbitrary network boundaries and skips keepalives
+ok 4 - PCM framing survives arbitrary network boundaries and skips keepalives
+  ---
+  duration_ms: 10.151658
+  type: 'test'
+  ...
+# Subtest: audio mode flags retain buffered/reset flags and notify policy before timing without video config
+ok 5 - audio mode flags retain buffered/reset flags and notify policy before timing without video config
+  ---
+  duration_ms: 17.415517
+  type: 'test'
+  ...
+# Subtest: empty stream reset is neither played PCM nor a clock fallback sample
+ok 6 - empty stream reset is neither played PCM nor a clock fallback sample
+  ---
+  duration_ms: 9.044668
+  type: 'test'
+  ...
+# Subtest: startup and Bluetooth demand never ask the browser for capture or permissions
+ok 7 - startup and Bluetooth demand never ask the browser for capture or permissions
+  ---
+  duration_ms: 2.173464
+  type: 'test'
+  ...
+# Subtest: ordered route records clear buffered music, discard demand audio, and resume only fresh PCM
+ok 8 - ordered route records clear buffered music, discard demand audio, and resume only fresh PCM
+  ---
+  duration_ms: 2.295994
+  type: 'test'
+  ...
+# Subtest: route status overtaking an HTTP body retires it and reports failure without a capture fallback
+ok 9 - route status overtaking an HTTP body retires it and reports failure without a capture fallback
+  ---
+  duration_ms: 2.355886
+  type: 'test'
+  ...
+# Subtest: malformed and truncated PCM frames fail before publication
+ok 10 - malformed and truncated PCM frames fail before publication
+  ---
+  duration_ms: 1.024821
+  type: 'test'
+  ...
+# Subtest: speaker credit is isolated across resets and the context clock is anchored once
+ok 11 - speaker credit is isolated across resets and the context clock is anchored once
+  ---
+  duration_ms: 18.542984
+  type: 'test'
+  ...
+# Subtest: two seconds of buffered music cannot block a following low-rate navigation packet
+ok 12 - two seconds of buffered music cannot block a following low-rate navigation packet
+  ---
+  duration_ms: 32.495276
+  type: 'test'
+  ...
+# Subtest: worklet mixes separate streams and bounds an unpaced music producer
+ok 13 - worklet mixes separate streams and bounds an unpaced music producer
+  ---
+  duration_ms: 153.590442
+  type: 'test'
+  ...
+# Subtest: middle 90% excludes both tails, slow FPS and worst presentation offset use the upper duration tail
+ok 14 - middle 90% excludes both tails, slow FPS and worst presentation offset use the upper duration tail
+  ---
+  duration_ms: 2.605306
+  type: 'test'
+  ...
+# Subtest: warm-up, expiration and reset never retain stale data
+ok 15 - warm-up, expiration and reset never retain stale data
+  ---
+  duration_ms: 2.977157
+  type: 'test'
+  ...
+# Subtest: browser clock bridge preserves scheduled future presentation and rejects unrelated clocks
+ok 16 - browser clock bridge preserves scheduled future presentation and rejects unrelated clocks
+  ---
+  duration_ms: 0.423537
+  type: 'test'
+  ...
+# Subtest: Debug has exactly four fields without hardware/software labels
+ok 17 - Debug has exactly four fields without hardware/software labels
+  ---
+  duration_ms: 0.26649
+  type: 'test'
+  ...
+# Subtest: early presentation stays negative and the slowest tail contains the largest signed offsets
+ok 18 - early presentation stays negative and the slowest tail contains the largest signed offsets
+  ---
+  duration_ms: 0.83527
+  type: 'test'
+  ...
+# Subtest: current FPS counts actual draws in a rolling second and reaches zero while offsets retain their five-second window
+ok 19 - current FPS counts actual draws in a rolling second and reaches zero while offsets retain their five-second window
+  ---
+  duration_ms: 0.397197
+  type: 'test'
+  ...
+# Subtest: worker readiness waits for its matching stream and token before transfer
+ok 20 - worker readiness waits for its matching stream and token before transfer
+  ---
+  duration_ms: 15.963361
+  type: 'test'
+  ...
+# Subtest: worker resets retire pending readiness without reusing tokens in the same stream
+ok 21 - worker resets retire pending readiness without reusing tokens in the same stream
+  ---
+  duration_ms: 21.001816
+  type: 'test'
+  ...
+# Subtest: worker discards a decoded CarPlay frame that expires while awaiting readiness
+ok 22 - worker discards a decoded CarPlay frame that expires while awaiting readiness
+  ---
+  duration_ms: 3.470267
+  type: 'test'
+  ...
+# Subtest: worker renders absent source timing without inventing a timestamp or requesting an ACK
+ok 23 - worker renders absent source timing without inventing a timestamp or requesting an ACK
+  ---
+  duration_ms: 3.026322
+  type: 'test'
+  ...
+# Subtest: worker delivery keeps the old transfer credit across stream reset
+ok 24 - worker delivery keeps the old transfer credit across stream reset
+  ---
+  duration_ms: 4.902373
+  type: 'test'
+  ...
+# Subtest: main renderer rechecks the raw cap after a transferred frame waits in transit
+ok 25 - main renderer rechecks the raw cap after a transferred frame waits in transit
+  ---
+  duration_ms: 2.844237
+  type: 'test'
+  ...
+# Subtest: legacy endpoint status cannot change the browser address or reconnect it
+ok 26 - legacy endpoint status cannot change the browser address or reconnect it
+  ---
+  duration_ms: 2.453897
+  type: 'test'
+  ...
+# Subtest: link hash carries an IPv4 host with port and a four-digit code
+ok 27 - link hash carries an IPv4 host with port and a four-digit code
+  ---
+  duration_ms: 5.202224
+  type: 'test'
+  ...
+# Subtest: built links put a phone other than the default in ?t= for bookmarks and the code in the fragment
+ok 28 - built links put a phone other than the default in ?t= for bookmarks and the code in the fragment
+  ---
+  duration_ms: 1.116169
+  type: 'test'
+  ...
+# Subtest: the address names the phone in ?t=, else a pairing link names the default phone, else the saved one stays
+ok 29 - the address names the phone in ?t=, else a pairing link names the default phone, else the saved one stays
+  ---
+  duration_ms: 5.775238
+  type: 'test'
+  ...
+# Subtest: ?t= names the phone with an optional port that defaults to 8080
+ok 30 - ?t= names the phone with an optional port that defaults to 8080
+  ---
+  duration_ms: 2.664029
+  type: 'test'
+  ...
+# Subtest: the address bar keeps ?t= for bookmarks of a phone other than the default and drops the fragment with the code
+ok 31 - the address bar keeps ?t= for bookmarks of a phone other than the default and drops the fragment with the code
+  ---
+  duration_ms: 0.44903
+  type: 'test'
+  ...
+# Subtest: the declared address space matches what Chrome resolves for the host
+ok 32 - the declared address space matches what Chrome resolves for the host
+  ---
+  duration_ms: 0.715703
+  type: 'test'
+  ...
+# Subtest: session ids are 22 URL-safe characters
+ok 33 - session ids are 22 URL-safe characters
+  ---
+  duration_ms: 11.560929
+  type: 'test'
+  ...
+# Subtest: reconnect backoff doubles from 500 ms up to 8 s
+ok 34 - reconnect backoff doubles from 500 ms up to 8 s
+  ---
+  duration_ms: 0.249907
+  type: 'test'
+  ...
+# Subtest: records are reassembled across a split at every byte boundary
+ok 35 - records are reassembled across a split at every byte boundary
+  ---
+  duration_ms: 61.267672
+  type: 'test'
+  ...
+# Subtest: records survive one-byte chunks and two splits
+ok 36 - records survive one-byte chunks and two splits
+  ---
+  duration_ms: 299.358183
+  type: 'test'
+  ...
+# Subtest: a payload inside one chunk is a view, a split payload a copy
+ok 37 - a payload inside one chunk is a view, a split payload a copy
+  ---
+  duration_ms: 1.232598
+  type: 'test'
+  ...
+# Subtest: an oversized payload or an unknown version is rejected for good
+ok 38 - an oversized payload or an unknown version is rejected for good
+  ---
+  duration_ms: 2.233773
+  type: 'test'
+  ...
+# Subtest: a record stream reports the end record reason, gaps and discontinuities
+ok 39 - a record stream reports the end record reason, gaps and discontinuities
+  ---
+  duration_ms: 8.442899
+  type: 'test'
+  ...
+# Subtest: a record stream ends as closed, network, bad-record or error
+ok 40 - a record stream ends as closed, network, bad-record or error
+  ---
+  duration_ms: 2.242388
+  type: 'test'
+  ...
+# Subtest: a silent stream times out, and a replaced or stopped one reports nothing
+ok 41 - a silent stream times out, and a replaced or stopped one reports nothing
+  ---
+  duration_ms: 1.883099
+  type: 'test'
+  ...
+# Subtest: the video path takes the Tesla rung when everything is there and replaces only what is missing
+ok 42 - the video path takes the Tesla rung when everything is there and replaces only what is missing
+  ---
+  duration_ms: 0.434181
+  type: 'test'
+  ...
+# Subtest: landscape pillarbox is excluded and video center maps correctly
+ok 43 - landscape pillarbox is excluded and video center maps correctly
+  ---
+  duration_ms: 0.282601
+  type: 'test'
+  ...
+# Subtest: portrait letterbox is excluded
+ok 44 - portrait letterbox is excluded
+  ---
+  duration_ms: 0.157891
+  type: 'test'
+  ...
+# Subtest: a captured drag clamps to frame edges
+ok 45 - a captured drag clamps to frame edges
+  ---
+  duration_ms: 0.151924
+  type: 'test'
+  ...
+# Subtest: zero sized frame cannot send a touch
+ok 46 - zero sized frame cannot send a touch
+  ---
+  duration_ms: 0.17596
+  type: 'test'
+  ...
+# Subtest: the drawn letterbox is the box mapPoint normalizes against
+ok 47 - the drawn letterbox is the box mapPoint normalizes against
+  ---
+  duration_ms: 0.358828
+  type: 'test'
+  ...
+# Subtest: pointers take the free lower slot and keep it until they lift
+ok 48 - pointers take the free lower slot and keep it until they lift
+  ---
+  duration_ms: 1.986787
+  type: 'test'
+  ...
+# Subtest: exactly one control POST is in flight and the next carries everything queued meanwhile
+ok 49 - exactly one control POST is in flight and the next carries everything queued meanwhile
+  ---
+  duration_ms: 56.439899
+  type: 'test'
+  ...
+# Subtest: moves merge only within a gesture and down/up edges stay ordered
+ok 50 - moves merge only within a gesture and down/up edges stay ordered
+  ---
+  duration_ms: 10.590736
+  type: 'test'
+  ...
+# Subtest: the heartbeat re-sends held contacts and otherwise posts an empty batch
+ok 51 - the heartbeat re-sends held contacts and otherwise posts an empty batch
+  ---
+  duration_ms: 2.087534
+  type: 'test'
+  ...
+# Subtest: a failed POST is reported and not replayed at once
+ok 52 - a failed POST is reported and not replayed at once
+  ---
+  duration_ms: 5.338656
+  type: 'test'
+  ...
+# Subtest: the heartbeat after a failed POST repeats its latest events and lifts a finger whose up edge was lost
+ok 53 - the heartbeat after a failed POST repeats its latest events and lifts a finger whose up edge was lost
+  ---
+  duration_ms: 1.784605
+  type: 'test'
+  ...
+# Subtest: a failed event is not repeated over a newer one of the same kind
+ok 54 - a failed event is not repeated over a newer one of the same kind
+  ---
+  duration_ms: 5.029815
+  type: 'test'
+  ...
+# Subtest: the queue is bounded at 64 events
+ok 55 - the queue is bounded at 64 events
+  ---
+  duration_ms: 94.364212
+  type: 'test'
+  ...
+# Subtest: a closed outbox ignores the answer in flight and sends nothing more
+ok 56 - a closed outbox ignores the answer in flight and sends nothing more
+  ---
+  duration_ms: 4.432107
+  type: 'test'
+  ...
+# Subtest: viewport is CSS × DPR rounded to even and only within the phone limits
+ok 57 - viewport is CSS × DPR rounded to even and only within the phone limits
+  ---
+  duration_ms: 0.465442
+  type: 'test'
+  ...
+# Subtest: codec probing lists the families the decoder accepts
+ok 58 - codec probing lists the families the decoder accepts
+  ---
+  duration_ms: 0.626808
+  type: 'test'
+  ...
+# Subtest: the decoder config prefers hardware and falls back to any decoder
+ok 59 - the decoder config prefers hardware and falls back to any decoder
+  ---
+  duration_ms: 0.680815
+  type: 'test'
+  ...
+# Subtest: samples report nearest-rank percentiles over a bounded window
+ok 60 - samples report nearest-rank percentiles over a bounded window
+  ---
+  duration_ms: 0.32789
+  type: 'test'
+  ...
+# Subtest: stats events are flat, rounded and at most 2 KiB
+ok 61 - stats events are flat, rounded and at most 2 KiB
+  ---
+  duration_ms: 4.463618
+  type: 'test'
+  ...
+# Subtest: stopping a stream unblocks a pending configuration and releases its reader
+ok 62 - stopping a stream unblocks a pending configuration and releases its reader
+  ---
+  duration_ms: 15.625858
+  type: 'test'
+  ...
+# Subtest: audio readiness never delays video and audio remains within its relative window
+ok 63 - audio readiness never delays video and audio remains within its relative window
+  ---
+  duration_ms: 3.887715
+  type: 'test'
+  ...
+# Subtest: a common ramp presents each video timestamp while continuous audio reaches the same source time
+ok 64 - a common ramp presents each video timestamp while continuous audio reaches the same source time
+  ---
+  duration_ms: 17.445702
+  type: 'test'
+  ...
+# Subtest: the first timestamp after fallback playback cannot jump the effective delay
+ok 65 - the first timestamp after fallback playback cannot jump the effective delay
+  ---
+  duration_ms: 0.539089
+  type: 'test'
+  ...
+# Subtest: CarPlay and AirPlay mirror use their own shared delay caps
+ok 66 - CarPlay and AirPlay mirror use their own shared delay caps
+  ---
+  duration_ms: 0.479608
+  type: 'test'
+  ...
+# Subtest: mode switches discard an old high delay plan without clearing independent audio queues
+ok 67 - mode switches discard an old high delay plan without clearing independent audio queues
+  ---
+  duration_ms: 0.517212
+  type: 'test'
+  ...
+# Subtest: fallback video deadlines and decoded buffering fit the 500ms submission limit
+ok 68 - fallback video deadlines and decoded buffering fit the 500ms submission limit
+  ---
+  duration_ms: 0.824632
+  type: 'test'
+  ...
+# Subtest: decoded video reorders by source time and shares the audio start deadline
+ok 69 - decoded video reorders by source time and shares the audio start deadline
+  ---
+  duration_ms: 0.637372
+  type: 'test'
+  ...
+# Subtest: audio reorders, discards duplicates and late packets, and preserves gaps
+ok 70 - audio reorders, discards duplicates and late packets, and preserves gaps
+  ---
+  duration_ms: 0.416257
+  type: 'test'
+  ...
+# Subtest: late decoded video collapses to the newest due frame without presenting future frames
+ok 71 - late decoded video collapses to the newest due frame without presenting future frames
+  ---
+  duration_ms: 0.651917
+  type: 'test'
+  ...
+# Subtest: worker waits for the shared delay acknowledgement and ignores retired frame tokens
+ok 72 - worker waits for the shared delay acknowledgement and ignores retired frame tokens
+  ---
+  duration_ms: 1.348814
+  type: 'test'
+  ...
+# Subtest: buffered audio retains a two second burst while live audio remains bounded
+ok 73 - buffered audio retains a two second burst while live audio remains bounded
+  ---
+  duration_ms: 2.576019
+  type: 'test'
+  ...
+# Subtest: repeated video configuration preserves queued frames until the actual epoch changes
+ok 74 - repeated video configuration preserves queued frames until the actual epoch changes
+  ---
+  duration_ms: 0.569923
+  type: 'test'
+  ...
+# Subtest: audio early and late limits follow matching video deadlines through frequent ramp changes
+ok 75 - audio early and late limits follow matching video deadlines through frequent ramp changes
+  ---
+  duration_ms: 41.851357
+  type: 'test'
+  ...
+# Subtest: video presents ready frames without slow audio and drops only raw cap violations
+ok 76 - video presents ready frames without slow audio and drops only raw cap violations
+  ---
+  duration_ms: 0.570674
+  type: 'test'
+  ...
+# Subtest: zero-cap CarPlay buffers future frames, reserves draw time, and accepts the raw boundary
+ok 77 - zero-cap CarPlay buffers future frames, reserves draw time, and accepts the raw boundary
+  ---
+  duration_ms: 0.486777
+  type: 'test'
+  ...
+# Subtest: late readiness inside a raw cap is drawn despite missing the adaptive target
+ok 78 - late readiness inside a raw cap is drawn despite missing the adaptive target
+  ---
+  duration_ms: 0.272906
+  type: 'test'
+  ...
+# Subtest: zero-cap audio retains the 125ms late tolerance relative to early video submission
+ok 79 - zero-cap audio retains the 125ms late tolerance relative to early video submission
+  ---
+  duration_ms: 0.177366
+  type: 'test'
+  ...
+# Subtest: the initial clock reaches a video sink whose setup finishes after hello
+ok 80 - the initial clock reaches a video sink whose setup finishes after hello
+  ---
+  duration_ms: 38.496205
+  type: 'test'
+  ...
+# Subtest: retry messages count down every second without receiving a phone heartbeat
+ok 81 - retry messages count down every second without receiving a phone heartbeat
+  ---
+  duration_ms: 25.789327
+  type: 'test'
+  ...
+# Subtest: replacing a retry schedule cancels the previous countdown and reconnect attempt
+ok 82 - replacing a retry schedule cancels the previous countdown and reconnect attempt
+  ---
+  duration_ms: 1.036536
+  type: 'test'
+  ...
+# Subtest: stopping or manually connecting clears the retry countdown immediately
+ok 83 - stopping or manually connecting clears the retry countdown immediately
+  ---
+  duration_ms: 1.553948
+  type: 'test'
+  ...
+# Subtest: blank and whitespace address fields connect to the default phone
+ok 84 - blank and whitespace address fields connect to the default phone
+  ---
+  duration_ms: 2.716974
+  type: 'test'
+  ...
+# Subtest: disconnect is a separate full-width row immediately below connect
+ok 85 - disconnect is a separate full-width row immediately below connect
+  ---
+  duration_ms: 0.451343
+  type: 'test'
+  ...
+# Subtest: the service worker precaches every page file
+ok 86 - the service worker precaches every page file
+  ---
+  duration_ms: 6.040423
+  type: 'test'
+  ...
+# Subtest: the service worker answers only its own files, so the download pages in its scope reach the network
+ok 87 - the service worker answers only its own files, so the download pages in its scope reach the network
+  ---
+  duration_ms: 42.679391
+  type: 'test'
+  ...
+# Subtest: the page loads only relative, same-origin resources
+ok 88 - the page loads only relative, same-origin resources
+  ---
+  duration_ms: 1.291031
+  type: 'test'
+  ...
+# Subtest: TiPlay icon returns to the portal once and keeps the session available to resume
+ok 89 - TiPlay icon returns to the portal once and keeps the session available to resume
+  ---
+  duration_ms: 3.116636
+  type: 'test'
+  ...
+# Subtest: older phone status without portal notifications keeps the display open
+ok 90 - older phone status without portal notifications keeps the display open
+  ---
+  duration_ms: 3.226503
+  type: 'test'
+  ...
+# Subtest: golden records-v1.bin parses to records-v1.json
+ok 91 - golden records-v1.bin parses to records-v1.json
+  ---
+  duration_ms: 10.57688
+  type: 'test'
+  ...
+# Subtest: the page is the site root and the download pages are in download/
+ok 92 - the page is the site root and the download pages are in download/
+  ---
+  duration_ms: 215.257745
+  type: 'test'
+  ...
+# Subtest: download metadata and project actions use the TiPlay destinations
+ok 93 - download metadata and project actions use the TiPlay destinations
+  ---
+  duration_ms: 0.40042
+  type: 'test'
+  ...
+# Subtest: the former addresses forward: play/ to the root with ?t= and \#c=, a language page to download/
+ok 94 - the former addresses forward: play/ to the root with ?t= and \#c=, a language page to download/
+  ---
+  duration_ms: 106.303537
+  type: 'test'
+  ...
+# Subtest: the worker at play/ unregisters itself and reloads its pages, which then reach the forwarder
+ok 95 - the worker at play/ unregisters itself and reloads its pages, which then reach the forwarder
+  ---
+  duration_ms: 177.383131
+  type: 'test'
+  ...
+# Subtest: worker byte transport waits for demand, bounds transfers and preserves configuration/frame order
+ok 96 - worker byte transport waits for demand, bounds transfers and preserves configuration/frame order
+  ---
+  duration_ms: 374.837112
+  type: 'test'
+  ...
+# Subtest: worker cancellation interrupts an outstanding network read and releases its lock
+ok 97 - worker cancellation interrupts an outstanding network read and releases its lock
+  ---
+  duration_ms: 16.880699
+  type: 'test'
+  ...
+# Subtest: page stop interrupts a sender blocked waiting for worker credit
+ok 98 - page stop interrupts a sender blocked waiting for worker credit
+  ---
+  duration_ms: 3.669773
+  type: 'test'
+  ...
+# Subtest: frame delivery keeps one transferred and one latest pending frame across stop/reconnect
+ok 99 - frame delivery keeps one transferred and one latest pending frame across stop/reconnect
+  ---
+  duration_ms: 1.269851
+  type: 'test'
+  ...
+# (node:1430) ExperimentalWarning: The MockTimers API is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: late output of the previous decoder is not drawn or reported as the new epoch
+ok 100 - late output of the previous decoder is not drawn or reported as the new epoch
+  ---
+  duration_ms: 70.211907
+  type: 'test'
+  ...
+# Subtest: stop interrupts codec probing and an old probe cannot reopen a decoder after reconnect
+ok 101 - stop interrupts codec probing and an old probe cannot reopen a decoder after reconnect
+  ---
+  duration_ms: 6.237381
+  type: 'test'
+  ...
+# Subtest: producer idle drops late decoder output and resumes on the same response
+ok 102 - producer idle drops late decoder output and resumes on the same response
+  ---
+  duration_ms: 7.585576
+  type: 'test'
+  ...
+# Subtest: the presenter closes retained and failed frames on stop/dispose
+ok 103 - the presenter closes retained and failed frames on stop/dispose
+  ---
+  duration_ms: 1.742952
+  type: 'test'
+  ...
+# Subtest: scheduled source timestamps reach presentation; absent clocks never become guessed offsets
+ok 104 - scheduled source timestamps reach presentation; absent clocks never become guessed offsets
+  ---
+  duration_ms: 18.252636
+  type: 'test'
+  ...
+# Subtest: video pipeline preserves source mode in CONFIG messages and presented frame configuration
+ok 105 - video pipeline preserves source mode in CONFIG messages and presented frame configuration
+  ---
+  duration_ms: 4.361013
+  type: 'test'
+  ...
+# Subtest: canvas submission reports an early source presentation as a signed offset
+ok 106 - canvas submission reports an early source presentation as a signed offset
+  ---
+  duration_ms: 0.61402
+  type: 'test'
+  ...
+# Subtest: the presenter rejects frames delayed by main-thread delivery and rechecks before drawing
+ok 107 - the presenter rejects frames delayed by main-thread delivery and rechecks before drawing
+  ---
+  duration_ms: 0.63907
+  type: 'test'
+  ...
+# Subtest: an expired GPU texture upload never clears or submits the canvas
+ok 108 - an expired GPU texture upload never clears or submits the canvas
+  ---
+  duration_ms: 1.075227
+  type: 'test'
+  ...
+# Subtest: viewport resize notifications share the next frame and report its latest size
+ok 109 - viewport resize notifications share the next frame and report its latest size
+  ---
+  duration_ms: 1.886517
+  type: 'test'
+  ...
+# Subtest: continuous resizes report on every frame without waiting for quiet
+ok 110 - continuous resizes report on every frame without waiting for quiet
+  ---
+  duration_ms: 0.364149
+  type: 'test'
+  ...
+# Subtest: a pending resize cannot report after returning to the portal or disconnecting
+ok 111 - a pending resize cannot report after returning to the portal or disconnecting
+  ---
+  duration_ms: 0.267711
+  type: 'test'
+  ...
+# Subtest: cancelled old-session frames cannot send to a newly connected session
+ok 112 - cancelled old-session frames cannot send to a newly connected session
+  ---
+  duration_ms: 0.350334
+  type: 'test'
+  ...
+# Subtest: invalid dimensions do not prevent a valid next-frame report
+ok 113 - invalid dimensions do not prevent a valid next-frame report
+  ---
+  duration_ms: 0.272271
+  type: 'test'
+  ...
+1..113
+# tests 113
+# suites 0
+# pass 113
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1746.524768

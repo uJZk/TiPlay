@@ -19,7 +19,7 @@ parts = urlsplit(SITE_URL)
 if parts.scheme != 'https' or not parts.hostname or parts.query or parts.fragment or any(c in SITE_URL for c in '"<> '):
     raise SystemExit(f'SITE_BASE_URL must be an https:// address without a query or fragment, not {SITE_URL!r}')
 BASE = SITE_URL + 'download/'
-REPO = 'https://github.com/uJZk/DiPlay'
+REPO = 'https://github.com/uJZk/TiPlay'
 VERSION = '0.2.14-beta.2'
 RELEASE = REPO + '/releases'
 DOWNLOAD = REPO + '/releases/latest'

@@ -50,7 +50,8 @@ even when the environment configures a system proxy.
     requests; with the page server stopped the download page does not open.
 12. With the page server stopped, a reload and the pairing link (with `#c=`) are served by the Service Worker and decode
     again.
-13. The Debug switch shows four statistics and a second line of per-frame source/submission times at the top center,
+13. The Debug switch shows one line at the top center: codec, current draw FPS, the central-90% signed
+    presentation-offset average and the slowest-5% signed presentation-offset average. It
     does not intercept touches or replace the video session,
     and hides the overlay when disabled. Worker-stream, worker-chunk, worker-frame and main-thread paths all collect
     actual draw counts in the last second and signed offsets from synthetic scheduled presentation times to canvas submission.
@@ -143,11 +144,14 @@ The script removes its Playwright request routes before it leaves the page: Play
 `keepalive` request of a page that is going away, which looked like a lost `/bye`.
 
 
-## AirPlay HTML video and Bluetooth audio gating
+## AirPlay URL Canvas (`airplay-video.mjs`)
 
-`airplay-video.mjs` checks the actual Video.js player under the page's CSP, native
+`airplay-video.mjs` checks the actual Video.js 10.1.0 player under the page's CSP, native
 buffering UI, removed fullscreen control, MP4 decoding, playback status delivery,
-Bluetooth route muting (including preventing a user unmute), restoration and player disposal. Supply
+pause without position rollback, explicit seek revisions and failed-state reporting,
+Bluetooth route muting (including preventing a user unmute), restoration and player disposal.
+It also checks WebGL, forced 2D and the no-video-frame-callback fallback, caption display/toggle,
+Chinese labels, actual timeline clicks and Stop casting. Set `TEST_VIDEO_HLS` to include the HLS adapter path. Supply
 an ordinary unprotected MP4 fixture; it is never uploaded to an external service.
 
 ```sh
@@ -155,7 +159,9 @@ NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chrome \
   TEST_VIDEO_MP4=/path/to/short-test.mp4 node tests/web-e2e/airplay-video.mjs
 ```
 
-This is a desktop Chromium simulation, not a Tesla device or acoustic test.
+This is a desktop Chromium simulation, not a Tesla device or acoustic test. It
+forces autoplay permission and uses a local resource stub, so it does not verify
+production autoplay policy, authenticated proxying or the Android HFP/SCO transition.
 HLS URL rewriting, Range handling, peer direct access and stale playback reports
 are covered by shared module tests. Actual iPhone HLS/FCUP playback and vehicle
 microphone/call quality still need device validation.

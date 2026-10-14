@@ -4,7 +4,7 @@
     <string name="settings_browser_advanced_summary">معدل الإطارات وHEVC وعناصر التحكم بالمركبة والسجلات وتقارير التشخيص.</string>
     <string name="settings_browser_next_connection_hint">تُطبّق التغييرات فورًا؛ ويُعاد اتصال CarPlay تلقائيًا عند الحاجة.</string>
     <string name="settings_browser_video">الفيديو</string>
-    <string name="settings_browser_endpoint_hint">نطاق العناوين 169.254.0.0/16 / 100.64.0.0/10، والمنافذ 1024–65535، مثل 169.254.111.111:8080. يحدّث المتصفح المتصل عنوانه تلقائيًا. إذا كان غير متصل فأدخل عنوان أندرويد الجديد في الصفحة. اتركه فارغًا لاستخدام 169.254.111.111 مع الاحتفاظ بالمنفذ المحفوظ.</string>
+    <string name="settings_browser_endpoint_hint">نطاق العناوين 169.254.0.0/16 / 100.64.0.0/10، والمنافذ 1024–65535، مثل 169.254.111.111:8080. بعد التغيير، أدخل عنوان أندرويد الجديد يدويًا في صفحة المتصفح ثم اضغط اتصال. اتركه فارغًا لاستخدام 169.254.111.111 مع الاحتفاظ بالمنفذ المحفوظ.</string>
     <string name="settings_browser_endpoint_invalid">أدخل عنوانًا ضمن 169.254.0.0/16 / 100.64.0.0/10 ومنفذًا (1024–65535)، مثل 169.254.111.111:8080.</string>
     <string name="settings_browser_boot_hint">افتح TiPlay عند بدء Android. قد يقيّد Android أو إعدادات الجهاز بدء التشغيل في الخلفية.</string>
 </resources>

@@ -115,6 +115,7 @@ Run the required source checks from [AGENTS.md](../AGENTS.md) and CI:
 ```sh
 node --test tests/web/*.test.mjs
 python3 scripts/check_public_tree.py
+python3 -m unittest discover -s tests -p 'test_release_draft.py'
 ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :home:testDebugUnitTest \
   :mobile:lintDebug :home:lintDebug :maphost:lintDebug \
   :mobile:assembleDebug :home:assembleDebug :maphost:assembleDebug
@@ -208,10 +209,12 @@ place a signing keystore under APK assets.
 
 ### GitHub Actions release build
 
-Run **Actions → Build signed TiPlay release APK → Run workflow**
+First run the full [source checks](#check-the-source-build) for the intended build commit;
+the signed-release workflow does not run the Android unit-test set or Node browser tests.
+Then run **Actions → Build signed TiPlay release APK → Run workflow**
 (`.github/workflows/android-release.yml`). It builds `:mobile:assembleRelease`
 with release lint and uploads the signed APK, matching source ZIP and checksums
-as the `TiPlay-signed-release` Actions artifact. A separate job with Contents
+as the `TiPlay-signed-release` Actions artifact (retained for 14 days). A separate job with Contents
 write permission creates or updates the version's GitHub Release draft with
 exactly those three attachments. The checksum file covers both APK and source ZIP;
 the notes record the exact build commit and upstream runtime identity provenance.
@@ -330,13 +333,13 @@ Create a draft rather than a public release:
   cd "$RELEASE_OUTPUT_DIR"
   sha256sum "TiPlay-$RELEASE_VERSION.apk" "TiPlay-$RELEASE_VERSION-source.zip" > SHA256SUMS.txt
 )
-gh release create "v$RELEASE_VERSION" --repo uJZk/DiPlay --draft \
+gh release create "v$RELEASE_VERSION" --repo uJZk/TiPlay --draft \
   --target "$RELEASE_COMMIT" --title "TiPlay $RELEASE_VERSION" \
   --notes-file "$RELEASE_NOTES_FILE" \
   "$RELEASE_OUTPUT_DIR/TiPlay-$RELEASE_VERSION.apk" \
   "$RELEASE_OUTPUT_DIR/TiPlay-$RELEASE_VERSION-source.zip" \
   "$RELEASE_OUTPUT_DIR/SHA256SUMS.txt"
-gh release view "v$RELEASE_VERSION" --repo uJZk/DiPlay --json isDraft,assets,url
+gh release view "v$RELEASE_VERSION" --repo uJZk/TiPlay --json isDraft,assets,url
 ```
 
 A failed upload can leave a created draft without attachments. Inspect the draft

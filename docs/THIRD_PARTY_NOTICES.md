@@ -2,7 +2,7 @@
 
 ## TiPlay
 
-TiPlay is a modified version of [DiPlay by shihabal3amri](https://github.com/shihabal3amri/DiPlay), licensed under GNU GPL version 3. It was renamed from DiPlay to TiPlay in October 2026 and is maintained at https://github.com/uJZk/DiPlay. DiPlay's changelog entries and release notes keep their original name. Tesla is a trademark of Tesla, Inc. TiPlay is not affiliated with or endorsed by Tesla, Inc.
+TiPlay is a modified version of [DiPlay by shihabal3amri](https://github.com/shihabal3amri/DiPlay), licensed under GNU GPL version 3. It was renamed from DiPlay to TiPlay in October 2026 and is maintained at https://github.com/uJZk/TiPlay. DiPlay's changelog entries and release notes keep their original name. Tesla is a trademark of Tesla, Inc. TiPlay is not affiliated with or endorsed by Tesla, Inc.
 
 ## Receiver
 

@@ -6,31 +6,85 @@ protect future upstream merges; they do not add a second supported product or na
 
 ## Source checks and local browser E2E
 
-## Host unit tests
+Run the required Android, Node 22 browser and public-tree checks in [Build TiPlay](BUILD.md#check-the-source-build).
+The command includes retained `home`/`maphost` module checks required by AGENTS.md and CI.
+[Browser E2E](../tests/web-e2e/README.md) documents the optional fake-phone and compiled-phone harnesses;
+CI does not run them. They check WebCodecs playback, pairing, touch, resize reporting, the Debug overlay and
+reconnect/portal layout. The CarPlay MSE/fMP4 and `<video>` fallback has been removed; AirPlay URL video uses
+its separate Video.js HTML player. For CarPlay, plain HTTP on a LAN address must
+show the secure-context requirement rather than start playback. Local harness results do not establish
+vehicle routing, real iPhone display renegotiation or physical display latency.
 
-Run the complete unit-test, lint and debug-build command in [AGENTS.md](../AGENTS.md).
-The USB permission command tests need a POSIX shell: `sh` on Linux/macOS, or Git for Windows.
-On Windows the tests find the standard `%ProgramFiles%/Git/bin/sh.exe` installation automatically;
-set `DIPLAY_TEST_SHELL` to the executable path for a custom installation.
-Scripts are sent through stdin so the host cannot reinterpret their embedded quotes.
+## Phone + browser vehicle checks
 
-Robolectric uses host files even when executing Android framework code. Journal tests use a narrow
-`AtomicFile` rename shadow to reproduce Android's replace-existing behavior on Windows. Update
-installation tests use the same FileProvider path shadow as diagnostic export tests. Both retain
-the real journal and provider logic; regression tests check stage persistence, sync failure and
-rejection of sibling directories outside the provider root.
+With the car parked, record the exact APK/build, Android phone/OS, iPhone/iOS, car/browser version,
+iPhone transport (wireless or USB), browser network and any untested setup.
 
-## Custom stream resolution
+- Check picture, letterboxed touch mapping and music with a fresh connection for each supported transport/network
+  setup. Confirm the foreground Android connection requests microphone permission when needed; the browser
+  must not request microphone access. With permission denied, check that browser playback remains available
+  and CarPlay does not advertise a microphone. If autoplay is blocked, a normal page touch must resume sound. Separately
+  enable **Disable CarPlay audio** and confirm the iPhone uses the car's Bluetooth for all sound and calls.
+  Disconnect/reconnect and repeat with the phone screen off.
+- In **Main settings**, change the selected iPhone, connection mode or network fields. Valid edits save and apply
+  automatically; text fields settle after a short debounce. A change needing negotiation reconnects a running
+  session while keeping settings open. With CarPlay enabled, idle edits may resume continuous connection
+  preparation; disabling CarPlay must block all startup and retries. Opening **Advanced settings** and returning
+  must preserve saved values. Invalid network input must not replace the saved valid configuration; an explicit
+  reconnect must report its validation error.
+- In **Advanced settings**, change frame rate, HEVC, driving side or CarPlay audio. Valid changes save immediately;
+  changes needing negotiation reconnect a running session while keeping the settings page open. Enabled
+  CarPlay may resume preparation after idle changes; disabled CarPlay must stay stopped. Buffered music is
+  always offered while CarPlay audio is enabled, with no user toggle; check pause/resume and track changes when
+  the iPhone negotiates the type-103 stream. Check permission rows after returning from Android settings and
+  export through **Save diagnostic report**.
+- With CarPlay audio enabled, check calls and Siri request the car HFP/SCO route only during microphone demand.
+  Browser PCM and URL-video sound must mute during the transition; speech and capture start only after both
+  Android input/output routes are confirmed as SCO. Check navigation at fixed 0.25 gain during that route,
+  music discarded during demand, and only fresh browser sound after confirmed release. Denied permissions,
+  unavailable/ambiguous HFP devices or route loss must fail without phone/browser microphone fallback. Repeat
+  with the phone screen off; record vehicle echo quality and routing/teardown limits. TiPlay adds no software AEC.
+- Change the Android phone endpoint address/port and confirm it applies immediately while preserving the pairing
+  code. The browser receives no proactive endpoint notification and does not migrate automatically. On the browser,
+  select **Disconnect**, edit the Android address and select **Connect**, or open the updated pairing link. Check
+  the old address is not silently rewritten and record reachability at the new endpoint.
+- Pair using the copied link, then confirm the code fragment disappears from the address bar. Reopen the saved page,
+  test a new browser taking over and return through the CarPlay TiPlay icon to the portal. The portal Connect button,
+  labeled **Return to CarPlay** while active, must resume the same connection; **Disconnect** must stop retries.
+  A new code requires re-pairing.
+- Resize the browser window in both directions and confirm the picture fills its available area and touches match
+  after replacement video starts. Record any display that remains pending; resize retains the wireless network stack
+  and has no timed full-stack recovery fallback. See [browser session lifecycle](TESLA_BROWSER.md#browser-session-lifecycle).
+- Enable **Debug** in the browser portal. Check the one-line codec, current draw FPS, central-90% signed presentation-offset average and
+  slowest-5% signed presentation-offset average at the top center, uninterrupted touch and playback,
+  and hiding the overlay when disabled. Missing timing remains unknown. Synthetic harness timing and canvas submission
+  statistics do not establish physical capture-to-screen latency.
+
+Save a diagnostic report after reproducing an issue. Do not post credentials or unreviewed personal information.
+
+## Retained upstream head-unit compatibility reference
+
+The following matrix predates the phone-only product scope and is retained as an upstream compatibility reference.
+Its native Settings paths, BYD/ADB probes, location/car-data controls, resolution controls and wheel/dashboard checks
+are not current TiPlay user instructions or required acceptance tests. Its mentions of outstanding hardware retests
+refer to that retained compatibility work, not a requirement to validate a native TiPlay product.
+Do not enable or restore native product navigation to run it.
+
+The [connection reliability matrix](CONNECTION_RELIABILITY.md#historical-compatibility-acceptance-checklist) describes shared
+USB/RFCOMM/session behavior as well as retained head-unit cases. Use only the cases that exercise the supported
+phone + browser path for current release validation; record the APK and untested supported setups explicitly.
+
+### Custom stream resolution
 
 In the home settings and the in-session menu, confirm the accepted range is **30–160%**. Try 160%, cancel an edit, save an unrelated setting, and reconnect; the exact saved percentage must survive. Enter 161% in the numeric dialog and confirm it stays open with an error. Reset must only change the draft to 100% until Save/Apply is selected.
 
 On a parked head unit, test a supported setting above 100% with Default, Smaller and Large icon/text sizes. Confirm the display diagnostics show the requested and effective resolution, actual decoder size/rate/alignment support, negotiated canvas and video output. An unsupported enlarged canvas must fall back before advertising it to the phone, with a notice; resolution falls back to 100% if removing the Smaller-size enlargement is insufficient, and 100% is saved for later connections. Compare picture sharpness, touch mapping, audio and sustained video smoothness. Decoder metadata and automated tests cannot establish performance on real hardware, so the contributor's supersampling result needs a signed vehicle retest.
 
-## Wi-Fi Direct scan pause
+### Android 10 Wi-Fi scan recovery
 
-On a parked head unit with network ADB already approved, connect over Wi-Fi Direct with the car's Wi-Fi client switched on but not joined to a network. Confirm the report shows `Wi-Fi connectivity scans paused=true reason=done` with the head unit's API level, then play music for five minutes and compare `Receive: audio ... seqForwardGaps` with an earlier report from the same car: the losses on a 10 s rhythm should be gone. Close the session and confirm the car joins a saved network again. Repeat on Android 10 and on Android 11 or later where available. Trigger a full controller retry or replace the controller while the prior restore is delayed: an old cleanup must never enable scans after the replacement reports its pause.
+On a parked DiLink 3 head unit with network ADB already authorized, compare hotspot/P2P wireless CarPlay with the car's Wi-Fi client disconnected. Confirm that a supported framework reports `Wi-Fi connectivity scans paused=true` and check whether the contributor's periodic stutter is resolved. Close the session and confirm station scanning/reconnect returns. Trigger a full controller retry or replace the controller while the prior restore is delayed: an old cleanup must never enable scans after the replacement reports its pause.
 
-Temporarily make the authorized ADB connection unavailable during teardown, then restore access. Confirm cleanup retries while the app remains open, and confirm a subsequent session's pause survives any pending old retry. Interrupt the app after suppression, reopen it, and verify the recorded restore is recovered; a force-stop cannot restore until the app next runs or the car restarts. On Android 13 or later, turn automatic joining off by other means first and confirm `reason=already-off` and that it stays off after CarPlay ends. With the built-in car hotspot or **Same LAN / Existing Wi-Fi**, confirm no pause is reported. Without ADB approval there must be no pause and no approval prompt, and the report must say `reason=adb-not-approved` or `reason=adb-off`. These hardware checks remain necessary after the automated ownership/recovery tests pass.
+Temporarily make the authorized ADB connection unavailable during teardown, then restore access. Confirm cleanup retries while the app remains open, and confirm a subsequent session's pause survives any pending old retry. Interrupt the app after suppression, reopen it, and verify the recorded restore is recovered; a force-stop cannot restore until the app next runs. With **Existing Wi-Fi**, confirm no pause is reported and normal station reconnect/roaming still works. On Android versions other than 10, or without existing ADB approval, there must be no suppression or approval prompt. These hardware checks remain necessary after the automated ownership/recovery tests pass.
 
 ### Diagnostic export without a picker
 

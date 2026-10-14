@@ -35,8 +35,6 @@ data class BrowserLinkStatus(
     val phone: Map<String, Any?> = emptyMap(),
     /** Changes when the driver taps the TiPlay icon in CarPlay. */
     val portalRevision: Long = BrowserPortalSignal.revision,
-    /** A new phone endpoint announced before an address/port change. */
-    val endpoint: String? = null,
 ) {
     enum class State(val wire: String) { IDLE("idle"), CONNECTING("connecting"), STREAMING("streaming") }
 

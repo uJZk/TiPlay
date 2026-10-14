@@ -586,7 +586,6 @@ class HotspotExtraAddressSettingsTest {
 
         input.setText(" 100.70.1.2:8181 ")
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-        shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS)
 
         assertFalse(dialog.isShowing)
         assertEquals(ip("100.70.1.2"), HotspotExtraAddressSettings.address(context))

@@ -390,7 +390,7 @@ class BrowserMainPageTest {
         assertTrue(views().filterIsInstance<EditText>().any())
         assertTrue(button(R.string.settings_carplay_reconnect).isShown)
     }
-    @Test fun validIdleEditsSaveWithoutStartingAConnection() {
+    @Test fun validIdleEditsNotifyTheHostWithoutCallingManualConnect() {
         views().filterIsInstance<EditText>().first().setText("Another hotspot")
         settleEdits()
         assertEquals("Another hotspot", AirPlayPersistence.loadManualHotspotSsid(activity))

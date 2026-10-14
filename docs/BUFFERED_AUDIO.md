@@ -1,12 +1,14 @@
 # Buffered music in the car browser
 
-CarPlay enhanced buffering is an opt-in advanced setting. It applies at the next CarPlay negotiation and stays off by default. Disabling CarPlay audio also disables buffered music and the browser microphone; the iPhone then owns its Bluetooth audio route to the car.
+Phone + car browser sessions always offer CarPlay enhanced buffering when CarPlay audio is enabled; there is no buffered-music setting in the product menus. Buffered playback starts only if the iPhone accepts `mainBuffered` and sets up a type-103 stream. Disabling CarPlay audio also removes buffered-music and microphone capabilities; the iPhone then owns its Bluetooth audio route to the car. The retained upstream opt-in API is compatibility code, not a product control.
 
 The ordinary AirPlay receiver does not implement AirPlay 2 buffered audio or audio-only casting. CarPlay type 103 is a separate accessory protocol. Its retained implementation comes from [upstream #308](https://github.com/shihabal3amri/DiPlay/pull/308); [upstream #484](https://github.com/shihabal3amri/DiPlay/pull/484) explains why an unrestricted initial TCP fill competes with video and realtime audio.
 
 ## Buffer ownership
 
-The browser owns the audible PCM queue. Android decrypts the CarPlay stream, decodes AAC-LC on a bounded worker and relays PCM; it creates no AudioTrack. The browser applies a finite playback reservoir and backpressure to its HTTP reader. Realtime navigation, call and Siri streams use separate queues with a shorter latency bound.
+The browser owns the audible PCM queue. Android decrypts the CarPlay stream, decodes AAC-LC on a bounded worker and relays PCM; buffered music creates no AudioTrack. The browser applies a finite playback reservoir and backpressure to its HTTP reader. Realtime navigation, call and Siri streams use separate queues with a shorter latency bound.
+
+When the iPhone requests Siri or call microphone capture, Android requests the car’s Bluetooth HFP/SCO route and mutes browser PCM and Video.js output. After both capture and playback devices confirm SCO, call/Siri downlink and permitted navigation use an Android AudioTrack; navigation has a fixed 0.25 gain. Media, alerts and buffered music are consumed and discarded during that route, with no catch-up playback. Android captures only the verified SCO input, with no browser or handset microphone fallback and no TiPlay software AEC. Browser playback resumes only after actual SCO release. See [the media adjustment record](BROWSER-MEDIA-2026-10-13.md) for route and permission limits.
 
 Android retains a small relay/preload window to preserve the upstream pause/resume contract. It does not accumulate the upstream two-minute music buffer for the browser product. A full relay pauses TCP intake; intake is additionally paced rather than racing the video connection. A stalled browser subscription is retired rather than dropping arbitrary buffered music frames. Losing the browser or switching the source clears the browser playback state.
 
@@ -31,4 +33,4 @@ networkTimeSecs uses the 1970 epoch; networkTimeFrac is a 64-bit fraction. Feedb
 
 AAC-LC is supported for buffered music; Apple Music lossless and spatial audio are not advertised. Apps that do not negotiate mainBuffered retain normal CarPlay audio. A finite browser buffer cannot fix a connection whose sustained throughput is below the media bitrate. PCM relay uses more bandwidth than the compressed iPhone stream; the bounded buffers and pacing protect latency but do not promise uninterrupted playback.
 
-Source-level tests exercise authenticated framing, local limits, pause/resume ownership and teardown. The new browser audio path still needs physical iPhone/browser checks for Apple Music pause/resume, track changes, navigation ducking and call/Siri interruption. Historical native head-unit measurements are available from the upstream pull requests and do not establish browser behavior.
+Source-level tests exercise authenticated framing, local limits, pause/resume ownership and teardown. The browser audio path still needs physical iPhone/browser checks for Apple Music pause/resume, track changes, navigation ducking and call/Siri interruption. Historical native head-unit measurements are available from the upstream pull requests and do not establish browser behavior.

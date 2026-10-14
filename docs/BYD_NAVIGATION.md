@@ -1,6 +1,6 @@
 # BYD navigation displays and vehicle data
 
-This guide describes retained head-unit integrations and their recorded vehicle tests. Current TiPlay forces the phone + browser profile and hides BYD navigation, dashboard map, wheel-key and vehicle-data settings; these outputs are disabled in that profile. The settings paths below refer to the retained head-unit UI.
+This guide describes retained head-unit integrations and their recorded vehicle tests. Current TiPlay forces the phone + browser profile and hides BYD navigation, dashboard map, wheel-key and vehicle-data settings; these outputs are disabled in that profile. The settings paths below refer to the retained head-unit UI. This is upstream compatibility history, not a supported second product or a TiPlay release acceptance checklist. Physical vehicle and contributor reports below were not revalidated in this documentation review; their firmware and device limits remain unchanged.
 
 Phone navigation arrows, next-turn distance and street names can appear on supported BYD displays. Ordinary operation requires no ADB, root, laptop or helper process. The map app must provide structured navigation metadata; compatibility is not guaranteed for every map app or version.
 
@@ -303,7 +303,7 @@ that recovery. Android cannot guarantee restoration before force-stop; recovery
 runs after the app opens again. This journal does not change the stock-map package
 hold or the verified windshield HUD receiver checks.
 
-Before releasing DiLink 3 support, retest on the car: first display creation after
+Historical upstream DiLink 3 follow-up (outside current TiPlay product scope): before a head-unit release, retest on the car: first display creation after
 boot, guidance-only mode, map priority over guidance, normal disconnect, temporary
 ADB loss during creation and shutdown, and reopening after an interrupted output.
 Confirm that gauges return after recovery and that existing DiLink 5 routing still

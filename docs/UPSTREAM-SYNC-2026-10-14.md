@@ -10,7 +10,8 @@ browser product scope. This replaces selective backports as the regular tracking
   0.2.19 and subsequent main fixes. The prior common ancestor was `e837efa95e`;
   444 upstream commits are retained through a merge commit.
 - Keep TiPlay application ID `com.ujzk.tiplay`, current version `0.2.14-beta.2` /
-  code 34 and mobile minimum Android API 28. Source sync does not publish a release.
+  code 34 and mobile minimum Android API 28 at the initial sync. Subsequent beta.3
+  packaging/versionCode 35 is recorded in [the delivery record](UPSTREAM-VIDEOJS-TIE-UP-2026-10-14.md).
 - Preserve inherited packages, identifiers, native compatibility source, licenses and
   historical release records. Normal TiPlay entry remains phone + browser; retained
   head-unit source is not a second supported product.

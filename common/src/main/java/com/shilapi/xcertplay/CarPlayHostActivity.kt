@@ -3375,6 +3375,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun applyBrowserSettings() {
         if (headUnitIntegrations() || shuttingDown.get()) return
+        // Valid settings resume enabled CarPlay even from idle; the opt-out blocks startup and retries.
         browserConnectionRequested = !BrowserCarPlaySettings.disabled(this)
         startupRetryStopped = false
         loadPersistedSettings()

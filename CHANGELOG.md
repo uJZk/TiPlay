@@ -1,9 +1,19 @@
-# TiPlay — unreleased
+# TiPlay 0.2.14-beta.3 — draft
 
 - Merge the complete upstream DiPlay source through `c30d3f0df` (0.2.19 and subsequent main fixes), retaining Android phone + car browser scope and merge ancestry.
 - Align audio feedback and browser presentation with negotiated RTP clocks, recover stalled SCO microphone reads, preserve browser audio settings during upstream key migration, and add Japanese browser translations.
 - Migrate URL video playback to Video.js 10.1.0 controls and its official hls.js adapter, retaining Canvas, iPhone commands, captions, Bluetooth mute and offline assets.
-- Source validation and device limits are recorded in [upstream sync](docs/UPSTREAM-SYNC-2026-10-14.md). No new APK version is published by this source sync.
+- Source validation and device limits are recorded in [upstream sync](docs/UPSTREAM-SYNC-2026-10-14.md). Signed beta.3 delivery remains a draft; published beta.2 is unchanged.
+
+
+- Apply valid browser settings immediately and reconnect automatically when negotiation is needed, keeping the settings page open. Main settings offers Reconnect CarPlay and All (USB first) / Wireless / USB; enabled CarPlay continuously recovers and valid idle edits may resume preparation. Start on boot launches TiPlay, while Disable CarPlay blocks startup and retries.
+- Play CarPlay music through mandatory buffered browser audio by default. Recording demand switches capture and call/Siri/navigation playback to the Android-to-car Bluetooth telephone channel, with navigation at fixed 25% gain; other audio is discarded until browser playback resumes. Disable CarPlay audio instead uses the iPhone-to-car Bluetooth route. Vehicle validation remains pending.
+- Use Video.js for non-DRM AirPlay URL video, with authenticated Android resource proxying and direct iPhone resources. Support compatible AAC-ELD mirroring companion audio, URL-video soundtracks and enabled HEVC mirroring; standalone audio-only AirPlay remains unsupported. AirPlay remains experimental.
+- Remove URL-video timing diagnostics; the current Debug overlay shows codec, FPS and two signed presentation-offset averages.
+- Apply hotspot address/port edits immediately on Android without notifying or migrating browser endpoints. Reconnect manually with the updated Android address or pairing link; pairing codes remain.
+
+
+The entries below retain historical release behavior. Current phone/browser scope is described above.
 
 # TiPlay 0.2.14-beta.1 — 2026-10-12
 

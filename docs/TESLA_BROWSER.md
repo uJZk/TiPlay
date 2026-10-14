@@ -8,7 +8,7 @@ advanced settings can disable CarPlay audio and leave all sound and calls on the
 
 ## Hosting and playback
 
-The hosted page needs HTTPS because WebCodecs requires a secure context. The phone relays the iPhone's encoded video
+The hosted page needs HTTPS because WebCodecs requires a secure context. For CarPlay, the phone relays the iPhone's encoded video
 without re-encoding it and receives browser touch input. The app does not bundle or serve the browser page. It
 provides `/hello`, `/video`, `/audio`, `/airplay-resource`, `/control` and `/bye`; GET `/`, `/play` and `/play/*` return `404`. Plain HTTP at a LAN
 address cannot provide the secure context needed for playback; localhost is a browser exception. Do not restore a video/MSE
@@ -16,9 +16,12 @@ fallback: vehicle browsers can pause that path while driving.
 
 Playback requires WebCodecs and support for the negotiated codec. The remaining paths use a worker or the main
 thread for decoding and canvas drawing, depending on browser capabilities. CarPlay and ordinary AirPlay mirroring keep canvas drawing; AirPlay URL
-video uses Video.js/HTML video with Android resource proxying. Do not add an HTML video fallback to CarPlay.
+video uses a hidden HTML video decoded by Video.js and presents frames on Canvas, with Android resource proxying. Do not add an HTML video fallback to CarPlay.
 These capability checks do not establish support for a particular vehicle or browser version. In the phone profile,
-encoded video bypasses the Android decoder and local video surface; the phone retains its native settings and status UI.
+CarPlay encoded video bypasses the Android decoder and local video surface; the phone retains its native settings and status UI.
+Ordinary AirPlay mirroring also forwards encoded H.264 or enabled HEVC to the browser; still photos use an Android
+Surface/encoder bridge. Mirror companion audio uses Android AAC-ELD decoding and browser PCM output, while URL-video
+audio and video are decoded by the browser player. See [AirPlay implementation](AIRPLAY.md#实现与开源依据).
 
 ## Audio and microphone
 
@@ -57,6 +60,7 @@ an actual car test. See [the current media implementation](BROWSER-MEDIA-2026-10
 The App's page address and the deployment's public base URL must agree. Their authoritative sources are
 [TeslaBrowserPageLinks](../common/src/main/java/com/shilapi/xcertplay/TeslaBrowserPageLinks.kt) and
 [the Pages workflow](../.github/workflows/pages.yml). A repository redirect is not proof of the deployed site address.
+The official page address is `https://ujzk.github.io/TiPlay/`, with the project at `https://github.com/uJZk/TiPlay`.
 Previously saved custom HTTPS addresses remain supported; former default addresses resolve to the build default.
 
 The first visit and page updates require access to the static host. Later visits can use the Service Worker's cache.
@@ -76,10 +80,10 @@ configured address as a fallback. Endpoint edits require 169.254.0.0/16 for VPN 
 169.254.0.0/16 and 100.64.0.0/10 for Root/Shizuku, with ports 1024–65535. An empty address uses the
 default and preserves the saved port. Changing the method never rewrites the saved address;
 VPN uses the default when the saved address is outside its supported range. The editor checks the
-currently selected method before saving. Address modification and endpoint changes
-apply immediately. Before moving the address or listener, an authenticated control status announces
-the new endpoint. The connected browser saves it, updates its bookmark and resumes transport with the
-same pairing code and session. A disconnected browser still needs the updated endpoint entered manually.
+currently selected method before saving. Address modification and endpoint changes apply immediately on Android,
+preserving the pairing code. The phone does not notify the browser of the new endpoint or automatically migrate
+its connection, saved address or bookmark. In the browser, choose **Disconnect**, update the **Android address**
+and choose **Connect**, or open a newly copied pairing link. An old bookmark continues to name its old endpoint.
 
 The code belongs in a URL fragment so it is not sent to the static page host. The page imports and saves it, then
 removes the fragment. Bookmark only after import; a bookmark does not contain the code and cannot replace a new code
@@ -95,6 +99,12 @@ connection. Browser storage must remain available for a code-free bookmark to re
 Only one browser presents CarPlay at a time; a newly paired browser can take over. Wrong-code throttling also affects
 otherwise correct requests during its lockout, so repeated retries are not a recovery strategy. The limits are defined
 by [the pairing gate](../shared/src/main/java/com/shilapi/xcertplay/web/BrowserPairingGate.kt), rather than duplicated here.
+
+Network failures retry automatically while the browser session is active. The portal's countdown updates each
+second even without a phone heartbeat. A rejected code stops the session and requires a current code; a browser
+takeover stops it and allows **Connect** to claim the display again. **Disconnect** cancels pending retries.
+Local-network permission denial or unsupported browser policy still needs attention in the browser's settings;
+the HTTPS page and retry loop cannot grant that access.
 
 The separately hosted static page and the phone's discovery response are reachable without a pairing code; video and control require authentication.
 The local video transport is not encrypted. An HTTPS page protects static-page delivery and enables WebCodecs; it does
@@ -118,7 +128,9 @@ configured fallback rather than falsely reporting a disconnected network.
 The browser reports its available video area and theme. Native head-unit display settings do not govern the browser
 canvas. The phone fits the existing picture while negotiating a replacement display; this can briefly interrupt
 CarPlay. Frame rate and codec controls belong to the App's Advanced settings. Settings apply immediately and
-reconnect a running session automatically when required. Returning from Advanced settings is navigation only.
+reconnect a running session automatically when required. With CarPlay enabled, idle edits may resume connection
+preparation; disabling CarPlay blocks startup and retries. Endpoint edits require the browser steps above.
+Returning from Advanced settings is navigation only.
 
 CarPlay has no product header over its canvas. Its TiPlay icon returns to the portal while preserving the session;
 the portal returns to the picture without creating a second connection. Connect appears above Disconnect on the portal.
@@ -147,7 +159,7 @@ PCM retains its sample timeline across reordered packets and missing data.
 CarPlay live audio follows the receiver-owned sample/latency anchor reported to the sender;
 buffered music follows its SETRATE anchor and retains backpressure. Neither path substitutes each packet's arrival
 time for its scheduled presentation. Audio resets are per semantic stream, so navigation cannot clear music.
-Video configurations do not clear audio received independently over HTTP. See [media timing contracts](AIRPLAY.md#音画时间与录像校准)
+Video configurations do not clear audio received independently over HTTP. See [media timing contracts](AIRPLAY.md#音画时间与播放策略)
 for mirroring, URL video, clock fallback and discontinuity handling. This scheduling does not compensate physical
 display or speaker output latency. Source presentation to canvas submission is observable; capture to physical
 display latency requires device measurements. A source timestamp describes expected playback, not a known capture

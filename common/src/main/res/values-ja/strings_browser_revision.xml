@@ -22,7 +22,7 @@
     <string name="settings_browser_hotspot_endpoint">ホットスポットのアドレス：%1$s</string>
     <string name="settings_browser_more">その他</string>
     <string name="settings_selected_iphone">iPhone · %1$s</string>
-    <string name="settings_browser_vpn_endpoint_hint">169.254.0.0/16、ポート 1024～65535。アドレスを空欄にすると既定値を使用します。</string>
+    <string name="settings_browser_vpn_endpoint_hint">169.254.0.0/16、ポート 1024～65535。アドレスを空欄にすると既定値を使用します。 変更後はブラウザーの Android アドレスを手動で更新し、「接続」をタップしてください。</string>
     <string name="settings_browser_vpn_endpoint_invalid">169.254.0.0/16 のアドレスとポート（1024～65535）を入力してください。例：169.254.111.111:8080。</string>
     <string name="settings_browser_hotspot_address_explanation">車載ブラウザーからのアクセスと USB 権限を TiPlay が扱う方法を選びます。「標準」は現在のアドレスを使用します。他の方法は異なる権限と制限でアドレスの問題に対処します。</string>
 </resources>

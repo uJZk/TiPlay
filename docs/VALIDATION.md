@@ -1,3 +1,17 @@
+# Validation records
+
+The release sections below preserve dated DiPlay evidence and its original scope;
+their package IDs, defaults and head-unit checks are not current TiPlay contracts.
+TiPlay now supports Android phone + car browser only. For the current build and
+acceptance procedure, see [BUILD.md](BUILD.md) and [TESTING.md](TESTING.md).
+The October 13 media verification and its pending iPhone/vehicle checks are recorded
+in [the media report](BROWSER-MEDIA-2026-10-13.md) and
+[its delivery record](BROWSER-MEDIA-TIE-UP-2026-10-13.md).
+Current browser sessions offer buffered music whenever audio is enabled and use
+Android demand-driven HFP/SCO capture; historical opt-in buffering and native
+microphone descriptions below remain historical evidence.
+
+
 # DiPlay 0.2.19 — 2026-10-12
 
 - The reviewed application baseline, main `f88e67d7` (tree `b5cfeea12c969d91124ca37480d8e90e9519f93a`, after #691), passed the full source workflow: **2,637 unit cases, 2,636 passed and one expected macOS wildcard-bind assumption skip**, zero failures/errors. Counts: 1,409 shared, 1,222 common and six Home. Mobile/Home/map-host debug lint reported zero errors, and all three identity-free debug APK builds passed.

@@ -1,5 +1,13 @@
 # TiPlay 0.2.14-beta.1
 
+This is the dated beta.1 build and delivery record. Upload failures, approval
+blocks and pending steps below belong to their original sessions. The later
+[October 13 delivery record](BROWSER-MEDIA-TIE-UP-2026-10-13.md) records beta.1 as
+published and beta.2 as a prerelease draft; use that handoff instead of resuming
+the old draft/upload steps here. Remote states were not revalidated in this
+documentation review. The official project destinations are now
+https://github.com/uJZk/TiPlay and https://ujzk.github.io/TiPlay/.
+
 This beta targets the Android phone + car browser flow. The Android package is
 `com.ujzk.tiplay`, version code 33, minimum Android 9 (API 28), target API 37.
 It includes the current browser connection/settings/recovery work and the
@@ -71,7 +79,7 @@ Next: upload the exact APK above through the approved path, verify all three
 remote attachments and their hashes, then publish the beta with prerelease true.
 Do not rebuild or change the draft's target commit when resuming this upload.
 
-## Release build workflow follow-up
+## Release build workflow follow-up (historical sequence)
 
 The user subsequently requested a non-debug APK release build workflow.
 `.github/workflows/android-release.yml` builds a signed mobile release with
@@ -125,6 +133,14 @@ Session inputs, logs and deliverables are outside Git in
 `/workspace/release-beta-2026-10-12/`.
 
 Real-car CarPlay, full Bluetooth audio and iPhone AirPlay acceptance remain
-unverified. The AirPlay receiver currently carries video only; it supports
+unverified. The beta.1 AirPlay receiver carried video only; it supports
 neither AirPlay audio nor DRM or HEVC mirroring. Lightweight AirPlay device trust
 is still pending as recorded in [todo.md](todo.md).
+
+Subsequent source supports mirror companion AAC-ELD audio and enabled HEVC
+mirroring, while URL video uses browser Video.js with authenticated proxy or
+direct resources. Standalone audio-only reception and DRM remain unsupported.
+The earlier video-only and read-only-workflow descriptions are superseded;
+`android-release.yml` includes the authorized Contents-write draft job. See
+[AIRPLAY.md](AIRPLAY.md) and [BUILD.md](BUILD.md#github-actions-release-build) for
+current contracts. Historical APK hashes and test totals above are unchanged.
