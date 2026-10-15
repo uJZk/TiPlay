@@ -798,7 +798,7 @@ internal fun nextOperatingRate(requested: Int, used: DecoderAttempt?): Int =
 /**
  * Qualcomm's vendor parameters that make its decoders output each frame as soon as it is decoded, in
  * decode order: without them c2.qti.avc.decoder released a frame only after about two more had been
- * queued (docs/SMOOTH_WIRELESS.md). Empty for other decoders. CarPlay's screen stream has no B-frames,
+ * queued (https://github.com/uJZk/TiPlay/blob/4d03261f9dc915d0acb2cd6f69f7028640da6f04/docs/SMOOTH_WIRELESS.md). Empty for other decoders. CarPlay's screen stream has no B-frames,
  * so decode order is display order.
  */
 internal fun vendorLowLatencyKeys(codecName: String): List<String> =

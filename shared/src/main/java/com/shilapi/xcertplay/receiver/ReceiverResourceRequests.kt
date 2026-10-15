@@ -9,6 +9,7 @@ import java.util.concurrent.TimeoutException
 internal class ReceiverResourceRequests(
     private val timeoutNanos: Long = TimeUnit.SECONDS.toNanos(30),
     private val maximumPending: Int = 16,
+    private val exchangeTimeoutNanos: Long = TimeUnit.SECONDS.toNanos(10),
     private val nowNanos: () -> Long = System::nanoTime,
 ) {
     class Pending(val id: Long, val session: String, val peer: InetAddress, val url: String,
@@ -18,13 +19,16 @@ internal class ReceiverResourceRequests(
     data class Acquisition(val pending: Pending, val created: Boolean)
 
     private val requests = linkedMapOf<Long, Pending>()
-    private val dispatched = hashSetOf<Long>()
+    private val dispatched = hashMapOf<Long, Long>()
     private var nextId = 0L
 
-    init { require(timeoutNanos > 0 && maximumPending > 0) }
+    init { require(timeoutNanos > 0 && maximumPending > 0 && exchangeTimeoutNanos > 0) }
 
     @Synchronized fun acquire(session: String, peer: InetAddress, url: String): Acquisition? {
-        requests.values.filter { remainingNanos(it) == 0L }.forEach(::expire)
+        // Sharing applies only to concurrent in-flight loads. A completed live playlist is never a cache.
+        requests.values.filter { it.future.isDone || remainingNanos(it) == 0L }.forEach {
+            if (it.future.isDone) remove(it) else expire(it)
+        }
         requests.values.firstOrNull { it.session == session && it.peer == peer && it.url == url }?.let {
             return Acquisition(it, false)
         }
@@ -44,15 +48,25 @@ internal class ReceiverResourceRequests(
     @Synchronized fun nextToDispatch(session: String, peer: InetAddress): Pending? {
         requests.values.filter { remainingNanos(it) == 0L }.forEach(::expire)
         if (requests.values.any { it.id in dispatched && !it.future.isDone }) return null
-        val pending = requests.values.firstOrNull {
+        val pending = requests.values.filter {
             it.session == session && it.peer == peer && it.id !in dispatched && !it.future.isDone
+        }.minByOrNull { request ->
+            val path = request.url.substringBefore('?').lowercase()
+            when {
+                path.endsWith(".m3u8") || path.endsWith(".m3u") -> 0
+                path.endsWith(".key") || path.endsWith(".vtt") -> 1
+                else -> 2
+            }
         } ?: return null
-        dispatched += pending.id
+        dispatched[pending.id] = nowNanos()
         return pending
     }
 
-    fun remainingNanos(pending: Pending): Long =
-        (timeoutNanos - (nowNanos() - pending.startedNanos)).coerceAtLeast(0)
+    @Synchronized fun remainingNanos(pending: Pending): Long {
+        val overall = timeoutNanos - (nowNanos() - pending.startedNanos)
+        val exchange = dispatched[pending.id]?.let { exchangeTimeoutNanos - (nowNanos() - it) } ?: Long.MAX_VALUE
+        return minOf(overall, exchange).coerceAtLeast(0)
+    }
 
     /** A queued loader also wakes when an abandoned in-flight exchange reaches its deadline. */
     @Synchronized fun waitNanos(pending: Pending): Long =
@@ -60,12 +74,12 @@ internal class ReceiverResourceRequests(
             .fold(remainingNanos(pending)) { wait, active -> minOf(wait, remainingNanos(active)) }
 
     @Synchronized fun remove(pending: Pending) {
-        if (requests.remove(pending.id, pending)) dispatched -= pending.id
+        if (requests.remove(pending.id, pending)) dispatched.remove(pending.id)
     }
 
     @Synchronized fun expire(pending: Pending) {
         if (requests.remove(pending.id, pending)) {
-            dispatched -= pending.id
+            dispatched.remove(pending.id)
             pending.future.completeExceptionally(TimeoutException())
         }
     }

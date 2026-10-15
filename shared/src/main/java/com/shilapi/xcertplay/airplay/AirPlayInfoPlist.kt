@@ -26,8 +26,12 @@ object AirPlayInfoPlist {
     private const val CONSTRAINT_ANYTIME = 100
 
     /** Discovery and /info must describe the same receiver capabilities. */
-    fun features(config: AirPlayConfig): Long =
-        if (config.disableAudioOutput) CARPLAY_FEATURES_NO_AUDIO else CARPLAY_FEATURES
+    fun features(config: AirPlayConfig): Long {
+        var features = if (config.disableAudioOutput) CARPLAY_FEATURES_NO_AUDIO else CARPLAY_FEATURES
+        if (!config.metadataArtworkEnabled) features = features and (1L shl 15).inv()
+        if (!config.metadataTextEnabled) features = features and (1L shl 17).inv()
+        return features
+    }
 
     fun build(config: AirPlayConfig): Map<String, Any?> {
         val displays = arrayListOf<Any?>(

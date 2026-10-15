@@ -13,6 +13,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 class ReceiverVideoPropertiesTest {
     private class Listener : ReceiverServer.Listener {
+        override fun authorizeDevice(verifiedPublicKey: ByteArray?, deviceName: String) = true
+        override fun authorizeConnection(sessionToken: String, deviceName: String) = true
         val actions = CopyOnWriteArrayList<String>()
         override fun mirrorSink() = WebMediaSink(WebVideoHub(), 1920, 1080, 60)
         override fun play(item: ReceiverPlay) { actions.add("play") }
@@ -45,8 +47,8 @@ class ReceiverVideoPropertiesTest {
         try {
             connect(receiver.port).use { control ->
                 play(control)
-                val hints = listOf("actionAtItemEnd", "selectedMediaArray", "reverseEndTime", "forwardEndTime",
-                    "interstitialEvents", "textMarkupArray", "isInterestedInDateRange")
+                val hints = listOf("actionAtItemEnd", "reverseEndTime", "forwardEndTime",
+                    "interstitialEvents", "isInterestedInDateRange")
                 for (hint in hints) {
                     val reply = control.request("PUT", "/setProperty?$hint", BplistCodec.encode(mapOf("value" to 80)))
                     assertEquals(hint, "200", reply.path)
@@ -54,7 +56,14 @@ class ReceiverVideoPropertiesTest {
                     assertTrue(reply.body.toString(Charsets.UTF_8).contains("<key>errorCode</key><integer>0</integer>"))
                 }
                 assertEquals(listOf("play"), listener.actions.toList())
-                for (path in listOf("/getProperty?duration", "/getProperty?unrecognized")) {
+                for (property in listOf("selectedMediaArray", "textMarkupArray")) {
+                    val reply = control.request("PUT", "/setProperty?$property", BplistCodec.encode(mapOf("value" to emptyList<Any>())))
+                    assertEquals("200", reply.path)
+                    assertTrue(reply.body.toString(Charsets.UTF_8).contains("<integer>-1</integer>"))
+                }
+                val duration = control.request("POST", "/getProperty?duration")
+                assertTrue(duration.body.toString(Charsets.UTF_8).contains("<key>value</key><real>120.0</real>"))
+                for (path in listOf("/getProperty?unrecognized")) {
                     val reply = control.request("POST", path)
                     assertEquals("200", reply.path)
                     assertEquals(0, reply.body.size)
@@ -70,6 +79,16 @@ class ReceiverVideoPropertiesTest {
                 assertEquals(listOf("play"), listener.actions.toList())
             }
         } finally { receiver.close() }
+    }
+
+    @Test fun mediaMutationsAreAppliedAndReadsReflectThePlayer() {
+        val changes = mutableListOf<Pair<String, Any?>>()
+        val request = com.shilapi.xcertplay.airplay.RtspMessage.Request("PUT", "/setProperty?selectedMediaArray", "HTTP/1.1",
+            emptyMap(), BplistCodec.encode(mapOf("value" to listOf(mapOf("type" to "audio", "index" to 1)))))
+        val response = ReceiverVideoProperties.response(request, apply = { property, value -> changes += property to value; true })
+        assertEquals("selectedMediaArray", changes.single().first)
+        assertTrue(changes.single().second is List<*>)
+        assertTrue(response.body.toString(Charsets.UTF_8).contains("<integer>0</integer>"))
     }
 
     @Test fun absoluteHttpTargetsKeepScrubAndPropertyRequestsOnTheOrdinaryVideoPath() {

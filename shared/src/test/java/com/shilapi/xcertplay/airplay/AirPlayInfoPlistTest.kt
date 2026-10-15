@@ -9,6 +9,27 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AirPlayInfoPlistTest {
+    @Test fun phoneBrowserClearsMusicTextAndArtworkWithoutDisablingProgressOrCarPlay() {
+        val base = AirPlayConfig("test", "02:00:00:00:00:02", "02:00:00:00:00:02", "366.0", AirPlayDisplayConfig(1280, 720))
+        val disabled = base.copy(metadataArtworkEnabled = false, metadataTextEnabled = false)
+        val features = AirPlayInfoPlist.features(disabled)
+        for (bit in listOf(3, 15, 17)) assertEquals(0L, features and (1L shl bit))
+        for (bit in listOf(16, 32)) assertTrue(features and (1L shl bit) != 0L)
+        assertEquals(AirPlayInfoPlist.features(base) and ((1L shl 15) or (1L shl 17)).inv(), features)
+    }
+
+    @Test fun artworkCanBeDisabledWithoutLosingCarPlayIdentityOrTextAndProgress() {
+        val config = AirPlayConfig("test", "02:00:00:00:00:02", "02:00:00:00:00:02", "366.0",
+            AirPlayDisplayConfig(1280, 720))
+        val native = AirPlayInfoPlist.features(config)
+        val browser = AirPlayInfoPlist.features(config.copy(metadataArtworkEnabled = false))
+        assertTrue(native and (1L shl 15) != 0L)
+        assertEquals(0L, browser and (1L shl 15))
+        assertEquals(native and (1L shl 15).inv(), browser)
+        for (bit in listOf(16, 17, 32)) assertTrue(browser and (1L shl bit) != 0L)
+        assertEquals(browser, AirPlayInfoPlist.build(config.copy(metadataArtworkEnabled = false))["features"])
+    }
+
     @Test
     fun bothDisplaysDeclareAutomaticAppearanceAtConnection() {
         val config = AirPlayConfig(

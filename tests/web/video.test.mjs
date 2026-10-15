@@ -34,6 +34,33 @@ const config = (epoch, mode = 'carplay') => encodeRecord({
 const keyFrame = epoch => encodeRecord({ kind: RECORD.FRAME, flags: FLAG.KEY, codec: 1, epoch, payload: Uint8Array.of(0, 0, 0, 1, 0x65) });
 const videoFrame = timestamp => ({ timestamp, closed: false, close() { this.closed = true; } });
 
+test('AirPlay mirror rejects decoded PQ/HLG frames before presentation and preserves CarPlay compatibility', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; FakeDecoder.instances = []; FakeDecoder.gate = null; });
+  const messages = [], presented = [], pipeline = createDecoderPipeline({ post: message => messages.push(message), present: frame => presented.push(frame) });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(15, new ReadableStream({ start(value) { controller = value; } }));
+  for (const [epoch, transfer] of [[1, 'pq'], [2, 'hlg']]) {
+    controller.enqueue(config(epoch, 'airplay-mirror')); controller.enqueue(keyFrame(epoch)); await settle();
+    const decoder = FakeDecoder.instances.at(-1), frame = { ...videoFrame(0), colorSpace: { transfer, primaries: 'bt2020' } };
+    decoder.output(frame);
+    assert.equal(frame.closed, true); assert.equal(decoder.state, 'closed'); assert.equal(pipeline.stats().codecSupported, false);
+    assert.equal(presented.length, 0); assert.equal(messages.at(-1).reason, 'hdr'); assert.match(messages.at(-1).detail, /SDR/);
+    const late = videoFrame(1); decoder.output(late); assert.equal(late.closed, true);
+  }
+  controller.enqueue(config(3, 'airplay-mirror')); controller.enqueue(keyFrame(3)); await settle();
+  const sdr = { ...videoFrame(0), colorSpace: { transfer: 'bt709' } }; FakeDecoder.instances.at(-1).output(sdr);
+  assert.equal(presented[0], sdr); assert.equal(sdr.closed, false);
+  controller.enqueue(config(4, 'carplay')); controller.enqueue(keyFrame(4)); await settle();
+  const retained = { ...videoFrame(0), colorSpace: { transfer: 'pq' } }; FakeDecoder.instances.at(-1).output(retained);
+  assert.equal(presented[1], retained); assert.equal(retained.closed, false);
+  assert.equal(messages.filter(message => message.type === 'unsupported').length, 2);
+});
+
 test('late output of the previous decoder is not drawn or reported as the new epoch', async t => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   globalThis.VideoDecoder = FakeDecoder;
@@ -273,7 +300,7 @@ test('canvas submission reports an early source presentation as a signed offset'
   const stats = presenter.stats();
   assert.equal(stats.presentationOffsetSamples, 1);
   assert.ok(stats.presentationOffset90 < 0 && stats.presentationOffset90 >= -40);
-  assert.equal(stats.currentDelta, stats.presentationOffset90, 'single submitted frame is the current Delta');
+  assert.ok(Math.abs(stats.currentDelta - stats.presentationOffset90) < 1e-9, 'single submitted frame is the current Delta within floating-point precision');
   presenter.dispose();
 });
 

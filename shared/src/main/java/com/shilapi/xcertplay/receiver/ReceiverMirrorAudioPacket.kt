@@ -6,7 +6,7 @@ import javax.crypto.spec.SecretKeySpec
 
 /** Legacy mirror RTP uses per-packet AES-CBC, with its final partial block left clear (UxPlay raop_buffer). */
 internal object ReceiverMirrorAudioPacket {
-    fun decrypt(packet: ByteArray, key: ByteArray, iv: ByteArray): ByteArray? {
+    fun decrypt(packet: ByteArray, key: ByteArray, iv: ByteArray, filterNoData: Boolean = true): ByteArray? {
         if (key.size != 16 || iv.size != 16 || packet.size < 12 ||
             packet[0].toInt() and 0xc0 != 0x80 || packet[1].toInt() and 0x7f != 0x60) return null
         var offset = 12 + (packet[0].toInt() and 0x0f) * 4
@@ -29,21 +29,8 @@ internal object ReceiverMirrorAudioPacket {
         if (packet[0].toInt() and 0x20 != 0) {
             val padding = output.last().toInt() and 0xff
             if (padding !in 1..output.size) return null
-            return output.copyOf(output.size - padding)
+            return output.copyOf(output.size - padding).takeUnless { filterNoData && it.contentEquals(byteArrayOf(0, 0x68, 0x34, 0)) }
         }
-        return output
-    }
-}
-
-data class ReceiverMirrorAudioFormat(val codec: Int, val sampleRate: Int, val channels: Int) {
-    companion object {
-        fun parse(stream: Map<*, *>): ReceiverMirrorAudioFormat? {
-            val codec = (stream["ct"] as? Number)?.toInt() ?: 0
-            if (codec != 8) return null // ALAC requires a separate portable decoder; do not misdecode it as AAC.
-            val rate = (stream["sr"] as? Number)?.toInt() ?: 44100
-            val channels = (stream["ch"] as? Number)?.toInt() ?: 2
-            if (rate != 44100 || channels != 2) return null
-            return ReceiverMirrorAudioFormat(codec, rate, channels)
-        }
+        return output.takeUnless { filterNoData && it.contentEquals(byteArrayOf(0, 0x68, 0x34, 0)) }
     }
 }

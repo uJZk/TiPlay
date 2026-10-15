@@ -18,6 +18,9 @@ class ReceiverPairing(private val identity: AirPlayIdentity) {
     private var pendingSecret: ByteArray? = null
     var sharedSecret: ByteArray? = null
         private set
+    private var verifiedSigning: ByteArray? = null
+    /** Identity proven by the peer's Ed25519 signature, never by its advertised name or address. */
+    val verifiedPublicKey: ByteArray? get() = verifiedSigning?.copyOf()
 
     fun setup(body: ByteArray): ByteArray {
         clearState()
@@ -58,6 +61,7 @@ class ReceiverPairing(private val identity: AirPlayIdentity) {
         val signature = cipher.update(body.copyOfRange(4, 68))
         exchange = null
         require(AirPlayCrypto.ed25519Verify(requireNotNull(peerSigning), requireNotNull(peerCurve) + requireNotNull(ownCurve), signature))
+        verifiedSigning = requireNotNull(peerSigning).copyOf()
         sharedSecret = requireNotNull(pendingSecret).copyOf()
         clearEphemeral()
         return ByteArray(0)
@@ -66,6 +70,7 @@ class ReceiverPairing(private val identity: AirPlayIdentity) {
     private fun clearState() {
         sharedSecret?.fill(0)
         sharedSecret = null
+        verifiedSigning = null
         clearEphemeral()
     }
 

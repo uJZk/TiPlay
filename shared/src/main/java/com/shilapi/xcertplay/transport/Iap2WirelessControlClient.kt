@@ -19,6 +19,8 @@ import kotlin.math.min
 class Iap2WirelessControlClient(
     private val session: Iap2Session,
     private val mfi: Iap2MfiAuthenticationClient,
+    private val receiveArtwork: Boolean = true,
+    private val receiveText: Boolean = true,
 ) {
     fun run(
         identification: Iap2IdentificationConfig,
@@ -55,7 +57,7 @@ class Iap2WirelessControlClient(
         stage = Iap2WirelessControlStage.AUTHENTICATED
         onProgress("iap2 authentication accepted")
 
-        for (subscription in Iap2WiredControlClient.subscriptions()) {
+        for (subscription in Iap2WiredControlClient.subscriptions(receiveArtwork, receiveText)) {
             session.send(subscription, deadline.requireRemaining())
         }
         stage = Iap2WirelessControlStage.SUBSCRIBED

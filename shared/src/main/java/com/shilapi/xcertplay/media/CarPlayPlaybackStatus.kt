@@ -21,7 +21,7 @@ data class CarPlayNowPlaying(
  * what changed, so an omitted field preserves its previous value while a present empty string
  * clears it.
  */
-class CarPlayPlaybackStatus {
+class CarPlayPlaybackStatus(private val includeText: Boolean = true, private val includeArtwork: Boolean = true) {
     @Volatile var nowPlaying = CarPlayNowPlaying()
         private set
 
@@ -35,11 +35,11 @@ class CarPlayPlaybackStatus {
         val playback = runCatching { body.optionalGroup(PLAYBACK) }.getOrNull()
         val previous = nowPlaying
         val next = previous.copy(
-            title = media.updatedString(TITLE, previous.title),
-            album = media.updatedString(ALBUM, previous.album),
-            artist = media.updatedString(ARTIST, previous.artist),
-            artworkTransferId = media.updatedU8(ARTWORK_TRANSFER_ID, previous.artworkTransferId),
-            sourceApp = playback.updatedString(SOURCE_APP, previous.sourceApp),
+            title = if (includeText) media.updatedString(TITLE, previous.title) else null,
+            album = if (includeText) media.updatedString(ALBUM, previous.album) else null,
+            artist = if (includeText) media.updatedString(ARTIST, previous.artist) else null,
+            artworkTransferId = if (includeArtwork) media.updatedU8(ARTWORK_TRANSFER_ID, previous.artworkTransferId) else null,
+            sourceApp = if (includeText) playback.updatedString(SOURCE_APP, previous.sourceApp) else null,
             durationMillis = media.updatedU32(DURATION, previous.durationMillis),
             elapsedMillis = playback.updatedU32(ELAPSED, previous.elapsedMillis),
             playing = playback.updatedStatus(previous.playing),

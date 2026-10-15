@@ -131,11 +131,11 @@ test('oversized and encrypted subtitle resources report track errors without sto
   assert.equal(errors.length, count);
   const master = 'https://media.test/master.m3u8', playlist = 'https://media.test/encrypted.m3u8';
   const encrypted = harness(t, new Map([[master, '#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,NAME="Text",DEFAULT=YES,URI="encrypted.m3u8"\n'],
-    [playlist, '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key"\n#EXTINF:2,\ntext.vtt\n#EXT-X-ENDLIST\n'],
+    [playlist, '#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI="key"\n#EXTINF:2,\ntext.vtt\n#EXT-X-ENDLIST\n'],
   ]));
   await encrypted.subtitles.load(master, 'application/x-mpegurl');
   await until(() => encrypted.subtitles.tracks[0].error);
-  assert.match(encrypted.subtitles.tracks[0].error.message, /Encrypted/);
+  assert.match(encrypted.subtitles.tracks[0].error.message, /encryption scheme/);
   encrypted.subtitles.update(1);
   assert.equal(encrypted.requests.length, 2);
 });

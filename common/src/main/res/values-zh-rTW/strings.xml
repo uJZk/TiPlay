@@ -575,7 +575,7 @@
     <string name="center_map_usage_missing">使用情況存取權：未允許，因此資訊卡會顯示在所有應用程式上層。透過 ADB：adb shell appops set %1$s GET_USAGE_STATS allow</string>
     <string name="center_map_no_permission_screen">此車機沒有該權限的設定介面，請透過 ADB 允許。</string>
     <string name="launcher_map_sharing">與其他啟動器共用即時地圖</string>
-    <string name="launcher_map_sharing_description">支援 TiPlay 的啟動器可以在自己的主螢幕中顯示即時儀表板地圖。預設關閉，因為開啟後車機上的任何App都可以請求該地圖。詳見 docs/LAUNCHER_INTEGRATION.md。</string>
+    <string name="launcher_map_sharing_description">支援 TiPlay 的啟動器可以在自己的主螢幕中顯示即時儀表板地圖。預設關閉，因為開啟後車機上的任何App都可以請求該地圖。詳見 https://github.com/uJZk/TiPlay/blob/4d03261f9dc915d0acb2cd6f69f7028640da6f04/docs/LAUNCHER_INTEGRATION.md。</string>
     <string name="adb_cluster_activity_label">儀表地圖</string>
     <string name="adb_cluster_activity_mode">DiLink 4 儀表影片（ADB，實驗性）</string>
     <string name="adb_cluster_activity_description">透過內建ADB直接在已驗證儀表副螢幕啟動地圖。請先授權ADB，再重新連線iPhone。</string>
@@ -886,4 +886,6 @@
     <string name="settings_mfi_target_description">只有車機上插著 CH341 認證轉接器時才選擇 USB/CH341。沒有轉接器時請選擇「本機離線」。下次連線時生效。</string>
     <string name="settings_call_speakerphone">通話使用揚聲器</string>
     <string name="settings_call_speakerphone_description">適用於當作車機的 Android 手機或平板：CarPlay 通話從揚聲器播放而不是聽筒，並使用免持麥克風。車機上請保持關閉。從下一次通話開始生效。</string>
+    <string name="settings_forget_airplay_devices">忘記所有可信 AirPlay 裝置</string>
+    <string name="settings_airplay_devices_forgotten">已忘記所有可信 AirPlay 裝置</string>
 </resources>

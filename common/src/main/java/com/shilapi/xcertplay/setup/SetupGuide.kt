@@ -19,7 +19,7 @@ object SetupGuide {
 
     data class Entry(val feature: Feature, val status: Status, val needsAdb: Boolean)
 
-    /** Claims follow docs/COMPATIBILITY.md: community reports, not a certified support list. */
+    /** Claims follow https://github.com/uJZk/TiPlay/blob/4d03261f9dc915d0acb2cd6f69f7028640da6f04/docs/COMPATIBILITY.md: community reports, not a certified support list. */
     fun features(generation: DiLinkGeneration): List<Entry> {
         fun entry(feature: Feature, status: Status, needsAdb: Boolean = false) = Entry(feature, status, needsAdb)
         val dilink3 = generation == DiLinkGeneration.DILINK_3

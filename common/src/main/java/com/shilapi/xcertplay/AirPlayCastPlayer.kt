@@ -1,253 +1,172 @@
 package com.shilapi.xcertplay
 
-import android.media.MediaCodec
-import android.media.MediaCodecInfo
-import android.media.MediaFormat
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import com.shilapi.xcertplay.airplay.VideoCodec
-import com.shilapi.xcertplay.receiver.ReceiverAvc
 import com.shilapi.xcertplay.receiver.ReceiverPlay
 import com.shilapi.xcertplay.receiver.ReceiverPlayback
 import com.shilapi.xcertplay.receiver.ReceiverResource
-import com.shilapi.xcertplay.web.WebMediaSink
 import com.shilapi.xcertplay.web.AirPlayBrowserPlayback
 import com.shilapi.xcertplay.web.AirPlayVideoPlayback
-import com.shilapi.xcertplay.media.MediaCodecSupport
+import com.shilapi.xcertplay.web.AirPlayPhotoPlayback
 import java.io.Closeable
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
-/** URL video is proxied to the browser. Only still photos use the canvas encoder. */
+/** URL media and original still images are decoded by the browser, without Android re-encoding. */
 internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResource?,
-                                private val stateChanged: (String) -> Unit) : Closeable {
+                                private val stateChanged: (String, Long) -> Unit) : Closeable {
     private val main = Handler(Looper.getMainLooper())
     private val diagnostics = AirPlayVideoDiagnostics {
         Log.i("tiplay-airplay", it)
         TeslaBrowserLink.persistDiagnostic(it)
     }
     @Volatile private var browserVideo: AirPlayVideoPlayback? = null
-    @Volatile private var video: EncodedVideo? = null
-    private var photoFrames: AirPlayPhotoFrames? = null
-    @Volatile private var generation = 0L
-    val playbackEpoch: Long get() = generation
-    private var closed = false
+    @Volatile private var browserPhoto: AirPlayPhotoPlayback? = null
+    @Volatile private var audioActive = false
+    @Volatile private var activeGeneration = 0L
     private val outputLock = Any()
     @Volatile private var outputAllowed = false
-    private data class QueuedSeek(val playback: AirPlayVideoPlayback, val token: Long)
+    private val requests = AtomicLong()
+    private val generation: Long get() = requests.get()
+    val playbackEpoch: Long get() = generation
+    @Volatile private var closed = false
+    private fun live(token: Long) = !closed && generation == token
+    private data class QueuedSeek(val playback: AirPlayVideoPlayback, val token: Long, val epoch: Long)
     private var iphoneSeekRequest: QueuedSeek? = null // main thread
     private val iphoneSeek = AirPlaySeekCoalescer(
         schedule = { task, delay -> main.postDelayed(task, delay) }, cancelScheduled = main::removeCallbacks,
     ) { seconds ->
         if (!closed) iphoneSeekRequest?.let { request ->
-            if (browserVideo === request.playback && request.playback.dispatchQueuedSeek(request.token)) {
+            if (live(request.epoch) && browserVideo === request.playback && request.playback.dispatchQueuedSeek(request.token)) {
                 diagnostics.control(AirPlayVideoDiagnostics.ControlSource.IPHONE, "seek", seconds, generation)
             }
         }
     }
     private var browserControls: Closeable? = null
-    val state: ReceiverPlayback get() = browserVideo?.receiverPlayback() ?: ReceiverPlayback()
-
-    fun play(item: ReceiverPlay) = main.post {
-        if (closed) return@post
-        stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED)
-        val token = generation
-        val playback = AirPlayVideoPlayback(item, resource) { event -> main.post {
-            if (!closed && generation == token) {
-                if (event == "stopped" || event == "failed") stopNow(
-                    if (event == "failed") AirPlayVideoDiagnostics.StopReason.BROWSER_FAILED else AirPlayVideoDiagnostics.StopReason.BROWSER_ENDED,
-                )
-                stateChanged(event)
-            }
-        } }
-        synchronized(outputLock) {
-            browserVideo = playback
-            playback.setOutputAllowed(outputAllowed)
-        }
-        browserControls = AirPlayBrowserPlayback.register(state = playback::state, video = playback,
-            control = { action, value -> main.post {
-                if (!closed && generation == token) {
-                    diagnostics.control(AirPlayVideoDiagnostics.ControlSource.BROWSER, action, value, generation)
-                    if (action == "stop") { stopNow(AirPlayVideoDiagnostics.StopReason.BROWSER_STOP); stateChanged("stopped") }
-                    else {
-                        if (action == "seek") { iphoneSeek.cancel(); iphoneSeekRequest = null }
-                        playback.control(action, value)
-                    }
-                }
-            } })
-        stateChanged("loading")
+    val state: ReceiverPlayback get() {
+        val epoch = generation
+        if (activeGeneration != epoch) return ReceiverPlayback(buffering = true)
+        val current = browserVideo?.receiverPlayback() ?: ReceiverPlayback(ready = browserPhoto != null || audioActive)
+        return if (generation == epoch && activeGeneration == epoch) current else ReceiverPlayback(buffering = true)
     }
 
-    fun photo(bytes: ByteArray) = main.post {
-        if (closed) return@post
-        stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED)
-        val token = generation
-        browserControls = AirPlayBrowserPlayback.register(state = {
-            AirPlayBrowserPlayback.State(0.0, 0.0, false, true, false, false, "photo", outputAllowed = outputAllowed)
-        }, control = { action, _ -> if (action == "stop") main.post {
-            if (!closed && generation == token) {
-                diagnostics.control(AirPlayVideoDiagnostics.ControlSource.BROWSER, "stop", null, generation)
-                stopNow(AirPlayVideoDiagnostics.StopReason.BROWSER_STOP); stateChanged("stopped")
-            }
-        } })
-        val failure: (Exception) -> Unit = { error -> main.post {
-            if (!closed && generation == token) { diagnostics.failure(AirPlayVideoDiagnostics.Stage.PREPARE, error); fail() }
-        } }
-        try {
-            val encoded = EncodedVideo(diagnostics, ready = { surface -> main.post {
-                if (!closed && generation == token) photoFrames = AirPlayPhotoFrames(surface, bytes, failure)
-            } }, failed = failure)
+    fun play(item: ReceiverPlay): Boolean {
+        val token = requests.incrementAndGet()
+        return main.post {
+            if (!live(token)) return@post
+            stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED, token)
+            val playback = AirPlayVideoPlayback(item, resource) { event -> main.post {
+                if (live(token)) {
+                    if (event == "stopped" || event == "failed") stopNow(
+                        if (event == "failed") AirPlayVideoDiagnostics.StopReason.BROWSER_FAILED else AirPlayVideoDiagnostics.StopReason.BROWSER_ENDED, token,
+                    )
+                    stateChanged(event, token)
+                }
+            } }
             synchronized(outputLock) {
-                video = encoded
-                encoded.setOutputAllowed(outputAllowed)
+                browserVideo = playback
+                playback.setOutputAllowed(outputAllowed)
             }
-        } catch (error: Exception) { failure(error) }
+            activeGeneration = token
+            browserControls = AirPlayBrowserPlayback.register(state = playback::state, video = playback,
+                control = { action, value -> main.post {
+                    if (live(token)) {
+                        diagnostics.control(AirPlayVideoDiagnostics.ControlSource.BROWSER, action, value, generation)
+                        if (action == "stop") { stopNow(AirPlayVideoDiagnostics.StopReason.BROWSER_STOP, token); stateChanged("stopped", token) }
+                        else {
+                            if (action == "seek") { iphoneSeek.cancel(); iphoneSeekRequest = null }
+                            playback.control(action, value)
+                        }
+                    }
+                } })
+            stateChanged("loading", token)
+        }
+    }
+
+    fun photo(bytes: ByteArray): Boolean {
+        val token = requests.incrementAndGet()
+        return main.post {
+            if (!live(token)) return@post
+            stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED, token)
+            val photo = AirPlayPhotoPlayback(bytes).also { browserPhoto = it }
+            browserControls = AirPlayBrowserPlayback.register(state = {
+                AirPlayBrowserPlayback.State(0.0, 0.0, false, true, false, false, "photo", outputAllowed = outputAllowed)
+            }, photo = photo, control = { action, _ -> if (action == "stop") main.post {
+                if (live(token)) {
+                    diagnostics.control(AirPlayVideoDiagnostics.ControlSource.BROWSER, "stop", null, generation)
+                    stopNow(AirPlayVideoDiagnostics.StopReason.BROWSER_STOP, token); stateChanged("stopped", token)
+                }
+            } })
+            activeGeneration = token
+            stateChanged("photo", token)
+        }
     }
 
     fun seek(seconds: Double) {
+        val epoch = generation
+        if (activeGeneration != epoch) return
         val playback = browserVideo ?: return
         val token = playback.queueSeek(seconds) ?: return
         main.post {
-            if (!closed && browserVideo === playback) {
-                iphoneSeekRequest = QueuedSeek(playback, token)
+            if (live(epoch) && browserVideo === playback) {
+                iphoneSeekRequest = QueuedSeek(playback, token, epoch)
                 iphoneSeek.request(seconds)
             }
         }
     }
-    fun rate(value: Double) = main.post {
-        if (closed || !ReceiverPlayback.supportsRate(value)) return@post
-        browserVideo?.let { playback ->
-            diagnostics.control(AirPlayVideoDiagnostics.ControlSource.IPHONE, "rate", value, generation)
-            playback.control("rate", value)
+    fun audio(afterReady: () -> Unit = {}, stop: () -> Unit): Boolean {
+        val token = requests.incrementAndGet()
+        return main.post {
+            if (!live(token)) return@post
+            stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED, token)
+            audioActive = true
+            browserControls = AirPlayBrowserPlayback.register(state = {
+                AirPlayBrowserPlayback.State(0.0, 0.0, true, true, false, false, "audio")
+            }, control = { action, _ -> if (action == "stop") main.post {
+                if (live(token)) { stopNow(AirPlayVideoDiagnostics.StopReason.BROWSER_STOP, token); stop() }
+            } })
+            activeGeneration = token
+            afterReady()
+        }
+    }
+
+    fun videoProperty(property: String, value: Any?): Boolean =
+        if (activeGeneration == generation) browserVideo?.property(property, value) ?: false else false
+
+    fun rate(value: Double): Boolean {
+        if (!ReceiverPlayback.supportsRate(value)) return false
+        val request = generation
+        val playback = browserVideo ?: return false
+        return main.post {
+            if (live(request) && activeGeneration == request && browserVideo === playback) {
+                diagnostics.control(AirPlayVideoDiagnostics.ControlSource.IPHONE, "rate", value, request)
+                playback.control("rate", value)
+            }
         }
     }
     fun setOutputAllowed(allowed: Boolean) = synchronized(outputLock) {
-        // The hub must release a photo before the resource worker resumes CarPlay.
-        // Codec/config callbacks use WebMediaSink's own monitor and remain owner-specific.
         outputAllowed = allowed
         browserVideo?.setOutputAllowed(allowed)
-        video?.setOutputAllowed(allowed)
     }
-    fun stop(afterStop: () -> Unit = {}) = main.post { stopNow(AirPlayVideoDiagnostics.StopReason.RECEIVER_STOP); afterStop() }
-    private fun fail() { stopNow(AirPlayVideoDiagnostics.StopReason.PHOTO_FAILED); stateChanged("failed") }
-    private fun stopNow(reason: AirPlayVideoDiagnostics.StopReason) {
-        if (browserControls != null || browserVideo != null || photoFrames != null || video != null) diagnostics.stopped(reason, generation)
+
+    fun stop(afterStop: () -> Unit = {}): Boolean {
+        val token = requests.incrementAndGet()
+        return main.post { if (live(token)) { stopNow(AirPlayVideoDiagnostics.StopReason.RECEIVER_STOP, token); afterStop() } }
+    }
+    private fun stopNow(reason: AirPlayVideoDiagnostics.StopReason, token: Long = generation) {
+        if (browserControls != null || browserVideo != null || browserPhoto != null) diagnostics.stopped(reason, generation)
         iphoneSeek.cancel()
         iphoneSeekRequest = null
         browserControls?.close(); browserControls = null
         browserVideo?.close(); browserVideo = null
-        generation++
-        photoFrames?.close(); photoFrames = null
-        video?.close(); video = null
+        browserPhoto?.close(); browserPhoto = null
+        audioActive = false
+        activeGeneration = token
     }
     override fun close() {
-        if (Looper.myLooper() == main.looper) { closed = true; stopNow(AirPlayVideoDiagnostics.StopReason.SHUTDOWN) }
-        else main.post { closed = true; stopNow(AirPlayVideoDiagnostics.StopReason.SHUTDOWN) }
+        closed = true; requests.incrementAndGet()
+        if (Looper.myLooper() == main.looper) stopNow(AirPlayVideoDiagnostics.StopReason.SHUTDOWN)
+        else main.post { stopNow(AirPlayVideoDiagnostics.StopReason.SHUTDOWN) }
     }
 
-    private class EncodedVideo(private val diagnostics: AirPlayVideoDiagnostics,
-                               ready: (android.view.Surface) -> Unit,
-                               private val failed: (Exception) -> Unit) : Closeable {
-        private val stopped = AtomicBoolean(false)
-        private val closing = AtomicBoolean(false)
-        private val sink = WebMediaSink(TeslaBrowserLink.hub, 1280, 720, 30,
-            com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY,
-            com.shilapi.xcertplay.web.BrowserPlaybackMode.AIRPLAY_MIRROR)
-        private val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-        private val surface: android.view.Surface
-        private val bridge: AirPlayVideoSurfaceBridge
-        private val thread: Thread
-        private val timelineLock = Any()
-
-        init {
-            sink.pauseDisplay()
-            var allocatedSurface: android.view.Surface? = null
-            try {
-                val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1280, 720).apply {
-                    setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                    setInteger(MediaFormat.KEY_BIT_RATE, 6_000_000)
-                    setInteger(MediaFormat.KEY_FRAME_RATE, 30)
-                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-                }
-                encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-                surface = encoder.createInputSurface().also { allocatedSurface = it }
-                encoder.start()
-                diagnostics.stage(AirPlayVideoDiagnostics.Stage.ENCODER_READY)
-            } catch (error: Exception) { allocatedSurface?.release(); encoder.release(); sink.close(); throw error }
-            sink.setVideoRecoveryHandler(110) {
-                if (!closing.get()) runCatching {
-                    encoder.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) })
-                }
-            }
-            sink.onScreenStreamActive(110, true)
-            bridge = try { AirPlayVideoSurfaceBridge(surface, 1280, 720, ready, failed) }
-            catch (error: Exception) {
-                sink.close(); runCatching { encoder.stop() }; encoder.release(); surface.release(); throw error
-            }
-            thread = Thread(::drain, "tiplay-airplay-cast-encoder").apply { isDaemon = true; start() }
-        }
-
-        private fun drain() {
-            val info = MediaCodec.BufferInfo()
-            var frames = 0L
-            try {
-                while (!stopped.get()) {
-                    val index = encoder.dequeueOutputBuffer(info, 20_000)
-                    if (index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                        val format = encoder.outputFormat
-                        val buffers = listOfNotNull(format.getByteBuffer("csd-0"), format.getByteBuffer("csd-1"))
-                            .map { buffer -> ByteArray(buffer.remaining()).also { buffer.duplicate().get(it) } }
-                        synchronized(timelineLock) {
-                            val configRecord = ReceiverAvc.record(*buffers.toTypedArray())
-                            sink.onVideoCodec(110, VideoCodec.H264)
-                            sink.onVideoConfig(110, configRecord)
-                        }
-                        diagnostics.stage(AirPlayVideoDiagnostics.Stage.ENCODER_CONFIG)
-                    } else if (index >= 0) {
-                        try {
-                            val buffer = encoder.getOutputBuffer(index)
-                            if (buffer != null && info.size > 0 && info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
-                                buffer.position(info.offset); buffer.limit(info.offset + info.size)
-                                val bytes = ByteArray(info.size); buffer.get(bytes)
-                                val annexB = if (bytes.size >= 4 && bytes[0] == 0.toByte() && bytes[1] == 0.toByte() &&
-                                    (bytes[2] == 1.toByte() || (bytes[2] == 0.toByte() && bytes[3] == 1.toByte()))) bytes
-                                    else MediaCodecSupport.toAnnexB(bytes)
-                                if (annexB.isNotEmpty()) {
-                                    synchronized(timelineLock) {
-                                        sink.onVideoFrame(110, annexB, info.presentationTimeUs * 1000, System.nanoTime())
-                                        frames++
-                                        if (frames == 1L || frames % 120 == 0L) diagnostics.stage(AirPlayVideoDiagnostics.Stage.ENCODED_FRAME, frames)
-                                    }
-                                }
-                            }
-                        } finally { encoder.releaseOutputBuffer(index, false) }
-                    }
-                }
-            } catch (error: Exception) { if (!closing.get()) failed(error) }
-            finally {
-                sink.close()
-                // Normal close has already released GL while draining stayed alive. A codec
-                // failure still requests GL cleanup here; only this thread tears down the codec.
-                val released = CountDownLatch(1)
-                bridge.close { released.countDown() }
-                runCatching { released.await(2, TimeUnit.SECONDS) }
-                // A failed codec can leave eglSwapBuffers blocked; bounded codec teardown
-                // releases that consumer so owner-thread cleanup can finish without an ANR.
-                runCatching { encoder.stop() }; encoder.release(); surface.release()
-            }
-        }
-
-        override fun close() {
-            if (!closing.compareAndSet(false, true)) return
-            sink.close()
-            bridge.close { stopped.set(true); thread.interrupt() }
-        }
-
-        fun setOutputAllowed(allowed: Boolean) {
-            if (allowed) sink.resumeDisplay() else sink.pauseDisplay()
-        }
-    }
 }

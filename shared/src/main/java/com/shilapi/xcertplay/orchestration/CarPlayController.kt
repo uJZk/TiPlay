@@ -161,7 +161,7 @@ internal fun isWirelessHandoffInProgress(
 class CarPlayController(
     context: Context,
     private val config: CarPlayRuntimeConfig,
-    private val airPlayConfig: AirPlayConfig,
+    airPlayConfig: AirPlayConfig,
     private val identity: AirPlayIdentity,
     private val pairings: PairingStore,
     listener: AirPlaySessionListener,
@@ -173,6 +173,12 @@ class CarPlayController(
     private val locationProvider: Iap2LocationProvider? = null,
     private val vehicleStatusProvider: com.shilapi.xcertplay.transport.VehicleStatusProvider? = null,
 ) : Closeable {
+    private val airPlayConfig = airPlayConfig.copy(
+        metadataArtworkEnabled = airPlayConfig.metadataArtworkEnabled && config.headUnitIntegrations,
+        metadataTextEnabled = airPlayConfig.metadataTextEnabled && config.headUnitIntegrations,
+    )
+    private val artworkEnabled: Boolean get() = this.airPlayConfig.metadataArtworkEnabled
+
     init {
         require(!config.locationReportingEnabled || locationProvider != null) {
             "A location provider is required when location reporting is enabled"
@@ -245,7 +251,9 @@ class CarPlayController(
     @Volatile private var clusterUiVisibility: Pair<Pair<AirPlaySession, Int>, Boolean>? = null
     @Volatile private var dashboardMapOutputVisible = false
     private val dashboardMapEpoch = AtomicInteger()
-    private val playbackStatus = com.shilapi.xcertplay.media.CarPlayPlaybackStatus()
+    private val playbackStatus = com.shilapi.xcertplay.media.CarPlayPlaybackStatus(
+        includeText = this.airPlayConfig.metadataTextEnabled, includeArtwork = artworkEnabled,
+    )
 
     private val albumReplayLock = Any()
     private var initialArtworkReplay: com.shilapi.xcertplay.transport.Iap2ArtworkTransfer? = null
@@ -532,7 +540,7 @@ class CarPlayController(
                             closeBluetoothBootstrapTransport()
                         }
                         bootstrap.run(device, ::connectBluetoothSocket, bootstrapIdentification, endpoint, mfi,
-                            ::debugLog, ::onRouteFrame, ::onArtworkTransfer)
+                            ::debugLog, ::onRouteFrame, ::onArtworkTransfer, receiveArtwork = artworkEnabled, receiveText = airPlayConfig.metadataTextEnabled)
                     } catch (error: Exception) {
                         if (!bootstrap.isClosed) {
                             debugLog("browser display reconnect bootstrap failed")
@@ -673,6 +681,10 @@ class CarPlayController(
 
     /** The run mode this session connected with; a host or key gate follows it until the next connection. */
     fun phoneBrowserMode(): Boolean = !config.headUnitIntegrations
+
+    fun receivesArtwork(): Boolean = artworkEnabled
+
+    fun receivesTextMetadata(): Boolean = airPlayConfig.metadataTextEnabled
 
     /** A visible physical map and its session/stream generation; null for a paused/virtual/turn-card route. */
     fun dashboardMapRoute(): Any? {
@@ -901,7 +913,8 @@ class CarPlayController(
     // HUD (SOME/IP) and cluster (AMap broadcast) keep separate state so one failing cannot stall the other.
     private fun onRouteFrame(frame: com.shilapi.xcertplay.iap2.wire.Iap2Frame) {
         if (config.headUnitIntegrations) BydNavigationOutputs.onFrame(frame)
-        com.shilapi.xcertplay.glance.CarPlayGlance.onFrame(frame)
+        if (airPlayConfig.metadataTextEnabled || frame.messageId != com.shilapi.xcertplay.media.CarPlayPlaybackStatus.NOW_PLAYING_UPDATE)
+            com.shilapi.xcertplay.glance.CarPlayGlance.onFrame(frame)
         synchronized(playbackStatus) {
             val previousPlaying = playbackStatus.playing
             playbackStatus.acceptUpdate(frame)?.let { it to (it.playing != previousPlaying) }
@@ -923,6 +936,7 @@ class CarPlayController(
         run {
             try {
                 if (closed) { result = InitialAlbumRefreshResult.CLOSED; return@run }
+                if (!artworkEnabled) return@run
                 if (activeSession == null) { result = InitialAlbumRefreshResult.INACTIVE_SESSION; return@run }
                 if (!stillNeeded()) return@run
                 // The RFCOMM bootstrap is not the runtime metadata channel after wireless handoff.
@@ -933,10 +947,11 @@ class CarPlayController(
                     return@run
                 }
                 if (closed) { result = InitialAlbumRefreshResult.CLOSED; return@run }
+                if (!artworkEnabled) return@run
                 if (!stillNeeded() || !beforeSend()) return@run
                 // Claim only at the send boundary; preflight skips leave the budget intact.
                 result = InitialAlbumRefreshResult.FAILED
-                channel.send(com.shilapi.xcertplay.iap2.message.Iap2ControlMessages.startNowPlayingUpdates(), 250)
+                channel.send(com.shilapi.xcertplay.iap2.message.Iap2ControlMessages.startNowPlayingUpdates(includeArtwork = artworkEnabled, includeText = airPlayConfig.metadataTextEnabled), 250)
                 result = InitialAlbumRefreshResult.SENT
                 debugLog("album recovery subscription sent")
             } catch (error: Exception) {
@@ -948,7 +963,7 @@ class CarPlayController(
     }
 
     private fun onArtworkTransfer(transfer: com.shilapi.xcertplay.transport.Iap2ArtworkTransfer) {
-        if (closed) return
+        if (closed || !artworkEnabled) return
         synchronized(albumReplayLock) {
             initialArtworkReplay = transfer.takeIf { it.bytes.size <= 1024 * 1024 }
         }
@@ -1572,6 +1587,7 @@ class CarPlayController(
                 traceContext = "wireless-rfcomm",
                 onTrace = ::debugLog,
                 onArtwork = ::onArtworkTransfer,
+                receiveArtwork = artworkEnabled,
             )
             synchronized(wirelessResourceLock) {
                 if (isStaleWirelessRun(generation)) {
@@ -1623,6 +1639,8 @@ class CarPlayController(
             val result = Iap2WirelessControlClient(
                 session = channel,
                 mfi = Iap2MfiAuthenticationClient(mfi),
+                receiveArtwork = artworkEnabled,
+                receiveText = airPlayConfig.metadataTextEnabled,
             ).run(
                 identification = bootstrapIdentification,
                 endpoint = endpoint,
@@ -1704,6 +1722,7 @@ class CarPlayController(
                 traceContext = "wireless-tunnel",
                 onTrace = ::debugLog,
                 onArtwork = ::onArtworkTransfer,
+                receiveArtwork = artworkEnabled,
             )
         } catch (error: Throwable) {
             debugLog("Could not open the tunneled iAP2 link", error)
@@ -1722,6 +1741,8 @@ class CarPlayController(
                     val result = Iap2WirelessControlClient(
                         session = channel,
                         mfi = Iap2MfiAuthenticationClient(mfi),
+                        receiveArtwork = artworkEnabled,
+                        receiveText = airPlayConfig.metadataTextEnabled,
                     ).run(
                         identification = identification,
                         endpoint = endpoint,
@@ -2345,6 +2366,7 @@ class CarPlayController(
                 traceContext = "wired",
                 onTrace = ::debugLog,
                 onArtwork = ::onArtworkTransfer,
+                receiveArtwork = artworkEnabled,
             )
             this.csm = csm
             debugLog("wired iAP2 CSM channel opened")
@@ -2376,7 +2398,7 @@ class CarPlayController(
                     "location=${config.identification.locationInformationEnabled} " +
                     "vehicleStatus=${config.identification.vehicleStatusEnabled}",
             )
-            val result = Iap2WiredControlClient(csm, Iap2MfiAuthenticationClient(mfi)).run(
+            val result = Iap2WiredControlClient(csm, Iap2MfiAuthenticationClient(mfi), artworkEnabled, airPlayConfig.metadataTextEnabled).run(
                 identification = config.identification,
                 endpoint = endpoint,
                 availableCurrentMilliAmps = config.availableCurrentMilliAmps,

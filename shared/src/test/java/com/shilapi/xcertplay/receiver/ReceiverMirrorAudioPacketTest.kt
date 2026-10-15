@@ -35,8 +35,16 @@ class ReceiverMirrorAudioPacketTest {
         assertNull(ReceiverMirrorAudioPacket.decrypt(packet(bad, header), key, iv))
     }
 
-    @Test fun negotiatedAlacAndUnknownFormatsAreNeverTreatedAsAacEld() {
-        assertNull(ReceiverMirrorAudioFormat.parse(mapOf("ct" to 2)))
+    @Test fun noDataAacMarkerIsDiscardedIncludingRtpPadding() {
+        assertNull(ReceiverMirrorAudioPacket.decrypt(packet(byteArrayOf(0, 0x68, 0x34, 0)), key, iv))
+        assertArrayEquals(byteArrayOf(0, 0x68, 0x34, 0), ReceiverMirrorAudioPacket.decrypt(
+            packet(byteArrayOf(0, 0x68, 0x34, 0)), key, iv, filterNoData = false))
+        val header = ByteArray(12).apply { this[0] = 0xa0.toByte(); this[1] = 0x60 }
+        assertNull(ReceiverMirrorAudioPacket.decrypt(packet(byteArrayOf(0, 0x68, 0x34, 0, 1), header), key, iv))
+    }
+
+    @Test fun negotiatedCodecsAreNeverTreatedAsAacEld() {
+        assertEquals(2, ReceiverMirrorAudioFormat.parse(mapOf("ct" to 2))?.codec)
         assertNull(ReceiverMirrorAudioFormat.parse(emptyMap<String, Any>()))
         assertEquals(ReceiverMirrorAudioFormat(8, 44100, 2), ReceiverMirrorAudioFormat.parse(mapOf("ct" to 8)))
     }

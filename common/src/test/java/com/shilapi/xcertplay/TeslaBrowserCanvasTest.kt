@@ -2,12 +2,19 @@ package com.shilapi.xcertplay
 
 import com.shilapi.xcertplay.web.BrowserSize
 import com.shilapi.xcertplay.web.BrowserViewport
+import com.shilapi.xcertplay.web.BrowserVideoCapabilities
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TeslaBrowserCanvasTest {
+    @Test fun bothProjectionModesUseTheSameMeasuredBrowserDecoderLimit() {
+        val viewport = BrowserViewport(2400, 1800, 1200.0, 900.0, 2.0,
+            BrowserVideoCapabilities(true, false, 1600, 1200))
+        assertEquals(BrowserSize(1600, 1200), TeslaBrowserCanvas.sizeFor(viewport))
+        assertEquals(TeslaBrowserCanvas.sizeFor(viewport), TeslaBrowserCanvas.plan(viewport, 300).size)
+    }
     private fun viewport(width: Int, height: Int, cssWidth: Double = 0.0, cssHeight: Double = 0.0, dpr: Double = 0.0) =
         BrowserViewport(width, height, cssWidth, cssHeight, dpr)
 

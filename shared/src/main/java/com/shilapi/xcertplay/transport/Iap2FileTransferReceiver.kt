@@ -14,6 +14,7 @@ data class Iap2ArtworkTransfer(val id: Int, val bytes: ByteArray)
  */
 class Iap2FileTransferReceiver(
     private val maximumArtworkBytes: Int = DEFAULT_MAXIMUM_ARTWORK_BYTES,
+    private val receiveArtwork: Boolean = true,
 ) {
     data class Outcome(
         val replies: List<ByteArray> = emptyList(),
@@ -55,7 +56,7 @@ class Iap2FileTransferReceiver(
         if (datagram.size < VERSION_2_SETUP_BYTES) return Outcome(replies = listOf(cancel(id)))
         val size = readU64(datagram, SIZE_OFFSET)
         val type = readU16(datagram, FILE_TYPE_OFFSET)
-        if (type != NOW_PLAYING_ARTWORK_TYPE) return Outcome(replies = listOf(cancel(id)))
+        if (type != NOW_PLAYING_ARTWORK_TYPE || !receiveArtwork) return Outcome(replies = listOf(cancel(id)))
         if (size < 0 || size > maximumArtworkBytes) return rejected(id)
         if (size == 0L) {
             return Outcome(

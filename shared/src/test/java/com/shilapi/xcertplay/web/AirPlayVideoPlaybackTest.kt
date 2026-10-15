@@ -5,6 +5,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayVideoPlaybackTest {
+    @Test fun mediaPropertiesSelectOnlyReportedTracksAndRejectUnknownStylesAndRemoteVolume() {
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
+        try {
+            assertFalse(video.property("selectedMediaArray", listOf(mapOf("type" to "audio", "id" to "1"))))
+            assertTrue(video.report(rateReport() + ("tracks" to mapOf("audio" to listOf("1", "2"), "subtitle" to listOf("zh")))))
+            assertTrue(video.property("selectedMediaArray", listOf(mapOf("type" to "audio", "id" to "2"), mapOf("type" to "subtitle", "id" to "zh"))))
+            assertEquals(1L, video.source()["trackRevision"])
+            assertFalse(video.property("selectedMediaArray", listOf(mapOf("type" to "subtitle", "id" to "missing"))))
+            assertFalse(video.property("selectedMediaArray", listOf(mapOf("index" to 0))))
+            assertFalse(video.property("textMarkupArray", listOf(mapOf("color" to "url(https://example.test)"))))
+            assertFalse(video.property("textMarkupArray", listOf(mapOf("fontScale" to 5.0))))
+            assertFalse(video.property("textMarkupArray", listOf(mapOf("unknown" to true))))
+            assertTrue(video.property("textMarkupArray", listOf(mapOf("fontScale" to 1.5, "color" to "#F0E0D0"))))
+            assertEquals(mapOf("fontScale" to 1.5, "color" to "#F0E0D0"), video.source()["textMarkup"])
+            assertFalse(video.property("volume", 0.5))
+            assertTrue(video.property("selectedMediaArray", listOf(mapOf("type" to "subtitle", "id" to null))))
+        } finally { video.close() }
+    }
     private fun rateReport(revision: Long = 0L, rate: Double = 1.0, playing: Boolean = true) =
         mapOf("revision" to revision, "duration" to 100.0, "position" to 20.0, "bufferedPosition" to 30.0,
             "rate" to rate, "playing" to playing, "ready" to true, "buffering" to false, "seekable" to true)
@@ -167,7 +185,7 @@ class AirPlayVideoPlaybackTest {
     @Test fun browserOwnsTheClockAndRetiredReportsCannotUndoAnIphoneCommand() {
         val events = mutableListOf<String>()
         val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.2, true), { null }, events::add)
-        val binding = AirPlayBrowserPlayback.register(video::state, video, video::control)
+        val binding = AirPlayBrowserPlayback.register(video::state, video, control = video::control)
         try {
             val id = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
             val fields = mapOf("revision" to 0L, "duration" to 100.0, "position" to 20.0,

@@ -49,11 +49,11 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
         return (++next).toString().also { urls[it] = url }
     }
 
-    fun open(id: String, range: String?, route: (String) -> String): Resource? {
+    fun open(id: String, range: String?, forceProxy: Boolean = false, route: (String) -> String): Resource? {
         if (range != null && !BYTE_RANGE.matches(range))
             return Resource(416, "application/octet-stream", emptyList(), ByteArrayInputStream(ByteArray(0)))
         val url = synchronized(this) { if (closed.get()) null else if (id == rootId) root else urls[id] } ?: return null
-        val resource = load(url, range, route, 0)
+        val resource = load(url, range, route, 0, forceProxy)
         bodies += resource
         if (closed.get()) { bodies -= resource; resource.close(); return null }
         return Resource(resource.status, resource.type, resource.headers, resource.body) {
@@ -61,10 +61,10 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
         }
     }
 
-    private fun load(url: String, range: String?, route: (String) -> String, redirects: Int): Resource {
+    private fun load(url: String, range: String?, route: (String) -> String, redirects: Int, forceProxy: Boolean): Resource {
         requirePlayable(url)
         if (closed.get()) throw IOException("Playback ended")
-        directUrl(url)?.let { direct ->
+        directUrl(url)?.takeIf { !forceProxy }?.let { direct ->
             return Resource(307, "application/octet-stream", listOf("Location" to direct), ByteArrayInputStream(ByteArray(0)))
         }
         val uri = URI(url)
@@ -75,6 +75,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
             connection.connectTimeout = 5000; connection.readTimeout = 10000
             connection.instanceFollowRedirects = false
             connection.setRequestProperty("Accept-Encoding", "identity")
+            connection.setRequestProperty("Cache-Control", "no-cache")
             if (range != null) connection.setRequestProperty("Range", range)
             connections += connection
             if (closed.get()) { connections -= connection; connection.disconnect(); throw IOException("Playback ended") }
@@ -84,14 +85,14 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
                     val location = connection.getHeaderField("Location") ?: throw IOException("Missing redirect")
                     if (redirects >= 5) throw IOException("Too many redirects")
                     connection.disconnect(); connections -= connection
-                    return load(uri.resolve(location).toString(), range, route, redirects + 1)
+                    return load(uri.resolve(location).toString(), range, route, redirects + 1, forceProxy)
                 }
                 if (status in listOf(200, 206)) {
                     val input = BufferedInputStream(connection.inputStream)
                     if (isPlaylist(input)) {
                         try {
                             val bytes = readPlaylist(input)
-                            val rewritten = rewritePlaylist(url, bytes, route)
+                            val rewritten = rewritePlaylist(url, bytes, forceProxy, route)
                             return Resource(200, "application/vnd.apple.mpegurl", emptyList(), ByteArrayInputStream(rewritten))
                         } finally { input.close(); connection.disconnect(); connections -= connection }
                     }
@@ -117,23 +118,23 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
         val response = broker ?: throw IOException("iPhone did not load resource")
         response.location?.let { location ->
             if (redirects >= 5) throw IOException("Too many redirects")
-            return load(uri.resolve(location).toString(), range, route, redirects + 1)
+            return load(uri.resolve(location).toString(), range, route, redirects + 1, forceProxy)
         }
         if (response.status != null && response.status != 0 && response.status !in 200..299)
             throw IOException("iPhone refused media")
         val bytes = response.bytes ?: throw IOException("Empty resource")
         if (isPlaylist(BufferedInputStream(ByteArrayInputStream(bytes))))
-            return Resource(200, "application/vnd.apple.mpegurl", emptyList(), ByteArrayInputStream(rewritePlaylist(url, bytes, route)))
+            return Resource(200, "application/vnd.apple.mpegurl", emptyList(), ByteArrayInputStream(rewritePlaylist(url, bytes, forceProxy, route)))
         return byteResource(url, bytes, range)
     }
 
-    internal fun rewritePlaylist(base: String, bytes: ByteArray, route: (String) -> String): ByteArray {
+    internal fun rewritePlaylist(base: String, bytes: ByteArray, forceProxy: Boolean = false, route: (String) -> String): ByteArray {
         if (bytes.size > MAX_PLAYLIST) throw IOException("Playlist too large")
         val uri = URI(base)
         fun replace(value: String): String {
             val resolved = uri.resolve(value).toString()
             requirePlayable(resolved)
-            return directUrl(resolved) ?: route(remember(resolved))
+            return directUrl(resolved)?.takeIf { !forceProxy } ?: route(remember(resolved))
         }
         // Includes variants, segments, EXT-X-MAP, EXT-X-MEDIA and ordinary AES-128 keys.
         // DRM key schemes are refused by requirePlayable; no decryption is performed here.

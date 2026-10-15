@@ -4,7 +4,7 @@ import com.shilapi.xcertplay.airplay.VideoCodec
 
 /** Bounded mirror metadata. Payloads, cipher inputs, transport keys and peer identities are never formatted. */
 internal class ReceiverMirrorDiagnostics(private val log: (String) -> Unit, private val nanoTime: () -> Long = System::nanoTime) {
-    enum class Stage { ACCEPT, HEADER, BODY, DECRYPT, CONFIG, PUBLISH }
+    enum class Stage { ACCEPT, HEADER, BODY, DECRYPT, CONFIG, FRAME_VALIDATE, PUBLISH }
     enum class End { CLOSED, HEADER_EOF, BODY_EOF, FAILED }
     private var packets = 0L
     private var frames = 0L
@@ -19,6 +19,7 @@ internal class ReceiverMirrorDiagnostics(private val log: (String) -> Unit, priv
 
     fun listening() = emit("mirror stage=LISTENING")
     fun accepted() = emit("mirror stage=ACCEPTED")
+    fun reconnecting(graceMillis: Long) = emit("mirror stage=RECONNECTING graceMs=$graceMillis")
     fun packet(type: Int, bytes: Int) {
         packets++
         if (sample(packets)) emit("mirror stage=PACKET type=$type bodyBytes=$bytes packets=$packets")

@@ -9,6 +9,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReceiverAudioDrainTest {
+    @Test fun retransmissionRequestsUseTheControlSocketAndNegotiatedPeerPort() {
+        val peer = InetAddress.getByName("127.0.0.1")
+        DatagramSocket(0, peer).use { sender ->
+            sender.soTimeout = 1000
+            ReceiverAudioDrain(peer).use { drain ->
+                val ports = drain.start()
+                val request = byteArrayOf(0x80.toByte(), 0xd5.toByte(), 0, 1, 0, 9, 0, 2)
+                drain.sendControl(request, sender.localPort)
+                val received = DatagramPacket(ByteArray(64), 64)
+                sender.receive(received)
+                assertArrayEquals(request, received.data.copyOf(received.length))
+                assertEquals(ports.second, received.port)
+                drain.sendControl(request, -1)
+                drain.sendControl(ByteArray(65), sender.localPort)
+            }
+        }
+    }
     @Test fun drainsBothChannelsWithoutPayloadLoggingAndReleasesBothPortsOnRepeatedClose() {
         val peer = InetAddress.getByName("127.0.0.1")
         val logs = CopyOnWriteArrayList<String>()

@@ -16,6 +16,7 @@ import '@videojs/html/ui/seek-button';
 import '@videojs/html/ui/playback-rate-button';
 import '@videojs/html/ui/captions-button';
 import '@videojs/html/ui/captions-radio-group';
+import '@videojs/html/ui/audio-track-radio-group';
 import '@videojs/html/ui/menu';
 import '@videojs/html/ui/menu-content';
 import '@videojs/html/ui/menu-radio-item';

@@ -661,7 +661,7 @@ class BrowserLinkServerTest {
             requests.incrementAndGet()
             com.shilapi.xcertplay.receiver.ReceiverResource(byteArrayOf(1, 2, 3), 200, null)
         }) {}
-        val binding = AirPlayBrowserPlayback.register(playback::state, playback, playback::control)
+        val binding = AirPlayBrowserPlayback.register(playback::state, playback, control = playback::control)
         try {
             val id = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
             val path = "/airplay-resource?id=$id&r=${playback.proxy.rootId}&s=$session"
@@ -678,7 +678,7 @@ class BrowserLinkServerTest {
 
     @Test fun airplayBrowserDiagnosticsRequirePairingAndDoNotControlPlayback() {
         val playback = AirPlayVideoPlayback(com.shilapi.xcertplay.receiver.ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
-        val binding = AirPlayBrowserPlayback.register(playback::state, playback, playback::control)
+        val binding = AirPlayBrowserPlayback.register(playback::state, playback, control = playback::control)
         try {
             val id = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
             val event = """{"k":"ap-diag","id":$id,"revision":0,"event":"play-rejected","errorName":"NotAllowedError","message":"private-secret","url":"https://private.test/secret"}"""
@@ -708,6 +708,52 @@ class BrowserLinkServerTest {
         for (line in logs) {
             assertFalse(line, line.contains(code) || line.contains(session) || line.contains(other))
             assertFalse(line, line.contains("127.0.0.1") || line.contains(origin))
+        }
+    }
+
+    @Test fun airplayConsentIsVisibleAndActionableOnlyThroughAuthenticatedControl() {
+        val remembered = mutableSetOf<String>()
+        val store = object : com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.Store {
+            override fun contains(fingerprint: String) = fingerprint in remembered
+            override fun remember(fingerprint: String) { remembered += fingerprint }
+            override fun forgetAll() { remembered.clear() }
+        }
+        val trust = com.shilapi.xcertplay.receiver.ReceiverDeviceTrust(store)
+        val key = ByteArray(32) { it.toByte() }
+        AirPlayTrustNotifications.attach(trust).use {
+            assertEquals(401, control(1, c = "0000").status)
+            assertTrue(trust.request(key, "iPhone") is com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.Decision.Denied)
+            assertEquals(200, control(1).status)
+            val pending = trust.request(key, "iPhone") as com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.Decision.Pending
+            val snapshot = control(2).json["airplayTrust"] as Map<*, *>
+            assertEquals(pending.id, snapshot["id"])
+            assertEquals(true, snapshot["verified"])
+            val allow = """{"k":"ap-trust","id":"${pending.id}","allow":true}"""
+            assertEquals(401, control(3, allow, c = "0000").status)
+            assertTrue(remembered.isEmpty())
+            assertEquals(200, control(3, allow).status)
+            assertEquals(setOf(com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.fingerprint(key)), remembered)
+            assertNull(control(4).json["airplayTrust"])
+        }
+    }
+
+    @Test fun replacingBrowserOrLeavingCancelsAFirstUseAirplayPrompt() {
+        val store = object : com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.Store {
+            override fun contains(fingerprint: String) = false
+            override fun remember(fingerprint: String) { error("stale approval must not persist") }
+            override fun forgetAll() {}
+        }
+        val trust = com.shilapi.xcertplay.receiver.ReceiverDeviceTrust(store)
+        AirPlayTrustNotifications.attach(trust).use {
+            control(1)
+            val pending = trust.request(ByteArray(32), "iPhone") as com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.Decision.Pending
+            assertEquals(200, control(1, s = other).status)
+            assertNull(control(2, s = other).json["airplayTrust"])
+            assertFalse(trust.respond(session, pending.id, true))
+            trust.forgetAll()
+            val next = trust.request(ByteArray(32), "iPhone") as com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.Decision.Pending
+            assertEquals(204, post("/bye", """{"c":"$code","s":"$other"}""").status)
+            assertFalse(trust.respond(other, next.id, true))
         }
     }
 }

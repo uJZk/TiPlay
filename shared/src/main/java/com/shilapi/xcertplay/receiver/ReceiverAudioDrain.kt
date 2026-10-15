@@ -27,6 +27,13 @@ class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String
     private var data: DatagramSocket? = null
     private var control: DatagramSocket? = null
 
+    /** Send bounded RTP retransmission requests only to the authenticated SETUP peer. */
+    @Synchronized fun sendControl(packet: ByteArray, port: Int) {
+        if (closed.get() || port !in 1..65535 || packet.size !in 1..64) return
+        runCatching { control?.send(DatagramPacket(packet, packet.size, peer, port)) }
+            .onFailure { emit("audioDrain stage=RESEND_FAILED") }
+    }
+
     /** Real dual-stack UDP ports, in data/control order. */
     @Synchronized
     fun start(): Pair<Int, Int> {

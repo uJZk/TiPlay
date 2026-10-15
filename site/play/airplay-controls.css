@@ -7,6 +7,8 @@
 .airplay-player .airplay-canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .airplay-control-bar { position:absolute; inset:auto 0 0; z-index:2; display:flex; align-items:center; gap:8px; padding:12px; padding-bottom:max(12px,env(safe-area-inset-bottom)); background:linear-gradient(transparent,rgba(0,0,0,.85)); }
 .airplay-control-bar .media-button { display:grid; place-items:center; flex-shrink:0; min-width:44px; min-height:44px; border:0; font:inherit; }
+.airplay-control-bar .media-button[hidden] { display:none; }
+.airplay-control-bar .media-button[data-available="false"] { display:none; }
 .airplay-control-bar .airplay-rate::after { content:attr(data-rate) "\00d7"; }
 .airplay-control-bar :focus-visible { outline:2px solid #fff; outline-offset:2px; }
 .airplay-control-bar media-time { font:12px monospace; white-space:nowrap; }

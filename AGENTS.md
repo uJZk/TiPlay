@@ -1,146 +1,34 @@
-# AGENTS.md
+# TiPlay contributor instructions
 
-Instructions for coding agents that work on TiPlay.
+TiPlay supports **Android phone + car browser only**. 本项目不考虑原生车机。
+Keep inherited native files for upstream merging; do not add product navigation or acceptance
+tests for native head units.
 
-Browser resize, portal and discovery shutdown contracts are documented in `docs/TESLA_BROWSER.md`
-under "Browser session lifecycle".
+## Documentation
 
-Browser music continuity and microphone-demand HFP/SCO routing follow
-[Audio and microphone](docs/TESLA_BROWSER.md#audio-and-microphone).
+Start at [docs/README.md](docs/README.md). Keep each topic in one stable document;
+remove obsolete descriptions instead of appending delivery diaries. Use filenames
+starting with a capital and hyphens between words, with no dates except sweep folders.
+Conventional README, AGENTS, CLAUDE, CHANGELOG, SECURITY and legal/vendor filenames
+are exceptions. Keep only the latest sweep; historical records remain in Git.
 
-Phone settings, validated drafts, immediate apply/automatic reconnect and boot behavior follow
-`docs/APP-MAIN-PAGE-IMPLEMENTATION.md`.
+Project AGENTS.md files and documents under docs/ must stay below 8,192 words each.
+Split a topic only when needed, target 4,096 words, and update the index and references.
 
-Build prerequisites, runtime identity, signing and APK update contracts are documented
-in [docs/BUILD.md](docs/BUILD.md). Windows WSLC container supplements, including filesystem,
-secret transfer and host ADB boundaries, are in [docs/WLSC.md](docs/WLSC.md).
-
-## Documentation size and index
-
-Project `AGENTS.md` files and each child document under `docs/` MUST NOT exceed
-8,192 words per file. If a file exceeds that limit, split it by topic into files under
-`docs/`, targeting 4,096 words per new child file. Keep this root `AGENTS.md` as the
-index, link every new child here, and update affected navigation links. Prefer concise
-instructions; do not duplicate detailed rules in the index.
-
-- [Archived upstream Traditional Chinese README](docs/UPSTREAM-README.zh-TW.md): inherited head-unit documentation, outside TiPlay product scope.
-- [Upstream maintenance](docs/Upstream.md): DiPlay, Video.js and UxPlay tracking and update rules.
-- [Diagnostics](docs/DIAGNOSTICS.md): performance monitor semantics, log detail, process lifecycle and collection completeness.
-- [October 13 sweep scope](docs/sweep-2026-10-13/SCOPE.md): baseline and split-entry index.
-- [October 13 sweep scope, part 1](docs/sweep-2026-10-13/SCOPE-PART-1.md): retained file/commit entries.
-- [October 13 sweep scope, part 2](docs/sweep-2026-10-13/SCOPE-PART-2.md): retained file/commit entries.
-- [October 13 sweep scope, part 3](docs/sweep-2026-10-13/SCOPE-PART-3.md): retained file/commit entries.
-
-## Current progress
-
-See [docs/MEDIABUNNY-TIE-UP-2026-10-14.md](docs/MEDIABUNNY-TIE-UP-2026-10-14.md)
-for the URL playback engine, native controls, WebVTT subtitles, validation,
-build-skipping delivery and remaining iPhone/vehicle checks.
-
-See [docs/UPSTREAM-VIDEOJS-TIE-UP-2026-10-14.md](docs/UPSTREAM-VIDEOJS-TIE-UP-2026-10-14.md)
-for remote main integration, final checks, beta.3 signing/draft delivery and Pages cache v38.
-
-
-See [docs/UPSTREAM-SYNC-2026-10-14.md](docs/UPSTREAM-SYNC-2026-10-14.md) for the full DiPlay source merge, browser product gates, audio-clock and microphone adaptations, preference migration, and validation.
-
-See [docs/AIRPLAY-CANVAS-TIE-UP-2026-10-14.md](docs/AIRPLAY-CANVAS-TIE-UP-2026-10-14.md)
-for Video.js Canvas presentation, cache v36, browser verification, Android toolchain limits,
-main integration and Pages delivery. Vehicle performance and audio/video alignment still need measurement.
-
-See [docs/UPSTREAM-DOCS-TIE-UP-2026-10-13.md](docs/UPSTREAM-DOCS-TIE-UP-2026-10-13.md)
-for upstream tracking, concise maintenance rules, document length limits, scope splitting,
-verification and the Android toolchain access limitation.
-
-See [docs/docs-sweep-2026-10-13/TIE-UP.md](docs/docs-sweep-2026-10-13/TIE-UP.md) for the recovered documentation sweep, user-confirmed destination/settings/endpoint policies and delivery handoff. Integrated source 08a1c079 passed 2,423 Android tests, all required lint/debug builds and 116 browser tests with the available JDK 25 toolchain; current page cache is v37. Main ce3a7050 was pushed and Publish site run 38435442241 succeeded.
-
-See `docs/sweep-2026-10-13/README.md` for single-Bonjour trial retirement, incremental
-and post-merge code cleanup, and the requested tap-map/reverse-notification/audio-cancellation repairs.
-`docs/sweep-2026-10-13/TIE-UP.md` records main integration, concurrency regressions,
-final verification, commit/push/Pages delivery and remaining follow-up decisions.
-
-See `docs/BROWSER-MEDIA-TIE-UP-2026-10-13.md` for authorized cleanup, main integration,
-0.2.14-beta.2 delivery and Pages deployment status.
-
-See `docs/BROWSER-MEDIA-2026-10-13.md` for compact settings, mandatory buffered music,
-Video.js URL playback with authenticated resource proxying and direct iPhone resources,
-removed URL-video timing code, and demand-switched car HFP/SCO audio and capture
-with fixed navigation attenuation (no browser/software AEC).
-
-Browser permission and retry-countdown verification evidence and the local delivery handoff are in ignored
-`agent_docs/merge-all/HANDOFF.md`. Browser permission compatibility follows `docs/TESLA_BROWSER.md`.
-
-See `docs/CARPLAY-CONNECTION-UX-2026-10-12.md` for continuous CarPlay recovery,
-the 1/2/4/8/16-second Bluetooth arrival retry policy, USB-first All mode, independent
-CarPlay opt-out, TiPlay mode copy, privileged USB attempts and Android 16 virtual validation.
-
-See `docs/SETTINGS-IMMEDIATE-APPLY-2026-10-12.md` for immediate settings application,
-default AirPlay startup, historical hotspot address handoff, verification and device follow-up.
-Current hotspot address/port edits apply immediately on Android and NEVER proactively notify or migrate
-the browser. The user selects Disconnect, edits Android address and selects Connect, or opens the
-updated pairing link. Preserve the pairing code; do not update bookmarks automatically.
-
-See `docs/BETA-RELEASE-2026-10-12.md` for the 0.2.14-beta.1 release inputs,
-upstream CarPlay identity provenance, validation and publication status.
-
-See `docs/docs-sweep-2026-10-12/README.md` for the incremental documentation sweep,
-user-focused English/Chinese READMEs, checks and historically unresolved destination/label policies.
-The user-confirmed TiPlay destinations and concise browser labels below supersede those open questions.
-`docs/docs-sweep-2026-10-12/TIE-UP.md` records its integration and delivery progress.
-
-See `docs/AIRPLAY.md` for the experimental ordinary AirPlay mirror/video receiver,
-the pinned UxPlay reference, confirmed CarPlay screen borrow/return and mixed audio contracts, and validation limits.
-Remaining receiver compatibility, CarPlay audio continuity, browser audio timestamp scheduling and vehicle checks are in `docs/todo.md`.
-Local device evidence and the next-session handoff are in ignored `agent_docs/adb-fixes/HANDOFF.md`; keep secrets and device captures out of commits.
-Ordinary AirPlay video routing, app-specific device evidence and the next playback-architecture handoff are in ignored `agent_docs/airplay-route/HANDOFF.md`.
-URL-video resource serialization, immediate seek feedback and CarPlay recovery contracts are in `docs/AIRPLAY.md`.
-Local playback diagnostics, device verification and signed-build handoff are in ignored `agent_docs/airplay-seek-diagnostics/HANDOFF.md`.
-See `docs/AIRPLAY-TIE-UP-2026-10-12.md` for verification, integration and remaining device checks.
-See `docs/todo.md` under "AirPlay 轻量信任设备机制" for the pending approval, remembered-device and takeover-protection work; it is not implemented yet.
-
-See `docs/DIAGNOSTICS.md` for the performance monitor and diagnostic logging contracts.
-See `docs/WEB-DEBUG-2026-10-12.md` for browser theme delivery,
-peer-initiated clock synchronization, Android lifecycle repairs and validation limits.
-The browser page is hosted over HTTPS only; the APK does not bundle it and the phone has no local `/play/` route.
-`docs/WEB-DEBUG-2026-10-11.md` retains the earlier implementation and playback-path history.
-See `docs/sweep-2026-10-12/TIE-UP.md` for main integration, final verification and delivery progress.
-
-See `docs/RECONNECT-UX-2026-10-11.md` for the pre-rendered reconnect wallpaper,
-portal integration, verification and delivery progress. Follow `docs/WEB-PAIRING-DESIGN.md`
-and `docs/APP-MAIN-PAGE-IMPLEMENTATION.md` for browser and phone contracts.
-See `docs/APP-MAIN-PAGE-IMPLEMENTATION.md` for draft/session behavior and upstream compatibility.
-See `docs/UI-REDESIGN-2026-10-11.md` for the Liquid Glass web UI,
-native Android controls, safe window bounds and shared pre-rendered wallpaper.
-
-See `docs/BROWSER-RESIZE-2026-10-11.md` for retained-wireless display renegotiation,
-ADB measurements, debug installation, verification and remaining vehicle/recovery validation.
-
-See `docs/APK-RELEASE-2026-10-11.md` for the signed 0.2.13 APK, upstream runtime
-identity provenance, test results, download delivery and pending Release attachment upload.
-`docs/BUILD.md` includes extraction, verification and draft-upload procedures.
-
-See `docs/SETTINGS-UX-2026-10-11.md` for the dated main-menu ordering, connection-mode
-migration, automatic radio hints, codec defaults, shared branding, verification and delivery progress.
-Its final section records the two-menu browser UI, editable `address:port`, the
-stopped Termux probe, the corrected Pages URL and the latest signed installation.
-
-See `docs/docs-sweep-2026-10-11/README.md` for the completed documentation sweep,
-verification and remaining link-policy/vehicle-validation limits;
-`docs/docs-sweep-2026-10-11/TIE-UP.md` records its commit and delivery progress.
-
-See `docs/sweep-2026-10-10/FOLLOWUP-2026-10-11.md` for the completed queue/resource lifecycle fixes and verification;
-`docs/sweep-2026-10-10/TIE-UP-2026-10-11.md` records commit, merge, push and Pages deployment progress.
-
-See `docs/SETTINGS-VALIDATION-2026-10-10.md` for the dated browser settings profile,
-device installation, verification results and remaining vehicle checks.
-`docs/E2E-VALIDATION-2026-10-10.md` records the earlier local browser E2E results
-and system-proxy fix.
-
-See `docs/VIDEOJS-10-2026-10-14.md` for URL playback engine/control boundaries,
-shared timing, caption integration, self-hosted dependencies and acceptance limits.
+- [Browser](docs/Browser.md): pairing, resize, portal, media and shutdown.
+- [Settings](docs/Settings.md): drafts, immediate apply, reconnect and boot.
+- [Connection setup](docs/Connection-setup.md) and [hotspot address](docs/Hotspot-address.md).
+- [AirPlay](docs/AirPlay.md): receiver/media contracts and compatibility limits.
+- [Diagnostics](docs/Diagnostics.md) and [privacy](docs/Privacy.md).
+- [Geolocation](docs/geolocation.md): browser coordinate evidence, Android conversion boundary and iPhone forwarding.
+- [Build](docs/Build.md), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md).
+- [Upstream](docs/Upstream.md): merge policy, preserved identifiers and dependency provenance.
+- [Third-party notices](docs/Third-party-notices.md) and [remaining work](docs/Todo.md).
+- [Latest documentation sweep](docs/docs-sweep-2026-10-15/README.md).
 
 ## Checks
 
-Run the CI command from `.github/workflows/android.yml` before you report a change as done:
+Run the CI command from .github/workflows/android.yml before reporting a change as done:
 
 ```sh
 ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :home:testDebugUnitTest \
@@ -148,9 +36,9 @@ Run the CI command from `.github/workflows/android.yml` before you report a chan
   :mobile:assembleDebug :home:assembleDebug :maphost:assembleDebug
 ```
 
-Set `ANDROID_HOME` or `local.properties` if Gradle cannot find the SDK.
-
-CI also runs the browser page tests with Node 22: `node --test tests/web/*.test.mjs`.
+Set ANDROID_HOME or local.properties if Gradle cannot find the SDK.
+CI also runs `node --test tests/web/*.test.mjs` with Node 22. See [Testing](docs/Testing.md)
+for the remaining source checks and device acceptance boundary.
 
 ## Adding or moving a setting
 

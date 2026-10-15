@@ -140,7 +140,7 @@
                 android:resource="@xml/navigation_widget_info" />
         </receiver>
 
-        <!-- The live dashboard map for launchers that embed it (docs/LAUNCHER_INTEGRATION.md). -->
+        <!-- The live dashboard map for launchers that embed it (https://github.com/uJZk/TiPlay/blob/4d03261f9dc915d0acb2cd6f69f7028640da6f04/docs/LAUNCHER_INTEGRATION.md). -->
         <service
             android:name="com.shilapi.xcertplay.MapEmbedService"
             android:exported="true"
@@ -150,7 +150,7 @@
             </intent-filter>
         </service>
 
-        <!-- Optional: steering-wheel keys for the dashboard map zoom (docs/BYD_NAVIGATION.md). -->
+        <!-- Optional: steering-wheel keys for the dashboard map zoom (https://github.com/uJZk/TiPlay/blob/4d03261f9dc915d0acb2cd6f69f7028640da6f04/docs/BYD_NAVIGATION.md). -->
         <service
             android:name="com.shilapi.xcertplay.WheelKeyService"
             android:exported="true"

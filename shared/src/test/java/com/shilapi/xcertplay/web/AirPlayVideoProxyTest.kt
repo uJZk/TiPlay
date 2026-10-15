@@ -6,6 +6,24 @@ import org.junit.Test
 import java.io.IOException
 
 class AirPlayVideoProxyTest {
+    @Test fun forcedProxyRewritesIphoneChildResourcesAndRefreshesEveryLiveManifestRead() {
+        var requests = 0
+        val proxy = AirPlayVideoProxy("http://192.168.1.7/live.m3u8", {
+            requests++
+            ReceiverResource("#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:1,\nsegment-$requests.m4s".toByteArray(), 200, null)
+        }, "192.168.1.7")
+        try {
+            repeat(2) {
+                proxy.open(proxy.rootId, null, forceProxy = true) { child -> "/resource?r=$child&proxy=1" }!!.use { resource ->
+                    assertEquals(200, resource.status)
+                    val manifest = resource.body.readBytes().toString(Charsets.UTF_8)
+                    assertFalse(manifest.contains("192.168.1.7"))
+                    assertEquals(2, Regex("proxy=1").findAll(manifest).count())
+                }
+            }
+            assertEquals(2, requests)
+        } finally { proxy.close() }
+    }
     @Test fun rewritesNestedPlaylistsSegmentsMapsAndKeysWithoutLeakingUpstreamUrls() {
         val proxy = AirPlayVideoProxy("https://example.test/path/master.m3u8", { null })
         try {

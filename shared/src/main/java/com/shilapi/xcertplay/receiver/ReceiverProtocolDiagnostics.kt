@@ -13,6 +13,11 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
             (bytes?.let { " bodyBytes=$it" } ?: ""))
     }
 
+    fun photo(connection: Long, action: String, bytes: Int) {
+        val safeAction = action.takeIf { it in setOf("CACHE_ONLY", "DISPLAY", "CACHE_MISS") } ?: "OTHER"
+        emit("c=$connection photo stage=$safeAction bodyBytes=$bytes")
+    }
+
     fun play(connection: Long, item: ReceiverPlay) =
         emit("c=$connection video stage=START start=${position(item.start)} fraction=${item.fraction}")
 
@@ -29,9 +34,9 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
     fun finish(reason: ReceiverServer.PlaybackFinishReason, reverseConnection: Long?) =
         emit("video stage=FINISH reason=${reason.wire} reverse=${reverseConnection ?: 0}")
 
-    fun playbackEvent(connection: Long?, state: String) {
+    fun playbackEvent(connection: Long?, state: String, category: String = "video") {
         val safeState = state.takeIf { it in setOf("loading", "playing", "paused", "stopped") } ?: "OTHER"
-        emit("video stage=EVENT state=$safeState reverse=${connection ?: 0} available=${connection != null}")
+        emit("${if (category == "photo") "photo" else "video"} stage=EVENT state=$safeState reverse=${connection ?: 0} available=${connection != null}")
     }
 
     fun stage(connection: Long, stage: Stage) = emit("c=$connection stage=$stage")
@@ -116,7 +121,7 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
         private val METHODS = setOf("GET", "POST", "PUT", "OPTIONS", "SETUP", "RECORD", "TEARDOWN",
             "GET_PARAMETER", "SET_PARAMETER", "FLUSH", "ANNOUNCE")
         private val PATHS = setOf("/", "/info", "/server-info", "/pair-setup", "/pair-verify", "/fp-setup",
-            "/reverse", "/play", "/action", "/stop", "/scrub", "/rate", "/playback-info", "/feedback",
+            "/reverse", "/play", "/photo", "/action", "/stop", "/scrub", "/rate", "/playback-info", "/feedback",
             "/getProperty", "/setProperty", "/fp-setup2", "/auth-setup", "/audioMode", "/command", "/event", "/volume")
     }
 }

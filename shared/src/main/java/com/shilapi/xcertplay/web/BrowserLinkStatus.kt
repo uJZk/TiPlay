@@ -4,6 +4,25 @@ import kotlin.math.abs
 
 data class BrowserSize(val width: Int, val height: Int)
 
+/** Measured WebCodecs support from the current paired browser, bounded before negotiation. */
+data class BrowserVideoCapabilities(val h264: Boolean, val hevc: Boolean, val maxWidth: Int, val maxHeight: Int) {
+    companion object {
+        fun parse(value: Any?): BrowserVideoCapabilities? {
+            val fields = value as? Map<*, *> ?: return null
+            val h264 = fields["h264"] as? Boolean ?: return null
+            val hevc = fields["hevc"] as? Boolean ?: return null
+            if (!h264 && !hevc && (fields["maxWidth"] as? Number)?.toDouble() == 0.0 &&
+                (fields["maxHeight"] as? Number)?.toDouble() == 0.0) return BrowserVideoCapabilities(false, false, 0, 0)
+            fun dimension(key: String): Int? = (fields[key] as? Number)?.toDouble()
+                ?.takeIf { it.isFinite() && it in 2.0..4096.0 && it % 2.0 == 0.0 }?.toInt()
+            val width = dimension("maxWidth") ?: return null
+            val height = dimension("maxHeight") ?: return null
+            if (maxOf(width, height) > 3840 || minOf(width, height) > 2160) return null
+            return BrowserVideoCapabilities(h264, hevc, width, height)
+        }
+    }
+}
+
 /** A `vp` event: [width] × [height] device pixels of the page's video area, its CSS size and its pixel ratio. */
 data class BrowserViewport(
     val width: Int,
@@ -11,6 +30,7 @@ data class BrowserViewport(
     val cssWidth: Double,
     val cssHeight: Double,
     val devicePixelRatio: Double,
+    val videoCapabilities: BrowserVideoCapabilities? = null,
 ) {
     val size: BrowserSize get() = BrowserSize(width, height)
 

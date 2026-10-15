@@ -11,7 +11,7 @@ function extract(name) {
 const schedule = extract('scheduleViewport');
 const cancel = extract('cancelViewport');
 
-function page() {
+function page(probe = () => new Promise(() => {})) {
   let next = 0;
   const frames = new Map(), sent = [];
   const requestAnimationFrame = run => {
@@ -23,7 +23,7 @@ function page() {
   const rect = { width: 1280, height: 720 };
   const stage = { hidden: false, getBoundingClientRect: () => rect };
   const outbox = { push: (event, mode) => sent.push({ event, mode }) };
-  const p = new Function('stage', 'outbox', 'window', 'viewportFor', 'requestAnimationFrame', 'cancelAnimationFrame', `
+  const p = new Function('stage', 'outbox', 'window', 'viewportFor', 'requestAnimationFrame', 'cancelAnimationFrame', 'probeMirrorCapabilities', `
     let viewportFrame = null, lastViewport = '';
     ${schedule}
     ${cancel}
@@ -31,7 +31,7 @@ function page() {
       disconnect: () => { outbox = null; },
       reconnect: box => { outbox = box; lastViewport = ''; }
     };
-  `)(stage, outbox, { devicePixelRatio: 1 }, viewportFor, requestAnimationFrame, cancelAnimationFrame);
+  `)(stage, outbox, { devicePixelRatio: 1 }, viewportFor, requestAnimationFrame, cancelAnimationFrame, probe);
   return { ...p, rect, stage, sent, frames, frame() {
     for (const [id, run] of [...frames]) {
       frames.delete(id);
@@ -104,4 +104,19 @@ test('invalid dimensions do not prevent a valid next-frame report', () => {
   p.scheduleViewport();
   p.frame();
   assert.equal(p.sent.length, 1);
+});
+
+test('capability probe reports only the latest viewport and cannot cross browser sessions', async () => {
+  const pending = [], caps = { h264: true, hevc: false, maxWidth: 1280, maxHeight: 720 };
+  const p = page((width, height) => new Promise(resolve => pending.push({ width, height, resolve })));
+  p.scheduleViewport(); p.frame();
+  p.rect.width = 1000; p.scheduleViewport(); p.frame();
+  pending[0].resolve(caps); await Promise.resolve();
+  assert.equal(p.sent.length, 2, 'a completed probe for the old viewport cannot replace the latest size');
+  pending[1].resolve(caps); await Promise.resolve();
+  assert.deepEqual(p.sent.at(-1), { event: { k: 'vp', ...viewportFor(1000, 720, 1), caps }, mode: 'latest' });
+  p.rect.width = 1200; p.scheduleViewport(); p.frame();
+  const fresh = []; p.disconnect(); p.reconnect({ push: event => fresh.push(event) });
+  pending[2].resolve(caps); await Promise.resolve();
+  assert.equal(fresh.length, 0, 'results from the retired paired session are discarded');
 });

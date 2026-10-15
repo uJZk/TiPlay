@@ -1,8 +1,8 @@
 # Shell address check
 
 `AddAddr` checks whether the ADB shell user can put a 100.64.0.0/10 address on the phone's hotspot interface
-through the `network_management` service. Shizuku without root runs as the same user (uid 2000), so the result
-tells whether TiPlay's extra hotspot address can work through Shizuku on that phone.
+through the `network_management` service. Shizuku without root runs as the same user (uid 2000), so this isolates the shell service-call permission. TiPlay authorization,
+link-local address support and car-browser reachability need separate checks.
 
 The interface name must carry an alias (`wlan2:tp`). Without it, the system first clears the interface's IPv4
 addresses, which cuts every device off the hotspot until it restarts. The tool refuses a name without an alias.
@@ -11,7 +11,7 @@ Run the build from `tools/shell-address/` (needs a JDK and the Android SDK build
 
 ```sh
 javac --release 11 -d out AddAddr.java
-$ANDROID_HOME/build-tools/36.0.0/d8 --min-api 28 --lib $ANDROID_HOME/platforms/android-37.0/android.jar --output out out/AddAddr.class
+"$ANDROID_HOME/build-tools/36.0.0/d8" --min-api 28 --lib "$ANDROID_HOME/platforms/android-37.0/android.jar" --output out out/AddAddr.class
 ```
 
 Run with the hotspot on (`adb shell ip -4 addr` shows its interface, e.g. `wlan2`). If the address is already
@@ -24,6 +24,11 @@ adb shell CLASSPATH=/data/local/tmp/addaddr.dex app_process /system/bin AddAddr 
 adb shell ip -4 addr show wlan2
 ```
 
+The CGNAT example is a diagnostic address, not TiPlay's current default. `AddAddr`
+accepts only its `100.x.y.z/32` input form; it does not test the app's link-local method
+or reproduce its app-process hidden-API restrictions. It reports interface addresses
+to the console, so redact captures before sharing.
+
 A completed service-call check prints a final `RESULT:` line; invalid arguments instead print usage and exit 64:
 
 | Output | Meaning |
@@ -35,4 +40,4 @@ A completed service-call check prints a final `RESULT:` line; invalid arguments 
 The address goes away when the hotspot restarts. The shell user cannot remove it.
 
 TiPlay's Shizuku hotspot address method makes the same call from the app; see
-[docs/HOTSPOT_ADDRESS.md](../../docs/HOTSPOT_ADDRESS.md).
+[docs/Hotspot-address.md](../../docs/Hotspot-address.md).

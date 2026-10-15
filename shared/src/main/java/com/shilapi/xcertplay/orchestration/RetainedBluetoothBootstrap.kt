@@ -29,6 +29,8 @@ internal class RetainedBluetoothBootstrap : AutoCloseable {
         log: (String) -> Unit,
         onIncoming: (Iap2Frame) -> Unit,
         onArtwork: (Iap2ArtworkTransfer) -> Unit,
+        receiveArtwork: Boolean = true,
+        receiveText: Boolean = true,
     ) {
         val socket = own(device.createRfcommSocketToServiceRecord(
             UUID.fromString("00000000-deca-fade-deca-deafdecacafe")))
@@ -37,8 +39,8 @@ internal class RetainedBluetoothBootstrap : AutoCloseable {
         log("browser display reconnect Bluetooth connected")
         val stream = own(BluetoothRfcommDuplexStream(socket, log))
         val channel = own(Iap2Session.openWireless(stream,
-            traceContext = "browser-resize-rfcomm", onTrace = log, onArtwork = onArtwork))
-        Iap2WirelessControlClient(channel, Iap2MfiAuthenticationClient(mfi)).run(
+            traceContext = "browser-resize-rfcomm", onTrace = log, onArtwork = onArtwork, receiveArtwork = receiveArtwork))
+        Iap2WirelessControlClient(channel, Iap2MfiAuthenticationClient(mfi), receiveArtwork, receiveText).run(
             identification = identification,
             endpoint = endpoint,
             timeoutMillis = 30_000,

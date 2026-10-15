@@ -4918,6 +4918,8 @@ class CarPlayHostActivity : ComponentActivity() {
             videoInCar = false,
             mainBufferedAudio = !BrowserCarPlayAudioSettings.disabled(this),
             audioViaCarBluetooth = BrowserCarPlayAudioSettings.disabled(this),
+            metadataArtworkEnabled = false,
+            metadataTextEnabled = false,
         )
     }
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { createFrameCanvas } from './airplay-canvas.js';
 import { createTempoProcessor, downmixStereo } from './airplay-tempo.js';
+import { audioTrackLabel, createAudioTrackList, preferredAudioTrack } from './airplay-audio-tracks.js';
+import { fetchSdrMediaResource, hasHdrTransfer, requireSdrTrack, sdrError } from './airplay-sdr.js';
 import { clampMediaTime, intersectMediaRanges, mediaRangeEnd, mediaTimeRanges, mergeMediaRanges,
   videoQueueFull } from './airplay-media-state.js';
 
@@ -29,6 +31,7 @@ export function createMediaEngine(surface, options = {}) {
   const playWaiters = new Set();
   const event = type => { if (!disposed) media.dispatchEvent(new Event(type)); };
   const active = item => !disposed && item === generation && !item.closed;
+  const audioTracks = createAudioTrackList(selectAudioTrack);
 
   function publishClock() {
     try { options.onClock?.(readPosition()); } catch (_) { /* Captions must not interrupt decoding or audio. */ }
@@ -74,18 +77,40 @@ export function createMediaEngine(surface, options = {}) {
     const previous = source;
     source = null;
     // Disposal aborts every root/segment request, including bodies already streaming.
-    previous?.input?.dispose();
+    previous?.controller.abort(); previous?.input?.dispose();
   }
   function fail(cause) {
     if (disposed || error) return;
+    generation?.readyReject(cause);
     freeze(); closeGeneration(); closeSource(); paused = true; seeking = false; readyState = 0; networkState = 3;
     error = { code: cause?.name === 'NotSupportedError' ? 4 : 3, name: cause?.name || 'Error', message: cause?.message || String(cause) };
     settlePlay(cause instanceof Error ? cause : new Error(error.message));
     const failureEvent = new Event('error'); failureEvent.error = cause; media.dispatchEvent(failureEvent);
   }
+  function readFailure(item, cause) {
+    if (!active(item)) return;
+    const session = source;
+    const recoverable = cause?.name === 'TimeoutError' || cause?.name === 'TypeError'
+      || /HTTP|fetch|network|resource|segment|connection|404|410/i.test(cause?.message || '');
+    if (session?.live && session.prepared && recoverable && cause?.name !== 'NotSupportedError') {
+      if (now() - (session.lastRecovery ?? -Infinity) > 60) session.recoveries = 0;
+      if ((session.recoveries || 0) < 2) {
+        session.recoveries = (session.recoveries || 0) + 1; session.lastRecovery = now();
+        freeze(); closeGeneration(); session.controller.abort(); session.input?.dispose();
+        session.controller = new AbortController(); session.input = null; session.tracksPromise = null;
+        // A slid-out live window has no recoverable old seek position. Start its fresh window
+        // with a fresh caption origin and preserve the user's play/pause/rate intent.
+        session.origin = null; session.prepared = false; position = 0; held = null; readyState = 0;
+        try { options.onResync?.(session.src, session.type); } catch (_) {}
+        event('resync'); event('waiting'); void begin(0, false); return;
+      }
+    }
+    fail(cause);
+  }
   function begin(positionToRead, isSeek) {
     freeze(); closeGeneration();
     position = positionToRead; ended = false; seeking = isSeek; readyState = Math.min(readyState, 1); networkState = 2;
+    try { options.onCaptionReset?.(position); } catch (_) {}
     if (isSeek) event('seeking');
     let readyResolve, readyReject;
     const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
@@ -111,29 +136,56 @@ export function createMediaEngine(surface, options = {}) {
     const input = session.input || new lib.Input({ source: new lib.UrlSource(session.src, {
       maxCacheSize: 16 * 1024 * 1024, parallelism: 2,
       requestInit: { referrerPolicy: 'no-referrer' },
-      fetchFn: (url, init) => {
+      fetchFn: async (url, init) => {
         if (disposed || source !== session) return Promise.reject(abortError());
-        return fetchResource(url, init);
+        const response = await fetchSdrMediaResource(fetchResource, url, init, { signal: session.controller.signal,
+          deadline: options.resourceDeadline || 15000 });
+        if (options.onResource && source === session && !disposed) {
+          // Observers consume a bounded clone and cannot block the decoding pipeline.
+          const copy = response.clone();
+          try { void Promise.resolve(options.onResource(response.url || String(url), copy, session.origin ?? null)).catch(() => {}); }
+          catch (_) { void copy.body?.cancel().catch(() => {}); }
+        }
+        return response;
       },
       // A failed range must not leave the UI indefinitely loading.
       getRetryDelay: attempts => attempts < 3 ? Math.min(2 ** (attempts - 1), 4) : null,
-      handleUnhandledError: cause => { if (!disposed && source === session) fail(cause); },
+      handleUnhandledError: cause => { if (!disposed && source === session && session.input === input && generation) readFailure(generation, cause); },
     }), formats: lib.ALL_FORMATS || [lib.MP4, ...lib.HLS_FORMATS],
     formatOptions: { hls: { offsetTimestampsByDateTime: false } } });
     session.input = input;
     item.input = input;
     session.tracksPromise ||= (async () => {
       const decodableFirst = { sortBy: async track => Number(!(await track.canDecode())) };
-      const video = await input.getPrimaryVideoTrack(decodableFirst);
+      const video = await input.getPrimaryVideoTrack({ sortBy: async track => {
+        try { await requireSdrTrack(track); } catch (cause) { if (cause?.name === 'NotSupportedError') return 2; throw cause; }
+        return Number(!(await track.canDecode()));
+      } });
       // An HLS master can expose mutually exclusive variants; pair the selected video with its audio.
       const audio = video ? await video.getPrimaryPairableAudioTrack(decodableFirst)
         : await input.getPrimaryAudioTrack(decodableFirst);
+      const candidates = video?.getPairableAudioTracks ? await video.getPairableAudioTracks()
+        : input.getAudioTracks ? await input.getAudioTracks() : audio ? [audio] : [];
+      const alternatives = [];
+      for (const candidate of candidates) if (await candidate.canDecode()) {
+        const language = await candidate.getLanguageCode?.() || 'und';
+        alternatives.push({ track: candidate, id: String(alternatives.length), kind: 'main',
+          label: audioTrackLabel(await candidate.getName?.(), language, options.languages?.[0] || globalThis.navigator?.language, alternatives.length), language });
+      }
+      session.audioAlternatives = alternatives;
+      const preferred = preferredAudioTrack(alternatives, options.languages || globalThis.navigator?.languages || []);
+      session.selectedAudio = (alternatives.find(candidate => candidate.id === session.selectedAudio)
+        || preferred || alternatives.find(candidate => candidate.track === audio) || alternatives[0])?.id;
+      if (source === session && !disposed) audioTracks.replace(alternatives.map(({ track, ...descriptor }) => descriptor), session.selectedAudio);
       return [video, audio];
     })();
     const tracks = await session.tracksPromise;
     if (!active(item)) return;
     [item.videoTrack, item.audioTrack] = tracks;
-    const selected = tracks.filter(Boolean);
+    await requireSdrTrack(item.videoTrack);
+    if (!active(item)) return;
+    if (session.audioAlternatives?.length) item.audioTrack = session.audioAlternatives.find(candidate => candidate.id === session.selectedAudio)?.track;
+    const selected = [item.videoTrack, item.audioTrack].filter(Boolean);
     if (!selected.length) throw new DOMException('This resource contains no audio or video.', 'NotSupportedError');
     const decodable = await Promise.all(selected.map(track => track.canDecode()));
     if (!active(item)) return;
@@ -147,14 +199,19 @@ export function createMediaEngine(surface, options = {}) {
     session.origin ??= first;
     origin = session.origin;
     const nextDuration = live.some(Boolean) ? Infinity : end === null ? NaN : Math.max(0, end - origin);
+    session.live = nextDuration === Infinity;
     if (!Object.is(duration, nextDuration)) { duration = nextDuration; event('durationchange'); }
     if (width !== nextWidth || height !== nextHeight) { width = nextWidth; height = nextHeight; event('resize'); }
     position = clampMediaTime(position, duration); item.start = position; item.audioEnd = position;
     item.videoReady = !item.videoTrack; item.audioReady = !item.audioTrack; item.metadataReady = true;
     readyState = 1; event('loadedmetadata');
-    if (item.videoTrack) void pumpVideo(item, lib).catch(cause => { if (active(item)) fail(cause); });
+    try { options.onTimeline?.({ origin, live: duration === Infinity, videoTrack: item.videoTrack, input }); } catch (_) {}
+    if (item.videoTrack && lib.EncodedPacketSink && options.onCaptionPacket) {
+      void pumpCaptions(item, lib).catch(() => {});
+    }
+    if (item.videoTrack) void pumpVideo(item, lib).catch(cause => readFailure(item, cause));
     else item.videoDone = true;
-    if (item.audioTrack) void pumpAudio(item, lib).catch(cause => { if (active(item)) fail(cause); });
+    if (item.audioTrack) void pumpAudio(item, lib).catch(cause => readFailure(item, cause));
     else item.audioDone = true;
     checkReady(item);
     if (!Number.isFinite(duration) && duration !== Infinity) {
@@ -164,11 +221,43 @@ export function createMediaEngine(surface, options = {}) {
     }
   }
   function notify(item) { notifyRoom(item); checkReady(item); schedule(); }
+  async function pumpCaptions(item, lib) {
+    const sink = new lib.EncodedPacketSink(item.videoTrack);
+    const first = await sink.getKeyPacket(origin + item.start) || await sink.getFirstPacket();
+    if (!first || !active(item)) return;
+    const codec = await item.videoTrack.getCodec?.();
+    const config = await item.videoTrack.getDecoderConfig?.();
+    const iterator = sink.packets(first)[Symbol.asyncIterator]();
+    item.iterators.push(iterator);
+    while (active(item)) {
+      const next = await iterator.next();
+      if (!active(item) || next.done) break;
+      while (active(item) && next.value.timestamp - origin > readPosition() + MAX_AUDIO_AHEAD) await waitForRoom(item);
+      if (!active(item)) break;
+      // Caption failures never stop an otherwise playable video.
+      try { options.onCaptionPacket(next.value.data, next.value.timestamp - origin, codec, config); } catch (_) {}
+    }
+  }
+  function selectAudioTrack(id) {
+    const session = source;
+    if (!session || !session.audioAlternatives?.some(candidate => candidate.id === String(id))) return false;
+    if (session.selectedAudio === String(id)) return true;
+    updatePosition(); freeze(); session.selectedAudio = String(id); audioTracks.select(String(id));
+    // Retain the source's timeline/cache and rebuild both queues at one common clock position.
+    void begin(position, seeking); event('audiotrackchange'); return true;
+  }
   function waitForRoom(item) {
     return new Promise(resolve => { item.waiters.add(resolve); if (!active(item)) notifyRoom(item); });
   }
   async function pumpVideo(item, lib) {
-    const iterator = new lib.VideoSampleSink(item.videoTrack, { hardwareAcceleration: 'prefer-hardware' })
+    let acceleration = 'no-preference';
+    const Decoder = options.VideoDecoder || globalThis.VideoDecoder;
+    if (Decoder?.isConfigSupported && item.videoTrack.getDecoderConfig) {
+      const config = await item.videoTrack.getDecoderConfig();
+      try { if (config && (await Decoder.isConfigSupported({ ...config, hardwareAcceleration: 'prefer-hardware' })).supported) acceleration = 'prefer-hardware'; } catch (_) {}
+    }
+    if (!active(item)) return;
+    const iterator = new lib.VideoSampleSink(item.videoTrack, { hardwareAcceleration: acceleration })
       .samples(origin + item.start)[Symbol.asyncIterator]();
     item.iterators.push(iterator);
     while (active(item)) {
@@ -178,6 +267,7 @@ export function createMediaEngine(surface, options = {}) {
       if (!active(item)) { next.value?.close(); break; }
       if (next.done) { item.videoDone = true; item.videoReady = true; notify(item); break; }
       const sample = next.value, start = sample.timestamp - origin;
+      if (hasHdrTransfer(sample.colorSpace)) { sample.close(); throw sdrError(); }
       const end = start + Math.max(sample.duration, 1 / 120);
       if (end < item.start - FRAME_EPSILON) { sample.close(); continue; }
       const frame = { sample, start, end, bytes: sample.codedWidth * sample.codedHeight * 4
@@ -299,7 +389,7 @@ export function createMediaEngine(surface, options = {}) {
   function checkReady(item) {
     if (!active(item) || !item.metadataReady || !item.videoReady || !item.audioReady) return;
     if (!item.readySettled) {
-      item.readySettled = true; readyState = 2; publishClock(); event('loadeddata');
+      item.readySettled = true; readyState = 2; source.prepared = true; publishClock(); event('loadeddata');
       if (seeking) { seeking = false; event('timeupdate'); event('seeked'); }
       item.readyResolve();
     }
@@ -433,10 +523,11 @@ export function createMediaEngine(surface, options = {}) {
   async function load(src, type) {
     if (disposed) throw abortError();
     freeze(); closeGeneration(); closeSource(); serial++; settlePlay(abortError());
-    source = src ? { src: String(src), type, input: null, origin: null } : null;
+    source = src ? { src: String(src), type, input: null, origin: null, controller: new AbortController() } : null;
     canvas.clear(); held = null; position = 0; duration = NaN; origin = 0; width = height = 0;
     paused = true; ended = seeking = false; error = null; readyState = networkState = 0;
     totalVideoFrames = droppedVideoFrames = 0; event('emptied');
+    audioTracks.replace([], null); if (source) event('loadstart');
     if (source) await begin(0, false);
   }
   function dispose() {
@@ -449,6 +540,7 @@ export function createMediaEngine(surface, options = {}) {
   const getter = (name, get, set) => Object.defineProperty(media, name, { enumerable: true, get, ...(set ? { set } : {}) });
   getter('duration', () => duration); getter('currentTime', readPosition, seek);
   getter('timestampOrigin', () => origin);
+  getter('audioTracks', () => audioTracks);
   getter('buffered', () => mediaTimeRanges(bufferedRanges()));
   getter('seekable', () => mediaTimeRanges(Number.isFinite(duration) && duration > 0 ? [[0, duration]] : bufferedRanges()));
   getter('paused', () => paused); getter('seeking', () => seeking); getter('ended', () => ended);
@@ -470,7 +562,7 @@ export function createMediaEngine(surface, options = {}) {
     muted = next; if (gain) gain.gain.value = muted ? 0 : volume; event('volumechange'); });
   getter('volume', () => volume, value => { const next = Number(value); if (!Number.isFinite(next) || next < 0 || next > 1) throw new DOMException('Volume must be between 0 and 1.', 'IndexSizeError');
     if (next === volume) return; volume = next; if (gain) gain.gain.value = muted ? 0 : volume; event('volumechange'); });
-  Object.assign(media, { play, pause, load, dispose,
+  Object.assign(media, { play, pause, load, dispose, selectAudioTrack,
     getVideoPlaybackQuality: () => ({ creationTime: now() * 1000, totalVideoFrames, droppedVideoFrames, corruptedVideoFrames: 0 }) });
   options.signal?.addEventListener('abort', dispose, { once: true });
   if (options.signal?.aborted) dispose();

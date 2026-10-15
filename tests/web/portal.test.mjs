@@ -20,8 +20,12 @@ function page() {
     const onResize = () => resizes++;
     const render = () => {};
     const browserAudio = { status() {} }, airplayControls = { update() {} };
+    const trustUpdates = [];
+    let trustPrompt = null;
+    const airplayTrust = { update(prompt) { trustUpdates.push(prompt); trustPrompt = prompt ?? null; } };
     ${functions}
     return { applyStatus, resumeCarPlay, stage, panel,
+      trustUpdates, trustPrompt: () => trustPrompt,
       state: () => ({ active, releases, resizes, viewportCancellations }) };
   `)();
 }
@@ -50,4 +54,21 @@ test('older phone status without portal notifications keeps the display open', (
   assert.equal(p.stage.hidden, false);
   assert.equal(p.state().releases, 0);
   assert.equal(p.state().viewportCancellations, 0);
+});
+
+test('first-use AirPlay consent remains available on the paired portal and clears with server cancellation', () => {
+  const p = page();
+  const prompt = { id: 'approval-1', name: 'iPhone', verified: true, remainingMillis: 5000 };
+  p.applyStatus({ portalRevision: 7, airplayTrust: prompt });
+  assert.equal(p.trustPrompt(), prompt);
+  p.applyStatus({ portalRevision: 8, airplayTrust: prompt });
+  assert.equal(p.stage.hidden, true);
+  assert.equal(p.panel.hidden, false);
+  assert.equal(p.trustPrompt(), prompt, 'returning to settings retains the paired channel needed for approval');
+  const countdown = { ...prompt, remainingMillis: 2500 };
+  p.applyStatus({ portalRevision: 8, airplayTrust: countdown });
+  assert.equal(p.trustPrompt(), countdown, 'portal status polls continue updating the live approval');
+  p.applyStatus({ portalRevision: 8, airplayTrust: null });
+  assert.equal(p.trustPrompt(), null);
+  assert.deepEqual(p.trustUpdates, [prompt, prompt, countdown, null]);
 });

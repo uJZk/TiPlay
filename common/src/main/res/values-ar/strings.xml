@@ -537,7 +537,7 @@
     <string name="center_map_usage_missing">الوصول إلى بيانات الاستخدام: غير مسموح، لذلك تظهر البطاقة فوق كل التطبيقات. عبر ADB: adb shell appops set %1$s GET_USAGE_STATS allow</string>
     <string name="center_map_no_permission_screen">لا توجد في وحدة القيادة شاشة إعدادات لهذا الإذن. اسمح به عبر ADB.</string>
     <string name="launcher_map_sharing">مشاركة الخريطة المباشرة مع المشغّلات الأخرى</string>
-    <string name="launcher_map_sharing_description">يمكن للمشغّلات التي تدعم TiPlay عرض خريطة لوحة العدادات المباشرة داخل شاشتها الرئيسية. معطّل افتراضيًا، لأن أي تطبيق على وحدة القيادة يمكنه عندها طلب الخريطة. راجع docs/LAUNCHER_INTEGRATION.md.</string>
+    <string name="launcher_map_sharing_description">يمكن للمشغّلات التي تدعم TiPlay عرض خريطة لوحة العدادات المباشرة داخل شاشتها الرئيسية. معطّل افتراضيًا، لأن أي تطبيق على وحدة القيادة يمكنه عندها طلب الخريطة. راجع https://github.com/uJZk/TiPlay/blob/4d03261f9dc915d0acb2cd6f69f7028640da6f04/docs/LAUNCHER_INTEGRATION.md.</string>
     <string name="turn_card_overlay_size">حجم بطاقة الانعطاف المخصصة</string>
     <string name="turn_card_overlay_opacity">شفافية بطاقة الانعطاف المخصصة</string>
     <string name="turn_card_overlay_opacity_option">%1$d %%</string>
@@ -875,4 +875,6 @@
     <string name="settings_mfi_target_description">اختر USB/CH341 فقط عندما يكون محوّل مصادقة CH341 متصلًا بوحدة الوسائط. بدونه، اختر «محلي دون اتصال». يُطبَّق عند الاتصال التالي.</string>
     <string name="settings_call_speakerphone">المكالمات عبر مكبّر الصوت</string>
     <string name="settings_call_speakerphone_description">لهاتف أو جهاز لوحي بنظام Android يُستخدم كوحدة وسائط: يشغّل مكالمات CarPlay عبر مكبّر الصوت بدلًا من سمّاعة الأذن ويستخدم ميكروفون التحدث الحر. اتركه متوقفًا في وحدة وسائط السيارة. يُطبَّق من المكالمة التالية.</string>
+    <string name="settings_forget_airplay_devices">نسيان جميع أجهزة AirPlay الموثوقة</string>
+    <string name="settings_airplay_devices_forgotten">تم نسيان أجهزة AirPlay الموثوقة</string>
 </resources>

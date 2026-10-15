@@ -152,7 +152,7 @@ class BrowserLinkServer(
         videos.forEach { it.finished.await(maxOf(0L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS) }
         connections.forEach(::closeQuietly)
         pool?.shutdownNow()
-        synchronized(lock) { gate.current?.let(touch::drop) }
+        synchronized(lock) { gate.current?.let { touch.drop(it); AirPlayTrustNotifications.browserGone(it) } }
         callbacks.log("Browser link: stopped")
     }
 
@@ -339,22 +339,26 @@ class BrowserLinkServer(
             ?: return respond(output, request, refuse(400, "bad-request"))
         synchronized(lock) { admitLocked(request.query["c"], session)?.let { return respond(output, request, it) } }
         val id = request.query["id"]?.toLongOrNull() ?: return respond(output, request, refuse(400, "bad-request"))
-        val playback = AirPlayBrowserPlayback.video(id) ?: return respond(output, request, refuse(404, "not-found"))
         val resourceId = request.query["r"] ?: return respond(output, request, refuse(400, "bad-request"))
-        playback.proxy.directResource(resourceId)?.let { direct ->
+        val photo = AirPlayBrowserPlayback.photo(id)
+        val playback = AirPlayBrowserPlayback.video(id)
+        if (photo == null && playback == null) return respond(output, request, refuse(404, "not-found"))
+        val forceProxy = request.query["proxy"] == "1"
+        playback?.proxy?.directResource(resourceId)?.takeIf { !forceProxy }?.let { direct ->
             return respond(output, request, Response(307, headers = listOf("Location" to direct)))
         }
         val resource = try {
-            playback.proxy.open(resourceId, request.headers["range"]) { child ->
-                "/airplay-resource?id=$id&r=${AirPlayVideoProxy.query(child)}&c=${AirPlayVideoProxy.query(request.query["c"].orEmpty())}&s=${AirPlayVideoProxy.query(session)}"
+            if (photo != null) { if (resourceId == "photo") photo.open(request.headers["range"]) else null }
+            else playback!!.proxy.open(resourceId, request.headers["range"], forceProxy) { child ->
+                "/airplay-resource?id=$id&r=${AirPlayVideoProxy.query(child)}&c=${AirPlayVideoProxy.query(request.query["c"].orEmpty())}&s=${AirPlayVideoProxy.query(session)}${if (forceProxy) "&proxy=1" else ""}"
             }
         } catch (_: Exception) { return respond(output, request, refuse(502, "media-unavailable")) }
             ?: return respond(output, request, refuse(404, "not-found"))
         resource.use {
             output.write(head(it.status, request, it.headers + listOf("Content-Type" to it.type,
-                "Access-Control-Expose-Headers" to "Content-Type, Content-Length, Content-Range, Accept-Ranges", "Connection" to "close")))
+                "Access-Control-Expose-Headers" to "Content-Type, Content-Length, Content-Range, Accept-Ranges", "Cache-Control" to "no-store", "Connection" to "close")))
             val buffer = ByteArray(32 * 1024)
-            while (running.get() && gate.current == session && AirPlayBrowserPlayback.video(id) === playback) {
+            while (running.get() && gate.current == session && (if (photo != null) AirPlayBrowserPlayback.photo(id) === photo else AirPlayBrowserPlayback.video(id) === playback)) {
                 val count = it.body.read(buffer)
                 if (count < 0) break
                 output.write(buffer, 0, count)
@@ -375,6 +379,7 @@ class BrowserLinkServer(
                 admitLocked(body["c"] as? String, session)?.let { return it }
                 val fresh = appliedSequence.let { it == null || sequence > it }
                 if (fresh) appliedSequence = sequence
+                AirPlayTrustNotifications.browserSeen(session)
                 fresh
             }
             // A repeated or late batch is answered but not applied again.
@@ -382,7 +387,7 @@ class BrowserLinkServer(
             fresh
         }
         performance.count(if (fresh) "control" else "controlRepeated")
-        return json(200, WebJson.write(status(synchronized(lock) { appliedSequence })))
+        return json(200, WebJson.write(status(synchronized(lock) { appliedSequence }, session)))
     }
 
     private fun bye(request: Request): Response {
@@ -392,6 +397,7 @@ class BrowserLinkServer(
             when (gate.leave(body["c"] as? String, session, nowMillis())) {
                 is BrowserPairingGate.Decision.Accepted -> {
                     touch.drop(session)
+                    AirPlayTrustNotifications.browserGone(session)
                     video?.takeIf { it.session == session }?.subscription?.end("bye")
                     audios.filter { it.session == session }.forEach { it.subscription.close(); closeQuietly(it.socket) }
                 }
@@ -414,6 +420,7 @@ class BrowserLinkServer(
             is BrowserPairingGate.Decision.Accepted -> {
                 decision.replaced?.let { previous ->
                     touch.drop(previous)
+                    AirPlayTrustNotifications.browserGone(previous)
                     video?.takeIf { it.session == previous }?.subscription?.end("replaced")
                     audios.filter { it.session == previous }.forEach { it.subscription.close(); closeQuietly(it.socket) }
                     callbacks.log("Browser link: a new page session replaced the previous one")
@@ -449,7 +456,8 @@ class BrowserLinkServer(
                     return
                 }
                 callbacks.onViewport(
-                    BrowserViewport(width, height, fields["cw"].finite(), fields["ch"].finite(), fields["dpr"].finite()),
+                    BrowserViewport(width, height, fields["cw"].finite(), fields["ch"].finite(), fields["dpr"].finite(),
+                        BrowserVideoCapabilities.parse(fields["caps"])),
                 )
             }
             "kf" -> hub.requestKeyFrame()
@@ -475,6 +483,11 @@ class BrowserLinkServer(
                 val value = (fields["v"] as? Number)?.toDouble()?.takeIf { it.isFinite() }
                 val accepted = AirPlayBrowserPlayback.command(id, action, value)
                 airplayDiagnostics.command(id, action, value, accepted)
+            }
+            "ap-trust" -> {
+                val id = fields["id"] as? String ?: return
+                val allow = fields["allow"] as? Boolean ?: return
+                if (id.length <= 64) AirPlayTrustNotifications.respond(session, id, allow)
             }
         }
     }
@@ -508,7 +521,7 @@ class BrowserLinkServer(
         return flat.takeIf { WebJson.write(it).length <= MAX_STATS }
     }
 
-    private fun status(sequence: Long?): Map<String, Any?> {
+    private fun status(sequence: Long?, session: String): Map<String, Any?> {
         val status = callbacks.status()
         return linkedMapOf(
             "q" to sequence,
@@ -521,6 +534,7 @@ class BrowserLinkServer(
             "audio" to (audioHub?.enabled == true),
             "voice" to (audioHub?.voiceStatus() ?: mapOf("state" to "idle", "muted" to false, "revision" to 0)),
             "airplay" to AirPlayBrowserPlayback.snapshot(),
+            "airplayTrust" to AirPlayTrustNotifications.prompt(session),
             "touch" to if (status.touchAvailable) "ok" else "unavailable",
             "phone" to status.phone + mapOf("video" to hub.snapshot(), "link" to performance.snapshot()),
         )

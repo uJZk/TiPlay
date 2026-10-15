@@ -13,12 +13,13 @@ import java.nio.ByteOrder
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 
-/** Browser music continues while microphone demand routes speech through verified Android HFP duplex. */
+/** Browser decodes music continuously; Android decodes eligible speech only during verified HFP/SCO demand. */
 class BrowserAudioMediaSink(
     private val video: MediaSink,
     private val hub: WebAudioHub,
     initiallyPaused: Boolean = false,
     private val voiceFactory: BluetoothVoiceFactory? = null,
+    private val decoderFactory: (AudioFormat) -> MediaCodec = ::decoder,
 ) : MediaSink by video, Closeable {
     private val renderers = mutableMapOf<AudioStreamId, Decoder>()
     private val microphoneDemands = linkedMapOf<AudioStreamId, MicrophoneConfig>()
@@ -37,6 +38,7 @@ class BrowserAudioMediaSink(
     @Synchronized override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) {
         if (closed) return
         renderers.remove(id)?.close()
+        voice?.clear(id)
         renderers[id] = Decoder(id, format)
     }
 
@@ -51,9 +53,11 @@ class BrowserAudioMediaSink(
     }
 
     @Synchronized override fun onAudioStopped(id: AudioStreamId) {
-        renderers.remove(id)?.close()
+        renderers.remove(id)?.let { renderer ->
+            hub.endEncodedStream(this, semanticType(id), renderer.publication)
+            renderer.close()
+        }
         voice?.clear(id)
-        hub.flush(this, semanticType(id))
     }
 
     @Synchronized fun pauseAudio() {
@@ -67,8 +71,8 @@ class BrowserAudioMediaSink(
     @Synchronized fun resumeAudio() {
         if (closed || !paused) return
         paused = false
-        resetDecoders()
         hub.begin(this)
+        resetDecoders()
         selectMicrophone()
     }
 
@@ -137,8 +141,9 @@ class BrowserAudioMediaSink(
         val previous = renderers.filterKeys { !voiceOnly || BluetoothVoicePolicy.allowed(it) }
         previous.forEach { (id, decoder) ->
             renderers.remove(id)
+            if (voiceOnly) hub.endEncodedStream(this, semanticType(id), decoder.publication)
             decoder.close()
-            if (voiceOnly) hub.flush(this, semanticType(id))
+            voice?.clear(id)
             if (!closed) renderers[id] = Decoder(id, decoder.format, decoder.timeline)
         }
     }
@@ -160,11 +165,12 @@ class BrowserAudioMediaSink(
         private val packets = ArrayBlockingQueue<Pair<ByteArray, Int>>(24)
         private val order = AudioPacketOrder<Pair<ByteArray, Int>>()
         @Volatile private var running = true
-        private var reset = true
         private var outputRate = format.sampleRate
         private var outputChannels = format.channels
-        private val publication = hub.publication(this@BrowserAudioMediaSink)
-        private val thread = Thread(::run, "browser-audio-decode").apply { isDaemon = true; start() }
+        val publication = hub.publication(this@BrowserAudioMediaSink)
+        private val bluetoothDecode = !paused && voiceActive && microphoneId != null && BluetoothVoicePolicy.allowed(id)
+        private val browserForward = !paused && !(voiceHeld && BluetoothVoicePolicy.allowed(id))
+        private val thread = Thread(::run, if (browserForward) "browser-audio-transport" else "car-bluetooth-audio-decode").apply { isDaemon = true; start() }
 
         fun offer(rtp: ByteArray, sample: Int) {
             if (!running || rtp.size <= 12) return
@@ -187,15 +193,25 @@ class BrowserAudioMediaSink(
         private fun run() {
             var codec: MediaCodec? = null
             try {
-                if (format.codec != AudioCodecKind.LPCM) codec = decoder(format)
+                if (browserForward) hub.beginEncodedStream(this@BrowserAudioMediaSink, semanticType(id), browserFormat(format),
+                    publication = publication, buffered = id.type == 103)
+                if (bluetoothDecode && format.codec != AudioCodecKind.LPCM) codec = decoderFactory(format)
                 val info = MediaCodec.BufferInfo()
                 while (running) {
                     if (id.type != 103) synchronized(order) { order.drain().forEach(::enqueue) }
                     val packet = packets.poll(10, TimeUnit.MILLISECONDS)
                     if (packet != null) {
-                        val sample = timeline.unwrap(packet.second)
+                        val sample = synchronized(this@BrowserAudioMediaSink) {
+                            if (!running || paused || epoch != routeEpoch) null else timeline.unwrap(packet.second)
+                        } ?: continue
                         val payload = packet.first.copyOfRange(12, packet.first.size)
-                        if (format.codec == AudioCodecKind.LPCM) {
+                        if (browserForward) {
+                            hub.publishEncoded(this@BrowserAudioMediaSink, payload,
+                                sample.toDouble() * 1_000_000.0 / format.rtpClockRate, timeline.presentation(sample),
+                                id = semanticType(id), buffered = id.type == 103, publication = publication)
+                        } else if (!bluetoothDecode) {
+                            continue
+                        } else if (format.codec == AudioCodecKind.LPCM) {
                             send(MicrophonePacketizer.toWirePcm(payload), timeline.presentation(sample)) // endian conversion is symmetric
                         } else {
                             val decoder = codec ?: continue
@@ -246,19 +262,11 @@ class BrowserAudioMediaSink(
             }
         }
 
-        private fun send(pcm: ByteArray, presentationNanos: Long?) {
-            val needsReset = synchronized(this) {
-                if (!running || paused || epoch != routeEpoch) return
-                if (voiceHeld && BluetoothVoicePolicy.allowed(id)) {
-                    if (voiceActive) voice?.play(id, outputRate, outputChannels, pcm)
-                    return
-                }
-                reset
+        private fun send(pcm: ByteArray, @Suppress("UNUSED_PARAMETER") presentationNanos: Long?) {
+            synchronized(this@BrowserAudioMediaSink) {
+                if (!running || paused || epoch != routeEpoch || !voiceHeld || !voiceActive || microphoneId == null) return
+                if (BluetoothVoicePolicy.allowed(id)) voice?.play(id, outputRate, outputChannels, pcm)
             }
-            val type = semanticType(id)
-            hub.publish(this@BrowserAudioMediaSink, type, outputRate, outputChannels, pcm, buffered = id.type == 103, reset = needsReset,
-                presentationNanos = presentationNanos, publication = publication)
-            synchronized(this) { reset = false }
         }
 
         @Synchronized override fun close() { running = false; publication.close(); packets.clear(); thread.interrupt() }
@@ -269,6 +277,21 @@ class BrowserAudioMediaSink(
             "media" -> 0
             "default", "compatibility" -> if (id.type == 102 || id.type == 103) 0 else 1
             "telephony" -> 2; "speechrecognition" -> 3; "alert" -> 4; else -> 1
+        }
+        fun browserFormat(format: AudioFormat): WebAudioHub.EncodedFormat {
+            val codec = when (format.codec) { AudioCodecKind.LPCM -> "pcm"; AudioCodecKind.AAC_LC -> "aac-lc"; AudioCodecKind.OPUS -> "opus" }
+            val asc = if (format.codec == AudioCodecKind.AAC_LC) {
+                val bits = (2 shl 11) or (MediaCodecSupport.aacFrequencyIndex(format.sampleRate) shl 7) or (format.channels shl 3)
+                byteArrayOf((bits ushr 8).toByte(), bits.toByte())
+            } else ByteArray(0)
+            val head = if (format.codec == AudioCodecKind.OPUS) ByteArray(19).apply {
+                "OpusHead".toByteArray(Charsets.US_ASCII).copyInto(this)
+                this[8] = 1; this[9] = format.channels.toByte(); this[10] = 0x38; this[11] = 1
+                ByteBuffer.wrap(this, 12, 4).order(ByteOrder.LITTLE_ENDIAN).putInt(format.sampleRate)
+            } else ByteArray(0)
+            return WebAudioHub.EncodedFormat(codec, format.sampleRate, format.channels, 16,
+                if (format.codec == AudioCodecKind.AAC_LC) 1024 else if (format.codec == AudioCodecKind.OPUS) 960 else 352,
+                asc = asc, cookie = head, littleEndian = false)
         }
         fun decoder(format: AudioFormat): MediaCodec {
             val opus = format.codec == AudioCodecKind.OPUS

@@ -10,17 +10,20 @@ object AirPlayBrowserPlayback {
                      val ready: Boolean, val buffering: Boolean, val seekable: Boolean,
                      val kind: String = "video", val rate: Double = 1.0, val outputAllowed: Boolean = true)
     private data class Entry(val id: Long, val state: () -> State,
-                             val control: (String, Double?) -> Unit, val video: AirPlayVideoPlayback?)
+                             val control: (String, Double?) -> Unit, val video: AirPlayVideoPlayback?,
+                             val photo: AirPlayPhotoPlayback?)
     private val ids = AtomicLong()
     private var current: Entry? = null
 
     @Synchronized
-    fun register(state: () -> State, video: AirPlayVideoPlayback? = null, control: (String, Double?) -> Unit): Closeable {
-        val entry = Entry(ids.incrementAndGet(), state, control, video)
+    fun register(state: () -> State, video: AirPlayVideoPlayback? = null, photo: AirPlayPhotoPlayback? = null,
+                 control: (String, Double?) -> Unit): Closeable {
+        val entry = Entry(ids.incrementAndGet(), state, control, video, photo)
         current = entry
         return Closeable {
             synchronized(this) { if (current === entry) current = null }
             entry.video?.close()
+            entry.photo?.close()
         }
     }
 
@@ -30,12 +33,15 @@ object AirPlayBrowserPlayback {
         val state = entry.state()
         return mapOf("id" to entry.id, "duration" to state.duration, "position" to state.position,
             "playing" to state.playing, "ready" to state.ready, "buffering" to state.buffering,
-            "seekable" to state.seekable, "kind" to state.kind, "rate" to state.rate,
-            "outputAllowed" to state.outputAllowed) + (entry.video?.source() ?: emptyMap())
+            "seekable" to state.seekable, "kind" to state.kind, "rate" to state.rate, "outputAllowed" to state.outputAllowed) +
+            (entry.video?.source() ?: entry.photo?.source() ?: emptyMap())
     }
 
     @Synchronized
     fun video(id: Long): AirPlayVideoPlayback? = current?.takeIf { it.id == id }?.video
+
+    @Synchronized
+    fun photo(id: Long): AirPlayPhotoPlayback? = current?.takeIf { it.id == id }?.photo
 
     @Synchronized
     fun report(id: Long, fields: Map<*, *>): Boolean = current?.takeIf { it.id == id }?.video?.report(fields) ?: false

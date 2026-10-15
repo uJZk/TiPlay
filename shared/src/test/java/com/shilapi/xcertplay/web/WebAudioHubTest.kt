@@ -261,19 +261,67 @@ class WebAudioHubTest {
         } finally { reader.close() }
     }
 
+    @Test fun encodedSpeechControlsCannotEvictAFullRealtimeMusicQueue() {
+        val hub = WebAudioHub(); val owner = Any()
+        hub.begin(owner); val reader = hub.subscribe()
+        val format = WebAudioHub.EncodedFormat("pcm", 16000, 1, 16, 352)
+        try {
+            hub.beginEncodedStream(owner, 0, format)
+            val musicEpoch = ByteBuffer.wrap(reader.take(100)!!).getInt(16)
+            repeat(16) { hub.publishEncoded(owner, byteArrayOf(0, it.toByte()), it.toDouble(), id = 0) }
+            repeat(10) {
+                hub.beginEncodedStream(owner, 1, format)
+                hub.endEncodedStream(owner, 1)
+            }
+            val ended = reader.take(100)!!
+            assertEquals(6, ended[4].toInt())
+            assertEquals(1, ended[5].toInt())
+            assertTrue(String(ended.copyOfRange(28, ended.size)).contains("\"ended\":true"))
+            repeat(16) {
+                val music = reader.take(100)!!
+                assertEquals(7, music[4].toInt())
+                assertEquals(0, music[5].toInt())
+                assertEquals(it, music[37].toInt())
+                assertEquals(musicEpoch, ByteBuffer.wrap(music).getInt(16))
+            }
+            assertNull(reader.take(10))
+            assertFalse(reader.closed)
+        } finally { reader.close() }
+    }
+
+    @Test fun codecConfigurationQueuedDuringABufferedWaitPrecedesItsFirstPacket() {
+        val hub = WebAudioHub(); val owner = Any()
+        hub.begin(owner); val reader = hub.subscribe()
+        val result = java.util.concurrent.atomic.AtomicReference<ByteArray?>()
+        val consumer = Thread { result.set(reader.take(1000)) }.apply { start() }
+        try {
+            assertTrue(awaitBufferedWaiters(listOf(consumer)))
+            hub.beginEncodedStream(owner, 0, WebAudioHub.EncodedFormat("pcm", 16000, 1, 16, 352), buffered = true)
+            hub.publishEncoded(owner, byteArrayOf(0, 42), 0.0, id = 0, buffered = true)
+            consumer.join(1000)
+            val configuration = requireNotNull(result.get())
+            assertEquals(6, configuration[4].toInt())
+            val packet = reader.take(100)!!
+            assertEquals(7, packet[4].toInt())
+            assertEquals(42, packet[37].toInt())
+            assertEquals(ByteBuffer.wrap(configuration).getInt(16), ByteBuffer.wrap(packet).getInt(16))
+            assertNull(reader.take(10))
+        } finally { reader.close(); consumer.join(1000) }
+    }
+
     @Test fun repeatedFlushKeepsOnlyItsLatestResetBeforeNewPcmAndRejectsALateOldReset() {
         val hub = WebAudioHub(); val owner = Any()
         hub.begin(owner); val reader = hub.subscribe()
         try {
             hub.flush(owner, 1)
             val oldReset = reader.take(100)!!
-            val oldGeneration = reader.streamGeneration(1)
+            val oldGeneration = reader.streamVersion(1)
             hub.publish(owner, 1, 16000, 1, byteArrayOf(41, 0))
             hub.flush(owner, 1)
             hub.publish(owner, 1, 16000, 1, byteArrayOf(42, 0))
             hub.flush(owner, 1)
             hub.publish(owner, 1, 16000, 1, byteArrayOf(43, 0), reset = true)
-            reader.offer(oldReset, false, reader.generation, oldGeneration)
+            reader.offer(oldReset, false, reader.generation, version = oldGeneration)
             val reset = reader.take(100)!!
             assertEquals(28, reset.size)
             assertTrue(ByteBuffer.wrap(reset).getInt(16) > ByteBuffer.wrap(oldReset).getInt(16))

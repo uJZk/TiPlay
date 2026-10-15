@@ -225,21 +225,24 @@ class Iap2CsmChannel private constructor(
         fun open(
             underlying: BlockingDuplexByteStream,
             onArtwork: (Iap2ArtworkTransfer) -> Unit = {},
+            receiveArtwork: Boolean = true,
         ): Iap2CsmChannel =
-            Iap2CsmChannel(Iap2LinkChannel.open(underlying, onArtwork))
+            Iap2CsmChannel(Iap2LinkChannel.open(underlying, onArtwork, receiveArtwork))
 
         /** Opens the owned iAP2 link over an owned wireless RFCOMM stream. */
         fun openWireless(
             underlying: BlockingDuplexByteStream,
             onArtwork: (Iap2ArtworkTransfer) -> Unit = {},
+            receiveArtwork: Boolean = true,
         ): Iap2CsmChannel =
-            Iap2CsmChannel(Iap2LinkChannel.openWireless(underlying, onArtwork))
+            Iap2CsmChannel(Iap2LinkChannel.openWireless(underlying, onArtwork, receiveArtwork))
 
         /** Opens the owned iAP2 link over an AirPlay type-130 tunnel. */
         fun openTunnel(
             underlying: BlockingDuplexByteStream,
             onArtwork: (Iap2ArtworkTransfer) -> Unit = {},
+            receiveArtwork: Boolean = true,
         ): Iap2CsmChannel =
-            Iap2CsmChannel(Iap2LinkChannel.openTunnel(underlying, onArtwork))
+            Iap2CsmChannel(Iap2LinkChannel.openTunnel(underlying, onArtwork, receiveArtwork))
     }
 }

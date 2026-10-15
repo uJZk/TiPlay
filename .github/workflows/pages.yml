@@ -1,5 +1,5 @@
 name: Publish site
-# The TiPlay page (site/play/) at the site root, the download pages under download/. See docs/TESLA_BROWSER.md.
+# The TiPlay page (site/play/) at the site root, the download pages under download/. See docs/Browser.md.
 on:
   push:
     branches: [main]
