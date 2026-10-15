@@ -26,8 +26,8 @@ try{
   const {PcmTimeline}=await import('/pcm-timeline.js');
   const timeline=new PcmTimeline(44100,2,()=>{},1000);
   const outputs=[],errors=[],decoder=createAirPlayAudioDecoder({onPcm:record=>{if(record.pcm?.byteLength){timeline.push({...record,sourceTime:record.presentationMs});outputs.push({samples:Array.from(new Int16Array(record.pcm)),rate:record.rate,channels:record.channels,epoch:record.epoch,presentationMs:record.presentationMs});}},onError:error=>errors.push(error.message)});
-  const available=await decoder.configure({type:0,epoch:1,mode:'airplay-mirror',flags:2,rate:44100,channels:2,config:fixture.config});
-  if(available){for(const packet of fixture.packets){const payload=Uint8Array.from(atob(packet.payload),c=>c.charCodeAt(0));await decoder.decode({type:0,epoch:1,mode:'airplay-mirror',flags:0,rate:44100,channels:2,decodeTimestampUs:packet.timestampUs,presentationMs:10000+packet.timestampUs/1000,payload:payload.buffer});}
+  const available=await decoder.configure({type:6,epoch:1,mode:'airplay-mirror',flags:2,rate:44100,channels:2,config:fixture.config});
+  if(available){for(const packet of fixture.packets){const payload=Uint8Array.from(atob(packet.payload),c=>c.charCodeAt(0));await decoder.decode({type:6,epoch:1,mode:'airplay-mirror',flags:0,rate:44100,channels:2,decodeTimestampUs:packet.timestampUs,presentationMs:10000+packet.timestampUs/1000,payload:payload.buffer});}
    const deadline=performance.now()+5000;while(outputs.length<fixture.packets.length&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));}
   decoder.dispose();
   const capabilities={};for(const config of[{codec:'mp4a.40.39',sampleRate:44100,numberOfChannels:2,description:new Uint8Array([248,232,80,0])},{codec:'alac',sampleRate:44100,numberOfChannels:2,description:new Uint8Array(36)}]){try{capabilities[config.codec]=(await AudioDecoder.isConfigSupported(config)).supported;}catch{capabilities[config.codec]=false;}}

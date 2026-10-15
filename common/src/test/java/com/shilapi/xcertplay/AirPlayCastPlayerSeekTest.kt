@@ -20,6 +20,7 @@ class AirPlayCastPlayerSeekTest {
         TeslaBrowserLink.resetForTest()
         val events = mutableListOf<Pair<String, Long>>()
         val player = AirPlayCastPlayer({ null }) { event, epoch -> events += event to epoch }
+        player.setOutputAllowed(true)
         try { test(player, events) } finally {
             player.close()
             shadowOf(Looper.getMainLooper()).idle()
@@ -48,6 +49,7 @@ class AirPlayCastPlayerSeekTest {
     @Test fun iphoneSpeedAndPauseReachTheBrowserWithoutReplacingACoalescedSeek() {
         TeslaBrowserLink.resetForTest()
         val player = AirPlayCastPlayer({ null }) { _, _ -> }
+        player.setOutputAllowed(true)
         try {
             player.play(ReceiverPlay("http://example.test/video.mp4", 0.0, false))
             shadowOf(Looper.getMainLooper()).idle()
@@ -94,6 +96,7 @@ class AirPlayCastPlayerSeekTest {
     @Test fun receiverReadbackChangesBeforeMainDispatchWhileSliderBurstsStillCoalesce() {
         TeslaBrowserLink.resetForTest()
         val player = AirPlayCastPlayer({ null }) { _, _ -> }
+        player.setOutputAllowed(true)
         try {
             player.play(ReceiverPlay("http://example.test/video.mp4", 0.0, false))
             shadowOf(Looper.getMainLooper()).idle()
@@ -221,4 +224,21 @@ class AirPlayCastPlayerSeekTest {
             assertEquals(0, audioStops)
         }
     }
+    @Test fun photoOwnershipChangesHideAndRestoreTheOriginalResourceWithoutReplacingIt() = withPlayer { player, _ ->
+        player.setOutputAllowed(false)
+        assertTrue(player.photo(byteArrayOf(-1, -40, -1, -39)))
+        shadowOf(Looper.getMainLooper()).idle()
+        val waiting = AirPlayBrowserPlayback.snapshot()!!
+        val id = waiting["id"] as Long
+        assertEquals("photo", waiting["kind"])
+        assertEquals(false, waiting["outputAllowed"])
+        val resource = AirPlayBrowserPlayback.photo(id)!!
+        player.setOutputAllowed(true)
+        assertEquals(true, AirPlayBrowserPlayback.snapshot()!!["outputAllowed"])
+        assertSame(resource, AirPlayBrowserPlayback.photo(id))
+        player.setOutputAllowed(false)
+        assertEquals(false, AirPlayBrowserPlayback.snapshot()!!["outputAllowed"])
+        assertArrayEquals(byteArrayOf(-1, -40, -1, -39), resource.bytes())
+    }
+
 }

@@ -5898,7 +5898,9 @@ class CarPlayHostActivity : ComponentActivity() {
         recoveryPendingAfterAirPlay = false
         val rebuildRequired = carPlayRebuildPendingAfterAirPlay
         carPlayRebuildPendingAfterAirPlay = false
-        if (!rebuildRequired && controller?.activeAirPlaySessionToken() != null) {
+        // Borrowing the screen may tear down only its media stream. The recorded control
+        // session still owns iAP2, timing and keep-alives while iOS returns the display.
+        if (!rebuildRequired && (controller?.activeAirPlaySessionToken() != null || controller?.screenBorrowState != null)) {
             reconnectTask?.let(mainHandler::removeCallbacks)
             reconnectTask = null
             reconnectScheduled = false

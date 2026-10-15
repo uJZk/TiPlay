@@ -32,6 +32,7 @@ import com.shilapi.xcertplay.airplay.AirPlayIdentity
 import com.shilapi.xcertplay.airplay.AirPlayMediaHandler
 import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
+import com.shilapi.xcertplay.airplay.CarPlayScreenBorrowState
 import com.shilapi.xcertplay.airplay.PairingStore
 import com.shilapi.xcertplay.airplay.VideoInCar
 import com.shilapi.xcertplay.airplay.VideoPlaybackDelivery
@@ -236,6 +237,8 @@ class CarPlayController(
     @Volatile private var mux: Iap2UsbMuxHost? = null
     @Volatile private var csm: Iap2Session? = null
     @Volatile private var activeSession: AirPlaySession? = null
+    @Volatile private var screenBorrowed = false
+    private val screenBorrowListeners = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
     private val browserDisplayReconnect = BrowserDisplayReconnect()
     @Volatile private var browserBluetoothBootstrap: RetainedBluetoothBootstrap? = null
     @Volatile private var wirelessBluetoothTarget: BluetoothDevice? = null
@@ -343,6 +346,8 @@ class CarPlayController(
                 }
             }
             activeSession = session
+            session.setScreenBorrowed(screenBorrowed)
+            screenBorrowListeners.forEach { it() }
             val btPrefs = appContext.getSharedPreferences("xcertplay_airplay", android.content.Context.MODE_PRIVATE)
             if (config.headUnitIntegrations && btPrefs.getBoolean("bt_suspend_during_carplay", false)) {
                 // close() marks [closed], and a closing session marks itself before onSessionEnded
@@ -362,6 +367,7 @@ class CarPlayController(
         override fun onSessionEnded(session: AirPlaySession) {
             if (activeSession === session) {
                 activeSession = null
+                screenBorrowListeners.forEach { it() }
                 synchronized(albumReplayLock) { initialArtworkReplay = null }
                 if (config.headUnitIntegrations) BydNavigationOutputs.endNow(preserveTurnOverlay = !closed && config.transport == CarPlayTransport.WIRELESS)
                 if (config.headUnitIntegrations) BydBluetoothSuspend.resume(appContext, this@CarPlayController)
@@ -441,6 +447,11 @@ class CarPlayController(
             uiListener?.onCommand(session, type, params)
         }
 
+        override fun onScreenBorrowChanged(session: AirPlaySession, state: CarPlayScreenBorrowState) {
+            if (activeSession === session) screenBorrowListeners.forEach { it() }
+        }
+
+
         override fun onDebugLog(message: String) {
             debugLog(message)
         }
@@ -458,6 +469,20 @@ class CarPlayController(
     }
 
     fun isClosed(): Boolean = closed
+
+    /** Screen loans keep the connection and its control/keep-alive transports intact. */
+    fun setScreenBorrowed(borrowed: Boolean) {
+        screenBorrowed = borrowed
+        activeSession?.takeUnless { closed || it.isClosed }?.setScreenBorrowed(borrowed)
+    }
+
+    val screenBorrowState: CarPlayScreenBorrowState?
+        get() = activeSession?.takeUnless { closed || it.isClosed }?.screenBorrowState
+
+    fun listenScreenBorrow(listener: () -> Unit): java.io.Closeable {
+        screenBorrowListeners += listener
+        return java.io.Closeable { screenBorrowListeners -= listener }
+    }
 
     /** Nonblocking identity for wheel controls: only an unclosed phone with an accepted primary stream. */
     fun activeAirPlaySessionToken(): Any? {

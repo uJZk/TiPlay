@@ -15,6 +15,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let retryTimer = null;
   let clock = null, delayPlans = initialPlaybackPlans(), timedPackets = 0, fallbackPackets = 0;
   let clockBase = null, playbackGeneration = 0;
+  const plansByMode = {};
   const encodedReservations = new Map();
   const reservedBytes = () => [...encodedReservations.values()].reduce((total, bytes) => total + bytes, 0);
   const releaseEncoded = type => {
@@ -69,15 +70,15 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     record.sourceTime = presentationTime(record.presentationMs, clock);
     const hasPcm = record.pcm.byteLength > 0;
     if (hasPcm) {
-      if (Number.isFinite(record.sourceTime)) { timedPackets++; onTiming(record.sourceTime); }
+      if (Number.isFinite(record.sourceTime)) { timedPackets++; onTiming(record.sourceTime, record.mode); }
       else fallbackPackets++;
     }
     clockBase ??= performance.timeOrigin + performance.now() - context.currentTime * 1000;
-    node.port.postMessage({ plans: delayPlans, clockBase });
+    node.port.postMessage({ plans: delayPlans, plansByMode, clockBase });
     record.generation = playbackGeneration;
     queuedBytes += record.pcm.byteLength;
     node.port.postMessage(record, [record.pcm]);
-    if (hasPcm) onQueued();
+    if (hasPcm) onQueued(record.mode);
   }
   async function stream(signal) {
     stopStream();
@@ -160,7 +161,11 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   return {
     activate, stats: snapshot,
     clock(value) { clock = value; },
-    delay(value) { delayPlans = value; node?.port.postMessage({ plans: delayPlans }); },
+    delay(value, mode) {
+      if (mode) plansByMode[mode] = value;
+      else delayPlans = value;
+      node?.port.postMessage({ plans: delayPlans, plansByMode });
+    },
     reset() { packetDecoder.reset(); releaseEncoded(); playbackGeneration++; clockBase = null; queuedBytes = 0; node?.port.postMessage({ reset: true }); capacity?.(); capacity = null; },
     start() { activate(); },
     gesture() { if (!disposed && context?.state !== 'running') activate(); },

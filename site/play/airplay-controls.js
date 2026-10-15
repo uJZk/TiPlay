@@ -109,7 +109,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   }
   async function openPhoto(next) {
     const currentKey = `${next.id}:${host()}:${next.resource}`;
-    clear(); key = currentKey; layer.hidden = false; photoStop.hidden = false;
+    clear(); key = currentKey; layer.hidden = photoStop.hidden = next.outputAllowed === false;
     const abort = loading = new AbortController();
     try {
       const { createPhotoPresenter } = await import('./airplay-photo.js');
@@ -126,7 +126,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   async function open(next, forced = false) {
     const currentKey = `${next.id}:${host()}:${next.resource}`;
     clear(); key = currentKey;
-    layer.hidden = false;
+    layer.hidden = next.outputAllowed === false;
     const abort = loading = new AbortController();
     const observation = diagnostics = createAirPlayDiagnostics(send, {
       state: () => state, media: () => player?.media,
@@ -169,6 +169,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       for (const event of ['play', 'pause', 'waiting', 'playing', 'seeking', 'seeked', 'ratechange', 'ended', 'error'])
         media.addEventListener(event, () => {
           if (player !== opened) return;
+          if (event === 'play' && state?.outputAllowed === false) { media.pause(); return; }
           if (event === 'waiting' || event === 'seeking') waiting = true;
           else if (['pause', 'playing', 'seeked', 'ended', 'error'].includes(event)) waiting = false;
           if (event === 'error' && !forceProxy && media.error?.name !== 'NotSupportedError') { observation.event('proxy-fallback'); void open(state, true); return; }
@@ -199,9 +200,10 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       if (next.kind === 'photo') {
         if (!next.resource && key) clear();
         if (next.resource && key !== `${next.id}:${host()}:${next.resource}`) void openPhoto(next);
-        else photoStop.hidden = false;
+        layer.hidden = photoStop.hidden = next.outputAllowed === false;
         return;
       }
+      layer.hidden = next.outputAllowed === false;
       if (!next.resource || !Number.isSafeInteger(next.revision)) { clear(); return; }
       const nextKey = `${next.id}:${host()}:${next.resource}`;
       if (key !== nextKey) open(next);
@@ -213,7 +215,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       routeMuted = value;
       if (player) player.media.muted = value ? true : savedMute;
     },
-    videoActive: () => Boolean(state?.resource) || state?.kind === 'audio',
+    videoActive: () => state?.kind === 'audio' || (Boolean(state?.resource) && state?.outputAllowed !== false),
     dispose() { disposed = true; clear(); layer.remove(); photoStop.remove(); },
   };
 }

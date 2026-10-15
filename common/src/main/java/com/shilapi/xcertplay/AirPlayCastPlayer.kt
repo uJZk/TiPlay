@@ -24,6 +24,8 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
     @Volatile private var browserPhoto: AirPlayPhotoPlayback? = null
     @Volatile private var audioActive = false
     @Volatile private var activeGeneration = 0L
+    private val outputLock = Any()
+    @Volatile private var outputAllowed = false
     private val requests = AtomicLong()
     private val generation: Long get() = requests.get()
     val playbackEpoch: Long get() = generation
@@ -53,7 +55,6 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
         return main.post {
             if (!live(token)) return@post
             stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED, token)
-            TeslaBrowserLink.pauseCarPlayDisplay()
             val playback = AirPlayVideoPlayback(item, resource) { event -> main.post {
                 if (live(token)) {
                     if (event == "stopped" || event == "failed") stopNow(
@@ -62,7 +63,10 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
                     stateChanged(event, token)
                 }
             } }
-            browserVideo = playback
+            synchronized(outputLock) {
+                browserVideo = playback
+                playback.setOutputAllowed(outputAllowed)
+            }
             activeGeneration = token
             browserControls = AirPlayBrowserPlayback.register(state = playback::state, video = playback,
                 control = { action, value -> main.post {
@@ -84,10 +88,9 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
         return main.post {
             if (!live(token)) return@post
             stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED, token)
-            TeslaBrowserLink.pauseCarPlayDisplay()
             val photo = AirPlayPhotoPlayback(bytes).also { browserPhoto = it }
             browserControls = AirPlayBrowserPlayback.register(state = {
-                AirPlayBrowserPlayback.State(0.0, 0.0, false, true, false, false, "photo")
+                AirPlayBrowserPlayback.State(0.0, 0.0, false, true, false, false, "photo", outputAllowed = outputAllowed)
             }, photo = photo, control = { action, _ -> if (action == "stop") main.post {
                 if (live(token)) {
                     diagnostics.control(AirPlayVideoDiagnostics.ControlSource.BROWSER, "stop", null, generation)
@@ -111,7 +114,7 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
             }
         }
     }
-    fun audio(stop: () -> Unit): Boolean {
+    fun audio(afterReady: () -> Unit = {}, stop: () -> Unit): Boolean {
         val token = requests.incrementAndGet()
         return main.post {
             if (!live(token)) return@post
@@ -123,6 +126,7 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
                 if (live(token)) { stopNow(AirPlayVideoDiagnostics.StopReason.BROWSER_STOP, token); stop() }
             } })
             activeGeneration = token
+            afterReady()
         }
     }
 
@@ -140,6 +144,11 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
             }
         }
     }
+    fun setOutputAllowed(allowed: Boolean) = synchronized(outputLock) {
+        outputAllowed = allowed
+        browserVideo?.setOutputAllowed(allowed)
+    }
+
     fun stop(afterStop: () -> Unit = {}): Boolean {
         val token = requests.incrementAndGet()
         return main.post { if (live(token)) { stopNow(AirPlayVideoDiagnostics.StopReason.RECEIVER_STOP, token); afterStop() } }

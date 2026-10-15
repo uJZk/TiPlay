@@ -175,9 +175,11 @@ class ReceiverServerTest {
         val states = CopyOnWriteArrayList<String>()
         val logs = CopyOnWriteArrayList<String>()
         val ended = CountDownLatch(1)
+        @Volatile var prepared = 0
         var stopped = 0
         var sought = 0.0
         var speed = 1.0
+        override fun prepareMirror() { prepared++ }
         override fun mirrorSink() = WebMediaSink(hub, 1920, 1080, 60)
         override fun play(item: ReceiverPlay) { items.add(item) }
         override fun stopPlayback() { stopped++ }
@@ -452,6 +454,87 @@ class ReceiverServerTest {
             assertEquals(800, config.height)
             assertThrows(IllegalArgumentException::class.java) { receiver.updateDisplaySize(1279, 800) }
         } finally { receiver.close() }
+    }
+
+    /** Shared real pairing fixture; native FairPlay is supplied by each server's existing test seam. */
+    private fun Socket.authenticateMirror(): ByteArray {
+        val curve = AirPlayCrypto.x25519Generate()
+        val signing = AirPlayCrypto.ed25519Generate()
+        val reply = send("POST", "/pair-verify", byteArrayOf(1, 0, 0, 0) + curve.publicKey + signing.publicKey).body
+        val serverCurve = reply.copyOf(32)
+        val secret = AirPlayCrypto.x25519Shared(curve.privateKey, serverCurve)
+        val verifyCipher = aesCtr(AirPlayCrypto.sha512("Pair-Verify-AES-Key".toByteArray(), secret).copyOf(16),
+            AirPlayCrypto.sha512("Pair-Verify-AES-IV".toByteArray(), secret).copyOf(16))
+        verifyCipher.update(reply.copyOfRange(32, 96))
+        assertEquals(200, status("POST", "/pair-verify", ByteArray(4) +
+            verifyCipher.update(AirPlayCrypto.ed25519Sign(signing.privateKey, curve.publicKey + serverCurve))))
+        fun fairPlay(size: Int, sequence: Int) = ByteArray(size).apply {
+            byteArrayOf(0x46, 0x50, 0x4c, 0x59, 3, 1, sequence.toByte(), 0).copyInto(this)
+            ByteBuffer.wrap(this, 8, 4).putInt(size - 12)
+        }
+        assertEquals(142, send("POST", "/fp-setup", fairPlay(16, 1)).body.size)
+        assertEquals(32, send("POST", "/fp-setup", fairPlay(164, 3)).body.size)
+        return secret
+    }
+
+    @Test fun oldMirrorPreparationCannotStopANewUrlPlayback() =
+        preparedTransportDisconnectDoesNotRetireReplacement(mirror = false)
+
+    @Test fun oldMirrorPreparationCannotStopANewMirror() =
+        preparedTransportDisconnectDoesNotRetireReplacement(mirror = true)
+
+    @Test fun closingTheCurrentMirrorPreparationReleasesDisplayIntent() =
+        preparedTransportDisconnectDoesNotRetireReplacement(mirror = null)
+
+    private fun preparedTransportDisconnectDoesNotRetireReplacement(mirror: Boolean?) {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener,
+            fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) },
+            fairPlayDecrypt = { _, _ -> ByteArray(16) { (it + 1).toByte() } })
+        receiver.start()
+        val preparing = connect(receiver.port)
+        try {
+            preparing.authenticateMirror()
+            val setup = BplistCodec.encode(mapOf("eiv" to ByteArray(16), "ekey" to ByteArray(72), "timingPort" to 0))
+            assertEquals(200, preparing.status("SETUP", "/", setup))
+            assertEquals(1, listener.prepared)
+            assertTrue(listener.states.isEmpty())
+            if (mirror == null) {
+                preparing.close()
+                awaitConnectionCount(receiver, 0)
+                assertEquals(listOf("listening"), listener.states.toList())
+                assertEquals(0, listener.stopped)
+                return
+            }
+            connect(receiver.port).use { replacement ->
+                // Another control connection can claim actual media while this transport is only prepared.
+                if (mirror) {
+                    replacement.authenticateMirror()
+                    assertEquals(200, replacement.status("SETUP", "/", setup))
+                    assertEquals(200, replacement.status("SETUP", "/", BplistCodec.encode(mapOf("streams" to
+                        listOf(mapOf("type" to 110, "streamConnectionID" to 4321L))))))
+                    assertEquals("mirror", listener.states.last())
+                } else {
+                    assertEquals(200, replacement.status("POST", "/play",
+                        "Content-Location: https://example.org/next.mp4\r\n".toByteArray()))
+                    assertEquals("video", listener.states.last())
+                }
+                val states = listener.states.toList()
+                preparing.close()
+                awaitConnectionCount(receiver, 1)
+                assertEquals(states, listener.states.toList())
+                assertEquals(0, listener.stopped)
+                assertEquals(200, replacement.status("GET", "/info"))
+            }
+        } finally { preparing.close(); receiver.close() }
+    }
+
+    private fun awaitConnectionCount(receiver: ReceiverServer, expected: Int) {
+        val sockets = ReceiverServer::class.java.getDeclaredField("sockets").apply { isAccessible = true }
+            .get(receiver) as Set<*>
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        while (sockets.size != expected && System.nanoTime() < deadline) Thread.sleep(1)
+        assertEquals("Preparing connection completed cleanup", expected, sockets.size)
     }
 
     @Test fun videoControlAndReverseEventsBelongToTheirSessionAndShutdownClosesSockets() {

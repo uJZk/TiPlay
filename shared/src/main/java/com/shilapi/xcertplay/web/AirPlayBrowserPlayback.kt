@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicLong
 object AirPlayBrowserPlayback {
     data class State(val duration: Double, val position: Double, val playing: Boolean,
                      val ready: Boolean, val buffering: Boolean, val seekable: Boolean,
-                     val kind: String = "video", val rate: Double = 1.0)
+                     val kind: String = "video", val rate: Double = 1.0, val outputAllowed: Boolean = true)
     private data class Entry(val id: Long, val state: () -> State,
                              val control: (String, Double?) -> Unit, val video: AirPlayVideoPlayback?,
                              val photo: AirPlayPhotoPlayback?)
@@ -33,7 +33,7 @@ object AirPlayBrowserPlayback {
         val state = entry.state()
         return mapOf("id" to entry.id, "duration" to state.duration, "position" to state.position,
             "playing" to state.playing, "ready" to state.ready, "buffering" to state.buffering,
-            "seekable" to state.seekable, "kind" to state.kind, "rate" to state.rate) +
+            "seekable" to state.seekable, "kind" to state.kind, "rate" to state.rate, "outputAllowed" to state.outputAllowed) +
             (entry.video?.source() ?: entry.photo?.source() ?: emptyMap())
     }
 

@@ -91,6 +91,17 @@ TEST_VIDEO_MP4="$PWD/work/canvas/sample.mp4" TEST_VIDEO_HLS="$PWD/work/canvas/sa
 
 Set `CHROMIUM` and `NODE_PATH` as needed. Omit `TEST_VIDEO_HLS` to run only the MP4 cases.
 
+## Photos under the actual page CSP
+
+```sh
+NODE_PATH=/tmp/pw/node_modules node tests/web-e2e/airplay-photo.mjs
+```
+
+Loads the actual `site/play/index.html` and its CSP, fetches an EXIF-oriented JPEG
+through the photo controls' authenticated resource route, and verifies native decode,
+contain fitting, hidden/shown screen ownership, resource reuse and absence of CSP
+violations. Set `CHROMIUM` as needed; this script defaults to `/usr/bin/chromium`.
+
 ## Real phone side (`phone-run.mjs`)
 
 `phone-run.mjs` checks the app's own phone side instead of the fake phone. `RealPhone.java` runs the compiled `:shared`

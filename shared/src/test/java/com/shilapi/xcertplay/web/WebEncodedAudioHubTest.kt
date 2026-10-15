@@ -20,7 +20,7 @@ class WebEncodedAudioHubTest {
         assertTrue(json.contains("\"codec\":\"aac-eld\""))
         assertTrue(json.contains("\"asc\":[248,232,80,0]"))
         val raw = byteArrayOf(1, 2, 3, 4, 5)
-        hub.publishEncoded(owner, raw, 12345.0, 8_765_432_100L)
+        hub.publishEncoded(owner, raw, 12345.0, 8_765_432_100L, id = WebAudioHub.AIRPLAY_MIRROR_STREAM)
         val packet = requireNotNull(reader.take(10))
         val header = ByteBuffer.wrap(packet)
         assertEquals(7, packet[4].toInt()); assertEquals(4, packet[7].toInt())
@@ -36,11 +36,11 @@ class WebEncodedAudioHubTest {
         val hub = WebAudioHub(); val owner = Any()
         hub.beginEncoded(owner, format); val reader = hub.subscribe()
         val oldEpoch = epoch(requireNotNull(reader.take(10)))
-        hub.publishEncoded(owner, byteArrayOf(99), 1.0)
-        hub.flushEncoded(owner)
+        hub.publishEncoded(owner, byteArrayOf(99), 1.0, id = WebAudioHub.AIRPLAY_MIRROR_STREAM)
+        hub.flushEncoded(owner, WebAudioHub.AIRPLAY_MIRROR_STREAM)
         val config = requireNotNull(reader.take(10))
         assertEquals(6, config[4].toInt()); assertTrue(oldEpoch != epoch(config))
-        hub.publishEncoded(owner, byteArrayOf(7), 2.0)
+        hub.publishEncoded(owner, byteArrayOf(7), 2.0, id = WebAudioHub.AIRPLAY_MIRROR_STREAM)
         val next = requireNotNull(reader.take(10))
         assertEquals(7, next[4].toInt()); assertEquals(epoch(config), epoch(next))
         assertArrayEquals(byteArrayOf(7), next.copyOfRange(36, next.size))
@@ -50,7 +50,7 @@ class WebEncodedAudioHubTest {
     @Test fun slowReaderGetsFreshConfigurationBeforeAnyPacketFromANewBoundedEpoch() {
         val hub = WebAudioHub(); val owner = Any()
         hub.beginEncoded(owner, format); val reader = hub.subscribe()
-        repeat(100) { hub.publishEncoded(owner, byteArrayOf(it.toByte()), it.toDouble()) }
+        repeat(100) { hub.publishEncoded(owner, byteArrayOf(it.toByte()), it.toDouble(), id = WebAudioHub.AIRPLAY_MIRROR_STREAM) }
         val records = buildList { while (true) add(reader.take(1) ?: break) }
         assertTrue(records.size <= 16)
         assertEquals(6, records.first()[4].toInt())
@@ -62,8 +62,8 @@ class WebEncodedAudioHubTest {
         val hub = WebAudioHub(); val old = Any(); val current = Any()
         hub.beginEncoded(old, format); var reader = hub.subscribe()
         reader.take(10)
-        hub.publishEncoded(old, byteArrayOf(1), 1.0)
-        hub.end(old)
+        hub.publishEncoded(old, byteArrayOf(1), 1.0, id = WebAudioHub.AIRPLAY_MIRROR_STREAM)
+        hub.endMirror(old)
         val ended = buildList { while (true) add(reader.take(1) ?: break) }.last()
         assertEquals(6, ended[4].toInt())
         assertTrue(String(ended.copyOfRange(28, ended.size)).contains("\"ended\":true"))
@@ -71,9 +71,9 @@ class WebEncodedAudioHubTest {
         reader = hub.subscribe()
         val config = requireNotNull(reader.take(10))
         assertEquals(6, config[4].toInt())
-        hub.publishEncoded(old, byteArrayOf(99), 2.0); hub.end(old)
+        hub.publishEncoded(old, byteArrayOf(99), 2.0, id = WebAudioHub.AIRPLAY_MIRROR_STREAM); hub.endMirror(old)
         assertNull(reader.take(1))
-        hub.publishEncoded(current, byteArrayOf(3), 3.0)
+        hub.publishEncoded(current, byteArrayOf(3), 3.0, id = WebAudioHub.AIRPLAY_MIRROR_STREAM)
         assertEquals(3, requireNotNull(reader.take(10))[36].toInt())
     }
 
@@ -82,10 +82,10 @@ class WebEncodedAudioHubTest {
         hub.beginEncoded(owner, format); val reader = hub.subscribe(); reader.take(10)
         assertTrue(hub.voiceRoute(voice, "connected", true))
         assertEquals(5, requireNotNull(reader.take(10))[5].toInt())
-        hub.publishEncoded(owner, byteArrayOf(1), 1.0); assertNull(reader.take(1))
+        hub.publishEncoded(owner, byteArrayOf(1), 1.0, id = WebAudioHub.AIRPLAY_MIRROR_STREAM); assertNull(reader.take(1))
         assertTrue(hub.voiceRoute(voice, "idle", false))
         reader.take(10)
-        hub.publishEncoded(owner, byteArrayOf(2), 2.0)
+        hub.publishEncoded(owner, byteArrayOf(2), 2.0, id = WebAudioHub.AIRPLAY_MIRROR_STREAM)
         assertEquals(6, requireNotNull(reader.take(10))[4].toInt())
         assertEquals(7, requireNotNull(reader.take(10))[4].toInt())
     }
@@ -264,6 +264,82 @@ class WebEncodedAudioHubTest {
             assertTrue(epoch(config) != epoch(configs.single { it[5].toInt() == id }))
         }
         assertNull(reader.take(1))
+    }
+
+    @Test fun mirrorEndKeepsCarPlayCodecsMusicAndGuidanceAlive() {
+        val hub = WebAudioHub(); val carPlay = Any(); val mirror = Any()
+        hub.begin(carPlay); val reader = hub.subscribe()
+        hub.beginEncodedStream(carPlay, 0, format, buffered = true)
+        hub.publishEncoded(carPlay, byteArrayOf(10), 0.0, buffered = true)
+        hub.beginEncodedStream(carPlay, 3, format)
+        hub.publishEncoded(carPlay, byteArrayOf(20), 0.0, id = 3)
+        hub.beginEncoded(mirror, format)
+        hub.publishEncoded(mirror, byteArrayOf(30), 0.0, id = WebAudioHub.AIRPLAY_MIRROR_STREAM)
+        hub.endMirror(mirror)
+        val records = buildList { while (true) add(reader.take(1) ?: break) }
+        assertEquals(listOf(3, 3, 6, 0, 0), records.map { it[5].toInt() })
+        assertTrue(String(records[2].copyOfRange(28, records[2].size)).contains("\"ended\":true"))
+        assertEquals(20, records[1][36].toInt()); assertEquals(10, records.last()[36].toInt())
+        hub.publishEncoded(carPlay, byteArrayOf(40), 1.0, buffered = true)
+        assertEquals(40, requireNotNull(reader.take(10))[36].toInt())
+    }
+
+    @Test fun mirrorOverrunRestoresItsCodecWithoutDiscardingCarPlayGuidanceOrMusic() {
+        val hub = WebAudioHub(); val carPlay = Any(); val mirror = Any()
+        hub.begin(carPlay); val reader = hub.subscribe()
+        hub.beginEncodedStream(carPlay, 0, format, buffered = true)
+        hub.publishEncoded(carPlay, byteArrayOf(10), 0.0, buffered = true)
+        hub.beginEncodedStream(carPlay, 3, format)
+        hub.publishEncoded(carPlay, byteArrayOf(20), 0.0, id = 3)
+        hub.beginEncoded(mirror, format)
+        repeat(100) { hub.publishEncoded(mirror, byteArrayOf(it.toByte()), it.toDouble(), id = WebAudioHub.AIRPLAY_MIRROR_STREAM) }
+        val records = buildList { while (true) add(reader.take(1) ?: break) }
+        assertEquals(listOf(3, 3), records.take(2).map { it[5].toInt() })
+        assertEquals(20, records[1][36].toInt())
+        val mirrors = records.filter { it[5].toInt() == WebAudioHub.AIRPLAY_MIRROR_STREAM }
+        assertTrue(mirrors.size <= 16); assertEquals(6, mirrors.first()[4].toInt())
+        assertTrue(mirrors.drop(1).all { it[4].toInt() == 7 && epoch(it) == epoch(mirrors.first()) })
+        assertEquals(99, mirrors.last()[36].toInt())
+        assertEquals(10, records.last()[36].toInt())
+    }
+
+    @Test fun carPlayBeginAndEndPreserveAnExistingMirrorCodecAndItsQueuedPackets() {
+        val hub = WebAudioHub(); val carPlay = Any(); val mirror = Any()
+        hub.beginEncoded(mirror, format); val reader = hub.subscribe()
+        hub.publishEncoded(mirror, byteArrayOf(30), 0.0, id = WebAudioHub.AIRPLAY_MIRROR_STREAM)
+        hub.begin(carPlay)
+        hub.beginEncodedStream(carPlay, 0, format, buffered = true)
+        hub.publishEncoded(carPlay, byteArrayOf(99), 0.0, buffered = true)
+        hub.end(carPlay)
+        val records = buildList { while (true) add(reader.take(1) ?: break) }
+        val mirrors = records.filter { it[5].toInt() == WebAudioHub.AIRPLAY_MIRROR_STREAM }
+        assertEquals(listOf(6, 7), mirrors.map { it[4].toInt() })
+        assertFalse(String(mirrors.first().copyOfRange(28, mirrors.first().size)).contains("ended"))
+        assertEquals(30, mirrors.last()[36].toInt())
+        assertTrue(records.none { it[4].toInt() == 7 && it[5].toInt() == 0 })
+        hub.publishEncoded(mirror, byteArrayOf(40), 1.0, id = WebAudioHub.AIRPLAY_MIRROR_STREAM)
+        assertEquals(40, requireNotNull(reader.take(10))[36].toInt())
+    }
+
+    @Test fun carPlaySettingRetiresOnlyCarPlayEncodedAudioAndReplaysItsCodecWhenEnabled() {
+        val hub = WebAudioHub(); val carPlay = Any(); val mirror = Any()
+        hub.begin(carPlay); val reader = hub.subscribe()
+        hub.beginEncodedStream(carPlay, 0, format, buffered = true)
+        hub.publishEncoded(carPlay, byteArrayOf(10), 0.0, buffered = true)
+        hub.beginEncoded(mirror, format)
+        hub.publishEncoded(mirror, byteArrayOf(30), 0.0, id = WebAudioHub.AIRPLAY_MIRROR_STREAM)
+        hub.carPlayEnabled = false
+        val records = buildList { while (true) add(reader.take(1) ?: break) }
+        assertFalse(reader.closed)
+        assertTrue(records.none { it[4].toInt() == 7 && it[5].toInt() == 0 })
+        assertEquals(30, records.single { it[4].toInt() == 7 }[36].toInt())
+        hub.publishEncoded(carPlay, byteArrayOf(99), 1.0, buffered = true)
+        assertNull(reader.take(1))
+        hub.carPlayEnabled = true
+        while (reader.take(1) != null) {}
+        hub.publishEncoded(carPlay, byteArrayOf(40), 2.0, buffered = true)
+        assertEquals(6, requireNotNull(reader.take(10))[4].toInt())
+        assertEquals(40, requireNotNull(reader.take(10))[36].toInt())
     }
 
     private fun awaitWaiting(thread: Thread): Boolean {

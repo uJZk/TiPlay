@@ -7,9 +7,10 @@ import { audioDelayAt } from '../../site/play/playback-window.js';
 import { createFramePresenter } from '../../site/play/video.js';
 import { constantDelay, delayAt, planDelay } from '../../site/play/delay-plan.js';
 
-function record(samples, { rate = 48000, channels = 1, flags = 0 } = {}) {
+function record(samples, { rate = 48000, channels = 1, flags = 0, type = 0 } = {}) {
   const bytes = new Uint8Array(28 + samples.length * 2), view = new DataView(bytes.buffer);
   view.setUint32(0, bytes.length - 4); bytes[4] = 2; bytes[6] = channels; bytes[7] = flags;
+  bytes[5] = type;
   view.setUint32(8, rate); view.setFloat64(20, NaN);
   samples.forEach((value, i) => view.setInt16(28 + i * 2, value, true));
   return bytes;
@@ -24,6 +25,13 @@ test('PCM framing survives arbitrary network boundaries and skips keepalives', a
   assert.equal(records.length, 1);
   assert.equal(records[0].rate, 48000);
   assert.deepEqual([...new Int16Array(records[0].pcm)], [-32768, 0, 32767]);
+});
+
+test('mirror soundtrack keeps its own channel beside CarPlay and rejects an unlabelled mirror', async () => {
+  const values = [];
+  for await (const value of readAudioRecords(body([record([10]), record([20], { type: 6, flags: 4 })]))) values.push(value);
+  assert.deepEqual(values.map(value => [value.type, value.mode]), [[0, 'carplay'], [6, 'airplay-mirror']]);
+  await assert.rejects(async () => { for await (const _ of readAudioRecords(body([record([20], { type: 6 })]))) {} });
 });
 
 test('audio mode flags retain buffered/reset flags and notify policy before timing without video config', async () => {
@@ -204,6 +212,28 @@ test('worklet mixes separate streams and bounds an unpaced music producer', asyn
   const left = new Float32Array(128), right = new Float32Array(128);
   processor.process([], [[left, right]]);
   assert.ok(left.every(value => Math.abs(value - 0.3) < 0.00001), 'guidance ducks music'); assert.deepEqual(left, right);
+  const mixed = new Processor();
+  const mix = (type, count, value, flags = 0) => mixed.port.onmessage({ data: {
+    type, epoch: 1, rate: 48000, channels: 1, flags, pcm: new Int16Array(count).fill(value).buffer,
+  } });
+  mix(0, 256, 8192); mix(6, 128, 8192, 4);
+  mixed.process([], [[left, right]]);
+  assert.ok(left.every(value => value === 0.5), 'CarPlay and mirror media mix without treating the mirror as guidance');
+  mix(6, 0, 0, 6);
+  mixed.process([], [[left, right]]);
+  assert.ok(left.every(value => value === 0.25), 'ending mirror audio preserves queued CarPlay music');
+  const separatePlans = new Processor();
+  globalThis.currentTime = 0;
+  separatePlans.port.onmessage({ data: { clockBase: 1100, plansByMode: {
+    carplay: { video: constantDelay(0), audio: constantDelay(0) },
+    'airplay-mirror': { video: constantDelay(100), audio: constantDelay(100) },
+  } } });
+  for (const [type, mode, sourceTime] of [[0, 'carplay', 1100], [6, 'airplay-mirror', 1000]]) {
+    separatePlans.port.onmessage({ data: { type, mode, epoch: 1, sequence: 0, sourceTime,
+      rate: 48000, channels: 1, flags: 0, pcm: new Int16Array(128).fill(8192).buffer } });
+  }
+  separatePlans.process([], [[left, right]]);
+  assert.ok(left.every(value => value === 0.5), 'each simultaneous PCM mode follows its own delay plan');
   for (let i = 0; i < 100; i++) publish(0, 4800, 1, 1);
   assert.ok(processor.streams.get(0).frames <= 96000);
   assert.ok(processor.messages.some(message => message.consumed));

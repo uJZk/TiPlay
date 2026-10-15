@@ -24,6 +24,7 @@ import com.shilapi.xcertplay.web.AirPlayTrustNotifications
 import com.shilapi.xcertplay.web.WebMediaSink
 import java.security.SecureRandom
 import java.util.concurrent.Executors
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /** The default AirPlay receiver; CarPlay retains its controller while AirPlay borrows the canvas. */
@@ -121,25 +122,53 @@ class AirPlayReceiverService : Service() {
                     override fun flushMirrorAudio() {
                         synchronized(displayLock) { mirrorAudio?.flush(); mirrorAudioFailedFormat = null }
                     }
-                    override fun mirrorSink(): WebMediaSink = synchronized(displayLock) {
-                        check(!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService))
-                        displayGeneration++
-                        mirrorAudio?.close(); mirrorAudio = null; mirrorAudioFormat = null; mirrorAudioFailedFormat = null
-                        player.stop()
-                        TeslaBrowserLink.pauseCarPlayDisplay()
-                        val display = server?.displayConfig ?: receiverConfig
-                        WebMediaSink(TeslaBrowserLink.hub, display.width, display.height, display.fps,
-                            com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY).also {
-                            mirrorOutput = it
-                            // Reserve ordinary AirPlay priority at SETUP, before its first CONFIG.
-                            it.onScreenStreamActive(110, true)
+                    override fun prepareMirror() {
+                        synchronized(displayLock) {
+                            check(!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService))
+                            requestDisplay()
                         }
+                    }
+                    override fun mirrorSink(): WebMediaSink {
+                        val ready = CountDownLatch(1)
+                        val output = synchronized(displayLock) {
+                            check(!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService))
+                            mirrorAudio?.close(); mirrorAudio = null; mirrorAudioFormat = null; mirrorAudioFailedFormat = null
+                            val display = server?.displayConfig ?: receiverConfig
+                            WebMediaSink(TeslaBrowserLink.hub, display.width, display.height, display.fps,
+                                com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY).also {
+                                it.pauseDisplay()
+                                it.onScreenStreamActive(110, true)
+                                mirrorOutput = it
+                                requestDisplay(it, ready)
+                                val generation = displayGeneration
+                                player.stop {
+                                    synchronized(displayLock) {
+                                        // A timed-out loan can finish before the main thread releases
+                                        // an old URL/photo resource. Retry return after that cleanup.
+                                        if (!destroyed && displayGeneration == generation && mirrorOutput == null)
+                                            TeslaBrowserLink.resumeCarPlayDisplay()
+                                    }
+                                }
+                            }
+                        }
+                        // The iPhone cannot send its only initial IDR until SETUP supplies a data port.
+                        // Wait on this control thread, never while holding the service display lock.
+                        if (!ready.await(5, TimeUnit.SECONDS) || destroyed || mirrorOutput !== output) {
+                            synchronized(displayLock) {
+                                output.close()
+                                if (mirrorOutput === output) {
+                                    mirrorOutput = null
+                                    TeslaBrowserLink.resumeCarPlayDisplay()
+                                }
+                            }
+                            error("CarPlay screen loan was not confirmed")
+                        }
+                        return output
                     }
                     override fun play(item: ReceiverPlay) {
                         synchronized(displayLock) {
                             if (!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService)) {
-                                displayGeneration++
-                                TeslaBrowserLink.pauseCarPlayDisplay(); player.play(item)
+                                requestDisplay(); player.play(item)
                             }
                         }
                     }
@@ -184,8 +213,7 @@ class AirPlayReceiverService : Service() {
                     override fun photo(bytes: ByteArray) {
                         synchronized(displayLock) {
                             if (!destroyed && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService)) {
-                                displayGeneration++
-                                TeslaBrowserLink.pauseCarPlayDisplay(); player.photo(bytes)
+                                requestDisplay(); player.photo(bytes)
                             }
                         }
                     }
@@ -197,9 +225,14 @@ class AirPlayReceiverService : Service() {
                         if (destroyed) return
                         if (state == "audio") {
                             synchronized(displayLock) {
-                                displayGeneration++
-                                TeslaBrowserLink.pauseCarPlayDisplay()
-                                player.audio { worker.execute { if (!destroyed) server?.stopAudioPlayback() } }
+                                val generation = ++displayGeneration
+                                // Audio has no display resource. Release any previous visual producer
+                                // before returning its confirmed CarPlay screen loan.
+                                player.audio(afterReady = {
+                                    synchronized(displayLock) {
+                                        if (!destroyed && displayGeneration == generation) TeslaBrowserLink.resumeCarPlayDisplay()
+                                    }
+                                }) { worker.execute { if (!destroyed) server?.stopAudioPlayback() } }
                             }
                         }
                         if (state == "listening") {
@@ -228,6 +261,22 @@ class AirPlayReceiverService : Service() {
     private fun logDiagnostic(message: String) {
         Log.i("tiplay-airplay", message)
         TeslaBrowserLink.persistDiagnostic(message)
+    }
+
+    /** Called under displayLock; stale ownership callbacks cannot affect a replacement producer. */
+    private fun requestDisplay(output: WebMediaSink? = null, ready: CountDownLatch? = null) {
+        val generation = ++displayGeneration
+        player.setOutputAllowed(false)
+        TeslaBrowserLink.pauseCarPlayDisplay { available ->
+            synchronized(displayLock) {
+                if (!destroyed && displayGeneration == generation) {
+                    if (available) { output?.resumeDisplay(); ready?.countDown() }
+                    else output?.pauseDisplay()
+                    // A mirror owns its sink; a queued old photo/video must stay hidden.
+                    player.setOutputAllowed(available && output == null)
+                }
+            }
+        }
     }
 
     private fun identity(): ReceiverConfig {

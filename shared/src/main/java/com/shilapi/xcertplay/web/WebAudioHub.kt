@@ -23,17 +23,18 @@ class WebAudioHub {
     internal fun publication(owner: Any) = Publication(this, owner)
 
     private var owner: Any? = null
+    private var mirrorOwner: Any? = null
     private var sequence = 0
     private var voiceOwner: Any? = null
     private var voiceRevision = 0
     private var voiceMuted = false
     private var voiceState = "idle"
     private var voiceError: String? = null
-    private val epochs = IntArray(5)
+    private val epochs = IntArray(AIRPLAY_MIRROR_STREAM + 1)
     private var subscription: Subscription? = null
     private class EncodedStream(val id: Int, val format: EncodedFormat, val mode: BrowserPlaybackMode,
                                 val buffered: Boolean, val publication: Publication?)
-    private val encodedStreams = arrayOfNulls<EncodedStream>(5)
+    private val encodedStreams = arrayOfNulls<EncodedStream>(AIRPLAY_MIRROR_STREAM + 1)
 
     data class EncodedFormat(val codec: String, val sampleRate: Int, val channels: Int,
                              val bitDepth: Int, val samplesPerFrame: Int,
@@ -57,41 +58,74 @@ class WebAudioHub {
             if (!value) { subscription?.close(); subscription = null }
         }
 
+    @Volatile var carPlayEnabled = true
+        set(value) = synchronized(this) {
+            if (field != value) {
+                field = value
+                owner?.let { current ->
+                    for (id in 0..4) {
+                        subscription?.clearStream(id)
+                        val stream = encodedStreams[id]
+                        if (stream == null) publish(current, id, 48000, 2, ByteArray(0), reset = true)
+                        else {
+                            epochs[id]++
+                            subscription?.let { target ->
+                                target.offer(encodedRecord(6, stream, epochs[id], endedJson(stream), true), false, target.generation)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
     @Synchronized fun begin(owner: Any) {
-        encodedStreams.fill(null)
         this.owner = owner
-        subscription?.clear()
-        for (id in 0..4) flush(owner, id)
+        for (id in 0..4) { encodedStreams[id] = null; flush(owner, id) }
         if (voiceRevision != 0) subscription?.let(::routeRecord)
     }
 
     @Synchronized fun end(owner: Any) {
         if (this.owner !== owner) return
-        val ended = encodedStreams.filterNotNull()
-        subscription?.clear()
         for (id in 0..4) {
-            if (encodedStreams[id] == null) publish(owner, id, 48000, 2, ByteArray(0), reset = true)
-            else epochs[id]++
-        }
-        // STOP control is live: each stream has been cleared, so no older music can follow it.
-        for (stream in ended) subscription?.let { target ->
-            target.offer(encodedRecord(6, stream, epochs[stream.id], endedJson(stream), true),
-                false, target.generation)
+            if (encodedStreams[id] != null) retireEncoded(requireNotNull(encodedStreams[id]))
+            else flush(owner, id)
         }
         this.owner = null
-        encodedStreams.fill(null)
         if (voiceRevision != 0) subscription?.let(::routeRecord)
     }
+
+    /** Ordinary AirPlay has its own audio producer, independent of CarPlay media and guidance. */
+    @Synchronized fun beginMirror(owner: Any) {
+        mirrorOwner = owner
+        encodedStreams[AIRPLAY_MIRROR_STREAM] = null
+        flush(owner, AIRPLAY_MIRROR_STREAM)
+    }
+
+    @Synchronized fun endMirror(owner: Any) {
+        if (mirrorOwner !== owner) return
+        if (encodedStreams[AIRPLAY_MIRROR_STREAM] != null) retireEncoded(requireNotNull(encodedStreams[AIRPLAY_MIRROR_STREAM]))
+        else flush(owner, AIRPLAY_MIRROR_STREAM)
+        mirrorOwner = null
+    }
+
+    private fun owns(owner: Any, id: Int) = when (id) {
+        in 0..4 -> this.owner === owner
+        AIRPLAY_MIRROR_STREAM -> mirrorOwner === owner
+        else -> false
+    }
+
+    private fun audioStream(id: Int) = id in 0..4 || id == AIRPLAY_MIRROR_STREAM
 
     fun publish(owner: Any, id: Int, sampleRate: Int, channels: Int, pcm: ByteArray,
                               buffered: Boolean = false, reset: Boolean = false,
                               presentationNanos: Long? = null,
                               mode: BrowserPlaybackMode = BrowserPlaybackMode.CARPLAY,
                               publication: Publication? = null) {
-        if (id !in 0..4 || channels !in 1..2 || sampleRate !in 8000..96000 ||
+        if (!audioStream(id) || (id == AIRPLAY_MIRROR_STREAM && mode != BrowserPlaybackMode.AIRPLAY_MIRROR) || channels !in 1..2 || sampleRate !in 8000..96000 ||
             (pcm.isEmpty() && !reset) || pcm.size > MAX_PCM || pcm.size % (channels * 2) != 0) return
         val delivery = synchronized(this) {
-            if (!enabled || this.owner !== owner || (voiceMuted && pcm.isNotEmpty())) return
+            if (!enabled || !owns(owner, id) || (voiceMuted && pcm.isNotEmpty())) return
+            if (id in 0..4 && !carPlayEnabled && pcm.isNotEmpty()) return
             if (publication != null && (!publication.active || publication.owner !== owner)) return
             val target = subscription ?: return
             if (reset) epochs[id]++
@@ -119,19 +153,19 @@ class WebAudioHub {
         return target
     }
 
-    /** Ordinary AirPlay owns the session; CarPlay registers streams without replacing its siblings. */
+    /** Register the dedicated ordinary AirPlay stream without replacing CarPlay audio. */
     fun beginEncoded(owner: Any, format: EncodedFormat) {
-        synchronized(this) { begin(owner) }
-        beginEncodedStream(owner, 0, format, BrowserPlaybackMode.AIRPLAY_MIRROR)
+        synchronized(this) { beginMirror(owner) }
+        beginEncodedStream(owner, AIRPLAY_MIRROR_STREAM, format, BrowserPlaybackMode.AIRPLAY_MIRROR)
     }
 
     fun beginEncodedStream(owner: Any, id: Int, format: EncodedFormat,
                            mode: BrowserPlaybackMode = BrowserPlaybackMode.CARPLAY,
                            publication: Publication? = null, buffered: Boolean = false) {
-        if (id !in 0..4) return
+        if (!audioStream(id) || (id == AIRPLAY_MIRROR_STREAM && mode != BrowserPlaybackMode.AIRPLAY_MIRROR)) return
         val stream: EncodedStream
         synchronized(this) {
-            if (this.owner !== owner || !validPublication(owner, publication)) return
+            if (!owns(owner, id) || !validPublication(owner, publication)) return
             subscription?.clearStream(id)
             epochs[id]++
             stream = EncodedStream(id, format.copy(asc = format.asc.copyOf(), cookie = format.cookie.copyOf()),
@@ -144,9 +178,9 @@ class WebAudioHub {
     fun publishEncoded(owner: Any, payload: ByteArray, decodeTimestampUs: Double,
                        presentationNanos: Long? = null, id: Int = 0, buffered: Boolean = false,
                        publication: Publication? = null) {
-        if (id !in 0..4 || payload.isEmpty() || payload.size > MAX_PCM || !decodeTimestampUs.isFinite()) return
+        if (!audioStream(id) || payload.isEmpty() || payload.size > MAX_PCM || !decodeTimestampUs.isFinite()) return
         val stream = synchronized(this) {
-            if (this.owner !== owner || !validPublication(owner, publication)) return
+            if (!owns(owner, id) || !validPublication(owner, publication)) return
             encodedStreams[id]?.takeIf { it.publication === publication } ?: return
         }
         // Registration defines the transport policy: callers cannot accidentally prioritize music.
@@ -155,9 +189,9 @@ class WebAudioHub {
     }
 
     fun flushEncoded(owner: Any, id: Int = 0, publication: Publication? = null) {
-        if (id !in 0..4) return
+        if (!audioStream(id)) return
         val stream = synchronized(this) {
-            if (this.owner !== owner || !validPublication(owner, publication)) return
+            if (!owns(owner, id) || !validPublication(owner, publication)) return
             val current = encodedStreams[id]?.takeIf { it.publication === publication } ?: return
             epochs[id]++
             subscription?.clearStream(id)
@@ -167,8 +201,13 @@ class WebAudioHub {
     }
 
     @Synchronized fun endEncodedStream(owner: Any, id: Int, publication: Publication? = null) {
-        if (id !in 0..4 || this.owner !== owner || !validPublication(owner, publication)) return
+        if (!audioStream(id) || !owns(owner, id) || !validPublication(owner, publication)) return
         val stream = encodedStreams[id]?.takeIf { it.publication === publication } ?: return
+        retireEncoded(stream)
+    }
+
+    private fun retireEncoded(stream: EncodedStream) {
+        val id = stream.id
         encodedStreams[id] = null
         epochs[id]++
         subscription?.let { target ->
@@ -190,7 +229,7 @@ class WebAudioHub {
             val delivery: Delivery
             val records: List<ByteArray>
             synchronized(this) {
-                if (!enabled || voiceMuted || encodedStreams[stream.id] !== stream ||
+                if (!enabled || voiceMuted || (stream.id in 0..4 && !carPlayEnabled) || encodedStreams[stream.id] !== stream ||
                     stream.publication?.active == false) return
                 val target = subscription ?: return
                 if (expectedTarget != null && target !== expectedTarget) return
@@ -252,14 +291,14 @@ class WebAudioHub {
 
     fun flush(owner: Any, id: Int) {
         synchronized(this) {
-            if (this.owner !== owner) return
-            if (id !in 0..4) return
+            if (!owns(owner, id)) return
             if (encodedStreams[id] != null) {
                 // Encoded callers use flushEncoded so configuration remains their decoder contract.
                 return
             }
             subscription?.clearStream(id)
-            publish(owner, id, 48000, 2, ByteArray(0), reset = true)
+            publish(owner, id, 48000, 2, ByteArray(0), reset = true,
+                mode = if (id == AIRPLAY_MIRROR_STREAM) BrowserPlaybackMode.AIRPLAY_MIRROR else BrowserPlaybackMode.CARPLAY)
         }
     }
 
@@ -267,14 +306,15 @@ class WebAudioHub {
         private data class Packet(val generation: Long, val version: Long, val bytes: ByteArray,
                                   val publication: Publication?)
         private val live = ArrayBlockingQueue<Packet>(16)
+        private val mirror = ArrayBlockingQueue<Packet>(16)
         private val music = ArrayBlockingQueue<Packet>(16)
         @Volatile internal var generation = 0L
             private set
         @Volatile var closed = false
             private set
-        private val versions = LongArray(6)
-        private val encodedEpochs = arrayOfNulls<Int>(5)
-        private val pendingReset = BooleanArray(5)
+        private val versions = LongArray(AIRPLAY_MIRROR_STREAM + 1)
+        private val encodedEpochs = arrayOfNulls<Int>(AIRPLAY_MIRROR_STREAM + 1)
+        private val pendingReset = BooleanArray(AIRPLAY_MIRROR_STREAM + 1)
         internal data class EncodedState(val configuration: Boolean, val reset: Boolean)
         @Synchronized internal fun streamVersion(id: Int): Long = versions[id]
         @Synchronized internal fun encodedConfiguration(id: Int, epoch: Int) {
@@ -284,29 +324,30 @@ class WebAudioHub {
                                                    packets: Int): EncodedState {
             var configuration = encodedEpochs[id] != epoch
             var reset = pendingReset[id]
-            if (!buffered && live.remainingCapacity() < packets + (if (configuration || reset) 1 else 0)) {
-                discardLive()
+            if (!buffered && realtime(id).remainingCapacity() < packets + (if (configuration || reset) 1 else 0)) {
+                discardLive(realtime(id))
                 configuration = true
                 reset = true
             }
             return EncodedState(configuration, reset)
         }
         // Live overrun cannot touch ordered music. Every affected encoded stream restores its codec.
-        private fun discardLive() {
-            for (packet in live) {
+        private fun realtime(id: Int) = if (id == AIRPLAY_MIRROR_STREAM) mirror else live
+        private fun discardLive(queue: ArrayBlockingQueue<Packet>) {
+            for (packet in queue) {
                 val id = packet.bytes[5].toInt()
-                if (id in 0..4 && (packet.bytes[4].toInt() == 6 || packet.bytes[4].toInt() == 7)) {
+                if ((id in 0..4 || id == AIRPLAY_MIRROR_STREAM) && (packet.bytes[4].toInt() == 6 || packet.bytes[4].toInt() == 7)) {
                     encodedEpochs[id] = null
                     pendingReset[id] = true
                 }
             }
-            live.clear()
+            queue.clear()
         }
         @Synchronized internal fun offerLiveBatch(records: List<ByteArray>, generation: Long,
                                                   version: Long, publication: Publication?) {
             for (bytes in records) {
                 if (!valid(generation, version, bytes[5].toInt(), publication)) return
-                check(live.offer(Packet(generation, version, bytes, publication)))
+                check(realtime(bytes[5].toInt()).offer(Packet(generation, version, bytes, publication)))
             }
         }
         @Synchronized private fun valid(generation: Long, version: Long, id: Int,
@@ -336,19 +377,20 @@ class WebAudioHub {
             }
             synchronized(this) {
                 if (!valid(generation, version, id, publication)) return
-                if (!live.offer(packet)) {
-                    discardLive()
+                val queue = realtime(id)
+                if (!queue.offer(packet)) {
+                    discardLive(queue)
                     record[7] = (record[7].toInt() or 2).toByte()
-                    live.offer(packet)
+                    queue.offer(packet)
                 }
             }
-            if (!valid(generation, version, id, publication)) live.remove(packet)
+            if (!valid(generation, version, id, publication)) realtime(id).remove(packet)
         }
         fun take(timeoutMillis: Long): ByteArray? {
             val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
             while (!closed) {
                 val remaining = maxOf(0L, deadline - System.nanoTime())
-                val packet = live.poll() ?: music.poll(minOf(remaining, 10_000_000L), TimeUnit.NANOSECONDS)
+                val packet = live.poll() ?: mirror.poll() ?: music.poll(minOf(remaining, 10_000_000L), TimeUnit.NANOSECONDS)
                 if (packet == null) { if (System.nanoTime() >= deadline) return null else continue }
                 if (valid(packet.generation, packet.version, packet.bytes[5].toInt(), packet.publication)) return packet.bytes
             }
@@ -356,16 +398,18 @@ class WebAudioHub {
         }
         @Synchronized internal fun clearStream(id: Int) {
             versions[id]++
-            if (id in 0..4) { encodedEpochs[id] = null; pendingReset[id] = false }
+            if (id in 0..4 || id == AIRPLAY_MIRROR_STREAM) { encodedEpochs[id] = null; pendingReset[id] = false }
             live.removeIf { it.bytes[5].toInt() == id }
+            mirror.removeIf { it.bytes[5].toInt() == id }
             music.removeIf { it.bytes[5].toInt() == id }
         }
         @Synchronized internal fun discard(publication: Publication) {
             live.removeIf { it.publication === publication }
+            mirror.removeIf { it.publication === publication }
             music.removeIf { it.publication === publication }
         }
         @Synchronized internal fun clear() {
-            generation++; live.clear(); music.clear(); encodedEpochs.fill(null); pendingReset.fill(false)
+            generation++; live.clear(); mirror.clear(); music.clear(); encodedEpochs.fill(null); pendingReset.fill(false)
             for (id in versions.indices) versions[id]++
         }
         @Synchronized override fun close() { closed = true; clear() }
@@ -373,5 +417,8 @@ class WebAudioHub {
 
     private data class Delivery(val target: Subscription, val sequence: Int, val generation: Long, val epoch: Int, val streamVersion: Long)
 
-    companion object { const val MAX_PCM = 64 * 1024 }
+    companion object {
+        const val MAX_PCM = 64 * 1024
+        const val AIRPLAY_MIRROR_STREAM = 6
+    }
 }

@@ -21,6 +21,7 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
     private var fraction = item.fraction
     private var seekable = false
     private var closed = false
+    private var outputAllowed = true
     private var availableTracks: Map<String, Set<String>> = emptyMap()
     private var trackRevision = 0L
     private var trackSelection: List<Map<String, Any?>> = emptyList()
@@ -58,11 +59,18 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
     }
 
     @Synchronized fun state() = AirPlayBrowserPlayback.State(playback.duration, playback.position,
-        requestedPlaying, playback.ready, playback.buffering, seekable, rate = requestedRate)
+        requestedPlaying && outputAllowed, playback.ready, playback.buffering, seekable,
+        rate = requestedRate, outputAllowed = outputAllowed)
 
     @Synchronized fun source(): Map<String, Any?> = mapOf("resource" to proxy.rootId,
-        "directUrl" to proxy.directUrl(itemUrl), "revision" to revision, "seekRevision" to seekRevision, "target" to target, "fraction" to fraction,
+        "directUrl" to proxy.directUrl(itemUrl), "revision" to revision, "seekRevision" to seekRevision, "target" to target, "fraction" to fraction, "outputAllowed" to outputAllowed,
         "trackRevision" to trackRevision, "trackSelection" to trackSelection, "textMarkup" to textMarkup)
+
+    @Synchronized fun setOutputAllowed(allowed: Boolean) {
+        if (closed || outputAllowed == allowed) return
+        outputAllowed = allowed
+        revision++
+    }
 
     /** Only select tracks the browser has actually decoded/discovered; unknown plist shapes are refused. */
     @Synchronized fun property(name: String, value: Any?): Boolean {
@@ -147,7 +155,7 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
             availableTracks = decoded
         }
         seekable = fields["seekable"] == true && duration > 0
-        requestedPlaying = playing
+        if (outputAllowed) requestedPlaying = playing
         requestedRate = rate
         prepared = prepared || ready
         playback = ReceiverPlayback(duration, position, if (playing && fields["ended"] != true) rate else 0.0,

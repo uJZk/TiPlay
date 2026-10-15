@@ -169,7 +169,8 @@ sender compliance cannot be guaranteed by declaring an invented flag.
   an unfiltered green run after the final test-only edits was not repeated.
 - Android artifacts were inspected: no `libtiplay_audio_codecs.so` or FFmpeg decoder
   library is packaged. The existing FairPlay transport and non-codec native libraries
-  remain. No commit, push or site deployment was performed.
+  remain. These are implementation-stage results; final remote integration and
+  delivery are recorded in [the October 15 tie-up](AIRPLAY-TIE-UP-2026-10-15.md).
 
 Real Photos-app selection, sender-specific optional properties/subtitle delivery,
 long-running live HLS, ordinary audio negotiation/latency and CarPlay coexistence

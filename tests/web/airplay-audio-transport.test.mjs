@@ -49,6 +49,18 @@ test('transport rejects short compressed timestamps, oversized configs, invalid 
  const huge=new Uint8Array(4);new DataView(huge.buffer).setUint32(0,MAX_AUDIO_RECORD+1);await assert.rejects(collect([huge]),/invalid audio size/);
 });
 
+test('encoded mirror stream 6 coexists with CarPlay codecs and rejects an unlabelled mirror',async()=>{
+ const records=await collect([
+  configFrame(pcmConfig,{type:0,flags:3}),frame(7,Uint8Array.of(1,2,3,4),{type:0,flags:1}),
+  configFrame(pcmConfig,{type:6}),frame(7,Uint8Array.of(5,6,7,8),{type:6}),
+ ]);
+ assert.deepEqual(records.map(record=>[record.kind,record.type,record.mode]),[
+  [6,0,'carplay'],[7,0,'carplay'],[6,6,'airplay-mirror'],[7,6,'airplay-mirror'],
+ ]);
+ await assert.rejects(collect([configFrame(pcmConfig,{type:6,flags:2})]),/invalid audio format/);
+ await assert.rejects(collect([configFrame(pcmConfig,{type:5})]),/invalid audio format/);
+});
+
 test('modern AirPlay PCM configuration and packets reach the browser worklet with exact samples and timing',async t=>{
  const{audio,controller,messages}=await audioHarness(t),samples=new Int16Array([-32768,-1,1234,32767]);
  const now=performance.timeOrigin+performance.now();audio.clock({offset:now-1000,at:now,rtt:2});

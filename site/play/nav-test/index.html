@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src http:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>TiPlay 定位测试</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">TiPlay · 临时诊断</p>
+    <h1>浏览器定位测试</h1>
+    <p>比较安卓手机与车载浏览器的原始定位。先在手机启动 TiPlay 定位测试，再连接手机热点并打开手机提供的链接。</p>
+  </header>
+
+  <section class="card" aria-labelledby="connection-title">
+    <h2 id="connection-title">采集连接</h2>
+    <div class="fields">
+      <label>手机热点地址<input id="host" type="text" inputmode="url" placeholder="192.168.43.1:18080" autocomplete="off" spellcheck="false"></label>
+      <label>手机会话令牌<input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="来自手机链接的 #c="></label>
+    </div>
+    <div class="actions">
+      <button id="start" type="button">开始测试</button>
+      <button id="stop" type="button" class="secondary" disabled>停止网页定位</button>
+      <button id="retry" type="button" class="secondary">重试手机连接</button>
+    </div>
+    <p id="action-status" role="status">等待开始。请允许浏览器的定位和本地网络访问。</p>
+    <p class="hint">网页停止后会继续上传待发送事件。安卓采集须在手机点“停止”。页面保持打开；后台或熄屏可能暂停浏览器定位。</p>
+  </section>
+
+  <div class="columns">
+    <section class="card" aria-labelledby="browser-title">
+      <h2 id="browser-title">网页定位</h2>
+      <p id="geo-status" role="status">尚未请求定位</p>
+      <dl class="metrics"><div><dt>收到定位</dt><dd id="web-count">0</dd></div><div><dt>定位错误</dt><dd id="geo-errors">0</dd></div></dl>
+      <pre id="web-fix">尚无定位</pre>
+      <p id="web-fix-age" class="hint">原始定位时间与本页接收时间分别保留。</p>
+      <p class="hint">浏览器不会说明定位来自车辆 GPS、网络还是其他来源。此测试保留它实际返回的数据。</p>
+    </section>
+    <section class="card" aria-labelledby="android-title">
+      <h2 id="android-title">安卓定位</h2>
+      <p id="phone-status" role="status">尚未连接手机</p>
+      <dl class="metrics"><div><dt>收到定位</dt><dd id="android-count">—</dd></div><div><dt>手机已收网页定位</dt><dd id="phone-web-count">—</dd></div></dl>
+      <pre id="android-fix">尚无定位</pre>
+      <p id="android-fix-age" class="hint">手机原始定位时间与网页读取状态时间分别保留。</p>
+    </section>
+  </div>
+
+  <section class="card" aria-labelledby="logs-title">
+    <h2 id="logs-title">日志</h2>
+    <dl class="metrics"><div><dt>待上传事件</dt><dd id="pending">0</dd></div><div><dt>已确认事件</dt><dd id="uploaded">0</dd></div><div><dt>上传失败次数</dt><dd id="upload-errors">0</dd></div></dl>
+    <p id="upload-status" role="status">开始后上传到手机</p>
+    <div class="actions">
+      <button id="download" type="button" class="secondary">下载手机 NDJSON</button>
+      <button id="export" type="button" class="secondary">导出本页 JSON</button>
+    </div>
+    <p class="hint">本页 JSON 包含环境、定位错误、网络错误及待上传事件。手机连接失败时也可导出。关闭或刷新页面会清除本页数据，先导出。</p>
+    <p id="clock-status" class="hint">时钟差：等待手机响应</p>
+  </section>
+
+  <section class="card" aria-labelledby="environment-title">
+    <h2 id="environment-title">浏览器环境</h2>
+    <p id="capabilities"></p>
+    <p id="permissions"></p>
+    <details><summary>环境和权限原始数据</summary><pre id="environment"></pre></details>
+    <details><summary>手机诊断原始数据</summary><pre id="phone-diagnostics">尚未连接手机</pre></details>
+    <details open><summary>最近事件</summary><pre id="recent-events" aria-live="off">尚无事件</pre></details>
+  </section>
+  <noscript>定位测试需要启用 JavaScript。</noscript>
+</main>
+</body>
+</html>

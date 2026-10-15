@@ -7,9 +7,11 @@ class TiPlayAudio extends AudioWorkletProcessor {
     super();
     this.streams = new Map();
     this.timelines = new Map(); this.epochs = new Map(); this.delayPlans = initialPlaybackPlans(); this.clockBase = null;
+    this.plansByMode = {};
     this.muted = false;
     this.port.onmessage = ({ data }) => {
       if (data.plans) this.delayPlans = data.plans;
+      if (data.plansByMode) this.plansByMode = data.plansByMode;
       if (data.clockBase !== undefined) this.clockBase = data.clockBase;
       if (data.muted !== undefined) this.muted = Boolean(data.muted);
       if (data.reset || data.muted === true) {
@@ -37,6 +39,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
           timeline = new PcmTimeline(data.rate, data.channels, consumed => this.port.postMessage({ consumed, generation: data.generation }), data.flags & 1 ? 2500 : 1000);
           timeline.epoch = data.epoch; this.timelines.set(data.type, timeline);
         }
+        timeline.mode = data.mode;
         const legacy = this.streams.get(data.type);
         if (legacy) { for (const pcm of legacy.queue) this.port.postMessage({ consumed: pcm.byteLength, generation: pcm.generation }); this.streams.delete(data.type); }
         timeline.push(data); return;
@@ -67,9 +70,9 @@ class TiPlayAudio extends AudioWorkletProcessor {
     for (const channel of output) channel.fill(0);
     if (this.muted) return true;
     let voiceActive = false;
-    for (const [type, stream] of this.streams) if (type !== 0 && stream.queue.length > 0) { voiceActive = true; break; }
+    for (const [type, stream] of this.streams) if (type >= 1 && type <= 4 && stream.queue.length > 0) { voiceActive = true; break; }
     for (const [type, stream] of this.streams) {
-      const gain = type === 0 && voiceActive ? 0.2 : 1;
+      const gain = (type === 0 || type === 6) && voiceActive ? 0.2 : 1;
       const step = stream.rate / sampleRate;
       for (let i = 0; i < output[0].length; i++) {
         while (stream.queue.length && stream.position >= stream.queue[0].length / stream.channels) {
@@ -90,10 +93,12 @@ class TiPlayAudio extends AudioWorkletProcessor {
     }
     if (this.clockBase !== null) for (let i = 0; i < output[0].length; i++) {
       const wallTime = this.clockBase + (currentTime + i / sampleRate) * 1000;
-      const time = wallTime - audioDelayAt(this.delayPlans, wallTime);
-      let voice = false;
-      for (const [type, timeline] of this.timelines) if (type !== 0 && timeline.active(time)) { voice = true; break; }
-      for (const [type, timeline] of this.timelines) for (let c = 0; c < output.length; c++) output[c][i] += timeline.sample(time, c) * (type === 0 && voice ? 0.2 : 1);
+      let voice = voiceActive;
+      for (const [type, timeline] of this.timelines) {
+        timeline.playbackTime = wallTime - audioDelayAt(this.plansByMode[timeline.mode] ?? this.delayPlans, wallTime);
+        if (type >= 1 && type <= 4 && timeline.active(timeline.playbackTime)) voice = true;
+      }
+      for (const [type, timeline] of this.timelines) for (let c = 0; c < output.length; c++) output[c][i] += timeline.sample(timeline.playbackTime, c) * ((type === 0 || type === 6) && voice ? 0.2 : 1);
     }
     for (const channel of output) for (let i = 0; i < channel.length; i++) channel[i] = Math.max(-1, Math.min(1, channel[i]));
     return true;

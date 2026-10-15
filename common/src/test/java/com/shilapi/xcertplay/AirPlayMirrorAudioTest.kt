@@ -25,6 +25,7 @@ class AirPlayMirrorAudioTest {
                 transport.offer(raw, format.sampleRate.toLong(), 2_000_000_000L)
                 val packet = requireNotNull(reader.take(10))
                 assertEquals(7, packet[4].toInt())
+                assertEquals(WebAudioHub.AIRPLAY_MIRROR_STREAM, packet[5].toInt())
                 assertEquals(1_000_000.0, ByteBuffer.wrap(packet).getDouble(28), 0.0)
                 assertEquals(2000.0, ByteBuffer.wrap(packet).getDouble(20), 0.0)
                 assertArrayEquals(raw, packet.copyOfRange(36, packet.size))
@@ -48,5 +49,24 @@ class AirPlayMirrorAudioTest {
         assertTrue(String(ended.copyOfRange(28, ended.size)).contains("\"ended\":true"))
         transport.offer(byteArrayOf(2), 512, null)
         assertNull(reader.take(1))
+    }
+
+    @Test fun mirrorDoesNotEnableDisabledAudioOrReplaceCarPlayOwnership() {
+        val hub = WebAudioHub(); val carPlay = Any()
+        hub.begin(carPlay); hub.carPlayEnabled = false
+        AirPlayMirrorAudio(ReceiverMirrorAudioFormat(4, 44100, 2, 1024), hub).use { transport ->
+            assertFalse(hub.carPlayEnabled)
+            val reader = hub.subscribe()
+            assertEquals(WebAudioHub.AIRPLAY_MIRROR_STREAM, requireNotNull(reader.take(10))[5].toInt())
+            transport.offer(byteArrayOf(1), 0, null)
+            assertEquals(WebAudioHub.AIRPLAY_MIRROR_STREAM, requireNotNull(reader.take(10))[5].toInt())
+            hub.carPlayEnabled = true
+            repeat(5) { reader.take(10) }
+            hub.publish(carPlay, 0, 48000, 1, byteArrayOf(42, 0))
+            assertEquals(42, requireNotNull(reader.take(10))[28].toInt())
+        }
+        hub.enabled = false
+        AirPlayMirrorAudio(ReceiverMirrorAudioFormat(4, 44100, 2, 1024), hub).close()
+        assertFalse(hub.enabled)
     }
 }

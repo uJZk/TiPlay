@@ -35,6 +35,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     }
 
     interface Listener {
+        /** Authenticated mirror transport intent, before the sender starts the screen stream. */
+        fun prepareMirror() {}
         fun mirrorSink(): WebMediaSink
         fun play(item: ReceiverPlay)
         fun photo(bytes: ByteArray) {}
@@ -61,6 +63,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     private val slots = Semaphore(12)
     private val ownership = Any()
     private var owner: Connection? = null
+    private var mirrorPreparation: Connection? = null // does not reserve media ownership
     private var playbackPeer: InetAddress? = null
     private var playbackId: String? = null
     private var playbackConnection: Connection? = null
@@ -134,6 +137,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         sockets.forEach { runCatching { it.close() } }
         synchronized(ownership) {
             owner?.closeMedia(); owner = null
+            mirrorPreparation = null
             if (playbackPeer != null) diagnostics.finish(PlaybackFinishReason.SHUTDOWN, reverseForPlayback()?.diagnosticId)
             playbackPeer = null; playbackId = null
             photos = ReceiverPhotos(); photoSession = null
@@ -374,6 +378,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 }
             }
             synchronized(ownership) {
+                val wasPreparing = mirrorPreparation === this
                 if (playbackConnection === this && playbackCategory == "video") {
                     val generation = playbackGeneration
                     if (!closed.get()) maintenance.schedule({ synchronized(ownership) {
@@ -385,6 +390,10 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 }
                 closeMedia()
                 if (owner === this) { owner = null; listener.status("listening") }
+                if (wasPreparing) {
+                    mirrorPreparation = null
+                    if (owner == null && playbackPeer == null) listener.status("listening")
+                }
             }
         }
 
@@ -509,6 +518,10 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                             closeMedia()
                         }
                         if (owner === this) { owner = null; listener.status("listening") }
+                        if (mirrorPreparation === this) {
+                            mirrorPreparation = null
+                            if (owner == null && playbackPeer == null) listener.status("listening")
+                        }
                     }
                     return RtspMessage.Response(headers = mapOf("Connection" to "close"))
                 }
@@ -530,6 +543,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                             (playbackPeer != null && (playbackPeer != peer || playbackId != id ||
                                 (playbackConnection !== this && playbackConnection?.let { !sameVerifiedPeer(it) } == true)))) return busy()
                         owner?.closeMedia(); owner = null
+                        mirrorPreparation = null
                         resources.clear()
                         playbackPeer = peer; playbackId = id; playbackConnection = this
                         playbackCategory = "video"; playbackPaused = false; playbackGeneration++
@@ -558,6 +572,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                             request.headers["x-apple-assetkey"], request.body)
                         diagnostics.photo(diagnosticId, if (image == null) "CACHE_ONLY" else "DISPLAY", request.body.size)
                         if (image != null) {
+                            mirrorPreparation = null
                             owner?.closeMedia(); owner = null
                             resources.clear()
                             playbackPeer = peer; playbackId = id; playbackConnection = this
@@ -736,6 +751,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 clock.start(peer, timingPort)
                 // Legacy mirroring has no separate event channel; do not point it at the control listener.
                 response["eventPort"] = 0
+                mirrorPreparation = this
+                listener.prepareMirror()
             }
             requestedStreams?.let { streams ->
                 response["streams"] = streams.mapNotNull { entry ->
@@ -795,6 +812,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                     val streamKey = requireNotNull(key)
                     val clock = requireNotNull(timing)
                     val connectionId = (stream["streamConnectionID"] as? Number)?.toLong() ?: error("missing connection id")
+                    mirrorPreparation = this
                     mirror?.close()
                     val token = Any()
                     mirrorToken = token

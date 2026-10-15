@@ -145,16 +145,33 @@ let config = null, live = false, status = null, unsupported = null, videoStats =
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 const appearance = window.matchMedia('(prefers-color-scheme: dark)');
 const reportAppearance = followAppearance(appearance, () => outbox);
-const mediaTiming = createMediaTiming(delay => { sink?.delay(delay); browserAudio.delay(delay); });
+const mediaTimings = new Map();
+let mediaTiming;
+function timingFor(mode) {
+  let timing = mediaTimings.get(mode);
+  if (!timing) {
+    timing = createMediaTiming(delay => {
+      browserAudio.delay(delay, mode);
+      if (mediaTiming === timing) sink?.delay(delay);
+    });
+    mediaTimings.set(mode, timing);
+    timing.mode(mode);
+  }
+  return timing;
+}
 const browserAudio = createBrowserAudio({
-  onMode: mode => mediaTiming.mode(mode),
-  onTiming: source => mediaTiming.observe('audio', source),
-  onQueued: () => mediaTiming.started(),
+  onMode: mode => {
+    const timing = timingFor(mode);
+    if (!config) { mediaTiming = timing; sink?.delay(timing.plans()); }
+  },
+  onTiming: (source, mode) => timingFor(mode).observe('audio', source),
+  onQueued: mode => timingFor(mode).started(),
   fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }),
   onState(state) {
     airplayControls.audioMuted(state.browserMuted);
   },
 });
+mediaTiming = timingFor('carplay');
 // Pairing, touching CarPlay and using page controls already provide activation.
 // Resume playback on ordinary page gestures when autoplay is restricted.
 document.addEventListener('pointerdown', () => browserAudio.gesture(), { capture: true, passive: true });
@@ -422,7 +439,9 @@ async function connectVideo() {
       return;
     }
     // The first hello can finish before asynchronous worker setup creates the sink.
-    sink.clock(clock); browserAudio.clock(clock); mediaTiming.reset();
+    sink.clock(clock); browserAudio.clock(clock);
+    for (const [mode, timing] of mediaTimings) { timing.reset(); timing.mode(mode); }
+    mediaTiming = timingFor('carplay');
     const response = await phoneFetch(`/video?c=${link.code}&s=${session}&codecs=${codecs}&timing=1&lifecycle=1`, { signal: abort.signal });
     clearTimeout(timer);
     if (id !== streamId) {
@@ -532,7 +551,8 @@ function onVideoMessage(message) {
   }
   if (message.type === 'alive' && message.id === streamId) attempt = 0;
   else if (message.type === 'config') {
-    mediaTiming.mode(message.config.mode);
+    mediaTiming = timingFor(message.config.mode);
+    sink?.delay(mediaTiming.plans());
     // Audio has its own ordered per-type reset/epoch. Its HTTP response may deliver
     // the new producer's PCM before this config, so video cannot clear that audio.
     if (config?.epoch !== message.config.epoch) videoStats = {};
