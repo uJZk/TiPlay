@@ -1,18 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="onboarding_help">دليل الاستخدام الأول</string>
-    <string name="onboarding_progress">الخطوة %1$d من %2$d</string>
-    <string name="onboarding_welcome_title">مرحبًا بك في TiPlay</string>
-    <string name="onboarding_welcome_body">اضبط الاتصال والصوت ثم اسمح بالأذونات الناقصة. يفحص TiPlay الأذونات الحالية ويرشدك إلى إعدادات النظام المطلوبة. قم بذلك أثناء الوقوف.</string>
-    <string name="onboarding_connection_title">توصيل iPhone</string>
-    <string name="onboarding_connection_body">اختر طريقة الاتصال، وللاتصال اللاسلكي اختر iPhone المقترن وأدخل بيانات نقطة الاتصال أو Wi-Fi. أقرن الهاتف في إعدادات Bluetooth في Android عند الحاجة. ينتظر TiPlay اتصال متصفح السيارة قبل توصيل iPhone.</string>
-    <string name="onboarding_audio_title">الصوت وبدء التشغيل</string>
-    <string name="onboarding_audio_body">اترك صوت CarPlay مفعلاً للموسيقى في المتصفح والمكالمات وSiri عبر Android. عطّله لاستخدام صوت iPhone مباشرة عبر Bluetooth السيارة. اختر أيضًا فتح TiPlay عند بدء التشغيل.</string>
-    <string name="onboarding_next">التالي</string>
-    <string name="onboarding_back">السابق</string>
+    <string name="onboarding_help">قائمة التحقق من الأذونات</string>
     <string name="onboarding_finish">فتح الإعدادات الرئيسية</string>
     <string name="settings_browser_waiting_connection">بانتظار اتصال المتصفح</string>
-    <string name="onboarding_permissions_title">الأذونات وإعدادات النظام</string>
     <string name="onboarding_permissions_body">اسمح بالأذونات الناقصة. يعرض كل صف الحالة الحالية ويعيد فحصها عند العودة من الإعدادات. تتطلب المكالمات وSiri الميكروفون. يطلب النظام إذن USB عند توصيل الكابل. بعد الإعداد افتح رابط الاقتران في متصفح السيارة.</string>
     <string name="onboarding_grant_missing">السماح بالأذونات الناقصة</string>
     <string name="onboarding_usb_vpn">السماح باتصال USB VPN</string>

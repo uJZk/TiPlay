@@ -18,7 +18,7 @@ internal object DiagnosticLogSnapshot {
                 report.appendLine("--- $name ---")
                 runCatching {
                     file.useLines { lines ->
-                        lines.forEach { line -> DiagnosticRedactor.redact(line)?.let(report::appendLine) }
+                        lines.forEach(report::appendLine)
                     }
                 }.onFailure { error ->
                     report.appendLine("LOG_EXPORT readFailed=true file=$name exception=" +

@@ -299,9 +299,6 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     }
     // Android 17, phone + browser mode: the car browser's connections need the local network permission.
     private val localNetworkPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { render() }
-    private val browserPagePermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        refreshBrowserLocationAccess()
-    }
 
     private fun refreshBrowserLocationAccess() {
         browserAdvancedPage?.refresh()
@@ -689,7 +686,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             val ui = TiPlayNativeUi(this)
             val productPage = if (page == "about") BrowserAboutPage.build(this, version(), ::navigateBack) else {
                 val advanced = browserAdvancedPage ?: BrowserAdvancedPage(this,
-                    requestPermissions = { browserPagePermissions.launch(it) }, changed = ::markReconnectNeeded,
+                    changed = ::markReconnectNeeded,
                     returnToMain = {
                         startActivity(CarPlaySettingsNavigation.mainIntent(this))
                         finish()
@@ -715,7 +712,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             val ui = TiPlayNativeUi(this)
             val productPage = if (page == "about") BrowserAboutPage.build(this, version(), ::navigateBack) else {
                 val advanced = browserAdvancedPage ?: BrowserAdvancedPage(this,
-                    requestPermissions = { browserPagePermissions.launch(it) }, changed = ::markReconnectNeeded,
+                    changed = ::markReconnectNeeded,
                     returnToMain = {
                         startActivity(CarPlaySettingsNavigation.mainIntent(this))
                         finish()
@@ -5542,8 +5539,8 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                 exportButton?.apply { isEnabled = true; text = getString(R.string.save_diagnostic_report) }
                 if (AirPlayPersistence.isPhoneBrowserMode(this)) {
                     if (result.isSuccess) {
-                        val (savedReport, report) = result.getOrThrow()
-                        BrowserDiagnosticResultUi.saved(this, savedReport, report)
+                        val savedReport = result.getOrThrow().first
+                        BrowserDiagnosticResultUi.saved(this, savedReport)
                     } else exportButton?.apply {
                         setText(R.string.settings_report_save_failed)
                         TiPlayNativeUi(this@DiPlayActivity).emphasize(this)

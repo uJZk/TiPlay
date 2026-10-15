@@ -2,9 +2,9 @@
 <resources>
     <string name="settings_hint_phone_wireless">Для бездротового підключення спочатку виберіть спарений iPhone.</string>
     <string name="settings_hint_bluetooth">Увімкніть Bluetooth у системних налаштуваннях.</string>
-    <string name="settings_hint_nearby">Дозвольте доступ до пристроїв поблизу в розширених налаштуваннях.</string>
-    <string name="settings_hint_location">Дозвольте точне місцезнаходження в розширених налаштуваннях.</string>
-    <string name="settings_hint_usb_vpn">Дозвольте USB VPN-підключення в посібнику першого запуску.</string>
+    <string name="settings_hint_nearby">Дозвольте доступ до пристроїв поблизу в переліку дозволів.</string>
+    <string name="settings_hint_location">Дозвольте точне місцеположення в переліку дозволів.</string>
+    <string name="settings_hint_usb_vpn">Дозвольте USB VPN-підключення в переліку дозволів.</string>
     <string name="settings_hint_failed">Не вдалося підключитися до iPhone. Експортуйте діагностичний звіт у розширених налаштуваннях.</string>
     <string name="settings_hint_preparation_failed">Не вдалося підготувати CarPlay. Перевірте інсталяційний пакет або експортуйте діагностичний звіт.</string>
     <string name="settings_hint_hotspot_off">Увімкніть точку доступу цього телефона Android у системних налаштуваннях.</string>

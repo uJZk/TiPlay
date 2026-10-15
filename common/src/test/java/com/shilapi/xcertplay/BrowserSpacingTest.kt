@@ -24,7 +24,7 @@ class BrowserSpacingTest {
         val controller = Robolectric.buildActivity(Activity::class.java).setup()
         val activity = controller.get()
         activity.setTheme(R.style.Theme_TiPlayNative)
-        val page = BrowserAdvancedPage(activity, {}, {}, {}, {})
+        val page = BrowserAdvancedPage(activity, {}, {}, {})
         activity.setContentView(page.view)
         layout(page.view, activity)
         val toggles = views(page.view).filterIsInstance<Switch>().toList()
@@ -39,15 +39,15 @@ class BrowserSpacingTest {
         location.isChecked = true
         page.refresh()
         layout(page.view, activity)
-        assertTrue(views(page.view).filterIsInstance<TextView>().single {
+        assertFalse(views(page.view).filterIsInstance<TextView>().any {
             it.text == activity.getString(R.string.settings_browser_location_permission_reason)
-        }.visibility == View.GONE)
-        val notifications = views(page.view).filterIsInstance<Button>().single {
-            it.text.startsWith(activity.getString(R.string.settings_permission_notifications))
+        })
+        val report = views(page.view).filterIsInstance<Button>().single {
+            it.text == activity.getString(R.string.save_diagnostic_report)
         }
-        val parent = notifications.parent as ViewGroup
-        val previous = (0 until parent.indexOfChild(notifications)).map(parent::getChildAt).last { it.visibility != View.GONE }
-        assertEquals(dp(activity, 8), notifications.top - previous.bottom)
+        val parent = report.parent as ViewGroup
+        val previous = (0 until parent.indexOfChild(report)).map(parent::getChildAt).last { it.visibility != View.GONE }
+        assertEquals(dp(activity, 8), report.top - previous.bottom)
         controller.pause().stop().destroy()
     }
 
@@ -59,7 +59,7 @@ class BrowserSpacingTest {
         @Suppress("DEPRECATION")
         activity.resources.displayMetrics.scaledDensity = activity.resources.displayMetrics.density * 1.5f
         val main = BrowserMainSettingsMenu(activity, BrowserConnectionDraft.load(activity), {}, {}, {})
-        val advanced = BrowserAdvancedPage(activity, {}, {}, {}, {})
+        val advanced = BrowserAdvancedPage(activity, {}, {}, {})
         val about = BrowserAboutPage.build(activity, "test") {}
         for (page in listOf(main.view, advanced.view, about)) {
             activity.setContentView(page)

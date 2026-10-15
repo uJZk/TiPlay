@@ -50,6 +50,34 @@ class AirPlayVideoProxyTest {
         assertNull(proxy.directResource(proxy.rootId))
     }
 
+    @Test fun debugModeProxiesPeerUrlsPlaylistsAndRedirectsAndSwitchesBackImmediately() {
+        val directory = java.nio.file.Files.createTempDirectory("proxy-debug").toFile()
+        val capture = java.io.File(directory, "raw.tsv")
+        var requests = 0
+        val proxy = AirPlayVideoProxy("mlhls://localhost/movie", {
+            requests++
+            if (it.startsWith("mlhls:")) ReceiverResource(null, 302, "http://192.168.1.7/movie.mp4")
+            else ReceiverResource(byteArrayOf(1, 2, 3), 200, null)
+        }, "192.168.1.7")
+        try {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, true)
+            assertNull(proxy.directUrl("http://192.168.1.7/movie.mp4"))
+            val playlist = proxy.rewritePlaylist("http://192.168.1.7/live.m3u8",
+                "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\nsegment.ts".toByteArray()) { "/resource?r=$it" }.toString(Charsets.UTF_8)
+            assertFalse(playlist.contains("192.168.1.7"))
+            assertEquals(2, Regex("/resource\\?r=").findAll(playlist).count())
+            proxy.open(proxy.rootId, null) { it }!!.use {
+                assertEquals(200, it.status)
+                assertFalse(it.headers.any { header -> header.first == "Location" })
+                assertArrayEquals(byteArrayOf(1, 2, 3), it.body.readBytes())
+            }
+            assertEquals(2, requests)
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            assertEquals("http://192.168.1.7/movie.mp4", proxy.directUrl("http://192.168.1.7/movie.mp4"))
+            proxy.open(proxy.rootId, null) { it }!!.use { assertEquals(307, it.status) }
+        } finally { com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false); proxy.close(); directory.deleteRecursively() }
+    }
+
     @Test fun appBrokerResourcesSupportRangeAndRejectMalformedRanges() {
         val proxy = AirPlayVideoProxy("mlhls://localhost/movie", { ReceiverResource(byteArrayOf(0, 1, 2, 3, 4), 200, null) })
         try {

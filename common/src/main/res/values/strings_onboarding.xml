@@ -1,18 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="onboarding_help">First-use guide</string>
-    <string name="onboarding_progress">Step %1$d of %2$d</string>
-    <string name="onboarding_welcome_title">Welcome to TiPlay</string>
-    <string name="onboarding_welcome_body">Configure your connection and audio, then allow the missing permissions. TiPlay checks the current Android grants and helps you open system settings when needed. Set up while parked.</string>
-    <string name="onboarding_connection_title">Connect your iPhone</string>
-    <string name="onboarding_connection_body">Choose a connection mode, select your paired iPhone for wireless, and enter the hotspot or Wi-Fi details below. Pair in Android Bluetooth settings if needed. TiPlay waits for the car browser before connecting the iPhone.</string>
-    <string name="onboarding_audio_title">Sound and startup</string>
-    <string name="onboarding_audio_body">Keep CarPlay audio enabled for browser music, calls and Siri through Android. Disable it to use the iPhone’s car Bluetooth route. Choose whether TiPlay should open at boot.</string>
-    <string name="onboarding_next">Next</string>
-    <string name="onboarding_back">Back</string>
+    <string name="onboarding_help">Permission checklist</string>
     <string name="onboarding_finish">Open main settings</string>
     <string name="settings_browser_waiting_connection">Waiting for browser connection</string>
-    <string name="onboarding_permissions_title">Permissions and system settings</string>
     <string name="onboarding_permissions_body">Allow missing permissions below. Each row shows the current system state; return here after changing system settings to check it again. Microphone is needed for TiPlay calls/Siri. USB device approval is requested when connecting a cable. After setup, open the pairing link in the car browser.</string>
     <string name="onboarding_grant_missing">Allow missing permissions</string>
     <string name="onboarding_usb_vpn">Allow USB VPN connection</string>

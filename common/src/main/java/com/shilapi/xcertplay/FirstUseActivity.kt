@@ -9,37 +9,25 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.network.CarPlayVpnService
 
-/** Configure the phone and obtain consent before handing over to the receiver host. */
+/** Check current Android permissions before handing over to the receiver host. */
 class FirstUseActivity : ComponentActivity() {
     companion object {
         const val REVIEW = "review_first_use"
-        private const val STEP = "first_use_step"
         private const val PREFS = "tiplay_first_use"
-        // The previous introduction did not configure anything or request permissions.
         private const val COMPLETED = "setup_completed"
     }
 
-    private var step = 0
     private val reviewing get() = intent.getBooleanExtra(REVIEW, false)
-    private lateinit var draft: BrowserConnectionDraft
-    private var connection: BrowserMainSettingsMenu? = null
     private var permissions: BrowserPermissionsPage? = null
     private var permissionStatus: TextView? = null
     private var grantButton: Button? = null
     private var finishLater: Button? = null
     private var vpnButton: Button? = null
     private lateinit var error: TextView
-    private val pages = listOf(
-        R.string.onboarding_welcome_title to R.string.onboarding_welcome_body,
-        R.string.onboarding_connection_title to R.string.onboarding_connection_body,
-        R.string.onboarding_audio_title to R.string.onboarding_audio_body,
-        R.string.onboarding_permissions_title to R.string.onboarding_permissions_body,
-    )
     private val runtimePermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         refresh()
     }
@@ -59,13 +47,6 @@ class FirstUseActivity : ComponentActivity() {
             return
         }
         BrowserSettingsPolicy.activate(this)
-        draft = BrowserConnectionDraft.load(this, savedInstanceState)
-        step = (savedInstanceState?.getInt(STEP) ?: 0).coerceIn(pages.indices)
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (step > 0) { step--; render() } else finish()
-            }
-        })
         render()
     }
 
@@ -74,29 +55,7 @@ class FirstUseActivity : ComponentActivity() {
         refresh()
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        outState.putInt(STEP, step)
-        if (::draft.isInitialized) draft.retain(outState)
-        super.onSaveInstanceState(outState)
-    }
-
-    override fun onDestroy() {
-        connection?.dispose()
-        super.onDestroy()
-    }
-
-    private fun settingsChanged() {
-        if (reviewing) BrowserSettingsChanges.apply(this)
-    }
-
     private fun render() {
-        connection?.dispose()
-        connection = null
-        permissions = null
-        permissionStatus = null
-        grantButton = null
-        finishLater = null
-        vpnButton = null
         val ui = TiPlayNativeUi(this)
         val spacing = BrowserNativeSettingsUi(this)
         ui.applyWindow(this)
@@ -111,40 +70,18 @@ class FirstUseActivity : ComponentActivity() {
             if (heading) androidx.core.view.ViewCompat.setAccessibilityHeading(it, true)
             content.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(16) })
         }
-        label(getString(R.string.onboarding_progress, step + 1, pages.size))
-        label(getString(pages[step].first), true).also(spacing::field)
-        label(getString(pages[step].second))
+        label(getString(R.string.onboarding_help), true).also(spacing::field)
+        label(getString(R.string.onboarding_permissions_body))
         error = label("").apply { visibility = View.GONE; accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
-        when (step) {
-            1 -> {
-                connection = BrowserMainSettingsMenu(this, draft,
-                    requestPermissions = { runtimePermissions.launch(it) },
-                    advanced = {}, about = {}, settingsChanged = ::settingsChanged, setupOnly = true)
-                content.addView(connection!!.view.also(spacing::field))
-            }
-            2 -> {
-                val controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-                content.addView(controls.also(spacing::field))
-                BrowserCarPlayAudioSettings.addControls(this, controls,
-                    toggle = { parent, title, description, value, save ->
-                        BrowserNativeSettingsUi(this).toggle(parent, title, description, value, true, save)
-                        Unit
-                    }, changed = ::settingsChanged)
-                controls.addView(BrowserBootConnectionSettings.create(this))
-            }
-            3 -> {
-                val controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-                content.addView(controls.also(spacing::field))
-                permissionStatus = TextView(this).also(controls::addView)
-                permissions = BrowserPermissionsPage(this, controls) { runtimePermissions.launch(it) }
-                if (needsVpn()) vpnButton = action(controls, R.string.onboarding_usb_vpn) {
-                    runCatching { CarPlayVpnService.prepare(this) }.onSuccess { consent ->
-                        if (consent != null) runCatching { vpnConsent.launch(consent) }.onFailure { showError(R.string.vpn_authorization_unavailable) }
-                        else refresh()
-                    }.onFailure { showError(R.string.vpn_authorization_unavailable) }
-                }
-                BrowserNativeSettingsUi(this).normalizeSpacing(controls)
-            }
+        val controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(controls.also(spacing::field))
+        permissionStatus = TextView(this).also(controls::addView)
+        permissions = BrowserPermissionsPage(this, controls) { runtimePermissions.launch(it) }
+        if (needsVpn()) vpnButton = action(controls, R.string.onboarding_usb_vpn) {
+            runCatching { CarPlayVpnService.prepare(this) }.onSuccess { consent ->
+                if (consent != null) runCatching { vpnConsent.launch(consent) }.onFailure { showError(R.string.vpn_authorization_unavailable) }
+                else refresh()
+            }.onFailure { showError(R.string.vpn_authorization_unavailable) }
         }
         spacing.normalizeSpacing(content, recursive = true)
         root.addView(ScrollView(this).apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -154,18 +91,11 @@ class FirstUseActivity : ComponentActivity() {
             tag = "onboarding_navigation"
         }
         root.addView(navigation, LinearLayout.LayoutParams(-1, -2))
-        val primary = action(navigation, if (step == pages.lastIndex) R.string.onboarding_finish else R.string.onboarding_next) {
-            if (step == 1 && !saveConnection()) return@action
-            if (step == pages.lastIndex) {
-                if (permissions?.missingRuntimePermissions()?.isNotEmpty() == true) permissions?.requestMissingPermissions()
-                else finishOrConfirm()
-            } else { step++; render() }
+        grantButton = action(navigation, R.string.onboarding_finish) {
+            if (permissions?.missingRuntimePermissions()?.isNotEmpty() == true) permissions?.requestMissingPermissions()
+            else finishOrConfirm()
         }
-        if (step == pages.lastIndex) {
-            grantButton = primary
-            finishLater = action(navigation, R.string.onboarding_continue) { finishOrConfirm() }
-        }
-        if (step > 0) action(navigation, R.string.onboarding_back) { step--; render() }
+        finishLater = action(navigation, R.string.onboarding_continue) { finishOrConfirm() }
         BrowserNativeSettingsUi(this).normalizeSpacing(navigation)
         setContentView(root)
         refresh()
@@ -179,11 +109,10 @@ class FirstUseActivity : ComponentActivity() {
         parent.addView(this, LinearLayout.LayoutParams(-1, -2))
     }
 
-    private fun needsVpn() = draft.allTransports || !draft.wireless
+    private fun needsVpn() = BrowserCarPlaySettings.mode(this) != BrowserCarPlaySettings.Mode.WIRELESS
     private fun vpnGranted() = runCatching { CarPlayVpnService.prepare(this) == null }.getOrDefault(false)
 
     private fun refresh() {
-        connection?.refresh()
         permissions?.let { page ->
             page.refresh()
             val count = page.missingRuntimePermissions().size
@@ -202,15 +131,6 @@ class FirstUseActivity : ComponentActivity() {
         BrowserNativeSettingsUi(this).normalizeSpacing(error.parent as LinearLayout, recursive = true)
     }
 
-    private fun saveConnection(): Boolean {
-        val invalid = draft.validationError()
-            ?: if (draft.wireless && draft.phoneAddress.isNullOrBlank()) R.string.choose_your_iphone else null
-        if (invalid != null) { showError(invalid); return false }
-        draft.save(this)
-        connection?.committed()
-        return true
-    }
-
     private fun finishOrConfirm() {
         if (permissions?.allGranted() != true || (needsVpn() && !vpnGranted())) {
             AlertDialog.Builder(this).setMessage(R.string.onboarding_missing_confirmation)
@@ -220,7 +140,6 @@ class FirstUseActivity : ComponentActivity() {
     }
 
     private fun completeSetup() {
-        if (!saveConnection()) return
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(COMPLETED, true).apply()
         BrowserSettingsChanges.apply(this)
         if (reviewing) finish() else openMain()

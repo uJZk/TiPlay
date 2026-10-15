@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_debug_logging">デバッグログ</string>
+    <string name="settings_debug_logging">デバッグモード</string>
+    <string name="settings_debug_mode_description">iPhone、ブラウザー、USB、Android 音声出力の全生データをマスキングせず記録します。レポートに全記録を含み、アプリデータを消去するまでストレージを使用します。</string>
+    <string name="settings_hint_car_bluetooth_disconnected">車載 Bluetooth 音声接続（A2DP/HFP）が検出されません。Bluetooth 設定で Android を車に接続してください。</string>
+    <string name="settings_hint_car_bluetooth_unknown">車載 Bluetooth 接続を確認できません。付近のデバイス権限と Bluetooth 設定を確認してください。</string>
+    <string name="settings_hint_car_bluetooth_verify">Bluetooth 音声デバイスに接続中です。車であることを設定で確認してください。</string>
 </resources>

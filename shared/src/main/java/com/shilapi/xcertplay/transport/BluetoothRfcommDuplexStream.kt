@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.transport
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.bluetooth.BluetoothSocket
 import java.io.IOException
 import java.io.InputStream
@@ -78,7 +79,9 @@ class BluetoothRfcommDuplexStream internal constructor(
                 if (closed) throw IOException("Bluetooth RFCOMM stream is closed")
             }
             try {
+                RawTraffic.record("iphone/rfcomm/out/attempt", data)
                 output.write(data)
+                RawTraffic.record("iphone/rfcomm/out/written", data)
                 if (flushAllowed) flushOutput()
             } catch (error: Exception) {
                 val io = BluetoothRfcommStreamException(
@@ -193,6 +196,7 @@ class BluetoothRfcommDuplexStream internal constructor(
                     0 -> Unit
                     else -> synchronized(lock) {
                         if (closed) return
+                        RawTraffic.record("iphone/rfcomm/in", buffer, 0, count)
                         receivedBytes += count
                         pending.addLast(if (count == buffer.size) buffer else buffer.copyOf(count))
                         pendingBytes += count

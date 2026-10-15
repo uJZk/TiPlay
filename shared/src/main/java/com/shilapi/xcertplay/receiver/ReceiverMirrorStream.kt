@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.receiver
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import com.shilapi.xcertplay.airplay.AirPlayCrypto
 import com.shilapi.xcertplay.airplay.ScreenCodec
 import com.shilapi.xcertplay.airplay.NtpClock
@@ -70,7 +71,7 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
                     TcpLiveness.configure(accepted) {}
                     accepted.tcpNoDelay = true
                     accepted.soTimeout = 120_000
-                    input = accepted.getInputStream()
+                    input = RawTraffic.input("iphone/ReceiverMirrorStream/${accepted.remoteSocketAddress}/${accepted.localPort}/in", accepted.getInputStream())
                     reconnectDeadline = 0L
                 }
                 stage = ReceiverMirrorDiagnostics.Stage.HEADER

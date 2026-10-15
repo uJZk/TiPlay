@@ -2,9 +2,9 @@
 <resources>
     <string name="settings_hint_phone_wireless">ワイヤレス接続を使うには、まずペア設定済みの iPhone を選択してください。</string>
     <string name="settings_hint_bluetooth">システム設定で Bluetooth をオンにしてください。</string>
-    <string name="settings_hint_nearby">詳細設定で付近のデバイスへのアクセスを許可してください。</string>
-    <string name="settings_hint_location">詳細設定で正確な位置情報を許可してください。</string>
-    <string name="settings_hint_usb_vpn">初回設定ガイドで USB VPN 接続を許可してください。</string>
+    <string name="settings_hint_nearby">権限チェックリストで付近のデバイスへのアクセスを許可してください。</string>
+    <string name="settings_hint_location">権限チェックリストで正確な位置情報を許可してください。</string>
+    <string name="settings_hint_usb_vpn">権限チェックリストで USB VPN 接続を許可してください。</string>
     <string name="settings_hint_failed">iPhone に接続できませんでした。詳細設定から診断レポートをエクスポートできます。</string>
     <string name="settings_hint_preparation_failed">CarPlay を準備できませんでした。インストールパッケージを確認するか、診断レポートをエクスポートしてください。</string>
     <string name="settings_hint_hotspot_off">システム設定でこの Android スマートフォンのアクセスポイントをオンにしてください。</string>

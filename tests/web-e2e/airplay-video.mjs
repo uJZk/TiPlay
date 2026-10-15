@@ -87,6 +87,7 @@ try {
       return context;
     };
   }, mode);
+  const requests=[]; page.on('request', request => requests.push(request.url()));
   const errors=[];page.on('pageerror', e=>errors.push(e.message));
   page.on('console', message => { if (message.type() === 'error') console.log('console:',message.text()); });
 
@@ -123,6 +124,24 @@ try {
   console.log(`${mode}: decoded video pictures reached the canvas without a native video clock`);
   if (mode === 'hls' && !/[\u4e00-\u9fff]/.test(await page.locator('media-play-button').getAttribute('aria-label')))
     throw new Error('Chinese controls did not use the bundled locale');
+  if (mode === 'webgl') {
+    await page.evaluate(() => {
+      window.policyEngine = actualVideo();
+      controls.update({id:1,resource:mediaResource,revision:0,seekRevision:0,target:0,fraction:false,
+        playing:true,proxyOnly:true,directUrl:'http://127.0.0.1:1/iphone-private.mp4'});
+    });
+    await page.waitForFunction(() => actualVideo() !== policyEngine && actualVideo()?.readyState >= 2);
+    if (requests.some(url => url.includes('iphone-private.mp4')) || !requests.some(url => url.includes('proxy=1')))
+      throw new Error('Debug mode did not force active playback through Android');
+    await page.evaluate(() => {
+      window.policyEngine = actualVideo();
+      controls.update({id:1,resource:mediaResource,revision:0,seekRevision:0,target:0,fraction:false,
+        playing:true,proxyOnly:false,directUrl:location.origin+'/airplay-resource?r=0&direct=1'});
+    });
+    await page.waitForFunction(() => actualVideo() !== policyEngine && actualVideo()?.readyState >= 2);
+    if (!requests.some(url => url.includes('direct=1'))) throw new Error('Disabling debug did not restore direct playback');
+    console.log('debug switch: active media reopened through Android and direct playback returned when disabled');
+  }
   const progress = await page.evaluate(() => {
     const player=actualVideo();
     player.pause(); player.currentTime = Math.min(0.25,player.duration/3); const before=player.currentTime;
@@ -324,8 +343,8 @@ try {
         throw new Error('Failure diagnostic omitted its safe exception name');
       if(scenario==='autoplay-rejection' && !await page.evaluate(()=>document.querySelector('tiplay-media').paused && !events.some(event=>event.k==='ap-state' && event.failed)))
         throw new Error('Autoplay rejection diagnostics changed playback failure behavior');
-      if(scenario==='canvas-failure' && !await page.evaluate(()=>events.some(event=>event.k==='ap-state' && event.failed)))
-        throw new Error('Canvas failure no longer reached the existing playback report');
+      if(scenario==='canvas-failure')
+        await page.waitForFunction(()=>events.some(event=>event.k==='ap-state' && event.failed));
       console.log(JSON.stringify({scenario, failure:await page.evaluate(expected=>events.find(event=>
         event.k==='ap-diag' && event.event===expected),expected)}));
     }

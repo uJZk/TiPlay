@@ -3,14 +3,13 @@ package com.shilapi.xcertplay
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.shilapi.xcertplay.host.R
 
 internal object BrowserDiagnosticResultUi {
-    fun saved(activity: Activity, saved: DiagnosticExportStore.SavedReport, report: String) {
+    fun saved(activity: Activity, saved: DiagnosticExportStore.SavedReport) {
         val ui = TiPlayNativeUi(activity)
         val content = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -23,10 +22,6 @@ internal object BrowserDiagnosticResultUi {
             })
         }
         AlertDialog.Builder(activity).setView(content)
-            .setPositiveButton(R.string.settings_report_copy_full_text) { _, _ ->
-                activity.getSystemService(ClipboardManager::class.java)
-                    ?.setPrimaryClip(ClipData.newPlainText(activity.getString(R.string.report_clip_label), report))
-            }
             .setNeutralButton(R.string.share) { _, _ ->
                 runCatching { activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"

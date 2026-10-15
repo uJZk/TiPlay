@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.web
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import com.shilapi.xcertplay.airplay.VideoInCar
 import com.shilapi.xcertplay.receiver.ReceiverResource
 import java.io.BufferedInputStream
@@ -33,6 +34,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
 
     /** Only literal addresses belonging to this AirPlay peer qualify, never a DNS name or app scheme. */
     fun directUrl(url: String): String? {
+        if (RawTraffic.enabled) return null
         val uri = URI(url)
         return url.takeIf { uri.scheme.lowercase() in listOf("http", "https") &&
             iphoneHost != null && uri.host == iphoneHost && uri.userInfo == null }
@@ -69,7 +71,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
         }
         val uri = URI(url)
         val direct = uri.scheme.lowercase() in listOf("http", "https")
-        var broker = if (!direct || uri.path.orEmpty().endsWith(".m3u8", true)) iphone(url) else null
+        var broker = if (!direct || uri.host == iphoneHost || uri.path.orEmpty().endsWith(".m3u8", true)) iphone(url) else null
         if (broker == null && direct) {
             val connection = uri.toURL().openConnection() as HttpURLConnection
             connection.connectTimeout = 5000; connection.readTimeout = 10000
@@ -81,6 +83,16 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
             if (closed.get()) { connections -= connection; connection.disconnect(); throw IOException("Playback ended") }
             try {
                 val status = connection.responseCode
+                if (RawTraffic.enabled) RawTraffic.record("iphone/resource/$url/response-headers",
+                    "status=$status headers=${connection.headerFields}".toByteArray())
+                if (status !in 200..399 && RawTraffic.enabled) connection.errorStream?.use { body ->
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val count = body.read(buffer)
+                        if (count < 0) break
+                        RawTraffic.record("iphone/resource/$url/error-body", buffer, 0, count)
+                    }
+                }
                 if (status in listOf(301, 302, 303, 307, 308)) {
                     val location = connection.getHeaderField("Location") ?: throw IOException("Missing redirect")
                     if (redirects >= 5) throw IOException("Too many redirects")
@@ -88,7 +100,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String) -
                     return load(uri.resolve(location).toString(), range, route, redirects + 1, forceProxy)
                 }
                 if (status in listOf(200, 206)) {
-                    val input = BufferedInputStream(connection.inputStream)
+                    val input = BufferedInputStream(RawTraffic.input("iphone/resource/$url/in", connection.inputStream))
                     if (isPlaylist(input)) {
                         try {
                             val bytes = readPlaylist(input)

@@ -25,6 +25,11 @@ Source verification: 1,967 shared, 1,532 common and 6 home unit tests; 229 brows
 
 ## Unreleased
 
+- Replace the four-step first-use wizard with a single Permission checklist and remove the duplicate permission list from Advanced settings.
+- Report missing or unknown Android car Bluetooth audio connections using live A2DP/HFP evidence and the device class, excluding the selected iPhone.
+- Turn Debug logging into unredacted application traffic capture for iPhone, browser, USB and Android audio output. Export channel-tagged, millisecond-timestamped records in one TXT; hide the clipboard action.
+- Force AirPlay URL media through Android only while Debug mode is enabled; switch active playback routes when the policy changes and retain normal direct eligibility when disabled.
+
 - Merge DiPlay through `c30d3f0df` while retaining Android phone + car browser scope and upstream ancestry.
 - Apply valid settings immediately and reconnect when needed without closing settings. Support All (USB first), Wireless and USB, with independent CarPlay opt-out and continuous recovery while enabled.
 - Make Start on boot optional, subject to Android background restrictions.

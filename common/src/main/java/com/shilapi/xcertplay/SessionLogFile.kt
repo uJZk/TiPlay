@@ -42,7 +42,7 @@ internal class SessionLogFile(val file: File) : Closeable {
     }
 
     internal fun prepare(message: String): String? {
-        val safe = DiagnosticRedactor.redact(message)
+        val safe = if (DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG) message else DiagnosticRedactor.redact(message)
         if (safe == null) {
             privacyFiltered.incrementAndGet()
             return null

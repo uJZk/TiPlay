@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.media
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat as AndroidAudioFormat
@@ -2301,6 +2302,9 @@ private class AudioRenderer(
                 zeroWritesThisWindow++
                 break
             }
+            if (RawTraffic.enabled) RawTraffic.record(
+                "android-audio/track/${track.audioSessionId}/route=${track.routedDevice?.type ?: -1}/pcm16le/rate=${format.sampleRate}/channels=${format.channels}/out",
+                data, offset + written, count)
             if (count < writeLength) partialWritesThisWindow++
             val framesWritten = count / frameBytes
             if (ambientMedia && AmbientMusicController.wantsPcm(ambientRendererToken)) {

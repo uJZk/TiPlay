@@ -2,7 +2,6 @@ package com.shilapi.xcertplay
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.os.Looper
 import android.view.View
@@ -26,7 +25,7 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], qualifiers = "en", shadows = [FileProviderPathTestShadow::class])
 class DiagnosticExportUiTest {
-    @Test fun missingPickerSavesAReportAndCopiesItsFullTextWithoutOpeningAViewer() {
+    @Test fun missingPickerSavesAShareableReportWithoutACopyActionOrViewer() {
         val controller = Robolectric.buildActivity(DiPlayActivity::class.java,
             Intent().putExtra("page", "settings").putExtra(CarPlaySettingsNavigation.MENU, true)).setup()
         val activity = controller.get()
@@ -56,10 +55,10 @@ class DiagnosticExportUiTest {
             assertTrue(descendants(saved.window!!.decorView).filterIsInstance<TextView>()
                 .any { it.text.contains(file.absolutePath) })
             assertTrue(file.readText().contains("Android 9 / API 28"))
-            saved.getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+            assertNotEquals(View.VISIBLE, saved.getButton(android.app.AlertDialog.BUTTON_POSITIVE).visibility)
+            assertEquals(View.VISIBLE, saved.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).visibility)
+            saved.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).performClick()
             shadowOf(Looper.getMainLooper()).idle()
-            val clipboard = activity.getSystemService(ClipboardManager::class.java)
-            assertEquals(file.readText(), clipboard.primaryClip!!.getItemAt(0).text.toString())
             assertSame(saved, ShadowAlertDialog.getLatestAlertDialog())
             assertFalse(saved.isShowing)
         } finally {

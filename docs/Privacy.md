@@ -4,15 +4,15 @@ TiPlay uses local pairing and direct USB/Wi-Fi connections. It has no account, r
 
 ## Stored data and reports
 
-Android stores preferences, paired-device selections, pairing data and bounded diagnostic logs in app storage. App data is excluded from Android backup. Uninstalling removes app-private data; reports exported to Downloads remain until deleted.
+Android stores preferences, paired-device selections, pairing data, bounded metadata logs and opt-in raw traffic captures in app storage. App data is excluded from Android backup. Uninstalling removes app-private data; reports exported to Downloads remain until deleted.
 
-You initiate diagnostic export. Reports contain versions, display negotiation, connection transitions, Wi-Fi state/band/channel and recovery events. The exporter filters protocol payloads, credential-bearing lines and common identifiers, but cannot recognize every vendor-specific string. Review reports before sharing; GitHub issues are public.
+You initiate diagnostic export. Reports contain versions, display negotiation, connection transitions, Wi-Fi state/band/channel and recovery events. Standard logging filters common identifiers and credential-bearing messages. Debug mode explicitly records raw protocol and media data, credentials and personal identifiers without redaction; its capture persists until app data is cleared and is included in exported files even after Debug mode is disabled. Review reports before sharing; GitHub issues are public.
 
-Exports normally use Downloads/TiPlay. If unavailable, TiPlay uses `Android/data/<package>/files/diagnostic-reports/`, then private app storage. The confirmation shows the TXT path; **View** and **Share** work when file managers restrict `Android/data`. Each fallback directory retains its newest eight exports and is removed on uninstall. Sharing grants read access only to the selected report. On Android 9, apps with storage permission may read external reports. Release uses `com.ujzk.tiplay`; debug adds `.hudtest`.
+Exports normally use Downloads/TiPlay. If unavailable, TiPlay uses `Android/data/<package>/files/diagnostic-reports/`, then private app storage. The confirmation shows the TXT path; **Share** works when file managers restrict `Android/data`. Each fallback directory retains its newest eight exports and is removed on uninstall. Sharing grants read access only to the selected report. On Android 9, apps with storage permission may read external reports. Release uses `com.ujzk.tiplay`; debug adds `.hudtest`.
 
 ## Media and permissions
 
-CarPlay and ordinary AirPlay encoded video are forwarded to the browser. Ordinary AirPlay audio and original JPEG/PNG photos are also decoded in the browser. URL playback fetches resources from the iPhone or sender's media service through Android's authenticated proxy or supported direct resource URLs.
+CarPlay and ordinary AirPlay encoded video are forwarded to the browser. Ordinary AirPlay audio and original JPEG/PNG photos are also decoded in the browser. URL playback fetches resources from the iPhone or sender's media service through Android’s authenticated proxy or supported direct resource URLs. While Debug mode is enabled, all resources pass through Android so the capture includes them; the browser receives no direct iPhone URL or redirect.
 
 With CarPlay sound enabled, Android requests microphone permission while connecting in the foreground. Capture opens only when the iPhone requests Siri/call input, using a verified car HFP/SCO Bluetooth route; denial still permits playback. There is no handset or browser microphone fallback. The browser never requests microphone permission. Advanced settings can leave audio/calls on the iPhone-to-car Bluetooth link. See [audio routing](Browser.md#audio-and-microphone) for route-release and physical-validation limits.
 

@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.airplay
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import java.io.Closeable
 import java.math.BigInteger
 import java.net.DatagramPacket
@@ -145,7 +146,7 @@ class NtpClock(private val wireTimeline: NtpWireTimeline? = null, log: (String) 
             val sock = currentSocket() ?: return
             val packet = DatagramPacket(buffer, buffer.size)
             try {
-                sock.receive(packet)
+                RawTraffic.receive(sock, packet)
             } catch (_: Exception) {
                 if (running.get()) continue else return
             }

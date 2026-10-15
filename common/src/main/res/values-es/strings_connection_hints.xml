@@ -2,9 +2,9 @@
 <resources>
     <string name="settings_hint_phone_wireless">Para conectarte de forma inalámbrica, selecciona primero un iPhone emparejado.</string>
     <string name="settings_hint_bluetooth">Activa Bluetooth en los ajustes del sistema.</string>
-    <string name="settings_hint_nearby">Permite el acceso a dispositivos cercanos en Ajustes avanzados.</string>
-    <string name="settings_hint_location">Permite la ubicación precisa en Ajustes avanzados.</string>
-    <string name="settings_hint_usb_vpn">Permite la conexión VPN USB en la guía de primer uso.</string>
+    <string name="settings_hint_nearby">Permite el acceso a dispositivos cercanos en la lista de permisos.</string>
+    <string name="settings_hint_location">Permite la ubicación precisa en la lista de permisos.</string>
+    <string name="settings_hint_usb_vpn">Permite la conexión VPN USB en la lista de permisos.</string>
     <string name="settings_hint_failed">No se pudo conectar con el iPhone. Puedes exportar un informe de diagnóstico en Ajustes avanzados.</string>
     <string name="settings_hint_preparation_failed">No se pudo preparar CarPlay. Comprueba el paquete de instalación o exporta un informe de diagnóstico.</string>
     <string name="settings_hint_hotspot_off">Activa el punto de acceso de este teléfono Android en los ajustes del sistema.</string>

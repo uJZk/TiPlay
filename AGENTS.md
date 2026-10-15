@@ -19,9 +19,10 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 - [Settings](docs/Settings.md): short receiver status titles, separate details, drafts, immediate apply, reconnect and boot.
 - [Connection setup](docs/Connection-setup.md) and [hotspot address](docs/Hotspot-address.md).
 - [AirPlay](docs/AirPlay.md): receiver/media contracts and compatibility limits.
-- [Diagnostics](docs/Diagnostics.md) and [privacy](docs/Privacy.md).
+- [Diagnostics](docs/Diagnostics.md): opt-in unredacted raw capture, channel/timestamp TXT format and Debug-only AirPlay proxy routing; [privacy](docs/Privacy.md).
+  Current validation and remaining device checks are in [Testing](docs/Testing.md#debug-raw-capture-and-car-bluetooth-hints) and [Todo](docs/Todo.md#connection-settings-and-browser).
 - [Geolocation](docs/geolocation.md): implemented GPS fallback, datum detection/conversion, browser cache and iPhone forwarding. Verification is in [Testing](docs/Testing.md#location-and-notification-verification); physical follow-up is in [Todo](docs/Todo.md#location).
-- [Build](docs/Build.md), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md). First-use/browser-readiness verification is recorded in Testing; physical follow-up is in [Todo](docs/Todo.md#connection-settings-and-browser).
+- [Build](docs/Build.md), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md). Permission-checklist/browser-readiness verification is recorded in Testing; physical follow-up is in [Todo](docs/Todo.md#connection-settings-and-browser).
   Consolidated hints, explicit-operation feedback and their device checks are in [Testing](docs/Testing.md#phone-and-browser-acceptance).
   Receiver-status verification and remaining device checks are in [Testing](docs/Testing.md#receiver-status-and-browser-notices);
   provisioned-JDK proxy certificate setup is in [Build](docs/Build.md#managed-cloud-certificate-trust).

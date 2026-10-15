@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.receiver
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import java.io.Closeable
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -77,7 +78,7 @@ class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String
         while (!closed.get()) {
             try {
                 packet.length = buffer.size
-                socket.receive(packet)
+                RawTraffic.receive(socket, packet)
                 if (closed.get()) return
                 if (packet.address != peer) {
                     val rejected = counts.rejected.incrementAndGet()

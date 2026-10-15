@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.receiver
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import com.shilapi.xcertplay.airplay.AirPlayCrypto
 import com.shilapi.xcertplay.airplay.BplistCodec
 import com.shilapi.xcertplay.airplay.NtpClock
@@ -279,7 +280,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         private val connectionNonce = java.util.UUID.randomUUID().toString().replace("-", "")
         private var connectionApproved = false
         private var timing: NtpClock? = null
-        private val output = socket.getOutputStream()
+        private val output = RawTraffic.output("iphone/ReceiverServer/${socket.remoteSocketAddress}/${socket.localPort}/out", socket.getOutputStream())
         // One ordered, bounded writer per connection; neither ownership nor shutdown waits for its I/O.
         private val events = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue<Runnable>(32)) {
             Thread(it, "tiplay-airplay-events").apply { isDaemon = true }
@@ -296,7 +297,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 TcpLiveness.configure(socket) {}
                 socket.tcpNoDelay = true
                 socket.soTimeout = 120_000
-                val input = BufferedInputStream(socket.getInputStream())
+                val input = BufferedInputStream(RawTraffic.input("iphone/ReceiverServer/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()))
                 while (!closed.get() && !socket.isClosed) {
                     stage = ReceiverProtocolDiagnostics.Stage.READ
                     val request = try { readReceiverRequest(input) } catch (error: ReceiverRequestBodyTooLarge) {

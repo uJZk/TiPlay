@@ -72,6 +72,7 @@ internal class BrowserMainSettingsMenu(
     private val receiverSubscription = AirPlayReceiverService.listenState {
         activity.runOnUiThread { if (!disposed && !activity.isDestroyed) updateActions() }
     }
+    private val carBluetooth by lazy { CarBluetoothStatus(activity) { if (!disposed) updateActions() } }
     private var phone: Button
     private lateinit var connectionMode: Button
     private var networkStatus: TextView? = null
@@ -285,7 +286,7 @@ internal class BrowserMainSettingsMenu(
         renderNetwork(); updateActions()
     }
     fun refresh() {
-        refreshAddress(); refreshBrowser(); refreshNetwork(); phone.text = phoneLabel(); updateActions()
+        carBluetooth.refresh(); refreshAddress(); refreshBrowser(); refreshNetwork(); phone.text = phoneLabel(); updateActions()
     }
     fun refreshNetwork() {
         val message = if (draft.source == BrowserConnectionDraft.Source.LOCAL) {
@@ -345,6 +346,13 @@ internal class BrowserMainSettingsMenu(
             else -> null
         } else null
         putHint("phone", phoneMessage?.let(activity::getString))
+        val bluetoothHint = when (carBluetooth.state(draft.phoneAddress)) {
+            CarBluetoothStatus.State.CONNECTED -> null
+            CarBluetoothStatus.State.DISCONNECTED -> R.string.settings_hint_car_bluetooth_disconnected
+            CarBluetoothStatus.State.UNKNOWN -> R.string.settings_hint_car_bluetooth_unknown
+            CarBluetoothStatus.State.VERIFY_AUDIO_DEVICE -> R.string.settings_hint_car_bluetooth_verify
+        }
+        putHint("car-bluetooth", bluetoothHint?.let(activity::getString))
         spacing.normalizeSpacing(content, recursive = true)
     }
 
@@ -399,6 +407,6 @@ internal class BrowserMainSettingsMenu(
         committed()
         settingsChanged()
     }
-    fun dispose() { disposed = true; editHandler.removeCallbacks(applyEdit); receiverSubscription.close() }
+    fun dispose() { disposed = true; carBluetooth.close(); editHandler.removeCallbacks(applyEdit); receiverSubscription.close() }
     fun applyPendingEdits() { applyChanges() }
 }

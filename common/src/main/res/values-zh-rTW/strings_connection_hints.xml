@@ -2,9 +2,9 @@
 <resources>
     <string name="settings_hint_phone_wireless">使用無線連線時，請先選擇已配對的 iPhone。</string>
     <string name="settings_hint_bluetooth">請在系統設定中開啟藍牙。</string>
-    <string name="settings_hint_nearby">請在進階設定中允許鄰近裝置權限。</string>
-    <string name="settings_hint_location">請在進階設定中允許精確位置。</string>
-    <string name="settings_hint_usb_vpn">請在首次使用精靈中允許 USB VPN 連線。</string>
+    <string name="settings_hint_nearby">請在權限檢查單中允許鄰近裝置權限。</string>
+    <string name="settings_hint_location">請在權限檢查單中允許精確位置權限。</string>
+    <string name="settings_hint_usb_vpn">請在權限檢查單中允許 USB VPN 連線。</string>
     <string name="settings_hint_failed">無法連線至 iPhone。可在進階設定中匯出診斷報告。</string>
     <string name="settings_hint_preparation_failed">無法準備 CarPlay，請檢查安裝套件或匯出診斷報告。</string>
     <string name="settings_hint_hotspot_off">請在系統設定中開啟這支 Android 手機的熱點。</string>

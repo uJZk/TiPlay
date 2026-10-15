@@ -92,7 +92,7 @@ remains distinct. Replacement cancels requests/decoders/output. Live recovery is
 
 Authenticated resources validate browser/playback/resource identity, preserve Range,
 stream media and rewrite bounded HLS manifests/children/keys. Current-iPhone resources
-may redirect directly, with authorized proxy fallback for failed CORS/reachability.
+may redirect directly, with authorized proxy fallback for failed CORS/reachability. Debug mode forces all media through Android, including nested playlists and redirects, and updates the browser directive so active playback reopens on the new route.
 Neither makes an unreachable sender reachable. FCUP serializes exchanges with
 session/peer/URL/request-ID checks; acknowledgement is not resource completion.
 Interrupted requests may be reused only within their original deadlines. Expiry,
@@ -122,7 +122,7 @@ specifies WebVTT; broader support does not prove sender delivery.
 
 Runtime dependencies are self-hosted. Asset changes update the complete Service Worker
 manifest/cache identity. Diagnostics record redacted protocol/buffer/version metadata,
-never media, keys or authentication payloads. Relevant checks include browser unit/E2E
+excluding media, keys and authentication payloads in Standard. Debug mode separately captures unredacted application traffic and media; see [Diagnostics](Diagnostics.md). Relevant checks include browser unit/E2E
 playback and `python3 scripts/test_airplay_native.py`, alongside repository requirements.
 Desktop fixtures do not establish iPhone compatibility, vehicle performance, acoustic
 synchronization, long playback, subtitle alignment or expired-live recovery. Physical

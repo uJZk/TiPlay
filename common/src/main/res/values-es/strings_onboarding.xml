@@ -1,18 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="onboarding_help">Guía de primer uso</string>
-    <string name="onboarding_progress">Paso %1$d de %2$d</string>
-    <string name="onboarding_welcome_title">Bienvenido a TiPlay</string>
-    <string name="onboarding_welcome_body">Configura la conexión y el audio y permite los permisos que falten. TiPlay comprueba los permisos actuales y te guía a los ajustes del sistema. Hazlo con el coche aparcado.</string>
-    <string name="onboarding_connection_title">Conecta el iPhone</string>
-    <string name="onboarding_connection_body">Elige el modo y, para conexión inalámbrica, selecciona el iPhone emparejado e introduce los datos del punto de acceso o Wi-Fi. Si hace falta, empareja en los ajustes Bluetooth de Android. TiPlay espera al navegador antes de conectar el iPhone.</string>
-    <string name="onboarding_audio_title">Sonido e inicio</string>
-    <string name="onboarding_audio_body">Mantén el audio CarPlay para música en el navegador y llamadas/Siri mediante Android. Desactívalo para usar el Bluetooth del coche desde el iPhone. Elige también si TiPlay se abre al arrancar.</string>
-    <string name="onboarding_next">Siguiente</string>
-    <string name="onboarding_back">Atrás</string>
+    <string name="onboarding_help">Lista de permisos</string>
     <string name="onboarding_finish">Abrir ajustes principales</string>
     <string name="settings_browser_waiting_connection">Esperando conexión del navegador</string>
-    <string name="onboarding_permissions_title">Permisos y ajustes del sistema</string>
     <string name="onboarding_permissions_body">Permite los permisos que falten. Cada fila muestra el estado actual, que se comprueba al volver de los ajustes. Las llamadas y Siri necesitan micrófono. La autorización USB se solicita al conectar el cable. Al terminar, abre el enlace de emparejamiento en el navegador del coche.</string>
     <string name="onboarding_grant_missing">Permitir permisos pendientes</string>
     <string name="onboarding_usb_vpn">Permitir conexión USB VPN</string>

@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.airplay
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.util.Log
 import com.shilapi.xcertplay.mfi.MfiAuthenticator
 import com.shilapi.xcertplay.transport.BlockingDuplexByteStream
@@ -351,7 +352,7 @@ class AirPlaySession(
         trace("airplay event tx headers=$head bodyHex=${body.toHex()}")
         return try {
             val bytes = cipher.encrypt(head.toByteArray(Charsets.US_ASCII) + body)
-            val output = socket.getOutputStream()
+            val output = RawTraffic.output("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/out", socket.getOutputStream())
             output.write(bytes)
             output.flush()
             true
@@ -466,8 +467,8 @@ class AirPlaySession(
 
     private fun runControl() {
         com.shilapi.xcertplay.network.TcpLiveness.configure(socket) { debugLog(it) }
-        val input = BufferedInputStream(socket.getInputStream())
-        val output = BufferedOutputStream(socket.getOutputStream())
+        val input = BufferedInputStream(RawTraffic.input("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()))
+        val output = BufferedOutputStream(RawTraffic.output("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/out", socket.getOutputStream()))
         var accumulated = ByteArray(0)
         val buffer = ByteArray(READ_CHUNK_BYTES)
         var closeReason = "session closed"
@@ -836,7 +837,7 @@ class AirPlaySession(
         val buffer = ByteArray(512)
         while (!closed.get()) {
             try {
-                socket.receive(DatagramPacket(buffer, buffer.size))
+                RawTraffic.receive(socket, DatagramPacket(buffer, buffer.size))
             } catch (_: Exception) {
                 if (closed.get()) return
             }
@@ -916,8 +917,8 @@ class AirPlaySession(
 
     private fun runEventRead(socket: Socket) {
         try {
-            val input = BufferedInputStream(socket.getInputStream())
-            val output = BufferedOutputStream(socket.getOutputStream())
+            val input = BufferedInputStream(RawTraffic.input("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()))
+            val output = BufferedOutputStream(RawTraffic.output("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/out", socket.getOutputStream()))
             var encrypted = ByteArray(0)
             var plaintext = ByteArray(0)
             val buffer = ByteArray(READ_CHUNK_BYTES)

@@ -45,6 +45,23 @@ class DiagnosticExportStoreTest {
         assertFalse(provider.deleted)
     }
 
+    @Test fun exportedFileIncludesCompleteRawCaptureAfterDebugIsDisabled() {
+        val directory = java.nio.file.Files.createTempDirectory("export-raw").toFile()
+        val capture = File(directory, "capture.tsv")
+        try {
+            val bytes = ByteArray(100_001) { (it % 256).toByte() }
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, true)
+            com.shilapi.xcertplay.diagnostics.RawTraffic.record("iphone/in", bytes)
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            DiagnosticExportStore.saveToDownloads(resolver, "raw.txt", "summary\n")
+            val records = provider.file.readLines().map { it.split('\t') }.filter { it.size == 5 && it[2] == "iphone/in" }
+            val restored = java.io.ByteArrayOutputStream()
+            records.forEach { restored.write(java.util.Base64.getDecoder().decode(it[4])) }
+            assertArrayEquals(bytes, restored.toByteArray())
+            assertEquals(provider.file.readText(), provider.contentAtPublish)
+        } finally { com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false); directory.deleteRecursively() }
+    }
+
     @Test fun unavailableDownloadsDoesNotReturnFalseSuccess() {
         provider.refuseInsert = true
         assertThrows(IOException::class.java) {

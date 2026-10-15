@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.network
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
@@ -578,13 +579,13 @@ class CarPlayBonjour(
                 sourceVersion = config.sourceVersion,
                 deviceId = config.deviceId,
             )
-            val output = socket.getOutputStream()
+            val output = RawTraffic.output("iphone/discovery-control/${socket.remoteSocketAddress}/out", socket.getOutputStream())
             output.write(request.toByteArray(StandardCharsets.US_ASCII))
             output.flush()
             stage = CarPlayBonjourEvent.ProbeProgress.Stage.REQUEST_SENT
             emit(CarPlayBonjourEvent.ProbeProgress(CarPlayBonjourEvent.ProbeProgress.Stage.REQUEST_SENT, attempt, address is Inet6Address))
             val reader = BufferedReader(
-                InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII),
+                InputStreamReader(RawTraffic.input("iphone/discovery-control/${socket.remoteSocketAddress}/in", socket.getInputStream()), StandardCharsets.US_ASCII),
             )
             return reader.readLine()
                 ?: throw IOException("AirPlay control probe returned no status line")

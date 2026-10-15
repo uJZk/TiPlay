@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.airplay
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import java.io.Closeable
 import java.io.IOException
 import java.net.DatagramPacket
@@ -96,7 +97,7 @@ class AudioStream(
                 val packet = DatagramPacket(buffer, buffer.size)
                 try {
                     stats.reading()
-                    socket.receive(packet)
+                    RawTraffic.receive(socket, packet)
                 } catch (_: Exception) {
                     if (closed.get()) return else continue
                 }
@@ -180,7 +181,7 @@ class AudioStream(
         val buffer = ByteArray(DATAGRAM_BYTES)
         while (!closed.get()) {
             try {
-                socket.receive(DatagramPacket(buffer, buffer.size))
+                RawTraffic.receive(socket, DatagramPacket(buffer, buffer.size))
             } catch (_: Exception) {
                 if (closed.get()) return
             }

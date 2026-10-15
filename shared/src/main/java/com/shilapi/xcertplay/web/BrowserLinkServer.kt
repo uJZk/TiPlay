@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.web
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import com.shilapi.xcertplay.airplay.AirPlayContact
 import java.io.BufferedInputStream
 import java.io.Closeable
@@ -192,7 +193,7 @@ class BrowserLinkServer(
         try {
             socket.soTimeout = IDLE_TIMEOUT_MILLIS
             socket.tcpNoDelay = true
-            val input = BufferedInputStream(socket.getInputStream())
+            val input = BufferedInputStream(RawTraffic.input("browser/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()))
             val output = socket.getOutputStream()
             while (running.get()) {
                 val request = try {

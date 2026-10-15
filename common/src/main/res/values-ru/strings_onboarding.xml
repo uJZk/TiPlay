@@ -1,18 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="onboarding_help">Первое использование</string>
-    <string name="onboarding_progress">Шаг %1$d из %2$d</string>
-    <string name="onboarding_welcome_title">Добро пожаловать в TiPlay</string>
-    <string name="onboarding_welcome_body">Настройте подключение и звук, затем предоставьте недостающие разрешения. TiPlay проверяет текущие разрешения и помогает открыть системные настройки. Выполняйте настройку на стоянке.</string>
-    <string name="onboarding_connection_title">Подключите iPhone</string>
-    <string name="onboarding_connection_body">Выберите способ подключения. Для беспроводного режима выберите сопряжённый iPhone и укажите данные точки доступа или Wi-Fi. При необходимости создайте пару в настройках Bluetooth Android. TiPlay подключает iPhone только после подключения браузера автомобиля.</string>
-    <string name="onboarding_audio_title">Звук и запуск</string>
-    <string name="onboarding_audio_body">Оставьте звук CarPlay для музыки в браузере, звонков и Siri через Android. Отключите его для прямого звука с iPhone по Bluetooth автомобиля. Также выберите запуск TiPlay при загрузке.</string>
-    <string name="onboarding_next">Далее</string>
-    <string name="onboarding_back">Назад</string>
+    <string name="onboarding_help">Список разрешений</string>
     <string name="onboarding_finish">Открыть главные настройки</string>
     <string name="settings_browser_waiting_connection">Ожидание подключения браузера</string>
-    <string name="onboarding_permissions_title">Разрешения и системные настройки</string>
     <string name="onboarding_permissions_body">Предоставьте недостающие разрешения. Каждая строка показывает текущее состояние; после возврата из настроек оно проверяется снова. Для звонков и Siri нужен микрофон. Разрешение USB запрашивается при подключении кабеля. Затем откройте ссылку сопряжения в браузере автомобиля.</string>
     <string name="onboarding_grant_missing">Предоставить разрешения</string>
     <string name="onboarding_usb_vpn">Разрешить USB VPN</string>

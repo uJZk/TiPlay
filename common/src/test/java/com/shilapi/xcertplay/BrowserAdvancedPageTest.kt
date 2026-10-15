@@ -1,6 +1,5 @@
 package com.shilapi.xcertplay
 
-import android.Manifest
 import android.app.Activity
 
 import android.view.View
@@ -16,8 +15,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -28,7 +25,6 @@ class BrowserAdvancedPageTest {
     private var returns = 0
     private var changes = 0
     private var reportSaves = 0
-    private var requested = emptyList<String>()
 
     @Before fun setup() {
         val controller = Robolectric.buildActivity(Activity::class.java)
@@ -47,7 +43,7 @@ class BrowserAdvancedPageTest {
     }
 
     private fun create() = BrowserAdvancedPage(activity,
-        requestPermissions = { requested = it.toList() }, changed = { changes++ },
+        changed = { changes++ },
         returnToMain = { returns++ }, saveReport = { reportSaves++ })
 
     @Test fun advancedSettingsApplyImmediatelyAndReturnNeverAppliesAgain() {
@@ -80,34 +76,17 @@ class BrowserAdvancedPageTest {
         })
     }
 
-    @Test fun locationOptOutHidesPermissionAndReasonAndRequiresFineGrant() {
-        val row = views(page.view).filterIsInstance<Button>().single {
-            it.text.toString().startsWith(activity.getString(R.string.settings_permission_location) + " ")
-        }
-        val reason = views(page.view).filterIsInstance<TextView>().single {
-            it.text == activity.getString(R.string.settings_browser_location_permission_reason)
-        }
-        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
-        row.performClick()
-        assertEquals(setOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION), requested.toSet())
-        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_COARSE_LOCATION)
-        page.refresh()
-        assertTrue(row.text.endsWith("✕"))
-        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
-        page.refresh()
-        assertTrue(row.text.endsWith("✓"))
+    @Test fun locationOptOutStillAppliesWithoutAPermissionChecklist() {
         val toggle = views(page.view).filterIsInstance<Switch>().single {
             it.text == activity.getString(R.string.settings_browser_location_disable)
         }
         assertFalse(toggle.isChecked)
         toggle.performClick()
         assertTrue(com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(activity))
-        assertEquals(View.GONE, row.visibility)
-        assertEquals(View.GONE, reason.visibility)
         assertEquals(1, changes)
         toggle.performClick()
-        assertEquals(View.VISIBLE, row.visibility)
-        assertEquals(View.VISIBLE, reason.visibility)
+        assertFalse(com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(activity))
+        assertEquals(2, changes)
     }
 
     @Test fun disablingAirPlayIsDefaultOffPersistsAndDoesNotRequireCarPlayReconnect() {
@@ -151,25 +130,18 @@ class BrowserAdvancedPageTest {
         for (id in listOf(R.string.settings_browser_next_connection_hint, R.string.settings_browser_advanced_summary,
             R.string.choose_save_location, R.string.wireless_connection_help, R.string.choose_image))
             assertFalse(labels.contains(activity.getString(id)))
-        assertTrue(labels.any { it.startsWith(activity.getString(R.string.settings_permission_microphone) + " ") })
+        assertFalse(labels.any { it.startsWith(activity.getString(R.string.settings_permission_microphone) + " ") })
         button(R.string.save_diagnostic_report).performClick()
         assertEquals(1, reportSaves)
     }
 
-    @Test fun deniedPermissionRequestsAndroidAndRefreshReadsTheActualGrant() {
-        val nearby = views(page.view).filterIsInstance<Button>().single {
-            it.text.toString().startsWith(activity.getString(R.string.nearby_devices) + " ")
-        }
-        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.NEARBY_WIFI_DEVICES, Manifest.permission.BLUETOOTH_CONNECT)
+    @Test fun advancedSettingsNeverRenderADuplicatePermissionChecklist() {
         page.refresh()
-        assertTrue(nearby.text.endsWith("✕"))
-        nearby.performClick()
-        assertEquals(setOf(Manifest.permission.NEARBY_WIFI_DEVICES, Manifest.permission.BLUETOOTH_CONNECT), requested.toSet())
-        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(*requested.toTypedArray())
-        page.refresh()
-        assertTrue(nearby.text.endsWith("✓"))
-        nearby.performClick()
-        assertEquals(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, shadowOf(activity).nextStartedActivity.action)
+        val labels = views(page.view).filterIsInstance<TextView>().map { it.text.toString() }.toList()
+        assertFalse(labels.contains(activity.getString(R.string.settings_permission_group)))
+        for (id in listOf(R.string.nearby_devices, R.string.settings_permission_location,
+            R.string.settings_permission_microphone, R.string.settings_permission_notifications))
+            assertFalse(labels.any { it.startsWith(activity.getString(id) + " ") })
     }
 
     @Test fun aboutStartsWithReturnAndPreservesOriginalDescriptionsAndVersionAlone() {

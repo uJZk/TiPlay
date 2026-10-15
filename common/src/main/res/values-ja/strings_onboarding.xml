@@ -1,18 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="onboarding_help">初回ガイド</string>
-    <string name="onboarding_progress">%2$d ステップ中 %1$d</string>
-    <string name="onboarding_welcome_title">TiPlay へようこそ</string>
-    <string name="onboarding_welcome_body">接続方法と音声を設定し、不足している権限を許可します。TiPlay が現在の権限を確認し、必要なシステム設定へ案内します。停車中に操作してください。</string>
-    <string name="onboarding_connection_title">iPhone を接続</string>
-    <string name="onboarding_connection_body">接続方法を選び、ワイヤレスではペアリング済みの iPhone とホットスポットまたは Wi-Fi の情報を設定します。未ペアリングの場合は Android の Bluetooth 設定を開きます。車のブラウザ接続後に iPhone への接続を開始します。</string>
-    <string name="onboarding_audio_title">音声と起動</string>
-    <string name="onboarding_audio_body">ブラウザの音楽と Android 経由の通話・Siri には CarPlay 音声を有効にします。iPhone を車の Bluetooth 音声に直接接続する場合は無効にできます。端末起動時に TiPlay を開くかも選べます。</string>
-    <string name="onboarding_next">次へ</string>
-    <string name="onboarding_back">戻る</string>
+    <string name="onboarding_help">権限チェックリスト</string>
     <string name="onboarding_finish">メイン設定へ</string>
     <string name="settings_browser_waiting_connection">ブラウザの接続を待っています</string>
-    <string name="onboarding_permissions_title">権限とシステム設定</string>
     <string name="onboarding_permissions_body">不足している権限を許可してください。各行に現在の状態が表示され、システム設定から戻ると再確認されます。通話と Siri にはマイクが必要です。USB デバイスの許可はケーブル接続時に要求されます。完了後、車のブラウザでペアリングリンクを開きます。</string>
     <string name="onboarding_grant_missing">不足している権限を許可</string>
     <string name="onboarding_usb_vpn">USB VPN 接続を許可</string>

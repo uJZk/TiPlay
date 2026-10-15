@@ -103,12 +103,12 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       player.media.pause();
     }
   }
-  function resourceRoute(next, forceProxy = false) {
+  function resourceRoute(next, forceProxy = next.proxyOnly === true) {
     const { code, session } = credentials();
     return `/airplay-resource?id=${next.id}&r=${encodeURIComponent(next.resource)}&c=${encodeURIComponent(code)}&s=${encodeURIComponent(session)}${forceProxy ? '&proxy=1' : ''}`;
   }
   async function openPhoto(next) {
-    const currentKey = `${next.id}:${host()}:${next.resource}`;
+    const currentKey = `${next.id}:${host()}:${next.resource}:${next.proxyOnly === true}`;
     clear(); key = currentKey; layer.hidden = photoStop.hidden = next.outputAllowed === false;
     const abort = loading = new AbortController();
     try {
@@ -124,7 +124,10 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     }
   }
   async function open(next, forced = false) {
-    const currentKey = `${next.id}:${host()}:${next.resource}`;
+    const sourceKey = `${next.id}:${host()}:${next.resource}:`;
+    const currentKey = `${sourceKey}${next.proxyOnly === true}`;
+    const resume = player && key !== currentKey && key?.startsWith(sourceKey) && appliedRevision === next.revision
+      ? { time: player.media.currentTime, rate: player.media.playbackRate } : null;
     clear(); key = currentKey;
     layer.hidden = next.outputAllowed === false;
     const abort = loading = new AbortController();
@@ -133,7 +136,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       active: () => diagnostics === observation && key === currentKey && !abort.signal.aborted && !disposed,
     });
     observation.event('open', undefined, next);
-    let forceProxy = forced;
+    let forceProxy = forced || next.proxyOnly === true;
     let route = resourceRoute(next, forceProxy);
     const fetchExternal = (url, init) => fetch(url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
     try {
@@ -156,9 +159,13 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       if (abort.signal.aborted || key !== currentKey || disposed) return;
       player = createVideoPlayer(layer, { lang, stop, stopText: photoStop.textContent, signal: abort.signal,
         onCanvasError: error => observation.event('canvas-error', error),
-        fetchResource: (url, init) => next.directUrl && !forceProxy ? fetchExternal(url, init)
-          : new URL(url).origin === `http://${host()}` ? fetchPhone(new URL(url).pathname + new URL(url).search, init)
-            : fetchExternal(url, init),
+        fetchResource: (url, init) => {
+          const target = new URL(url);
+          if (target.origin === `http://${host()}` && target.pathname === '/airplay-resource')
+            return fetchPhone(target.pathname + target.search, init);
+          if (next.proxyOnly === true) throw new Error('Debug media must pass through Android');
+          return fetchExternal(url, init);
+        },
       });
       const opened = player;
       const media = player.media;
@@ -178,7 +185,11 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
         });
       await player.source(next.directUrl && !forceProxy ? next.directUrl : `http://${host()}${route}`, type);
       if (abort.signal.aborted || player !== opened) return;
-      sourceReady = true; applyDirective(); report();
+      sourceReady = true; applyDirective();
+      if (resume && Number.isFinite(resume.time)) {
+        media.currentTime = resume.time; media.playbackRate = resume.rate;
+      }
+      report();
       timer = setInterval(report, 400);
     } catch (error) {
       if (!abort.signal.aborted && state?.id === next.id) {
@@ -197,13 +208,13 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       if (next.kind === 'audio') { if (key) clear(); photoStop.hidden = false; return; }
       if (next.kind === 'photo') {
         if (!next.resource && key) clear();
-        if (next.resource && key !== `${next.id}:${host()}:${next.resource}`) void openPhoto(next);
+        if (next.resource && key !== `${next.id}:${host()}:${next.resource}:${next.proxyOnly === true}`) void openPhoto(next);
         layer.hidden = photoStop.hidden = next.outputAllowed === false;
         return;
       }
       layer.hidden = next.outputAllowed === false;
       if (!next.resource || !Number.isSafeInteger(next.revision)) { clear(); return; }
-      const nextKey = `${next.id}:${host()}:${next.resource}`;
+      const nextKey = `${next.id}:${host()}:${next.resource}:${next.proxyOnly === true}`;
       if (key !== nextKey) open(next);
       else applyDirective();
     },

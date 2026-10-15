@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_debug_logging">偵錯日誌</string>
+    <string name="settings_debug_logging">偵錯模式</string>
+    <string name="settings_debug_mode_description">完整記錄 iPhone、網頁、USB 和 Android 音訊輸出的原始資料，不去識別化。匯出報告包含完整擷取；清除應用程式資料前記錄會持續占用儲存空間。</string>
+    <string name="settings_hint_car_bluetooth_disconnected">未偵測到 Android 與車載音訊藍牙連線（A2DP/HFP），請在藍牙設定中將本機連接車機。</string>
+    <string name="settings_hint_car_bluetooth_unknown">暫時無法確認車載藍牙連線，請檢查鄰近裝置權限及藍牙設定。</string>
+    <string name="settings_hint_car_bluetooth_verify">已連接音訊藍牙裝置，請在藍牙設定中確認它是車機。</string>
 </resources>

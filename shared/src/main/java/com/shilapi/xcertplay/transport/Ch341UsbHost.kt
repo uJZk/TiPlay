@@ -269,7 +269,7 @@ class Ch341UsbSession internal constructor(
         }
 
         val transferred = try {
-            connection.bulkTransfer(endpoint, data, data.size, timeoutMillis)
+            connection.tracedBulkTransfer(endpoint, data, data.size, timeoutMillis)
         } catch (error: SecurityException) {
             throw I2cTransportException.PermissionDenied("USB permission was denied during bulk $operation")
         } catch (error: RuntimeException) {
@@ -296,7 +296,7 @@ class Ch341UsbSession internal constructor(
      */
     private fun clearEndpointHalt(endpoint: UsbEndpoint, operation: String) {
         val result = try {
-            connection.controlTransfer(
+            connection.tracedControlTransfer(
                 UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_STANDARD or
                     USB_RECIP_ENDPOINT,
                 USB_REQUEST_CLEAR_FEATURE,

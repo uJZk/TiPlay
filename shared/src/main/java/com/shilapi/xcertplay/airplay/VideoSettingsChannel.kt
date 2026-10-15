@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.airplay
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import java.io.Closeable
 import java.io.OutputStream
 import java.net.InetAddress
@@ -51,8 +52,8 @@ class VideoSettingsChannel(
     }
 
     private fun run(sock: Socket) {
-        val input = sock.getInputStream()
-        val output = sock.getOutputStream()
+        val input = RawTraffic.input("iphone/VideoSettingsChannel/${sock.remoteSocketAddress}/${sock.localPort}/in", sock.getInputStream())
+        val output = RawTraffic.output("iphone/VideoSettingsChannel/${sock.remoteSocketAddress}/${sock.localPort}/out", sock.getOutputStream())
         val buffer = ByteArray(16 * 1024)
         var ciphertext = ByteArray(0)
         var plaintext = ByteArray(0)

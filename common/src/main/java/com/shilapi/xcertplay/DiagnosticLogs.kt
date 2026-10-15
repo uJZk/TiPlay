@@ -15,6 +15,8 @@ internal object DiagnosticLogs {
     fun initialize(context: Context, level: DiagnosticLogLevel = DiagnosticLogPolicy.level): SessionLogFile =
         synchronized(initializationLock) {
             DiagnosticLogPolicy.level = level
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(
+                File(context.applicationContext.filesDir, "logs/raw-traffic.tsv"), level == DiagnosticLogLevel.DEBUG)
             current?.let { return@synchronized it }
             val log = SessionLogFile(File(context.applicationContext.filesDir, "logs/diplay.log"))
             log.reset("TiPlay log started ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS Z", Locale.US).format(Date())} " +
@@ -30,7 +32,10 @@ internal object DiagnosticLogs {
     internal fun resetForTest() {
         check(AsyncDiagnosticLog.awaitIdle(2_000))
         synchronized(initializationLock) {
-            current?.close()
+            current?.let {
+                com.shilapi.xcertplay.diagnostics.RawTraffic.configure(File(it.file.parentFile, "raw-traffic.tsv"), false)
+                it.close()
+            }
             current = null
             DiagnosticLogPolicy.level = DiagnosticLogLevel.STANDARD
         }

@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.airplay
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.util.Log
 import java.io.Closeable
 import java.io.DataInputStream
@@ -89,7 +90,7 @@ internal class BufferedAudioStream(
             // One stream has one TCP sender. Release the listening socket after ownership is set.
             server.close()
             log("Buffered audio: connected")
-            val input = DataInputStream(socket.getInputStream().buffered())
+            val input = DataInputStream(RawTraffic.input("iphone/BufferedAudioStream/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()).buffered())
             var failures = 0
             var receivedBytes = 0L
             var windowStart = nanoTime()

@@ -692,6 +692,28 @@ class BrowserLinkServerTest {
         } finally { binding.close(); playback.close() }
     }
 
+    @Test fun peerMediaIsFetchedByAndroidAndNeverRedirectedToTheBrowser() {
+        val playback = AirPlayVideoPlayback(com.shilapi.xcertplay.receiver.ReceiverPlay(
+            "http://192.168.1.7/movie.mp4", 0.0, false, iphoneHost = "192.168.1.7"), {
+            com.shilapi.xcertplay.receiver.ReceiverResource(byteArrayOf(4, 5, 6), 200, null)
+        }) {}
+        val binding = AirPlayBrowserPlayback.register(playback::state, playback, control = playback::control)
+        val directory = java.nio.file.Files.createTempDirectory("browser-proxy-debug").toFile()
+        val capture = File(directory, "raw.tsv")
+        try {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, true)
+            assertNull(playback.source()["directUrl"])
+            assertEquals(true, playback.source()["proxyOnly"])
+            val id = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
+            val response = get("/airplay-resource?id=$id&r=${playback.proxy.rootId}&s=$session&c=$code")
+            assertEquals(200, response.status)
+            assertArrayEquals(byteArrayOf(4, 5, 6), response.body)
+        } finally {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            binding.close(); playback.close(); directory.deleteRecursively()
+        }
+    }
+
     @Test fun airplayBrowserDiagnosticsRequirePairingAndDoNotControlPlayback() {
         val playback = AirPlayVideoPlayback(com.shilapi.xcertplay.receiver.ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
         val binding = AirPlayBrowserPlayback.register(playback::state, playback, control = playback::control)

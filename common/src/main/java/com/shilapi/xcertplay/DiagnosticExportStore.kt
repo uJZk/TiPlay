@@ -77,7 +77,7 @@ internal object DiagnosticExportStore {
         // Each export has a new URI: an earlier share grant cannot read a later report.
         val file = File.createTempFile(fileName.removeSuffix(".txt") + "-", ".txt", directory)
         try {
-            file.writeText(report, Charsets.UTF_8)
+            file.outputStream().use { stream -> writeReport(stream, report) }
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.diagnostic-reports", file)
             // Retain only the newest eight reports; never prune the export being returned.
             directory.listFiles()?.filter { it != file && it.isFile }
@@ -113,7 +113,7 @@ internal object DiagnosticExportStore {
         var copy = 1
         while (file.exists()) file = File(directory, "$base-${copy++}.txt")
         try {
-            file.writeText(report, Charsets.UTF_8)
+            file.outputStream().use { stream -> writeReport(stream, report) }
             if (file.length() == 0L && report.isNotEmpty()) throw IOException("Downloads/TiPlay did not keep the report")
         } catch (error: Exception) {
             file.delete()
@@ -166,9 +166,14 @@ internal object DiagnosticExportStore {
         }
     }
 
+    private fun writeReport(stream: java.io.OutputStream, report: String) {
+        stream.write(report.toByteArray(Charsets.UTF_8))
+        com.shilapi.xcertplay.diagnostics.RawTraffic.appendTo(stream)
+    }
+
     fun write(resolver: ContentResolver, uri: Uri, report: String) {
         val stream = resolver.openOutputStream(uri, "wt")
             ?: throw IOException("Report destination is unavailable")
-        stream.bufferedWriter(Charsets.UTF_8).use { it.write(report) }
+        stream.use { writeReport(it, report) }
     }
 }

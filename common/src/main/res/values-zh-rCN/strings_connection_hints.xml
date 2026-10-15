@@ -2,9 +2,9 @@
 <resources>
     <string name="settings_hint_phone_wireless">使用无线连接时，请先选择已配对的 iPhone。</string>
     <string name="settings_hint_bluetooth">请在系统设置中打开蓝牙。</string>
-    <string name="settings_hint_nearby">请在高级设置中允许附近设备权限。</string>
-    <string name="settings_hint_location">请在高级设置中允许精确定位。</string>
-    <string name="settings_hint_usb_vpn">请在首次使用向导中允许 USB VPN 连接。</string>
+    <string name="settings_hint_nearby">请在权限检查单中允许附近设备权限。</string>
+    <string name="settings_hint_location">请在权限检查单中允许精确位置权限。</string>
+    <string name="settings_hint_usb_vpn">请在权限检查单中允许 USB VPN 连接。</string>
     <string name="settings_hint_failed">未能连接 iPhone。可在高级设置中导出诊断报告。</string>
     <string name="settings_hint_preparation_failed">无法准备 CarPlay，请检查安装包或导出诊断报告。</string>
     <string name="settings_hint_hotspot_off">请在系统设置中开启这台安卓手机的热点。</string>

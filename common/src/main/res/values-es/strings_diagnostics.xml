@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_debug_logging">Registro de depuración</string>
+    <string name="settings_debug_logging">Modo de depuración</string>
+    <string name="settings_debug_mode_description">Registra todos los datos originales del iPhone, navegador, USB y salida de audio Android sin ocultarlos. Los informes incluyen la captura completa; ocupa espacio hasta borrar los datos de la app.</string>
+    <string name="settings_hint_car_bluetooth_disconnected">No se detecta conexión de audio Bluetooth con el coche (A2DP/HFP). Conecta Android al coche en ajustes Bluetooth.</string>
+    <string name="settings_hint_car_bluetooth_unknown">No se puede confirmar la conexión Bluetooth del coche. Revisa el permiso de dispositivos cercanos y los ajustes Bluetooth.</string>
+    <string name="settings_hint_car_bluetooth_verify">Hay un dispositivo de audio Bluetooth conectado. Confirma que sea el coche en ajustes.</string>
 </resources>

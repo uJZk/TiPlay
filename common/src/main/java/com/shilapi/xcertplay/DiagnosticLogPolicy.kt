@@ -8,7 +8,7 @@ internal enum class DiagnosticLogLevel(val key: String) {
     }
 }
 
-/** Both levels contain metadata only. Failure evidence and final summaries survive either level. */
+/** Standard filters metadata; Debug preserves messages and enables the separate raw capture. */
 internal object DiagnosticLogPolicy {
     @Volatile var level = DiagnosticLogLevel.STANDARD
 
@@ -50,7 +50,7 @@ internal object DiagnosticLogPolicy {
         errorValue.findAll(message).any { it.groupValues[1].lowercase() !in setOf("0", "none", "null", "-", "false") } ||
         lossValue.findAll(message).any { it.groupValues[1].removePrefix("+").toLongOrNull()?.let { value -> value > 0 } == true }
 
-    fun reportLine(): String = "Log detail: ${level.key}; metadata only; payloads and credentials excluded"
+    fun reportLine(): String = "Log detail: ${level.key}; debug captures unredacted payloads in appended RAW_CAPTURE; standard metadata is filtered"
 
     private fun withoutTimestamp(message: String): String = message.substringAfter("  ", message)
 }

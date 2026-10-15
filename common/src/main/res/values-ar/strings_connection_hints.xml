@@ -2,9 +2,9 @@
 <resources>
     <string name="settings_hint_phone_wireless">للاتصال لاسلكيًا، اختر أولًا جهاز iPhone مقترنًا.</string>
     <string name="settings_hint_bluetooth">شغّل البلوتوث في إعدادات النظام.</string>
-    <string name="settings_hint_nearby">اسمح بالوصول إلى الأجهزة القريبة في الإعدادات المتقدمة.</string>
-    <string name="settings_hint_location">اسمح بالموقع الدقيق في الإعدادات المتقدمة.</string>
-    <string name="settings_hint_usb_vpn">اسمح باتصال USB VPN في دليل الاستخدام الأول.</string>
+    <string name="settings_hint_nearby">اسمح بالوصول إلى الأجهزة القريبة في قائمة التحقق من الأذونات.</string>
+    <string name="settings_hint_location">اسمح بالموقع الدقيق في قائمة التحقق من الأذونات.</string>
+    <string name="settings_hint_usb_vpn">اسمح باتصال USB VPN في قائمة التحقق من الأذونات.</string>
     <string name="settings_hint_failed">تعذر الاتصال بجهاز iPhone. يمكنك تصدير تقرير تشخيصي من الإعدادات المتقدمة.</string>
     <string name="settings_hint_preparation_failed">تعذر إعداد CarPlay. تحقق من حزمة التثبيت أو صدّر تقريرًا تشخيصيًا.</string>
     <string name="settings_hint_hotspot_off">شغّل نقطة اتصال هاتف Android هذا في إعدادات النظام.</string>

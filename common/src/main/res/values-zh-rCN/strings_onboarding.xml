@@ -1,18 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="onboarding_help">首次使用向导</string>
-    <string name="onboarding_progress">第 %1$d 步，共 %2$d 步</string>
-    <string name="onboarding_welcome_title">欢迎使用 TiPlay</string>
-    <string name="onboarding_welcome_body">请先配置连接方式和声音，再申请缺失的权限。TiPlay 会检查安卓当前授权状态，并引导你打开必要的系统设置。请停车后操作。</string>
-    <string name="onboarding_connection_title">连接 iPhone</string>
-    <string name="onboarding_connection_body">在下方选择连接方式。无线模式请选择已配对的 iPhone，并填写热点或 Wi-Fi 信息；尚未配对时可前往安卓蓝牙设置。TiPlay 会等车机网页连接后再连接 iPhone。</string>
-    <string name="onboarding_audio_title">声音与启动</string>
-    <string name="onboarding_audio_body">通过浏览器播放音乐、由安卓处理通话和 Siri 时，请保留 CarPlay 声音；使用 iPhone 直连车辆蓝牙声音时可将其停用。也可选择是否开机自动打开 TiPlay。</string>
-    <string name="onboarding_next">下一步</string>
-    <string name="onboarding_back">上一步</string>
+    <string name="onboarding_help">权限检查单</string>
     <string name="onboarding_finish">进入主设置</string>
     <string name="settings_browser_waiting_connection">等待网页端连接</string>
-    <string name="onboarding_permissions_title">权限与系统设置</string>
     <string name="onboarding_permissions_body">点击下方按钮申请缺失权限，各项会显示真实授权状态。修改系统设置返回后会重新检查。TiPlay 通话和 Siri 需要麦克风；USB 设备授权在插线连接时由系统申请。设置完成后，请在车机浏览器打开配对链接。</string>
     <string name="onboarding_grant_missing">申请缺失权限</string>
     <string name="onboarding_usb_vpn">允许 USB VPN 连接</string>

@@ -63,7 +63,8 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
         rate = requestedRate, outputAllowed = outputAllowed)
 
     @Synchronized fun source(): Map<String, Any?> = mapOf("resource" to proxy.rootId,
-        "directUrl" to proxy.directUrl(itemUrl), "revision" to revision, "seekRevision" to seekRevision, "target" to target, "fraction" to fraction, "outputAllowed" to outputAllowed,
+        "proxyOnly" to com.shilapi.xcertplay.diagnostics.RawTraffic.enabled, "directUrl" to proxy.directUrl(itemUrl),
+        "revision" to revision, "seekRevision" to seekRevision, "target" to target, "fraction" to fraction, "outputAllowed" to outputAllowed,
         "trackRevision" to trackRevision, "trackSelection" to trackSelection, "textMarkup" to textMarkup)
 
     @Synchronized fun setOutputAllowed(allowed: Boolean) {

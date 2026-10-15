@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_debug_logging">سجلات التصحيح</string>
+    <string name="settings_debug_logging">وضع التصحيح</string>
+    <string name="settings_debug_mode_description">يسجل جميع البيانات الأصلية من iPhone والمتصفح وUSB ومخرج صوت Android دون إخفاء. تتضمن التقارير التسجيل الكامل ويستمر استخدام التخزين حتى مسح بيانات التطبيق.</string>
+    <string name="settings_hint_car_bluetooth_disconnected">لم يتم اكتشاف اتصال صوت Bluetooth بالسيارة (A2DP/HFP). صل هاتف Android بالسيارة في إعدادات Bluetooth.</string>
+    <string name="settings_hint_car_bluetooth_unknown">تعذر التأكد من اتصال Bluetooth بالسيارة. تحقق من إذن الأجهزة القريبة وإعدادات Bluetooth.</string>
+    <string name="settings_hint_car_bluetooth_verify">جهاز صوت Bluetooth متصل. تأكد من أنه السيارة في الإعدادات.</string>
 </resources>

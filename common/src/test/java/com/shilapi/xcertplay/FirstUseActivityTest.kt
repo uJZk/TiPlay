@@ -9,7 +9,6 @@ import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.shilapi.xcertplay.host.R
@@ -37,11 +36,10 @@ class FirstUseActivityTest {
         BrowserCarPlaySettings.saveMode(context, BrowserCarPlaySettings.Mode.USB)
     }
 
-    @Test fun firstOpenConfiguresBeforeCompletionAndSubsequentOpenRoutesToMain() {
+    @Test fun firstOpenShowsChecklistAndSubsequentOpenRoutesToMain() {
         val controller = Robolectric.buildActivity(FirstUseActivity::class.java).setup()
         val activity = controller.get()
         assertNull(shadowOf(activity).nextStartedActivity)
-        repeat(3) { button(activity, R.string.onboarding_next).performClick() }
         assertNotNull(button(activity, R.string.onboarding_grant_missing))
         assertNull(shadowOf(activity).nextStartedActivity)
         finishSetup(activity)
@@ -58,49 +56,53 @@ class FirstUseActivityTest {
         context.getSharedPreferences("tiplay_first_use", 0).edit().putBoolean("completed", true).commit()
         val controller = Robolectric.buildActivity(FirstUseActivity::class.java).setup()
         assertFalse(controller.get().isFinishing)
-        assertNotNull(button(controller.get(), R.string.onboarding_next))
+        assertNotNull(button(controller.get(), R.string.onboarding_grant_missing))
         controller.pause().stop().destroy()
     }
 
-    @Test fun wirelessCannotAdvanceWithMissingNetworkOrIphone() {
+    @Test fun wirelessChecklistDoesNotRequireOrModifyConnectionConfiguration() {
         BrowserCarPlaySettings.saveMode(context, BrowserCarPlaySettings.Mode.WIRELESS)
         val controller = Robolectric.buildActivity(FirstUseActivity::class.java).setup()
         val activity = controller.get()
-        button(activity, R.string.onboarding_next).performClick()
-        button(activity, R.string.onboarding_next).performClick()
-        assertFalse(views(activity.window.decorView).filterIsInstance<TextView>()
-            .any { it.text == activity.getString(R.string.onboarding_audio_title) })
-        assertFalse(context.getSharedPreferences("tiplay_first_use", 0).getBoolean("setup_completed", false))
+        assertTrue(views(activity.window.decorView).filterIsInstance<TextView>()
+            .any { it.text == activity.getString(R.string.onboarding_help) })
         assertFalse(views(activity.window.decorView).filterIsInstance<Button>()
-            .any { it.isShown && it.text == activity.getString(R.string.settings_carplay_reconnect) })
+            .any { it.text == activity.getString(R.string.choose_iphone) })
+        assertNull(BrowserConnectionDraft.load(context).phoneAddress)
+        finishSetup(activity)
+        assertTrue(context.getSharedPreferences("tiplay_first_use", 0).getBoolean("setup_completed", false))
+        assertEquals(BrowserCarPlaySettings.Mode.WIRELESS, BrowserCarPlaySettings.mode(context))
+        assertNull(BrowserConnectionDraft.load(context).phoneAddress)
         controller.pause().stop().destroy()
     }
 
-    @Test fun permanentlyDeniedBluetoothCanBeRecoveredBeforeChoosingIphone() {
+    @Test fun permanentlyDeniedBluetoothCanBeRecoveredFromChecklist() {
         BrowserCarPlaySettings.saveMode(context, BrowserCarPlaySettings.Mode.WIRELESS)
+        shadowOf(context).grantPermissions(Manifest.permission.NEARBY_WIFI_DEVICES)
         shadowOf(context).denyPermissions(Manifest.permission.BLUETOOTH_CONNECT)
         context.getSharedPreferences("tiplay_permission_requests", 0).edit()
             .putBoolean(Manifest.permission.BLUETOOTH_CONNECT, true).commit()
         val controller = Robolectric.buildActivity(FirstUseActivity::class.java).setup()
-        button(controller.get(), R.string.onboarding_next).performClick()
-        button(controller.get(), R.string.choose_iphone).performClick()
+        views(controller.get().window.decorView).filterIsInstance<Button>().single {
+            it.text.startsWith(controller.get().getString(R.string.nearby_devices) + " ")
+        }.performClick()
         assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, shadowOf(controller.get()).nextStartedActivity.action)
         assertFalse(controller.get().isFinishing)
         controller.pause().stop().destroy()
     }
 
-    @Test fun recreationRetainsStepAndIncompleteNetworkDraftWithoutCompleting() {
+    @Test fun recreationShowsOnlyChecklistAndBackDoesNotCompleteIt() {
         val controller = Robolectric.buildActivity(FirstUseActivity::class.java).setup()
-        button(controller.get(), R.string.onboarding_next).performClick()
-        views(controller.get().window.decorView).filterIsInstance<EditText>().first().setText("My unsaved network")
         val saved = Bundle()
         controller.saveInstanceState(saved).pause().stop().destroy()
+        saved.putInt("first_use_step", 2) // Old wizard state cannot restore a removed step.
         val restored = Robolectric.buildActivity(FirstUseActivity::class.java).create(saved).start().resume().visible()
-        assertTrue(views(restored.get().window.decorView).filterIsInstance<EditText>()
-            .any { it.text.toString() == "My unsaved network" })
-        button(restored.get(), R.string.onboarding_back).performClick()
-        restored.get().onBackPressedDispatcher.onBackPressed()
-        assertTrue(restored.get().isFinishing)
+        val activity = restored.get()
+        assertTrue(views(activity.window.decorView).filterIsInstance<TextView>()
+            .any { it.text == activity.getString(R.string.onboarding_help) })
+        assertNotNull(button(activity, R.string.onboarding_grant_missing))
+        activity.onBackPressedDispatcher.onBackPressed()
+        assertTrue(activity.isFinishing)
         assertFalse(context.getSharedPreferences("tiplay_first_use", 0).getBoolean("setup_completed", false))
         restored.pause().stop().destroy()
     }
@@ -112,7 +114,6 @@ class FirstUseActivityTest {
         shadowOf(context).denyPermissions(Manifest.permission.RECORD_AUDIO)
         val controller = Robolectric.buildActivity(FirstUseActivity::class.java).setup()
         val activity = controller.get()
-        repeat(3) { button(activity, R.string.onboarding_next).performClick() }
         button(activity, R.string.onboarding_grant_missing).performClick()
         val request = shadowOf(activity).lastRequestedPermission
         assertArrayEquals(arrayOf(Manifest.permission.RECORD_AUDIO), request.requestedPermissions)
@@ -127,7 +128,6 @@ class FirstUseActivityTest {
         BrowserCarPlayAudioSettings.saveDisabled(context, true)
         com.shilapi.xcertplay.location.BrowserLocationSettings.setDisabled(context, true)
         val controller = Robolectric.buildActivity(FirstUseActivity::class.java).setup()
-        repeat(3) { button(controller.get(), R.string.onboarding_next).performClick() }
         button(controller.get(), R.string.onboarding_grant_missing).performClick()
         val requested = shadowOf(controller.get()).lastRequestedPermission.requestedPermissions.toList()
         assertFalse(Manifest.permission.RECORD_AUDIO in requested)
@@ -142,7 +142,6 @@ class FirstUseActivityTest {
         context.getSharedPreferences("tiplay_permission_requests", 0).edit()
             .putBoolean(Manifest.permission.RECORD_AUDIO, true).commit()
         val controller = Robolectric.buildActivity(FirstUseActivity::class.java).setup()
-        repeat(3) { button(controller.get(), R.string.onboarding_next).performClick() }
         button(controller.get(), R.string.onboarding_grant_missing).performClick()
         val requested = shadowOf(controller.get()).lastRequestedPermission.requestedPermissions.toList()
         assertTrue(Manifest.permission.POST_NOTIFICATIONS in requested)
@@ -167,7 +166,6 @@ class FirstUseActivityTest {
         }.commit()
         val controller = Robolectric.buildActivity(FirstUseActivity::class.java).setup()
         val activity = controller.get()
-        repeat(3) { button(activity, R.string.onboarding_next).performClick() }
         button(activity, R.string.onboarding_grant_missing).performClick()
         assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, shadowOf(activity).nextStartedActivity.action)
         button(activity, R.string.onboarding_continue).performClick()
@@ -177,20 +175,18 @@ class FirstUseActivityTest {
         controller.pause().stop().destroy()
     }
 
-    @Test fun navigationUsesSameSpacingAndTouchHeightOnEveryStep() {
+    @Test fun checklistActionsKeepSpacingAndTouchHeightWithoutStepNavigation() {
         val controller = Robolectric.buildActivity(FirstUseActivity::class.java).setup()
         val activity = controller.get()
-        repeat(4) { step ->
-            val nav = activity.window.decorView.findViewWithTag<LinearLayout>("onboarding_navigation")
-            val density = activity.resources.displayMetrics.density
-            for (i in 0 until nav.childCount) {
-                val button = nav.getChildAt(i) as Button
-                val params = button.layoutParams as LinearLayout.LayoutParams
-                assertEquals(if (i == 0) 0 else (8 * density).toInt(), params.topMargin)
-                assertEquals(0, params.bottomMargin)
-                assertTrue(button.minHeight >= (48 * density).toInt())
-            }
-            if (step < 3) button(activity, R.string.onboarding_next).performClick()
+        val nav = activity.window.decorView.findViewWithTag<LinearLayout>("onboarding_navigation")
+        val density = activity.resources.displayMetrics.density
+        assertTrue(nav.childCount in 1..2)
+        for (i in 0 until nav.childCount) {
+            val button = nav.getChildAt(i) as Button
+            val params = button.layoutParams as LinearLayout.LayoutParams
+            assertEquals(if (i == 0) 0 else (8 * density).toInt(), params.topMargin)
+            assertEquals(0, params.bottomMargin)
+            assertTrue(button.minHeight >= (48 * density).toInt())
         }
         controller.pause().stop().destroy()
     }
@@ -199,7 +195,6 @@ class FirstUseActivityTest {
         context.getSharedPreferences("tiplay_first_use", 0).edit().putBoolean("setup_completed", true).commit()
         val controller = Robolectric.buildActivity(FirstUseActivity::class.java,
             Intent(context, FirstUseActivity::class.java).putExtra(FirstUseActivity.REVIEW, true)).setup()
-        repeat(3) { button(controller.get(), R.string.onboarding_next).performClick() }
         finishSetup(controller.get())
         assertTrue(controller.get().isFinishing)
         assertNull(shadowOf(controller.get()).nextStartedActivity)

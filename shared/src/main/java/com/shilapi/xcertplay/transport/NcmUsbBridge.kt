@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.transport
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
@@ -83,7 +84,7 @@ class NcmUsbBridge internal constructor(
         // timeout, and each USBMUX write of the iAP2 handshake finished only when one expired:
         // ~2 s per step on Android 8.1–14 (#634, #335, #301). Until the phone takes its first
         // frame, a frame that cannot go out at once is dropped, as it was after the full timeout.
-        val transferred = connection.bulkTransfer(
+        val transferred = connection.tracedBulkTransfer(
             outEndpoint,
             block,
             block.size,
@@ -174,7 +175,7 @@ class NcmUsbBridge internal constructor(
             // Short synchronous polls keep this thread out of JNI critical sections most of the time;
             // notifications are rare, small interrupt packets that are only logged.
             val transferred = try {
-                connection.bulkTransfer(endpoint, buffer, buffer.size, STATUS_POLL_TIMEOUT_MILLIS)
+                connection.tracedBulkTransfer(endpoint, buffer, buffer.size, STATUS_POLL_TIMEOUT_MILLIS)
             } catch (_: RuntimeException) {
                 return
             }
@@ -360,6 +361,7 @@ class NcmUsbBridge internal constructor(
             if (transferred <= 0) return null
             directReadBuffer.flip()
             directReadBuffer.get(readBuffer, 0, transferred)
+            RawTraffic.record("usb/ncm/${System.identityHashCode(connection)}/in", readBuffer, 0, transferred)
             return transferred
         } catch (error: IphoneUsbException) {
             throw error
@@ -512,7 +514,7 @@ class NcmUsbBridge internal constructor(
         private fun readNcmHostMac(connection: UsbDeviceConnection, controlInterfaceId: Int): ByteArray? {
             val index = ethernetMacStringIndex(connection.rawDescriptors, controlInterfaceId) ?: return null
             val buffer = ByteArray(256)
-            val length = connection.controlTransfer(
+            val length = connection.tracedControlTransfer(
                 UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_STANDARD,
                 USB_REQUEST_GET_DESCRIPTOR,
                 (USB_STRING_DESCRIPTOR_TYPE shl 8) or index,

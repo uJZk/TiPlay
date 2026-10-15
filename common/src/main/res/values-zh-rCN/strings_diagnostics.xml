@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_debug_logging">调试日志</string>
+    <string name="settings_debug_logging">调试模式</string>
+    <string name="settings_debug_mode_description">完整记录 iPhone、网页、USB 和 Android 音频输出的原始数据，不脱敏。导出报告包含完整抓取；清除应用数据前记录会持续占用存储。</string>
+    <string name="settings_hint_car_bluetooth_disconnected">未检测到 Android 与车载音频蓝牙连接（A2DP/HFP），请在蓝牙设置中将本机连接车机。</string>
+    <string name="settings_hint_car_bluetooth_unknown">暂时无法确认车载蓝牙连接，请检查附近设备权限及蓝牙设置。</string>
+    <string name="settings_hint_car_bluetooth_verify">已连接音频蓝牙设备，请在蓝牙设置中确认它是车机。</string>
 </resources>

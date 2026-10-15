@@ -12,7 +12,6 @@ import com.shilapi.xcertplay.host.R
 /** Product-owned advanced controls; upstream settings remain available through their internal API. */
 internal class BrowserAdvancedPage(
     private val activity: Activity,
-    private val requestPermissions: (Array<String>) -> Unit,
     private val changed: () -> Unit,
     private val returnToMain: () -> Unit,
     private val saveReport: () -> Unit,
@@ -40,7 +39,6 @@ internal class BrowserAdvancedPage(
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(16); bottomMargin = ui.dp(8) })
     }
     val reportButton: Button
-    private val permissions: BrowserPermissionsPage
 
     init {
         button(activity.getString(R.string.back), returnToMain)
@@ -89,13 +87,11 @@ internal class BrowserAdvancedPage(
         }
         heading(R.string.diagnostics)
         BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_debug_logging),
-            "", AirPlayPersistence.loadDiagnosticLogLevel(activity) == DiagnosticLogLevel.DEBUG, true) {
+            activity.getString(R.string.settings_debug_mode_description), AirPlayPersistence.loadDiagnosticLogLevel(activity) == DiagnosticLogLevel.DEBUG, true) {
             AirPlayPersistence.saveDiagnosticLogLevel(activity,
                 if (it) DiagnosticLogLevel.DEBUG else DiagnosticLogLevel.STANDARD)
         }
         reportButton = button(activity.getString(R.string.save_diagnostic_report), saveReport)
-        heading(R.string.settings_permission_group)
-        permissions = BrowserPermissionsPage(activity, content, requestPermissions)
         refresh()
     }
 
@@ -105,7 +101,6 @@ internal class BrowserAdvancedPage(
     }
 
     fun refresh() {
-        permissions.refresh()
         spacing.normalizeSpacing(content, recursive = true)
     }
 }

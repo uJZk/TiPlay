@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.media
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothHeadset
@@ -266,7 +267,13 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
                             var offset = 0
                             while (running.get() && offset < samples.size) {
                                 val count = audio.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
-                                check(count > 0) { "Bluetooth playback stopped" }; offset += count
+                                check(count > 0) { "Bluetooth playback stopped" }
+                                if (RawTraffic.enabled) {
+                                    val bytes = java.nio.ByteBuffer.allocate(count * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                                    repeat(count) { bytes.putShort(samples[offset + it]) }
+                                    RawTraffic.record("car-bluetooth/sco/pcm16le/rate=${mixer.rate}/out", bytes.array())
+                                }
+                                offset += count
                             }
                         }
                     } catch (_: Exception) { if (running.get()) main.post { if (token == generation) fail("bluetooth-output-failed") } }

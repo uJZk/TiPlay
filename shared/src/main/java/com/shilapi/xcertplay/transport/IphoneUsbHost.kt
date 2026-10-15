@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.transport
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -164,7 +165,7 @@ class IphoneUsbHost(
         executor.execute {
             callback(runTransition(device) { connection ->
                 val response = ByteArray(VENDOR_RESPONSE_LENGTH)
-                val transferred = connection.controlTransfer(
+                val transferred = connection.tracedControlTransfer(
                     USB_VENDOR_DEVICE_IN,
                     CARPLAY_CONFIGURATION_REQUEST,
                     0,
@@ -338,7 +339,7 @@ class IphoneUsbHost(
     /** The iPhone's current configuration value (standard GET_CONFIGURATION), or null if unreadable. */
     private fun activeConfiguration(connection: UsbDeviceConnection): Int? {
         val value = ByteArray(1)
-        val read = connection.controlTransfer(
+        val read = connection.tracedControlTransfer(
             USB_STANDARD_DEVICE_IN, GET_CONFIGURATION_REQUEST, 0, 0, value, value.size, CONTROL_TRANSFER_TIMEOUT_MILLIS,
         )
         return if (read == value.size) value[0].toInt() and 0xff else null
@@ -385,7 +386,7 @@ class IphoneUsbHost(
     /** The iPhone's current USB mode (usbmuxd's 0x45 request) and every configuration it exposes. */
     private fun modeRejectionDiagnostic(connection: UsbDeviceConnection, device: UsbDevice): String {
         val mode = ByteArray(USB_MODE_RESPONSE_LENGTH)
-        val read = connection.controlTransfer(
+        val read = connection.tracedControlTransfer(
             USB_VENDOR_DEVICE_IN, GET_USB_MODE_REQUEST, 0, 0, mode, mode.size, CONTROL_TRANSFER_TIMEOUT_MILLIS,
         )
         return usbModeDiagnostic(read, mode, device.version,
@@ -443,7 +444,7 @@ class Iap2UsbSession internal constructor(
         checkOpen()
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
         if (data.isEmpty()) return@synchronized
-        val transferred = connection.bulkTransfer(outEndpoint, data, data.size, timeoutMillis)
+        val transferred = connection.tracedBulkTransfer(outEndpoint, data, data.size, timeoutMillis)
         if (transferred != data.size) {
             throw IphoneUsbException.DeviceUnavailable(
                 "USBMUX write transferred $transferred of ${data.size} bytes",
@@ -498,6 +499,7 @@ class Iap2UsbSession internal constructor(
             return@synchronized ByteArray(buffer.position()).also {
                 buffer.flip()
                 buffer.get(it)
+            RawTraffic.record("usb/mux/${System.identityHashCode(connection)}/endpoint=${inEndpoint.address}/in", it)
             }
         } catch (error: IphoneUsbException) {
             throw error
@@ -556,6 +558,7 @@ class Iap2UsbSession internal constructor(
         return ByteArray(buffer.position()).also {
             buffer.flip()
             buffer.get(it)
+            RawTraffic.record("usb/mux/${System.identityHashCode(connection)}/endpoint=${inEndpoint.address}/in", it)
         }
     }
 

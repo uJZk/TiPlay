@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.airplay
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import java.io.Closeable
 import java.io.InputStream
 import java.net.Inet4Address
@@ -134,7 +135,7 @@ class IapTunnel(
         var failure: Throwable? = null
         var announcedData = false
         try {
-            val input = sock.getInputStream()
+            val input = RawTraffic.input("iphone/IapTunnel/${sock.remoteSocketAddress}/${sock.localPort}/in", sock.getInputStream())
             val buffer = ByteArray(READ_CHUNK_BYTES)
             while (!closed.get()) {
                 val read = input.read(buffer)

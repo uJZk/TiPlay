@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_debug_logging">Отладочные журналы</string>
+    <string name="settings_debug_logging">Режим отладки</string>
+    <string name="settings_debug_mode_description">Записывает все исходные данные iPhone, браузера, USB и аудиовыхода Android без маскировки. Полная запись включена в отчёт и занимает место до очистки данных приложения.</string>
+    <string name="settings_hint_car_bluetooth_disconnected">Не обнаружено аудиосоединение Android с автомобилем по Bluetooth (A2DP/HFP). Подключите телефон в настройках Bluetooth.</string>
+    <string name="settings_hint_car_bluetooth_unknown">Не удаётся проверить Bluetooth автомобиля. Проверьте разрешение устройств поблизости и настройки Bluetooth.</string>
+    <string name="settings_hint_car_bluetooth_verify">Подключено аудиоустройство Bluetooth. Убедитесь в настройках, что это автомобиль.</string>
 </resources>

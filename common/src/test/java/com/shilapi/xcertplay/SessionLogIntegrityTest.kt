@@ -54,6 +54,21 @@ class SessionLogIntegrityTest {
         } finally { DiagnosticLogPolicy.level = previous; log.close(); folder.deleteRecursively() }
     }
 
+    @Test fun debugPreservesCredentialsEvenWhenExportedAfterReturningToStandard() {
+        val folder = Files.createTempDirectory("tiplay-log-debug").toFile()
+        val log = SessionLogFile(folder.resolve("diplay.log"))
+        val previous = DiagnosticLogPolicy.level
+        try {
+            DiagnosticLogPolicy.level = DiagnosticLogLevel.DEBUG
+            val raw = "password=private pairingCode=1234 url=http://192.168.1.2/media"
+            log.append(raw)
+            DiagnosticLogPolicy.level = DiagnosticLogLevel.STANDARD
+            val report = StringBuilder()
+            DiagnosticLogSnapshot.appendTo(report, folder)
+            assertTrue(report.toString().contains(raw))
+        } finally { DiagnosticLogPolicy.level = previous; log.close(); folder.deleteRecursively() }
+    }
+
     @Test fun recoveryPersistsEarlierLoggingGapsForTheNextProcessReport() {
         val folder = Files.createTempDirectory("tiplay-log-recovery").toFile()
         val log = SessionLogFile(folder.resolve("missing/diplay.log"))

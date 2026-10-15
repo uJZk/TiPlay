@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_debug_logging">Debug logging</string>
+    <string name="settings_debug_logging">Debug mode</string>
+    <string name="settings_debug_mode_description">Record all raw iPhone, browser, USB and Android audio output data without redaction. Reports include the full capture; storage use grows until app data is cleared.</string>
+    <string name="settings_hint_car_bluetooth_disconnected">No Android car Bluetooth audio connection detected (A2DP/HFP). Connect this Android phone to the car in Bluetooth settings.</string>
+    <string name="settings_hint_car_bluetooth_unknown">Cannot confirm the car Bluetooth connection. Check Nearby devices permission and Bluetooth settings.</string>
+    <string name="settings_hint_car_bluetooth_verify">An audio Bluetooth device is connected. Confirm it is the car in Bluetooth settings.</string>
 </resources>

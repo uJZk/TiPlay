@@ -1,18 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="onboarding_help">Перше використання</string>
-    <string name="onboarding_progress">Крок %1$d із %2$d</string>
-    <string name="onboarding_welcome_title">Ласкаво просимо до TiPlay</string>
-    <string name="onboarding_welcome_body">Налаштуйте з’єднання й звук, потім надайте відсутні дозволи. TiPlay перевіряє поточні дозволи й допомагає відкрити системні налаштування. Виконуйте на стоянці.</string>
-    <string name="onboarding_connection_title">Підключіть iPhone</string>
-    <string name="onboarding_connection_body">Оберіть спосіб підключення. Для бездротового режиму оберіть спарений iPhone і вкажіть дані точки доступу або Wi-Fi. За потреби створіть пару в налаштуваннях Bluetooth Android. TiPlay підключає iPhone лише після підключення браузера автомобіля.</string>
-    <string name="onboarding_audio_title">Звук і запуск</string>
-    <string name="onboarding_audio_body">Залиште звук CarPlay для музики у браузері, дзвінків і Siri через Android. Вимкніть його для прямого звуку з iPhone через Bluetooth автомобіля. Також оберіть запуск TiPlay під час завантаження.</string>
-    <string name="onboarding_next">Далі</string>
-    <string name="onboarding_back">Назад</string>
+    <string name="onboarding_help">Перелік дозволів</string>
     <string name="onboarding_finish">Відкрити головні налаштування</string>
     <string name="settings_browser_waiting_connection">Очікування підключення браузера</string>
-    <string name="onboarding_permissions_title">Дозволи й системні налаштування</string>
     <string name="onboarding_permissions_body">Надайте відсутні дозволи. Кожен рядок показує поточний стан, який перевіряється після повернення з налаштувань. Для дзвінків і Siri потрібен мікрофон. Дозвіл USB запитується під час підключення кабелю. Потім відкрийте посилання сполучення в браузері автомобіля.</string>
     <string name="onboarding_grant_missing">Надати відсутні дозволи</string>
     <string name="onboarding_usb_vpn">Дозволити USB VPN</string>

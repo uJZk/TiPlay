@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.airplay
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.util.Log
 import java.io.Closeable
 import java.io.InputStream
@@ -72,7 +73,7 @@ class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String
         var failure: Throwable? = null
         val stats = StreamReceiveStats("video", onDiagnostic)
         try {
-            val input = sock.getInputStream()
+            val input = RawTraffic.input("iphone/ScreenStream/${sock.remoteSocketAddress}/${sock.localPort}/in", sock.getInputStream())
             while (!closed.get()) {
                 stats.reading()
                 val header = readFully(input, HEADER_LEN) ?: break
