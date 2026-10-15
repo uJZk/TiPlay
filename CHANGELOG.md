@@ -4,6 +4,15 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.14
+
+- Replace the informational first-use guide with connection, sound, startup and missing-permission setup, including current Android grant checks and system-settings links.
+- Unify page, section, button and description spacing; adapt network choices for narrow windows and large text.
+- Consolidate automatic hints below status and keep explicit operation results at their controls. Preserve independent blockers, distinguish unknown Wi-Fi facts and discard stale failures or asynchronous results.
+- Remove the residual manual reconnect action; valid settings continue to save and apply automatically.
+
+Verification: 1,967 shared, 1,552 common and 6 home unit tests; 229 browser tests; Android lint and debug builds. Physical phone/vehicle, system authorization and VPN acceptance remain pending.
+
 ## 0.2.14-beta.4
 
 - Add a first-use guide on Android, with completion tracking and a Main settings entry to review it.

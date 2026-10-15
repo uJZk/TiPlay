@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_hint_phone_wireless">للاتصال لاسلكيًا، اختر أولًا جهاز iPhone مقترنًا.</string>
+    <string name="settings_hint_bluetooth">شغّل البلوتوث في إعدادات النظام.</string>
+    <string name="settings_hint_nearby">اسمح بالوصول إلى الأجهزة القريبة في الإعدادات المتقدمة.</string>
+    <string name="settings_hint_location">اسمح بالموقع الدقيق في الإعدادات المتقدمة.</string>
+    <string name="settings_hint_usb_vpn">اسمح باتصال USB VPN في دليل الاستخدام الأول.</string>
+    <string name="settings_hint_failed">تعذر الاتصال بجهاز iPhone. يمكنك تصدير تقرير تشخيصي من الإعدادات المتقدمة.</string>
+    <string name="settings_hint_preparation_failed">تعذر إعداد CarPlay. تحقق من حزمة التثبيت أو صدّر تقريرًا تشخيصيًا.</string>
+    <string name="settings_hint_hotspot_off">شغّل نقطة اتصال هاتف Android هذا في إعدادات النظام.</string>
+    <string name="settings_hint_hotspot_unknown">تعذر تحديد ما إذا كانت نقطة الاتصال قيد التشغيل. تأكد من تشغيلها في إعدادات النظام.</string>
+    <string name="settings_hint_wifi_disconnected">اتصل بالشبكة التي أدخلتها من إعدادات Wi-Fi في النظام.</string>
+    <string name="settings_hint_wifi_unknown">تعذرت قراءة اسم شبكة Wi-Fi الحالية. تحقّق منه في إعدادات النظام.</string>
+    <string name="settings_hint_wifi_mismatch">يختلف اسم شبكة Wi-Fi الحالية عن الاسم المُدخل. تحقّق من الشبكة أو الاسم.</string>
+    <string name="settings_hint_address_unknown">عنوان نقطة الاتصال غير متاح بعد. تأكد من تشغيل نقطة اتصال هذا الهاتف.</string>
+    <string name="settings_hint_browser_open">صِل متصفح السيارة وهذا الهاتف بالشبكة نفسها، ثم افتح الرابط ضمن «%1$s» أدناه.</string>
+    <string name="settings_hint_address_blocked">قد لا يتمكن متصفح السيارة من الوصول إلى عنوان نقطة الاتصال هذا. جرّب طريقة أخرى للعنوان.</string>
+    <string name="settings_hint_vpn_failed">تعذر بدء VPN الخاص بعنوان نقطة الاتصال. أعد المحاولة أو اختر طريقة أخرى.</string>
+    <string name="settings_hint_shizuku_start">شغّل Shizuku أولًا، ثم عُد إلى TiPlay.</string>
+</resources>

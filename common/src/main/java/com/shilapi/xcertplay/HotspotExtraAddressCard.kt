@@ -44,10 +44,15 @@ internal class HotspotExtraAddressCard(
     private val actionButton: (parent: LinearLayout, text: String, click: () -> Unit) -> Button,
     private val rerender: () -> Unit,
     private val showEndpoint: Boolean = true,
+    private val hintReporter: ((String, String?) -> Unit)? = null,
+    private val showOperationalHints: () -> Boolean = { true },
+    private val browserReady: () -> Boolean = { false },
+    private val operationFeedback: HotspotOperationFeedback? = null,
 ) {
     data class Colors(val muted: Int, val warning: Int, val ready: Int)
 
     private val app = activity.applicationContext
+    private var operation: HotspotOperationFeedback.Operation? = null
     private var probeToken: LatestSettingsProbe.Token? = null
 
     fun build(parent: LinearLayout) {
@@ -63,6 +68,11 @@ internal class HotspotExtraAddressCard(
             visibility = View.GONE
         }
         settingRow(parent, "${activity.getString(R.string.settings_browser_hotspot_address_repair)} · ${label(method)}", ::chooseMethod)
+        val methodResult = if (operationFeedback != null) note("").apply {
+            visibility = View.GONE
+            tag = "hotspot_operation_result"
+            parent.addView(this)
+        } else null
         if (showEndpoint) {
             if (method != HotspotAddressMethod.NORMAL) {
                 settingRow(parent, "${activity.getString(R.string.settings_browser_hotspot_address)} · " +
@@ -75,22 +85,38 @@ internal class HotspotExtraAddressCard(
         // Keep the probe anchor attached for repaired addresses too, without a duplicate address line.
         if (!showEndpoint || method != HotspotAddressMethod.NORMAL) parent.addView(current.apply { visibility = View.GONE })
         val action = when (method) {
-            HotspotAddressMethod.SHIZUKU -> actionButton(parent, activity.getString(R.string.settings_hotspot_shizuku_allow), ::allowShizuku)
-            HotspotAddressMethod.VPN -> actionButton(parent, activity.getString(R.string.settings_hotspot_vpn_allow), ::allowVpn)
+            HotspotAddressMethod.SHIZUKU -> actionButton(parent, activity.getString(R.string.settings_hotspot_shizuku_allow)) {
+                operation = operationFeedback?.begin(HotspotOperationFeedback.Target.AUTHORIZATION, method)
+                allowShizuku()
+            }
+            HotspotAddressMethod.VPN -> actionButton(parent, activity.getString(R.string.settings_hotspot_vpn_allow)) {
+                operation = operationFeedback?.begin(HotspotOperationFeedback.Target.AUTHORIZATION, method)
+                allowVpn()
+            }
             else -> null
         }
+        val actionResult = if (operationFeedback != null && action != null) note("").apply {
+            visibility = View.GONE
+            tag = "hotspot_authorization_result"
+            parent.addView(this)
+        } else null
+        if (methodResult != null) operationFeedback?.bind(methodResult, actionResult)
         val refresh = { showStatus(method, status, action) }
         refresh()
         val keeperListener: (HotspotExtraAddressKeeper.State) -> Unit = {
             activity.runOnUiThread {
                 if (status.isAttachedToWindow) {
+                    if (!rootCheckInProgress.get()) clearOperation()
                     refresh()
                     probe(current, blocked, method) // the address list changes with it
                 }
             }
         }
         val vpnListener: (HotspotAddressVpn.State) -> Unit = {
-            activity.runOnUiThread { if (status.isAttachedToWindow) refresh() }
+            activity.runOnUiThread { if (status.isAttachedToWindow) {
+                if (!rootCheckInProgress.get()) clearOperation()
+                refresh()
+            } }
         }
         // Only while the rows are on screen; a new render replaces them.
         val attachment = object : View.OnAttachStateChangeListener {
@@ -110,6 +136,18 @@ internal class HotspotExtraAddressCard(
         status.addOnAttachStateChangeListener(attachment)
         // A refresh may build these rows inside a parent that is already on screen.
         if (status.isAttachedToWindow) attachment.onViewAttachedToWindow(status)
+    }
+
+    private fun clearOperation() {
+        operationFeedback?.cancel()
+    }
+
+    /** This line is reserved for the result of this card's explicit button operation. */
+    private fun showOperation(message: Int, result: HotspotOperationFeedback.Operation? = operation) {
+        if (hintReporter == null) Toast.makeText(activity, message, Toast.LENGTH_LONG).show()
+        else {
+            result?.show(message)
+        }
     }
 
     /** The chooser's label. */
@@ -140,6 +178,19 @@ internal class HotspotExtraAddressCard(
 
     private fun showHotspot(current: TextView, blocked: TextView, hotspot: HotspotAddresses.Current?,
         method: HotspotAddressMethod) {
+        if (hintReporter != null) {
+            current.visibility = View.GONE
+            blocked.visibility = View.GONE
+            val relevant = showOperationalHints() && method == HotspotAddressMethod.NORMAL && !browserReady()
+            // Unknown/off switch state already has one precise instruction in the main network observation.
+            val knownOn = com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(activity) == true
+            val addresses = hotspot?.ipv4.orEmpty()
+            hintReporter.invoke("address", if (relevant && knownOn && addresses.isEmpty())
+                activity.getString(R.string.settings_hint_address_unknown) else null)
+            hintReporter.invoke("reachability", if (relevant && addresses.isNotEmpty() && addresses.none(HotspotExtraAddress::isAllowed))
+                activity.getString(R.string.settings_hint_address_blocked) else null)
+            return
+        }
         if (hotspot == null || hotspot.ipv4.isEmpty()) {
             if (!showEndpoint && method == HotspotAddressMethod.NORMAL) current.visibility = View.VISIBLE
             current.text = activity.getString(R.string.settings_hotspot_not_found)
@@ -162,7 +213,7 @@ internal class HotspotExtraAddressCard(
     private fun showStatus(method: HotspotAddressMethod, line: TextView, action: Button?) {
         var showAction = false
         val (text, color) = when {
-            rootCheckInProgress.get() -> activity.getString(R.string.settings_hotspot_extra_address_root_checking) to colors.muted
+            rootCheckInProgress.get() && hintReporter == null -> activity.getString(R.string.settings_hotspot_extra_address_root_checking) to colors.muted
             method == HotspotAddressMethod.NORMAL -> null to colors.muted
             !HotspotExtraAddressSettings.manualHotspotLink(app) -> activity.getString(
                 R.string.settings_hotspot_extra_address_manual_only,
@@ -178,8 +229,22 @@ internal class HotspotExtraAddressCard(
         }
         line.text = text.orEmpty()
         line.setTextColor(color)
-        line.visibility = if (text == null) View.GONE else View.VISIBLE
-        action?.visibility = if (showAction) View.VISIBLE else View.GONE
+        if (hintReporter != null) {
+            val healthy = (method == HotspotAddressMethod.VPN && HotspotAddressVpn.state == HotspotAddressVpn.State.Up) ||
+                (method != HotspotAddressMethod.VPN && HotspotExtraAddressKeeper.state is HotspotExtraAddressKeeper.State.Added)
+            val waitingForHotspot = method != HotspotAddressMethod.VPN && HotspotExtraAddressKeeper.state == HotspotExtraAddressKeeper.State.NoHotspot
+            val message = when {
+                method == HotspotAddressMethod.VPN && HotspotAddressVpn.state is HotspotAddressVpn.State.Failed -> activity.getString(R.string.settings_hint_vpn_failed)
+                method == HotspotAddressMethod.SHIZUKU && HotspotExtraAddressKeeper.state == HotspotExtraAddressKeeper.State.ShizukuUnavailable -> activity.getString(R.string.settings_hint_shizuku_start)
+                method != HotspotAddressMethod.VPN && !HotspotExtraAddressKeeper.running && !rootCheckInProgress.get() -> null
+                else -> text
+            }
+            hintReporter.invoke("method", message.takeIf {
+                showOperationalHints() && !healthy && !waitingForHotspot && operationFeedback?.owns(method) != true
+            })
+            line.visibility = View.GONE
+        } else line.visibility = if (text == null) View.GONE else View.VISIBLE
+        action?.visibility = if (showAction && (hintReporter == null || showOperationalHints())) View.VISIBLE else View.GONE
     }
 
     private fun keeperStatus(state: HotspotExtraAddressKeeper.State): Pair<String, Int> = when (state) {
@@ -236,6 +301,7 @@ internal class HotspotExtraAddressCard(
      * blocked Shizuku, a revoked VPN).
      */
     private fun choose(next: HotspotAddressMethod, previous: HotspotAddressMethod) {
+        operation = operationFeedback?.begin(HotspotOperationFeedback.Target.METHOD, next)
         if (next == HotspotAddressMethod.ROOT) return checkRootThenApply(previous)
         apply(next, previous, retry = true)
         when (next) {
@@ -257,7 +323,8 @@ internal class HotspotExtraAddressCard(
 
     private fun checkRootThenApply(previous: HotspotAddressMethod) {
         if (!rootCheckInProgress.compareAndSet(false, true)) return
-        rerender()
+        if (hintReporter != null) showOperation(R.string.settings_hotspot_extra_address_root_checking) else rerender()
+        val result = operation
         // The first su call: the root manager may show its prompt, so it waits off the main thread.
         Thread({
             val granted = try {
@@ -274,10 +341,14 @@ internal class HotspotExtraAddressCard(
                     return@runOnUiThread
                 }
                 if (granted) {
+                    clearOperation()
                     apply(HotspotAddressMethod.ROOT, previous, retry = true)
                 } else {
-                    Toast.makeText(activity, R.string.settings_hotspot_extra_address_root_refused, Toast.LENGTH_LONG).show()
-                    rerender()
+                    if (hintReporter != null) showOperation(R.string.settings_hotspot_extra_address_root_refused, result)
+                    else {
+                        Toast.makeText(activity, R.string.settings_hotspot_extra_address_root_refused, Toast.LENGTH_LONG).show()
+                        rerender()
+                    }
                 }
             }
         }, "tiplay-root-check").start()
@@ -304,7 +375,7 @@ internal class HotspotExtraAddressCard(
         try {
             activity.startActivityForResult(consent, VPN_CONSENT_REQUEST)
         } catch (_: ActivityNotFoundException) {
-            Toast.makeText(activity, R.string.settings_hotspot_vpn_no_consent_screen, Toast.LENGTH_LONG).show()
+            showOperation(R.string.settings_hotspot_vpn_no_consent_screen)
         }
     }
 
@@ -312,6 +383,7 @@ internal class HotspotExtraAddressCard(
 
     /** Shizuku's own dialog, from a tap. Its answer reaches the keeper, which adds the address. */
     private fun requestShizukuIfNeeded(quiet: Boolean) {
+        val result = operation
         Thread({
             val running = runCatching { ShizukuSystem.running() }.getOrDefault(false)
             val granted = running && runCatching { ShizukuSystem.permissionGranted() }.getOrDefault(false)
@@ -321,9 +393,9 @@ internal class HotspotExtraAddressCard(
                 ShizukuSystem.permissionDeniedForGood() || !ShizukuSystem.requestPermission() -> R.string.settings_hotspot_shizuku_denied
                 else -> null
             }
-            HotspotExtraAddressKeeper.checkNow()
-            if (message != null) activity.runOnUiThread {
-                if (!activity.isFinishing && !activity.isDestroyed) Toast.makeText(activity, message, Toast.LENGTH_LONG).show()
+            if (message == null) HotspotExtraAddressKeeper.checkNow()
+            else activity.runOnUiThread {
+                if (!activity.isFinishing && !activity.isDestroyed) showOperation(message, result)
             }
         }, "tiplay-shizuku-permission").start()
     }

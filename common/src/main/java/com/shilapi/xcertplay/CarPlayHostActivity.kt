@@ -143,6 +143,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var connectionHelpView: TextView? = null
     private var wifiRecoveryButton: View? = null
     private var browserCarPlayPhase = "preparing"
+    private var browserConnectionProblem: BrowserConnectionProblem? = null
     private var reconnectTask: Runnable? = null
     private val browserCarPlayRetry = BrowserCarPlayRetry()
     private var browserCarPlayWatch: BrowserCarPlayWatch? = null
@@ -962,7 +963,8 @@ class CarPlayHostActivity : ComponentActivity() {
         mfiI2cPath = AirPlayPersistence.loadMfiI2cPath(this)
         remoteMfiServer = AirPlayPersistence.loadRemoteMfiServer(this)
         remoteMfiToken = AirPlayPersistence.loadRemoteMfiToken(this)
-        locationReportingEnabled = AirPlayPersistence.loadLocationReportingEnabled(this)
+        locationReportingEnabled = AirPlayPersistence.loadLocationReportingEnabled(this) &&
+            (headUnitIntegrations() || !com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(this))
         wirelessHotspotMode = AirPlayPersistence.loadWirelessHotspotMode(this)
         existingWifiSsid = AirPlayPersistence.loadExistingWifiSsid(this)
         existingWifiPassphrase = AirPlayPersistence.loadExistingWifiPassphrase(this)
@@ -3404,7 +3406,10 @@ class CarPlayHostActivity : ComponentActivity() {
         // Valid settings resume enabled CarPlay even from idle; the opt-out blocks startup and retries.
         browserConnectionRequested = !BrowserCarPlaySettings.disabled(this)
         startupRetryStopped = false
-        if (controller == null) browserCarPlayPhase = "preparing"
+        if (controller == null) {
+            browserCarPlayPhase = "preparing"
+            browserConnectionProblem = null
+        }
         loadPersistedSettings()
         browserMainPage?.refresh()
         if (controller != null) {
@@ -3419,29 +3424,6 @@ class CarPlayHostActivity : ComponentActivity() {
         val draft = browserMainPage?.draft ?: BrowserConnectionDraft.load(this, browserMainState)
         val page = BrowserMainSettingsMenu(this, draft,
             requestPermissions = { wirelessPermissions.launch(it) },
-            connect = submit@{
-                if (BrowserCarPlaySettings.disabled(this)) return@submit
-                startupRetryStopped = false
-                reconnectAttempts = 0
-                if (runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isFailure) {
-                    showBrowserPreparationError()
-                    return@submit
-                }
-                draft.save(this)
-                loadPersistedSettings()
-                browserMainPage?.committed()
-                browserConnectionRequested = true
-                settingsOnlyLaunch = false
-                if (controller != null) restartCarPlay("Settings saved; reconnecting")
-                requestStartupPrerequisites()
-            },
-            disconnect = {
-                browserConnectionRequested = !BrowserCarPlaySettings.disabled(this)
-                startupRetryStopped = false
-                reconnectAttempts = 0
-                if (controller != null) restartCarPlay("Manual CarPlay reconnect")
-                else checkBrowserCarPlay()
-            },
             advanced = { openAdditionalSettings(SettingsCategory.ADVANCED) },
             settingsChanged = ::applyBrowserSettings,
             about = {
@@ -3452,8 +3434,8 @@ class CarPlayHostActivity : ComponentActivity() {
         browserMainPage = page
         resolutionValueView = null
         resolutionPreviewView = null
-        hotspotStatusView = page.hotspotStatus
-        updateHotspotStatusBlock()
+        hotspotStatusView = null // Product network hints are owned by the page, not upstream status prose.
+        updateDebugOverlays()
         return page.view
     }
     /** Mirrors [persistMenuSettings]: a field staged there belongs here too. */
@@ -5335,12 +5317,12 @@ class CarPlayHostActivity : ComponentActivity() {
         updateHotspotStatus(status)
         val description = status.describe()
         val englishDescription = status.describe(englishResources)
-        browserMainPage?.showConnectionError(if (status is CarPlayStatus.Failed) {
-            if (wirelessHotspotMode == WirelessHotspotMode.EXISTING_WIFI &&
-                listOf("Wi-Fi", "network", "SSID", "unreachable").any { description.contains(it, true) })
-                getString(R.string.settings_external_ap_check) + "\n" + getString(R.string.settings_external_ap_hint)
-            else friendlyStage(description)
-        } else null)
+        browserConnectionProblem = when (status) {
+            is CarPlayStatus.Failed -> BrowserConnectionProblem.FAILED
+            CarPlayStatus.RequestingIphonePermission -> BrowserConnectionProblem.USB_DEVICE
+            CarPlayStatus.RequestingMfiPermission -> BrowserConnectionProblem.MFI_USB
+            else -> null
+        }
         setConnectionStage(description, englishDescription)
         when (status) {
             is CarPlayStatus.Failed -> if (status.wifiResetRequired) {
@@ -5450,6 +5432,7 @@ class CarPlayHostActivity : ComponentActivity() {
         recoveryPendingAfterAirPlay = false
         carPlayRebuildPendingAfterAirPlay = false
         browserCarPlayPhase = "preparing"
+        browserConnectionProblem = null
         val controllerGeneration = restartGeneration
         // Settings → Connection can change the target while this screen stays open (#696).
         mfiTarget = AirPlayPersistence.loadMfiTarget(this)
@@ -6021,6 +6004,7 @@ class CarPlayHostActivity : ComponentActivity() {
         Log.i(TAG, "$reason; rebuilding stack at ${size.width}x${size.height}")
         val generation = ++restartGeneration
         browserCarPlayPhase = "recovering"
+        browserConnectionProblem = null
         handshakeResetInProgress = true
         updateDebugOverlays()
         callPopupSessionReady = false
@@ -6586,16 +6570,21 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun showBrowserPreparationError() {
         browserCarPlayPhase = "failed"
         latestStage = getString(R.string.setup_error_auth)
-        browserMainPage?.showConnectionError(latestStage)
+        browserConnectionProblem = BrowserConnectionProblem.PREPARATION
         updateDebugOverlays()
     }
 
     private fun updateDebugOverlays() {
+        val missingWireless = if (wirelessEnabled) requiredWirelessPermissions().filter {
+            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        } else emptyList()
         val requirement = if (controller != null) null else when {
+            locationReportingEnabled && !hasFineLocationPermission() -> R.string.settings_hint_location
             wirelessEnabled && DiPlayPreferences.phoneAddress(this).isNullOrBlank() -> R.string.choose_your_iphone
             wirelessEnabled && BrowserConnectionDraft.load(this).validationError() != null -> BrowserConnectionDraft.load(this).validationError()
-            wirelessEnabled && !hasRequiredWirelessPermissions() -> R.string.allow_the_connection_permission_to_continue
-            !wirelessEnabled && !vpnReady -> R.string.allow_the_connection_permission_to_continue
+            missingWireless.any { it == Manifest.permission.ACCESS_FINE_LOCATION || it == Manifest.permission.ACCESS_COARSE_LOCATION } -> R.string.settings_hint_location
+            missingWireless.any { it != LocalNetworkPermission.PERMISSION } -> R.string.settings_hint_nearby
+            !wirelessEnabled && !vpnReady -> R.string.settings_hint_usb_vpn
             else -> null
         }
         val phase = when {
@@ -6608,12 +6597,17 @@ class CarPlayHostActivity : ComponentActivity() {
             else -> browserCarPlayPhase
         }
         val title = getString(BrowserCarPlayStatus.title(phase))
-        val detail = (if (phase == "blocked") requirement?.let(::getString)
-            else latestStage.ifBlank { getString(R.string.getting_carplay_ready) })
-            .takeUnless { phase == "disabled" || phase == "connected" || it == title }
+        if (phase == "connected") browserConnectionProblem = null
+        val problem = when (requirement) {
+            R.string.settings_hint_location -> BrowserConnectionProblem.LOCATION
+            R.string.settings_hint_nearby -> BrowserConnectionProblem.NEARBY
+            R.string.settings_hint_usb_vpn -> BrowserConnectionProblem.USB_VPN
+            else -> browserConnectionProblem
+        }
         TeslaBrowserLink.carPlayReceiver = mapOf("state" to phase)
         browserMainPage?.update(
-            title, controller != null, detail = detail, browserReady = browserReadyForCarPlay(),
+            title, CarPlayBackgroundSession.active || activeScreenStreamTypes.isNotEmpty(),
+            browserReady = browserReadyForCarPlay(), problem = problem,
         )
         statusScrollView?.visibility = View.GONE
         connectionPanel?.visibility = if (activeScreenStreamTypes.isEmpty()) View.VISIBLE else View.GONE

@@ -17,10 +17,13 @@ import com.shilapi.xcertplay.host.R
 /** Permission rows report Android's current state; grants never come from a cached UI preference. */
 internal class BrowserPermissionsPage(
     private val activity: Activity,
-    parent: LinearLayout,
+    private val parent: LinearLayout,
     private val request: (Array<String>) -> Unit,
 ) {
     private data class Row(val button: Button, val label: Int, val granted: () -> Boolean)
+    private data class RuntimeGroup(val permissions: List<String>, val enabled: () -> Boolean)
+    private val runtimeGroups = mutableListOf<RuntimeGroup>()
+    private var microphoneView: View? = null
     private var locationViews: List<View> = emptyList()
     private val rows = mutableListOf<Row>()
     private val requested = activity.getSharedPreferences("tiplay_permission_requests", Activity.MODE_PRIVATE)
@@ -31,14 +34,16 @@ internal class BrowserPermissionsPage(
     init {
         fun add(label: Int, state: () -> Boolean, action: () -> Unit) {
             val button = Button(activity).apply {
+                isAllCaps = false
                 minHeight = TiPlayNativeUi(activity).dp(48)
                 setOnClickListener { action(); refresh() }
             }
             parent.addView(button, LinearLayout.LayoutParams(-1, -2).apply { topMargin = TiPlayNativeUi(activity).dp(8) })
             rows += Row(button, label, state)
         }
-        fun permission(label: Int, permissions: List<String>) {
-            add(label, { permissions.all(::granted) }) { authorize(permissions) }
+        fun permission(label: Int, permissions: List<String>, enabled: () -> Boolean = { true }) {
+            runtimeGroups += RuntimeGroup(permissions, enabled)
+            add(label, { !enabled() || permissions.all(::granted) }) { authorize(permissions) }
         }
         add(R.string.settings_permission_bluetooth, {
             runCatching { activity.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled == true }.getOrDefault(false)
@@ -51,11 +56,15 @@ internal class BrowserPermissionsPage(
             listOf(Manifest.permission.NEARBY_WIFI_DEVICES, Manifest.permission.BLUETOOTH_CONNECT))
         else if (Build.VERSION.SDK_INT >= 31) permission(R.string.nearby_devices,
             listOf(Manifest.permission.BLUETOOTH_CONNECT))
-        permission(R.string.settings_permission_microphone, listOf(Manifest.permission.RECORD_AUDIO))
-        permission(R.string.settings_permission_location, listOf(Manifest.permission.ACCESS_FINE_LOCATION))
+        permission(R.string.settings_permission_microphone, listOf(Manifest.permission.RECORD_AUDIO)) { !BrowserCarPlayAudioSettings.disabled(activity) }
+        microphoneView = rows.last().button
+        permission(R.string.settings_permission_location, listOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)) {
+            needsLocation()
+        }
         val locationRow = rows.last().button
         locationRow.contentDescription = activity.getString(R.string.settings_browser_location_permission_reason)
         val reason = TiPlayNativeUi(activity).label(activity.getString(R.string.settings_browser_location_permission_reason))
+        BrowserNativeSettingsUi(activity).related(reason)
         parent.addView(reason)
         locationViews = listOf(locationRow, reason)
         if (Build.VERSION.SDK_INT >= 33) permission(R.string.settings_permission_notifications,
@@ -68,22 +77,39 @@ internal class BrowserPermissionsPage(
         refresh()
     }
 
+    private fun needsLocation() = !com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(activity) ||
+        (Build.VERSION.SDK_INT <= 32 && BrowserCarPlaySettings.mode(activity) != BrowserCarPlaySettings.Mode.USB)
+
     private fun authorize(permissions: List<String>) {
         val denied = permissions.filterNot(::granted)
-        if (denied.isEmpty() || denied.any { requested.getBoolean(it, false) && !activity.shouldShowRequestPermissionRationale(it) }) {
+        val requestable = denied.filterNot { requested.getBoolean(it, false) && !activity.shouldShowRequestPermissionRationale(it) }
+        if (requestable.isEmpty()) {
             appSettings()
             return
         }
-        requested.edit().apply { denied.forEach { putBoolean(it, true) } }.apply()
+        requested.edit().apply { requestable.forEach { putBoolean(it, true) } }.apply()
+        if (LocalNetworkPermission.PERMISSION in requestable) LocalNetworkPermission.markRequested(activity)
         // Android 12+ requires coarse and fine together even when upgrading an approximate grant.
-        val batch = if (Build.VERSION.SDK_INT >= 31 && Manifest.permission.ACCESS_FINE_LOCATION in denied)
-            listOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION) else denied
+        val batch = if (Build.VERSION.SDK_INT >= 31 && Manifest.permission.ACCESS_FINE_LOCATION in requestable)
+            (requestable + Manifest.permission.ACCESS_COARSE_LOCATION + Manifest.permission.ACCESS_FINE_LOCATION).distinct() else requestable
         request(batch.toTypedArray())
     }
 
+    fun missingRuntimePermissions(): List<String> = runtimeGroups.filter { it.enabled() }
+        .flatMap { it.permissions }.distinct().filterNot(::granted)
+
+    fun requestMissingPermissions() {
+        val missing = missingRuntimePermissions()
+        if (missing.isNotEmpty()) authorize(missing)
+    }
+
+    fun allGranted(): Boolean = rows.all { it.granted() }
+
     fun refresh() {
-        val hidden = com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(activity)
+        microphoneView?.visibility = if (BrowserCarPlayAudioSettings.disabled(activity)) View.GONE else View.VISIBLE
+        val hidden = !needsLocation()
         locationViews.forEach { it.visibility = if (hidden) View.GONE else View.VISIBLE }
         rows.forEach { it.button.text = activity.getString(it.label) + " " + if (it.granted()) "✓" else "✕" }
+        BrowserNativeSettingsUi(activity).normalizeSpacing(parent, recursive = true)
     }
 }

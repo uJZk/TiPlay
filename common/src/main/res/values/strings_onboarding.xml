@@ -3,15 +3,21 @@
     <string name="onboarding_help">First-use guide</string>
     <string name="onboarding_progress">Step %1$d of %2$d</string>
     <string name="onboarding_welcome_title">Welcome to TiPlay</string>
-    <string name="onboarding_welcome_body">Use an Android phone to receive CarPlay from your iPhone and display it in your car browser. Set up while parked. This guide explains the steps; enter your settings on the main page afterwards.</string>
+    <string name="onboarding_welcome_body">Configure your connection and audio, then allow the missing permissions. TiPlay checks the current Android grants and helps you open system settings when needed. Set up while parked.</string>
     <string name="onboarding_connection_title">Connect your iPhone</string>
-    <string name="onboarding_connection_body">Choose All (USB first), Wireless or USB on the main page. For wireless, pair the iPhone in Android Bluetooth settings, then select it in TiPlay. For USB, use a data cable and approve the requested USB, Trust and VPN dialogs. TiPlay waits for the car browser to connect and report its screen size and decoder support before attempting to connect the iPhone.</string>
-    <string name="onboarding_browser_title">Connect the car browser</string>
-    <string name="onboarding_browser_body">Choose Android hotspot or Existing Wi-Fi and enter its network details. Turn on the hotspot or join Wi-Fi yourself, then connect the car to the same network. Open the pairing link shown on the main page in the car browser and select Connect. The first page load needs internet access. The browser reports its screen size and decoder support automatically. TiPlay selects HEVC when supported and H.264 otherwise.</string>
-    <string name="onboarding_audio_title">Sound and permissions</string>
-    <string name="onboarding_audio_body">Music normally plays in the browser. For calls and Siri through TiPlay, connect the Android phone to the car Bluetooth telephone profile and allow microphone access. TiPlay requests permissions when needed. You can change connection settings or disable CarPlay on the main page, and reopen this guide there.</string>
+    <string name="onboarding_connection_body">Choose a connection mode, select your paired iPhone for wireless, and enter the hotspot or Wi-Fi details below. Pair in Android Bluetooth settings if needed. TiPlay waits for the car browser before connecting the iPhone.</string>
+    <string name="onboarding_audio_title">Sound and startup</string>
+    <string name="onboarding_audio_body">Keep CarPlay audio enabled for browser music, calls and Siri through Android. Disable it to use the iPhone’s car Bluetooth route. Choose whether TiPlay should open at boot.</string>
     <string name="onboarding_next">Next</string>
     <string name="onboarding_back">Back</string>
     <string name="onboarding_finish">Open main settings</string>
     <string name="settings_browser_waiting_connection">Waiting for browser connection</string>
+    <string name="onboarding_permissions_title">Permissions and system settings</string>
+    <string name="onboarding_permissions_body">Allow missing permissions below. Each row shows the current system state; return here after changing system settings to check it again. Microphone is needed for TiPlay calls/Siri. USB device approval is requested when connecting a cable. After setup, open the pairing link in the car browser.</string>
+    <string name="onboarding_grant_missing">Allow missing permissions</string>
+    <string name="onboarding_usb_vpn">Allow USB VPN connection</string>
+    <string name="onboarding_permissions_ready">Runtime permissions are granted. Check the system settings below.</string>
+    <string name="onboarding_permissions_missing">Missing runtime permissions: %1$d</string>
+    <string name="onboarding_missing_confirmation">Some permissions or system settings are still unavailable. Related features may not work. Continue to Main settings, or return to complete setup.</string>
+    <string name="onboarding_continue">Continue for now</string>
 </resources>

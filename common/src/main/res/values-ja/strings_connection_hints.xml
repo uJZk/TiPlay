@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_hint_phone_wireless">ワイヤレス接続を使うには、まずペア設定済みの iPhone を選択してください。</string>
+    <string name="settings_hint_bluetooth">システム設定で Bluetooth をオンにしてください。</string>
+    <string name="settings_hint_nearby">詳細設定で付近のデバイスへのアクセスを許可してください。</string>
+    <string name="settings_hint_location">詳細設定で正確な位置情報を許可してください。</string>
+    <string name="settings_hint_usb_vpn">初回設定ガイドで USB VPN 接続を許可してください。</string>
+    <string name="settings_hint_failed">iPhone に接続できませんでした。詳細設定から診断レポートをエクスポートできます。</string>
+    <string name="settings_hint_preparation_failed">CarPlay を準備できませんでした。インストールパッケージを確認するか、診断レポートをエクスポートしてください。</string>
+    <string name="settings_hint_hotspot_off">システム設定でこの Android スマートフォンのアクセスポイントをオンにしてください。</string>
+    <string name="settings_hint_hotspot_unknown">アクセスポイントのオン・オフを読み取れません。システム設定でオンになっていることを確認してください。</string>
+    <string name="settings_hint_wifi_disconnected">システムの Wi-Fi 設定で、入力したネットワークに接続してください。</string>
+    <string name="settings_hint_wifi_unknown">現在の Wi-Fi 名を読み取れません。システム設定で確認してください。</string>
+    <string name="settings_hint_wifi_mismatch">現在の Wi-Fi 名が入力した名前と異なります。ネットワークまたは名前を確認してください。</string>
+    <string name="settings_hint_address_unknown">アクセスポイントのアドレスをまだ読み取れていません。このスマートフォンのアクセスポイントがオンになっていることを確認してください。</string>
+    <string name="settings_hint_browser_open">車載ブラウザとこのスマートフォンを同じネットワークに接続してから、下の「%1$s」にあるリンクを開いてください。</string>
+    <string name="settings_hint_address_blocked">車載ブラウザからこのアクセスポイントのアドレスにアクセスできない可能性があります。別のアドレス方式をお試しください。</string>
+    <string name="settings_hint_vpn_failed">アクセスポイントアドレス用 VPN を起動できませんでした。再試行するか、別の方式を選択してください。</string>
+    <string name="settings_hint_shizuku_start">先に Shizuku を起動してから、TiPlay に戻ってください。</string>
+</resources>

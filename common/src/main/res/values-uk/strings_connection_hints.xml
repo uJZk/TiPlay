@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_hint_phone_wireless">Для бездротового підключення спочатку виберіть спарений iPhone.</string>
+    <string name="settings_hint_bluetooth">Увімкніть Bluetooth у системних налаштуваннях.</string>
+    <string name="settings_hint_nearby">Дозвольте доступ до пристроїв поблизу в розширених налаштуваннях.</string>
+    <string name="settings_hint_location">Дозвольте точне місцезнаходження в розширених налаштуваннях.</string>
+    <string name="settings_hint_usb_vpn">Дозвольте USB VPN-підключення в посібнику першого запуску.</string>
+    <string name="settings_hint_failed">Не вдалося підключитися до iPhone. Експортуйте діагностичний звіт у розширених налаштуваннях.</string>
+    <string name="settings_hint_preparation_failed">Не вдалося підготувати CarPlay. Перевірте інсталяційний пакет або експортуйте діагностичний звіт.</string>
+    <string name="settings_hint_hotspot_off">Увімкніть точку доступу цього телефона Android у системних налаштуваннях.</string>
+    <string name="settings_hint_hotspot_unknown">Не вдалося визначити, чи ввімкнена точка доступу. Перевірте це в системних налаштуваннях.</string>
+    <string name="settings_hint_wifi_disconnected">Підключіться до вказаної мережі в системних налаштуваннях Wi-Fi.</string>
+    <string name="settings_hint_wifi_unknown">Не вдалося прочитати назву поточної мережі Wi-Fi. Перевірте її в системних налаштуваннях.</string>
+    <string name="settings_hint_wifi_mismatch">Назва поточної мережі Wi-Fi відрізняється від вказаної. Перевірте мережу або назву.</string>
+    <string name="settings_hint_address_unknown">Адреса точки доступу поки недоступна. Переконайтеся, що точку доступу цього телефона ввімкнено.</string>
+    <string name="settings_hint_browser_open">Підключіть автомобільний браузер і цей телефон до однієї мережі, а потім відкрийте посилання в розділі «%1$s» нижче.</string>
+    <string name="settings_hint_address_blocked">Автомобільний браузер може не мати доступу до цієї адреси точки доступу. Спробуйте інший спосіб налаштування адреси.</string>
+    <string name="settings_hint_vpn_failed">Не вдалося запустити VPN для адреси точки доступу. Повторіть спробу або виберіть інший спосіб.</string>
+    <string name="settings_hint_shizuku_start">Спочатку запустіть Shizuku, а потім поверніться до TiPlay.</string>
+</resources>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_hint_phone_wireless">Для беспроводного подключения сначала выберите сопряжённый iPhone.</string>
+    <string name="settings_hint_bluetooth">Включите Bluetooth в системных настройках.</string>
+    <string name="settings_hint_nearby">Разрешите доступ к устройствам поблизости в дополнительных настройках.</string>
+    <string name="settings_hint_location">Разрешите точное местоположение в дополнительных настройках.</string>
+    <string name="settings_hint_usb_vpn">Разрешите USB VPN-подключение в руководстве по первому запуску.</string>
+    <string name="settings_hint_failed">Не удалось подключиться к iPhone. Экспортируйте диагностический отчёт в дополнительных настройках.</string>
+    <string name="settings_hint_preparation_failed">Не удалось подготовить CarPlay. Проверьте установочный пакет или экспортируйте диагностический отчёт.</string>
+    <string name="settings_hint_hotspot_off">Включите точку доступа этого телефона Android в системных настройках.</string>
+    <string name="settings_hint_hotspot_unknown">Не удалось определить, включена ли точка доступа. Проверьте это в системных настройках.</string>
+    <string name="settings_hint_wifi_disconnected">Подключитесь к указанной сети в системных настройках Wi-Fi.</string>
+    <string name="settings_hint_wifi_unknown">Не удалось прочитать имя текущей сети Wi-Fi. Проверьте его в системных настройках.</string>
+    <string name="settings_hint_wifi_mismatch">Имя текущей сети Wi-Fi отличается от указанного. Проверьте сеть или имя.</string>
+    <string name="settings_hint_address_unknown">Адрес точки доступа пока недоступен. Убедитесь, что точка доступа этого телефона включена.</string>
+    <string name="settings_hint_browser_open">Подключите автомобильный браузер и этот телефон к одной сети, затем откройте ссылку в разделе «%1$s» ниже.</string>
+    <string name="settings_hint_address_blocked">Автомобильный браузер может не иметь доступа к этому адресу точки доступа. Попробуйте другой способ настройки адреса.</string>
+    <string name="settings_hint_vpn_failed">Не удалось запустить VPN для адреса точки доступа. Повторите попытку или выберите другой способ.</string>
+    <string name="settings_hint_shizuku_start">Сначала запустите Shizuku, затем вернитесь в TiPlay.</string>
+</resources>

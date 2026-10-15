@@ -30,6 +30,7 @@ internal class TiPlayNativeUi(private val context: Context) {
         text = value
         if (heading) {
             tag = TextRole.HEADING
+            ViewCompat.setAccessibilityHeading(this, true)
             setTextAppearance(android.R.style.TextAppearance_Material_Large)
         }
     }

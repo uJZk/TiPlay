@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_hint_phone_wireless">To connect wirelessly, first select a paired iPhone.</string>
+    <string name="settings_hint_bluetooth">Turn on Bluetooth in system settings.</string>
+    <string name="settings_hint_nearby">Allow Nearby devices permission in Advanced settings.</string>
+    <string name="settings_hint_location">Allow precise location in Advanced settings.</string>
+    <string name="settings_hint_usb_vpn">Allow the USB VPN connection in the first-use guide.</string>
+    <string name="settings_hint_failed">Could not connect to iPhone. Export a diagnostic report in Advanced settings.</string>
+    <string name="settings_hint_preparation_failed">Could not prepare CarPlay. Check the installation package or export a diagnostic report.</string>
+    <string name="settings_hint_hotspot_off">Turn on this Android phone\'s hotspot in system settings.</string>
+    <string name="settings_hint_hotspot_unknown">Could not read the hotspot switch. Confirm it is on in system settings.</string>
+    <string name="settings_hint_wifi_disconnected">Connect to the entered network in system Wi-Fi settings.</string>
+    <string name="settings_hint_wifi_unknown">Could not read the current Wi-Fi name. Check it in system settings.</string>
+    <string name="settings_hint_wifi_mismatch">The current Wi-Fi name differs from the entered name. Check the network or name.</string>
+    <string name="settings_hint_address_unknown">The hotspot address is not available yet. Confirm this phone\'s hotspot is on.</string>
+    <string name="settings_hint_browser_open">Connect the car browser and this phone to the same network, then open the link under “%1$s” below.</string>
+    <string name="settings_hint_address_blocked">The car browser may not be able to access this hotspot address. Try another address method.</string>
+    <string name="settings_hint_vpn_failed">The hotspot address VPN could not start. Retry or choose another method.</string>
+    <string name="settings_hint_shizuku_start">Start Shizuku, then return to TiPlay.</string>
+</resources>

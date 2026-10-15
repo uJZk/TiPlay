@@ -3,15 +3,21 @@
     <string name="onboarding_help">首次使用向导</string>
     <string name="onboarding_progress">第 %1$d 步，共 %2$d 步</string>
     <string name="onboarding_welcome_title">欢迎使用 TiPlay</string>
-    <string name="onboarding_welcome_body">通过安卓手机接收 iPhone 的 CarPlay，并在车机浏览器中显示。请停车后设置。本向导介绍连接步骤，完成后请在主设置页填写具体配置。</string>
+    <string name="onboarding_welcome_body">请先配置连接方式和声音，再申请缺失的权限。TiPlay 会检查安卓当前授权状态，并引导你打开必要的系统设置。请停车后操作。</string>
     <string name="onboarding_connection_title">连接 iPhone</string>
-    <string name="onboarding_connection_body">在主设置页选择全部（USB 优先）、无线或 USB。无线连接需先在安卓系统蓝牙设置中配对 iPhone，再在 TiPlay 中选择它；USB 连接需使用数据线，并确认系统提示的 USB、信任和 VPN 授权。TiPlay 会等待车机网页连接并上报画面尺寸与解码能力后，再尝试连接 iPhone。</string>
-    <string name="onboarding_browser_title">连接车机浏览器</string>
-    <string name="onboarding_browser_body">选择安卓热点或现有 Wi-Fi 并填写网络信息。请自行开启热点或加入 Wi-Fi，再让车辆连接同一网络。在车机浏览器打开主设置页显示的配对链接，选择连接。首次加载网页需要互联网。网页自动上报画面尺寸和解码能力；支持 HEVC 时自动使用，否则使用 H.264。</string>
-    <string name="onboarding_audio_title">声音与权限</string>
-    <string name="onboarding_audio_body">音乐通常通过浏览器播放。若要通过 TiPlay 使用通话和 Siri，请将安卓手机连接到车辆蓝牙电话，并允许麦克风权限。TiPlay 会按需请求权限。可在主设置页更改连接配置、停用 CarPlay，或重新查看本向导。</string>
+    <string name="onboarding_connection_body">在下方选择连接方式。无线模式请选择已配对的 iPhone，并填写热点或 Wi-Fi 信息；尚未配对时可前往安卓蓝牙设置。TiPlay 会等车机网页连接后再连接 iPhone。</string>
+    <string name="onboarding_audio_title">声音与启动</string>
+    <string name="onboarding_audio_body">通过浏览器播放音乐、由安卓处理通话和 Siri 时，请保留 CarPlay 声音；使用 iPhone 直连车辆蓝牙声音时可将其停用。也可选择是否开机自动打开 TiPlay。</string>
     <string name="onboarding_next">下一步</string>
     <string name="onboarding_back">上一步</string>
     <string name="onboarding_finish">进入主设置</string>
     <string name="settings_browser_waiting_connection">等待网页端连接</string>
+    <string name="onboarding_permissions_title">权限与系统设置</string>
+    <string name="onboarding_permissions_body">点击下方按钮申请缺失权限，各项会显示真实授权状态。修改系统设置返回后会重新检查。TiPlay 通话和 Siri 需要麦克风；USB 设备授权在插线连接时由系统申请。设置完成后，请在车机浏览器打开配对链接。</string>
+    <string name="onboarding_grant_missing">申请缺失权限</string>
+    <string name="onboarding_usb_vpn">允许 USB VPN 连接</string>
+    <string name="onboarding_permissions_ready">运行时权限已齐全，请检查下方系统设置。</string>
+    <string name="onboarding_permissions_missing">缺失运行时权限：%1$d 项</string>
+    <string name="onboarding_missing_confirmation">仍有权限或系统设置未完成，相关功能可能不可用。可继续进入主设置，或返回补齐。</string>
+    <string name="onboarding_continue">暂时继续</string>
 </resources>

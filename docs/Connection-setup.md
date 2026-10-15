@@ -8,7 +8,7 @@ Install TiPlay on the **Android phone** and open the [TiPlay browser page](https
 2. In TiPlay Main settings, choose **Android hotspot**. Enter its exact name, security type and password. TiPlay does not create the hotspot for you. Root mode optionally imports credentials after an explicit tap; other modes use manual entry.
 3. Select a **TiPlay mode** suitable for the browser's address restrictions. Standard uses the existing address; Root, Shizuku and VPN have different requirements. Follow [Hotspot address methods](Hotspot-address.md).
 4. Choose the CarPlay transport: Wireless, USB, or All (USB priority). For wireless, enable Bluetooth and Wi-Fi on the iPhone and Android phone, pair them in system settings, then use **Choose iPhone**. Accept requested Android permissions and iPhone CarPlay prompts. Normal wireless bootstrap sends the network details to the iPhone; manually joining it first is unnecessary.
-5. Open the copied pairing link in the car browser and allow any requested browser permissions. Save a bookmark after the pairing fragment has been consumed. TiPlay maintains CarPlay recovery automatically; use **Reconnect CarPlay** for an explicit retry.
+5. Open the copied pairing link in the car browser and allow any requested browser permissions. Save a bookmark after the pairing fragment has been consumed. TiPlay maintains CarPlay recovery automatically while enabled and the browser is ready.
 
 USB changes the iPhone-to-Android data connection; the browser still needs its network connection. Android's normal USB permission dialog applies. A source-only development APK lacks accessory authentication; successful iPhone negotiation needs the external runtime identity described in [Build](Build.md).
 

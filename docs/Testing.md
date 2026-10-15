@@ -12,7 +12,7 @@ Desktop simulations and codec probes cannot establish Tesla firmware support, iP
 
 ## Receiver status and browser notices
 
-The full Android CI command passes with 1,967 shared, 1,532 common and 6 home unit
+The full Android CI command passes with 1,967 shared, 1,552 common and 6 home unit
 tests, three application lint checks and three debug APK builds. The mobile debug
 APK also passes signature verification. All 229 browser unit tests, the Chromium
 `run.mjs` and real shared-server `phone-run.mjs` harnesses, static site generation
@@ -21,7 +21,7 @@ and assembly, the public-source scan and 9 release-draft tests pass.
 Regression checks distinguish receiver preparation, waiting, handshake, readiness,
 recovery and failure, and verify that actual display ownership selects CarPlay or
 AirPlay waiting copy. Main settings retain short `CarPlay status | AirPlay status`
-titles with explanations below; duplicate error text is hidden. All existing copy
+titles with a consolidated automatic-hint area below. Duplicate causes and routine stage prose are hidden; explicit operation results stay below their source control. All existing copy
 is preserved and the 15 additional Android entries are present in all 8 locales.
 Browser codec/protocol/takeover errors use persistent closable cards, dismissed
 errors stay hidden on rerender, and code/address feedback stays beside Connect.
@@ -35,7 +35,7 @@ software behavior only.
 
 The implemented [location flow](geolocation.md) uses precise Android GPS until the
 browser datum is confirmed, refined GCJ-02 conversion and browser-local datum caching.
-The latest source checks passed: 1,967 shared, 1,532 common and 6 home unit tests,
+The latest source checks passed: 1,967 shared, 1,552 common and 6 home unit tests,
 229 browser tests, the CI lint/debug-build command, the public-source scan and all
 9 release-draft delivery tests. The debug APK contains geocoordinates and JNA native
 libraries for arm64-v8a, armeabi-v7a, x86 and x86_64; the library checksum matches its
@@ -56,13 +56,18 @@ actual iPhone navigation. Do not mark those acceptance items complete from simul
 
 ## Phone and browser acceptance
 
+`BrowserMainPageTest` checks centralized hint placement, cleared stale failures, structured USB consent and automatic persistence without a reconnect button. `BrowserConnectionHintsTest` covers unknown/redacted SSIDs, mismatch and actual absence of Wi-Fi. `HotspotOperationFeedbackTest` checks method-versus-authorization placement, card rebuilds, consecutive clicks and late asynchronous results after a superseding fact. Real Android authorization/VPN and network transitions still require the device checks below.
+
+`BrowserSpacingTest` measures control/description gaps and page edges, checks that opt-outs leave no extra gap, and exercises buttons and network options at 320 dp with large text. System permission dialogs and actual OEM font rendering still require device acceptance.
+
 Automated coverage for this flow lives in `FirstUseActivityTest`,
 `BrowserCarPlayReadinessTest`, `BrowserMainHostTest`, `BrowserMainPageTest`,
-`CarPlayHostBrowserLinkTest` and `BrowserLinkServerTest`: guide completion/recreation,
+`CarPlayHostBrowserLinkTest` and `BrowserLinkServerTest`: setup completion/recreation, legacy-guide migration, wireless validation, missing-only
+permission requests, permanently denied permission settings and uniform navigation spacing,
 current-page readiness, authenticated heartbeat/disconnect, startup gating, waiting title
 and browser-selected HEVC independent of the old preference.
 
-1. Install/update the intended signed `mobile` APK; confirm settings survive an update. On first launcher open, check every guide step, Back, rotation and completion; the next launch should enter Main settings directly, and its guide action should reopen the introduction. Before opening the browser, verify **Waiting for browser connection** and no iPhone connection attempts, including USB attachment, boot and Bluetooth events. Open the hosted HTTPS page from TiPlay's pairing link. Check first-use network permissions, pairing-code entry, saved address and fragment removal. Deny a permission once and confirm the explanation and retry path work.
+1. Install/update the intended signed `mobile` APK; confirm settings survive an update. On first launcher open, check connection and sound choices, missing-only permission requests, Back, rotation and completion. Check uniform button spacing on narrow screens and with large text. Deny a permission, deny it permanently, return from app settings, and verify current grant status. Check Bluetooth, battery settings and USB VPN consent. Continue with missing grants only through the explicit confirmation. The next launch should enter Main settings directly, and its guide action should reopen setup. Before opening the browser, verify **Waiting for browser connection** and no iPhone connection attempts, including USB attachment, boot and Bluetooth events. Open the hosted HTTPS page from TiPlay's pairing link. Check first-use network permissions, pairing-code entry, saved address and fragment removal. Deny a permission once and confirm the explanation and retry path work.
 2. Connect via each affected USB/wireless mode. Confirm CarPlay picture, touch alignment, keyboard/controls and audio. Close/reopen the browser, interrupt Wi-Fi, sleep/wake the screen and reconnect. A replacement browser must take ownership without the old page stealing it back; disconnect must release the session.
 3. Check both phone settings menus. Valid edits apply immediately and negotiate a reconnect when required while keeping settings open. Invalid drafts show errors. Disable CarPlay and confirm startup/retry stops; enable it and verify recovery. Verify **Start on boot** only when enabled, subject to Android background restrictions.
 4. Resize the browser, change fullscreen/orientation and open/close browser panels. Check stable layout, accurate touch mapping, negotiated resolution and recovery after rapid changes. Verify HEVC is selected only when reported supported, H.264 is selected otherwise, and there is no manual codec switch. Settings and diagnostics must remain usable while disconnected.

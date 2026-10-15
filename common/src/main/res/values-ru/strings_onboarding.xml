@@ -3,15 +3,21 @@
     <string name="onboarding_help">Первое использование</string>
     <string name="onboarding_progress">Шаг %1$d из %2$d</string>
     <string name="onboarding_welcome_title">Добро пожаловать в TiPlay</string>
-    <string name="onboarding_welcome_body">Телефон Android принимает CarPlay с iPhone и выводит его в браузер автомобиля. Настраивайте на стоянке. После руководства введите параметры на главной странице настроек.</string>
+    <string name="onboarding_welcome_body">Настройте подключение и звук, затем предоставьте недостающие разрешения. TiPlay проверяет текущие разрешения и помогает открыть системные настройки. Выполняйте настройку на стоянке.</string>
     <string name="onboarding_connection_title">Подключите iPhone</string>
-    <string name="onboarding_connection_body">Выберите все способы (сначала USB), беспроводной или USB. Для беспроводного подключения сначала выполните сопряжение iPhone в настройках Bluetooth Android, затем выберите его в TiPlay. Для USB используйте кабель передачи данных и подтвердите запросы USB, доверия и VPN. TiPlay ждёт подключения браузера и отчёта о размере экрана и поддержке декодера, прежде чем подключать iPhone.</string>
-    <string name="onboarding_browser_title">Подключите браузер автомобиля</string>
-    <string name="onboarding_browser_body">Выберите точку доступа Android или существующую Wi-Fi и введите параметры сети. Включите точку доступа или подключитесь к Wi-Fi вручную, затем подключите автомобиль к той же сети. Откройте ссылку сопряжения с главной страницы в браузере и нажмите «Подключить». Первая загрузка требует интернета. Браузер автоматически сообщает размер экрана и поддержку кодеков. При поддержке используется HEVC, иначе H.264.</string>
-    <string name="onboarding_audio_title">Звук и разрешения</string>
-    <string name="onboarding_audio_body">Музыка обычно звучит через браузер. Для звонков и Siri через TiPlay подключите Android к телефонному профилю Bluetooth автомобиля и разрешите микрофон. Разрешения запрашиваются по необходимости. На главной странице можно изменить параметры, отключить CarPlay или снова открыть руководство.</string>
+    <string name="onboarding_connection_body">Выберите способ подключения. Для беспроводного режима выберите сопряжённый iPhone и укажите данные точки доступа или Wi-Fi. При необходимости создайте пару в настройках Bluetooth Android. TiPlay подключает iPhone только после подключения браузера автомобиля.</string>
+    <string name="onboarding_audio_title">Звук и запуск</string>
+    <string name="onboarding_audio_body">Оставьте звук CarPlay для музыки в браузере, звонков и Siri через Android. Отключите его для прямого звука с iPhone по Bluetooth автомобиля. Также выберите запуск TiPlay при загрузке.</string>
     <string name="onboarding_next">Далее</string>
     <string name="onboarding_back">Назад</string>
     <string name="onboarding_finish">Открыть главные настройки</string>
     <string name="settings_browser_waiting_connection">Ожидание подключения браузера</string>
+    <string name="onboarding_permissions_title">Разрешения и системные настройки</string>
+    <string name="onboarding_permissions_body">Предоставьте недостающие разрешения. Каждая строка показывает текущее состояние; после возврата из настроек оно проверяется снова. Для звонков и Siri нужен микрофон. Разрешение USB запрашивается при подключении кабеля. Затем откройте ссылку сопряжения в браузере автомобиля.</string>
+    <string name="onboarding_grant_missing">Предоставить разрешения</string>
+    <string name="onboarding_usb_vpn">Разрешить USB VPN</string>
+    <string name="onboarding_permissions_ready">Разрешения предоставлены. Проверьте системные настройки ниже.</string>
+    <string name="onboarding_permissions_missing">Недостающие разрешения: %1$d</string>
+    <string name="onboarding_missing_confirmation">Не все разрешения или системные настройки готовы. Связанные функции могут не работать. Перейдите к главным настройкам или вернитесь для завершения.</string>
+    <string name="onboarding_continue">Продолжить пока</string>
 </resources>

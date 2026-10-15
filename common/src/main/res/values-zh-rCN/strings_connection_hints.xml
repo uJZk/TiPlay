@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_hint_phone_wireless">使用无线连接时，请先选择已配对的 iPhone。</string>
+    <string name="settings_hint_bluetooth">请在系统设置中打开蓝牙。</string>
+    <string name="settings_hint_nearby">请在高级设置中允许附近设备权限。</string>
+    <string name="settings_hint_location">请在高级设置中允许精确定位。</string>
+    <string name="settings_hint_usb_vpn">请在首次使用向导中允许 USB VPN 连接。</string>
+    <string name="settings_hint_failed">未能连接 iPhone。可在高级设置中导出诊断报告。</string>
+    <string name="settings_hint_preparation_failed">无法准备 CarPlay，请检查安装包或导出诊断报告。</string>
+    <string name="settings_hint_hotspot_off">请在系统设置中开启这台安卓手机的热点。</string>
+    <string name="settings_hint_hotspot_unknown">无法读取热点开关，请在系统设置中确认已开启。</string>
+    <string name="settings_hint_wifi_disconnected">请在系统 Wi-Fi 设置中连接所填写的网络。</string>
+    <string name="settings_hint_wifi_unknown">无法读取当前 Wi-Fi 名称，请在系统设置中确认。</string>
+    <string name="settings_hint_wifi_mismatch">当前 Wi-Fi 与填写的名称不同，请检查网络或名称。</string>
+    <string name="settings_hint_address_unknown">尚未读取到热点地址，请确认本机热点已开启。</string>
+    <string name="settings_hint_browser_open">让车载浏览器与本机处于同一网络，再打开下方“%1$s”中的链接。</string>
+    <string name="settings_hint_address_blocked">此热点地址可能无法被车载浏览器访问，可尝试其他地址方式。</string>
+    <string name="settings_hint_vpn_failed">热点地址 VPN 启动失败，请重试或选择其他方式。</string>
+    <string name="settings_hint_shizuku_start">请先启动 Shizuku，再返回 TiPlay。</string>
+</resources>

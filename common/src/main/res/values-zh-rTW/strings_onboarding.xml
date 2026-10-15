@@ -3,15 +3,21 @@
     <string name="onboarding_help">首次使用指南</string>
     <string name="onboarding_progress">第 %1$d 步，共 %2$d 步</string>
     <string name="onboarding_welcome_title">歡迎使用 TiPlay</string>
-    <string name="onboarding_welcome_body">透過 Android 手機接收 iPhone 的 CarPlay，並在車用瀏覽器中顯示。請停車後設定。本指南介紹連線步驟，完成後請在主設定頁填寫設定。</string>
+    <string name="onboarding_welcome_body">請先設定連線方式和聲音，再申請缺少的權限。TiPlay 會檢查 Android 目前授權狀態，並引導你開啟必要的系統設定。請停車後操作。</string>
     <string name="onboarding_connection_title">連接 iPhone</string>
-    <string name="onboarding_connection_body">在主設定頁選擇全部（USB 優先）、無線或 USB。無線連線需先在 Android 藍牙設定中配對 iPhone，再於 TiPlay 選取；USB 需使用資料線，並確認 USB、信任和 VPN 授權。TiPlay 會等待車用網頁連線並回報畫面尺寸與解碼能力後，才嘗試連接 iPhone。</string>
-    <string name="onboarding_browser_title">連接車用瀏覽器</string>
-    <string name="onboarding_browser_body">選擇 Android 熱點或現有 Wi-Fi 並填寫網路資訊。請自行開啟熱點或加入 Wi-Fi，再讓車輛連接同一網路。在車用瀏覽器開啟主設定頁顯示的配對連結，選擇連線。首次載入網頁需要網際網路。網頁自動回報畫面尺寸和解碼能力；支援 HEVC 時自動使用，否則使用 H.264。</string>
-    <string name="onboarding_audio_title">聲音與權限</string>
-    <string name="onboarding_audio_body">音樂通常透過瀏覽器播放。如要透過 TiPlay 使用通話和 Siri，請將 Android 手機連接至車輛藍牙電話，並允許麥克風權限。TiPlay 會依需求請求權限。可在主設定頁變更連線設定、停用 CarPlay，或重新查看本指南。</string>
+    <string name="onboarding_connection_body">在下方選擇連線方式。無線模式請選取已配對的 iPhone，並填寫熱點或 Wi-Fi 資訊；尚未配對時可前往 Android 藍牙設定。TiPlay 會等車用網頁連線後才連接 iPhone。</string>
+    <string name="onboarding_audio_title">聲音與啟動</string>
+    <string name="onboarding_audio_body">透過瀏覽器播放音樂、由 Android 處理通話和 Siri 時，請保留 CarPlay 聲音；使用 iPhone 直接連接車輛藍牙音訊時可停用。也可選擇是否開機自動開啟 TiPlay。</string>
     <string name="onboarding_next">下一步</string>
     <string name="onboarding_back">上一步</string>
     <string name="onboarding_finish">進入主設定</string>
     <string name="settings_browser_waiting_connection">等待網頁端連線</string>
+    <string name="onboarding_permissions_title">權限與系統設定</string>
+    <string name="onboarding_permissions_body">點選下方按鈕申請缺少的權限，各項會顯示實際授權狀態。修改系統設定返回後會重新檢查。TiPlay 通話和 Siri 需要麥克風；USB 裝置授權會在插線連接時由系統申請。完成後請在車用瀏覽器開啟配對連結。</string>
+    <string name="onboarding_grant_missing">申請缺少的權限</string>
+    <string name="onboarding_usb_vpn">允許 USB VPN 連線</string>
+    <string name="onboarding_permissions_ready">執行階段權限已齊全，請檢查下方系統設定。</string>
+    <string name="onboarding_permissions_missing">缺少執行階段權限：%1$d 項</string>
+    <string name="onboarding_missing_confirmation">仍有權限或系統設定未完成，相關功能可能無法使用。可繼續進入主設定，或返回補齊。</string>
+    <string name="onboarding_continue">暫時繼續</string>
 </resources>

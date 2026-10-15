@@ -18,9 +18,10 @@ internal class BrowserAdvancedPage(
     private val saveReport: () -> Unit,
 ) {
     private val ui = TiPlayNativeUi(activity)
+    private val spacing = BrowserNativeSettingsUi(activity)
     private val content = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(16))
+        spacing.pagePadding(this)
     }
     val view: View = ScrollView(activity).apply {
         isFillViewport = true
@@ -35,7 +36,7 @@ internal class BrowserAdvancedPage(
         content.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
     }
     private fun heading(id: Int) {
-        content.addView(ui.label(activity.getString(id), heading = true),
+        content.addView(ui.label(activity.getString(id), heading = true).also(spacing::section),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(16); bottomMargin = ui.dp(8) })
     }
     val reportButton: Button
@@ -105,5 +106,6 @@ internal class BrowserAdvancedPage(
 
     fun refresh() {
         permissions.refresh()
+        spacing.normalizeSpacing(content, recursive = true)
     }
 }

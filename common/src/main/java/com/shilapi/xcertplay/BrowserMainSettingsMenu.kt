@@ -27,62 +27,67 @@ internal class BrowserMainSettingsMenu(
     private val activity: Activity,
     val draft: BrowserConnectionDraft,
     private val requestPermissions: (Array<String>) -> Unit,
-    private val connect: () -> Unit,
-    disconnect: () -> Unit,
     advanced: () -> Unit,
     about: () -> Unit,
     private val settingsChanged: () -> Unit = {},
+    private val setupOnly: Boolean = false,
 ) {
     private val ui = TiPlayNativeUi(activity)
+    private val spacing = BrowserNativeSettingsUi(activity)
     private fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
     private fun text(value: String, size: Float = 14f) = TextView(activity).apply {
         text = value
-        if (size >= 18f) setTextAppearance(android.R.style.TextAppearance_Material_Large)
+        if (size >= 18f) {
+            setTextAppearance(android.R.style.TextAppearance_Material_Large)
+            androidx.core.view.ViewCompat.setAccessibilityHeading(this, true)
+        }
     }
     private val content = LinearLayout(activity).apply {
-        orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(12), dp(16), dp(16))
+        orientation = LinearLayout.VERTICAL
+        if (!setupOnly) spacing.pagePadding(this)
     }
-    val view: View = ScrollView(activity).apply {
+    val view: View = if (setupOnly) content else ScrollView(activity).apply {
         isFillViewport = true; setBackgroundColor(ui.background); addView(content)
         ui.protectSystemInsets(this)
     }
     val status = text("", 18f).also(ui::emphasize)
-    val hotspotStatus = text("").also(ui::emphasize)
-    private val readiness = text("").apply { visibility = View.GONE }
-    private val stageDetail = text("").apply { visibility = View.GONE }
-    private val error = text("").apply { visibility = View.GONE }.also(ui::emphasize)
-    private val stop: Button
+    private val hints = LinearLayout(activity).apply {
+        orientation = LinearLayout.VERTICAL
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        tag = "connection_hints"
+    }
+    private val hintMessages = linkedMapOf<String, String>()
+    private val hintGenerations = mutableMapOf<String, Int>()
+    private var problem: BrowserConnectionProblem? = null
+    private var nameInput: EditText? = null
+    private var passwordInput: EditText? = null
     private val network = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
     private var baseline = BrowserConnectionDraft.load(activity)
     private val editHandler = Handler(Looper.getMainLooper())
-    private val applyEdit = Runnable { applyChanges() }
+    private val applyEdit = Runnable { validateFields(); applyChanges() }
     private var browserReady = true
     private var active = false
-    private var stopping = false
     private var carPlayStage = activity.getString(R.string.settings_carplay_preparing_status)
     private var disposed = false
     private val receiverSubscription = AirPlayReceiverService.listenState {
         activity.runOnUiThread { if (!disposed && !activity.isDestroyed) updateActions() }
     }
-    private var failed = false
     private var phone: Button
     private lateinit var connectionMode: Button
     private var networkStatus: TextView? = null
-    private var networkReadiness: Int? = null
     private var refreshAddress: () -> Unit = {}
-    private lateinit var refreshBrowser: () -> Unit
+    private var refreshBrowser: () -> Unit = {}
     private fun button(parent: LinearLayout, label: String, click: () -> Unit) = Button(activity).apply {
         text = label; isAllCaps = false; minHeight = dp(48)
         setOnClickListener { click() }; parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
     }
     private fun heading(id: Int, parent: LinearLayout = content) {
-        parent.addView(text(activity.getString(id), 18f).apply {
-            setPadding(0, 0, 0, dp(8))
-        })
+        parent.addView(text(activity.getString(id), 18f))
     }
     private fun group(parent: LinearLayout): LinearLayout = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
-        parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(16) })
+        spacing.section(this)
+        parent.addView(this, LinearLayout.LayoutParams(-1, -2))
     }
     private fun <T> choice(parent: LinearLayout, label: Int, options: List<Pair<T, String>>, current: T, changed: (T) -> Unit) {
         var selected = current
@@ -96,25 +101,27 @@ internal class BrowserMainSettingsMenu(
         }
     }
     init {
-        ui.applyWindow(activity)
-        content.addView(LinearLayout(activity).apply {
+        if (!setupOnly) ui.applyWindow(activity)
+        if (!setupOnly) content.addView(LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(12))
             addView(ImageView(activity).apply { setImageResource(R.drawable.ic_carplay); contentDescription = "TiPlay" },
                 LinearLayout.LayoutParams(dp(32), dp(32)))
             addView(text("TiPlay", 24f).apply {
-                setPadding(dp(12), 0, 0, 0)
+                setPadding(dp(8), 0, 0, 0)
                 ui.emphasize(this)
             })
         })
         val session = group(content)
-        session.addView(status)
-        session.addView(stageDetail)
-        session.addView(readiness)
+        if (!setupOnly) {
+            session.addView(status)
+            session.addView(hints)
+        }
         val modeRows = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         session.addView(modeRows)
-        refreshAddress = BrowserSettingsMenu.addHotspotAddress(modeRows, activity,
-            onMethodChanged = { refreshAddress(); refreshBrowser(); renderNetwork() })
+        if (!setupOnly) refreshAddress = BrowserSettingsMenu.addHotspotAddress(modeRows, activity,
+            onMethodChanged = { refreshAddress(); refreshBrowser(); renderNetwork() },
+            showHints = { draft.source == BrowserConnectionDraft.Source.LOCAL },
+            browserReady = { browserReady }, newHintReporter = { newHintReporter("address") })
         connectionMode = BrowserSettingsPresentation.carPlayMode(activity, draft) {
             BrowserCarPlaySettings.saveMode(activity, if (draft.allTransports) BrowserCarPlaySettings.Mode.ALL
                 else if (draft.wireless) BrowserCarPlaySettings.Mode.WIRELESS else BrowserCarPlaySettings.Mode.USB)
@@ -123,38 +130,42 @@ internal class BrowserMainSettingsMenu(
         }
         session.addView(connectionMode, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         phone = button(session, phoneLabel(), ::choosePhone).apply { isAllCaps = false }
-        stop = button(session, activity.getString(R.string.settings_carplay_reconnect), ::submit)
-        session.addView(error)
-        session.addView(BrowserBootConnectionSettings.create(activity))
+        if (!setupOnly) session.addView(BrowserBootConnectionSettings.create(activity))
         val browser = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         val details = LinearLayout(activity).apply {
-            orientation = if (activity.resources.configuration.screenWidthDp >= 1000) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            spacing.section(this)
+            orientation = if (activity.resources.configuration.screenWidthDp >= 1000 && activity.resources.configuration.fontScale <= 1.2f) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         }
         content.addView(details)
-        for (column in listOf(browser, network)) details.addView(column,
-            if (details.orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -2, if (column === network) 2f else 1f).apply { marginEnd = dp(12) }
-            else LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(16) })
-        refreshBrowser = BrowserSettingsMenu.addBrowserLink(browser, activity) {
-            requestPermissions(arrayOf(LocalNetworkPermission.PERMISSION))
+        for (column in if (setupOnly) listOf(network) else listOf(browser, network)) {
+            spacing.section(column)
+            details.addView(column,
+            if (details.orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -2, if (column === network) 2f else 1f).apply { marginEnd = if (column === browser) dp(16) else 0 }
+            else LinearLayout.LayoutParams(-1, -2))
         }
+        if (!setupOnly) refreshBrowser = BrowserSettingsMenu.addBrowserLink(browser, activity,
+            requestLocalNetwork = { requestPermissions(arrayOf(LocalNetworkPermission.PERMISSION)) },
+            newHintReporter = { newHintReporter("browser") })
         renderNetwork()
-        val more = group(content)
-        heading(R.string.settings_browser_more, more)
-        button(more, activity.getString(R.string.settings_advanced)) { applyChanges(); advanced() }
-        button(more, activity.getString(R.string.onboarding_help)) {
-            applyChanges()
-            activity.startActivity(Intent(activity, FirstUseActivity::class.java).putExtra(FirstUseActivity.REVIEW, true))
+        if (!setupOnly) {
+            val more = group(content)
+            heading(R.string.settings_browser_more, more)
+            button(more, activity.getString(R.string.settings_advanced)) { applyChanges(); advanced() }
+            button(more, activity.getString(R.string.onboarding_help)) {
+                applyChanges()
+                activity.startActivity(Intent(activity, FirstUseActivity::class.java).putExtra(FirstUseActivity.REVIEW, true))
+            }
+            val stackTools = activity.resources.configuration.screenWidthDp < 400 || activity.resources.configuration.fontScale > 1.2f
+            val tools = LinearLayout(activity).apply { orientation = if (stackTools) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL }
+            more.addView(tools)
+            button(tools, activity.getString(R.string.language_app_language)) { AppLocale.showPicker(activity) }
+            button(tools, activity.getString(R.string.about)) { applyChanges(); about() }
+            for (i in 0 until tools.childCount) tools.getChildAt(i).layoutParams =
+                if (stackTools) LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
+                else LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = if (i < tools.childCount - 1) dp(8) else 0 }
+            val version = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
+            content.addView(text(version).also(ui::emphasize))
         }
-        val stackTools = activity.resources.configuration.screenWidthDp < 400 || activity.resources.configuration.fontScale > 1.2f
-        val tools = LinearLayout(activity).apply { orientation = if (stackTools) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL }
-        more.addView(tools)
-        button(tools, activity.getString(R.string.language_app_language)) { AppLocale.showPicker(activity) }
-        button(tools, activity.getString(R.string.about)) { applyChanges(); about() }
-        for (i in 0 until tools.childCount) tools.getChildAt(i).layoutParams =
-            if (stackTools) LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
-            else LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) }
-        val version = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
-        content.addView(text(version).also(ui::emphasize))
         updateActions()
         if (draft != baseline) editHandler.postDelayed(applyEdit, 400L)
     }
@@ -162,7 +173,16 @@ internal class BrowserMainSettingsMenu(
         else activity.getString(R.string.settings_selected_iphone, draft.phoneName)
     private fun choosePhone() {
         if (Build.VERSION.SDK_INT >= 31 && activity.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT)); return
+            val permission = Manifest.permission.BLUETOOTH_CONNECT
+            val history = activity.getSharedPreferences("tiplay_permission_requests", android.content.Context.MODE_PRIVATE)
+            if (history.getBoolean(permission, false) && !activity.shouldShowRequestPermissionRationale(permission)) {
+                activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:${activity.packageName}")))
+            } else {
+                history.edit().putBoolean(permission, true).apply()
+                requestPermissions(arrayOf(permission))
+            }
+            return
         }
         val adapter = activity.getSystemService(BluetoothManager::class.java)?.adapter
         val devices = runCatching { adapter?.takeIf { it.isEnabled }?.bondedDevices?.sortedBy { it.name ?: "" } }.getOrNull().orEmpty()
@@ -178,8 +198,9 @@ internal class BrowserMainSettingsMenu(
             .setNegativeButton(android.R.string.cancel, null).create().also(ui::showDialog)
     }
     private fun input(parent: LinearLayout, label: Int, value: String, secret: Boolean = false, changed: (String) -> Unit): EditText {
-        parent.addView(text(activity.getString(label)))
+        parent.addView(text(activity.getString(label)).also(spacing::field))
         return EditText(activity).apply {
+            spacing.related(this)
             setText(value); setSingleLine()
             inputType = InputType.TYPE_CLASS_TEXT or if (secret) InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_VARIATION_NORMAL
             ui.emphasize(this)
@@ -187,18 +208,23 @@ internal class BrowserMainSettingsMenu(
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
                 override fun afterTextChanged(s: Editable?) {
-                    changed(s.toString()); this@BrowserMainSettingsMenu.error.visibility = View.GONE; updateActions()
+                    error = null
+                    changed(s.toString()); updateActions()
                     editHandler.removeCallbacks(applyEdit)
                     editHandler.postDelayed(applyEdit, 400L)
                 }
             })
-            parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4); bottomMargin = dp(8) })
+            setOnFocusChangeListener { _, focused -> if (!focused) validateFields() }
+            parent.addView(this, LinearLayout.LayoutParams(-1, -2))
         }
     }
     private fun renderNetwork() {
-        network.removeAllViews(); networkStatus = null; networkReadiness = null
+        network.removeAllViews(); networkStatus = null; nameInput = null; passwordInput = null
         heading(R.string.settings_browser_network_configuration, network)
-        val group = RadioGroup(activity).apply { orientation = RadioGroup.HORIZONTAL }
+        val group = RadioGroup(activity).apply {
+            orientation = if (activity.resources.configuration.screenWidthDp < 400 || activity.resources.configuration.fontScale > 1.2f)
+                RadioGroup.VERTICAL else RadioGroup.HORIZONTAL
+        }
         val labels = listOf(R.string.built_in_car_hotspot, R.string.existing_wifi_title)
         BrowserConnectionDraft.Source.entries.forEachIndexed { index, source ->
             group.addView(RadioButton(activity).apply {
@@ -207,16 +233,18 @@ internal class BrowserMainSettingsMenu(
                 tag = source
                 isChecked = draft.source == source
                 setOnClickListener { draft.source = source; renderNetwork(); applyChanges() }
-            }, RadioGroup.LayoutParams(0, -2, 1f).apply { marginEnd = dp(4) })
+            }, if (group.orientation == RadioGroup.VERTICAL) RadioGroup.LayoutParams(-1, -2)
+                else RadioGroup.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
         }
         network.addView(group, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
         val local = draft.source == BrowserConnectionDraft.Source.LOCAL
-        if (local) network.addView(hotspotStatus.apply { (parent as? android.view.ViewGroup)?.removeView(this) })
+        networkStatus = if (setupOnly) text("").also(network::addView) else null
         val actions = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         network.addView(actions)
         val fields = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }; network.addView(fields)
         val ssid = input(fields, if (local) R.string.hotspot_ssid else R.string.existing_wifi_ssid,
             if (local) draft.localSsid else draft.externalSsid) { if (local) draft.localSsid = it else { draft.externalSsid = it; refreshNetwork() } }
+        nameInput = ssid
         val options = listOf(ManualHotspotSecurity.OPEN to activity.getString(R.string.open),
                 ManualHotspotSecurity.WPA2 to activity.getString(R.string.wpa2),
                 ManualHotspotSecurity.WPA3_TRANSITION to activity.getString(R.string.wpa3_transition),
@@ -230,10 +258,11 @@ internal class BrowserMainSettingsMenu(
             orientation = LinearLayout.VERTICAL
             visibility = if (secured) View.VISIBLE else View.GONE
         }
-        fields.addView(passwordFields)
+        fields.addView(passwordFields.also(spacing::field))
         val password = input(passwordFields, R.string.hotspot_password, if (local) draft.localPassword else draft.externalPassword, true) {
             if (local) draft.localPassword = it else draft.externalPassword = it
         }
+        passwordInput = password
         if (local) {
             val privileged = HotspotExtraAddressSettings.method(activity) == HotspotAddressMethod.ROOT
             if (privileged) LocalHotspotAutofill.attach(fields, ssid, password, controlsParent = actions, showHint = false)
@@ -242,12 +271,12 @@ internal class BrowserMainSettingsMenu(
             }
             refreshNetwork()
         } else {
-            networkStatus = text("").also(fields::addView)
             button(fields, activity.getString(R.string.settings_external_ap_wifi)) {
                 activity.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
             }
             refreshNetwork()
         }
+        refreshAddress()
     }
     fun transportSelected(wireless: Boolean) {
         if (draft.allTransports) return
@@ -259,41 +288,39 @@ internal class BrowserMainSettingsMenu(
         refreshAddress(); refreshBrowser(); refreshNetwork(); phone.text = phoneLabel(); updateActions()
     }
     fun refreshNetwork() {
-        if (draft.source == BrowserConnectionDraft.Source.LOCAL) {
-            val enabled = com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(activity)
-            hotspotStatus.setText(when (enabled) {
-                true -> R.string.settings_browser_hotspot_on
-                false -> R.string.settings_browser_hotspot_off
-                null -> R.string.settings_browser_hotspot_unknown
-            })
-            networkReadiness = if (enabled == false) R.string.hotspot_details_off else null
-            updateActions()
-            return
+        val message = if (draft.source == BrowserConnectionDraft.Source.LOCAL) {
+            when (com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(activity)) {
+                false -> R.string.settings_hint_hotspot_off
+                null -> R.string.settings_hint_hotspot_unknown
+                true -> null
+            }
+        } else {
+            val connectivity = activity.getSystemService(ConnectivityManager::class.java)
+            val wifi = connectivity?.allNetworks?.any {
+                connectivity.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            } == true
+            @Suppress("DEPRECATION")
+            val ssid = runCatching { activity.applicationContext.getSystemService(WifiManager::class.java)?.connectionInfo?.ssid }.getOrNull()
+            BrowserConnectionHints.wifi(wifi, ssid, draft.externalSsid)
         }
-        val connectivity = activity.getSystemService(ConnectivityManager::class.java)
-        val wifi = connectivity?.allNetworks?.any { connectivity.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true } == true
-        @Suppress("DEPRECATION")
-        val ssid = runCatching { activity.applicationContext.getSystemService(WifiManager::class.java)?.connectionInfo?.ssid?.trim('"') }
-            .getOrNull()?.takeUnless { it == "<unknown ssid>" }
-        val matches = wifi && ssid == draft.externalSsid
-        networkStatus?.setText(if (matches) R.string.settings_external_ap_ready else R.string.settings_external_ap_check)
-        networkReadiness = if (matches) null else R.string.settings_external_ap_check
+        val visibleMessage = message.takeUnless { active &&
+            (it == R.string.settings_hint_hotspot_unknown || it == R.string.settings_hint_wifi_unknown) }
+        putHint("network", visibleMessage?.let(activity::getString))
+        networkStatus?.text = visibleMessage?.let(activity::getString).orEmpty()
+        networkStatus?.visibility = if (visibleMessage == null) View.GONE else View.VISIBLE
         updateActions()
     }
-    fun update(stage: String, hasSession: Boolean, detail: String? = null, browserReady: Boolean = true) {
+    fun update(stage: String, hasSession: Boolean, browserReady: Boolean = true,
+        problem: BrowserConnectionProblem? = null) {
+        val readinessChanged = this.browserReady != browserReady
         this.browserReady = browserReady
+        if (readinessChanged) refreshAddress()
         active = hasSession
         carPlayStage = stage
-        stageDetail.text = detail.orEmpty()
+        this.problem = problem
         updateActions(); refreshNetwork()
     }
-    fun showConnectionError(message: String?) {
-        failed = message != null
-        error.text = message.orEmpty()
-        error.visibility = if (failed) View.VISIBLE else View.GONE
-        updateActions()
-    }
-    fun committed() { baseline = draft.copy(); failed = false; error.visibility = View.GONE; updateActions() }
+    fun committed() { baseline = draft.copy(); updateActions() }
     private fun updateReceiverStatus() {
         status.text = if (!browserReady) activity.getString(R.string.settings_browser_waiting_connection) else receiverStatus(if (BrowserCarPlaySettings.disabled(activity))
             activity.getString(R.string.settings_carplay_disabled)
@@ -303,23 +330,67 @@ internal class BrowserMainSettingsMenu(
         BrowserReceiverPresentation.airPlayTitle(AirPlayReceiverService.state, AirPlayReceiverSettings.isDisabled(activity)))
     private fun updateActions() {
         updateReceiverStatus()
-        stageDetail.visibility = if (!browserReady || stageDetail.text.isNullOrBlank() ||
-            (failed && stageDetail.text.toString() == error.text.toString()) || BrowserCarPlaySettings.disabled(activity))
-            View.GONE else View.VISIBLE
-        val requirement = when {
-            BrowserCarPlaySettings.disabled(activity) || !draft.wireless || active -> null
-            draft.phoneAddress.isNullOrBlank() -> R.string.choose_your_iphone
-            draft.validationError() != null -> draft.validationError()
-            Build.VERSION.SDK_INT >= 31 && activity.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED ->
-                R.string.allow_the_connection_permission_to_continue
-            runCatching { activity.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled }.getOrNull() != true -> R.string.turn_on_bluetooth
-            else -> networkReadiness
+        val disabled = BrowserCarPlaySettings.disabled(activity)
+        val currentProblem = problem?.takeIf {
+            !disabled && !active && (browserReady || it != BrowserConnectionProblem.FAILED)
         }
-        readiness.text = requirement?.let(activity::getString).orEmpty()
-        readiness.visibility = if (requirement == null) View.GONE else View.VISIBLE
-        phone.visibility = if (draft.wireless && !BrowserCarPlaySettings.disabled(activity)) View.VISIBLE else View.GONE
-        stop.visibility = if (BrowserCarPlaySettings.disabled(activity)) View.GONE else View.VISIBLE
-        stop.isEnabled = !stopping
+        putHint("session", currentProblem?.message?.let(activity::getString))
+        putHint("browser-open", if (!browserReady) activity.getString(R.string.settings_hint_browser_open, activity.getString(R.string.settings_tesla_browser)) else null)
+        phone.visibility = if (draft.wireless && (setupOnly || !disabled)) View.VISIBLE else View.GONE
+        val phoneMessage = if (phone.visibility == View.VISIBLE && !active) when {
+            draft.phoneAddress.isNullOrBlank() -> R.string.settings_hint_phone_wireless
+            draft.allTransports -> null // Only the host knows whether All currently uses USB.
+            Build.VERSION.SDK_INT >= 31 && activity.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED -> null
+            runCatching { activity.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled }.getOrNull() == false -> R.string.settings_hint_bluetooth
+            else -> null
+        } else null
+        putHint("phone", phoneMessage?.let(activity::getString))
+        spacing.normalizeSpacing(content, recursive = true)
+    }
+
+    /** A rebuilt card receives a new token; old asynchronous observations cannot overwrite it. */
+    private fun newHintReporter(owner: String): (String, String?) -> Unit {
+        val generation = (hintGenerations[owner] ?: 0) + 1
+        hintGenerations[owner] = generation
+        hintMessages.keys.removeAll { it.startsWith("$owner/") }
+        renderHints()
+        return { cause, message ->
+            if (!disposed && hintGenerations[owner] == generation) putHint("$owner/$cause", message)
+        }
+    }
+
+    private fun putHint(cause: String, message: String?) {
+        if (hintMessages[cause] == message) return
+        if (message.isNullOrBlank()) hintMessages.remove(cause) else hintMessages[cause] = message
+        renderHints()
+    }
+
+    private fun renderHints() {
+        if (setupOnly) return
+        fun priority(key: String) = when {
+            key == "browser/permission" || key == "browser/service" -> 0
+            key == "session" -> 1
+            key == "network" -> 2
+            key.startsWith("address/") -> 3
+            key == "browser-open" -> 5
+            else -> 4
+        }
+        hints.removeAllViews()
+        for ((cause, message) in hintMessages.entries.sortedBy { priority(it.key) }) {
+            hints.addView(text(message).apply { tag = "connection_hint:$cause" })
+        }
+        spacing.normalizeSpacing(hints)
+        spacing.normalizeSpacing(content, recursive = true)
+    }
+
+    private fun validateFields() {
+        nameInput?.error = null
+        passwordInput?.error = null
+        val invalid = draft.validationError() ?: return
+        val name = nameInput ?: return
+        val target = if (name.text.isBlank() || name.text.toString().encodeToByteArray().size > 32 || '\u0000' in name.text.toString())
+            name else passwordInput ?: name
+        target.error = activity.getString(invalid)
     }
     private fun applyChanges() {
         editHandler.removeCallbacks(applyEdit)
@@ -330,13 +401,4 @@ internal class BrowserMainSettingsMenu(
     }
     fun dispose() { disposed = true; editHandler.removeCallbacks(applyEdit); receiverSubscription.close() }
     fun applyPendingEdits() { applyChanges() }
-    private fun submit() {
-        editHandler.removeCallbacks(applyEdit)
-        val invalid = draft.validationError()
-        if (invalid != null) {
-            error.text = activity.getString(invalid)
-            error.visibility = View.VISIBLE; return
-        }
-        connect()
-    }
 }

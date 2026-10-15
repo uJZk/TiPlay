@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_hint_phone_wireless">Para conectarte de forma inalámbrica, selecciona primero un iPhone emparejado.</string>
+    <string name="settings_hint_bluetooth">Activa Bluetooth en los ajustes del sistema.</string>
+    <string name="settings_hint_nearby">Permite el acceso a dispositivos cercanos en Ajustes avanzados.</string>
+    <string name="settings_hint_location">Permite la ubicación precisa en Ajustes avanzados.</string>
+    <string name="settings_hint_usb_vpn">Permite la conexión VPN USB en la guía de primer uso.</string>
+    <string name="settings_hint_failed">No se pudo conectar con el iPhone. Puedes exportar un informe de diagnóstico en Ajustes avanzados.</string>
+    <string name="settings_hint_preparation_failed">No se pudo preparar CarPlay. Comprueba el paquete de instalación o exporta un informe de diagnóstico.</string>
+    <string name="settings_hint_hotspot_off">Activa el punto de acceso de este teléfono Android en los ajustes del sistema.</string>
+    <string name="settings_hint_hotspot_unknown">No se pudo leer si el punto de acceso está activado. Confírmalo en los ajustes del sistema.</string>
+    <string name="settings_hint_wifi_disconnected">Conéctate a la red indicada en los ajustes Wi-Fi del sistema.</string>
+    <string name="settings_hint_wifi_unknown">No se pudo leer el nombre de la red Wi-Fi actual. Compruébalo en los ajustes del sistema.</string>
+    <string name="settings_hint_wifi_mismatch">El nombre de la red Wi-Fi actual no coincide con el indicado. Comprueba la red o el nombre.</string>
+    <string name="settings_hint_address_unknown">La dirección del punto de acceso aún no está disponible. Confirma que el punto de acceso de este teléfono esté activado.</string>
+    <string name="settings_hint_browser_open">Conecta el navegador del coche y este teléfono a la misma red y abre el enlace de «%1$s» que aparece más abajo.</string>
+    <string name="settings_hint_address_blocked">Es posible que el navegador del coche no pueda acceder a esta dirección del punto de acceso. Prueba otro método de dirección.</string>
+    <string name="settings_hint_vpn_failed">No se pudo iniciar la VPN de dirección del punto de acceso. Vuelve a intentarlo o elige otro método.</string>
+    <string name="settings_hint_shizuku_start">Inicia Shizuku y vuelve a TiPlay.</string>
+</resources>

@@ -41,6 +41,7 @@ internal class TeslaBrowserLinkCard(
     private val requestLocalNetwork: () -> Unit,
     private val rerender: () -> Unit,
     private val compactEndpoint: Boolean = false,
+    private val hintReporter: ((String, String?) -> Unit)? = null,
 ) {
     private val app = activity.applicationContext
     private var probeToken: LatestSettingsProbe.Token? = null
@@ -55,7 +56,7 @@ internal class TeslaBrowserLinkCard(
             return
         }
 
-        parent.addView(note(activity.getString(R.string.settings_browser_link_car)).withTopPadding())
+        if (hintReporter == null) parent.addView(note(activity.getString(R.string.settings_browser_link_car)).withTopPadding())
         val pageAddress = TeslaBrowserLink.pageAddress(app).removeSuffix("/")
         fun connectionLink(hotspot: String?): String = TeslaBrowserPageLinks.pageLink(
             TeslaBrowserLink.pageAddress(app), code,
@@ -146,18 +147,24 @@ internal class TeslaBrowserLinkCard(
         }
         line.text = text
         line.setTextColor(color)
-        line.visibility = if (state is TeslaBrowserLink.State.Listening) View.GONE else View.VISIBLE
+        val message = text.takeUnless { state is TeslaBrowserLink.State.Listening }
+        if (hintReporter != null) {
+            line.visibility = View.GONE
+            hintReporter.invoke("service", message)
+        } else line.visibility = if (message == null) View.GONE else View.VISIBLE
     }
 
     private fun localNetworkRows(parent: LinearLayout) {
         when (LocalNetworkPermission.state(app)) {
             LocalNetworkPermission.State.NOT_NEEDED -> Unit
-            LocalNetworkPermission.State.GRANTED ->
-                parent.addView(note(activity.getString(R.string.settings_browser_local_network_granted)))
+            LocalNetworkPermission.State.GRANTED -> {
+                hintReporter?.invoke("permission", null)
+                if (hintReporter == null) parent.addView(note(activity.getString(R.string.settings_browser_local_network_granted)))
+            }
             LocalNetworkPermission.State.DENIED -> {
-                parent.addView(note(activity.getString(R.string.settings_browser_local_network_denied)).apply {
-                    setTextColor(colors.warning)
-                })
+                val message = activity.getString(R.string.settings_browser_local_network_denied)
+                if (hintReporter != null) hintReporter.invoke("permission", message)
+                else parent.addView(note(message).apply { setTextColor(colors.warning) })
                 actionRow(parent, activity.getString(R.string.settings_browser_local_network_allow), ::allowLocalNetwork)
             }
         }

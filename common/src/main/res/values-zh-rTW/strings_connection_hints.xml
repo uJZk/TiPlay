@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_hint_phone_wireless">使用無線連線時，請先選擇已配對的 iPhone。</string>
+    <string name="settings_hint_bluetooth">請在系統設定中開啟藍牙。</string>
+    <string name="settings_hint_nearby">請在進階設定中允許鄰近裝置權限。</string>
+    <string name="settings_hint_location">請在進階設定中允許精確位置。</string>
+    <string name="settings_hint_usb_vpn">請在首次使用精靈中允許 USB VPN 連線。</string>
+    <string name="settings_hint_failed">無法連線至 iPhone。可在進階設定中匯出診斷報告。</string>
+    <string name="settings_hint_preparation_failed">無法準備 CarPlay，請檢查安裝套件或匯出診斷報告。</string>
+    <string name="settings_hint_hotspot_off">請在系統設定中開啟這支 Android 手機的熱點。</string>
+    <string name="settings_hint_hotspot_unknown">無法讀取熱點開關，請在系統設定中確認已開啟。</string>
+    <string name="settings_hint_wifi_disconnected">請在系統 Wi-Fi 設定中連線至所填寫的網路。</string>
+    <string name="settings_hint_wifi_unknown">無法讀取目前的 Wi-Fi 名稱，請在系統設定中確認。</string>
+    <string name="settings_hint_wifi_mismatch">目前的 Wi-Fi 與填寫的名稱不同，請檢查網路或名稱。</string>
+    <string name="settings_hint_address_unknown">尚未讀取到熱點位址，請確認本機熱點已開啟。</string>
+    <string name="settings_hint_browser_open">讓車載瀏覽器與本機位於同一網路，再開啟下方「%1$s」中的連結。</string>
+    <string name="settings_hint_address_blocked">車載瀏覽器可能無法存取此熱點位址，可嘗試其他位址方式。</string>
+    <string name="settings_hint_vpn_failed">熱點位址 VPN 啟動失敗，請重試或選擇其他方式。</string>
+    <string name="settings_hint_shizuku_start">請先啟動 Shizuku，再返回 TiPlay。</string>
+</resources>
