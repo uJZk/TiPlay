@@ -56,6 +56,7 @@ class CarPlayHostBrowserLinkTest {
         AirPlayPersistence.saveMfiTarget(activity, MfiTarget.USB_CH341)
         set("airPlayIdentity", AirPlayIdentity.generate())
         set("hevcEnabled", false)
+        reportReadyBrowser()
         controllerConstruction = mockConstruction(CarPlayController::class.java)
         (get("teardownExecutor") as ExecutorService).shutdownNow()
         set("teardownExecutor", PausedExecutorService())
@@ -132,11 +133,13 @@ class CarPlayHostBrowserLinkTest {
         assertFalse(config.mainBufferedAudio)
     }
 
-    @Test fun beforeAnyBrowserSizeThePhoneNegotiates720p() {
-        val config = config(1080, 2200)
-        assertEquals(1280, config.main.widthPixels)
-        assertEquals(720, config.main.heightPixels)
-        assertEquals(60, config.main.fps)
+    @Test fun browserCapabilitiesChooseHevcRegardlessOfOldPreference() {
+        AirPlayPersistence.saveHevcEnabled(activity, false)
+        reportReadyBrowser(hevc = true)
+        assertTrue(config(1080, 2200).hevc)
+        AirPlayPersistence.saveHevcEnabled(activity, true)
+        reportReadyBrowser(hevc = false)
+        assertFalse(config(1080, 2200).hevc)
     }
 
     @Test fun rotatingThePhoneDoesNotResizeARunningBrowserSession() {
@@ -240,7 +243,10 @@ class CarPlayHostBrowserLinkTest {
         org.mockito.Mockito.verify(current, org.mockito.Mockito.never()).close()
         BrowserCarPlaySettings.setDisabled(activity, false)
         activity.javaClass.getDeclaredMethod("checkBrowserCarPlay").apply { isAccessible = true }.invoke(activity)
-        assertEquals("Recovery can continue when the user enables CarPlay again", 1, get("restartGeneration"))
+        assertEquals("A browser whose heartbeat expired cannot resume recovery", 0, get("restartGeneration"))
+        reportReadyBrowser()
+        activity.javaClass.getDeclaredMethod("checkBrowserCarPlay").apply { isAccessible = true }.invoke(activity)
+        assertEquals("Recovery can continue once the browser is live again", 1, get("restartGeneration"))
     }
 
     @Test fun airPlayEndingCancelsTheRemainingRetryDelay() {
@@ -586,6 +592,7 @@ class CarPlayHostBrowserLinkTest {
 
     private fun saveViewport(viewport: BrowserViewport) {
         TeslaBrowserLink.resetForTest()
+        reportReadyBrowser(viewport)
         activity.getSharedPreferences("tiplay_browser_link", 0).edit()
             .putInt("viewport_width", viewport.width).putInt("viewport_height", viewport.height)
             .putFloat("viewport_css_width", viewport.cssWidth.toFloat())

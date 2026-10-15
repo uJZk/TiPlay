@@ -8,7 +8,7 @@ The launcher opens the session-owning host directly. Legacy main-page intents re
 
 Main settings show separate CarPlay and AirPlay status, with configuration, selected iPhone and permission requirements below. Only Main settings and Advanced settings are product navigation. Manufacturer, model, OEM label and MFi controls stay hidden. Upstream category APIs remain for merging, not as additional product screens. Native controls adapt to narrow windows and large text, with system-bar, cutout and keyboard insets preserving access to actions.
 
-The title keeps the short `CarPlay status | AirPlay status` form. Preparation,
+Before a live paired browser reports its viewport and decoder capabilities, the title reads **Waiting for browser connection**. Afterwards it uses `CarPlay status | AirPlay status`. Preparation,
 waiting, connection, recovery and failure are distinct CarPlay phases; USB mode or
 an idle controller alone cannot claim readiness. Only an actual wireless listener
 reports CarPlay ready. AirPlay ready requires the receiver's `listening` state;
@@ -23,7 +23,7 @@ Settings requiring new negotiation notify the host through `BrowserSettingsChang
 
 ## Connection policy
 
-CarPlay automatically starts and recovers unless **Disable CarPlay** is selected. Disabling cancels retries and closes the controller; enabling or saving a valid idle configuration can resume preparation. **Reconnect CarPlay** explicitly rebuilds the session. System background-launch policy can still block boot launch. The boot switch controls app launch only; `BootReceiver` supplies `CONNECT_AFTER_BOOT` and respects saved transport and CarPlay opt-out.
+CarPlay starts and recovers only after a live authenticated browser has reported a valid viewport and usable decoder capabilities, and while **Disable CarPlay** is off. Saved viewports cannot authorize a connection. USB attachment, boot launch, Bluetooth events, permission callbacks and manual retries use this same gate. Browser control heartbeats expire after five seconds without contact; explicit disconnect clears readiness immediately. This blocks new connection attempts without tearing down an already active session. Disabling cancels retries and closes the controller; enabling or saving a valid idle configuration can resume preparation. **Reconnect CarPlay** explicitly rebuilds the session. System background-launch policy can still block boot launch. The boot switch controls app launch only; `BootReceiver` supplies `CONNECT_AFTER_BOOT` and respects saved transport and CarPlay opt-out.
 
 `BrowserCarPlaySettings` stores All, Wireless or USB independently of the current transport. All prefers an attached Apple USB device and returns to wireless after removal. USB uses the ordinary Android permission prompt; Root and Shizuku do not grant USB permissions in this product.
 
@@ -39,11 +39,11 @@ CarPlay to use the iPhone's location. When enabled, browser location is detected
 on Android; until confirmation, Android supplies high accuracy GPS fixes. See
 [geolocation](geolocation.md) for quality gates and local browser caching.
 
-**Disable HEVC (H.265)** is off by default. Its switch is the inverse of the existing
-`hevc_enabled` preference: existing users keep their codec choice; enabling the switch
-selects H.264 on the next negotiation, while disabling it allows HEVC when the browser
-supports it. Both changes apply immediately and reconnect while keeping settings open.
+The browser probes and reports its decoder capabilities automatically. CarPlay and AirPlay
+select HEVC only when reported supported, otherwise H.264. The former manual HEVC opt-out
+and its saved value no longer control browser negotiation. Reported decoder limits also
+constrain the negotiated canvas.
 
 ## Source entry points
 
-The implementation lives in `common/src/main/java/com/shilapi/xcertplay/`: `BrowserMainSettingsMenu`, `BrowserConnectionDraft`, `BrowserAdvancedSettings`, `BrowserSettingsChanges`, `BrowserCarPlaySettings`, `BrowserCarPlayRetry`, `BrowserCarPlayWatch`, `CarPlayHostActivity` and `BootReceiver`. Keep product behavior in dedicated files with small shared-session hooks.
+The implementation lives in `common/src/main/java/com/shilapi/xcertplay/`: `BrowserMainSettingsMenu`, `BrowserConnectionDraft`, `BrowserAdvancedSettings`, `BrowserSettingsChanges`, `BrowserCarPlaySettings`, `BrowserCarPlayRetry`, `BrowserCarPlayWatch`, `BrowserCarPlayReadiness`, `FirstUseActivity`, `CarPlayHostActivity` and `BootReceiver`. Keep product behavior in dedicated files with small shared-session hooks.

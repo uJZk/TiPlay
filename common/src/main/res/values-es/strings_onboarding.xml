@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_help">Guía de primer uso</string>
+    <string name="onboarding_progress">Paso %1$d de %2$d</string>
+    <string name="onboarding_welcome_title">Bienvenido a TiPlay</string>
+    <string name="onboarding_welcome_body">Usa un teléfono Android para recibir CarPlay del iPhone y mostrarlo en el navegador del coche. Configúralo con el coche aparcado. Después de esta guía, introduce los ajustes en la página principal.</string>
+    <string name="onboarding_connection_title">Conecta el iPhone</string>
+    <string name="onboarding_connection_body">Elige Todos (USB primero), Inalámbrico o USB. Para conexión inalámbrica, empareja el iPhone en los ajustes Bluetooth de Android y selecciónalo en TiPlay. Para USB, usa un cable de datos y acepta las solicitudes de USB, confianza y VPN. TiPlay espera a que el navegador se conecte e informe del tamaño de pantalla y la compatibilidad del decodificador antes de conectar el iPhone.</string>
+    <string name="onboarding_browser_title">Conecta el navegador del coche</string>
+    <string name="onboarding_browser_body">Elige el punto de acceso Android o una red Wi-Fi existente e introduce sus datos. Activa el punto de acceso o únete a la red manualmente y conecta el coche a la misma red. Abre el enlace de emparejamiento de la página principal en el navegador y pulsa Conectar. La primera carga necesita internet. El navegador informa automáticamente del tamaño y los códecs compatibles. TiPlay usa HEVC si es compatible y H.264 en caso contrario.</string>
+    <string name="onboarding_audio_title">Sonido y permisos</string>
+    <string name="onboarding_audio_body">La música suele reproducirse en el navegador. Para llamadas y Siri mediante TiPlay, conecta Android al perfil telefónico Bluetooth del coche y permite el micrófono. Los permisos se solicitan cuando hacen falta. Puedes cambiar los ajustes, desactivar CarPlay o volver a abrir esta guía desde la página principal.</string>
+    <string name="onboarding_next">Siguiente</string>
+    <string name="onboarding_back">Atrás</string>
+    <string name="onboarding_finish">Abrir ajustes principales</string>
+    <string name="settings_browser_waiting_connection">Esperando conexión del navegador</string>
+</resources>

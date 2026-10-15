@@ -161,7 +161,7 @@ class ReceiverServerTest {
         } finally { blocked.forEach { it.release.countDown() }; receiver.close() }
     }
 
-    private class Listener : ReceiverServer.Listener {
+    private class Listener(private val onLog: (String) -> Unit = {}) : ReceiverServer.Listener {
         @Volatile var playbackState: ReceiverPlayback? = null
         val images = CopyOnWriteArrayList<ByteArray>()
         override fun photo(bytes: ByteArray) { images.add(bytes) }
@@ -187,7 +187,7 @@ class ReceiverServerTest {
         override fun rate(value: Double) { speed = value }
         override fun playback() = playbackState ?: ReceiverPlayback(100.0, sought, speed, true)
         override fun status(state: String) { states.add(state); if (state == "listening") ended.countDown() }
-        override fun log(message: String) { logs.add(message) }
+        override fun log(message: String) { logs.add(message); onLog(message) }
     }
 
     private fun Socket.send(method: String, path: String, body: ByteArray = ByteArray(0), id: String = "11223344556677889900aabbccddeeff", contentType: String? = null, extraHeaders: String = ""):
@@ -845,7 +845,10 @@ class ReceiverServerTest {
     }
 
     @Test fun seekCancellationKeepsTheIphoneExchangeForTheReplacementLoader() {
-        val listener = Listener()
+        val replacementAcquired = CountDownLatch(1)
+        val listener = Listener { message ->
+            if (message.startsWith("resource stage=REUSED ")) replacementAcquired.countDown()
+        }
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
         receiver.start()
         try {
@@ -868,6 +871,8 @@ class ReceiverServerTest {
                     assertFalse(oldLoader.isAlive)
                     assertTrue(interrupted.get())
                     val replacement = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(url) }
+                    // A response before the replacement acquires the exchange retires it legitimately.
+                    assertTrue("Replacement loader must join the pending request", replacementAcquired.await(2, TimeUnit.SECONDS))
                     val bytes = "#EXTM3U\n#EXT-X-ENDLIST\n".toByteArray()
                     val answer = BplistCodec.encode(mapOf("type" to "unhandledURLResponse", "params" to mapOf(
                         "FCUP_Response_RequestID" to requestId, "FCUP_Response_URL" to url,

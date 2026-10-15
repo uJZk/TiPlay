@@ -37,6 +37,8 @@ class BrowserLinkServerTest {
     private val keyFrameRequests = AtomicInteger()
     private val reports = CopyOnWriteArrayList<String>()
     private val touches = CopyOnWriteArrayList<List<AirPlayContact>>()
+    private val seenPages = CopyOnWriteArrayList<String>()
+    private val gonePages = CopyOnWriteArrayList<String>()
     private val viewports = CopyOnWriteArrayList<BrowserViewport>()
     private val keys = CopyOnWriteArrayList<String>()
     private val stats = CopyOnWriteArrayList<Map<String, Any?>>()
@@ -57,6 +59,8 @@ class BrowserLinkServerTest {
         override fun code() = pairingCode
         override fun status() = status
         override fun onTouch(contacts: List<AirPlayContact>): Boolean = touches.add(contacts)
+        override fun onBrowserSeen(session: String) { seenPages += session }
+        override fun onBrowserGone(session: String) { gonePages += session }
         override fun onViewport(viewport: BrowserViewport) {
             beforeViewport()
             viewports += viewport
@@ -338,6 +342,18 @@ class BrowserLinkServerTest {
         assertEquals("""{"error":"throttled"}""", throttled.text)
         assertEquals(429, get(videoPath()).status)
         assertEquals(429, post("/bye", """{"c":"$code","s":"$session"}""").status)
+    }
+
+    @Test fun onlyAuthenticatedControlRefreshesPresenceAndByeClearsIt() {
+        assertEquals(401, control(1, c = "9999").status)
+        assertTrue(seenPages.isEmpty())
+        assertEquals(200, control(1).status)
+        assertEquals(200, control(2).status)
+        assertEquals(listOf(session, session), seenPages)
+        assertEquals(401, post("/bye", """{"c":"9999","s":"$session"}""").status)
+        assertTrue(gonePages.isEmpty())
+        assertEquals(204, post("/bye", """{"c":"$code","s":"$session"}""").status)
+        assertEquals(listOf(session), gonePages)
     }
 
     @Test fun controlAppliesEventsInOrderOnceAndAnswersWithTheStatus() {

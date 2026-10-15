@@ -72,6 +72,17 @@ class BrowserMainPageTest {
         assertTrue(labels.contains(activity.getString(R.string.settings_advanced)))
         assertNull(page.view.findViewWithTag<View>("collapsed"))
     }
+    @Test fun browserWaitReplacesReceiverTitleUntilTheCurrentPageIsReady() {
+        page.update("CarPlay preparing", false, detail = "Preparing", browserReady = false)
+        assertEquals("Waiting for browser connection", page.status.text.toString())
+        AirPlayReceiverService::class.java.getDeclaredField("state").apply { isAccessible = true }
+            .set(null, "listening")
+        page.refresh()
+        assertEquals("Waiting for browser connection", page.status.text.toString())
+        page.update("CarPlay preparing", false, browserReady = true)
+        assertEquals("CarPlay preparing | AirPlay ready", page.status.text.toString())
+    }
+
     @Test fun actualConnectionStatusStaysVisibleWithoutASeparateStatusTitle() {
         page.update("Connected to car browser", true)
         val labels = views().filterIsInstance<TextView>().map { it.text.toString() }.toList()

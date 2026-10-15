@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_help">First-use guide</string>
+    <string name="onboarding_progress">Step %1$d of %2$d</string>
+    <string name="onboarding_welcome_title">Welcome to TiPlay</string>
+    <string name="onboarding_welcome_body">Use an Android phone to receive CarPlay from your iPhone and display it in your car browser. Set up while parked. This guide explains the steps; enter your settings on the main page afterwards.</string>
+    <string name="onboarding_connection_title">Connect your iPhone</string>
+    <string name="onboarding_connection_body">Choose All (USB first), Wireless or USB on the main page. For wireless, pair the iPhone in Android Bluetooth settings, then select it in TiPlay. For USB, use a data cable and approve the requested USB, Trust and VPN dialogs. TiPlay waits for the car browser to connect and report its screen size and decoder support before attempting to connect the iPhone.</string>
+    <string name="onboarding_browser_title">Connect the car browser</string>
+    <string name="onboarding_browser_body">Choose Android hotspot or Existing Wi-Fi and enter its network details. Turn on the hotspot or join Wi-Fi yourself, then connect the car to the same network. Open the pairing link shown on the main page in the car browser and select Connect. The first page load needs internet access. The browser reports its screen size and decoder support automatically. TiPlay selects HEVC when supported and H.264 otherwise.</string>
+    <string name="onboarding_audio_title">Sound and permissions</string>
+    <string name="onboarding_audio_body">Music normally plays in the browser. For calls and Siri through TiPlay, connect the Android phone to the car Bluetooth telephone profile and allow microphone access. TiPlay requests permissions when needed. You can change connection settings or disable CarPlay on the main page, and reopen this guide there.</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_back">Back</string>
+    <string name="onboarding_finish">Open main settings</string>
+    <string name="settings_browser_waiting_connection">Waiting for browser connection</string>
+</resources>

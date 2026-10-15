@@ -87,6 +87,7 @@ class SmoothVideoHostLifecycleTest {
         CarPlayBackgroundSession.clear()
         AirPlayPersistence.saveSmoothVideo(activity, false)
         controllerConstruction.close()
+        browserReadiness().clear()
     }
 
     // (1) The maintainer's sequence: Smooth video turned on, the reconnect stopped at a prerequisite, so
@@ -332,6 +333,7 @@ class SmoothVideoHostLifecycleTest {
     }
 
     private fun allowStartup(target: CarPlayHostActivity = activity) {
+        reportReadyBrowser()
         setField(target, "airPlayIdentity", AirPlayIdentity.generate())
         setField(target, "mfiTarget", MfiTarget.LOCAL)
         setField(target, "vpnReady", true)

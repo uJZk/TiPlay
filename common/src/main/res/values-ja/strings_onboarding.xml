@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_help">初回ガイド</string>
+    <string name="onboarding_progress">%2$d ステップ中 %1$d</string>
+    <string name="onboarding_welcome_title">TiPlay へようこそ</string>
+    <string name="onboarding_welcome_body">Android スマートフォンで iPhone の CarPlay を受信し、車のブラウザに表示します。停車中に設定してください。このガイドの後にメイン設定で接続情報を入力します。</string>
+    <string name="onboarding_connection_title">iPhone を接続</string>
+    <string name="onboarding_connection_body">メイン設定で「すべて（USB 優先）」「ワイヤレス」「USB」を選びます。ワイヤレスでは Android の Bluetooth 設定で iPhone をペアリングしてから TiPlay で選択します。USB ではデータケーブルを使い、USB・信頼・VPN の確認に同意します。車のブラウザが接続し、画面サイズとデコーダー対応状況を通知してから iPhone への接続を試みます。</string>
+    <string name="onboarding_browser_title">車のブラウザを接続</string>
+    <string name="onboarding_browser_body">Android ホットスポットまたは既存の Wi-Fi を選び、ネットワーク情報を入力します。自分でホットスポットを有効にするか Wi-Fi に参加し、車を同じネットワークに接続します。メイン設定のペアリングリンクを車のブラウザで開き、接続を選びます。初回のページ読み込みにはインターネットが必要です。画面サイズとデコーダー対応状況は自動通知されます。HEVC 対応なら HEVC、それ以外は H.264 を使います。</string>
+    <string name="onboarding_audio_title">音声と権限</string>
+    <string name="onboarding_audio_body">音楽は通常ブラウザで再生されます。TiPlay で通話や Siri を使うには Android を車の Bluetooth 電話に接続し、マイクを許可します。権限は必要なときに要求されます。メイン設定で接続の変更、CarPlay の無効化、このガイドの再表示ができます。</string>
+    <string name="onboarding_next">次へ</string>
+    <string name="onboarding_back">戻る</string>
+    <string name="onboarding_finish">メイン設定へ</string>
+    <string name="settings_browser_waiting_connection">ブラウザの接続を待っています</string>
+</resources>

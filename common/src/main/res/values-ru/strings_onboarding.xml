@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_help">Первое использование</string>
+    <string name="onboarding_progress">Шаг %1$d из %2$d</string>
+    <string name="onboarding_welcome_title">Добро пожаловать в TiPlay</string>
+    <string name="onboarding_welcome_body">Телефон Android принимает CarPlay с iPhone и выводит его в браузер автомобиля. Настраивайте на стоянке. После руководства введите параметры на главной странице настроек.</string>
+    <string name="onboarding_connection_title">Подключите iPhone</string>
+    <string name="onboarding_connection_body">Выберите все способы (сначала USB), беспроводной или USB. Для беспроводного подключения сначала выполните сопряжение iPhone в настройках Bluetooth Android, затем выберите его в TiPlay. Для USB используйте кабель передачи данных и подтвердите запросы USB, доверия и VPN. TiPlay ждёт подключения браузера и отчёта о размере экрана и поддержке декодера, прежде чем подключать iPhone.</string>
+    <string name="onboarding_browser_title">Подключите браузер автомобиля</string>
+    <string name="onboarding_browser_body">Выберите точку доступа Android или существующую Wi-Fi и введите параметры сети. Включите точку доступа или подключитесь к Wi-Fi вручную, затем подключите автомобиль к той же сети. Откройте ссылку сопряжения с главной страницы в браузере и нажмите «Подключить». Первая загрузка требует интернета. Браузер автоматически сообщает размер экрана и поддержку кодеков. При поддержке используется HEVC, иначе H.264.</string>
+    <string name="onboarding_audio_title">Звук и разрешения</string>
+    <string name="onboarding_audio_body">Музыка обычно звучит через браузер. Для звонков и Siri через TiPlay подключите Android к телефонному профилю Bluetooth автомобиля и разрешите микрофон. Разрешения запрашиваются по необходимости. На главной странице можно изменить параметры, отключить CarPlay или снова открыть руководство.</string>
+    <string name="onboarding_next">Далее</string>
+    <string name="onboarding_back">Назад</string>
+    <string name="onboarding_finish">Открыть главные настройки</string>
+    <string name="settings_browser_waiting_connection">Ожидание подключения браузера</string>
+</resources>

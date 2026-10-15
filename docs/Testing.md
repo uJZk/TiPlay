@@ -12,7 +12,7 @@ Desktop simulations and codec probes cannot establish Tesla firmware support, iP
 
 ## Receiver status and browser notices
 
-The full Android CI command passes with 1,966 shared, 1,523 common and 6 home unit
+The full Android CI command passes with 1,967 shared, 1,532 common and 6 home unit
 tests, three application lint checks and three debug APK builds. The mobile debug
 APK also passes signature verification. All 229 browser unit tests, the Chromium
 `run.mjs` and real shared-server `phone-run.mjs` harnesses, static site generation
@@ -35,7 +35,7 @@ software behavior only.
 
 The implemented [location flow](geolocation.md) uses precise Android GPS until the
 browser datum is confirmed, refined GCJ-02 conversion and browser-local datum caching.
-The latest source checks passed: 1,966 shared, 1,523 common and 6 home unit tests,
+The latest source checks passed: 1,967 shared, 1,532 common and 6 home unit tests,
 229 browser tests, the CI lint/debug-build command, the public-source scan and all
 9 release-draft delivery tests. The debug APK contains geocoordinates and JNA native
 libraries for arm64-v8a, armeabi-v7a, x86 and x86_64; the library checksum matches its
@@ -56,10 +56,16 @@ actual iPhone navigation. Do not mark those acceptance items complete from simul
 
 ## Phone and browser acceptance
 
-1. Install/update the intended signed `mobile` APK; confirm settings survive an update. Open the hosted HTTPS page from TiPlay's pairing link. Check first-use network permissions, pairing-code entry, saved address and fragment removal. Deny a permission once and confirm the explanation and retry path work.
+Automated coverage for this flow lives in `FirstUseActivityTest`,
+`BrowserCarPlayReadinessTest`, `BrowserMainHostTest`, `BrowserMainPageTest`,
+`CarPlayHostBrowserLinkTest` and `BrowserLinkServerTest`: guide completion/recreation,
+current-page readiness, authenticated heartbeat/disconnect, startup gating, waiting title
+and browser-selected HEVC independent of the old preference.
+
+1. Install/update the intended signed `mobile` APK; confirm settings survive an update. On first launcher open, check every guide step, Back, rotation and completion; the next launch should enter Main settings directly, and its guide action should reopen the introduction. Before opening the browser, verify **Waiting for browser connection** and no iPhone connection attempts, including USB attachment, boot and Bluetooth events. Open the hosted HTTPS page from TiPlay's pairing link. Check first-use network permissions, pairing-code entry, saved address and fragment removal. Deny a permission once and confirm the explanation and retry path work.
 2. Connect via each affected USB/wireless mode. Confirm CarPlay picture, touch alignment, keyboard/controls and audio. Close/reopen the browser, interrupt Wi-Fi, sleep/wake the screen and reconnect. A replacement browser must take ownership without the old page stealing it back; disconnect must release the session.
 3. Check both phone settings menus. Valid edits apply immediately and negotiate a reconnect when required while keeping settings open. Invalid drafts show errors. Disable CarPlay and confirm startup/retry stops; enable it and verify recovery. Verify **Start on boot** only when enabled, subject to Android background restrictions.
-4. Resize the browser, change fullscreen/orientation and open/close browser panels. Check stable layout, accurate touch mapping, negotiated resolution and recovery after rapid changes. Settings and diagnostics must remain usable while disconnected.
+4. Resize the browser, change fullscreen/orientation and open/close browser panels. Check stable layout, accurate touch mapping, negotiated resolution and recovery after rapid changes. Verify HEVC is selected only when reported supported, H.264 is selected otherwise, and there is no manual codec switch. Settings and diagnostics must remain usable while disconnected.
 5. Change Android's address/port: the pairing code stays valid, but the browser requires a manual endpoint change or new link. **New code** must invalidate the old code and terminate its session. Test a stale code and interrupted connection without exposing credentials in logs.
 6. With CarPlay sound enabled, check browser music/navigation, Siri and calls. Verify microphone permission denial still permits playback; microphone demand must use a verified car HFP/SCO route and release it afterwards. The browser must never request microphone access. With CarPlay audio disabled, verify the intended iPhone-to-car Bluetooth path. Check echo, navigation attenuation, timing and route restoration on the actual car.
 7. Export diagnostics, review redaction, then use **View** and **Share**. Confirm Downloads output, distinct filenames and cancellation of **Choose save location**. Test unavailable-picker/storage fallbacks on an emulator; verify the displayed path and retention of the newest eight fallback reports.

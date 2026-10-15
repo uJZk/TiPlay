@@ -52,7 +52,7 @@ class CarPlaySettingsNavigationTest {
         assertFalse(labels.contains(screen.getString(R.string.settings_overview)))
         assertFalse(labels.contains(screen.getString(R.string.settings_search)))
         assertTrue(labels.any { it == screen.getString(R.string.frame_rate) + " · 60 fps" })
-        assertTrue(labels.contains(screen.getString(R.string.settings_browser_hevc_title)))
+        assertTrue(labels.contains(screen.getString(R.string.settings_disable_carplay_audio)))
         assertEquals(SettingsCategory.ADVANCED, CarPlaySettingsNavigation.category(screen.intent))
     }
 
@@ -73,7 +73,7 @@ class CarPlaySettingsNavigationTest {
         assertFalse(labels.contains(screen.getString(R.string.split_screen_areas)))
         assertFalse(labels.contains(screen.getString(R.string.efficient_video)))
         assertFalse(labels.contains(screen.getString(R.string.advanced_audio_channel_mapping)))
-        for (id in listOf(R.string.settings_browser_hevc_title, R.string.right_hand_drive,
+        for (id in listOf(R.string.settings_disable_carplay_audio, R.string.right_hand_drive,
             R.string.diagnostics, R.string.save_diagnostic_report)) {
             assertTrue(screen.getString(id), labels.contains(screen.getString(id)))
         }
@@ -123,10 +123,10 @@ class CarPlaySettingsNavigationTest {
         assertFalse(PendingReconnect.isPending(session))
         assertEquals(1, changes)
         descendants(screen.window.decorView).filterIsInstance<Switch>().single {
-            it.contentDescription == screen.getString(R.string.settings_browser_hevc_title)
+            it.contentDescription == screen.getString(R.string.settings_disable_carplay_audio)
         }.performClick()
         shadowOf(Looper.getMainLooper()).idle()
-        assertFalse(AirPlayPersistence.loadHevcEnabled(context))
+        assertTrue(BrowserCarPlayAudioSettings.disabled(context))
         assertEquals(2, changes)
         assertFalse(PendingReconnect.isPending(session))
         assertSame(session, CarPlayBackgroundSession.snapshot()?.controller)
@@ -151,7 +151,7 @@ class CarPlaySettingsNavigationTest {
         assertFalse(results.any { it.title.startsWith(screen.getString(R.string.resolution)) })
         assertEquals(setOf(SettingsCategory.ADVANCED), results.map { it.category }.toSet())
         assertTrue(results.any { it.title == screen.getString(R.string.frame_rate) })
-        assertTrue(results.any { it.title == screen.getString(R.string.settings_browser_hevc_title) })
+        assertTrue(results.any { it.title == screen.getString(R.string.settings_disable_carplay_audio) })
         assertTrue(results.any { it.title == screen.getString(R.string.save_diagnostic_report) })
     }
 

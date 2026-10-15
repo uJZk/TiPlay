@@ -54,7 +54,9 @@ class BrowserLinkServer(
         fun status(): BrowserLinkStatus
         /** Both touch slots in order, or an empty list to release every finger; false when no CarPlay session took it. */
         fun onTouch(contacts: List<AirPlayContact>): Boolean
-        /** A valid viewport report. */
+        /** An authenticated control heartbeat from the paired page. */
+        fun onBrowserSeen(session: String) {}
+        fun onBrowserGone(session: String) {}
         fun onViewport(viewport: BrowserViewport)
         /** The driver pressed "Apply and reconnect": renegotiate CarPlay to the last viewport. */
         fun onFit()
@@ -381,6 +383,7 @@ class BrowserLinkServer(
                 val fresh = appliedSequence.let { it == null || sequence > it }
                 if (fresh) appliedSequence = sequence
                 AirPlayTrustNotifications.browserSeen(session)
+                callbacks.onBrowserSeen(session)
                 fresh
             }
             // A repeated or late batch is answered but not applied again.
@@ -397,6 +400,7 @@ class BrowserLinkServer(
         synchronized(lock) {
             when (gate.leave(body["c"] as? String, session, nowMillis())) {
                 is BrowserPairingGate.Decision.Accepted -> {
+                    callbacks.onBrowserGone(session)
                     touch.drop(session)
                     AirPlayTrustNotifications.browserGone(session)
                     if (callbacks.browserLocationEnabled()) com.shilapi.xcertplay.location.BrowserLocationRelay.leave(session)
@@ -421,6 +425,7 @@ class BrowserLinkServer(
         return when (val decision = gate.admit(code, session, now, liveVideo)) {
             is BrowserPairingGate.Decision.Accepted -> {
                 decision.replaced?.let { previous ->
+                    callbacks.onBrowserGone(previous)
                     touch.drop(previous)
                     AirPlayTrustNotifications.browserGone(previous)
                     if (callbacks.browserLocationEnabled()) com.shilapi.xcertplay.location.BrowserLocationRelay.leave(previous)

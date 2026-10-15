@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="settings_main">主設定</string>
-    <string name="settings_browser_advanced_summary">幀率、HEVC、車型適配、日誌和診斷報告。</string>
+    <string name="settings_browser_advanced_summary">幀率、車型適配、日誌和診斷報告。</string>
     <string name="settings_browser_next_connection_hint">修改後立即生效；需要時自動重新連線 CarPlay。</string>
     <string name="settings_browser_video">影片</string>
     <string name="settings_browser_endpoint_hint">位址：169.254.0.0/16 或 100.64.0.0/10；連接埠：1024–65535。位址留空使用預設值。修改後，手動更新瀏覽器中的安卓位址並點選連線。</string>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_help">首次使用指南</string>
+    <string name="onboarding_progress">第 %1$d 步，共 %2$d 步</string>
+    <string name="onboarding_welcome_title">歡迎使用 TiPlay</string>
+    <string name="onboarding_welcome_body">透過 Android 手機接收 iPhone 的 CarPlay，並在車用瀏覽器中顯示。請停車後設定。本指南介紹連線步驟，完成後請在主設定頁填寫設定。</string>
+    <string name="onboarding_connection_title">連接 iPhone</string>
+    <string name="onboarding_connection_body">在主設定頁選擇全部（USB 優先）、無線或 USB。無線連線需先在 Android 藍牙設定中配對 iPhone，再於 TiPlay 選取；USB 需使用資料線，並確認 USB、信任和 VPN 授權。TiPlay 會等待車用網頁連線並回報畫面尺寸與解碼能力後，才嘗試連接 iPhone。</string>
+    <string name="onboarding_browser_title">連接車用瀏覽器</string>
+    <string name="onboarding_browser_body">選擇 Android 熱點或現有 Wi-Fi 並填寫網路資訊。請自行開啟熱點或加入 Wi-Fi，再讓車輛連接同一網路。在車用瀏覽器開啟主設定頁顯示的配對連結，選擇連線。首次載入網頁需要網際網路。網頁自動回報畫面尺寸和解碼能力；支援 HEVC 時自動使用，否則使用 H.264。</string>
+    <string name="onboarding_audio_title">聲音與權限</string>
+    <string name="onboarding_audio_body">音樂通常透過瀏覽器播放。如要透過 TiPlay 使用通話和 Siri，請將 Android 手機連接至車輛藍牙電話，並允許麥克風權限。TiPlay 會依需求請求權限。可在主設定頁變更連線設定、停用 CarPlay，或重新查看本指南。</string>
+    <string name="onboarding_next">下一步</string>
+    <string name="onboarding_back">上一步</string>
+    <string name="onboarding_finish">進入主設定</string>
+    <string name="settings_browser_waiting_connection">等待網頁端連線</string>
+</resources>

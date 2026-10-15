@@ -59,15 +59,14 @@ class AirPlayReceiverService : Service() {
             val size = TeslaBrowserCanvas.sizeFor(viewport)
             worker.execute {
                 if (!destroyed) server?.updateDisplaySize(size.width, size.height,
-                    AirPlayPersistence.loadHevcEnabled(this) && viewport?.videoCapabilities?.hevc != false,
+                    viewport?.videoCapabilities?.hevc == true,
                     viewport?.videoCapabilities?.let { it.h264 || it.hevc } ?: true)
             }
         }
         settingsSubscription = BrowserSettingsChanges.listen(this) {
             worker.execute {
                 if (!destroyed) server?.let { receiver ->
-                    receiver.updateDisplay(AirPlayPersistence.loadFps(this), AirPlayPersistence.loadHevcEnabled(this) &&
-                        TeslaBrowserLink.lastViewport(this)?.videoCapabilities?.hevc != false)
+                    receiver.updateDisplay(AirPlayPersistence.loadFps(this), TeslaBrowserLink.lastViewport(this)?.videoCapabilities?.hevc == true)
                     refreshDiscovery()
                 }
             }
@@ -297,8 +296,7 @@ class AirPlayReceiverService : Service() {
         return ReceiverConfig("TiPlay AirPlay", deviceId, identity,
             width = TeslaBrowserCanvas.sizeFor(TeslaBrowserLink.lastViewport(this)).width,
             height = TeslaBrowserCanvas.sizeFor(TeslaBrowserLink.lastViewport(this)).height,
-            fps = AirPlayPersistence.loadFps(this), hevcEnabled = AirPlayPersistence.loadHevcEnabled(this) &&
-                TeslaBrowserLink.lastViewport(this)?.videoCapabilities?.hevc != false,
+            fps = AirPlayPersistence.loadFps(this), hevcEnabled = TeslaBrowserLink.lastViewport(this)?.videoCapabilities?.hevc == true,
             mirrorEnabled = TeslaBrowserLink.lastViewport(this)?.videoCapabilities?.let { it.h264 || it.hevc } ?: true)
     }
 

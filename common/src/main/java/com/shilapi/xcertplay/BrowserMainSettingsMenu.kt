@@ -56,6 +56,7 @@ internal class BrowserMainSettingsMenu(
     private var baseline = BrowserConnectionDraft.load(activity)
     private val editHandler = Handler(Looper.getMainLooper())
     private val applyEdit = Runnable { applyChanges() }
+    private var browserReady = true
     private var active = false
     private var stopping = false
     private var carPlayStage = activity.getString(R.string.settings_carplay_preparing_status)
@@ -140,6 +141,10 @@ internal class BrowserMainSettingsMenu(
         val more = group(content)
         heading(R.string.settings_browser_more, more)
         button(more, activity.getString(R.string.settings_advanced)) { applyChanges(); advanced() }
+        button(more, activity.getString(R.string.onboarding_help)) {
+            applyChanges()
+            activity.startActivity(Intent(activity, FirstUseActivity::class.java).putExtra(FirstUseActivity.REVIEW, true))
+        }
         val stackTools = activity.resources.configuration.screenWidthDp < 400 || activity.resources.configuration.fontScale > 1.2f
         val tools = LinearLayout(activity).apply { orientation = if (stackTools) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL }
         more.addView(tools)
@@ -275,7 +280,8 @@ internal class BrowserMainSettingsMenu(
         networkReadiness = if (matches) null else R.string.settings_external_ap_check
         updateActions()
     }
-    fun update(stage: String, hasSession: Boolean, detail: String? = null) {
+    fun update(stage: String, hasSession: Boolean, detail: String? = null, browserReady: Boolean = true) {
+        this.browserReady = browserReady
         active = hasSession
         carPlayStage = stage
         stageDetail.text = detail.orEmpty()
@@ -289,7 +295,7 @@ internal class BrowserMainSettingsMenu(
     }
     fun committed() { baseline = draft.copy(); failed = false; error.visibility = View.GONE; updateActions() }
     private fun updateReceiverStatus() {
-        status.text = receiverStatus(if (BrowserCarPlaySettings.disabled(activity))
+        status.text = if (!browserReady) activity.getString(R.string.settings_browser_waiting_connection) else receiverStatus(if (BrowserCarPlaySettings.disabled(activity))
             activity.getString(R.string.settings_carplay_disabled)
             else carPlayStage)
     }
@@ -297,7 +303,7 @@ internal class BrowserMainSettingsMenu(
         BrowserReceiverPresentation.airPlayTitle(AirPlayReceiverService.state, AirPlayReceiverSettings.isDisabled(activity)))
     private fun updateActions() {
         updateReceiverStatus()
-        stageDetail.visibility = if (stageDetail.text.isNullOrBlank() ||
+        stageDetail.visibility = if (!browserReady || stageDetail.text.isNullOrBlank() ||
             (failed && stageDetail.text.toString() == error.text.toString()) || BrowserCarPlaySettings.disabled(activity))
             View.GONE else View.VISIBLE
         val requirement = when {

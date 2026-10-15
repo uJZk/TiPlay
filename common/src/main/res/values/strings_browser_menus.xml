@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="settings_main">Main settings</string>
-    <string name="settings_browser_advanced_summary">Frame rate, HEVC, vehicle controls, logs and diagnostic reports.</string>
+    <string name="settings_browser_advanced_summary">Frame rate, vehicle controls, logs and diagnostic reports.</string>
     <string name="settings_browser_next_connection_hint">Changes apply immediately; CarPlay reconnects automatically when needed.</string>
     <string name="settings_browser_video">Video</string>
     <string name="settings_browser_endpoint_hint">169.254.0.0/16 or 100.64.0.0/10; port 1024–65535. Leave the address blank for the default. After changing it, manually update the Android address in the browser and tap Connect.</string>

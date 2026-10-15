@@ -4,6 +4,16 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.14-beta.4
+
+- Add a first-use guide on Android, with completion tracking and a Main settings entry to review it.
+- Wait for an authenticated browser to report its viewport and decoder capabilities before starting or retrying an iPhone connection. Show **Waiting for browser connection** until ready.
+- Select HEVC automatically from browser support, remove the manual codec switch and respect decoder canvas limits when offering Fit.
+- Clear readiness on browser disconnect/replacement, expire stale heartbeats and retain already active sessions during short browser interruptions.
+- Make the AirPlay resource-replacement test wait for the replacement loader to acquire its request before responding.
+
+Source verification: 1,967 shared, 1,532 common and 6 home unit tests; 229 browser tests; Android CI lint/debug builds; public-source scan; 9 release-draft tests. Physical phone/vehicle acceptance remains pending.
+
 ## Unreleased
 
 - Merge DiPlay through `c30d3f0df` while retaining Android phone + car browser scope and upstream ancestry.

@@ -10,6 +10,8 @@ TiPlay supports Android phone + car browser only. These checks remain open; auto
 
 ## Connection, settings and browser
 
+- [ ] Verify the first-use guide on a physical phone: completion, rotation, Back and reopening from Main settings. Confirm cold launch, USB, boot and Bluetooth events do not attempt an iPhone connection before an authenticated browser reports its dimensions and decoder support. Check the waiting title, heartbeat expiry and automatic HEVC/H.264 selection without a manual switch.
+
 - [ ] On a physical phone and vehicle browser, verify short receiver titles and separate details during permission waits, USB enumeration, connection failure/recovery and AirPlay load/pause/buffering. Confirm browser errors can be closed without reappearing on status polls, while pairing-code and address errors remain beside Connect.
 - [ ] Test cold launch/boot, wireless and USB startup, All-mode USB priority/removal, ordinary Android consent, Bluetooth arrival retry, disable/re-enable, repeated reconnects, background/resume and sustained use. Measure battery cost; no zero-power claim.
 - [ ] Test valid/incomplete settings edits, recreation and Advanced-page return, rapid edits during recovery, FPS/HEVC/audio changes and CarPlay disabled state. Confirm immediate apply preserves the current settings page.

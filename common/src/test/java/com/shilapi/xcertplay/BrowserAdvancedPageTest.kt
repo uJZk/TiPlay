@@ -35,7 +35,7 @@ class BrowserAdvancedPageTest {
         activity = controller.get()
         activity.setTheme(R.style.Theme_TiPlayNative)
         controller.setup()
-        for (name in listOf("xcertplay_airplay", "diplay", "tiplay_permission_requests", "tiplay_airplay_receiver"))
+        for (name in listOf("xcertplay_airplay", "diplay", "tiplay_permission_requests", "tiplay_airplay_receiver", "tiplay_browser_audio"))
             activity.getSharedPreferences(name, 0).edit().clear().commit()
         page = create()
         activity.setContentView(page.view)
@@ -51,39 +51,33 @@ class BrowserAdvancedPageTest {
         returnToMain = { returns++ }, saveReport = { reportSaves++ })
 
     @Test fun advancedSettingsApplyImmediatelyAndReturnNeverAppliesAgain() {
-        val hevc = views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_browser_hevc_title) }
-        hevc.performClick()
+        val audio = views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_disable_carplay_audio) }
+        audio.performClick()
         assertEquals(1, changes)
         assertEquals(0, returns)
         assertEquals(1, views(page.view).filterIsInstance<Button>().count { it.text == activity.getString(R.string.back) })
         button(R.string.back).performClick()
         assertEquals(1, returns)
         assertEquals(1, changes)
-        hevc.performClick()
+        audio.performClick()
         assertEquals(2, changes)
     }
 
     @Test fun recreationReadsAlreadyAppliedConfigurationWithoutPendingState() {
-        val hevc = views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_browser_hevc_title) }
-        hevc.performClick()
-        val saved = AirPlayPersistence.loadHevcEnabled(activity)
+        val audio = views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_disable_carplay_audio) }
+        audio.performClick()
+        val saved = BrowserCarPlayAudioSettings.disabled(activity)
         page = create()
         activity.setContentView(page.view)
-        assertEquals(!saved, views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_browser_hevc_title) }.isChecked)
+        assertEquals(saved, views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_disable_carplay_audio) }.isChecked)
         assertNotNull(button(R.string.back))
         assertEquals(1, changes)
     }
 
-    @Test fun disableHevcDefaultsOffAndKeepsTheExistingCodecPreference() {
-        BrowserSettingsPolicy.activate(activity)
-        page = create()
-        val toggle = views(page.view).filterIsInstance<Switch>().single {
-            it.text == activity.getString(R.string.settings_browser_hevc_title)
-        }
-        assertFalse(toggle.isChecked)
-        assertTrue(AirPlayPersistence.loadHevcEnabled(activity))
-        toggle.performClick()
-        assertFalse(AirPlayPersistence.loadHevcEnabled(activity))
+    @Test fun browserVideoHasNoManualCodecToggle() {
+        assertFalse(views(page.view).filterIsInstance<TextView>().any {
+            it.text.toString().contains("HEVC")
+        })
     }
 
     @Test fun locationOptOutHidesPermissionAndReasonAndRequiresFineGrant() {

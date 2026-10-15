@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="settings_main">Основные настройки</string>
-    <string name="settings_browser_advanced_summary">Частота кадров, HEVC, управление автомобилем, журналы и диагностические отчёты.</string>
+    <string name="settings_browser_advanced_summary">Частота кадров, управление автомобилем, журналы и диагностические отчёты.</string>
     <string name="settings_browser_next_connection_hint">Изменения применяются сразу; при необходимости CarPlay переподключается автоматически.</string>
     <string name="settings_browser_video">Видео</string>
     <string name="settings_browser_endpoint_hint">Диапазоны адресов: 169.254.0.0/16 / 100.64.0.0/10, порты 1024–65535, например 169.254.111.111:8080. После изменения вручную введите новый адрес Android на странице браузера и нажмите «Подключить». Оставьте поле пустым для 169.254.111.111; сохранённый порт остаётся.</string>

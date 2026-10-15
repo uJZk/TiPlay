@@ -22,6 +22,10 @@
         <activity android:name="com.shilapi.xcertplay.CarPlayHostActivity"
             android:exported="true"
             android:theme="@style/Theme.TiPlayNative" tools:replace="android:theme">
+        </activity>
+        <activity android:name="com.shilapi.xcertplay.FirstUseActivity"
+            android:exported="true"
+            android:theme="@style/Theme.TiPlayNative">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

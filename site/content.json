@@ -31,7 +31,7 @@
       "The browser picture follows its window size; pairing uses a four-digit code."
     ],
     "compat": "Before you try it",
-    "compatText": "A public preview, not an Apple-certified product. Authentication uses an experimental accessory identity recovered from public firmware. Browser decoding support, the network and iOS affect playback. Disable HEVC or reduce picture size when troubleshooting.",
+    "compatText": "A public preview, not an Apple-certified product. Authentication uses an experimental accessory identity recovered from public firmware. Browser decoding support, the network and iOS affect playback. The browser reports decoder support automatically. Reduce picture size when troubleshooting.",
     "update": "Updates & signing",
     "updateText": "TiPlay uses its own app package, com.ujzk.tiplay. It installs alongside DiPlay and does not keep DiPlay’s settings. Install later TiPlay releases over the previous one to keep settings. Test builds use a separate app package.",
     "notes": "Release notes & checksums",
@@ -76,7 +76,7 @@
       "تتبع الصورة حجم نافذة المتصفح؛ الاقتران برمز من أربعة أرقام."
     ],
     "compat": "قبل التجربة",
-    "compatText": "معاينة عامة غير معتمدة من Apple. تستخدم المصادقة هوية تجريبية مستخرجة من برنامج ثابت عام. يعتمد التشغيل على فك الترميز في المتصفح والشبكة وiOS. عند معالجة المشاكل أوقف HEVC أو قلّل حجم الصورة.",
+    "compatText": "معاينة عامة غير معتمدة من Apple. تستخدم المصادقة هوية تجريبية مستخرجة من برنامج ثابت عام. يعتمد التشغيل على فك الترميز في المتصفح والشبكة وiOS. يبلغ المتصفح تلقائيًا عن دعم فك الترميز. عند معالجة المشاكل قلّل حجم الصورة.",
     "update": "التحديثات والتوقيع",
     "updateText": "يستخدم TiPlay حزمة تطبيق خاصة به هي com.ujzk.tiplay، فيُثبَّت بجانب DiPlay ولا يحتفظ بإعداداته. ثبّت إصدارات TiPlay اللاحقة فوق الإصدار السابق للاحتفاظ بالإعدادات. إصدارات الاختبار تستخدم حزمة تطبيق منفصلة.",
     "notes": "ملاحظات الإصدار وبصمات التحقق",
@@ -121,7 +121,7 @@
       "Изображение следует размеру окна браузера; код сопряжения из четырёх цифр."
     ],
     "compat": "Перед установкой",
-    "compatText": "Публичная предварительная версия без сертификации Apple. Аутентификация использует экспериментальный идентификатор из публичной прошивки. Воспроизведение зависит от декодера браузера, сети и iOS. При проблемах отключите HEVC или уменьшите изображение.",
+    "compatText": "Публичная предварительная версия без сертификации Apple. Аутентификация использует экспериментальный идентификатор из публичной прошивки. Воспроизведение зависит от декодера браузера, сети и iOS. Браузер автоматически сообщает поддержку кодеков. При проблемах уменьшите изображение.",
     "update": "Обновления и подпись",
     "updateText": "TiPlay использует собственный пакет приложения com.ujzk.tiplay: он устанавливается рядом с DiPlay и не переносит его настройки. Последующие выпуски TiPlay устанавливайте поверх предыдущего, чтобы сохранить настройки. Тестовые сборки используют отдельный пакет приложения.",
     "notes": "Описание выпуска и контрольные суммы",
@@ -166,7 +166,7 @@
       "Зображення відповідає розміру вікна браузера; код сполучення з чотирьох цифр."
     ],
     "compat": "Перш ніж спробувати",
-    "compatText": "Публічна попередня версія без сертифікації Apple. Автентифікація використовує експериментальний ідентифікатор із публічної прошивки. Відтворення залежить від декодера браузера, мережі та iOS. За проблем вимкніть HEVC або зменште зображення.",
+    "compatText": "Публічна попередня версія без сертифікації Apple. Автентифікація використовує експериментальний ідентифікатор із публічної прошивки. Відтворення залежить від декодера браузера, мережі та iOS. Браузер автоматично повідомляє підтримку кодеків. За проблем зменште зображення.",
     "update": "Оновлення й підпис",
     "updateText": "TiPlay використовує власний пакет застосунку com.ujzk.tiplay: він встановлюється поруч із DiPlay і не переносить його налаштування. Наступні випуски TiPlay встановлюйте поверх попереднього, щоб зберегти налаштування. Тестові збірки використовують окремий пакет застосунку.",
     "notes": "Примітки до випуску й контрольні суми",
@@ -211,7 +211,7 @@
       "La imagen sigue el tamaño del navegador; emparejamiento con cuatro dígitos."
     ],
     "compat": "Antes de probar",
-    "compatText": "Vista previa pública sin certificación de Apple. La autenticación usa una identidad experimental extraída de firmware público. La reproducción depende de la decodificación del navegador, la red e iOS. Para diagnosticar problemas, desactiva HEVC o reduce el tamaño de imagen.",
+    "compatText": "Vista previa pública sin certificación de Apple. La autenticación usa una identidad experimental extraída de firmware público. La reproducción depende de la decodificación del navegador, la red e iOS. El navegador informa automáticamente de los códecs compatibles. Para diagnosticar problemas, reduce el tamaño de imagen.",
     "update": "Actualizaciones y firma",
     "updateText": "TiPlay usa su propio paquete de aplicación, com.ujzk.tiplay: se instala junto a DiPlay y no conserva sus ajustes. Instala las siguientes versiones de TiPlay sobre la anterior para conservar los ajustes. Las versiones de prueba usan un paquete de aplicación separado.",
     "notes": "Notas y sumas de comprobación",
@@ -256,7 +256,7 @@
       "画面随浏览器窗口调整，使用四位配对码连接。"
     ],
     "compat": "试用前请了解",
-    "compatText": "这是公开预览版，未经 Apple 认证。认证使用从公开固件中提取的实验性配件身份。播放效果取决于浏览器解码能力、网络和 iOS。排查问题时可关闭 HEVC 或减小画面尺寸。",
+    "compatText": "这是公开预览版，未经 Apple 认证。认证使用从公开固件中提取的实验性配件身份。播放效果取决于浏览器解码能力、网络和 iOS。网页会自动汇报解码能力；播放异常时可尝试减小画面尺寸。",
     "update": "更新与签名",
     "updateText": "TiPlay 使用独立的应用包名 com.ujzk.tiplay，可与 DiPlay 同时安装，不会沿用 DiPlay 的设置。以后的 TiPlay 版本覆盖安装即可保留设置。测试版使用独立的应用包名。",
     "notes": "发布说明与校验值",
@@ -294,7 +294,7 @@
     "adb": "安裝與連線指南",
     "bssid": "在系統設定中開啟安卓端熱點，或連線現有 Wi-Fi。日常設定無須 ADB。",
     "compat": "試用前請了解",
-    "compatText": "這是公開預覽版，未經 Apple 認證。驗證使用從公開韌體中擷取的實驗性配件身分。播放效果取決於瀏覽器解碼能力、網路和 iOS。排查問題時可關閉 HEVC 或縮小畫面。",
+    "compatText": "這是公開預覽版，未經 Apple 認證。驗證使用從公開韌體中擷取的實驗性配件身分。播放效果取決於瀏覽器解碼能力、網路和 iOS。網頁會自動回報解碼能力；播放異常時可嘗試縮小畫面。",
     "update": "更新與簽章",
     "updateText": "TiPlay 使用獨立的應用程式套件名稱 com.ujzk.tiplay，可與 DiPlay 同時安裝，不會沿用 DiPlay 的設定。之後的 TiPlay 版本覆蓋安裝即可保留設定。測試版使用獨立的應用程式套件名稱。",
     "notes": "版本說明與校驗值",
@@ -346,7 +346,7 @@
       "ブラウザーのウィンドウに合わせて映像サイズが変わります。ペア設定には 4 桁のコードを使用します。"
     ],
     "compat": "試す前に",
-    "compatText": "公開プレビューであり、Apple 認証製品ではありません。公開ファームウェアから取得した実験的なアクセサリー識別情報を使用します。映像と音声はブラウザーのデコード機能、ネットワーク、iOS に依存します。問題がある場合は HEVC を無効にするか映像サイズを小さくしてください。",
+    "compatText": "公開プレビューであり、Apple 認証製品ではありません。公開ファームウェアから取得した実験的なアクセサリー識別情報を使用します。映像と音声はブラウザーのデコード機能、ネットワーク、iOS に依存します。ブラウザーがデコーダー対応状況を自動通知します。問題がある場合は映像サイズを小さくしてください。",
     "update": "更新と署名",
     "updateText": "TiPlay のパッケージは com.ujzk.tiplay です。DiPlay と同時にインストールできますが、その設定は引き継ぎません。TiPlay の更新を上書きインストールすると設定を保持できます。テスト版は別のパッケージを使用します。",
     "notes": "リリースノートとチェックサム",

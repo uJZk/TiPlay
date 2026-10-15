@@ -234,9 +234,22 @@ class CarPlayHostActivity : ComponentActivity() {
         override fun onAirPlayEnded() {
             if (!resumeCarPlayRecoveryAfterAirPlay(castingEnded = true)) onBrowserFit()
         }
+        override fun onBrowserGone() { updateDebugOverlays() }
         override fun onBrowserViewport(viewport: com.shilapi.xcertplay.web.BrowserViewport) {
             // TeslaBrowserLink already delivers this callback on the main thread.
-            if (!headUnitIntegrations() && !shuttingDown.get()) onBrowserFit()
+            if (!headUnitIntegrations() && !shuttingDown.get()) {
+                val ready = TeslaBrowserLink.readyViewport() ?: return
+                val browserHevc = ready.videoCapabilities?.hevc == true
+                val codecChanged = hevcEnabled != browserHevc
+                hevcEnabled = browserHevc
+                if (codecChanged && controller != null) restartCarPlay("Browser decoder capabilities changed")
+                if (controller == null) {
+                    if (browserConnectionRequested && !BrowserCarPlaySettings.disabled(this@CarPlayHostActivity))
+                        requestStartupPrerequisites()
+                    else checkBrowserCarPlay()
+                } else onBrowserFit()
+                updateDebugOverlays()
+            }
         }
         override fun onBrowserFit() {
             if (TeslaBrowserLink.airPlayActive || BrowserCarPlaySettings.disabled(this@CarPlayHostActivity)) return
@@ -904,7 +917,8 @@ class CarPlayHostActivity : ComponentActivity() {
         displayScaleTenths = CarPlayDisplayScale.sanitize((displayScalePercent + 5) / 10)
         // Size is now chosen only through CarPlaySize; ignore the canvas scale older builds stored.
         uiScalePercent = CarPlayUiScale.DEFAULT
-        hevcEnabled = AirPlayPersistence.loadHevcEnabled(this)
+        hevcEnabled = if (headUnitIntegrations()) AirPlayPersistence.loadHevcEnabled(this)
+            else TeslaBrowserLink.readyViewport()?.videoCapabilities?.hevc == true
         hevcSoftwareDecoderEnabled =
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
                 AirPlayPersistence.loadHevcSoftwareDecoderEnabled(this)
@@ -960,6 +974,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun requestStartupPrerequisites() {
+        if (!browserReadyForCarPlay()) return
         if (!headUnitIntegrations() && BrowserCarPlayAudioSettings.disabled(this)) microphonePermissionResolved = true
         if (!microphonePermissionResolved && !BrowserCarPlayAudioSettings.disabled(this)) {
             microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
@@ -3375,7 +3390,8 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun syncBrowserAdvancedSettings() {
         fps = AirPlayPersistence.loadFps(this)
-        hevcEnabled = AirPlayPersistence.loadHevcEnabled(this)
+        hevcEnabled = if (headUnitIntegrations()) AirPlayPersistence.loadHevcEnabled(this)
+            else TeslaBrowserLink.readyViewport()?.videoCapabilities?.hevc == true
         rightHandDrive = AirPlayPersistence.loadRightHandDrive(this)
         gestureFingerCount = AirPlayPersistence.loadSettingsGestureFingers(this)
         debugLogsEnabled = AirPlayPersistence.loadDebugLogsEnabled(this)
@@ -4892,7 +4908,9 @@ class CarPlayHostActivity : ComponentActivity() {
      * map do not apply. Every other field is the same as at the end of [createAirPlayConfig].
      */
     private fun phoneBrowserAirPlayConfig(size: DisplaySize): AirPlayConfig {
-        val plan = TeslaBrowserCanvas.plan(TeslaBrowserLink.lastViewport(this), widthPhysicalMm)
+        val viewport = checkNotNull(TeslaBrowserLink.readyViewport())
+        val plan = TeslaBrowserCanvas.plan(viewport, widthPhysicalMm)
+        hevcEnabled = viewport.videoCapabilities?.hevc == true
         val knobPrimary = AndroidTvInputMode.shouldUseKnobAsPrimaryInput(this)
         val main = AirPlayDisplayConfig(
             widthPixels = plan.width,
@@ -5425,6 +5443,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun startCarPlay(size: DisplaySize) {
+        if (!browserReadyForCarPlay()) return
         if (CarPlayBackgroundSession.hasSession() && !CarPlayBackgroundSession.isOwner(this)) return
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || controller != null) return
         if (deferCarPlayRecoveryForAirPlay()) return
@@ -5828,7 +5847,11 @@ class CarPlayHostActivity : ComponentActivity() {
         }
     }
 
+    private fun browserReadyForCarPlay(): Boolean = headUnitIntegrations() || TeslaBrowserLink.readyViewport() != null
+
     private fun checkBrowserCarPlay() {
+        updateDebugOverlays()
+        if (!browserReadyForCarPlay()) return
         if (isDestroyed || isFinishing || shuttingDown.get() || menuOpen || handshakeResetInProgress ||
             BrowserCarPlaySettings.disabled(this)) return
         if (TeslaBrowserLink.airPlayActive) return
@@ -5851,6 +5874,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun maybeStartCarPlay() {
+        if (!browserReadyForCarPlay()) return
         if (!headUnitIntegrations() && BrowserCarPlaySettings.disabled(this)) return
         if (browserMainPage != null && !browserConnectionRequested) return
         if (shuttingDown.get()) return
@@ -6589,7 +6613,7 @@ class CarPlayHostActivity : ComponentActivity() {
             .takeUnless { phase == "disabled" || phase == "connected" || it == title }
         TeslaBrowserLink.carPlayReceiver = mapOf("state" to phase)
         browserMainPage?.update(
-            title, controller != null, detail = detail,
+            title, controller != null, detail = detail, browserReady = browserReadyForCarPlay(),
         )
         statusScrollView?.visibility = View.GONE
         connectionPanel?.visibility = if (activeScreenStreamTypes.isEmpty()) View.VISIBLE else View.GONE

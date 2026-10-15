@@ -234,6 +234,13 @@ class TeslaBrowserLinkTest {
         assertNotEquals("0042", TeslaBrowserLink.newPairingCode(context))
     }
 
+    @Test fun decoderLimitedCanvasDoesNotOfferRepeatedFitReconnects() {
+        started().callbacks.onViewport(BrowserViewport(1920, 1080, 960.0, 540.0, 2.0,
+            com.shilapi.xcertplay.web.BrowserVideoCapabilities(true, false, 1280, 720)))
+        assertNull(TeslaBrowserLink.fitReason(context, BrowserSize(1280, 720)))
+        assertEquals(BrowserSize(1280, 720), TeslaBrowserLink.status().viewport)
+    }
+
     @Test fun theLastValidViewportIsSavedForTheNextConnection() {
         val server = started()
         val viewport = BrowserViewport(1182, 920, 773.0, 601.0, 1.53)

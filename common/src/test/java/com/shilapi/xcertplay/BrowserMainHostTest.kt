@@ -40,6 +40,7 @@ class BrowserMainHostTest {
         RuntimeEnvironment.getApplication().getSharedPreferences("tiplay_carplay", 0).edit().clear().commit()
         AirPlayReceiverService::class.java.getDeclaredField("state").apply { isAccessible = true }.set(null, "stopped")
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
+        reportReadyBrowser()
         controllers = mockConstruction(CarPlayController::class.java) { mock, _ ->
             `when`(mock.phoneBrowserMode()).thenReturn(true)
         }
@@ -66,6 +67,22 @@ class BrowserMainHostTest {
         (field("airPlayCommandExecutor") as ExecutorService).shutdownNow()
         CarPlayBackgroundSession.clear()
         controllers.close()
+        browserReadiness().clear()
+    }
+
+    @Test fun noBrowserBlocksStartupEvenWithCachedViewportAndAllPermissions() {
+        browserReadiness().clear()
+        assertNotNull("A previous canvas is still cached", TeslaBrowserLink.lastViewport(activity))
+        setField("browserConnectionRequested", true)
+        setField("wirelessPermissionsReady", true)
+        setField("vpnReady", true)
+        setField("pendingDisplaySize", null)
+        invoke("requestStartupPrerequisites")
+        invoke("maybeStartCarPlay")
+        assertTrue(controllers.constructed().isEmpty())
+        assertNull(field("controller"))
+        invoke("updateDebugOverlays")
+        assertEquals("Waiting for browser connection", (field("browserMainPage") as BrowserMainSettingsMenu).status.text.toString())
     }
 
     @Test fun idleMainPageWithoutAConnectionRequestDoesNotStartCarPlay() {

@@ -52,10 +52,5 @@ internal object BrowserAdvancedSettings {
             AirPlayPersistence.saveFps(context, rates[it])
             reconnectNeeded()
         }
-        toggle(card, context.getString(R.string.settings_browser_hevc_title),
-            context.getString(R.string.settings_browser_next_connection_hint), !AirPlayPersistence.loadHevcEnabled(context)) {
-            AirPlayPersistence.saveHevcEnabled(context, !it)
-            reconnectNeeded()
-        }
     }
 }

@@ -39,6 +39,7 @@ class CarPlayHostResolutionTest {
         (get("teardownExecutor") as ExecutorService).shutdownNow()
         (get("airPlayCommandExecutor") as ExecutorService).shutdownNow()
         ShadowMediaCodecList.reset()
+        browserReadiness().clear()
     }
 
     @Test fun unsupportedEnlargedResolutionFallsBackBeforeAdvertisingItToThePhone() {
@@ -245,6 +246,7 @@ class CarPlayHostResolutionTest {
         set("uiScalePercent", uiPercent)
         AirPlayPersistence.saveDisplayScalePercent(activity, percent)
         AirPlayPersistence.saveUiScalePercent(activity, uiPercent)
+        reportReadyBrowser()
         val sizeClass = Class.forName("com.shilapi.xcertplay.CarPlayHostActivity\$DisplaySize")
         val size = sizeClass.getDeclaredConstructor(Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
             .apply { isAccessible = true }.newInstance(width, height)

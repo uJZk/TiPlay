@@ -109,7 +109,7 @@ AEC and screen-off behavior require physical tests.
 
 ## Display, settings and lifecycle
 
-The browser reports viewport/theme. Valid Android settings apply immediately and
+The browser reports viewport, decoder capabilities and theme. New CarPlay connections wait for a live authenticated page with usable capabilities; saved dimensions alone never start an iPhone connection. HEVC is selected automatically from that report. Valid Android settings apply immediately and
 reconnect when negotiation requires it, retaining the settings page. Enabled idle
 CarPlay can resume preparation; disabling it blocks startup/retries. Endpoint edits
 use the explicit browser steps above.

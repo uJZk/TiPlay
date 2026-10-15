@@ -21,7 +21,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 - [AirPlay](docs/AirPlay.md): receiver/media contracts and compatibility limits.
 - [Diagnostics](docs/Diagnostics.md) and [privacy](docs/Privacy.md).
 - [Geolocation](docs/geolocation.md): implemented GPS fallback, datum detection/conversion, browser cache and iPhone forwarding. Verification is in [Testing](docs/Testing.md#location-and-notification-verification); physical follow-up is in [Todo](docs/Todo.md#location).
-- [Build](docs/Build.md), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md).
+- [Build](docs/Build.md), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md). First-use/browser-readiness verification is recorded in Testing; physical follow-up is in [Todo](docs/Todo.md#connection-settings-and-browser).
   Receiver-status verification and remaining device checks are in [Testing](docs/Testing.md#receiver-status-and-browser-notices);
   provisioned-JDK proxy certificate setup is in [Build](docs/Build.md#managed-cloud-certificate-trust).
 - [Upstream](docs/Upstream.md): merge policy, preserved identifiers and dependency provenance.
@@ -46,8 +46,9 @@ for the remaining source checks and device acceptance boundary.
 
 The TiPlay browser product has only **Main settings** and **Advanced settings**.
 `BrowserMainSettingsMenu` holds everyday connection controls; `BrowserAdvancedSettings`
-and the host-owned advanced page hold frame rate (60 fps by default), HEVC,
-vehicle controls and diagnostic reports. Manufacturer, model, OEM label and MFi
+and the host-owned advanced page hold frame rate (60 fps by default),
+vehicle controls and diagnostic reports. The browser reports decoder capabilities;
+HEVC selection is automatic and has no manual switch. Manufacturer, model, OEM label and MFi
 certificate controls are hidden. Keep the legacy category APIs below for upstream
 compatibility; do not add their navigation entries back to the browser menu.
 
@@ -76,7 +77,7 @@ A control that fixes a common problem and is safe at its default (for example th
 Exception: a gated control that only its own audience sees, and that completes an everyday goal, stays in that goal's category.
 Example: auto car hotspot needs ADB but appears only for car-hotspot users, so it is in Connection.
 
-Browser HEVC, AirPlay and VPN controls intentionally use concise titles without an experimental suffix.
+Browser AirPlay and VPN controls intentionally use concise titles without an experimental suffix.
 Preserve existing experimental suffixes on retained upstream controls and their translated forms; do not
 restore suffixes to these browser controls. Documentation may still explain experimental compatibility limits.
 

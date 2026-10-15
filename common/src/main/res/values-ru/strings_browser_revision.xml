@@ -16,7 +16,6 @@
     <string name="settings_report_save_failed">Не удалось сохранить!</string>
     <string name="settings_report_copy_full_text">Копировать весь текст</string>
     <string name="settings_report_saved_at">Отчёт сохранён в:</string>
-    <string name="settings_browser_hevc_title">Отключить HEVC (H.265)</string>
     <string name="settings_browser_hotspot_address_repair">Режим TiPlay</string>
     <string name="settings_browser_hotspot_address">Адрес точки доступа</string>
     <string name="settings_browser_hotspot_endpoint">Адрес точки доступа: %1$s</string>

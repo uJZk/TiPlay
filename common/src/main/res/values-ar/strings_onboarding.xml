@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_help">دليل الاستخدام الأول</string>
+    <string name="onboarding_progress">الخطوة %1$d من %2$d</string>
+    <string name="onboarding_welcome_title">مرحبًا بك في TiPlay</string>
+    <string name="onboarding_welcome_body">استخدم هاتف Android لاستقبال CarPlay من iPhone وعرضه في متصفح السيارة. قم بالإعداد أثناء الوقوف. بعد هذا الدليل أدخل الإعدادات في الصفحة الرئيسية.</string>
+    <string name="onboarding_connection_title">توصيل iPhone</string>
+    <string name="onboarding_connection_body">اختر الكل (USB أولاً) أو اللاسلكي أو USB. للاتصال اللاسلكي، أقرن iPhone في إعدادات Bluetooth في Android ثم اختره في TiPlay. مع USB استخدم كابل بيانات ووافق على طلبات USB والثقة وVPN. ينتظر TiPlay اتصال متصفح السيارة وإبلاغه بحجم الشاشة ودعم فك الترميز قبل محاولة توصيل iPhone.</string>
+    <string name="onboarding_browser_title">توصيل متصفح السيارة</string>
+    <string name="onboarding_browser_body">اختر نقطة اتصال Android أو شبكة Wi-Fi موجودة وأدخل بياناتها. فعّل نقطة الاتصال أو انضم للشبكة بنفسك ثم صِل السيارة بالشبكة نفسها. افتح رابط الاقتران الظاهر في الصفحة الرئيسية في متصفح السيارة واختر الاتصال. يتطلب التحميل الأول إنترنت. يبلغ المتصفح تلقائيًا عن حجم الشاشة ودعم الترميز. يستخدم TiPlay ترميز HEVC عند دعمه وإلا يستخدم H.264.</string>
+    <string name="onboarding_audio_title">الصوت والأذونات</string>
+    <string name="onboarding_audio_body">تعمل الموسيقى عادة عبر المتصفح. للمكالمات وSiri عبر TiPlay، صِل Android بملف الهاتف في Bluetooth السيارة واسمح بالميكروفون. تُطلب الأذونات عند الحاجة. يمكنك تغيير الإعدادات أو تعطيل CarPlay أو فتح هذا الدليل مجددًا من الصفحة الرئيسية.</string>
+    <string name="onboarding_next">التالي</string>
+    <string name="onboarding_back">السابق</string>
+    <string name="onboarding_finish">فتح الإعدادات الرئيسية</string>
+    <string name="settings_browser_waiting_connection">بانتظار اتصال المتصفح</string>
+</resources>

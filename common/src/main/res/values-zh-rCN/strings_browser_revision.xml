@@ -16,7 +16,6 @@
     <string name="settings_report_save_failed">保存失败!</string>
     <string name="settings_report_copy_full_text">复制全文</string>
     <string name="settings_report_saved_at">报告已保存到：</string>
-    <string name="settings_browser_hevc_title">禁用 HEVC (H.265)</string>
     <string name="settings_browser_hotspot_address_repair">TiPlay 模式</string>
     <string name="settings_browser_hotspot_address">热点地址</string>
     <string name="settings_browser_hotspot_endpoint">热点地址: %1$s</string>

@@ -74,6 +74,7 @@ internal object TeslaBrowserLink {
         fun onBrowserViewport(viewport: BrowserViewport) {}
         fun onBrowserTheme(night: Boolean) {}
         fun onAirPlayEnded() {}
+        fun onBrowserGone() {}
     }
 
     const val PORT = BrowserLinkServer.DEFAULT_PORT
@@ -247,6 +248,9 @@ internal object TeslaBrowserLink {
 
     @Volatile private var app: Context? = null
     @Volatile private var code: String? = null
+    private val carPlayReadiness = BrowserCarPlayReadiness { android.os.SystemClock.elapsedRealtime() }
+    fun readyViewport(): BrowserViewport? = carPlayReadiness.readyViewport()
+
     @Volatile private var viewport: BrowserViewport? = null
     @Volatile private var viewportLoaded = false
     private var lastStatsLog: Long? = null
@@ -439,7 +443,7 @@ internal object TeslaBrowserLink {
             log("Browser link: the browser asked to fit, but no CarPlay session is running")
             return null
         }
-        val wanted = TeslaBrowserCanvas.size(lastViewport(context)?.size)
+        val wanted = TeslaBrowserCanvas.sizeFor(lastViewport(context))
         if (!TeslaBrowserCanvas.differs(running, wanted)) {
             log("Browser link: CarPlay already fits the browser (${running.width}x${running.height})")
             return null
@@ -481,7 +485,7 @@ internal object TeslaBrowserLink {
             codec = info?.codec,
             display = info?.let { BrowserSize(it.width, it.height) } ?: snapshot?.display?.let { BrowserSize(it.width, it.height) },
             // The canvas "Apply and reconnect" would ask for, so the page offers it only when a reconnect changes something.
-            viewport = viewport?.let { TeslaBrowserCanvas.size(it.size) },
+            viewport = viewport?.let { TeslaBrowserCanvas.sizeFor(it) },
             touchAvailable = !carPlayDisplayPaused && snapshot != null && CarPlayBackgroundSession.active,
             phone = linkedMapOf("localNetworkPermission" to (app?.let { LocalNetworkPermission.state(it).wire })),
             receivers = mapOf(
@@ -508,6 +512,11 @@ internal object TeslaBrowserLink {
         override fun status(): BrowserLinkStatus = this@TeslaBrowserLink.status()
         override fun onTouch(contacts: List<AirPlayContact>): Boolean =
             if (carPlayDisplayPaused) false else CarPlayBackgroundSession.snapshot()?.controller?.sendTouch(contacts) ?: false
+        override fun onBrowserSeen(session: String) = carPlayReadiness.seen(session)
+        override fun onBrowserGone(session: String) {
+            carPlayReadiness.gone(session)
+            main.post { host.get()?.onBrowserGone() }
+        }
         override fun onViewport(viewport: BrowserViewport) = viewportChanged(viewport)
         override fun onFit() {
             if (airPlayActive) return
@@ -605,10 +614,13 @@ internal object TeslaBrowserLink {
     }
 
     private fun viewportChanged(next: BrowserViewport) {
-        if (next == viewport) return
+        val alreadyReady = readyViewport() != null
+        carPlayReadiness.report(next)
+        val changed = next != viewport
+        if (!changed && alreadyReady) return
         viewport = next
         viewportLoaded = true
-        app?.let { saveViewport(it, next) }
+        if (changed) app?.let { saveViewport(it, next) }
         log("Browser link: viewport ${TeslaBrowserCanvas.describe(next)}")
         viewportListeners.forEach { listener ->
             runCatching { listener(next) }.onFailure { Log.w(TAG, "viewport listener failed", it) }
@@ -630,6 +642,7 @@ internal object TeslaBrowserLink {
     }
 
     private fun stopQuietly(server: Server) {
+        carPlayReadiness.clear()
         try {
             server.stop()
         } catch (error: RuntimeException) {
@@ -685,6 +698,7 @@ internal object TeslaBrowserLink {
         awaitIdle()
         synchronized(this) {
             code = null
+            carPlayReadiness.clear()
             viewport = null
             viewportLoaded = false
         }
