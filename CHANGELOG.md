@@ -4,6 +4,15 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.15
+
+- Replace the four-step first-use wizard with a single Permission checklist and remove the duplicate permission list from Advanced settings.
+- Report missing or unknown Android car Bluetooth audio connections using live A2DP/HFP evidence and the device class, excluding the selected iPhone.
+- Turn Debug logging into unredacted application traffic capture for iPhone, browser, USB and Android audio output. Export channel-tagged, millisecond-timestamped records in one TXT; hide the clipboard action.
+- Force AirPlay URL media through Android only while Debug mode is enabled; switch active playback routes when the policy changes and retain normal direct eligibility when disabled.
+
+Verification: 1,971 shared, 1,556 common and 6 home unit tests; 229 browser tests; Android lint and debug builds; MP4 browser playback and live Debug route switching. Physical phone/vehicle, raw capture completeness and Bluetooth routing acceptance remain pending.
+
 ## 0.2.14
 
 - Replace the informational first-use guide with connection, sound, startup and missing-permission setup, including current Android grant checks and system-settings links.
@@ -24,11 +33,6 @@ Verification: 1,967 shared, 1,552 common and 6 home unit tests; 229 browser test
 Source verification: 1,967 shared, 1,532 common and 6 home unit tests; 229 browser tests; Android CI lint/debug builds; public-source scan; 9 release-draft tests. Physical phone/vehicle acceptance remains pending.
 
 ## Unreleased
-
-- Replace the four-step first-use wizard with a single Permission checklist and remove the duplicate permission list from Advanced settings.
-- Report missing or unknown Android car Bluetooth audio connections using live A2DP/HFP evidence and the device class, excluding the selected iPhone.
-- Turn Debug logging into unredacted application traffic capture for iPhone, browser, USB and Android audio output. Export channel-tagged, millisecond-timestamped records in one TXT; hide the clipboard action.
-- Force AirPlay URL media through Android only while Debug mode is enabled; switch active playback routes when the policy changes and retain normal direct eligibility when disabled.
 
 - Merge DiPlay through `c30d3f0df` while retaining Android phone + car browser scope and upstream ancestry.
 - Apply valid settings immediately and reconnect when needed without closing settings. Support All (USB first), Wireless and USB, with independent CarPlay opt-out and continuous recovery while enabled.
