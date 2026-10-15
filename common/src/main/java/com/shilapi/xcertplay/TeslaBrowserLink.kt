@@ -48,6 +48,7 @@ import kotlin.math.floor
  * Nothing here logs the pairing code, the page's session id or an address.
  */
 internal object TeslaBrowserLink {
+    @Volatile var carPlayReceiver: Map<String, Any?> = mapOf("state" to "preparing")
     sealed interface State {
         data object Stopped : State
         data class Listening(val port: Int) : State
@@ -483,6 +484,13 @@ internal object TeslaBrowserLink {
             viewport = viewport?.let { TeslaBrowserCanvas.size(it.size) },
             touchAvailable = !carPlayDisplayPaused && snapshot != null && CarPlayBackgroundSession.active,
             phone = linkedMapOf("localNetworkPermission" to (app?.let { LocalNetworkPermission.state(it).wire })),
+            receivers = mapOf(
+                "carplay" to if (app?.let(BrowserCarPlaySettings::disabled) == true)
+                    mapOf("state" to "disabled") else carPlayReceiver,
+                "airplay" to mapOf("state" to if (app?.let(AirPlayReceiverSettings::isDisabled) == true)
+                    "disabled" else AirPlayReceiverService.state),
+            ),
+            videoSource = info?.source?.name?.lowercase(Locale.ROOT),
         )
     }
 
@@ -672,6 +680,7 @@ internal object TeslaBrowserLink {
 
     /** Tests: stop, wait for the link's thread and forget what this process cached. */
     internal fun resetForTest() {
+        carPlayReceiver = mapOf("state" to "preparing")
         stop()
         awaitIdle()
         synchronized(this) {

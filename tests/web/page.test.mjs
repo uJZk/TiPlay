@@ -65,9 +65,13 @@ function retryPage(lastError) {
   };
   const page = new Function('$', 'Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'renderReconnect', 'lastError', `
     let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort;
-    let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null;
+    let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null, config = null;
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
     const browserLocation = { stop() {} };
+    let problem = null;
+    const browserNotice = { update(value) { if (value) problem = value; } };
+    const codecName = value => value;
+    const videoStats = {};
     const statsVisible = false, link = { code: '1234' }, stage = {};
     const airplayControls = { update() {}, videoActive: () => false };
     let trustVisible = true, trustClears = 0;
@@ -78,6 +82,12 @@ function retryPage(lastError) {
     const phoneFetch = () => new Promise(() => {});
     ${['statusText', 'render', 'scheduleRetry', 'stop', 'connectVideo'].map(extract).join('\n')}
     return { scheduleRetry, stop, connectVideo, reconnects: () => reconnects,
+      present(value) {
+        phase = 'waiting'; status = value.status ?? null; config = value.config ?? null;
+        live = value.live ?? false; unsupported = value.unsupported ?? null;
+        render(); return $('status').textContent;
+      },
+      problem: () => problem, inlineMessage: () => $('message').textContent,
       trustState: () => ({ visible: trustVisible, clears: trustClears }) };
   `)($, { now: () => now }, (callback, delay) => setTimer(callback, delay, 0), id => timers.delete(id),
     (callback, delay) => setTimer(callback, delay, delay), id => timers.delete(id), value => overlays.push(value.text), lastError);
@@ -97,6 +107,46 @@ function retryPage(lastError) {
     },
   };
 }
+
+test('waiting messages follow receiver phase and actual video source rather than session availability', () => {
+  const page = retryPage(null);
+  assert.equal(page.present({ status: { state: 'idle' } }), 'waitingSource');
+  assert.equal(page.present({ status: { state: 'connecting' } }), 'waitingSource');
+  for (const [state, key] of Object.entries({
+    preparing: 'carPlayPreparing', blocked: 'carPlayBlocked', disabled: 'carPlayDisabled',
+    failed: 'carPlayFailed', recovering: 'carPlayRecovering', stopping: 'carPlayStopping',
+    connecting: 'phoneConnecting', ready: 'waitingPhone', waiting: 'waitingPhone',
+  })) {
+    assert.equal(page.present({ status: { state: 'idle', receivers: { carplay: { state } } } }), key);
+  }
+  assert.equal(page.present({ status: { videoSource: 'carplay' } }), 'waitingFrame');
+  assert.equal(page.present({ status: { videoSource: 'airplay' } }), 'waitingVideo');
+  assert.equal(page.present({ config: { mode: 'carplay' } }), 'waitingFrame');
+  assert.equal(page.present({ config: { mode: 'airplay-mirror' } }), 'waitingVideo');
+  assert.equal(page.present({ status: { airplay: { kind: 'audio' } } }), 'airPlayAudio');
+  assert.equal(page.present({ status: { airplay: { kind: 'photo', resource: 'photo' } } }), 'airPlayPhoto');
+  assert.equal(page.present({ status: { airplay: { kind: 'video', resource: 'movie', ready: false } } }), 'waitingVideo');
+  assert.equal(page.present({ status: { airplay: { kind: 'video', resource: 'movie', ready: true, playing: false } } }), 'airPlayPaused');
+  assert.equal(page.present({ status: { airplay: { kind: 'video', resource: 'movie', ready: true, playing: true } } }), 'airPlayPlaying');
+  assert.equal(page.present({ live: true, config: { codec: 'avc1' }, status: { state: 'idle' } }), 'streaming:avc1,0');
+});
+
+test('codec and protocol errors use persistent notices while pairing errors stay beside Connect', () => {
+  const page = retryPage(null);
+  assert.equal(page.present({ unsupported: 'hvc1' }), 'pictureUnavailable');
+  assert.equal(page.problem().text, 'unsupportedHevc:hvc1');
+  assert.equal(page.inlineMessage(), '');
+  page.stop('protocol');
+  assert.equal(page.problem().text, 'protocol');
+  assert.equal(page.text(), 'stopped');
+  page.stop('badCode');
+  assert.equal(page.inlineMessage(), 'badCode');
+  assert.equal(page.problem().text, 'protocol', 'pairing feedback must not replace the notification');
+  for (const key of ['invalidCode', 'invalidHost']) {
+    page.stop(key);
+    assert.equal(page.inlineMessage(), key);
+  }
+});
 
 test('retry messages count down every second without receiving a phone heartbeat', () => {
   for (const [error, key] of [[null, 'lost'], [{ status: 503 }, 'unreachable'], [{ status: 429 }, 'throttled']]) {

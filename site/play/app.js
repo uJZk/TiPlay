@@ -23,6 +23,7 @@ import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from './m
 import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
 import { createAirPlayTrustNotification } from './airplay-trust.js';
+import { createBrowserNotice } from './browser-notice.js';
 
 const STRINGS = {
   en: {
@@ -51,6 +52,20 @@ const STRINGS = {
     waitingPhone: 'Connected to the Android device. Waiting for the iPhone…',
     phoneConnecting: 'CarPlay is connecting…',
     waitingVideo: 'AirPlay is connecting…',
+    waitingFrame: 'Waiting for the CarPlay picture…',
+    waitingSource: 'Connected to the Android device. Waiting for a projection…',
+    carPlayPreparing: 'CarPlay is preparing…',
+    carPlayDisabled: 'CarPlay is disabled.',
+    carPlayFailed: 'CarPlay connection failed.',
+    carPlayRecovering: 'CarPlay is reconnecting…',
+    carPlayStopping: 'CarPlay is disconnecting…',
+    carPlayBlocked: 'CarPlay is waiting for setup or permission.',
+    pictureUnavailable: 'Picture unavailable.',
+    airPlayAudio: 'AirPlay audio.',
+    airPlayPhoto: 'AirPlay photo.',
+    airPlayPlaying: 'AirPlay is playing.',
+    airPlayPaused: 'AirPlay is paused.',
+    airPlayBuffering: 'AirPlay is buffering…',
     streaming: '{0} · {1} fps',
     badCode: 'The pairing code is wrong. Check it in TiPlay on the Android device.',
     replaced: 'Another browser took over the display. Connect again to take it back.',
@@ -88,6 +103,20 @@ const STRINGS = {
     waitingPhone: '已连接安卓端，等待 iPhone…',
     phoneConnecting: 'CarPlay 正在连接…',
     waitingVideo: 'AirPlay 正在连接…',
+    waitingFrame: '正在等待 CarPlay 画面…',
+    waitingSource: '已连接安卓端，等待投屏…',
+    carPlayPreparing: 'CarPlay 正在准备…',
+    carPlayDisabled: 'CarPlay 已禁用。',
+    carPlayFailed: 'CarPlay 连接失败。',
+    carPlayRecovering: 'CarPlay 正在重新连接…',
+    carPlayStopping: 'CarPlay 正在断开连接…',
+    carPlayBlocked: 'CarPlay 等待设置或授权。',
+    pictureUnavailable: '画面暂不可用。',
+    airPlayAudio: 'AirPlay 音频。',
+    airPlayPhoto: 'AirPlay 照片。',
+    airPlayPlaying: 'AirPlay 正在播放。',
+    airPlayPaused: 'AirPlay 已暂停。',
+    airPlayBuffering: 'AirPlay 正在缓冲…',
     streaming: '{0} · {1} fps',
     badCode: '配对码不正确，请在安卓端上的 TiPlay 中核对。',
     replaced: '另一个浏览器接管了画面。再次连接即可收回。',
@@ -105,6 +134,7 @@ const t = (key, ...args) => (STRINGS[lang][key] ?? STRINGS.en[key]).replace(/\{(
 const CODEC_NAMES = { avc1: 'H.264', avc3: 'H.264', hvc1: 'HEVC', hev1: 'HEVC', vp8: 'VP8', vp09: 'VP9', av01: 'AV1' };
 const LINK_KEY = 'tiplay.link', STATS_KEY = 'tiplay.stats';
 const $ = id => document.getElementById(id);
+const browserNotice = createBrowserNotice($('browser-notice'), lang);
 const stage = $('stage'), touch = $('touch');
 const codecName = codec => CODEC_NAMES[String(codec).split('.')[0]] ?? codec;
 const renderReconnect = createReconnectOverlay({
@@ -356,6 +386,7 @@ function resumeCarPlay() {
 
 function start() {
   if (active || videoPath.path === 'none') return;
+  browserNotice.reset();
   cancelViewport();
   portalRevision = null;
   // A fresh session id per start lets "Connect" take the display back after another browser replaced this one.
@@ -366,6 +397,8 @@ function start() {
   reconnects = 0;
   lastError = null;
   status = null;
+  config = null;
+  unsupported = null;
   airplayControls.update(null);
   airplayTrust.clear();
   live = false;
@@ -592,7 +625,15 @@ function render() {
   $('fit').disabled = fitRequestedAt > 0;
   $('fit').textContent = t(fitRequestedAt ? 'fitPending' : 'fit');
   const text = statusText();
-  $('message').textContent = !active && notice && notice.key !== 'stopped' ? t(notice.key, ...notice.args) : '';
+  const inlineNotice = !active && ['badCode', 'invalidCode', 'invalidHost'].includes(notice?.key);
+  let problem = !active && notice && notice.key !== 'stopped' && !inlineNotice
+    ? { id: notice.key, text: t(notice.key, ...notice.args) } : null;
+  if (active && unsupported) {
+    const key = unsupported === 'hdr' ? 'unsupportedHdr' : /^(hvc1|hev1)\b/.test(unsupported) ? 'unsupportedHevc' : 'unsupported';
+    problem = { id: `codec:${unsupported}`, text: t(key, codecName(unsupported)) };
+  }
+  browserNotice.update(problem);
+  $('message').textContent = inlineNotice ? t(notice.key, ...notice.args) : '';
   $('status').textContent = text;
   $('status').hidden = Boolean($('message').textContent);
   renderReconnect({ active, live: live || airplayControls.videoActive(), phase: airplayControls.videoActive() ? 'waiting' : phase, pending: !airplayControls.videoActive() && fitRequestedAt > 0, text });
@@ -610,18 +651,38 @@ function renderStats() {
 }
 
 function statusText() {
-  if (!active) return notice ? t(notice.key, ...notice.args) : t(link.code ? 'ready' : 'enterCode');
-  if (unsupported === 'hdr') return t('unsupportedHdr');
-  if (unsupported) return /^(hvc1|hev1)\b/.test(unsupported) ? t('unsupportedHevc') : t('unsupported', codecName(unsupported));
+  if (!active) {
+    if (notice?.key === 'noVideo') return t('pictureUnavailable');
+    if (notice && !['badCode', 'invalidCode', 'invalidHost'].includes(notice.key)) return t('stopped');
+    return t(link.code ? 'ready' : 'enterCode');
+  }
+  if (unsupported) return t('pictureUnavailable');
   if (phase === 'connecting') return t('connecting');
   if (phase === 'retry') {
     const seconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
     return t(lastError?.status === 429 ? 'throttled' : lastError ? 'unreachable' : 'lost', seconds);
   }
-  if (status?.state === 'idle') return t('waitingPhone');
-  if (status?.state === 'connecting') return t('phoneConnecting');
-  if (!live) return t('waitingVideo');
-  return t('streaming', codecName(config?.codec), Math.round(videoStats.decodedFps ?? 0));
+  const playback = status?.airplay;
+  if (playback?.kind === 'audio') return t('airPlayAudio');
+  if (playback?.resource && playback.outputAllowed !== false) {
+    if (playback.kind === 'photo') return t('airPlayPhoto');
+    if (playback.buffering) return t('airPlayBuffering');
+    if (playback.ready) return t(playback.playing ? 'airPlayPlaying' : 'airPlayPaused');
+    return t('waitingVideo');
+  }
+  if (live) return t('streaming', codecName(config?.codec), Math.round(videoStats.decodedFps ?? 0));
+  const source = config?.mode?.startsWith('airplay') ? 'airplay' : status?.videoSource;
+  if (source === 'airplay') return t('waitingVideo');
+  if (source === 'carplay' || config?.mode === 'carplay') return t('waitingFrame');
+  const receiver = status?.receivers?.carplay;
+  const key = {
+    ready: 'waitingPhone', waiting: 'waitingPhone', searching: 'waitingPhone',
+    preparing: 'carPlayPreparing', connecting: 'phoneConnecting', connected: 'waitingFrame',
+    disabled: 'carPlayDisabled', failed: 'carPlayFailed', recovering: 'carPlayRecovering', stopping: 'carPlayStopping',
+    blocked: 'carPlayBlocked',
+  }[receiver?.state];
+  // Older apps report only session availability, which cannot establish a receiver phase.
+  return t(key ?? 'waitingSource');
 }
 
 function pageStats() {

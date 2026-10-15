@@ -9,4 +9,19 @@
     <string name="settings_carplay_searching">CarPlay يبحث</string>
     <string name="settings_airplay_ready_status">AirPlay جاهز</string>
     <string name="settings_airplay_disabled_status">AirPlay معطل</string>
+    <string name="settings_carplay_preparing_status">CarPlay قيد التحضير</string>
+    <string name="settings_carplay_waiting_status">CarPlay قيد الانتظار</string>
+    <string name="settings_carplay_connecting_status">CarPlay قيد الاتصال</string>
+    <string name="settings_carplay_recovering_status">CarPlay يعيد الاتصال</string>
+    <string name="settings_carplay_failed_status">فشل CarPlay</string>
+    <string name="settings_carplay_stopping_status">CarPlay ينقطع</string>
+    <string name="settings_airplay_starting_status">AirPlay يبدأ</string>
+    <string name="settings_airplay_mirroring_status">AirPlay يعكس الشاشة</string>
+    <string name="settings_airplay_playing_status">AirPlay يشغّل</string>
+    <string name="settings_airplay_photo_status">صورة AirPlay</string>
+    <string name="settings_airplay_permission_status">AirPlay يحتاج إذنًا</string>
+    <string name="settings_airplay_failed_status">فشل AirPlay</string>
+    <string name="settings_airplay_stopped_status">AirPlay متوقف</string>
+    <string name="settings_airplay_loading_status">AirPlay يحمّل</string>
+    <string name="settings_airplay_paused_status">AirPlay متوقف مؤقتًا</string>
 </resources>

@@ -49,6 +49,7 @@ internal class BrowserMainSettingsMenu(
     val status = text("", 18f).also(ui::emphasize)
     val hotspotStatus = text("").also(ui::emphasize)
     private val readiness = text("").apply { visibility = View.GONE }
+    private val stageDetail = text("").apply { visibility = View.GONE }
     private val error = text("").apply { visibility = View.GONE }.also(ui::emphasize)
     private val stop: Button
     private val network = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
@@ -56,8 +57,12 @@ internal class BrowserMainSettingsMenu(
     private val editHandler = Handler(Looper.getMainLooper())
     private val applyEdit = Runnable { applyChanges() }
     private var active = false
-    private var idle = true
     private var stopping = false
+    private var carPlayStage = activity.getString(R.string.settings_carplay_preparing_status)
+    private var disposed = false
+    private val receiverSubscription = AirPlayReceiverService.listenState {
+        activity.runOnUiThread { if (!disposed && !activity.isDestroyed) updateActions() }
+    }
     private var failed = false
     private var phone: Button
     private lateinit var connectionMode: Button
@@ -103,6 +108,7 @@ internal class BrowserMainSettingsMenu(
         })
         val session = group(content)
         session.addView(status)
+        session.addView(stageDetail)
         session.addView(readiness)
         val modeRows = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         session.addView(modeRows)
@@ -269,10 +275,10 @@ internal class BrowserMainSettingsMenu(
         networkReadiness = if (matches) null else R.string.settings_external_ap_check
         updateActions()
     }
-    fun update(stage: String, hasSession: Boolean, idle: Boolean = false) {
+    fun update(stage: String, hasSession: Boolean, detail: String? = null) {
         active = hasSession
-        this.idle = idle && !hasSession
-        status.text = receiverStatus(stage)
+        carPlayStage = stage
+        stageDetail.text = detail.orEmpty()
         updateActions(); refreshNetwork()
     }
     fun showConnectionError(message: String?) {
@@ -282,15 +288,18 @@ internal class BrowserMainSettingsMenu(
         updateActions()
     }
     fun committed() { baseline = draft.copy(); failed = false; error.visibility = View.GONE; updateActions() }
-    private fun updateIdleStatus() {
-        if (!idle || stopping) return
-        status.text = receiverStatus(activity.getString(if (BrowserCarPlaySettings.disabled(activity))
-            R.string.settings_carplay_disabled else R.string.settings_carplay_ready))
+    private fun updateReceiverStatus() {
+        status.text = receiverStatus(if (BrowserCarPlaySettings.disabled(activity))
+            activity.getString(R.string.settings_carplay_disabled)
+            else carPlayStage)
     }
     private fun receiverStatus(carPlay: String) = carPlay + " | " + activity.getString(
-        if (AirPlayReceiverSettings.isDisabled(activity)) R.string.settings_airplay_disabled_status else R.string.settings_airplay_ready_status)
+        BrowserReceiverPresentation.airPlayTitle(AirPlayReceiverService.state, AirPlayReceiverSettings.isDisabled(activity)))
     private fun updateActions() {
-        updateIdleStatus()
+        updateReceiverStatus()
+        stageDetail.visibility = if (stageDetail.text.isNullOrBlank() ||
+            (failed && stageDetail.text.toString() == error.text.toString()) || BrowserCarPlaySettings.disabled(activity))
+            View.GONE else View.VISIBLE
         val requirement = when {
             BrowserCarPlaySettings.disabled(activity) || !draft.wireless || active -> null
             draft.phoneAddress.isNullOrBlank() -> R.string.choose_your_iphone
@@ -313,7 +322,7 @@ internal class BrowserMainSettingsMenu(
         committed()
         settingsChanged()
     }
-    fun dispose() { editHandler.removeCallbacks(applyEdit) }
+    fun dispose() { disposed = true; editHandler.removeCallbacks(applyEdit); receiverSubscription.close() }
     fun applyPendingEdits() { applyChanges() }
     private fun submit() {
         editHandler.removeCallbacks(applyEdit)

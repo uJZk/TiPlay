@@ -20,6 +20,24 @@ The output is `mobile/build/outputs/apk/debug/mobile-debug.apk`. Debug uses `com
 
 Run source-only checks before supplying authentication assets. Avoid simultaneous Gradle builds in one output directory. `git archive` exports committed source only; use a separate copy that includes intended working-tree edits when testing uncommitted work. Run the public-tree checker in the originating Git checkout, against the same source input.
 
+### Managed cloud certificate trust
+
+Gradle's automatically provisioned JDK can have a different certificate store from
+system Java and `curl`. Behind an HTTPS session proxy, plugin resolution may report
+"plugin not found" when the underlying failure is `SSLHandshakeException` /
+`PKIX path building failed`. Confirm the plugin URL with both clients before
+changing dependency versions.
+
+Use the environment's trusted CA store and proxy configuration for the provisioned
+JDK and forked test JVMs. On this Linux environment the system Java trust store is
+`/etc/ssl/certs/java/cacerts`; passing
+`-Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts` through command-local
+`JAVA_TOOL_OPTIONS`, together with the session's HTTP/HTTPS proxy properties,
+allows Gradle and Robolectric downloads while preserving TLS verification. Keep
+these paths, SDK locations, proxy settings and caches outside committed build
+configuration. Set `ANDROID_HOME` to the locally installed SDK; the required
+packages are defined by the Android workflow.
+
 ## Runtime identity
 
 Keep runtime inputs outside Git in this layout:

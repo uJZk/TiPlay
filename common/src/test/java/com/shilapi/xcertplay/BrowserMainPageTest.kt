@@ -57,6 +57,7 @@ class BrowserMainPageTest {
             @Suppress("DEPRECATION")
             activity.resources.displayMetrics.scaledDensity = activity.resources.displayMetrics.density * 1.5f
         }
+        AirPlayReceiverService::class.java.getDeclaredField("state").apply { isAccessible = true }.set(null, "stopped")
         page = BrowserMainSettingsMenu(activity, BrowserConnectionDraft.load(activity), {},
             { page.draft.save(activity); page.committed(); connections++ }, { disconnects++ }, {}, {}, { settingsChanges++ })
         activity.setContentView(page.view)
@@ -75,7 +76,7 @@ class BrowserMainPageTest {
         page.update("Connected to car browser", true)
         val labels = views().filterIsInstance<TextView>().map { it.text.toString() }.toList()
         assertFalse(labels.contains(activity.getString(R.string.settings_browser_connection_status)))
-        assertEquals("Connected to car browser | AirPlay ready", page.status.text.toString())
+        assertEquals("Connected to car browser | AirPlay stopped", page.status.text.toString())
         assertTrue(page.status.isShown)
     }
     @Test fun aPlaceholderPhoneNameDoesNotPretendThatAnIphoneWasSelected() {
@@ -88,6 +89,14 @@ class BrowserMainPageTest {
         page.refresh()
         assertNotNull(button(R.string.choose_iphone))
         assertFalse(views().filterIsInstance<Button>().any { it.text == activity.getString(R.string.settings_selected_iphone, "Stale name") })
+    }
+    @Test fun connectionExplanationIsBelowTheShortStatusTitle() {
+        page.update("CarPlay connecting", true, detail = "Waiting for USB permission")
+        assertEquals("CarPlay connecting | AirPlay stopped", page.status.text.toString())
+        assertTrue(views().filterIsInstance<TextView>().any { it.isShown && it.text == "Waiting for USB permission" })
+        assertFalse(page.status.text.contains("permission"))
+        page.showConnectionError("Waiting for USB permission")
+        assertEquals(1, views().filterIsInstance<TextView>().count { it.isShown && it.text == "Waiting for USB permission" })
     }
     @Test fun aRealSavedIphoneChoiceKeepsItsNameAcrossRefreshAndRecreation() {
         val address = "02:00:00:00:00:01"
@@ -129,7 +138,7 @@ class BrowserMainPageTest {
         }
     }
     @Test fun receiverStatusKeepsActionableRequirementsInSeparateText() {
-        assertEquals("CarPlay ready | AirPlay ready", page.status.text.toString())
+        assertEquals("CarPlay preparing | AirPlay stopped", page.status.text.toString())
         assertTrue(views().filterIsInstance<TextView>().any { it.isShown && it.text == activity.getString(R.string.choose_your_iphone) })
         page.draft.phoneAddress = "02:00:00:00:00:01"
         shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(false)
@@ -137,7 +146,7 @@ class BrowserMainPageTest {
         assertTrue(views().filterIsInstance<TextView>().any { it.isShown && it.text == activity.getString(R.string.turn_on_bluetooth) })
         page.transportSelected(false)
         assertFalse(views().filterIsInstance<Button>().any { it.isShown && it.text == activity.getString(R.string.settings_selected_iphone, page.draft.phoneName) })
-        assertEquals("CarPlay ready | AirPlay ready", page.status.text.toString())
+        assertEquals("CarPlay preparing | AirPlay stopped", page.status.text.toString())
     }
     @Config(shadows = [DisabledHotspot::class])
     @Test fun idleReadinessReportsKnownHotspotOffAndUnmatchedExistingWifi() {
@@ -156,10 +165,10 @@ class BrowserMainPageTest {
     @Test fun editingInvalidDraftDoesNotReplaceActiveSessionStatus() {
         page.update("Connected", true)
         views().filterIsInstance<EditText>().first().setText("")
-        assertEquals("Connected | AirPlay ready", page.status.text.toString())
+        assertEquals("Connected | AirPlay stopped", page.status.text.toString())
         button(R.string.settings_carplay_reconnect).performClick()
         views().filterIsInstance<EditText>().first().setText("Another network")
-        assertEquals("Connected | AirPlay ready", page.status.text.toString())
+        assertEquals("Connected | AirPlay stopped", page.status.text.toString())
     }
     @Test fun editingNetworkSavesAndAppliesAutomaticallyOnceTypingSettles() {
         page.update("Connected", true)

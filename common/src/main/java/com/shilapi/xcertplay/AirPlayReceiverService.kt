@@ -52,6 +52,7 @@ class AirPlayReceiverService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        publish("starting")
         deviceTrust = ReceiverDeviceTrust(AirPlayDeviceTrustStore(this))
         trustRegistration = AirPlayTrustNotifications.attach(deviceTrust)
         viewportSubscription = TeslaBrowserLink.listenViewport(this) { viewport ->
@@ -85,14 +86,14 @@ class AirPlayReceiverService : Service() {
                         server?.finishPlayback(if (state == "failed") ReceiverServer.PlaybackFinishReason.BROWSER_FAILED
                             else ReceiverServer.PlaybackFinishReason.BROWSER_ENDED)
                         if (state == "failed") publish("playback-failed")
-                    }
+                    } else if (state in setOf("loading", "playing", "paused", "photo")) publish(state)
                 }
             }
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (AirPlayReceiverSettings.isDisabled(this)) { stopSelf(); return START_NOT_STICKY }
+        if (AirPlayReceiverSettings.isDisabled(this)) { publish("stopped"); stopSelf(); return START_NOT_STICKY }
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "AirPlay", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(this, 10, CarPlaySettingsNavigation.mainIntent(this), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -327,7 +328,7 @@ class AirPlayReceiverService : Service() {
             server?.close()
             server = null
             discovery?.close(); discovery = null
-            publish("stopped")
+            if (state !in setOf("failed", "permission", "discovery-failed")) publish("stopped")
         }
         worker.shutdown()
         super.onDestroy()
@@ -339,6 +340,14 @@ class AirPlayReceiverService : Service() {
         private const val CHANNEL = "tiplay_airplay_receiver"
         @Volatile var state: String = "stopped"
             private set
-        private fun publish(value: String) { state = value }
+        private val stateListeners = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
+        internal fun listenState(listener: () -> Unit): AutoCloseable {
+            stateListeners.add(listener)
+            return AutoCloseable { stateListeners.remove(listener) }
+        }
+        private fun publish(value: String) {
+            state = value
+            stateListeners.forEach { it() }
+        }
     }
 }

@@ -535,6 +535,8 @@ class BrowserLinkServer(
                 else mapOf("enabled" to false, "active" to false),
             "q" to sequence,
             "state" to status.state.wire,
+            "receivers" to status.receivers,
+            "videoSource" to status.videoSource,
             "codec" to status.codec,
             "display" to status.display?.let { mapOf("w" to it.width, "h" to it.height) },
             "viewport" to status.viewport?.let { mapOf("w" to it.width, "h" to it.height) },

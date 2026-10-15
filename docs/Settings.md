@@ -8,6 +8,15 @@ The launcher opens the session-owning host directly. Legacy main-page intents re
 
 Main settings show separate CarPlay and AirPlay status, with configuration, selected iPhone and permission requirements below. Only Main settings and Advanced settings are product navigation. Manufacturer, model, OEM label and MFi controls stay hidden. Upstream category APIs remain for merging, not as additional product screens. Native controls adapt to narrow windows and large text, with system-bar, cutout and keyboard insets preserving access to actions.
 
+The title keeps the short `CarPlay status | AirPlay status` form. Preparation,
+waiting, connection, recovery and failure are distinct CarPlay phases; USB mode or
+an idle controller alone cannot claim readiness. Only an actual wireless listener
+reports CarPlay ready. AirPlay ready requires the receiver's `listening` state;
+startup, mirroring, media playback, photos, permission failure and stopped/error
+states have separate titles. Receiver events refresh the title without waiting for
+a CarPlay event. Detailed connection stages, requirements and error guidance appear
+below the title.
+
 `BrowserConnectionDraft` retains incomplete edits through window recreation and Advanced settings navigation. Valid text saves after 400 ms without typing; leaving Main settings applies valid pending edits. Choices apply immediately. Invalid fields remain editable without replacing saved connection parameters. Drafts contain connection parameters only, so they cannot overwrite independently saved video settings. Existing-Wi-Fi credentials and security are separate from hotspot credentials; legacy external-network selections restore to Existing Wi-Fi.
 
 Settings requiring new negotiation notify the host through `BrowserSettingsChanges`. The host reloads current preferences and reconnects while leaving the settings page open; edits during recovery must reach the next attempt. Back performs navigation. There is no Save and reconnect action. Debug logging applies immediately without reconnecting; its policy is in [Diagnostics](Diagnostics.md). Address and port edits follow the separate [hotspot endpoint contract](Hotspot-address.md).

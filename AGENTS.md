@@ -15,13 +15,15 @@ are exceptions. Keep only the latest sweep; historical records remain in Git.
 Project AGENTS.md files and documents under docs/ must stay below 8,192 words each.
 Split a topic only when needed, target 4,096 words, and update the index and references.
 
-- [Browser](docs/Browser.md): pairing, resize, portal, media and shutdown.
-- [Settings](docs/Settings.md): drafts, immediate apply, reconnect and boot.
+- [Browser](docs/Browser.md): pairing, receiver-aware waiting states, dismissible browser errors, resize, portal, media and shutdown.
+- [Settings](docs/Settings.md): short receiver status titles, separate details, drafts, immediate apply, reconnect and boot.
 - [Connection setup](docs/Connection-setup.md) and [hotspot address](docs/Hotspot-address.md).
 - [AirPlay](docs/AirPlay.md): receiver/media contracts and compatibility limits.
 - [Diagnostics](docs/Diagnostics.md) and [privacy](docs/Privacy.md).
 - [Geolocation](docs/geolocation.md): implemented GPS fallback, datum detection/conversion, browser cache and iPhone forwarding. Verification is in [Testing](docs/Testing.md#location-and-notification-verification); physical follow-up is in [Todo](docs/Todo.md#location).
 - [Build](docs/Build.md), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md).
+  Receiver-status verification and remaining device checks are in [Testing](docs/Testing.md#receiver-status-and-browser-notices);
+  provisioned-JDK proxy certificate setup is in [Build](docs/Build.md#managed-cloud-certificate-trust).
 - [Upstream](docs/Upstream.md): merge policy, preserved identifiers and dependency provenance.
 - [Third-party notices](docs/Third-party-notices.md) and [remaining work](docs/Todo.md).
 - [Latest documentation sweep](docs/docs-sweep-2026-10-15/README.md).

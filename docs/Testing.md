@@ -10,12 +10,33 @@ For browser/media changes, use the applicable [Chromium harness](../tests/web-e2
 
 Desktop simulations and codec probes cannot establish Tesla firmware support, iPhone interoperability, autoplay behavior, vehicle sound or sustained performance. Record which checks ran and which physical checks remain.
 
+## Receiver status and browser notices
+
+The full Android CI command passes with 1,966 shared, 1,523 common and 6 home unit
+tests, three application lint checks and three debug APK builds. The mobile debug
+APK also passes signature verification. All 229 browser unit tests, the Chromium
+`run.mjs` and real shared-server `phone-run.mjs` harnesses, static site generation
+and assembly, the public-source scan and 9 release-draft tests pass.
+
+Regression checks distinguish receiver preparation, waiting, handshake, readiness,
+recovery and failure, and verify that actual display ownership selects CarPlay or
+AirPlay waiting copy. Main settings retain short `CarPlay status | AirPlay status`
+titles with explanations below; duplicate error text is hidden. All existing copy
+is preserved and the 15 additional Android entries are present in all 8 locales.
+Browser codec/protocol/takeover errors use persistent closable cards, dismissed
+errors stay hidden on rerender, and code/address feedback stays beside Connect.
+
+Physical phone/vehicle checks of status timing during permissions, USB enumeration,
+reconnection, AirPlay pause/buffering and browser notification dismissal remain
+open in [Todo](Todo.md#connection-settings-and-browser). Desktop harnesses establish
+software behavior only.
+
 ## Location and notification verification
 
 The implemented [location flow](geolocation.md) uses precise Android GPS until the
 browser datum is confirmed, refined GCJ-02 conversion and browser-local datum caching.
-The latest source checks passed: 1,965 shared, 1,520 common and 6 home unit tests,
-225 browser tests, the CI lint/debug-build command, the public-source scan and all
+The latest source checks passed: 1,966 shared, 1,523 common and 6 home unit tests,
+229 browser tests, the CI lint/debug-build command, the public-source scan and all
 9 release-draft delivery tests. The debug APK contains geocoordinates and JNA native
 libraries for arm64-v8a, armeabi-v7a, x86 and x86_64; the library checksum matches its
 pinned release. This source-only APK contains no runtime MFi identity.

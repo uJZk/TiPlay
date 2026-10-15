@@ -34,6 +34,21 @@ class WebVideoHubTest {
 
     private fun WebVideoSubscription.drain(): List<WebVideoRecord> = generateSequence { take(0) }.toList()
 
+    @Test fun reportedProducerFollowsDisplayOwnershipIncludingRejectedAndStaleProducers() {
+        begin()
+        assertEquals(BrowserDisplaySource.CARPLAY, hub.info()?.source)
+        val airPlay = Any()
+        hub.beginStream(airPlay, 1920, 1080, 30, {}, {}, BrowserDisplaySource.AIRPLAY)
+        assertEquals(BrowserDisplaySource.AIRPLAY, hub.info()?.source)
+        begin() // CarPlay cannot take a screen currently borrowed by AirPlay.
+        hub.endStream(owner) // A stale producer cannot erase the new source.
+        assertEquals(BrowserDisplaySource.AIRPLAY, hub.info()?.source)
+        hub.endStream(airPlay)
+        assertNull(hub.info())
+        begin()
+        assertEquals(BrowserDisplaySource.CARPLAY, hub.info()?.source)
+    }
+
     @Test fun lateSubscriberGetsTheConfigFirstThenFramesFromTheNextKeyFrame() {
         begin()
         hub.configure(owner, VideoCodec.H264, avcc)

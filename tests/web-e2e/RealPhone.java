@@ -102,7 +102,9 @@ public class RealPhone {
                         last == null ? null : last.getSize(),
                         true,
                         Map.of("harness", "RealPhone"),
-                        BrowserPortalSignal.INSTANCE.getRevision());
+                        BrowserPortalSignal.INSTANCE.getRevision(),
+                        Map.of("carplay", Map.of("state", info == null ? "waiting" : "connected")),
+                        info == null ? null : "carplay");
                 }
 
                 @Override public boolean onTouch(List<AirPlayContact> contacts) {

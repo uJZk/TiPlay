@@ -9,4 +9,19 @@
     <string name="settings_carplay_searching">CarPlay 搜尋中</string>
     <string name="settings_airplay_ready_status">AirPlay 就緒</string>
     <string name="settings_airplay_disabled_status">AirPlay 已停用</string>
+    <string name="settings_carplay_preparing_status">CarPlay 準備中</string>
+    <string name="settings_carplay_waiting_status">CarPlay 等待中</string>
+    <string name="settings_carplay_connecting_status">CarPlay 連線中</string>
+    <string name="settings_carplay_recovering_status">CarPlay 重新連線中</string>
+    <string name="settings_carplay_failed_status">CarPlay 連線失敗</string>
+    <string name="settings_carplay_stopping_status">CarPlay 中斷中</string>
+    <string name="settings_airplay_starting_status">AirPlay 啟動中</string>
+    <string name="settings_airplay_mirroring_status">AirPlay 鏡像中</string>
+    <string name="settings_airplay_playing_status">AirPlay 播放中</string>
+    <string name="settings_airplay_photo_status">AirPlay 照片</string>
+    <string name="settings_airplay_permission_status">AirPlay 待授權</string>
+    <string name="settings_airplay_failed_status">AirPlay 失敗</string>
+    <string name="settings_airplay_stopped_status">AirPlay 已停止</string>
+    <string name="settings_airplay_loading_status">AirPlay 載入中</string>
+    <string name="settings_airplay_paused_status">AirPlay 已暫停</string>
 </resources>

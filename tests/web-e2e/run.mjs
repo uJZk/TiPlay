@@ -414,7 +414,12 @@ async function main() {
     await checkPath(browser, pageUrl, phone, 'worker-chunks', NO_STREAM_TRANSFER);
     await checkPath(browser, pageUrl, phone, 'worker-frames', NO_OFFSCREEN_CANVAS);
     await checkPath(browser, pageUrl, phone, 'main', noWorkerVideoDecoder);
-    check(/Another browser took over/.test(await page.textContent('#status')), 'the first page, replaced by the others, says so and stops');
+    check(/Another browser took over/.test(await page.textContent('#browser-notice-message')), 'the first page, replaced by the others, says so and stops');
+    check(await page.isVisible('#browser-notice'), 'browser takeover is explained in the persistent notification');
+    check(!/Another browser took over/.test(await page.textContent('#status')), 'the waiting status does not contain the error explanation');
+    await page.click('[data-browser-close]');
+    await page.click('#stats-toggle');
+    check(!await page.isVisible('#browser-notice'), 'closing the notification survives the next page render');
 
     // The worker's scope is the site root, which also holds the download pages: it must leave them to the network.
     await page.evaluate(() => Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => setTimeout(() => reject(new Error('Service worker activation timed out')), 15000))]));

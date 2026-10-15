@@ -10,6 +10,7 @@ TiPlay supports Android phone + car browser only. These checks remain open; auto
 
 ## Connection, settings and browser
 
+- [ ] On a physical phone and vehicle browser, verify short receiver titles and separate details during permission waits, USB enumeration, connection failure/recovery and AirPlay load/pause/buffering. Confirm browser errors can be closed without reappearing on status polls, while pairing-code and address errors remain beside Connect.
 - [ ] Test cold launch/boot, wireless and USB startup, All-mode USB priority/removal, ordinary Android consent, Bluetooth arrival retry, disable/re-enable, repeated reconnects, background/resume and sustained use. Measure battery cost; no zero-power claim.
 - [ ] Test valid/incomplete settings edits, recreation and Advanced-page return, rapid edits during recovery, FPS/HEVC/audio changes and CarPlay disabled state. Confirm immediate apply preserves the current settings page.
 - [ ] Test hotspot method/address/port changes: phone applies immediately, browser stays on its saved endpoint until manual disconnect/edit/connect or a new pairing link; pairing code persists. Test Root/Shizuku re-add after hotspot restart and refusal recovery, current Android Shizuku authorization, VPN link-local reachability, VPN conflicts/revocation and concurrent wireless CarPlay.

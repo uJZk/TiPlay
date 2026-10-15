@@ -9,4 +9,19 @@
     <string name="settings_carplay_searching">CarPlay searching</string>
     <string name="settings_airplay_ready_status">AirPlay ready</string>
     <string name="settings_airplay_disabled_status">AirPlay disabled</string>
+    <string name="settings_carplay_preparing_status">CarPlay preparing</string>
+    <string name="settings_carplay_waiting_status">CarPlay waiting</string>
+    <string name="settings_carplay_connecting_status">CarPlay connecting</string>
+    <string name="settings_carplay_recovering_status">CarPlay reconnecting</string>
+    <string name="settings_carplay_failed_status">CarPlay failed</string>
+    <string name="settings_carplay_stopping_status">CarPlay disconnecting</string>
+    <string name="settings_airplay_starting_status">AirPlay starting</string>
+    <string name="settings_airplay_mirroring_status">AirPlay mirroring</string>
+    <string name="settings_airplay_playing_status">AirPlay playing</string>
+    <string name="settings_airplay_photo_status">AirPlay photo</string>
+    <string name="settings_airplay_permission_status">AirPlay needs permission</string>
+    <string name="settings_airplay_failed_status">AirPlay failed</string>
+    <string name="settings_airplay_stopped_status">AirPlay stopped</string>
+    <string name="settings_airplay_loading_status">AirPlay loading</string>
+    <string name="settings_airplay_paused_status">AirPlay paused</string>
 </resources>

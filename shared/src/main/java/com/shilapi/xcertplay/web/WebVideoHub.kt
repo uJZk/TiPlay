@@ -29,7 +29,8 @@ class WebVideoHub(
     private val log: (String) -> Unit = {},
 ) {
     /** The current stream: the negotiated canvas and, once configured, the codec string and epoch. */
-    data class StreamInfo(val width: Int, val height: Int, val fps: Int, val codec: String?, val epoch: Int?)
+    data class StreamInfo(val width: Int, val height: Int, val fps: Int, val codec: String?, val epoch: Int?,
+                          val source: BrowserDisplaySource = BrowserDisplaySource.CARPLAY)
 
     private class Stream(
         val width: Int,
@@ -234,7 +235,8 @@ class WebVideoHub(
     }
 
     fun info(): StreamInfo? = lock.withLock {
-        stream?.let { StreamInfo(it.width, it.height, it.fps, config?.codecString, config?.epoch) }
+        stream?.let { StreamInfo(it.width, it.height, it.fps, config?.codecString, config?.epoch,
+            displayOwner.source ?: BrowserDisplaySource.CARPLAY) }
     }
 
     /** Counters for the link status; no payloads. */

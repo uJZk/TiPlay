@@ -14,8 +14,19 @@ or shared Wi-Fi that permits communication between devices.
 4. Bookmark after code import removes the URL fragment.
 
 Address/code stay visible and editable while disconnected. Connect appears above
-Disconnect; errors stay beside the action. The CarPlay TiPlay icon opens the portal, preserving the session. Re-entering resumes it.
+Disconnect; pairing-code and address errors stay beside the action. The CarPlay TiPlay icon opens the portal, preserving the session. Re-entering resumes it.
 **Disconnect** stops the session and automatic retries.
+
+The waiting surface shows short connection or picture states. Receiver phases and
+the video producer are reported separately: waiting for a CarPlay frame must not
+say AirPlay is connecting, and a missing session alone does not prove that TiPlay
+is waiting for an iPhone. Older apps without receiver phases use a neutral waiting
+message. AirPlay URL video, photos and audio have their own playback states.
+Browser capability/codec failures, protocol mismatches and browser takeover use
+the existing notification-card style with a Close button. These explanations have
+no timeout, and rerenders cannot reopen a dismissed error; explicitly starting a
+new connection resets dismissal. Location guidance keeps its separate persistent
+card. Receiver fault details stay on Android, below its short status title.
 
 Network failure retries with a countdown; rejected codes stop retries and require the
 current code. Another paired browser can take over, and the displaced page can use

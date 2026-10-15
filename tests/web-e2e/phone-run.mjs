@@ -366,7 +366,7 @@ async function main() {
       check(first.page.video.codec === codec && first.page.video.width === WIDTH && first.page.video.height === HEIGHT,
         `the page got the config record: ${first.page.video.codec} ${first.page.video.width}x${first.page.video.height}`);
       const status = await waitFor('the unsupported message', async () => {
-        const text = await page.textContent('#status');
+        const text = await page.textContent('#browser-notice-message');
         return /cannot decode/.test(text) && text;
       });
       check(status === 'This browser cannot decode H.264.' && (await stats(page)).page.link.unsupported === codec,
@@ -400,7 +400,7 @@ async function main() {
       const page = await context.newPage();
       await page.goto(lan);
       await waitFor('unsupported non-secure page', () => page.isDisabled('#connect'));
-      check((await page.textContent('#message')).includes('not a secure context'), 'LAN page explains the secure WebCodecs requirement');
+      check((await page.textContent('#browser-notice-message')).includes('not a secure context'), 'LAN page explains the secure WebCodecs requirement');
       check(await page.locator('video').count() === 0, 'LAN page has no removed video element');
       await context.close();
     }

@@ -55,6 +55,10 @@ data class BrowserLinkStatus(
     val phone: Map<String, Any?> = emptyMap(),
     /** Changes when the driver taps the TiPlay icon in CarPlay. */
     val portalRevision: Long = BrowserPortalSignal.revision,
+    /** Actual receiver phases; the old state describes only session/video availability. */
+    val receivers: Map<String, Any?> = emptyMap(),
+    /** The current video producer, independent of CarPlay connection state. */
+    val videoSource: String? = null,
 ) {
     enum class State(val wire: String) { IDLE("idle"), CONNECTING("connecting"), STREAMING("streaming") }
 

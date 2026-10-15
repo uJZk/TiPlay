@@ -624,6 +624,8 @@ class TeslaBrowserLinkTest {
         val server = started()
         val idle = server.callbacks.status()
         assertEquals(BrowserLinkStatus.State.IDLE, idle.state)
+        assertNull(idle.videoSource)
+        assertEquals(mapOf("state" to "preparing"), idle.receivers["carplay"])
         assertNull(idle.display)
         assertNull(idle.viewport)
         assertFalse(idle.touchAvailable)
@@ -643,6 +645,7 @@ class TeslaBrowserLinkTest {
         try {
             val streaming = server.callbacks.status()
             assertEquals(BrowserLinkStatus.State.STREAMING, streaming.state)
+            assertEquals("carplay", streaming.videoSource)
             assertEquals(BrowserSize(1182, 920), streaming.display)
             assertFalse(streaming.fit)
             assertEquals("not-needed", streaming.phone["localNetworkPermission"])

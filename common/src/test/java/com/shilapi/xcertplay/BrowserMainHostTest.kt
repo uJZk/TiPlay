@@ -38,6 +38,7 @@ class BrowserMainHostTest {
 
     @Before fun setUp() {
         RuntimeEnvironment.getApplication().getSharedPreferences("tiplay_carplay", 0).edit().clear().commit()
+        AirPlayReceiverService::class.java.getDeclaredField("state").apply { isAccessible = true }.set(null, "stopped")
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
         controllers = mockConstruction(CarPlayController::class.java) { mock, _ ->
             `when`(mock.phoneBrowserMode()).thenReturn(true)
@@ -109,10 +110,10 @@ class BrowserMainHostTest {
         setField("wirelessEnabled", true)
         invoke("updateDebugOverlays")
         val main = field("browserMainPage") as BrowserMainSettingsMenu
-        assertEquals("CarPlay searching | AirPlay ready", main.status.text.toString())
+        assertEquals("CarPlay waiting | AirPlay stopped", main.status.text.toString())
         BrowserCarPlaySettings.setDisabled(activity, true)
         invoke("applyBrowserSettings")
-        assertEquals("CarPlay disabled | AirPlay ready", main.status.text.toString())
+        assertEquals("CarPlay disabled | AirPlay stopped", main.status.text.toString())
         assertNull(field("controller"))
     }
 
@@ -134,23 +135,23 @@ class BrowserMainHostTest {
         assertEquals(0, field("restartGeneration"))
         assertFalse(field("menuOpen") as Boolean) // Main page does not gate session recovery.
         report(CarPlayStatus.StartingHotspot)
-        assertEquals("CarPlay searching | AirPlay ready", main.status.text.toString())
+        assertEquals("CarPlay preparing | AirPlay stopped", main.status.text.toString())
         main.draft.save(activity)
         assertEquals(35, AirPlayPersistence.loadFps(activity))
         assertFalse(AirPlayPersistence.loadHevcEnabled(activity))
     }
 
-    @Test fun wirelessWaitingIsReadyAndActiveBluetoothAttemptsAreSearching() {
+    @Test fun wirelessWaitingConnectingAndListeningHaveDistinctTitles() {
         attachController()
         setField("wirelessEnabled", true)
         setField("browserConnectionRequested", true)
         val main = field("browserMainPage") as BrowserMainSettingsMenu
         report(CarPlayStatus.WaitingForPairedIphone)
-        assertEquals("CarPlay ready | AirPlay ready", main.status.text.toString())
+        assertEquals("CarPlay waiting | AirPlay stopped", main.status.text.toString())
         report(CarPlayStatus.ConnectingBluetooth)
-        assertEquals("CarPlay searching | AirPlay ready", main.status.text.toString())
+        assertEquals("CarPlay connecting | AirPlay stopped", main.status.text.toString())
         report(CarPlayStatus.RunningWireless)
-        assertEquals("CarPlay ready | AirPlay ready", main.status.text.toString())
+        assertEquals("CarPlay ready | AirPlay stopped", main.status.text.toString())
     }
 
     @Test fun idleReadinessDoesNotClaimReadyBeforeAnIphoneIsSelected() {
@@ -159,7 +160,7 @@ class BrowserMainHostTest {
         main.draft.phoneAddress = null
         setField("browserConnectionRequested", false)
         invoke("updateDebugOverlays")
-        assertEquals("CarPlay ready | AirPlay ready", main.status.text.toString())
+        assertEquals("CarPlay waiting | AirPlay stopped", main.status.text.toString())
     }
 
     @Test fun savingConnectionDraftDoesNotOverwriteCustomResolution() {

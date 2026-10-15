@@ -9,4 +9,19 @@
     <string name="settings_carplay_searching">CarPlay шукає</string>
     <string name="settings_airplay_ready_status">AirPlay готовий</string>
     <string name="settings_airplay_disabled_status">AirPlay вимкнено</string>
+    <string name="settings_carplay_preparing_status">CarPlay: підготовка</string>
+    <string name="settings_carplay_waiting_status">CarPlay: очікування</string>
+    <string name="settings_carplay_connecting_status">CarPlay: підключення</string>
+    <string name="settings_carplay_recovering_status">CarPlay: перепідключення</string>
+    <string name="settings_carplay_failed_status">CarPlay: збій</string>
+    <string name="settings_carplay_stopping_status">CarPlay: відключення</string>
+    <string name="settings_airplay_starting_status">AirPlay: запуск</string>
+    <string name="settings_airplay_mirroring_status">AirPlay: повтор екрана</string>
+    <string name="settings_airplay_playing_status">AirPlay: відтворення</string>
+    <string name="settings_airplay_photo_status">AirPlay: фото</string>
+    <string name="settings_airplay_permission_status">AirPlay: потрібен дозвіл</string>
+    <string name="settings_airplay_failed_status">AirPlay: збій</string>
+    <string name="settings_airplay_stopped_status">AirPlay: зупинено</string>
+    <string name="settings_airplay_loading_status">AirPlay: завантаження</string>
+    <string name="settings_airplay_paused_status">AirPlay: пауза</string>
 </resources>
