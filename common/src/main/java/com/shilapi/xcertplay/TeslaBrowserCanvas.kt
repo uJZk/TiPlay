@@ -46,7 +46,7 @@ internal object TeslaBrowserCanvas {
     /** The canvas for [viewport] (null before any browser reported one); [presetWidthMm] is the CarPlay-size preset. */
     fun plan(viewport: BrowserViewport?, presetWidthMm: Int): Plan {
         val valid = viewport?.takeIf { BrowserViewport.isValid(it.width, it.height) }
-        val size = size(valid?.size)
+        val size = sizeFor(valid)
         val cssWidth = valid?.cssWidth?.takeIf { it.isFinite() && it > 0.0 }
         val widthMm = AirPlayDisplaySettings.sanitizeReportedPhysicalMm(
             ((cssWidth?.times(MILLIMETERS_PER_CSS_PIXEL)) ?: presetWidthMm.toDouble()).roundToInt(),
@@ -66,6 +66,16 @@ internal object TeslaBrowserCanvas {
         val short = minOf(viewport.width, viewport.height)
         val scale = minOf(1.0, MAX_LONG_SIDE.toDouble() / long, MAX_SHORT_SIDE.toDouble() / short)
         return BrowserSize(even(viewport.width * scale), even(viewport.height * scale))
+    }
+
+    /** CarPlay and AirPlay request the same viewport, constrained by the browser's measured decoder. */
+    fun sizeFor(viewport: BrowserViewport?): BrowserSize {
+        val wanted = size(viewport?.size)
+        val capabilities = viewport?.videoCapabilities ?: return wanted
+        if (capabilities.maxWidth == 0 || capabilities.maxHeight == 0) return wanted
+        val scale = minOf(1.0, capabilities.maxWidth.toDouble() / wanted.width,
+            capabilities.maxHeight.toDouble() / wanted.height)
+        return BrowserSize(even(wanted.width * scale), even(wanted.height * scale))
     }
 
     /** A running canvas needs "Apply and reconnect" only when it is more than 8 px or 1 % in aspect off [wanted]. */

@@ -25,7 +25,7 @@ class ReceiverResourceRequestsTest {
 
     @Test fun expiryAdvancesTheQueueWithoutRestartingQueuedDeadlinesAndStopDiscardsIt() {
         var now = 0L
-        val requests = ReceiverResourceRequests(nowNanos = { now })
+        val requests = ReceiverResourceRequests(exchangeTimeoutNanos = TimeUnit.SECONDS.toNanos(30), nowNanos = { now })
         val first = requests.acquire("session", peer, "mlhls://app/video.m3u8")!!.pending
         assertSame(first, requests.nextToDispatch("session", peer))
         now = TimeUnit.SECONDS.toNanos(10)
@@ -45,7 +45,7 @@ class ReceiverResourceRequestsTest {
 
     @Test fun cancelledWaiterCanReuseTheSameExchangeAfterTheOldTenSecondLimit() {
         var now = 0L
-        val requests = ReceiverResourceRequests(nowNanos = { now })
+        val requests = ReceiverResourceRequests(exchangeTimeoutNanos = TimeUnit.SECONDS.toNanos(30), nowNanos = { now })
         val original = requests.acquire("session", peer, "mlhls://app/media")!!.pending
         now = TimeUnit.SECONDS.toNanos(16)
         val resumed = requests.acquire("session", peer, original.url)!!
@@ -75,6 +75,24 @@ class ReceiverResourceRequestsTest {
         // A late reply for the expired request cannot complete its replacement.
         assertFalse(original.future.complete(ReceiverResource(byteArrayOf(1), 0, null)))
         assertFalse(next.pending.future.isDone)
+    }
+
+    @Test fun stalledSegmentCannotBlockPlaylistsAndLiveRefreshDoesNotReuseCompletedResource() {
+        var now = 0L
+        val requests = ReceiverResourceRequests(nowNanos = { now })
+        val segment = requests.acquire("session", peer, "mlhls://app/segment.ts")!!.pending
+        assertSame(segment, requests.nextToDispatch("session", peer))
+        val otherSegment = requests.acquire("session", peer, "mlhls://app/next.ts")!!.pending
+        val playlist = requests.acquire("session", peer, "mlhls://app/live.m3u8")!!.pending
+        now = TimeUnit.SECONDS.toNanos(10)
+        assertSame(playlist, requests.nextToDispatch("session", peer))
+        assertTrue(segment.future.isCompletedExceptionally)
+        playlist.future.complete(ReceiverResource(byteArrayOf(1), 200, null))
+        // Refresh can start before the previous loader's finally removes the completed exchange.
+        val refresh = requests.acquire("session", peer, playlist.url)!!
+        assertTrue(refresh.created)
+        assertSame(refresh.pending, requests.nextToDispatch("session", peer))
+        assertFalse(otherSegment.future.isDone)
     }
 
     @Test fun exchangesCannotBeSharedAcrossPlaybackSessionsOrPeersAndStopCancelsAll() {

@@ -6,7 +6,7 @@ import { intersectMediaRanges, mediaTimeRanges, mergeMediaRanges, videoQueueFull
 const flush = async () => { for (let i = 0; i < 150; i++) await Promise.resolve(); };
 
 function fixture({ audio = true, video = true, live = false, timestampOrigin = 100, duration = 20, deferVideo = null,
-  missingFrameDuration = false, onClock = null } = {}) {
+  missingFrameDuration = false, onClock = null, alternateAudio = false, expiredLiveWindow = false, sampleColor = null } = {}) {
   let wall = 0, next = 0, reads = { video: 0, audio: 0 }, audioContexts = 0;
   const selection = { primaryAudio: 0, pairableAudio: 0 };
   const callbacks = new Map(), inputs = [], samples = [], pictures = [], nodes = [], events = [];
@@ -14,6 +14,9 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
     getDisplayWidth: async () => 16, getDisplayHeight: async () => 9,
     getPrimaryPairableAudioTrack: async () => { selection.pairableAudio++; return audio ? audioTrack : null; } };
   const audioTrack = { canDecode: async () => true, isLive: async () => live };
+  const otherAudio = { canDecode: async () => true, isLive: async () => live, getName: async () => '中文', getLanguageCode: async () => 'zho' };
+  const decodedAudio = [];
+  if (alternateAudio) videoTrack.getPairableAudioTracks = async () => [audioTrack, otherAudio];
   class Input {
     constructor(options) { this.options = options; this.disposed = false; inputs.push(this); }
     getPrimaryVideoTrack() { return Promise.resolve(video ? videoTrack : null); }
@@ -24,6 +27,7 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
   }
   const sample = time => {
     const result = { timestamp: time, duration: missingFrameDuration ? 0 : 0.1, displayWidth: 16, displayHeight: 9,
+      colorSpace: sampleColor,
       codedWidth: 16, codedHeight: 9, closed: 0, close() { this.closed++; } };
     samples.push(result); return result;
   };
@@ -35,6 +39,7 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
         async next() {
           if (stopped || index >= duration * 10) return { done: true };
           reads.video++;
+          if (expiredLiveWindow && inputs.length === 1 && reads.video === 25) throw new TypeError('HTTP 404: expired live segment');
           const value = sample(timestampOrigin + index++ / 10);
           if (deferVideo && reads.video === 1) await deferVideo;
           return { value, done: false };
@@ -44,6 +49,7 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
     }
   }
   class AudioBufferSink {
+    constructor(track) { decodedAudio.push(track); }
     buffers(start) {
       let index = Math.floor((start - timestampOrigin) * 10 + 0.00001), stopped = false;
       return {
@@ -83,8 +89,8 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
     presenter: { present(value) { pictures.at(-1)?.close(); pictures.push(value); }, clear() { pictures.at(-1)?.close(); pictures.length = 0; },
       dispose() { pictures.at(-1)?.close(); } },
   });
-  for (const type of ['playing', 'pause', 'waiting', 'seeked', 'loadeddata', 'error']) media.addEventListener(type, () => events.push(type));
-  return { media, reads, inputs, samples, pictures, nodes, events, selection, audioContexts: () => audioContexts,
+  for (const type of ['playing', 'pause', 'waiting', 'seeked', 'loadeddata', 'error', 'resync']) media.addEventListener(type, () => events.push(type));
+  return { media, reads, inputs, samples, pictures, nodes, events, selection, decodedAudio, otherAudio, audioContexts: () => audioContexts,
     async tick(advance = 0) {
       wall += advance; if (contextInstance) contextInstance.currentTime += advance;
       const [id, callback] = callbacks.entries().next().value; callbacks.delete(id); callback(); await flush();
@@ -101,6 +107,18 @@ test('decoded ranges intersect both tracks and preserve real gaps', () => {
   assert.throws(() => ranges.start(2), { name: 'IndexSizeError' });
   assert.equal(videoQueueFull([{ end: 0.1, bytes: 97 * 1024 * 1024 }], 0), true);
   assert.equal(videoQueueFull([{ end: 10, bytes: 1 }], 0), true);
+});
+
+test('alternate audio selection actually changes the decoder at the shared clock without reopening its input', async () => {
+  const h = fixture({ alternateAudio: true });
+  await h.media.load('https://example.test/master.m3u8'); await flush();
+  assert.equal(h.media.audioTracks.length, 2);
+  h.media.currentTime = 5; await flush();
+  assert.equal(h.media.selectAudioTrack('unknown'), false);
+  assert.equal(h.media.selectAudioTrack('1'), true); await flush();
+  assert.equal(h.decodedAudio.at(-1), h.otherAudio);
+  assert.equal(h.media.currentTime, 5); assert.equal(h.inputs.length, 1);
+  assert.equal(h.media.audioTracks.getTrackById('1').enabled, true); h.media.dispose();
 });
 
 test('paused loading normalizes timestamps and bounds both decoded queues', async () => {
@@ -158,6 +176,13 @@ test('invalid rates fail without silently resampling or changing pitch', async (
   h.media.dispose();
 });
 
+test('late decoded HDR metadata closes its frame and fails before presenting wrong colors', async () => {
+  const h = fixture({ sampleColor: { transfer: 'pq', primaries: 'bt2020' } });
+  await assert.rejects(h.media.load('https://example.test/undeclared-hdr.mp4'), { name: 'NotSupportedError' });
+  assert.equal(h.media.error.name, 'NotSupportedError'); assert.match(h.media.error.message, /SDR/);
+  assert.equal(h.pictures.length, 0); assert.ok(h.samples.every(sample => sample.closed === 1)); h.media.dispose();
+});
+
 test('live pause/resume retains the source timeline and cancels the old decoded queues', async () => {
   const h = fixture({ live: true }); await h.media.load('https://example.test/live.m3u8'); await flush();
   assert.equal(h.media.duration, Infinity);
@@ -171,6 +196,16 @@ test('live pause/resume retains the source timeline and cancels the old decoded 
   assert.ok(Math.abs(h.media.currentTime - stoppedAt) < 0.002);
   h.media.dispose(); assert.equal(h.inputs[0].disposed, true);
   assert.ok(h.samples.every(value => value.closed === 1));
+});
+
+test('an expired live window refreshes its source once and preserves playing intent', async () => {
+  const h = fixture({ live: true, expiredLiveWindow: true, audio: false });
+  await h.media.load('https://example.test/live.m3u8'); await flush();
+  const playing = h.media.play(); await flush(); await h.tick(); await playing;
+  for (let i = 0; i < 8 && !h.events.includes('resync'); i++) await h.tick(0.1);
+  assert.ok(h.events.includes('resync')); assert.equal(h.inputs.length, 2);
+  assert.equal(h.inputs[0].disposed, true); assert.equal(h.media.paused, false); assert.equal(h.media.error, null);
+  h.media.dispose();
 });
 
 test('missing frame durations use the next PTS instead of creating false buffer holes', async () => {

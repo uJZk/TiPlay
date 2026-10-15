@@ -19,6 +19,8 @@ import java.net.InetAddress
 class Iap2WiredControlClient(
     private val session: Iap2Session,
     private val mfi: Iap2MfiAuthenticationClient,
+    private val receiveArtwork: Boolean = true,
+    private val receiveText: Boolean = true,
 ) {
     fun run(
         identification: Iap2IdentificationConfig,
@@ -51,7 +53,7 @@ class Iap2WiredControlClient(
         deadlineNanos.authenticated()
 
         send(powerSourceUpdate(availableCurrentMilliAmps), deadlineNanos)
-        for (subscription in subscriptions()) send(subscription, deadlineNanos)
+        for (subscription in subscriptions(receiveArtwork, receiveText)) send(subscription, deadlineNanos)
         stage = Iap2WiredControlStage.SUBSCRIBED
         onProgress("iap2 power/subscriptions sent availableCurrentMa=$availableCurrentMilliAmps")
 
@@ -140,7 +142,7 @@ class Iap2WiredControlClient(
             Iap2ControlMessages.powerSourceUpdate(availableCurrentMilliAmps, charging = true)
 
         /** Exact five subscription requests emitted by LIVI's wired bring-up. */
-        fun subscriptions(): List<Iap2Frame> = Iap2ControlMessages.subscriptions()
+        fun subscriptions(includeArtwork: Boolean = true, includeText: Boolean = true): List<Iap2Frame> = Iap2ControlMessages.subscriptions(includeArtwork, includeText)
 
         /** Builds the wired-only CarPlayStartSession message; no NCM or AirPlay socket is opened. */
         fun carPlayStartSession(endpoint: Iap2WiredCarPlayEndpoint): Iap2Frame =

@@ -98,6 +98,10 @@ data class AirPlayConfig(
     val speechWithout8And16Khz: Boolean = false,
     /** Browser profile: retain the iPhone-to-car audio route. */
     val audioViaCarBluetooth: Boolean = false,
+    /** Retained upstream default; the phone + browser profile does not request music covers. */
+    val metadataArtworkEnabled: Boolean = true,
+    /** Music title, album, artist and source-app metadata; disabled for phone + browser. */
+    val metadataTextEnabled: Boolean = true,
 ) {
     val receivesAudio: Boolean get() = !audioViaCarBluetooth && !disableAudioOutput
 }

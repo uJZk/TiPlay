@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="reconnect.css">
 <link rel="stylesheet" href="airplay-controls.css">
+<link rel="stylesheet" href="airplay-trust.css">
 <link rel="stylesheet" href="vendor/videojs/skin.min.css">
 <script type="module" src="app.js"></script>
 </head>
@@ -64,6 +65,11 @@
 <button id="reconnect-settings" type="button" data-i18n="settings"></button>
 </section>
 
+<aside id="airplay-trust" role="alertdialog" aria-labelledby="airplay-trust-heading" aria-describedby="airplay-trust-name" hidden>
+<div class="airplay-trust-header"><img src="icon.svg" alt="" width="38" height="38"><strong id="airplay-trust-heading" data-trust-heading></strong></div>
+<p id="airplay-trust-name" data-trust-name></p>
+<div class="airplay-trust-actions"><button type="button" data-trust-reject></button><button type="button" data-trust-allow></button></div>
+</aside>
 <noscript>TiPlay needs JavaScript. · TiPlay 需要 JavaScript。</noscript>
 </body>
 </html>

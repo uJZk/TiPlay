@@ -5,6 +5,7 @@ import { FLAG, RECORD, RecordError, Samples, chooseDecoderConfig, createRecordSt
 import { createFpsWindow } from './fps-window.js';
 import { presentationTime } from './clock-sync.js';
 import { videoExpired } from './playback-window.js';
+import { hasHdrTransfer } from './airplay-sdr.js';
 
 const KEY_REQUEST_INTERVAL_MS = 1000;
 const MAX_DECODE_QUEUE = 30; // half a second at 60 fps; beyond that, drop to the next key frame instead of lagging
@@ -73,7 +74,7 @@ export function createDecoderPipeline({ post: send, present }) {
     const next = { epoch: record.epoch, mode: info.mode ?? null, codec: String(info.codec), width: info.width | 0, height: info.height | 0, fps: info.fps | 0 };
     post({ type: 'config', config: next });
     // The phone repeats a byte-identical config at every stream start; keep the decoder then.
-    const same = config && decoder?.state === 'configured' && ['epoch', 'codec', 'width', 'height'].every(key => config[key] === next[key]);
+    const same = config && decoder?.state === 'configured' && ['epoch', 'mode', 'codec', 'width', 'height'].every(key => config[key] === next[key]);
     config = next;
     if (same) return;
     decodeDroppedFrames = 0;
@@ -172,6 +173,11 @@ export function createDecoderPipeline({ post: send, present }) {
   function onFrame(source, frame) {
     if (source !== decoder) {
       frame.close();
+      return;
+    }
+    if (config?.mode === 'airplay-mirror' && hasHdrTransfer(frame.colorSpace)) {
+      frame.close(); dropped(); closeDecoder(); codecSupported = false;
+      post({ type: 'unsupported', codec: config.codec, reason: 'hdr', detail: 'AirPlay mirroring requires SDR video.' });
       return;
     }
     const started = decodeStarts.get(frame.timestamp);

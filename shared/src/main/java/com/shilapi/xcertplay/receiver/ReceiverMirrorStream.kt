@@ -12,6 +12,8 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
@@ -48,22 +50,40 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
         var configuredWidth: Int? = null
         var configuredHeight: Int? = null
         try {
-            var accepted: Socket
-            do {
-                accepted = server.accept()
-                if (accepted.inetAddress != peer) accepted.close()
-            } while (accepted.inetAddress != peer && !closed.get())
-            socket = accepted
-            if (closed.get()) { accepted.close(); return }
-            diagnostics.accepted()
-            TcpLiveness.configure(accepted) {}
-            accepted.tcpNoDelay = true
-            val input = accepted.getInputStream()
+            var input: InputStream? = null
+            var reconnectDeadline = 0L
             val header = ByteArray(128)
             val data = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
             while (!closed.get()) {
+                if (input == null) {
+                    stage = ReceiverMirrorDiagnostics.Stage.ACCEPT
+                    if (reconnectDeadline != 0L) {
+                        val remaining = reconnectDeadline - System.nanoTime()
+                        if (remaining <= 0L) break
+                        server.soTimeout = (remaining / 1_000_000).coerceIn(1, RECONNECT_MILLIS).toInt()
+                    }
+                    val accepted = server.accept()
+                    if (accepted.inetAddress != peer) { accepted.close(); continue }
+                    socket = accepted
+                    if (closed.get()) { accepted.close(); return }
+                    diagnostics.accepted()
+                    TcpLiveness.configure(accepted) {}
+                    accepted.tcpNoDelay = true
+                    accepted.soTimeout = 120_000
+                    input = accepted.getInputStream()
+                    reconnectDeadline = 0L
+                }
                 stage = ReceiverMirrorDiagnostics.Stage.HEADER
-                if (!readPacket(input, header)) { reason = ReceiverMirrorDiagnostics.End.HEADER_EOF; break }
+                val headerBytes = readMirrorPacket(requireNotNull(input), header)
+                if (headerBytes != header.size) {
+                    reason = ReceiverMirrorDiagnostics.End.HEADER_EOF
+                    // Only an EOF at a complete packet boundary can resume the existing CTR byte stream.
+                    if (headerBytes != 0) break
+                    runCatching { socket?.close() }; socket = null; input = null
+                    reconnectDeadline = System.nanoTime() + RECONNECT_MILLIS * 1_000_000
+                    diagnostics.reconnecting(RECONNECT_MILLIS)
+                    continue
+                }
                 val size = data.getInt(0)
                 require(size in 0..8 * 1024 * 1024)
                 val type = header[4].toInt() and 0xff
@@ -71,14 +91,16 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
                 val body = ByteArray(size)
                 stage = ReceiverMirrorDiagnostics.Stage.BODY
                 val bodyStart = System.nanoTime()
-                if (!readPacket(input, body)) { reason = ReceiverMirrorDiagnostics.End.BODY_EOF; break }
+                if (!readPacket(requireNotNull(input), body)) { reason = ReceiverMirrorDiagnostics.End.BODY_EOF; break }
                 val arrivalNanos = System.nanoTime()
                 when (type) {
                     0 -> {
                         stage = ReceiverMirrorDiagnostics.Stage.DECRYPT
                         val plain = cipher.update(body)
                         if (plain != null && plain.isNotEmpty() && !suspended) {
+                            stage = ReceiverMirrorDiagnostics.Stage.FRAME_VALIDATE
                             val frame = ReceiverMirrorCodec.annexB(plain, lengthBytes)
+                            ReceiverMirrorCodec.requireSdrFrame(frame, codec)
                             stage = ReceiverMirrorDiagnostics.Stage.PUBLISH
                             val senderNanos = ScreenCodec.senderNanos(header)
                             val publishStart = System.nanoTime()
@@ -120,8 +142,12 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
                 }
             }
         } catch (error: Exception) {
-            reason = if (closed.get()) ReceiverMirrorDiagnostics.End.CLOSED else ReceiverMirrorDiagnostics.End.FAILED
-            if (!closed.get()) diagnostics.failure(stage, error)
+            val endedGrace = error is SocketTimeoutException && stage == ReceiverMirrorDiagnostics.Stage.ACCEPT &&
+                reason == ReceiverMirrorDiagnostics.End.HEADER_EOF
+            if (!endedGrace) {
+                reason = if (closed.get()) ReceiverMirrorDiagnostics.End.CLOSED else ReceiverMirrorDiagnostics.End.FAILED
+                if (!closed.get()) diagnostics.failure(stage, error)
+            }
         } finally {
             diagnostics.end(reason)
             close()
@@ -135,6 +161,20 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
         runCatching { socket?.close() }
         sink.close()
     }
+
+    companion object { private const val RECONNECT_MILLIS = 5_000L }
+}
+
+/** Reports a partial header separately from a clean boundary EOF, which alone may reconnect. */
+internal fun readMirrorPacket(input: InputStream, bytes: ByteArray): Int {
+    var offset = 0
+    while (offset < bytes.size) {
+        val count = input.read(bytes, offset, bytes.size - offset)
+        if (count < 0) break
+        if (count == 0) continue
+        offset += count
+    }
+    return offset
 }
 
 internal fun readPacket(input: java.io.InputStream, bytes: ByteArray): Boolean {

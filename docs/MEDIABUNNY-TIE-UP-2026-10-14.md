@@ -18,9 +18,23 @@ Pause preserves the selected speed. Rate-aware Android directives and reports
 carry the actual rate. An older APK's directives omit rate and must preserve
 the browser's selection; accurate iPhone rate feedback requires updating the
 APK too. Independent seek revisions keep later pause/play commands from
-undoing an earlier seek. Embedded, encrypted and fragmented MP4 subtitles
-remain outside the separate WebVTT path. Mirror captions already rendered
-into the transmitted picture do not require that path.
+undoing an earlier seek. At this delivery, embedded, encrypted and fragmented
+MP4 subtitles remained outside the separate WebVTT path. Mirror captions already
+rendered into the transmitted picture did not require that path.
+
+### Subsequent subtitle implementation
+
+The later AirPlay compatibility work adds AES-128 HLS WebVTT (rotating keys,
+explicit/sequence IV and encrypted init), CMAF/fMP4 `wvtt`/`stpp`, ordinary MP4
+`tx3g`/`wvtt`/`stpp` sample-range reads, and AVC/HEVC SEI CEA-608/708 text. Parsed
+tracks control whether Video.js displays the subtitle button. Captions remain
+plain text with bounded requests/caches and media-clock activation; TTML images,
+complex layout and DRM authorization are not implemented. General HLS fMP4
+compatibility does not promise that an iPhone app will emit that format over
+AirPlay; Apple's AirPlay 2 TV profile specifies WebVTT. Current contracts and
+timing limitations are in [AIRPLAY.md](AIRPLAY.md#url-视频字幕). The earlier build,
+deployment and acceptance evidence below belongs to the earlier delivery and
+does not validate these later subtitle additions.
 
 ## Validation and cleanup
 

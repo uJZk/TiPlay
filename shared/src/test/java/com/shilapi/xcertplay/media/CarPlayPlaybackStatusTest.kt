@@ -9,6 +9,20 @@ class CarPlayPlaybackStatusTest {
     private fun update(block: com.shilapi.xcertplay.iap2.body.Iap2BodyBuilder.() -> Unit) =
         Iap2Messages.buildRaw(CarPlayPlaybackStatus.NOW_PLAYING_UPDATE, block)
 
+    @Test fun unsolicitedSongMetadataIsIgnoredWhileBrowserPlaybackStateAndProgressRemain() {
+        val status = CarPlayPlaybackStatus(includeText = false, includeArtwork = false)
+        val update = update {
+            group(0) { string(1, "Title"); string(6, "Album"); string(12, "Artist"); u8(26, 7); u32(4, 30_000) }
+            group(1) { string(7, "App"); u8(0, 1); u32(1, 2_000) }
+        }
+        assertEquals(CarPlayNowPlaying(durationMillis = 30_000, elapsedMillis = 2_000, playing = true), status.acceptUpdate(update))
+        assertNull(status.nowPlaying.title)
+        assertNull(status.nowPlaying.artist)
+        assertNull(status.nowPlaying.album)
+        assertNull(status.nowPlaying.sourceApp)
+        assertNull(status.nowPlaying.artworkTransferId)
+    }
+
     @Test
     fun reportsOnlyChangesOfThePlaybackStatus() {
         val status = CarPlayPlaybackStatus()

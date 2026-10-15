@@ -11,10 +11,12 @@ test('legacy endpoint status cannot change the browser address or reconnect it',
   let status, portalRevision = null, fitRequestedAt = 0;
   const effects = [];
   const browserAudio = { status() {} }, airplayControls = { update() {} };
+  const trustPrompts = [], airplayTrust = { update(prompt) { trustPrompts.push(prompt); } };
   const render = () => {}, showPortal = () => effects.push('portal');
   const applyStatus = eval(`(${apply})`);
   applyStatus({ endpoint: '100.70.1.2:9000', fit: false });
   assert.deepEqual(link, { host: '169.254.111.111:8080', code: '1234' });
   assert.deepEqual(effects, []);
   assert.equal(status.endpoint, '100.70.1.2:9000');
+  assert.deepEqual(trustPrompts, [undefined], 'legacy status clears an absent trust prompt without altering the endpoint');
 });

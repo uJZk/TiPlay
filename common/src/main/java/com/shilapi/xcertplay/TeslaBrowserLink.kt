@@ -136,6 +136,7 @@ internal object TeslaBrowserLink {
     private val requested = AtomicBoolean(false)
     private val host = AtomicReference<Host?>(null)
     private val listeners = CopyOnWriteArraySet<(State) -> Unit>()
+    private val viewportListeners = CopyOnWriteArraySet<(BrowserViewport?) -> Unit>()
     // Both maps and their display transitions share one monitor; retirement detaches the pair
     // before closing it outside this monitor. Sink teardown remains owner-specific.
     private val tapLock = Any()
@@ -312,6 +313,13 @@ internal object TeslaBrowserLink {
             }
         }
         return viewport
+    }
+
+    /** Ordinary AirPlay saves resize requests for its next session, independently of CarPlay reconnects. */
+    fun listenViewport(context: Context, listener: (BrowserViewport?) -> Unit): AutoCloseable {
+        viewportListeners += listener
+        listener(lastViewport(context))
+        return AutoCloseable { viewportListeners -= listener }
     }
 
     /** The HTTPS page the links open; [TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS] unless the driver hosts their own. */
@@ -519,6 +527,9 @@ internal object TeslaBrowserLink {
         viewportLoaded = true
         app?.let { saveViewport(it, next) }
         log("Browser link: viewport ${TeslaBrowserCanvas.describe(next)}")
+        viewportListeners.forEach { listener ->
+            runCatching { listener(next) }.onFailure { Log.w(TAG, "viewport listener failed", it) }
+        }
         main.post { host.get()?.onBrowserViewport(next) }
     }
 
@@ -596,6 +607,7 @@ internal object TeslaBrowserLink {
         synchronized(statsLock) { lastStatsLog = null; lastStatsCounters = emptyMap() }
         host.set(null)
         listeners.clear()
+        viewportListeners.clear()
         val retired = synchronized(tapLock) {
             val previous = audioTaps.values.toList() to taps.values.toList()
             audioTaps.clear()

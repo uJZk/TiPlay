@@ -21,6 +21,10 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
     private var fraction = item.fraction
     private var seekable = false
     private var closed = false
+    private var availableTracks: Map<String, Set<String>> = emptyMap()
+    private var trackRevision = 0L
+    private var trackSelection: List<Map<String, Any?>> = emptyList()
+    private var textMarkup: Map<String, Any> = mapOf("fontScale" to 1.0, "color" to "#FFFFFF")
     private data class PendingSeek(val token: Long, val position: Double, val dispatchedRevision: Long? = null)
     private var seekRequests = 0L
     private var pendingSeek: PendingSeek? = null
@@ -57,7 +61,43 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
         requestedPlaying, playback.ready, playback.buffering, seekable, rate = requestedRate)
 
     @Synchronized fun source(): Map<String, Any?> = mapOf("resource" to proxy.rootId,
-        "directUrl" to proxy.directUrl(itemUrl), "revision" to revision, "seekRevision" to seekRevision, "target" to target, "fraction" to fraction)
+        "directUrl" to proxy.directUrl(itemUrl), "revision" to revision, "seekRevision" to seekRevision, "target" to target, "fraction" to fraction,
+        "trackRevision" to trackRevision, "trackSelection" to trackSelection, "textMarkup" to textMarkup)
+
+    /** Only select tracks the browser has actually decoded/discovered; unknown plist shapes are refused. */
+    @Synchronized fun property(name: String, value: Any?): Boolean {
+        if (closed) return false
+        when (name) {
+            "selectedMediaArray" -> {
+                val selections = value as? List<*> ?: return false
+                if (selections.size > 2) return false
+                val seen = mutableSetOf<String>()
+                val accepted = selections.map { entry ->
+                    val fields = entry as? Map<*, *> ?: return false
+                    val type = fields["type"] as? String ?: return false
+                    if (type !in setOf("audio", "subtitle") || !seen.add(type)) return false
+                    val id = fields["id"]
+                    if (id == null && type != "subtitle") return false
+                    if (id != null && (id !is String || id !in availableTracks[type].orEmpty())) return false
+                    mapOf("type" to type, "id" to id)
+                }
+                trackSelection = accepted; trackRevision++
+            }
+            "textMarkupArray" -> {
+                val styles = value as? List<*> ?: return false
+                if (styles.size > 1) return false
+                val fields = if (styles.isEmpty()) emptyMap<Any?, Any?>() else styles[0] as? Map<*, *> ?: return false
+                if (fields.keys.any { it !in setOf("fontScale", "color") }) return false
+                val scale = if (fields.containsKey("fontScale")) (fields["fontScale"] as? Number)?.toDouble()
+                    ?.takeIf { it.isFinite() && it in 0.5..3.0 } ?: return false else 1.0
+                val color = if (fields.containsKey("color")) (fields["color"] as? String)
+                    ?.takeIf { Regex("#[0-9a-fA-F]{6}").matches(it) } ?: return false else "#FFFFFF"
+                textMarkup = mapOf("fontScale" to scale, "color" to color)
+            }
+            else -> return false
+        }
+        revision++; return true
+    }
 
     @Synchronized fun control(action: String, value: Double?) {
         if (closed) return
@@ -96,6 +136,16 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResou
         val buffered = if (fields.containsKey("bufferedPosition")) number("bufferedPosition") ?: return false else position
         if (buffered < position || (duration > 0 && buffered > duration)) return false
         val previous = playback
+        val catalogue = fields["tracks"] as? Map<*, *>
+        if (catalogue != null) {
+            val decoded = mutableMapOf<String, Set<String>>()
+            for (type in listOf("audio", "subtitle")) {
+                val ids = catalogue[type] as? List<*> ?: return false
+                if (ids.size > 64 || ids.any { it !is String || it.length !in 1..128 }) return false
+                decoded[type] = ids.filterIsInstance<String>().toSet()
+            }
+            availableTracks = decoded
+        }
         seekable = fields["seekable"] == true && duration > 0
         requestedPlaying = playing
         requestedRate = rate

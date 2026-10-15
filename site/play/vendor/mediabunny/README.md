@@ -1,7 +1,7 @@
 # Media decoding and audio processing
 
 This self-hosted bundle contains Mediabunny's media input/sink APIs, SoundTouchJS's
-audio tempo processor and hls.js's WebVTT parsers. TiPlay owns playback scheduling;
+audio tempo processor and hls.js's WebVTT, IMSC1, CEA-608 and MP4/SEI parsers. TiPlay owns playback scheduling;
 no HLS playback engine, CDN or second HTML video clock is used by this bundle.
 
 The authoritative package versions, tarball URLs and integrity are in the
@@ -21,5 +21,6 @@ lockfile, and upstream source is available from:
 The hls.js parser imports are taken from the integrity-verified npm source tree,
 because its package exports do not expose these utilities. Package updates must
 review their source signatures and timestamp/discontinuity behavior. Subtitle
-support does not imply DRM key availability or support for embedded subtitle
-formats. Browser codec support remains a WebCodecs capability check.
+support includes ordinary AES-128 subtitle segments and supported embedded
+WebVTT/TTML/tx3g/CEA captions, and does not imply DRM key availability.
+Browser codec support remains a WebCodecs capability check.

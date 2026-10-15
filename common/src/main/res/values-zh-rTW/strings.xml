@@ -886,4 +886,6 @@
     <string name="settings_mfi_target_description">只有車機上插著 CH341 認證轉接器時才選擇 USB/CH341。沒有轉接器時請選擇「本機離線」。下次連線時生效。</string>
     <string name="settings_call_speakerphone">通話使用揚聲器</string>
     <string name="settings_call_speakerphone_description">適用於當作車機的 Android 手機或平板：CarPlay 通話從揚聲器播放而不是聽筒，並使用免持麥克風。車機上請保持關閉。從下一次通話開始生效。</string>
+    <string name="settings_forget_airplay_devices">忘記所有可信 AirPlay 裝置</string>
+    <string name="settings_airplay_devices_forgotten">已忘記所有可信 AirPlay 裝置</string>
 </resources>

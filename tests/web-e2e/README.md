@@ -150,3 +150,19 @@ It forces autoplay permission and uses a local resource stub, so production auto
 Android HFP/SCO transitions, actual iPhone FCUP access and vehicle performance remain device checks.
 HLS URL rewriting, Range handling, peer direct access and stale playback reports are also covered
 by shared module tests. Codec support in native HTML video does not establish WebCodecs support.
+
+## Ordinary AirPlay audio
+
+`airplay-audio.mjs` serves the production browser decoder and a checked-in,
+synthetically generated AAC-LC fixture. It uses actual browser WebCodecs rather
+than a fake decoder and verifies decoded nonzero PCM, rates/channels and RTP/NTP
+presentation metadata. Run with the same `NODE_PATH` and `CHROMIUM` prerequisites:
+
+```sh
+NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/airplay-audio.mjs
+```
+
+Chromium 151 on 2026-10-14 decoded 10 AAC-LC frames / 20,480 channel samples.
+Its native probes returned unsupported for AAC-ELD (`mp4a.40.39`) and ALAC.
+Those limits are browser dependent; TiPlay provides no Android/software fallback.
+Fixture source and generation notes are in `tests/web/fixtures/README.md`.

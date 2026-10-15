@@ -275,18 +275,19 @@ object Iap2ControlMessages {
         optionalVoid(5, maxNonSiphoningCurrentExceeded)
     }
 
-    fun startNowPlayingUpdates(): Iap2Frame =
+    fun startNowPlayingUpdates(includeArtwork: Boolean = true, includeText: Boolean = true): Iap2Frame =
         Iap2Messages.build(Iap2Endpoints.START_NOW_PLAYING_UPDATES) {
             group(0) {
-                listOf(1, 4, 6, 12, 26).forEach(::void)
+                (listOf(4) + (if (includeText) listOf(1, 6, 12) else emptyList()) +
+                    (if (includeArtwork) listOf(26) else emptyList())).sorted().forEach(::void)
             }
             group(1) {
-                listOf(0, 1, 7).forEach(::void)
+                (listOf(0, 1) + if (includeText) listOf(7) else emptyList()).forEach(::void)
             }
         }
 
-    fun subscriptions(): List<Iap2Frame> = listOf(
-        startNowPlayingUpdates(),
+    fun subscriptions(includeArtwork: Boolean = true, includeText: Boolean = true): List<Iap2Frame> = listOf(
+        startNowPlayingUpdates(includeArtwork, includeText),
         Iap2Messages.build(Iap2Endpoints.START_ROUTE_GUIDANCE_UPDATES) {
             u16(0, 42)
             void(1)

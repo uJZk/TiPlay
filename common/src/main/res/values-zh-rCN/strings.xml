@@ -886,4 +886,6 @@
     <string name="settings_mfi_target_description">只有车机上插着 CH341 认证适配器时才选择 USB/CH341。没有适配器时请选择「本地离线」。下次连接时生效。</string>
     <string name="settings_call_speakerphone">通话使用扬声器</string>
     <string name="settings_call_speakerphone_description">适用于用作车机的 Android 手机或平板：CarPlay 通话从扬声器播放而不是听筒，并使用免提麦克风。车机上请保持关闭。从下一次通话开始生效。</string>
+    <string name="settings_forget_airplay_devices">忘记所有可信 AirPlay 设备</string>
+    <string name="settings_airplay_devices_forgotten">已忘记所有可信 AirPlay 设备</string>
 </resources>

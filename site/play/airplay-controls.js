@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { createAirPlayDiagnostics } from './airplay-diagnostics.js';
+import { fetchMediaResource } from './airplay-fetch.js';
 export function playbackState(value) {
   if (!value || !Number.isSafeInteger(value.id) || value.id < 1) return null;
   const duration = Number.isFinite(value.duration) ? Math.max(0, value.duration) : 0;
@@ -21,9 +22,9 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   const photoStop = document.createElement('button');
   photoStop.className = 'airplay-photo-stop'; photoStop.textContent = lang === 'zh' ? '结束投放' : 'Stop casting';
   photoStop.hidden = true; stage.append(layer, photoStop);
-  let state = null, player = null, loading = null, key = null, appliedRevision = -1, appliedSeekRevision = -1, metadata = false, timer = null;
+  let state = null, player = null, loading = null, key = null, appliedRevision = -1, appliedSeekRevision = -1, appliedTrackRevision = -1, metadata = false, timer = null;
   let directive = null, disposed = false, routeMuted = false, savedMute = false, waiting = false, sourceReady = false;
-  let diagnostics = null;
+  let diagnostics = null, photo = null;
   const stop = () => {
     if (!state) return;
     diagnostics?.event('explicit-stop');
@@ -37,7 +38,8 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     loading?.abort(); loading = null;
     clearInterval(timer); timer = null;
     const retiring = player; player = null; retiring?.dispose(); layer.replaceChildren();
-    key = null; metadata = sourceReady = false; waiting = false; appliedRevision = appliedSeekRevision = -1;
+    photo?.dispose(); photo = null;
+    key = null; metadata = sourceReady = false; waiting = false; appliedRevision = appliedSeekRevision = appliedTrackRevision = -1;
     layer.hidden = photoStop.hidden = true;
   }
   function report() {
@@ -57,6 +59,8 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       bufferedPosition, playing: !media.paused, rate: media.playbackRate, ready: media.readyState >= 2,
       buffering: !player.error() && playbackBuffering(media, waiting),
       seekable: Number.isFinite(duration) && duration > 0 && media.seekable.length > 0,
+      tracks: { audio: [...media.audioTracks].map(track => track.id),
+        subtitle: [...media.textTracks].filter(track => !track.error && (track.supported || track.cues?.length > 0)).map(track => track.id) },
       ended: media.ended, failed: Boolean(player.error()) });
   }
   function applyDirective() {
@@ -74,6 +78,20 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       appliedSeekRevision = seekRevision;
     }
     appliedRevision = directive.revision;
+    if (directive.trackRevision !== appliedTrackRevision) {
+      for (const selection of directive.trackSelection || []) {
+        if (selection.type === 'audio') player.media.selectAudioTrack(selection.id);
+        if (selection.type === 'subtitle') for (const track of player.media.textTracks) track.mode = track.id === selection.id ? 'showing' : 'disabled';
+      }
+      appliedTrackRevision = directive.trackRevision;
+    }
+    if (directive.textMarkup) {
+      const overlay = player.surface.querySelector('.airplay-captions');
+      if (overlay) {
+        overlay.style.fontSize = `${20 * directive.textMarkup.fontScale}px`;
+        overlay.style.color = directive.textMarkup.color;
+      }
+    }
     applyDirectiveRate(player.media, directive);
     if (directive.playing) {
       observation?.event('directive-play', undefined, command);
@@ -85,7 +103,27 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       player.media.pause();
     }
   }
-  async function open(next) {
+  function resourceRoute(next, forceProxy = false) {
+    const { code, session } = credentials();
+    return `/airplay-resource?id=${next.id}&r=${encodeURIComponent(next.resource)}&c=${encodeURIComponent(code)}&s=${encodeURIComponent(session)}${forceProxy ? '&proxy=1' : ''}`;
+  }
+  async function openPhoto(next) {
+    const currentKey = `${next.id}:${host()}:${next.resource}`;
+    clear(); key = currentKey; layer.hidden = false; photoStop.hidden = false;
+    const abort = loading = new AbortController();
+    try {
+      const { createPhotoPresenter } = await import('./airplay-photo.js');
+      if (abort.signal.aborted || key !== currentKey || disposed) return;
+      photo = createPhotoPresenter(layer, { fetchResource: (url, init) => fetchMediaResource((resource, options) => fetchPhone(new URL(resource).pathname + new URL(resource).search, options), url, init, { signal: abort.signal }), signal: abort.signal });
+      await photo.load(`http://${host()}${resourceRoute(next)}`);
+    } catch (error) {
+      if (!abort.signal.aborted && key === currentKey && !disposed) {
+        const message = document.createElement('p'); message.className = 'airplay-error'; message.role = 'alert';
+        message.textContent = lang === 'zh' ? '无法显示照片' : 'Unable to display photo'; layer.append(message);
+      }
+    }
+  }
+  async function open(next, forced = false) {
     const currentKey = `${next.id}:${host()}:${next.resource}`;
     clear(); key = currentKey;
     layer.hidden = false;
@@ -95,11 +133,20 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       active: () => diagnostics === observation && key === currentKey && !abort.signal.aborted && !disposed,
     });
     observation.event('open', undefined, next);
-    const { code, session } = credentials();
-    const route = `/airplay-resource?id=${next.id}&r=${encodeURIComponent(next.resource)}&c=${encodeURIComponent(code)}&s=${encodeURIComponent(session)}`;
+    let forceProxy = forced;
+    let route = resourceRoute(next, forceProxy);
+    const fetchExternal = (url, init) => fetch(url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
     try {
       observation.event('probe-start', undefined, next);
-      const response = next.directUrl ? await fetch(next.directUrl, { signal: abort.signal, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' }) : await fetchPhone(route, { signal: abort.signal });
+      let response;
+      try {
+        response = await fetchMediaResource(next.directUrl && !forceProxy ? fetchExternal : (_, init) => fetchPhone(route, init), next.directUrl || `http://${host()}${route}`, { signal: abort.signal });
+        if (!response.ok) throw new Error('AirPlay media unavailable');
+      } catch (cause) {
+        if (forceProxy || abort.signal.aborted) throw cause;
+        forceProxy = true; route = resourceRoute(next, true); observation.event('proxy-fallback');
+        response = await fetchMediaResource((_, init) => fetchPhone(route, init), `http://${host()}${route}`, { signal: abort.signal });
+      }
       if (!response.ok) throw new Error('AirPlay media unavailable');
       const type = response.headers.get('Content-Type')?.split(';')[0] ?? '';
       await response.body?.cancel();
@@ -109,9 +156,9 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       if (abort.signal.aborted || key !== currentKey || disposed) return;
       player = createVideoPlayer(layer, { lang, stop, stopText: photoStop.textContent, signal: abort.signal,
         onCanvasError: error => observation.event('canvas-error', error),
-        fetchResource: (url, init) => next.directUrl ? fetch(url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' })
+        fetchResource: (url, init) => next.directUrl && !forceProxy ? fetchExternal(url, init)
           : new URL(url).origin === `http://${host()}` ? fetchPhone(new URL(url).pathname + new URL(url).search, init)
-            : fetch(url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' }),
+            : fetchExternal(url, init),
       });
       const opened = player;
       const media = player.media;
@@ -124,10 +171,13 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
           if (player !== opened) return;
           if (event === 'waiting' || event === 'seeking') waiting = true;
           else if (['pause', 'playing', 'seeked', 'ended', 'error'].includes(event)) waiting = false;
-          if (event === 'error') player?.fail(lang === 'zh' ? '无法播放视频' : 'Unable to play video');
+          if (event === 'error' && !forceProxy && media.error?.name !== 'NotSupportedError') { observation.event('proxy-fallback'); void open(state, true); return; }
+          if (event === 'error') player?.fail(/HDR|SDR/.test(media.error?.message || '')
+            ? (lang === 'zh' ? '此视频需要 HDR，TiPlay 仅支持 SDR 视频' : 'This video requires HDR. TiPlay supports SDR video.')
+            : (lang === 'zh' ? '无法播放视频' : 'Unable to play video'));
           report();
         });
-      await player.source(next.directUrl ?? `http://${host()}${route}`, type);
+      await player.source(next.directUrl && !forceProxy ? next.directUrl : `http://${host()}${route}`, type);
       if (abort.signal.aborted || player !== opened) return;
       sourceReady = true; applyDirective(); report();
       timer = setInterval(report, 400);
@@ -145,7 +195,13 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       const next = playbackState(value);
       state = next; directive = next;
       if (!next) { clear(); return; }
-      if (next.kind === 'photo') { if (key) clear(); photoStop.hidden = false; return; }
+      if (next.kind === 'audio') { if (key) clear(); photoStop.hidden = false; return; }
+      if (next.kind === 'photo') {
+        if (!next.resource && key) clear();
+        if (next.resource && key !== `${next.id}:${host()}:${next.resource}`) void openPhoto(next);
+        else photoStop.hidden = false;
+        return;
+      }
       if (!next.resource || !Number.isSafeInteger(next.revision)) { clear(); return; }
       const nextKey = `${next.id}:${host()}:${next.resource}`;
       if (key !== nextKey) open(next);
@@ -157,7 +213,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       routeMuted = value;
       if (player) player.media.muted = value ? true : savedMute;
     },
-    videoActive: () => Boolean(state?.resource),
+    videoActive: () => Boolean(state?.resource) || state?.kind === 'audio',
     dispose() { disposed = true; clear(); layer.remove(); photoStop.remove(); },
   };
 }

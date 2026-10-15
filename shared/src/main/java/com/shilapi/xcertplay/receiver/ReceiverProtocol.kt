@@ -10,10 +10,10 @@ import java.net.URLDecoder
 /** Capabilities shared by Bonjour, /info and /server-info. No CarPlay or DRM offer. */
 data class ReceiverConfig(val name: String, val deviceId: String, val identity: AirPlayIdentity,
                           val width: Int = 1920, val height: Int = 1080, val fps: Int = 60,
-                          val hevcEnabled: Boolean = false) {
+                          val hevcEnabled: Boolean = false, val mirrorEnabled: Boolean = true) {
     // Bit 30 advertises the existing mirror RTSP endpoint on the AirPlay port, so
-    // clients need no separate AirTunes service. Audio transport is received and discarded.
-    val features: Long = ReceiverCapabilities.features(hevcEnabled)
+    // clients need no separate AirTunes service. Audio uses the browser output path.
+    val features: Long = ReceiverCapabilities.features(hevcEnabled, mirrorEnabled)
     val txt: Map<String, String> get() = mapOf(
         "deviceid" to deviceId, "features" to ReceiverCapabilities.txtFeatures(features),
         "flags" to "0x4", "model" to "AppleTV3,2", "srcvers" to "220.68", "vv" to "2",
@@ -52,7 +52,7 @@ data class ReceiverPlay(val url: String, val start: Double, val fraction: Boolea
             val seconds = fields["Start-Position-Seconds"] ?: fields["startPositionSeconds"]
             val position = seconds ?: fields["Start-Position"] ?: fields["startPosition"]
             val start = if (position == null) 0.0 else requireNotNull(position.toString().toDoubleOrNull())
-            require(start.isFinite() && start >= 0)
+            require(start.isFinite() && start >= 0 && (seconds != null || start <= 1.0))
             return ReceiverPlay(url, start, seconds == null)
         }
     }

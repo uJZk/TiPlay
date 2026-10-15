@@ -16,6 +16,58 @@ import java.nio.ByteOrder
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], manifest = Config.NONE)
 class BrowserAudioMediaSinkTest {
+    @Test fun idleAacAndOpusForwardTheirAccessUnitsWithoutCreatingAndroidCodecs() {
+        val hub = WebAudioHub()
+        val codecCreations = java.util.concurrent.atomic.AtomicInteger()
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub, decoderFactory = {
+            codecCreations.incrementAndGet()
+            error("Android decoding must not be used by idle playback")
+        })
+        val reader = hub.subscribe()
+        try {
+            for (kind in listOf(AudioCodecKind.AAC_LC, AudioCodecKind.OPUS)) {
+                val id = AudioStreamId(100, "media")
+                val format = AudioFormat(kind, 48000, 1, 100, "media", rtpClockRate = 16000)
+                sink.onAudioStarted(id, format, 0)
+                val config = requireNotNull(reader.take(1000))
+                assertEquals(6, config[4].toInt())
+                assertTrue(String(config.copyOfRange(28, config.size)).contains(
+                    "\"codec\":\"${if (kind == AudioCodecKind.OPUS) "opus" else "aac-lc"}\""))
+                val raw = byteArrayOf(9, 8, 7, 6)
+                sink.onAudioRtp(id, format, ByteArray(12) + raw, 16000)
+                val packet = requireNotNull(pcm(reader))
+                assertArrayEquals(raw, packet.copyOfRange(36, packet.size))
+                assertEquals(1_000_000.0, ByteBuffer.wrap(packet).getDouble(28), 0.0)
+                assertEquals(0, codecCreations.get())
+            }
+        } finally { sink.close(); reader.close() }
+    }
+
+    @Test fun androidCodecCreationIsLimitedToAllowedStreamsDuringActiveMicrophoneDemand() {
+        val hub = WebAudioHub(); lateinit var voice: Voice
+        val codecCreations = java.util.concurrent.atomic.AtomicInteger()
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+            voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } },
+            decoderFactory = { codecCreations.incrementAndGet(); error("Injected codec factory") })
+        val media = AudioStreamId(103, "media"); val call = AudioStreamId(100, "telephony")
+        fun start(id: AudioStreamId) = sink.onAudioStarted(id, AudioFormat(AudioCodecKind.AAC_LC, 48000, 1, id.type, id.audioType), 0)
+        try {
+            start(media)
+            sink.onMicrophoneStarted(call, config("telephony"))
+            start(call)
+            assertEquals(0, codecCreations.get())
+            voice.ready()
+            val deadline = System.nanoTime() + 1_000_000_000L
+            while (codecCreations.get() == 0 && System.nanoTime() < deadline) Thread.sleep(1)
+            assertEquals(1, codecCreations.get())
+            start(AudioStreamId(100, "alert"))
+            sink.onMicrophoneStopped(call); voice.released()
+            start(media)
+            Thread.sleep(20)
+            assertEquals(1, codecCreations.get())
+        } finally { sink.close(); voice.released() }
+    }
+
     @Test fun presentationUsesTheRtpClockWhilePcmKeepsItsDecodeSampleRate() {
         for (clock in listOf(16000, 24000, 48000)) {
             val hub = WebAudioHub()
@@ -27,54 +79,58 @@ class BrowserAudioMediaSinkTest {
                 sink.onAudioStarted(id, format, 100)
                 sink.onAudioClock(id, 100, 1_000_000_000L)
                 sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, 1), 100 + clock)
-                val packet = ByteBuffer.wrap(requireNotNull(reader.take(1000)))
+                val packet = ByteBuffer.wrap(requireNotNull(pcm(reader)))
                 assertEquals(48000, packet.getInt(8))
                 assertEquals(2000.0, packet.getDouble(20), 0.001)
             } finally { sink.close(); reader.close() }
         }
     }
 
-    @Test fun replacingADecoderBlockedOnMusicCapacityRetiresItsPendingResetWithoutClosingTheReader() {
+    @Test fun replacingAnEncodedMusicWorkerRetiresItsBlockedOldPacketWithoutClosingTheReader() {
         val hub = WebAudioHub()
         val sink = BrowserAudioMediaSink(object : MediaSink {}, hub)
         val reader = hub.subscribe()
         val id = AudioStreamId(103, "media")
         val format = AudioFormat(AudioCodecKind.LPCM, 16000, 1, id.type, id.audioType)
         try {
-            repeat(16) { hub.publish(sink, 0, 16000, 1, byteArrayOf(it.toByte(), 0), buffered = true) }
             sink.onAudioStarted(id, format, 0)
+            assertEquals(6, reader.take(1000)!![4].toInt())
+            // Fill through the producer so every queued packet has its real retirement lease.
+            repeat(16) { sample ->
+                sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, sample.toByte()), sample)
+            }
             val old = decoderThread(sink, id)
             sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, 99), 0)
             awaitMusicWait(old)
-            val replacement = java.util.concurrent.CompletableFuture.runAsync { sink.onAudioStarted(id, format, 0) }
-            replacement.get(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+            java.util.concurrent.CompletableFuture.runAsync { sink.onAudioStarted(id, format, 0) }
+                .get(500, java.util.concurrent.TimeUnit.MILLISECONDS)
             old.join(500)
-            assertFalse("Retired decoder must leave its full-buffer wait", old.isAlive)
-            repeat(16) { assertEquals(it, reader.take(100)!![28].toInt()) }
-            assertNull(reader.take(20))
+            assertFalse("Retired worker must leave its full-buffer wait", old.isAlive)
+            val config = reader.take(1000)!!
+            assertEquals(6, config[4].toInt())
             assertFalse(reader.closed)
             sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, 77), 0)
-            val fresh = reader.take(1000)!!
-            assertEquals(77, fresh[28].toInt())
-            assertEquals(2, fresh[7].toInt() and 2)
-            val epoch = ByteBuffer.wrap(fresh).getInt(16)
+            val fresh = pcm(reader)!!
+            assertArrayEquals(byteArrayOf(0, 77), fresh.copyOfRange(36, fresh.size))
+            assertEquals(1, fresh[7].toInt() and 1)
+            assertEquals(ByteBuffer.wrap(config).getInt(16), ByteBuffer.wrap(fresh).getInt(16))
             sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, 78), 1)
-            val next = reader.take(1000)!!
-            assertEquals(78, next[28].toInt())
-            assertEquals(epoch, ByteBuffer.wrap(next).getInt(16))
-            assertEquals(0, next[7].toInt() and 2)
+            val next = pcm(reader)!!
+            assertArrayEquals(byteArrayOf(0, 78), next.copyOfRange(36, next.size))
+            assertEquals(ByteBuffer.wrap(fresh).getInt(16), ByteBuffer.wrap(next).getInt(16))
         } finally { sink.close(); reader.close() }
     }
 
-    @Test fun pausingAFullMusicDecoderReturnsPromptlyAndResumeStartsOnlyFreshPcm() {
+    @Test fun pausingAFullMusicWorkerReturnsPromptlyAndResumeForwardsOnlyFreshAccessUnits() {
         val hub = WebAudioHub()
         val sink = BrowserAudioMediaSink(object : MediaSink {}, hub)
         val reader = hub.subscribe()
         val id = AudioStreamId(103, "media")
         val format = AudioFormat(AudioCodecKind.LPCM, 16000, 1, id.type, id.audioType)
         try {
-            repeat(16) { hub.publish(sink, 0, 16000, 1, byteArrayOf(1, 0), buffered = true) }
             sink.onAudioStarted(id, format, 0)
+            assertEquals(6, reader.take(1000)!![4].toInt())
+            repeat(16) { hub.publish(sink, 0, 16000, 1, byteArrayOf(1, 0), buffered = true) }
             val old = decoderThread(sink, id)
             sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, 99), 0)
             awaitMusicWait(old)
@@ -83,12 +139,10 @@ class BrowserAudioMediaSinkTest {
             old.join(500)
             assertFalse(old.isAlive)
             sink.resumeAudio()
-            while (reader.take(10) != null) Unit
             sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, 42), 0)
-            val fresh = reader.take(1000)!!
-            assertEquals(42, fresh[28].toInt())
-            assertEquals(2, fresh[7].toInt() and 2)
-            assertNull(reader.take(20))
+            val fresh = pcm(reader)!!
+            assertArrayEquals(byteArrayOf(0, 42), fresh.copyOfRange(36, fresh.size))
+            assertNull(pcm(reader, 20))
             assertFalse(reader.closed)
         } finally { sink.close(); reader.close() }
     }
@@ -126,7 +180,7 @@ class BrowserAudioMediaSinkTest {
         } finally { sink.close(); subscription.close() }
     }
 
-    @Test fun pcmIsConvertedForTheBrowserAndStopClearsPlayback() {
+    @Test fun pcmIsForwardedUnchangedForBrowserConversionAndStopClearsPlayback() {
         val hub = WebAudioHub()
         val sink = BrowserAudioMediaSink(object : MediaSink {}, hub)
         val subscription = hub.subscribe()
@@ -136,16 +190,15 @@ class BrowserAudioMediaSinkTest {
             sink.onAudioStarted(id, format, 0)
             sink.onAudioClock(id, 0, 1_000_000_000L)
             sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0x12, 0x34, 0x56, 0x78), 0)
-            val packet = subscription.take(1000)!!
+            val packet = pcm(subscription)!!
             assertEquals(2, packet[5].toInt())
-            assertEquals(2, packet[7].toInt() and 2)
-            assertEquals(2, packet[4].toInt())
+            assertEquals(7, packet[4].toInt())
             assertEquals(1000.0, ByteBuffer.wrap(packet).order(ByteOrder.BIG_ENDIAN).getDouble(20), 0.0)
-            assertArrayEquals(byteArrayOf(0x34, 0x12, 0x78, 0x56), packet.copyOfRange(28, packet.size))
+            assertArrayEquals(byteArrayOf(0x12, 0x34, 0x56, 0x78), packet.copyOfRange(36, packet.size))
             sink.onAudioStopped(id)
             val stopped = subscription.take(1000)!!
-            assertEquals(28, stopped.size)
-            assertEquals(2, stopped[7].toInt() and 2)
+            assertEquals(6, stopped[4].toInt())
+            assertTrue(String(stopped.copyOfRange(28, stopped.size)).contains("\"ended\":true"))
             sink.onAudioRtp(id, format, ByteArray(14), 0)
             assertNull(subscription.take(30))
         } finally { sink.close(); subscription.close() }
@@ -171,11 +224,11 @@ class BrowserAudioMediaSinkTest {
         sink.onAudioStarted(id, format, 0)
         sink.onAudioRtp(id, format, ByteArray(12) + byteArrayOf(0, value.toByte()), 0)
     }
-    private fun pcm(reader: WebAudioHub.Subscription): ByteArray? {
-        val until = System.nanoTime() + 1_000_000_000L
+    private fun pcm(reader: WebAudioHub.Subscription, timeoutMillis: Long = 1000): ByteArray? {
+        val until = System.nanoTime() + timeoutMillis * 1_000_000L
         while (System.nanoTime() < until) {
             val packet = reader.take(10) ?: continue
-            if (packet.size > 28) return packet
+            if ((packet[4].toInt() == 2 && packet.size > 28) || packet[4].toInt() == 7) return packet
         }
         return null
     }
@@ -210,7 +263,7 @@ class BrowserAudioMediaSinkTest {
             assertEquals(false, hub.voiceStatus()["muted"])
             packet(sink, media, 5)
             val fresh = pcm(reader)!!
-            assertArrayEquals(byteArrayOf(5, 0), fresh.copyOfRange(28, fresh.size))
+            assertArrayEquals(byteArrayOf(0, 5), fresh.copyOfRange(36, fresh.size))
         } finally { sink.close(); voice.released(); reader.close() }
     }
 

@@ -826,4 +826,6 @@
     <string name="settings_mfi_target_description">Выбирайте USB/CH341, только если к головному устройству подключён адаптер аутентификации CH341. Без него выберите «Локальный офлайн». Применяется при следующем подключении.</string>
     <string name="settings_call_speakerphone">Звонки через громкоговоритель</string>
     <string name="settings_call_speakerphone_description">Для телефона или планшета Android, используемого как головное устройство: звонки CarPlay звучат из громкоговорителя, а не из разговорного динамика, и используется микрофон громкой связи. На головном устройстве автомобиля оставьте выключенным. Применяется со следующего звонка.</string>
+    <string name="settings_forget_airplay_devices">Забыть все доверенные устройства AirPlay</string>
+    <string name="settings_airplay_devices_forgotten">Доверенные устройства AirPlay забыты</string>
 </resources>

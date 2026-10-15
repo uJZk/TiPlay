@@ -7,6 +7,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Iap2FileTransferReceiverTest {
+    @Test fun unsolicitedArtworkIsCancelledBeforeAllocatingAnAssemblyBufferInBrowserMode() {
+        val receiver = Iap2FileTransferReceiver(receiveArtwork = false)
+        val refused = receiver.accept(setup(1, Iap2FileTransferReceiver.DEFAULT_MAXIMUM_ARTWORK_BYTES))
+        assertArrayEquals(byteArrayOf(1, 2), refused.replies.single())
+        assertNull(refused.completed)
+        val pending = receiver.javaClass.getDeclaredField("pending").apply { isAccessible = true }.get(receiver) as Map<*, *>
+        assertTrue(pending.isEmpty())
+        assertNull(receiver.accept(data(1, 0x40, byteArrayOf(1, 2, 3))).completed)
+        assertTrue(pending.isEmpty())
+        // The existing unsupported-file response remains unchanged; this is not a generic file protocol switch.
+        assertArrayEquals(byteArrayOf(2, 2), receiver.accept(setup(2, 3, type = 7)).replies.single())
+    }
+
     @Test
     fun acceptsAndReassemblesNowPlayingArtwork() {
         val receiver = Iap2FileTransferReceiver()

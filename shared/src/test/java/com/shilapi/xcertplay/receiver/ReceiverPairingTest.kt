@@ -14,6 +14,7 @@ class ReceiverPairingTest {
         val signing = AirPlayCrypto.ed25519Generate()
         val reply = receiver.verify(byteArrayOf(1, 0, 0, 0) + curve.publicKey + signing.publicKey)
         assertNull(receiver.sharedSecret)
+        assertNull(receiver.verifiedPublicKey)
         val serverCurve = reply.copyOf(32)
         val secret = AirPlayCrypto.x25519Shared(curve.privateKey, serverCurve)
         val cipher = aesCtr(AirPlayCrypto.sha512("Pair-Verify-AES-Key".toByteArray(), secret).copyOf(16),
@@ -22,8 +23,12 @@ class ReceiverPairingTest {
         val clientSignature = AirPlayCrypto.ed25519Sign(signing.privateKey, curve.publicKey + serverCurve)
         assertEquals(0, receiver.verify(ByteArray(4) + cipher.update(clientSignature)).size)
         assertArrayEquals(secret, receiver.sharedSecret)
+        assertArrayEquals(signing.publicKey, receiver.verifiedPublicKey)
+        receiver.verifiedPublicKey!!.fill(0)
+        assertArrayEquals(signing.publicKey, receiver.verifiedPublicKey)
         assertThrows(ReceiverPairingFailure::class.java) { receiver.verify(ByteArray(0)) }
         assertNull(receiver.sharedSecret)
+        assertNull(receiver.verifiedPublicKey)
     }
 
     @Test fun badProofCannotAuthorizeMedia() {
@@ -31,6 +36,7 @@ class ReceiverPairingTest {
         receiver.verify(byteArrayOf(1, 0, 0, 0) + AirPlayCrypto.x25519Generate().publicKey + AirPlayCrypto.ed25519Generate().publicKey)
         assertThrows(IllegalArgumentException::class.java) { receiver.verify(ByteArray(68)) }
         assertNull(receiver.sharedSecret)
+        assertNull(receiver.verifiedPublicKey)
         // A failed proof also destroys its cipher/pending state; retrying the old step cannot succeed.
         assertThrows(ReceiverPairingFailure::class.java) { receiver.verify(ByteArray(68)) }
         assertNull(receiver.sharedSecret)

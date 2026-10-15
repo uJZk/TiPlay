@@ -73,7 +73,7 @@ internal object CarPlayMediaKeys {
     fun attach(context: Context, next: CarPlayController) {
         if (controller !== next) {
             releaseLocked()
-            artworkOwner = artworkQueue.newSession()
+            if (next.receivesArtwork()) artworkOwner = artworkQueue.newSession()
         }
         appContext = context.applicationContext
         controller = next
@@ -84,10 +84,10 @@ internal object CarPlayMediaKeys {
             onIphonePlaying(next, playing)
         }
         next.nowPlayingListener = { _ -> onNowPlayingChanged(next) }
-        next.artworkListener = { id, bytes -> onArtworkChanged(next, id, bytes) }
+        next.artworkListener = if (next.receivesArtwork()) ({ id, bytes -> onArtworkChanged(next, id, bytes) }) else null
         val retained = next.nowPlayingSnapshot()
         onNowPlayingChanged(next)
-        next.matchingArtworkSnapshot(retained.artworkTransferId)?.let { onArtworkChanged(next, it.id, it.bytes) }
+        if (next.receivesArtwork()) next.matchingArtworkSnapshot(retained.artworkTransferId)?.let { onArtworkChanged(next, it.id, it.bytes) }
     }
 
     /** Ends key handling for [expected]; a newer controller's state is left alone. */
@@ -123,9 +123,15 @@ internal object CarPlayMediaKeys {
             synchronized(this) {
                 if (controller !== expected) return@synchronized
                 // Resolve retained state at delivery: a queued callback cannot roll a replay back.
-                val update = expected.nowPlayingSnapshot()
+                val update = expected.nowPlayingSnapshot().let { state ->
+                    state.copy(artworkTransferId = if (expected.receivesArtwork()) state.artworkTransferId else null,
+                        title = if (expected.receivesTextMetadata()) state.title else null,
+                        artist = if (expected.receivesTextMetadata()) state.artist else null,
+                        album = if (expected.receivesTextMetadata()) state.album else null,
+                        sourceApp = if (expected.receivesTextMetadata()) state.sourceApp else null)
+                }
                 val previousArtwork = artwork
-                if (albumTrackChanged(nowPlaying, update)) {
+                if (expected.receivesArtwork() && albumTrackChanged(nowPlaying, update)) {
                     val previousId = nowPlaying.artworkTransferId
                     if (previousId != null) {
                         ambientColorCache.remove(previousId)
@@ -156,7 +162,7 @@ internal object CarPlayMediaKeys {
 
     @Synchronized
     private fun onArtworkChanged(expected: CarPlayController, id: Int, bytes: ByteArray) {
-        if (controller !== expected) return
+        if (controller !== expected || !expected.receivesArtwork()) return
         artworkOwner?.let { artworkQueue.submit(it, id, bytes) }
     }
 
@@ -186,6 +192,7 @@ internal object CarPlayMediaKeys {
         nowPlaying.artworkTransferId?.let { ambientColorCache.containsKey(it) } == true
 
     private fun albumRecoveryEnabled(): Boolean {
+        if (controller?.receivesArtwork() != true) return false
         val settings = appContext?.let(com.shilapi.xcertplay.media.AmbientMusicSettings::load) ?: return false
         return settings.enabled && settings.colorSource == com.shilapi.xcertplay.media.AmbientColorSource.ALBUM
     }
@@ -199,6 +206,7 @@ internal object CarPlayMediaKeys {
     }
 
     private fun updateInitialAlbumRecovery(expected: CarPlayController) {
+        if (!expected.receivesArtwork()) return
         val recovery = initialAlbumRecovery
         val schedule = recovery.observe(nowPlaying, hasCurrentAlbumColor(), ::albumRecoveryEnabled)
         logAlbumRecoveryEvents(recovery)
@@ -435,7 +443,8 @@ internal object CarPlayMediaKeys {
 
     // Without art the car draws DiPlay's bright launcher icon instead.
     private fun shownArtworkLocked(): Bitmap? =
-        artwork ?: placeholder ?: appContext?.let(::placeholderArt)?.also { placeholder = it }
+        if (controller?.receivesArtwork() != true) null
+        else artwork ?: placeholder ?: appContext?.let(::placeholderArt)?.also { placeholder = it }
 
     internal fun placeholderArt(context: Context): Bitmap? = context
         .getDrawable(R.drawable.art_now_playing_placeholder)

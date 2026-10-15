@@ -1,6 +1,6 @@
 package com.shilapi.xcertplay.receiver
 
-/** Legacy transport shared by mirroring. Only AAC-ELD mirror audio is decoded; no standalone service. */
+/** Legacy RTP transport: declared PCM, ALAC, AAC-LC and AAC-ELD are forwarded for browser decoding. */
 internal object ReceiverAudioCapabilities {
     // Pinned UxPlay advertises this transport format mask for stream types 100 and 101.
     const val OUTPUT_FORMATS = 0x3fffffcL
@@ -23,12 +23,7 @@ internal object ReceiverAudioCapabilities {
         require(integer(stream, "type", 0) == 96L) { "unsupported audio stream type" }
         val format = integer(stream, "audioFormat", 0)
         require(format >= 0 && format and OUTPUT_FORMATS.inv() == 0L) { "unsupported audio format" }
-        val codec = integer(stream, "ct", 0)
-        require(codec in 0L..255L) { "invalid audio codec type" }
-        // UxPlay's SETUP defaults ct to zero; its codec callback explicitly identifies
-        // ct 2 (ALAC) and 8 (AAC-ELD). Without format bits, do not accept unknown codecs.
-        require(format != 0L || codec in listOf(0L, 2L, 8L)) { "unsupported audio codec type" }
-        require(integer(stream, "spf", 0) in 0L..65535L) { "invalid audio samples per frame" }
+        require(ReceiverMirrorAudioFormat.parse(stream) != null) { "unsupported audio codec configuration" }
         require(integer(stream, "controlPort", 0) in 0L..65535L) { "invalid audio control port" }
     }
 

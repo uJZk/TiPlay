@@ -929,4 +929,6 @@
     <string name="settings_mfi_target_description">Choose USB/CH341 only while a CH341 authentication adapter is connected to the head unit. Without one, choose Local offline. Applies at the next connection.</string>
     <string name="settings_call_speakerphone">Calls on the loudspeaker</string>
     <string name="settings_call_speakerphone_description">For an Android phone or tablet used as the head unit: plays CarPlay calls on its loudspeaker instead of the earpiece and uses its hands-free microphone. Leave off on a car head unit. Applies from the next call.</string>
+    <string name="settings_forget_airplay_devices">Forget all trusted AirPlay devices</string>
+    <string name="settings_airplay_devices_forgotten">Trusted AirPlay devices forgotten</string>
 </resources>

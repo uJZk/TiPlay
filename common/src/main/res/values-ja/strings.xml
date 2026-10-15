@@ -928,4 +928,6 @@
     <string name="settings_mfi_target_description">USB/CH341 は、CH341 認証アダプターを車載機に接続しているときだけ選択してください。接続していない場合は「ローカル／オフライン」を選択します。次回の接続から適用されます。</string>
     <string name="settings_call_speakerphone">通話をスピーカーで再生</string>
     <string name="settings_call_speakerphone_description">車載機として使う Android スマートフォンやタブレット向け：CarPlay の通話を受話口ではなくスピーカーで再生し、ハンズフリー用マイクを使います。車の車載機ではオフのままにしてください。次の通話から適用されます。</string>
+    <string name="settings_forget_airplay_devices">信頼済みの AirPlay デバイスをすべて削除</string>
+    <string name="settings_airplay_devices_forgotten">信頼済みの AirPlay デバイスを削除しました</string>
 </resources>

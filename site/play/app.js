@@ -12,6 +12,7 @@ import {
   timeoutSignal, viewportFor,
 } from './link.js';
 import { followAppearance } from './appearance.js';
+import { probeMirrorCapabilities } from './airplay-capabilities.js';
 import { createReconnectOverlay } from './reconnect.js';
 import { pumpChunkStream } from './transport.js';
 import { formatPerformanceMonitor, performanceStats } from './fps-window.js';
@@ -19,6 +20,7 @@ import { sampleClock } from './clock-sync.js';
 import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from './media-timing.js';
 import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
+import { createAirPlayTrustNotification } from './airplay-trust.js';
 
 const STRINGS = {
   en: {
@@ -53,6 +55,7 @@ const STRINGS = {
     protocol: 'TiPlay on the Android device does not match this page. Update the app.',
     unsupported: 'This browser cannot decode {0}.',
     unsupportedHevc: 'This browser cannot decode HEVC. Turn off HEVC in TiPlay on the Android device.',
+    unsupportedHdr: 'AirPlay mirroring requires SDR video; this source sends HDR.',
     noVideo: 'This browser cannot show the video ({0}). Open the page over HTTPS in a browser with WebCodecs support.',
     invalidCode: 'Enter the 4-digit pairing code.',
     invalidHost: 'Enter an IPv4 address with port, for example 169.254.111.111:8080.',
@@ -89,6 +92,7 @@ const STRINGS = {
     protocol: '安卓端上的 TiPlay 与本页不匹配，请更新应用。',
     unsupported: '此浏览器无法解码 {0}。',
     unsupportedHevc: '此浏览器无法解码 HEVC。请在安卓端上的 TiPlay 中关闭 HEVC。',
+    unsupportedHdr: 'AirPlay 镜像需要 SDR 视频，当前来源发送的是 HDR。',
     noVideo: '此浏览器无法显示画面（{0}）。请使用支持 WebCodecs 的浏览器通过 HTTPS 打开本页。',
     invalidCode: '请输入 4 位配对码。',
     invalidHost: '请输入带端口的 IPv4 地址，例如 169.254.111.111:8080。',
@@ -156,6 +160,7 @@ const browserAudio = createBrowserAudio({
 document.addEventListener('pointerdown', () => browserAudio.gesture(), { capture: true, passive: true });
 document.addEventListener('keydown', () => browserAudio.gesture(), { capture: true });
 const airplayControls = createAirPlayControls($('stage'), event => outbox?.push(event), lang, { fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }), host: () => link.host });
+const airplayTrust = createAirPlayTrustNotification($('airplay-trust'), event => outbox?.push(event), lang);
 browserAudio.start();
 let movePending = false, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
 let statsVisible = false;
@@ -339,6 +344,7 @@ function start() {
   lastError = null;
   status = null;
   airplayControls.update(null);
+  airplayTrust.clear();
   live = false;
   lastViewport = '';
   fitRequestedAt = 0;
@@ -361,6 +367,7 @@ function stop(key = null, ...args) {
   active = false;
   browserAudio.stop();
   airplayControls.update(null);
+  airplayTrust.clear();
   phase = 'ready';
   streamId++;
   clearTimeout(retryTimer);
@@ -499,6 +506,7 @@ async function postControl(q, events) {
 }
 
 function applyStatus(next) {
+  airplayTrust.update(next.airplayTrust);
   browserAudio.status(next);
   airplayControls.update(next.airplay);
   if (Number.isSafeInteger(next.portalRevision)) {
@@ -536,7 +544,7 @@ function onVideoMessage(message) {
     unsupported = null;
     videoStats = {};
   } else if (message.type === 'unsupported') {
-    unsupported = message.codec;
+    unsupported = message.reason === 'hdr' ? 'hdr' : message.codec;
     live = false;
   } else if (message.type === 'decoded') {
     mediaTiming.started();
@@ -575,6 +583,7 @@ function renderStats() {
 
 function statusText() {
   if (!active) return notice ? t(notice.key, ...notice.args) : t(link.code ? 'ready' : 'enterCode');
+  if (unsupported === 'hdr') return t('unsupportedHdr');
   if (unsupported) return /^(hvc1|hev1)\b/.test(unsupported) ? t('unsupportedHevc') : t('unsupported', codecName(unsupported));
   if (phase === 'connecting') return t('connecting');
   if (phase === 'retry') {
@@ -689,6 +698,10 @@ function scheduleViewport() {
     if (!viewport || `${viewport.w}x${viewport.h}` === lastViewport) return;
     lastViewport = `${viewport.w}x${viewport.h}`;
     outbox.push({ k: 'vp', ...viewport }, 'latest');
+    const reporting = outbox, size = lastViewport;
+    void probeMirrorCapabilities(viewport.w, viewport.h).then(caps => {
+      if (outbox === reporting && lastViewport === size && !stage.hidden) reporting.push({ k: 'vp', ...viewport, caps }, 'latest');
+    });
   }); // Coalesce layout notifications without waiting for a quiet period during a resize.
 }
 

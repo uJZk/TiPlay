@@ -21,6 +21,7 @@ class Iap2LinkChannel private constructor(
     private val linkConfig: Iap2LinkConfig,
     private val initiateNegotiation: Boolean,
     private val onArtwork: (Iap2ArtworkTransfer) -> Unit,
+    receiveArtwork: Boolean,
 ) : AutoCloseable {
     private data class Command(val sessionId: Int, val payload: ByteArray)
 
@@ -29,7 +30,7 @@ class Iap2LinkChannel private constructor(
     private var commandBytes = 0
     private val controls = ArrayDeque<ByteArray>()
     private var controlBytes = 0
-    private val fileTransfers = Iap2FileTransferReceiver()
+    private val fileTransfers = Iap2FileTransferReceiver(receiveArtwork = receiveArtwork)
 
     private var ready = false
     private var peerMaxControlPayloadBytes: Int? = null
@@ -372,8 +373,9 @@ class Iap2LinkChannel private constructor(
         fun open(
             underlying: BlockingDuplexByteStream,
             onArtwork: (Iap2ArtworkTransfer) -> Unit = {},
+            receiveArtwork: Boolean = true,
         ): Iap2LinkChannel =
-            Iap2LinkChannel(underlying, WIRED_LINK_CONFIG, initiateNegotiation = true, onArtwork)
+            Iap2LinkChannel(underlying, WIRED_LINK_CONFIG, initiateNegotiation = true, onArtwork, receiveArtwork)
                 .also { it.worker.start() }
 
         /**
@@ -383,8 +385,9 @@ class Iap2LinkChannel private constructor(
         fun openWireless(
             underlying: BlockingDuplexByteStream,
             onArtwork: (Iap2ArtworkTransfer) -> Unit = {},
+            receiveArtwork: Boolean = true,
         ): Iap2LinkChannel =
-            Iap2LinkChannel(underlying, WIRELESS_LINK_CONFIG, initiateNegotiation = false, onArtwork)
+            Iap2LinkChannel(underlying, WIRELESS_LINK_CONFIG, initiateNegotiation = false, onArtwork, receiveArtwork)
                 .also { it.worker.start() }
 
         /**
@@ -394,8 +397,9 @@ class Iap2LinkChannel private constructor(
         fun openTunnel(
             underlying: BlockingDuplexByteStream,
             onArtwork: (Iap2ArtworkTransfer) -> Unit = {},
+            receiveArtwork: Boolean = true,
         ): Iap2LinkChannel =
-            Iap2LinkChannel(underlying, WIRED_LINK_CONFIG, initiateNegotiation = true, onArtwork)
+            Iap2LinkChannel(underlying, WIRED_LINK_CONFIG, initiateNegotiation = true, onArtwork, receiveArtwork)
                 .also { it.worker.start() }
 
         private fun nowMillis(): Long = System.nanoTime() / NANOS_PER_MILLISECOND

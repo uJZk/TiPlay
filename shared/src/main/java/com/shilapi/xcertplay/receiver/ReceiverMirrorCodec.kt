@@ -15,6 +15,24 @@ internal object ReceiverMirrorCodec {
         val described = ScreenCodec.describeConfig(payload)
         val codec = if (hevcEntry) VideoCodec.H265 else described.codec
         val record = if (hevcEntry) {
+            var box = 86
+            while (box + 8 <= payload.size) {
+                val boxSize = unsignedLength(payload, box, 4)
+                require(boxSize >= 8 && boxSize <= payload.size - box)
+                val kind = payload.copyOfRange(box + 4, box + 8).toString(Charsets.US_ASCII)
+                require(kind !in setOf("dvcC", "dvvC", "dvwC")) { "Dolby Vision configuration is not SDR" }
+                if (kind == "colr") {
+                    require(boxSize >= 12) { "truncated colour metadata" }
+                    val colourType = payload.copyOfRange(box + 8, box + 12).toString(Charsets.US_ASCII)
+                    if (colourType in setOf("nclx", "nclc")) {
+                        require(boxSize >= if (colourType == "nclx") 19 else 18)
+                        val transfer = ((payload[box + 14].toInt() and 255) shl 8) or (payload[box + 15].toInt() and 255)
+                        require(transfer != 16 && transfer != 18) { "HDR sample-entry colour transfer is not accepted" }
+                    }
+                }
+                box += boxSize
+            }
+            require(box == payload.size)
             // An ISO visual sample entry has 78 bytes after its 8-byte box header. The next box is
             // hvcC; its 23-byte header ends at 0x75, where the pinned UxPlay reads its NAL arrays.
             require(payload.size >= 94 + 23)
@@ -25,9 +43,12 @@ internal object ReceiverMirrorCodec {
         } else described.record
         require(codec != VideoCodec.H265 || hevcEnabled) { "HEVC not offered" }
         require(WebVideoCodecs.codecString(codec, record) != null) { "Invalid mirror configuration" }
+        ReceiverMirrorSdr.configuration(codec, record)
         val lengthBytes = requireNotNull(ScreenCodec.nalLengthBytes(codec, record))
         return Config(codec, record, lengthBytes)
     }
+
+    fun requireSdrFrame(annexB: ByteArray, codec: VideoCodec) = ReceiverMirrorSdr.frame(annexB, codec)
 
     fun annexB(payload: ByteArray, lengthBytes: Int): ByteArray {
         require(lengthBytes in 1..4)

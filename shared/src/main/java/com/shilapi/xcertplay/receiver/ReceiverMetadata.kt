@@ -4,7 +4,7 @@ import com.shilapi.xcertplay.airplay.RtspMessage
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 
-/** SET_PARAMETER metadata is validated and discarded, like the ordinary audio stream. */
+/** SET_PARAMETER metadata is validated without changing local volume or playback. */
 internal object ReceiverMetadata {
     fun receive(request: RtspMessage.Request, log: (String) -> Unit): RtspMessage.Response {
         val type = request.headers["content-type"]?.substringBefore(';')?.trim()?.lowercase()
@@ -35,6 +35,7 @@ internal object ReceiverMetadata {
                     val key = line.substringBefore(':')
                     val value = line.substringAfter(':', "").trim()
                     when (key) {
+                        // Local browser/vehicle gain owns volume; this compatibility command has no side effect.
                         "volume" -> require(value.toDoubleOrNull()?.isFinite() == true)
                         "progress" -> {
                             val samples = value.split('/')

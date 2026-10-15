@@ -37,19 +37,28 @@ class ReceiverProtocolTest {
         assertEquals(listOf(mapOf("start" to 50.0, "duration" to 10.0)), ready.info()["loadedTimeRanges"])
     }
 
-    @Test fun discoveryAndInfoAgreeWithDiscardedAudioWithoutClaimingCarPlayOrDrm() {
+    @Test fun discoveryAndInfoAgreeWithoutClaimingCarPlayRemoteVolumeOrDrm() {
         val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate())
         assertEquals(config.features, config.info()["features"])
         assertEquals(config.deviceId, config.serverInfo()["deviceid"])
         assertEquals("1.0", config.serverInfo()["protovers"])
         assertEquals(config.features, config.serverInfo()["features"])
         assertEquals(ReceiverCapabilities.txtFeatures(config.features), config.txt["features"])
-        for (bit in listOf(0, 1, 4, 7, 9, 14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 30)) assertTrue(config.features and (1L shl bit) != 0L)
-        for (bit in listOf(2, 3, 5, 6, 8, 10, 11, 12, 13, 23, 26, 32, 33, 34, 40, 41, 42, 61)) {
+        for (bit in listOf(0, 1, 4, 7, 9, 13, 14, 16, 18, 19, 20, 21, 22, 27, 30)) assertTrue(config.features and (1L shl bit) != 0L)
+        for (bit in listOf(2, 3, 5, 6, 8, 10, 11, 12, 15, 17, 23, 26, 32, 33, 34, 40, 41, 42, 61)) {
             assertEquals("Unexpected advertised feature $bit", 0L, config.features and (1L shl bit))
         }
         assertFalse(config.info().containsKey("modes"))
         assertFalse(config.info().containsKey("hidDevices"))
+    }
+
+    @Test fun browsersWithoutVideoDecodersDoNotAdvertiseMirrorButKeepPhotosVideoAndAudio() {
+        val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(),
+            hevcEnabled = true, mirrorEnabled = false)
+        for (bit in listOf(7, 42)) assertEquals(0L, config.features and (1L shl bit))
+        for (bit in listOf(0, 1, 9)) assertTrue(config.features and (1L shl bit) != 0L)
+        assertEquals(config.features, config.info()["features"])
+        assertTrue(config.copy(mirrorEnabled = true).features and (1L shl 42) != 0L)
     }
 
     @Test fun audioCapabilitiesOfferMirrorOutputWithoutMicrophoneAndDoNotMuteTheSender() {
@@ -72,10 +81,9 @@ class ReceiverProtocolTest {
         }
     }
 
-    @Test fun audioDrainAcceptsAdvertisedFormatsAndKnownLegacyCodecDefaults() {
-        for (codec in listOf(0, 2, 8)) ReceiverAudioCapabilities.validateStream(mapOf("type" to 96, "ct" to codec))
-        ReceiverAudioCapabilities.validateStream(mapOf("type" to 96))
-        ReceiverAudioCapabilities.validateStream(mapOf("type" to 96, "audioFormat" to 0x3fffffcL,
+    @Test fun audioDrainAcceptsEveryAdvertisedSelectedFormatAndSupportedCodecs() {
+        for (codec in listOf(1, 2, 4, 8)) ReceiverAudioCapabilities.validateStream(mapOf("type" to 96, "ct" to codec))
+        ReceiverAudioCapabilities.validateStream(mapOf("type" to 96, "audioFormat" to (1L shl 22),
             "ct" to 4, "spf" to 1024, "controlPort" to 65535))
         for (bit in 2..25) ReceiverAudioCapabilities.validateStream(mapOf("type" to 96, "audioFormat" to (1L shl bit)))
     }
@@ -85,7 +93,8 @@ class ReceiverProtocolTest {
             mapOf("type" to 103), mapOf("type" to 96, "audioFormat" to 1L),
             mapOf("type" to 96, "audioFormat" to (1L shl 26)),
             mapOf("type" to 96, "audioFormat" to -1L),
-            mapOf("type" to 96, "ct" to 4), mapOf("type" to 96, "ct" to 256),
+            mapOf("type" to 96), mapOf("type" to 96, "ct" to 0),
+            mapOf("type" to 96, "audioFormat" to 0x3fffffcL), mapOf("type" to 96, "ct" to 256),
             mapOf("type" to 96, "spf" to -1), mapOf("type" to 96, "spf" to 65536),
             mapOf("type" to 96, "controlPort" to -1), mapOf("type" to 96, "controlPort" to 65536),
             mapOf("type" to 96, "audioFormat" to "4"), mapOf("type" to 96, "spf" to 1.5),

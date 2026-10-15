@@ -838,4 +838,6 @@
     <string name="settings_mfi_target_description">Обирайте USB/CH341, лише коли до головного пристрою підключено адаптер автентифікації CH341. Без нього оберіть «Локально, без мережі». Застосовується під час наступного підключення.</string>
     <string name="settings_call_speakerphone">Дзвінки через гучномовець</string>
     <string name="settings_call_speakerphone_description">Для телефона або планшета Android, який використовується як головний пристрій: дзвінки CarPlay звучать із гучномовця, а не з розмовного динаміка, і використовується мікрофон гучного зв’язку. На головному пристрої автомобіля залиште вимкненим. Застосовується з наступного дзвінка.</string>
+    <string name="settings_forget_airplay_devices">Забути всі довірені пристрої AirPlay</string>
+    <string name="settings_airplay_devices_forgotten">Довірені пристрої AirPlay забуто</string>
 </resources>

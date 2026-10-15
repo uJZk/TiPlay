@@ -16,18 +16,22 @@ fallback: vehicle browsers can pause that path while driving.
 
 Playback requires WebCodecs and support for the negotiated codec. The remaining paths use a worker or the main
 thread for decoding and canvas drawing, depending on browser capabilities. CarPlay and ordinary AirPlay mirroring keep canvas drawing; AirPlay URL
-video uses a hidden HTML video decoded by Video.js and presents frames on Canvas, with Android resource proxying. Do not add an HTML video fallback to CarPlay.
+video uses Mediabunny/WebCodecs decoding and Canvas presentation, with Video.js native controls and Android resource proxying. Do not add an HTML video fallback to CarPlay.
 These capability checks do not establish support for a particular vehicle or browser version. In the phone profile,
 CarPlay encoded video bypasses the Android decoder and local video surface; the phone retains its native settings and status UI.
-Ordinary AirPlay mirroring also forwards encoded H.264 or enabled HEVC to the browser; still photos use an Android
-Surface/encoder bridge. Mirror companion audio uses Android AAC-ELD decoding and browser PCM output, while URL-video
+Ordinary AirPlay mirroring also forwards encoded H.264 or enabled HEVC to the browser; still photos retain their original JPEG/PNG encoding and use browser image decoding with EXIF orientation and viewport fitting.
+Ordinary AirPlay PCM/ALAC/AAC-LC/AAC-ELD packets are decrypted/ordered on Android and decoded/output in the browser;
+ALAC/AAC-ELD playback depends on browser WebCodecs support, with no Android decoder fallback. URL-video
 audio and video are decoded by the browser player. See [AirPlay implementation](AIRPLAY.md#实现与开源依据).
 
 ## Audio and microphone
 
 CarPlay negotiates media, navigation, telephone and assistant streams independently. These format declarations
-alone do not select Bluetooth devices. Android receives all enabled CarPlay audio and makes the routing decision
-locally: browser playback when idle, HFP/SCO duplex only during an iPhone microphone demand.
+alone do not select Bluetooth devices. Android receives/decrypts all enabled CarPlay audio and routes encoded
+AAC/Opus/LPCM to browser decoding while idle. During iPhone microphone demand, Android decodes permitted
+voice/navigation streams to PCM for verified HFP/SCO duplex. The Android Bluetooth stack handles mSBC/CVSD;
+TiPlay does not encode Bluetooth radio packets. Music artwork and song text are neither requested nor decoded
+in the phone/browser profile; state/progress and controls remain available.
 
 The browser AudioWorklet only plays PCM. The page never requests microphone permission, opens capture tracks,
 or runs AEC. Android requests RECORD_AUDIO while connecting in the foreground, and the existing connection
@@ -36,7 +40,7 @@ opens only on demand. Regranting permission requires a CarPlay renegotiation; pl
 Browser autoplay restrictions still use the next page touch or key gesture to resume sound. Some browsers still
 request local-network access for the Android endpoint; removing microphone capture does not remove that network requirement.
 
-On demand, Android mutes and flushes browser audio, retires old decoding workers and codecs, and selects the unique
+On demand, Android mutes and flushes browser audio, retires old browser decoders/output and Android feeder workers, and selects the unique
 available HFP device. Android 12+ uses setCommunicationDevice; older releases use the HEADSET profile and SCO
 connection broadcasts. Both AudioRecord and AudioTrack must actually route to Bluetooth before speech/capture
 flows. Existing communication sessions and ambiguous headsets are refused, not preempted. There is no handset

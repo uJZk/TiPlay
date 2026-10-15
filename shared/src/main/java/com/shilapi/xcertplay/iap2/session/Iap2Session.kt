@@ -121,24 +121,27 @@ class Iap2Session private constructor(
             traceContext: String = "wired",
             onTrace: (String) -> Unit = {},
             onArtwork: (Iap2ArtworkTransfer) -> Unit = {},
+            receiveArtwork: Boolean = true,
         ): Iap2Session =
-            Iap2Session(Iap2CsmChannel.open(underlying, onArtwork), traceContext, onTrace)
+            Iap2Session(Iap2CsmChannel.open(underlying, onArtwork, receiveArtwork), traceContext, onTrace)
 
         fun openWireless(
             underlying: BlockingDuplexByteStream,
             traceContext: String = "wireless",
             onTrace: (String) -> Unit = {},
             onArtwork: (Iap2ArtworkTransfer) -> Unit = {},
+            receiveArtwork: Boolean = true,
         ): Iap2Session =
-            Iap2Session(Iap2CsmChannel.openWireless(underlying, onArtwork), traceContext, onTrace)
+            Iap2Session(Iap2CsmChannel.openWireless(underlying, onArtwork, receiveArtwork), traceContext, onTrace)
 
         fun openTunnel(
             underlying: BlockingDuplexByteStream,
             traceContext: String = "wireless-tunnel",
             onTrace: (String) -> Unit = {},
             onArtwork: (Iap2ArtworkTransfer) -> Unit = {},
+            receiveArtwork: Boolean = true,
         ): Iap2Session =
-            Iap2Session(Iap2CsmChannel.openTunnel(underlying, onArtwork), traceContext, onTrace)
+            Iap2Session(Iap2CsmChannel.openTunnel(underlying, onArtwork, receiveArtwork), traceContext, onTrace)
 
         fun wrap(
             channel: Iap2CsmChannel,

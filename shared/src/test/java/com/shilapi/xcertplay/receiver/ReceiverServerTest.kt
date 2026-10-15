@@ -35,16 +35,21 @@ class ReceiverServerTest {
     }
 
     /** Replace only the reverse socket's output with a controlled slow writer after its real upgrade. */
-    private fun blockReverseOutput(receiver: ReceiverServer, id: String = "test"): BlockedEventOutput {
+    private fun blockReverseOutput(receiver: ReceiverServer, id: String = "11223344556677889900aabbccddeeff"): BlockedEventOutput {
         val reverse = ReceiverServer::class.java.getDeclaredField("reverse").apply { isAccessible = true }
             .get(receiver) as Map<*, *>
-        val connection = requireNotNull(reverse[id])
+        val connection = requireNotNull(reverse.values.firstOrNull { value ->
+            val candidate = requireNotNull(value)
+            val reverseId = candidate.javaClass.getDeclaredField("reverseId").apply { isAccessible = true }.get(candidate)
+            val socket = candidate.javaClass.getDeclaredField("socket").apply { isAccessible = true }.get(candidate) as Socket
+            reverseId == id && !socket.isClosed
+        })
         val field = connection.javaClass.getDeclaredField("output").apply { isAccessible = true }
         return BlockedEventOutput(field.get(connection) as java.io.OutputStream).also { field.set(connection, it) }
     }
 
     private fun Socket.upgradeReverse() {
-        getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: test\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
+        getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: 11223344556677889900aabbccddeeff\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
         assertEquals("101", readReceiverRequest(getInputStream())!!.path)
     }
 
@@ -145,7 +150,10 @@ class ReceiverServerTest {
                         val currentWriter = blockReverseOutput(receiver).also { blocked.add(it) }
                         receiver.playbackEvent("paused")
                         assertTrue(currentWriter.entered.await(1, TimeUnit.SECONDS))
-                        java.util.concurrent.CompletableFuture.runAsync { receiver.close() }.get(500, TimeUnit.MILLISECONDS)
+                        // Leave room for CI scheduling, while remaining below the writer's five-second
+                        // block. Close must finish before that writer is released or times out.
+                        java.util.concurrent.CompletableFuture.runAsync { receiver.close() }.get(2, TimeUnit.SECONDS)
+                        assertEquals(1L, currentWriter.release.count)
                         assertNull(readReceiverRequest(replacement.getInputStream()))
                     }
                 }
@@ -154,6 +162,14 @@ class ReceiverServerTest {
     }
 
     private class Listener : ReceiverServer.Listener {
+        @Volatile var playbackState: ReceiverPlayback? = null
+        val images = CopyOnWriteArrayList<ByteArray>()
+        override fun photo(bytes: ByteArray) { images.add(bytes) }
+        override fun authorizeDevice(verifiedPublicKey: ByteArray?, deviceName: String) = true
+        override fun authorizeConnection(sessionToken: String, deviceName: String): Boolean {
+            authorizationTokens.add(sessionToken); return true
+        }
+        val authorizationTokens = CopyOnWriteArrayList<String>()
         val hub = WebVideoHub()
         val items = CopyOnWriteArrayList<ReceiverPlay>()
         val states = CopyOnWriteArrayList<String>()
@@ -167,19 +183,276 @@ class ReceiverServerTest {
         override fun stopPlayback() { stopped++ }
         override fun seek(seconds: Double) { sought = seconds }
         override fun rate(value: Double) { speed = value }
-        override fun playback() = ReceiverPlayback(100.0, sought, speed, true)
+        override fun playback() = playbackState ?: ReceiverPlayback(100.0, sought, speed, true)
         override fun status(state: String) { states.add(state); if (state == "listening") ended.countDown() }
         override fun log(message: String) { logs.add(message) }
     }
 
-    private fun Socket.send(method: String, path: String, body: ByteArray = ByteArray(0), id: String = "test", contentType: String? = null):
+    private fun Socket.send(method: String, path: String, body: ByteArray = ByteArray(0), id: String = "11223344556677889900aabbccddeeff", contentType: String? = null, extraHeaders: String = ""):
         com.shilapi.xcertplay.airplay.RtspMessage.Request {
         val contentHeader = contentType?.let { "Content-Type: $it\r\n" }.orEmpty()
-        getOutputStream().write(("$method $path HTTP/1.1\r\nX-Apple-Session-ID: $id\r\n${contentHeader}Content-Length: ${body.size}\r\n\r\n").toByteArray() + body)
+        getOutputStream().write(("$method $path HTTP/1.1\r\nX-Apple-Session-ID: $id\r\n${contentHeader}${extraHeaders}Content-Length: ${body.size}\r\n\r\n").toByteArray() + body)
         return requireNotNull(readReceiverRequest(getInputStream()))
     }
-    private fun Socket.status(method: String, path: String, body: ByteArray = ByteArray(0), id: String = "test") = send(method, path, body, id).path.toInt()
+    private fun Socket.status(method: String, path: String, body: ByteArray = ByteArray(0), id: String = "11223344556677889900aabbccddeeff") = send(method, path, body, id).path.toInt()
     private fun connect(port: Int) = Socket(InetAddress.getLoopbackAddress(), port).apply { soTimeout = 5000 }
+
+    @Test fun defaultSessionAliasesCannotShareApprovalOrTakeOverAnotherConnection() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { owner ->
+                assertEquals(200, owner.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray(), id = "default"))
+                connect(receiver.port).use { contender ->
+                    assertEquals(453, contender.status("POST", "/play", "Content-Location: https://example.org/other.mp4\r\n".toByteArray(), id = "default"))
+                    assertEquals(403, contender.status("POST", "/stop", id = "default"))
+                    assertEquals(403, contender.status("POST", "/rate?value=0", id = "default"))
+                    assertEquals(2, listener.authorizationTokens.distinct().size)
+                    assertEquals(1, listener.items.size)
+                    assertEquals(0, listener.stopped)
+                    assertEquals(1.0, listener.speed, 0.0)
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun verifiedReverseHandoffKeepsTheOwnersChannelUsableAfterAForeignSameSessionAttempt() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                control.verifyIdentity()
+                assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
+                connect(receiver.port).use { approved ->
+                    approved.upgradeReverse()
+                    Socket(InetAddress.getByName("127.0.0.1"), receiver.port, InetAddress.getByName("127.0.0.2"), 0).use { foreign ->
+                        foreign.soTimeout = 5000
+                        assertEquals("453", foreign.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+                    }
+                    receiver.playbackEvent("paused")
+                    assertTrue(readReceiverRequest(approved.getInputStream())!!.body.toString(Charsets.UTF_8).contains("<string>paused</string>"))
+                    val url = "mlhls://private/secret.m3u8"
+                    val resource = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(url) }
+                    val event = readReceiverRequest(approved.getInputStream())!!.body.toString(Charsets.UTF_8)
+                    assertTrue(event.contains(url))
+                    val id = Regex("<key>FCUP_Response_RequestID</key><integer>([0-9]+)</integer>").find(event)!!.groupValues[1].toLong()
+                    val answer = BplistCodec.encode(mapOf("type" to "unhandledURLResponse", "params" to mapOf(
+                        "FCUP_Response_RequestID" to id, "FCUP_Response_URL" to url,
+                        "FCUP_Response_StatusCode" to 200, "FCUP_Response_Data" to byteArrayOf(1, 2),
+                    )))
+                    assertEquals(200, control.status("POST", "/action", answer))
+                    assertArrayEquals(byteArrayOf(1, 2), resource.get(1, TimeUnit.SECONDS)!!.bytes)
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    private fun Socket.verifyIdentity() {
+        val curve = AirPlayCrypto.x25519Generate()
+        val signing = AirPlayCrypto.ed25519Generate()
+        val reply = send("POST", "/pair-verify", byteArrayOf(1, 0, 0, 0) + curve.publicKey + signing.publicKey).body
+        val serverCurve = reply.copyOf(32)
+        val secret = AirPlayCrypto.x25519Shared(curve.privateKey, serverCurve)
+        val cipher = aesCtr(AirPlayCrypto.sha512("Pair-Verify-AES-Key".toByteArray(), secret).copyOf(16),
+            AirPlayCrypto.sha512("Pair-Verify-AES-IV".toByteArray(), secret).copyOf(16))
+        cipher.update(reply.copyOfRange(32, 96))
+        assertEquals(200, status("POST", "/pair-verify", ByteArray(4) +
+            cipher.update(AirPlayCrypto.ed25519Sign(signing.privateKey, curve.publicKey + serverCurve))))
+    }
+
+    @Test fun aForeignReverseChannelWithTheSameSessionCannotReceivePrivateResourceUrlsOrEvents() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        try {
+            Socket(InetAddress.getByName("127.0.0.1"), receiver.port, InetAddress.getByName("127.0.0.2"), 0).use { foreign ->
+                foreign.soTimeout = 5000
+                foreign.upgradeReverse()
+                connect(receiver.port).use { control ->
+                    assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
+                    receiver.playbackEvent("playing")
+                    assertNull(receiver.loadResource("mlhls://private/secret.m3u8"))
+                    foreign.soTimeout = 100
+                    assertThrows(java.net.SocketTimeoutException::class.java) { readReceiverRequest(foreign.getInputStream()) }
+                    // The owner's approved session can install its own replacement channel.
+                    connect(receiver.port).use { approved ->
+                        approved.upgradeReverse()
+                        receiver.playbackEvent("playing")
+                        assertTrue(readReceiverRequest(approved.getInputStream())!!.body.toString(Charsets.UTF_8).contains("<string>playing</string>"))
+                    }
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun independentDefaultApprovalsCannotBorrowAReverseChannelOnTheSamePeer() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { reverse ->
+                assertEquals("101", reverse.send("POST", "/reverse", id = "default", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+                connect(receiver.port).use { control ->
+                    assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray(), id = "default"))
+                    receiver.playbackEvent("playing")
+                    assertNull(receiver.loadResource("mlhls://private/secret.m3u8"))
+                    reverse.soTimeout = 100
+                    assertThrows(java.net.SocketTimeoutException::class.java) { readReceiverRequest(reverse.getInputStream()) }
+                    reverse.close()
+                    assertEquals(200, control.status("GET", "/playback-info", id = "default"))
+                    assertEquals(0, listener.stopped)
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun unapprovedLegacyConnectionsCannotOwnMediaOrInstallAReverseChannel() {
+        val listener = Listener()
+        val guarded = object : ReceiverServer.Listener by listener {
+            override fun authorizeDevice(verifiedPublicKey: ByteArray?, deviceName: String) = false
+            override fun authorizeConnection(sessionToken: String, deviceName: String) = false
+        }
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), guarded)
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                assertEquals(200, control.status("GET", "/info"))
+                assertEquals(200, control.status("GET", "/playback-info"))
+                assertEquals(403, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
+                assertEquals(403, control.status("PUT", "/photo", byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xd9.toByte())))
+                assertEquals("403", control.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+                assertTrue(listener.items.isEmpty())
+                assertTrue(listener.images.isEmpty())
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun photoReverseEventsUsePhotoCategoryAndReleaseWithAnIdempotentStop() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        try {
+            connect(receiver.port).use { reverse ->
+                reverse.upgradeReverse()
+                connect(receiver.port).use { control ->
+                    assertEquals(200, control.status("PUT", "/photo", byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xd9.toByte())))
+                    val event = readReceiverRequest(reverse.getInputStream())!!
+                    assertTrue(event.body.toString(Charsets.UTF_8).contains("<key>category</key><string>photo</string>"))
+                    assertEquals(200, control.status("POST", "/stop"))
+                    assertTrue(readReceiverRequest(reverse.getInputStream())!!.body.toString(Charsets.UTF_8).contains("<string>stopped</string>"))
+                    assertEquals(200, control.status("POST", "/stop"))
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun remoteVolumeRemainsAnIgnoredCompatibilityParameter() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                for (value in listOf("-144.0", "-30.0", "0.0")) {
+                    assertEquals("200", control.send("SET_PARAMETER", "/", "volume: $value\r\n".toByteArray(),
+                        contentType = "text/parameters").path)
+                    assertEquals("volume: 0.0\r\n", control.send("GET_PARAMETER", "/", "volume\r\n".toByteArray(),
+                        contentType = "text/parameters").body.toString(Charsets.US_ASCII))
+                }
+                assertTrue(listener.items.isEmpty())
+                assertTrue(listener.images.isEmpty())
+                assertEquals(1.0, listener.speed, 0.0)
+                assertEquals(0, listener.stopped)
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun photoCacheMissRequestsReuploadAndCacheOnlyStopDoesNotLeaveStaleAssets() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                val jpeg = ByteArray(2 * 1024 * 1024).apply { this[0] = 0xff.toByte(); this[1] = 0xd8.toByte() }
+                assertEquals("412", control.send("PUT", "/photo", extraHeaders = "X-Apple-AssetAction: displayCached\r\nX-Apple-AssetKey: missing\r\n").path)
+                assertEquals("200", control.send("PUT", "/photo", jpeg,
+                    extraHeaders = "X-Apple-AssetAction: cacheOnly\r\nX-Apple-AssetKey: image\r\n").path)
+                assertTrue(listener.images.isEmpty())
+                assertEquals(200, control.status("POST", "/stop"))
+                assertEquals(200, control.status("POST", "/stop"))
+                assertEquals("412", control.send("PUT", "/photo", extraHeaders = "X-Apple-AssetAction: displayCached\r\nX-Apple-AssetKey: image\r\n").path)
+                assertEquals("200", control.send("PUT", "/photo", jpeg).path)
+                assertArrayEquals(jpeg, listener.images.single())
+                assertEquals("photo", listener.states.last())
+                assertEquals(200, control.status("POST", "/stop"))
+                val info = control.send("GET", "/playback-info")
+                assertEquals("200", info.path)
+                assertTrue(info.body.toString(Charsets.UTF_8).contains("<key>readyToPlay</key><integer>0</integer>"))
+                assertTrue(listener.logs.any { it.contains("photo stage=CACHE_MISS") })
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun playbackPreparationAllowsConcurrentStateQueriesAndFinishesWhenBrowserReady() {
+        val listener = Listener().apply { playbackState = ReceiverPlayback(buffering = true) }
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                assertEquals(200, control.status("GET", "/playback-info"))
+                val play = java.util.concurrent.CompletableFuture.supplyAsync {
+                    control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray())
+                }
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+                while (listener.items.isEmpty() && System.nanoTime() < deadline) Thread.sleep(1)
+                assertEquals(1, listener.items.size)
+                assertFalse(play.isDone)
+                connect(receiver.port).use { probe ->
+                    assertEquals(200, probe.status("GET", "/playback-info"))
+                    assertEquals(403, probe.status("GET", "/playback-info", id = "foreign"))
+                }
+                listener.playbackState = ReceiverPlayback(duration = 120.0, ready = true)
+                assertEquals(200, play.get(1, TimeUnit.SECONDS).toInt())
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun oversizedEndpointBodyGetsAnExplicitErrorBeforeItIsAllocatedOrRead() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        try {
+            connect(receiver.port).use { socket ->
+                socket.getOutputStream().write("PUT /photo HTTP/1.1\r\nContent-Length: ${ReceiverPhotos.MAX_IMAGE_BYTES + 1}\r\n\r\n".toByteArray())
+                val reply = readReceiverRequest(socket.getInputStream())!!
+                assertEquals("413", reply.path)
+                assertEquals("close", reply.headers["connection"])
+                assertNull(readReceiverRequest(socket.getInputStream()))
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun unsupportedBrowserMirrorRejectsNewSetupWithoutGrantingOwnership() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(),
+            mirrorEnabled = false), Listener())
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                assertEquals(461, control.status("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(
+                    mapOf("type" to 110, "streamConnectionID" to 123L),
+                )))))
+                assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun browserResizeKeepsActiveOwnershipAndChangesFutureDisplayOffer() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        try {
+            val config = receiver.updateDisplaySize(1280, 800)
+            assertEquals(1280, config.width)
+            assertEquals(800, config.height)
+            assertThrows(IllegalArgumentException::class.java) { receiver.updateDisplaySize(1279, 800) }
+        } finally { receiver.close() }
+    }
 
     @Test fun videoControlAndReverseEventsBelongToTheirSessionAndShutdownClosesSockets() {
         val listener = Listener()
@@ -208,7 +481,7 @@ class ReceiverServerTest {
                 assertTrue(listener.logs.any { it.contains("exception=IllegalArgumentException") })
                 assertFalse(listener.logs.any { it.contains("example.org") || it.contains("value=NaN") })
                 connect(receiver.port).use { reverse ->
-                    reverse.getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: test\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                    reverse.getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: 11223344556677889900aabbccddeeff\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
                     assertEquals("101", readReceiverRequest(reverse.getInputStream())!!.path)
                     receiver.playbackEvent("playing")
                     val event = readReceiverRequest(reverse.getInputStream())!!
@@ -275,8 +548,15 @@ class ReceiverServerTest {
     @Test fun sleepResumeWithRepeatedConfigurationKeepsThePredictionChainAndCipherPosition() =
         encryptedMirrorProbe(false, sleepResume = true)
 
+    @Test fun packetBoundaryReconnectKeepsTheSamePortPredictionChainAndPartialCtrBlock() =
+        encryptedMirrorProbe(false, dataSocketResume = true)
+
+    @Test fun partialMirrorHeaderEndsImmediatelyInsteadOfReusingUnknownFraming() =
+        encryptedMirrorProbe(false, partialHeader = true)
+
     private fun encryptedMirrorProbe(teardown: Boolean, dataEofRecovery: Boolean = false, audioDrain: Boolean = false,
-                                     sleepResume: Boolean = false) {
+                                     sleepResume: Boolean = false, dataSocketResume: Boolean = false,
+                                     partialHeader: Boolean = false) {
         val identity = AirPlayIdentity.generate()
         val listener = Listener()
         val rawKey = ByteArray(16) { (it + 1).toByte() }
@@ -339,7 +619,7 @@ class ReceiverServerTest {
                     header.put(6, flag.toByte())
                     return header.array() + body
                 }
-                val avcc = byteArrayOf(1, 0x42, 0, 0x1f, -1, -31, 0, 4, 0x67, 0x42, 0, 0x1f, 1, 0, 2, 0x68, 1)
+                val avcc = ReceiverSdrFixtures.avcc()
                 data.getOutputStream().write(packet(1, avcc))
                 assertNotNull(subscription.take(5000))
                 assertEquals(720, listener.hub.info()!!.width)
@@ -359,7 +639,28 @@ class ReceiverServerTest {
                     assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_FRAME, subscription.take(5000)!!.kind)
                     assertEquals(epoch, listener.hub.info()!!.epoch)
                 }
-                if (audioDrain && !dataEofRecovery) {
+                if (dataSocketResume) {
+                    val epoch = listener.hub.info()!!.epoch
+                    data.close()
+                    connect(port).use { resumed ->
+                        // Seven + six ciphertext bytes before EOF leave a partial CTR block.
+                        // Continue that same cipher across the next six bytes without another CONFIG.
+                        resumed.getOutputStream().write(packet(0, encryption.update(second)))
+                        val frame = requireNotNull(subscription.take(5000))
+                        assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_FRAME, frame.kind)
+                        assertArrayEquals(byteArrayOf(0, 0, 0, 1, 0x41, 1), frame.payload)
+                        assertEquals(epoch, listener.hub.info()!!.epoch)
+                        assertTrue(listener.logs.any { it.contains("stage=RECONNECT") })
+                        assertEquals(200, control.status("TEARDOWN", "/"))
+                    }
+                } else if (partialHeader) {
+                    data.getOutputStream().write(byteArrayOf(1, 2, 3))
+                    data.close()
+                    assertTrue(listener.ended.await(1, TimeUnit.SECONDS))
+                    assertFalse(listener.logs.any { it.contains("stage=RECONNECT") })
+                    assertNull(listener.hub.info())
+                    assertEquals(200, control.status("TEARDOWN", "/"))
+                } else if (audioDrain && !dataEofRecovery) {
                     assertEquals(200, control.status("TEARDOWN", "/", BplistCodec.encode(mapOf("streams" to listOf(mapOf("type" to 96))))))
                     assertEquals(200, control.status("OPTIONS", "/"))
                     assertNotNull(listener.hub.info())
@@ -373,11 +674,20 @@ class ReceiverServerTest {
                     assertNull(readReceiverRequest(control.getInputStream()))
                 } else if (dataEofRecovery) {
                     data.close()
-                    assertTrue(listener.ended.await(5, TimeUnit.SECONDS))
+                    if (audioDrain) {
+                        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(7)
+                        while ((listener.hub.info() != null || listener.states.lastOrNull() != "audio" ||
+                                listener.logs.none { it.contains("Media clock snapshot: reason=VIDEO_END") }) &&
+                            System.nanoTime() < deadline) Thread.sleep(5)
+                        assertNull(listener.hub.info())
+                        assertEquals("audio", listener.states.last())
+                    } else assertTrue(listener.ended.await(7, TimeUnit.SECONDS))
                     if (audioDrain) connect(receiver.port).use { competing ->
+                        // A competing device has a different session. The same approved strong
+                        // ID is intentionally allowed to hand off among this sender's connections.
                         assertEquals(453, competing.status("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(
                             mapOf("type" to 110, "streamConnectionID" to 999L),
-                        )))))
+                        ))), id = "ffeeddccbbaa00998877665544332211"))
                     }
                     assertNull(listener.hub.info())
                     assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_IDLE, subscription.take(5000)!!.kind)
@@ -460,7 +770,7 @@ class ReceiverServerTest {
                 val url = "mlhls://app/master.m3u8"
                 assertEquals(200, control.status("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to url))))
                 connect(receiver.port).use { reverse ->
-                    reverse.getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: test\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                    reverse.getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: 11223344556677889900aabbccddeeff\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
                     assertEquals("101", readReceiverRequest(reverse.getInputStream())!!.path)
                     val interrupted = java.util.concurrent.atomic.AtomicBoolean(false)
                     val oldLoader = Thread {
@@ -499,7 +809,7 @@ class ReceiverServerTest {
                 val url = "mlhls://app/master.m3u8"
                 assertEquals(200, control.status("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to url))))
                 connect(receiver.port).use { reverse ->
-                    reverse.getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: test\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                    reverse.getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: 11223344556677889900aabbccddeeff\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
                     assertEquals("101", readReceiverRequest(reverse.getInputStream())!!.path)
                     val future = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(url) }
                     val event = readReceiverRequest(reverse.getInputStream())!!

@@ -20,6 +20,13 @@ DiPlay, and therefore TiPlay, is a modified version of [xcertplay by shilapi](ht
 
 Upstream credits [LIVI](https://github.com/f-io/LIVI) and [Showcase](https://github.com/amineross/showcase) for protocol research. Existing source comments and attribution are preserved.
 
+## Receiver protocol review
+
+The 2026-10-14 protocol review also references
+[jqssun/android-airplay-server](https://github.com/jqssun/android-airplay-server)
+commit `c8defdd70d7e6a04f4f1b71d353653682d594106` and UxPlay commit `462153392f2e30937424922039ff9f0cda5e7b1a`. Receiver behavior was compared;
+the Android application/player was not copied into TiPlay.
+
 ## Home and settings UI
 
 `common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt` adapts the palette, visual arrangement and interface copy of the [DiAuto project](https://github.com/shihabal3amri/DiAuto). DiAuto's source is licensed under AGPL version 3. The UI file is marked AGPL-3.0-only; its license text is included in `docs/licenses/DiAuto-AGPL-3.0.txt`.
@@ -73,7 +80,7 @@ The maneuver PNGs under `shared/src/main/assets/byd-hud-icons` were imported fro
 
 - Video.js native controls, skin and media adapter helpers: Apache-2.0, self-hosted under
   `site/play/vendor/videojs/` with license texts and retained bundle notices.
-- Mediabunny and SoundTouchJS: MPL-2.0. hls.js WebVTT parsing helpers: Apache-2.0 with
+- Mediabunny and SoundTouchJS: MPL-2.0. hls.js WebVTT and CEA-608 parsing helpers: Apache-2.0 with
   retained notices for their Mozilla-derived parser. The media bundle, full dependency
   licenses and source provenance are under `site/play/vendor/mediabunny/`; the source
   packages and their integrity are pinned in `scripts/videojs/package-lock.json`.

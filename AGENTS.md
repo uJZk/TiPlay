@@ -92,7 +92,7 @@ Ordinary AirPlay video routing, app-specific device evidence and the next playba
 URL-video resource serialization, immediate seek feedback and CarPlay recovery contracts are in `docs/AIRPLAY.md`.
 Local playback diagnostics, device verification and signed-build handoff are in ignored `agent_docs/airplay-seek-diagnostics/HANDOFF.md`.
 See `docs/AIRPLAY-TIE-UP-2026-10-12.md` for verification, integration and remaining device checks.
-See `docs/todo.md` under "AirPlay 轻量信任设备机制" for the pending approval, remembered-device and takeover-protection work; it is not implemented yet.
+See [docs/AIRPLAY-RECEIVER-2026-10-14.md](docs/AIRPLAY-RECEIVER-2026-10-14.md) for photo/viewport/protocol repairs, full advertised audio codecs, HLS and embedded/encrypted subtitles, SDR policy and implemented browser device approval. `docs/todo.md` retains real-device acceptance checks.
 
 See `docs/DIAGNOSTICS.md` for the performance monitor and diagnostic logging contracts.
 See `docs/WEB-DEBUG-2026-10-12.md` for browser theme delivery,

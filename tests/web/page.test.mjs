@@ -67,12 +67,15 @@ function retryPage(lastError) {
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
     const statsVisible = false, link = { code: '1234' }, stage = {};
     const airplayControls = { update() {}, videoActive: () => false };
+    let trustVisible = true, trustClears = 0;
+    const airplayTrust = { clear() { trustVisible = false; trustClears++; } };
     const browserAudio = { stop() {} }, sink = { stop() {} }, slots = { releaseAll() {} };
     const cancelViewport = () => {}, cancelMove = () => {}, renderStats = () => {};
     const t = (key, ...args) => args.length ? key + ':' + args.join(',') : key;
     const phoneFetch = () => new Promise(() => {});
     ${['statusText', 'render', 'scheduleRetry', 'stop', 'connectVideo'].map(extract).join('\n')}
-    return { scheduleRetry, stop, connectVideo, reconnects: () => reconnects };
+    return { scheduleRetry, stop, connectVideo, reconnects: () => reconnects,
+      trustState: () => ({ visible: trustVisible, clears: trustClears }) };
   `)($, { now: () => now }, (callback, delay) => setTimer(callback, delay, 0), id => timers.delete(id),
     (callback, delay) => setTimer(callback, delay, delay), id => timers.delete(id), value => overlays.push(value.text), lastError);
   return {
@@ -130,6 +133,16 @@ test('stopping or manually connecting clears the retry countdown immediately', (
     assert.equal(page.overlays.length, notifications, action);
     assert.equal(page.reconnects(), 0, 'cancelled retry cannot start another connection');
   }
+});
+
+test('disconnect immediately clears an AirPlay approval before a delayed status poll arrives', () => {
+  const page = retryPage(null);
+  assert.deepEqual(page.trustState(), { visible: true, clears: 0 });
+  page.scheduleRetry(3000);
+  page.stop();
+  assert.deepEqual(page.trustState(), { visible: false, clears: 1 });
+  page.advance(5000);
+  assert.deepEqual(page.trustState(), { visible: false, clears: 1 });
 });
 
 test('blank and whitespace address fields connect to the default phone', () => {
