@@ -61,6 +61,15 @@ Runtime identity and Android signing are separate. Never place a signing keystor
 
 ## Signed release
 
+The current stable download is [TiPlay 0.2.14](https://github.com/uJZk/TiPlay/releases/tag/v0.2.14)
+(version code 37), built from `c59b6f136d6d58246f6c1bb4f9fc85351ae17caa`.
+Its APK SHA-256 is `4b236d8396208a48c49107a9f5d4f4354e4d716de307edc8d3963ba1133adb98`.
+The APK signature matches beta.4, its source ZIP matches that commit's `git archive`,
+and both runtime identity files match the pinned inputs used by beta.4. The release
+includes the source archive and `SHA256SUMS.txt`. Automated checks passed; physical
+phone/vehicle, system authorization and VPN acceptance remain in [Testing](Testing.md)
+and [Todo](Todo.md).
+
 After the intended commit passes the Android workflow, run **Actions → Build signed TiPlay release APK**. The [release workflow](../.github/workflows/android-release.yml) is authoritative for signing, pinned runtime identity, APK verification and artifact creation. It requires these repository secrets:
 
 - `ANDROID_KEYSTORE_BASE64`: complete `.p12` or `.jks` keystore, Base64 encoded.
