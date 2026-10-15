@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_location_disable">Disable browser location</string>
+    <string name="settings_browser_location_disable_description">Use the iPhone’s own location instead.</string>
+    <string name="settings_browser_location_permission_reason">Location permission lets Android use high accuracy GPS to identify the browser’s coordinate system and supply location until it is confirmed.</string>
+</resources>

@@ -50,6 +50,7 @@ class BrowserLinkServer(
     interface Callbacks {
         /** The pairing code, or null while pairing is off (every authenticated request is then refused). */
         fun code(): String?
+        fun browserLocationEnabled(): Boolean = false
         fun status(): BrowserLinkStatus
         /** Both touch slots in order, or an empty list to release every finger; false when no CarPlay session took it. */
         fun onTouch(contacts: List<AirPlayContact>): Boolean
@@ -398,6 +399,7 @@ class BrowserLinkServer(
                 is BrowserPairingGate.Decision.Accepted -> {
                     touch.drop(session)
                     AirPlayTrustNotifications.browserGone(session)
+                    if (callbacks.browserLocationEnabled()) com.shilapi.xcertplay.location.BrowserLocationRelay.leave(session)
                     video?.takeIf { it.session == session }?.subscription?.end("bye")
                     audios.filter { it.session == session }.forEach { it.subscription.close(); closeQuietly(it.socket) }
                 }
@@ -421,10 +423,12 @@ class BrowserLinkServer(
                 decision.replaced?.let { previous ->
                     touch.drop(previous)
                     AirPlayTrustNotifications.browserGone(previous)
+                    if (callbacks.browserLocationEnabled()) com.shilapi.xcertplay.location.BrowserLocationRelay.leave(previous)
                     video?.takeIf { it.session == previous }?.subscription?.end("replaced")
                     audios.filter { it.session == previous }.forEach { it.subscription.close(); closeQuietly(it.socket) }
                     callbacks.log("Browser link: a new page session replaced the previous one")
                 }
+                if (callbacks.browserLocationEnabled()) com.shilapi.xcertplay.location.BrowserLocationRelay.claim(session)
                 touch.claim(session)
                 if (appliedSession != session) {
                     appliedSession = session
@@ -460,6 +464,8 @@ class BrowserLinkServer(
                         BrowserVideoCapabilities.parse(fields["caps"])),
                 )
             }
+            "loc" -> if (callbacks.browserLocationEnabled())
+                com.shilapi.xcertplay.location.BrowserLocationRelay.accept(session, fields)
             "kf" -> hub.requestKeyFrame()
             "dec" -> fields["ep"].wholeInt()?.let(hub::browserDecoded)
             "fit" -> callbacks.onFit()
@@ -524,6 +530,9 @@ class BrowserLinkServer(
     private fun status(sequence: Long?, session: String): Map<String, Any?> {
         val status = callbacks.status()
         return linkedMapOf(
+            "location" to if (callbacks.browserLocationEnabled())
+                com.shilapi.xcertplay.location.BrowserLocationRelay.status(session) + mapOf("enabled" to true)
+                else mapOf("enabled" to false, "active" to false),
             "q" to sequence,
             "state" to status.state.wire,
             "codec" to status.codec,

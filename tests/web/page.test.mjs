@@ -67,6 +67,7 @@ function retryPage(lastError) {
     let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort;
     let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null;
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
+    const browserLocation = { stop() {} };
     const statsVisible = false, link = { code: '1234' }, stage = {};
     const airplayControls = { update() {}, videoActive: () => false };
     let trustVisible = true, trustClears = 0;

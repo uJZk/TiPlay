@@ -335,12 +335,13 @@ async function main() {
             inert: document.getElementById('stage').inert && document.getElementById('panel').inert,
             base: getComputedStyle(overlay).backgroundColor,
             wallpaper: document.getElementById('reconnect-wallpaper').src, blur: getComputedStyle(document.getElementById('reconnect-wallpaper')).filter,
-            button: document.getElementById('reconnect-settings').getBoundingClientRect().bottom,
+            button: (() => { const r = document.getElementById('reconnect-settings').getBoundingClientRect(); return { x: r.x, y: r.y, bottom: r.bottom }; })(),
             message: document.getElementById('reconnect-message').getBoundingClientRect().bottom };
         });
         check(layout.x === 0 && layout.y === 0 && layout.width === viewport.width && layout.height === viewport.height &&
           Math.abs(layout.cx - viewport.width / 2) < 1 && Math.abs(layout.cy - viewport.height / 2) < 1 && layout.inert &&
-          layout.button < viewport.height && layout.message < viewport.height,
+          layout.button.x <= 20 && layout.button.y > viewport.height / 2 &&
+          layout.button.bottom < viewport.height && layout.message < viewport.height,
         `${colorScheme} ${viewport.width}×${viewport.height}: full viewport, centered logo, reachable action and blocked CarPlay input`);
         check(layout.base === 'rgb(25, 33, 46)', `${colorScheme}: shared low-luminance material`);
         check(layout.wallpaper.includes('reconnect-wallpaper-blurred.png') && layout.blur === 'none',

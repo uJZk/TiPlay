@@ -19,6 +19,7 @@ function page() {
     const cancelViewport = () => viewportCancellations++;
     const onResize = () => resizes++;
     const render = () => {};
+    const browserLocation = { update() {} };
     const browserAudio = { status() {} }, airplayControls = { update() {} };
     const trustUpdates = [];
     let trustPrompt = null;

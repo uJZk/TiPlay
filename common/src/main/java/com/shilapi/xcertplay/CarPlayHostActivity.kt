@@ -186,7 +186,7 @@ class CarPlayHostActivity : ComponentActivity() {
             firmwareVersion = "0.1.0",
             hardwareVersion = "1.0",
             carPlayUsbInterfaceNumber = 3,
-            locationInformationEnabled = locationReportingEnabled,
+            locationInformationEnabled = locationForwardingEnabled(),
             vehicleStatusEnabled = headUnitIntegrations() && com.shilapi.xcertplay.hud.BydOutputSettings.batteryToIphoneActive(this),
             chargingConnectors = com.shilapi.xcertplay.hud.BydOutputSettings.chargingConnectors(this),
             vehicleSpeedEnabled = locationReportingEnabled && headUnitIntegrations() &&
@@ -207,12 +207,15 @@ class CarPlayHostActivity : ComponentActivity() {
         existingWifiSsid = existingWifiSsid,
         existingWifiPassphrase = existingWifiPassphrase,
         existingWifiSecurity = BrowserExistingWifiSettings.loadSecurity(this),
-        locationReportingEnabled = locationReportingEnabled,
+        locationReportingEnabled = locationForwardingEnabled(),
         headUnitIntegrations = headUnitIntegrations(),
         availableCurrentMilliAmps = AirPlayPersistence.loadUsbChargingCurrent(this).milliAmps,
     )
 
     // Phone + browser mode: no BYD vehicle data, outputs, dashboard map or wheel keys, whatever a head unit saved.
+    private fun locationForwardingEnabled(): Boolean = if (headUnitIntegrations()) locationReportingEnabled
+        else !com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(this)
+
     // A running session keeps the mode it connected with (the setting applies at the next connection), so a
     // change cannot move its dashboard stream onto the main surface. startCarPlay runs without a session,
     // so a new session takes the saved mode.
@@ -276,6 +279,10 @@ class CarPlayHostActivity : ComponentActivity() {
             microphoneAvailable = microphoneGranted
             if (microphoneGranted) microphonePermissionResolved = true
             if (microphoneChanged && browserConnectionRequested && controller != null) restartCarPlay("Microphone permission changed")
+            else if (!headUnitIntegrations() && controller != null) {
+                // A location grant from Advanced must enable foreground access without another reconnect.
+                ContextCompat.startForegroundService(this, Intent(this, DiPlaySessionService::class.java))
+            }
             wirelessPermissionsReady = hasRequiredWirelessPermissions()
             appendLog(
                 if (wirelessPermissionsReady) {
@@ -5438,6 +5445,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val locationProvider: Iap2LocationProvider? =
             when {
                 !config.locationReportingEnabled -> null
+                !headUnitIntegrations() -> com.shilapi.xcertplay.location.BrowserCarPlayLocationProvider(this)
                 config.identification.vehicleSpeedEnabled -> VehicleSpeedLocationProvider(
                     AndroidCarPlayLocationProvider(this),
                     com.shilapi.xcertplay.hud.BydNavigationOutputs.wheelSpeed(applicationContext),

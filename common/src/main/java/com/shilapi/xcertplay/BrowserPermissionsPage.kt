@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import com.shilapi.xcertplay.host.R
@@ -20,6 +21,7 @@ internal class BrowserPermissionsPage(
     private val request: (Array<String>) -> Unit,
 ) {
     private data class Row(val button: Button, val label: Int, val granted: () -> Boolean)
+    private var locationViews: List<View> = emptyList()
     private val rows = mutableListOf<Row>()
     private val requested = activity.getSharedPreferences("tiplay_permission_requests", Activity.MODE_PRIVATE)
     private fun granted(permission: String) = activity.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
@@ -50,8 +52,12 @@ internal class BrowserPermissionsPage(
         else if (Build.VERSION.SDK_INT >= 31) permission(R.string.nearby_devices,
             listOf(Manifest.permission.BLUETOOTH_CONNECT))
         permission(R.string.settings_permission_microphone, listOf(Manifest.permission.RECORD_AUDIO))
-        if (Build.VERSION.SDK_INT < 33) permission(R.string.settings_permission_location,
-            listOf(Manifest.permission.ACCESS_FINE_LOCATION))
+        permission(R.string.settings_permission_location, listOf(Manifest.permission.ACCESS_FINE_LOCATION))
+        val locationRow = rows.last().button
+        locationRow.contentDescription = activity.getString(R.string.settings_browser_location_permission_reason)
+        val reason = TiPlayNativeUi(activity).label(activity.getString(R.string.settings_browser_location_permission_reason))
+        parent.addView(reason)
+        locationViews = listOf(locationRow, reason)
         if (Build.VERSION.SDK_INT >= 33) permission(R.string.settings_permission_notifications,
             listOf(Manifest.permission.POST_NOTIFICATIONS))
         if (LocalNetworkPermission.applies(activity)) permission(R.string.settings_permission_local_network,
@@ -69,10 +75,15 @@ internal class BrowserPermissionsPage(
             return
         }
         requested.edit().apply { denied.forEach { putBoolean(it, true) } }.apply()
-        request(denied.toTypedArray())
+        // Android 12+ requires coarse and fine together even when upgrading an approximate grant.
+        val batch = if (Build.VERSION.SDK_INT >= 31 && Manifest.permission.ACCESS_FINE_LOCATION in denied)
+            listOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION) else denied
+        request(batch.toTypedArray())
     }
 
     fun refresh() {
+        val hidden = com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(activity)
+        locationViews.forEach { it.visibility = if (hidden) View.GONE else View.VISIBLE }
         rows.forEach { it.button.text = activity.getString(it.label) + " " + if (it.granted()) "✓" else "✕" }
     }
 }

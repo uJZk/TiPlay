@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_location_disable">Отключить геолокацию браузера</string>
+    <string name="settings_browser_location_disable_description">Использовать геолокацию самого iPhone.</string>
+    <string name="settings_browser_location_permission_reason">Разрешение позволяет использовать высокоточный GPS Android для определения системы координат браузера и передачи местоположения до подтверждения.</string>
+</resources>

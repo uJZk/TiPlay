@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_location_disable">Desactivar ubicación del navegador</string>
+    <string name="settings_browser_location_disable_description">Usar la ubicación del propio iPhone.</string>
+    <string name="settings_browser_location_permission_reason">El permiso permite usar el GPS de alta precisión de Android para identificar el sistema de coordenadas del navegador y proporcionar la ubicación hasta confirmarlo.</string>
+</resources>

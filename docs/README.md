@@ -16,7 +16,7 @@ Start with the [English README](../README.md) or [简体中文](../README.zh-CN.
 
 - [Build](Build.md) and [Windows containers](Wlsc.md): toolchain, runtime identity, signing and updates.
 - [Settings](Settings.md): drafts, immediate apply and connection recovery.
-- [Geolocation](geolocation.md): browser coordinate evidence, planned Android conversion and iPhone forwarding.
+- [Geolocation](geolocation.md): browser coordinate evidence, Android conversion and detection and iPhone forwarding.
 - [Testing](Testing.md) and [Todo](Todo.md): automated checks and pending physical acceptance.
 - [Upstream](Upstream.md): dependencies, provenance and merge policy.
 - [Third-party notices](Third-party-notices.md): credits, licenses and experimental authentication data.

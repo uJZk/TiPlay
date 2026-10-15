@@ -17,6 +17,17 @@ TiPlay supports Android phone + car browser only. These checks remain open; auto
 - [ ] Test vehicle browser first pairing, permissions/local-network prompts, cached/offline reopen, long HTTP streams, touch/buttons, theme and viewport resize/shrink/restore. Confirm replacement first-frame recovery, no stale input and eventual resolution renegotiation during repeated resizes.
 - [ ] Confirm physical end-to-end picture latency, acoustic A/V alignment and performance-monitor behavior. Capture real iPhone `Video config marker` evidence; configured hardware preference and synthetic decode benchmarks do not prove vehicle decoding.
 
+## Location
+
+- [ ] Validate cold-start drift, immediate GCJ-02 confirmation, WGS84 movement confirmation,
+  browser-local cache/reload and cache clearing in the actual vehicle. Check high accuracy Android GPS
+  location accuracy, precise permission and approximate-only refusal, phone screen off, GPS disabled, unavailable GPS
+  provider and fallback before confirmation. Verify no external positions after opt-out and
+  iPhone behavior after renegotiation; source selection is controlled by iOS.
+- [ ] Check geocoordinates native loading on physical ARM devices, refined output in final iPhone
+  navigation, geographic boundary crossings, Hong Kong/Macau, stale/reordered callbacks and
+  browser ownership changes. Automated decision tests do not establish sensor accuracy.
+
 ## Browser and CarPlay audio
 
 - [ ] Diagnose intermittent sound with normal picture: separate RTP loss, decode stalls, HTTP jitter and browser underruns; verify bounded jitter buffering and recovery during long playback, pause/seek and network variation.

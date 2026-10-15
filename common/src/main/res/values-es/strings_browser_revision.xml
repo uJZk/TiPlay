@@ -16,7 +16,7 @@
     <string name="settings_report_save_failed">¡Error al guardar!</string>
     <string name="settings_report_copy_full_text">Copiar todo el texto</string>
     <string name="settings_report_saved_at">Informe guardado en:</string>
-    <string name="settings_browser_hevc_title">HEVC (H.265)</string>
+    <string name="settings_browser_hevc_title">Desactivar HEVC (H.265)</string>
     <string name="settings_browser_hotspot_address_repair">Modo TiPlay</string>
     <string name="settings_browser_hotspot_address">Dirección del punto de acceso</string>
     <string name="settings_browser_hotspot_endpoint">Dirección del punto de acceso: %1$s</string>

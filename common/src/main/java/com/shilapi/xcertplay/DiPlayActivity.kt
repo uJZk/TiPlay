@@ -300,7 +300,16 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     // Android 17, phone + browser mode: the car browser's connections need the local network permission.
     private val localNetworkPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { render() }
     private val browserPagePermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        refreshBrowserLocationAccess()
+    }
+
+    private fun refreshBrowserLocationAccess() {
         browserAdvancedPage?.refresh()
+        if (browserAdvancedPage != null && CarPlayBackgroundSession.hasSession() &&
+            !com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(this) &&
+            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            androidx.core.content.ContextCompat.startForegroundService(this, Intent(this, DiPlaySessionService::class.java))
+        }
     }
     private val tick = object : Runnable {
         override fun run() { refreshStatus(); handler.postDelayed(this, 1000) }
@@ -548,6 +557,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     override fun onResume() {
         super.onResume()
         if (isFinishing) return
+        refreshBrowserLocationAccess()
         HotspotExtraAddressSettings.sync(this) // phone + browser mode: keep the car browser's hotspot address
         TeslaBrowserLink.sync(this)
         AirPlayReceiverSettings.sync(this)

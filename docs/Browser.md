@@ -136,3 +136,11 @@ Shutdown retires sessions/listeners before Bonjour cleanup, which completes befo
 advertisements. Ordinary AirPlay survives CarPlay detach, independently of hotspot ownership.
 Connected sessions hold CPU/Wi-Fi locks subject to Android restrictions. Permission rows reread actual system state on resume;
 opening authorization alone is not a grant.
+
+## Location notifications
+
+The Android Advanced page owns the location permission button. Browser permission failures
+show a card in the upper left, sharing the AirPlay notification style. It explains how to
+allow browser location or enable **Disable browser location** on Android. The card stays
+until **Close** is pressed. The waiting screen's **Setting** action is in the lower left.
+See [geolocation](geolocation.md) for GPS fallback, coordinate detection and local caching.

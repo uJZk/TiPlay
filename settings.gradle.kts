@@ -19,6 +19,12 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        ivy {
+            url = uri("shared/libs")
+            patternLayout { artifact("[module]/[artifact].[ext]") }
+            metadataSources { artifact() }
+            content { includeModule("com.ujzk.vendor", "geocoordinates") }
+        }
     }
 }
 
