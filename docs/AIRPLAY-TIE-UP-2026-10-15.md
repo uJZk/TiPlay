@@ -40,7 +40,9 @@ newer than the remote `v43` and the pre-merge local `v43`.
   during lint after the browser integration blocker below. The user subsequently
   authorized skipping the remaining complete Android checks; the restarted run was
   canceled as requested. Final lint/APK and full Android tests were not completed
-  for this merge. Earlier implementation-stage results do not replace that check.
+  for this merge. The restarted shared-module suite completed 1,944 tests with zero
+  failures/errors before cancellation. Earlier implementation-stage results do not
+  replace the skipped complete check.
 - An extra smoke loaded the actual browser entry, including its CSP, then exercised
   photo ownership with a valid EXIF-oriented JPEG. The page starts and ownership
   hide/show/reuse worked, but the image initially did not decode: the CSP blocked
@@ -52,9 +54,19 @@ newer than the remote `v43` and the pre-merge local `v43`.
   fetch occurs, and there are no CSP violations or page errors. Chromium 151 passed.
   All 231 browser unit tests also passed after the CSP fix.
 - Delivery initially stopped at the verification gate. The requested CSP repair
-  resolved that blocker; delivery resumes with the user's explicit Android-check
-  exception. Merge commit, main-branch push and Pages deployment remain pending.
-  Implementation checkpoint: `86fe366a`.
+  resolved that blocker; delivery completed with the user's explicit Android-check
+  exception. Implementation checkpoint: `86fe366a`.
+- Integration commit `876de51faa5110517bf7fa52ac2bb32053badae3` preserves both remote
+  commits in merge ancestry. Local `main` was fast-forwarded, temporary branch `work`
+  was deleted, and main was pushed to origin without force.
+- [Publish site run 38659959803](https://github.com/uJZk/TiPlay/actions/runs/38659959803)
+  completed successfully for that integration commit. Pages deployed the fixed entry
+  and cache `v44` to <https://ujzk.github.io/TiPlay/>. A public HTTP revisit could not
+  be verified from this environment: the configured proxy rejected the Pages host
+  with CONNECT 403. The deployment-success statement is based on GitHub's run result,
+  not a claimed live-page byte comparison.
+- Generated site assembly passed. Public-tree checks and release-draft tests passed;
+  no Android installable release or signed APK was published in this tie-up.
 
 Existing implementation-stage results and real-device limits remain in the
 implementation record. A local browser/Android test is not an iPhone or vehicle
