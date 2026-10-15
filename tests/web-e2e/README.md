@@ -15,6 +15,7 @@ All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LA
 
 | Script | Coverage and extra requirements |
 | --- | --- |
+| `geolocation.mjs` | Actual Chromium geolocation permissions/watch, browser-local datum cache across reload, release on opt-out, and persistent guidance with an explicit close action. Uses a module fixture without vehicle/Android sensors. |
 | `run.mjs` | Fake-phone VP8 streaming, pairing/code privacy, current default endpoint from `site/play/link.js`, touch/viewport, telemetry, reconnect/keyframe recovery, localization, takeover, nested hosting and offline Service Worker cache boundaries. Exercises worker-stream, worker-chunk, worker-frame and main-thread fallback. Optional FFmpeg/libvpx (`FFMPEG` override); otherwise browser `VideoEncoder`, also forced by `E2E_VP8=browser`. |
 | `phone-run.mjs` | Compiled shared phone API with a separate page server: removed local-page routes, Host/CORS/cache rules, H.264 framing, authenticated control/touch, epochs, recovery, `/bye` and privacy. Uses an unsupported-codec case and an explicit decoder stand-in; it is not an Android-device test. |
 | `airplay-video.mjs` | Real Mediabunny/WebCodecs playback engine, Video.js controls/skin, canvas pixels, seek/pause/rate, captions, mute restoration, ownership, disposal and sanitized failure diagnostics under production CSP. Needs an MP4 fixture; HLS optional. |

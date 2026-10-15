@@ -493,6 +493,9 @@ internal object TeslaBrowserLink {
     }
 
     private val callbacks = object : BrowserLinkServer.Callbacks {
+        override fun browserLocationEnabled(): Boolean = app?.let {
+            !com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(it)
+        } == true
         override fun code(): String? = code
         override fun status(): BrowserLinkStatus = this@TeslaBrowserLink.status()
         override fun onTouch(contacts: List<AirPlayContact>): Boolean =

@@ -10,6 +10,29 @@ For browser/media changes, use the applicable [Chromium harness](../tests/web-e2
 
 Desktop simulations and codec probes cannot establish Tesla firmware support, iPhone interoperability, autoplay behavior, vehicle sound or sustained performance. Record which checks ran and which physical checks remain.
 
+## Location and notification verification
+
+The implemented [location flow](geolocation.md) uses precise Android GPS until the
+browser datum is confirmed, refined GCJ-02 conversion and browser-local datum caching.
+The latest source checks passed: 1,965 shared, 1,520 common and 6 home unit tests,
+225 browser tests, the CI lint/debug-build command, the public-source scan and all
+9 release-draft delivery tests. The debug APK contains geocoordinates and JNA native
+libraries for arm64-v8a, armeabi-v7a, x86 and x86_64; the library checksum matches its
+pinned release. This source-only APK contains no runtime MFi identity.
+
+The Chromium `run.mjs`, `phone-run.mjs` and `geolocation.mjs` harnesses passed.
+They cover reconnect/offline behavior, the production shared server, browser-owned
+location permission, datum persistence across reload, opt-out, persistent notification
+close behavior, upper-left notifications and the lower-left waiting-screen action.
+The GPS provider tests verify precise permission, GPS subscription, initial Android
+forwarding and cleanup. The decision tests cover immediate GCJ-02 confirmation,
+WGS84 movement evidence, stale/duplicate fixes and source fallback.
+
+These checks establish software behavior, not vehicle sensor accuracy or native loading
+on a physical phone. Next, run the [location device checks](Todo.md#location), including
+cold-start drift, GPS loss/recovery, screen-off operation, geographic boundaries and
+actual iPhone navigation. Do not mark those acceptance items complete from simulation.
+
 ## Phone and browser acceptance
 
 1. Install/update the intended signed `mobile` APK; confirm settings survive an update. Open the hosted HTTPS page from TiPlay's pairing link. Check first-use network permissions, pairing-code entry, saved address and fragment removal. Deny a permission once and confirm the explanation and retry path work.

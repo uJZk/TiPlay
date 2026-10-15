@@ -22,6 +22,19 @@ USB and selected-iPhone Bluetooth ACL events trigger checks. Without a controlle
 
 CarPlay audio is enabled by default. `BrowserCarPlayAudioSettings` independently controls opt-out; `phoneBrowserAirPlayConfig()` enables buffered music and available microphone support when audio is enabled. Disabling leaves audio to the iPhone's vehicle Bluetooth route. It does not reuse upstream `car_bluetooth_audio`. Ordinary AirPlay starts by default and has its own disable control; media and screen ownership follow [AirPlay](AirPlay.md).
 
+## Location and video controls
+
+Advanced settings offers **Disable browser location**, off by default. Enabling it hides
+the Android location permission button, stops browser/Android location forwarding and renegotiates
+CarPlay to use the iPhone's location. When enabled, browser location is detected/converted
+on Android; until confirmation, Android supplies high accuracy GPS fixes. See
+[geolocation](geolocation.md) for quality gates and local browser caching.
+
+**Disable HEVC (H.265)** is off by default. Its switch is the inverse of the existing
+`hevc_enabled` preference: existing users keep their codec choice; enabling the switch
+selects H.264 on the next negotiation, while disabling it allows HEVC when the browser
+supports it. Both changes apply immediately and reconnect while keeping settings open.
+
 ## Source entry points
 
 The implementation lives in `common/src/main/java/com/shilapi/xcertplay/`: `BrowserMainSettingsMenu`, `BrowserConnectionDraft`, `BrowserAdvancedSettings`, `BrowserSettingsChanges`, `BrowserCarPlaySettings`, `BrowserCarPlayRetry`, `BrowserCarPlayWatch`, `CarPlayHostActivity` and `BootReceiver`. Keep product behavior in dedicated files with small shared-session hooks.

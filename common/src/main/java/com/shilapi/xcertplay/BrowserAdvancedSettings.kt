@@ -33,6 +33,12 @@ internal object BrowserAdvancedSettings {
                 Toast.makeText(context, R.string.settings_airplay_devices_forgotten, Toast.LENGTH_SHORT).show()
             }
         }, LinearLayout.LayoutParams(-1, -2))
+        toggle(card, context.getString(R.string.settings_browser_location_disable),
+            context.getString(R.string.settings_browser_location_disable_description),
+            com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(context)) {
+            com.shilapi.xcertplay.location.BrowserLocationSettings.setDisabled(context, it)
+            reconnectNeeded()
+        }
         BrowserCarPlayAudioSettings.addControls(context, card, toggle, reconnectNeeded)
         toggle(card, context.getString(R.string.settings_debug_logging), "",
             AirPlayPersistence.loadDiagnosticLogLevel(context) == DiagnosticLogLevel.DEBUG) {
@@ -46,9 +52,9 @@ internal object BrowserAdvancedSettings {
             AirPlayPersistence.saveFps(context, rates[it])
             reconnectNeeded()
         }
-        toggle(card, context.getString(R.string.settings_hevc_experimental),
-            context.getString(R.string.settings_browser_next_connection_hint), AirPlayPersistence.loadHevcEnabled(context)) {
-            AirPlayPersistence.saveHevcEnabled(context, it)
+        toggle(card, context.getString(R.string.settings_browser_hevc_title),
+            context.getString(R.string.settings_browser_next_connection_hint), !AirPlayPersistence.loadHevcEnabled(context)) {
+            AirPlayPersistence.saveHevcEnabled(context, !it)
             reconnectNeeded()
         }
     }

@@ -63,8 +63,14 @@ internal class BrowserAdvancedPage(
             BrowserCarPlaySettings.setDisabled(activity, it)
         }
         BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_browser_hevc_title),
-            "", AirPlayPersistence.loadHevcEnabled(activity), true) {
-            AirPlayPersistence.saveHevcEnabled(activity, it)
+            "", !AirPlayPersistence.loadHevcEnabled(activity), true) {
+            AirPlayPersistence.saveHevcEnabled(activity, !it)
+            configurationChanged()
+        }
+        BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_browser_location_disable),
+            activity.getString(R.string.settings_browser_location_disable_description),
+            com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(activity), true) {
+            com.shilapi.xcertplay.location.BrowserLocationSettings.setDisabled(activity, it)
             configurationChanged()
         }
         BrowserCarPlayAudioSettings.addControls(activity, content,

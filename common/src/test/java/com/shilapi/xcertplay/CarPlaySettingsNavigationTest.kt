@@ -151,7 +151,7 @@ class CarPlaySettingsNavigationTest {
         assertFalse(results.any { it.title.startsWith(screen.getString(R.string.resolution)) })
         assertEquals(setOf(SettingsCategory.ADVANCED), results.map { it.category }.toSet())
         assertTrue(results.any { it.title == screen.getString(R.string.frame_rate) })
-        assertTrue(results.any { it.title == screen.getString(R.string.settings_hevc_experimental) })
+        assertTrue(results.any { it.title == screen.getString(R.string.settings_browser_hevc_title) })
         assertTrue(results.any { it.title == screen.getString(R.string.save_diagnostic_report) })
     }
 

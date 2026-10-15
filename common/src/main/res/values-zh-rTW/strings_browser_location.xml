@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_location_disable">停用網頁定位</string>
+    <string name="settings_browser_location_disable_description">改用 iPhone 自己的定位。</string>
+    <string name="settings_browser_location_permission_reason">定位權限用於取得 Android 高精度 GPS 位置，比對網頁座標系，並在確認前提供導航定位。</string>
+</resources>

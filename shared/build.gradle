@@ -33,11 +33,16 @@ android {
         aidl true
     }
     compileOptions {
+        coreLibraryDesugaringEnabled true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
 }
 dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+    implementation 'com.ujzk.vendor:geocoordinates:0.14.2@aar'
+    implementation 'net.java.dev.jna:jna:5.18.1@aar'
+    implementation 'androidx.annotation:annotation:1.9.1'
     implementation libs.androidx.app
     implementation libs.bouncycastle
     implementation libs.jmdns

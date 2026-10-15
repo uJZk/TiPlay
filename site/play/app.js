@@ -11,6 +11,8 @@ import {
   isCode, linkFromAddress, linkLocation, mapPoint, newSessionId, normalizeHost, supportedCodecs,
   timeoutSignal, viewportFor,
 } from './link.js';
+import { createLocationNotice } from './location-notice.js';
+import { createBrowserLocation, locationEvents } from './geolocation.js';
 import { followAppearance } from './appearance.js';
 import { probeMirrorCapabilities } from './airplay-capabilities.js';
 import { createReconnectOverlay } from './reconnect.js';
@@ -54,7 +56,7 @@ const STRINGS = {
     replaced: 'Another browser took over the display. Connect again to take it back.',
     protocol: 'TiPlay on the Android device does not match this page. Update the app.',
     unsupported: 'This browser cannot decode {0}.',
-    unsupportedHevc: 'This browser cannot decode HEVC. Turn off HEVC in TiPlay on the Android device.',
+    unsupportedHevc: 'This browser cannot decode HEVC. Enable “Disable HEVC” in TiPlay on the Android device.',
     unsupportedHdr: 'AirPlay mirroring requires SDR video; this source sends HDR.',
     noVideo: 'This browser cannot show the video ({0}). Open the page over HTTPS in a browser with WebCodecs support.',
     invalidCode: 'Enter the 4-digit pairing code.',
@@ -91,7 +93,7 @@ const STRINGS = {
     replaced: '另一个浏览器接管了画面。再次连接即可收回。',
     protocol: '安卓端上的 TiPlay 与本页不匹配，请更新应用。',
     unsupported: '此浏览器无法解码 {0}。',
-    unsupportedHevc: '此浏览器无法解码 HEVC。请在安卓端上的 TiPlay 中关闭 HEVC。',
+    unsupportedHevc: '此浏览器无法解码 HEVC。请在安卓端上的 TiPlay 中开启“禁用 HEVC”。',
     unsupportedHdr: 'AirPlay 镜像需要 SDR 视频，当前来源发送的是 HDR。',
     noVideo: '此浏览器无法显示画面（{0}）。请使用支持 WebCodecs 的浏览器通过 HTTPS 打开本页。',
     invalidCode: '请输入 4 位配对码。',
@@ -143,6 +145,13 @@ let attempt = 0, reconnects = 0, retryTimer = null, retryAt = 0, streamId = 0, v
 let retryCountdownTimer = null;
 let config = null, live = false, status = null, unsupported = null, videoStats = {};
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
+const locationNotice = createLocationNotice($('location-notice'), lang);
+const browserLocation = createBrowserLocation({
+  onIssue: reason => locationNotice.show(reason),
+  push: event => outbox?.push(event, 'latest'), navigator,
+  storage: { getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) },
+  secure: window.isSecureContext,
+});
 const appearance = window.matchMedia('(prefers-color-scheme: dark)');
 const reportAppearance = followAppearance(appearance, () => outbox);
 const mediaTimings = new Map();
@@ -392,6 +401,7 @@ function stop(key = null, ...args) {
   sink?.stop();
   cancelMove();
   slots.releaseAll();
+  browserLocation.stop();
   outbox?.close();
   outbox = null;
   status = null;
@@ -515,13 +525,14 @@ function scheduleRetry(delay) {
 
 async function postControl(q, events) {
   const response = await phoneFetch('/control', {
-    method: 'POST', body: JSON.stringify({ c: link.code, s: session, q, e: events }), signal: timeoutSignal(3000),
+    method: 'POST', body: JSON.stringify({ c: link.code, s: session, q, e: locationEvents(events) }), signal: timeoutSignal(3000),
   });
   if (!response.ok) throw await httpError(response);
   return response.json();
 }
 
 function applyStatus(next) {
+  browserLocation.update(next.location);
   airplayTrust.update(next.airplayTrust);
   browserAudio.status(next);
   airplayControls.update(next.airplay);

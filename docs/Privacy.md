@@ -22,6 +22,8 @@ Retained upstream DiLink cluster code, hidden from the phone/browser product, ca
 
 ## Browser and network
 
-Browser storage retains the pairing code and phone address. TiPlay removes the code from the link fragment after opening; fragments are not sent to the static host, but the endpoint in `?t=` is. Authenticated HTTP requests send the code to the phone. Local video, audio, proxied resources and controls are not encrypted by TiPlay: use secured Wi-Fi. Open networks provide no Wi-Fi encryption.
+Browser storage retains the pairing code, phone address and confirmed coordinate-system type (plus browser UA and record version). Location coordinates are not persisted. When enabled, browser positions travel only over the paired local control channel to Android and onward to the iPhone. High accuracy Android GPS supplies the initial position and coordinate-system comparison; it stops when a known browser position is available and resumes if browser fixes expire. See [geolocation](geolocation.md) for permissions, caching and the opt-out.
+
+Browser storage retains no position history. TiPlay removes the code from the link fragment after opening; fragments are not sent to the static host, but the endpoint in `?t=` is. Authenticated HTTP requests send the code to the phone. Local video, audio, proxied resources and controls are not encrypted by TiPlay: use secured Wi-Fi. Open networks provide no Wi-Fi encryption.
 
 **New code** invalidates the old code and ends the browser session. Changing Android address/port preserves the code but requires a manual browser address update or new pairing link; no endpoint migration is sent. The static site has no analytics script or account.

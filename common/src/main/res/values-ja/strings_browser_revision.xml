@@ -16,7 +16,7 @@
     <string name="settings_report_save_failed">保存できませんでした！</string>
     <string name="settings_report_copy_full_text">全文をコピー</string>
     <string name="settings_report_saved_at">レポートの保存先：</string>
-    <string name="settings_browser_hevc_title">HEVC（H.265）</string>
+    <string name="settings_browser_hevc_title">HEVC（H.265）を無効にする</string>
     <string name="settings_browser_hotspot_address_repair">TiPlay モード</string>
     <string name="settings_browser_hotspot_address">ホットスポットのアドレス</string>
     <string name="settings_browser_hotspot_endpoint">ホットスポットのアドレス：%1$s</string>

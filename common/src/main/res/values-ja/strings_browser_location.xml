@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_location_disable">ブラウザの位置情報を無効にする</string>
+    <string name="settings_browser_location_disable_description">iPhone 自身の位置情報を使用します。</string>
+    <string name="settings_browser_location_permission_reason">高精度 GPS でブラウザの座標系を識別し、確認できるまでナビゲーションに Android の位置情報を提供します。</string>
+</resources>

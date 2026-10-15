@@ -45,6 +45,8 @@ CarPlay and the CarPlay icon are Apple Inc. marks/assets. This asset is not cove
 - Kotlin standard library — JetBrains; Apache License 2.0.
 - Bouncy Castle 1.79 — The Legion of the Bouncy Castle Inc.; Bouncy Castle license (MIT-style).
 - JmDNS 3.6.3 — JmDNS contributors; Apache License 2.0.
+- geocoordinates-rs 0.14.2 — geocoordinates-rs contributors; MIT OR Apache-2.0. The Android AAR is from [uJZk/geocoordinates-rs](https://github.com/uJZk/geocoordinates-rs/releases/tag/android-v0.14.2), with upstream [justin13888/geocoordinates-rs](https://github.com/justin13888/geocoordinates-rs). Licenses, checksum and artifact provenance are in [shared/libs/geocoordinates](../shared/libs/geocoordinates/README.md).
+- JNA 5.18.1 (Android AAR) — JNA contributors; LGPL-2.1-or-later OR Apache-2.0; used under Apache-2.0 for the geocoordinates UniFFI bindings. [Project](https://github.com/java-native-access/jna/tree/5.18.1), [license selection](licenses/dependencies/JNA-LICENSE.txt) and [Apache-2.0 text](licenses/dependencies/JNA-APACHE-2.0.txt).
 - SLF4J — QOS.ch; MIT license.
 - Shizuku API 13.1.5 (`dev.rikka.shizuku:api`, `:provider` and their `aidl` and `shared` modules) — Copyright (c) 2021 RikkaW; MIT license, text in `docs/licenses/dependencies/Shizuku-API-LICENSE.txt`. Used only by the Shizuku hotspot address method (`docs/Hotspot-address.md`).
 

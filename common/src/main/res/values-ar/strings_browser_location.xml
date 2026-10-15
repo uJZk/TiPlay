@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_location_disable">تعطيل موقع المتصفح</string>
+    <string name="settings_browser_location_disable_description">استخدام موقع iPhone نفسه.</string>
+    <string name="settings_browser_location_permission_reason">يسمح إذن الموقع باستخدام GPS عالي الدقة في Android لتحديد نظام إحداثيات المتصفح وتوفير الموقع حتى تأكيده.</string>
+</resources>

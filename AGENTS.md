@@ -20,7 +20,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 - [Connection setup](docs/Connection-setup.md) and [hotspot address](docs/Hotspot-address.md).
 - [AirPlay](docs/AirPlay.md): receiver/media contracts and compatibility limits.
 - [Diagnostics](docs/Diagnostics.md) and [privacy](docs/Privacy.md).
-- [Geolocation](docs/geolocation.md): browser coordinate evidence, Android conversion boundary and iPhone forwarding.
+- [Geolocation](docs/geolocation.md): implemented GPS fallback, datum detection/conversion, browser cache and iPhone forwarding. Verification is in [Testing](docs/Testing.md#location-and-notification-verification); physical follow-up is in [Todo](docs/Todo.md#location).
 - [Build](docs/Build.md), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md).
 - [Upstream](docs/Upstream.md): merge policy, preserved identifiers and dependency provenance.
 - [Third-party notices](docs/Third-party-notices.md) and [remaining work](docs/Todo.md).

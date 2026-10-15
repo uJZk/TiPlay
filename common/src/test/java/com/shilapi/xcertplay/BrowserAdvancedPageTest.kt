@@ -69,9 +69,51 @@ class BrowserAdvancedPageTest {
         val saved = AirPlayPersistence.loadHevcEnabled(activity)
         page = create()
         activity.setContentView(page.view)
-        assertEquals(saved, views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_browser_hevc_title) }.isChecked)
+        assertEquals(!saved, views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_browser_hevc_title) }.isChecked)
         assertNotNull(button(R.string.back))
         assertEquals(1, changes)
+    }
+
+    @Test fun disableHevcDefaultsOffAndKeepsTheExistingCodecPreference() {
+        BrowserSettingsPolicy.activate(activity)
+        page = create()
+        val toggle = views(page.view).filterIsInstance<Switch>().single {
+            it.text == activity.getString(R.string.settings_browser_hevc_title)
+        }
+        assertFalse(toggle.isChecked)
+        assertTrue(AirPlayPersistence.loadHevcEnabled(activity))
+        toggle.performClick()
+        assertFalse(AirPlayPersistence.loadHevcEnabled(activity))
+    }
+
+    @Test fun locationOptOutHidesPermissionAndReasonAndRequiresFineGrant() {
+        val row = views(page.view).filterIsInstance<Button>().single {
+            it.text.toString().startsWith(activity.getString(R.string.settings_permission_location) + " ")
+        }
+        val reason = views(page.view).filterIsInstance<TextView>().single {
+            it.text == activity.getString(R.string.settings_browser_location_permission_reason)
+        }
+        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
+        row.performClick()
+        assertEquals(setOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION), requested.toSet())
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_COARSE_LOCATION)
+        page.refresh()
+        assertTrue(row.text.endsWith("✕"))
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        page.refresh()
+        assertTrue(row.text.endsWith("✓"))
+        val toggle = views(page.view).filterIsInstance<Switch>().single {
+            it.text == activity.getString(R.string.settings_browser_location_disable)
+        }
+        assertFalse(toggle.isChecked)
+        toggle.performClick()
+        assertTrue(com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(activity))
+        assertEquals(View.GONE, row.visibility)
+        assertEquals(View.GONE, reason.visibility)
+        assertEquals(1, changes)
+        toggle.performClick()
+        assertEquals(View.VISIBLE, row.visibility)
+        assertEquals(View.VISIBLE, reason.visibility)
     }
 
     @Test fun disablingAirPlayIsDefaultOffPersistsAndDoesNotRequireCarPlayReconnect() {

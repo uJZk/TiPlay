@@ -53,7 +53,9 @@ class DiPlaySessionService : Service() {
             }
             // Without it Android stops location updates while another car app (the reversing camera,
             // the car's own map) covers CarPlay, and the iPhone gets no position until DiPlay is back.
-            if (AirPlayPersistence.loadLocationReportingEnabled(this) &&
+            val usesLocation = if (phoneBrowser) !com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(this)
+                else AirPlayPersistence.loadLocationReportingEnabled(this)
+            if (usesLocation &&
                 checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                 types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             }
