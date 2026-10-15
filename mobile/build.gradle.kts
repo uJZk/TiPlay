@@ -17,8 +17,8 @@ android {
         applicationId = "com.ujzk.tiplay"
         minSdk = 28
         targetSdk = 37
-        versionCode = 38
-        versionName = "0.2.15"
+        versionCode = 39
+        versionName = "0.2.16"
 
     }
 

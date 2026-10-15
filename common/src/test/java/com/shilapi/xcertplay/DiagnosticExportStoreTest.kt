@@ -45,20 +45,47 @@ class DiagnosticExportStoreTest {
         assertFalse(provider.deleted)
     }
 
-    @Test fun exportedFileIncludesCompleteRawCaptureAfterDebugIsDisabled() {
+    @Test fun standardExportExcludesRetainedRawCapture() {
         val directory = java.nio.file.Files.createTempDirectory("export-raw").toFile()
         val capture = File(directory, "capture.tsv")
         try {
-            val bytes = ByteArray(100_001) { (it % 256).toByte() }
             com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, true)
-            com.shilapi.xcertplay.diagnostics.RawTraffic.record("iphone/in", bytes)
+            com.shilapi.xcertplay.diagnostics.RawTraffic.record("iphone/in", "secret raw data".toByteArray())
             com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
-            DiagnosticExportStore.saveToDownloads(resolver, "raw.txt", "summary\n")
-            val records = provider.file.readLines().map { it.split('\t') }.filter { it.size == 5 && it[2] == "iphone/in" }
-            val restored = java.io.ByteArrayOutputStream()
-            records.forEach { restored.write(java.util.Base64.getDecoder().decode(it[4])) }
-            assertArrayEquals(bytes, restored.toByteArray())
-            assertEquals(provider.file.readText(), provider.contentAtPublish)
+            DiagnosticExportStore.saveToDownloads(resolver, "plain.txt", "summary\n")
+            assertEquals("summary\n", provider.file.readText())
+            assertTrue(capture.length() > 0)
+        } finally { com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false); directory.deleteRecursively() }
+    }
+
+    @Test fun debugArchiveIsPreparedOnceAndUsesZipMimeWithRawPcmAndBinaryStreams() {
+        val context = RuntimeEnvironment.getApplication()
+        val directory = java.nio.file.Files.createTempDirectory("export-zip").toFile()
+        val capture = File(directory, "capture.tsv")
+        try {
+            val raw = com.shilapi.xcertplay.diagnostics.RawTraffic
+            raw.configure(capture, true)
+            raw.record("iphone/in", byteArrayOf(0, 1, 2, -1))
+            raw.record("car-bluetooth/sco/pcm16le/rate=16000/out", byteArrayOf(0, 10, 11, 12))
+            DiagnosticReportContent.prepare(context, "TiPlay-test.zip", "summary\n", debug = true).use { content ->
+                raw.record("later", byteArrayOf(77))
+                DiagnosticExportStore.saveToDownloads(resolver, content)
+                assertEquals("application/zip", provider.insertValues!!.getAsString(MediaStore.Downloads.MIME_TYPE))
+                assertEquals("TiPlay-test.zip", provider.insertValues!!.getAsString(MediaStore.Downloads.DISPLAY_NAME))
+                val first = provider.file.readBytes()
+                val entries = linkedMapOf<String, ByteArray>()
+                java.util.zip.ZipInputStream(first.inputStream()).use { zip ->
+                    while (true) { val entry = zip.nextEntry ?: break; entries[entry.name] = zip.readBytes() }
+                }
+                assertEquals("summary\n", entries.getValue("TiPlay-test.txt").toString(Charsets.UTF_8))
+                assertArrayEquals(byteArrayOf(0, 1, 2, -1), entries.values.single { it.contentEquals(byteArrayOf(0, 1, 2, -1)) })
+                assertArrayEquals(byteArrayOf(0, 10, 11, 12), entries.entries.single { it.key.endsWith(".pcm") }.value)
+                assertFalse(entries.getValue("streams.tsv").toString(Charsets.UTF_8).contains(java.util.Base64.getEncoder().encodeToString("later".toByteArray())))
+                raw.configure(capture, false)
+                DiagnosticExportStore.write(resolver, provider.uri, content)
+                assertArrayEquals(first, provider.file.readBytes())
+            }
+            assertTrue(context.cacheDir.listFiles()!!.none { it.name.startsWith("diagnostic-export-") || it.name.startsWith("traffic-export-") })
         } finally { com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false); directory.deleteRecursively() }
     }
 

@@ -4,6 +4,14 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.16
+
+- Scope Debug mode to the current process, create a new capture session on each enable, show its performance hint in Main settings and offer explicit raw-history clearing after a successful ZIP save. Preserve exported artifacts when clearing.
+- Export one diagnostic TXT in Standard mode; in Debug mode export a ZIP with the same timestamp naming pattern, log TXT, per-channel raw BIN/PCM streams and timestamp/sequence/offset indexes. Preserve ZIP MIME types and one immutable snapshot across storage fallbacks and sharing.
+- Preserve interrupted raw records in a marked ZIP entry and repair append boundaries after process termination without discarding earlier evidence.
+
+Verification: 1,973 shared, 1,561 common and 6 home unit tests; 229 browser tests; Android lint/debug builds; public-source scan and 9 release-draft tests. Physical phone/vehicle, sustained capture under storage pressure and OEM storage/share acceptance remain pending.
+
 ## 0.2.15
 
 - Replace the four-step first-use wizard with a single Permission checklist and remove the duplicate permission list from Advanced settings.

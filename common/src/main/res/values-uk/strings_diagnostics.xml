@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="settings_debug_logging">Режим налагодження</string>
-    <string name="settings_debug_mode_description">Записує всі початкові дані iPhone, браузера, USB та аудіовиходу Android без маскування. Повний запис включено до звіту й займає місце до очищення даних застосунку.</string>
     <string name="settings_hint_car_bluetooth_disconnected">Не виявлено аудіоз’єднання Android з автомобілем через Bluetooth (A2DP/HFP). Підключіть телефон у налаштуваннях Bluetooth.</string>
     <string name="settings_hint_car_bluetooth_unknown">Не вдалося перевірити Bluetooth автомобіля. Перевірте дозвіл пристроїв поблизу та налаштування Bluetooth.</string>
     <string name="settings_hint_car_bluetooth_verify">Підключено аудіопристрій Bluetooth. Переконайтеся в налаштуваннях, що це автомобіль.</string>
+    <string name="settings_debug_mode_description">Записує всі початкові дані iPhone, браузера, USB та аудіовиходу Android без маскування. Кожне ввімкнення створює сеанс; після перезапуску процесу режим вимкнено. Зберігає ZIP; очищення запису доступне у вікні завершення.</string>
+    <string name="settings_hint_debug_enabled">Режим налагодження ввімкнено. Можливе зниження продуктивності.</string>
+    <string name="settings_clear_captured_data">Очистити записані дані</string>
+    <string name="settings_capture_cleared">Записані дані очищено. Збережені файли не змінено.</string>
+    <string name="settings_capture_clear_failed">Не вдалося очистити записані дані. Спробуйте ще раз.</string>
 </resources>

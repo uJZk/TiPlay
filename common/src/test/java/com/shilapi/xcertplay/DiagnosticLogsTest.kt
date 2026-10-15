@@ -32,6 +32,25 @@ class DiagnosticLogsTest {
         assertEquals(DiagnosticLogLevel.DEBUG, DiagnosticLogPolicy.level)
     }
 
+    @Test fun debugIsProcessLocalAndOldPersistedPreferenceCannotEnableItOnRestart() {
+        context.getSharedPreferences("xcertplay_airplay", 0).edit().putString("diagnostic_log_level", "debug").commit()
+        assertEquals(DiagnosticLogLevel.STANDARD, AirPlayPersistence.loadDiagnosticLogLevel(context))
+        AirPlayPersistence.saveDiagnosticLogLevel(context, DiagnosticLogLevel.DEBUG)
+        assertEquals(DiagnosticLogLevel.DEBUG, AirPlayPersistence.loadDiagnosticLogLevel(context))
+        val raw = File(context.filesDir, "logs/raw-traffic.tsv")
+        val before = raw.readText()
+        assertTrue(before.contains("capture/start"))
+        val metadata = java.util.Base64.getDecoder().decode(raw.readLines().first { it.split('\t')[2] == "capture/start" }.split('\t')[4]).toString(Charsets.UTF_8)
+        assertTrue(metadata.contains("session="))
+        assertTrue(metadata.contains("version="))
+        assertTrue(metadata.contains("sources=iphone,browser,usb,android-audio"))
+        DiagnosticLogs.resetForTest() // A fresh process resets all static state to its Standard default.
+        assertEquals(DiagnosticLogLevel.STANDARD, AirPlayPersistence.loadDiagnosticLogLevel(context))
+        DiagnosticLogs.initialize(context, AirPlayPersistence.loadDiagnosticLogLevel(context))
+        assertFalse(com.shilapi.xcertplay.diagnostics.RawTraffic.enabled)
+        assertTrue(raw.length() >= before.length)
+    }
+
     @Test fun exportDrainsAcceptedMetadataAndReportsCollectionIntegrity() {
         DiagnosticLogs.initialize(context, DiagnosticLogLevel.STANDARD)
         DiagnosticLogs.append("Shutdown complete clean=true")

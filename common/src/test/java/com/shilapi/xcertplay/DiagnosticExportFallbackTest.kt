@@ -63,6 +63,26 @@ class DiagnosticExportFallbackTest {
         assertEquals("report", read(saved.uri))
     }
 
+    @Test @Config(sdk = [29]) fun missingDownloadsPreservesTheZipExtensionMimeAndSnapshot() {
+        val provider = MissingDownloadsProvider()
+        provider.attachInfo(context, ProviderInfo().apply { authority = "media" })
+        ShadowContentResolver.registerProviderInternal("media", provider)
+        DiagnosticReportContent.prepare(context, "TiPlay-test.zip", "summary", debug = true).use { content ->
+            val first = DiagnosticExportStore.saveWithoutPicker(context, content)
+            val second = DiagnosticExportStore.saveWithoutPicker(context, content)
+            assertEquals("application/zip", first.mimeType)
+            assertEquals("application/zip", context.contentResolver.getType(first.uri))
+            assertTrue(first.savedPath!!.endsWith(".zip"))
+            assertNotEquals(first.uri, second.uri)
+            val bytes = context.contentResolver.openInputStream(first.uri)!!.use { it.readBytes() }
+            assertArrayEquals(bytes, context.contentResolver.openInputStream(second.uri)!!.use { it.readBytes() })
+            java.util.zip.ZipInputStream(bytes.inputStream()).use { zip ->
+                assertEquals("TiPlay-test.txt", zip.nextEntry.name)
+                assertEquals("summary", zip.readBytes().toString(Charsets.UTF_8))
+            }
+        }
+    }
+
     @Test fun publicDownloadsWriteSucceedsDirectly() {
         val saved = DiagnosticExportStore.saveToPublicDownloads(context, "DiPlay-direct.txt", "report")
         assertEquals("report", File(publicReports, "DiPlay-direct.txt").readText())

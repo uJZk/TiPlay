@@ -22,9 +22,14 @@ internal object BrowserDiagnosticResultUi {
             })
         }
         AlertDialog.Builder(activity).setView(content)
+            .apply {
+                if (saved.mimeType == "application/zip") setPositiveButton(R.string.settings_clear_captured_data) { _, _ ->
+                    DiagnosticCaptureClearUi.clear(activity)
+                }
+            }
             .setNeutralButton(R.string.share) { _, _ ->
                 runCatching { activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
+                    type = saved.mimeType
                     putExtra(Intent.EXTRA_STREAM, saved.uri)
                     clipData = ClipData.newRawUri(activity.getString(R.string.report_clip_label), saved.uri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

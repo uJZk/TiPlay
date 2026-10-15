@@ -62,7 +62,6 @@ object AirPlayPersistence {
     private const val KEY_MANUAL_HOTSPOT_CHANNEL = "manual_hotspot_channel"
     private const val KEY_MANUAL_HOTSPOT_SECURITY = "manual_hotspot_security"
     private const val KEY_DEBUG_LOGS_ENABLED = "debug_logs_enabled"
-    private const val KEY_DIAGNOSTIC_LOG_LEVEL = "diagnostic_log_level"
     private const val KEY_MANUFACTURER = "manufacturer"
     private const val KEY_MODEL = "model"
     private const val KEY_OEM_LABEL = "oem_label"
@@ -492,13 +491,11 @@ object AirPlayPersistence {
             .apply()
     }
 
-    internal fun loadDiagnosticLogLevel(context: Context): DiagnosticLogLevel =
-        DiagnosticLogLevel.fromKey(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_DIAGNOSTIC_LOG_LEVEL, null))
+    // Process-local: every fresh process starts in Standard, including service/receiver startup.
+    internal fun loadDiagnosticLogLevel(@Suppress("UNUSED_PARAMETER") context: Context): DiagnosticLogLevel =
+        DiagnosticLogPolicy.level
 
     internal fun saveDiagnosticLogLevel(context: Context, level: DiagnosticLogLevel) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_DIAGNOSTIC_LOG_LEVEL, level.key).apply()
         DiagnosticLogs.initialize(context, level)
         DiagnosticLogs.append("Diagnostic log level changed level=${level.key}")
     }

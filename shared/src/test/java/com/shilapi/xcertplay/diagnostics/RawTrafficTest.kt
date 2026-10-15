@@ -16,22 +16,96 @@ class RawTrafficTest {
             val bytes = ByteArray(131_073) { (it % 256).toByte() }
             RawTraffic.record("iphone/in", bytes)
             RawTraffic.record("browser/in", "password=secret code=1234 http://192.168.1.2".toByteArray())
+            RawTraffic.record("iphone/in", byteArrayOf(7, 8))
             RawTraffic.configure(file, false)
             RawTraffic.record("ignored", bytes)
             val output = ByteArrayOutputStream()
-            RawTraffic.appendTo(output)
-            val lines = output.toString("UTF-8").lineSequence().map { it.split('\t') }.filter { it.size == 5 }.toList()
-            val actual = ByteArrayOutputStream()
-            for (record in lines.filter { it[2] == "iphone/in" }) {
-                val decoded = Base64.getDecoder().decode(record[4])
-                assertEquals(record[3].toInt(), decoded.size)
-                actual.write(decoded)
+            RawTraffic.writeArchive(output, "TiPlay-test.txt", "summary", directory)
+            val entries = linkedMapOf<String, ByteArray>()
+            java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { zip ->
+                while (true) { val entry = zip.nextEntry ?: break; entries[entry.name] = zip.readBytes() }
             }
-            assertArrayEquals(bytes, actual.toByteArray())
+            val streams = entries.getValue("streams.tsv").toString(Charsets.UTF_8).lines().drop(1)
+                .filter { it.isNotEmpty() }.associate { line ->
+                    val fields = line.split('\t')
+                    String(Base64.getDecoder().decode(fields[1])) to fields[0]
+                }
+            assertArrayEquals(bytes + byteArrayOf(7, 8), entries.getValue(streams.getValue("iphone/in")))
             assertEquals("password=secret code=1234 http://192.168.1.2",
-                String(Base64.getDecoder().decode(lines.single { it[2] == "browser/in" }[4])))
-            assertFalse(lines.any { it[2] == "ignored" })
-            assertTrue(output.toString("UTF-8").contains("failures=0"))
+                entries.getValue(streams.getValue("browser/in")).toString(Charsets.UTF_8))
+            assertFalse(streams.containsKey("ignored"))
+            assertTrue(entries.getValue("capture.txt").toString(Charsets.UTF_8).contains("failures=0"))
+            assertEquals("summary", entries.getValue("TiPlay-test.txt").toString(Charsets.UTF_8))
+            val events = entries.getValue("events.tsv").toString(Charsets.UTF_8).lines().drop(1).filter { it.isNotEmpty() }
+            val offsets = mutableMapOf<String, Long>()
+            events.forEach { line ->
+                val fields = line.split('\t')
+                assertTrue(fields[0].toLong() > 0)
+                assertTrue(fields[1].toLong() > 0)
+                assertEquals(offsets.getOrDefault(fields[2], 0L), fields[3].toLong())
+                offsets[fields[2]] = fields[3].toLong() + fields[4].toInt()
+            }
+            assertTrue(directory.listFiles()!!.none { it.name.startsWith("traffic-export-") })
+        } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
+    }
+
+    @Test fun eachEnableStartsASessionAndClearKeepsSavedArchiveWhileRestartingActiveCapture() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-session").toFile()
+        val file = File(directory, "capture.tsv")
+        try {
+            RawTraffic.configure(file, true, "version=test config=all")
+            RawTraffic.record("iphone/in", byteArrayOf(42))
+            RawTraffic.configure(file, true, "ignored") // Reopening settings must not create another session.
+            RawTraffic.configure(file, false)
+            RawTraffic.configure(file, true, "version=test config=all")
+            RawTraffic.record("iphone/in", byteArrayOf(43))
+            val saved = ByteArrayOutputStream()
+            RawTraffic.writeArchive(saved, "report.txt", "summary", directory)
+            val entries = linkedMapOf<String, ByteArray>()
+            java.util.zip.ZipInputStream(saved.toByteArray().inputStream()).use { zip ->
+                while (true) { val entry = zip.nextEntry ?: break; entries[entry.name] = zip.readBytes() }
+            }
+            assertEquals(3, entries.getValue("sessions.tsv").toString(Charsets.UTF_8).trim().lines().size)
+            val channels = entries.getValue("streams.tsv").toString(Charsets.UTF_8).trim().lines().drop(1)
+                .map { it.split('\t') }.filter { String(Base64.getDecoder().decode(it[1])) == "iphone/in" }
+            assertEquals(2, channels.size)
+            assertArrayEquals(byteArrayOf(42), entries.getValue(channels[0][0]))
+            assertArrayEquals(byteArrayOf(43), entries.getValue(channels[1][0]))
+            val snapshotBytes = saved.toByteArray()
+            RawTraffic.clear()
+            assertTrue(RawTraffic.enabled)
+            assertArrayEquals(snapshotBytes, saved.toByteArray())
+            val remaining = file.readLines().map { it.split('\t') }
+            assertEquals(listOf("capture/start"), remaining.map { it[2] })
+            assertTrue(String(Base64.getDecoder().decode(remaining.single()[4])).contains("version=test config=all"))
+            RawTraffic.configure(file, false)
+            RawTraffic.clear()
+            assertFalse(file.exists())
+            assertFalse(RawTraffic.enabled)
+        } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
+    }
+
+    @Test fun interruptedCaptureIsPreservedAndDoesNotPreventLaterSessionExports() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-corrupt").toFile()
+        val file = File(directory, "capture.tsv")
+        try {
+            RawTraffic.configure(file, true)
+            RawTraffic.record("iphone/in", byteArrayOf(1, 2, 3))
+            RawTraffic.configure(file, false)
+            file.appendText("incomplete-record")
+            RawTraffic.configure(file, true)
+            RawTraffic.record("browser/in", byteArrayOf(9, 8))
+            val output = ByteArrayOutputStream()
+            RawTraffic.writeArchive(output, "report.txt", "summary", directory)
+            val entries = linkedMapOf<String, ByteArray>()
+            java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { zip ->
+                while (true) { val entry = zip.nextEntry ?: break; entries[entry.name] = zip.readBytes() }
+            }
+            assertEquals("incomplete-record\n", entries.getValue("unparsed.tsv").toString(Charsets.UTF_8))
+            assertTrue(entries.getValue("capture.txt").toString(Charsets.UTF_8).contains("unparsedRecords=1"))
+            assertTrue(entries.values.any { it.contentEquals(byteArrayOf(1, 2, 3)) })
+            assertTrue(entries.values.any { it.contentEquals(byteArrayOf(9, 8)) })
+            assertTrue(directory.listFiles()!!.none { it.isDirectory })
         } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
     }
 

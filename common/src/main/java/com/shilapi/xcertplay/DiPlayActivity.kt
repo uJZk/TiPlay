@@ -348,7 +348,10 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         carButtonSaved()
     }
     private val export = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-        if (uri != null) exportDiagnostics(uri)
+        if (uri != null) exportDiagnostics(uri, debug = false)
+    }
+    private val exportArchive = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) exportDiagnostics(uri, debug = true)
     }
     // Android 9: storage access puts the report in the visible Downloads/DiPlay folder.
     // A denial still saves the report, only in DiPlay's own storage.
@@ -5497,7 +5500,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         }, "adb-cluster-authorize").start()
     }
 
-    private fun reportFileName() = "TiPlay-${SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())}.txt"
+    private fun reportFileName(debug: Boolean) = "TiPlay-${SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())}.${if (debug) "zip" else "txt"}"
 
     private fun saveReportToDownloads() {
         if (exportInProgress) return
@@ -5511,10 +5514,12 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         // Some head units omit or disable DocumentsUI. Launch itself can throw, before
         // the result callback and the background writer's exception handler ever run.
         if (exportInProgress) return
-        runCatching { export.launch(reportFileName()) }.onFailure { exportDiagnostics() }
+        val debug = DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG
+        runCatching { (if (debug) exportArchive else export).launch(reportFileName(debug)) }
+            .onFailure { exportDiagnostics(debug = debug) }
     }
 
-    private fun exportDiagnostics(uri: Uri? = null) {
+    private fun exportDiagnostics(uri: Uri? = null, debug: Boolean = DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG) {
         if (exportInProgress) return
         exportInProgress = true
         exportButton?.apply {
@@ -5523,14 +5528,16 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             if (AirPlayPersistence.isPhoneBrowserMode(this@DiPlayActivity)) typeface = Button(this@DiPlayActivity).typeface
         }
         val appContext = applicationContext
-        val fileName = reportFileName()
+        val fileName = reportFileName(debug)
         Thread({
             val result = runCatching {
                 val report = diagnosticReportText(appContext)
-                val savedReport = if (uri != null) {
-                    DiagnosticExportStore.write(appContext.contentResolver, uri, report)
-                    DiagnosticExportStore.SavedReport(uri)
-                } else DiagnosticExportStore.saveWithoutPicker(appContext, fileName, report)
+                val savedReport = DiagnosticReportContent.prepare(appContext, fileName, report, debug).use { content ->
+                    if (uri != null) {
+                        DiagnosticExportStore.write(appContext.contentResolver, uri, content)
+                        DiagnosticExportStore.SavedReport(uri, mimeType = content.mimeType)
+                    } else DiagnosticExportStore.saveWithoutPicker(appContext, content)
+                }
                 savedReport to report
             }
             runOnUiThread {
@@ -5556,12 +5563,16 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                             uri == null -> "Downloads/TiPlay/$fileName"
                             else -> getString(R.string.your_report_was_saved_to_the_selected_location)
                         })
-                        .setPositiveButton(getString(R.string.view_diagnostic_report)) { _, _ -> showDiagnosticReport(report) }
+                        .apply {
+                            if (savedReport.mimeType == "application/zip") setPositiveButton(R.string.settings_clear_captured_data) { _, _ ->
+                                DiagnosticCaptureClearUi.clear(this@DiPlayActivity)
+                            } else setPositiveButton(getString(R.string.view_diagnostic_report)) { _, _ -> showDiagnosticReport(report) }
+                        }
                         .setNegativeButton(getString(R.string.done), null)
                         .setNeutralButton(getString(R.string.share)) { _, _ ->
                             runCatching {
                                 startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"; putExtra(Intent.EXTRA_STREAM, savedReport.uri)
+                                    type = savedReport.mimeType; putExtra(Intent.EXTRA_STREAM, savedReport.uri)
                                     clipData = android.content.ClipData.newRawUri(getString(R.string.report_clip_label), savedReport.uri)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }, getString(R.string.share_diagnostic_report)))

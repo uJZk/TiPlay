@@ -59,6 +59,20 @@ class BrowserMainPageTest {
         page = BrowserMainSettingsMenu(activity, BrowserConnectionDraft.load(activity), {}, {}, {}, { settingsChanges++ })
         activity.setContentView(page.view)
     }
+    @Test fun debugPerformanceHintFollowsTheProcessSwitchWithoutHidingOtherHints() {
+        try {
+            AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.DEBUG)
+            page.update("Preparing", false, browserReady = false)
+            page.refresh()
+            assertEquals(activity.getString(R.string.settings_hint_debug_enabled),
+                page.view.findViewWithTag<TextView>("connection_hint:debug").text.toString())
+            assertNotNull(page.view.findViewWithTag<View>("connection_hint:browser-open"))
+            AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.STANDARD)
+            page.refresh()
+            assertNull(page.view.findViewWithTag<View>("connection_hint:debug"))
+        } finally { DiagnosticLogs.resetForTest() }
+    }
+
     @Test fun mainPageHasNoManualConnectionActionOrLegacyNavigationOrVideoControls() {
         val labels = views().filterIsInstance<TextView>().map { it.text.toString() }.toList()
         assertEquals(0, labels.count { it == activity.getString(R.string.settings_carplay_reconnect) })

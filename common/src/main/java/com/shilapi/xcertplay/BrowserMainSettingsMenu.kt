@@ -331,6 +331,8 @@ internal class BrowserMainSettingsMenu(
         BrowserReceiverPresentation.airPlayTitle(AirPlayReceiverService.state, AirPlayReceiverSettings.isDisabled(activity)))
     private fun updateActions() {
         updateReceiverStatus()
+        putHint("debug", if (DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG)
+            activity.getString(R.string.settings_hint_debug_enabled) else null)
         val disabled = BrowserCarPlaySettings.disabled(activity)
         val currentProblem = problem?.takeIf {
             !disabled && !active && (browserReady || it != BrowserConnectionProblem.FAILED)
