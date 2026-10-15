@@ -615,7 +615,7 @@
     <string name="center_map_usage_missing">Usage Access: not allowed, so the card shows over every app. Over ADB: adb shell appops set %1$s GET_USAGE_STATS allow</string>
     <string name="center_map_no_permission_screen">This head unit has no settings screen for this permission. Allow it over ADB.</string>
     <string name="launcher_map_sharing">Share the live map with other launchers</string>
-    <string name="launcher_map_sharing_description">Launchers that support TiPlay can show the live dashboard map inside their own home screen. Off by default, because any app on the head unit could then ask for the map. See docs/LAUNCHER_INTEGRATION.md.</string>
+    <string name="launcher_map_sharing_description">Launchers that support TiPlay can show the live dashboard map inside their own home screen. Off by default, because any app on the head unit could then ask for the map. See https://github.com/uJZk/TiPlay/blob/4d03261f9dc915d0acb2cd6f69f7028640da6f04/docs/LAUNCHER_INTEGRATION.md.</string>
     <string name="usb_auto_confirm_status_on">USB Dialog Auto-Confirm: Enabled</string>
     <string name="usb_auto_confirm_dialog_msg">Auto-confirm requires the Accessibility Service. Many car head units do not expose the system accessibility settings.\n\nThis setup also requests Usage Access and permission to draw over other apps for the home-screen map. Existing accessibility services are preserved.\n\nApply these three permissions via local ADB?</string>
     <string name="usb_auto_confirm_active_hint">✓ Accessibility Service is active (USB prompt will be auto-confirmed)</string>

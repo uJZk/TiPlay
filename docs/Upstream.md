@@ -1,48 +1,30 @@
-# Upstream
+# Upstream maintenance
 
-Read this document before changing inherited code or updating the upstreams below.
-TiPlay supports Android phone + car browser use only.
+TiPlay is a GPL-3.0 derivative of [DiPlay by shihabal3amri](https://github.com/shihabal3amri/DiPlay), formerly xcertplay. Its supported product is Android phone plus car browser. Preserve original copyright, license and provenance notices; see [third-party notices](Third-party-notices.md).
 
-## Upstreams to track
+## Tracked components
 
-| Upstream | Used for | Current baseline / provenance |
-| --- | --- | --- |
-| [DiPlay](https://github.com/shihabal3amri/DiPlay) | CarPlay receiver and shared Android code | `c30d3f0df` (0.2.19 plus main fixes through 2026-10-13); full Git merge ancestry. See [sync record](UPSTREAM-SYNC-2026-10-14.md). |
-| [Video.js](https://github.com/videojs/video.js) | Browser playback controls and media adapter | [Pinned build inputs and update instructions](../site/play/vendor/videojs/README.md). |
-| [Mediabunny](https://github.com/Vanilagy/mediabunny) | URL media demuxing and WebCodecs samples | [Pinned media dependencies and provenance](../site/play/vendor/mediabunny/README.md). |
-| [UxPlay](https://github.com/FDH2/UxPlay) | Ordinary AirPlay protocol reference, `playfair` transport keys and FairPlay reply tables | `ec203121355220dd90278a369eeabb0b8ba4f14a`; [native provenance](../shared/src/main/jni/airplay/README.md). |
+| Upstream | Role and baseline |
+| --- | --- |
+| [DiPlay](https://github.com/shihabal3amri/DiPlay) | CarPlay/shared Android source; full merge ancestry through `c30d3f0df18dd132739d864a9e054c73b3d57d8c` (0.2.19 plus main fixes). |
+| [Video.js](https://github.com/videojs/video.js) | Browser controls/media adapter; [pinned inputs and update procedure](../site/play/vendor/videojs/README.md). |
+| [Mediabunny](https://github.com/Vanilagy/mediabunny) | URL demuxing/WebCodecs, with SoundTouch and hls.js helpers; [provenance/licenses](../site/play/vendor/mediabunny/README.md). |
+| [UxPlay](https://github.com/FDH2/UxPlay) | Ordinary AirPlay protocol reference and native transport-key modules; `ec203121355220dd90278a369eeabb0b8ba4f14a`, [native provenance](../shared/src/main/jni/airplay/README.md). |
 
-When updating these components, review upstream releases and changes since the recorded baseline,
-especially security, protocol compatibility, playback and lifecycle fixes. Adopt relevant changes,
-then update the baseline, provenance, license notices and validation record together. Tracking an
-upstream does not mean automatically upgrading it or merging its entire application.
+Review security, protocol, playback and lifecycle changes since each baseline. Update adopted code, pins, provenance, licenses and validation together. Source ancestry and the runtime identity selected for an APK are separate; see [Build](Build.md#runtime-identity).
 
-## Maintenance rules
+## Preserve merge compatibility
 
-- DiPlay updates flow into TiPlay only. Send no pull requests or patches to DiPlay;
-  disable pushes and tag fetching on its remote.
-- Put TiPlay features in new files; limit inherited-file edits to small hooks.
-  Remove TiPlay-owned duplicate or unused code while preserving future upstream reuse.
-  Do not rename, move, reformat or delete inherited files or identifiers.
-- Preserve packages, classes, Android resources, preferences, log/thread names,
-  intent actions, `DIPLAY_AUTH_ASSETS_DIR` and `rootProject.name`. Keep
-  `com.shilapi.xcertplay`, `com.shihab.diplay.action.EMBED_MAP` and
-  `com.shihab.diplay.DISCONNECT`; TiPlay's application ID remains `com.ujzk.tiplay`
-  (`.hudtest` for debug). Keep TiPlay preference and browser storage keys stable too.
-- Current issues, releases and downloads point to `https://github.com/uJZk/TiPlay`; the hosted page is `https://ujzk.github.io/TiPlay/`. Preserve dated destinations and upstream provenance.
-- Browser HEVC, AirPlay and VPN labels are intentionally concise, without experimental suffixes. Preserve inherited locale text unless explicitly changed.
-- User-visible names use TiPlay. Keep DiPlay in credits, archived READMEs, historical
-  release/audit records and source comments. Never globally replace DiPlay with TiPlay.
-  Link numbered upstream issues, PRs and commits to their original repository.
-- Preserve phone + browser session, media, permission and connection contracts.
-  Keep native head-unit behavior gated and its settings hidden. Do not restore APK-bundled
-  browser pages or local `/play/` routes; the browser page is hosted over HTTPS.
-- Keep TiPlay strings in separate resource files and translate every supported locale.
-  Retain upstream identifiers and licenses; resolve naming collisions in TiPlay-owned additions.
+- Updates flow from DiPlay into TiPlay only: no upstream patches/PRs; disable upstream pushes and tag fetching.
+- Prefer new files for TiPlay features and small hooks in inherited files. Do not rename, move, reformat or delete inherited source/identifiers. Remove unused TiPlay-owned code.
+- Keep packages/classes/resources, preference and browser-storage keys, log/thread names, intent actions, `DIPLAY_AUTH_ASSETS_DIR` and `rootProject.name`. This includes `com.shilapi.xcertplay`, `com.shihab.diplay.action.EMBED_MAP` and `com.shihab.diplay.DISCONNECT`. Application ID remains `com.ujzk.tiplay` (`.hudtest` for debug).
+- User-facing names use TiPlay; retain DiPlay in credits, historical records and source comments. Keep numbered upstream issue/PR/commit links on their original repository. Current project links use `https://github.com/uJZk/TiPlay` and `https://ujzk.github.io/TiPlay/`.
+- Preserve phone/browser session, media, permission and connection contracts. Gate retained native behavior and hide its settings. The page is hosted over HTTPS; do not restore APK page assets or a local `/play/` route.
+- Keep TiPlay strings separate and translated in every locale. Browser HEVC, AirPlay and VPN titles intentionally omit experimental suffixes; retain inherited locale text unless explicitly changed.
 
-## Updating DiPlay
+## DiPlay merge procedure
 
-Configure the remote once:
+Configure the one-way remote once:
 
 ```sh
 git remote add upstream https://github.com/shihabal3amri/DiPlay.git
@@ -50,52 +32,16 @@ git remote set-url --push upstream DISABLED
 git config remote.upstream.tagOpt --no-tags
 ```
 
-Prefer a full source merge at each upstream release or a short regular interval, then retain the phone + browser product gates. This preserves ancestry and avoids accumulating untracked selective ports.
+At releases or short regular intervals, start from a clean worktree, fetch origin/upstream, review the changelog and changes since the common base, then create an integration branch from `origin/main` and merge `upstream/main` with `--no-ff`.
 
-Start from a clean worktree, fetch both remotes, review the upstream changelog and diff,
-then merge on a branch:
+Keep upstream improvements and reapply TiPlay hooks. Inspect configuration, preference/resource collisions, teardown, product gates, branding and locales even without conflicts. Preserve TiPlay's root documentation, application identity and hosted browser delivery. Record the adopted version and validation in [Changelog](../CHANGELOG.md).
 
-```sh
-git fetch origin
-git fetch upstream
-git log --oneline origin/main..upstream/main
-git diff --stat origin/main...upstream/main
-git switch -c upstream-sync origin/main
-git merge --no-ff upstream/main -m "Merge upstream DiPlay <version or short commit>"
-```
+Retain the merge commit and put product adaptations in separate commits. Do not squash, cherry-pick or rebase the upstream merge. After validation, fast-forward `main` to the integration branch and push only to origin.
 
-Keep upstream improvements and reapply TiPlay hooks when resolving conflicts. Inspect TiPlay's
-changes from the common base rather than relying on an old file-by-file conflict inventory.
-Check configuration fields, preference/resource collisions, session teardown, product gates,
-branding and all locales even when Git reports no conflict. Preserve TiPlay's root READMEs,
-AGENTS index, application ID, release provenance and hosted browser delivery.
-Record the merged version in `CHANGELOG.md` and `RELEASE-NOTES-NEXT.md`.
+## Browser and receiver updates
 
-Use a merge commit; do not rebase `main`, squash the upstream merge or cherry-pick upstream
-commits. Commit product adaptations separately. After validation, fast-forward `main` to the
-integration branch and push only to `origin`.
+For Video.js and bundled media dependencies, select explicit releases and verify npm integrity using [pinned build inputs](../scripts/videojs/package.json) and lockfile. Rebuild self-hosted bundles, translations and license notices. Keep runtime dependencies pinned without a CDN. Check MP4/HLS, seeks, buffering, subtitles, authenticated resources, iPhone controls and offline assets.
 
-## Updating Video.js and UxPlay
+For UxPlay, port relevant protocol fixes into Android adapters, preserving native licenses and reply-table provenance. Exclude desktop/GStreamer rendering. Verify pairing, transport keys, discovery, mirroring/audio, HTTP video and CarPlay borrow/return isolation. Transport-key exchange does not supply FairPlay Streaming licenses or DRM support.
 
-**Video.js:** select an explicit release, download its official npm tarball and verify published
-integrity. Use the pinned npm build inputs in `scripts/videojs/` and update the self-hosted ESM bundle,
-translations and licenses under `site/play/vendor/videojs/`. Review the native controls and media adapter contracts. The same build inputs pin Mediabunny, SoundTouch and the hls.js subtitle parsers; rebuild their bundle and notices when updating. Verify MP4/HLS playback, seeking, buffering, resource proxying,
-iPhone playback controls and offline assets. Keep the deployed version pinned; use no runtime CDN.
-
-**UxPlay:** compare against the pinned commit and port relevant protocol fixes into TiPlay's
-Android adapters. Update copied native modules and reply tables with their licenses/provenance.
-Keep the desktop/GStreamer renderer outside the Android integration. Verify pairing, transport-key
-exchange, mirroring/audio, HTTP video, discovery and CarPlay pause/resume isolation. This transport
-key exchange does not provide FairPlay Streaming licenses or DRM video support.
-
-## Validation and references
-
-Run the checks in [AGENTS.md](../AGENTS.md) and [BUILD.md](BUILD.md#check-the-source-build),
-including browser tests and `python3 scripts/check_public_tree.py`. For UxPlay native changes,
-also run `python3 scripts/test_airplay_native.py`. Regenerate changed site outputs and verify
-the hosted browser entry. Record real iPhone/car checks and any untested behavior separately.
-
-- [AirPlay contracts and validation](AIRPLAY.md)
-- [Credits and licenses](THIRD_PARTY_NOTICES.md)
-- Original xcertplay README archives: [English](UPSTREAM-README.md), [中文](UPSTREAM-README.zh-CN.md).
-  Their native head-unit instructions describe upstream history, not TiPlay's supported product.
+Run [required source checks](Build.md#check-the-source-build), applicable [browser/device checks](Testing.md), and `python3 scripts/test_airplay_native.py` for native AirPlay changes. Regenerate changed site outputs. Record actual iPhone/car evidence and untested behavior separately.

@@ -576,7 +576,7 @@
     <string name="center_map_usage_missing">使用情况访问权限：未允许，因此卡片会显示在所有应用上层。通过 ADB：adb shell appops set %1$s GET_USAGE_STATS allow</string>
     <string name="center_map_no_permission_screen">此车机没有该权限的设置界面，请通过 ADB 允许。</string>
     <string name="launcher_map_sharing">与其他启动器共享实时地图</string>
-    <string name="launcher_map_sharing_description">支持 TiPlay 的启动器可以在自己的主屏幕中显示实时仪表盘地图。默认关闭，因为开启后车机上的任何应用都可以请求该地图。详见 docs/LAUNCHER_INTEGRATION.md。</string>
+    <string name="launcher_map_sharing_description">支持 TiPlay 的启动器可以在自己的主屏幕中显示实时仪表盘地图。默认关闭，因为开启后车机上的任何应用都可以请求该地图。详见 https://github.com/uJZk/TiPlay/blob/4d03261f9dc915d0acb2cd6f69f7028640da6f04/docs/LAUNCHER_INTEGRATION.md。</string>
     <string name="usb_auto_confirm_status_on">USB 弹窗自动确认：已开启</string>
     <string name="usb_auto_confirm_dialog_msg">开启自动确认需要无障碍服务支持。比亚迪车机通常无法直接从系统设置中开启。\n\n此次设置还会为桌面地图申请使用情况访问权限和悬浮窗权限，并保留现有无障碍服务。\n\n是否通过车机本地 ADB 申请这三项权限？</string>
     <string name="usb_auto_confirm_active_hint">✓ 无障碍服务已激活（连接 iPhone 时将自动确认）</string>

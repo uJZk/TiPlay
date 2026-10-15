@@ -613,7 +613,7 @@
     <string name="center_map_usage_missing">使用状況へのアクセス：未許可。カードがすべてのアプリの上に表示されます。ADBで実行：adb shell appops set %1$s GET_USAGE_STATS allow</string>
     <string name="center_map_no_permission_screen">この車載端末には該当する権限設定画面がありません。ADBで許可してください。</string>
     <string name="launcher_map_sharing">他のランチャーと地図を共有</string>
-    <string name="launcher_map_sharing_description">TiPlayに対応するランチャーは、メーター地図を自身のホーム画面内にリアルタイム表示できます。車載端末上のほかのアプリも地図へのアクセスを要求できるようになるため、初期状態ではオフです。詳細はdocs/LAUNCHER_INTEGRATION.mdを参照してください。</string>
+    <string name="launcher_map_sharing_description">TiPlayに対応するランチャーは、メーター地図を自身のホーム画面内にリアルタイム表示できます。車載端末上のほかのアプリも地図へのアクセスを要求できるようになるため、初期状態ではオフです。詳細はhttps://github.com/uJZk/TiPlay/blob/4d03261f9dc915d0acb2cd6f69f7028640da6f04/docs/LAUNCHER_INTEGRATION.mdを参照してください。</string>
     <string name="usb_auto_confirm_status_on">USBダイアログの自動承認：有効</string>
     <string name="usb_auto_confirm_dialog_msg">USB権限の自動承認にはユーザー補助サービスが必要です。車載端末によってはシステムのユーザー補助設定画面を開けません。\n\nこの設定では、ホーム画面への地図表示に必要な「使用状況へのアクセス」と「他のアプリの上に表示する権限」も要求します。既存のユーザー補助サービスは維持されます。\n\nこれら3つの権限をローカルADB経由で適用しますか？</string>
     <string name="usb_auto_confirm_active_hint">✓ ユーザー補助サービスが有効です（USB確認を自動承認）</string>

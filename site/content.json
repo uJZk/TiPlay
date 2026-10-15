@@ -18,9 +18,9 @@
     "setup": "Install on Android",
     "steps": [
       "Download the APK while parked and install it on the Android device.",
-      "Open TiPlay and allow the requested permissions. Pair the iPhone with the Android device over Bluetooth.",
+      "Open TiPlay and allow the requested permissions. For wireless CarPlay, pair the iPhone with the Android phone over Bluetooth.",
       "Choose Android hotspot or Existing Wi-Fi. Enter the network name, choose its security type and enter a password when required. Connect the car browser to that network.",
-      "Choose wireless or USB for the iPhone connection and tap Connect phone. Open the browser link shown in TiPlay and enter its four-digit pairing code."
+      "Choose All (USB first), Wireless or USB for the iPhone connection. Open the link shown by TiPlay in the car browser, enter the four-digit pairing code and select Connect."
     ],
     "adb": "Installation & connection help",
     "bssid": "Turn on the Android hotspot in system settings, or join the existing Wi-Fi. ADB is not required for ordinary setup.",
@@ -40,8 +40,8 @@
     "privacy": "Privacy",
     "footer": "TiPlay is an independent project based on DiPlay by shihabal3amri (GPL-3.0) and xcertplay, with interface design from DiAuto. Not affiliated with Tesla, Inc., Apple or BYD. Tesla is a trademark of Tesla, Inc. CarPlay and its icon belong to Apple Inc.",
     "supportScope": "TiPlay supports an Android receiver and car browser. Native head-unit installation and product menus are outside its scope.",
-    "diagnosticsTitle": "Please send fresh reports from 0.2.13",
-    "diagnosticsText": "Reproduce the issue and save a diagnostic report from Advanced settings. Review it before attaching it to a GitHub issue. Include the Android device and version, iPhone and iOS, car browser, network, connection mode, expected and actual behavior, and approximate failure time. Reports are not uploaded automatically.",
+    "diagnosticsTitle": "Report a problem with the latest TiPlay",
+    "diagnosticsText": "Reproduce the issue on the latest TiPlay and save a diagnostic report from Advanced settings. Review it before attaching it to a GitHub issue. Include the TiPlay version, Android phone and version, iPhone and iOS, car browser, network, connection mode, expected and actual behavior, and approximate failure time. Reports are not uploaded automatically.",
     "newIssue": "Create a new issue"
   },
   "ar": {
@@ -63,9 +63,9 @@
     "setup": "التثبيت على Android",
     "steps": [
       "أثناء الوقوف، نزّل APK وثبّته على جهاز Android.",
-      "افتح TiPlay وامنح الأذونات المطلوبة، ثم اقترن بين iPhone وجهاز Android عبر Bluetooth.",
+      "افتح TiPlay وامنح الأذونات المطلوبة. لاستخدام CarPlay لاسلكياً، أقرن iPhone بهاتف Android عبر Bluetooth.",
       "اختر نقطة اتصال Android أو Wi-Fi موجودة. أدخل اسم الشبكة وحدد الأمان وكلمة المرور عند الحاجة. وصّل متصفح السيارة بهذه الشبكة.",
-      "اختر الاتصال اللاسلكي أو USB لجهاز iPhone واضغط توصيل الهاتف. افتح رابط TiPlay في متصفح السيارة وأدخل رمز الاقتران المكوّن من أربعة أرقام."
+      "اختر الكل (USB أولاً) أو الاتصال اللاسلكي أو USB لتوصيل iPhone. افتح الرابط الذي يعرضه TiPlay في متصفح السيارة وأدخل رمز الاقتران المكوّن من أربعة أرقام ثم اختر اتصال."
     ],
     "adb": "دليل التثبيت والمساعدة في الاتصال",
     "bssid": "شغّل نقطة اتصال Android من إعدادات النظام أو انضم إلى شبكة Wi-Fi الموجودة. الإعداد المعتاد لا يحتاج ADB.",
@@ -85,8 +85,8 @@
     "privacy": "الخصوصية",
     "footer": "TiPlay مشروع مستقل مبني على DiPlay من shihabal3amri (GPL-3.0) وعلى xcertplay، وبتصميم واجهة من DiAuto. غير تابع لـ Tesla, Inc. أو Apple أو BYD. Tesla علامة تجارية لشركة Tesla, Inc. كار بلاي وأيقونته ملك لشركة Apple.",
     "supportScope": "يدعم TiPlay جهاز استقبال Android ومتصفح السيارة. التثبيت والقوائم الأصلية لوحدة السيارة خارج نطاق المنتج.",
-    "diagnosticsTitle": "نحتاج تقارير جديدة من 0.2.13",
-    "diagnosticsText": "أعد إنتاج المشكلة واحفظ تقريراً من الإعدادات المتقدمة. راجعه قبل إرفاقه بمشكلة GitHub. اذكر جهاز Android وإصداره وiPhone وiOS ومتصفح السيارة والشبكة ونمط الاتصال والنتيجة المتوقعة والفعلية ووقت العطل. لا تُرفع التقارير تلقائياً.",
+    "diagnosticsTitle": "أبلغ عن مشكلة في أحدث إصدار من TiPlay",
+    "diagnosticsText": "أعد إنتاج المشكلة في أحدث إصدار من TiPlay واحفظ تقريراً من الإعدادات المتقدمة. راجعه قبل إرفاقه بمشكلة GitHub. اذكر إصدار TiPlay وهاتف Android وإصداره وiPhone وiOS ومتصفح السيارة والشبكة ونمط الاتصال والنتيجة المتوقعة والفعلية ووقت العطل. لا تُرفع التقارير تلقائياً.",
     "newIssue": "فتح مشكلة جديدة"
   },
   "ru": {
@@ -108,9 +108,9 @@
     "setup": "Установка на Android",
     "steps": [
       "На стоянке скачайте APK и установите на устройство Android.",
-      "Откройте TiPlay, разрешите необходимые доступы и сопрягите iPhone с устройством Android по Bluetooth.",
+      "Откройте TiPlay и разрешите необходимые доступы. Для беспроводного CarPlay сопрягите iPhone с телефоном Android по Bluetooth.",
       "Выберите точку доступа Android или существующий Wi-Fi. Введите имя сети, выберите защиту и при необходимости пароль. Подключите браузер автомобиля к этой сети.",
-      "Выберите беспроводное или USB-подключение iPhone и нажмите «Подключить телефон». Откройте ссылку TiPlay в браузере автомобиля и введите четырёхзначный код."
+      "Выберите «Все (сначала USB)», «Беспроводное» или USB для подключения iPhone. Откройте ссылку из TiPlay в браузере автомобиля, введите четырёхзначный код и нажмите «Подключить»."
     ],
     "adb": "Инструкция и помощь с подключением",
     "bssid": "Включите точку доступа Android в системных настройках или подключитесь к существующему Wi-Fi. Обычная настройка не требует ADB.",
@@ -130,8 +130,8 @@
     "privacy": "Конфиденциальность",
     "footer": "TiPlay — независимый проект на базе DiPlay от shihabal3amri (GPL-3.0) и xcertplay с дизайном интерфейса DiAuto. Не связан с Tesla, Inc., Apple или BYD. Tesla — товарный знак Tesla, Inc. CarPlay и его значок принадлежат Apple Inc.",
     "supportScope": "TiPlay поддерживает приёмник Android и браузер автомобиля. Установка и меню нативного головного устройства не входят в область продукта.",
-    "diagnosticsTitle": "Нужны свежие отчёты из 0.2.13",
-    "diagnosticsText": "Воспроизведите проблему и сохраните отчёт в расширенных настройках. Проверьте его перед отправкой в задачу GitHub. Укажите устройство и версию Android, iPhone и iOS, браузер автомобиля, сеть, режим подключения, ожидаемый и фактический результат и время сбоя. Отчёты не отправляются автоматически.",
+    "diagnosticsTitle": "Сообщите о проблеме в последней версии TiPlay",
+    "diagnosticsText": "Воспроизведите проблему в последней версии TiPlay и сохраните отчёт в расширенных настройках. Проверьте его перед отправкой в задачу GitHub. Укажите версию TiPlay, телефон и версию Android, iPhone и iOS, браузер автомобиля, сеть, режим подключения, ожидаемый и фактический результат и время сбоя. Отчёты не отправляются автоматически.",
     "newIssue": "Создать новую задачу"
   },
   "uk": {
@@ -153,9 +153,9 @@
     "setup": "Установлення на Android",
     "steps": [
       "На стоянці завантажте APK й установіть на пристрій Android.",
-      "Відкрийте TiPlay, надайте потрібні дозволи та спарте iPhone з пристроєм Android через Bluetooth.",
+      "Відкрийте TiPlay та надайте потрібні дозволи. Для бездротового CarPlay спарте iPhone із телефоном Android через Bluetooth.",
       "Виберіть точку доступу Android або наявний Wi-Fi. Уведіть назву мережі, виберіть захист і за потреби пароль. Підключіть браузер автомобіля до цієї мережі.",
-      "Виберіть бездротове або USB-підключення iPhone та натисніть «Підключити телефон». Відкрийте посилання TiPlay у браузері автомобіля й уведіть чотиризначний код."
+      "Виберіть «Усі (спочатку USB)», бездротове або USB-підключення iPhone. Відкрийте посилання з TiPlay у браузері автомобіля, уведіть чотиризначний код і натисніть «Підключити»."
     ],
     "adb": "Довідка зі встановлення й підключення",
     "bssid": "Увімкніть точку доступу Android у системних налаштуваннях або приєднайтеся до наявного Wi-Fi. Звичайне налаштування не потребує ADB.",
@@ -175,8 +175,8 @@
     "privacy": "Конфіденційність",
     "footer": "TiPlay — незалежний проєкт на основі DiPlay від shihabal3amri (GPL-3.0) та xcertplay з дизайном інтерфейсу від DiAuto. Не пов’язаний з Tesla, Inc., Apple чи BYD. Tesla — торговельна марка Tesla, Inc. CarPlay і його значок належать Apple Inc.",
     "supportScope": "TiPlay підтримує приймач Android і браузер автомобіля. Установлення та меню нативного головного пристрою не входять до сфери продукту.",
-    "diagnosticsTitle": "Потрібні свіжі звіти з 0.2.13",
-    "diagnosticsText": "Відтворіть проблему та збережіть звіт у розширених налаштуваннях. Перевірте його перед додаванням до проблеми GitHub. Укажіть пристрій і версію Android, iPhone та iOS, браузер автомобіля, мережу, режим підключення, очікуваний і фактичний результат та час збою. Звіти не надсилаються автоматично.",
+    "diagnosticsTitle": "Повідомте про проблему в останній версії TiPlay",
+    "diagnosticsText": "Відтворіть проблему в останній версії TiPlay та збережіть звіт у розширених налаштуваннях. Перевірте його перед додаванням до проблеми GitHub. Укажіть версію TiPlay, телефон і версію Android, iPhone та iOS, браузер автомобіля, мережу, режим підключення, очікуваний і фактичний результат та час збою. Звіти не надсилаються автоматично.",
     "newIssue": "Створити нову проблему"
   },
   "es": {
@@ -198,9 +198,9 @@
     "setup": "Instalar en Android",
     "steps": [
       "Con el coche estacionado, descarga el APK e instálalo en el dispositivo Android.",
-      "Abre TiPlay, concede los permisos y empareja el iPhone con el dispositivo Android por Bluetooth.",
+      "Abre TiPlay y concede los permisos necesarios. Para CarPlay inalámbrico, empareja el iPhone con el teléfono Android por Bluetooth.",
       "Elige el punto de acceso de Android o Wi-Fi existente. Introduce el nombre, selecciona la seguridad y añade la contraseña si se requiere. Conecta el navegador del coche a esa red.",
-      "Selecciona conexión inalámbrica o USB para el iPhone y pulsa Conectar teléfono. Abre el enlace de TiPlay en el navegador del coche e introduce el código de cuatro dígitos."
+      "Elige Todos (USB primero), Inalámbrico o USB para conectar el iPhone. Abre el enlace de TiPlay en el navegador del coche, introduce el código de cuatro dígitos y pulsa Conectar."
     ],
     "adb": "Guía de instalación y conexión",
     "bssid": "Activa el punto de acceso de Android en los ajustes del sistema o conecta el Wi-Fi existente. La configuración habitual no requiere ADB.",
@@ -220,8 +220,8 @@
     "privacy": "Privacidad",
     "footer": "TiPlay es un proyecto independiente basado en DiPlay de shihabal3amri (GPL-3.0) y en xcertplay, con diseño de interfaz de DiAuto. Sin afiliación a Tesla, Inc., Apple ni BYD. Tesla es una marca de Tesla, Inc. CarPlay y su icono pertenecen a Apple Inc.",
     "supportScope": "TiPlay admite un receptor Android y el navegador del coche. La instalación y los menús nativos de la unidad principal quedan fuera de su alcance.",
-    "diagnosticsTitle": "Necesitamos informes nuevos de 0.2.13",
-    "diagnosticsText": "Reproduce el problema y guarda un informe desde los ajustes avanzados. Revísalo antes de adjuntarlo a un problema de GitHub. Incluye dispositivo y versión Android, iPhone e iOS, navegador del coche, red, modo de conexión, resultado esperado y real, y hora del fallo. Los informes no se suben automáticamente.",
+    "diagnosticsTitle": "Informa de un problema con la última versión de TiPlay",
+    "diagnosticsText": "Reproduce el problema en la última versión de TiPlay y guarda un informe desde los ajustes avanzados. Revísalo antes de adjuntarlo a un problema de GitHub. Incluye la versión de TiPlay, el teléfono y la versión de Android, iPhone e iOS, navegador del coche, red, modo de conexión, resultado esperado y real, y hora del fallo. Los informes no se suben automáticamente.",
     "newIssue": "Crear una incidencia"
   },
   "zh-Hans": {
@@ -243,9 +243,9 @@
     "setup": "安装到安卓端",
     "steps": [
       "停车后下载 APK，并安装到安卓端。",
-      "打开 TiPlay，允许所需权限，并通过蓝牙将 iPhone 与安卓端配对。",
+      "打开 TiPlay 并授予所需权限。使用无线 CarPlay 时，通过蓝牙将 iPhone 与安卓手机配对。",
       "选择“安卓端热点”或“现有 Wi-Fi”，填写网络名称、选择安全类型，并在需要时填写密码。让车机浏览器接入该网络。",
-      "选择 iPhone 的无线或 USB 连接模式，点击“连接手机”。在车机浏览器中打开 TiPlay 显示的链接，输入四位配对码。"
+      "选择 iPhone 的“全部（USB 优先）”“无线”或“USB”连接模式。在车载浏览器中打开 TiPlay 显示的链接，输入四位配对码并点击“连接”。"
     ],
     "adb": "安装与连接指南",
     "bssid": "在系统设置中开启安卓端热点，或连接现有 Wi-Fi。日常设置无需 ADB。",
@@ -265,8 +265,8 @@
     "privacy": "隐私",
     "footer": "TiPlay 是基于 shihabal3amri 的 DiPlay（GPL-3.0）和 xcertplay 的独立项目，界面设计源自 DiAuto。与 Tesla, Inc.、Apple 或比亚迪无隶属关系。Tesla 是 Tesla, Inc. 的商标。CarPlay 及其图标归 Apple Inc. 所有。",
     "supportScope": "TiPlay 支持安卓端接收与车机浏览器显示，不提供原生车机安装和产品菜单。",
-    "diagnosticsTitle": "请提供 0.2.13 的新诊断报告",
-    "diagnosticsText": "复现问题后，在高级设置中保存诊断报告。检查报告后附到 GitHub 问题，并注明安卓端设备与系统版本、iPhone 与 iOS、车机浏览器、网络、连接模式、预期与实际行为及故障时间。报告不会自动上传。",
+    "diagnosticsTitle": "反馈最新版 TiPlay 的问题",
+    "diagnosticsText": "在最新版 TiPlay 中复现问题后，在高级设置中保存诊断报告。检查报告后附到 GitHub 问题，并注明 TiPlay 版本、安卓手机与系统版本、iPhone 与 iOS、车载浏览器、网络、连接模式、预期与实际行为及故障时间。报告不会自动上传。",
     "newIssue": "新建问题"
   },
   "zh-Hant": {
@@ -287,9 +287,9 @@
     "setup": "安裝到安卓端",
     "steps": [
       "停車後下載 APK，並安裝到安卓端。",
-      "開啟 TiPlay，允許所需權限，並透過藍牙將 iPhone 與安卓端配對。",
+      "開啟 TiPlay 並授予所需權限。使用無線 CarPlay 時，透過藍牙將 iPhone 與 Android 手機配對。",
       "選擇「安卓端熱點」或「現有 Wi-Fi」，填寫網路名稱、選擇安全類型，並在需要時填寫密碼。讓車機瀏覽器加入該網路。",
-      "選擇 iPhone 的無線或 USB 連線模式，點選「連線手機」。在車機瀏覽器開啟 TiPlay 顯示的連結，輸入四位配對碼。"
+      "選擇 iPhone 的「全部（USB 優先）」「無線」或「USB」連線模式。在車載瀏覽器開啟 TiPlay 顯示的連結，輸入四位配對碼並點選「連線」。"
     ],
     "adb": "安裝與連線指南",
     "bssid": "在系統設定中開啟安卓端熱點，或連線現有 Wi-Fi。日常設定無須 ADB。",
@@ -311,8 +311,8 @@
       "安卓端熱點和現有 Wi-Fi 在同一主頁面設定。",
       "畫面隨瀏覽器視窗調整，使用四位配對碼連線。"
     ],
-    "diagnosticsTitle": "請提供 0.2.13 的新診斷報告",
-    "diagnosticsText": "重現問題後，在進階設定儲存診斷報告。檢查報告後附至 GitHub 問題，註明安卓端裝置與系統版本、iPhone 與 iOS、車機瀏覽器、網路、連線模式、預期與實際行為及故障時間。報告不會自動上傳。"
+    "diagnosticsTitle": "回報最新版 TiPlay 的問題",
+    "diagnosticsText": "在最新版 TiPlay 中重現問題後，在進階設定儲存診斷報告。檢查報告後附至 GitHub 問題，註明 TiPlay 版本、Android 手機與系統版本、iPhone 與 iOS、車載瀏覽器、網路、連線模式、預期與實際行為及故障時間。報告不會自動上傳。"
   },
   "ja": {
     "name": "日本語",
@@ -333,9 +333,9 @@
     "setup": "Android にインストール",
     "steps": [
       "停車中に APK をダウンロードし、Android 端末にインストールします。",
-      "TiPlay を開いて必要な権限を許可し、iPhone を Android 端末と Bluetooth でペア設定します。",
+      "TiPlay を開いて必要な権限を許可します。ワイヤレス CarPlay を使う場合は、iPhone と Android スマートフォンを Bluetooth でペア設定します。",
       "Android のホットスポットまたは既存の Wi-Fi を選び、ネットワーク名とセキュリティ方式、必要なパスワードを入力します。車載ブラウザーもそのネットワークに接続します。",
-      "iPhone の接続方法をワイヤレスまたは USB に設定します。TiPlay のブラウザーリンクを開き、4 桁のペア設定コードを入力します。"
+      "iPhone の接続方法を「すべて（USB 優先）」「ワイヤレス」または「USB」に設定します。車載ブラウザーで TiPlay のリンクを開き、4 桁のペア設定コードを入力して接続します。"
     ],
     "adb": "インストールと接続のヘルプ",
     "bssid": "Android のシステム設定でホットスポットをオンにするか、既存の Wi-Fi に接続してください。通常のセットアップに ADB は不要です。",
@@ -355,8 +355,8 @@
     "privacy": "プライバシー",
     "footer": "TiPlay は shihabal3amri の DiPlay（GPL-3.0）と xcertplay を基にした独立プロジェクトで、画面デザインは DiAuto に由来します。Tesla、Apple、BYD とは関係ありません。Tesla は Tesla, Inc. の商標です。CarPlay とそのアイコンは Apple Inc. に帰属します。",
     "supportScope": "TiPlay は Android スマートフォンと車載ブラウザーの組み合わせをサポートします。車載 Android 端末向けのインストールや製品メニューは対象外です。",
-    "diagnosticsTitle": "最新の TiPlay で取得したレポートを送ってください",
-    "diagnosticsText": "問題を再現し、詳細設定から診断レポートを保存してください。内容を確認してから GitHub の Issue に添付し、Android 端末とバージョン、iPhone と iOS、車載ブラウザー、ネットワーク、接続方法、期待した動作と実際の動作、発生時刻を記載してください。レポートは自動送信されません。",
+    "diagnosticsTitle": "最新の TiPlay の問題を報告してください",
+    "diagnosticsText": "最新の TiPlay で問題を再現し、詳細設定から診断レポートを保存してください。内容を確認してから GitHub の Issue に添付し、TiPlay のバージョン、Android スマートフォンとバージョン、iPhone と iOS、車載ブラウザー、ネットワーク、接続方法、期待した動作と実際の動作、発生時刻を記載してください。レポートは自動送信されません。",
     "newIssue": "新しい Issue を作成"
   }
 }

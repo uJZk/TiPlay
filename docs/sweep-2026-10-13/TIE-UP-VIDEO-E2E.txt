@@ -1,2 +1,0 @@
-{"result":{"version":"8.24.1","active":true,"fullscreen":0,"stop":1,"spinner":1,"fill":true},"errors":[]}
-MP4 decoded and browser playback state reached the control path

@@ -1,2 +1,0 @@
-Stopping Daemon(s)
-1 Daemon stopped

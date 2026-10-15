@@ -25,4 +25,4 @@ npm run build --prefix scripts/videojs
 When updating, choose explicit versions, regenerate the lockfile and bundle, bump the
 service-worker cache and update its complete asset list. Verify MP4/HLS, Canvas rendering,
 iPhone play/pause/seek/status, Bluetooth mute, captions, Chinese labels, stop/disposal
-and offline module loading. See [migration record](../../../../docs/VIDEOJS-10-2026-10-14.md).
+and offline module loading. See [playback contracts](../../../../docs/AirPlay.md).

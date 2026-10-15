@@ -21,7 +21,7 @@ import rikka.shizuku.SystemServiceHelper
  * no NETWORK_STACK, so it can add the address but never remove it: the address goes when the hotspot restarts.
  *
  * Never a Shizuku UserService: Shizuku 13.6.0's bindUserService hangs on Android 17 (RikkaApps/Shizuku#2180).
- * Checked on the owner's Android 16 phone with `tools/shell-address/AddAddr.java`; see docs/HOTSPOT_ADDRESS.md.
+ * Checked on the owner's Android 16 phone with `tools/shell-address/AddAddr.java`; see docs/Hotspot-address.md.
  */
 class ShizukuHotspotAddressBackend internal constructor(private val shizuku: ShizukuAccess) : HotspotAddressBackend {
     constructor() : this(ShizukuSystem)
@@ -132,7 +132,7 @@ object ShizukuSystem : ShizukuAccess {
  * the unsupported list, and `setInterfaceConfig`, `InterfaceConfiguration()` and `setLinkAddress` carry
  * `@UnsupportedAppUsage` without `maxTargetSdk`, so apps may call them at any target SDK. The `LinkAddress` constructors
  * are system APIs, which apps may not call; TiPlay builds the value with the public `LinkAddress.CREATOR` instead
- * ([linkAddress]). See docs/HOTSPOT_ADDRESS.md.
+ * ([linkAddress]). See docs/Hotspot-address.md.
  */
 internal class NetworkManagementCall(private val binder: () -> IBinder?) {
     @SuppressLint("PrivateApi")

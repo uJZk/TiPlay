@@ -28,7 +28,7 @@ import com.shilapi.xcertplay.network.GeelyHeadUnit
  *
  * The microphone key's long press is answered by the car's HiCar app, which registers for the same
  * code and cannot be intercepted from here; disable HiCar over ADB if Siri should answer instead
- * (see docs/COMPATIBILITY.md).
+ * (see https://github.com/uJZk/TiPlay/blob/4d03261f9dc915d0acb2cd6f69f7028640da6f04/docs/COMPATIBILITY.md).
  *
  * Silently does nothing off this head unit ([GeelyHeadUnit.detected]).
  */
