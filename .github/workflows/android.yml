@@ -30,7 +30,14 @@ jobs:
           packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests, lint and source-only debug build
-        run: ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :home:testDebugUnitTest :mobile:lintDebug :home:lintDebug :maphost:lintDebug :mobile:assembleDebug :home:assembleDebug :maphost:assembleDebug --stacktrace
+        run: >-
+          ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :home:testDebugUnitTest
+          :mobile:lintDebug :home:lintDebug :maphost:lintDebug
+          :mobile:assembleDebug :home:assembleDebug :maphost:assembleDebug
+          --stacktrace --no-daemon --max-workers=1 --no-parallel --no-configuration-cache
+          -Pkotlin.compiler.execution.strategy=in-process
+          '-Dorg.gradle.jvmargs=-Xmx1280m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8'
+          -I gradle/ci-memory.init.gradle
       - name: Test reports
         if: always()
         uses: actions/upload-artifact@v4

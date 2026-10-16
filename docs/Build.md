@@ -10,6 +10,13 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 Run the checks defined in the [Android workflow](../.github/workflows/android.yml): browser tests, public-tree scan, release-draft tests, Android unit tests, lint and debug builds. Retained `home`/`maphost` checks protect upstream compatibility. Optional Chromium checks are in [Testing](Testing.md).
 
+CI limits concurrent JVMs and periodically retires test workers using the workflow's
+Gradle arguments and [CI memory policy](../gradle/ci-memory.init.gradle). Robolectric,
+Mockito and native graphics can retain SDK/resource state beyond the Java heap;
+heap limits alone do not prevent exhaustion or long stalls in a full run. Module
+test settings may override the policy's default heap. Keep this isolation in CI
+rather than changing application behavior or omitting tests.
+
 Build the phone app with:
 
 ```sh

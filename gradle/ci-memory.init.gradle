@@ -1,0 +1,11 @@
+// Robolectric and native graphics retain state beyond the Java heap. Retire test
+// workers regularly so a full CI run does not accumulate every SDK/resource sandbox.
+allprojects {
+    tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+        maxParallelForks = 1
+        forkEvery = project.path == ':shared' ? 20 : 5
+        // A module can override this default for its UI tests.
+        maxHeapSize = '512m'
+        jvmArgs(project.path == ':shared' ? '-XX:MaxMetaspaceSize=256m' : '-XX:MaxMetaspaceSize=512m')
+    }
+}
