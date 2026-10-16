@@ -9,4 +9,6 @@
     <string name="settings_clear_captured_data">Borrar datos capturados</string>
     <string name="settings_capture_cleared">Datos capturados borrados. Los archivos guardados no cambian.</string>
     <string name="settings_capture_clear_failed">No se pudieron borrar los datos capturados. Inténtalo de nuevo.</string>
+    <string name="settings_hint_iphone_car_audio">Comprueba que el iPhone esté conectado al audio del coche por Bluetooth. TiPlay ya no recibe ni reenvía audio de CarPlay.</string>
+    <string name="settings_hint_permissions_missing">Permisos o autorizaciones pendientes: %1$s. Abre «%2$s» más abajo para revisarlos y conceder acceso.</string>
 </resources>

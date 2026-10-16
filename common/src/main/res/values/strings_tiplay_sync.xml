@@ -10,6 +10,6 @@
     <string name="settings_airplay_listening">Waiting for iPhone · TiPlay</string>
     <string name="settings_airplay_disable">Disable AirPlay</string>
     <string name="settings_airplay_disable_description" />
-    <string name="settings_disable_carplay_audio">Disable CarPlay audio</string>
-    <string name="settings_disable_carplay_audio_description" />
+    <string name="settings_disable_carplay_audio">Play audio through iPhone Bluetooth</string>
+    <string name="settings_disable_carplay_audio_description">Keep your iPhone connected to the car audio over Bluetooth. TiPlay will stop receiving and forwarding CarPlay audio. Applies automatically by reconnecting CarPlay.</string>
 </resources>

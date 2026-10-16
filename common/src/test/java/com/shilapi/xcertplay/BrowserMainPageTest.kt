@@ -32,11 +32,12 @@ import org.robolectric.shadows.ShadowAlertDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], qualifiers = "en-w390dp-h844dp")
 class BrowserMainPageTest {
+    private lateinit var controller: org.robolectric.android.controller.ActivityController<Activity>
     private lateinit var activity: Activity
     private lateinit var page: BrowserMainSettingsMenu
     private var settingsChanges = 0
     @Before fun setup() {
-        val controller = Robolectric.buildActivity(Activity::class.java)
+        controller = Robolectric.buildActivity(Activity::class.java)
         activity = controller.get()
         activity.setTheme(R.style.Theme_TiPlayNative)
         controller.setup()
@@ -46,6 +47,7 @@ class BrowserMainPageTest {
         activity.getSharedPreferences("tiplay_airplay_receiver", 0).edit().clear().commit()
         activity.getSharedPreferences("tiplay_browser_network", 0).edit().clear().commit()
         activity.getSharedPreferences("tiplay_hotspot_address", 0).edit().clear().commit()
+        activity.getSharedPreferences("tiplay_browser_audio", 0).edit().clear().commit()
         AirPlayPersistence.saveWirelessHotspotMode(activity, WirelessHotspotMode.MANUAL)
         AirPlayPersistence.saveManualHotspotSsid(activity, "Phone hotspot")
         AirPlayPersistence.saveManualHotspotPassphrase(activity, "password1")
@@ -59,6 +61,44 @@ class BrowserMainPageTest {
         page = BrowserMainSettingsMenu(activity, BrowserConnectionDraft.load(activity), {}, {}, {}, { settingsChanges++ })
         activity.setContentView(page.view)
     }
+    @Test fun iphoneBluetoothAudioReplacesAndroidCarConnectionWarning() {
+        shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(false)
+        BrowserCarPlayAudioSettings.saveDisabled(activity, true)
+        page.refresh()
+        val hint = page.view.findViewWithTag<TextView>("connection_hint:car-bluetooth")
+        assertEquals(activity.getString(R.string.settings_hint_iphone_car_audio), hint.text.toString())
+        BrowserCarPlayAudioSettings.saveDisabled(activity, false)
+        page.refresh()
+        assertEquals(activity.getString(R.string.settings_hint_car_bluetooth_disconnected),
+            page.view.findViewWithTag<TextView>("connection_hint:car-bluetooth").text.toString())
+    }
+
+    @Test fun missingPermissionsPointToChecklistAndRespectAudioOptOut() {
+        shadowOf(activity).denyPermissions(android.Manifest.permission.RECORD_AUDIO)
+        page.refresh()
+        val message = page.view.findViewWithTag<TextView>("connection_hint:permissions").text.toString()
+        assertTrue(message.contains(activity.getString(R.string.onboarding_help)))
+        assertTrue(message.contains(activity.getString(R.string.settings_permission_microphone)))
+        BrowserCarPlayAudioSettings.saveDisabled(activity, true)
+        page.refresh()
+        assertFalse(page.view.findViewWithTag<TextView>("connection_hint:permissions").text.contains(
+            activity.getString(R.string.settings_permission_microphone)))
+    }
+
+    @Test fun bluetoothChangesRefreshWithoutSessionRecoveryOrReopeningSettings() {
+        showSettingsWindow()
+        page.draft.phoneAddress = "02:00:00:00:00:01"
+        val adapter = shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter)
+        adapter.setEnabled(false)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_001))
+        assertEquals(activity.getString(R.string.settings_hint_bluetooth),
+            page.view.findViewWithTag<TextView>("connection_hint:phone").text.toString())
+        adapter.setEnabled(true)
+        activity.sendBroadcast(Intent(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertNull(page.view.findViewWithTag<View>("connection_hint:phone"))
+    }
+
     @Test fun debugPerformanceHintFollowsTheProcessSwitchWithoutHidingOtherHints() {
         try {
             AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.DEBUG)
@@ -178,6 +218,30 @@ class BrowserMainPageTest {
         choose(BrowserConnectionDraft.Source.LAN)
         views().filterIsInstance<EditText>().first().setText("Car AP")
         assertTrue(views().filterIsInstance<TextView>().any { it.isShown && it.text == activity.getString(R.string.settings_hint_wifi_unknown) })
+    }
+    @Config(shadows = [ChangingHotspot::class])
+    @Test fun hotspotHintTracksBroadcastsAndLaterPlatformStateWithoutReopening() {
+        showSettingsWindow()
+        ChangingHotspot.state = 11
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_001))
+        assertEquals(activity.getString(R.string.settings_hint_hotspot_off),
+            page.view.findViewWithTag<TextView>("connection_hint:network").text.toString())
+        ChangingHotspot.state = 13
+        activity.sendBroadcast(Intent("android.net.wifi.WIFI_AP_STATE_CHANGED"))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertNull(page.view.findViewWithTag<View>("connection_hint:network"))
+        ChangingHotspot.state = 11 // Firmware can update its query result after its broadcast.
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_001))
+        assertNotNull(page.view.findViewWithTag<View>("connection_hint:network"))
+        page.dispose()
+        ChangingHotspot.state = 13
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        assertNotNull(page.view.findViewWithTag<View>("connection_hint:network"))
+    }
+    @Implements(WifiManager::class)
+    class ChangingHotspot : ShadowWifiManager() {
+        companion object { var state = 11 }
+        @Implementation fun getWifiApState(): Int = state
     }
     @Implements(WifiManager::class)
     class DisabledHotspot : ShadowWifiManager() {
@@ -522,6 +586,14 @@ class BrowserMainPageTest {
         assertFalse(descendants(area).filterIsInstance<TextView>().any { it.text == field.error })
         field.setText("Repaired name")
         assertNull(field.error)
+    }
+
+    private fun showSettingsWindow() {
+        controller.visible()
+        // Robolectric attaches this Activity but leaves its window marked GONE.
+        val attachInfo = org.robolectric.util.ReflectionHelpers.getField<Any>(page.view, "mAttachInfo")
+        org.robolectric.util.ReflectionHelpers.setField(attachInfo, "mWindowVisibility", View.VISIBLE)
+        assertTrue(page.view.isAttachedToWindow && page.view.isShown)
     }
 
     private fun assertNoManualConnection() {

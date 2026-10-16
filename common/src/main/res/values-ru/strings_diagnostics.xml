@@ -9,4 +9,6 @@
     <string name="settings_clear_captured_data">Очистить записанные данные</string>
     <string name="settings_capture_cleared">Записанные данные очищены. Сохранённые файлы не изменены.</string>
     <string name="settings_capture_clear_failed">Не удалось очистить записанные данные. Повторите попытку.</string>
+    <string name="settings_hint_iphone_car_audio">Убедитесь, что iPhone подключён к аудиосистеме автомобиля по Bluetooth. TiPlay больше не принимает и не передаёт звук CarPlay.</string>
+    <string name="settings_hint_permissions_missing">Не предоставлены разрешения или доступ: %1$s. Откройте «%2$s» ниже для проверки и предоставления доступа.</string>
 </resources>

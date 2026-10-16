@@ -30,6 +30,43 @@ import org.robolectric.util.ReflectionHelpers.ClassParameter
 class UsbReadQueueCompatibilityTest {
     @Before fun reset() { UsbQueueReplay.reset() }
 
+    @Test fun debugCapturePreservesBytesAndTimedOutCompletionBeforeParsing() {
+        val file = kotlin.io.path.createTempFile("usb-capture", ".txt").toFile()
+        val raw = com.shilapi.xcertplay.diagnostics.RawTraffic
+        try {
+            raw.configure(file, true)
+            UsbQueueReplay.timeouts = 1
+            val pipe = pipe()
+            try { repeat(2) { assertArrayEquals(payload, pipe.read(100)) } } finally { pipe.close() }
+            raw.configure(file, false)
+            val records = file.readLines().map { it.split('\t') }
+            val bytes = records.filter { it[2].startsWith("usb/request/") && it[2].endsWith("/in") }
+                .flatMap { java.util.Base64.getDecoder().decode(it[4]).toList() }.toByteArray()
+            assertArrayEquals(payload + payload, bytes)
+            assertEquals(1, records.filter { it[2].startsWith("usb/request/") && it[2].endsWith("/in") }.map { it[2] }.distinct().size)
+            assertTrue(records.any { it[2].endsWith("/wait/failure") &&
+                String(java.util.Base64.getDecoder().decode(it[4])).contains("TimeoutException") })
+            assertTrue(records.any { it[2].endsWith("/cancel/result") })
+            assertTrue(records.any { it[2].endsWith("/close/result") })
+            assertTrue(records.any { it[2].endsWith("/initialize/start") })
+        } finally { raw.configure(file, false); file.delete() }
+    }
+
+    @Test fun debugCaptureDoesNotLoseNcmCompletionBytesOrMutateTheBuffer() {
+        val file = kotlin.io.path.createTempFile("ncm-capture", ".txt").toFile()
+        val raw = com.shilapi.xcertplay.diagnostics.RawTraffic
+        try {
+            raw.configure(file, true)
+            val bridge = ncm()
+            try { assertEquals(payload.size, readChunk(bridge)) } finally { bridge.close() }
+            raw.configure(file, false)
+            val bytes = file.readLines().map { it.split('\t') }
+                .filter { it[2].startsWith("usb/request/") && it[2].endsWith("/in") }
+                .flatMap { java.util.Base64.getDecoder().decode(it[4]).toList() }.toByteArray()
+            assertArrayEquals(payload, bytes)
+        } finally { raw.configure(file, false); file.delete() }
+    }
+
     @Test fun cachedSixteenKRejectionRetriesEightKInBothPipes() {
         UsbQueueReplay.outcomes.addAll(listOf(false, true, false, true, true))
         val pipe = pipe()

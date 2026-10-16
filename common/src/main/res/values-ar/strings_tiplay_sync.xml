@@ -10,6 +10,6 @@
     <string name="settings_airplay_listening">بانتظار iPhone · TiPlay</string>
     <string name="settings_airplay_disable">تعطيل AirPlay</string>
     <string name="settings_airplay_disable_description">يسري فورًا. AirPlay مفعّل افتراضيًا. يوقف هذا الخيار AirPlay ويعيد عرض CarPlay؛ إيقاف الخيار يعيد تشغيل المستقبل.</string>
-    <string name="settings_disable_carplay_audio">تعطيل صوت CarPlay</string>
-    <string name="settings_disable_carplay_audio_description">إبقاء الموسيقى والملاحة والمكالمات وSiri على اتصال Bluetooth بين iPhone والسيارة. وصّل iPhone ببلوتوث السيارة أولاً. يُعاد توصيل CarPlay بعد التغيير.</string>
+    <string name="settings_disable_carplay_audio">تشغيل الصوت عبر Bluetooth في iPhone</string>
+    <string name="settings_disable_carplay_audio_description">صل iPhone بصوت السيارة عبر Bluetooth. سيتوقف TiPlay عن استقبال صوت CarPlay وتمريره، وسيعيد اتصال CarPlay تلقائيًا.</string>
 </resources>

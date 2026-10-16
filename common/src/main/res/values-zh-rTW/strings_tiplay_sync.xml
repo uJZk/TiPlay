@@ -10,6 +10,6 @@
     <string name="settings_airplay_listening">等待 iPhone · TiPlay</string>
     <string name="settings_airplay_disable">停用 AirPlay</string>
     <string name="settings_airplay_disable_description" />
-    <string name="settings_disable_carplay_audio">停用 CarPlay 音訊</string>
-    <string name="settings_disable_carplay_audio_description" />
+    <string name="settings_disable_carplay_audio">由 iPhone 藍牙播放音訊</string>
+    <string name="settings_disable_carplay_audio_description">請先將 iPhone 透過藍牙連接車載音訊。開啟後，TiPlay 不再接收和轉送 CarPlay 音訊，並自動重新連線 CarPlay 生效。</string>
 </resources>

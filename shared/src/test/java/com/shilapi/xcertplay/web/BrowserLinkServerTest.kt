@@ -655,13 +655,15 @@ class BrowserLinkServerTest {
         assertEquals(WebVideoRecords.KIND_END, video.record().first.kind)
         assertTrue(video.closedByServer())
         server.stop()
+        // Release the clients after verifying server-initiated EOF, before probing port reuse.
+        // Otherwise their half-closed TCP connections can still retain the local endpoint.
+        idle.close()
+        video.close()
         // Rebinding proves the listener is gone. A connect probe can self-connect on an ephemeral port and pass by luck.
         ServerSocket().use {
             it.reuseAddress = true
             it.bind(InetSocketAddress("127.0.0.1", port))
         }
-        idle.close()
-        video.close()
         assertEquals(1, logs.count { it == "Browser link: stopped" })
     }
 

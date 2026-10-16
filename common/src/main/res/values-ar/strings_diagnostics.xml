@@ -9,4 +9,6 @@
     <string name="settings_clear_captured_data">مسح البيانات المسجلة</string>
     <string name="settings_capture_cleared">تم مسح البيانات المسجلة. لم تتغير الملفات المحفوظة.</string>
     <string name="settings_capture_clear_failed">تعذر مسح البيانات المسجلة. حاول مرة أخرى.</string>
+    <string name="settings_hint_iphone_car_audio">تأكد من اتصال iPhone بصوت السيارة عبر Bluetooth. لم يعد TiPlay يستقبل صوت CarPlay أو يمرره.</string>
+    <string name="settings_hint_permissions_missing">أذونات أو صلاحيات غير مكتملة: %1$s. افتح «%2$s» أدناه لمراجعتها ومنح الوصول.</string>
 </resources>

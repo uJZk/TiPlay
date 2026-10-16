@@ -9,4 +9,6 @@
     <string name="settings_clear_captured_data">清空采集数据</string>
     <string name="settings_capture_cleared">采集数据已清空，已保存的文件不受影响。</string>
     <string name="settings_capture_clear_failed">无法清空采集数据，请重试。</string>
+    <string name="settings_hint_iphone_car_audio">请确保 iPhone 已通过蓝牙连接车载音频。TiPlay 不再接收和转发 CarPlay 音频。</string>
+    <string name="settings_hint_permissions_missing">尚未完成的权限或授权：%1$s。请打开下方的“%2$s”检查并授权。</string>
 </resources>

@@ -9,4 +9,6 @@
     <string name="settings_clear_captured_data">記録データを消去</string>
     <string name="settings_capture_cleared">記録データを消去しました。保存済みファイルは変更されません。</string>
     <string name="settings_capture_clear_failed">記録データを消去できませんでした。再試行してください。</string>
+    <string name="settings_hint_iphone_car_audio">iPhone が車載オーディオに Bluetooth 接続されていることを確認してください。TiPlay は CarPlay 音声の受信と転送を停止しています。</string>
+    <string name="settings_hint_permissions_missing">未完了の権限・許可：%1$s。下の「%2$s」を開いて確認・許可してください。</string>
 </resources>

@@ -9,4 +9,6 @@
     <string name="settings_clear_captured_data">Clear captured data</string>
     <string name="settings_capture_cleared">Captured data cleared. Saved files are unchanged.</string>
     <string name="settings_capture_clear_failed">Could not clear captured data. Try again.</string>
+    <string name="settings_hint_iphone_car_audio">Make sure your iPhone is connected to the car audio over Bluetooth. TiPlay is no longer receiving or forwarding CarPlay audio.</string>
+    <string name="settings_hint_permissions_missing">Incomplete permissions or access: %1$s. Open “%2$s” below to review and allow access.</string>
 </resources>
