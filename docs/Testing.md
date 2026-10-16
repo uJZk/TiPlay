@@ -66,6 +66,32 @@ and browser-selected HEVC independent of the old preference.
 6. With CarPlay sound enabled, check browser music/navigation, Siri and calls. Verify microphone permission denial still permits playback; microphone demand must use a verified car HFP/SCO route and release it afterwards. The browser must never request microphone access. With CarPlay audio disabled, verify the intended iPhone-to-car Bluetooth path. Check echo, navigation attenuation, timing and route restoration on the actual car.
 7. Export diagnostics in Standard and Debug modes and use **Share**. Confirm Standard exports only a TXT and Debug exports a ZIP using the same timestamp naming pattern. Check log TXT, per-channel BIN/PCM files, millisecond/sequence/offset indexes, preserved history and absence of a clipboard action. Test storage fallbacks and retention of the newest eight fallback reports. Confirm the main-page performance hint follows the switch; each enable creates a session with version/configuration, restarting the process defaults to Standard, saving retains raw history, and Clear preserves saved ZIPs while starting a fresh session if still active. Confirm Debug forces active AirPlay URL playback through Android and disabling it restores direct eligibility. Verify ZIP MIME types in Downloads, document-picker and Share flows; reconstruct streams using the indexes and confirm exporting does not consume or truncate the capture.
 
+## Media clock and continuous audio acceptance
+
+Run the browser clock, continuous-audio, AudioWorklet and main-thread integration tests
+with the repository's Node test command. Their deterministic virtual-time cases vary
+Android, producer and device rates independently, inject network jitter/queue steps and
+calibration changes, and retain dynamic PCM through the real variable-rate WASM engine.
+Check waveform error and boundary continuity, bounded phase/rate correction, queue growth,
+stream/format isolation, explicit interruption fades and rejection of old generations.
+Constant samples or counters alone do not establish audio quality.
+
+Use the [browser E2E harness](../tests/web-e2e/README.md) for actual CSP, WASM loading,
+AudioWorklet output, output timestamps, worker/main Canvas paths and context suspend/resume.
+Verify the audio-output reference remains active with Debug off. Synthetic clocks must
+also test stale/invalid references, large epochs, output-device latency changes and the
+fallback's uncertainty. Audio may be at most 45 ms early and 125 ms late relative to
+matching video; filter/device delay belongs inside this window. A dropped/infeasible
+frame is an explicit recovery outcome, not a successful synchronized presentation.
+
+For device acceptance, record source app/iPhone, Android transport, browser/vehicle,
+output route and reproduction times. Exercise long music/navigation playback, delayed
+and bursty delivery, background/foreground, pause/resume, seek, track/format changes,
+AirPlay takeover/return and changing output routes. Listen for quiet buzz/clicks as well
+as gaps, and measure corresponding audio/video events across recovery. Software output
+timestamps cannot establish acoustic speaker time or panel scanout. Keep physical
+follow-up in [Todo](Todo.md#browser-and-carplay-audio).
+
 ## Ordinary AirPlay acceptance
 
 Use unprotected content from an actual iPhone. Check discovery and device approval, mirroring, audio-only playback, JPEG/PNG photos, and URL MP4/HLS playback with seeking, subtitles, buffering and iPhone controls. Test stopping/replacing a cast and returning the browser display to CarPlay while retained CarPlay audio continues as designed. Exercise authentication/resource expiry and recovery after network loss.

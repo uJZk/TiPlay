@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import { loadTestResampler } from './fixtures/audio-resampler-module.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserAudio } from '../../site/play/audio.js';
@@ -161,7 +162,7 @@ function browserHarness() {
     connect() { this.connected = true; }
     disconnect() { this.connected = false; }
   };
-  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'test-session' }),
+  const audio = createBrowserAudio({ loadResampler: loadTestResampler, credentials: () => ({ code: '1234', session: 'test-session' }),
     fetchPhone: async (_, { signal }) => {
       let controller; const body = new ReadableStream({ start(value) { controller = value; } });
       requests.push({ controller, signal }); return { ok: true, body };

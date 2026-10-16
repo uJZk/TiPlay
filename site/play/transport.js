@@ -100,9 +100,9 @@ export function createFrameDelivery(send) {
     catch (_) { droppedFrames++; next.frame.close(); inFlight = null; }
   }
   return {
-    present(frame, config, id, timing) {
+    present(frame, config, id, timing, outputWindow) {
       if (pending) { droppedFrames++; pending.frame.close(); }
-      pending = { frame, config, id, timing };
+      pending = { frame, config, id, timing, outputWindow };
       flush();
     },
     acknowledge(frameId) {

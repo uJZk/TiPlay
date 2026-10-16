@@ -127,6 +127,11 @@ Upstream denial is retained as a distinct
 resource failure, including its route and status. Signed CDN query parameters are preserved:
 the receiver cannot repair an unavailable or rejected signed source by deleting parameters.
 
+Bilibili CDN media can require both the Bilibili site Referer and a browser User-Agent;
+either header alone can still receive 403. Android HTTP and iPhone FCUP apply the same
+host-scoped compatibility headers, reevaluating the destination after HTTP redirects
+while preserving signed URLs and byte ranges.
+
 Captions support WebVTT, AVC/HEVC CEA-608/708 text, HLS fMP4 `wvtt`/`stpp` and MP4
 `tx3g`/`wvtt`/`stpp`. Identity AES-128 segments support rotating keys, explicit/sequence
 IVs and encrypted initialization maps, without DRM authorization. Cues follow the

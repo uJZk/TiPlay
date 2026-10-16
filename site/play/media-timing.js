@@ -1,22 +1,24 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
-import { INITIAL_MEDIA_DELAY, MAX_MEDIA_DELAY, MEDIA_DELAY_LIMITS, constantDelay, delayAt, mediaDeadline, planDelay } from './delay-plan.js';
-import { initialPlaybackPlans, audioDelayAt, videoExpired, videoSubmissionMargin, AUDIO_PLANNED_EARLY_MS, VIDEO_SUBMIT_MARGIN_MS } from './playback-window.js';
-import { AUDIO_LATE_MS } from './delay-plan.js';
+import { INITIAL_MEDIA_DELAY, MAX_MEDIA_DELAY, MEDIA_DELAY_LIMITS, AUDIO_EARLY_MS, AUDIO_LATE_MS, constantDelay, delayAt, mediaDeadline, planDelay } from './delay-plan.js';
+import { initialPlaybackPlans, audioDelayAt, videoExpired, videoLimit, videoSubmissionMargin, AUDIO_PLANNED_EARLY_MS, VIDEO_SUBMIT_MARGIN_MS } from './playback-window.js';
+import { createAudioReferenceTimeline } from './audio-output-clock.js';
 export { INITIAL_MEDIA_DELAY, MAX_MEDIA_DELAY } from './delay-plan.js';
 
 /** A repeated configuration is not a new presentation epoch. */
 export function createVideoEpochGuard(clear) {
-  let epoch = null;
+  let epoch = null, mode = null;
   return {
     message(message) {
       if (message.type === 'idle' || message.type === 'end') { this.reset(); return; }
-      if (message.type === 'config' && message.config.epoch !== epoch) { clear(); epoch = message.config.epoch; }
+      if (message.type === 'config' && (message.config.epoch !== epoch || message.config.mode !== mode)) {
+        clear(); epoch = message.config.epoch; mode = message.config.mode;
+      }
     },
-    reset() { epoch = null; clear(); },
+    reset() { epoch = mode = null; clear(); },
   };
 }
 
-/** Video readiness sets its clock; audio follows its own readiness within the permitted skew. */
+/** Readiness estimates network/decode buffering only. Output drift has a separate audio reference. */
 export function createMediaTiming(change = () => {}, now = () => performance.timeOrigin + performance.now()) {
   let plans = initialPlaybackPlans(), first = { video: true, audio: true }, mode = null, limit = MAX_MEDIA_DELAY;
   const tracks = new Map();
@@ -63,38 +65,81 @@ export function createMediaTiming(change = () => {}, now = () => performance.tim
 /** Orders decoded frames only. Encoded video remains in decoder dependency order. */
 export function createTimedFrames(present, { now = () => performance.timeOrigin + performance.now(), schedule = setTimeout, cancel = clearTimeout, observe = () => {} } = {}) {
   let queue = [], timer = null, plan = constantDelay(), last = -Infinity, serial = 0, expiredFrames = 0, droppedFrames = 0;
+  let syncDroppedFrames = 0, syncUnavailableFrames = 0, syncState = 'video-only', outputMethod = null;
+  const audioReferences = createAudioReferenceTimeline();
   const drop = frame => { droppedFrames++; frame.close(); };
+
+  function outputWindow(item, at) {
+    const resolved = audioReferences.resolve(item.config?.mode, item.sourceTimeMs, item.clockGeneration, at);
+    const { reference, audioAt, uncertaintyMs: uncertainty } = resolved;
+    syncState = resolved.state; outputMethod = reference?.outputMethod ?? null;
+    if (!resolved.required) return null;
+    if (!Number.isFinite(audioAt)) return { unavailable: true, reason: resolved.state };
+    const earliest = audioAt + uncertainty - AUDIO_LATE_MS;
+    const latest = Math.min(audioAt - uncertainty + AUDIO_EARLY_MS, item.timing + videoLimit(item.config?.mode));
+    syncState = earliest <= latest ? 'audio-output' : 'infeasible';
+    return { audioAt, earliest, latest, uncertaintyMs: uncertainty, sourceTimeMs: item.sourceTimeMs,
+      at: reference.at, mode: reference.mode, type: reference.type, epoch: reference.epoch,
+      generation: reference.generation, sequence: reference.sequence, clockGeneration: reference.clockGeneration,
+      outputMethod: reference.outputMethod };
+  }
+
   function pump() {
     if (timer !== null) cancel(timer);
     timer = null;
     // A zero-delay plan cannot reserve drawing time by becoming negative. Submit
     // those frames early instead; the final presenter still checks the raw cap.
     const margin = videoSubmissionMargin(plan);
-    const at = now(), cutoff = at - delayAt(plan, at) + margin;
+    const at = now();
     let selected = null;
-    while (queue.length && queue[0].ready && queue[0].timing <= cutoff) {
-      const item = queue.shift();
-      if (videoExpired(item.timing, item.config?.mode, at)) { expiredFrames++; drop(item.frame); continue; }
+    let nextAt = null;
+    while (queue.length && queue[0].ready) {
+      const item = queue[0];
+      if (videoExpired(item.timing, item.config?.mode, at)) { queue.shift(); expiredFrames++; drop(item.frame); continue; }
+      const window = outputWindow(item, at);
+      if (window?.unavailable || (window && (window.earliest > window.latest || at > window.latest))) {
+        queue.shift(); syncDroppedFrames++; if (window.unavailable) syncUnavailableFrames++; drop(item.frame); continue;
+      }
+      const networkAt = mediaDeadline(item.timing - margin, plan, at);
+      const due = window ? Math.min(window.latest, Math.max(window.earliest, networkAt)) : networkAt;
+      if (at < due) { nextAt = due; break; }
+      queue.shift();
       if (selected) drop(selected.frame);
-      selected = item;
+      selected = { ...item, window };
     }
-    if (selected) { last = selected.timing; present(selected.frame, selected.config, selected.id, selected.timing); }
-    if (queue[0]?.ready) timer = schedule(pump, Math.max(1, mediaDeadline(queue[0].timing - margin, plan, now()) - now()));
+    if (selected) { last = selected.order; present(selected.frame, selected.config, selected.id, selected.timing, selected.window); }
+    if (nextAt !== null) timer = schedule(pump, Math.max(1, nextAt - now()));
   }
   return {
-    present(frame, config, id, timing) {
-      if (!Number.isFinite(timing)) { present(frame, config, id, null); return; }
-      if (timing <= last || queue.some(item => item.timing === timing)) { drop(frame); return; }
-      const token = ++serial, item = { frame, config, id, timing, token, ready: false };
-      queue.push(item); queue.sort((a, b) => a.timing - b.timing);
+    present(frame, config, id, timing, source) {
+      if (!Number.isFinite(timing)) {
+        const resolved = audioReferences.resolve(config?.mode, null, source?.clockGeneration, now());
+        if (resolved.required) { syncState = 'source-time-unavailable'; syncDroppedFrames++; syncUnavailableFrames++; drop(frame); }
+        else present(frame, config, id, null);
+        return;
+      }
+      const sourceTimeMs = typeof source === 'number' ? source : source?.sourceTimeMs;
+      // Refining the network clock can move its mapped presentation estimate;
+      // decoded media order belongs to the stable source coordinate instead.
+      const order = Number.isFinite(sourceTimeMs) ? sourceTimeMs : timing;
+      if (order <= last || queue.some(item => item.order === order)) { drop(frame); return; }
+      const token = ++serial, item = { frame, config, id, timing, sourceTimeMs, order, clockGeneration: source?.clockGeneration, token, ready: false };
+      queue.push(item); queue.sort((a, b) => a.order - b.order);
       item.ready = observe(timing, now(), token) !== false;
       while (queue.length > 60) drop(queue.shift().frame);
       pump();
     },
     delay(value) { plan = value; pump(); },
+    audio(reference) {
+      if (!audioReferences.update(reference)) return;
+      pump();
+    },
     ready(token, value) { const item = queue.find(item => item.token === token); if (!item) return; plan = value; item.ready = true; pump(); },
-    stats: () => ({ scheduledExpiredFrames: expiredFrames, scheduledDroppedFrames: droppedFrames }),
+    stats: () => ({ scheduledExpiredFrames: expiredFrames, scheduledDroppedFrames: droppedFrames,
+      audioSyncDroppedFrames: syncDroppedFrames, audioSyncUnavailableFrames: syncUnavailableFrames,
+      audioSyncState: syncState, audioOutputMethod: outputMethod }),
     plan: () => plan,
-    reset() { if (timer !== null) cancel(timer); timer = null; for (const item of queue) item.frame.close(); queue = []; last = -Infinity; expiredFrames = droppedFrames = 0; },
+    reset() { if (timer !== null) cancel(timer); timer = null; for (const item of queue) item.frame.close(); queue = []; last = -Infinity;
+      expiredFrames = droppedFrames = syncDroppedFrames = syncUnavailableFrames = 0; syncState = 'video-only'; },
   };
 }

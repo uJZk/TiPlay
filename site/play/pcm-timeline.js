@@ -1,5 +1,11 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 import { MAX_AUDIO_AHEAD_BYTES, MAX_PCM_PACKET_MS, MAX_TIMELINE_PACKETS } from './audio-buffer-policy.js';
+
+function contiguous(packet, next) {
+  // Epoch-millisecond timestamps can round the same boundary differently by one ULP.
+  return next && Math.abs(next.start - packet.end)
+    <= Number.EPSILON * Math.max(1, Math.abs(packet.end), Math.abs(next.start));
+}
 /** Missing packets leave silence at their source time; late packets cannot shift later audio. */
 export class PcmTimeline {
   constructor(rate, channels, consumed, maximumMs = 1000, { buffered = false } = {}) {
@@ -45,15 +51,22 @@ export class PcmTimeline {
     if (time < this.through) return 0;
     this.through = Math.max(this.through, time);
     while (this.queue.length && this.queue[0].end <= time) {
+      // Cover only timestamp rounding between adjacent packets, never a source-time gap.
+      if (this.queue[1]?.start > time && contiguous(this.queue[0], this.queue[1])) break;
       const expired = this.queue.shift(); this.discard(expired, expired.rendered ? 'played' : 'late');
     }
     const packet = this.queue[0];
     if (!packet || packet.start > time) return 0;
     packet.rendered = true;
-    const position = (time - packet.start) * this.rate / 1000, frame = Math.floor(position), fraction = position - frame;
-    const index = Math.min(frame * this.channels, packet.pcm.length - this.channels) + Math.min(channel, this.channels - 1);
-    const next = Math.min(index + this.channels, packet.pcm.length - this.channels + Math.min(channel, this.channels - 1));
-    return (packet.pcm[index] + (packet.pcm[next] - packet.pcm[index]) * fraction) / 32768;
+    const position = (time - packet.start) * this.rate / 1000;
+    const frame = Math.min(Math.floor(position), packet.pcm.length / this.channels - 1), fraction = Math.min(1, position - frame);
+    const sourceChannel = Math.min(channel, this.channels - 1), index = frame * this.channels + sourceChannel;
+    const following = this.queue[1];
+    // The next sample of a continuous waveform may live in the following decoded packet.
+    // Looking at it does not consume that packet or change its scheduled playback time.
+    const next = index + this.channels < packet.pcm.length ? packet.pcm[index + this.channels]
+      : contiguous(packet, following) ? following.pcm[sourceChannel] : packet.pcm[index];
+    return (packet.pcm[index] + (next - packet.pcm[index]) * fraction) / 32768;
   }
   stats() {
     return { ...this.counters, queueBytes: this.bytes, queuePackets: this.queue.length,

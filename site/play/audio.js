@@ -5,9 +5,12 @@ import { initialPlaybackPlans } from './playback-window.js';
 import { createAirPlayAudioDecoder } from './airplay-audio-decoder.js';
 import { MAX_AUDIO_AHEAD_BYTES, MAX_DECODED_PACKET_BYTES } from './audio-buffer-policy.js';
 import { pcmStats, measurePcm } from './audio-pcm-stats.js';
+import { createAudioOutputMapping } from './audio-output-clock.js';
+import { loadSoxrModule } from './audio-resampler-loader.js';
 
 /** Playback only. Android owns demand-driven car Bluetooth capture and speech playback. */
-export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {} }) {
+export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {},
+  onAudioReference = () => {}, loadResampler = loadSoxrModule }) {
   let context = null, node = null, ready = null, connection = null, request = null;
   let support = false, enabled = true, voiceRevision = null, voiceState = 'idle', voiceError = null;
   let queuedBytes = 0, capacity = null, audioError = null, disposed = false;
@@ -17,6 +20,8 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let debugEnabled = false, pcmMetrics = null, workletMetrics = null, reportAt = null;
   let diagnosticRevision = 0;
   let processorErrors = 0, recoveries = 0, processorFailed = false, recoveryAttempts = 0, recoveryTimer = null;
+  let resamplerModule = null, moduleReady = null, lastControlAt = -Infinity;
+  const outputClock = createAudioOutputMapping(), playoutReferences = new Map();
   const plansByMode = {};
   const encodedReservations = new Map();
   const reservedBytes = () => [...encodedReservations.values()].reduce((total, bytes) => total + bytes, 0);
@@ -36,6 +41,9 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     contextRate: context?.sampleRate ?? null, contextBaseLatencyMs: context?.baseLatency * 1000,
     contextOutputLatencyMs: context?.outputLatency * 1000, clockBase,
     clockOffsetMs: clock?.offset ?? null, clockAgeMs: clock ? now() - clock.at : null, clockRttMs: clock?.rtt ?? null,
+    clockRatePpm: clock?.rate === undefined ? null : (clock.rate - 1) * 1e6,
+    clockGeneration: clock?.generation ?? null, clockUncertaintyMs: clock?.uncertaintyMs ?? null,
+    clockRateConfidence: clock?.rateConfidence ?? null,
     pcmPackets: pcmMetrics?.packets ?? 0, pcmFrames: pcmMetrics?.frames ?? 0,
     pcmNonzero: pcmMetrics?.nonzero ?? 0, pcmPeak: pcmMetrics?.peak ?? 0,
     ...workletMetrics,
@@ -49,6 +57,33 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     ...(debugEnabled ? { debug: debugSnapshot() } : {}) });
   const notify = () => onState(snapshot());
   const auth = () => { const { code, session } = credentials(); return `c=${encodeURIComponent(code)}&s=${encodeURIComponent(session)}`; };
+  function relativeClock() {
+    if (!clock) return null;
+    const origin = performance.timeOrigin;
+    return clock.version === 2 ? { ...clock, localOriginMs: clock.localOriginMs - origin, at: clock.at - origin }
+      : { version: 2, generation: 0, serverOriginMs: 0, localOriginMs: clock.offset - origin,
+        rate: 1, at: clock.at - origin };
+  }
+  function controls(force = false) {
+    if (!node || !context) return;
+    const at = now();
+    if (!force && at - lastControlAt < 20) return;
+    lastControlAt = at;
+    const output = outputClock.capture(context);
+    node.port.postMessage({ clock: relativeClock(),
+      contextAnchor: output ? { contextTimeMs: output.contextTimeMs, localTimeMs: output.performanceTimeMs - performance.timeOrigin } : null,
+      outputLatencyMs: output?.outputLatencyMs ?? null, outputUncertaintyMs: output?.uncertaintyMs ?? null,
+      localTimeOriginMs: performance.timeOrigin, suspended: context.state !== 'running',
+      plans: delayPlans, plansByMode });
+  }
+  function invalidateOutput(state, clear = false) {
+    outputClock.reset();
+    if (clear) { playoutReferences.clear(); onAudioReference(null); return; }
+    for (const [key, previous] of playoutReferences) {
+      const reference = { ...previous, state, playoutState: state, audibleTimeMs: null, at: now() };
+      playoutReferences.set(key, reference); onAudioReference(reference);
+    }
+  }
   function debug(value) {
     const next = value === true;
     if (next === debugEnabled) return;
@@ -58,7 +93,9 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   function retireNode() {
     if (!node) return;
     node.onprocessorerror = null; node.port.onmessage = null;
+    node.port.postMessage({ dispose: true });
     node.disconnect?.(); node = null; workletMetrics = null; reportAt = null;
+    invalidateOutput('output-unavailable');
   }
   function recoverProcessor() {
     if (disposed || !connection || connection.aborted || !enabled || context?.state !== 'running') return;
@@ -83,6 +120,11 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
         queuedBytes = Math.max(0, queuedBytes - data.consumed); capacity?.(); capacity = null;
       }
       if (debugEnabled && data.diagnosticRevision === diagnosticRevision && data.diagnostics) { workletMetrics = data.diagnostics; reportAt = now(); }
+      if (data.playout && data.playout.generation === playbackGeneration) {
+        const reference = outputClock.reference(data.playout, context);
+        if (reference) { playoutReferences.set(`${reference.mode}:${reference.type}`, reference); onAudioReference(reference); }
+        controls();
+      }
     };
     installed.onprocessorerror = () => {
       if (disposed || node !== installed) return;
@@ -90,6 +132,8 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       stopStream(); retireNode(); recoverProcessor(); notify();
     };
     installed.port.postMessage({ debug: debugEnabled, diagnosticRevision });
+    installed.port.postMessage({ resamplerModule });
+    lastControlAt = -Infinity; controls(true);
   }
   // Android separates speech from music; Bluetooth state never resets or mutes browser playback.
   function route(next) {
@@ -100,7 +144,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     if ('error' in next) voiceError = next.error;
     notify();
   }
-  function stopStream() {
+  function stopStream(clearReferences = false, state = 'rebuffering') {
     packetDecoder.reset();
     releaseEncoded();
     playbackGeneration++; clockBase = null;
@@ -108,22 +152,30 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     request?.abort(); request = null;
     node?.port.postMessage({ reset: true });
     queuedBytes = 0; capacity?.(); capacity = null;
+    invalidateOutput(state, clearReferences);
   }
   function publishPcm(record) {
     if (pcmMetrics) measurePcm(pcmMetrics, record.pcm, record.channels);
-    if (disposed || !node || context?.state !== 'running') return;
+    if (disposed || !node) return;
     if (!record.pcm.byteLength && record.flags & 2) encodedReservations.delete(record.type);
     else if (record.flags & 1) releaseEncoded(record.type);
+    if (context?.state !== 'running') return;
     if (record.flags & 1 && queuedBytes + record.pcm.byteLength > MAX_AUDIO_AHEAD_BYTES) throw new Error('Decoded buffered audio exceeds its playback memory limit.');
     if (record.pcm.byteLength) onMode(record.mode);
-    record.sourceTime = presentationTime(record.presentationMs, clock);
+    // Readiness may use the current clock estimate; queued PCM retains the raw
+    // media timestamp. Calibration updates adjust the playout target, never the
+    // timestamps or adjacency of packets already belonging to one stream.
+    const sourceTime = presentationTime(record.presentationMs, clock);
+    if (clock?.version !== 2) record.sourceTime = sourceTime;
+    record.arrivalLocalTimeMs = performance.now();
     const hasPcm = record.pcm.byteLength > 0;
     if (hasPcm) {
-      if (Number.isFinite(record.sourceTime)) { timedPackets++; onTiming(record.sourceTime, record.mode); }
+      if (Number.isFinite(sourceTime)) { timedPackets++; onTiming(sourceTime, record.mode); }
       else fallbackPackets++;
     }
     clockBase ??= now() - context.currentTime * 1000;
     node.port.postMessage({ plans: delayPlans, plansByMode, clockBase });
+    controls();
     record.generation = playbackGeneration;
     queuedBytes += record.pcm.byteLength;
     node.port.postMessage(record, [record.pcm]);
@@ -177,6 +229,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
         packetDecoder.reset();
         releaseEncoded();
         request = null; node?.port.postMessage({ reset: true }); queuedBytes = 0;
+        invalidateOutput('output-unavailable');
         if (!abort.signal.aborted && connection === signal && enabled) retryTimer = setTimeout(() => stream(signal), 1000);
       }
     }
@@ -186,12 +239,28 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     clearTimeout(recoveryTimer); recoveryTimer = null;
     try {
       // Creating/resuming the context happens before awaiting, preserving user activation.
-      context ??= new AudioContext({ latencyHint: 'interactive' });
+      if (!context) {
+        context = new AudioContext({ latencyHint: 'interactive' });
+        context.onstatechange = () => {
+          if (disposed || !context) return;
+          if (context.state !== 'running') {
+            invalidateOutput('suspended');
+            controls(true);
+          } else {
+            outputClock.reset(); controls(true);
+          }
+          notify();
+        };
+      }
       const resumed = context.resume();
-      ready ??= context.audioWorklet.addModule(new URL('audio-worklet.js', import.meta.url)).then(() => {
+      moduleReady ||= Promise.resolve().then(() => loadResampler()).then(module => {
+        if (!(module instanceof WebAssembly.Module)) throw new Error('Invalid audio resampler module.');
+        resamplerModule = module;
+      }).catch(error => { moduleReady = null; throw error; });
+      ready ??= Promise.all([context.audioWorklet.addModule(new URL('audio-worklet.js', import.meta.url)), moduleReady]).then(() => {
         if (disposed) return;
         installNode();
-      });
+      }).catch(error => { ready = null; throw error; });
       // Load the worklet even while autoplay waits for the first gesture.
       Promise.all([ready, resumed]).then(() => { if (!disposed) {
         if (!node) installNode();
@@ -204,20 +273,21 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   }
   return {
     activate, debug, stats: snapshot,
-    clock(value) { clock = value; },
+    clock(value) { clock = value; controls(true); },
     delay(value, mode) {
       if (mode) plansByMode[mode] = value;
       else delayPlans = value;
       node?.port.postMessage({ plans: delayPlans, plansByMode });
+      controls(true);
     },
-    reset() { packetDecoder.reset(); releaseEncoded(); playbackGeneration++; clockBase = null; queuedBytes = 0; node?.port.postMessage({ reset: true }); capacity?.(); capacity = null; },
+    reset() { packetDecoder.reset(); releaseEncoded(); playbackGeneration++; clockBase = null; queuedBytes = 0; node?.port.postMessage({ reset: true }); capacity?.(); capacity = null; invalidateOutput('reset', true); },
     start() { activate(); },
-    gesture() { if (!disposed && (context?.state !== 'running' || processorFailed)) { recoveryAttempts = 0; activate(); } },
+    gesture() { if (!disposed && (!node || context?.state !== 'running' || processorFailed)) { recoveryAttempts = 0; activate(); } },
     attach(signal, hello) {
       this.stop(); voiceRevision = null; connection = signal; support = hello.audio === true;
       recoveryAttempts = 0;
       signal.addEventListener('abort', () => { if (connection === signal) this.stop(); }, { once: true });
-      if (!node && processorFailed) activate(); else stream(signal);
+      if (!node) activate(); else stream(signal);
       notify();
     },
     status(status) {
@@ -225,14 +295,14 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       const changed = enabled !== (status.audio !== false);
       enabled = status.audio !== false;
       route(status.voice);
-      if (!enabled) stopStream();
+      if (!enabled) stopStream(true, 'disabled');
       else if (changed) {
         if (!node && processorFailed) { recoveryAttempts = 0; activate(); }
         else stream(connection);
       }
       notify();
     },
-    stop() { clearTimeout(recoveryTimer); recoveryTimer = null; connection = null; stopStream(); voiceError = null; voiceState = 'idle'; notify(); },
-    dispose() { disposed = true; this.stop(); retireNode(); packetDecoder.dispose(); context?.close().catch(() => {}); context = null; ready = null; },
+    stop() { clearTimeout(recoveryTimer); recoveryTimer = null; connection = null; stopStream(true, 'stopped'); voiceError = null; voiceState = 'idle'; notify(); },
+    dispose() { disposed = true; this.stop(); retireNode(); packetDecoder.dispose(); if (context) context.onstatechange = null; context?.close().catch(() => {}); context = null; ready = moduleReady = null; },
   };
 }

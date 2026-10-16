@@ -103,7 +103,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
     if (previous && record.type === previous.type && ((record.epoch - previous.epoch) | 0) < 0) return false;
     reset(record.type);
     if (record.config?.ended === true) {
-      publish({ ...record, config: undefined, flags: record.flags | 2, pcm: new ArrayBuffer(0) }); return true;
+      publish({ ...record, config: undefined, ended: true, flags: record.flags | 2, pcm: new ArrayBuffer(0) }); return true;
     }
     const config = record.config;
     const session = { closed: false, decoder: null, software: null, config,
@@ -114,7 +114,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       if (!config || !['pcm', ...Object.keys(CODECS)].includes(config.codec) || !Number.isInteger(config.sampleRate)
         || config.sampleRate < 8000 || config.sampleRate > 96000 || ![1, 2].includes(config.channels)
         || config.sampleRate !== record.rate || config.channels !== record.channels) throw new Error('Invalid AirPlay audio configuration.');
-      publish(recordFor(session, { flags: record.flags | 2, pcm: new ArrayBuffer(0), presentationMs: NaN }));
+      publish(recordFor(session, { ended: false, flags: record.flags | 2, pcm: new ArrayBuffer(0), presentationMs: NaN }));
       if (config.codec === 'pcm') {
         if (![16, 24].includes(config.bitDepth)) throw unsupported('pcm');
         backend(session, 'pcm');

@@ -18,7 +18,7 @@ import { probeMirrorCapabilities, probeMirrorAudioFormats } from './airplay-capa
 import { createReconnectOverlay } from './reconnect.js';
 import { pumpChunkStream } from './transport.js';
 import { formatPerformanceMonitor, performanceStats } from './fps-window.js';
-import { sampleClock } from './clock-sync.js';
+import { createClockEstimator } from './clock-sync.js';
 import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from './media-timing.js';
 import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
@@ -207,6 +207,7 @@ const browserAudio = createBrowserAudio({
   },
   onTiming: (source, mode) => timingFor(mode).observe('audio', source),
   onQueued: mode => timingFor(mode).started(),
+  onAudioReference: reference => sink?.audio(reference),
   fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }),
 });
 mediaTiming = timingFor('carplay');
@@ -299,7 +300,7 @@ async function setUpVideo() {
     worker.onmessage = ({ data }) => {
       if (data.type === 'frame') {
         try {
-          if (active && data.id === streamId) presenter.present(data.frame, data.config, data.timing);
+          if (active && data.id === streamId) presenter.present(data.frame, data.config, data.timing, data.outputWindow);
           else data.frame.close();
         } finally {
           worker.postMessage({ type: 'frame-ack', frameId: data.frameId });
@@ -315,6 +316,7 @@ async function setUpVideo() {
     worker.onerror = () => stop('noVideo', 'decoder worker failed');
     sink = {
       clock(clock) { worker.postMessage({ type: 'clock', clock }); },
+      audio(reference) { presenter?.audio(reference); worker.postMessage({ type: 'audio-output', reference }); },
       delay(plans) { worker.postMessage({ type: 'delay', plan: plans.video }); },
       ready(token, plan) { worker.postMessage({ type: 'media-ready-ack', id: streamId, token, plan }); },
       open(id, body, signal) {
@@ -332,7 +334,7 @@ async function setUpVideo() {
   } else if (path.decode === 'main') {
     const { createDecoderPipeline, createFramePresenter } = await import('./video.js');
     const presenter = createFramePresenter(canvas, { applyTimingPolicy: true });
-    const frames = createTimedFrames((frame, config, id, timing) => presenter.present(frame, config, timing), {
+    const frames = createTimedFrames((frame, config, id, timing, outputWindow) => presenter.present(frame, config, timing, outputWindow), {
       observe(source, ready) { mediaTiming.observe('video', source, ready); },
     });
     const epochs = createVideoEpochGuard(() => { frames.reset(); presenter.close(); });
@@ -344,6 +346,7 @@ async function setUpVideo() {
     const stop = () => { clearInterval(timer); epochs.reset(); pipeline.stop(); };
     sink = {
       clock: pipeline.clock,
+      audio(reference) { presenter.audio(reference); frames.audio(reference); },
       delay(plans) { frames.delay(plans.video); },
       open(id, body) {
         stop();
@@ -466,12 +469,13 @@ async function connectVideo() {
   const abort = videoAbort = new AbortController();
   const timer = setTimeout(() => abort.abort(), 6000); // until the response headers arrive
   try {
+    const clockEstimator = createClockEstimator();
     const clockStart = performance.timeOrigin + performance.now();
     const helloResponse = await phoneFetch('/hello', { signal: abort.signal });
     if (!helloResponse.ok) throw await httpError(helloResponse);
     const hello = await helloResponse.json();
     if (id !== streamId) return;
-    const clock = sampleClock(hello.clockMs, clockStart, performance.timeOrigin + performance.now());
+    const clock = clockEstimator.observe(hello.clockMs, clockStart, performance.timeOrigin + performance.now());
     if (hello.app !== 'TiPlay' || hello.protocol !== PROTOCOL) {
       stop('protocol');
       return;
@@ -501,16 +505,17 @@ async function connectVideo() {
         if (busy || abort.signal.aborted) return;
         busy = true;
         try {
-          let best = null;
           for (let probe = 0; probe < 3; probe++) {
             const start = performance.timeOrigin + performance.now();
             const response = await phoneFetch('/hello', { signal: abort.signal });
             if (!response.ok) break;
             const hello = await response.json();
-            const sample = sampleClock(hello.clockMs, start, performance.timeOrigin + performance.now());
-            if (sample && (!best || sample.rtt < best.rtt)) best = sample;
+            clockEstimator.observe(hello.clockMs, start, performance.timeOrigin + performance.now());
           }
-          if (!abort.signal.aborted && id === streamId) { sink?.clock(best); browserAudio.clock(best); }
+          if (!abort.signal.aborted && id === streamId) {
+            const estimate = clockEstimator.snapshot();
+            if (estimate) { sink?.clock(estimate); browserAudio.clock(estimate); }
+          }
         } catch (_) { /* Expired clock samples produce unavailable presentation offsets, never guessed values. */ }
         finally { busy = false; }
       }, 5000);

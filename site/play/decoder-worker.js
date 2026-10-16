@@ -7,10 +7,10 @@ import { createChunkStream, createFrameDelivery } from './transport.js';
 
 let presenter = null, timer = null, activeId = null;
 const delivery = createFrameDelivery(message => self.postMessage({ type: 'frame', ...message }, [message.frame]));
-const frames = createTimedFrames((frame, config, id, timing) => {
+const frames = createTimedFrames((frame, config, id, timing, outputWindow) => {
   if (id !== activeId) frame.close();
-  else if (presenter) presenter.present(frame, config, timing);
-  else delivery.present(frame, config, id, timing);
+  else if (presenter) presenter.present(frame, config, timing, outputWindow);
+  else delivery.present(frame, config, id, timing, outputWindow);
 }, { observe(source, ready, token) {
   self.postMessage({ type: 'media-ready', id: activeId, source, ready, token });
   return false;
@@ -35,6 +35,7 @@ function stop() {
 
 self.onmessage = ({ data }) => {
   if (data.type === 'clock') pipeline?.clock(data.clock);
+  else if (data.type === 'audio-output') { presenter?.audio(data.reference); frames.audio(data.reference); }
   else if (data.type === 'delay') frames.delay(data.plan);
   else if (data.type === 'media-ready-ack') {
     if (data.id === activeId) frames.ready(data.token, data.plan);

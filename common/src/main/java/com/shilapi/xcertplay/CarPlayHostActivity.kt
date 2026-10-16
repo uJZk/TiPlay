@@ -263,7 +263,9 @@ class CarPlayHostActivity : ComponentActivity() {
                 if (activeDisplaySize == null) return
                 val plan = TeslaBrowserCanvas.plan(TeslaBrowserLink.lastViewport(this@CarPlayHostActivity), widthPhysicalMm)
                 val display = AirPlayDisplayConfig(plan.width, plan.height, plan.widthMm, plan.heightMm, fps,
-                    primaryInputDevice = if (AndroidTvInputMode.shouldUseKnobAsPrimaryInput(this@CarPlayHostActivity)) 3 else 1)
+                    primaryInputDevice = if (AndroidTvInputMode.shouldUseKnobAsPrimaryInput(this@CarPlayHostActivity)) 3 else 1,
+                    mainDisplayCornerMasks = true,
+                    mainDisplayDisableSafeArea = true)
                 if (browserDisplayReconnectHost.request(current, activeAirPlaySession, display)) {
                     appendLog("Browser display reconnect retaining wireless transport")
                 } else appendLog("Browser display reconnect retaining wireless transport is unavailable; keeping the current session")
@@ -4902,6 +4904,9 @@ class CarPlayHostActivity : ComponentActivity() {
             heightPhysicalMm = plan.heightMm,
             fps = fps,
             primaryInputDevice = if (knobPrimary) 3 else 1,
+            // The browser draws a rectangle; request the unclipped iPhone canvas (DiPlay #596).
+            mainDisplayCornerMasks = true,
+            mainDisplayDisableSafeArea = true,
         )
         pendingViewAreas = null
         val summary = "${plan.describe(fps)} phoneView=${size.width}x${size.height} " +

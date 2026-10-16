@@ -80,6 +80,12 @@ The maneuver PNGs under `shared/src/main/assets/byd-hud-icons` were imported fro
 
 ## Browser media
 
+- libsoxr (SoX Resampler Library): LGPL-2.1-or-later, used as a separately
+  replaceable, self-hosted WASM variable-rate resampler. Its complete source,
+  licenses and pinned build provenance are under
+  [vendor/soxr](../site/play/vendor/soxr/README.md); the source tree also includes
+  the adapter and reproducible rebuild script. Keep those materials with binary
+  distributions so users can rebuild and replace the library.
 - AAC-ELD software fallback: a third-party modified, ELD-only asm.js build derived
   from Fraunhofer FDK AAC Codec Library for Android. It retains the Fraunhofer
   license, modification notices and complete corresponding source under

@@ -35,7 +35,7 @@ async function workerHarness() {
     messages,
     send: data => self.onmessage({ data }),
     post: message => callbacks.post(message),
-    frame(frame, config, id, timing) { callbacks.present(frame, config, id, timing); },
+    frame(frame, config, id, timing, source) { callbacks.present(frame, config, id, timing, source); },
     advance(value) {
       at = value;
       for (const [id, timer] of timers) if (timer.at <= at) { timers.delete(id); timer.callback(); }
@@ -122,4 +122,38 @@ test('main renderer rechecks the raw cap after a transferred frame waits in tran
   presenter.present(picture, { epoch: 1, mode: 'carplay' }, 1000);
   assert.equal(picture.closed, 1);
   assert.equal(presenter.stats().expiredFrames, 1);
+});
+
+test('worker applies actual output references and transfers the exact narrowed A/V window', async () => {
+  const h = await workerHarness(), picture = frame();
+  h.send({ type: 'stream', id: 1, stream: {} });
+  h.send({ type: 'audio-output', reference: { mode: 'carplay', type: 0, epoch: 7, generation: 2, clockGeneration: 3,
+    sequence: 1, state: 'playing', at: 1000, sourceTimeMs: 5000, audibleTimeMs: 1150,
+    mediaRate: 1, uncertaintyMs: 1, outputMethod: 'timestamp' } });
+  h.frame(picture, { mode: 'carplay', epoch: 1 }, 1, 1050, { sourceTimeMs: 5000, clockGeneration: 3 });
+  const ready = latest(h, 'media-ready');
+  h.send({ type: 'media-ready-ack', id: 1, token: ready.token, plan: constantDelay(0) });
+  h.advance(1025); assert.equal(latest(h, 'frame'), undefined);
+  h.advance(1030);
+  const transfer = latest(h, 'frame');
+  assert.equal(transfer.frame, picture);
+  assert.equal(transfer.outputWindow.audioAt, 1150);
+  assert.equal(transfer.outputWindow.earliest, 1026);
+  assert.equal(transfer.outputWindow.latest, 1050, 'raw zero cap still bounds actual-output following');
+  assert.equal(transfer.outputWindow.epoch, 7, 'video and audio producer epochs remain independent');
+});
+
+test('worker cannot use an invalidated active-audio reference as video-only fallback', async () => {
+  const h = await workerHarness(), picture = frame();
+  h.send({ type: 'stream', id: 1, stream: {} });
+  const reference = { mode: 'carplay', type: 0, epoch: 7, generation: 2, sequence: 1,
+    state: 'playing', at: 1000, sourceTimeMs: 5000, audibleTimeMs: 1150, mediaRate: 1 };
+  h.send({ type: 'audio-output', reference });
+  h.send({ type: 'audio-output', reference: { ...reference, sequence: 2, state: 'rebuffering', audibleTimeMs: null } });
+  h.frame(picture, { mode: 'carplay', epoch: 1 }, 1, 1050, { sourceTimeMs: 5000 });
+  const ready = latest(h, 'media-ready');
+  h.send({ type: 'media-ready-ack', id: 1, token: ready.token, plan: constantDelay(0) });
+  h.advance(1050);
+  assert.equal(picture.closed, 1);
+  assert.equal(latest(h, 'frame'), undefined);
 });

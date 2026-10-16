@@ -6,6 +6,8 @@ import { createFpsWindow } from './fps-window.js';
 import { presentationTime } from './clock-sync.js';
 import { videoExpired } from './playback-window.js';
 import { hasHdrTransfer } from './airplay-sdr.js';
+import { AUDIO_EARLY_MS, AUDIO_LATE_MS } from './delay-plan.js';
+import { createAudioReferenceTimeline, OUTPUT_REFERENCE_MAX_AGE_MS } from './audio-output-clock.js';
 
 const KEY_REQUEST_INTERVAL_MS = 1000;
 const MAX_DECODE_QUEUE = 30; // half a second at 60 fps; beyond that, drop to the next key frame instead of lagging
@@ -47,7 +49,7 @@ export function createDecoderPipeline({ post: send, present }) {
         const mapped = presentationTime(presentation, clock);
         totals.timingRecords++;
         if (mapped === null) totals.timingRejected++;
-        presentationTimes.set(`${record.epoch}:${record.timestampUs}`, mapped);
+        presentationTimes.set(`${record.epoch}:${record.timestampUs}`, { mapped, sourceTimeMs: presentation, clockGeneration: clock?.generation });
         if (presentationTimes.size > 120) presentationTimes.delete(presentationTimes.keys().next().value);
       }
       if (record.kind === RECORD.FRAME) decodeFrame(record);
@@ -190,7 +192,7 @@ export function createDecoderPipeline({ post: send, present }) {
     const key = `${config?.epoch}:${frame.timestamp}`;
     const timing = presentationTimes.get(key);
     presentationTimes.delete(key);
-    present(frame, config, streamId, timing);
+    present(frame, config, streamId, timing?.mapped, timing && { sourceTimeMs: timing.sourceTimeMs, clockGeneration: timing.clockGeneration });
     if (config && reportedEpoch !== config.epoch) {
       reportedEpoch = config.epoch;
       post({ type: 'decoded', epoch: config.epoch });
@@ -251,6 +253,9 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
   const drawMs = new Samples();
   const fpsWindow = createFpsWindow();
   let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null, expiredFrames = 0, untimedFrames = 0, renderDroppedFrames = 0;
+  let audioSyncDroppedFrames = 0;
+  const audioReferences = createAudioReferenceTimeline();
+  let audioTracking = false;
 
   function draw(frame, allowed) {
     const width = lastConfig?.width || frame.displayWidth, height = lastConfig?.height || frame.displayHeight;
@@ -269,20 +274,37 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
   }
 
   return {
-    present(frame, config, timing) {
+    present(frame, config, timing, outputWindow) {
       if (lastConfig?.epoch !== config?.epoch) {
         fpsWindow.reset();
         expiredFrames = untimedFrames = renderDroppedFrames = 0;
+        audioSyncDroppedFrames = 0;
       }
       lastConfig = config;
       const late = () => applyTimingPolicy && videoExpired(timing, config?.mode, now());
+      const outsideAudioWindow = () => {
+        if (!applyTimingPolicy) return false;
+        const at = now();
+        if (audioTracking) {
+          const resolved = audioReferences.resolve(config?.mode, outputWindow?.sourceTimeMs, outputWindow?.clockGeneration, at);
+          if (!resolved.required) return false;
+          if (!Number.isFinite(resolved.audioAt)) return true;
+          return at < resolved.audioAt + resolved.uncertaintyMs - AUDIO_LATE_MS
+            || at > resolved.audioAt - resolved.uncertaintyMs + AUDIO_EARLY_MS;
+        }
+        return outputWindow && (at < outputWindow.at || at - outputWindow.at > OUTPUT_REFERENCE_MAX_AGE_MS
+          || at < outputWindow.earliest || at > outputWindow.latest);
+      };
       if (late()) { expiredFrames++; renderDroppedFrames++; frame.close(); return; }
+      if (outsideAudioWindow()) { audioSyncDroppedFrames++; renderDroppedFrames++; frame.close(); return; }
       const started = performance.now();
       let drawn;
       let expired = false;
-      try { drawn = draw(frame, () => { expired = late(); return !expired; }) !== false; }
+      let audioExpired = false;
+      try { drawn = draw(frame, () => { expired = late(); audioExpired = outsideAudioWindow(); return !expired && !audioExpired; }) !== false; }
       catch (error) { renderDroppedFrames++; frame.close(); throw error; }
       if (expired) { expiredFrames++; renderDroppedFrames++; frame.close(); return; }
+      if (audioExpired) { audioSyncDroppedFrames++; renderDroppedFrames++; frame.close(); return; }
       if (!drawn) { renderDroppedFrames++; frame.close(); return; }
       if (!Number.isFinite(timing)) untimedFrames++;
       drawMs.add(performance.now() - started);
@@ -300,12 +322,14 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       canvas.height = height;
       if (lastFrame) draw(lastFrame);
     },
+    audio(reference) { audioTracking = true; audioReferences.update(reference); },
     close() {
       fpsWindow.reset();
       lastFrame?.close();
       lastFrame = null;
       lastConfig = null;
       expiredFrames = untimedFrames = renderDroppedFrames = 0;
+      audioSyncDroppedFrames = 0;
     },
     dispose() {
       fpsWindow.reset();
@@ -315,7 +339,8 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       canvas.removeEventListener('webglcontextrestored', restored);
       renderer.dispose?.();
     },
-    stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), expiredFrames, untimedFrames, renderDroppedFrames, ...fpsWindow.stats() }),
+    stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), expiredFrames, untimedFrames, renderDroppedFrames,
+      audioRenderSyncDroppedFrames: audioSyncDroppedFrames, ...fpsWindow.stats() }),
   };
 }
 

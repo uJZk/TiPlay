@@ -81,6 +81,42 @@ queue uses the same retention budget as buffered music, while retaining real-tim
 handling. Retaining those samples does not delay their scheduled playback; a shorter queue
 can discard them before their playback time arrives.
 
+Each decoded stream/format epoch owns a continuous source-sample position and a
+stateful [libsoxr resampler](../site/play/vendor/soxr/README.md). Filter state survives
+packet boundaries; real timestamp gaps, seeks and stream replacement enter bounded
+rebuffer/fade recovery. Temporary input shortages never flush the filter as end-of-file.
+
+### Media clocks and synchronization
+
+HTTP clock probes estimate both Android/browser time offset and relative clock rate
+from a bounded history, filtering high-delay and inconsistent observations. Centered
+coordinates avoid deriving rate from enormous absolute timestamps. Ordinary calibration
+refines a target; it does not remap queued audio packets. AudioWorklet advances an integer
+device-sample counter and relative per-stream anchors. Small drift changes the resampling
+ratio smoothly; confirmed clock steps, device discontinuities and substantial network-buffer
+target changes use separate recovery reasons. Network readiness and clock correction keep
+independent state.
+
+Actual output references map emitted content through `AudioContext.getOutputTimestamp()`.
+That pair already includes the device pipeline. Feature fallback uses reported base/output
+latencies once, marks its uncertainty and rejects unbounded mappings. Resampler content
+delay is reflected in the source position, so video must not add it again. Both worker and
+main-thread video intersect their existing mode deadline with the audible interval: audio
+may lead matching video by at most **45 ms** or lag by at most **125 ms**. Device/filter
+uncertainty shrinks this interval. Extra hardware latency can be compensated by rendering
+available future PCM earlier; it is not an exception to either limit. Active audio with a
+stale/unavailable reference prevents a new unsynchronized draw. Explicitly disabled/ended
+audio permits video-only scheduling again.
+
+Android/browser calibration does not establish the iPhone oscillator's rate. Ordinary
+AirPlay timing anchors and realtime source-supply evidence have different confidence;
+buffered prefetch must never be interpreted as a faster source clock. Realtime ingress
+estimation is bounded and rejects obvious network-queue steps, but cannot distinguish
+every slow network-delay trend from sender drift. Keep that uncertainty and recovery
+boundary visible in diagnostics. Desktop clock/output tests establish software behavior;
+speaker sound, vehicle display latency and sustained iPhone interoperability require
+[physical acceptance](Testing.md#media-clock-and-continuous-audio-acceptance).
+
 Type 103 uses authenticated AAC-LC and bounded relay/browser reservoirs. SETRATE
 starts at an RTP anchor, GETANCHOR reads it, rate zero pauses, and FLUSHBUFFERED
 resets output. Compressed preload may survive pause, isolated from retired sessions.
@@ -88,8 +124,9 @@ The decoded buffer covers the producer's lead, startup anchor, permitted output 
 clock/packet margin. Memory remains bounded; capacity protection preserves the next buffered
 sample to play instead of repeatedly evicting it for later arrivals. A processor failure
 retires the old node/epoch and permits only bounded reconstruction within one connection.
-Stalled browsers retire instead of dropping ordered music. Feedback estimates position,
-not physical speaker time. Lossless/spatial audio is not advertised. Upstream rationale: [buffering #308](https://github.com/shihabal3amri/DiPlay/pull/308)
+Stalled browsers retire instead of dropping ordered music. iPhone protocol feedback
+estimates position, not physical speaker time. Lossless/spatial audio is not advertised.
+Upstream rationale: [buffering #308](https://github.com/shihabal3amri/DiPlay/pull/308)
 and [pacing #484](https://github.com/shihabal3amri/DiPlay/pull/484).
 
 On iPhone call/Siri microphone demand, Android routes speech and navigation to the
@@ -125,6 +162,14 @@ The browser reports viewport, decoder capabilities and theme. New CarPlay connec
 reconnect when negotiation requires it, retaining the settings page. Enabled idle
 CarPlay can resume preparation; disabling it blocks startup/retries. Endpoint edits
 use the explicit browser steps above.
+
+The CarPlay picture fills a rectangular browser canvas, including after viewport
+renegotiation. Following [DiPlay #596](https://github.com/shihabal3amri/DiPlay/pull/596),
+the main display advertises `cornerMasks=true` and omits `safeArea` from its
+`viewAreas`: iOS supplies the unclipped picture and separate corner masks, which
+the rectangular browser does not blend. This changes iPhone negotiation rather
+than cropping or stretching the received picture with CSS. Saved upstream safe-area
+preferences do not override the browser canvas.
 
 The performance monitor cannot alter viewport/touch mapping. It shows codec,
 last-second drawn FPS, latest frame Delta and explicit drops. Delta is Canvas submission

@@ -1,0 +1,19 @@
+{
+  "upstream": "https://github.com/chirlu/soxr",
+  "commit": "945b592b70470e29f917f4de89b4281fbbd540c0",
+  "license": "LGPL-2.1-or-later",
+  "sourceArchive": "soxr-source.tar.gz",
+  "sourceSha256": "ae970b44833c7dd2b088d5928b27c7f1796198ff5bc5386b90393aaf33e53d51",
+  "wasmSha256": "544a26559464116514d5fd0d217ff59fa07410d0980fbeeebae05fa4dc0c8ffa",
+  "build": "scripts/soxr/build.py",
+  "wrapper": "scripts/soxr/soxr-wrapper.c",
+  "toolchain": "wasi-sdk-34.0-x86_64-linux",
+  "toolchainUrl": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz",
+  "toolchainSha256": "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4",
+  "patches": ["Exact void return signature adapter for vr_process in WebAssembly control block"],
+  "configuration": "SOXR_HQ | SOXR_VR; vr32; float32 interleaved; single-threaded; 16 MiB initial / 32 MiB maximum memory",
+  "inspiration": {
+    "variableRateExample": "https://github.com/chirlu/soxr/blob/945b592b70470e29f917f4de89b4281fbbd540c0/examples/5-variable-rate.c",
+    "recoveryConcepts": "https://github.com/mikebrady/shairport-sync/blob/cf6998daa1876c5a8f97128a960c8afc0e731841/player.c"
+  }
+}

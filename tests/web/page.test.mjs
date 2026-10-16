@@ -25,7 +25,7 @@ test('the initial clock reaches a video sink whose setup finishes after hello', 
     const render = () => {}, reportAppearance = () => {}, scheduleViewport = () => {};
     const setInterval = () => 0, clearInterval = () => {};
     const stop = reason => { throw new Error(reason); };
-    const sampleClock = serverMs => ({ offset: 10, rtt: 2, at: serverMs });
+    const createClockEstimator = () => ({ observe: serverMs => ({ offset: 10, rtt: 2, at: serverMs }), snapshot: () => null });
     const phoneFetch = async route => {
       events.push(route);
       return { ok: true, body: null, json: async () => ({ app: 'TiPlay', protocol: 1, clockMs: 100 }) };
@@ -80,6 +80,7 @@ function retryPage(lastError) {
     const cancelViewport = () => {}, cancelMove = () => {}, renderStats = () => {};
     const t = (key, ...args) => args.length ? key + ':' + args.join(',') : key;
     const phoneFetch = () => new Promise(() => {});
+    const createClockEstimator = () => ({ observe: () => null, snapshot: () => null });
     ${['statusText', 'render', 'scheduleRetry', 'stop', 'connectVideo'].map(extract).join('\n')}
     return { scheduleRetry, stop, connectVideo, reconnects: () => reconnects,
       present(value) {

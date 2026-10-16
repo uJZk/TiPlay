@@ -3,6 +3,7 @@ package com.shilapi.xcertplay.web
 import com.shilapi.xcertplay.diagnostics.RawTraffic
 import com.shilapi.xcertplay.airplay.VideoInCar
 import com.shilapi.xcertplay.receiver.ReceiverResource
+import com.shilapi.xcertplay.receiver.ReceiverResourceHeaders
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.ByteArrayInputStream
@@ -103,6 +104,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
             connection.instanceFollowRedirects = false
             connection.setRequestProperty("Accept-Encoding", "identity")
             connection.setRequestProperty("Cache-Control", "no-cache")
+            ReceiverResourceHeaders.forUrl(url).forEach { (name, value) -> connection.setRequestProperty(name, value) }
             if (range != null) connection.setRequestProperty("Range", range)
             connections += connection
             if (closed.get()) { connections -= connection; connection.disconnect(); throw IOException("Playback ended") }

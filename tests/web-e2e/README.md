@@ -21,8 +21,40 @@ All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LA
 | `airplay-video.mjs` | Real Mediabunny/WebCodecs playback engine, Video.js controls/skin, canvas pixels, seek/pause/rate, captions, mute restoration, ownership, disposal and sanitized failure diagnostics under production CSP. Needs an MP4 fixture; HLS optional. |
 | `airplay-photo.mjs` | Actual page CSP, authenticated synthetic EXIF JPEG, native decode/contain fit, ownership, resource reuse and cleanup. |
 | `airplay-audio.mjs` | Actual WebCodecs AAC-LC and CarPlay Opus decoding, nonzero PCM, sample metadata and asynchronous timeline sequence preservation. Prints ALAC/AAC-ELD capability probes; no software fallback is implied. |
+| `media-clock.mjs` | Production CSP, bundled soxr WASM/AudioWorklet, independent mixed CarPlay/mirror PCM, actual output timestamps, suspend/resume, and main/worker/OffscreenCanvas video timing. Requires H.264 decoding, AudioWorklet, `getOutputTimestamp`, OffscreenCanvas and transferable streams. |
 
 The Performance monitor check verifies a non-intercepting overlay without replacing the media connection. Current fields are codec, actual last-second draw FPS, latest synchronized Delta and explicit browser discards; five-second offset distributions remain in diagnostics. Fake source times validate the timing path, not iPhone capture-to-display latency. Resize/reconnect checks cover browser layout/reporting, not iPhone replacement-display negotiation.
+
+## Media clock and actual browser output
+
+```sh
+NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium \
+  MEDIA_CLOCK_RESULT=/tmp/media-clock.json node tests/web-e2e/media-clock.mjs
+```
+
+The runner clicks the page's Start button and uses the production CSP and bundled
+WASM without autoplay or CSP bypasses. All assets and synthetic media stay on
+loopback. It verifies output references before enabling diagnostic capture, then
+checks nonzero worklet output, independent CarPlay/mirror producers, an actual
+context suspend/resume and clock refinement. Main-thread presentation, real H.264
+worker decode with frame transfer, and worker OffscreenCanvas use the same output
+reference and retain the production video caps and audio early/late window.
+
+The H.264 source is the original black 16×16
+[`embedded-tx3g.mp4` fixture](../web/fixtures/README.md), whose FFmpeg generation
+instructions are recorded with the fixture. The probe demuxes its first keyframe,
+converts AVC parameter sets and length-prefixed NAL units to Annex B, and repeats
+that independent keyframe with synthetic presentation timestamps. A 200 ms
+producer lead permits desktop decoder buffering before the source deadline; it
+does not increase the video latency cap. Audio uses continuous nonzero synthetic
+tones, with separate producers and epochs.
+
+`MEDIA_CLOCK_RESULT` optionally saves the full result, served-asset hashes and
+runtime SHA256 snapshots before and after the run. Runtime changes during a run
+fail the check. Browser/workers and the loopback server close on success or failure.
+These checks measure browser output-clock estimates and Canvas submission. They
+do not measure acoustic speaker delay, physical panel presentation, vehicle audio
+routes or iPhone negotiation; physical acceptance remains separate.
 
 ## Compiled phone API
 

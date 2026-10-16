@@ -929,6 +929,47 @@ class ReceiverServerTest {
         } finally { receiver.close() }
     }
 
+    @Test fun fcupSerializesCdnHeadersOnlyForTheRequestedMediaHostAndPreservesSessionAndRange() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                assertEquals(200, control.status("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to "mlhls://app/master.m3u8"))))
+                connect(receiver.port).use { reverse ->
+                    reverse.upgradeReverse()
+                    val cdn = "upos-sz-estgoss.bilivideo.com"
+                    for (host in listOf(cdn, "example.test", "bilivideo.com.example.test")) {
+                        val url = "https://$host/video.m4s?nbs=1&upsig=fake%2fSignature&uparams=nbs"
+                        val future = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(url, "bytes=3058-3060") }
+                        val event = readReceiverRequest(reverse.getInputStream())!!.body.toString(Charsets.UTF_8)
+                        assertTrue(event.contains("<key>FCUP_Response_URL</key><string>${url.replace("&", "&amp;")}</string>"))
+                        val dictionary = Regex("<key>FCUP_Response_Headers</key><dict>(.*?)</dict>").find(event)!!.groupValues[1]
+                        val headers = Regex("<key>([^<]+)</key><string>([^<]+)</string>").findAll(dictionary)
+                            .associate { it.groupValues[1] to it.groupValues[2] }
+                        assertEquals("11223344556677889900aabbccddeeff", headers["X-Playback-Session-Id"])
+                        assertEquals("bytes=3058-3060", headers["Range"])
+                        if (host == cdn) {
+                            assertEquals("https://www.bilibili.com/", headers["Referer"])
+                            assertEquals("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+                                "Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0", headers["User-Agent"])
+                            assertEquals(setOf("X-Playback-Session-Id", "Range", "Referer", "User-Agent"), headers.keys)
+                        } else {
+                            assertEquals("AppleCoreMedia/1.0.0.11B554a (Apple TV; U; CPU OS 7_0_4 like Mac OS X; en_us)", headers["User-Agent"])
+                            assertEquals(setOf("X-Playback-Session-Id", "Range", "User-Agent"), headers.keys)
+                        }
+                        val id = Regex("<key>FCUP_Response_RequestID</key><integer>([0-9]+)</integer>").find(event)!!.groupValues[1].toLong()
+                        val answer = BplistCodec.encode(mapOf("type" to "unhandledURLResponse", "params" to mapOf(
+                            "FCUP_Response_RequestID" to id, "FCUP_Response_URL" to url,
+                            "FCUP_Response_StatusCode" to 0, "FCUP_Response_Data" to byteArrayOf(1, 2, 3),
+                        )))
+                        assertEquals(200, control.status("POST", "/action", answer))
+                        assertArrayEquals(byteArrayOf(1, 2, 3), future.get(2, TimeUnit.SECONDS)!!.bytes)
+                    }
+                }
+            }
+        } finally { receiver.close() }
+    }
+
     @Test fun parallelIphoneResourceLoadsSendTheNextEventOnlyAfterTheActionResponse() {
         val listener = Listener()
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)

@@ -5,6 +5,10 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.io.IOException
 import java.net.ServerSocket
+import java.net.ProxySelector
+import java.net.Proxy
+import java.net.URI
+import java.net.InetSocketAddress
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
@@ -73,6 +77,64 @@ class AirPlayVideoProxyTest {
             }.apply { isDaemon = true; start() }
             try { test("http://127.0.0.1:${server.localPort}", request) }
             finally { server.close(); worker.join(3000); assertFalse(worker.isAlive) }
+        }
+    }
+
+    /** Resolve virtual media hosts through local HTTP proxies, without DNS or a production test hook. */
+    private fun withLocalOrigins(origins: Map<String, String>, test: () -> Unit) {
+        val previous = ProxySelector.getDefault()
+        ProxySelector.setDefault(object : ProxySelector() {
+            override fun select(uri: URI): List<Proxy> = listOf(Proxy(Proxy.Type.HTTP,
+                InetSocketAddress("127.0.0.1", URI(origins.getValue(uri.host)).port)))
+            override fun connectFailed(uri: URI, address: java.net.SocketAddress, error: IOException) = throw error
+        })
+        try { test() } finally { ProxySelector.setDefault(previous) }
+    }
+
+    @Test fun androidCdnRequestReceivesBothRequiredHeadersWithoutChangingSignedUrlOrRange() {
+        val cdn = "upos-sz-estgoss.bilivideo.com"
+        for (host in listOf(cdn, "example.test", "bilivideo.com.example.test")) {
+            withOrigin(206, mapOf("Content-Range" to "bytes 3058-3060/4000"), byteArrayOf(1, 2, 3)) { origin, request ->
+                withLocalOrigins(mapOf(host to origin)) {
+                    val signed = "http://$host/video.m4s?nbs=1&upsig=fake%2fSignature&uparams=nbs"
+                    val proxy = AirPlayVideoProxy(signed, { _, _ -> error("Local HTTP request should succeed") })
+                    try {
+                        proxy.open(proxy.rootId, "bytes=3058-3060") { it }!!.use {
+                            assertEquals(206, it.status)
+                            assertArrayEquals(byteArrayOf(1, 2, 3), it.body.readBytes())
+                        }
+                        val sent = request.get(2, TimeUnit.SECONDS)
+                        assertTrue(sent.startsWith("GET $signed HTTP/1.1\r\n"))
+                        assertTrue(sent.contains("Range: bytes=3058-3060\r\n", true))
+                        assertEquals(host == cdn, sent.contains("Referer: https://www.bilibili.com/\r\n", true))
+                        assertEquals(host == cdn, sent.contains("Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0"))
+                    } finally { proxy.close() }
+                }
+            }
+        }
+    }
+
+    @Test fun androidRedirectsRecomputeCdnHeadersForTheDestinationInBothDirections() {
+        val cdn = "upos-sz-estgoss.bilivideo.com"
+        for ((from, to) in listOf(cdn to "example.test", "example.test" to cdn)) {
+            val signed = "http://$to/video.m4s?nbs=1&upsig=fake%2fSignature&uparams=nbs"
+            withOrigin(206, mapOf("Content-Range" to "bytes 3058-3060/4000"), byteArrayOf(1, 2, 3)) { target, targetRequest ->
+                withOrigin(302, mapOf("Location" to signed), byteArrayOf()) { origin, originRequest ->
+                    withLocalOrigins(mapOf(from to origin, to to target)) {
+                        val proxy = AirPlayVideoProxy("http://$from/start", { _, _ -> error("Redirect should remain on local HTTP") })
+                        try {
+                            proxy.open(proxy.rootId, "bytes=3058-3060") { it }!!.use { assertArrayEquals(byteArrayOf(1, 2, 3), it.body.readBytes()) }
+                            for ((host, request) in listOf(from to originRequest, to to targetRequest)) {
+                                val sent = request.get(2, TimeUnit.SECONDS)
+                                assertEquals(host == cdn, sent.contains("Referer: https://www.bilibili.com/\r\n", true))
+                                assertEquals(host == cdn, sent.contains("Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0"))
+                                assertTrue(sent.contains("Range: bytes=3058-3060\r\n", true))
+                            }
+                            assertTrue(targetRequest.get().startsWith("GET $signed HTTP/1.1\r\n"))
+                        } finally { proxy.close() }
+                    }
+                }
+            }
         }
     }
 

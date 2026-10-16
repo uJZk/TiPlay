@@ -5,6 +5,7 @@ import android.os.Looper
 import android.view.Surface
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
+import com.shilapi.xcertplay.airplay.AirPlayInfoPlist
 import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.CarPlayScreenBorrowState
 import com.shilapi.xcertplay.airplay.CarPlayScreenOwner
@@ -89,6 +90,8 @@ class CarPlayHostBrowserLinkTest {
         AirPlayPersistence.saveUiScalePercent(activity, 75)
         AirPlayPersistence.saveClusterMapEnabled(activity, true)
         AirPlayPersistence.saveSafeAreaRect(activity, 1080, 2200, SafeAreaRect(0, 100, 1080, 2100), commit = true)
+        AirPlayPersistence.saveMainDisplayDisableSafeArea(activity, false)
+        set("mainDisplayDisableSafeArea", false)
         CarPlayDock.save(activity, CarPlayDock.BOTTOM)
         SidePanelSettings.setEnabled(activity, true)
 
@@ -101,11 +104,13 @@ class CarPlayHostBrowserLinkTest {
         assertEquals(160, config.main.heightPhysicalMm)
         assertNull(config.main.safeArea)
         assertNull(config.main.viewAreas)
+        assertRectangularCarPlayOffer(config)
         assertNull(config.cluster)
         assertFalse(config.videoInCar)
         assertNull(get("pendingViewAreas"))
         assertEquals("TiPlay", config.oemLabel)
         assertEquals("The head-unit settings stay as saved", 160, AirPlayPersistence.loadDisplayScalePercent(activity))
+        assertFalse(AirPlayPersistence.loadMainDisplayDisableSafeArea(activity))
         assertTrue(DisplayDiagnosticSnapshot.report(activity).contains("Phone + browser canvas=1182x920"))
     }
 
@@ -418,6 +423,7 @@ class CarPlayHostBrowserLinkTest {
         org.mockito.Mockito.`when`(current.reconnectBrowserDisplay(firstConfig)).thenReturn(true)
         host.onBrowserViewport(first)
         org.mockito.Mockito.verify(current).reconnectBrowserDisplay(firstConfig)
+        assertRectangularCarPlayOffer(config(1080, 2200).copy(main = firstConfig))
         assertEquals("The already-main callback requests a replacement without full teardown", 0, get("restartGeneration"))
         assertFalse(get("handshakeResetInProgress") as Boolean)
         val latest = BrowserViewport(1600, 900, 1046.0, 588.0, 1.53)
@@ -429,6 +435,8 @@ class CarPlayHostBrowserLinkTest {
         val nextConfig = config(1080, 2200)
         assertEquals("The replacement session uses the latest saved viewport", 1600, nextConfig.main.widthPixels)
         assertEquals(900, nextConfig.main.heightPixels)
+        org.mockito.Mockito.verify(current).reconnectBrowserDisplay(nextConfig.main)
+        assertRectangularCarPlayOffer(nextConfig)
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(0, get("restartGeneration"))
         assertFalse(get("handshakeResetInProgress") as Boolean)
@@ -618,6 +626,18 @@ class CarPlayHostBrowserLinkTest {
         val engine = activity.javaClass.getDeclaredMethod("createMediaEngine", AndroidMediaSink::class.java,
             Boolean::class.javaPrimitiveType).apply { isAccessible = true }.invoke(activity, sink, false)!!
         return engine.javaClass.getDeclaredField("sink").apply { isAccessible = true }.get(engine) as MediaSink
+    }
+
+    private fun assertRectangularCarPlayOffer(config: AirPlayConfig) {
+        val display = (AirPlayInfoPlist.build(config)["displays"] as List<*>).single() as Map<*, *>
+        assertEquals(AirPlayInfoPlist.MAIN_UUID, display["uuid"])
+        assertEquals(true, display["cornerMasks"])
+        val area = (display["viewAreas"] as List<*>).single() as Map<*, *>
+        assertFalse("The iPhone must not clip the rectangular browser canvas", area.containsKey("safeArea"))
+        assertEquals(config.main.widthPixels, area["widthPixels"])
+        assertEquals(config.main.heightPixels, area["heightPixels"])
+        assertEquals(0, area["originXPixels"])
+        assertEquals(0, area["originYPixels"])
     }
 
     private fun config(width: Int, height: Int): AirPlayConfig =

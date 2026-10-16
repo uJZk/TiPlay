@@ -268,6 +268,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             "FCUP_Response_IsContentKeyRequest" to false, "sessionID" to 1,
             "FCUP_Response_Headers" to mapOf("X-Playback-Session-Id" to pending.session,
                 "User-Agent" to "AppleCoreMedia/1.0.0.11B554a (Apple TV; U; CPU OS 7_0_4 like Mac OS X; en_us)") +
+                ReceiverResourceHeaders.forUrl(pending.url) +
                 (pending.range?.let { mapOf("Range" to it) } ?: emptyMap()),
         ))), pending.session)
     }

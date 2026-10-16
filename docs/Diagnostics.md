@@ -34,6 +34,21 @@ The ZIP includes retained raw history, including earlier sessions. Disabling Deb
 
 ## Browser audio evidence
 
+Clock evidence separates offset, rate, confidence and clock generation. Worklet stream
+evidence distinguishes phase error, source-rate confidence, resampling ratio, recovery
+reason and network-buffer target. Raw media/source coordinates, relative device-context
+time and exported wall-clock event time are different domains: compare them only through
+their recorded anchors. A small phase correction must not be classified as a new stream.
+Source-supply rate inferred from realtime ingress is weaker evidence than a sender timing
+anchor, especially when network queuing changes slowly.
+
+Audio output references needed for synchronization remain active in Standard mode;
+Debug controls detailed collection only. Video records unavailable/infeasible audio sync
+and explicit sync drops. `getOutputTimestamp` establishes the browser's device-output
+mapping, not measured sound at vehicle speakers. Its device latency and the resampler's
+already-accounted content delay must not be added twice. Missing/stale output evidence
+cannot justify claiming that audio stayed within the 45 ms early / 125 ms late window.
+
 Debug records the loaded page's cache identity, decoder backend/frame/nonzero/peak counters,
 AudioContext time/state and latency, clock mapping, AudioWorklet heartbeat/age, rendered
 frames/nonzero/peak and each stream's epoch, queue bounds, playback time and delay. Capacity
