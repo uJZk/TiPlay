@@ -255,7 +255,6 @@
     <string name="mfi_authentication_ready">Аутентификация MFi готова</string>
     <string name="mfi_certificate_signing_target">Сертификат MFi и цель подписи</string>
     <string name="model">Модель</string>
-    <string name="music_buffer">Буфер музыки</string>
     <string name="resolution_native">Нативное</string>
     <string name="navigation_on_hud_and_instrument_cluster">Навигация на HUD и приборной панели</string>
     <string name="navigation_stream_type">Тип потока навигации</string>
@@ -327,7 +326,9 @@
     <string name="s_30_fps_lighter_load">30 кадров/с · меньшая нагрузка</string>
     <string name="s_3_connect">3 · Подключитесь</string>
     <string name="s_3_tap_check_and_enable_below_this_enables_the_cluster_ma">3. Нажмите «Проверить и включить» ниже. Это включит карту комбинации и автоматическое следование теме. Активный сеанс CarPlay переподключится один раз. После этого можно отключить компьютер.</string>
-    <string name="s_500_ms">500 мс</string>
+    <string name="settings_music_buffer_ms">%1$d мс</string>
+    <string name="settings_music_buffer_wireless">Буфер музыки (беспроводной CarPlay)</string>
+    <string name="settings_music_buffer_wired">Буфер музыки (USB-кабель)</string>
     <string name="s_60_fps_smoother_motion">60 кадров/с · более плавное движение</string>
     <string name="s_60_lightest_load" formatted="false">60% · минимальная нагрузка</string>
     <string name="s_80_lighter_load" formatted="false">80% · меньшая нагрузка</string>
@@ -397,6 +398,7 @@
     <string name="wi_fi_session">Сеанс Wi-Fi</string>
     <string name="widest_width">Наибольшая ширина</string>
     <string name="wireless_carplay">БЕСПРОВОДНОЙ CARPLAY</string>
+    <string name="home_usb_carplay">CARPLAY ПО USB</string>
     <string name="wireless_carplay_2">Беспроводной CarPlay</string>
     <string name="wireless_carplay_active">Беспроводной CarPlay активен</string>
     <string name="wireless_carplay_control_running">Управление беспроводным CarPlay работает</string>
@@ -623,6 +625,12 @@
     <string name="wheel_key_in_use">Эта кнопка уже назначена для «%1$s». Выберите другую кнопку.</string>
     <string name="wheel_siri_key">Кнопка Siri на руле</string>
     <string name="wheel_siri_key_description">Открывает Siri кнопкой на руле, которую вы выберете, пока CarPlay на экране. Кнопка, которую автомобиль оставляет себе, работает только со службой кнопок руля; служба работает и когда CarPlay в фоне. Без CarPlay или во время звонка кнопка сохраняет своё действие в автомобиле.</string>
+    <string name="wheel_siri_double_press">Двойное нажатие для Siri</string>
+    <string name="wheel_siri_double_press_description">Одиночное нажатие сохраняет действие автомобиля. Нажмите дважды за выбранный интервал, и TiPlay откроет Siri после выбранной задержки. Если ассистент автомобиля занимает экран, требуется служба кнопок руля. Применяется сразу.</string>
+    <string name="wheel_siri_double_press_interval">Интервал двойного нажатия</string>
+    <string name="wheel_siri_trigger_delay">Задержка запуска Siri</string>
+    <string name="wheel_siri_long_press_only">Siri только по долгому нажатию</string>
+    <string name="wheel_siri_long_press_only_description">Siri открывается только долгим нажатием кнопки голосового управления на руле. Короткое нажатие в TiPlay ничего не делает.</string>
     <string name="wheel_key_role_back">назад</string>
     <string name="wheel_key_service_label">Кнопки руля TiPlay</string>
     <string name="wheel_key_service_description">Необязательная фильтрация клавиш руля для громкости голосовых подсказок навигации, масштаба карты на панели, джойстика CarPlay и управления звонками. Содержимое экрана не читается.</string>
@@ -767,12 +775,35 @@
     <string name="settings_ambient_enable">Управлять подсветкой</string>
     <string name="settings_ambient_enable_description">При отключении выполняется попытка восстановить исходные цвета, яркость и зону. Требуется существующая авторизация ADB.</string>
     <string name="settings_ambient_music">Следовать музыке</string>
-    <string name="settings_ambient_music_description">При воспроизведении следует музыке или использует постоянные цвета и яркость. При паузе или отключении все зоны удерживаются на минимальном уровне. Изменения применяются после сохранения.</string>
+    <string name="settings_ambient_music_description">При воспроизведении следует музыке или использует постоянные цвета и яркость. Что делает подсветка, когда музыка не играет, настраивается ниже отдельно. Изменения применяются после сохранения.</string>
     <string name="settings_ambient_color_mode">Смена цвета</string>
     <string name="settings_ambient_speed">Скорость изменения яркости</string>
-    <string name="settings_ambient_palette">Номера цветов OEM (несколько вариантов)</string>
-    <string name="settings_ambient_palette_summary">Цвета · выбрано %1$d</string>
-    <string name="settings_ambient_select_all">Выбрать все</string>
+    <string name="settings_ambient_behavior_title">Что происходит</string>
+    <string name="settings_ambient_behavior_off">Управление выключено. Автомобиль сохраняет собственные цвета, яркость и зону подсветки.</string>
+    <string name="settings_ambient_behavior_follow">Играет музыка · %1$s: подсветка следует за музыкой, до уровня %2$d.</string>
+    <string name="settings_ambient_behavior_fixed">Играет музыка · %1$s: подсветка горит одним фиксированным цветом на уровне %2$d.</string>
+    <string name="settings_ambient_behavior_idle">Пауза, остановка или отключение: все зоны снижаются до минимального уровня, при котором подсветка может погаснуть.</string>
+    <string name="settings_ambient_behavior_idle_steady">Пауза, остановка или отключение · %1$s: подсветка сохраняет выбранный цвет на уровне %2$d.</string>
+    <string name="settings_ambient_behavior_idle_car">Нет музыки 15 секунд: подсветка возвращается к настройкам автомобиля, а TiPlay снова берёт управление, когда начинается музыка.</string>
+    <string name="settings_ambient_behavior_other_zone">Другая зона не меняется, пока играет музыка.</string>
+    <string name="settings_ambient_behavior_lowest">Уровень 0: все зоны всегда остаются на минимальном уровне, при котором подсветка может погаснуть.</string>
+    <string name="settings_ambient_idle">Когда музыка не играет</string>
+    <string name="settings_ambient_idle_steady">Постоянное свечение</string>
+    <string name="settings_ambient_idle_car">Подсветка автомобиля</string>
+    <string name="settings_ambient_idle_off">Минимальный уровень (может быть тёмным)</string>
+    <string name="settings_ambient_behavior_restore">Выключите управление, чтобы вернуть подсветку к настройкам автомобиля.</string>
+    <string name="settings_ambient_mode_energy_desc">Цвета меняются в зависимости от громкости музыки.</string>
+    <string name="settings_ambient_mode_beat_desc">Цвета меняются на каждый удар ритма.</string>
+    <string name="settings_ambient_mode_tempo_desc">Цвета меняются в оценённом темпе (BPM).</string>
+    <string name="settings_ambient_mode_bass_desc">Цвета меняются на удары баса.</string>
+    <string name="settings_ambient_mode_smart_desc">Цвета меняются на удары баса и сильные ритмы.</string>
+    <string name="settings_ambient_colors_title">Цвета</string>
+    <string name="settings_ambient_colors_hint_follow">Нажмите на цвета, которые может использовать подсветка. Она меняется между выбранными.</string>
+    <string name="settings_ambient_colors_hint_fixed">Нажмите на нужный цвет. В фиксированном режиме показывается один цвет.</string>
+    <string name="settings_ambient_colors_hint_album">Цвета берутся с обложки альбома. Выключите «Цвет обложки альбома», чтобы выбрать цвета самостоятельно.</string>
+    <string name="settings_ambient_swatch">Цвет %1$d</string>
+    <string name="settings_ambient_swatch_selected">Цвет %1$d, выбран</string>
+    <string name="settings_ambient_brightness_value">Уровень %1$d из 6</string>
     <string name="settings_ambient_select_one">Выберите хотя бы один цвет</string>
     <string name="settings_ambient_brightness">Максимальная яркость</string>
     <string name="settings_ambient_minimum">0 (минимальный уровень)</string>
@@ -800,6 +831,7 @@
     <string name="settings_speech_without_low_rates_description">По USB iPhone может передавать подсказки навигации и ответы Siri в телефонном качестве 8 кГц. Этот параметр перестаёт предлагать 8 и 16 кГц для такого звука, и iPhone выбирает более высокую частоту. Если подсказки пропадут, выключите его. Переподключает CarPlay.</string>
     <string name="bluetooth_connections_not_real">Bluetooth Android на этом головном устройстве сообщает о подключении, но до iPhone ничего не доходит: «успешно» подключается даже несуществующая служба. Bluetooth здесь обслуживает собственный модуль производителя, недоступный приложениям, поэтому беспроводной CarPlay на этом головном устройстве работать не может. Попробуйте подключение по USB.</string>
     <string name="bluetooth_cannot_open_connections">Bluetooth Android на этом головном устройстве не может открывать соединения для приложений: в прошивке нет части, через которую подключаются приложения. Звонки и музыка по Bluetooth автомобиля работают как обычно, но беспроводной CarPlay на этом головном устройстве работать не может. Попробуйте подключение по USB.</string>
+    <string name="bluetooth_will_not_stay_on_hint">Если Bluetooth там не остаётся включённым, это головное устройство оставляет Bluetooth только для собственных звонков и музыки, и приложениям он недоступен. В таком случае беспроводной CarPlay работать не может: используйте USB-кабель.</string>
     <string name="settings_fce_cluster_guidance">Подсказки на приборной панели FCE (экспериментально)</string>
     <string name="settings_fce_cluster_guidance_description">Показывает стрелки CarPlay и расстояние до следующего манёвра в навигационном виде приборной панели на головных устройствах FCE, записывая данные в сервис автомобиля. Проверено только на одном автомобиле; отключите, если панель ведёт себя необычно.</string>
     <string name="settings_cluster_music">Музыка на приборной панели (экспериментально)</string>
@@ -828,4 +860,26 @@
     <string name="settings_call_speakerphone_description">Для телефона или планшета Android, используемого как головное устройство: звонки CarPlay звучат из громкоговорителя, а не из разговорного динамика, и используется микрофон громкой связи. На головном устройстве автомобиля оставьте выключенным. Применяется со следующего звонка.</string>
     <string name="settings_forget_airplay_devices">Забыть все доверенные устройства AirPlay</string>
     <string name="settings_airplay_devices_forgotten">Доверенные устройства AirPlay забыты</string>
+    <string name="settings_navigation_attenuation">Громкость навигационных подсказок</string>
+    <string name="settings_navigation_attenuation_value">%1$d дБ</string>
+    <string name="settings_navigation_attenuation_description">Уменьшает только громкость навигационных подсказок CarPlay, не меняя музыку и звонки. Применяется сразу; регулировка громкости навигации на устройстве сохраняется.</string>
+    <string name="settings_car_hotspot_control">Точка доступа автомобиля</string>
+    <string name="settings_auto_car_hotspot_system_description">Включает сохранённую точку доступа при открытии TiPlay и перед беспроводным подключением. Нужен доступ Android «Изменение системных настроек»; ADB не требуется. Чтобы точка доступа появлялась и после полного перезапуска, включите открытие TiPlay после запуска автомобиля. Точка доступа автоматически не выключается.</string>
+    <string name="settings_write_settings_granted">Доступ «Изменение системных настроек»: разрешён</string>
+    <string name="settings_write_settings_missing">Доступ «Изменение системных настроек» ещё не разрешён. Разрешите его, чтобы TiPlay мог включать точку доступа.</string>
+    <string name="settings_write_settings_allow">Разрешить доступ</string>
+    <string name="settings_wifi_direct_scan_pause">Приостановить поиск Wi-Fi автомобилем при CarPlay · нужен ADB</string>
+    <string name="settings_wifi_direct_scan_pause_description">В режиме Wi-Fi Direct автомобиль ищет сети Wi-Fi каждые несколько секунд, и каждый поиск прерывает музыку и видео. Когда параметр включён, TiPlay приостанавливает поиск, пока работает CarPlay. Тогда автомобиль и сам не подключается к известной сети, например к точке доступа телефона, пока CarPlay не завершится; подключиться можно вручную в настройках Wi-Fi автомобиля. Выключите, чтобы автомобиль подключался сам. Применяется при следующем подключении.</string>
+    <string name="temporary_system_bars">Показать системные панели на 5 секунд</string>
+    <string name="temporary_system_bars_description">При включении проведите вверх числом пальцев, заданным для меню TiPlay, чтобы на пять секунд показать скрытые панели автомобиля. Свайп вниз по-прежнему открывает настройки. Отключите при конфликте жестов; некоторые устройства не поддерживают показ.</string>
+    <string name="wheel_media_play_pause">Кнопка воспроизведения/паузы на руле</string>
+    <string name="wheel_media_play_pause_description">Назначьте свободную кнопку руля или клавиатуры для переключения воспроизведения CarPlay. В фоновом режиме нужна служба кнопок руля. Во время звонка или без подключения кнопка сохраняет своё действие. Прошивка может перехватывать некоторые кнопки.</string>
+    <string name="wheel_key_role_media_play_pause">Воспроизведение/пауза</string>
+    <string name="wheel_media_navigation_reserved">Кнопки навигации, «Домой», громкости, голосового помощника и медиа сохраняют свои функции. Выберите другую кнопку.</string>
+    <string name="black_corner_overlay">Чёрные закруглённые углы</string>
+    <string name="black_corner_overlay_description">Закрывает углы CarPlay чёрным. Выберите Выкл., ручной радиус или маску iPhone (экспериментально). Для режима iPhone требуется переподключение; без действительной маски используется приближение 24 dp. Ручные изменения отображаются сразу, выбор сохраняется кнопкой сохранения.</string>
+    <string name="black_corner_overlay_off">Выкл.</string>
+    <string name="black_corner_overlay_value">%1$d dp</string>
+    <string name="iphone_corner_mask_mode">Маска iPhone (экспериментально)</string>
+
 </resources>

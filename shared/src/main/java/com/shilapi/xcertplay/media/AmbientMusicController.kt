@@ -29,6 +29,7 @@ object AmbientMusicController {
     private var brightnessEnvelope = AmbientMusicBrightness(settings.speed)
     private var appliedCount = 0L
     private var lastLogMillis = 0L
+    private var idleSinceMillis: Long? = null
 
     private val lampSession = AmbientLampSession(
         factory = {
@@ -88,6 +89,7 @@ object AmbientMusicController {
             resetColors()
             brightnessEnvelope = AmbientMusicBrightness(settings.speed)
             allowed = settings.enabled; envelope = null; playback = null
+            idleSinceMillis = longIdle()
             if (!settings.enabled) restoreOriginal()
             updateTicking()
         }
@@ -186,6 +188,9 @@ object AmbientMusicController {
         }
     }
 
+    /** Silence that began before this session: the car's own lighting returns without a first lamp session. */
+    private fun longIdle() = android.os.SystemClock.uptimeMillis() - AmbientMusicActivityPolicy.RESTORE_AFTER_MILLIS
+
     @Synchronized internal fun closeRenderer(token: Long) {
         if (token == 0L || !activeRenderer.compareAndSet(token, 0L)) return
         executor.execute {
@@ -212,24 +217,28 @@ object AmbientMusicController {
         if (!allowed) return
         if (!values.enabled) { restoreOriginal(); return }
         if (context == null) return
-        lampSession.setEnabled(true)
+        val nowMillis = android.os.SystemClock.uptimeMillis()
         val rendererActive = activeRenderer.get() != 0L && playback != null
-        val playbackState = if (rendererActive && values.brightness > 0)
-            playback?.invoke() else null
+        val playbackState = if (rendererActive) playback?.invoke() else null
+        val playing = playbackState?.second == true && phonePlayback.current() != false
+        if (playing) idleSinceMillis = null
+        else if (idleSinceMillis == null) idleSinceMillis = nowMillis
         val target = AmbientMusicActivityPolicy.target(
             enabled = values.enabled,
             music = values.music,
             brightness = values.brightness,
             rendererActive = rendererActive,
-            playing = playbackState?.second == true && phonePlayback.current() != false
+            playing = playing,
+            idle = values.idle,
+            idleMillis = idleSinceMillis?.let { nowMillis - it } ?: 0,
         )
         if (target == AmbientMusicTarget.RESTORE_OEM) { restoreOriginal(); return }
+        lampSession.setEnabled(true)
         val energy = if (target == AmbientMusicTarget.FOLLOW_PLAYBACK) {
-            val (head, playing) = playbackState ?: return
-            envelope?.playedWindow(head, playing) ?: AmbientMusicEnvelope.Energy(0.0, 0.0)
+            val (head, headPlaying) = playbackState ?: return
+            envelope?.playedWindow(head, headPlaying) ?: AmbientMusicEnvelope.Energy(0.0, 0.0)
         } else AmbientMusicEnvelope.Energy(0.0, 0.0)
         val rms = energy.rms
-        val nowMillis = android.os.SystemClock.uptimeMillis()
         val brightness = when (target) {
             AmbientMusicTarget.LOWEST -> 1
             AmbientMusicTarget.FOLLOW_PLAYBACK -> brightnessEnvelope.level(rms, nowMillis, values.brightness)

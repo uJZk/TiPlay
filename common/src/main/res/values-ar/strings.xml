@@ -255,7 +255,6 @@
     <string name="mfi_authentication_ready">مصادقة MFi جاهزة</string>
     <string name="mfi_certificate_signing_target">شهادة MFi وهدف التوقيع</string>
     <string name="model">الطراز</string>
-    <string name="music_buffer">ذاكرة الموسيقى</string>
     <string name="resolution_native">أصلي</string>
     <string name="navigation_on_hud_and_instrument_cluster">الملاحة على شاشة العرض الأمامية ولوحة العدادات</string>
     <string name="navigation_stream_type">نوع بث الملاحة</string>
@@ -327,7 +326,9 @@
     <string name="s_30_fps_lighter_load">30 إطاراً/ث · حمل أخف</string>
     <string name="s_3_connect">3 · اتصل</string>
     <string name="s_3_tap_check_and_enable_below_this_enables_the_cluster_ma">3. اضغط «تحقق وفعّل» أدناه. يفعّل ذلك خريطة المجموعة واتباع السمة تلقائياً. ستعيد جلسة CarPlay النشطة الاتصال مرة واحدة. يمكنك بعد ذلك فصل الحاسوب.</string>
-    <string name="s_500_ms">500 مللي ثانية</string>
+    <string name="settings_music_buffer_ms">%1$d مللي ثانية</string>
+    <string name="settings_music_buffer_wireless">ذاكرة الموسيقى (لاسلكي)</string>
+    <string name="settings_music_buffer_wired">ذاكرة الموسيقى (كابل USB)</string>
     <string name="s_60_fps_smoother_motion">60 إطاراً/ث · حركة أكثر سلاسة</string>
     <string name="s_60_lightest_load" formatted="false">60% · أخف حمل</string>
     <string name="s_80_lighter_load" formatted="false">80% · حمل أخف</string>
@@ -397,6 +398,7 @@
     <string name="wi_fi_session">جلسة واي فاي</string>
     <string name="widest_width">أقصى عرض</string>
     <string name="wireless_carplay">CARPLAY اللاسلكي</string>
+    <string name="home_usb_carplay">CARPLAY عبر USB</string>
     <string name="wireless_carplay_2">CarPlay اللاسلكي</string>
     <string name="wireless_carplay_active">CarPlay اللاسلكي نشط</string>
     <string name="wireless_carplay_control_running">التحكم في CarPlay اللاسلكي قيد التشغيل</string>
@@ -623,6 +625,12 @@
     <string name="wheel_key_in_use">هذا الزر مخصّص بالفعل لـ %1$s. اختر زرًا آخر.</string>
     <string name="wheel_siri_key">زر Siri على المقود</string>
     <string name="wheel_siri_key_description">يفتح Siri بزر على المقود تختاره عندما تكون CarPlay على الشاشة. الزر الذي تحتفظ به السيارة لنفسها لا يعمل إلا مع خدمة أزرار المقود، التي تعمل أيضًا عندما تكون CarPlay في الخلفية. من دون CarPlay، أو أثناء مكالمة، يحتفظ الزر بوظيفته في السيارة.</string>
+    <string name="wheel_siri_double_press">ضغط مزدوج لتشغيل Siri</string>
+    <string name="wheel_siri_double_press_description">تحتفظ الضغطة الواحدة بوظيفة السيارة. اضغط مرتين ضمن الفاصل المحدد، وسيفتح TiPlay ‏Siri بعد التأخير المحدد. تلزم خدمة أزرار المقود إذا استحوذ مساعد السيارة على الشاشة. يسري فورًا.</string>
+    <string name="wheel_siri_double_press_interval">فاصل الضغط المزدوج</string>
+    <string name="wheel_siri_trigger_delay">تأخير تشغيل Siri</string>
+    <string name="wheel_siri_long_press_only">Siri بالضغط المطوّل فقط</string>
+    <string name="wheel_siri_long_press_only_description">يفتح Siri بالضغط المطوّل على زر الصوت في المقود فقط. لا يفعل الضغط القصير شيئًا في TiPlay.</string>
     <string name="wheel_key_role_back">رجوع</string>
     <string name="wheel_key_service_label">أزرار المقود في TiPlay</string>
     <string name="wheel_key_service_description">تصفية اختيارية لمفاتيح المقود لضبط صوت الملاحة أثناء الإرشادات الصوتية وتقريب خريطة لوحة العدادات وعصا تحكم CarPlay والتحكم بالمكالمات. لا تتم قراءة محتوى الشاشة.</string>
@@ -767,12 +775,35 @@
     <string name="settings_ambient_enable">تفعيل التحكم بالإضاءة المحيطية</string>
     <string name="settings_ambient_enable_description">يحاول إيقاف التحكم استعادة الألوان والسطوع والمنطقة الأصلية. يلزم تفويض ADB موجود.</string>
     <string name="settings_ambient_music">متابعة الموسيقى</string>
-    <string name="settings_ambient_music_description">أثناء التشغيل تتبع الموسيقى أو تستخدم ألوانًا وسطوعًا ثابتين. عند الإيقاف المؤقت أو قطع الاتصال تبقى كل المناطق عند أدنى مستوى. تُطبق التغييرات بعد الحفظ.</string>
+    <string name="settings_ambient_music_description">أثناء التشغيل تتبع الموسيقى أو تستخدم ألوانًا وسطوعًا ثابتين. ما تفعله الإضاءة عند عدم تشغيل موسيقى يُضبط بشكل منفصل أدناه. تُطبق التغييرات بعد الحفظ.</string>
     <string name="settings_ambient_color_mode">تغييرات اللون</string>
     <string name="settings_ambient_speed">سرعة انتقال السطوع</string>
-    <string name="settings_ambient_palette">أرقام ألوان المصنع (اختيارات متعددة)</string>
-    <string name="settings_ambient_palette_summary">الألوان · %1$d محددة</string>
-    <string name="settings_ambient_select_all">تحديد الكل</string>
+    <string name="settings_ambient_behavior_title">ماذا يحدث</string>
+    <string name="settings_ambient_behavior_off">التحكم متوقف. تحتفظ السيارة بألوان الإضاءة وسطوعها ومنطقتها الخاصة.</string>
+    <string name="settings_ambient_behavior_follow">أثناء تشغيل الموسيقى · %1$s: تتبع الإضاءة الموسيقى حتى المستوى %2$d.</string>
+    <string name="settings_ambient_behavior_fixed">أثناء تشغيل الموسيقى · %1$s: تبقى الإضاءة بلون ثابت واحد عند المستوى %2$d.</string>
+    <string name="settings_ambient_behavior_idle">عند الإيقاف المؤقت أو التوقف أو قطع الاتصال: تنخفض كل المناطق إلى أدنى مستوى، وقد يؤدي ذلك إلى إطفاء الإضاءة.</string>
+    <string name="settings_ambient_behavior_idle_steady">عند الإيقاف المؤقت أو التوقف أو قطع الاتصال · %1$s: تبقى الإضاءة على اللون المختار عند المستوى %2$d.</string>
+    <string name="settings_ambient_behavior_idle_car">بعد 15 ثانية دون موسيقى: تعود الإضاءة إلى إعدادات السيارة، ويستعيد TiPlay التحكم عند بدء الموسيقى.</string>
+    <string name="settings_ambient_behavior_other_zone">لا تتغير المنطقة الأخرى أثناء تشغيل الموسيقى.</string>
+    <string name="settings_ambient_behavior_lowest">المستوى 0: تبقى كل المناطق على أدنى مستوى دائمًا، وقد يؤدي ذلك إلى إطفاء الإضاءة.</string>
+    <string name="settings_ambient_idle">عند عدم تشغيل موسيقى</string>
+    <string name="settings_ambient_idle_steady">توهج ثابت</string>
+    <string name="settings_ambient_idle_car">إضاءة السيارة</string>
+    <string name="settings_ambient_idle_off">أدنى مستوى (قد تكون مظلمة)</string>
+    <string name="settings_ambient_behavior_restore">أوقف التحكم لإعادة الإضاءة إلى إعدادات السيارة.</string>
+    <string name="settings_ambient_mode_energy_desc">تتغير الألوان بحسب علو الصوت.</string>
+    <string name="settings_ambient_mode_beat_desc">تتغير الألوان مع كل نبضة.</string>
+    <string name="settings_ambient_mode_tempo_desc">تتغير الألوان بحسب الإيقاع التقديري (BPM).</string>
+    <string name="settings_ambient_mode_bass_desc">تتغير الألوان مع ضربات الجهير.</string>
+    <string name="settings_ambient_mode_smart_desc">تتغير الألوان مع ضربات الجهير والنبضات القوية.</string>
+    <string name="settings_ambient_colors_title">الألوان</string>
+    <string name="settings_ambient_colors_hint_follow">اضغط على الألوان التي يمكن للإضاءة استخدامها. تتنقل الإضاءة بين اختيارك.</string>
+    <string name="settings_ambient_colors_hint_fixed">اضغط على اللون المطلوب. الوضع الثابت يعرض لونًا واحدًا.</string>
+    <string name="settings_ambient_colors_hint_album">تؤخذ الألوان من غلاف الألبوم. أوقف اتباع غلاف الألبوم لاختيار الألوان بنفسك.</string>
+    <string name="settings_ambient_swatch">اللون %1$d</string>
+    <string name="settings_ambient_swatch_selected">اللون %1$d، محدد</string>
+    <string name="settings_ambient_brightness_value">المستوى %1$d من 6</string>
     <string name="settings_ambient_select_one">حدد لونًا واحدًا على الأقل</string>
     <string name="settings_ambient_brightness">أقصى سطوع</string>
     <string name="settings_ambient_minimum">0 (أدنى مستوى)</string>
@@ -800,6 +831,7 @@
     <string name="settings_speech_without_low_rates_description">عبر USB قد يرسل iPhone تعليمات الملاحة وردود Siri المنطوقة بجودة هاتفية 8 كيلوهرتز. يوقف هذا الخيار عرض 8 و16 كيلوهرتز لهذا الصوت ليختار iPhone معدلاً أعلى. إذا اختفت التعليمات الصوتية، فأوقفه. يعيد توصيل CarPlay.</string>
     <string name="bluetooth_connections_not_real">يُبلغ بلوتوث Android في وحدة القيادة هذه عن اتصال، لكن لا شيء يصل إلى iPhone: حتى الاتصال بخدمة غير موجودة ينجح. البلوتوث هنا يديره مكوّن خاص بالشركة المصنّعة لا تستطيع التطبيقات استخدامه، لذلك لا يمكن أن يعمل CarPlay اللاسلكي على وحدة القيادة هذه. جرّب اتصال USB.</string>
     <string name="bluetooth_cannot_open_connections">لا يستطيع بلوتوث Android في وحدة القيادة هذه فتح اتصالات للتطبيقات: ينقص البرنامج الثابت الجزء الذي تتصل عبره التطبيقات. المكالمات والموسيقى عبر بلوتوث السيارة نفسه لا تتأثر، لكن لا يمكن أن يعمل CarPlay اللاسلكي على وحدة القيادة هذه. جرّب اتصال USB.</string>
+    <string name="bluetooth_will_not_stay_on_hint">إذا لم يبقَ البلوتوث مُشغّلًا هناك، فهذه الوحدة تحتفظ بالبلوتوث لمكالماتها وموسيقاها فقط ولا تستطيع التطبيقات استخدامه. في هذه الحالة لا يمكن أن يعمل CarPlay اللاسلكي: استخدم كابل USB.</string>
     <string name="settings_fce_cluster_guidance">الإرشاد في عدادات FCE (تجريبي)</string>
     <string name="settings_fce_cluster_guidance_description">يعرض أسهم CarPlay ومسافة المنعطف التالي في واجهة الملاحة بلوحة العدادات على وحدات FCE، عبر الكتابة إلى خدمة المركبة في الوحدة. جُرّب على سيارة واحدة فقط؛ أوقفه إذا تصرفت لوحة العدادات بشكل غير متوقع.</string>
     <string name="settings_cluster_music">الموسيقى في لوحة العدادات (تجريبي)</string>
@@ -877,4 +909,26 @@
     <string name="settings_call_speakerphone_description">لهاتف أو جهاز لوحي بنظام Android يُستخدم كوحدة وسائط: يشغّل مكالمات CarPlay عبر مكبّر الصوت بدلًا من سمّاعة الأذن ويستخدم ميكروفون التحدث الحر. اتركه متوقفًا في وحدة وسائط السيارة. يُطبَّق من المكالمة التالية.</string>
     <string name="settings_forget_airplay_devices">نسيان جميع أجهزة AirPlay الموثوقة</string>
     <string name="settings_airplay_devices_forgotten">تم نسيان أجهزة AirPlay الموثوقة</string>
+    <string name="settings_navigation_attenuation">مستوى صوت إرشادات الملاحة</string>
+    <string name="settings_navigation_attenuation_value">%1$d ديسيبل</string>
+    <string name="settings_navigation_attenuation_description">يخفض صوت إرشادات ملاحة CarPlay فقط دون تغيير صوت الموسيقى أو المكالمات. يُطبَّق التغيير فورًا وتظل وحدة السيارة تتحكم بمستوى صوت الملاحة.</string>
+    <string name="settings_car_hotspot_control">نقطة اتصال السيارة</string>
+    <string name="settings_auto_car_hotspot_system_description">يشغّل نقطة اتصال السيارة المحفوظة عند فتح TiPlay وقبل الاتصال اللاسلكي. يحتاج TiPlay إلى إذن Android «تعديل إعدادات النظام»؛ لا يلزم ADB. لتتوفر نقطة الاتصال بعد إعادة التشغيل الكاملة، فعّل أيضًا فتح TiPlay بعد تشغيل السيارة. لا يتم إيقاف نقطة الاتصال تلقائيًا.</string>
+    <string name="settings_write_settings_granted">إذن «تعديل إعدادات النظام»: مسموح</string>
+    <string name="settings_write_settings_missing">إذن «تعديل إعدادات النظام» غير مسموح بعد. اسمح به ليتمكن TiPlay من تشغيل نقطة الاتصال.</string>
+    <string name="settings_write_settings_allow">السماح بالإذن</string>
+    <string name="settings_wifi_direct_scan_pause">إيقاف بحث السيارة عن Wi-Fi أثناء CarPlay · يتطلب ADB</string>
+    <string name="settings_wifi_direct_scan_pause_description">مع Wi-Fi Direct تبحث السيارة عن شبكات Wi-Fi كل بضع ثوانٍ، وكل بحث يجعل الموسيقى والفيديو يتقطعان. عند تشغيل هذا الخيار يوقف TiPlay البحث أثناء تشغيل CarPlay. عندها لا تتصل السيارة تلقائيًا بشبكة معروفة، مثل نقطة اتصال هاتفك، حتى ينتهي CarPlay؛ ويمكنك الاتصال بها يدويًا من إعدادات Wi-Fi في السيارة. أوقفه لتتصل السيارة تلقائيًا. يُطبَّق عند الاتصال التالي.</string>
+    <string name="temporary_system_bars">إظهار أشرطة النظام لمدة 5 ثوانٍ</string>
+    <string name="temporary_system_bars_description">اختياري: مرر لأعلى بعدد الأصابع المضبوط لفتح إعدادات TiPlay لعرض أشرطة حالة وتنقل السيارة المخفية لخمس ثوانٍ. التمرير لأسفل يفتح إعدادات TiPlay. عطّل الخيار إذا تعارض مع إيماءات السيارة؛ وقد تتجاهله بعض الأجهزة.</string>
+    <string name="wheel_media_play_pause">زر تشغيل/إيقاف مؤقت على المقود</string>
+    <string name="wheel_media_play_pause_description">عيّن زرًا متاحًا على المقود أو لوحة المفاتيح لتبديل تشغيل موسيقى CarPlay. يعمل أثناء الاتصال، وفي الخلفية عند تفعيل خدمة أزرار المقود. أثناء المكالمات أو عدم الاتصال، يحتفظ الزر بوظيفته الأصلية. قد يمنع نظام السيارة وصول بعض الأزرار.</string>
+    <string name="wheel_key_role_media_play_pause">تشغيل/إيقاف مؤقت</string>
+    <string name="wheel_media_navigation_reserved">أزرار التنقل والصفحة الرئيسية والصوت والمساعد الصوتي والوسائط محجوزة لوظائفها الأصلية. اختر زرًا آخر.</string>
+    <string name="black_corner_overlay">زوايا مستديرة سوداء</string>
+    <string name="black_corner_overlay_description">تغطية زوايا CarPlay بالأسود. اختر إيقافًا أو نصف قطر يدويًا أو قناع iPhone (تجريبي). يحتاج وضع iPhone إلى إعادة اتصال، ويعود إلى تقريب 24 dp إن تعذر الحصول على القناع. تظهر التعديلات اليدوية فورًا، ويحفظ زر الحفظ الاختيار.</string>
+    <string name="black_corner_overlay_off">إيقاف</string>
+    <string name="black_corner_overlay_value">%1$d dp</string>
+    <string name="iphone_corner_mask_mode">قناع iPhone (تجريبي)</string>
+
 </resources>

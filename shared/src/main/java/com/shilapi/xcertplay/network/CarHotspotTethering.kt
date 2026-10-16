@@ -1,7 +1,6 @@
 package com.shilapi.xcertplay.network
 
 import android.content.Context
-import android.net.ConnectivityManager
 import android.os.Bundle
 import android.os.ResultReceiver
 import android.provider.Settings
@@ -27,6 +26,9 @@ object CarHotspotTethering {
 
     fun permitted(context: Context): Boolean = Settings.System.canWrite(context)
 
+    /** Whether this Android version lets an app with [permitted] access start tethering itself, without ADB. */
+    fun appStartSupported(): Boolean = PlatformTetheringStart.supported()
+
     /** Blocking; serialize startup and connection requests, checking cancellation after acquiring the lock. */
     fun enable(
         context: Context,
@@ -38,14 +40,7 @@ object CarHotspotTethering {
         val observedAdbState = AtomicReference<Boolean?>()
         val startReflection: (ResultReceiver) -> Unit = { receiver ->
             try {
-                val service = ConnectivityManager::class.java.getDeclaredField("mService")
-                    .apply { isAccessible = true }
-                    .get(context.getSystemService(ConnectivityManager::class.java))
-                    ?: throw NoSuchMethodException("Connectivity service unavailable")
-                service.javaClass.getMethod(
-                    "startTethering", Int::class.javaPrimitiveType, ResultReceiver::class.java,
-                    Boolean::class.javaPrimitiveType, String::class.java,
-                ).invoke(service, 0, receiver, false, context.packageName)
+                PlatformTetheringStart.start(context, receiver, log)
             } catch (error: Exception) {
                 // #616: the report did not say which start path failed.
                 log("car hotspot: Android start request failed ${describe(error)}")

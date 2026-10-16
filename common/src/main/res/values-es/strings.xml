@@ -255,7 +255,6 @@
     <string name="mfi_authentication_ready">Autenticación MFi lista</string>
     <string name="mfi_certificate_signing_target">Certificado MFi y destino de firma</string>
     <string name="model">Modelo</string>
-    <string name="music_buffer">Búfer de música</string>
     <string name="resolution_native">Nativa</string>
     <string name="navigation_on_hud_and_instrument_cluster">Navegación en HUD y panel de instrumentos</string>
     <string name="navigation_stream_type">Tipo de flujo de navegación</string>
@@ -327,7 +326,9 @@
     <string name="s_30_fps_lighter_load">30 img/s · carga más ligera</string>
     <string name="s_3_connect">3 · Conéctate</string>
     <string name="s_3_tap_check_and_enable_below_this_enables_the_cluster_ma">3. Toca «Comprobar y activar» abajo. Esto activa el mapa del cuadro y el seguimiento automático del tema. Una sesión de CarPlay activa se reconectará una vez. Después puedes desconectar el ordenador.</string>
-    <string name="s_500_ms">500 ms</string>
+    <string name="settings_music_buffer_ms">%1$d ms</string>
+    <string name="settings_music_buffer_wireless">Búfer de música (inalámbrico)</string>
+    <string name="settings_music_buffer_wired">Búfer de música (cable USB)</string>
     <string name="s_60_fps_smoother_motion">60 img/s · movimiento más suave</string>
     <string name="s_60_lightest_load" formatted="false">60% · carga más ligera</string>
     <string name="s_80_lighter_load" formatted="false">80% · carga más ligera</string>
@@ -397,6 +398,7 @@
     <string name="wi_fi_session">Sesión Wi‑Fi</string>
     <string name="widest_width">Ancho máximo</string>
     <string name="wireless_carplay">CARPLAY INALÁMBRICO</string>
+    <string name="home_usb_carplay">CARPLAY POR USB</string>
     <string name="wireless_carplay_2">CarPlay inalámbrico</string>
     <string name="wireless_carplay_active">CarPlay inalámbrico activo</string>
     <string name="wireless_carplay_control_running">Control de CarPlay inalámbrico en ejecución</string>
@@ -623,6 +625,12 @@
     <string name="wheel_key_in_use">Ese botón ya es el botón de %1$s. Elige otro botón.</string>
     <string name="wheel_siri_key">Botón de Siri en el volante</string>
     <string name="wheel_siri_key_description">Abre Siri con un botón del volante que elijas mientras CarPlay está en pantalla. Un botón que el coche reserva para sí mismo solo funciona con el servicio de botones del volante, que también funciona con CarPlay en segundo plano. Sin CarPlay, o durante una llamada, el botón conserva su función en el coche.</string>
+    <string name="wheel_siri_double_press">Doble pulsación para Siri</string>
+    <string name="wheel_siri_double_press_description">Una sola pulsación conserva la función del coche. Pulsa dos veces dentro del intervalo elegido; TiPlay abre Siri tras el retardo seleccionado. Se requiere el servicio de botones del volante si el asistente del coche ocupa la pantalla. Se aplica inmediatamente.</string>
+    <string name="wheel_siri_double_press_interval">Intervalo de doble pulsación</string>
+    <string name="wheel_siri_trigger_delay">Retardo para iniciar Siri</string>
+    <string name="wheel_siri_long_press_only">Siri solo con pulsación larga</string>
+    <string name="wheel_siri_long_press_only_description">Solo una pulsación larga del botón de voz del volante abre Siri. Una pulsación corta no hace nada en TiPlay.</string>
     <string name="wheel_key_role_back">atrás</string>
     <string name="wheel_key_service_label">Botones del volante de TiPlay</string>
     <string name="wheel_key_service_description">Filtrado opcional de las teclas del volante para el volumen de las indicaciones de navegación, el zoom del mapa del panel, el joystick de CarPlay y los controles de llamada. No se lee el contenido de la pantalla.</string>
@@ -767,12 +775,35 @@
     <string name="settings_ambient_enable">Activar control de iluminación ambiental</string>
     <string name="settings_ambient_enable_description">Al desactivarlo se intenta restaurar los colores, el brillo y la zona originales. Requiere autorización ADB existente.</string>
     <string name="settings_ambient_music">Seguir la música</string>
-    <string name="settings_ambient_music_description">Durante la reproducción, sigue la música o usa colores y brillo fijos si se desactiva. Al pausar o desconectar, todas las zonas quedan al nivel mínimo. Los cambios se aplican al guardar.</string>
+    <string name="settings_ambient_music_description">Durante la reproducción, sigue la música o usa colores y brillo fijos si se desactiva. Lo que hacen las luces cuando no suena música se ajusta por separado abajo. Los cambios se aplican al guardar.</string>
     <string name="settings_ambient_color_mode">Cambios de color</string>
     <string name="settings_ambient_speed">Velocidad de transición del brillo</string>
-    <string name="settings_ambient_palette">Números de color OEM (selección múltiple)</string>
-    <string name="settings_ambient_palette_summary">Colores · %1$d seleccionados</string>
-    <string name="settings_ambient_select_all">Seleccionar todos</string>
+    <string name="settings_ambient_behavior_title">Qué ocurre</string>
+    <string name="settings_ambient_behavior_off">El control está desactivado. El coche mantiene sus propios colores, brillo y zona.</string>
+    <string name="settings_ambient_behavior_follow">Con música · %1$s: las luces siguen la música, hasta el nivel %2$d.</string>
+    <string name="settings_ambient_behavior_fixed">Con música · %1$s: las luces se quedan en un color fijo en el nivel %2$d.</string>
+    <string name="settings_ambient_behavior_idle">En pausa, detenido o desconectado: todas las zonas bajan al nivel mínimo, que puede apagar las luces.</string>
+    <string name="settings_ambient_behavior_idle_steady">En pausa, detenido o desconectado · %1$s: las luces mantienen el color elegido al nivel %2$d.</string>
+    <string name="settings_ambient_behavior_idle_car">Sin música durante 15 segundos: las luces vuelven a los ajustes del coche y TiPlay retoma el control cuando empieza la música.</string>
+    <string name="settings_ambient_behavior_other_zone">La otra zona no cambia mientras suena la música.</string>
+    <string name="settings_ambient_behavior_lowest">Nivel 0: todas las zonas se quedan en el nivel mínimo, que puede apagar las luces.</string>
+    <string name="settings_ambient_idle">Cuando no suena música</string>
+    <string name="settings_ambient_idle_steady">Brillo constante</string>
+    <string name="settings_ambient_idle_car">Iluminación del coche</string>
+    <string name="settings_ambient_idle_off">Nivel mínimo (puede quedar oscuro)</string>
+    <string name="settings_ambient_behavior_restore">Desactiva el control para devolver las luces a los ajustes del coche.</string>
+    <string name="settings_ambient_mode_energy_desc">Los colores cambian según lo fuerte que suena la música.</string>
+    <string name="settings_ambient_mode_beat_desc">Los colores cambian en cada pulso.</string>
+    <string name="settings_ambient_mode_tempo_desc">Los colores cambian al ritmo estimado (BPM).</string>
+    <string name="settings_ambient_mode_bass_desc">Los colores cambian con los golpes de graves.</string>
+    <string name="settings_ambient_mode_smart_desc">Los colores cambian con los graves y los pulsos fuertes.</string>
+    <string name="settings_ambient_colors_title">Colores</string>
+    <string name="settings_ambient_colors_hint_follow">Toca los colores que pueden usar las luces. Cambian entre tu selección.</string>
+    <string name="settings_ambient_colors_hint_fixed">Toca el color que quieres usar. El modo fijo muestra un solo color.</string>
+    <string name="settings_ambient_colors_hint_album">Los colores salen de la portada del álbum. Desactiva Seguir la portada del álbum para elegirlos tú.</string>
+    <string name="settings_ambient_swatch">Color %1$d</string>
+    <string name="settings_ambient_swatch_selected">Color %1$d, seleccionado</string>
+    <string name="settings_ambient_brightness_value">Nivel %1$d de 6</string>
     <string name="settings_ambient_select_one">Selecciona al menos un color</string>
     <string name="settings_ambient_brightness">Brillo máximo</string>
     <string name="settings_ambient_minimum">0 (nivel mínimo)</string>
@@ -800,6 +831,7 @@
     <string name="settings_speech_without_low_rates_description">Por USB, el iPhone puede enviar las indicaciones de navegación y las respuestas habladas de Siri con calidad telefónica de 8 kHz. Esta opción deja de ofrecer 8 y 16 kHz para ese audio y el iPhone elige una frecuencia mayor. Si las indicaciones dejan de oírse, desactívala. Reconecta CarPlay.</string>
     <string name="bluetooth_connections_not_real">El Bluetooth de Android de esta unidad principal indica una conexión, pero nada llega al iPhone: incluso la conexión a un servicio que no existe tiene éxito. Aquí el Bluetooth lo gestiona un módulo propio del fabricante que las apps no pueden usar, por lo que CarPlay inalámbrico no puede funcionar en esta unidad principal. Prueba una conexión USB.</string>
     <string name="bluetooth_cannot_open_connections">El Bluetooth de Android de esta unidad principal no puede abrir conexiones para las apps: al firmware le falta la parte por la que se conectan las apps. Las llamadas y la música por el Bluetooth del coche no se ven afectadas, pero CarPlay inalámbrico no puede funcionar en esta unidad principal. Prueba una conexión USB.</string>
+    <string name="bluetooth_will_not_stay_on_hint">Si el Bluetooth no se queda activado ahí, esta unidad principal reserva el Bluetooth para sus propias llamadas y música, y las apps no pueden usarlo. En ese caso CarPlay inalámbrico no puede funcionar: usa un cable USB.</string>
     <string name="settings_fce_cluster_guidance">Indicaciones en el cuadro FCE (experimental)</string>
     <string name="settings_fce_cluster_guidance_description">Muestra las flechas de CarPlay y la distancia al próximo giro en la vista de navegación del cuadro de instrumentos en unidades FCE, escribiendo en el servicio del vehículo de la unidad. Probado solo en un coche; desactívalo si el cuadro se comporta de forma inesperada.</string>
     <string name="settings_cluster_music">Música en el cuadro (experimental)</string>
@@ -828,4 +860,26 @@
     <string name="settings_call_speakerphone_description">Para un teléfono o una tableta Android usados como unidad principal: reproduce las llamadas de CarPlay por su altavoz en lugar del auricular y usa su micrófono manos libres. Déjalo desactivado en la unidad principal de un coche. Se aplica desde la próxima llamada.</string>
     <string name="settings_forget_airplay_devices">Olvidar todos los dispositivos AirPlay de confianza</string>
     <string name="settings_airplay_devices_forgotten">Se olvidaron los dispositivos AirPlay de confianza</string>
+    <string name="settings_navigation_attenuation">Volumen de las indicaciones de navegación</string>
+    <string name="settings_navigation_attenuation_value">%1$d dB</string>
+    <string name="settings_navigation_attenuation_description">Reduce solo las indicaciones de navegación de CarPlay, sin cambiar música ni llamadas. Se aplica al instante; sigue funcionando el volumen de navegación de la unidad.</string>
+    <string name="settings_car_hotspot_control">Punto de acceso del coche</string>
+    <string name="settings_auto_car_hotspot_system_description">Activa el punto de acceso guardado del coche al abrir TiPlay y antes de una conexión inalámbrica. TiPlay necesita el acceso de Android «Modificar ajustes del sistema»; no se requiere ADB. Para tener el punto de acceso tras un reinicio completo, activa también abrir TiPlay al arrancar el coche. El punto de acceso no se desactiva automáticamente.</string>
+    <string name="settings_write_settings_granted">Acceso «Modificar ajustes del sistema»: permitido</string>
+    <string name="settings_write_settings_missing">El acceso «Modificar ajustes del sistema» aún no está permitido. Permítelo para que TiPlay pueda activar el punto de acceso.</string>
+    <string name="settings_write_settings_allow">Permitir acceso</string>
+    <string name="settings_wifi_direct_scan_pause">Pausar la búsqueda de Wi-Fi del coche con CarPlay · requiere ADB</string>
+    <string name="settings_wifi_direct_scan_pause_description">Con Wi-Fi Direct el coche busca redes Wi-Fi cada pocos segundos, y cada búsqueda hace que la música y el vídeo se corten. Con esta opción, TiPlay pausa la búsqueda mientras CarPlay está activo. Entonces el coche tampoco se conecta solo a una red conocida, como el punto de acceso de tu teléfono, hasta que CarPlay termina; puedes conectarte a mano en los ajustes de Wi-Fi del coche. Desactívala para que el coche se conecte solo. Se aplica en la próxima conexión.</string>
+    <string name="temporary_system_bars">Mostrar barras del sistema durante 5 segundos</string>
+    <string name="temporary_system_bars_description">Opcional: desliza hacia arriba con el número de dedos configurado para abrir los ajustes de TiPlay y mostrar durante cinco segundos las barras ocultas del vehículo. Deslizar hacia abajo sigue abriendo los ajustes. Desactívalo si hay conflictos; algunos equipos pueden ignorarlo.</string>
+    <string name="wheel_media_play_pause">Tecla reproducir/pausar del volante</string>
+    <string name="wheel_media_play_pause_description">Asigna una tecla disponible del volante o teclado para alternar reproducción y pausa en CarPlay. Funciona con CarPlay conectado, también en segundo plano con el servicio de teclas activo. Durante llamadas o sin conexión, conserva su función original. El vehículo puede reservar ciertas teclas.</string>
+    <string name="wheel_key_role_media_play_pause">Reproducir/pausar</string>
+    <string name="wheel_media_navigation_reserved">Las teclas de navegación, Inicio, volumen, asistente de voz y multimedia conservan sus funciones originales. Elige otra tecla.</string>
+    <string name="black_corner_overlay">Esquinas redondeadas negras</string>
+    <string name="black_corner_overlay_description">Cubre de negro las esquinas de CarPlay. Elige Desactivado, un radio manual o la máscara del iPhone (experimental). El modo iPhone necesita reconexión y vuelve a 24 dp si no llega una máscara válida. Los cambios manuales se previsualizan al instante; guarda para conservarlos.</string>
+    <string name="black_corner_overlay_off">Desactivado</string>
+    <string name="black_corner_overlay_value">%1$d dp</string>
+    <string name="iphone_corner_mask_mode">Máscara del iPhone (experimental)</string>
+
 </resources>

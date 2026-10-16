@@ -1,6 +1,9 @@
 package com.shilapi.xcertplay.transport
 
+import com.shilapi.xcertplay.network.WirelessStartupException
+import com.shilapi.xcertplay.network.WirelessStartupFailure
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -32,6 +35,24 @@ class BluetoothRadioCheckTest {
                 BluetoothRadioCheck.blocker(adapterPresent = false, enabled = false, pausedByDiPlay = paused),
             )
         }
+    }
+
+    // No retry gives a head unit a Bluetooth adapter; it used to be retried for ever as "Connecting to your iPhone".
+    @Test fun aMissingAdapterStopsTheAttemptsWithItsCause() {
+        val failure = BluetoothRadioCheck.failure(BluetoothRadioCheck.NO_ADAPTER)
+        assertTrue(failure is WirelessStartupException)
+        assertEquals(WirelessStartupFailure.BLUETOOTH_UNUSABLE, (failure as WirelessStartupException).reason)
+        assertFalse(failure.reason.retryable)
+        assertEquals(BluetoothRadioCheck.NO_ADAPTER, failure.message)
+        assertTrue(BluetoothRadioCheck.NO_ADAPTER.startsWith("Bluetooth adapter is unavailable"))
+        assertTrue(BluetoothRadioCheck.NO_ADAPTER.contains(BluetoothLinkCheck.NO_SOCKETS_MARK))
+    }
+
+    // The driver can switch the radio on, so that attempt goes on being retried.
+    @Test fun aRadioThatIsOffIsStillRetried() {
+        val failure = BluetoothRadioCheck.failure(BluetoothRadioCheck.RADIO_OFF)
+        assertFalse(failure is WirelessStartupException)
+        assertEquals(BluetoothRadioCheck.RADIO_OFF, failure.message)
     }
 
     // CarPlayHostActivity shows the request in the app's language by finding these words.

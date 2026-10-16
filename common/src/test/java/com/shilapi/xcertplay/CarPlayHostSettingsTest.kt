@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.SeekBar
+import android.widget.Switch
 import android.widget.RadioButton
 import android.widget.TextView
 import com.shilapi.xcertplay.airplay.*
@@ -96,6 +97,56 @@ class CarPlayHostSettingsTest {
             gesture(configured, y = -500f)
             assertFalse(field("menuOpen") as Boolean)
         }
+    }
+
+    @Test fun optedInUpwardGestureRevealsBarsWithoutOpeningSettingsAndDownwardGestureKeepsWorking() {
+        setField("temporarySystemBarsEnabled", true)
+        invoke("applyFullscreenMode")
+        gesture(3, y = -500f)
+        assertFalse(field("menuOpen") as Boolean)
+        assertTrue(field("temporarySystemBarsVisible") as Boolean)
+        assertTrue(AirPlayPersistence.loadHideTopBar(activity))
+        assertTrue(AirPlayPersistence.loadHideBottomBar(activity))
+        gesture(3)
+        assertTrue(field("menuOpen") as Boolean)
+        assertFalse(field("temporarySystemBarsVisible") as Boolean)
+    }
+
+    @Test fun releasingFingersAfterBarPeekCannotGenerateStrayCarPlayTouches() {
+        val controller = mock(CarPlayController::class.java)
+        setField("controller", controller)
+        setField("temporarySystemBarsEnabled", true)
+        touch(MotionEvent.ACTION_DOWN, 1, 100f)
+        touch(MotionEvent.ACTION_POINTER_DOWN, 2, 100f)
+        touch(MotionEvent.ACTION_POINTER_DOWN, 3, 100f)
+        touch(MotionEvent.ACTION_MOVE, 3, -300f)
+        assertTrue(field("temporarySystemBarsVisible") as Boolean)
+        touch(MotionEvent.ACTION_POINTER_UP, 3, -300f)
+        touch(MotionEvent.ACTION_UP, 1, -300f)
+        assertEquals(false, field("gestureSequenceActive"))
+        // Exactly one empty-release when gesture tracking started; no mismatched CarPlay UP.
+        org.mockito.Mockito.verify(controller, org.mockito.Mockito.times(1)).sendTouch(emptyList())
+    }
+
+    @Test fun temporaryBarsSettingIsStagedInFullscreenSettingsAndDiscardable() {
+        AirPlayPersistence.saveTemporarySystemBars(activity, false)
+        invoke("loadPersistedSettings")
+        assertEquals(false, field("temporarySystemBarsEnabled"))
+        invoke("openSettingsMenu")
+        val controls = invoke("buildFullscreenSection") as ViewGroup
+        views(controls).filterIsInstance<Switch>()
+            .single { it.contentDescription == activity.getString(R.string.temporary_system_bars_description) }
+            .performClick()
+        assertEquals(true, field("temporarySystemBarsEnabled"))
+        assertFalse(AirPlayPersistence.loadTemporarySystemBars(activity))
+        invoke("cancelSettingsEdits")
+        assertEquals(false, field("temporarySystemBarsEnabled"))
+        invoke("openSettingsMenu")
+        setField("temporarySystemBarsEnabled", true)
+        invoke("persistMenuSettings")
+        invoke("loadPersistedSettings")
+        assertTrue(AirPlayPersistence.loadTemporarySystemBars(activity))
+        assertEquals(true, field("temporarySystemBarsEnabled"))
     }
 
     @Test fun liftingAFingerCancelsTrackingUntilTheNextGesture() {
@@ -643,6 +694,31 @@ class CarPlayHostSettingsTest {
 
         assertFalse(field("menuOpen") as Boolean)
         assertEquals(edited, AirPlayPersistence.loadSafeAreaRect(activity, 1920, 942))
+    }
+
+    @Test fun localBlackCornerSettingPreviewsWithoutChangingVideoSessionAndCanBeCancelled() {
+        assertEquals(0, AirPlayPersistence.loadBlackCornerRadiusDp(activity))
+        val maskLayer = field("blackCornerOverlay") as CarPlayBlackCornerOverlay
+        val root = maskLayer.parent as ViewGroup
+        assertTrue(root.indexOfChild(field("videoView") as View) < root.indexOfChild(maskLayer))
+        assertTrue(root.indexOfChild(maskLayer) < root.indexOfChild(field("gestureOverlay") as View))
+        invoke("openSettingsMenu")
+        val mask = field("blackCornerOverlay") as CarPlayBlackCornerOverlay
+        assertEquals(0, mask.radiusDp)
+        setField("blackCornerRadiusDp", 36)
+        mask.radiusDp = 36
+        assertEquals(36, mask.radiusDp)
+        invoke("cancelSettingsEdits")
+        assertEquals(0, mask.radiusDp)
+        assertEquals(0, AirPlayPersistence.loadBlackCornerRadiusDp(activity))
+        // The local overlay is saved with the other menu settings and survives a settings reload.
+        invoke("openSettingsMenu")
+        setField("blackCornerRadiusDp", 24)
+        invoke("persistMenuSettings")
+        invoke("loadPersistedSettings")
+        assertEquals(24, mask.radiusDp)
+        assertEquals(24, AirPlayPersistence.loadBlackCornerRadiusDp(activity))
+        invoke("cancelSettingsEdits")
     }
 
     private fun resizeWindow(width: Int, height: Int) {

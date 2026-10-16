@@ -1,5 +1,9 @@
 package com.shilapi.xcertplay.transport
 
+import com.shilapi.xcertplay.network.WirelessStartupException
+import com.shilapi.xcertplay.network.WirelessStartupFailure
+import java.io.IOException
+
 /**
  * What wireless startup can know about the head unit's Bluetooth before it changes the Wi-Fi.
  *
@@ -18,7 +22,16 @@ object BluetoothRadioCheck {
         else -> null
     }
 
-    const val NO_ADAPTER = "Bluetooth adapter is unavailable"
+    /**
+     * What [blocker]'s answer is thrown as. A radio that is off can be switched on, so that attempt is
+     * retried; no retry gives a head unit an adapter, so that one stops with its cause.
+     */
+    fun failure(blocker: String): IOException =
+        if (blocker == NO_ADAPTER) WirelessStartupException(WirelessStartupFailure.BLUETOOTH_UNUSABLE, blocker)
+        else IOException(blocker)
+
+    /** Ends in the words the host screen matches on for Bluetooth that apps cannot use. */
+    const val NO_ADAPTER = "Bluetooth adapter is unavailable: Android on this head unit ${BluetoothLinkCheck.NO_SOCKETS_MARK}"
 
     /** The words that ask the driver to act; the host screen matches on them. */
     const val RADIO_OFF_MARK = "Turn on Bluetooth"

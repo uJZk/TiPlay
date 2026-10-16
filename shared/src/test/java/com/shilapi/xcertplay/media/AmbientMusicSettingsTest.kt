@@ -49,5 +49,13 @@ class AmbientMusicSettingsTest {
         assertEquals(3, values.area)
         assertEquals(AmbientColorMode.BEAT, values.colorMode)
         assertEquals(AmbientColorSpeed.STANDARD, values.speed)
+        assertEquals(AmbientIdleBehavior.STEADY, values.idle)
+    }
+
+    @Test fun idleChoiceRoundTripsAndUnknownValuesFallBackToTheSteadyGlow() {
+        AmbientMusicSettings.save(context, AmbientMusicSettings.Values(idle = AmbientIdleBehavior.CAR))
+        assertEquals(AmbientIdleBehavior.CAR, AmbientMusicSettings.load(context).idle)
+        prefs.edit().putString("idle", "UNKNOWN").commit()
+        assertEquals(AmbientIdleBehavior.STEADY, AmbientMusicSettings.load(context).idle)
     }
 }
