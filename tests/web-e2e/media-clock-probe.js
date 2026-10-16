@@ -126,7 +126,7 @@ globalThis.startAudioProbe = async () => {
       for (const probe of workerProbes) probe.frame(local, rawSourceAt(local));
     }, 1000 / 30);
     await sleep(2000);
-    if (referencesWithoutDebug < 20) fail('Production playout references depended on debug capture');
+    if (referencesWithoutDebug < 20) fail('Missing production playout references: ' + JSON.stringify(audio.stats()));
     debugEnabled = true;
     audio.status({ audio: true, debug: true });
     await sleep(1500);

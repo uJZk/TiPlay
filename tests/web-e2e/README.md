@@ -18,7 +18,7 @@ All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LA
 | `geolocation.mjs` | Actual Chromium geolocation permissions/watch, browser-local datum cache across reload, release on opt-out, and persistent guidance with an explicit close action. Uses a module fixture without vehicle/Android sensors. |
 | `run.mjs` | Fake-phone VP8 streaming, pairing/code privacy, current default endpoint from `site/play/link.js`, touch/viewport, telemetry, reconnect/keyframe recovery, localization, takeover, nested hosting and offline Service Worker cache boundaries. Exercises worker-stream, worker-chunk, worker-frame and main-thread fallback. Optional FFmpeg/libvpx (`FFMPEG` override); otherwise browser `VideoEncoder`, also forced by `E2E_VP8=browser`. |
 | `phone-run.mjs` | Compiled shared phone API with a separate page server: removed local-page routes, Host/CORS/cache rules, H.264 framing, authenticated control/touch, epochs, recovery, `/bye` and privacy. Uses an unsupported-codec case and an explicit decoder stand-in; it is not an Android-device test. |
-| `airplay-video.mjs` | Real Mediabunny/WebCodecs playback engine, Video.js controls/skin, canvas pixels, seek/pause/rate, captions, mute restoration, ownership, disposal and sanitized failure diagnostics under production CSP. Needs an MP4 fixture; HLS optional. |
+| `airplay-video.mjs` | Real Mediabunny/WebCodecs playback engine, Video.js controls/skin, canvas pixels, seek/pause/rate, ±10-second buttons and mouse/touch half-screen gestures, accumulated feedback/bounds, narrow layout with production CSS, captions, mute restoration, ownership, disposal and sanitized failure diagnostics under production CSP. Needs an MP4 fixture; HLS optional. |
 | `airplay-photo.mjs` | Actual page CSP, authenticated synthetic EXIF JPEG, native decode/contain fit, ownership, resource reuse and cleanup. |
 | `airplay-audio.mjs` | Actual WebCodecs AAC-LC and CarPlay Opus decoding, nonzero PCM, sample metadata and asynchronous timeline sequence preservation. Prints ALAC/AAC-ELD capability probes; no software fallback is implied. |
 | `media-clock.mjs` | Production CSP, bundled soxr WASM/AudioWorklet, independent mixed CarPlay/mirror PCM, actual output timestamps, suspend/resume, and main/worker/OffscreenCanvas video timing. Requires H.264 decoding, AudioWorklet, `getOutputTimestamp`, OffscreenCanvas and transferable streams. |
@@ -39,6 +39,11 @@ checks nonzero worklet output, independent CarPlay/mirror producers, an actual
 context suspend/resume and clock refinement. Main-thread presentation, real H.264
 worker decode with frame transfer, and worker OffscreenCanvas use the same output
 reference and retain the production video caps and audio early/late window.
+
+On Chromium builds that reject compiled WASM in AudioWorklet messages, the same
+production loader retries with cached bytes. The probe still requires actual
+nonzero worklet output and Standard-mode references; it cannot pass by bypassing
+audio output or widening a video deadline.
 
 The H.264 source is the original black 16×16
 [`embedded-tx3g.mp4` fixture](../web/fixtures/README.md), whose FFmpeg generation

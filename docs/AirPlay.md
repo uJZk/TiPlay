@@ -111,7 +111,8 @@ through playback information and events.
 
 TiPlay owns one audio-leading clock, bounded queues, buffering, seek and rate;
 silent video uses monotonic time. Underrun freezes both streams; playable buffers use
-their intersection. HLS date-time is not media position. Video.js adapts this engine,
+their intersection. HLS date-time is not media position. Video.js uses its official default skin with ±10-second seek controls and a
+matching casting-end button, and adapts this engine,
 without a second HTML video clock. SoundTouch preserves pitch during rate changes.
 Controls expose actual time/buffer/seek ranges, rate, available tracks, loading and
 Stop, without volume/fullscreen. Pause retains rate, including older APK commands

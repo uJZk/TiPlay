@@ -2,7 +2,7 @@
  * TiPlay decoder worker. Native streams keep their backpressure; fallback feeds use a pull-credit MessagePort.
  * Transferred frames require a main-thread acknowledgement before the next one is sent. */
 import { createDecoderPipeline, createFramePresenter } from './video.js';
-import { createTimedFrames, createVideoEpochGuard } from './media-timing.js';
+import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from './media-timing.js';
 import { createChunkStream, createFrameDelivery } from './transport.js';
 
 let presenter = null, timer = null, activeId = null;
@@ -11,15 +11,19 @@ const frames = createTimedFrames((frame, config, id, timing, outputWindow) => {
   if (id !== activeId) frame.close();
   else if (presenter) presenter.present(frame, config, timing, outputWindow);
   else delivery.present(frame, config, id, timing, outputWindow);
-}, { observe(source, ready, token) {
-  self.postMessage({ type: 'media-ready', id: activeId, source, ready, token });
-  return false;
+}, { observe(source, ready) {
+  // Scheduling stays with the decoder: a busy main thread must not hold a
+  // decoded frame past its deadline just to acknowledge a timing observation.
+  timing.observe('video', source, ready);
+  self.postMessage({ type: 'media-ready', id: activeId, source, ready });
 } });
-const epochs = createVideoEpochGuard(() => { frames.reset(); presenter?.close(); delivery.stop(); });
+const timing = createMediaTiming(plans => frames.delay(plans.video));
+const epochs = createVideoEpochGuard(() => { frames.reset(); timing.reset(); presenter?.close(); delivery.stop(); });
 const pipeline = typeof VideoDecoder === 'function' ? createDecoderPipeline({
   post: message => {
     if (message.type === 'end') stop();
     epochs.message(message);
+    if (message.type === 'config') timing.mode(message.config.mode);
     self.postMessage(message);
   },
   present: frames.present,
@@ -36,10 +40,6 @@ function stop() {
 self.onmessage = ({ data }) => {
   if (data.type === 'clock') pipeline?.clock(data.clock);
   else if (data.type === 'audio-output') { presenter?.audio(data.reference); frames.audio(data.reference); }
-  else if (data.type === 'delay') frames.delay(data.plan);
-  else if (data.type === 'media-ready-ack') {
-    if (data.id === activeId) frames.ready(data.token, data.plan);
-  }
   else if (data.type === 'canvas') presenter = createFramePresenter(data.canvas, {
     applyTimingPolicy: true,
   });

@@ -4,6 +4,9 @@ TiPlay shows CarPlay from an Android phone in the car browser. The iPhone
 connects by wireless CarPlay or USB; the browser reaches Android through its hotspot
 or shared Wi-Fi that permits communication between devices.
 
+The settings footer links **TiPlay 0.2.20** to the project releases. Android Main
+settings shows the same product version; playback has no corner version overlay.
+
 ## Connect and recover
 
 1. Configure the Android connection and permissions in TiPlay.
@@ -44,6 +47,14 @@ migrating the browser/bookmark. Disconnect, edit Android address and Connect, or
 a newly copied link. See [hotspot address setup](Hotspot-address.md) for Tesla private-address
 restrictions and Root/Shizuku/VPN behavior. Existing Wi-Fi uses the current attachment;
 saved credentials do not prove attachment, create an AP or change the default route.
+
+URL video supports double-tapping the left half to rewind ten seconds and the
+right half to advance ten seconds, following [YouTube's gesture](https://support.google.com/youtube/answer/7509567?co=GENIE.Platform%3DAndroid&hl=en).
+A single tap toggles the controls. Repeated double-taps accumulate the on-picture
+seconds indicator; seeks clamp to the media bounds. Video.js owns gesture recognition,
+feedback and interactive-target filtering, so slider/menu use keeps its own actions.
+Visible ±10-second buttons remain available for keyboard and assistive access.
+See [Video.js gestures](https://videojs.org/docs/framework/html/reference/components/gesture).
 
 ## Playback and security
 
@@ -177,7 +188,12 @@ minus synchronized scheduled presentation: negative is early, positive late. Mis
 shows unknown. This is not capture-to-screen latency or proof of hardware decode.
 See [Diagnostics.md](Diagnostics.md).
 
-Live video submits without waiting for audio or adding uncalibrated buffering. Live
+Decoded live video is scheduled in the decoder worker without a per-frame
+main-thread readiness acknowledgement. Timing observations still update the audio
+buffer estimate; transferred frames retain acknowledgement backpressure and final
+presentation checks. Source delay caps remain CarPlay 0 ms and AirPlay mirroring
+200 ms; actual output references retain the audio 45 ms early / 125 ms late window.
+Live video adds no uncalibrated buffering. Live
 audio follows its receiver sample/latency anchor; buffered music follows SETRATE.
 Arrival playback is an explicit synchronization fallback. Physical output latency
 requires device measurement; acceptance remains in [Todo.md](Todo.md).

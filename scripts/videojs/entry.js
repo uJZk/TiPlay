@@ -11,8 +11,14 @@ customElements.define('video-player', TiPlayVideoPlayer);
 import '@videojs/html/ui/container';
 import '@videojs/html/ui/controls';
 import '@videojs/html/ui/controls-content';
+import '@videojs/html/ui/controls-backdrop';
+import '@videojs/html/ui/controls-group';
 import '@videojs/html/ui/play-button';
 import '@videojs/html/ui/seek-button';
+import '@videojs/html/ui/gesture';
+import '@videojs/html/ui/seek-indicator';
+import '@videojs/html/ui/seek-indicator-value';
+import '@videojs/html/ui/status-announcer';
 import '@videojs/html/ui/playback-rate-button';
 import '@videojs/html/ui/captions-button';
 import '@videojs/html/ui/captions-radio-group';
@@ -29,9 +35,9 @@ import '@videojs/html/ui/slider-thumb';
 import '@videojs/html/ui/time';
 import '@videojs/html/ui/buffering-indicator';
 import { registerIcons } from '@videojs/html/icons/element/register';
-import { playIcon, pauseIcon, restartIcon, captionsOffIcon, captionsOnIcon, spinnerIcon, checkIcon } from '@videojs/html/icons/neutral';
-registerIcons('neutral', { play: playIcon, pause: pauseIcon, restart: restartIcon,
-  'captions-off': captionsOffIcon, 'captions-on': captionsOnIcon, spinner: spinnerIcon, check: checkIcon });
+import { playIcon, pauseIcon, restartIcon, captionsOffIcon, captionsOnIcon, spinnerIcon, checkIcon, seekIcon, speechIcon, chevronIcon } from '@videojs/html/icons/default';
+registerIcons('default', { play: playIcon, pause: pauseIcon, restart: restartIcon,
+  'captions-off': captionsOffIcon, 'captions-on': captionsOnIcon, spinner: spinnerIcon, check: checkIcon, seek: seekIcon, speech: speechIcon, chevron: chevronIcon });
 import '@videojs/html/i18n';
 import '@videojs/html/i18n/locales/zh-CN/register';
 export { VERSION } from '@videojs/html';

@@ -17,8 +17,8 @@ android {
         applicationId = "com.ujzk.tiplay"
         minSdk = 28
         targetSdk = 37
-        versionCode = 39
-        versionName = "0.2.20"
+        versionCode = providers.gradleProperty("tiplayVersionCode").get().toInt()
+        versionName = providers.gradleProperty("tiplayVersionName").get()
 
 
     }

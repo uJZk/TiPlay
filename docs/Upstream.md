@@ -6,7 +6,7 @@ TiPlay is a GPL-3.0 derivative of [DiPlay by shihabal3amri](https://github.com/s
 
 | Upstream | Role and baseline |
 | --- | --- |
-| [DiPlay](https://github.com/shihabal3amri/DiPlay) | CarPlay/shared Android source; full merge ancestry through `c30d3f0df18dd132739d864a9e054c73b3d57d8c` (0.2.19 plus main fixes). |
+| [DiPlay](https://github.com/shihabal3amri/DiPlay) | CarPlay/shared Android source; full merge ancestry through `1b1ac5f2` (0.2.20 plus main fixes). |
 | [Video.js](https://github.com/videojs/video.js) | Browser controls/media adapter; [pinned inputs and update procedure](../site/play/vendor/videojs/README.md). |
 | [Mediabunny](https://github.com/Vanilagy/mediabunny) | URL demuxing/WebCodecs, with SoundTouch and hls.js helpers; [provenance/licenses](../site/play/vendor/mediabunny/README.md). |
 | [FDK AAC](https://github.com/mstorsjo/fdk-aac) | Third-party modified AAC-ELD browser fallback; [source, modifications and license](../site/play/vendor/aac-eld/README.md). |

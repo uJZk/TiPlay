@@ -1,31 +1,26 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 .airplay-player { position:absolute; inset:0; z-index:3; background:#000; color:#fff; }
 .airplay-player [hidden], .airplay-player[hidden], .airplay-photo-stop[hidden] { display:none; }
-.airplay-player media-i18n, .airplay-player video-player { display:contents; }
-.airplay-player media-container { display:block; position:relative; width:100%; height:100%; overflow:hidden; }
-.airplay-player tiplay-media { display:contents; }
+.airplay-player media-i18n, .airplay-player video-player, .airplay-player tiplay-media { display:contents; }
+.airplay-player media-container { width:100%; height:100%; --media-video-border-radius:0; touch-action:manipulation; }
 .airplay-player .airplay-canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
-.airplay-control-bar { position:absolute; inset:auto 0 0; z-index:2; display:flex; align-items:center; gap:8px; padding:12px; padding-bottom:max(12px,env(safe-area-inset-bottom)); background:linear-gradient(transparent,rgba(0,0,0,.85)); }
-.airplay-control-bar .media-button { display:grid; place-items:center; flex-shrink:0; min-width:44px; min-height:44px; border:0; font:inherit; }
-.airplay-control-bar .media-button[hidden] { display:none; }
-.airplay-control-bar .media-button[data-available="false"] { display:none; }
-.airplay-control-bar .airplay-rate::after { content:attr(data-rate) "\00d7"; }
-.airplay-control-bar :focus-visible { outline:2px solid #fff; outline-offset:2px; }
-.airplay-control-bar media-time { font:12px monospace; white-space:nowrap; }
-.airplay-control-bar media-time-slider { flex:1; min-width:40px; }
-.airplay-control-bar media-time-slider { display:block; position:relative; height:44px; cursor:pointer; touch-action:none; }
-.airplay-control-bar media-slider-track { position:absolute; top:20px; left:0; width:100%; height:4px; border-radius:4px; background:rgba(255,255,255,.25); }
-.airplay-control-bar :is(media-slider-buffer,media-slider-fill) { display:block; position:absolute; inset:0 auto 0 0; width:var(--media-slider-fill,0%); border-radius:inherit; background:#fff; }
-.airplay-control-bar media-slider-buffer { width:var(--media-slider-buffer,0%); background:rgba(255,255,255,.45); }
-.airplay-control-bar media-slider-thumb { position:absolute; top:16px; left:var(--media-slider-fill,0%); width:12px; height:12px; border-radius:50%; background:#fff; transform:translateX(-50%); }
-.airplay-player media-buffering-indicator { position:absolute; inset:0; z-index:1; display:none; place-items:center; pointer-events:none; }
-.airplay-player media-buffering-indicator[data-visible] { display:grid; }
+.airplay-player .media-button[data-available="false"] { display:none; }
+.airplay-rate::after { content:attr(data-rate) "\00d7"; }
+/* Video.js default audio-skin seek anatomy, shared by the video +/-10 controls. */
+.media-seek-button-content { display:grid; position:relative; }
+.media-seek-button-backward-icon { scale:-1 1; }
+.media-seek-button-label { position:absolute; bottom:-3px; font-size:.7em; font-weight:500; letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
+.media-seek-button-backward-label { left:-1px; }
+.media-seek-button-forward-label { right:-1px; }
 .airplay-error { position:absolute; inset:40% 16px auto; text-align:center; pointer-events:none; }
 .airplay-photo-stop { position:absolute; z-index:3; bottom:max(16px,env(safe-area-inset-bottom)); right:max(16px,env(safe-area-inset-right)); }
-@media (max-width:600px) { .airplay-control-bar { gap:4px; padding-inline:8px; } .airplay-control-bar media-time[type=duration] { display:none; } }
-
 .airplay-captions { position:absolute; inset:auto 10% 84px; z-index:1; text-align:center; white-space:pre-line; color:#fff; font:20px sans-serif; text-shadow:0 1px 3px #000,0 -1px 3px #000; pointer-events:none; }
-.airplay-player media-controls, .airplay-player media-controls-content { display:contents; }
-.airplay-control-bar { transition:opacity .2s; }
-.airplay-player media-controls-content:not([data-visible]):not(:focus-within) .airplay-control-bar { opacity:0; pointer-events:none; }
-@media (max-width:420px) { .airplay-control-bar { flex-wrap:wrap; } .airplay-control-bar media-time-slider { flex-basis:100%; order:-1; } }
+@container media-root (width < 32rem) {
+  .airplay-player .video-controls-primary { flex-wrap:wrap; }
+  .airplay-player .video-time-slider-group { flex-basis:100%; order:-1; }
+}
+
+/* The official gesture indicator occupies the same two halves as its recognizers. */
+.airplay-player .airplay-seek-feedback { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.airplay-seek-feedback .media-seek-indicator { grid-column:1; justify-self:stretch; align-self:stretch; place-content:center; border-radius:50%; background:rgba(255,255,255,.08); }
+.airplay-seek-feedback .media-seek-indicator[data-direction="forward"] { grid-column:2; }

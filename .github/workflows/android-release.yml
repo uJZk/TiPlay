@@ -94,7 +94,7 @@ jobs:
           import subprocess
           import zipfile
           apk = Path('mobile/build/outputs/apk/release/mobile-release.apk')
-          version = re.search(r'versionName = "([^"]+)"', Path('mobile/build.gradle.kts').read_text()).group(1)
+          version = re.search(r'^tiplayVersionName=(.+)$', Path('gradle.properties').read_text(), re.M).group(1)
           assert re.fullmatch(r'[0-9A-Za-z.-]+', version), 'Invalid version'
           badging = subprocess.check_output([os.environ['ANDROID_HOME'] + '/build-tools/36.0.0/aapt', 'dump', 'badging', str(apk)], text=True)
           assert "name='com.ujzk.tiplay'" in badging and f"versionName='{version}'" in badging

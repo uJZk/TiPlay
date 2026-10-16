@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { Input, UrlSource, ALL_FORMATS, EncodedPacketSink } from '/play/vendor/mediabunny/mediabunny.min.js';
 import { encodeRecord, RECORD, FLAG } from '/play/link.js';
-import { constantDelay } from '/play/delay-plan.js';
 import { createFramePresenter } from '/play/video.js';
 
 // This fixture is an original 16x16 black H.264 sample, not captured media.
@@ -46,8 +45,7 @@ export async function createWorkerProbe(offscreen, clock) {
   });
   worker.onerror = event => errors.push(event.message);
   worker.onmessage = ({ data }) => {
-    if (data.type === 'media-ready') worker.postMessage({ type: 'media-ready-ack', id: 1, token: data.token, plan: constantDelay(0) });
-    else if (data.type === 'stats') lastStats = data.stats;
+    if (data.type === 'stats') lastStats = data.stats;
     else if (data.type === 'unsupported') errors.push(JSON.stringify(data));
     else if (data.type === 'frame') {
       try {
@@ -65,7 +63,6 @@ export async function createWorkerProbe(offscreen, clock) {
     worker.postMessage({ type: 'canvas', canvas: surface }, [surface]);
   }
   worker.postMessage({ type: 'clock', clock });
-  worker.postMessage({ type: 'delay', plan: constantDelay(0) });
   const stream = new ReadableStream({ start(value) { controller = value; } });
   worker.postMessage({ type: 'stream', id: 1, stream }, [stream]);
   controller.enqueue(encodeRecord({ kind: RECORD.CONFIG, epoch: 1, payload: new TextEncoder().encode(JSON.stringify({

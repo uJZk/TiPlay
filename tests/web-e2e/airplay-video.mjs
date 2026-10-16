@@ -40,11 +40,11 @@ const server = createServer((req, res) => {
   if(path === '/airplay-resource' && new URL(req.url,'http://localhost').searchParams.get('r')==='broken') {
     setTimeout(()=>{res.statusCode=502;res.end();},100);return;
   }
-  if (path === '/airplay-resource') { const data=readFileSync(sample); res.setHeader('Content-Type','video/mp4'); res.setHeader('Accept-Ranges','bytes'); const match=/bytes=(\d+)-(\d*)/.exec(req.headers.range??''); if(match){const start=+match[1],end=match[2]?+match[2]:data.length-1;res.statusCode=206;res.setHeader('Content-Range',`bytes ${start}-${end}/${data.length}`);res.end(data.subarray(start,end+1));}else res.end(data);return; }
+  if (path === '/airplay-resource') { const data=readFileSync(sample); res.setHeader('Content-Type','video/mp4'); res.setHeader('Accept-Ranges','bytes'); const match=/bytes=(\d+)-(\d*)/.exec(req.headers.range??''); if(match){const start=+match[1],end=Math.min(match[2]?+match[2]:data.length-1,data.length-1);if(start>=data.length||end<start){res.statusCode=416;res.setHeader('Content-Range',`bytes */${data.length}`);res.end();return;}res.statusCode=206;res.setHeader('Content-Range',`bytes ${start}-${end}/${data.length}`);res.end(data.subarray(start,end+1));}else res.end(data);return; }
   if (path === '/harness') {
     res.setHeader('Content-Type', 'text/html');
     const csp=readFileSync(root+'/index.html','utf8').match(/<meta http-equiv="Content-Security-Policy"[^>]+>/)[0];
-    res.end(`${csp}<link rel="stylesheet" href="/vendor/videojs/skin.min.css"><link rel="stylesheet" href="/airplay-controls.css"><div id="stage" style="position:relative;width:800px;height:480px"></div>`); return;
+    res.end(`${csp}<link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/vendor/videojs/skin.min.css"><link rel="stylesheet" href="/airplay-controls.css"><div id="stage" style="position:relative;width:800px;height:480px"></div>`); return;
   }
   try { const data = readFileSync(root + path); res.setHeader('Content-Type', ({ '.js':'text/javascript', '.css':'text/css', '.wasm':'application/wasm' })[extname(path)] ?? 'application/octet-stream'); res.end(data); }
   catch { res.statusCode = 404; res.end(); }
@@ -54,7 +54,7 @@ const url = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', headless:true, args:['--no-sandbox','--no-proxy-server','--autoplay-policy=no-user-gesture-required'] });
 try {
   for (const mode of ['webgl', '2d', ...(hls ? ['hls'] : [])]) {
-  const page = await browser.newPage();
+  const page = await browser.newPage({ hasTouch:true });
   await page.addInitScript(mode => {
     window.pictures = [];
     window.actualVideo = () => document.querySelector('tiplay-media')?.engine;
@@ -237,6 +237,60 @@ try {
     throw new Error('Time-slider gesture or seek edges were not diagnosed');
   console.log(JSON.stringify({mode, drag:dragDiagnostics.map(({event,position,duration,seeking,dragging})=>
     ({event,position,duration,seeking,dragging}))}));
+
+  const skipStart = await page.evaluate(() => actualVideo().currentTime);
+  await page.locator('media-seek-button[seconds="-10"]').click();
+  await page.waitForFunction(target => !actualVideo().seeking && Math.abs(actualVideo().currentTime - target) < 0.03, Math.max(0, skipStart - 10));
+  await page.locator('media-seek-button[seconds="10"]').click();
+  await page.waitForFunction(target => !actualVideo().seeking && Math.abs(actualVideo().currentTime - target) < 0.03, Math.max(0, skipStart - 10) + 10);
+  const surface = page.locator('media-container');
+  const area = await surface.boundingBox();
+  const point = side => ({ x: area.width * (side === 'left' ? .25 : .75), y: area.height * .4 });
+  await page.evaluate(() => { actualVideo().currentTime = 12; });
+  await page.waitForFunction(() => !actualVideo().seeking);
+  await surface.dblclick({ position: point('left') });
+  await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime - 2) < .03);
+  await surface.click({ position: point('right') });
+  await page.waitForTimeout(300);
+  if (!await page.evaluate(() => actualVideo().paused && Math.abs(actualVideo().currentTime - 2) < .03))
+    throw new Error('Single tap changed playback instead of only showing controls');
+  const right = point('right');
+  await page.touchscreen.tap(area.x + right.x, area.y + right.y);
+  await page.touchscreen.tap(area.x + right.x, area.y + right.y);
+  await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime - 12) < .03);
+  await page.waitForTimeout(850);
+  await page.evaluate(() => { actualVideo().currentTime = 0; });
+  await page.waitForFunction(() => !actualVideo().seeking);
+  await surface.dblclick({ position: point('right') });
+  await surface.dblclick({ position: point('right') });
+  const indicator = page.locator('media-seek-indicator');
+  if (await indicator.getAttribute('data-direction') !== 'forward' || !/^20/.test(await indicator.textContent()))
+    throw new Error('Rapid right-side seeking did not accumulate feedback');
+  await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime - 20) < .03);
+  await surface.dblclick({ position: point('right') });
+  await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime - actualVideo().duration) < .03);
+  await surface.dblclick({ position: point('left') });
+  await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime - (actualVideo().duration - 10)) < .03);
+  console.log(`${mode}: mouse/touch half-screen seeking, single-tap isolation, accumulation and duration clamp passed`);
+  const style = await page.locator('.airplay-stop').evaluate(button => {
+    const stop = getComputedStyle(button), play = getComputedStyle(document.querySelector('media-play-button'));
+    return { padding: stop.padding, border: stop.borderWidth, radius: stop.borderRadius,
+      playRadius: play.borderRadius, width: button.getBoundingClientRect().width,
+      icon: button.querySelector('svg').getBoundingClientRect().width };
+  });
+  if (style.padding !== '0px' || style.border !== '0px' || style.radius !== style.playRadius || style.icon > style.width)
+    throw new Error('Page styles overrode the official Video.js stop control: ' + JSON.stringify(style));
+  // The skin must remain usable on a narrow browser with the production page CSS.
+  await page.evaluate(() => { document.getElementById('stage').style.width = '320px'; });
+  for (const selector of ['media-seek-button[seconds="-10"]', 'media-seek-button[seconds="10"]', '.airplay-stop', 'media-time-slider']) {
+    const visible = await page.locator(selector).evaluate(control => {
+      const r = control.getBoundingClientRect(), parent = document.getElementById('stage').getBoundingClientRect();
+      return r.width > 0 && r.left >= parent.left && r.right <= parent.right;
+    });
+    if (!visible) throw new Error('Narrow Video.js layout clipped ' + selector);
+  }
+  await page.evaluate(() => { document.getElementById('stage').style.width = '800px'; });
+  console.log(`${mode}: +/-10 seeking, matching skin controls and narrow layout passed`);
 
   await page.evaluate(()=>{
     const player=actualVideo();

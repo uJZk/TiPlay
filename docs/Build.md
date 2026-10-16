@@ -6,6 +6,14 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
+The Android/browser product version comes from `tiplayVersionName` and
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). The current source
+is 0.2.20 (code 40); the code remains above the published TiPlay 0.2.16. Run
+`python3 scripts/build_site.py` after changing it to regenerate `app-version.js`.
+The browser diagnostic/cache revision is independent of this product version.
+Download pages continue to identify the latest published APK until a new release
+is verified. Debug APK metadata retains its diagnostic suffix.
+
 ### Check the source build
 
 Run the checks defined in the [Android workflow](../.github/workflows/android.yml): browser tests, public-tree scan, release-draft tests, Android unit tests, lint and debug builds. Retained `home`/`maphost` checks protect upstream compatibility. Optional Chromium checks are in [Testing](Testing.md).

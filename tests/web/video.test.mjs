@@ -26,6 +26,7 @@ class FakeDecoder {
   configure() { this.state = 'configured'; }
   decode(chunk) { this.chunks.push(chunk); }
   close() { this.state = 'closed'; }
+  reset() { this.state = 'unconfigured'; this.decodeQueueSize = 0; this.resets = (this.resets || 0) + 1; }
 }
 
 const config = (epoch, mode = 'carplay') => encodeRecord({
@@ -332,4 +333,32 @@ test('an expired GPU texture upload never clears or submits the canvas', () => {
   const frame = videoFrame(0); presenter.present(frame, { mode: 'carplay' }, 1000);
   assert.ok(calls.includes('upload')); assert.equal(calls.includes('clear'), false); assert.equal(calls.includes('drawArrays'), false);
   assert.equal(frame.closed, true); assert.equal(presenter.stats().expiredFrames, 1); presenter.dispose();
+});
+
+
+test('encoded dependency order survives PTS reordering and backlog recovery waits for a key frame', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const messages = [], pipeline = createDecoderPipeline({ post: value => messages.push(value), present() {} });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1)); controller.enqueue(keyFrame(1)); await settle();
+  const decoder = FakeDecoder.instances.at(-1);
+  const delta = (sequence, timestampUs) => encodeRecord({ kind: RECORD.FRAME, codec: 1, epoch: 1,
+    sequence, timestampUs, payload: Uint8Array.of(0, 0, 0, 1, 0x41) });
+  controller.enqueue(delta(1, 3000)); controller.enqueue(delta(2, 2000)); await settle();
+  assert.deepEqual(decoder.chunks.map(chunk => chunk.timestamp), [0, 3000, 2000],
+    'encoded reference/decode order cannot be sorted by presentation timestamps');
+  decoder.decodeQueueSize = 31;
+  controller.enqueue(delta(3, 4000)); controller.enqueue(delta(4, 5000)); await settle();
+  assert.equal(decoder.resets, 1); assert.equal(decoder.chunks.length, 3);
+  assert.equal(pipeline.stats().backlogResets, 1);
+  assert.equal(pipeline.stats().decodeDroppedFrames, 2);
+  assert.ok(messages.some(message => message.type === 'keyframe'));
+  controller.enqueue(keyFrame(1)); controller.enqueue(delta(5, 6000)); await settle();
+  assert.deepEqual(decoder.chunks.slice(-2).map(chunk => chunk.type), ['key', 'delta']);
 });

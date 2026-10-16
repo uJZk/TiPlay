@@ -3,7 +3,7 @@ name: Publish site
 on:
   push:
     branches: [main]
-    paths: ['site/**', 'scripts/build_site.py', 'scripts/assemble_site.py', '.github/workflows/pages.yml']
+    paths: ['gradle.properties', 'site/**', 'scripts/build_site.py', 'scripts/assemble_site.py', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read

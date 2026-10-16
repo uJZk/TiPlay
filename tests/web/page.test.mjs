@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
+import { APP_VERSION } from '../../site/play/app-version.js';
 import { DEFAULT_HOST, isCode, normalizeHost } from '../../site/play/link.js';
 
 const play = new URL('../../site/play/', import.meta.url);
@@ -267,10 +268,20 @@ test('the service worker answers only its own files, so the download pages in it
 test('the page loads only relative, same-origin resources', () => {
   const html = read('index.html');
   for (const [, url] of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
-    if (url === 'https://github.com/uJZk/TiPlay') continue; // the GPL source link
+    if (url === 'https://github.com/uJZk/TiPlay/releases') continue; // product version link
     assert.match(url, /^[a-z][\w./-]*$/, url);
   }
   for (const name of ['app.js', 'decoder-worker.js', 'style.css']) {
     assert.doesNotMatch(read(name), /(?:import|from|url\()\s*['"(]?(?:https?:)?\/\//, name);
   }
+});
+
+
+test('browser settings uses the Android product version without a playback overlay', () => {
+  const properties = readFileSync(new URL('../../gradle.properties', import.meta.url), 'utf8');
+  assert.equal(APP_VERSION, /^tiplayVersionName=(.+)$/m.exec(properties)[1]);
+  const html = read('index.html');
+  assert.match(html, /<footer><a id="page-version" href="https:\/\/github.com\/uJZk\/TiPlay\/releases"><\/a><\/footer>/);
+  assert.doesNotMatch(html, /<small id="page-version"/);
+  assert.doesNotMatch(read('style.css'), /#page-version\s*\{[^}]*position:fixed/);
 });

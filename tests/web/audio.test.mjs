@@ -112,6 +112,30 @@ test('a transient resampler load failure can recover without refreshing a runnin
   }
 });
 
+test('a worklet that rejects compiled WASM receives cached bytes once and ignores retired replies', async () => {
+  const browser = mockBrowser(), bytes = new Uint8Array([0, 97, 115, 109]).buffer;
+  let loads = 0;
+  const audio = createBrowserAudio({ loadResampler: loadTestResampler,
+    loadResamplerBytes: async () => { loads++; return bytes; }, credentials: () => ({ code: '1234', session: 'test' }) });
+  try {
+    await audio.activate();
+    const port = browser.nodes[0].port, callback = port.onmessage;
+    callback({ data: { resamplerModuleError: true } });
+    callback({ data: { resamplerModuleError: true } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(loads, 1);
+    const fallback = browser.messages.filter(message => message.resamplerBytes);
+    assert.equal(fallback.length, 1);
+    assert.notEqual(fallback[0].resamplerBytes, bytes, 'cached bytes must survive transfer for processor recovery');
+    assert.deepEqual(new Uint8Array(fallback[0].resamplerBytes), new Uint8Array(bytes));
+    port.onmessage({ data: { resamplerError: true } });
+    assert.match(audio.stats().error, /resampler could not start/);
+    audio.dispose();
+    callback({ data: { resamplerModuleError: true } });
+    assert.equal(loads, 1);
+  } finally { audio.dispose(); browser.done(); }
+});
+
 test('startup and Bluetooth demand never ask the browser for capture or permissions', async () => {
   const browser = mockBrowser(), descriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   let prompts = 0;

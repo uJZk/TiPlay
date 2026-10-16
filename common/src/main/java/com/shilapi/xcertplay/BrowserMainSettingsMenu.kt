@@ -166,7 +166,7 @@ internal class BrowserMainSettingsMenu(
                 if (stackTools) LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
                 else LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = if (i < tools.childCount - 1) dp(8) else 0 }
             val version = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
-            content.addView(text(version).also(ui::emphasize))
+            content.addView(text("TiPlay $version").apply { gravity = Gravity.CENTER }.also(ui::emphasize))
         }
         updateActions()
         statusWatch = BrowserSettingsStatusWatch(view) { carBluetooth.refresh(); refreshNetwork() }

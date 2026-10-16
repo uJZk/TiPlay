@@ -69,6 +69,11 @@ authenticated browser audio response, including codec configuration and decrypte
 packets or PCM. Its `browser/audio` attempt/written channels distinguish attempted writes
 from bytes accepted by the socket; they do not capture browser speaker output.
 
+Some browsers reject a compiled WASM Module sent to an AudioWorklet with
+`messageerror`. TiPlay retries initialization once using cached module bytes; it
+keeps the same resampler and clocks. An initialization failure reports
+“Audio resampler could not start.” rather than leaving silent PCM rejection.
+
 Resource diagnostics distinguish Android HTTP from iPhone FCUP, preserve upstream status
 and report bounded denial details in Debug. Service diagnostics distinguish missing
 permission from foreground eligibility; a granted microphone permission alone does not

@@ -11,6 +11,7 @@ import {
   isCode, linkFromAddress, linkLocation, mapPoint, newSessionId, normalizeHost, supportedCodecs,
   timeoutSignal, viewportFor,
 } from './link.js';
+import { APP_VERSION } from './app-version.js';
 import { createLocationNotice } from './location-notice.js';
 import { createBrowserLocation, locationEvents } from './geolocation.js';
 import { followAppearance } from './appearance.js';
@@ -24,7 +25,7 @@ import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
 import { createAirPlayTrustNotification } from './airplay-trust.js';
 import { createBrowserNotice } from './browser-notice.js';
-import { PAGE_VERSION, browserDiagnosticEvents } from './browser-diagnostics.js';
+import { browserDiagnosticEvents } from './browser-diagnostics.js';
 
 const STRINGS = {
   en: {
@@ -146,7 +147,7 @@ const renderReconnect = createReconnectOverlay({
 document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
 for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
 $('stats').setAttribute('aria-label', t('statsLabel'));
-$('page-version').textContent = `TiPlay ${PAGE_VERSION}`;
+$('page-version').textContent = `TiPlay ${APP_VERSION}`;
 
 function loadLink() {
   try {
@@ -193,7 +194,7 @@ function timingFor(mode) {
   if (!timing) {
     timing = createMediaTiming(delay => {
       browserAudio.delay(delay, mode);
-      if (mediaTiming === timing) sink?.delay(delay);
+      if (mediaTiming === timing) sink?.delay?.(delay);
     });
     mediaTimings.set(mode, timing);
     timing.mode(mode);
@@ -203,7 +204,7 @@ function timingFor(mode) {
 const browserAudio = createBrowserAudio({
   onMode: mode => {
     const timing = timingFor(mode);
-    if (!config) { mediaTiming = timing; sink?.delay(timing.plans()); }
+    if (!config) { mediaTiming = timing; sink?.delay?.(timing.plans()); }
   },
   onTiming: (source, mode) => timingFor(mode).observe('audio', source),
   onQueued: mode => timingFor(mode).started(),
@@ -317,8 +318,6 @@ async function setUpVideo() {
     sink = {
       clock(clock) { worker.postMessage({ type: 'clock', clock }); },
       audio(reference) { presenter?.audio(reference); worker.postMessage({ type: 'audio-output', reference }); },
-      delay(plans) { worker.postMessage({ type: 'delay', plan: plans.video }); },
-      ready(token, plan) { worker.postMessage({ type: 'media-ready-ack', id: streamId, token, plan }); },
       open(id, body, signal) {
         if (path.feed === 'stream') worker.postMessage({ type: 'stream', id, stream: body }, [body]);
         else {
@@ -597,13 +596,12 @@ function onVideoMessage(message) {
   if (!active || message.id !== streamId) return;
   if (message.type === 'media-ready') {
     mediaTiming.observe('video', message.source, message.ready);
-    sink?.ready?.(message.token, mediaTiming.plan());
     return;
   }
   if (message.type === 'alive' && message.id === streamId) attempt = 0;
   else if (message.type === 'config') {
     mediaTiming = timingFor(message.config.mode);
-    sink?.delay(mediaTiming.plans());
+    sink?.delay?.(mediaTiming.plans());
     // Audio has its own ordered per-type reset/epoch. Its HTTP response may deliver
     // the new producer's PCM before this config, so video cannot clear that audio.
     if (config?.epoch !== message.config.epoch) videoStats = {};

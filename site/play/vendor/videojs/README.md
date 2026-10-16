@@ -1,6 +1,6 @@
 # Video.js controls and media adapter
 
-Self-hosted ESM controls and native neutral-skin CSS from the official Video.js
+Self-hosted ESM controls and official default-skin CSS from the official Video.js
 HTML and media packages (Apache-2.0). TiPlay's native-like media adapter exposes
 its own Canvas/Web Audio playback engine to these controls.
 
@@ -12,7 +12,11 @@ and published tarball integrity. npm verifies that integrity during `npm ci`.
 `player.min.js` registers only the required player and UI components, with the
 Chinese locale included. There are no runtime CDN dependencies. `LICENSE`,
 `APACHE-2.0.txt`, `THIRD_PARTY_LICENSES.txt` and `player.min.js.LEGAL.txt` retain licenses and notices.
-TiPlay's control layout lives in `videojs-player.js` and `airplay-controls.css`.
+`videojs-player.js` uses the official default skin's container, backdrop, controls
+and time-slider groups, plus Video.js half-screen double-tap gestures, accumulated
+seek indicators and accessible seek buttons for ±10 seconds. The casting
+end action uses the same `media-button` style. `airplay-controls.css` handles
+Canvas placement and narrow layouts; page button styles exclude the player.
 The same build creates the [media toolkit bundle](../mediabunny/README.md).
 
 Rebuild with Node 22:

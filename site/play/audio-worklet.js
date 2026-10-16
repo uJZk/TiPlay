@@ -17,6 +17,9 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.nextContextFrame = null; this.outputUncertaintyMs = 0;
     this.retiring = [];
     this.disposed = false;
+    // Some browsers cannot deserialize a compiled Module in an AudioWorklet.
+    // Ask for bytes once; compile them during initialization, before a timeline exists.
+    this.port.onmessageerror = () => this.port.postMessage({ resamplerModuleError: true });
     this.port.onmessage = ({ data }) => {
       if (this.disposed) return;
       if (data.dispose) {
@@ -26,7 +29,11 @@ class TiPlayAudio extends AudioWorkletProcessor {
         this.streams.clear(); this.epochs.clear(); this.retiring = []; this.runtime = null; this.disposed = true;
         return;
       }
-      if (data.resamplerModule) this.runtime = new SoxrRuntime(data.resamplerModule);
+      if (data.resamplerModule || data.resamplerBytes) {
+        try {
+          this.runtime ??= new SoxrRuntime(data.resamplerModule || new WebAssembly.Module(data.resamplerBytes));
+        } catch (_) { this.port.postMessage({ resamplerError: true }); }
+      }
       if ('clock' in data) this.clock = data.clock;
       if ('contextAnchor' in data) this.contextAnchor = data.contextAnchor;
       if ('localTimeOriginMs' in data) this.localTimeOriginMs = data.localTimeOriginMs;

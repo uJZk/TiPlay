@@ -4,6 +4,16 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20
+
+- Merge DiPlay through `1b1ac5f2` (0.2.20 and subsequent fixes) with full ancestry. Keep TiPlay branding, application identity, Android phone + browser gates, serial AirPlay resource loading, casting admission and existing audio timing fixes.
+- Define the product version once in Gradle properties. Show **TiPlay 0.2.20** at the bottom of Android Main settings and as a release link in browser settings; remove the playback corner badge. Use TiPlay version code 40 so updates remain newer than 0.2.16.
+- Use the official Video.js 10 default skin and layout groups, isolate page button CSS, add left/right half-screen double-tap ±10-second seeking with accumulated feedback and accessible seek buttons, and match the casting-end button to the player.
+- Schedule decoded video inside the worker without waiting for a main-thread readiness round trip. Preserve encoded dependencies, transfer backpressure, presentation/epoch checks, CarPlay 0 ms and mirror 200 ms caps, and audio 45 ms early / 125 ms late limits.
+- Recover browsers that reject compiled WASM modules in AudioWorklet messages by compiling cached bytes during initialization. Keep the existing resampler and playback clocks; report initialization failures instead of silently discarding all PCM.
+
+Physical iPhone/vehicle smoothness and acoustic/panel latency require device acceptance.
+
 ## 0.2.16
 
 - Scope Debug mode to the current process, create a new capture session on each enable, show its performance hint in Main settings and offer explicit raw-history clearing after a successful ZIP save. Preserve exported artifacts when clearing.

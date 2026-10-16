@@ -139,7 +139,7 @@ test('late decoded video collapses to the newest due frame without presenting fu
   frames.reset(); assert.equal(items[2].closed, true);
 });
 
-test('worker waits for the shared delay acknowledgement and ignores retired frame tokens', () => {
+test('explicitly deferred readiness rejects retired scheduler tokens', () => {
   const shown = [], tokens = [];
   const frames = createTimedFrames(frame => shown.push(frame), { now: () => 1100, schedule: () => 1, cancel() {}, observe: (_, __, token) => { tokens.push(token); return false; } });
   const first = { close() { this.closed = true; } };
@@ -259,4 +259,28 @@ test('zero-cap audio retains the 125ms late tolerance relative to early video su
     assert.ok(offset >= -45 && offset <= 125);
     if (delay === 1000) assert.equal(offset, 125);
   }
+});
+
+
+test('a decoded burst bounds retained pictures and closes duplicate, evicted and expired frames once', () => {
+  let now = 1000;
+  const items = [], shown = [];
+  const frames = createTimedFrames(frame => { shown.push(frame); frame.close(); }, {
+    now: () => now, schedule: () => 1, cancel() {},
+  });
+  frames.delay(constantDelay(0));
+  for (let n = 0; n < 100; n++) {
+    const frame = { n, closes: 0, close() { this.closes++; } }; items.push(frame);
+    frames.present(frame, { mode: 'carplay', epoch: 1 }, 1, 1500 + n,
+      { sourceTimeMs: 5000 + n, clockGeneration: 1 });
+  }
+  assert.equal(items.filter(frame => frame.closes === 0).length, 60);
+  const duplicate = { closes: 0, close() { this.closes++; } };
+  frames.present(duplicate, { mode: 'carplay', epoch: 1 }, 1, 1599,
+    { sourceTimeMs: 5099, clockGeneration: 1 });
+  assert.equal(duplicate.closes, 1);
+  now = 1580; frames.delay(constantDelay(0));
+  assert.deepEqual(shown.map(frame => frame.n), [99], 'catch up to the newest due frame without moving its deadline');
+  assert.ok(items.every(frame => frame.closes === 1));
+  frames.reset(); assert.ok(items.every(frame => frame.closes === 1));
 });

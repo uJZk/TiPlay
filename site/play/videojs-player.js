@@ -30,26 +30,35 @@ for (let prototype = HTMLVideoAdapter.prototype; prototype !== EventTarget.proto
 customElements.define('tiplay-media', TiPlayMedia);
 let playerSequence = 0;
 
-/** TiPlay's control layout, composed from Video.js v10 elements. */
+/** Official Video.js default skin anatomy, with Canvas media and casting actions. */
 export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, signal, onCanvasError }) {
   const captionsMenu = `tiplay-captions-${++playerSequence}`;
   const audioMenu = `tiplay-audio-${playerSequence}`;
   const locale = document.createElement('media-i18n');
   locale.lang = lang === 'zh' ? 'zh-CN' : 'en';
-  locale.innerHTML = `<video-player data-version="${VERSION}"><media-container class="media-skin video-skin" data-theme="neutral" data-preset="video">
-    <media-buffering-indicator class="media-buffering-indicator"><media-icon family="neutral" name="spinner" class="media-buffering-indicator-spinner-icon"></media-icon></media-buffering-indicator>
-    <media-controls><media-controls-content><div class="airplay-control-bar">
-      <media-play-button class="media-button media-play-button"><media-icon family="neutral" name="restart" class="media-button-icon media-play-button-restart-icon"></media-icon><media-icon family="neutral" name="play" class="media-button-icon media-play-button-play-icon"></media-icon><media-icon family="neutral" name="pause" class="media-button-icon media-play-button-pause-icon"></media-icon></media-play-button>
-      <media-time type="current"></media-time>
-      <media-time-slider class="media-slider media-time-slider"><media-slider-track class="media-slider-track"><media-slider-buffer class="media-slider-buffer"></media-slider-buffer><media-slider-fill class="media-slider-fill"></media-slider-fill></media-slider-track><media-slider-thumb class="media-slider-thumb"></media-slider-thumb></media-time-slider>
-      <media-time type="duration"></media-time>
+  locale.innerHTML = `<video-player data-version="${VERSION}"><media-container class="media-skin media-container video-skin" data-theme="default" data-preset="video">
+    <media-buffering-indicator class="media-buffering-indicator"><media-icon family="default" name="spinner" class="media-buffering-indicator-spinner-icon"></media-icon></media-buffering-indicator>
+    <media-controls><media-controls-backdrop class="video-controls-backdrop"></media-controls-backdrop><media-controls-content class="video-controls video-controls-content"><media-controls-group class="video-controls-primary">
+      <media-play-button class="media-button media-play-button"><media-icon family="default" name="restart" class="media-button-icon media-play-button-restart-icon"></media-icon><media-icon family="default" name="play" class="media-button-icon media-play-button-play-icon"></media-icon><media-icon family="default" name="pause" class="media-button-icon media-play-button-pause-icon"></media-icon></media-play-button>
+      <media-seek-button seconds="-10" class="media-button media-seek-button"><span class="media-seek-button-content"><media-icon family="default" name="seek" class="media-button-icon media-seek-button-backward-icon"></media-icon><span class="media-seek-button-label media-seek-button-backward-label" aria-hidden="true">10</span></span></media-seek-button>
+      <media-seek-button seconds="10" class="media-button media-seek-button"><span class="media-seek-button-content"><media-icon family="default" name="seek" class="media-button-icon media-seek-button-forward-icon"></media-icon><span class="media-seek-button-label media-seek-button-forward-label" aria-hidden="true">10</span></span></media-seek-button>
+      <media-controls-group class="video-time-slider-group"><media-time class="media-time-value video-time-value" type="current"></media-time>
+      <media-time-slider class="media-slider media-time-slider"><media-slider-track class="media-slider-track"><media-slider-buffer class="media-slider-buffer"></media-slider-buffer><media-slider-fill class="media-slider-fill"></media-slider-fill></media-slider-track><media-slider-thumb class="media-slider-thumb media-time-slider-thumb"></media-slider-thumb></media-time-slider>
+      <media-time class="media-time-value video-time-value" type="duration"></media-time></media-controls-group>
       <media-playback-rate-button class="media-button airplay-rate"></media-playback-rate-button>
-      <media-captions-button data-available="false" menu-for="${captionsMenu}" class="media-button media-captions-button"><media-icon family="neutral" name="captions-off" class="media-button-icon media-captions-button-off-icon"></media-icon><media-icon family="neutral" name="captions-on" class="media-button-icon media-captions-button-on-icon"></media-icon></media-captions-button>
-      <media-menu id="${captionsMenu}" side="top" align="end" class="media-popup media-popup-surface media-menu-popup"><media-menu-content class="media-menu-content"><media-captions-radio-group class="media-menu-radio-group"><template><media-menu-radio-item class="media-menu-radio-item"><span data-part="label"></span><media-menu-item-indicator force-mount class="media-menu-item-indicator"><media-icon family="neutral" name="check" class="media-menu-radio-item-icon"></media-icon></media-menu-item-indicator></media-menu-radio-item></template></media-captions-radio-group></media-menu-content></media-menu>
-      <button data-available="false" type="button" commandfor="${audioMenu}" command="toggle" class="media-button airplay-audio" aria-label="${lang === 'zh' ? '音轨' : 'Audio tracks'}">♫</button>
-      <media-menu id="${audioMenu}" side="top" align="end" class="media-popup media-popup-surface media-menu-popup"><media-menu-content class="media-menu-content"><media-audio-track-radio-group class="media-menu-radio-group"><template><media-menu-radio-item class="media-menu-radio-item"><span data-part="label"></span><media-menu-item-indicator force-mount class="media-menu-item-indicator"><media-icon family="neutral" name="check" class="media-menu-radio-item-icon"></media-icon></media-menu-item-indicator></media-menu-radio-item></template></media-audio-track-radio-group></media-menu-content></media-menu>
-      <button class="media-button airplay-stop" type="button"><svg class="media-button-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor"/></svg></button>
-    </div></media-controls-content></media-controls>
+      <media-captions-button data-available="false" menu-for="${captionsMenu}" class="media-button media-captions-button"><media-icon family="default" name="captions-off" class="media-button-icon media-captions-button-off-icon"></media-icon><media-icon family="default" name="captions-on" class="media-button-icon media-captions-button-on-icon"></media-icon></media-captions-button>
+      <media-menu id="${captionsMenu}" side="top" align="end" class="media-popup media-popup-surface media-menu-popup"><media-menu-content class="media-menu-content"><media-captions-radio-group class="media-menu-radio-group"><template><media-menu-radio-item class="media-menu-radio-item"><span data-part="label"></span><media-menu-item-indicator force-mount class="media-menu-item-indicator"><media-icon family="default" name="check" class="media-menu-radio-item-icon"></media-icon></media-menu-item-indicator></media-menu-radio-item></template></media-captions-radio-group></media-menu-content></media-menu>
+      <button data-available="false" type="button" commandfor="${audioMenu}" command="toggle" class="media-button airplay-audio" aria-label="${lang === 'zh' ? '音轨' : 'Audio tracks'}"><media-icon family="default" name="speech" class="media-button-icon"></media-icon></button>
+      <media-menu id="${audioMenu}" side="top" align="end" class="media-popup media-popup-surface media-menu-popup"><media-menu-content class="media-menu-content"><media-audio-track-radio-group class="media-menu-radio-group"><template><media-menu-radio-item class="media-menu-radio-item"><span data-part="label"></span><media-menu-item-indicator force-mount class="media-menu-item-indicator"><media-icon family="default" name="check" class="media-menu-radio-item-icon"></media-icon></media-menu-item-indicator></media-menu-radio-item></template></media-audio-track-radio-group></media-menu-content></media-menu>
+      <button class="media-button airplay-stop" type="button"><svg class="media-button-icon" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><path d="M4.2 2.8 9 7.6l4.8-4.8 1.4 1.4L10.4 9l4.8 4.8-1.4 1.4L9 10.4l-4.8 4.8-1.4-1.4L7.6 9 2.8 4.2z"/></svg></button>
+    </media-controls-group></media-controls-content></media-controls>
+    <media-gesture type="tap" action="toggleControls"></media-gesture>
+    <media-gesture type="doubletap" action="seekStep" value="-10" region="left"></media-gesture>
+    <media-gesture type="doubletap" action="seekStep" value="10" region="right"></media-gesture>
+    <media-status-announcer class="media-status-announcer"></media-status-announcer>
+    <div class="video-status-indicators airplay-seek-feedback" aria-hidden="true">
+      <media-seek-indicator class="media-seek-indicator"><media-icon family="default" name="chevron" class="media-seek-indicator-icon"></media-icon><media-seek-indicator-value class="media-seek-indicator-value"></media-seek-indicator-value></media-seek-indicator>
+    </div>
     <p class="airplay-error" role="alert" hidden></p>
   </media-container></video-player>`;
   const element = locale.querySelector('video-player');

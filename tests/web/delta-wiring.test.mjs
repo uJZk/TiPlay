@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
-import { createTimedFrames, createVideoEpochGuard } from '../../site/play/media-timing.js';
+import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from '../../site/play/media-timing.js';
 import { createFrameDelivery } from '../../site/play/transport.js';
 import { createFramePresenter } from '../../site/play/video.js';
 import { constantDelay } from '../../site/play/delay-plan.js';
@@ -27,6 +27,7 @@ async function workerHarness() {
     },
     createFramePresenter() { throw new Error('unexpected offscreen presenter'); },
     createTimedFrames: (present, options) => createTimedFrames(present, { ...options, now: () => at, schedule, cancel }),
+    createMediaTiming: change => createMediaTiming(change, () => at),
     createVideoEpochGuard, createFrameDelivery,
     createChunkStream: () => { throw new Error('unexpected port feed'); },
     setInterval: () => 1, clearInterval() {},
@@ -45,47 +46,37 @@ async function workerHarness() {
 function frame() { return { closed: 0, close() { this.closed++; } }; }
 function latest(harness, type) { return harness.messages.filter(message => message.type === type).at(-1); }
 
-test('worker readiness waits for its matching stream and token before transfer', async () => {
+test('worker schedules CarPlay without a main-thread readiness round trip', async () => {
   const h = await workerHarness(), picture = frame();
   h.send({ type: 'stream', id: 7, stream: {} });
   h.post({ type: 'config', id: 7, config: { epoch: 1, mode: 'carplay' } });
   h.frame(picture, { epoch: 1, mode: 'carplay' }, 7, 1010);
-  const ready = latest(h, 'media-ready');
-  assert.equal(ready.id, 7);
-  assert.equal(latest(h, 'frame'), undefined);
-  h.send({ type: 'media-ready-ack', id: 6, token: ready.token, plan: constantDelay(0) });
-  h.send({ type: 'media-ready-ack', id: 7, token: ready.token + 1, plan: constantDelay(0) });
-  assert.equal(latest(h, 'frame'), undefined);
-  h.send({ type: 'media-ready-ack', id: 7, token: ready.token, plan: constantDelay(0) });
-  assert.equal(latest(h, 'frame').frame, picture);
-  assert.equal(picture.closed, 0);
+  assert.equal(latest(h, 'media-ready').id, 7, 'main thread still receives audio-buffer observations');
+  assert.equal(latest(h, 'frame').frame, picture, 'decode completed only 10 ms before the cap; no ACK can block it');
+  h.advance(1100);
+  assert.equal(picture.closed, 0, 'ownership transferred before the busy main thread returned');
 });
 
-test('worker resets retire pending readiness without reusing tokens in the same stream', async () => {
+test('worker epoch reset closes pending pictures before installing the new local plan', async () => {
   const h = await workerHarness(), old = frame(), next = frame();
   h.send({ type: 'stream', id: 1, stream: {} });
-  h.post({ type: 'config', id: 1, config: { epoch: 1 } });
-  h.frame(old, { epoch: 1, mode: 'carplay' }, 1, 1010);
-  const stale = latest(h, 'media-ready');
+  h.post({ type: 'config', id: 1, config: { epoch: 1, mode: 'carplay' } });
+  h.frame(old, { epoch: 1, mode: 'carplay' }, 1, 1050);
+  assert.equal(latest(h, 'frame'), undefined);
   h.post({ type: 'idle', id: 1 });
   assert.equal(old.closed, 1);
-  h.post({ type: 'config', id: 1, config: { epoch: 2 } });
-  h.frame(next, { epoch: 2, mode: 'carplay' }, 1, 1010);
-  const current = latest(h, 'media-ready');
-  assert.notEqual(current.token, stale.token);
-  h.send({ type: 'media-ready-ack', id: 1, token: stale.token, plan: constantDelay(0) });
-  assert.equal(latest(h, 'frame'), undefined);
-  h.send({ type: 'media-ready-ack', id: 1, token: current.token, plan: constantDelay(0) });
+  h.post({ type: 'config', id: 1, config: { epoch: 2, mode: 'carplay' } });
+  h.frame(next, { epoch: 2, mode: 'carplay' }, 1, 1050);
+  h.advance(1030);
   assert.equal(latest(h, 'frame').frame, next);
 });
 
-test('worker discards a decoded CarPlay frame that expires while awaiting readiness', async () => {
+test('worker discards CarPlay pictures decoded after the unchanged source cap', async () => {
   const h = await workerHarness(), picture = frame();
   h.send({ type: 'stream', id: 1, stream: {} });
-  h.frame(picture, { epoch: 1, mode: 'carplay' }, 1, 1010);
-  const ready = latest(h, 'media-ready');
+  h.post({ type: 'config', id: 1, config: { epoch: 1, mode: 'carplay' } });
   h.advance(1011);
-  h.send({ type: 'media-ready-ack', id: 1, token: ready.token, plan: constantDelay(0) });
+  h.frame(picture, { epoch: 1, mode: 'carplay' }, 1, 1010);
   assert.equal(picture.closed, 1);
   assert.equal(latest(h, 'frame'), undefined);
 });
@@ -127,12 +118,11 @@ test('main renderer rechecks the raw cap after a transferred frame waits in tran
 test('worker applies actual output references and transfers the exact narrowed A/V window', async () => {
   const h = await workerHarness(), picture = frame();
   h.send({ type: 'stream', id: 1, stream: {} });
+  h.post({ type: 'config', id: 1, config: { epoch: 1, mode: 'carplay' } });
   h.send({ type: 'audio-output', reference: { mode: 'carplay', type: 0, epoch: 7, generation: 2, clockGeneration: 3,
     sequence: 1, state: 'playing', at: 1000, sourceTimeMs: 5000, audibleTimeMs: 1150,
     mediaRate: 1, uncertaintyMs: 1, outputMethod: 'timestamp' } });
   h.frame(picture, { mode: 'carplay', epoch: 1 }, 1, 1050, { sourceTimeMs: 5000, clockGeneration: 3 });
-  const ready = latest(h, 'media-ready');
-  h.send({ type: 'media-ready-ack', id: 1, token: ready.token, plan: constantDelay(0) });
   h.advance(1025); assert.equal(latest(h, 'frame'), undefined);
   h.advance(1030);
   const transfer = latest(h, 'frame');
@@ -151,8 +141,6 @@ test('worker cannot use an invalidated active-audio reference as video-only fall
   h.send({ type: 'audio-output', reference });
   h.send({ type: 'audio-output', reference: { ...reference, sequence: 2, state: 'rebuffering', audibleTimeMs: null } });
   h.frame(picture, { mode: 'carplay', epoch: 1 }, 1, 1050, { sourceTimeMs: 5000 });
-  const ready = latest(h, 'media-ready');
-  h.send({ type: 'media-ready-ack', id: 1, token: ready.token, plan: constantDelay(0) });
   h.advance(1050);
   assert.equal(picture.closed, 1);
   assert.equal(latest(h, 'frame'), undefined);
