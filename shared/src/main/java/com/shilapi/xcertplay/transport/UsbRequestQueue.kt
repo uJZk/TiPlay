@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.transport
 
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbRequest
 import android.os.Build
@@ -22,15 +23,30 @@ internal class UsbRequestQueue(private val connection: UsbDeviceConnection, thre
         UsbCompletionReaper(threadName) { connection.requestWait() }
     }
 
+    private data class Pending(val buffer: ByteBuffer, val start: Int, val length: Int)
+    private val pending = java.util.concurrent.ConcurrentHashMap<UsbRequest, Pending>()
+    private fun channel(request: UsbRequest) =
+        "usb/request/${System.identityHashCode(connection)}/endpoint=${request.endpoint?.address}"
+
     /** Queues [buffer] from its position to its limit; a completed read advances the position. */
     fun queue(request: UsbRequest, buffer: ByteBuffer): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) return request.queue(buffer)
-        // The Android 7.x call fills a direct buffer from its start, whatever its position.
-        require(buffer.position() == 0) { "Android 7 USB reads must start at buffer position 0" }
-        @Suppress("DEPRECATION")
-        val queued = request.queue(buffer, buffer.remaining())
-        if (queued) reaper!!.queued()
-        return queued
+        val read = Pending(buffer, buffer.position(), buffer.remaining())
+        pending[request] = read
+        return try {
+            traceUsbOperation(connection, "queue", "request=${System.identityHashCode(request)} endpoint=${request.endpoint?.address} length=${read.length}") {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) request.queue(buffer)
+                else {
+                    require(buffer.position() == 0) { "Android 7 USB reads must start at buffer position 0" }
+                    @Suppress("DEPRECATION")
+                    val queued = request.queue(buffer, buffer.remaining())
+                    if (queued) reaper!!.queued()
+                    queued
+                }
+            }.also { if (!it) pending.remove(request) }
+        } catch (error: RuntimeException) {
+            pending.remove(request)
+            throw error
+        }
     }
 
     /**
@@ -38,14 +54,27 @@ internal class UsbRequestQueue(private val connection: UsbDeviceConnection, thre
      * Throws [TimeoutException] when none completes within [timeoutMillis].
      */
     @Throws(TimeoutException::class)
-    fun await(timeoutMillis: Long): UsbRequest? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            connection.requestWait(timeoutMillis)
-        } else {
-            reaper!!.await(timeoutMillis)
+    fun await(timeoutMillis: Long): UsbRequest? {
+        val request = traceUsbOperation(connection, "wait", "timeout=$timeoutMillis") {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) connection.requestWait(timeoutMillis)
+            else reaper!!.await(timeoutMillis)
         }
+        if (request != null) pending.remove(request)?.let { read ->
+            if (RawTraffic.enabled) {
+                val count = (read.buffer.position() - read.start).coerceIn(0, read.length)
+                RawTraffic.record("${channel(request)}/result", "request=${System.identityHashCode(request)} transferred=$count requested=${read.length}".toByteArray())
+                if (count > 0) {
+                    val bytes = ByteArray(count)
+                    read.buffer.duplicate().apply { position(read.start); get(bytes) }
+                    RawTraffic.record("${channel(request)}/in", bytes)
+                }
+            }
+        }
+        return request
+    }
 
     override fun close() {
+        pending.clear()
         reaper?.close()
     }
 }

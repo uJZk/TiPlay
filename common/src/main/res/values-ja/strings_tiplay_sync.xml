@@ -10,6 +10,6 @@
     <string name="settings_airplay_listening">iPhone を待機中 · TiPlay</string>
     <string name="settings_airplay_disable">AirPlay を無効にする</string>
     <string name="settings_airplay_disable_description" />
-    <string name="settings_disable_carplay_audio">CarPlay の音声を無効にする</string>
-    <string name="settings_disable_carplay_audio_description" />
+    <string name="settings_disable_carplay_audio">iPhone の Bluetooth で音声を再生</string>
+    <string name="settings_disable_carplay_audio_description">iPhone を車載オーディオに Bluetooth 接続してください。有効にすると TiPlay は CarPlay 音声の受信と転送を停止し、CarPlay を自動再接続します。</string>
 </resources>

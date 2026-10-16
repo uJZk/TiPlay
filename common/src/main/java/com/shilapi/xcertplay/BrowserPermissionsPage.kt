@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.PowerManager
 import android.provider.Settings
 import android.view.View
 import android.widget.Button
@@ -52,33 +51,25 @@ internal class BrowserPermissionsPage(
                 authorize(listOf(Manifest.permission.BLUETOOTH_CONNECT))
             else open(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
         }
-        if (Build.VERSION.SDK_INT >= 33) permission(R.string.nearby_devices,
-            listOf(Manifest.permission.NEARBY_WIFI_DEVICES, Manifest.permission.BLUETOOTH_CONNECT))
-        else if (Build.VERSION.SDK_INT >= 31) permission(R.string.nearby_devices,
-            listOf(Manifest.permission.BLUETOOTH_CONNECT))
-        permission(R.string.settings_permission_microphone, listOf(Manifest.permission.RECORD_AUDIO)) { !BrowserCarPlayAudioSettings.disabled(activity) }
-        microphoneView = rows.last().button
-        permission(R.string.settings_permission_location, listOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)) {
-            needsLocation()
+        BrowserPermissionStatus.runtimeGroups(activity).forEach { group ->
+            permission(group.label, group.permissions, group.enabled)
+            if (group.label == R.string.settings_permission_microphone) microphoneView = rows.last().button
+            if (group.label == R.string.settings_permission_location) {
+                val locationRow = rows.last().button
+                locationRow.contentDescription = activity.getString(R.string.settings_browser_location_permission_reason)
+                val reason = TiPlayNativeUi(activity).label(activity.getString(R.string.settings_browser_location_permission_reason))
+                BrowserNativeSettingsUi(activity).related(reason)
+                parent.addView(reason)
+                locationViews = listOf(locationRow, reason)
+            }
         }
-        val locationRow = rows.last().button
-        locationRow.contentDescription = activity.getString(R.string.settings_browser_location_permission_reason)
-        val reason = TiPlayNativeUi(activity).label(activity.getString(R.string.settings_browser_location_permission_reason))
-        BrowserNativeSettingsUi(activity).related(reason)
-        parent.addView(reason)
-        locationViews = listOf(locationRow, reason)
-        if (Build.VERSION.SDK_INT >= 33) permission(R.string.settings_permission_notifications,
-            listOf(Manifest.permission.POST_NOTIFICATIONS))
-        if (LocalNetworkPermission.applies(activity)) permission(R.string.settings_permission_local_network,
-            listOf(LocalNetworkPermission.PERMISSION))
         add(R.string.settings_ignore_battery_optimization, {
-            activity.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(activity.packageName) == true
+            BrowserPermissionStatus.batteryAllowed(activity)
         }) { open(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
         refresh()
     }
 
-    private fun needsLocation() = !com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(activity) ||
-        (Build.VERSION.SDK_INT <= 32 && BrowserCarPlaySettings.mode(activity) != BrowserCarPlaySettings.Mode.USB)
+    private fun needsLocation() = BrowserPermissionStatus.needsLocation(activity)
 
     private fun authorize(permissions: List<String>) {
         val denied = permissions.filterNot(::granted)

@@ -73,6 +73,7 @@ internal class BrowserMainSettingsMenu(
         activity.runOnUiThread { if (!disposed && !activity.isDestroyed) updateActions() }
     }
     private val carBluetooth by lazy { CarBluetoothStatus(activity) { if (!disposed) updateActions() } }
+    private var statusWatch: BrowserSettingsStatusWatch? = null
     private var phone: Button
     private lateinit var connectionMode: Button
     private var networkStatus: TextView? = null
@@ -168,6 +169,7 @@ internal class BrowserMainSettingsMenu(
             content.addView(text(version).also(ui::emphasize))
         }
         updateActions()
+        statusWatch = BrowserSettingsStatusWatch(view) { carBluetooth.refresh(); refreshNetwork() }
         if (draft != baseline) editHandler.postDelayed(applyEdit, 400L)
     }
     private fun phoneLabel() = if (draft.phoneAddress.isNullOrBlank()) activity.getString(R.string.choose_iphone)
@@ -348,13 +350,18 @@ internal class BrowserMainSettingsMenu(
             else -> null
         } else null
         putHint("phone", phoneMessage?.let(activity::getString))
-        val bluetoothHint = when (carBluetooth.state(draft.phoneAddress)) {
+        val bluetoothHint = if (BrowserCarPlayAudioSettings.disabled(activity))
+            R.string.settings_hint_iphone_car_audio else when (carBluetooth.state(draft.phoneAddress)) {
             CarBluetoothStatus.State.CONNECTED -> null
             CarBluetoothStatus.State.DISCONNECTED -> R.string.settings_hint_car_bluetooth_disconnected
             CarBluetoothStatus.State.UNKNOWN -> R.string.settings_hint_car_bluetooth_unknown
             CarBluetoothStatus.State.VERIFY_AUDIO_DEVICE -> R.string.settings_hint_car_bluetooth_verify
         }
         putHint("car-bluetooth", bluetoothHint?.let(activity::getString))
+        val missing = BrowserPermissionStatus.missingLabels(activity)
+        putHint("permissions", if (missing.isEmpty()) null else activity.getString(
+            R.string.settings_hint_permissions_missing, missing.joinToString(" / ") { activity.getString(it) },
+            activity.getString(R.string.onboarding_help)))
         spacing.normalizeSpacing(content, recursive = true)
     }
 
@@ -378,7 +385,7 @@ internal class BrowserMainSettingsMenu(
     private fun renderHints() {
         if (setupOnly) return
         fun priority(key: String) = when {
-            key == "browser/permission" || key == "browser/service" -> 0
+            key == "permissions" || key == "browser/permission" || key == "browser/service" -> 0
             key == "session" -> 1
             key == "network" -> 2
             key.startsWith("address/") -> 3
@@ -409,6 +416,6 @@ internal class BrowserMainSettingsMenu(
         committed()
         settingsChanged()
     }
-    fun dispose() { disposed = true; carBluetooth.close(); editHandler.removeCallbacks(applyEdit); receiverSubscription.close() }
+    fun dispose() { disposed = true; statusWatch?.close(); carBluetooth.close(); editHandler.removeCallbacks(applyEdit); receiverSubscription.close() }
     fun applyPendingEdits() { applyChanges() }
 }

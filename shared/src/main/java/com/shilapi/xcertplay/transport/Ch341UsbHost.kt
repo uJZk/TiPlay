@@ -51,9 +51,9 @@ class Ch341UsbHost(
     @Throws(I2cTransportException::class)
     fun requestPermission(device: UsbDevice): PermissionRequest {
         requireConfiguredDevice(device)
-        if (usbManager.hasPermission(device)) return PermissionRequest.AlreadyGranted(device)
+        if (usbManager.tracedHasPermission(device)) return PermissionRequest.AlreadyGranted(device)
 
-        usbManager.requestPermission(device, permissionPendingIntent())
+        usbManager.tracedRequestPermission(device, permissionPendingIntent())
         return PermissionRequest.Requested(device)
     }
 
@@ -61,6 +61,7 @@ class Ch341UsbHost(
     fun parsePermissionResult(intent: Intent): PermissionResult? {
         if (intent.action != permissionAction) return null
         val device = intent.usbDevice() ?: return null
+        traceUsbDeviceEvent(intent, device)
         if (!matcher.matches(device.vendorId, device.productId)) return null
         return if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
             PermissionResult.Granted(device)
@@ -98,16 +99,16 @@ class Ch341UsbHost(
 
     private fun open(device: UsbDevice): Ch341UsbSession {
         requireConfiguredDevice(device)
-        if (!usbManager.hasPermission(device)) {
+        if (!usbManager.tracedHasPermission(device)) {
             throw I2cTransportException.PermissionDenied("USB permission has not been granted")
         }
         val endpoints = findBulkEndpoints(device)
             ?: throw I2cTransportException.DeviceUnavailable("No USB interface has both bulk IN and OUT endpoints")
-        val connection = usbManager.openDevice(device)
+        val connection = usbManager.tracedOpenDevice(device)
             ?: throw I2cTransportException.DeviceUnavailable("UsbManager could not open the CH341 device")
 
-        if (!connection.claimInterface(endpoints.usbInterface, true)) {
-            connection.close()
+        if (!connection.tracedClaimInterface(endpoints.usbInterface, true)) {
+            connection.tracedClose()
             throw I2cTransportException.DeviceUnavailable("Could not claim CH341 USB interface")
         }
         return Ch341UsbSession(connection, endpoints.usbInterface, endpoints.input, endpoints.output)
@@ -251,8 +252,8 @@ class Ch341UsbSession internal constructor(
     override fun close() {
         if (closed) return
         closed = true
-        connection.releaseInterface(usbInterface)
-        connection.close()
+        connection.tracedReleaseInterface(usbInterface)
+        connection.tracedClose()
     }
 
     private fun transfer(

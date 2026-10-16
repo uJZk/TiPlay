@@ -100,12 +100,14 @@ class IphoneUsbHost(
     }
 
     fun discover(): List<UsbDevice> =
-        usbManager.deviceList.values.filter { matcher.matches(it.vendorId, it.productId) }
+        traceUsbOperation(usbManager, "discover") {
+            usbManager.deviceList.values.filter { matcher.matches(it.vendorId, it.productId) }
+        }
 
     @Throws(IphoneUsbException::class)
     fun requestPermission(device: UsbDevice, allowAdbFallback: Boolean = true): PermissionRequest {
         requireConfiguredDevice(device)
-        if (usbManager.hasPermission(device))
+        if (usbManager.tracedHasPermission(device))
             return PermissionRequest.AlreadyGranted(device)
 
         val ui = UsbPermissionActivityProbe.inspect(appContext)
@@ -117,7 +119,7 @@ class IphoneUsbHost(
                 return PermissionRequest.AdbRequired(device)
             }
         }
-        usbManager.requestPermission(device, permissionPendingIntent())
+        usbManager.tracedRequestPermission(device, permissionPendingIntent())
         return PermissionRequest.Requested(
             device,
             afterMissingUiAdbFailure = ui.state == UsbPermissionActivityProbe.State.UNAVAILABLE,
@@ -128,6 +130,7 @@ class IphoneUsbHost(
     fun parsePermissionResult(intent: Intent): PermissionResult? {
         if (intent.action != permissionAction) return null
         val device = intent.usbDevice() ?: return null
+        traceUsbDeviceEvent(intent, device)
         if (!matcher.matches(device.vendorId, device.productId)) return null
         return if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
             PermissionResult.Granted(device)
@@ -140,6 +143,7 @@ class IphoneUsbHost(
     fun parseAttachedDevice(intent: Intent): UsbDevice? {
         if (intent.action != UsbManager.ACTION_USB_DEVICE_ATTACHED) return null
         val device = intent.usbDevice() ?: return null
+        traceUsbDeviceEvent(intent, device)
         return device.takeIf { matcher.matches(it.vendorId, it.productId) }
     }
 
@@ -234,15 +238,15 @@ class IphoneUsbHost(
         operation: (UsbDeviceConnection) -> TransitionResult,
     ): TransitionResult = try {
         requireConfiguredDevice(device)
-        if (!usbManager.hasPermission(device)) {
+        if (!usbManager.tracedHasPermission(device)) {
             throw IphoneUsbException.PermissionDenied("USB permission has not been granted")
         }
-        val connection = usbManager.openDevice(device)
+        val connection = usbManager.tracedOpenDevice(device)
             ?: throw IphoneUsbException.DeviceUnavailable("UsbManager could not open the iPhone")
         try {
             operation(connection)
         } finally {
-            connection.close()
+            connection.tracedClose()
         }
     } catch (error: IphoneUsbException) {
         TransitionResult.Failed(error)
@@ -254,10 +258,10 @@ class IphoneUsbHost(
 
     private fun openIap2UsbSession(device: UsbDevice): Iap2UsbSession {
         requireConfiguredDevice(device)
-        if (!usbManager.hasPermission(device)) {
+        if (!usbManager.tracedHasPermission(device)) {
             throw IphoneUsbException.PermissionDenied("USB permission has not been granted")
         }
-        var connection = usbManager.openDevice(device)
+        var connection = usbManager.tracedOpenDevice(device)
             ?: throw IphoneUsbException.DeviceUnavailable("UsbManager could not open the iPhone")
         var claimedInterface: UsbInterface? = null
         try {
@@ -278,14 +282,14 @@ class IphoneUsbHost(
                     "out=${describeUsbEndpoint(endpoints.first)} " +
                     "in=${describeUsbEndpoint(endpoints.second)}",
             )
-            if (!connection.claimInterface(usbMux, true)) {
+            if (!connection.tracedClaimInterface(usbMux, true)) {
                 throw IphoneUsbException.DeviceUnavailable("Android could not claim USBMUX interface 1")
             }
             claimedInterface = usbMux
             return Iap2UsbSession(connection, endpoints.first, endpoints.second, onDiagnostic)
         } catch (error: Throwable) {
-            if (claimedInterface != null) connection.releaseInterface(claimedInterface)
-            connection.close()
+            if (claimedInterface != null) connection.tracedReleaseInterface(claimedInterface)
+            connection.tracedClose()
             throw error
         }
     }
@@ -307,14 +311,14 @@ class IphoneUsbHost(
             val outcome = UsbConfigurationSelection.select(
                 target = configuration.id,
                 interfaceIds = interfaces.keys.toList(),
-                setConfiguration = { current.setConfiguration(configuration) },
+                setConfiguration = { current.tracedSetConfiguration(configuration) },
                 activeConfiguration = { activeConfiguration(current) },
                 // A forced claim detaches the kernel driver. It stays claimed until the reopen.
-                detach = { id -> current.claimInterface(interfaces.getValue(id), true) },
+                detach = { id -> current.tracedClaimInterface(interfaces.getValue(id), true) },
                 // Closing drops the claims without the driver reattach that releaseInterface() requests.
                 reopen = {
-                    current.close()
-                    current = usbManager.openDevice(device)
+                    current.tracedClose()
+                    current = usbManager.tracedOpenDevice(device)
                         ?: throw IphoneUsbException.DeviceUnavailable("UsbManager could not reopen the iPhone")
                 },
             ) ?: return current
@@ -331,7 +335,7 @@ class IphoneUsbHost(
             return current
         } catch (error: Throwable) {
             // The caller closes the connection it passed in; a replacement is closed here.
-            if (current !== connection) current.close()
+            if (current !== connection) current.tracedClose()
             throw error
         }
     }
@@ -459,7 +463,7 @@ class Iap2UsbSession internal constructor(
         val request = UsbRequest()
         var initialized = false
         try {
-            if (!request.initialize(connection, inEndpoint)) {
+            if (!request.tracedInitialize(connection, inEndpoint)) {
                 throw IphoneUsbException.DeviceUnavailable(
                     "Android could not initialize USBMUX read request (${requestDiagnostics(timeoutMillis)})",
                 )
@@ -499,7 +503,6 @@ class Iap2UsbSession internal constructor(
             return@synchronized ByteArray(buffer.position()).also {
                 buffer.flip()
                 buffer.get(it)
-            RawTraffic.record("usb/mux/${System.identityHashCode(connection)}/endpoint=${inEndpoint.address}/in", it)
             }
         } catch (error: IphoneUsbException) {
             throw error
@@ -509,8 +512,8 @@ class Iap2UsbSession internal constructor(
             synchronized(stateLock) {
                 if (pendingRead === request) pendingRead = null
             }
-            if (initialized) request.cancel()
-            request.close()
+            if (initialized) request.tracedCancel()
+            request.tracedClose()
         }
     }
 
@@ -520,9 +523,9 @@ class Iap2UsbSession internal constructor(
             closed = true
             pendingRead
         }
-        requestToCancel?.cancel()
+        requestToCancel?.tracedCancel()
         requests.close()
-        connection.close()
+        connection.tracedClose()
     }
 
     private fun checkOpen() {
@@ -542,7 +545,7 @@ class Iap2UsbSession internal constructor(
      * USBMUX stream stays intact.
      */
     private fun drainTimedOutRead(request: UsbRequest, buffer: ByteBuffer): ByteArray? {
-        val cancelled = request.cancel()
+        val cancelled = request.tracedCancel()
         val completed = try {
             requests.await(CANCEL_DRAIN_TIMEOUT_MILLIS)
         } catch (_: TimeoutException) {
@@ -558,7 +561,6 @@ class Iap2UsbSession internal constructor(
         return ByteArray(buffer.position()).also {
             buffer.flip()
             buffer.get(it)
-            RawTraffic.record("usb/mux/${System.identityHashCode(connection)}/endpoint=${inEndpoint.address}/in", it)
         }
     }
 

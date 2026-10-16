@@ -10,6 +10,6 @@
     <string name="settings_airplay_listening">Очікування iPhone · TiPlay</string>
     <string name="settings_airplay_disable">Вимкнути AirPlay</string>
     <string name="settings_airplay_disable_description">Діє одразу. AirPlay увімкнено за замовчуванням. Цей перемикач зупиняє AirPlay та повертає екран CarPlay; вимкнення перемикача знову запускає приймач.</string>
-    <string name="settings_disable_carplay_audio">Вимкнути звук CarPlay</string>
-    <string name="settings_disable_carplay_audio_description">Музика, навігація, дзвінки та Siri використовують Bluetooth-зʼєднання iPhone з автомобілем. Спочатку підключіть iPhone до Bluetooth автомобіля. Після зміни CarPlay перепідключається.</string>
+    <string name="settings_disable_carplay_audio">Звук через Bluetooth iPhone</string>
+    <string name="settings_disable_carplay_audio_description">Підключіть iPhone до аудіосистеми автомобіля через Bluetooth. TiPlay припинить приймати й передавати звук CarPlay. CarPlay автоматично перепідключиться.</string>
 </resources>

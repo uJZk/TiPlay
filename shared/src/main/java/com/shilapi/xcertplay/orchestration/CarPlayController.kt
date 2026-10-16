@@ -14,6 +14,8 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.hardware.usb.UsbDevice
+import com.shilapi.xcertplay.transport.tracedHasPermission
+import com.shilapi.xcertplay.transport.tracedOpenDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Handler
@@ -1119,7 +1121,7 @@ class CarPlayController(
         val check = object : Runnable {
             override fun run() {
                 if (closed || phase != Phase.MFI || generation != permissionPollGeneration) return
-                if (requireUsbManager().hasPermission(device)) {
+                if (requireUsbManager().tracedHasPermission(device)) {
                     onCh341Permission(Ch341UsbHost.PermissionResult.Granted(device))
                     return
                 }
@@ -2067,7 +2069,7 @@ class CarPlayController(
                 if (closed || phase != grantPhase || permissionPollGeneration != grantGeneration) return@post
                 // A stale grant must not clear the same key owned by a newer reconnect generation.
                 pendingUsbAdbGrants.remove(key)
-                if (requireUsbManager().hasPermission(device)) {
+                if (requireUsbManager().tracedHasPermission(device)) {
                     onIphonePermission(IphoneUsbHost.PermissionResult.Granted(device))
                 } else {
                     doRequestIphonePermission(device, allowAdbFallback = false)
@@ -2136,7 +2138,7 @@ class CarPlayController(
         val check = object : Runnable {
             override fun run() {
                 if (closed || generation != permissionPollGeneration) return
-                if (requireUsbManager().hasPermission(device)) {
+                if (requireUsbManager().tracedHasPermission(device)) {
                     onIphonePermission(IphoneUsbHost.PermissionResult.Granted(device))
                     return
                 }
@@ -2247,7 +2249,7 @@ class CarPlayController(
                 " status=${function.statusIn?.address?.let { "0x${it.toString(16)}" } ?: "none"}" +
                 " in=0x${function.bulkIn.address.toString(16)} out=0x${function.bulkOut.address.toString(16)}",
         )
-        val connection = requireUsbManager().openDevice(device)
+        val connection = requireUsbManager().tracedOpenDevice(device)
             ?: throw IphoneUsbException.DeviceUnavailable("Could not open the iPhone NCM connection")
         return NcmUsbBridge.open(connection, function, onDiagnostic = ::connectionDiagnostic)
     }

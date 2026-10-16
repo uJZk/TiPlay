@@ -9,4 +9,6 @@
     <string name="settings_clear_captured_data">清空擷取資料</string>
     <string name="settings_capture_cleared">擷取資料已清空，已儲存的檔案不受影響。</string>
     <string name="settings_capture_clear_failed">無法清空擷取資料，請重試。</string>
+    <string name="settings_hint_iphone_car_audio">請確保 iPhone 已透過藍牙連接車載音訊。TiPlay 不再接收和轉送 CarPlay 音訊。</string>
+    <string name="settings_hint_permissions_missing">尚未完成的權限或授權：%1$s。請開啟下方的「%2$s」檢查並授權。</string>
 </resources>

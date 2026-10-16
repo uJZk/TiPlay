@@ -1,6 +1,5 @@
 package com.shilapi.xcertplay.transport
 
-import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
@@ -147,7 +146,7 @@ class NcmUsbBridge internal constructor(
             readRequest
         }
         // Wakes a reader blocked in requestWait(); it then observes the closed state.
-        runCatching { requestToClose?.cancel() }
+        runCatching { requestToClose?.tracedCancel() }
         statusThread?.let { thread ->
             thread.interrupt()
             try {
@@ -158,14 +157,14 @@ class NcmUsbBridge internal constructor(
         }
         for (usbInterface in claimedInterfaces.asReversed()) {
             try {
-                connection.releaseInterface(usbInterface)
+                connection.tracedReleaseInterface(usbInterface)
             } catch (_: RuntimeException) {
                 // Best-effort release; the connection close below is authoritative.
             }
         }
         readRequests.close()
-        connection.close()
-        runCatching { requestToClose?.close() }
+        connection.tracedClose()
+        runCatching { requestToClose?.tracedClose() }
     }
 
     private fun drainStatus(endpoint: UsbEndpoint) {
@@ -315,8 +314,8 @@ class NcmUsbBridge internal constructor(
             synchronized(stateLock) {
                 checkOpenLocked()
                 val current = readRequest ?: UsbRequest().also {
-                    if (!it.initialize(connection, inEndpoint)) {
-                        it.close()
+                    if (!it.tracedInitialize(connection, inEndpoint)) {
+                        it.tracedClose()
                         throw failSession("Android could not initialize the NCM read request")
                     }
                     readRequest = it
@@ -361,7 +360,6 @@ class NcmUsbBridge internal constructor(
             if (transferred <= 0) return null
             directReadBuffer.flip()
             directReadBuffer.get(readBuffer, 0, transferred)
-            RawTraffic.record("usb/ncm/${System.identityHashCode(connection)}/in", readBuffer, 0, transferred)
             return transferred
         } catch (error: IphoneUsbException) {
             throw error
@@ -445,7 +443,7 @@ class NcmUsbBridge internal constructor(
                 // same interface id, so it must be claimed once and switched with setInterface.
                 val sameInterface = function.control.id == function.data.id
                 val first = if (sameInterface) function.data else function.control
-                val firstClaimed = retryUsbSetup { connection.claimInterface(first, true) }
+                val firstClaimed = retryUsbSetup { connection.tracedClaimInterface(first, true) }
                 Log.i(
                     IphoneCarPlayConfiguration.TAG,
                     "claim iface=${first.id}/${first.alternateSetting} class=${first.interfaceClass}" +
@@ -459,7 +457,7 @@ class NcmUsbBridge internal constructor(
                 }
                 claimed.add(first)
                 if (!sameInterface) {
-                    val dataClaimed = retryUsbSetup { connection.claimInterface(function.data, true) }
+                    val dataClaimed = retryUsbSetup { connection.tracedClaimInterface(function.data, true) }
                     Log.i(
                         IphoneCarPlayConfiguration.TAG,
                         "claim iface=${function.data.id}/${function.data.alternateSetting}" +
@@ -473,7 +471,7 @@ class NcmUsbBridge internal constructor(
                     }
                     claimed.add(function.data)
                 }
-                val altSelected = retryUsbSetup { connection.setInterface(function.data) }
+                val altSelected = retryUsbSetup { connection.tracedSetInterface(function.data) }
                 Log.i(
                     IphoneCarPlayConfiguration.TAG,
                     "setInterface iface=${function.data.id}/${function.data.alternateSetting} ok=${altSelected != null}" +
@@ -500,12 +498,12 @@ class NcmUsbBridge internal constructor(
             } catch (error: Throwable) {
                 for (usbInterface in claimed.asReversed()) {
                     try {
-                        connection.releaseInterface(usbInterface)
+                        connection.tracedReleaseInterface(usbInterface)
                     } catch (_: RuntimeException) {
                         // The connection close below is authoritative.
                     }
                 }
-                connection.close()
+                connection.tracedClose()
                 if (error is IphoneUsbException) throw error
                 throw IphoneUsbException.DeviceUnavailable("Android NCM open failed", error)
             }

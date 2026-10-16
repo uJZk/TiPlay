@@ -6,6 +6,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.usb.UsbDevice
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.hardware.usb.UsbManager
 import android.os.Handler
 import android.os.Looper
@@ -25,6 +27,11 @@ internal class BrowserCarPlayWatch(context: Context, private val bluetoothConnec
     }
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            if (RawTraffic.enabled && (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED ||
+                    intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED)) {
+                val device = IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+                RawTraffic.record("usb/device-event", "action=${intent.action} device=$device".toByteArray())
+            }
             if (intent.action == BluetoothDevice.ACTION_ACL_CONNECTED) {
                 val device = IntentCompat.getParcelableExtra(intent, BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
                 if (runCatching { device != null && device.address == DiPlayPreferences.phoneAddress(app) }.getOrDefault(false) != true) return
