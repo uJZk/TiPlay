@@ -74,7 +74,7 @@ class AirPlayReceiverService : Service() {
                 }
             }
         }
-        player = AirPlayCastPlayer({ url -> server?.loadResource(url) }) { state, epoch ->
+        player = AirPlayCastPlayer({ url, range -> server?.loadResource(url, range) }) { state, epoch ->
             playbackDiagnostics.callback(state, epoch)
             val ended = state in listOf("failed", "stopped")
             synchronized(displayLock) {
@@ -337,7 +337,11 @@ class AirPlayReceiverService : Service() {
         super.onDestroy()
     }
 
-    override fun onTaskRemoved(rootIntent: Intent?) { stopSelf() }
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // The launcher removes its empty handoff task while the host task still owns the receiver.
+        if (rootIntent?.component?.className == FirstUseActivity::class.java.name) return
+        stopSelf()
+    }
 
     companion object {
         private const val CHANNEL = "tiplay_airplay_receiver"

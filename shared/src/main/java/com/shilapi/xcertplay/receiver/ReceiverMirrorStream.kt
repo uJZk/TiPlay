@@ -119,10 +119,13 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
                         if (body.isEmpty() && suspended) continue
                         val width = data.getFloat(56).toInt()
                         val height = data.getFloat(60).toInt()
+                        diagnostics.configInput(body.size, ScreenCodec.describeConfig(body).codec)
                         diagnostics.geometry(width, height)
-                        require(width in 16..8192 && height in 16..8192)
+                        if (width !in 16..8192 || height !in 16..8192)
+                            throw ReceiverMirrorCodec.ConfigurationException(ReceiverMirrorCodec.Reason.INVALID_GEOMETRY)
                         val config = ReceiverMirrorCodec.config(body, hevcEnabled)
                         diagnostics.config(config.codec, config.record.size)
+                        diagnostics.envelope(config)
                         codec = config.codec
                         lengthBytes = config.lengthBytes
                         if (suspended) continue

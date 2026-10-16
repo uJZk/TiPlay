@@ -736,6 +736,35 @@ class TeslaBrowserLinkTest {
         assertFalse(status.fit)
     }
 
+    @Test fun detailedAudioEvidenceReachesTheExportOnlyWhileDebugIsCurrentlyEnabled() {
+        val server = started()
+        val logs = CopyOnWriteArrayList<String>()
+        TeslaBrowserLink.attachHost(object : TeslaBrowserLink.Host {
+            override fun log(message: String) { logs += message }
+            override fun onBrowserFit() = Unit
+        })
+        val directory = java.nio.file.Files.createTempDirectory("browser-audio-export").toFile()
+        val raw = com.shilapi.xcertplay.diagnostics.RawTraffic
+        val capture = java.io.File(directory, "raw.tsv")
+        val detail = mapOf("pageVersion" to "v52", "pcmNonzero" to 400, "renderNonzero" to 0,
+            "stream0.headMs" to 1792120000000L, "stream0.capacityPackets" to 117)
+        try {
+            DiagnosticLogPolicy.level = DiagnosticLogLevel.DEBUG
+            raw.configure(capture, true)
+            server.callbacks.onBrowserAudioDiagnostics(detail)
+            assertTrue(logs.any { it.contains("pcmNonzero=400") && it.contains("renderNonzero=0") })
+            assertTrue(logs.any { it.contains("headMs=1792120000000") && it.contains("capacityPackets=117") })
+            val count = logs.size
+            DiagnosticLogPolicy.level = DiagnosticLogLevel.STANDARD
+            raw.configure(capture, false)
+            server.callbacks.onBrowserAudioDiagnostics(detail)
+            assertEquals(count, logs.size)
+        } finally {
+            raw.configure(capture, false)
+            directory.deleteRecursively()
+        }
+    }
+
     @Test fun browserStatsReachTheSessionLogAtMostEvery10Seconds() {
         val server = started()
         DiagnosticLogPolicy.level = DiagnosticLogLevel.DEBUG

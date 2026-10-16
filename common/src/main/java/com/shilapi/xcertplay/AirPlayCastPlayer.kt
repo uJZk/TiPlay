@@ -13,13 +13,14 @@ import java.io.Closeable
 import java.util.concurrent.atomic.AtomicLong
 
 /** URL media and original still images are decoded by the browser, without Android re-encoding. */
-internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResource?,
+internal class AirPlayCastPlayer(private val resource: (String, String?) -> ReceiverResource?,
                                 private val stateChanged: (String, Long) -> Unit) : Closeable {
     private val main = Handler(Looper.getMainLooper())
-    private val diagnostics = AirPlayVideoDiagnostics {
-        Log.i("tiplay-airplay", it)
-        TeslaBrowserLink.persistDiagnostic(it)
+    private fun logDiagnostic(message: String) {
+        Log.i("tiplay-airplay", message)
+        TeslaBrowserLink.persistDiagnostic(message)
     }
+    private val diagnostics = AirPlayVideoDiagnostics(::logDiagnostic)
     @Volatile private var browserVideo: AirPlayVideoPlayback? = null
     @Volatile private var browserPhoto: AirPlayPhotoPlayback? = null
     @Volatile private var audioActive = false
@@ -55,7 +56,7 @@ internal class AirPlayCastPlayer(private val resource: (String) -> ReceiverResou
         return main.post {
             if (!live(token)) return@post
             stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED, token)
-            val playback = AirPlayVideoPlayback(item, resource) { event -> main.post {
+            val playback = AirPlayVideoPlayback(item, resource, ::logDiagnostic) { event -> main.post {
                 if (live(token)) {
                     if (event == "stopped" || event == "failed") stopNow(
                         if (event == "failed") AirPlayVideoDiagnostics.StopReason.BROWSER_FAILED else AirPlayVideoDiagnostics.StopReason.BROWSER_ENDED, token,

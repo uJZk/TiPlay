@@ -2,6 +2,7 @@ package com.shilapi.xcertplay
 
 import android.Manifest
 import android.app.Notification
+import android.app.ActivityManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -11,6 +12,8 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import androidx.core.content.ContextCompat
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import com.shilapi.xcertplay.host.R
 
 /** Keeps an explicitly started connection alive when another car app is in the foreground. */
@@ -59,7 +62,21 @@ class DiPlaySessionService : Service() {
                 checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                 types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             }
-            startForeground(1, notification, types)
+            val started = SessionForegroundStart.start(types,
+                permissionGranted = { type ->
+                    checkSelfPermission(if (type == ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                        Manifest.permission.RECORD_AUDIO else Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                },
+                start = { acceptedTypes -> startForeground(1, notification, acceptedTypes) },
+                log = DiagnosticLogs::append, debug = { RawTraffic.enabled },
+                processImportance = {
+                    ActivityManager.RunningAppProcessInfo().also { ActivityManager.getMyMemoryState(it) }.importance
+                })
+            if (!started) {
+                phoneBrowserLocks.release()
+                stopSelf()
+                return START_NOT_STICKY
+            }
         } else startForeground(1, notification)
         HotspotExtraAddressSettings.sync(this) // phone + browser mode: keep the car browser's hotspot address
         TeslaBrowserLink.sync(this)
@@ -74,6 +91,9 @@ class DiPlaySessionService : Service() {
         super.onDestroy()
     }
     override fun onTaskRemoved(rootIntent: Intent?) {
+        // The launcher removes its empty task after opening the separate CarPlay task.
+        // That cleanup is not a request to disconnect the session owned by that task.
+        if (rootIntent?.component?.className == FirstUseActivity::class.java.name) return
         phoneBrowserLocks.release()
         // BYD's recents force-stops the package ~10 ms after removing the task: end guidance first.
         com.shilapi.xcertplay.hud.BydNavigationOutputs.endNow()
@@ -83,5 +103,16 @@ class DiPlaySessionService : Service() {
     companion object {
         const val ACTION_STOP = "com.shihab.diplay.DISCONNECT"
         private const val CHANNEL = "diplay_connection"
+
+        /** Called from a resumed app screen to retry access after a background denial. */
+        fun refreshForegroundAccess(context: android.content.Context) {
+            if (!CarPlayBackgroundSession.hasSession()) return
+            try {
+                ContextCompat.startForegroundService(context, Intent(context, DiPlaySessionService::class.java))
+            } catch (error: RuntimeException) {
+                if (!SessionForegroundStart.backgroundStartRejected(error)) throw error
+                DiagnosticLogs.append("session foreground stage=DISPATCH unavailable reason=BACKGROUND_START_REJECTED")
+            }
+        }
     }
 }

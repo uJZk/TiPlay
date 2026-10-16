@@ -22,6 +22,7 @@ object RawTraffic {
     private var lastFailure = "none"
 
     private var configuration = ""
+    private var sessionId: String? = null
     private var needsBoundaryCheck = true
 
     fun configure(destination: File, active: Boolean, configuration: String = "") = synchronized(lock) {
@@ -38,8 +39,12 @@ object RawTraffic {
 
     private fun startSession() {
         val session = java.util.UUID.randomUUID().toString()
+        sessionId = session
         record("capture/start", ("process=$process session=$session startEpochMillis=${System.currentTimeMillis()}\n" + configuration).toByteArray())
     }
+
+    /** Binds browser reports to this enable/clear cycle, including delayed control retries. */
+    fun activeSessionId(): String? = synchronized(lock) { sessionId.takeIf { enabled } }
 
     /** Explicit user action; saved artifacts are independent. An active capture starts a fresh session. */
     fun clear() = synchronized(lock) {

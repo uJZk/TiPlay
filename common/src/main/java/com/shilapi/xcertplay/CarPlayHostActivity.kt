@@ -1173,6 +1173,7 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (!headUnitIntegrations()) {
+            DiPlaySessionService.refreshForegroundAccess(this)
             val granted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
             val changed = microphoneAvailable != granted
             microphoneAvailable = granted

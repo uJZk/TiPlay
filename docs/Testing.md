@@ -76,7 +76,20 @@ Record Android/device, browser/vehicle firmware, iPhone/iOS, app version, transp
 
 ## Debug raw capture and car Bluetooth hints
 
-Current automated verification: 1,989 shared, 1,573 common and 6 home unit tests; 244 browser tests; 9 release-draft tests; public-source scan; and mobile/home/maphost Android lint and debug builds all passed. The full local suite used a temporary 3 GiB test-JVM heap override to avoid simulator initialization slowing under the repository default of 1 GiB; committed build settings are unchanged. The browser shutdown test now closes its client sockets after verifying server-initiated EOF and before checking port reuse, so half-closed TCP connections do not interfere with that check.
+Run the repository workflow checks against the intended source. Browser audio regressions
+exercise actual worklet/timeline code with nonzero PCM across the producer lead, output-delay
+and clock-margin boundary; they also distinguish decoded from rendered output, classify
+discard reasons, isolate retired worklet reports and bound processor-failure recovery.
+Diagnostic transport checks verify independent audio-detail limits, live Debug switching and
+exact browser audio response capture. Socket fixtures must close their clients after checking
+server-initiated EOF and before checking port reuse.
+
+Mirror regressions accept bounded terminal zero padding while rejecting malformed box tails
+and hidden HDR/Dolby extensions. Resource fixtures verify Range isolation, FCUP request headers,
+partial responses without double slicing, ignored-range full responses and upstream denial
+classification. Foreground-service tests cover granted-but-ineligible access, bounded fallback,
+foreground retry and refusal without a process crash. Task-removal tests preserve the active
+session when the empty launcher task is removed, while session-task removal still stops it.
 
 `RawTrafficTest`, `DiagnosticExportStoreTest` and `SessionLogIntegrityTest` cover exact recovery of large binary payloads, byte ranges, unredacted credentials, disabled capture, exclusion of retained raw history from Standard TXT, Debug ZIP stream reconstruction, snapshot stability, PCM/binary extensions, temporary-file cleanup and preservation of interrupted records without preventing later session exports. `DiagnosticLogsTest` covers ignoring persisted Debug values at process initialization and capture configuration. `DiagnosticCaptureClearUiTest` covers the completed-export Clear action; `BrowserMainPageTest` covers the performance hint. `DiagnosticExportFallbackTest` also covers ZIP MIME/extension preservation, distinct share URIs and byte-identical fallback copies. `AirPlayVideoProxyTest` and `BrowserLinkServerTest` verify that the debug policy removes peer URLs, rewrites playlist children and proxies redirects, while Standard retains direct eligibility. The Chromium `airplay-video.mjs` harness toggles the policy during decoded playback and checks proxy requests, absence of direct iPhone requests while enabled and restored direct playback when disabled.
 

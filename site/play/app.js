@@ -7,7 +7,7 @@
  * local-network treatment. On the Tesla path its body is transferred to decoder-worker.js, which draws on the
  * transferred canvas; other browsers take a later rung of the fallback ladder (link.js choosePath). */
 import {
-  DEFAULT_HOST, PROTOCOL, addressSpaceFor, backoffDelay, choosePath, createControlOutbox, createTouchSlots, flatStats,
+  DEFAULT_HOST, PROTOCOL, addressSpaceFor, backoffDelay, choosePath, createControlOutbox, createTouchSlots,
   isCode, linkFromAddress, linkLocation, mapPoint, newSessionId, normalizeHost, supportedCodecs,
   timeoutSignal, viewportFor,
 } from './link.js';
@@ -24,6 +24,7 @@ import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
 import { createAirPlayTrustNotification } from './airplay-trust.js';
 import { createBrowserNotice } from './browser-notice.js';
+import { browserDiagnosticEvents } from './browser-diagnostics.js';
 
 const STRINGS = {
   en: {
@@ -409,7 +410,9 @@ function start() {
   outbox = createControlOutbox({ send: postControl, heldContacts: () => slots.contacts(), onStatus: applyStatus, onError: controlFailed });
   reportAppearance();
   heartbeatTimer = setInterval(() => outbox.heartbeat(), 400);
-  statsTimer = setInterval(() => outbox.push({ k: 'st', v: { ...flatStats(pageStats()), themeDark: appearance.matches } }, 'latest'), 5000);
+  statsTimer = setInterval(() => {
+    for (const event of browserDiagnosticEvents(pageStats(), appearance.matches, status?.debug === true, status?.debugSession)) outbox.push(event, 'latest');
+  }, 5000);
   outbox.heartbeat();
   resizeCanvas();
   scheduleViewport();
@@ -567,6 +570,7 @@ async function postControl(q, events) {
 function applyStatus(next) {
   browserLocation.update(next.location);
   airplayTrust.update(next.airplayTrust);
+  if (next.debugSession !== status?.debugSession) browserAudio.debug(false);
   browserAudio.status(next);
   airplayControls.update(next.airplay);
   if (Number.isSafeInteger(next.portalRevision)) {

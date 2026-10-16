@@ -60,7 +60,22 @@ data class ReceiverPlay(val url: String, val start: Double, val fraction: Boolea
     }
 }
 
-data class ReceiverResource(val bytes: ByteArray?, val status: Int?, val location: String?)
+data class ReceiverResource(val bytes: ByteArray?, val status: Int?, val location: String?,
+                            val headers: Map<String, String> = emptyMap()) {
+    /** Only resource metadata crosses FCUP; cookies and authentication never become proxy headers. */
+    companion object {
+        internal val byteRange = Regex("bytes=(?:[0-9]{1,18}-[0-9]{0,18}|-[0-9]{1,18})")
+        internal fun headers(values: Map<*, *>?): Map<String, String> {
+            val allowed = listOf("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Deny-Reason")
+            return allowed.mapNotNull { name ->
+                val entries = values?.entries?.filter { (it.key as? String)?.equals(name, true) == true }.orEmpty()
+                val value = entries.singleOrNull()?.value as? String
+                value?.takeIf { it.length in 1..1024 && it.none { c -> c == '\r' || c == '\n' || c == '\u0000' } }
+                    ?.let { name to it }
+            }.toMap()
+        }
+    }
+}
 
 internal fun receiverQuery(path: String): Map<String, String> = path.substringAfter('?', "").split('&')
     .filter { it.contains('=') }.associate { it.substringBefore('=') to URLDecoder.decode(it.substringAfter('='), "UTF-8") }

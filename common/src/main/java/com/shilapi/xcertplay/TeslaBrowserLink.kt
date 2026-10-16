@@ -571,6 +571,8 @@ internal object TeslaBrowserLink {
                     "errors" to counter(stats["video.decodeErrors"]),
                     "gaps" to counter(stats["video.gaps"]),
                     "reconnects" to counter(stats["link.reconnects"]),
+                    "audioProcessorErrors" to counter(stats["audio.processorErrors"]),
+                    "audioRecoveries" to counter(stats["audio.recoveries"]),
                 )
                 anomalies = counters.mapValues { (key, value) ->
                     (value - (lastStatsCounters[key] ?: 0L)).coerceAtLeast(0L)
@@ -580,6 +582,11 @@ internal object TeslaBrowserLink {
             if (DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG) log(statsLine(stats))
             else if (anomalies.isNotEmpty()) log("Browser anomaly: " +
                 anomalies.entries.joinToString(" ") { (key, count) -> "$key=$count" })
+        }
+        override fun onBrowserAudioDiagnostics(stats: Map<String, Any?>) {
+            if (DiagnosticLogPolicy.level != DiagnosticLogLevel.DEBUG ||
+                !com.shilapi.xcertplay.diagnostics.RawTraffic.enabled) return
+            BrowserAudioDiagnostics.lines(stats).forEach(::log)
         }
         override fun log(message: String) = this@TeslaBrowserLink.log(message)
     }

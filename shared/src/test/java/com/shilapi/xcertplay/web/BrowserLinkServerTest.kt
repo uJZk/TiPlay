@@ -42,6 +42,7 @@ class BrowserLinkServerTest {
     private val viewports = CopyOnWriteArrayList<BrowserViewport>()
     private val keys = CopyOnWriteArrayList<String>()
     private val stats = CopyOnWriteArrayList<Map<String, Any?>>()
+    private val audioDiagnostics = CopyOnWriteArrayList<Map<String, Any?>>()
     private val fits = AtomicInteger()
     private val logs = CopyOnWriteArrayList<String>()
     @Volatile private var pairingCode: String? = code
@@ -68,6 +69,7 @@ class BrowserLinkServerTest {
         override fun onFit() { fits.incrementAndGet() }
         override fun onKey(name: String) { keys += name }
         override fun onBrowserStats(stats: Map<String, Any?>) { this@BrowserLinkServerTest.stats += stats }
+        override fun onBrowserAudioDiagnostics(stats: Map<String, Any?>) { audioDiagnostics += stats }
         override fun log(message: String) { logs += message }
     }
 
@@ -169,6 +171,79 @@ class BrowserLinkServerTest {
             assertArrayEquals(byteArrayOf(1, 2, 3, 4), packet.copyOfRange(28, 32))
             assertEquals(204, post("/bye", """{"c":"$code","s":"$session"}""").status)
             assertTrue(client.closedByServer())
+        }
+    }
+
+    @Test fun audioDiagnosticsHaveAnIndependentBudgetAndFollowTheLiveDebugSwitch() {
+        val directory = java.nio.file.Files.createTempDirectory("browser-audio-debug").toFile()
+        val capture = File(directory, "raw.tsv")
+        val detail = (0 until 100).associate { "stream0.field$it" to it }
+        val json = WebJson.write(detail)
+        assertTrue(json.length > 2048)
+        fun event(session: Any?) = """{"k":"audio-diag","d":${WebJson.write(session)},"v":$json}"""
+        try {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            assertEquals(false, control(1, event(null)).json["debug"])
+            assertTrue(audioDiagnostics.isEmpty())
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, true)
+            val debugSession = control(2).json["debugSession"]
+            assertTrue(debugSession is String)
+            assertEquals(401, control(3, event(debugSession), c = "0000").status)
+            assertTrue(audioDiagnostics.isEmpty())
+            assertEquals(true, control(3, event(debugSession)).json["debug"])
+            assertEquals(detail.keys, audioDiagnostics.single().keys)
+            control(4, """{"k":"st","v":$json}""")
+            assertTrue("Ordinary stats retain their smaller bound", stats.isEmpty())
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            assertEquals(false, control(5, event(debugSession)).json["debug"])
+            assertEquals(1, audioDiagnostics.size)
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, true)
+            val reopened = control(6, event(debugSession)).json["debugSession"]
+            assertTrue(reopened != debugSession)
+            assertEquals("A retried old event cannot enter the new capture", 1, audioDiagnostics.size)
+            com.shilapi.xcertplay.diagnostics.RawTraffic.clear()
+            val cleared = control(7, event(reopened)).json["debugSession"]
+            assertTrue(cleared != reopened)
+            assertEquals(1, audioDiagnostics.size)
+            control(8, event(cleared))
+            assertEquals(2, audioDiagnostics.size)
+        } finally {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun debugCaptureContainsWrittenBrowserAudioAndCanStopWithoutReconnecting() {
+        val directory = java.nio.file.Files.createTempDirectory("browser-audio-written").toFile()
+        val capture = File(directory, "raw.tsv")
+        val raw = com.shilapi.xcertplay.diagnostics.RawTraffic
+        fun written(): List<ByteArray> = if (!capture.exists()) emptyList() else capture.readLines().mapNotNull { line ->
+            val parts = line.split('\t')
+            if (parts.size == 5 && parts[2].startsWith("browser/audio/") && parts[2].endsWith("/written"))
+                java.util.Base64.getDecoder().decode(parts[4]) else null
+        }
+        try {
+            raw.configure(capture, false)
+            Client().use { client ->
+                client.get("/audio?c=$code&s=$session")
+                assertEquals(200, client.response().status)
+                audioHub.begin(owner)
+                repeat(5) { client.bytes(28) }
+                raw.configure(capture, true)
+                audioHub.publish(owner, 0, 48000, 2, byteArrayOf(1, 2, 3, 4))
+                val packet = client.bytes(32)
+                eventually("browser audio bytes are recorded after a successful write") {
+                    written().any { it.contentEquals(packet) }
+                }
+                raw.configure(capture, false)
+                val count = written().size
+                audioHub.publish(owner, 0, 48000, 2, byteArrayOf(5, 6, 7, 8))
+                assertArrayEquals(byteArrayOf(5, 6, 7, 8), client.bytes(32).copyOfRange(28, 32))
+                assertEquals(count, written().size)
+            }
+        } finally {
+            raw.configure(capture, false)
+            directory.deleteRecursively()
         }
     }
 
@@ -688,7 +763,7 @@ class BrowserLinkServerTest {
 
     @Test fun airplayResourcesRequirePairingAndCannotOutliveTheirPlaybackId() {
         val requests = AtomicInteger()
-        val playback = AirPlayVideoPlayback(com.shilapi.xcertplay.receiver.ReceiverPlay("mlhls://localhost/video", 0.0, false), {
+        val playback = AirPlayVideoPlayback(com.shilapi.xcertplay.receiver.ReceiverPlay("mlhls://localhost/video", 0.0, false), { _, _ ->
             requests.incrementAndGet()
             com.shilapi.xcertplay.receiver.ReceiverResource(byteArrayOf(1, 2, 3), 200, null)
         }) {}
@@ -709,7 +784,7 @@ class BrowserLinkServerTest {
 
     @Test fun peerMediaIsFetchedByAndroidAndNeverRedirectedToTheBrowser() {
         val playback = AirPlayVideoPlayback(com.shilapi.xcertplay.receiver.ReceiverPlay(
-            "http://192.168.1.7/movie.mp4", 0.0, false, iphoneHost = "192.168.1.7"), {
+            "http://192.168.1.7/movie.mp4", 0.0, false, iphoneHost = "192.168.1.7"), { _, _ ->
             com.shilapi.xcertplay.receiver.ReceiverResource(byteArrayOf(4, 5, 6), 200, null)
         }) {}
         val binding = AirPlayBrowserPlayback.register(playback::state, playback, control = playback::control)
@@ -730,7 +805,7 @@ class BrowserLinkServerTest {
     }
 
     @Test fun airplayBrowserDiagnosticsRequirePairingAndDoNotControlPlayback() {
-        val playback = AirPlayVideoPlayback(com.shilapi.xcertplay.receiver.ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
+        val playback = AirPlayVideoPlayback(com.shilapi.xcertplay.receiver.ReceiverPlay("http://example.test/video.mp4", 0.0, false), { _, _ -> null }) {}
         val binding = AirPlayBrowserPlayback.register(playback::state, playback, control = playback::control)
         try {
             val id = AirPlayBrowserPlayback.snapshot()!!["id"] as Long

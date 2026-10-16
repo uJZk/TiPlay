@@ -147,6 +147,8 @@ class FirstUseActivity : ComponentActivity() {
 
     private fun openMain() {
         startActivity(CarPlaySettingsNavigation.mainIntent(this))
-        finish()
+        // The singleTask host has a separate affinity. Finishing its launcher root alone
+        // leaves an empty, black task card on some Android launchers.
+        if (isTaskRoot) finishAndRemoveTask() else finish()
     }
 }

@@ -193,7 +193,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     }
 
     /** An iPhone app may own its HLS playlists. Request them on reverse HTTP, as UxPlay does. */
-    fun loadResource(url: String): ReceiverResource? {
+    fun loadResource(url: String, range: String? = null): ReceiverResource? {
+        if (range != null && !ReceiverResource.byteRange.matches(range)) return null
         if (!com.shilapi.xcertplay.airplay.VideoInCar.isPlayableUrl(url, iphoneLoadsAppSchemes = true)) return null
         val acquisition = synchronized(ownership) {
             if (closed.get()) return null
@@ -203,7 +204,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.UNAVAILABLE)
                 return null
             }
-            val acquisition = resources.acquire(session, peer, url) ?: return null
+            val acquisition = resources.acquire(session, peer, url, range) ?: return null
             diagnostics.resource(if (acquisition.created) ReceiverProtocolDiagnostics.ResourceStage.QUEUED
                 else ReceiverProtocolDiagnostics.ResourceStage.REUSED, acquisition.pending.id)
             dispatchNextResource()
@@ -266,7 +267,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             "FCUP_Response_RequestID" to pending.id, "FCUP_Response_URL" to pending.url,
             "FCUP_Response_IsContentKeyRequest" to false, "sessionID" to 1,
             "FCUP_Response_Headers" to mapOf("X-Playback-Session-Id" to pending.session,
-                "User-Agent" to "AppleCoreMedia/1.0.0.11B554a (Apple TV; U; CPU OS 7_0_4 like Mac OS X; en_us)"),
+                "User-Agent" to "AppleCoreMedia/1.0.0.11B554a (Apple TV; U; CPU OS 7_0_4 like Mac OS X; en_us)") +
+                (pending.range?.let { mapOf("Range" to it) } ?: emptyMap()),
         ))), pending.session)
     }
 
@@ -614,7 +616,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         (params["FCUP_Response_StatusCode"] as? Number)?.toInt(),
                         (params["FCUP_Response_Data"] as? ByteArray)?.size)
                     pending.future.complete(ReceiverResource(params["FCUP_Response_Data"] as? ByteArray,
-                        (params["FCUP_Response_StatusCode"] as? Number)?.toInt(), location))
+                        (params["FCUP_Response_StatusCode"] as? Number)?.toInt(), location, ReceiverResource.headers(headers)))
                     dispatchNextResource()
                     return RtspMessage.Response()
                 }

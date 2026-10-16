@@ -3,9 +3,8 @@ import { presentationTime } from './clock-sync.js';
 import { readAudioRecords } from './audio-protocol.js';
 import { initialPlaybackPlans } from './playback-window.js';
 import { createAirPlayAudioDecoder } from './airplay-audio-decoder.js';
-
-const MAX_AUDIO_AHEAD_BYTES = 1024 * 1024;
-const MAX_DECODED_PACKET_BYTES = 64 * 1024;
+import { MAX_AUDIO_AHEAD_BYTES, MAX_DECODED_PACKET_BYTES } from './audio-buffer-policy.js';
+import { pcmStats, measurePcm } from './audio-pcm-stats.js';
 
 /** Playback only. Android owns demand-driven car Bluetooth capture and speech playback. */
 export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {} }) {
@@ -15,6 +14,9 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let retryTimer = null;
   let clock = null, delayPlans = initialPlaybackPlans(), timedPackets = 0, fallbackPackets = 0;
   let clockBase = null, playbackGeneration = 0;
+  let debugEnabled = false, pcmMetrics = null, workletMetrics = null, reportAt = null;
+  let diagnosticRevision = 0;
+  let processorErrors = 0, recoveries = 0, processorFailed = false, recoveryAttempts = 0, recoveryTimer = null;
   const plansByMode = {};
   const encodedReservations = new Map();
   const reservedBytes = () => [...encodedReservations.values()].reduce((total, bytes) => total + bytes, 0);
@@ -27,11 +29,68 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     onPcm: record => publishPcm(record),
     onError: cause => { releaseEncoded(); audioError = cause.message || String(cause); notify(); },
   });
+  const now = () => performance.timeOrigin + performance.now();
+  const debugSnapshot = () => ({
+    processorErrors, recoveries, processorFailed, recoveryAttempts,
+    contextState: context?.state ?? 'unavailable', contextTimeMs: context ? context.currentTime * 1000 : null,
+    contextRate: context?.sampleRate ?? null, contextBaseLatencyMs: context?.baseLatency * 1000,
+    contextOutputLatencyMs: context?.outputLatency * 1000, clockBase,
+    clockOffsetMs: clock?.offset ?? null, clockAgeMs: clock ? now() - clock.at : null, clockRttMs: clock?.rtt ?? null,
+    pcmPackets: pcmMetrics?.packets ?? 0, pcmFrames: pcmMetrics?.frames ?? 0,
+    pcmNonzero: pcmMetrics?.nonzero ?? 0, pcmPeak: pcmMetrics?.peak ?? 0,
+    ...workletMetrics,
+    renderReportAgeMs: reportAt === null ? null : now() - reportAt,
+    renderAgeMs: clockBase !== null && workletMetrics ? now() - clockBase - workletMetrics.renderTimeMs : null,
+    decoder: packetDecoder.stats(),
+  });
   const snapshot = () => ({ supported: support, enabled, sound: context?.state === 'running',
     bluetooth: voiceState, browserMuted: false, error: voiceError ?? audioError,
-    timedPackets, fallbackPackets, queuedBytes });
+    timedPackets, fallbackPackets, queuedBytes, processorErrors, recoveries, processorFailed,
+    ...(debugEnabled ? { debug: debugSnapshot() } : {}) });
   const notify = () => onState(snapshot());
   const auth = () => { const { code, session } = credentials(); return `c=${encodeURIComponent(code)}&s=${encodeURIComponent(session)}`; };
+  function debug(value) {
+    const next = value === true;
+    if (next === debugEnabled) return;
+    debugEnabled = next; diagnosticRevision++; pcmMetrics = next ? pcmStats() : null; workletMetrics = null; reportAt = null;
+    packetDecoder.debug(next); node?.port.postMessage({ debug: next, diagnosticRevision }); notify();
+  }
+  function retireNode() {
+    if (!node) return;
+    node.onprocessorerror = null; node.port.onmessage = null;
+    node.disconnect?.(); node = null; workletMetrics = null; reportAt = null;
+  }
+  function recoverProcessor() {
+    if (disposed || !connection || connection.aborted || !enabled || context?.state !== 'running') return;
+    if (recoveryAttempts >= 2) { audioError = 'Audio processor failed repeatedly.'; notify(); return; }
+    recoveryAttempts++;
+    const expected = connection;
+    recoveryTimer = setTimeout(() => {
+      recoveryTimer = null;
+      if (disposed || connection !== expected || expected.aborted || !enabled) return;
+      try {
+        installNode(); recoveries++; processorFailed = false;
+        stream(expected); notify();
+      } catch (_) { retireNode(); audioError = 'Audio processor could not restart.'; recoverProcessor(); notify(); }
+    }, 100);
+  }
+  function installNode() {
+    const installed = new AudioWorkletNode(context, 'tiplay-audio', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+    node = installed; installed.connect(context.destination);
+    installed.port.onmessage = ({ data }) => {
+      if (disposed || node !== installed) return;
+      if (data.consumed && data.generation === playbackGeneration) {
+        queuedBytes = Math.max(0, queuedBytes - data.consumed); capacity?.(); capacity = null;
+      }
+      if (debugEnabled && data.diagnosticRevision === diagnosticRevision && data.diagnostics) { workletMetrics = data.diagnostics; reportAt = now(); }
+    };
+    installed.onprocessorerror = () => {
+      if (disposed || node !== installed) return;
+      processorErrors++; processorFailed = true; audioError = 'Audio processor failed.';
+      stopStream(); retireNode(); recoverProcessor(); notify();
+    };
+    installed.port.postMessage({ debug: debugEnabled, diagnosticRevision });
+  }
   // Android separates speech from music; Bluetooth state never resets or mutes browser playback.
   function route(next) {
     if (!next || !Number.isInteger(next.revision)) return;
@@ -51,6 +110,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     queuedBytes = 0; capacity?.(); capacity = null;
   }
   function publishPcm(record) {
+    if (pcmMetrics) measurePcm(pcmMetrics, record.pcm, record.channels);
     if (disposed || !node || context?.state !== 'running') return;
     if (!record.pcm.byteLength && record.flags & 2) encodedReservations.delete(record.type);
     else if (record.flags & 1) releaseEncoded(record.type);
@@ -62,7 +122,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       if (Number.isFinite(record.sourceTime)) { timedPackets++; onTiming(record.sourceTime, record.mode); }
       else fallbackPackets++;
     }
-    clockBase ??= performance.timeOrigin + performance.now() - context.currentTime * 1000;
+    clockBase ??= now() - context.currentTime * 1000;
     node.port.postMessage({ plans: delayPlans, plansByMode, clockBase });
     record.generation = playbackGeneration;
     queuedBytes += record.pcm.byteLength;
@@ -123,29 +183,27 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   }
   async function activate() {
     if (disposed) return;
+    clearTimeout(recoveryTimer); recoveryTimer = null;
     try {
       // Creating/resuming the context happens before awaiting, preserving user activation.
       context ??= new AudioContext({ latencyHint: 'interactive' });
       const resumed = context.resume();
       ready ??= context.audioWorklet.addModule(new URL('audio-worklet.js', import.meta.url)).then(() => {
         if (disposed) return;
-        node = new AudioWorkletNode(context, 'tiplay-audio', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
-        node.connect(context.destination);
-        node.port.onmessage = ({ data }) => {
-          if (data.consumed && data.generation === playbackGeneration) {
-            queuedBytes = Math.max(0, queuedBytes - data.consumed); capacity?.(); capacity = null;
-          }
-        };
+        installNode();
       });
       // Load the worklet even while autoplay waits for the first gesture.
-      Promise.all([ready, resumed]).then(() => { if (!disposed) { audioError = null; stream(connection); notify(); } }).catch(failure => { if (!disposed) { audioError = failure.message; notify(); } });
+      Promise.all([ready, resumed]).then(() => { if (!disposed) {
+        if (!node) installNode();
+        processorFailed = false; audioError = null; stream(connection); notify();
+      } }).catch(failure => { if (!disposed) { audioError = failure.message; notify(); } });
       await ready;
       if (disposed) return;
       notify();
     } catch (failure) { if (!disposed) { audioError = failure.message; notify(); } }
   }
   return {
-    activate, stats: snapshot,
+    activate, debug, stats: snapshot,
     clock(value) { clock = value; },
     delay(value, mode) {
       if (mode) plansByMode[mode] = value;
@@ -154,21 +212,27 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     },
     reset() { packetDecoder.reset(); releaseEncoded(); playbackGeneration++; clockBase = null; queuedBytes = 0; node?.port.postMessage({ reset: true }); capacity?.(); capacity = null; },
     start() { activate(); },
-    gesture() { if (!disposed && context?.state !== 'running') activate(); },
+    gesture() { if (!disposed && (context?.state !== 'running' || processorFailed)) { recoveryAttempts = 0; activate(); } },
     attach(signal, hello) {
       this.stop(); voiceRevision = null; connection = signal; support = hello.audio === true;
+      recoveryAttempts = 0;
       signal.addEventListener('abort', () => { if (connection === signal) this.stop(); }, { once: true });
-      stream(signal); notify();
+      if (!node && processorFailed) activate(); else stream(signal);
+      notify();
     },
     status(status) {
+      debug(status.debug);
       const changed = enabled !== (status.audio !== false);
       enabled = status.audio !== false;
       route(status.voice);
       if (!enabled) stopStream();
-      else if (changed) stream(connection);
+      else if (changed) {
+        if (!node && processorFailed) { recoveryAttempts = 0; activate(); }
+        else stream(connection);
+      }
       notify();
     },
-    stop() { connection = null; stopStream(); voiceError = null; voiceState = 'idle'; notify(); },
-    dispose() { disposed = true; this.stop(); packetDecoder.dispose(); context?.close().catch(() => {}); context = null; ready = null; node = null; },
+    stop() { clearTimeout(recoveryTimer); recoveryTimer = null; connection = null; stopStream(); voiceError = null; voiceState = 'idle'; notify(); },
+    dispose() { disposed = true; this.stop(); retireNode(); packetDecoder.dispose(); context?.close().catch(() => {}); context = null; ready = null; },
   };
 }

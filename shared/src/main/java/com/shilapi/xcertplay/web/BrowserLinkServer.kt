@@ -65,6 +65,8 @@ class BrowserLinkServer(
         fun onKey(name: String)
         /** A flat stats snapshot from the page: numbers, booleans and short strings. */
         fun onBrowserStats(stats: Map<String, Any?>)
+        /** Debug-only decoded-audio/render diagnostics, independently bounded from ordinary stats. */
+        fun onBrowserAudioDiagnostics(stats: Map<String, Any?>) {}
         /** Diagnostics for the session log. The server never puts codes, session ids or addresses in them. */
         fun log(message: String)
     }
@@ -323,12 +325,15 @@ class BrowserLinkServer(
         }
         try {
             socket.sendBufferSize = 16 * 1024
-            output.write(head(200, request, listOf("Content-Type" to "application/octet-stream", "Connection" to "close")))
+            // The records include codec configuration and decrypted audio. Keep the actual written
+            // browser stream in opt-in capture so a decoder/output fault can be replayed later.
+            val captured = RawTraffic.output("browser/audio/${socket.remoteSocketAddress}/${socket.localPort}/out", output)
+            captured.write(head(200, request, listOf("Content-Type" to "application/octet-stream", "Connection" to "close")))
             while (running.get() && !stream.subscription.closed) {
                 val record = stream.subscription.take(HEARTBEAT_MILLIS) ?: ByteArray(4)
                 if (stream.subscription.closed) break
                 stream.writingSince = nowMillis()
-                output.write(record)
+                captured.write(record)
                 stream.writingSince = null
             }
         } finally {
@@ -356,7 +361,13 @@ class BrowserLinkServer(
             else playback!!.proxy.open(resourceId, request.headers["range"], forceProxy) { child ->
                 "/airplay-resource?id=$id&r=${AirPlayVideoProxy.query(child)}&c=${AirPlayVideoProxy.query(request.query["c"].orEmpty())}&s=${AirPlayVideoProxy.query(session)}${if (forceProxy) "&proxy=1" else ""}"
             }
-        } catch (_: Exception) { return respond(output, request, refuse(502, "media-unavailable")) }
+        } catch (error: AirPlayVideoProxy.Failure) {
+            callbacks.log("AirPlay resource failed reason=${error.reason.wire} status=${error.status ?: "unknown"} route=${error.route ?: "unknown"}")
+            return respond(output, request, refuse(502, error.error))
+        } catch (error: Exception) {
+            callbacks.log("AirPlay resource failed reason=resource-io exception=${error.javaClass.simpleName}")
+            return respond(output, request, refuse(502, "media-unavailable"))
+        }
             ?: return respond(output, request, refuse(404, "not-found"))
         resource.use {
             output.write(head(it.status, request, it.headers + listOf("Content-Type" to it.type,
@@ -480,6 +491,11 @@ class BrowserLinkServer(
                 val stats = stats(fields["v"])
                 if (stats == null) performance.count("statsRejected") else callbacks.onBrowserStats(stats)
             }
+            "audio-diag" -> if (RawTraffic.activeSessionId()?.let { it == fields["d"] } == true) {
+                val stats = stats(fields["v"], MAX_AUDIO_DIAGNOSTICS)
+                if (stats == null) performance.count("audioDiagnosticsRejected")
+                else callbacks.onBrowserAudioDiagnostics(stats)
+            }
             "ap-state" -> {
                 val id = fields["id"].wholeNumber() ?: return
                 val accepted = AirPlayBrowserPlayback.report(id, fields)
@@ -523,18 +539,20 @@ class BrowserLinkServer(
         }
     }
 
-    private fun stats(value: Any?): Map<String, Any?>? {
+    private fun stats(value: Any?, limit: Int = MAX_STATS): Map<String, Any?>? {
         val stats = value as? Map<*, *> ?: return null
+        if (stats.size > MAX_STATS_FIELDS) return null
         val flat = stats.entries.associate { (name, item) ->
             if (name !is String || name.length > 48) return null
             if (item != null && item !is Number && item !is Boolean && !(item is String && item.length <= 64)) return null
             name to item
         }
-        return flat.takeIf { WebJson.write(it).length <= MAX_STATS }
+        return flat.takeIf { WebJson.write(it).length <= limit }
     }
 
     private fun status(sequence: Long?, session: String): Map<String, Any?> {
         val status = callbacks.status()
+        val debugSession = RawTraffic.activeSessionId()
         return linkedMapOf(
             "location" to if (callbacks.browserLocationEnabled())
                 com.shilapi.xcertplay.location.BrowserLocationRelay.status(session) + mapOf("enabled" to true)
@@ -549,6 +567,8 @@ class BrowserLinkServer(
             "fit" to status.fit,
             "portalRevision" to status.portalRevision,
             "audio" to (audioHub?.enabled == true),
+            "debug" to (debugSession != null),
+            "debugSession" to debugSession,
             "voice" to (audioHub?.voiceStatus() ?: mapOf("state" to "idle", "muted" to false, "revision" to 0)),
             "airplay" to AirPlayBrowserPlayback.snapshot(),
             "airplayTrust" to AirPlayTrustNotifications.prompt(session),
@@ -737,6 +757,8 @@ class BrowserLinkServer(
         private const val LINGER_MILLIS = 500
         private const val INITIAL_RECORD_BUFFER = 64 * 1024
         private const val MAX_STATS = 2 * 1024
+        private const val MAX_AUDIO_DIAGNOSTICS = 16 * 1024
+        private const val MAX_STATS_FIELDS = 256
         private const val TOKEN_CHARACTERS = "!#$%&'*+-.^_`|~"
         private val HEADER_NAME_PATTERN = Regex("[a-z0-9-]{1,48}")
         private val KEYS = setOf("home", "back", "siri")

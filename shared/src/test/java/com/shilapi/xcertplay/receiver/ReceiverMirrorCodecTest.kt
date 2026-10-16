@@ -95,6 +95,71 @@ class ReceiverMirrorCodecTest {
         assertThrows(IllegalArgumentException::class.java) { ReceiverMirrorCodec.config(entry, true) }
     }
 
+    @Test fun hevcEntryWithColourBoxAndOneFinalZeroWordKeepsTheExactCodecRecord() {
+        val record = hevc()
+        val colour = ByteBuffer.allocate(18).putInt(18).put("colr".toByteArray()).put("nclc".toByteArray())
+            .putShort(1).putShort(1).putShort(1).array()
+        // Same structure as the failed sender: hvc1 header, hvcC, nclc and four zero bytes.
+        val entry = sampleEntry(record, colour + ByteArray(4))
+        val parsed = ReceiverMirrorCodec.config(entry, true)
+        assertEquals(VideoCodec.H265, parsed.codec)
+        assertArrayEquals(record, parsed.record)
+        assertEquals(entry.size, parsed.sampleEntryBytes)
+        assertEquals(4, parsed.paddingBytes)
+        assertEquals(4, parsed.lengthBytes)
+    }
+
+    @Test fun paddingCannotHideMalformedBoxesOrEscapeTheDeclaredSampleEntry() {
+        for (count in listOf(1, 2, 3, 5, 6, 7, 8, 12)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                ReceiverMirrorCodec.config(sampleEntry(hevc(), ByteArray(count)), true)
+            }
+        }
+        val entry = sampleEntry(hevc(), ByteArray(4))
+        assertEquals(ReceiverMirrorCodec.Reason.INVALID_PADDING, assertThrows(
+            ReceiverMirrorCodec.ConfigurationException::class.java) {
+                ReceiverMirrorCodec.config(entry.copyOf().apply { this[lastIndex] = 1 }, true)
+            }.reason)
+        for (declared in listOf(0, entry.size - 4, entry.size + 4, Int.MAX_VALUE)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                ReceiverMirrorCodec.config(entry.copyOf().apply { ByteBuffer.wrap(this).putInt(declared) }, true)
+            }
+        }
+        val malformed = ByteBuffer.allocate(12).putInt(64).put("colr".toByteArray()).putInt(0).array()
+        assertEquals(ReceiverMirrorCodec.Reason.INVALID_BOX_SIZE, assertThrows(
+            ReceiverMirrorCodec.ConfigurationException::class.java) {
+                ReceiverMirrorCodec.config(sampleEntry(hevc(), malformed + ByteArray(4)), true)
+            }.reason)
+    }
+
+    @Test fun paddingDoesNotBypassHdrOrDolbyVisionRejection() {
+        for (transfer in listOf(16, 18)) {
+            val colour = ByteBuffer.allocate(18).putInt(18).put("colr".toByteArray()).put("nclc".toByteArray())
+                .putShort(1).putShort(transfer.toShort()).putShort(1).array()
+            assertEquals(ReceiverMirrorCodec.Reason.HDR_COLOUR, assertThrows(
+                ReceiverMirrorCodec.ConfigurationException::class.java) {
+                    ReceiverMirrorCodec.config(sampleEntry(hevc(), colour + ByteArray(4)), true)
+                }.reason)
+            assertEquals(ReceiverMirrorCodec.Reason.SDR_REJECTED, assertThrows(
+                ReceiverMirrorCodec.ConfigurationException::class.java) {
+                    ReceiverMirrorCodec.config(sampleEntry(ReceiverSdrFixtures.hvcc(transfer), ByteArray(4)), true)
+                }.reason)
+        }
+        val dolby = ByteBuffer.allocate(12).putInt(12).put("dvcC".toByteArray()).putInt(0).array()
+        assertEquals(ReceiverMirrorCodec.Reason.DOLBY_VISION, assertThrows(
+            ReceiverMirrorCodec.ConfigurationException::class.java) {
+                ReceiverMirrorCodec.config(sampleEntry(hevc(), dolby + ByteArray(4)), true)
+            }.reason)
+    }
+
+    private fun sampleEntry(record: ByteArray, suffix: ByteArray): ByteArray =
+        (ByteArray(94) + record + suffix).apply {
+            ByteBuffer.wrap(this).putInt(size)
+            "hvc1".toByteArray().copyInto(this, 4)
+            ByteBuffer.wrap(this, 86, 4).putInt(record.size + 8)
+            "hvcC".toByteArray().copyInto(this, 90)
+        }
+
     @Test fun shortNalLengthsBecomeAnnexBAndTruncatedUnitsAreRejected() {
         assertArrayEquals(byteArrayOf(0, 0, 0, 1, 0x40, 1, 0, 0, 0, 1, 0x42, 1),
             ReceiverMirrorCodec.annexB(byteArrayOf(2, 0x40, 1, 2, 0x42, 1), 1))

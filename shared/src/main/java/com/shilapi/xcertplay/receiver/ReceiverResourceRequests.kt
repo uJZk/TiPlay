@@ -12,7 +12,7 @@ internal class ReceiverResourceRequests(
     private val exchangeTimeoutNanos: Long = TimeUnit.SECONDS.toNanos(10),
     private val nowNanos: () -> Long = System::nanoTime,
 ) {
-    class Pending(val id: Long, val session: String, val peer: InetAddress, val url: String,
+    class Pending(val id: Long, val session: String, val peer: InetAddress, val url: String, val range: String?,
                   val startedNanos: Long) {
         val future = CompletableFuture<ReceiverResource?>()
     }
@@ -24,16 +24,17 @@ internal class ReceiverResourceRequests(
 
     init { require(timeoutNanos > 0 && maximumPending > 0 && exchangeTimeoutNanos > 0) }
 
-    @Synchronized fun acquire(session: String, peer: InetAddress, url: String): Acquisition? {
+    @Synchronized fun acquire(session: String, peer: InetAddress, url: String, range: String? = null): Acquisition? {
+        require(range == null || ReceiverResource.byteRange.matches(range))
         // Sharing applies only to concurrent in-flight loads. A completed live playlist is never a cache.
         requests.values.filter { it.future.isDone || remainingNanos(it) == 0L }.forEach {
             if (it.future.isDone) remove(it) else expire(it)
         }
-        requests.values.firstOrNull { it.session == session && it.peer == peer && it.url == url }?.let {
+        requests.values.firstOrNull { it.session == session && it.peer == peer && it.url == url && it.range == range }?.let {
             return Acquisition(it, false)
         }
         if (requests.size >= maximumPending) return null
-        val pending = Pending(++nextId, session, peer, url, nowNanos())
+        val pending = Pending(++nextId, session, peer, url, range, nowNanos())
         requests[pending.id] = pending
         return Acquisition(pending, true)
     }

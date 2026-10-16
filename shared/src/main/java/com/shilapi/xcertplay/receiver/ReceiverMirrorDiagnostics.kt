@@ -1,9 +1,12 @@
 package com.shilapi.xcertplay.receiver
 
 import com.shilapi.xcertplay.airplay.VideoCodec
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 
 /** Bounded mirror metadata. Payloads, cipher inputs, transport keys and peer identities are never formatted. */
-internal class ReceiverMirrorDiagnostics(private val log: (String) -> Unit, private val nanoTime: () -> Long = System::nanoTime) {
+internal class ReceiverMirrorDiagnostics(private val log: (String) -> Unit,
+                                       private val debug: () -> Boolean = { RawTraffic.enabled },
+                                       private val nanoTime: () -> Long = System::nanoTime) {
     enum class Stage { ACCEPT, HEADER, BODY, DECRYPT, CONFIG, FRAME_VALIDATE, PUBLISH }
     enum class End { CLOSED, HEADER_EOF, BODY_EOF, FAILED }
     private var packets = 0L
@@ -16,6 +19,11 @@ internal class ReceiverMirrorDiagnostics(private val log: (String) -> Unit, priv
     private var firstSenderArrivalNanos: Long? = null
     private var firstArrivalNanos: Long? = null
     private var lastArrivalNanos: Long? = null
+    private var inputBytes: Int? = null
+    private var width: Int? = null
+    private var height: Int? = null
+    private var codec: VideoCodec? = null
+    private var recordBytes: Int? = null
 
     fun listening() = emit("mirror stage=LISTENING")
     fun accepted() = emit("mirror stage=ACCEPTED")
@@ -25,12 +33,22 @@ internal class ReceiverMirrorDiagnostics(private val log: (String) -> Unit, priv
         if (sample(packets)) emit("mirror stage=PACKET type=$type bodyBytes=$bytes packets=$packets")
     }
     fun geometry(width: Int, height: Int) {
+        this.width = width; this.height = height
         geometries++
         if (sample(geometries)) emit("mirror stage=GEOMETRY width=$width height=$height")
     }
     fun config(codec: VideoCodec, bytes: Int) {
+        this.codec = codec; recordBytes = bytes
         configs++
         if (sample(configs)) emit("mirror stage=CONFIG codec=$codec recordBytes=$bytes configs=$configs")
+    }
+    fun configInput(bytes: Int, codec: VideoCodec? = null) {
+        inputBytes = bytes; this.codec = codec; recordBytes = null
+    }
+    fun envelope(config: ReceiverMirrorCodec.Config) {
+        if (debug()) emit("mirror stage=CONFIG_ENVELOPE codec=${config.codec} inputBytes=$inputBytes " +
+            "sampleEntryBytes=${config.sampleEntryBytes} paddingBytes=${config.paddingBytes} " +
+            "recordBytes=${config.record.size} nalLengthBytes=${config.lengthBytes} width=$width height=$height")
     }
     fun forwarded(bytes: Int, keyFrame: Boolean, annexB: Boolean) {
         frames++
@@ -54,7 +72,11 @@ internal class ReceiverMirrorDiagnostics(private val log: (String) -> Unit, priv
     }
     fun failure(stage: Stage, error: Exception) {
         val type = error.javaClass.simpleName.filter { it.isLetterOrDigit() || it == '_' }.take(64)
-        emit("mirror stage=$stage exception=$type")
+        val config = error as? ReceiverMirrorCodec.ConfigurationException
+        emit("mirror stage=$stage exception=$type reason=${config?.reason ?: "UNCLASSIFIED"}")
+        if (debug()) emit("mirror stage=FAILURE_DETAIL failedStage=$stage reason=${config?.reason ?: "UNCLASSIFIED"} " +
+            "inputBytes=$inputBytes codec=$codec recordBytes=$recordBytes width=$width height=$height " +
+            "offset=${config?.offset} boxBytes=${config?.boxBytes}")
     }
     fun end(reason: End) = emit("mirror stage=END reason=$reason packets=$packets configs=$configs frames=$frames keyFrames=$keyFrames annexBFrames=$annexBFrames sinceLastFrameMs=${lastArrivalNanos?.let { (nanoTime() - it) / 1_000_000 }}")
     private fun sample(count: Long) = count <= 3 || count % 120L == 0L

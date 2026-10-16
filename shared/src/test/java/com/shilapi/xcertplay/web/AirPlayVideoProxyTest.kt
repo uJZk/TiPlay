@@ -4,11 +4,183 @@ import com.shilapi.xcertplay.receiver.ReceiverResource
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.IOException
+import java.net.ServerSocket
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 
 class AirPlayVideoProxyTest {
+    /** A real local HTTP exchange exercises Android-route headers without external media requests. */
+    private fun withOrigin(status: Int, headers: Map<String, String>, body: ByteArray,
+                           test: (String, CompletableFuture<String>) -> Unit) {
+        ServerSocket(0).use { server ->
+            val request = CompletableFuture<String>()
+            val worker = Thread {
+                try {
+                    server.accept().use { socket ->
+                        socket.soTimeout = 2000
+                        val input = socket.getInputStream()
+                        val head = java.io.ByteArrayOutputStream()
+                        var end = 0
+                        while (end != 0x0d0a0d0a) {
+                            val value = input.read()
+                            if (value < 0) throw IOException("Incomplete local request")
+                            head.write(value); end = (end shl 8) or value
+                            check(head.size() <= 16384)
+                        }
+                        request.complete(head.toString("ISO-8859-1"))
+                        val response = "HTTP/1.1 $status Test\r\nContent-Length: ${body.size}\r\nConnection: close\r\n" +
+                            headers.entries.joinToString("") { "${it.key}: ${it.value}\r\n" } + "\r\n"
+                        socket.getOutputStream().write(response.toByteArray(Charsets.ISO_8859_1))
+                        socket.getOutputStream().write(body)
+                    }
+                } catch (error: Exception) { request.completeExceptionally(error) }
+            }.apply { isDaemon = true; start() }
+            try { test("http://127.0.0.1:${server.localPort}", request) }
+            finally { server.close(); worker.join(3000); assertFalse(worker.isAlive) }
+        }
+    }
+
+    @Test fun fcupPartialResponsesKeepAbsoluteOffsetsAndAreNeverSlicedTwice() {
+        val seen = mutableListOf<String?>()
+        val signed = "minibili://app/video.m4s?nbs=1&upsig=fake%2fSignature&uparams=nbs"
+        val bytes = byteArrayOf(7, 8, 9)
+        var total = "1526"
+        val proxy = AirPlayVideoProxy(signed, { url, range ->
+            assertEquals(signed, url); seen += range
+            ReceiverResource(bytes, 206, null, mapOf("content-range" to "bytes 1523-1525/$total",
+                "Content-Length" to "3", "Content-Type" to "video/mp4", "Set-Cookie" to "secret"))
+        })
+        try {
+            val ranges = listOf("bytes=1523-1525", "bytes=1523-", "bytes=-3")
+            for (representationLength in listOf("1526", "*")) {
+                total = representationLength
+                for (range in ranges) proxy.open(proxy.rootId, range) { it }!!.use {
+                assertEquals(206, it.status)
+                assertArrayEquals(bytes, it.body.readBytes())
+                assertEquals("video/mp4", it.type)
+                assertTrue(it.headers.contains("Content-Range" to "bytes 1523-1525/$total"))
+                assertTrue(it.headers.contains("Content-Length" to "3"))
+                assertFalse(it.headers.any { header -> header.first.equals("Set-Cookie", true) })
+            }
+            }
+            assertEquals(ranges + ranges, seen)
+        } finally { proxy.close() }
+    }
+
+    @Test fun senderIgnoringRangeWith200OrAppSuccessIsRangedLocallyOnce() {
+        for (status in listOf(200, 0)) {
+            var received: String? = null
+            val proxy = AirPlayVideoProxy("minibili://app/video", { _, range ->
+                received = range
+                ReceiverResource(byteArrayOf(0, 1, 2, 3, 4), status, null)
+            })
+            try {
+                proxy.open(proxy.rootId, "bytes=1-3") { it }!!.use {
+                    assertEquals(206, it.status)
+                    assertArrayEquals(byteArrayOf(1, 2, 3), it.body.readBytes())
+                    assertTrue(it.headers.contains("Content-Range" to "bytes 1-3/5"))
+                }
+                assertEquals("bytes=1-3", received)
+            } finally { proxy.close() }
+        }
+    }
+
+    @Test fun rejectsMissingMalformedOrMismatchedFcUpPartialMetadata() {
+        val invalidHeaders = listOf(emptyMap(), mapOf("Content-Range" to "bytes 0-2/2000"),
+            mapOf("Content-Range" to "bytes 1523-1525/1525"), mapOf("Content-Range" to "bytes 1523-1526/2000"),
+            mapOf("Content-Range" to "bytes 1523-1525/2000", "Content-Length" to "4"),
+            mapOf("Content-Range" to "bytes 1523-1525/2000\r\nCookie: secret"),
+            mapOf("Content-Range" to "bytes 1523-1525/2000", "content-range" to "bytes 0-2/2000"))
+        for (headers in invalidHeaders) {
+            val proxy = AirPlayVideoProxy("minibili://app/video", { _, _ -> ReceiverResource(byteArrayOf(1, 2, 3), 206, null, headers) })
+            try {
+                val failure = assertThrows(AirPlayVideoProxy.Failure::class.java) {
+                    proxy.open(proxy.rootId, "bytes=1523-1525") { it }
+                }
+                assertEquals(AirPlayVideoProxy.FailureReason.INVALID_RANGE_RESPONSE, failure.reason)
+                assertEquals(206, failure.status)
+                assertEquals(AirPlayVideoProxy.ResourceRoute.IPHONE_FCUP, failure.route)
+            } finally { proxy.close() }
+        }
+    }
+
+    @Test fun fcupUnsatisfiedRangeKeeps416AndContentRangeWithoutAnErrorBody() {
+        val proxy = AirPlayVideoProxy("minibili://app/video", { _, _ ->
+            ReceiverResource("private upstream error".toByteArray(), 416, null, mapOf("Content-Range" to "bytes */5"))
+        })
+        try {
+            proxy.open(proxy.rootId, "bytes=9-") { it }!!.use {
+                assertEquals(416, it.status)
+                assertTrue(it.headers.contains("Content-Range" to "bytes */5"))
+                assertArrayEquals(byteArrayOf(), it.body.readBytes())
+            }
+        } finally { proxy.close() }
+    }
+
+    @Test fun redirectsKeepSignedUrlsAndRangeWhileErrorLocationCannotOverrideA403() {
+        val source = "minibili://app/source?nbs=1&upsig=fake%2fSource&uparams=nbs"
+        val destination = "minibili://other/video?nbs=1&upsig=fake%2FRedirect&uparams=nbs"
+        val seen = mutableListOf<String>()
+        val proxy = AirPlayVideoProxy(source, { url, range ->
+            seen += url
+            assertEquals("bytes=100-102", range)
+            if (url == source) ReceiverResource(null, 302, destination)
+            else ReceiverResource(byteArrayOf(1, 2, 3), 206, null, mapOf("Content-Range" to "bytes 100-102/200"))
+        })
+        try {
+            proxy.open(proxy.rootId, "bytes=100-102") { it }!!.use { assertArrayEquals(byteArrayOf(1, 2, 3), it.body.readBytes()) }
+            assertEquals(listOf(source, destination), seen)
+        } finally { proxy.close() }
+        var requests = 0
+        val refused = AirPlayVideoProxy(source, { _, _ -> requests++; ReceiverResource(byteArrayOf(), 403, destination) })
+        try {
+            val failure = assertThrows(AirPlayVideoProxy.Failure::class.java) { refused.open(refused.rootId, null) { it } }
+            assertEquals(AirPlayVideoProxy.FailureReason.UPSTREAM_FORBIDDEN, failure.reason)
+            assertEquals("media-upstream-forbidden", failure.error)
+            assertEquals(1, requests)
+        } finally { refused.close() }
+    }
+
+    @Test fun androidRefusalFallsBackToFcUpWithTheExactSignedUrlAndOriginalRange() {
+        withOrigin(403, mapOf("Deny-Reason" to "nbs parameter"), "Forbidden".toByteArray()) { origin, request ->
+            val signed = "$origin/video.m4s?nbs=1&upsig=fake%2fSignature&uparams=nbs"
+            val messages = mutableListOf<String>()
+            var requests = 0
+            val proxy = AirPlayVideoProxy(signed, { url, range ->
+                requests++
+                assertEquals(signed, url); assertEquals("bytes=100-102", range)
+                ReceiverResource(byteArrayOf(1, 2, 3), 206, null, mapOf("Content-Range" to "bytes 100-102/200"))
+            }, log = messages::add)
+            try {
+                proxy.open(proxy.rootId, "bytes=100-102") { it }!!.use {
+                    assertEquals(206, it.status); assertArrayEquals(byteArrayOf(1, 2, 3), it.body.readBytes())
+                }
+                assertEquals(1, requests)
+                val sent = request.get(2, TimeUnit.SECONDS)
+                assertTrue(sent.startsWith("GET /video.m4s?nbs=1&upsig=fake%2fSignature&uparams=nbs HTTP/1.1"))
+                assertTrue(sent.contains("Range: bytes=100-102\r\n", true))
+                assertTrue(messages.any { it.contains("route=ANDROID_HTTP status=403 reason=upstream-forbidden") })
+                assertFalse(messages.joinToString().contains("fake%2fSignature"))
+            } finally { proxy.close() }
+        }
+    }
+
+    @Test fun androidPartialResponsePreservesContentRangeWithoutCallingFcUp() {
+        withOrigin(206, mapOf("Content-Range" to "bytes 100-102/200", "Content-Type" to "video/mp4"), byteArrayOf(4, 5, 6)) { origin, _ ->
+            val proxy = AirPlayVideoProxy("$origin/video.m4s", { _, _ -> error("FCUP fallback was not needed") })
+            try {
+                proxy.open(proxy.rootId, "bytes=100-102") { it }!!.use {
+                    assertEquals(206, it.status)
+                    assertArrayEquals(byteArrayOf(4, 5, 6), it.body.readBytes())
+                    assertTrue(it.headers.contains("Content-Range" to "bytes 100-102/200"))
+                }
+            } finally { proxy.close() }
+        }
+    }
+
     @Test fun forcedProxyRewritesIphoneChildResourcesAndRefreshesEveryLiveManifestRead() {
         var requests = 0
-        val proxy = AirPlayVideoProxy("http://192.168.1.7/live.m3u8", {
+        val proxy = AirPlayVideoProxy("http://192.168.1.7/live.m3u8", { _, _ ->
             requests++
             ReceiverResource("#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:1,\nsegment-$requests.m4s".toByteArray(), 200, null)
         }, "192.168.1.7")
@@ -25,7 +197,7 @@ class AirPlayVideoProxyTest {
         } finally { proxy.close() }
     }
     @Test fun rewritesNestedPlaylistsSegmentsMapsAndKeysWithoutLeakingUpstreamUrls() {
-        val proxy = AirPlayVideoProxy("https://example.test/path/master.m3u8", { null })
+        val proxy = AirPlayVideoProxy("https://example.test/path/master.m3u8", { _, _ -> null })
         try {
             val playlist = "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,URI=\"audio.m3u8\"\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXT-X-KEY:METHOD=AES-128,URI=\"key\"\n#EXTINF:1,\nclip.ts\n"
             val rewritten = proxy.rewritePlaylist("https://example.test/path/master.m3u8", playlist.toByteArray()) { "/resource?r=$it" }.toString(Charsets.UTF_8)
@@ -36,7 +208,7 @@ class AirPlayVideoProxyTest {
     }
 
     @Test fun onlyTheExactIphonePeerCanBypassTheProxy() {
-        val proxy = AirPlayVideoProxy("http://192.168.1.7/video.mp4", { null }, "192.168.1.7")
+        val proxy = AirPlayVideoProxy("http://192.168.1.7/video.mp4", { _, _ -> null }, "192.168.1.7")
         try {
             assertEquals("http://192.168.1.7/video.mp4", proxy.directResource(proxy.rootId))
             assertNull(proxy.directUrl("http://192.168.1.70/video.mp4"))
@@ -54,9 +226,9 @@ class AirPlayVideoProxyTest {
         val directory = java.nio.file.Files.createTempDirectory("proxy-debug").toFile()
         val capture = java.io.File(directory, "raw.tsv")
         var requests = 0
-        val proxy = AirPlayVideoProxy("mlhls://localhost/movie", {
+        val proxy = AirPlayVideoProxy("mlhls://localhost/movie", { url, _ ->
             requests++
-            if (it.startsWith("mlhls:")) ReceiverResource(null, 302, "http://192.168.1.7/movie.mp4")
+            if (url.startsWith("mlhls:")) ReceiverResource(null, 302, "http://192.168.1.7/movie.mp4")
             else ReceiverResource(byteArrayOf(1, 2, 3), 200, null)
         }, "192.168.1.7")
         try {
@@ -79,7 +251,7 @@ class AirPlayVideoProxyTest {
     }
 
     @Test fun appBrokerResourcesSupportRangeAndRejectMalformedRanges() {
-        val proxy = AirPlayVideoProxy("mlhls://localhost/movie", { ReceiverResource(byteArrayOf(0, 1, 2, 3, 4), 200, null) })
+        val proxy = AirPlayVideoProxy("mlhls://localhost/movie", { _, _ -> ReceiverResource(byteArrayOf(0, 1, 2, 3, 4), 200, null) })
         try {
             proxy.open(proxy.rootId, "bytes=1-3") { it }!!.use {
                 assertEquals(206, it.status); assertArrayEquals(byteArrayOf(1, 2, 3), it.body.readBytes())
@@ -95,7 +267,7 @@ class AirPlayVideoProxyTest {
 
     @Test fun appRedirectToIphoneDoesNotFetchOrProxyTheIphoneBody() {
         var requests = 0
-        val proxy = AirPlayVideoProxy("mlhls://localhost/movie", {
+        val proxy = AirPlayVideoProxy("mlhls://localhost/movie", { _, _ ->
             requests++; ReceiverResource(null, 302, "http://192.168.1.7/movie.mp4")
         }, "192.168.1.7")
         try {
@@ -109,8 +281,8 @@ class AirPlayVideoProxyTest {
 
     @Test fun refusesUnsupportedSchemesAndRedirects() {
         for (url in listOf("file:///video", "skd://drm", "http://user:pass@example.test/video"))
-            assertThrows(IOException::class.java) { AirPlayVideoProxy(url, { null }) }
-        val proxy = AirPlayVideoProxy("mlhls://localhost/movie", { ReceiverResource(null, 302, "file:///video") })
+            assertThrows(IOException::class.java) { AirPlayVideoProxy(url, { _, _ -> null }) }
+        val proxy = AirPlayVideoProxy("mlhls://localhost/movie", { _, _ -> ReceiverResource(null, 302, "file:///video") })
         try { assertThrows(IOException::class.java) { proxy.open(proxy.rootId, null) { it } } }
         finally { proxy.close() }
     }

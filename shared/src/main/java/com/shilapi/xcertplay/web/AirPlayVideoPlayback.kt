@@ -6,10 +6,11 @@ import com.shilapi.xcertplay.receiver.ReceiverResource
 import java.io.Closeable
 
 /** Browser owns decoding and its media clock; iPhone commands carry a revision to retire stale reports. */
-class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String) -> ReceiverResource?,
+class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String, String?) -> ReceiverResource?,
+                           log: (String) -> Unit = {},
                            private val event: (String) -> Unit) : Closeable {
     private val itemUrl = item.url
-    val proxy = AirPlayVideoProxy(item.url, iphone, item.iphoneHost)
+    val proxy = AirPlayVideoProxy(item.url, iphone, item.iphoneHost, log)
     @Volatile var playback = ReceiverPlayback(buffering = true)
         private set
     private var revision = 0L

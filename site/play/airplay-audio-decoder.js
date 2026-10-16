@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { createSoftwareEldDecoder } from './aac-eld-software.js';
+import { pcmStats, measurePcm } from './audio-pcm-stats.js';
 const CODECS = { 'aac-lc': 'mp4a.40.2', 'aac-eld': 'mp4a.40.39', alac: 'alac', opus: 'opus' };
 const unsupported = codec => new DOMException(`This browser cannot decode AirPlay ${codec.toUpperCase()} audio.`, 'NotSupportedError');
 const byteArray = values => {
@@ -43,7 +44,20 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
   AudioDecoder = globalThis.AudioDecoder, EncodedAudioChunk = globalThis.EncodedAudioChunk, probeTimeout = 1000,
   softwareEldFactory = createSoftwareEldDecoder } = {}) {
   const sessions = new Map();
-  let disposed = false;
+  let disposed = false, diagnostics = null;
+  function publish(record) {
+    if (diagnostics && record.pcm.byteLength) {
+      measurePcm(diagnostics, record.pcm, record.channels);
+      const stream = diagnostics['stream' + record.type] ??= pcmStats();
+      Object.assign(stream, { epoch: record.epoch, rate: record.rate, channels: record.channels });
+      measurePcm(stream, record.pcm, record.channels);
+    }
+    onPcm(record);
+  }
+  function backend(session, value) {
+    if (diagnostics) Object.assign(diagnostics['stream' + session.type] ??= pcmStats(),
+      { backend: value, epoch: session.epoch, rate: session.config.sampleRate, channels: session.config.channels });
+  }
   const live = session => !disposed && sessions.get(session.type) === session && !session.closed;
   const notify = session => { for (const resolve of session.waiters) resolve(); session.waiters.clear(); };
   function close(session) {
@@ -58,6 +72,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
   }
   function failure(session, cause) {
     if (!live(session)) return;
+    if (diagnostics) diagnostics.errors++;
     close(session); onError(cause);
   }
   function recordFor(session, fields) {
@@ -77,7 +92,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       let anchor = session.anchors[0];
       for (const candidate of session.anchors) { if (candidate.timestamp > data.timestamp) break; anchor = candidate; }
       const presentationMs = Number.isFinite(anchor?.presentationMs) ? anchor.presentationMs + (data.timestamp - anchor.timestamp) / 1000 : NaN;
-      onPcm(recordFor(session, { pcm: pcm.buffer, rate, presentationMs,
+      publish(recordFor(session, { pcm: pcm.buffer, rate, presentationMs,
         flags: (anchor?.flags ?? session.flags) & ~2, sequence: session.outputSequence++ >>> 0 })); notify(session);
     } catch (cause) { failure(session, cause); }
     finally { data.close(); }
@@ -88,7 +103,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
     if (previous && record.type === previous.type && ((record.epoch - previous.epoch) | 0) < 0) return false;
     reset(record.type);
     if (record.config?.ended === true) {
-      onPcm({ ...record, config: undefined, flags: record.flags | 2, pcm: new ArrayBuffer(0) }); return true;
+      publish({ ...record, config: undefined, flags: record.flags | 2, pcm: new ArrayBuffer(0) }); return true;
     }
     const config = record.config;
     const session = { closed: false, decoder: null, software: null, config,
@@ -99,9 +114,10 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       if (!config || !['pcm', ...Object.keys(CODECS)].includes(config.codec) || !Number.isInteger(config.sampleRate)
         || config.sampleRate < 8000 || config.sampleRate > 96000 || ![1, 2].includes(config.channels)
         || config.sampleRate !== record.rate || config.channels !== record.channels) throw new Error('Invalid AirPlay audio configuration.');
-      onPcm(recordFor(session, { flags: record.flags | 2, pcm: new ArrayBuffer(0), presentationMs: NaN }));
+      publish(recordFor(session, { flags: record.flags | 2, pcm: new ArrayBuffer(0), presentationMs: NaN }));
       if (config.codec === 'pcm') {
         if (![16, 24].includes(config.bitDepth)) throw unsupported('pcm');
+        backend(session, 'pcm');
         return true;
       }
       const decoderConfig = airPlayAudioDecoderConfig(config);
@@ -118,7 +134,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       if (supported) {
         try {
           const decoder = session.decoder = new AudioDecoder({ output: data => output(session, data), error: cause => failure(session, cause) });
-          decoder.ondequeue = () => notify(session); decoder.configure(decoderConfig); return true;
+          decoder.ondequeue = () => notify(session); decoder.configure(decoderConfig); backend(session, 'webcodecs'); return true;
         } catch (cause) {
           if (session.decoder && session.decoder.state !== 'closed') session.decoder.close();
           session.decoder = null;
@@ -129,6 +145,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       if (!live(session)) return false;
       session.software = softwareEldFactory(config);
       await session.software.ready;
+      if (live(session)) backend(session, 'software');
       return live(session);
     } catch (cause) { failure(session, cause); return false; }
   }
@@ -140,14 +157,14 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       session.sequence = record.sequence; session.flags = record.flags;
       if (session.config.codec === 'pcm') {
         if (record.payload.byteLength > session.config.sampleRate * session.config.channels * (session.config.bitDepth / 8)) throw new Error('AirPlay PCM packet exceeds the playback memory limit.');
-        onPcm(recordFor(session, { pcm: decodePcmPacket(record.payload, session.config), presentationMs: record.presentationMs })); return true;
+        publish(recordFor(session, { pcm: decodePcmPacket(record.payload, session.config), presentationMs: record.presentationMs })); return true;
       }
       if (!Number.isFinite(record.decodeTimestampUs) || Math.abs(record.decodeTimestampUs) > Number.MAX_SAFE_INTEGER || !record.payload.byteLength) throw new Error('Invalid AirPlay audio timestamp or packet.');
       const timestamp = Math.round(record.decodeTimestampUs);
       if (session.software) {
         const pcm = await session.software.decode(rawAacPacket(record.payload));
         if (!live(session)) return false;
-        onPcm(recordFor(session, { pcm, presentationMs: record.presentationMs,
+        publish(recordFor(session, { pcm, presentationMs: record.presentationMs,
           flags: record.flags & ~2, sequence: session.outputSequence++ >>> 0 })); notify(session);
         return true;
       }
@@ -159,5 +176,13 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       return live(session);
     } catch (cause) { failure(session, cause); return false; }
   }
-  return { configure, decode, reset, dispose() { reset(); disposed = true; } };
+  return { configure, decode, reset,
+    debug(enabled) {
+      diagnostics = enabled ? { ...pcmStats(), errors: 0 } : null;
+      if (enabled) for (const session of sessions.values()) if (live(session)) backend(session,
+        session.software ? 'software' : session.decoder ? 'webcodecs' : session.config.codec);
+    },
+    stats() { return diagnostics ? { ...diagnostics } : null; },
+    dispose() { reset(); disposed = true; diagnostics = null; },
+  };
 }

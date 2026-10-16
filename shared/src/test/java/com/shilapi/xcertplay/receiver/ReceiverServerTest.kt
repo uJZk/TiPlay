@@ -896,6 +896,39 @@ class ReceiverServerTest {
         } finally { control.close(); receiver.close() }
     }
 
+    @Test fun fcupForwardsTheExactSignedUrlAndRangeAndRetainsOnlyResourceResponseHeaders() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                assertEquals(200, control.status("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to "mlhls://app/master.m3u8"))))
+                connect(receiver.port).use { reverse ->
+                    reverse.upgradeReverse()
+                    val url = "https://example.test/video.m4s?nbs=1&upsig=fake%2fSignature&uparams=nbs"
+                    assertNull(receiver.loadResource(url, "bytes=1-2\r\nCookie: secret"))
+                    val future = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(url, "bytes=1523-1525") }
+                    val event = readReceiverRequest(reverse.getInputStream())!!.body.toString(Charsets.UTF_8)
+                    assertTrue(event.contains("<key>FCUP_Response_URL</key><string>${url.replace("&", "&amp;")}</string>"))
+                    assertTrue(event.contains("<key>Range</key><string>bytes=1523-1525</string>"))
+                    val id = Regex("<key>FCUP_Response_RequestID</key><integer>([0-9]+)</integer>").find(event)!!.groupValues[1].toLong()
+                    val answer = BplistCodec.encode(mapOf("type" to "unhandledURLResponse", "params" to mapOf(
+                        "FCUP_Response_RequestID" to id, "FCUP_Response_URL" to url,
+                        "FCUP_Response_StatusCode" to 206, "FCUP_Response_Data" to byteArrayOf(1, 2, 3),
+                        "FCUP_Response_Headers" to mapOf("content-range" to "bytes 1523-1525/2000", "Content-Length" to "3",
+                            "Content-Type" to "video/mp4", "Deny-Reason" to "safe diagnostic text",
+                            "Set-Cookie" to "private-cookie", "Authorization" to "private-token", "Connection" to "keep-alive"),
+                    )))
+                    assertEquals(200, control.status("POST", "/action", answer))
+                    val resource = future.get(2, TimeUnit.SECONDS)!!
+                    assertEquals(206, resource.status)
+                    assertArrayEquals(byteArrayOf(1, 2, 3), resource.bytes)
+                    assertEquals(mapOf("Content-Range" to "bytes 1523-1525/2000", "Content-Length" to "3",
+                        "Content-Type" to "video/mp4", "Deny-Reason" to "safe diagnostic text"), resource.headers)
+                }
+            }
+        } finally { receiver.close() }
+    }
+
     @Test fun parallelIphoneResourceLoadsSendTheNextEventOnlyAfterTheActionResponse() {
         val listener = Listener()
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)

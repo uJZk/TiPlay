@@ -79,7 +79,9 @@ CarPlay audio leaves AirPlay sound enabled. Music can overlap; Bluetooth voice-r
 muting has priority. iOS may actively end CarPlay or never start mirror media;
 heartbeats and selected menu entries do not prove a usable picture.
 
-Repeated mirror configurations/pause retain the decoder epoch and AES-CTR position;
+HEVC sample-entry parsing accepts the sender's bounded terminal zero padding after complete
+validated boxes. Truncated boxes and HDR/Dolby metadata remain rejected; padding cannot
+hide an additional extension. Repeated mirror configurations/pause retain the decoder epoch and AES-CTR position;
 paused transport still consumes ciphertext. Clean packet-boundary EOF permits same-peer
 reconnect for five seconds; partial packets or expiry end the mirror. RTP/NTP anchors
 map audio/video to one monotonic clock; bounded reordering/retransmission and FLUSH
@@ -113,6 +115,13 @@ session/peer/URL/request-ID checks; acknowledgement is not resource completion.
 Interrupted requests may be reused only within their original deadlines. Expiry,
 cancellation and replacement release the queue; consumed responses are not a live
 manifest cache. Local files and `skd` keys are excluded.
+
+FCUP sharing keys include the requested byte range. Range reaches both Android HTTP and
+the iPhone loader; a validated partial response is passed through once. An FCUP sender that
+returns a full body is sliced locally once; Android HTTP may legally return a full-body 200.
+Upstream denial is retained as a distinct
+resource failure, including its route and status. Signed CDN query parameters are preserved:
+the receiver cannot repair an unavailable or rejected signed source by deleting parameters.
 
 Captions support WebVTT, AVC/HEVC CEA-608/708 text, HLS fMP4 `wvtt`/`stpp` and MP4
 `tx3g`/`wvtt`/`stpp`. Identity AES-128 segments support rotating keys, explicit/sequence

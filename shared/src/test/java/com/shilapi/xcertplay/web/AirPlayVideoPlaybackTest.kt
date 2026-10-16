@@ -6,7 +6,7 @@ import org.junit.Test
 
 class AirPlayVideoPlaybackTest {
     @Test fun mediaPropertiesSelectOnlyReportedTracksAndRejectUnknownStylesAndRemoteVolume() {
-        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { _, _ -> null }) {}
         try {
             assertFalse(video.property("selectedMediaArray", listOf(mapOf("type" to "audio", "id" to "1"))))
             assertTrue(video.report(rateReport() + ("tracks" to mapOf("audio" to listOf("1", "2"), "subtitle" to listOf("zh")))))
@@ -29,7 +29,7 @@ class AirPlayVideoPlaybackTest {
 
     @Test fun actualRateSurvivesBufferingAndPauseKeepsTheSelectedSpeed() {
         val events = mutableListOf<String>()
-        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }, events::add)
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { _, _ -> null }, event = events::add)
         try {
             assertTrue(video.report(rateReport(rate = 1.5)))
             assertEquals(1.5, video.playback.rate, 0.0)
@@ -48,7 +48,7 @@ class AirPlayVideoPlaybackTest {
     }
 
     @Test fun iphoneSpeedCommandsCannotUndoPendingSeekOrAcceptStaleReports() {
-        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { _, _ -> null }) {}
         try {
             assertTrue(video.report(rateReport()))
             video.control("seek", 80.0)
@@ -73,7 +73,7 @@ class AirPlayVideoPlaybackTest {
     }
 
     @Test fun invalidRatesCannotMutatePlaybackAndLegacyReportsStillUseOneOrZero() {
-        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { _, _ -> null }) {}
         try {
             assertTrue(video.report(rateReport(rate = 1.5)))
             val accepted = video.playback
@@ -99,7 +99,7 @@ class AirPlayVideoPlaybackTest {
     }
 
     @Test fun queuedSeekReadbackAcknowledgesTheTargetUntilTheBrowserAppliesItsRevision() {
-        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { _, _ -> null }) {}
         try {
             val fields = mapOf("revision" to 0L, "duration" to 100.0, "position" to 20.0,
                 "bufferedPosition" to 30.0, "playing" to true, "ready" to true, "buffering" to false, "seekable" to true)
@@ -127,7 +127,7 @@ class AirPlayVideoPlaybackTest {
     }
 
     @Test fun newerQueuedSeekRejectsOldDispatchAndOldConfirmationEvenForTheSameTarget() {
-        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { _, _ -> null }) {}
         try {
             val fields = mapOf("revision" to 0L, "duration" to 100.0, "position" to 20.0,
                 "bufferedPosition" to 30.0, "playing" to true, "ready" to true, "buffering" to false, "seekable" to true)
@@ -148,7 +148,7 @@ class AirPlayVideoPlaybackTest {
 
     @Test fun repeatedSeekBufferingReportsSendOnlyOneLoadingEventAndResumePlaying() {
         val events = mutableListOf<String>()
-        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }, events::add)
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { _, _ -> null }, event = events::add)
         try {
             val fields = mapOf("revision" to 0L, "duration" to 100.0, "position" to 10.0,
                 "bufferedPosition" to 20.0, "playing" to true, "ready" to true, "buffering" to false, "seekable" to true)
@@ -163,7 +163,7 @@ class AirPlayVideoPlaybackTest {
     }
 
     @Test fun rateChangesPreserveAnUnacknowledgedSeekAndBufferingRetainsRatePreparedStateAndRanges() {
-        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.2, true), { null }) {}
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.2, true), { _, _ -> null }) {}
         try {
             video.control("seek", 50.0)
             video.control("pause", null)
@@ -184,7 +184,7 @@ class AirPlayVideoPlaybackTest {
     }
     @Test fun browserOwnsTheClockAndRetiredReportsCannotUndoAnIphoneCommand() {
         val events = mutableListOf<String>()
-        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.2, true), { null }, events::add)
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.2, true), { _, _ -> null }, event = events::add)
         val binding = AirPlayBrowserPlayback.register(video::state, video, control = video::control)
         try {
             val id = AirPlayBrowserPlayback.snapshot()!!["id"] as Long

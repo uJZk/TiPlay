@@ -49,4 +49,24 @@ class ReceiverMirrorDiagnosticsTest {
         assertTrue(logs.any { it.contains("exception=IllegalArgumentException") })
         assertFalse(logs.any { it.contains("secret") || it.contains("transport key") })
     }
+
+    @Test fun stableParserReasonSurvivesStandardAndSizeGeometryDetailsFollowLiveDebugToggle() {
+        val logs = mutableListOf<String>()
+        var debug = false
+        val diagnostics = ReceiverMirrorDiagnostics(logs::add, debug = { debug })
+        diagnostics.configInput(248)
+        diagnostics.geometry(708, 1536)
+        val error = ReceiverMirrorCodec.ConfigurationException(ReceiverMirrorCodec.Reason.INVALID_BOX_SIZE, 226, 64)
+        diagnostics.failure(ReceiverMirrorDiagnostics.Stage.CONFIG, error)
+        assertTrue(logs.last().contains("reason=INVALID_BOX_SIZE"))
+        assertFalse(logs.any { it.contains("FAILURE_DETAIL") })
+        debug = true
+        diagnostics.failure(ReceiverMirrorDiagnostics.Stage.CONFIG, error)
+        assertTrue(logs.last().contains("inputBytes=248"))
+        assertTrue(logs.last().contains("width=708 height=1536 offset=226 boxBytes=64"))
+        debug = false
+        diagnostics.failure(ReceiverMirrorDiagnostics.Stage.CONFIG, error)
+        assertEquals(1, logs.count { it.contains("FAILURE_DETAIL") })
+        assertTrue(logs.last().contains("reason=INVALID_BOX_SIZE"))
+    }
 }

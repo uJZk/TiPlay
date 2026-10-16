@@ -3,15 +3,20 @@ package com.shilapi.xcertplay
 import android.content.Context
 import android.content.Intent
 import android.net.wifi.WifiManager
+import android.view.Surface
+import com.shilapi.xcertplay.media.AndroidMediaSink
+import com.shilapi.xcertplay.orchestration.CarPlayController
 import com.shilapi.xcertplay.orchestration.CarPlayRunMode
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito.mock
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -80,6 +85,36 @@ class PhoneBrowserSessionServiceTest {
         assertFalse(second.isHeld)
         assertEquals(0, wifi.activeLockCount)
         removed.destroy()
+    }
+
+    @Test fun removingTheEmptyLauncherTaskKeepsTheOtherTasksSessionAndLocksUntilHostRemoval() {
+        AirPlayPersistence.saveRunMode(context, CarPlayRunMode.PHONE_BROWSER)
+        val service = started()
+        val wake = ShadowPowerManager.getLatestWakeLock()
+        val controller = mock(CarPlayController::class.java)
+        var stops = 0
+        CarPlayBackgroundSession.store(controller, mock(AndroidMediaSink::class.java), 800, 480,
+            Any(), CarPlaySessionDisplay(800, 480, Surface.ROTATION_0, false, false, 800, 480)) {
+            stops++
+            it()
+        }
+        try {
+            service.get().onTaskRemoved(Intent(context, FirstUseActivity::class.java))
+            assertEquals(0, stops)
+            assertTrue(wake.isHeld)
+            assertEquals(1, wifi.activeLockCount)
+            assertTrue(locks(service).held)
+            assertTrue(CarPlayBackgroundSession.hasSession())
+            assertSame(controller, CarPlayBackgroundSession.snapshot()?.controller)
+
+            service.get().onTaskRemoved(Intent(context, CarPlayHostActivity::class.java))
+            assertEquals(1, stops)
+            assertFalse(wake.isHeld)
+            assertEquals(0, wifi.activeLockCount)
+        } finally {
+            CarPlayBackgroundSession.clear()
+            service.destroy()
+        }
     }
 
     @Test fun headUnitModeHoldsNoLockAndStartsNoLink() {

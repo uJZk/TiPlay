@@ -79,6 +79,10 @@ are not requested; playback state/progress/controls remain.
 Type 103 uses authenticated AAC-LC and bounded relay/browser reservoirs. SETRATE
 starts at an RTP anchor, GETANCHOR reads it, rate zero pauses, and FLUSHBUFFERED
 resets output. Compressed preload may survive pause, isolated from retired sessions.
+The decoded buffer covers the producer's lead, startup anchor, permitted output delay and
+clock/packet margin. Memory remains bounded; capacity protection preserves the next buffered
+sample to play instead of repeatedly evicting it for later arrivals. A processor failure
+retires the old node/epoch and permits only bounded reconstruction within one connection.
 Stalled browsers retire instead of dropping ordered music. Feedback estimates position,
 not physical speaker time. Lossless/spatial audio is not advertised. Upstream rationale: [buffering #308](https://github.com/shihabal3amri/DiPlay/pull/308)
 and [pacing #484](https://github.com/shihabal3amri/DiPlay/pull/484).
@@ -102,7 +106,10 @@ TiPlay adds no software AEC.
 
 The browser never captures microphones. Android requests RECORD_AUDIO while connecting
 in the foreground; permitted sound-enabled foreground service access supports later
-on-demand capture. Permission changes require CarPlay renegotiation. Playback works
+on-demand capture. A rejected microphone/location foreground type is recorded and removed
+from that service start; eligible foreground access is retried when an app screen resumes.
+A system refusal to start any foreground service safely ends that service start. Missing
+car Bluetooth or foreground eligibility must not crash the app. Permission changes require CarPlay renegotiation. Playback works
 without that grant; browser autoplay may need a gesture. Disabling CarPlay audio leaves
 the iPhone responsible for direct car Bluetooth sound/calls. Vehicle voice quality,
 AEC and screen-off behavior require physical tests.
@@ -126,6 +133,10 @@ Arrival playback is an explicit synchronization fallback. Physical output latenc
 requires device measurement; acceptance remains in [Todo.md](Todo.md).
 
 ### Browser session lifecycle
+
+The launcher hands off to the separate settings/session task and removes its empty root
+task, avoiding a black recent-app card. Removing that launcher task must not stop the other
+task's CarPlay or AirPlay services; explicitly removing the session task still disconnects.
 
 Producer stop retains the authenticated response. `lifecycle=1` opts into kind-6 idle:
 release decoders/frames and wait for the next configuration on that response. Old

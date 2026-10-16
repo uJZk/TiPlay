@@ -32,6 +32,33 @@ Saving prepares one immutable-length snapshot off the UI thread and spools strea
 
 The ZIP includes retained raw history, including earlier sessions. Disabling Debug stops capture but does not delete it; re-enable Debug to export it again. Saving does not erase the original capture. The saved-ZIP dialog offers **Clear captured data**. This deletes raw history and resets capture failure counters, preserving saved artifacts, settings and metadata logs. If capture is still active, clearing immediately begins a fresh session with the same configuration. Clearing uses the capture lock; an export already holding a snapshot can finish from its open file handle. Automatic storage-pressure stopping is not implemented. Standard TXT excludes raw history, but diagnostic messages previously recorded in Debug remain unredacted. Captures can contain credentials, pairing codes, personal data and media; keep them out of Git.
 
+## Browser audio evidence
+
+Debug records the loaded page's cache identity, decoder backend/frame/nonzero/peak counters,
+AudioContext time/state and latency, clock mapping, AudioWorklet heartbeat/age, rendered
+frames/nonzero/peak and each stream's epoch, queue bounds, playback time and delay. Capacity
+eviction, late/duplicate rejection, playback consumption and reset have separate counters.
+These details use a separate bounded control event so video statistics cannot displace them;
+an omitted-field count makes a size-limit omission visible. Turning Debug off removes the
+details and stops their collection without renegotiating media. Standard keeps processor
+failure/recovery changes and concise resource/service failures.
+The current capture ID travels with detailed reports; reopening Debug or clearing capture
+rejects reports delayed from an earlier capture, even if the control outbox retries them.
+
+`sound=true` means the AudioContext is running. Decoded nonzero PCM establishes content
+reaching the queue; rendered nonzero output establishes samples produced by the worklet.
+Neither proves sound reached vehicle speakers. A full queue can result from a stopped
+worklet or a clock that has not reached its contents: interpret its head/tail/playback
+timestamps with heartbeat and discard counters. Debug raw capture also retains the
+authenticated browser audio response, including codec configuration and decrypted encoded
+packets or PCM. Its `browser/audio` attempt/written channels distinguish attempted writes
+from bytes accepted by the socket; they do not capture browser speaker output.
+
+Resource diagnostics distinguish Android HTTP from iPhone FCUP, preserve upstream status
+and report bounded denial details in Debug. Service diagnostics distinguish missing
+permission from foreground eligibility; a granted microphone permission alone does not
+establish permission to start microphone capture in the background.
+
 ## Reading wireless startup evidence
 
 | Milestone | What it establishes |

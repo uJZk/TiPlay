@@ -19,7 +19,7 @@ class AirPlayCastPlayerSeekTest {
     private fun withPlayer(test: (AirPlayCastPlayer, MutableList<Pair<String, Long>>) -> Unit) {
         TeslaBrowserLink.resetForTest()
         val events = mutableListOf<Pair<String, Long>>()
-        val player = AirPlayCastPlayer({ null }) { event, epoch -> events += event to epoch }
+        val player = AirPlayCastPlayer({ _, _ -> null }) { event, epoch -> events += event to epoch }
         player.setOutputAllowed(true)
         try { test(player, events) } finally {
             player.close()
@@ -48,7 +48,7 @@ class AirPlayCastPlayerSeekTest {
 
     @Test fun iphoneSpeedAndPauseReachTheBrowserWithoutReplacingACoalescedSeek() {
         TeslaBrowserLink.resetForTest()
-        val player = AirPlayCastPlayer({ null }) { _, _ -> }
+        val player = AirPlayCastPlayer({ _, _ -> null }) { _, _ -> }
         player.setOutputAllowed(true)
         try {
             player.play(ReceiverPlay("http://example.test/video.mp4", 0.0, false))
@@ -95,7 +95,7 @@ class AirPlayCastPlayerSeekTest {
 
     @Test fun receiverReadbackChangesBeforeMainDispatchWhileSliderBurstsStillCoalesce() {
         TeslaBrowserLink.resetForTest()
-        val player = AirPlayCastPlayer({ null }) { _, _ -> }
+        val player = AirPlayCastPlayer({ _, _ -> null }) { _, _ -> }
         player.setOutputAllowed(true)
         try {
             player.play(ReceiverPlay("http://example.test/video.mp4", 0.0, false))

@@ -8,6 +8,26 @@ import java.util.concurrent.TimeUnit
 class ReceiverResourceRequestsTest {
     private val peer = InetAddress.getLoopbackAddress()
 
+    @Test fun onlyTheSameByteRangeCanShareAnInflightSignedResource() {
+        val requests = ReceiverResourceRequests()
+        val url = "https://example.test/video.m4s?nbs=1&upsig=fake%2fSignature&uparams=nbs"
+        val map = requests.acquire("session", peer, url, "bytes=0-978")!!.pending
+        assertSame(map, requests.acquire("session", peer, url, "bytes=0-978")!!.pending)
+        val segment = requests.acquire("session", peer, url, "bytes=1523-554873")!!.pending
+        val full = requests.acquire("session", peer, url)!!.pending
+        assertNotEquals(map.id, segment.id)
+        assertNotEquals(segment.id, full.id)
+        assertEquals(url, map.url)
+        assertEquals(url, segment.url)
+        assertEquals("bytes=0-978", map.range)
+        assertSame(map, requests.nextToDispatch("session", peer))
+        map.future.complete(ReceiverResource(byteArrayOf(1), 206, null))
+        assertSame(segment, requests.nextToDispatch("session", peer))
+        assertThrows(IllegalArgumentException::class.java) {
+            requests.acquire("session", peer, url, "bytes=0-1\r\nAuthorization: secret")
+        }
+    }
+
     @Test fun parallelMediaLoadsWaitForTheirPredecessorResourceAndShareRetries() {
         val requests = ReceiverResourceRequests()
         val first = requests.acquire("session", peer, "mlhls://app/video.m3u8")!!.pending

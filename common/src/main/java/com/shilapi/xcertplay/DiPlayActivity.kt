@@ -302,11 +302,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
 
     private fun refreshBrowserLocationAccess() {
         browserAdvancedPage?.refresh()
-        if (browserAdvancedPage != null && CarPlayBackgroundSession.hasSession() &&
-            !com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(this) &&
-            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            androidx.core.content.ContextCompat.startForegroundService(this, Intent(this, DiPlaySessionService::class.java))
-        }
+        DiPlaySessionService.refreshForegroundAccess(this)
     }
     private val tick = object : Runnable {
         override fun run() { refreshStatus(); handler.postDelayed(this, 1000) }

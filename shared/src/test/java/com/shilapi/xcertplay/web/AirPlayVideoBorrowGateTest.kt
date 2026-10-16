@@ -8,7 +8,7 @@ import org.junit.Test
 
 class AirPlayVideoBorrowGateTest {
     @Test fun waitingForOwnershipPausesOutputButPreservesPhonePlaybackAndSeekIntent() {
-        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.25, true), { null }) {}
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.25, true), { _, _ -> null }) {}
         try {
             video.setOutputAllowed(false)
             assertFalse(video.state().playing)
@@ -26,7 +26,7 @@ class AirPlayVideoBorrowGateTest {
     }
 
     @Test fun aPhonePauseDuringTheLoanRemainsPausedWhenOwnershipReturns() {
-        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { null }) {}
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { _, _ -> null }) {}
         try {
             video.setOutputAllowed(false)
             video.control("pause", null)
