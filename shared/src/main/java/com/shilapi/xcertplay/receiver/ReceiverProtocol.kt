@@ -10,10 +10,12 @@ import java.net.URLDecoder
 /** Capabilities shared by Bonjour, /info and /server-info. No CarPlay or DRM offer. */
 data class ReceiverConfig(val name: String, val deviceId: String, val identity: AirPlayIdentity,
                           val width: Int = 1920, val height: Int = 1080, val fps: Int = 60,
-                          val hevcEnabled: Boolean = false, val mirrorEnabled: Boolean = true) {
+                          val hevcEnabled: Boolean = false, val mirrorEnabled: Boolean = true,
+                          val audioOutputFormats: Long = 0L) {
+    init { ReceiverAudioCapabilities.validateFormats(audioOutputFormats) }
     // Bit 30 advertises the existing mirror RTSP endpoint on the AirPlay port, so
     // clients need no separate AirTunes service. Audio uses the browser output path.
-    val features: Long = ReceiverCapabilities.features(hevcEnabled, mirrorEnabled)
+    val features: Long = ReceiverCapabilities.features(hevcEnabled, mirrorEnabled, audioOutputFormats)
     val txt: Map<String, String> get() = mapOf(
         "deviceid" to deviceId, "features" to ReceiverCapabilities.txtFeatures(features),
         "flags" to "0x4", "model" to "AppleTV3,2", "srcvers" to "220.68", "vv" to "2",
@@ -28,7 +30,7 @@ data class ReceiverConfig(val name: String, val deviceId: String, val identity: 
             "widthPixels" to width, "heightPixels" to height, "widthPhysical" to 0,
             "heightPhysical" to 0, "rotation" to false, "refreshRate" to 1.0 / fps,
             "maxFPS" to fps, "overscanned" to false, "features" to 14L)),
-    ) + ReceiverAudioCapabilities.info()
+    ) + ReceiverAudioCapabilities.info(audioOutputFormats)
     /** The HTTP video endpoint uses the legacy lower-case keys, unlike RTSP /info. */
     fun serverInfo(): Map<String, Any?> = mapOf(
         "deviceid" to deviceId, "macAddress" to deviceId, "features" to features,

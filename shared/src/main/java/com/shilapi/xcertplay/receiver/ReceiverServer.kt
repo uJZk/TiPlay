@@ -108,6 +108,16 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         config
     }
 
+    /** Capability reports constrain the next SETUP; updating them never interrupts the current media. */
+    fun updateAudioFormats(formats: Long): ReceiverConfig = synchronized(ownership) {
+        ReceiverAudioCapabilities.validateFormats(formats)
+        if (config.audioOutputFormats != formats) {
+            config = config.copy(audioOutputFormats = formats)
+            listener.log("audio capabilities outputFormats=0x${formats.toString(16)}")
+        }
+        config
+    }
+
     fun start(): Int {
         maintenance.scheduleWithFixedDelay({ runCatching { dispatchNextResource() } }, 1, 1, TimeUnit.SECONDS)
         server.reuseAddress = true
@@ -553,14 +563,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         diagnostics.play(diagnosticId, item)
                         listener.play(item.copy(iphoneHost = peer.hostAddress)); listener.status("video")
                     }
-                    // Browser preparation can itself need /action resources; never wait under ownership.
-                    val generation = synchronized(ownership) { playbackGeneration }
-                    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
-                    while (System.nanoTime() < deadline) {
-                        if (synchronized(ownership) { playbackConnection !== this || playbackGeneration != generation }) break
-                        if (listener.playback().ready) break
-                        Thread.sleep(25)
-                    }
+                    // Browser preparation may need FCUP /action on this same control connection.
+                    // Acknowledge before media readiness so its resource response can be read.
                     return RtspMessage.Response()
                 }
                 path == "/photo" && request.method == "PUT" -> {
@@ -720,7 +724,9 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 require(types.all { it == 96 || it == 110 } && types.distinct().size == types.size)
                 if (110 in types && !config.mirrorEnabled)
                     return RtspMessage.Response(status = 461, statusText = "Unsupported Transport")
-                entries.filter { (it["type"] as Number).toInt() == 96 }.forEach(ReceiverAudioCapabilities::validateStream)
+                entries.filter { (it["type"] as Number).toInt() == 96 }.forEach {
+                    ReceiverAudioCapabilities.validateStream(it, config.audioOutputFormats)
+                }
                 entries.filter { (it["type"] as Number).toInt() == 110 }.forEach {
                     require(it["streamConnectionID"] is Number) { "missing connection id" }
                 }

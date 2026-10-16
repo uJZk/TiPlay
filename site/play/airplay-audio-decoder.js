@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import { createSoftwareEldDecoder } from './aac-eld-software.js';
 const CODECS = { 'aac-lc': 'mp4a.40.2', 'aac-eld': 'mp4a.40.39', alac: 'alac', opus: 'opus' };
 const unsupported = codec => new DOMException(`This browser cannot decode AirPlay ${codec.toUpperCase()} audio.`, 'NotSupportedError');
 const byteArray = values => {
   if (!Array.isArray(values) || values.length < 1 || values.length > 256 || values.some(value => !Number.isInteger(value) || value < 0 || value > 255)) return null;
   return Uint8Array.from(values);
 };
+/** Capability reports and actual playback must test the same WebCodecs configuration. */
+export function airPlayAudioDecoderConfig(config) {
+  const description = config.codec === 'alac' ? byteArray(config.cookie)
+    : config.codec === 'opus' ? byteArray(config.cookie) || byteArray(config.asc) : byteArray(config.asc);
+  if (!description && config.codec !== 'opus') throw new Error('AirPlay audio codec configuration is missing.');
+  return { codec: CODECS[config.codec], sampleRate: config.sampleRate, numberOfChannels: config.channels, ...(description ? { description } : {}) };
+}
 function rawAacPacket(payload) {
   const bytes = new Uint8Array(payload);
   if (bytes.length >= 7 && bytes[0] === 255 && (bytes[1] & 246) === 240 && ((bytes[2] >> 2) & 15) < 13) {
@@ -32,7 +40,8 @@ export function decodePcmPacket(payload, { bitDepth, channels, littleEndian = fa
 
 /** Independent AAC/Opus/ALAC/PCM stream decoders share the browser output clock and retain their own epochs. */
 export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
-  AudioDecoder = globalThis.AudioDecoder, EncodedAudioChunk = globalThis.EncodedAudioChunk, probeTimeout = 1000 } = {}) {
+  AudioDecoder = globalThis.AudioDecoder, EncodedAudioChunk = globalThis.EncodedAudioChunk, probeTimeout = 1000,
+  softwareEldFactory = createSoftwareEldDecoder } = {}) {
   const sessions = new Map();
   let disposed = false;
   const live = session => !disposed && sessions.get(session.type) === session && !session.closed;
@@ -40,6 +49,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
   function close(session) {
     if (!session || session.closed) return;
     session.closed = true; if (session.decoder && session.decoder.state !== 'closed') session.decoder.close();
+    session.software?.close(); session.software = null;
     session.decoder = null; session.anchors.length = 0; notify(session);
   }
   function reset(type) {
@@ -81,7 +91,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       onPcm({ ...record, config: undefined, flags: record.flags | 2, pcm: new ArrayBuffer(0) }); return true;
     }
     const config = record.config;
-    const session = { closed: false, decoder: null, config,
+    const session = { closed: false, decoder: null, software: null, config,
       type: record.type, mode: record.mode, epoch: record.epoch, sequence: record.sequence, flags: record.flags,
       anchors: [], waiters: new Set(), outputSequence: 0 };
     sessions.set(record.type, session);
@@ -94,21 +104,32 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
         if (![16, 24].includes(config.bitDepth)) throw unsupported('pcm');
         return true;
       }
-      if (!AudioDecoder?.isConfigSupported || !EncodedAudioChunk) throw unsupported(config.codec);
-      const description = config.codec === 'alac' ? byteArray(config.cookie)
-        : config.codec === 'opus' ? byteArray(config.cookie) || byteArray(config.asc) : byteArray(config.asc);
-      if (!description && config.codec !== 'opus') throw new Error('AirPlay audio codec configuration is missing.');
-      const decoderConfig = { codec: CODECS[config.codec], sampleRate: config.sampleRate, numberOfChannels: config.channels, ...(description ? { description } : {}) };
-      let timer, supported;
-      try { supported = await Promise.race([AudioDecoder.isConfigSupported(decoderConfig),
-        new Promise(resolve => { timer = setTimeout(() => resolve({ supported: false }), probeTimeout); })]); }
-      catch (_) { throw unsupported(config.codec); }
+      const decoderConfig = airPlayAudioDecoderConfig(config);
+      let timer, supported = false;
+      try {
+        if (AudioDecoder?.isConfigSupported && EncodedAudioChunk) supported = (await Promise.race([
+          AudioDecoder.isConfigSupported(decoderConfig),
+          new Promise(resolve => { timer = setTimeout(() => resolve({ supported: false }), probeTimeout); }),
+        ]))?.supported === true;
+      }
+      catch (_) { supported = false; }
       finally { clearTimeout(timer); }
       if (!live(session)) return false;
-      if (!supported?.supported) throw unsupported(config.codec);
-      const decoder = session.decoder = new AudioDecoder({ output: data => output(session, data), error: cause => failure(session, cause) });
-      decoder.ondequeue = () => notify(session);
-      decoder.configure(decoderConfig); return true;
+      if (supported) {
+        try {
+          const decoder = session.decoder = new AudioDecoder({ output: data => output(session, data), error: cause => failure(session, cause) });
+          decoder.ondequeue = () => notify(session); decoder.configure(decoderConfig); return true;
+        } catch (cause) {
+          if (session.decoder && session.decoder.state !== 'closed') session.decoder.close();
+          session.decoder = null;
+          if (config.codec !== 'aac-eld') throw cause;
+        }
+      }
+      if (config.codec !== 'aac-eld') throw unsupported(config.codec);
+      if (!live(session)) return false;
+      session.software = softwareEldFactory(config);
+      await session.software.ready;
+      return live(session);
     } catch (cause) { failure(session, cause); return false; }
   }
   async function decode(record) {
@@ -123,6 +144,13 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       }
       if (!Number.isFinite(record.decodeTimestampUs) || Math.abs(record.decodeTimestampUs) > Number.MAX_SAFE_INTEGER || !record.payload.byteLength) throw new Error('Invalid AirPlay audio timestamp or packet.');
       const timestamp = Math.round(record.decodeTimestampUs);
+      if (session.software) {
+        const pcm = await session.software.decode(rawAacPacket(record.payload));
+        if (!live(session)) return false;
+        onPcm(recordFor(session, { pcm, presentationMs: record.presentationMs,
+          flags: record.flags & ~2, sequence: session.outputSequence++ >>> 0 })); notify(session);
+        return true;
+      }
       session.anchors.push({ timestamp, presentationMs: record.presentationMs, flags: record.flags });
       if (session.anchors.length > 128) session.anchors.shift();
       session.decoder.decode(new EncodedAudioChunk({ type: 'key', timestamp,

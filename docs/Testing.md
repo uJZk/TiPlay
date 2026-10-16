@@ -8,8 +8,6 @@ The [Android workflow](../.github/workflows/android.yml) defines required tool v
 
 For browser/media changes, use the applicable [Chromium harness](../tests/web-e2e/README.md): browser link and recovery, real shared-server wiring, URL MP4/HLS playback, still photos under production CSP, or ordinary AirPlay audio. Native AirPlay changes also require `python3 scripts/test_airplay_native.py`. Rebuild generated site outputs with [the Pages workflow](../.github/workflows/pages.yml) when their inputs change.
 
-Current source verification passes with 1,971 shared, 1,556 common and 6 home unit tests, all three application lint checks and all three debug APK builds. The mobile debug APK passes signature verification. All 229 browser unit tests, static site generation/assembly, the public-source scan and 9 release-draft tests pass. The Chromium `airplay-video.mjs` MP4 fixture passes with WebGL and 2D rendering, live Debug-mode route changes, restored direct playback after disabling Debug, asynchronous canvas/autoplay errors and retired-player cleanup.
-
 Desktop simulations and codec probes cannot establish Tesla firmware support, iPhone interoperability, autoplay behavior, vehicle sound or sustained performance. Record which checks ran and which physical checks remain.
 
 ## Receiver status and browser notices
@@ -72,13 +70,11 @@ and browser-selected HEVC independent of the old preference.
 
 Use unprotected content from an actual iPhone. Check discovery and device approval, mirroring, audio-only playback, JPEG/PNG photos, and URL MP4/HLS playback with seeking, subtitles, buffering and iPhone controls. Test stopping/replacing a cast and returning the browser display to CarPlay while retained CarPlay audio continues as designed. Exercise authentication/resource expiry and recovery after network loss.
 
-Check advertised audio codecs in the actual browser; unsupported WebCodecs formats must fail clearly. HDR content is subject to TiPlay's SDR policy. DRM services and apps that prohibit AirPlay are outside acceptance. See [AirPlay](AirPlay.md) for receiver boundaries.
+Check advertised audio codecs in the actual browser: ALAC/AAC-LC follow native decoder support; AAC-ELD remains offered and uses supported WebCodecs before the bundled software decoder. Verify clear failures when no implemented decoder can handle the format. HDR content is subject to TiPlay's SDR policy. DRM services and apps that prohibit AirPlay are outside acceptance. See [AirPlay](AirPlay.md) for receiver boundaries.
 
 Record Android/device, browser/vehicle firmware, iPhone/iOS, app version, transport, exact steps and remaining failures. Share reviewed diagnostics without pairing codes, keys or personal data. Track outstanding physical validation in [Todo](Todo.md).
 
 ## Debug raw capture and car Bluetooth hints
-
-Current source verification: 1,973 shared, 1,561 common and 6 home unit tests pass without skips; the required Android lint/debug-build task set, 229 browser tests, public-source scan and 9 release-draft tests pass. Physical checks remain listed below and in Todo.
 
 `RawTrafficTest`, `DiagnosticExportStoreTest` and `SessionLogIntegrityTest` cover exact recovery of large binary payloads, byte ranges, unredacted credentials, disabled capture, exclusion of retained raw history from Standard TXT, Debug ZIP stream reconstruction, snapshot stability, PCM/binary extensions, temporary-file cleanup and preservation of interrupted records without preventing later session exports. `DiagnosticLogsTest` covers ignoring persisted Debug values at process initialization and capture configuration. `DiagnosticCaptureClearUiTest` covers the completed-export Clear action; `BrowserMainPageTest` covers the performance hint. `DiagnosticExportFallbackTest` also covers ZIP MIME/extension preservation, distinct share URIs and byte-identical fallback copies. `AirPlayVideoProxyTest` and `BrowserLinkServerTest` verify that the debug policy removes peer URLs, rewrites playlist children and proxies redirects, while Standard retains direct eligibility. The Chromium `airplay-video.mjs` harness toggles the policy during decoded playback and checks proxy requests, absence of direct iPhone requests while enabled and restored direct playback when disabled.
 

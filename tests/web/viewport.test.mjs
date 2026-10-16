@@ -11,7 +11,7 @@ function extract(name) {
 const schedule = extract('scheduleViewport');
 const cancel = extract('cancelViewport');
 
-function page(probe = () => new Promise(() => {})) {
+function page(probe = () => new Promise(() => {}), audioProbe = () => Promise.resolve(0x3fffc)) {
   let next = 0;
   const frames = new Map(), sent = [];
   const requestAnimationFrame = run => {
@@ -23,7 +23,7 @@ function page(probe = () => new Promise(() => {})) {
   const rect = { width: 1280, height: 720 };
   const stage = { hidden: false, getBoundingClientRect: () => rect };
   const outbox = { push: (event, mode) => sent.push({ event, mode }) };
-  const p = new Function('stage', 'outbox', 'window', 'viewportFor', 'requestAnimationFrame', 'cancelAnimationFrame', 'probeMirrorCapabilities', `
+  const p = new Function('stage', 'outbox', 'window', 'viewportFor', 'requestAnimationFrame', 'cancelAnimationFrame', 'probeMirrorCapabilities', 'probeMirrorAudioFormats', `
     let viewportFrame = null, lastViewport = '';
     ${schedule}
     ${cancel}
@@ -31,7 +31,7 @@ function page(probe = () => new Promise(() => {})) {
       disconnect: () => { outbox = null; },
       reconnect: box => { outbox = box; lastViewport = ''; }
     };
-  `)(stage, outbox, { devicePixelRatio: 1 }, viewportFor, requestAnimationFrame, cancelAnimationFrame, probe);
+  `)(stage, outbox, { devicePixelRatio: 1 }, viewportFor, requestAnimationFrame, cancelAnimationFrame, probe, audioProbe);
   return { ...p, rect, stage, sent, frames, frame() {
     for (const [id, run] of [...frames]) {
       frames.delete(id);
@@ -111,12 +111,24 @@ test('capability probe reports only the latest viewport and cannot cross browser
   const p = page((width, height) => new Promise(resolve => pending.push({ width, height, resolve })));
   p.scheduleViewport(); p.frame();
   p.rect.width = 1000; p.scheduleViewport(); p.frame();
-  pending[0].resolve(caps); await Promise.resolve();
+  pending[0].resolve(caps); await Promise.resolve(); await Promise.resolve();
   assert.equal(p.sent.length, 2, 'a completed probe for the old viewport cannot replace the latest size');
-  pending[1].resolve(caps); await Promise.resolve();
-  assert.deepEqual(p.sent.at(-1), { event: { k: 'vp', ...viewportFor(1000, 720, 1), caps }, mode: 'latest' });
+  pending[1].resolve(caps); await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(p.sent.at(-1), { event: { k: 'vp', ...viewportFor(1000, 720, 1), caps: { ...caps, audioFormats: 0x3fffc } }, mode: 'latest' });
   p.rect.width = 1200; p.scheduleViewport(); p.frame();
   const fresh = []; p.disconnect(); p.reconnect({ push: event => fresh.push(event) });
-  pending[2].resolve(caps); await Promise.resolve();
+  pending[2].resolve(caps); await Promise.resolve(); await Promise.resolve();
   assert.equal(fresh.length, 0, 'results from the retired paired session are discarded');
+});
+
+test('paired viewport reports measured audio formats after both decoder probes complete', async () => {
+  const caps = { h264: true, hevc: false, maxWidth: 1280, maxHeight: 720 };
+  let complete;
+  const p = page(async () => caps, () => new Promise(resolve => { complete = resolve; }));
+  p.scheduleViewport(); p.frame();
+  await Promise.resolve();
+  assert.equal(p.sent.length, 1, 'size remains immediate while audio capabilities are pending');
+  complete(0x3000000 | 0x3fffc); await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(p.sent.at(-1), { event: { k: 'vp', ...viewportFor(1280, 720, 1),
+    caps: { ...caps, audioFormats: 0x303fffc } }, mode: 'latest' });
 });

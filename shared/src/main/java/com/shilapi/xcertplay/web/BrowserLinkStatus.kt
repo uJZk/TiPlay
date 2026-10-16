@@ -23,6 +23,23 @@ data class BrowserVideoCapabilities(val h264: Boolean, val hevc: Boolean, val ma
     }
 }
 
+/** Selected AirPlay wire formats measured by this browser; never persist another browser's support. */
+data class BrowserAudioCapabilities(val formats: Long) {
+    companion object {
+        const val FORMAT_MASK = 0x3fffffcL
+
+        fun parse(value: Any?): BrowserAudioCapabilities? {
+            val fields = value as? Map<*, *> ?: return null
+            val number = (fields["audioFormats"] as? Number)?.toDouble()
+                ?.takeIf { it.isFinite() && it >= 0 && it <= FORMAT_MASK && it % 1.0 == 0.0 }
+                ?: return null
+            val formats = number.toLong()
+            if (formats and FORMAT_MASK.inv() != 0L) return null
+            return BrowserAudioCapabilities(formats)
+        }
+    }
+}
+
 /** A `vp` event: [width] × [height] device pixels of the page's video area, its CSS size and its pixel ratio. */
 data class BrowserViewport(
     val width: Int,
@@ -31,6 +48,7 @@ data class BrowserViewport(
     val cssHeight: Double,
     val devicePixelRatio: Double,
     val videoCapabilities: BrowserVideoCapabilities? = null,
+    val audioCapabilities: BrowserAudioCapabilities? = null,
 ) {
     val size: BrowserSize get() = BrowserSize(width, height)
 

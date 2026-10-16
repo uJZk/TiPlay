@@ -58,9 +58,12 @@ class AirPlayReceiverService : Service() {
         viewportSubscription = TeslaBrowserLink.listenViewport(this) { viewport ->
             val size = TeslaBrowserCanvas.sizeFor(viewport)
             worker.execute {
-                if (!destroyed) server?.updateDisplaySize(size.width, size.height,
-                    viewport?.videoCapabilities?.hevc == true,
-                    viewport?.videoCapabilities?.let { it.h264 || it.hevc } ?: true)
+                if (!destroyed) server?.let { receiver ->
+                    receiver.updateDisplaySize(size.width, size.height,
+                        viewport?.videoCapabilities?.hevc == true,
+                        viewport?.videoCapabilities?.let { it.h264 || it.hevc } ?: true)
+                    refreshDiscovery()
+                }
             }
         }
         settingsSubscription = BrowserSettingsChanges.listen(this) {
@@ -297,12 +300,14 @@ class AirPlayReceiverService : Service() {
             width = TeslaBrowserCanvas.sizeFor(TeslaBrowserLink.lastViewport(this)).width,
             height = TeslaBrowserCanvas.sizeFor(TeslaBrowserLink.lastViewport(this)).height,
             fps = AirPlayPersistence.loadFps(this), hevcEnabled = TeslaBrowserLink.lastViewport(this)?.videoCapabilities?.hevc == true,
-            mirrorEnabled = TeslaBrowserLink.lastViewport(this)?.videoCapabilities?.let { it.h264 || it.hevc } ?: true)
+            mirrorEnabled = TeslaBrowserLink.lastViewport(this)?.videoCapabilities?.let { it.h264 || it.hevc } ?: true,
+            audioOutputFormats = TeslaBrowserLink.audioCapabilities()?.formats ?: 0L)
     }
 
     private fun refreshDiscovery() {
         if (destroyed) return
         try {
+            server?.updateAudioFormats(TeslaBrowserLink.audioCapabilities()?.formats ?: 0L)
             val advertised = discovery?.refresh() == true
             if (!advertised && state == "listening") publish("no-network")
             else if (advertised && state == "no-network") publish("listening")

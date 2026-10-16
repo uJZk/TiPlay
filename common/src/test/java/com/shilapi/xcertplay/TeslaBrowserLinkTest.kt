@@ -15,7 +15,9 @@ import com.shilapi.xcertplay.orchestration.CarPlayController
 import com.shilapi.xcertplay.orchestration.CarPlayRunMode
 import com.shilapi.xcertplay.web.BrowserLinkServer
 import com.shilapi.xcertplay.web.BrowserLinkStatus
+import com.shilapi.xcertplay.web.BrowserAudioCapabilities
 import com.shilapi.xcertplay.web.BrowserSize
+import com.shilapi.xcertplay.web.BrowserVideoCapabilities
 import com.shilapi.xcertplay.web.BrowserViewport
 import java.net.BindException
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -255,6 +257,70 @@ class TeslaBrowserLinkTest {
         context.getSharedPreferences("tiplay_browser_link", 0).edit().putInt("viewport_width", 100).commit()
         TeslaBrowserLink.resetForTest()
         assertNull(TeslaBrowserLink.lastViewport(context))
+    }
+
+    @Test fun resizeKeepsTheCurrentBrowsersAudioProbeAndNewMeasurementsReplaceIt() {
+        val callbacks = started().callbacks
+        val first = BrowserAudioCapabilities((1L shl 2) or (1L shl 25))
+        val report = BrowserViewport(1280, 720, 1280.0, 720.0, 1.0,
+            BrowserVideoCapabilities(true, false, 1920, 1080), first)
+        val seen = mutableListOf<BrowserViewport?>()
+        TeslaBrowserLink.listenViewport(context, seen::add).use {
+            callbacks.onBrowserSeen("first")
+            callbacks.onViewport(report)
+            callbacks.onViewport(report.copy(width = 1200, audioCapabilities = null))
+            assertEquals(first, TeslaBrowserLink.readyViewport()?.audioCapabilities)
+            assertEquals(first, seen.last()?.audioCapabilities)
+            val unsupported = BrowserAudioCapabilities(0L)
+            callbacks.onViewport(report.copy(width = 1200, audioCapabilities = unsupported))
+            assertEquals(unsupported, TeslaBrowserLink.readyViewport()?.audioCapabilities)
+            assertEquals(unsupported, seen.last()?.audioCapabilities)
+        }
+    }
+
+    @Test fun replacementBrowserCannotInheritAudioAndAnOldDisconnectCannotClearItsProbe() {
+        val callbacks = started().callbacks
+        val report = BrowserViewport(1280, 720, 1280.0, 720.0, 1.0,
+            BrowserVideoCapabilities(true, false, 1920, 1080), BrowserAudioCapabilities(1L shl 25))
+        val seen = mutableListOf<BrowserViewport?>()
+        TeslaBrowserLink.listenViewport(context, seen::add).use {
+            callbacks.onBrowserSeen("first")
+            callbacks.onViewport(report)
+            callbacks.onBrowserSeen("second")
+            assertNull(TeslaBrowserLink.readyViewport())
+            assertNull(TeslaBrowserLink.lastViewport(context)?.audioCapabilities)
+            assertNull(seen.last()?.audioCapabilities)
+            callbacks.onViewport(report.copy(audioCapabilities = null))
+            assertNull(TeslaBrowserLink.readyViewport()?.audioCapabilities)
+            val second = BrowserAudioCapabilities(1L shl 2)
+            callbacks.onViewport(report.copy(audioCapabilities = second))
+            callbacks.onBrowserGone("first")
+            assertEquals(second, TeslaBrowserLink.readyViewport()?.audioCapabilities)
+            callbacks.onBrowserGone("second")
+            assertNull(TeslaBrowserLink.readyViewport())
+            assertNull(seen.last()?.audioCapabilities)
+            callbacks.onBrowserSeen("second")
+            callbacks.onViewport(report.copy(audioCapabilities = null))
+            assertNull(TeslaBrowserLink.readyViewport()?.audioCapabilities)
+        }
+    }
+
+    @Test fun serverStopClearsAudioAndRestartLoadsOnlySavedGeometry() {
+        val callbacks = started().callbacks
+        callbacks.onBrowserSeen("first")
+        callbacks.onViewport(BrowserViewport(1280, 720, 1280.0, 720.0, 1.0,
+            BrowserVideoCapabilities(true, false, 1920, 1080), BrowserAudioCapabilities(1L shl 25)))
+        val seen = mutableListOf<BrowserViewport?>()
+        TeslaBrowserLink.listenViewport(context, seen::add).use {
+            TeslaBrowserLink.stop()
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            assertNull(TeslaBrowserLink.readyViewport())
+            assertNull(TeslaBrowserLink.lastViewport(context)?.audioCapabilities)
+            assertNull(seen.last()?.audioCapabilities)
+        }
+        TeslaBrowserLink.resetForTest()
+        assertEquals(BrowserSize(1280, 720), TeslaBrowserLink.lastViewport(context)?.size)
+        assertNull(TeslaBrowserLink.lastViewport(context)?.audioCapabilities)
     }
 
     @Test fun viewportAndFitReachTheCarPlayScreenOnTheMainThread() {

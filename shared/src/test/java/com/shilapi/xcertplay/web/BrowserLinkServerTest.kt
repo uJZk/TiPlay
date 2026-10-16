@@ -391,6 +391,19 @@ class BrowserLinkServerTest {
         assertEquals(2, touches.size)
     }
 
+    @Test fun onlyAuthenticatedViewportsReportMeasuredAudioFormatsAndPreserveExplicitZero() {
+        val event = """{"k":"vp","w":1182,"h":920,"cw":773,"ch":601,"dpr":1.53,"caps":{"audioFormats":4194304}}"""
+        assertEquals(401, control(1, event, c = "9999").status)
+        assertTrue(viewports.isEmpty())
+        assertEquals(200, control(1, event).status)
+        assertEquals(BrowserAudioCapabilities(1L shl 22), viewports.last().audioCapabilities)
+        assertNull(viewports.last().videoCapabilities)
+        assertEquals(200, control(2, event.replace("4194304", "0")).status)
+        assertEquals(BrowserAudioCapabilities(0L), viewports.last().audioCapabilities)
+        assertEquals(200, control(3, event.replace("4194304", "1")).status)
+        assertNull(viewports.last().audioCapabilities)
+    }
+
     @Test fun anOverlappingLaterBatchWaitsForTheEarlierOne() {
         // The page's 3 s timeout can send batch 2 while batch 1 is still being applied on another connection.
         val entered = CountDownLatch(1)

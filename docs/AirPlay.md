@@ -29,12 +29,21 @@ AirPlay uses no PIN; browser pairing retains its separate code.
 | Mirror | Authenticate/decrypt and relay H.264 or enabled HEVC | WebCodecs and Canvas |
 | URL video | Protocol, authenticated resources and controls | Mediabunny/WebCodecs; TiPlay Canvas/Web Audio engine; Video.js controls |
 | JPEG/PNG | Bounded original-image cache/resource | Native decoding, EXIF orientation, contain fitting |
-| Type-96 audio | RTP/decryption, packet order, RTP/NTP mapping | PCM conversion or WebCodecs decoding; AudioWorklet output |
+| Type-96 audio | RTP/decryption, packet order, RTP/NTP mapping | PCM conversion, WebCodecs or software AAC-ELD decoding; AudioWorklet output |
 
 No Android URL-video/photo encoder or ordinary audio decoder fallback exists.
-The audio transport accepts PCM, ALAC, AAC-LC and AAC-ELD; negotiated combinations
-are defined in the source below. Browser support is required, particularly for
-ALAC/AAC-ELD. Network PCM defaults to big endian, pending real-sender confirmation;
+The audio transport implements PCM, ALAC, AAC-LC and AAC-ELD. The current paired
+browser reports a per-format capability mask: PCM uses JavaScript conversion;
+AAC-ELD is always offered through the bundled software decoder, with WebCodecs
+preferred when the actual configuration is supported. Software decoding runs in an
+independent Worker and retains the stream's clock and epoch. ALAC and AAC-LC require
+bounded WebCodecs probes using the actual configuration, sample rate, bit depth and
+supported frame lengths. Only reported formats appear in the receiver's offers or
+pass SETUP, including codec-only requests. Unknown browser capabilities offer no audio.
+Reports belong to the current browser session and are never restored from a saved
+viewport; changes constrain the next SETUP without interrupting current media.
+Sender negotiation and actual sound still require iPhone validation.
+Network PCM defaults to big endian, pending real-sender confirmation;
 24-bit input becomes PCM16 output. Standalone type-96 audio is supported, without
 `_raop`, AirPlay 2 buffered audio or microphone transmission. CarPlay buffering is
 [a separate protocol](Browser.md#audio-and-microphone).
@@ -79,6 +88,12 @@ not source synchronization. Resize scales the current mirror; new dimensions app
 at the next SETUP. Keepalive tuning is not a recovery-time guarantee.
 
 ## URL engine and captions
+
+An accepted `/play` command is acknowledged before browser media readiness.
+Senders may wait for this reply before completing FCUP resources through `/action`
+on the same control connection; waiting for browser readiness there can block the
+resource needed to become ready. Loading, readiness and failure remain asynchronous
+through playback information and events.
 
 TiPlay owns one audio-leading clock, bounded queues, buffering, seek and rate;
 silent video uses monotonic time. Underrun freezes both streams; playable buffers use

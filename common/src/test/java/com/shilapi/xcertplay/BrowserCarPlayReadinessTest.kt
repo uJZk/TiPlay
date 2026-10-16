@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay
 
 import com.shilapi.xcertplay.web.BrowserVideoCapabilities
+import com.shilapi.xcertplay.web.BrowserAudioCapabilities
 import com.shilapi.xcertplay.web.BrowserViewport
 import org.junit.Assert.*
 import org.junit.Test
@@ -47,5 +48,25 @@ class BrowserCarPlayReadinessTest {
         readiness.clear()
         readiness.seen("new")
         assertNull(readiness.readyViewport())
+    }
+
+    @Test fun audioOnlyCapabilitiesRequireAFreshAuthenticatedPageButNoVideoDecoder() {
+        val audioOnly = viewport.copy(videoCapabilities = BrowserVideoCapabilities(false, false, 0, 0),
+            audioCapabilities = BrowserAudioCapabilities(1L shl 25))
+        readiness.report(audioOnly)
+        assertNull(readiness.liveViewport())
+        readiness.seen("audio-page")
+        assertNull(readiness.liveViewport())
+        readiness.report(audioOnly)
+        assertEquals(audioOnly, readiness.liveViewport())
+        assertNull(readiness.readyViewport())
+        now = BrowserCarPlayReadiness.TIMEOUT_MILLIS - 1
+        assertEquals(audioOnly, readiness.liveViewport())
+        now++
+        assertNull(readiness.liveViewport())
+        readiness.seen("audio-page")
+        assertEquals(audioOnly, readiness.liveViewport())
+        readiness.gone("audio-page")
+        assertNull(readiness.liveViewport())
     }
 }

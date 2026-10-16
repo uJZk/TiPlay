@@ -393,7 +393,7 @@ class ReceiverServerTest {
         } finally { receiver.close() }
     }
 
-    @Test fun playbackPreparationAllowsConcurrentStateQueriesAndFinishesWhenBrowserReady() {
+    @Test fun playbackPreparationAcknowledgesBeforeReadyAndKeepsStateQueriesAvailable() {
         val listener = Listener().apply { playbackState = ReceiverPlayback(buffering = true) }
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
         receiver.start()
@@ -403,16 +403,68 @@ class ReceiverServerTest {
                 val play = java.util.concurrent.CompletableFuture.supplyAsync {
                     control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray())
                 }
-                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
-                while (listener.items.isEmpty() && System.nanoTime() < deadline) Thread.sleep(1)
+                assertEquals(200, play.get(1, TimeUnit.SECONDS).toInt())
                 assertEquals(1, listener.items.size)
-                assertFalse(play.isDone)
+                assertFalse(listener.playback().ready)
+                val loading = control.send("GET", "/playback-info")
+                assertEquals("200", loading.path)
+                assertTrue(loading.body.toString(Charsets.UTF_8).contains("<key>readyToPlay</key><integer>0</integer>"))
                 connect(receiver.port).use { probe ->
                     assertEquals(200, probe.status("GET", "/playback-info"))
                     assertEquals(403, probe.status("GET", "/playback-info", id = "foreign"))
                 }
                 listener.playbackState = ReceiverPlayback(duration = 120.0, ready = true)
-                assertEquals(200, play.get(1, TimeUnit.SECONDS).toInt())
+                val ready = control.send("GET", "/playback-info")
+                assertEquals("200", ready.path)
+                assertTrue(ready.body.toString(Charsets.UTF_8).contains("<key>readyToPlay</key><integer>1</integer>"))
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun playAcknowledgementDoesNotWaitForItsAppResourceProbe() {
+        val listener = Listener().apply { playbackState = ReceiverPlayback(buffering = true) }
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                connect(receiver.port).use { reverse ->
+                    reverse.upgradeReverse()
+                    val url = "minibili://test/master.m3u8"
+                    val play = java.util.concurrent.CompletableFuture.supplyAsync {
+                        control.status("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to url)))
+                    }
+                    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+                    while (listener.items.isEmpty() && System.nanoTime() < deadline) Thread.sleep(1)
+                    assertEquals(1, listener.items.size)
+                    // The browser cannot become ready until the app-owned resource is delivered.
+                    val resource = java.util.concurrent.CompletableFuture.supplyAsync {
+                        receiver.loadResource(url)?.also {
+                            listener.playbackState = ReceiverPlayback(duration = 10.0, ready = true)
+                        }
+                    }
+                    val event = requireNotNull(readReceiverRequest(reverse.getInputStream()))
+                    val xml = event.body.toString(Charsets.UTF_8)
+                    assertTrue(xml.contains("<string>unhandledURLRequest</string>"))
+                    val requestId = Regex("<key>FCUP_Response_RequestID</key><integer>([0-9]+)</integer>")
+                        .find(xml)!!.groupValues[1].toLong()
+                    reverse.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                    // This sender services app resources only after /play is acknowledged.
+                    assertEquals(200, play.get(1, TimeUnit.SECONDS).toInt())
+                    assertFalse(listener.playback().ready)
+                    assertFalse(resource.isDone)
+                    val bytes = "#EXTM3U\n#EXT-X-ENDLIST\n".toByteArray()
+                    val answer = BplistCodec.encode(mapOf("type" to "unhandledURLResponse", "params" to mapOf(
+                        "FCUP_Response_RequestID" to requestId, "FCUP_Response_URL" to url,
+                        "FCUP_Response_Data" to bytes, "FCUP_Response_StatusCode" to 0,
+                    )))
+                    assertEquals(200, control.status("POST", "/action", answer))
+                    assertArrayEquals(bytes, resource.get(2, TimeUnit.SECONDS)!!.bytes)
+                    val ready = control.send("GET", "/playback-info")
+                    assertEquals("200", ready.path)
+                    assertTrue(ready.body.toString(Charsets.UTF_8).contains("<key>readyToPlay</key><integer>1</integer>"))
+                    assertEquals(200, control.status("POST", "/stop"))
+                    assertEquals(1, listener.stopped)
+                }
             }
         } finally { receiver.close() }
     }
@@ -453,6 +505,45 @@ class ReceiverServerTest {
             assertEquals(1280, config.width)
             assertEquals(800, config.height)
             assertThrows(IllegalArgumentException::class.java) { receiver.updateDisplaySize(1279, 800) }
+        } finally { receiver.close() }
+    }
+
+    @Test fun browserAudioChangesGateTheNextSetupWithoutRetiringCurrentAudio() {
+        val listener = Listener()
+        val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(), audioOutputFormats = 1L shl 23)
+        val receiver = ReceiverServer(config, listener,
+            fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) },
+            fairPlayDecrypt = { _, _ -> ByteArray(16) })
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                control.authenticateMirror()
+                assertEquals(200, control.status("SETUP", "/", BplistCodec.encode(mapOf(
+                    "eiv" to ByteArray(16), "ekey" to ByteArray(72), "timingPort" to 0,
+                ))))
+                fun stream(codec: Int, rate: Int = 44100) = BplistCodec.encode(mapOf("streams" to listOf(
+                    mapOf("type" to 96, "ct" to codec, "sr" to rate),
+                )))
+                val setup = control.send("SETUP", "/", stream(4, 48000))
+                assertEquals("200", setup.path)
+                val port = ((((BplistCodec.decode(setup.body) as Map<*, *>)["streams"] as List<*>).single() as Map<*, *>)["dataPort"] as Number).toInt()
+                assertEquals("audio", listener.states.last())
+                assertEquals(0L, receiver.updateAudioFormats(0L).audioOutputFormats)
+                assertEquals(400, control.status("SETUP", "/", stream(4, 48000)))
+                assertEquals(400, control.status("SETUP", "/", stream(8)))
+                assertEquals("audio", listener.states.last())
+                assertEquals(0, listener.stopped)
+                assertThrows(BindException::class.java) {
+                    DatagramSocket(null).use { it.bind(InetSocketAddress(InetAddress.getByName("::"), port)) }
+                }
+                receiver.updateAudioFormats(1L shl 18)
+                assertEquals(200, control.status("SETUP", "/", stream(2)))
+                assertEquals(400, control.status("SETUP", "/", stream(2, 48000)))
+                receiver.updateAudioFormats(1L shl 24)
+                assertEquals(200, control.status("SETUP", "/", stream(8)))
+                assertEquals(200, control.status("OPTIONS", "/"))
+                assertThrows(IllegalArgumentException::class.java) { receiver.updateAudioFormats(1L shl 26) }
+            }
         } finally { receiver.close() }
     }
 
@@ -643,7 +734,8 @@ class ReceiverServerTest {
         val identity = AirPlayIdentity.generate()
         val listener = Listener()
         val rawKey = ByteArray(16) { (it + 1).toByte() }
-        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", identity), listener,
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", identity,
+            audioOutputFormats = if (audioDrain) 1L shl 22 else 0L), listener,
             fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) }, fairPlayDecrypt = { _, _ -> rawKey })
         receiver.start()
         val control = connect(receiver.port)
@@ -681,7 +773,7 @@ class ReceiverServerTest {
             assertEquals("volume: 0.0\r\n", control.send("GET_PARAMETER", "rtsp://receiver/stream",
                 "volume\r\n".toByteArray()).body.toString(Charsets.US_ASCII))
             val requested = listOf(mapOf("type" to 110, "streamConnectionID" to 1234L)) +
-                if (audioDrain) listOf(mapOf("type" to 96, "ct" to 8, "audioFormat" to 0x1000000L, "spf" to 480)) else emptyList()
+                if (audioDrain) listOf(mapOf("type" to 96, "ct" to 4, "audioFormat" to 0x400000L, "spf" to 1024)) else emptyList()
             val stream = BplistCodec.decode(control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to requested))).body) as Map<*, *>
             val ports = (stream["streams"] as List<*>).map { it as Map<*, *> }
             val port = (ports.single { (it["type"] as Number).toInt() == 110 }["dataPort"] as Number).toInt()

@@ -1,0 +1,13 @@
+Third-Party Modified Version of the Fraunhofer FDK AAC Codec Library for Android.
+Modified 2026-10-16.
+Modified ELD-only derivative of mstorsjo/fdk-aac v2.0.3, commit 716f4394641d53f0d79c9ddac3fa93b03a49f278. Not an upstream release. See ../prune.py for transformations. Only raw AAC-ELD, no SBR/MPS/resilience, epConfig=0; other formats rejected. Preserve NOTICE and original copyright notices.
+
+Exact 32-bit-limb multiplication replaces emulated int64 products; see ../optimize-multiply.py.
+
+2026-10-16 second optimization round: transport narrowed to RAW and one layer;
+ELD-default-disabled limiter allocation and processing removed; UniDRC and legacy
+DRC preserved. Final source compile and link use O3. Public JS close releases
+private heap references; single-file initializer uses a preallocated fill loop.
+Filterbank/FFT candidates were tested and not retained. See patches/ and validation/.
+
+Additional changes: exact 32-bit-limb fixed-point multiplication replaces emulated int64 high products; narrow validated API; single-file embedded initializer; fixed 16MiB heap; borrowed PCM view. No runtime WASM dependency.

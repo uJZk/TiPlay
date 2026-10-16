@@ -1,0 +1,6 @@
+# Preserve the supplier's distribution and corresponding source byte for byte.
+aac-eld.js -text
+aac-eld-source.zip binary
+NOTICE -text
+MODIFICATIONS.txt -text
+SHA256SUMS text eol=lf

@@ -52,7 +52,7 @@ class WebEncodedAudioHubTest {
         hub.beginEncoded(owner, format); val reader = hub.subscribe()
         repeat(100) { hub.publishEncoded(owner, byteArrayOf(it.toByte()), it.toDouble(), id = WebAudioHub.AIRPLAY_MIRROR_STREAM) }
         val records = buildList { while (true) add(reader.take(1) ?: break) }
-        assertTrue(records.size <= 17) // One codec control and at most sixteen access units.
+        assertTrue(records.size <= WebAudioHub.MAX_REALTIME_PACKETS + 1)
         assertEquals(6, records.first()[4].toInt())
         assertTrue(records.drop(1).all { it[4].toInt() == 7 && epoch(it) == epoch(records.first()) })
         assertEquals(99, records.last()[36].toInt())
@@ -222,7 +222,7 @@ class WebEncodedAudioHubTest {
         hub.publishEncoded(owner, byteArrayOf(11), 1.0, buffered = true)
         hub.beginEncodedStream(owner, 1, format)
         hub.beginEncodedStream(owner, 3, format)
-        repeat(40) { hub.publishEncoded(owner, byteArrayOf(42), it.toDouble(), id = 3) }
+        repeat(WebAudioHub.MAX_REALTIME_PACKETS + 8) { hub.publishEncoded(owner, byteArrayOf(42), it.toDouble(), id = 3) }
         hub.publishEncoded(owner, byteArrayOf(1), 50.0, id = 1)
         val records = buildList { while (true) add(reader.take(1) ?: break) }
         val voice = records.filter { it[5].toInt() == 1 }
@@ -330,7 +330,7 @@ class WebEncodedAudioHubTest {
         assertEquals(listOf(6, 7), guidance.map { it[4].toInt() })
         assertEquals(20, guidance[1][36].toInt()); assertEquals(epoch(guidance[0]), epoch(guidance[1]))
         val mirrors = records.filter { it[5].toInt() == WebAudioHub.AIRPLAY_MIRROR_STREAM }
-        assertTrue(mirrors.size <= 17); assertEquals(6, mirrors.first()[4].toInt())
+        assertTrue(mirrors.size <= WebAudioHub.MAX_REALTIME_PACKETS + 1); assertEquals(6, mirrors.first()[4].toInt())
         assertTrue(mirrors.drop(1).all { it[4].toInt() == 7 && epoch(it) == epoch(mirrors.first()) })
         assertEquals(99, mirrors.last()[36].toInt())
         val music = records.filter { it[5].toInt() == 0 }

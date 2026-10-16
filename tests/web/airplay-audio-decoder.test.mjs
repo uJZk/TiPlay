@@ -80,11 +80,12 @@ test('PCM16 little endian preserves sign and frame count without a native decode
   assert.deepEqual([...new Int16Array(outputs.at(-1).pcm)], [...pcm]);
 });
 
-test('unsupported browser ALAC and AACELD report explicit errors and never use another decoder', async t => {
+test('unsupported ALAC and unavailable AAC-ELD software decoding report explicit errors', async t => {
   const { decoder, instances, errors, probes } = harness(t);
   for (const [epoch,config] of [[1,{codec:'alac',sampleRate:44100,channels:2,bitDepth:16,samplesPerFrame:352,cookie:Array(36).fill(0)}],[2,{codec:'aac-eld',sampleRate:44100,channels:2,bitDepth:16,samplesPerFrame:480,asc:[248,232,80,0]}]]) {
     const before=errors.length; assert.equal(await decoder.configure(configRecord(config,epoch)),false); await decoder.decode(packetRecord([1,2,3],epoch));
-    assert.equal(errors.length,before+1); assert.match(errors.at(-1).message,/support|decode|codec/i);
+    assert.equal(errors.length,before+1);
+    assert.match(errors.at(-1).message,config.codec==='aac-eld'?/requires a Worker/:/cannot decode AirPlay ALAC/);
   }
   assert.equal(instances.length,0); assert.equal(probes.length,2);
 });

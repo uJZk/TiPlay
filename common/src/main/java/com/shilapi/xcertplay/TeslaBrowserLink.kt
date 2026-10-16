@@ -20,6 +20,7 @@ import com.shilapi.xcertplay.web.BrowserLinkServer
 import com.shilapi.xcertplay.web.BrowserLinkStatus
 import com.shilapi.xcertplay.web.BrowserSize
 import com.shilapi.xcertplay.web.BrowserViewport
+import com.shilapi.xcertplay.web.BrowserAudioCapabilities
 import com.shilapi.xcertplay.web.WebMediaSink
 import com.shilapi.xcertplay.web.WebVideoHub
 import java.net.BindException
@@ -250,9 +251,11 @@ internal object TeslaBrowserLink {
     @Volatile private var code: String? = null
     private val carPlayReadiness = BrowserCarPlayReadiness { android.os.SystemClock.elapsedRealtime() }
     fun readyViewport(): BrowserViewport? = carPlayReadiness.readyViewport()
+    fun audioCapabilities(): BrowserAudioCapabilities? = carPlayReadiness.liveViewport()?.audioCapabilities
 
     @Volatile private var viewport: BrowserViewport? = null
     @Volatile private var viewportLoaded = false
+    private var viewportSession: String? = null // guarded by this; audio support belongs to this live page
     private var lastStatsLog: Long? = null
     private var lastStatsCounters = emptyMap<String, Long>() // guarded by statsLock
 
@@ -512,9 +515,21 @@ internal object TeslaBrowserLink {
         override fun status(): BrowserLinkStatus = this@TeslaBrowserLink.status()
         override fun onTouch(contacts: List<AirPlayContact>): Boolean =
             if (carPlayDisplayPaused) false else CarPlayBackgroundSession.snapshot()?.controller?.sendTouch(contacts) ?: false
-        override fun onBrowserSeen(session: String) = carPlayReadiness.seen(session)
+        override fun onBrowserSeen(session: String) = synchronized(this@TeslaBrowserLink) {
+            carPlayReadiness.seen(session)
+            if (viewportSession != session) {
+                viewportSession = session
+                clearViewportAudio()
+            }
+        }
         override fun onBrowserGone(session: String) {
-            carPlayReadiness.gone(session)
+            synchronized(this@TeslaBrowserLink) {
+                carPlayReadiness.gone(session)
+                if (viewportSession == session) {
+                    viewportSession = null
+                    clearViewportAudio()
+                }
+            }
             main.post { host.get()?.onBrowserGone() }
         }
         override fun onViewport(viewport: BrowserViewport) = viewportChanged(viewport)
@@ -613,7 +628,10 @@ internal object TeslaBrowserLink {
         }
     }
 
-    private fun viewportChanged(next: BrowserViewport) {
+    private fun viewportChanged(report: BrowserViewport): Unit = synchronized(this) {
+        // Resize reports can precede the async decoder probe. Preserve only this page's known audio support.
+        val next = if (report.audioCapabilities == null && viewportSession != null)
+            report.copy(audioCapabilities = viewport?.audioCapabilities) else report
         val alreadyReady = readyViewport() != null
         carPlayReadiness.report(next)
         val changed = next != viewport
@@ -622,10 +640,23 @@ internal object TeslaBrowserLink {
         viewportLoaded = true
         if (changed) app?.let { saveViewport(it, next) }
         log("Browser link: viewport ${TeslaBrowserCanvas.describe(next)}")
+        notifyViewport(next)
+        main.post { host.get()?.onBrowserViewport(next) }
+    }
+
+    /** Audio probes are never saved or carried into another browser session. Called under this monitor. */
+    private fun clearViewportAudio() {
+        val previous = viewport ?: return
+        if (previous.audioCapabilities == null) return
+        val cleared = previous.copy(audioCapabilities = null)
+        viewport = cleared
+        notifyViewport(cleared)
+    }
+
+    private fun notifyViewport(next: BrowserViewport?) {
         viewportListeners.forEach { listener ->
             runCatching { listener(next) }.onFailure { Log.w(TAG, "viewport listener failed", it) }
         }
-        main.post { host.get()?.onBrowserViewport(next) }
     }
 
     private fun log(message: String) {
@@ -642,7 +673,11 @@ internal object TeslaBrowserLink {
     }
 
     private fun stopQuietly(server: Server) {
-        carPlayReadiness.clear()
+        synchronized(this) {
+            carPlayReadiness.clear()
+            viewportSession = null
+            clearViewportAudio()
+        }
         try {
             server.stop()
         } catch (error: RuntimeException) {
@@ -699,6 +734,7 @@ internal object TeslaBrowserLink {
         synchronized(this) {
             code = null
             carPlayReadiness.clear()
+            viewportSession = null
             viewport = null
             viewportLoaded = false
         }

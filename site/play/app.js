@@ -14,7 +14,7 @@ import {
 import { createLocationNotice } from './location-notice.js';
 import { createBrowserLocation, locationEvents } from './geolocation.js';
 import { followAppearance } from './appearance.js';
-import { probeMirrorCapabilities } from './airplay-capabilities.js';
+import { probeMirrorCapabilities, probeMirrorAudioFormats } from './airplay-capabilities.js';
 import { createReconnectOverlay } from './reconnect.js';
 import { pumpChunkStream } from './transport.js';
 import { formatPerformanceMonitor, performanceStats } from './fps-window.js';
@@ -788,8 +788,8 @@ function scheduleViewport() {
     lastViewport = `${viewport.w}x${viewport.h}`;
     outbox.push({ k: 'vp', ...viewport }, 'latest');
     const reporting = outbox, size = lastViewport;
-    void probeMirrorCapabilities(viewport.w, viewport.h).then(caps => {
-      if (outbox === reporting && lastViewport === size && !stage.hidden) reporting.push({ k: 'vp', ...viewport, caps }, 'latest');
+    void Promise.all([probeMirrorCapabilities(viewport.w, viewport.h), probeMirrorAudioFormats()]).then(([caps, audioFormats]) => {
+      if (outbox === reporting && lastViewport === size && !stage.hidden) reporting.push({ k: 'vp', ...viewport, caps: { ...caps, audioFormats } }, 'latest');
     });
   }); // Coalesce layout notifications without waiting for a quiet period during a resize.
 }

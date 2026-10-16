@@ -467,7 +467,7 @@ class BrowserLinkServer(
                 }
                 callbacks.onViewport(
                     BrowserViewport(width, height, fields["cw"].finite(), fields["ch"].finite(), fields["dpr"].finite(),
-                        BrowserVideoCapabilities.parse(fields["caps"])),
+                        BrowserVideoCapabilities.parse(fields["caps"]), BrowserAudioCapabilities.parse(fields["caps"])),
                 )
             }
             "loc" -> if (callbacks.browserLocationEnabled())

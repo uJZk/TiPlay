@@ -18,7 +18,9 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 - [Browser](docs/Browser.md): pairing, receiver-aware waiting states, dismissible browser errors, resize, portal, media and shutdown.
 - [Settings](docs/Settings.md): short receiver status titles, separate details, drafts, immediate apply, reconnect and boot.
 - [Connection setup](docs/Connection-setup.md) and [hotspot address](docs/Hotspot-address.md).
-- [AirPlay](docs/AirPlay.md): receiver/media contracts and compatibility limits.
+- [AirPlay](docs/AirPlay.md): receiver/media contracts, native/software audio negotiation,
+  AAC-ELD fallback and asynchronous URL startup. Physical audio/video checks remain in
+  [Todo](docs/Todo.md#browser-and-carplay-audio) and [ordinary AirPlay acceptance](docs/Testing.md#ordinary-airplay-acceptance).
 - [Diagnostics](docs/Diagnostics.md): opt-in unredacted capture sessions, process-default-off and clear behavior, Standard TXT/Debug ZIP formats and Debug-only AirPlay proxy routing; [privacy](docs/Privacy.md).
   Current validation and remaining device checks are in [Testing](docs/Testing.md#debug-raw-capture-and-car-bluetooth-hints) and [Todo](docs/Todo.md#connection-settings-and-browser).
 - [Geolocation](docs/geolocation.md): implemented GPS fallback, datum detection/conversion, browser cache and iPhone forwarding. Verification is in [Testing](docs/Testing.md#location-and-notification-verification); physical follow-up is in [Todo](docs/Todo.md#location).

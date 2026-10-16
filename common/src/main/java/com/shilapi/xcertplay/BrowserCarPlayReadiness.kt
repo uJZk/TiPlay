@@ -22,9 +22,14 @@ internal class BrowserCarPlayReadiness(private val now: () -> Long) {
 
     @Synchronized fun clear() { session = null; viewport = null }
 
-    @Synchronized fun readyViewport(): BrowserViewport? {
+    /** Audio can be supported even when this page has no video decoder. */
+    @Synchronized fun liveViewport(): BrowserViewport? {
         if (session == null || now() - lastSeen >= TIMEOUT_MILLIS) return null
-        return viewport?.takeIf {
+        return viewport
+    }
+
+    @Synchronized fun readyViewport(): BrowserViewport? {
+        return liveViewport()?.takeIf {
             val caps = it.videoCapabilities
             caps != null && (caps.h264 || caps.hevc) && caps.maxWidth > 0 && caps.maxHeight > 0
         }

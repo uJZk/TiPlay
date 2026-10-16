@@ -52,11 +52,11 @@ class WebAudioHubTest {
         val hub = WebAudioHub(); val carPlay = Any(); val old = Any(); val current = Any()
         hub.begin(carPlay); hub.beginMirror(old); val reader = hub.subscribe()
         hub.publish(carPlay, 1, 16000, 1, byteArrayOf(20, 0))
-        repeat(17) { hub.publish(old, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(it.toByte(), 0),
+        repeat(WebAudioHub.MAX_REALTIME_PACKETS + 1) { hub.publish(old, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(it.toByte(), 0),
             mode = BrowserPlaybackMode.AIRPLAY_MIRROR) }
         assertEquals(20, reader.take(100)!![28].toInt())
         val fresh = reader.take(100)!!
-        assertEquals(16, fresh[28].toInt()); assertEquals(2, fresh[7].toInt() and 2)
+        assertEquals(WebAudioHub.MAX_REALTIME_PACKETS, fresh[28].toInt()); assertEquals(2, fresh[7].toInt() and 2)
         hub.beginMirror(current)
         reader.take(100)
         hub.endMirror(old)
@@ -223,13 +223,14 @@ class WebAudioHubTest {
             assertEquals(5, route[5].toInt())
             assertEquals(100, ByteBuffer.wrap(route).getInt(16))
             assertEquals(0, route[7].toInt())
-            repeat(16) {
-                val prompt = reader.take(100)!!
-                assertEquals(it, prompt[28].toInt())
+            val records = List(18) { reader.take(100)!! }
+            records.filter { it[5].toInt() == 4 }.forEachIndexed { index, prompt ->
+                assertEquals(index, prompt[28].toInt())
                 assertEquals(0, prompt[7].toInt())
             }
-            assertEquals(30, reader.take(100)!![28].toInt())
-            assertEquals(40, reader.take(100)!![28].toInt())
+            assertEquals(16, records.count { it[5].toInt() == 4 })
+            assertEquals(30, records.single { it[5].toInt() == WebAudioHub.AIRPLAY_MIRROR_STREAM }[28].toInt())
+            assertEquals(40, records.single { it[5].toInt() == 0 }[28].toInt())
             assertNull(reader.take(10))
             assertFalse(reader.closed)
         } finally { reader.close() }
@@ -239,7 +240,7 @@ class WebAudioHubTest {
         val hub = WebAudioHub(); val carPlay = Any(); val mirror = Any()
         hub.begin(carPlay); hub.beginMirror(mirror); val reader = hub.subscribe()
         try {
-            repeat(16) { hub.publish(carPlay, 0, 16000, 1, byteArrayOf(it.toByte(), 0)) }
+            repeat(WebAudioHub.MAX_REALTIME_PACKETS) { hub.publish(carPlay, 0, 16000, 1, byteArrayOf(it.toByte(), 0)) }
             hub.publish(mirror, WebAudioHub.AIRPLAY_MIRROR_STREAM, 44100, 1, byteArrayOf(30, 0),
                 mode = BrowserPlaybackMode.AIRPLAY_MIRROR)
             repeat(100) { hub.flush(carPlay, 1); hub.flush(carPlay, 2); hub.flush(carPlay, 3) }
@@ -249,13 +250,14 @@ class WebAudioHubTest {
                 assertEquals(28, reset.size)
                 assertEquals(2, reset[7].toInt())
             }
-            repeat(16) {
-                val music = reader.take(100)!!
+            val records = List(WebAudioHub.MAX_REALTIME_PACKETS + 1) { reader.take(100)!! }
+            records.filter { it[5].toInt() == 0 }.forEachIndexed { index, music ->
                 assertEquals(0, music[5].toInt())
-                assertEquals(it, music[28].toInt())
+                assertEquals(index, music[28].toInt())
                 assertEquals(0, music[7].toInt())
             }
-            assertEquals(30, reader.take(100)!![28].toInt())
+            assertEquals(WebAudioHub.MAX_REALTIME_PACKETS, records.count { it[5].toInt() == 0 })
+            assertEquals(30, records.single { it[5].toInt() == WebAudioHub.AIRPLAY_MIRROR_STREAM }[28].toInt())
             assertNull(reader.take(10))
             assertFalse(reader.closed)
         } finally { reader.close() }
@@ -268,7 +270,7 @@ class WebAudioHubTest {
         try {
             hub.beginEncodedStream(owner, 0, format)
             val musicEpoch = ByteBuffer.wrap(reader.take(100)!!).getInt(16)
-            repeat(16) { hub.publishEncoded(owner, byteArrayOf(0, it.toByte()), it.toDouble(), id = 0) }
+            repeat(WebAudioHub.MAX_REALTIME_PACKETS) { hub.publishEncoded(owner, byteArrayOf(0, it.toByte()), it.toDouble(), id = 0) }
             repeat(10) {
                 hub.beginEncodedStream(owner, 1, format)
                 hub.endEncodedStream(owner, 1)
@@ -277,7 +279,7 @@ class WebAudioHubTest {
             assertEquals(6, ended[4].toInt())
             assertEquals(1, ended[5].toInt())
             assertTrue(String(ended.copyOfRange(28, ended.size)).contains("\"ended\":true"))
-            repeat(16) {
+            repeat(WebAudioHub.MAX_REALTIME_PACKETS) {
                 val music = reader.take(100)!!
                 assertEquals(7, music[4].toInt())
                 assertEquals(0, music[5].toInt())
@@ -388,10 +390,10 @@ class WebAudioHubTest {
     @Test fun slowRealtimeReaderResetsToFreshAudioWithoutGrowingQueue() {
         val hub = WebAudioHub(); val owner = Any()
         hub.begin(owner); val reader = hub.subscribe()
-        repeat(17) { hub.publish(owner, 1, 16000, 1, byteArrayOf(it.toByte(), 0)) }
+        repeat(WebAudioHub.MAX_REALTIME_PACKETS + 1) { hub.publish(owner, 1, 16000, 1, byteArrayOf(it.toByte(), 0)) }
         val record = reader.take(1)!!
         assertEquals(2, record[7].toInt() and 2)
-        assertEquals(16, record[28].toInt())
+        assertEquals(WebAudioHub.MAX_REALTIME_PACKETS, record[28].toInt())
         assertNull(reader.take(1))
     }
 
@@ -408,7 +410,7 @@ class WebAudioHubTest {
         val hub = WebAudioHub(); val owner = Any()
         hub.begin(owner); val reader = hub.subscribe()
         repeat(16) { hub.publish(owner, 0, 48000, 2, byteArrayOf(it.toByte(), 0, 0, 0), buffered = true) }
-        repeat(17) { hub.publish(owner, 1, 16000, 1, byteArrayOf(it.toByte(), 0)) }
+        repeat(WebAudioHub.MAX_REALTIME_PACKETS + 1) { hub.publish(owner, 1, 16000, 1, byteArrayOf(it.toByte(), 0)) }
         assertEquals(1, reader.take(1)!![5].toInt())
         repeat(16) { assertEquals(it, reader.take(1)!![28].toInt()) }
         hub.publish(owner, 0, 48000, 2, ByteArray(4), buffered = true)

@@ -1,2 +1,7 @@
 # The golden protocol description is compared byte-for-byte with generated JSON.
 shared/src/test/resources/web/records-v1.json text eol=lf
+# Keep the supplied AAC-ELD distribution byte-for-byte with its pinned checksums.
+site/play/vendor/aac-eld/aac-eld.js -text -whitespace
+site/play/vendor/aac-eld/aac-eld-source.zip -text -whitespace
+site/play/vendor/aac-eld/NOTICE -text -whitespace
+site/play/vendor/aac-eld/MODIFICATIONS.txt -text -whitespace

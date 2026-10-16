@@ -4,6 +4,7 @@ import java.io.Closeable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
 /** Browser-owned audio output. Encoded AirPlay/CarPlay and PCM compatibility streams keep independent browser epochs. */
@@ -232,25 +233,29 @@ class WebAudioHub {
                     stream.publication?.active == false) return
                 val target = subscription ?: return
                 if (expectedTarget != null && target !== expectedTarget) return
-                val state = target.prepareEncoded(stream.id, epochs[stream.id], stream.buffered,
-                    if (payload == null) 0 else 1)
-                if (state.reset) epochs[stream.id]++
-                val epoch = epochs[stream.id]
-                records = buildList {
-                    if (state.configuration || state.reset) {
-                        add(encodedRecord(6, stream, epoch, stream.format.json(), true))
+                // PCM publishers can reach the subscription after releasing the hub. Keep admission
+                // and the encoded batch atomic so they cannot consume its reserved realtime room.
+                synchronized(target) {
+                    val state = target.prepareEncoded(stream.id, epochs[stream.id], stream.buffered,
+                        if (payload == null) 0 else 36 + payload.size)
+                    if (state.reset) epochs[stream.id]++
+                    val epoch = epochs[stream.id]
+                    records = buildList {
+                        if (state.configuration || state.reset) {
+                            add(encodedRecord(6, stream, epoch, stream.format.json(), true))
+                        }
+                        if (payload != null) {
+                            val packet = ByteBuffer.allocate(8 + payload.size).order(ByteOrder.BIG_ENDIAN)
+                                .putDouble(requireNotNull(timestamp)).put(payload).array()
+                            add(encodedRecord(7, stream, epoch, packet, state.reset, presentationNanos))
+                        }
                     }
-                    if (payload != null) {
-                        val packet = ByteBuffer.allocate(8 + payload.size).order(ByteOrder.BIG_ENDIAN)
-                            .putDouble(requireNotNull(timestamp)).put(payload).array()
-                        add(encodedRecord(7, stream, epoch, packet, state.reset, presentationNanos))
+                    delivery = Delivery(target, 0, target.generation, epoch, target.streamVersion(stream.id))
+                    target.encodedConfiguration(stream.id, epoch)
+                    if (!stream.buffered) {
+                        target.offerLiveBatch(records, delivery.generation, delivery.streamVersion, stream.publication)
+                        return
                     }
-                }
-                delivery = Delivery(target, 0, target.generation, epoch, target.streamVersion(stream.id))
-                target.encodedConfiguration(stream.id, epoch)
-                if (!stream.buffered) {
-                    target.offerLiveBatch(records, delivery.generation, delivery.streamVersion, stream.publication)
-                    return
                 }
             }
             for (record in records) delivery.target.offer(record, true, delivery.generation,
@@ -306,9 +311,14 @@ class WebAudioHub {
         // Route, reset and codec controls cannot evict another stream's queued audio.
         private val resets = linkedMapOf<Int, Packet>()
         private val deferred = ArrayBlockingQueue<Packet>(1)
-        private val live = ArrayBlockingQueue<Packet>(16)
-        private val mirror = ArrayBlockingQueue<Packet>(16)
+        // CarPlay sends eighteen AAC frames at once. Allow complete bursts plus scheduling margin,
+        // with an independent byte bound so large PCM/encoded packets cannot consume excessive RAM.
+        private val live = ArrayBlockingQueue<Packet>(MAX_REALTIME_PACKETS)
+        private val mirror = ArrayBlockingQueue<Packet>(MAX_REALTIME_PACKETS)
         private val music = ArrayBlockingQueue<Packet>(16)
+        private val available = Semaphore(0)
+        private var mirrorNext = false
+        private var realtimeSinceMusic = 0
         @Volatile internal var generation = 0L
             private set
         @Volatile var closed = false
@@ -322,10 +332,10 @@ class WebAudioHub {
             if (!closed) { encodedEpochs[id] = epoch; pendingReset[id] = false }
         }
         @Synchronized internal fun prepareEncoded(id: Int, epoch: Int, buffered: Boolean,
-                                                   packets: Int): EncodedState {
+                                                   packetBytes: Int): EncodedState {
             var configuration = encodedEpochs[id] != epoch
             var reset = pendingReset[id]
-            if (!buffered && realtime(id).remainingCapacity() < packets) {
+            if (!buffered && packetBytes > 0 && !hasRoom(realtime(id), packetBytes)) {
                 discardLive(realtime(id))
                 configuration = true
                 reset = true
@@ -334,6 +344,12 @@ class WebAudioHub {
         }
         // Live overrun cannot touch ordered music. Every affected encoded stream restores its codec.
         private fun realtime(id: Int) = if (id == AIRPLAY_MIRROR_STREAM) mirror else live
+        private fun hasRoom(queue: ArrayBlockingQueue<Packet>, bytes: Int) =
+            queue.remainingCapacity() > 0 && queue.sumOf { it.bytes.size } + bytes <= MAX_REALTIME_BYTES
+
+        // A retained permit closes the empty-poll -> wait race, without one stale permit per packet.
+        @Synchronized private fun wakeReader() { if (available.availablePermits() == 0) available.release() }
+
         private fun discardLive(queue: ArrayBlockingQueue<Packet>) {
             for (packet in queue) {
                 val id = packet.bytes[5].toInt()
@@ -350,8 +366,12 @@ class WebAudioHub {
                 if (!valid(generation, version, bytes[5].toInt(), publication)) return
                 val packet = Packet(generation, version, bytes, publication)
                 if (bytes[4].toInt() == 6) resets[bytes[5].toInt()] = packet
-                else check(realtime(bytes[5].toInt()).offer(packet))
+                else {
+                    val queue = realtime(bytes[5].toInt())
+                    check(hasRoom(queue, bytes.size) && queue.offer(packet))
+                }
             }
+            wakeReader()
         }
         @Synchronized private fun valid(generation: Long, version: Long, id: Int,
                                          publication: Publication?) = !closed && generation == this.generation &&
@@ -364,13 +384,13 @@ class WebAudioHub {
             val packet = Packet(generation, version, record, publication)
             if (id == 5) {
                 synchronized(this) {
-                    if (valid(generation, version, id, publication)) { routes.poll(); routes.offer(packet) }
+                    if (valid(generation, version, id, publication)) { routes.poll(); routes.offer(packet); wakeReader() }
                 }
                 return
             }
             if (record[4].toInt() == 6 || (record.size == 28 && record[7].toInt() and 2 != 0)) {
                 synchronized(this) {
-                    if (valid(generation, version, id, publication)) resets[id] = packet
+                    if (valid(generation, version, id, publication)) { resets[id] = packet; wakeReader() }
                 }
                 return
             }
@@ -385,6 +405,7 @@ class WebAudioHub {
                     }
                     if (music.offer(packet, minOf(remaining, 10_000_000L), TimeUnit.NANOSECONDS)) {
                         if (!valid(generation, version, id, publication)) music.remove(packet)
+                        wakeReader()
                         return
                     }
                 }
@@ -393,23 +414,42 @@ class WebAudioHub {
             synchronized(this) {
                 if (!valid(generation, version, id, publication)) return
                 val queue = realtime(id)
-                if (!queue.offer(packet)) {
+                if (!hasRoom(queue, record.size) || !queue.offer(packet)) {
                     discardLive(queue)
                     record[7] = (record[7].toInt() or 2).toByte()
                     queue.offer(packet)
                 }
+                wakeReader()
             }
             if (!valid(generation, version, id, publication)) realtime(id).remove(packet)
         }
         fun take(timeoutMillis: Long): ByteArray? {
             val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
             while (!closed) {
-                val remaining = maxOf(0L, deadline - System.nanoTime())
-                val packet = routes.poll() ?: takeReset() ?: deferred.poll() ?: live.poll() ?: mirror.poll() ?: music.poll(minOf(remaining, 10_000_000L), TimeUnit.NANOSECONDS)
-                if (packet == null) { if (System.nanoTime() >= deadline) return null else continue }
-                prepareDelivery(packet)?.let { return it }
+                val packet = synchronized(this) {
+                    if (closed) return null
+                    routes.poll() ?: takeReset() ?: deferred.poll() ?: takeAudio()
+                }
+                if (packet != null) {
+                    prepareDelivery(packet)?.let { return it }
+                    continue
+                }
+                val remaining = deadline - System.nanoTime()
+                if (remaining <= 0L || !available.tryAcquire(remaining, TimeUnit.NANOSECONDS)) return null
             }
             return null
+        }
+        /** Keep speech responsive while continuous CarPlay/mirror traffic cannot starve other audio. */
+        private fun takeAudio(): Packet? {
+            if (realtimeSinceMusic >= 8) music.poll()?.let { realtimeSinceMusic = 0; return it }
+            val packet = if (mirrorNext) mirror.poll() ?: live.poll() else live.poll() ?: mirror.poll()
+            if (packet != null) {
+                mirrorNext = packet.bytes[5].toInt() != AIRPLAY_MIRROR_STREAM
+                realtimeSinceMusic = (realtimeSinceMusic + 1).coerceAtMost(8)
+                return packet
+            }
+            realtimeSinceMusic = 0
+            return music.poll()
         }
         @Synchronized private fun prepareDelivery(packet: Packet): ByteArray? {
             if (!valid(packet.generation, packet.version, packet.bytes[5].toInt(), packet.publication)) return null
@@ -419,7 +459,7 @@ class WebAudioHub {
                 ByteBuffer.wrap(packet.bytes).getInt(16) - ByteBuffer.wrap(reset.bytes).getInt(16) >= 0) {
                 resets.remove(id)
                 if (reset.bytes[4].toInt() == 6) {
-                    // A buffered packet can wake music.poll after its codec control was queued.
+                    // A packet can be selected just before its codec control is queued.
                     // Deliver the configuration first, retaining this packet for the next take.
                     check(deferred.offer(packet))
                     return reset.bytes
@@ -454,7 +494,9 @@ class WebAudioHub {
         }
         @Synchronized internal fun clear() {
             generation++; routes.clear(); resets.clear(); deferred.clear(); live.clear(); mirror.clear(); music.clear(); encodedEpochs.fill(null); pendingReset.fill(false)
+            mirrorNext = false; realtimeSinceMusic = 0
             for (id in versions.indices) versions[id]++
+            wakeReader()
         }
         @Synchronized override fun close() { closed = true; clear() }
     }
@@ -464,5 +506,7 @@ class WebAudioHub {
     companion object {
         const val MAX_PCM = 64 * 1024
         const val AIRPLAY_MIRROR_STREAM = 6
+        internal const val MAX_REALTIME_PACKETS = 64
+        internal const val MAX_REALTIME_BYTES = 256 * 1024
     }
 }

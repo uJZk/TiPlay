@@ -38,7 +38,7 @@ class ReceiverProtocolTest {
     }
 
     @Test fun discoveryAndInfoAgreeWithoutClaimingCarPlayRemoteVolumeOrDrm() {
-        val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate())
+        val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(), audioOutputFormats = 0x3fffffcL)
         assertEquals(config.features, config.info()["features"])
         assertEquals(config.deviceId, config.serverInfo()["deviceid"])
         assertEquals("1.0", config.serverInfo()["protovers"])
@@ -54,7 +54,7 @@ class ReceiverProtocolTest {
 
     @Test fun browsersWithoutVideoDecodersDoNotAdvertiseMirrorButKeepPhotosVideoAndAudio() {
         val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(),
-            hevcEnabled = true, mirrorEnabled = false)
+            hevcEnabled = true, mirrorEnabled = false, audioOutputFormats = 0x3fffffcL)
         for (bit in listOf(7, 42)) assertEquals(0L, config.features and (1L shl bit))
         for (bit in listOf(0, 1, 9)) assertTrue(config.features and (1L shl bit) != 0L)
         assertEquals(config.features, config.info()["features"])
@@ -62,7 +62,7 @@ class ReceiverProtocolTest {
     }
 
     @Test fun audioCapabilitiesOfferMirrorOutputWithoutMicrophoneAndDoNotMuteTheSender() {
-        val info = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()).info()
+        val info = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(), audioOutputFormats = 0x3fffffcL).info()
         assertEquals(0.0, info["initialVolume"])
         val formats = info["audioFormats"] as List<*>
         assertEquals(listOf(100L, 101L), formats.map { (it as Map<*, *>)["type"] })
@@ -86,6 +86,57 @@ class ReceiverProtocolTest {
         ReceiverAudioCapabilities.validateStream(mapOf("type" to 96, "audioFormat" to (1L shl 22),
             "ct" to 4, "spf" to 1024, "controlPort" to 65535))
         for (bit in 2..25) ReceiverAudioCapabilities.validateStream(mapOf("type" to 96, "audioFormat" to (1L shl bit)))
+    }
+
+    @Test fun mirrorAudioExcludesUnsupportedAacEldIncludingCodecOnlySetupButAllowsPositiveBrowserProbes() {
+        val supported = 0xfffffcL
+        val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(), audioOutputFormats = supported)
+        val info = config.info()
+        for (entry in info["audioFormats"] as List<*>) {
+            val mask = ((entry as Map<*, *>)["audioOutputFormats"] as Number).toLong()
+            assertEquals(0L, mask and ((1L shl 24) or (1L shl 25)))
+        }
+        for (stream in listOf(
+            mapOf("type" to 96, "ct" to 8),
+            mapOf("type" to 96, "ct" to 8, "audioFormat" to 0L),
+            mapOf("type" to 96, "audioFormat" to (1L shl 24)),
+            mapOf("type" to 96, "audioFormat" to (1L shl 25)),
+            mapOf("type" to 96, "ct" to 8, "audioFormat" to (1L shl 24), "spf" to 480),
+        )) assertThrows(IllegalArgumentException::class.java) {
+            ReceiverAudioCapabilities.validateStream(stream, supported)
+        }
+        val capable = config.copy(audioOutputFormats = supported or (1L shl 24))
+        ReceiverAudioCapabilities.validateStream(mapOf("type" to 96, "ct" to 8), capable.audioOutputFormats)
+        assertTrue(capable.features and (1L shl 21) != 0L)
+        assertEquals(0L, config.features and (1L shl 21))
+    }
+
+    @Test fun audioOffersGateAlacRateAndBitDepthAndKeepDiscoveryAndInfoConsistent() {
+        val supported = (1L shl 11) or (1L shl 18) or (1L shl 22)
+        val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(), audioOutputFormats = supported)
+        for (entry in config.info()["audioFormats"] as List<*>) assertEquals(supported, (entry as Map<*, *>)["audioOutputFormats"])
+        assertEquals(config.features, config.info()["features"])
+        assertEquals(config.features, config.serverInfo()["features"])
+        assertEquals(ReceiverCapabilities.txtFeatures(config.features), config.txt["features"])
+        for (codec in listOf(1, 2, 4)) ReceiverAudioCapabilities.validateStream(mapOf("type" to 96, "ct" to codec), supported)
+        for (stream in listOf(
+            mapOf("type" to 96, "ct" to 2, "ss" to 24),
+            mapOf("type" to 96, "ct" to 2, "sr" to 48000),
+            mapOf("type" to 96, "audioFormat" to (1L shl 19)),
+        )) assertThrows(IllegalArgumentException::class.java) { ReceiverAudioCapabilities.validateStream(stream, supported) }
+        val noAlac = config.copy(audioOutputFormats = supported and (1L shl 18).inv())
+        assertEquals(0L, noAlac.features and (1L shl 19))
+        assertThrows(IllegalArgumentException::class.java) {
+            ReceiverAudioCapabilities.validateStream(mapOf("type" to 96, "ct" to 2), noAlac.audioOutputFormats)
+        }
+        val pending = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate())
+        assertEquals(0L, pending.audioOutputFormats)
+        for (bit in listOf(9, 18, 19, 20, 21, 22)) assertEquals(0L, pending.features and (1L shl bit))
+        assertThrows(IllegalArgumentException::class.java) {
+            ReceiverAudioCapabilities.validateStream(mapOf("type" to 96, "ct" to 1), pending.audioOutputFormats)
+        }
+        assertThrows(IllegalArgumentException::class.java) { config.copy(audioOutputFormats = -1L) }
+        assertThrows(IllegalArgumentException::class.java) { config.copy(audioOutputFormats = 1L shl 26) }
     }
 
     @Test fun audioDrainRejectsUnknownFormatsAndInvalidNegotiationFields() {

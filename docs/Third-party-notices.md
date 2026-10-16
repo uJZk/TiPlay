@@ -80,6 +80,11 @@ The maneuver PNGs under `shared/src/main/assets/byd-hud-icons` were imported fro
 
 ## Browser media
 
+- AAC-ELD software fallback: a third-party modified, ELD-only asm.js build derived
+  from Fraunhofer FDK AAC Codec Library for Android. It retains the Fraunhofer
+  license, modification notices and complete corresponding source under
+  [vendor/aac-eld](../site/play/vendor/aac-eld/README.md). This component keeps its
+  own license; the software license does not grant a patent license.
 - Video.js native controls, skin and media adapter helpers: Apache-2.0, self-hosted under
   `site/play/vendor/videojs/` with license texts and retained bundle notices.
 - Mediabunny and SoundTouchJS: MPL-2.0. hls.js WebVTT and CEA-608 parsing helpers: Apache-2.0 with

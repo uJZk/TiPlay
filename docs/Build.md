@@ -77,6 +77,11 @@ After the intended commit passes the Android workflow, run **Actions → Build s
 
 It verifies the pinned upstream APK and packages its two runtime files, runs release lint/build, then creates `TiPlay-<version>.apk`, the matching committed source ZIP and `SHA256SUMS.txt`. Its Actions artifact lasts 14 days. The separate upload job creates or updates a prerelease draft; it does not publish a release. Signing/runtime temporary inputs are deleted after the build. This workflow does not replace the Android unit and browser checks.
 
+For an in-place device update without a release draft, dispatch with
+`create_draft=false` and use the signed Actions artifact. Keep the declared version
+unless a version change is intended; compare package, signing identity and runtime
+assets with the installed APK before installation. The default still creates a draft.
+
 For a local release, provide `DIPLAY_AUTH_ASSETS_DIR` plus `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, then run:
 
 ```sh

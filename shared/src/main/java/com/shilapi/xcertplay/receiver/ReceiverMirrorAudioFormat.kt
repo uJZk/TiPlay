@@ -30,7 +30,7 @@ data class ReceiverMirrorAudioFormat(
     }
 
     companion object {
-        /** Bits 2..25 are the complete advertised 0x3fffffc mask. */
+        /** Keep the wire bit order: PCM 2..17, ALAC 18..21, AAC-LC 22..23 and AAC-ELD 24..25. */
         val supported: List<ReceiverMirrorAudioFormat> = buildList {
             for (rate in listOf(8000, 16000, 24000, 32000, 44100, 48000)) {
                 for (depth in if (rate >= 44100) listOf(16, 24) else listOf(16)) {
