@@ -174,6 +174,7 @@ class CarPlayController(
     private val clearPairRecord: () -> Unit = {},
     private val locationProvider: Iap2LocationProvider? = null,
     private val vehicleStatusProvider: com.shilapi.xcertplay.transport.VehicleStatusProvider? = null,
+    private val startSessionAllowed: (() -> Boolean)? = null,
 ) : Closeable {
     private val airPlayConfig = airPlayConfig.copy(
         metadataArtworkEnabled = airPlayConfig.metadataArtworkEnabled && config.headUnitIntegrations,
@@ -1650,6 +1651,7 @@ class CarPlayController(
                 keepAliveAfterDeadline = { keepBluetoothControlAlive(generation) },
                 beforeStartSession = { startedHotspot?.validateReady() },
                 onStartSessionSent = { watchdog.startSessionSent(it.sentAtNanos) },
+                startSessionAllowed = startSessionAllowed.takeIf { phoneBrowserMode() },
                 onIncoming = ::onRouteFrame,
                 onProgress = { message ->
                     diagnostics.controlProgress(message)
@@ -1754,6 +1756,7 @@ class CarPlayController(
                         onReady = {
                             onWirelessTunnelReady(generation, channel)
                         },
+                        startSessionAllowed = startSessionAllowed.takeIf { phoneBrowserMode() },
                         onIncoming = ::onRouteFrame,
                         onProgress = { message -> debugLog("iAP tunnel $message") },
                     )

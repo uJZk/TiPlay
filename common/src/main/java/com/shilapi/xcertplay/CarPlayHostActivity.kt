@@ -5521,6 +5521,7 @@ class CarPlayHostActivity : ComponentActivity() {
             } else {
                 null
             },
+            startSessionAllowed = { !TeslaBrowserLink.airPlayActive },
         )
         controller = next
         resetSidePanel() // a new session starts without the side panel

@@ -79,6 +79,13 @@ CarPlay audio leaves AirPlay sound enabled. Music can overlap; Bluetooth voice-r
 muting has priority. iOS may actively end CarPlay or never start mirror media;
 heartbeats and selected menu entries do not prove a usable picture.
 
+A wireless bootstrap already in progress must recheck the ordinary-AirPlay lease
+immediately before sending CarPlay StartSession. During the loan it keeps processing
+authenticated control traffic and retains one pending availability response; release
+resumes that response without another iPhone notification. The post-authentication
+startup deadline excludes this wait. Authentication remains bounded, and ownership
+changes reported by an already established CarPlay session remain authoritative.
+
 HEVC sample-entry parsing accepts the sender's bounded terminal zero padding after complete
 validated boxes. Truncated boxes and HDR/Dolby metadata remain rejected; padding cannot
 hide an additional extension. Repeated mirror configurations/pause retain the decoder epoch and AES-CTR position;
@@ -88,6 +95,11 @@ map audio/video to one monotonic clock; bounded reordering/retransmission and FL
 preserve stream epochs. Missing synchronization is explicit arrival-playback fallback,
 not source synchronization. Resize scales the current mirror; new dimensions apply
 at the next SETUP. Keepalive tuning is not a recovery-time guarantee.
+
+An externally revoked display can still replace the browser decoder epoch. Ordinary
+mirroring has no confirmed sender keyframe-request implementation, so the local
+recovery callback cannot guarantee a new independently decodable frame. Continuing
+prediction frames alone cannot restore a decoder whose initial keyframe was lost.
 
 ## URL engine and captions
 
@@ -112,6 +124,11 @@ stream media and rewrite bounded HLS manifests/children/keys. Current-iPhone res
 may redirect directly, with authorized proxy fallback for failed CORS/reachability. Debug mode forces all media through Android, including nested playlists and redirects, and updates the browser directive so active playback reopens on the new route.
 Neither makes an unreachable sender reachable. FCUP serializes exchanges with
 session/peer/URL/request-ID checks; acknowledgement is not resource completion.
+Browser media and caption discovery share one serial resource transport. A read remains
+in flight until its network body finishes or is canceled, rather than merely until its
+headers arrive. Media reads use bounded byte-range units so MP4 footer reads and seeks
+can progress without holding an open-ended response. Track ranking uses master metadata;
+SDR/decoder validation probes candidates one at a time and skips unavailable alternatives.
 Interrupted requests may be reused only within their original deadlines. Expiry,
 cancellation and replacement release the queue; consumed responses are not a live
 manifest cache. Local files and `skd` keys are excluded.

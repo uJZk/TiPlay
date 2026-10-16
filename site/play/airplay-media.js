@@ -3,6 +3,8 @@ import { createFrameCanvas } from './airplay-canvas.js';
 import { createTempoProcessor, downmixStereo } from './airplay-tempo.js';
 import { audioTrackLabel, createAudioTrackList, preferredAudioTrack } from './airplay-audio-tracks.js';
 import { fetchSdrMediaResource, hasHdrTransfer, requireSdrTrack, sdrError } from './airplay-sdr.js';
+import { decodableAudioTracks, selectPlayableTrack } from './airplay-track-selection.js';
+import { createSerialMediaFetch } from './airplay-resource-fetch.js';
 import { clampMediaTime, intersectMediaRanges, mediaRangeEnd, mediaTimeRanges, mergeMediaRanges,
   videoQueueFull } from './airplay-media-state.js';
 
@@ -18,7 +20,8 @@ export function createMediaEngine(surface, options = {}) {
   const now = options.now || (() => performance.now() / 1000);
   const request = options.requestFrame || (callback => requestAnimationFrame(callback));
   const cancel = options.cancelFrame || (id => cancelAnimationFrame(id));
-  const fetchResource = options.fetchResource || ((url, init) => fetch(url, { ...init, referrerPolicy: 'no-referrer' }));
+  const fetchResource = options.serialFetchResource || createSerialMediaFetch(options.fetchResource || fetch,
+    { signal: options.signal, deadline: options.resourceDeadline || 15000 });
   const canvas = options.presenter || createFrameCanvas(surface, cause => {
     options.onCanvasError?.(cause); fail(cause);
   });
@@ -134,12 +137,12 @@ export function createMediaEngine(surface, options = {}) {
     if (!active(item)) return;
     const session = source;
     const input = session.input || new lib.Input({ source: new lib.UrlSource(session.src, {
-      maxCacheSize: 16 * 1024 * 1024, parallelism: 2,
+      maxCacheSize: 16 * 1024 * 1024, parallelism: 1,
       requestInit: { referrerPolicy: 'no-referrer' },
       fetchFn: async (url, init) => {
         if (disposed || source !== session) return Promise.reject(abortError());
         const response = await fetchSdrMediaResource(fetchResource, url, init, { signal: session.controller.signal,
-          deadline: options.resourceDeadline || 15000 });
+          deadline: null });
         if (options.onResource && source === session && !disposed) {
           // Observers consume a bounded clone and cannot block the decoding pipeline.
           const copy = response.clone();
@@ -156,18 +159,15 @@ export function createMediaEngine(surface, options = {}) {
     session.input = input;
     item.input = input;
     session.tracksPromise ||= (async () => {
-      const decodableFirst = { sortBy: async track => Number(!(await track.canDecode())) };
-      const video = await input.getPrimaryVideoTrack({ sortBy: async track => {
-        try { await requireSdrTrack(track); } catch (cause) { if (cause?.name === 'NotSupportedError') return 2; throw cause; }
-        return Number(!(await track.canDecode()));
-      } });
+      const selection = { signal: session.controller.signal };
+      const video = await selectPlayableTrack(query => input.getPrimaryVideoTrack(query), { ...selection, video: true });
       // An HLS master can expose mutually exclusive variants; pair the selected video with its audio.
-      const audio = video ? await video.getPrimaryPairableAudioTrack(decodableFirst)
-        : await input.getPrimaryAudioTrack(decodableFirst);
+      const audio = await selectPlayableTrack(query => video ? video.getPrimaryPairableAudioTrack(query)
+        : input.getPrimaryAudioTrack(query), selection);
       const candidates = video?.getPairableAudioTracks ? await video.getPairableAudioTracks()
         : input.getAudioTracks ? await input.getAudioTracks() : audio ? [audio] : [];
       const alternatives = [];
-      for (const candidate of candidates) if (await candidate.canDecode()) {
+      for (const candidate of await decodableAudioTracks(candidates, selection)) {
         const language = await candidate.getLanguageCode?.() || 'und';
         alternatives.push({ track: candidate, id: String(alternatives.length), kind: 'main',
           label: audioTrackLabel(await candidate.getName?.(), language, options.languages?.[0] || globalThis.navigator?.language, alternatives.length), language });
@@ -535,6 +535,7 @@ export function createMediaEngine(surface, options = {}) {
     freeze(); closeGeneration(); closeSource(); serial++; settlePlay(abortError()); disposed = true;
     if (animation !== null) cancel(animation); animation = null;
     canvas.dispose(); options.signal?.removeEventListener('abort', dispose);
+    if (!options.serialFetchResource) fetchResource.dispose();
     if (context) void context.close().catch(() => {}); context = gain = null;
   }
   const getter = (name, get, set) => Object.defineProperty(media, name, { enumerable: true, get, ...(set ? { set } : {}) });

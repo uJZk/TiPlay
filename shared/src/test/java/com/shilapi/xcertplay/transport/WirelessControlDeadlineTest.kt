@@ -43,4 +43,35 @@ class WirelessControlDeadlineTest {
         assertEquals(300_000L, deadline.requireRemaining())
         assertEquals(300_000L, deadline.remainingMillis { false })
     }
+
+    @Test fun aDisplayLeaseExcludesOnlyItsOwnWaitFromTheAuthenticatedDeadline() {
+        var now = 0L
+        val deadline = WirelessControlDeadline(1_000) { now }
+        now = 200_000_000L
+        deadline.setSuspended(true)
+        now += 8 * 60 * 60 * 1_000_000_000L
+        assertEquals(800L, deadline.requireRemaining())
+        deadline.setSuspended(true) // A poll must not restart the suspension interval.
+        now += 8 * 60 * 60 * 1_000_000_000L
+        deadline.setSuspended(false)
+        assertEquals(800L, deadline.requireRemaining())
+        now += 300_000_000L
+        assertEquals(500L, deadline.requireRemaining())
+        deadline.setSuspended(true)
+        now += 60 * 1_000_000_000L
+        deadline.setSuspended(false)
+        now += 500_000_000L
+        assertThrows(IphoneUsbException.TimedOut::class.java) { deadline.requireRemaining() }
+    }
+
+    @Test fun suspendingAfterADeadlineAlreadyExpiredDoesNotReviveIt() {
+        var now = 0L
+        val deadline = WirelessControlDeadline(1_000) { now }
+        now = 1_000_000_000L
+        deadline.setSuspended(true)
+        now += 60 * 1_000_000_000L
+        assertEquals(0L, deadline.remainingMillis())
+        deadline.setSuspended(false)
+        assertEquals(0L, deadline.remainingMillis())
+    }
 }

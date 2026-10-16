@@ -4,6 +4,7 @@ import { createVideoCaptions } from './airplay-captions.js';
 import { createMediaEngine } from './airplay-media.js';
 import { createMediaTextTracks } from './airplay-text-tracks.js';
 import { fetchSdrMediaResource } from './airplay-sdr.js';
+import { createSerialMediaFetch } from './airplay-resource-fetch.js';
 
 /** Register a native-like media surface with Video.js; TiPlay owns its clock and output. */
 class TiPlayMedia extends MediaAttachMixin(HTMLElement) {
@@ -55,7 +56,8 @@ export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, 
   const surface = locale.querySelector('media-container');
   const elementMedia = document.createElement('tiplay-media');
   let subtitles, disposed = false, sourceSerial = 0;
-  const media = createMediaEngine(surface, { fetchResource, signal, onCanvasError,
+  const serialFetchResource = createSerialMediaFetch(fetchResource || fetch, { signal });
+  const media = createMediaEngine(surface, { serialFetchResource, signal, onCanvasError,
     onClock: time => subtitles?.update(time),
     languages: [lang, ...(globalThis.navigator?.languages || [])],
     onCaptionPacket: (...args) => subtitles?.appendCaptionPacket?.(...args),
@@ -66,7 +68,7 @@ export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, 
   });
   media.querySelectorAll = selectors => elementMedia.querySelectorAll(selectors);
   media.querySelector = selectors => elementMedia.querySelector(selectors);
-  subtitles = createMediaTextTracks({ fetchResource: (url, init) => fetchSdrMediaResource(fetchResource || fetch, url, init, { signal }), signal });
+  subtitles = createMediaTextTracks({ fetchResource: (url, init) => fetchSdrMediaResource(serialFetchResource, url, init, { signal, deadline: null }), signal });
   Object.defineProperty(media, 'textTracks', { get: () => subtitles.tracks });
   media.addTextTrack = (...args) => subtitles.addTextTrack(...args);
   elementMedia.initialize(media);
@@ -127,6 +129,7 @@ export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, 
       subtitles.dispose();
       for (const type of ['timeupdate', 'seeked', 'loadeddata']) media.removeEventListener(type, captionClock);
       media.dispose(); elementMedia.adapter.destroy();
+      serialFetchResource.dispose();
       locale.remove();
     },
   };

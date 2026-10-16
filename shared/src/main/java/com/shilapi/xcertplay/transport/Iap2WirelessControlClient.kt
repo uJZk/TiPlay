@@ -36,6 +36,8 @@ class Iap2WirelessControlClient(
         // The caller must prove that the current CarPlay session is usable before keeping it alive.
         keepAliveAfterDeadline: () -> Boolean = { false },
         onProgress: (String) -> Unit = {},
+        // Optional phone/browser display lease. Check the live lease, not an earlier startup snapshot.
+        startSessionAllowed: (() -> Boolean)? = null,
     ): Iap2WirelessControlResult {
         require(identification.wireless != null) {
             "Wireless control requires an Iap2IdentificationConfig with wireless transport"
@@ -76,10 +78,23 @@ class Iap2WirelessControlClient(
         var postTransportWiFiConfigurationsSent = 0
         var transportNotificationSeen = false
         var wirelessCarPlayAvailableSeen = false
+        val startRequest = WirelessStartSessionRequest(
+            allowed = { !session.isClosed && startSessionAllowed?.invoke() != false },
+            beforeSend = beforeStartSession,
+            send = { sendStartSession(endpoint, ::sendControl, onStartSessionSent) },
+        )
         val location = Iap2LocationReporter(locationProvider, onProgress)
         val vehicleStatus = Iap2VehicleStatusReporter(vehicleStatusProvider, onProgress)
         try {
             while (true) {
+                // Only this authenticated loop can wait for a display loan. Identification/MFi
+                // retain their bounded deadlines, and control traffic continues while it is held.
+                deadline.setSuspended(startSessionAllowed?.invoke() == false)
+                if (startRequest.dispatch()) {
+                    stage = later(stage, Iap2WirelessControlStage.CARPLAY_START_SENT)
+                    carPlayStartSessionsSent++
+                    onProgress("iap2 tx=0x4301 carplay-start-session")
+                }
                 val remaining = deadline.remainingMillis(keepAliveAfterDeadline)
                 if (remaining == 0L) {
                     return Iap2WirelessControlResult(
@@ -95,7 +110,8 @@ class Iap2WirelessControlClient(
                 }
                 location.tick(::sendControl)
                 vehicleStatus.tick(::sendControl)
-                val pollTimeout = vehicleStatus.pollTimeout(location.pollTimeout(remaining))
+                val leasePoll = if (startSessionAllowed == null) remaining else min(remaining, START_LEASE_POLL_MILLIS)
+                val pollTimeout = vehicleStatus.pollTimeout(location.pollTimeout(leasePoll))
                 val incoming = session.recv(pollTimeout)
                 if (incoming == null) {
                     if (session.isClosed) {
@@ -166,11 +182,7 @@ class Iap2WirelessControlClient(
                     CARPLAY_AVAILABILITY -> {
                         onProgress("iap2 rx=0x4300 carplay-availability")
                         onProgress(carPlayAvailabilityDiagnostic(incoming))
-                        beforeStartSession()
-                        sendStartSession(endpoint, ::sendControl, onStartSessionSent)
-                        stage = later(stage, Iap2WirelessControlStage.CARPLAY_START_SENT)
-                        carPlayStartSessionsSent++
-                        onProgress("iap2 tx=0x4301 carplay-start-session")
+                        startRequest.request()
                     }
 
                     WIRELESS_CARPLAY_UPDATE -> {
@@ -244,6 +256,7 @@ class Iap2WirelessControlClient(
         private const val MAX_TIMEOUT_MILLIS = 24 * 60 * 60 * 1_000L
         private const val MAX_PRE_TRANSPORT_WIFI_CONFIGURATION_SENDS = 5
         private const val MAX_POST_TRANSPORT_WIFI_CONFIGURATION_SENDS = 2
+        private const val START_LEASE_POLL_MILLIS = 250L
 
         /** Malformed optional availability metadata must not change existing control behavior. */
         internal fun carPlayAvailabilityDiagnostic(frame: Iap2Frame): String = try {
@@ -375,7 +388,8 @@ internal fun sendStartSession(
 /** A bounded bring-up deadline that a proven live session can extend for ongoing control updates. */
 internal class WirelessControlDeadline(timeoutMillis: Long, private val nowNanos: () -> Long = System::nanoTime) {
     private var extendedForLiveSession = false
-    private val deadlineNanos = if (timeoutMillis == Iap2WirelessControlClient.NO_TIMEOUT_MILLIS) {
+    private var suspendedAtNanos: Long? = null
+    private var deadlineNanos = if (timeoutMillis == Iap2WirelessControlClient.NO_TIMEOUT_MILLIS) {
         Long.MAX_VALUE
     } else {
         val now = nowNanos()
@@ -383,10 +397,22 @@ internal class WirelessControlDeadline(timeoutMillis: Long, private val nowNanos
         if (now > Long.MAX_VALUE - delta) Long.MAX_VALUE else now + delta
     }
 
+    fun setSuspended(suspended: Boolean) {
+        if (extendedForLiveSession || deadlineNanos == Long.MAX_VALUE) return
+        val since = suspendedAtNanos
+        if (suspended) {
+            if (since == null) suspendedAtNanos = nowNanos()
+        } else if (since != null) {
+            val elapsed = (nowNanos() - since).coerceAtLeast(0L)
+            deadlineNanos = if (deadlineNanos > Long.MAX_VALUE - elapsed) Long.MAX_VALUE else deadlineNanos + elapsed
+            suspendedAtNanos = null
+        }
+    }
+
     fun remainingMillis(keepAlive: () -> Boolean = { false }): Long {
         if (extendedForLiveSession) return if (keepAlive()) MAX_POLL_MILLIS else 0L
         if (deadlineNanos == Long.MAX_VALUE) return MAX_POLL_MILLIS
-        val remaining = deadlineNanos - nowNanos()
+        val remaining = deadlineNanos - (suspendedAtNanos ?: nowNanos())
         if (remaining <= 0) {
             if (!keepAlive()) return 0L
             extendedForLiveSession = true
