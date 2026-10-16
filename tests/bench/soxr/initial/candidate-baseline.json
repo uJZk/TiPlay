@@ -1,0 +1,526 @@
+{
+  "backend": "/workspace/TiPlay/work/soxr-asm/baseline-factory.mjs",
+  "cases": [
+    {
+      "rate": 8000,
+      "outputRate": 44100,
+      "channels": 1,
+      "frames": 14112,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 8000,
+      "outputRate": 44100,
+      "channels": 2,
+      "frames": 14112,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 8000,
+      "outputRate": 48000,
+      "channels": 1,
+      "frames": 15360,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 8000,
+      "outputRate": 48000,
+      "channels": 2,
+      "frames": 15360,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 16000,
+      "outputRate": 44100,
+      "channels": 1,
+      "frames": 14774,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 16000,
+      "outputRate": 44100,
+      "channels": 2,
+      "frames": 14774,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 16000,
+      "outputRate": 48000,
+      "channels": 1,
+      "frames": 16080,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 16000,
+      "outputRate": 48000,
+      "channels": 2,
+      "frames": 16080,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 24000,
+      "outputRate": 44100,
+      "channels": 1,
+      "frames": 14994,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 24000,
+      "outputRate": 44100,
+      "channels": 2,
+      "frames": 14994,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 24000,
+      "outputRate": 48000,
+      "channels": 1,
+      "frames": 16320,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 24000,
+      "outputRate": 48000,
+      "channels": 2,
+      "frames": 16320,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 32000,
+      "outputRate": 44100,
+      "channels": 1,
+      "frames": 15105,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 32000,
+      "outputRate": 44100,
+      "channels": 2,
+      "frames": 15105,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 32000,
+      "outputRate": 48000,
+      "channels": 1,
+      "frames": 16440,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 32000,
+      "outputRate": 48000,
+      "channels": 2,
+      "frames": 16440,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 44100,
+      "outputRate": 44100,
+      "channels": 1,
+      "frames": 15195,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 44100,
+      "outputRate": 44100,
+      "channels": 2,
+      "frames": 15195,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 44100,
+      "outputRate": 48000,
+      "channels": 1,
+      "frames": 16539,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 44100,
+      "outputRate": 48000,
+      "channels": 2,
+      "frames": 16539,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 48000,
+      "outputRate": 44100,
+      "channels": 1,
+      "frames": 15214,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 48000,
+      "outputRate": 44100,
+      "channels": 2,
+      "frames": 15214,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 48000,
+      "outputRate": 48000,
+      "channels": 1,
+      "frames": 16560,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 48000,
+      "outputRate": 48000,
+      "channels": 2,
+      "frames": 16560,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 96000,
+      "outputRate": 44100,
+      "channels": 1,
+      "frames": 15159,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 96000,
+      "outputRate": 44100,
+      "channels": 2,
+      "frames": 15159,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 96000,
+      "outputRate": 48000,
+      "channels": 1,
+      "frames": 16500,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    },
+    {
+      "rate": 96000,
+      "outputRate": 48000,
+      "channels": 2,
+      "frames": 16500,
+      "packetError": {
+        "peak": 0,
+        "rms": 0
+      },
+      "referenceError": {
+        "peak": 0,
+        "rms": 0
+      }
+    }
+  ],
+  "alias": [
+    {
+      "rate": 96000,
+      "outputRate": 48000,
+      "frequency": 36000,
+      "rejectionDb": -128.14785281152018,
+      "baselineDb": -128.14785281152018
+    },
+    {
+      "rate": 48000,
+      "outputRate": 44100,
+      "frequency": 23500,
+      "rejectionDb": -116.04125062201895,
+      "baselineDb": -116.04125062201895
+    },
+    {
+      "rate": 96000,
+      "outputRate": 44100,
+      "frequency": 36000,
+      "rejectionDb": -128.14846160547157,
+      "baselineDb": -128.14846160547157
+    }
+  ],
+  "slew": {
+    "slewPacketError": {
+      "peak": 0.0000016093254089355469,
+      "rms": 2.0333314923725459e-7
+    },
+    "slewReferenceError": {
+      "peak": 0,
+      "rms": 0
+    },
+    "maxAdjacentDelta": 0.11226539686322212
+  },
+  "calibration": [
+    {
+      "rate": 8000,
+      "outputRate": 44100,
+      "delayMs": -0.011337852333348391,
+      "baselineMs": -0.011337852333348391
+    },
+    {
+      "rate": 8000,
+      "outputRate": 48000,
+      "delayMs": -0.010416657650068828,
+      "baselineMs": -0.010416657650068828
+    },
+    {
+      "rate": 16000,
+      "outputRate": 44100,
+      "delayMs": -0.011337906441010799,
+      "baselineMs": -0.011337906441010799
+    },
+    {
+      "rate": 16000,
+      "outputRate": 48000,
+      "delayMs": -0.010416669664330414,
+      "baselineMs": -0.010416669664330414
+    },
+    {
+      "rate": 24000,
+      "outputRate": 44100,
+      "delayMs": -0.0009211880173795702,
+      "baselineMs": -0.0009211880173795702
+    },
+    {
+      "rate": 24000,
+      "outputRate": 48000,
+      "delayMs": -4.944939272869912e-10,
+      "baselineMs": -4.944939272869912e-10
+    },
+    {
+      "rate": 32000,
+      "outputRate": 44100,
+      "delayMs": -0.003525373346983986,
+      "baselineMs": -0.003525373346983986
+    },
+    {
+      "rate": 32000,
+      "outputRate": 48000,
+      "delayMs": -0.0026041871124912555,
+      "baselineMs": -0.0026041871124912555
+    },
+    {
+      "rate": 44100,
+      "outputRate": 44100,
+      "delayMs": 0.1643912260920049,
+      "baselineMs": 0.1643912260920049
+    },
+    {
+      "rate": 44100,
+      "outputRate": 48000,
+      "delayMs": -0.004747724048456803,
+      "baselineMs": -0.004747724048456803
+    },
+    {
+      "rate": 48000,
+      "outputRate": 44100,
+      "delayMs": 0.15655942861563577,
+      "baselineMs": 0.15655942861563577
+    },
+    {
+      "rate": 48000,
+      "outputRate": 48000,
+      "delayMs": 0.1510344389720295,
+      "baselineMs": 0.1510344389720295
+    },
+    {
+      "rate": 96000,
+      "outputRate": 44100,
+      "delayMs": 0.1518446913609928,
+      "baselineMs": 0.1518446913609928
+    },
+    {
+      "rate": 96000,
+      "outputRate": 48000,
+      "delayMs": 0.08073065811586311,
+      "baselineMs": 0.08073065811586311
+    }
+  ],
+  "longDrift": {
+    "virtualSeconds": 120,
+    "emittedFrames": 5760000,
+    "consumedExpected": 5292252,
+    "consumedActual": 5292252,
+    "leadFrames": 245.82586402632296,
+    "peakError": 0,
+    "rmsError": 0
+  }
+}

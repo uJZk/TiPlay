@@ -5,3 +5,6 @@ site/play/vendor/aac-eld/aac-eld.js -text -whitespace
 site/play/vendor/aac-eld/aac-eld-source.zip -text -whitespace
 site/play/vendor/aac-eld/NOTICE -text -whitespace
 site/play/vendor/aac-eld/MODIFICATIONS.txt -text -whitespace
+# Preserve the reproducible generated JavaScript and the exact corresponding source patch.
+site/play/vendor/soxr/soxr.asm.js -text -whitespace linguist-generated=true
+site/play/vendor/soxr/source/tiplay.patch text eol=lf -whitespace

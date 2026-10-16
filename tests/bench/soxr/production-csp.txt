@@ -1,0 +1,1 @@
+default-src 'self'; connect-src 'self' http: https:; media-src 'self' http: https: blob:; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'

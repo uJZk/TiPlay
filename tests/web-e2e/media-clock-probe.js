@@ -40,14 +40,13 @@ globalThis.startAudioProbe = async () => {
     const canvas = document.getElementById('picture'), input = document.createElement('canvas');
     input.width = 160; input.height = 90;
     const painter = input.getContext('2d');
-    presenter = createFramePresenter(canvas, { applyTimingPolicy: true });
+    presenter = createFramePresenter(canvas, { applyTimingPolicy: true, pace: true,
+      onPresent({ at, timing, audioAt }) {
+        if (Number.isFinite(audioAt)) draws.push({ skew: audioAt - at, sourceDelay: at - timing });
+      },
+    });
     frames = createTimedFrames((frame, config, id, timing, outputWindow) => {
-      const before = presenter.stats().renderDroppedFrames;
       presenter.present(frame, config, timing, outputWindow);
-      if (presenter.stats().renderDroppedFrames === before && outputWindow) {
-        const at = performance.timeOrigin + performance.now();
-        draws.push({ skew: outputWindow.audioAt - at, sourceDelay: at - timing });
-      }
     });
     frames.delay(constantDelay(0));
     audio = createBrowserAudio({
@@ -161,7 +160,7 @@ globalThis.startAudioProbe = async () => {
       if (result.mode === 'transfer' && (result.draws < 50 || result.minSkew < -45 || result.maxSkew > 125)) fail('Actual transferred video violated the A/V window: ' + JSON.stringify(result));
     }
     globalThis.__audioProbeResult = { done: true, ok: true, browser: navigator.userAgent,
-      secureContext: isSecureContext, wasmCsp: 'production policy, no bypass', outputBeforeSuspend,
+      secureContext: isSecureContext, resamplerCsp: 'production policy, no bypass', outputBeforeSuspend,
       summary: { carplayReferences: primary.length, mixedMirrorReferences: reports.length - primary.length, referencesWithoutDebug,
         peak: diagnosticPeak, nonzero: diagnosticNonzero, draws: draws.length,
         minSkewMs: Math.min(...draws.map(value => value.skew)), maxSkewMs: Math.max(...draws.map(value => value.skew)),
@@ -171,7 +170,7 @@ globalThis.startAudioProbe = async () => {
   } catch (error) {
     globalThis.__audioProbeResult = { done: true, ok: false, error: error.stack || String(error),
       violations, audioErrors, states: states.slice(-30), reports: reports.slice(-30),
-      diagnosticPeak, diagnosticNonzero, scheduler: frames?.stats(), presenter: presenter?.stats(), workers: workerProbes.map(probe => probe.result()) };
+      diagnosticPeak, diagnosticNonzero, draws: { count: draws.length, outside: draws.filter(value => value.skew < -45 || value.skew > 125 || value.sourceDelay > 0) }, scheduler: frames?.stats(), presenter: presenter?.stats(), workers: workerProbes.map(probe => probe.result()) };
   } finally {
     clearInterval(videoTimer); clearInterval(controlTimer); abort.abort(); audio?.dispose();
     for (const timer of packetTimers) clearInterval(timer);

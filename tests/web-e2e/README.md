@@ -21,7 +21,7 @@ All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LA
 | `airplay-video.mjs` | Real Mediabunny/WebCodecs playback engine, Video.js controls/skin, canvas pixels, seek/pause/rate, ±10-second buttons and mouse/touch half-screen gestures, accumulated feedback/bounds, narrow layout with production CSS, captions, mute restoration, ownership, disposal and sanitized failure diagnostics under production CSP. Needs an MP4 fixture; HLS optional. |
 | `airplay-photo.mjs` | Actual page CSP, authenticated synthetic EXIF JPEG, native decode/contain fit, ownership, resource reuse and cleanup. |
 | `airplay-audio.mjs` | Actual WebCodecs AAC-LC and CarPlay Opus decoding, nonzero PCM, sample metadata and asynchronous timeline sequence preservation. Prints ALAC/AAC-ELD capability probes; no software fallback is implied. |
-| `media-clock.mjs` | Production CSP, bundled soxr WASM/AudioWorklet, independent mixed CarPlay/mirror PCM, actual output timestamps, suspend/resume, and main/worker/OffscreenCanvas video timing. Requires H.264 decoding, AudioWorklet, `getOutputTimestamp`, OffscreenCanvas and transferable streams. |
+| `media-clock.mjs` | Production CSP, bundled pure JavaScript soxr/AudioWorklet, independent mixed CarPlay/mirror PCM, actual output timestamps, suspend/resume, and main/worker/OffscreenCanvas video timing. Requires H.264 decoding, AudioWorklet, `getOutputTimestamp`, OffscreenCanvas and transferable streams. |
 
 The Performance monitor check verifies a non-intercepting overlay without replacing the media connection. Current fields are codec, actual last-second draw FPS, latest synchronized Delta and explicit browser discards; five-second offset distributions remain in diagnostics. Fake source times validate the timing path, not iPhone capture-to-display latency. Resize/reconnect checks cover browser layout/reporting, not iPhone replacement-display negotiation.
 
@@ -33,17 +33,16 @@ NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium \
 ```
 
 The runner clicks the page's Start button and uses the production CSP and bundled
-WASM without autoplay or CSP bypasses. All assets and synthetic media stay on
+pure JavaScript resampler without autoplay or CSP bypasses. All assets and synthetic media stay on
 loopback. It verifies output references before enabling diagnostic capture, then
 checks nonzero worklet output, independent CarPlay/mirror producers, an actual
 context suspend/resume and clock refinement. Main-thread presentation, real H.264
 worker decode with frame transfer, and worker OffscreenCanvas use the same output
 reference and retain the production video caps and audio early/late window.
 
-On Chromium builds that reject compiled WASM in AudioWorklet messages, the same
-production loader retries with cached bytes. The probe still requires actual
-nonzero worklet output and Standard-mode references; it cannot pass by bypassing
-audio output or widening a video deadline.
+The page runs with WebAssembly disabled and no eval permission. It still requires
+actual nonzero worklet output and Standard-mode references; it cannot pass by
+bypassing audio output or widening a video deadline.
 
 The H.264 source is the original black 16×16
 [`embedded-tx3g.mp4` fixture](../web/fixtures/README.md), whose FFmpeg generation

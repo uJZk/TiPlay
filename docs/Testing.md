@@ -5,6 +5,12 @@ TiPlay supports an Android phone plus car browser. Follow [installation](Install
 ## Automated checks
 
 The [Android workflow](../.github/workflows/android.yml) defines required tool versions and commands: browser unit tests, public-source credential checks, release-draft tests, Android unit tests, lint and debug builds. Its retained upstream sample checks do not establish a second supported product.
+`gradle/tiplay-product-tests.gradle.kts` excludes legacy native Home/Vehicle/permission
+screens and finite-retry stop UI. Upstream fixtures remain available for merging;
+TiPlay's phone checklist, browser host, continuous recovery, shared permission logic
+and channel persistence tests still run. The isolated native Wi-Fi scan switch
+fixture calls a channel-only builder that does not own that switch; shared channel
+cases are retained.
 
 For browser/media changes, use the applicable [Chromium harness](../tests/web-e2e/README.md): browser link and recovery, real shared-server wiring, URL MP4/HLS playback, still photos under production CSP, or ordinary AirPlay audio. Native AirPlay changes also require `python3 scripts/test_airplay_native.py`. Rebuild generated site outputs with [the Pages workflow](../.github/workflows/pages.yml) when their inputs change.
 
@@ -68,15 +74,19 @@ and browser-selected HEVC independent of the old preference.
 
 ## Media clock and continuous audio acceptance
 
-Run the browser clock, continuous-audio, AudioWorklet and main-thread integration tests
+Run the browser clock, continuous-audio, AudioWorklet, frame-pacing and main-thread integration tests
 with the repository's Node test command. Their deterministic virtual-time cases vary
 Android, producer and device rates independently, inject network jitter/queue steps and
-calibration changes, and retain dynamic PCM through the real variable-rate WASM engine.
-Check waveform error and boundary continuity, bounded phase/rate correction, queue growth,
+calibration changes, and retain dynamic PCM through the real variable-rate JavaScript engine.
+Check burst coalescing, deadline-timer fallback, frame-interval tails, waveform error and boundary continuity, bounded phase/rate correction, queue growth,
 stream/format isolation, explicit interruption fades and rejection of old generations.
 Constant samples or counters alone do not establish audio quality.
+The [libsoxr report](../scripts/soxr/REPORT.md) retains independent DSP/runtime reviews,
+format/anti-alias/120-second drift results and raw repeated performance measurements.
+These establish the supplied pure JavaScript engine’s tested behavior, not a
+whole-worklet hardware deadline or universal CPU improvement.
 
-Use the [browser E2E harness](../tests/web-e2e/README.md) for actual CSP, WASM loading,
+Use the [browser E2E harness](../tests/web-e2e/README.md) for actual CSP, pure JavaScript loading,
 AudioWorklet output, output timestamps, worker/main Canvas paths and context suspend/resume.
 Verify the audio-output reference remains active with Debug off. Synthetic clocks must
 also test stale/invalid references, large epochs, output-device latency changes and the

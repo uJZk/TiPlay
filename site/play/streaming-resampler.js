@@ -1,22 +1,15 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
+import createSoxr from './vendor/soxr/soxr.asm.js';
+
 const INPUT_FRAMES = 4096, OUTPUT_FRAMES = 512;
 
-/** A replaceable, offline libsoxr reactor; allocation occurs when a stream is created. */
+/** A replaceable, self-hosted pure JavaScript libsoxr runtime; allocation occurs when a stream is created. */
 export class SoxrRuntime {
-  constructor(module) {
-    this.instance = new WebAssembly.Instance(module, { wasi_snapshot_preview1: {
-      proc_exit: code => { throw new Error(`Audio resampler exited (${code}).`); },
-      fd_close: () => 0, fd_seek: () => 8, fd_write: () => 8,
-      environ_sizes_get: (count, size) => {
-        const memory = new DataView(this.instance.exports.memory.buffer);
-        memory.setUint32(count, 0, true); memory.setUint32(size, 0, true); return 0;
-      },
-      environ_get: () => 0,
-      clock_time_get: (_clock, _precision, pointer) => {
-        new DataView(this.instance.exports.memory.buffer).setBigUint64(pointer, 0n, true); return 0;
-      },
-    } });
-    this.exports = this.instance.exports; this.exports._initialize(); this.calibrations = new Map();
+  constructor() {
+    this.exports = createSoxr().exports;
+    // The generated runtime has a fixed heap; reuse its view on every render quantum.
+    this.heap = new Float32Array(this.exports.memory.buffer);
+    this.calibrations = new Map();
   }
   create(rate, outputRate, channels) { return new StreamingResampler(this, rate, outputRate, channels); }
   /** vr_delay() is an upstream TODO. Measure this engine's impulse energy centroid instead. */
@@ -57,7 +50,7 @@ export class StreamingResampler {
   /** Input is interleaved float32; a zero length requests buffered output without flushing. */
   process(input, frames, output, capacity = output.length / this.channels) {
     frames = Math.min(frames, INPUT_FRAMES); capacity = Math.min(capacity, OUTPUT_FRAMES);
-    const heap = new Float32Array(this.api.memory.buffer);
+    const heap = this.runtime.heap;
     if (frames) heap.set(input.subarray(0, frames * this.channels), this.inputPointer / 4);
     if (this.api.tiplay_process(this.handle, this.inputPointer, frames, this.outputPointer, capacity)) throw new Error('Audio resampling failed.');
     const consumed = this.api.tiplay_input_done(), produced = this.api.tiplay_output_done();

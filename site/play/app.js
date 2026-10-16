@@ -296,7 +296,7 @@ async function setUpVideo() {
       const offscreen = canvas.transferControlToOffscreen();
       worker.postMessage({ type: 'canvas', canvas: offscreen }, [offscreen]);
     } else {
-      presenter = (await import('./video.js')).createFramePresenter(canvas, { applyTimingPolicy: true });
+      presenter = (await import('./video.js')).createFramePresenter(canvas, { applyTimingPolicy: true, pace: true });
     }
     worker.onmessage = ({ data }) => {
       if (data.type === 'frame') {
@@ -332,7 +332,7 @@ async function setUpVideo() {
     };
   } else if (path.decode === 'main') {
     const { createDecoderPipeline, createFramePresenter } = await import('./video.js');
-    const presenter = createFramePresenter(canvas, { applyTimingPolicy: true });
+    const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, pace: true });
     const frames = createTimedFrames((frame, config, id, timing, outputWindow) => presenter.present(frame, config, timing, outputWindow), {
       observe(source, ready) { mediaTiming.observe('video', source, ready); },
     });

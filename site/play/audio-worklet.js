@@ -12,14 +12,11 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.timelines = new Map(); this.epochs = new Map(); this.delayPlans = initialPlaybackPlans(); this.clockBase = null;
     this.plansByMode = {};
     this.diagnostics = null; this.lastReportTime = -Infinity; this.diagnosticRevision = null;
-    this.runtime = null; this.clock = null; this.contextAnchor = null; this.localTimeOriginMs = 0;
+    this.runtime = new SoxrRuntime(); this.clock = null; this.contextAnchor = null; this.localTimeOriginMs = 0;
     this.renderedFrames = 0; this.feedbackSequence = 0; this.lastFeedbackMs = -Infinity; this.suspended = false;
     this.nextContextFrame = null; this.outputUncertaintyMs = 0;
     this.retiring = [];
     this.disposed = false;
-    // Some browsers cannot deserialize a compiled Module in an AudioWorklet.
-    // Ask for bytes once; compile them during initialization, before a timeline exists.
-    this.port.onmessageerror = () => this.port.postMessage({ resamplerModuleError: true });
     this.port.onmessage = ({ data }) => {
       if (this.disposed) return;
       if (data.dispose) {
@@ -28,11 +25,6 @@ class TiPlayAudio extends AudioWorkletProcessor {
         for (const [type, stream] of this.streams) for (const pcm of stream.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', type);
         this.streams.clear(); this.epochs.clear(); this.retiring = []; this.runtime = null; this.disposed = true;
         return;
-      }
-      if (data.resamplerModule || data.resamplerBytes) {
-        try {
-          this.runtime ??= new SoxrRuntime(data.resamplerModule || new WebAssembly.Module(data.resamplerBytes));
-        } catch (_) { this.port.postMessage({ resamplerError: true }); }
       }
       if ('clock' in data) this.clock = data.clock;
       if ('contextAnchor' in data) this.contextAnchor = data.contextAnchor;
@@ -69,7 +61,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
         this.streams.delete(data.type);
       }
       this.epochs.set(data.type, data.epoch);
-      if (this.runtime && !data.pcm.byteLength && data.flags & 2) {
+      if (!data.pcm.byteLength && data.flags & 2) {
         if (previousTimeline && previousEpoch === data.epoch) this.retireTimeline(previousTimeline);
         this.port.postMessage({ playout: { ...(previousTimeline instanceof ContinuousAudio ? previousTimeline.reference(currentTime * 1000) : {}),
           type: data.type, mode: data.mode, epoch: data.epoch, generation: data.generation,
@@ -77,7 +69,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
           state: data.ended === false ? 'priming' : 'ended', sequence: ++this.feedbackSequence } });
         this.timelines.delete(data.type); return;
       }
-      if (this.runtime && (Number.isFinite(data.presentationMs) || !Number.isFinite(data.sourceTime))) {
+      if (Number.isFinite(data.presentationMs) || this.clock?.version >= 2 && !Number.isFinite(data.sourceTime)) {
         let timeline = this.timelines.get(data.type);
         if (!(timeline instanceof ContinuousAudio) || timeline.rate !== data.rate || timeline.channels !== data.channels || timeline.epoch !== data.epoch || data.flags & 2) {
           this.retireTimeline(timeline);
@@ -96,10 +88,6 @@ class TiPlayAudio extends AudioWorkletProcessor {
           data.presentationMs = previous ? timeline.sourceAnchorMs + previous.end * 1000 / timeline.rate : this.targetTime(timeline, currentTime * 1000) ?? 0;
         }
         timeline.push(data, this.clock?.rate || 1); return;
-      }
-      if (this.clock?.version >= 2 && !this.runtime) {
-        this.credit(data.pcm.byteLength, data.generation, 'invalid', data.type);
-        this.port.postMessage({ error: 'Audio resampler is unavailable.' }); return;
       }
       if (Number.isFinite(data.sourceTime)) {
         let timeline = this.timelines.get(data.type);

@@ -13,11 +13,11 @@ const pageRoot = resolve(repo, 'site/play'), fixtureRoot = resolve(repo, 'tests/
 const index = await readFile(resolve(pageRoot, 'index.html'), 'utf8');
 const csp = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(index)?.[1];
 assert.ok(csp && !csp.split(/\s+/).includes("'unsafe-eval'"), 'Use the exact production CSP without JavaScript eval');
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.mp4': 'video/mp4' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.mp4': 'video/mp4' };
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 async function sourceIdentity() {
   const paths = (await readdir(pageRoot)).filter(path => path.endsWith('.js')).sort();
-  paths.push('index.html', 'vendor/soxr/soxr.wasm');
+  paths.push('index.html', 'vendor/soxr/soxr.asm.js');
   return Object.fromEntries(await Promise.all(paths.map(async path => [path, hash(await readFile(resolve(pageRoot, path)))])));
 }
 const before = await sourceIdentity(), servedAssets = {}, pageErrors = [], externalRequests = [];
@@ -50,6 +50,7 @@ try {
     if (url.origin === origin) return route.continue();
     externalRequests.push(url.href); return route.abort();
   });
+  await context.addInitScript(() => { globalThis.WebAssembly = undefined; });
   const page = await context.newPage();
   page.on('pageerror', error => pageErrors.push(error.stack || error.message));
   await page.goto(origin);
@@ -63,6 +64,8 @@ try {
   assert.equal(result.ok, true, JSON.stringify(result, null, 2));
   assert.deepEqual(pageErrors, [], 'No browser/worker JavaScript errors');
   assert.deepEqual(externalRequests, [], 'Every media/asset request remains loopback');
+  assert.equal(await page.evaluate(() => typeof WebAssembly), 'undefined');
+  assert.ok(Object.keys(servedAssets).every(path => !path.endsWith('.wasm')), 'No runtime WASM asset');
   assert.deepEqual(changed, [], 'Runtime source remained unchanged throughout the check');
   console.log(JSON.stringify({ browser: await browser.version(), summary: result.summary,
     workers: result.workers, sourceSha256: hash(JSON.stringify(before)), sourceFiles: Object.keys(before).length,

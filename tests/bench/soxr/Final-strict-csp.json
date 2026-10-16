@@ -1,0 +1,17 @@
+{
+  "result": {
+    "blocks": 200,
+    "produced": 25600,
+    "energy": 629.6511400167223,
+    "nonfinite": 0,
+    "failed": 0,
+    "heapBytes": 16777216,
+    "webAssembly": "undefined"
+  },
+  "violations": [],
+  "errors": [],
+  "policy": "default-src 'self'; connect-src 'self' http: https:; media-src 'self' http: https: blob:; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'",
+  "browser": "151.0.7922.173",
+  "candidatePath": "/workspace/TiPlay/work/soxr-asm/candidate-a.mjs",
+  "candidateSha256": "0dda221ebb9979a01840c475caed3d9aee84c436f4a1e91483a868ca5df85777"
+}

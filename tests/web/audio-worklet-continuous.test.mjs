@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { constantDelay } from '../../site/play/delay-plan.js';
 import { createAudioReferenceTimeline } from '../../site/play/audio-output-clock.js';
 import { createAirPlayAudioDecoder } from '../../site/play/airplay-audio-decoder.js';
 
-const module = await WebAssembly.compile(readFileSync(new URL('../../site/play/vendor/soxr/soxr.wasm', import.meta.url)));
 let Processor;
 globalThis.AudioWorkletProcessor = class { constructor() { this.messages = []; this.port = { postMessage: value => this.messages.push(value) }; } };
 globalThis.registerProcessor = (_, value) => { Processor = value; };
@@ -14,10 +12,9 @@ globalThis.sampleRate = 48000;
 globalThis.currentTime = 0; globalThis.currentFrame = 0;
 await import('../../site/play/audio-worklet.js');
 
-function harness(bytes = false) {
+function harness() {
   const processor = new Processor(), base = 8000000;
   const post = data => processor.port.onmessage({ data });
-  post(bytes ? { resamplerBytes: Uint8Array.from(readFileSync(new URL('../../site/play/vendor/soxr/soxr.wasm', import.meta.url))).buffer } : { resamplerModule: module });
   post({ clock: { version: 2, generation: 1, serverOriginMs: base, localOriginMs: 0, rate: 1, state: 'locked' },
     contextAnchor: { contextTimeMs: 0, localTimeMs: 200 }, localTimeOriginMs: 1792159881000,
     outputUncertaintyMs: 1, plans: { audio: constantDelay(60), video: constantDelay(0) } });
@@ -146,17 +143,4 @@ test('disposing a retired processor releases all per-stream filters and terminat
   assert.equal(backend.handle, 0); assert.equal(h.processor.runtime, null); assert.equal(h.processor.timelines.size, 0);
   const output = [new Float32Array(128).fill(1)];
   assert.equal(h.processor.process([], [output]), false); assert.ok(output[0].every(value => value === 0));
-});
-
-
-test('WASM deserialization failure requests bytes and the same resampler produces audible output', () => {
-  const h = harness(true);
-  h.processor.port.onmessageerror();
-  assert.ok(h.processor.messages.some(message => message.resamplerModuleError));
-  for (let i = 0; i < 80; i++) { h.feed(); const output = h.render(); if (i > 5) assert.ok(output[0].some(value => Math.abs(value) > 0.1)); }
-  assert.ok(h.processor.messages.some(message => message.playout?.state === 'playing'));
-  const failed = new Processor();
-  failed.port.onmessage({ data: { resamplerBytes: new Uint8Array([0]).buffer } });
-  assert.ok(failed.messages.some(message => message.resamplerError));
-  assert.equal(failed.runtime, null);
 });

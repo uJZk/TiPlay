@@ -64,7 +64,7 @@ export function createMediaTiming(change = () => {}, now = () => performance.tim
 }
 /** Orders decoded frames only. Encoded video remains in decoder dependency order. */
 export function createTimedFrames(present, { now = () => performance.timeOrigin + performance.now(), schedule = setTimeout, cancel = clearTimeout, observe = () => {} } = {}) {
-  let queue = [], timer = null, plan = constantDelay(), last = -Infinity, serial = 0, expiredFrames = 0, droppedFrames = 0;
+  let queue = [], timer = null, plan = constantDelay(), last = -Infinity, expiredFrames = 0, droppedFrames = 0;
   let syncDroppedFrames = 0, syncUnavailableFrames = 0, syncState = 'video-only', outputMethod = null;
   const audioReferences = createAudioReferenceTimeline();
   const drop = frame => { droppedFrames++; frame.close(); };
@@ -123,9 +123,12 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
       // decoded media order belongs to the stable source coordinate instead.
       const order = Number.isFinite(sourceTimeMs) ? sourceTimeMs : timing;
       if (order <= last || queue.some(item => item.order === order)) { drop(frame); return; }
-      const token = ++serial, item = { frame, config, id, timing, sourceTimeMs, order, clockGeneration: source?.clockGeneration, token, ready: false };
+      const item = { frame, config, id, timing, sourceTimeMs, order, clockGeneration: source?.clockGeneration, ready: false };
       queue.push(item); queue.sort((a, b) => a.order - b.order);
-      item.ready = observe(timing, now(), token) !== false;
+      // Applying the local observation may synchronously update the plan and pump.
+      // Keep this item pending until that observation has completed.
+      observe(timing, now());
+      item.ready = true;
       while (queue.length > 60) drop(queue.shift().frame);
       pump();
     },
@@ -134,7 +137,6 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
       if (!audioReferences.update(reference)) return;
       pump();
     },
-    ready(token, value) { const item = queue.find(item => item.token === token); if (!item) return; plan = value; item.ready = true; pump(); },
     stats: () => ({ scheduledExpiredFrames: expiredFrames, scheduledDroppedFrames: droppedFrames,
       audioSyncDroppedFrames: syncDroppedFrames, audioSyncUnavailableFrames: syncUnavailableFrames,
       audioSyncState: syncState, audioOutputMethod: outputMethod }),

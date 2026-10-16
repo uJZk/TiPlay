@@ -3,6 +3,7 @@
  * (WebGL, 2D as a fallback). Runs in decoder-worker.js on the Tesla path, or on the main thread as a fallback. */
 import { FLAG, RECORD, RecordError, Samples, chooseDecoderConfig, createRecordStream, letterbox } from './link.js';
 import { createFpsWindow } from './fps-window.js';
+import { createVideoFramePacer } from './video-pacing.js';
 import { presentationTime } from './clock-sync.js';
 import { videoExpired } from './playback-window.js';
 import { hasHdrTransfer } from './airplay-sdr.js';
@@ -249,7 +250,7 @@ export function createDecoderPipeline({ post: send, present }) {
  * It keeps the last frame (closing the one before) so a resize can redraw a still CarPlay screen.
  */
 export function createFramePresenter(canvas, { now = () => performance.timeOrigin + performance.now(),
-  applyTimingPolicy = false } = {}) {
+  applyTimingPolicy = false, pace = false, onPresent } = {}) {
   const drawMs = new Samples();
   const fpsWindow = createFpsWindow();
   let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null, expiredFrames = 0, untimedFrames = 0, renderDroppedFrames = 0;
@@ -257,9 +258,9 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
   const audioReferences = createAudioReferenceTimeline();
   let audioTracking = false;
 
-  function draw(frame, allowed) {
+  function draw(frame, allowed, flush = true) {
     const width = lastConfig?.width || frame.displayWidth, height = lastConfig?.height || frame.displayHeight;
-    return renderer.draw(frame, letterbox(canvas.width, canvas.height, width, height), allowed);
+    return renderer.draw(frame, letterbox(canvas.width, canvas.height, width, height), allowed, flush);
   }
 
   const lost = event => event.preventDefault();
@@ -273,48 +274,62 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
     canvas.addEventListener('webglcontextrestored', restored);
   }
 
+  function presentNow(frame, config, timing, outputWindow, reason = 'immediate') {
+    if (lastConfig?.epoch !== config?.epoch) {
+      fpsWindow.reset();
+      expiredFrames = untimedFrames = renderDroppedFrames = 0;
+      audioSyncDroppedFrames = 0;
+    }
+    lastConfig = config;
+    const late = () => applyTimingPolicy && videoExpired(timing, config?.mode, now());
+    let checkedAt = null, checkedAudioAt = outputWindow?.audioAt;
+    const outsideAudioWindow = (at = now()) => {
+      if (!applyTimingPolicy) return false;
+      if (audioTracking) {
+        const resolved = audioReferences.resolve(config?.mode, outputWindow?.sourceTimeMs, outputWindow?.clockGeneration, at);
+        if (!resolved.required) return false;
+        if (!Number.isFinite(resolved.audioAt)) return true;
+        checkedAudioAt = resolved.audioAt;
+        return at < resolved.audioAt + resolved.uncertaintyMs - AUDIO_LATE_MS
+          || at > resolved.audioAt - resolved.uncertaintyMs + AUDIO_EARLY_MS;
+      }
+      return outputWindow && (at < outputWindow.at || at - outputWindow.at > OUTPUT_REFERENCE_MAX_AGE_MS
+        || at < outputWindow.earliest || at > outputWindow.latest);
+    };
+    if (late()) { expiredFrames++; renderDroppedFrames++; frame.close(); return; }
+    if (outsideAudioWindow()) { audioSyncDroppedFrames++; renderDroppedFrames++; frame.close(); return; }
+    const started = performance.now();
+    let drawn;
+    let expired = false;
+    let audioExpired = false;
+    try { drawn = draw(frame, () => {
+      checkedAt = now();
+      expired = applyTimingPolicy && videoExpired(timing, config?.mode, checkedAt);
+      audioExpired = outsideAudioWindow(checkedAt);
+      return !expired && !audioExpired;
+    }, reason !== 'refresh') !== false; }
+    catch (error) { renderDroppedFrames++; frame.close(); throw error; }
+    if (expired) { expiredFrames++; renderDroppedFrames++; frame.close(); return; }
+    if (audioExpired) { audioSyncDroppedFrames++; renderDroppedFrames++; frame.close(); return; }
+    if (!drawn) { renderDroppedFrames++; frame.close(); return; }
+    if (!Number.isFinite(timing)) untimedFrames++;
+    drawMs.add(performance.now() - started);
+    const at = performance.now();
+    const offset = Number.isFinite(timing) ? checkedAt - timing : null;
+    if (drawn) {
+      fpsWindow.frame(at, 1, offset);
+    }
+    lastFrame?.close();
+    lastFrame = frame;
+    onPresent?.({ at: checkedAt, timing, audioAt: checkedAudioAt });
+  }
+  const pacer = pace ? createVideoFramePacer(presentNow, { now,
+    budget: () => Math.max(4, (drawMs.percentile(95) ?? 3) + 1),
+  }) : null;
   return {
     present(frame, config, timing, outputWindow) {
-      if (lastConfig?.epoch !== config?.epoch) {
-        fpsWindow.reset();
-        expiredFrames = untimedFrames = renderDroppedFrames = 0;
-        audioSyncDroppedFrames = 0;
-      }
-      lastConfig = config;
-      const late = () => applyTimingPolicy && videoExpired(timing, config?.mode, now());
-      const outsideAudioWindow = () => {
-        if (!applyTimingPolicy) return false;
-        const at = now();
-        if (audioTracking) {
-          const resolved = audioReferences.resolve(config?.mode, outputWindow?.sourceTimeMs, outputWindow?.clockGeneration, at);
-          if (!resolved.required) return false;
-          if (!Number.isFinite(resolved.audioAt)) return true;
-          return at < resolved.audioAt + resolved.uncertaintyMs - AUDIO_LATE_MS
-            || at > resolved.audioAt - resolved.uncertaintyMs + AUDIO_EARLY_MS;
-        }
-        return outputWindow && (at < outputWindow.at || at - outputWindow.at > OUTPUT_REFERENCE_MAX_AGE_MS
-          || at < outputWindow.earliest || at > outputWindow.latest);
-      };
-      if (late()) { expiredFrames++; renderDroppedFrames++; frame.close(); return; }
-      if (outsideAudioWindow()) { audioSyncDroppedFrames++; renderDroppedFrames++; frame.close(); return; }
-      const started = performance.now();
-      let drawn;
-      let expired = false;
-      let audioExpired = false;
-      try { drawn = draw(frame, () => { expired = late(); audioExpired = outsideAudioWindow(); return !expired && !audioExpired; }) !== false; }
-      catch (error) { renderDroppedFrames++; frame.close(); throw error; }
-      if (expired) { expiredFrames++; renderDroppedFrames++; frame.close(); return; }
-      if (audioExpired) { audioSyncDroppedFrames++; renderDroppedFrames++; frame.close(); return; }
-      if (!drawn) { renderDroppedFrames++; frame.close(); return; }
-      if (!Number.isFinite(timing)) untimedFrames++;
-      drawMs.add(performance.now() - started);
-      const at = performance.now();
-      const offset = Number.isFinite(timing) ? performance.timeOrigin + at - timing : null;
-      if (drawn) {
-        fpsWindow.frame(at, 1, offset);
-      }
-      lastFrame?.close();
-      lastFrame = frame;
+      if (pacer) pacer.present(frame, config, timing, outputWindow);
+      else presentNow(frame, config, timing, outputWindow);
     },
     resize(width, height) {
       if (width < 1 || height < 1 || (canvas.width === width && canvas.height === height)) return;
@@ -324,7 +339,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
     },
     audio(reference) { audioTracking = true; audioReferences.update(reference); },
     close() {
-      fpsWindow.reset();
+      pacer?.reset(); fpsWindow.reset();
       lastFrame?.close();
       lastFrame = null;
       lastConfig = null;
@@ -332,7 +347,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       audioSyncDroppedFrames = 0;
     },
     dispose() {
-      fpsWindow.reset();
+      pacer?.reset(); fpsWindow.reset();
       lastFrame?.close();
       lastFrame = null;
       canvas.removeEventListener('webglcontextlost', lost);
@@ -340,7 +355,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       renderer.dispose?.();
     },
     stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), expiredFrames, untimedFrames, renderDroppedFrames,
-      audioRenderSyncDroppedFrames: audioSyncDroppedFrames, ...fpsWindow.stats() }),
+      audioRenderSyncDroppedFrames: audioSyncDroppedFrames, ...pacer?.stats(), ...fpsWindow.stats() }),
   };
 }
 
@@ -391,7 +406,7 @@ function glRenderer(gl) {
       gl.deleteProgram(program);
     },
     kind: typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext ? 'webgl2' : 'webgl',
-    draw(frame, box, allowed = () => true) {
+    draw(frame, box, allowed = () => true, flush = false) {
       if (gl.isContextLost()) return false;
       const { height } = gl.canvas;
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
@@ -401,6 +416,9 @@ function glRenderer(gl) {
       // deadline check; an expired upload must leave the retained picture intact.
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      // RAF flushes at its frame boundary. Timer/immediate submissions need an
+      // explicit nonblocking dispatch; never wait for GPU completion with finish().
+      if (flush) gl.flush();
     },
   };
 }

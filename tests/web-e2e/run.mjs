@@ -120,7 +120,7 @@ async function encodeInBrowser(context, origin) {
 
 
 function startPageServer() {
-  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.wasm': 'application/wasm' };
+  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
   const server = createServer((req, res) => {
     const path = new URL(req.url, 'http://page').pathname;
     if (path === '/blank') return res.writeHead(200, { 'Content-Type': 'text/html' }).end('<!doctype html><title>blank</title>');

@@ -4,6 +4,19 @@ import assert from 'node:assert/strict';
 import { createFpsWindow, formatPerformanceMonitor, performanceStats } from '../../site/play/fps-window.js';
 import { sampleClock, presentationTime } from '../../site/play/clock-sync.js';
 
+test('average draw count exposes burst spacing instead of establishing display refresh rate', () => {
+  const window = createFpsWindow();
+  for (let refresh = 0; refresh < 20; refresh++) {
+    window.frame(1 + refresh * 50);
+    window.frame(2 + refresh * 50);
+  }
+  const stats = window.stats(1000);
+  assert.equal(stats.currentFps, 40);
+  assert.equal(stats.frameIntervalP95Ms, 49);
+  assert.equal(stats.frameIntervalMaxMs, 49);
+  assert.equal(stats.lastDrawAgeMs, 48);
+});
+
 test('middle 90% excludes both tails, slow FPS and worst presentation offset use the upper duration tail', () => {
   const window = createFpsWindow({ now: () => 1000 });
   let at = 0;

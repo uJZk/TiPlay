@@ -81,7 +81,8 @@ The maneuver PNGs under `shared/src/main/assets/byd-hud-icons` were imported fro
 ## Browser media
 
 - libsoxr (SoX Resampler Library): LGPL-2.1-or-later, used as a separately
-  replaceable, self-hosted WASM variable-rate resampler. Its complete source,
+  replaceable, self-hosted pure JavaScript variable-rate resampler (asm.js-like
+  typed JavaScript generated with Binaryen). Its complete source,
   licenses and pinned build provenance are under
   [vendor/soxr](../site/play/vendor/soxr/README.md); the source tree also includes
   the adapter and reproducible rebuild script. Keep those materials with binary

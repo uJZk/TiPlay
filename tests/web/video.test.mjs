@@ -328,11 +328,16 @@ test('an expired GPU texture upload never clears or submits the canvas', () => {
   const calls = [], canvas = { width: 800, height: 480, addEventListener() {}, removeEventListener() {} }, gl = { canvas, isContextLost: () => false };
   for (const name of ['createProgram', 'createShader', 'shaderSource', 'compileShader', 'attachShader', 'deleteShader', 'linkProgram', 'useProgram', 'createBuffer', 'bindBuffer', 'bufferData', 'getAttribLocation', 'enableVertexAttribArray', 'vertexAttribPointer', 'createTexture', 'bindTexture', 'texParameteri', 'getUniformLocation', 'uniform1i', 'viewport', 'clearColor', 'clear', 'drawArrays', 'deleteTexture', 'deleteBuffer', 'deleteProgram']) gl[name] = () => { calls.push(name); return {}; };
   gl.texImage2D = () => { calls.push('upload'); now = 1001; };
+  gl.flush = () => calls.push('flush');
   canvas.getContext = type => type === 'webgl2' ? gl : null;
   const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => now });
   const frame = videoFrame(0); presenter.present(frame, { mode: 'carplay' }, 1000);
   assert.ok(calls.includes('upload')); assert.equal(calls.includes('clear'), false); assert.equal(calls.includes('drawArrays'), false);
-  assert.equal(frame.closed, true); assert.equal(presenter.stats().expiredFrames, 1); presenter.dispose();
+  assert.equal(calls.includes('flush'), false);
+  assert.equal(frame.closed, true); assert.equal(presenter.stats().expiredFrames, 1);
+  presenter.present(videoFrame(1), { mode: 'carplay' }, 1100);
+  assert.ok(calls.includes('drawArrays')); assert.equal(calls.filter(value => value === 'flush').length, 1);
+  presenter.dispose();
 });
 
 

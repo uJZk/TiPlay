@@ -1,0 +1,86 @@
+{
+  "Current": {
+    "bytes": 250835,
+    "cases": [
+      {
+        "rate": 8000,
+        "channels": 1,
+        "meanMs": 0.12935084900000016,
+        "p99Ms": 0.9475499999999784,
+        "cpuMsPerAudioSecond": 47.596875000000004
+      },
+      {
+        "rate": 44100,
+        "channels": 2,
+        "meanMs": 0.33193626000000087,
+        "p99Ms": 1.2178980000001047,
+        "cpuMsPerAudioSecond": 105.14381250000001
+      },
+      {
+        "rate": 48000,
+        "channels": 2,
+        "meanMs": 0.1985336089999994,
+        "p99Ms": 0.7203429999999571,
+        "cpuMsPerAudioSecond": 68.235375
+      }
+    ],
+    "concurrentMeanMs": 0.2510455385000048,
+    "concurrentP99Ms": 0.9136899999998604
+  },
+  "A": {
+    "bytes": 364339,
+    "cases": [
+      {
+        "rate": 8000,
+        "channels": 1,
+        "meanMs": 0.11737056000000166,
+        "p99Ms": 0.924073999999905,
+        "cpuMsPerAudioSecond": 45.5173125
+      },
+      {
+        "rate": 44100,
+        "channels": 2,
+        "meanMs": 0.3138603020000012,
+        "p99Ms": 1.0978920000000016,
+        "cpuMsPerAudioSecond": 99.98625
+      },
+      {
+        "rate": 48000,
+        "channels": 2,
+        "meanMs": 0.1853078224999981,
+        "p99Ms": 0.7909859999999753,
+        "cpuMsPerAudioSecond": 66.3380625
+      }
+    ],
+    "concurrentMeanMs": 0.22530119850000324,
+    "concurrentP99Ms": 0.936963999999989
+  },
+  "B": {
+    "bytes": 387307,
+    "cases": [
+      {
+        "rate": 8000,
+        "channels": 1,
+        "meanMs": 0.14501803700000027,
+        "p99Ms": 0.9605020000001332,
+        "cpuMsPerAudioSecond": 51.221250000000005
+      },
+      {
+        "rate": 44100,
+        "channels": 2,
+        "meanMs": 0.3415750169999983,
+        "p99Ms": 1.5836549999999079,
+        "cpuMsPerAudioSecond": 112.61681250000001
+      },
+      {
+        "rate": 48000,
+        "channels": 2,
+        "meanMs": 0.215963011000003,
+        "p99Ms": 0.9442009999997936,
+        "cpuMsPerAudioSecond": 77.3416875
+      }
+    ],
+    "concurrentMeanMs": 0.2553274674999893,
+    "concurrentP99Ms": 1.2346349999997983
+  }
+}

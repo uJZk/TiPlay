@@ -9,8 +9,14 @@ and delivery records remain in Git history.
 - Merge DiPlay through `1b1ac5f2` (0.2.20 and subsequent fixes) with full ancestry. Keep TiPlay branding, application identity, Android phone + browser gates, serial AirPlay resource loading, casting admission and existing audio timing fixes.
 - Define the product version once in Gradle properties. Show **TiPlay 0.2.20** at the bottom of Android Main settings and as a release link in browser settings; remove the playback corner badge. Use TiPlay version code 40 so updates remain newer than 0.2.16.
 - Use the official Video.js 10 default skin and layout groups, isolate page button CSS, add left/right half-screen double-tap ±10-second seeking with accumulated feedback and accessible seek buttons, and match the casting-end button to the player.
-- Schedule decoded video inside the worker without waiting for a main-thread readiness round trip. Preserve encoded dependencies, transfer backpressure, presentation/epoch checks, CarPlay 0 ms and mirror 200 ms caps, and audio 45 ms early / 125 ms late limits.
-- Recover browsers that reject compiled WASM modules in AudioWorklet messages by compiling cached bytes during initialization. Keep the existing resampler and playback clocks; report initialization failures instead of silently discarding all PCM.
+- Schedule decoded video inside the worker without waiting for a main-thread readiness round trip. Latch the newest eligible frame at display refresh with a deadline fallback, and report frame-interval tails to reveal bursts hidden by average FPS. Preserve encoded dependencies, transfer backpressure, presentation/epoch checks, CarPlay 0 ms and mirror 200 ms caps, and audio 45 ms early / 125 ms late limits.
+- Replace browser libsoxr with self-hosted pure JavaScript, retaining the variable-rate filter and clock correction. Remove the WASM binary, compiled-module transfer/byte fallback loading and WASM CSP exception; include reproducible builds, two independent reviews and DSP/performance measurements.
+
+Verification: 2,096 shared, 1,734 common and 6 home unit tests; 340 browser unit tests;
+all required Android lint/debug builds; hosted-browser and compiled-phone E2E,
+MP4/HLS controls/gestures, real CSP AudioWorklet and worker/OffscreenCanvas timing;
+public-source scan, 9 release-draft tests and native AirPlay JNI checks. The pure JS
+engine passed independent DSP/runtime reviews and a byte-identical production rebuild.
 
 Physical iPhone/vehicle smoothness and acoustic/panel latency require device acceptance.
 

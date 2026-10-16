@@ -4,6 +4,20 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { AUDIO_DIAGNOSTIC_BYTES, PAGE_VERSION, browserDiagnosticEvents } from '../../site/play/browser-diagnostics.js';
 
+test('busy video summaries retain cadence, audio and touch RTT within the ordinary budget', () => {
+  const video = { ...Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`counter${i}`, i])),
+    currentFps: 48, currentDelta: -19, frameIntervalP95Ms: 61, frameIntervalMaxMs: 128,
+    pacingMode: 'display-refresh', pacingDroppedFrames: 3 };
+  const [event] = browserDiagnosticEvents({ video, control: { rttMsP95: 72, pending: 1 },
+    audio: { sound: true, queuedBytes: 4096 } }, false);
+  assert.equal(event.v['video.frameIntervalP95Ms'], 61);
+  assert.equal(event.v['video.currentFps'], 48);
+  assert.equal(event.v['video.pacingDroppedFrames'], 3);
+  assert.equal(event.v['control.rttMsP95'], 72);
+  assert.equal(event.v['audio.queuedBytes'], 4096);
+  assert.ok(JSON.stringify(event.v).length <= 2048);
+});
+
 test('debug audio retains every stream independently of the ordinary video stats budget', () => {
   const debug = { contextState: 'running', pcmNonzero: 128, renderNonzero: 0 };
   for (let stream = 0; stream <= 6; stream++) debug[`stream${stream}`] = {

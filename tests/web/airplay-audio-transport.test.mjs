@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { loadTestResampler } from './fixtures/audio-resampler-module.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readAudioRecords, MAX_AUDIO_RECORD } from '../../site/play/audio-protocol.js';
@@ -27,7 +26,7 @@ function browser(t,{supported=false}={}){
 }
 async function audioHarness(t,codecs){
  const mock=browser(t,codecs),states=[];let controller;
- const audio=createBrowserAudio({ loadResampler: loadTestResampler, credentials:()=>({code:'pair',session:'session'}),onState:state=>states.push(state),fetchPhone:async()=>({ok:true,body:new ReadableStream({start(value){controller=value;}})})});
+ const audio=createBrowserAudio({ credentials:()=>({code:'pair',session:'session'}),onState:state=>states.push(state),fetchPhone:async()=>({ok:true,body:new ReadableStream({start(value){controller=value;}})})});
  t.after(()=>audio.dispose());await audio.activate();audio.attach(new AbortController().signal,{audio:true});await until(()=>controller);
  return{...mock,audio,controller,states};
 }

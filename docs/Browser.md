@@ -183,15 +183,27 @@ than cropping or stretching the received picture with CSS. Saved upstream safe-a
 preferences do not override the browser canvas.
 
 The performance monitor cannot alter viewport/touch mapping. It shows codec,
-last-second drawn FPS, latest frame Delta and explicit drops. Delta is Canvas submission
-minus synchronized scheduled presentation: negative is early, positive late. Missing sync
-shows unknown. This is not capture-to-screen latency or proof of hardware decode.
+last-second successful Canvas submissions, latest frame Delta and explicit drops.
+Delta is measured at the final submission check relative to synchronized scheduled
+presentation: negative is early, positive late. Missing sync shows unknown. Multiple
+submissions before one display refresh can overstate visible FPS. Debug diagnostics
+also report frame-interval P95/max and time since the last successful submission;
+a high average FPS alone cannot establish smooth pacing. These values do not measure
+physical screen refresh, capture-to-screen latency or prove hardware decode.
 See [Diagnostics.md](Diagnostics.md).
 
 Decoded live video is scheduled in the decoder worker without a per-frame
 main-thread readiness acknowledgement. Timing observations still update the audio
 buffer estimate; transferred frames retain acknowledgement backpressure and final
-presentation checks. Source delay caps remain CarPlay 0 ms and AirPlay mirroring
+presentation checks. When animation callbacks are available, the presenter retains
+only the newest eligible frame for the next display refresh. A deadline timer and
+measured upload budget bound that wait; the final upload/submission check still
+rejects expired or audio-incompatible frames. Workers without a usable animation
+source submit immediately. Timer/immediate WebGL submissions explicitly flush queued
+GPU commands without waiting for completion; refresh callbacks use their native
+frame boundary. See [MDN's flush guidance](https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices#flush_when_expecting_results).
+Superseded pending pictures count as pacing drops.
+Source delay caps remain CarPlay 0 ms and AirPlay mirroring
 200 ms; actual output references retain the audio 45 ms early / 125 ms late window.
 Live video adds no uncalibrated buffering. Live
 audio follows its receiver sample/latency anchor; buffered music follows SETRATE.

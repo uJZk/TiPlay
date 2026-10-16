@@ -1,0 +1,146 @@
+{
+  "method": "5 fresh-process repetitions; rotating engine order; 4000 steady blocks and 500 warmup per case; per-block timing includes OS scheduling",
+  "engines": [
+    {
+      "label": "Wasm",
+      "cases": [
+        {
+          "rate": 8000,
+          "outputRate": 48000,
+          "channels": 1,
+          "medianMeanMs": 0.008985901000000204,
+          "medianP50Ms": 0.006686999999999443,
+          "medianP95Ms": 0.007897000000014032,
+          "medianP99Ms": 0.07697500000000446,
+          "worstObservedBlockMs": 2.994271000000026,
+          "deadlineMisses": 1,
+          "medianCpuMsPerAudioSecond": 4.0086562500000005
+        },
+        {
+          "rate": 44100,
+          "outputRate": 48000,
+          "channels": 2,
+          "medianMeanMs": 0.05227485574999979,
+          "medianP50Ms": 0.03984800000000632,
+          "medianP95Ms": 0.12467399999997042,
+          "medianP99Ms": 0.3201859999999783,
+          "worstObservedBlockMs": 20.860449000000017,
+          "deadlineMisses": 24,
+          "medianCpuMsPerAudioSecond": 20.569406250000004
+        },
+        {
+          "rate": 48000,
+          "outputRate": 48000,
+          "channels": 2,
+          "medianMeanMs": 0.03174993449999988,
+          "medianP50Ms": 0.018380000000092878,
+          "medianP95Ms": 0.06800699999996596,
+          "medianP99Ms": 0.24509599999998954,
+          "worstObservedBlockMs": 8.875870000000077,
+          "deadlineMisses": 3,
+          "medianCpuMsPerAudioSecond": 11.264625
+        }
+      ],
+      "concurrent": {
+        "medianMeanMs": 0.045863354000000155,
+        "medianP99Ms": 0.24221399999998994,
+        "worstObservedBlockMs": 20.76191,
+        "deadlineMisses": 11
+      }
+    },
+    {
+      "label": "Baseline",
+      "cases": [
+        {
+          "rate": 8000,
+          "outputRate": 48000,
+          "channels": 1,
+          "medianMeanMs": 0.15197433374999858,
+          "medianP50Ms": 0.033740999999963606,
+          "medianP95Ms": 0.4953819999999496,
+          "medianP99Ms": 1.1003259999999955,
+          "worstObservedBlockMs": 14.012576999999965,
+          "deadlineMisses": 58,
+          "medianCpuMsPerAudioSecond": 63.51234375000001
+        },
+        {
+          "rate": 44100,
+          "outputRate": 48000,
+          "channels": 2,
+          "medianMeanMs": 0.2887519759999989,
+          "medianP50Ms": 0.21183700000005956,
+          "medianP95Ms": 0.5211349999999584,
+          "medianP99Ms": 0.9794479999998202,
+          "worstObservedBlockMs": 32.91016099999979,
+          "deadlineMisses": 61,
+          "medianCpuMsPerAudioSecond": 108.66496875000001
+        },
+        {
+          "rate": 48000,
+          "outputRate": 48000,
+          "channels": 2,
+          "medianMeanMs": 0.2668796217500029,
+          "medianP50Ms": 0.13989600000013525,
+          "medianP95Ms": 0.7951290000000881,
+          "medianP99Ms": 1.4843510000000606,
+          "worstObservedBlockMs": 16.952254000000266,
+          "deadlineMisses": 48,
+          "medianCpuMsPerAudioSecond": 106.24903125000002
+        }
+      ],
+      "concurrent": {
+        "medianMeanMs": 0.28515774849999265,
+        "medianP99Ms": 1.0205949999999575,
+        "worstObservedBlockMs": 22.090393000000404,
+        "deadlineMisses": 56
+      }
+    },
+    {
+      "label": "Final",
+      "cases": [
+        {
+          "rate": 8000,
+          "outputRate": 48000,
+          "channels": 1,
+          "medianMeanMs": 0.15068609650000042,
+          "medianP50Ms": 0.032500000000027285,
+          "medianP95Ms": 0.5162980000000061,
+          "medianP99Ms": 0.9499959999999419,
+          "worstObservedBlockMs": 27.121538999999984,
+          "deadlineMisses": 81,
+          "medianCpuMsPerAudioSecond": 64.29646875
+        },
+        {
+          "rate": 44100,
+          "outputRate": 48000,
+          "channels": 2,
+          "medianMeanMs": 0.26164261150000057,
+          "medianP50Ms": 0.21170299999994313,
+          "medianP95Ms": 0.46908399999983885,
+          "medianP99Ms": 0.8044970000000831,
+          "worstObservedBlockMs": 28.085861000000023,
+          "deadlineMisses": 117,
+          "medianCpuMsPerAudioSecond": 97.774125
+        },
+        {
+          "rate": 48000,
+          "outputRate": 48000,
+          "channels": 2,
+          "medianMeanMs": 0.27503388000000234,
+          "medianP50Ms": 0.13242300000001705,
+          "medianP95Ms": 0.9244309999999132,
+          "medianP99Ms": 1.6217400000000453,
+          "worstObservedBlockMs": 22.199029999999766,
+          "deadlineMisses": 133,
+          "medianCpuMsPerAudioSecond": 111.76378125
+        }
+      ],
+      "concurrent": {
+        "medianMeanMs": 0.27806015474999934,
+        "medianP99Ms": 1.745759000000362,
+        "worstObservedBlockMs": 1160.9864539999999,
+        "deadlineMisses": 344
+      }
+    }
+  ]
+}

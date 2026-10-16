@@ -33,9 +33,15 @@ export async function createWorkerProbe(offscreen, clock) {
   const mode = offscreen ? 'offscreen' : 'transfer';
   const canvas = document.createElement('canvas'); canvas.width = 160; canvas.height = 90; document.body.append(canvas);
   const worker = new Worker('/play/decoder-worker.js', { type: 'module' });
-  const presenter = offscreen ? null : createFramePresenter(canvas, { applyTimingPolicy: true });
   let controller, sequence = 0, lastStats = null, draws = 0, minSkew = Infinity, maxSkew = -Infinity;
   const errors = [], references = new Map();
+  const presenter = offscreen ? null : createFramePresenter(canvas, { applyTimingPolicy: true, pace: true,
+    onPresent({ at, audioAt }) {
+      if (!Number.isFinite(audioAt)) return;
+      const skew = audioAt - at;
+      minSkew = Math.min(minSkew, skew); maxSkew = Math.max(maxSkew, skew); draws++;
+    },
+  });
   await new Promise((resolve, reject) => {
     worker.onerror = event => reject(new Error('Actual decoder worker startup: ' + event.message));
     worker.onmessage = ({ data }) => {
@@ -49,12 +55,7 @@ export async function createWorkerProbe(offscreen, clock) {
     else if (data.type === 'unsupported') errors.push(JSON.stringify(data));
     else if (data.type === 'frame') {
       try {
-        const before = presenter.stats().renderDroppedFrames;
         presenter.present(data.frame, data.config, data.timing, data.outputWindow);
-        if (presenter.stats().renderDroppedFrames === before && data.outputWindow) {
-          const skew = data.outputWindow.audioAt - performance.timeOrigin - performance.now();
-          minSkew = Math.min(minSkew, skew); maxSkew = Math.max(maxSkew, skew); draws++;
-        }
       } finally { worker.postMessage({ type: 'frame-ack', frameId: data.frameId }); }
     }
   };

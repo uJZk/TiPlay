@@ -6,11 +6,10 @@ import { createAirPlayAudioDecoder } from './airplay-audio-decoder.js';
 import { MAX_AUDIO_AHEAD_BYTES, MAX_DECODED_PACKET_BYTES } from './audio-buffer-policy.js';
 import { pcmStats, measurePcm } from './audio-pcm-stats.js';
 import { createAudioOutputMapping } from './audio-output-clock.js';
-import { loadSoxrModule, loadSoxrBytes } from './audio-resampler-loader.js';
 
 /** Playback only. Android owns demand-driven car Bluetooth capture and speech playback. */
 export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {},
-  onAudioReference = () => {}, loadResampler = loadSoxrModule, loadResamplerBytes = loadSoxrBytes }) {
+  onAudioReference = () => {} }) {
   let context = null, node = null, ready = null, connection = null, request = null;
   let support = false, enabled = true, voiceRevision = null, voiceState = 'idle', voiceError = null;
   let queuedBytes = 0, capacity = null, audioError = null, disposed = false;
@@ -20,7 +19,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let debugEnabled = false, pcmMetrics = null, workletMetrics = null, reportAt = null;
   let diagnosticRevision = 0;
   let processorErrors = 0, recoveries = 0, processorFailed = false, recoveryAttempts = 0, recoveryTimer = null;
-  let resamplerModule = null, moduleReady = null, lastControlAt = -Infinity;
+  let lastControlAt = -Infinity;
   const outputClock = createAudioOutputMapping(), playoutReferences = new Map();
   const plansByMode = {};
   const encodedReservations = new Map();
@@ -113,24 +112,9 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   }
   function installNode() {
     const installed = new AudioWorkletNode(context, 'tiplay-audio', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
-    let fallbackStarted = false;
-    const fallback = () => {
-      if (fallbackStarted || disposed || node !== installed) return;
-      fallbackStarted = true;
-      void Promise.resolve().then(() => loadResamplerBytes()).then(bytes => {
-        if (disposed || node !== installed) return;
-        const copy = bytes.slice(0); // Retain the cached original for a replacement node.
-        installed.port.postMessage({ resamplerBytes: copy }, [copy]);
-      }).catch(() => {
-        if (disposed || node !== installed) return;
-        audioError = 'Audio resampler could not start.'; notify();
-      });
-    };
     node = installed; installed.connect(context.destination);
     installed.port.onmessage = ({ data }) => {
       if (disposed || node !== installed) return;
-      if (data.resamplerModuleError) { fallback(); return; }
-      if (data.resamplerError) { audioError = 'Audio resampler could not start.'; notify(); return; }
       if (data.consumed && data.generation === playbackGeneration) {
         queuedBytes = Math.max(0, queuedBytes - data.consumed); capacity?.(); capacity = null;
       }
@@ -147,8 +131,6 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       stopStream(); retireNode(); recoverProcessor(); notify();
     };
     installed.port.postMessage({ debug: debugEnabled, diagnosticRevision });
-    try { installed.port.postMessage({ resamplerModule }); }
-    catch (error) { if (error?.name === 'DataCloneError') fallback(); else throw error; }
     lastControlAt = -Infinity; controls(true);
   }
   // Android separates speech from music; Bluetooth state never resets or mutes browser playback.
@@ -269,11 +251,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
         };
       }
       const resumed = context.resume();
-      moduleReady ||= Promise.resolve().then(() => loadResampler()).then(module => {
-        if (!(module instanceof WebAssembly.Module)) throw new Error('Invalid audio resampler module.');
-        resamplerModule = module;
-      }).catch(error => { moduleReady = null; throw error; });
-      ready ??= Promise.all([context.audioWorklet.addModule(new URL('audio-worklet.js', import.meta.url)), moduleReady]).then(() => {
+      ready ??= context.audioWorklet.addModule(new URL('audio-worklet.js', import.meta.url)).then(() => {
         if (disposed) return;
         installNode();
       }).catch(error => { ready = null; throw error; });
@@ -319,6 +297,6 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       notify();
     },
     stop() { clearTimeout(recoveryTimer); recoveryTimer = null; connection = null; stopStream(true, 'stopped'); voiceError = null; voiceState = 'idle'; notify(); },
-    dispose() { disposed = true; this.stop(); retireNode(); packetDecoder.dispose(); if (context) context.onstatechange = null; context?.close().catch(() => {}); context = null; ready = moduleReady = null; },
+    dispose() { disposed = true; this.stop(); retireNode(); packetDecoder.dispose(); if (context) context.onstatechange = null; context?.close().catch(() => {}); context = null; ready = null; },
   };
 }

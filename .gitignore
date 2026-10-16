@@ -48,3 +48,7 @@ release-signing.properties
 
 # Local browser vendor build dependencies
 /scripts/videojs/node_modules/
+
+# Python helper/test caches
+__pycache__/
+*.py[cod]

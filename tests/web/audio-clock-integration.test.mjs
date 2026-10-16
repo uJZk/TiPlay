@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { createBrowserAudio } from '../../site/play/audio.js';
 import { createAudioReferenceTimeline } from '../../site/play/audio-output-clock.js';
 import { createTimedFrames } from '../../site/play/media-timing.js';
@@ -9,7 +8,6 @@ import { constantDelay } from '../../site/play/delay-plan.js';
 
 // Browser scheduling and clocks are controlled; the production worklet and DSP
 // are loaded unchanged and exchange real structured-cloned, transferred records.
-const soxrModule = await WebAssembly.compile(readFileSync(new URL('../../site/play/vendor/soxr/soxr.wasm', import.meta.url)));
 const immediate = () => new Promise(resolve => setImmediate(resolve));
 let Processor, constructingPort;
 const signal = frame => 0.31 * Math.sin(frame * 2 * Math.PI * 997 / 48000)
@@ -87,7 +85,7 @@ async function harness({ devicePpm = 90, outputDelayMs = 80 } = {}) {
     for (const [id, timer] of [...timers]) if (timer.at <= localMs) { timers.delete(id); timer.callback(); }
   }
   const audio = createBrowserAudio({
-    loadResampler: async () => soxrModule, credentials: () => ({ code: 'fixture', session: 'fixture' }),
+    credentials: () => ({ code: 'fixture', session: 'fixture' }),
     onAudioReference: reference => {
       references.push(reference); audioReferences.update(reference);
       for (const consume of referenceConsumers) consume(reference);
@@ -186,9 +184,9 @@ test('production audio transport and real soxr retain raw anchors through clock 
     assert.equal(player.sourceAnchorMs, firstPacket.presentationMs);
     assert.equal(h.nodes[0].processor.clock.localOriginMs, 10000, 'the main-thread boundary removes the large performance epoch once');
     assert.ok(h.nodes[0].processor.contextAnchor.localTimeMs < 20000);
-    assert.ok(player.backend.runtime.instance instanceof WebAssembly.Instance);
-    assert.ok(player.backend.outputFrames > 100000, 'the production WASM processes actual samples');
-    assert.ok(Math.abs(player.slewRatio - 1) > 0.00003, 'production clock refinements reach the variable-rate WASM engine');
+    assert.ok(player.backend.runtime.exports.memory.buffer instanceof ArrayBuffer);
+    assert.ok(player.backend.outputFrames > 100000, 'the production JavaScript engine processes actual samples');
+    assert.ok(Math.abs(player.slewRatio - 1) > 0.00003, 'production clock refinements reach the variable-rate JavaScript engine');
     assert.ok(minimumEnergy > 3, `dynamic PCM minimum block energy ${minimumEnergy}: ${JSON.stringify(worstBlock)}`);
     assert.ok(maximumStep < 0.3, 'packet boundaries and ratio refinements remain continuous');
     assert.ok(h.postedPcm.every(packet => packet.sourceTime === undefined), 'v2 calibration never rewrites raw packets into epoch-valued sourceTime');

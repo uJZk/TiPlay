@@ -69,10 +69,18 @@ authenticated browser audio response, including codec configuration and decrypte
 packets or PCM. Its `browser/audio` attempt/written channels distinguish attempted writes
 from bytes accepted by the socket; they do not capture browser speaker output.
 
-Some browsers reject a compiled WASM Module sent to an AudioWorklet with
-`messageerror`. TiPlay retries initialization once using cached module bytes; it
-keeps the same resampler and clocks. An initialization failure reports
-“Audio resampler could not start.” rather than leaving silent PCM rejection.
+Browser audio uses the bundled pure JavaScript libsoxr backend inside AudioWorklet.
+It requires neither WebAssembly nor JavaScript evaluation permissions. Worklet module
+loading and processor failures surface as audio errors; check processor errors,
+recovery counts and actual nonzero render samples when diagnosing silence.
+
+For uneven dragging with high FPS and unchanged drops, compare `video.frameIntervalP95Ms`,
+`video.frameIntervalMaxMs`, `video.lastDrawAgeMs`, `video.decodeMsP95`, `video.drawMsP95`
+and `control.rttMsP95`. These fields distinguish irregular picture delivery/submission
+from slow serial input requests. `pacingDroppedFrames` counts superseded pending decoded
+pictures; it does not count source/network loss or prove actual panel presentation.
+The bounded status summary prioritizes these fields; per-stream audio retains its own
+separate diagnostic budget.
 
 Resource diagnostics distinguish Android HTTP from iPhone FCUP, preserve upstream status
 and report bounded denial details in Debug. Service diagnostics distinguish missing

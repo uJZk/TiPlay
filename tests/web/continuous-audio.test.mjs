@@ -1,13 +1,34 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { SoxrRuntime } from '../../site/play/streaming-resampler.js';
 import { ContinuousAudio } from '../../site/play/continuous-audio.js';
 import { AudioSourceClock } from '../../site/play/audio-source-clock.js';
 
-const module = await WebAssembly.compile(readFileSync(new URL('../../site/play/vendor/soxr/soxr.wasm', import.meta.url)));
-const runtime = new SoxrRuntime(module);
+const runtime = new SoxrRuntime();
+
+test('production resampling runs without WebAssembly and isolates processor heaps', () => {
+  const saved = globalThis.WebAssembly;
+  let converter;
+  try {
+    globalThis.WebAssembly = undefined;
+    const standalone = new SoxrRuntime();
+    assert.notEqual(standalone.exports.memory.buffer, runtime.exports.memory.buffer);
+    assert.equal(standalone.exports.memory.buffer.byteLength, 16 * 1024 * 1024);
+    converter = standalone.create(44100, 48000, 2);
+    const input = Float32Array.from({ length: 4096 * 2 }, (_, i) => Math.sin(Math.floor(i / 2) * 0.1) * 0.2);
+    const output = new Float32Array(512 * 2);
+    converter.setRatio(44100 / 48000 * 1.0001, 128);
+    const result = converter.process(input, 4096, output);
+    assert.ok(result.produced > 0 && result.consumed > 0);
+    assert.ok(output.slice(0, result.produced * 2).some(value => Math.abs(value) > 0.1));
+    assert.ok(output.every(Number.isFinite));
+  } finally {
+    converter?.dispose();
+    globalThis.WebAssembly = saved;
+  }
+});
+
 const waveform = (frame, rate) => 0.31 * Math.sin(frame * 2 * Math.PI * 997 / rate)
   + 0.13 * Math.sin(frame * 2 * Math.PI * 7919 / rate) + 0.07 * Math.cos(frame * 2 * Math.PI * 137 / rate);
 function pcm(start, frames, rate, channels = 1) {

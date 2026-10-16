@@ -43,6 +43,9 @@ export function createFpsWindow({ now = () => performance.now(), windowMs = 5000
       const fps = duration => duration > 0 ? 1000 / duration : null;
       return {
         currentFps: draws.length,
+        lastDrawAgeMs: latest ? Math.max(0, at - latest.at) : null,
+        frameIntervalP95Ms: sortedSamples.length ? sortedSamples[Math.min(sortedSamples.length - 1, Math.ceil(sortedSamples.length * .95) - 1)].duration : null,
+        frameIntervalMaxMs: sortedSamples.at(-1)?.duration ?? null,
         currentDelta: latest && latest.at > at - 1000 ? latest.offset : null,
         fps90: fps(average(sortedSamples, sampleCount, .05, .95)), fpsLow5: fps(average(sortedSamples, sampleCount, .95, 1)),
         fpsSamples: sampleCount,
@@ -55,7 +58,7 @@ export function createFpsWindow({ now = () => performance.now(), windowMs = 5000
 
 /** Only explicit browser discards count; decoder-internal loss and phone/network loss remain unknown. */
 export function performanceStats(stats = {}) {
-  const counters = ['decodeDroppedFrames', 'scheduledDroppedFrames', 'transferDroppedFrames', 'renderDroppedFrames']
+  const counters = ['decodeDroppedFrames', 'scheduledDroppedFrames', 'transferDroppedFrames', 'renderDroppedFrames', 'pacingDroppedFrames']
     .map(key => stats[key]).filter(Number.isFinite);
   return { ...stats, droppedFrames: counters.length ? counters.reduce((sum, count) => sum + count, 0) : null };
 }

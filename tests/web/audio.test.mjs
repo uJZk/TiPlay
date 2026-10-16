@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { loadTestResampler } from './fixtures/audio-resampler-module.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readAudioRecords } from '../../site/play/audio-protocol.js';
@@ -42,7 +41,7 @@ test('audio mode flags retain buffered/reset flags and notify policy before timi
     assert.equal(records[0].mode, mode); assert.equal(records[0].flags & 3, 3);
   }
   const browser = mockBrowser(); let controller;
-  const events = [], audio = createBrowserAudio({ loadResampler: loadTestResampler, credentials: () => ({ code: '1234', session: 'session' }), onMode: mode => events.push(['mode', mode]), onTiming: () => events.push(['timing']), fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
+  const events = [], audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), onMode: mode => events.push(['mode', mode]), onTiming: () => events.push(['timing']), fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
   try {
     await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
     await new Promise(resolve => setImmediate(resolve));
@@ -57,7 +56,7 @@ test('audio mode flags retain buffered/reset flags and notify policy before timi
 test('empty stream reset is neither played PCM nor a clock fallback sample', async () => {
   const browser = mockBrowser();
   let queued = 0;
-  const audio = createBrowserAudio({ loadResampler: loadTestResampler, credentials: () => ({ code: '1234', session: 'session' }),
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
     onQueued: () => queued++, fetchPhone: async () => ({ ok: true, body: body([record([], { flags: 2 })]) }) });
   try {
     await audio.activate();
@@ -68,28 +67,25 @@ test('empty stream reset is neither played PCM nor a clock fallback sample', asy
   } finally { audio.dispose(); browser.done(); }
 });
 
-function mockBrowser() {
+function mockBrowser({ failFirstModuleLoad = false } = {}) {
+  let moduleLoads = 0;
   const messages = [], contexts = [], sources = [], nodes = [];
   const oldContext = globalThis.AudioContext, oldNode = globalThis.AudioWorkletNode;
   globalThis.AudioContext = class {
-    constructor() { this.state = 'suspended'; this.currentTime = 0; this.audioWorklet = { addModule: async () => {} }; contexts.push(this); }
+    constructor() { this.state = 'suspended'; this.currentTime = 0; this.audioWorklet = { addModule: async () => { if (++moduleLoads === 1 && failFirstModuleLoad) throw new Error('Temporary worklet fetch failure'); } }; contexts.push(this); }
     async resume() { this.state = 'running'; }
     async close() { this.state = 'closed'; }
     createMediaStreamSource() { const source = { connect(node) { this.connected = node; }, disconnect() { this.connected = null; } }; sources.push(source); return source; }
   };
   globalThis.AudioWorkletNode = class { constructor() { this.port = { postMessage: value => messages.push(value) }; nodes.push(this); } connect() {} };
-  return { messages, contexts, sources, nodes, done() { globalThis.AudioContext = oldContext; globalThis.AudioWorkletNode = oldNode; } };
+  return { messages, contexts, sources, nodes, get moduleLoads() { return moduleLoads; }, done() { globalThis.AudioContext = oldContext; globalThis.AudioWorkletNode = oldNode; } };
 }
 
-test('a transient resampler load failure can recover without refreshing a running context', async () => {
+test('a transient worklet load failure can recover without refreshing a running context', async () => {
   for (const retry of ['gesture', 'attach']) {
-    const browser = mockBrowser();
-    let attempts = 0, requests = 0;
+    const browser = mockBrowser({ failFirstModuleLoad: true });
+    let requests = 0;
     const audio = createBrowserAudio({
-      loadResampler: async () => {
-        if (++attempts === 1) throw new Error('Temporary module fetch failure');
-        return loadTestResampler();
-      },
       credentials: () => ({ code: '1234', session: 'session' }),
       fetchPhone: async () => { requests++; return { ok: true, body: new ReadableStream({}) }; },
     });
@@ -97,43 +93,19 @@ test('a transient resampler load failure can recover without refreshing a runnin
       await audio.activate(); await new Promise(resolve => setImmediate(resolve));
       assert.equal(browser.contexts[0].state, 'running');
       assert.equal(browser.nodes.length, 0);
-      assert.match(audio.stats().error, /Temporary module fetch failure/);
+      assert.match(audio.stats().error, /Temporary worklet fetch failure/);
       if (retry === 'gesture') {
         audio.gesture(); await new Promise(resolve => setImmediate(resolve));
       }
       audio.attach(new AbortController().signal, { audio: true });
       await new Promise(resolve => setImmediate(resolve));
-      assert.equal(attempts, 2, `${retry} retries the failed module`);
+      assert.equal(browser.moduleLoads, 2, `${retry} retries the failed module`);
       assert.equal(browser.contexts.length, 1, 'the existing context is reused');
       assert.equal(browser.nodes.length, 1);
       assert.equal(requests, 1, 'the recovered processor starts the audio transport');
       assert.equal(audio.stats().error, null);
     } finally { audio.dispose(); browser.done(); }
   }
-});
-
-test('a worklet that rejects compiled WASM receives cached bytes once and ignores retired replies', async () => {
-  const browser = mockBrowser(), bytes = new Uint8Array([0, 97, 115, 109]).buffer;
-  let loads = 0;
-  const audio = createBrowserAudio({ loadResampler: loadTestResampler,
-    loadResamplerBytes: async () => { loads++; return bytes; }, credentials: () => ({ code: '1234', session: 'test' }) });
-  try {
-    await audio.activate();
-    const port = browser.nodes[0].port, callback = port.onmessage;
-    callback({ data: { resamplerModuleError: true } });
-    callback({ data: { resamplerModuleError: true } });
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(loads, 1);
-    const fallback = browser.messages.filter(message => message.resamplerBytes);
-    assert.equal(fallback.length, 1);
-    assert.notEqual(fallback[0].resamplerBytes, bytes, 'cached bytes must survive transfer for processor recovery');
-    assert.deepEqual(new Uint8Array(fallback[0].resamplerBytes), new Uint8Array(bytes));
-    port.onmessage({ data: { resamplerError: true } });
-    assert.match(audio.stats().error, /resampler could not start/);
-    audio.dispose();
-    callback({ data: { resamplerModuleError: true } });
-    assert.equal(loads, 1);
-  } finally { audio.dispose(); browser.done(); }
 });
 
 test('startup and Bluetooth demand never ask the browser for capture or permissions', async () => {
@@ -144,7 +116,7 @@ test('startup and Bluetooth demand never ask the browser for capture or permissi
     permissions: { query() { prompts++; throw new Error('Unexpected browser permission'); } },
   } });
   const routes = [];
-  const audio = createBrowserAudio({ loadResampler: loadTestResampler, credentials: () => ({ code: '1234', session: 'session' }),
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
     fetchPhone: async route => { routes.push(route); return { ok: true, body: body([]) }; } });
   try {
     audio.start(); await new Promise(resolve => setImmediate(resolve));
@@ -163,7 +135,7 @@ test('startup and Bluetooth demand never ask the browser for capture or permissi
 
 test('Bluetooth route records preserve buffered music, playback credit and the running clock', async () => {
   const browser = mockBrowser(); let controller;
-  const audio = createBrowserAudio({ loadResampler: loadTestResampler, credentials: () => ({ code: '1234', session: 'session' }),
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
     fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
   const route = (revision, muted) => {
     const bytes = record([], { flags: muted ? 16 : 0 }); bytes[5] = 5;
@@ -197,7 +169,7 @@ test('Bluetooth route records preserve buffered music, playback credit and the r
 
 test('Bluetooth state and failures preserve the audio connection while rejecting obsolete status', async () => {
   const browser = mockBrowser(), requests = [];
-  const audio = createBrowserAudio({ loadResampler: loadTestResampler, credentials: () => ({ code: '1234', session: 'session' }),
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
     fetchPhone: async (_, { signal }) => { let controller;
       const response = { ok: true, body: new ReadableStream({ start(value) { controller = value; } }) };
       requests.push({ signal, controller }); return response;
@@ -239,7 +211,7 @@ test('malformed and truncated PCM frames fail before publication', async () => {
 });
 test('speaker credit is isolated across resets and the context clock is anchored once', async () => {
   const browser = mockBrowser(); let controller;
-  const audio = createBrowserAudio({ loadResampler: loadTestResampler, credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
   try {
     await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
     await new Promise(resolve => setImmediate(resolve));
@@ -260,7 +232,7 @@ test('speaker credit is isolated across resets and the context clock is anchored
 
 test('two seconds of buffered music cannot block a following low-rate navigation packet', async () => {
   const browser = mockBrowser(); let controller;
-  const audio = createBrowserAudio({ loadResampler: loadTestResampler, credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
   try {
     await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
     await new Promise(resolve => setImmediate(resolve));

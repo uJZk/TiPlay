@@ -139,18 +139,22 @@ test('late decoded video collapses to the newest due frame without presenting fu
   frames.reset(); assert.equal(items[2].closed, true);
 });
 
-test('explicitly deferred readiness rejects retired scheduler tokens', () => {
-  const shown = [], tokens = [];
-  const frames = createTimedFrames(frame => shown.push(frame), { now: () => 1100, schedule: () => 1, cancel() {}, observe: (_, __, token) => { tokens.push(token); return false; } });
+test('local readiness observations update the plan before drawing and reset releases pending pictures', () => {
+  const shown = [];
+  const frames = createTimedFrames(frame => shown.push(frame), {
+    now: () => 1100, schedule: () => 1, cancel() {},
+    observe() { frames.delay(constantDelay(120)); assert.deepEqual(shown, []); },
+  });
   const first = { close() { this.closed = true; } };
   frames.present(first, {}, 1, 1000);
-  assert.deepEqual(shown, [], 'old delay must not draw before the coordinator responds');
-  frames.delay(constantDelay(60)); assert.deepEqual(shown, []);
-  frames.ready(tokens[0], constantDelay(120)); assert.deepEqual(shown, [], 'new shared delay applies to the pending frame');
-  frames.reset();
-  const second = { close() {} }; frames.present(second, {}, 1, 1040);
-  frames.ready(tokens[0], constantDelay(60)); assert.deepEqual(shown, [], 'old acknowledgement cannot unlock a new configuration');
-  frames.ready(tokens[1], constantDelay(60)); assert.deepEqual(shown, [second]);
+  assert.deepEqual(shown, [], 'the synchronous observation establishes the pending frame target');
+  frames.delay(constantDelay(60));
+  assert.deepEqual(shown, [first]);
+  frames.reset(); shown.length = 0;
+  const second = { closes: 0, close() { this.closes++; } };
+  frames.present(second, {}, 1, 1040);
+  frames.reset(); frames.delay(constantDelay(60));
+  assert.equal(second.closes, 1); assert.deepEqual(shown, []);
 });
 
 test('buffered audio retains a two second burst while live audio remains bounded', () => {

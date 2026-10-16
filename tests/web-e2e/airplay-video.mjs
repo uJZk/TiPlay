@@ -46,7 +46,7 @@ const server = createServer((req, res) => {
     const csp=readFileSync(root+'/index.html','utf8').match(/<meta http-equiv="Content-Security-Policy"[^>]+>/)[0];
     res.end(`${csp}<link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/vendor/videojs/skin.min.css"><link rel="stylesheet" href="/airplay-controls.css"><div id="stage" style="position:relative;width:800px;height:480px"></div>`); return;
   }
-  try { const data = readFileSync(root + path); res.setHeader('Content-Type', ({ '.js':'text/javascript', '.css':'text/css', '.wasm':'application/wasm' })[extname(path)] ?? 'application/octet-stream'); res.end(data); }
+  try { const data = readFileSync(root + path); res.setHeader('Content-Type', ({ '.js':'text/javascript', '.css':'text/css' })[extname(path)] ?? 'application/octet-stream'); res.end(data); }
   catch { res.statusCode = 404; res.end(); }
 });
 await new Promise(r => server.listen(0,'127.0.0.1',r));
