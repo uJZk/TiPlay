@@ -24,7 +24,7 @@ import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
 import { createAirPlayTrustNotification } from './airplay-trust.js';
 import { createBrowserNotice } from './browser-notice.js';
-import { browserDiagnosticEvents } from './browser-diagnostics.js';
+import { PAGE_VERSION, browserDiagnosticEvents } from './browser-diagnostics.js';
 
 const STRINGS = {
   en: {
@@ -146,6 +146,7 @@ const renderReconnect = createReconnectOverlay({
 document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
 for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
 $('stats').setAttribute('aria-label', t('statsLabel'));
+$('page-version').textContent = `TiPlay ${PAGE_VERSION}`;
 
 function loadLink() {
   try {

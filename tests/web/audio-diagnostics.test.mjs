@@ -51,6 +51,48 @@ test('the real worklet reproduces prior buffered starvation and retains audio ac
   }
 });
 
+test('realtime CarPlay media retains its one-second sender lead across a delayed audio clock', () => {
+  const processor = new Processor(), frameMs = 1024 * 1000 / 48000, base = 1792129412763;
+  const senderLeadMs = 1000, audioClockLagMs = 925;
+  processor.port.onmessage({ data: { debug: true, clockBase: base - audioClockLagMs,
+    plans: { video: constantDelay(0), audio: constantDelay(20) } } });
+  let next = 0, nonzero = 0, samples = 0, maximumBytes = 0;
+  for (let block = 0; block < 3000; block++) {
+    const wall = block * 128 / 48;
+    globalThis.currentTime = wall / 1000;
+    while (next * frameMs <= wall) {
+      processor.port.onmessage({ data: { type: 0, mode: 'carplay', epoch: 9, generation: 4,
+        rate: 48000, channels: 2, flags: 0, sequence: next,
+        sourceTime: base + senderLeadMs + next * frameMs,
+        pcm: new Int16Array(2048).fill(8192).buffer } });
+      next++;
+    }
+    const output = [new Float32Array(128), new Float32Array(128)];
+    processor.process([], [output]);
+    maximumBytes = Math.max(maximumBytes, processor.timelines.get(0).bytes);
+    if (wall > 3000) { samples += 128; nonzero += output[0].filter(value => value !== 0).length; }
+  }
+  processor.report();
+  const stats = processor.messages.filter(value => value.diagnostics).at(-1).diagnostics;
+  assert.ok(nonzero / samples > 0.999, 'realtime media must retain the sample until its existing presentation deadline');
+  assert.equal(stats.stream0.capacityPackets, 0, 'the negotiated sender lead must fit without evicting audio before playback');
+  assert.ok(stats.stream0.playedPackets > 0);
+  assert.ok(maximumBytes <= MAX_AUDIO_AHEAD_BYTES);
+  assert.equal(processor.timelines.get(0).buffered, false, 'UDP media retains its realtime overflow policy');
+
+  for (const [type, mode, flags, maximumMs, buffered] of [
+    [0, 'carplay', 1, BUFFERED_AUDIO_WINDOW_MS, true],
+    [1, 'carplay', 0, 1000, false],
+    [6, 'airplay-mirror', 4, 1000, false],
+  ]) {
+    const other = new Processor();
+    other.port.onmessage({ data: { type, mode, epoch: 1, flags, sequence: 0,
+      rate: 48000, channels: 2, sourceTime: base, pcm: new Int16Array(2048).buffer } });
+    assert.equal(other.timelines.get(type).maximumMs, maximumMs);
+    assert.equal(other.timelines.get(type).buffered, buffered);
+  }
+});
+
 test('buffered overflow protects the sample about to play and diagnostics separate all retirement reasons', () => {
   const audio = new PcmTimeline(8000, 1, () => {}, 100, { buffered: true });
   audio.debug(true);

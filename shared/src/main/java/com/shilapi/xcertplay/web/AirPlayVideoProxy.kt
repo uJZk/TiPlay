@@ -136,7 +136,8 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
                     if (status == 206 && !validPartial(range, responseHeaders, null))
                         fail(load, FailureReason.INVALID_RANGE_RESPONSE, status, ResourceRoute.ANDROID_HTTP)
                     val input = BufferedInputStream(RawTraffic.input("iphone/resource/$url/in", connection.inputStream))
-                    if (status == 200 && range == null && isPlaylist(input)) {
+                    // A sender may ignore Range; whole playlists still need rewritten child URLs.
+                    if (status == 200 && isPlaylist(input)) {
                         try {
                             val bytes = readPlaylist(input)
                             val rewritten = rewritePlaylist(url, bytes, forceProxy, route)
@@ -189,7 +190,8 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
                 "Content-Range" to headers.getValue("Content-Range"), "Content-Length" to bytes.size.toString(),
                 "Accept-Ranges" to "bytes"), ByteArrayInputStream(bytes))
         }
-        if (range == null && isPlaylist(BufferedInputStream(ByteArrayInputStream(bytes))))
+        // Return rewritten whole playlists as 200 even when the browser requested a range.
+        if (isPlaylist(BufferedInputStream(ByteArrayInputStream(bytes))))
             return Resource(200, "application/vnd.apple.mpegurl", emptyList(), ByteArrayInputStream(rewritePlaylist(url, bytes, forceProxy, route)))
         // App loaders may ignore Range and return the full 200/0 representation; range it locally once.
         return byteResource(url, bytes, range, headers["Content-Type"])

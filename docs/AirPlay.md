@@ -119,6 +119,10 @@ manifest cache. Local files and `skd` keys are excluded.
 FCUP sharing keys include the requested byte range. Range reaches both Android HTTP and
 the iPhone loader; a validated partial response is passed through once. An FCUP sender that
 returns a full body is sliced locally once; Android HTTP may legally return a full-body 200.
+Complete HLS playlists are an exception: even when requested with Range, they are rewritten
+and returned whole as 200 with an HLS content type. Applying byte offsets from the original
+playlist after rewriting would corrupt it, and extensionless app URLs still require nested
+resources to use the authenticated proxy.
 Upstream denial is retained as a distinct
 resource failure, including its route and status. Signed CDN query parameters are preserved:
 the receiver cannot repair an unavailable or rejected signed source by deleting parameters.

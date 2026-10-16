@@ -9,6 +9,42 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 class AirPlayVideoProxyTest {
+    private val appPlaylist = "#EXTM3U\n#EXT-X-MAP:URI=\"minibili://app/init.mp4\"\n#EXTINF:1,\nminibili://app/segment.m4s\n"
+    private fun assertWholeRewrittenPlaylist(resource: AirPlayVideoProxy.Resource) {
+        assertEquals(200, resource.status)
+        assertEquals("application/vnd.apple.mpegurl", resource.type)
+        assertFalse(resource.headers.any { it.first.equals("Content-Range", true) })
+        val body = resource.body.readBytes().toString(Charsets.UTF_8)
+        assertTrue(body.startsWith("#EXTM3U\n"))
+        assertFalse(body.contains("minibili:"))
+        assertEquals(2, Regex("/resource\\?r=").findAll(body).count())
+    }
+
+    @Test fun fcupWholePlaylistsIgnoreBrowserRangesAndRewriteAppUrlsBeforeReturning200() {
+        for (status in listOf(0, 200)) for (range in listOf("bytes=0-", "bytes=0-15")) {
+            val proxy = AirPlayVideoProxy("minibili://app/root", { url, requested ->
+                assertEquals("minibili://app/root", url)
+                assertEquals(range, requested)
+                ReceiverResource(appPlaylist.toByteArray(), status, null)
+            })
+            try {
+                proxy.open(proxy.rootId, range) { "/resource?r=$it" }!!.use(::assertWholeRewrittenPlaylist)
+            } finally { proxy.close() }
+        }
+    }
+
+    @Test fun androidWholePlaylistsIgnoreBrowserRangesAndRewriteAppUrlsBeforeReturning200() {
+        for (range in listOf("bytes=0-", "bytes=0-15")) {
+            withOrigin(200, mapOf("Content-Type" to "application/octet-stream"), appPlaylist.toByteArray()) { origin, request ->
+                val proxy = AirPlayVideoProxy("$origin/playlist", { _, _ -> null })
+                try {
+                    proxy.open(proxy.rootId, range) { "/resource?r=$it" }!!.use(::assertWholeRewrittenPlaylist)
+                    assertTrue(request.get(2, TimeUnit.SECONDS).contains("Range: $range\r\n", true))
+                } finally { proxy.close() }
+            }
+        }
+    }
+
     /** A real local HTTP exchange exercises Android-route headers without external media requests. */
     private fun withOrigin(status: Int, headers: Map<String, String>, body: ByteArray,
                            test: (String, CompletableFuture<String>) -> Unit) {

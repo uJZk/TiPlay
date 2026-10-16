@@ -76,6 +76,11 @@ Sound-enabled sessions always offer `mainBuffered`; only negotiated type 103 use
 There is no product buffer switch or Android two-minute reservoir. Artwork/song text
 are not requested; playback state/progress/controls remain.
 
+Real-time CarPlay media can also arrive ahead of its RTP playback anchor. Its timestamped
+queue uses the same retention budget as buffered music, while retaining real-time overflow
+handling. Retaining those samples does not delay their scheduled playback; a shorter queue
+can discard them before their playback time arrives.
+
 Type 103 uses authenticated AAC-LC and bounded relay/browser reservoirs. SETRATE
 starts at an RTP anchor, GETANCHOR reads it, rate zero pauses, and FLUSHBUFFERED
 resets output. Compressed preload may survive pause, isolated from retired sessions.

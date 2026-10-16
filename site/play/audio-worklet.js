@@ -41,9 +41,11 @@ class TiPlayAudio extends AudioWorkletProcessor {
         let timeline = this.timelines.get(data.type);
         if (!timeline || timeline.rate !== data.rate || timeline.channels !== data.channels || timeline.epoch !== data.epoch || data.flags & 2) {
           timeline?.clear();
+          // Realtime CarPlay media also arrives ahead of its negotiated playback time.
+          const mediaWindow = data.mode === 'carplay' && data.type === 0;
           timeline = new PcmTimeline(data.rate, data.channels,
             (consumed, reason) => this.credit(consumed, data.generation, reason, data.type),
-            data.flags & 1 ? BUFFERED_AUDIO_WINDOW_MS : 1000, { buffered: Boolean(data.flags & 1) });
+            (data.flags & 1) || mediaWindow ? BUFFERED_AUDIO_WINDOW_MS : 1000, { buffered: Boolean(data.flags & 1) });
           timeline.debug(Boolean(this.diagnostics));
           timeline.epoch = data.epoch; this.timelines.set(data.type, timeline);
         }
