@@ -61,11 +61,11 @@ Runtime identity and Android signing are separate. Never place a signing keystor
 
 ## Signed release
 
-The current stable download is [TiPlay 0.2.15](https://github.com/uJZk/TiPlay/releases/tag/v0.2.15)
-(version code 38), built from `0d3b1d26e6b681d0230a519c4ccdbdbfcb2633df`.
-Its APK SHA-256 is `211c5f1a803921af7ee94e65c0a1091b19426653e4f4ee04c37656b35a49f359`.
-The APK signature matches 0.2.14, its source ZIP matches that commit's `git archive`,
-and both runtime identity files match the pinned inputs used by 0.2.14. The release
+The current stable download is [TiPlay 0.2.16](https://github.com/uJZk/TiPlay/releases/tag/v0.2.16)
+(version code 39), built from `c80faa91ff29f58d07f855c19a51e0b6bfe3a852`.
+Its APK SHA-256 is `4d32a780b33fb9662beaeffa711c6703ffd1ba591afbe31daf08617533394a42`.
+The APK signature matches 0.2.15, its source ZIP matches that commit's `git archive`,
+and both runtime identity files match the pinned inputs used by 0.2.15. The release
 includes the source archive and `SHA256SUMS.txt`. Automated checks passed; physical
 phone/vehicle, system authorization and VPN acceptance remain in [Testing](Testing.md)
 and [Todo](Todo.md).
