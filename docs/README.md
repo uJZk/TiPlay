@@ -20,6 +20,7 @@ Start with the [English README](../README.md) or [简体中文](../README.zh-CN.
 - [Testing](Testing.md) and [Todo](Todo.md): automated checks and pending physical acceptance.
 - [Upstream](Upstream.md): dependencies, provenance and merge policy.
 - [Third-party notices](Third-party-notices.md): credits, licenses and experimental authentication data.
+- [README presentation](Readme-presentation.md): bilingual feature list, screenshots, source notes and verification boundaries.
 - [Contributor instructions](../AGENTS.md), [changes](../CHANGELOG.md) and [security](../SECURITY.md).
 
 Keep one stable page per topic. Filenames start with a capital, use hyphens, and omit dates;

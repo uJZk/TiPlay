@@ -30,6 +30,8 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   provisioned-JDK proxy certificate setup is in [Build](docs/Build.md#managed-cloud-certificate-trust).
 - [Upstream](docs/Upstream.md): merge policy, preserved identifiers, dependency provenance and the [integration review](docs/Upstream.md#integration-review).
 - [Third-party notices](docs/Third-party-notices.md) and [remaining work](docs/Todo.md).
+- [README presentation](docs/Readme-presentation.md): bilingual content decisions,
+  screenshot provenance and documentation-only verification boundaries.
 - [Latest documentation sweep](docs/docs-sweep-2026-10-15/README.md).
 
 ## Checks
