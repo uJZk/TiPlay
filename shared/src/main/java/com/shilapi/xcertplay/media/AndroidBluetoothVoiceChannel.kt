@@ -80,7 +80,9 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
     } }
     override fun stop() { main.post { wanted = null; failure = null; release() } }
     override fun close() { main.post { closed = true; wanted = null; failure = null; release() } }
-    override fun play(id: AudioStreamId, sampleRate: Int, channels: Int, pcm: ByteArray) { mixer.offer(id, sampleRate, channels, pcm) }
+    override fun play(id: AudioStreamId, sampleRate: Int, channels: Int, pcm: ByteArray, discontinuity: Boolean, deadlineNanos: Long) {
+        mixer.offer(id, sampleRate, channels, pcm, discontinuity, deadlineNanos)
+    }
     override fun clear(id: AudioStreamId) { mixer.clear(id) }
 
     private fun permitted() = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
@@ -236,8 +238,10 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
         private fun matches(device: AudioDeviceInfo?, expected: AudioDeviceInfo) = device?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO &&
             (device.id == expected.id || expected.address.isNotEmpty() && device.address == expected.address)
         fun start() { Thread({
+            runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
             var sender: BrowserMicrophone? = null
             var outputThread: Thread? = null
+            var resampler: NativePcmResampler? = null
             try {
                 sender = BrowserMicrophone(config, packetCounters)
                 val rate = 16_000 // Android's SCO resampler also supports narrowband (8 kHz) headsets.
@@ -260,10 +264,15 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
                 val ready = AtomicBoolean(false)
                 val begun = SystemClock.elapsedRealtime()
                 outputThread = Thread({
+                    runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
                     try {
                         val silence = ShortArray(mixer.rate / 50)
+                        var writtenFrames = 0L; var playedFrames = 0L; var previousHead = 0L
                         while (running.get()) {
-                            val samples = if (ready.get()) mixer.next() else silence
+                            val head = audio.playbackHeadPosition.toLong() and 0xffff_ffffL
+                            playedFrames += (head - previousHead) and 0xffff_ffffL; previousHead = head
+                            val queuedNanos = (writtenFrames - playedFrames).coerceAtLeast(0) * 1_000_000_000L / mixer.rate
+                            val samples = if (ready.get()) mixer.next(outputLeadNanos = queuedNanos) else silence
                             var offset = 0
                             while (running.get() && offset < samples.size) {
                                 val count = audio.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
@@ -274,11 +283,12 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
                                     RawTraffic.record("car-bluetooth/sco/pcm16le/rate=${mixer.rate}/out", bytes.array())
                                 }
                                 offset += count
+                                writtenFrames += count
                             }
                         }
                     } catch (_: Exception) { if (running.get()) main.post { if (token == generation) fail("bluetooth-output-failed") } }
                 }, "tiplay-bluetooth-speaker").apply { isDaemon = true; start() }
-                val resampler = VoicePcmResampler(rate, sender.sampleRate)
+                val captureResampler = NativePcmResampler(rate, sender.sampleRate).also { resampler = it }
                 val samples = ShortArray(rate / 50)
                 val recovery = BluetoothMicrophoneRecovery()
                 while (running.get()) {
@@ -310,7 +320,7 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
                         ready.set(true)
                         main.post { if (token == generation && wanted === config && running.get()) state(BluetoothVoiceState("active")) }
                     }
-                    val converted = resampler.convert(if (count == samples.size) samples else samples.copyOf(count))
+                    val converted = captureResampler.convert(if (count == samples.size) samples else samples.copyOf(count))
                     val pcm = ByteArray(converted.size * 2)
                     converted.forEachIndexed { i, sample -> pcm[2 * i] = sample.toByte(); pcm[2 * i + 1] = (sample.toInt() shr 8).toByte() }
                     sender.accept(pcm)
@@ -320,7 +330,7 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
                 running.set(false)
                 runCatching { record?.stop() }; runCatching { track?.stop() }
                 outputThread?.join(1000)
-                record?.release(); track?.release(); sender?.close()
+                record?.release(); track?.release(); sender?.close(); resampler?.close()
                 main.post { workerRetiring = false; tick() }
             }
         }, "tiplay-bluetooth-microphone").apply { isDaemon = true; start() } }

@@ -3,6 +3,7 @@ package com.shilapi.xcertplay
 import android.os.Handler
 import android.os.Looper
 import android.view.Surface
+import android.view.KeyEvent
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
 import com.shilapi.xcertplay.airplay.AirPlayInfoPlist
@@ -76,7 +77,7 @@ class CarPlayHostBrowserLinkTest {
         CarPlayBackgroundSession.clear()
         controllerConstruction.close()
         TeslaBrowserLink.resetForTest()
-        listOf("xcertplay_airplay", "tiplay_browser_link", "tiplay_browser_audio", "tiplay_carplay", "diplay_carplay_dock").forEach {
+        listOf("xcertplay_airplay", "tiplay_browser_link", "tiplay_browser_audio", "tiplay_carplay", "diplay_carplay_dock", "diplay_wheel_map_zoom").forEach {
             activity.getSharedPreferences(it, 0).edit().clear().commit()
         }
     }
@@ -193,6 +194,41 @@ class CarPlayHostBrowserLinkTest {
         useHeadUnitMode(activity)
         val headUnit = sink(1920, 990)
         assertSame(headUnit, engineSink(headUnit))
+    }
+
+    @Test fun phoneModeKeepsTheLifecycleSinkWithoutOpeningNativeAudioOrAmbientLights() {
+        val retained = sink(1182, 920)
+        // A sink constructor used to open native ambient control even though all media bypassed it.
+        assertEquals(0L, AndroidMediaSink::class.java.getDeclaredField("ambientSinkToken")
+            .apply { isAccessible = true }.get(retained))
+        assertNull(AndroidMediaSink::class.java.getDeclaredField("audioManager")
+            .apply { isAccessible = true }.get(retained))
+        assertTrue(engineSink(retained) is BrowserOnlyMediaSink)
+    }
+
+    @Test fun importedNativeDisplaySettingsNeverCreatePhoneOverlaysOrRevealGestures() {
+        AirPlayPersistence.saveBlackCornerRadiusDp(activity, CarPlayBlackCornerOverlay.IPHONE_MASK)
+        AirPlayPersistence.saveTemporarySystemBars(activity, true)
+        for (method in listOf("loadPersistedSettings", "buildContentView")) {
+            activity.javaClass.getDeclaredMethod(method).apply { isAccessible = true }.invoke(activity)
+        }
+        assertNull(get("blackCornerOverlay"))
+        assertEquals(false, get("temporarySystemBarsEnabled"))
+        assertFalse(config(1080, 2200).main.useIphoneCornerMask)
+        assertTrue("Isolation must preserve imported settings", AirPlayPersistence.loadTemporarySystemBars(activity))
+        assertEquals(CarPlayBlackCornerOverlay.IPHONE_MASK, AirPlayPersistence.loadBlackCornerRadiusDp(activity))
+    }
+
+    @Test fun savedNativeMediaRemappingDoesNotConsumePhoneKeyboardEvents() {
+        WheelZoomSettings.setMediaPlayPause(activity, true)
+        WheelZoomSettings.assign(activity, WheelZoomSettings.Role.MEDIA_PLAY_PAUSE, WheelKey(KeyEvent.KEYCODE_F9, 0, "?"))
+        val current = org.mockito.Mockito.mock(CarPlayController::class.java)
+        org.mockito.Mockito.`when`(current.phoneBrowserMode()).thenReturn(true)
+        set("controller", current)
+        set("activeAirPlaySession", org.mockito.Mockito.mock(AirPlaySession::class.java))
+        assertFalse(activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_F9)))
+        assertFalse(activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_F9)))
+        org.mockito.Mockito.verify(current, org.mockito.Mockito.never()).sendMediaButton(org.mockito.ArgumentMatchers.anyInt())
     }
 
     @Test fun aRestartEndsTheBrowsersStreamAtOnce() {

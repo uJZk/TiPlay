@@ -6,6 +6,14 @@ LOCAL_SRC_FILES := linux_i2c_jni.c
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
+LOCAL_MODULE := tiplay_soxr
+LOCAL_SRC_FILES := soxr_jni.c soxr/soxr.c soxr/data-io.c soxr/vr32.c
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/soxr
+LOCAL_CFLAGS := -O3 -DNDEBUG -DSOXR_LIB -ffp-contract=off
+LOCAL_LDLIBS := -lm
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
 LOCAL_MODULE := tiplay_airplay
 LOCAL_SRC_FILES := airplay/fairplay_jni.c airplay/playfair/playfair.c \
     airplay/playfair/hand_garble.c airplay/playfair/modified_md5.c \

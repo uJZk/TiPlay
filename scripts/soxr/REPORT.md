@@ -1,4 +1,4 @@
-# TiPlay libsoxr JavaScript: final engineering report
+# TiPlay libsoxr: JavaScript and Android engineering report
 
 Final artifact SHA-256: `0dda221ebb9979a01840c475caed3d9aee84c436f4a1e91483a868ca5df85777` (364339 bytes). Pinned upstream: chirlu/soxr `945b592b70470e29f917f4de89b4281fbbd540c0`.
 
@@ -65,3 +65,33 @@ Each factory uses 16777216 bytes of fixed heap. Two simultaneous media/navigatio
 The final recipe was executed from a fresh temporary extracted source directory and reproduced the exact shipped SHA-256. Pinned source checksum, compiler/Binaryen URLs and checksums, source patch, static glue and licenses are supplied. [rebuild record](../../tests/bench/soxr/Rebuild.txt) records the final rebuild. Follow the [vendor README](../../site/play/vendor/soxr/README.md) to regenerate using verified toolchains.
 
 Desktop x86_64 Node and Chromium results do not establish performance on Android ARM/old car browsers, especially engines without modern JIT or with throttling. AudioWorklet has a shared render deadline (2.667 ms per 128 frames at 48k), including timeline/mixing/copies; isolated DSP timing cannot certify that whole deadline. Shared-host OS scheduling produced long outliers even for the WASM reference. Detailed CPU timing is measured in Node because AudioWorkletGlobalScope does not guarantee performance.now(). The real browser test demonstrates compatibility, not per-block CPU percentiles. No real car, complete ten-minute hardware drift test, or video smoothness improvement is claimed.
+
+## Android C/JNI reuse
+
+Android SCO playback and capture compile the same pinned, float32-patched vr32/HQ
+C engine directly with the NDK. The checked-in subset is reproduced by
+`prepare-native.py --check`; each stream owns a native handle. It has no JavaScript
+or WASM runtime. The old Kotlin FIR/linear converter is removed. Android's output
+device still has its own clock; this does not port the browser's AudioContext API.
+
+`scripts/test_soxr_native.py` compiles actual host JNI and runs the Gradle-compiled
+Kotlin adapter/mixer. It checks six rate pairs, exact split/whole-packet parity,
+continuous duration without flushing temporary shortages, impulse content offsets,
+alias rejection, ratio calls, independent concurrent handles, invalid/closed-handle
+rejection, PCM bounds and native lookahead deadline preservation. The raw result is
+[Native-jni.txt](../../tests/bench/soxr/Native-jni.txt). Impulse content offsets are
+not startup latency: the unflushed variable-rate filter retains input lookahead.
+
+The surrounding speech queue measures PCM frames, AAC's 1024-frame units and Opus
+TOC/frame counts. Both summed duration and RTP span are bounded to 160 ms, with a
+secondary memory safety cap. Original arrival/presentation leases survive codec
+waiting; stale decoder output cannot borrow a fresh packet's timestamp. PCM carries
+per-frame deadlines corrected for resampler lookahead, and rendering accounts for
+AudioTrack frames already queued. Source gaps, trimming, expiry and underrun use
+5 ms in-place recovery; stream retirement is immediate. Tests separately exercise
+the signal envelope, a blocked shadow MediaCodec, timestamp wrap, variable packet
+lengths, output queue lead and expiry isolation. See [Testing](../../docs/Testing.md#native-sco-resampling-and-continuity).
+
+These checks establish host DSP and software timing behavior. Four-ABI APK assembly
+does not prove physical Android native loading, Bluetooth acoustic quality,
+speaker latency or sustained device-clock drift; those remain device acceptance.

@@ -10,7 +10,7 @@ TiPlay is a GPL-3.0 derivative of [DiPlay by shihabal3amri](https://github.com/s
 | [Video.js](https://github.com/videojs/video.js) | Browser controls/media adapter; [pinned inputs and update procedure](../site/play/vendor/videojs/README.md). |
 | [Mediabunny](https://github.com/Vanilagy/mediabunny) | URL demuxing/WebCodecs, with SoundTouch and hls.js helpers; [provenance/licenses](../site/play/vendor/mediabunny/README.md). |
 | [FDK AAC](https://github.com/mstorsjo/fdk-aac) | Third-party modified AAC-ELD browser fallback; [source, modifications and license](../site/play/vendor/aac-eld/README.md). |
-| [libsoxr](https://github.com/chirlu/soxr) | Browser streaming variable-rate resampler; [source, replaceable JavaScript and build provenance](../site/play/vendor/soxr/README.md). |
+| [libsoxr](https://github.com/chirlu/soxr) | Browser streaming variable-rate resampler and native Android SCO resampling; [browser source/build provenance](../site/play/vendor/soxr/README.md) and [Android C/JNI subset](../shared/src/main/jni/soxr/README.md). |
 | [UxPlay](https://github.com/FDH2/UxPlay) | Ordinary AirPlay protocol reference and native transport-key modules; `ec203121355220dd90278a369eeabb0b8ba4f14a`, [native provenance](../shared/src/main/jni/airplay/README.md). |
 
 Review security, protocol, playback and lifecycle changes since each baseline. Update adopted code, pins, provenance, licenses and validation together. Source ancestry and the runtime identity selected for an APK are separate; see [Build](Build.md#runtime-identity).
@@ -23,6 +23,60 @@ Review security, protocol, playback and lifecycle changes since each baseline. U
 - User-facing names use TiPlay; retain DiPlay in credits, historical records and source comments. Keep numbered upstream issue/PR/commit links on their original repository. Current project links use `https://github.com/uJZk/TiPlay` and `https://ujzk.github.io/TiPlay/`.
 - Preserve phone/browser session, media, permission and connection contracts. Gate retained native behavior and hide its settings. The page is hosted over HTTPS; do not restore APK page assets or a local `/play/` route.
 - Keep TiPlay strings separate and translated in every locale. Browser HEVC, AirPlay and VPN titles intentionally omit experimental suffixes; retain inherited locale text unless explicitly changed.
+
+## Audio fixes with similar symptoms
+
+Upstream [clock drift #788](https://github.com/shihabal3amri/DiPlay/pull/788)
+adjusts Android `AudioTrack` playback rate from a smoothed buffer level; its
+[stale backlog #814](https://github.com/shihabal3amri/DiPlay/pull/814) bounds
+sustained compressed-music congestion. Retain those inherited implementations,
+but do not substitute them for browser audio timing. In phone + browser mode,
+`TeslaBrowserLink.tee` selects `BrowserAudioMediaSink`; browser output uses
+AudioWorklet sample counts, continuous libsoxr rate correction and actual output
+timestamps for video synchronization. The Android controller cannot control that
+output device. The browser implementation costs more CPU and needs sustained
+vehicle verification; similar symptoms alone do not establish interchangeable fixes.
+
+## Integration review
+
+The current review covers merge `f497f7dd` (`16c8c32f` plus upstream
+`1b1ac5f2`, common base `c30d3f0d`) and TiPlay's following browser adaptations.
+The merge changes 118 files: 42 production Kotlin files, eight resource files,
+63 test files, two build files, two inherited documents and one maintenance tool.
+The complete upstream tip is an ancestor of TiPlay; no incoming upstream commit
+was omitted. This proves source inclusion, not that every upstream feature runs
+in the browser product. The incoming range changes no `site/play/` files.
+The merge's remerge diff was also reviewed: production conflicts were confined
+to `CarPlayHostActivity`, `DiPlayActivity` and `CarPlayController`; their TiPlay
+mode, settings-lifecycle and recovery hooks survive alongside upstream additions.
+
+| Area | Effective phone/browser behavior and decision |
+| --- | --- |
+| Music drift and sustained stale backlog (#788, #814) | Android music renderer is bypassed. Keep browser continuous ASRC, bounded queues, output-clock mapping and buffered-stream backpressure; do not run both controllers or copy the native packet-drop policy into ordered music. |
+| Queue policy for music versus calls | Upstream shares a 192-packet hard queue bound, but media rebuffer/clock trim and the 1.5-second sustained-lag guard are music-specific. TiPlay's SCO queue now bounds both summed packet duration and RTP span to 160 ms, using actual PCM/AAC/Opus duration; an independent 256-packet safety cap bounds pathological tiny packets. Drop oldest complete compressed access units, or retain a bounded PCM tail. Preserve original arrival/decode leases; reject expired input/output and PCM at render time using anchored presentation +125 ms, or a 160 ms arrival fallback. Include AudioTrack queued frames and resampler lookahead in deadline accounting. RTP/decoded gaps, trimming and underrun use 5 ms in-place blends. These are software bounds, not an acoustic latency guarantee. |
+| Shared browser/native resampling | SCO playback and microphone capture now build the browser's patched float32 vr32/HQ C engine directly with NDK/JNI. Each stream keeps its own filter/phase state and never flushes on temporary shortage. Remove the old Kotlin FIR/linear converter. This reuses DSP and continuity/recovery principles, not the browser's AudioContext/device-clock mapping; SCO hardware timing remains separate. |
+| Audio thread scheduling (#740) | Shared UDP receive priority already reaches TiPlay. Extend the same guarded audio-priority request to TiPlay's SCO microphone, speaker and speech decoder; leave buffered network prefetch at its normal priority. |
+| Navigation gain (#752) | Native adjustable -20…0 dB gain has no browser setting or output connection. TiPlay already applies a fixed 0.25 amplitude to navigation on SCO. A user-adjustable browser gain is a useful enhancement, not an adopted feature; see Todo. |
+| Audio focus resume (#804), earpiece fallback (#797), microphone source (#770) | These control native Android playback/capture. Browser music and TiPlay's verified HFP/SCO route have separate owners; do not enable loudspeaker fallback or native phone-audio mode for them. |
+| USB framing and device visibility (#744, #793, #830) | `UsbMuxFrameBuffer`, USB host enumeration and controller diagnostics are shared and active for supported transports. Preserve these upstream fixes without a parallel parser. |
+| Startup permissions and cause reporting (#795, #824) | Shared classification remains active. Browser checklist/status notices and continuous retry policy remain TiPlay-owned; the native finite retry budget is gated. |
+| P2P 5 GHz selection and scan pause (#740, #768) | Inherited P2P capability fix is present. TiPlay's current connection draft selects manual hotspot or existing Wi-Fi, so it does not use P2P; scan suspension remains gated to native mode. |
+| Automatic hotspot control and off-report override (#748, #789) | Phone tethering belongs to Android's system controls. Imported native preferences must not start reflection/ADB tethering or override the phone's current AP state; gate both controller and legacy launch paths. |
+| Wheel remapping/double Siri, masks and temporary system bars (#813, #823, #811, #818) | Native service has an early phone-mode bypass; new foreground media remapping and native display hooks also need explicit mode guards. Rectangular browser negotiation remains separate. |
+| Ambient idle behavior and decoded music lighting | Media callbacks bypass native audio, but constructing the retained Android sink previously still opened ambient control. Create that lifecycle sink without an Android audio context in phone mode. |
+| Crash diagnostics and safe own-screen starts (#827) | Keep the shared improvements; they complement process-scoped TiPlay capture and do not replace it. Native settings helpers and maintenance tools stay outside browser navigation. |
+| AirPlay borrowing and URL resources | TiPlay's serial resource fetch, cancellation/seek behavior, admission lease checks and deferred recovery remain intact. The incoming range adds no competing browser resource loader or video scheduler. |
+
+Four boundary gaps were corrected: native sink initialization, automatic hotspot
+control, foreground media remapping and native display hooks. Sink/hotspot startup
+exposure predates this merge; newer upstream ambient-idle/tethering behavior made
+that exposure more consequential. Foreground media remapping and the native
+display hooks arrived in this merge. These are conditional problems with restored
+or retained settings, not evidence that they caused reported vehicle stutter.
+Existing source tests and focused phone-mode regression cases cover the guards;
+physical scheduling and interoperability acceptance remain open. Keep future
+reviews on this stable record and distinguish source ancestry, reachable code,
+equivalent TiPlay behavior and useful features still awaiting adaptation.
 
 ## DiPlay merge procedure
 

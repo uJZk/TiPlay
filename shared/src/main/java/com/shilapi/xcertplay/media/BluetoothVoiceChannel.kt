@@ -8,7 +8,7 @@ import java.io.Closeable
 interface BluetoothVoiceChannel : Closeable {
     fun start(config: MicrophoneConfig)
     fun stop()
-    fun play(id: AudioStreamId, sampleRate: Int, channels: Int, pcm: ByteArray)
+    fun play(id: AudioStreamId, sampleRate: Int, channels: Int, pcm: ByteArray, discontinuity: Boolean = false, deadlineNanos: Long = Long.MAX_VALUE)
     fun clear(id: AudioStreamId)
 }
 

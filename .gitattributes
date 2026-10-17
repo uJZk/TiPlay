@@ -8,3 +8,8 @@ site/play/vendor/aac-eld/MODIFICATIONS.txt -text -whitespace
 # Preserve the reproducible generated JavaScript and the exact corresponding source patch.
 site/play/vendor/soxr/soxr.asm.js -text -whitespace linguist-generated=true
 site/play/vendor/soxr/source/tiplay.patch text eol=lf -whitespace
+# Preserve generated native libsoxr sources byte-for-byte with the same archive/patch.
+shared/src/main/jni/soxr/*.c text eol=lf -whitespace linguist-vendored=true
+shared/src/main/jni/soxr/*.h text eol=lf -whitespace linguist-vendored=true
+shared/src/main/jni/soxr/COPYING.LGPL text eol=lf -whitespace
+shared/src/main/jni/soxr/LICENCE text eol=lf -whitespace

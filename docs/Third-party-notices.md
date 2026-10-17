@@ -85,7 +85,10 @@ The maneuver PNGs under `shared/src/main/assets/byd-hud-icons` were imported fro
   typed JavaScript generated with Binaryen). Its complete source,
   licenses and pinned build provenance are under
   [vendor/soxr](../site/play/vendor/soxr/README.md); the source tree also includes
-  the adapter and reproducible rebuild script. Keep those materials with binary
+  the adapter and reproducible rebuild script. Android SCO playback/capture uses
+  the same patched C engine directly through JNI; its generated native sources
+  and licenses are in [native libsoxr](../shared/src/main/jni/soxr/README.md).
+  No JS or WASM runtime is used by that Android library. Keep those materials with binary
   distributions so users can rebuild and replace the library.
 - AAC-ELD software fallback: a third-party modified, ELD-only asm.js build derived
   from Fraunhofer FDK AAC Codec Library for Android. It retains the Fraunhofer

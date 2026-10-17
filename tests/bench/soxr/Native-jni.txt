@@ -1,0 +1,17 @@
+patching file src/data-io.c
+patching file src/vr32.c
+Native sources match the browser source archive, patch and configuration.
+rate=8000->48000 frames=46560 packet-parity=exact
+filter-content-offset-ms=-0.010416666666666666
+rate=16000->48000 frames=47280 packet-parity=exact
+filter-content-offset-ms=-0.010416666666666666
+rate=48000->16000 frames=15800 packet-parity=exact
+filter-content-offset-ms=0.4092153138332595
+rate=48000->24000 frames=23700 packet-parity=exact
+filter-content-offset-ms=0.16146065824291136
+rate=44100->48000 frames=47739 packet-parity=exact
+filter-content-offset-ms=-0.00474793951105094
+rate=96000->48000 frames=47700 packet-parity=exact
+filter-content-offset-ms=0.08073032912145568
+alias-energy-ratio=0.0
+Native libsoxr/Kotlin packet, DSP, lifecycle and concurrency checks passed

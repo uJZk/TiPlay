@@ -38,6 +38,8 @@ jobs:
           -Pkotlin.compiler.execution.strategy=in-process
           '-Dorg.gradle.jvmargs=-Xmx1280m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8'
           -I gradle/ci-memory.init.gradle
+      - name: Native libsoxr source, JNI and streaming DSP checks
+        run: python3 scripts/test_soxr_native.py
       - name: Test reports
         if: always()
         uses: actions/upload-artifact@v4

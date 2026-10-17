@@ -1012,11 +1012,11 @@ class CarPlayHostActivity : ComponentActivity() {
         rightHandDrive = AirPlayPersistence.loadRightHandDrive(this)
         hideTopBar = AirPlayPersistence.loadHideTopBar(this)
         hideBottomBar = AirPlayPersistence.loadHideBottomBar(this)
-        temporarySystemBarsEnabled = AirPlayPersistence.loadTemporarySystemBars(this)
+        temporarySystemBarsEnabled = headUnitIntegrations() && AirPlayPersistence.loadTemporarySystemBars(this)
         harmanFullscreenEnabled = AirPlayPersistence.loadHarmanFullscreen(this)
         safeAreaDrawOutside = AirPlayPersistence.loadSafeAreaDrawOutside(this)
         mainDisplayDisableSafeArea = AirPlayPersistence.loadMainDisplayDisableSafeArea(this)
-        blackCornerRadiusDp = AirPlayPersistence.loadBlackCornerRadiusDp(this)
+        blackCornerRadiusDp = if (headUnitIntegrations()) AirPlayPersistence.loadBlackCornerRadiusDp(this) else 0
         blackCornerOverlay?.radiusDp = localCornerRadius()
         if (blackCornerRadiusDp != CarPlayBlackCornerOverlay.IPHONE_MASK) clearIphoneCornerMask()
         locationPermissionAvailable = hasFineLocationPermission()
@@ -1340,7 +1340,7 @@ class CarPlayHostActivity : ComponentActivity() {
             adbNaviMode = null
         }
         if (!menuOpen) gestureFingerCount = AirPlayPersistence.loadSettingsGestureFingers(this)
-        if (!menuOpen) temporarySystemBarsEnabled = AirPlayPersistence.loadTemporarySystemBars(this)
+        if (!menuOpen) temporarySystemBarsEnabled = headUnitIntegrations() && AirPlayPersistence.loadTemporarySystemBars(this)
         settingsGestureHint?.text = settingsGestureHintText()
         ensureClusterPresentation()
         AirPlayPersistence.overlaySettingsListener = { runOnUiThread { applyClusterTurnOverlay() } }
@@ -1742,7 +1742,8 @@ class CarPlayHostActivity : ComponentActivity() {
         // Leave all existing remote/keyboard events completely untouched when the opt-in
         // remap is off. A consumed release still belongs to its original down after toggling.
         val remappedMedia = if (downOrUp &&
-            (WheelZoomSettings.mediaPlayPause(this) || mediaKeyPresses.hasConsumedPress(physicalKey))) mediaKeyPresses.filter(
+            ((headUnitIntegrations() && WheelZoomSettings.mediaPlayPause(this)) ||
+                mediaKeyPresses.hasConsumedPress(physicalKey))) mediaKeyPresses.filter(
             physicalKey, event.action == KeyEvent.ACTION_DOWN, event.repeatCount == 0,
         ) {
             if (activeAirPlaySession == null || inCall(this) ||
@@ -2077,7 +2078,7 @@ class CarPlayHostActivity : ComponentActivity() {
             setOnTouchListener { view, event -> onHostTouch(view, event) }
         }
         root.addView(video, FrameLayout.LayoutParams(-1, -1))
-        blackCornerOverlay = CarPlayBlackCornerOverlay(this).also { overlay ->
+        if (headUnitIntegrations()) blackCornerOverlay = CarPlayBlackCornerOverlay(this).also { overlay ->
             overlay.radiusDp = localCornerRadius()
             root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         }
@@ -3572,10 +3573,10 @@ class CarPlayHostActivity : ComponentActivity() {
         CarPlayDock.save(this, carPlayDock)
         AirPlayPersistence.saveHideTopBar(this, hideTopBar)
         AirPlayPersistence.saveHideBottomBar(this, hideBottomBar)
-        AirPlayPersistence.saveTemporarySystemBars(this, temporarySystemBarsEnabled)
+        if (headUnitIntegrations()) AirPlayPersistence.saveTemporarySystemBars(this, temporarySystemBarsEnabled)
         AirPlayPersistence.saveSafeAreaDrawOutside(this, safeAreaDrawOutside)
         AirPlayPersistence.saveMainDisplayDisableSafeArea(this, mainDisplayDisableSafeArea)
-        AirPlayPersistence.saveBlackCornerRadiusDp(this, blackCornerRadiusDp)
+        if (headUnitIntegrations()) AirPlayPersistence.saveBlackCornerRadiusDp(this, blackCornerRadiusDp)
     }
 
     private fun openAdditionalSettings(category: SettingsCategory) {
@@ -5371,7 +5372,8 @@ class CarPlayHostActivity : ComponentActivity() {
             mediaChannel = AirPlayPersistence.loadMediaAudioChannel(this),
             navigationChannel = AirPlayPersistence.loadNavigationAudioChannel(this),
             navigationAttenuationDb = AirPlayPersistence.loadNavigationAudioAttenuationDb(this),
-            context = this,
+            // BrowserOnlyMediaSink owns audio; retain Android lifecycle callbacks without native audio/lamps.
+            context = if (headUnitIntegrations()) this else null,
             navigationStreamType = navigationStreamType,
             onScreenStreamActiveChanged = { type, active ->
                 onScreenStreamStateChanged(controllerGeneration, type, active)

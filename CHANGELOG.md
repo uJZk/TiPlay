@@ -4,18 +4,21 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
-## 0.2.20
+## 0.2.20-beta.1
 
 - Merge DiPlay through `1b1ac5f2` (0.2.20 and subsequent fixes) with full ancestry. Keep TiPlay branding, application identity, Android phone + browser gates, serial AirPlay resource loading, casting admission and existing audio timing fixes.
-- Define the product version once in Gradle properties. Show **TiPlay 0.2.20** at the bottom of Android Main settings and as a release link in browser settings; remove the playback corner badge. Use TiPlay version code 40 so updates remain newer than 0.2.16.
+- Define the product version once in Gradle properties. Show **TiPlay 0.2.20-beta.1** at the bottom of Android Main settings and as a release link in browser settings; remove the playback corner badge. Use TiPlay version code 40 so updates remain newer than 0.2.16.
 - Use the official Video.js 10 default skin and layout groups, isolate page button CSS, add left/right half-screen double-tap ±10-second seeking with accumulated feedback and accessible seek buttons, and match the casting-end button to the player.
 - Schedule decoded video inside the worker without waiting for a main-thread readiness round trip. Latch the newest eligible frame at display refresh with a deadline fallback, and report frame-interval tails to reveal bursts hidden by average FPS. Preserve encoded dependencies, transfer backpressure, presentation/epoch checks, CarPlay 0 ms and mirror 200 ms caps, and audio 45 ms early / 125 ms late limits.
 - Replace browser libsoxr with self-hosted pure JavaScript, retaining the variable-rate filter and clock correction. Remove the WASM binary, compiled-module transfer/byte fallback loading and WASM CSP exception; include reproducible builds, two independent reviews and DSP/performance measurements.
+- Audit upstream fix reachability and overlapping TiPlay behavior. Isolate native sink initialization, automatic tethering, wheel remapping and display hooks from phone mode even with restored settings; apply upstream audio-thread scheduling to TiPlay's SCO workers. Record useful unadapted features separately in the [integration review](docs/Upstream.md#integration-review).
+- Reuse the browser's pinned/patched libsoxr C engine directly through Android NDK/JNI for SCO playback and microphone resampling, with per-stream state and no JS/WASM runtime. Replace the old Kotlin FIR/linear converter. Blend PCM overflow, underrun/recovery and decoded RTP discontinuities over 5 ms within the existing output frames; retain the 160 ms PCM bound and immediate stream retirement. Add source reproducibility, native DSP/JNI/concurrency checks and signal-envelope regressions. Bound compressed speech duration and RTP span to 160 ms using codec-aware packet lengths. Carry original presentation/arrival deadlines through decoder leases and resampler lookahead, and discard stale PCM before AudioTrack submission with queued output accounted for. Preserve music backpressure and existing latency limits.
 
-Verification: 2,096 shared, 1,734 common and 6 home unit tests; 340 browser unit tests;
+Verification: 2,116 shared, 1,740 common and 6 home unit tests; 340 browser unit tests;
 all required Android lint/debug builds; hosted-browser and compiled-phone E2E,
 MP4/HLS controls/gestures, real CSP AudioWorklet and worker/OffscreenCanvas timing;
-public-source scan, 9 release-draft tests and native AirPlay JNI checks. The pure JS
+public-source scan, 9 release-draft tests, native AirPlay JNI checks and the
+compiled Kotlin/native libsoxr DSP, deadline and lifecycle checks. The pure JS
 engine passed independent DSP/runtime reviews and a byte-identical production rebuild.
 
 Physical iPhone/vehicle smoothness and acoustic/panel latency require device acceptance.

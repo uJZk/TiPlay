@@ -24,6 +24,7 @@ class CarHotspotSetupTest {
     @Before fun reset() {
         context.getSharedPreferences("diplay_car_hotspot", 0).edit().clear().commit()
         context.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
+        useHeadUnitMode(context)
     }
 
     @Test fun freshInstallAndExistingHotspotConfigurationRemainOptedOut() {
@@ -112,6 +113,14 @@ class CarHotspotSetupTest {
         assertEquals("Car hotspot", AirPlayPersistence.loadManualHotspotSsid(context))
         assertEquals("12345678", AirPlayPersistence.loadManualHotspotPassphrase(context))
         assertEquals(WirelessHotspotMode.MANUAL, AirPlayPersistence.loadWirelessHotspotMode(context))
+    }
+
+    @Test fun phoneModeNeverStartsNativeTetheringFromAnImportedChoice() {
+        configureHotspot()
+        CarHotspotSettings.setEnabled(context, true)
+        AirPlayPersistence.saveRunMode(context, com.shilapi.xcertplay.orchestration.CarPlayRunMode.PHONE_BROWSER)
+        assertFalse(eligible())
+        assertTrue(CarHotspotSettings.enabled(context))
     }
 
     private fun eligible() = CarHotspotSetup.shouldStartOnLaunch(context, hasSession = false)

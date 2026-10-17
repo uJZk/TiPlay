@@ -2507,7 +2507,7 @@ class CarPlayController(
     private fun startWirelessHotspot(generation: Int): WirelessHotspotInfo {
         val readyDeadline = System.nanoTime() + WirelessStartupPolicy.HOTSPOT_READY_MILLIS * 1_000_000
         val hotspotMode = config.wirelessHotspotMode
-        if (com.shilapi.xcertplay.network.CarHotspotSettings.shouldEnable(
+        if (config.headUnitIntegrations && com.shilapi.xcertplay.network.CarHotspotSettings.shouldEnable(
                 appContext, config.transport == CarPlayTransport.WIRELESS, hotspotMode,
             )
         ) {
@@ -2531,7 +2531,10 @@ class CarPlayController(
         var pastOffReport = false
         if (hotspotMode == WirelessHotspotMode.MANUAL) {
             val state = com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(appContext)
-            if (com.shilapi.xcertplay.network.CarHotspotSettings.reportedOff(appContext, state)) {
+            val reportedOff = if (config.headUnitIntegrations)
+                com.shilapi.xcertplay.network.CarHotspotSettings.reportedOff(appContext, state)
+            else state == false
+            if (reportedOff) {
                 throw WirelessStartupException(WirelessStartupFailure.HOTSPOT_CONFIGURATION,
                     "The car hotspot is off. Turn it on in the car settings and connect again.")
             }

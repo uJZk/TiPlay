@@ -4,6 +4,7 @@ TiPlay supports Android phone + car browser only. These checks remain open; auto
 
 ## Engineering follow-up
 
+- [ ] Evaluate user-adjustable browser navigation gain from upstream #752. The merged native AudioTrack slider does not affect browser output; TiPlay currently uses fixed 0.25 navigation amplitude on SCO. Adapt the real browser/SCO mixing path and setting semantics together before exposing a control; preserve the existing default and avoid double attenuation. See [upstream integration review](Upstream.md#integration-review).
 - [ ] Run independent `:common:lintDebug`, investigate any remaining permission/API findings against the merged application's permission context, and decide whether to add it to [CI](../.github/workflows/android.yml). The previously named `bondedDevices` access now has a `BLUETOOTH_CONNECT` check; do not assume that old finding persists.
 - [ ] Implement an independent AirPlay video queue and queue controls before advertising feature bit 33. A cached HLS playlist is not a queue. Audio redundancy bits 11/61 remain unadvertised until implemented.
 - [ ] Decide whether the official browser page needs a custom domain; test first load in the target vehicle without a proxy. GitHub Pages hosting alone does not establish reachability.

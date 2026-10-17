@@ -8,11 +8,11 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The current source
-is 0.2.20 (code 40); the code remains above the published TiPlay 0.2.16. Run
+is 0.2.20-beta.1 (code 40); the code remains above the published TiPlay 0.2.16. Run
 `python3 scripts/build_site.py` after changing it to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of this product version.
-Download pages continue to identify the latest published APK until a new release
-is verified. Debug APK metadata retains its diagnostic suffix.
+Download pages identify the latest verified stable APK; beta artifacts are linked
+from GitHub Releases. Debug APK metadata retains its diagnostic suffix.
 
 ### Check the source build
 
@@ -106,6 +106,40 @@ For a local release, provide `DIPLAY_AUTH_ASSETS_DIR` plus `ANDROID_KEYSTORE_PAT
 The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the keystore alias is a `PrivateKeyEntry`; keep passwords in configured secret environment variables. Use SDK Build-Tools `apksigner verify --verbose --print-certs` and `aapt dump badging` on the APK. Check package/version/minimum SDK against the mobile configuration and signing fingerprint against the intended key. Compare both packaged runtime files byte for byte with the selected inputs and reject all extra credential containers, as the workflow does.
 
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
+
+## Beta release
+
+The 0.2.20-beta.1 release uses version code 40 and the same phone application ID,
+`com.ujzk.tiplay`, with the existing release signing identity. The browser product
+version is generated from the same Gradle property. It includes the DiPlay 0.2.20
+merge, official player skin/gestures, bounded live-video refresh pacing and the
+pure JavaScript browser libsoxr backend plus the same C engine compiled directly
+through Android JNI for SCO playback/capture. The [integration review](Upstream.md#integration-review)
+also records restored-setting isolation fixes, SCO thread scheduling and useful
+upstream features still awaiting browser adaptation. Full implementation verification is recorded in
+[Changelog](../CHANGELOG.md); DSP/runtime evidence is in the
+[resampler report](../scripts/soxr/REPORT.md).
+
+The [beta release](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.1)
+contains the signed APK, complete committed source ZIP and `SHA256SUMS.txt`.
+The final APK and source SHA-256 values are recorded in that manifest.
+The APK signing certificate SHA-256 is
+`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`,
+matching 0.2.16; both runtime identity files also match 0.2.16 and the hash-verified
+pinned DiPlay 0.2.18 inputs byte for byte. Package/version/SDK metadata, all four
+native libsoxr ABIs and the Kotlin/JNI classes were verified. The source archive
+is generated from the release's exact target commit; remote attachment digests
+are checked before publication. Stable download links remain on 0.2.16.
+
+The complete source checks passed: 2,116 shared, 1,740 common and six home tests,
+required Android lint/debug builds, native C/JNI streaming DSP and release lint.
+The browser suite has 340 passing tests. SCO duration/span admission and original
+deadline checks now cover decoder stalls, resampler lookahead and AudioTrack
+queue lead; see [Testing](Testing.md#native-sco-resampling-and-continuity).
+Physical iPhone/vehicle audio, sustained JavaScript CPU usage, device-clock drift
+and perceived drag smoothness remain pending in [Testing](Testing.md) and
+[Todo](Todo.md). Temporary signing/runtime inputs stay outside Git and are
+removed after verification.
 
 ## Updating an installed app
 

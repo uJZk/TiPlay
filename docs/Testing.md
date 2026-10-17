@@ -16,6 +16,33 @@ For browser/media changes, use the applicable [Chromium harness](../tests/web-e2
 
 Desktop simulations and codec probes cannot establish Tesla firmware support, iPhone interoperability, autoplay behavior, vehicle sound or sustained performance. Record which checks ran and which physical checks remain.
 
+### Native SCO resampling and continuity
+
+`python3 scripts/soxr/prepare-native.py --check` reproduces Android's C sources
+from the browser archive/patch. After the shared debug build,
+`python3 scripts/test_soxr_native.py` compiles host JNI and exercises the actual
+Kotlin adapter: six sample-rate pairs, exact split/whole-packet output parity,
+temporary shortage without EOF, impulse content offsets, alias rejection,
+native-mixer overflow/recovery, independent concurrent handles and retirement.
+`BluetoothVoiceMixerTest` isolates the 5 ms envelope with an identity test backend;
+the former Kotlin converter's duration/alias checks now cover the real native engine
+in the host check rather than the removed converter. Decoder regressions check RTP
+wrap, distinct RTP/PCM rates and true timestamp gaps. Native assembly targets every
+configured Android ABI; host DSP tests do not establish SCO speaker latency or
+acoustic click-free behavior on the vehicle.
+
+`SpeechAudioQueueTest` covers mixed Opus durations/frame counts, AAC's 1024-frame
+units, short bursts beyond 24 packets, PCM tail clipping, timestamp gaps/wrap,
+original arrival age, absolute presentation deadlines and retired decoder leases.
+The sink tests hold a real shadow MediaCodec inside decoding, advance the clock
+and verify old output is discarded before fresh speech resumes. Mixer tests cover
+playback stalls, AudioTrack queue lead, resampler lookahead and per-stream expiry
+without muting other streams. The software queue/span stays at 160 ms; anchored
+first-sample deadlines retain the browser's 125 ms late allowance, with 160 ms
+arrival-based fallback before an anchor exists. In-place recovery may emit a
+5 ms decay of the last audible sample. Physical SCO/device latency and long
+session clock drift still require [device acceptance](Todo.md#browser-and-carplay-audio).
+
 ## Receiver status and browser notices
 
 Regression checks distinguish receiver preparation, waiting, handshake, readiness,

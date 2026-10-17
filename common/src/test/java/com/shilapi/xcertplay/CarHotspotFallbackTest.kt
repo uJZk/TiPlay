@@ -43,6 +43,7 @@ class CarHotspotFallbackTest {
 
     @Before fun setUp() {
         app.getSharedPreferences("diplay_byd_outputs", 0).edit().clear().commit()
+        app.getSharedPreferences("diplay_car_hotspot", 0).edit().clear().commit()
         CarHotspotSettings.setEnabled(app, true)
         CarHotspotAdbGrantTest.WritePermission.allowed = true
         ApState.enabled = null
@@ -92,6 +93,31 @@ class CarHotspotFallbackTest {
         assertEquals(0, ManualAttachment.starts)
     }
 
+    @Test fun phoneModeDoesNotRunImportedNativeAutomaticHotspotControl() {
+        ApState.enabled = true
+        CarHotspotAdbGrantTest.WritePermission.allowed = false
+        controller(headUnit = false).use { assertEquals(WirelessHotspotBackend.MANUAL_HOTSPOT, start(it).backend) }
+        ApState.enabled = false
+        controller(headUnit = false).use {
+            val error = assertThrows(IOException::class.java) { start(it) }
+            assertTrue(error.message, error.message!!.startsWith("The car hotspot is off"))
+        }
+        assertTrue(CarHotspotSettings.enabled(app))
+        assertEquals(1, ManualAttachment.starts)
+    }
+
+    @Test fun nativeIgnoreOffReportCannotOverrideThePhoneHotspotState() {
+        ApState.enabled = false
+        CarHotspotSettings.setEnabled(app, false)
+        CarHotspotSettings.setOffReportIgnored(app, true)
+        controller(headUnit = false).use {
+            val error = assertThrows(IOException::class.java) { start(it) }
+            assertTrue(error.message, error.message!!.startsWith("The car hotspot is off"))
+        }
+        assertEquals(0, ManualAttachment.starts)
+        assertTrue(CarHotspotSettings.offReportIgnored(app))
+    }
+
     private fun assertStartupFailure(message: String, generation: Int = 0) {
         controller().use { controller ->
             val error = assertThrows(IOException::class.java) { start(controller, generation) }
@@ -107,8 +133,9 @@ class CarHotspotFallbackTest {
         catch (error: InvocationTargetException) { throw error.targetException }
     }
 
-    private fun controller(mode: WirelessHotspotMode = WirelessHotspotMode.MANUAL): CarPlayController = CarPlayController(app,
+    private fun controller(mode: WirelessHotspotMode = WirelessHotspotMode.MANUAL, headUnit: Boolean = true): CarPlayController = CarPlayController(app,
         CarPlayRuntimeConfig(mfiTarget = MfiTarget.LOCAL, transport = CarPlayTransport.WIRELESS,
+            headUnitIntegrations = headUnit,
             wirelessHotspotMode = mode, manualHotspotSsid = "Car hotspot",
             existingWifiSsid = "Pocket", existingWifiPassphrase = "pocket-password",
             manualHotspotPassphrase = "12345678", identification = Iap2IdentificationConfig(

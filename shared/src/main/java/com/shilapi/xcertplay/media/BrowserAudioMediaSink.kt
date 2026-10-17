@@ -20,6 +20,7 @@ class BrowserAudioMediaSink(
     initiallyPaused: Boolean = false,
     private val voiceFactory: BluetoothVoiceFactory? = null,
     private val decoderFactory: (AudioFormat) -> MediaCodec = ::decoder,
+    private val nowNanos: () -> Long = System::nanoTime,
 ) : MediaSink by video, Closeable {
     private val renderers = mutableMapOf<AudioStreamId, Decoder>()
     private val microphoneDemands = linkedMapOf<AudioStreamId, MicrophoneConfig>()
@@ -162,11 +163,13 @@ class BrowserAudioMediaSink(
 
     private inner class Decoder(val id: AudioStreamId, val format: AudioFormat, val timeline: RtpAudioTimeline = RtpAudioTimeline(format.rtpClockRate)) : Closeable {
         private val epoch = routeEpoch
-        private val packets = ArrayBlockingQueue<Pair<ByteArray, Int>>(24)
-        private val order = AudioPacketOrder<Pair<ByteArray, Int>>()
+        private val packets = ArrayBlockingQueue<IncomingAudioPacket>(24)
+        private val order = AudioPacketOrder<IncomingAudioPacket>(nowNanos)
+        private val speechPackets = SpeechAudioQueue(format, timeline, nowNanos)
         @Volatile private var running = true
         private var outputRate = format.sampleRate
         private var outputChannels = format.channels
+        private var nextPcmSample: Double? = null
         val publication = hub.publication(this@BrowserAudioMediaSink)
         private val bluetoothDecode = !paused && voiceActive && microphoneId != null && BluetoothVoicePolicy.allowed(id)
         private val browserForward = !paused && !(voiceHeld && BluetoothVoicePolicy.allowed(id))
@@ -174,15 +177,18 @@ class BrowserAudioMediaSink(
 
         fun offer(rtp: ByteArray, sample: Int) {
             if (!running || rtp.size <= 12) return
-            if (id.type == 103) enqueue(rtp to sample)
+            val packet = IncomingAudioPacket(rtp, sample, nowNanos())
+            if (id.type == 103) enqueue(packet)
             else {
                 val sequence = ((rtp[2].toInt() and 255) shl 8) or (rtp[3].toInt() and 255)
-                synchronized(order) { order.offer(sequence, rtp to sample).forEach(::enqueue) }
+                synchronized(order) { order.offer(sequence, packet).forEach(::enqueue) }
             }
         }
 
-        private fun enqueue(packet: Pair<ByteArray, Int>) {
-            if (id.type == 103) {
+        private fun enqueue(packet: IncomingAudioPacket) {
+            if (bluetoothDecode) {
+                speechPackets.offer(packet)
+            } else if (id.type == 103) {
                 while (running && !packets.offer(packet, 100, TimeUnit.MILLISECONDS)) Unit
             } else if (!packets.offer(packet)) {
                 packets.poll()
@@ -191,6 +197,8 @@ class BrowserAudioMediaSink(
         }
 
         private fun run() {
+            // Apply upstream's audio scheduling fix to TiPlay's SCO decoder, not buffered network prefetch.
+            if (bluetoothDecode) runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
             var codec: MediaCodec? = null
             try {
                 if (browserForward) hub.beginEncodedStream(this@BrowserAudioMediaSink, semanticType(id), browserFormat(format),
@@ -199,12 +207,14 @@ class BrowserAudioMediaSink(
                 val info = MediaCodec.BufferInfo()
                 while (running) {
                     if (id.type != 103) synchronized(order) { order.drain().forEach(::enqueue) }
-                    val packet = packets.poll(10, TimeUnit.MILLISECONDS)
-                    if (packet != null) {
-                        val sample = synchronized(this@BrowserAudioMediaSink) {
-                            if (!running || paused || epoch != routeEpoch) null else timeline.unwrap(packet.second)
+                    val speech = if (bluetoothDecode) speechPackets.poll(10) else null
+                    val packet = if (bluetoothDecode) null else packets.poll(10, TimeUnit.MILLISECONDS)
+                    if (speech != null || packet != null) {
+                        val sample = speech?.sample ?: synchronized(this@BrowserAudioMediaSink) {
+                            if (!running || paused || epoch != routeEpoch) null else timeline.unwrap(requireNotNull(packet).sample)
                         } ?: continue
-                        val payload = packet.first.copyOfRange(12, packet.first.size)
+                        val bytes = speech?.bytes ?: requireNotNull(packet).bytes
+                        val payload = bytes.copyOfRange(12, bytes.size)
                         if (browserForward) {
                             hub.publishEncoded(this@BrowserAudioMediaSink, payload,
                                 sample.toDouble() * 1_000_000.0 / format.rtpClockRate, timeline.presentation(sample),
@@ -212,18 +222,24 @@ class BrowserAudioMediaSink(
                         } else if (!bluetoothDecode) {
                             continue
                         } else if (format.codec == AudioCodecKind.LPCM) {
-                            send(MicrophonePacketizer.toWirePcm(payload), timeline.presentation(sample)) // endian conversion is symmetric
+                            send(MicrophonePacketizer.toWirePcm(payload), sample, requireNotNull(speech)) // endian conversion is symmetric
                         } else {
                             val decoder = codec ?: continue
+                            val lease = requireNotNull(speech)
+                            if (speechPackets.expired(lease)) continue
                             var index = decoder.dequeueInputBuffer(10_000)
-                            while (running && index < 0) { drain(decoder, info); index = decoder.dequeueInputBuffer(10_000) }
+                            while (running && index < 0 && !speechPackets.expired(lease)) {
+                                drain(decoder, info); index = decoder.dequeueInputBuffer(10_000)
+                            }
                             if (!running) break
+                            if (index < 0) continue
                             val input = decoder.getInputBuffer(index) ?: error("decoder input unavailable")
                             input.clear()
                             val data = if (format.codec == AudioCodecKind.AAC_LC) MediaCodecSupport.adtsFrame(payload, format.sampleRate, format.channels) else payload
                             if (data.size > input.remaining()) error("audio packet too large")
                             input.put(data)
                             val timeUs = sample * 1_000_000L / format.rtpClockRate
+                            speechPackets.submitted(lease)
                             decoder.queueInputBuffer(index, 0, data.size, timeUs, 0)
                         }
                     }
@@ -255,21 +271,30 @@ class BrowserAudioMediaSink(
                             buffer.position(info.offset); buffer.limit(info.offset + info.size)
                             val scaled = info.presentationTimeUs * format.rtpClockRate
                             val sample = (scaled + if (scaled < 0) -500_000L else 500_000L) / 1_000_000L
-                            send(ByteArray(info.size).also { buffer.get(it) }, timeline.presentation(sample))
+                            speechPackets.outputLease(sample)?.let { lease ->
+                                send(ByteArray(info.size).also { buffer.get(it) }, sample, lease)
+                            }
                         }
                     } finally { codec.releaseOutputBuffer(index, false) }
                 }
             }
         }
 
-        private fun send(pcm: ByteArray, @Suppress("UNUSED_PARAMETER") presentationNanos: Long?) {
+        private fun send(pcm: ByteArray, sample: Long, lease: SpeechPacket) {
             synchronized(this@BrowserAudioMediaSink) {
                 if (!running || paused || epoch != routeEpoch || !voiceHeld || !voiceActive || microphoneId == null) return
-                if (BluetoothVoicePolicy.allowed(id)) voice?.play(id, outputRate, outputChannels, pcm)
+                val deadline = speechPackets.deadline(lease, sample)
+                val durationNanos = pcm.size.toLong() * 1_000_000_000L / (2 * outputChannels * outputRate)
+                if (deadline + durationNanos <= nowNanos()) return
+                val expected = nextPcmSample
+                val discontinuity = expected != null && kotlin.math.abs(sample - expected) >
+                    maxOf(1.0, format.rtpClockRate.toDouble() / outputRate)
+                nextPcmSample = sample + pcm.size.toDouble() / (2 * outputChannels) * format.rtpClockRate / outputRate
+                if (BluetoothVoicePolicy.allowed(id)) voice?.play(id, outputRate, outputChannels, pcm, discontinuity, deadline)
             }
         }
 
-        @Synchronized override fun close() { running = false; publication.close(); packets.clear(); thread.interrupt() }
+        @Synchronized override fun close() { running = false; publication.close(); packets.clear(); speechPackets.close(); thread.interrupt() }
     }
 
     private companion object {

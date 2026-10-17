@@ -86,6 +86,99 @@ class BrowserAudioMediaSinkTest {
         }
     }
 
+    @Test fun scoMarksRtpGapsForSmoothingWithoutMistakingRateConversionOrWrapForLoss() {
+        val hub = WebAudioHub(); lateinit var voice: Voice
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+            voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } })
+        val id = AudioStreamId(100, "telephony")
+        val format = AudioFormat(AudioCodecKind.LPCM, 48000, 1, 100, "telephony", rtpClockRate = 16000)
+        try {
+            sink.onMicrophoneStarted(id, config("telephony")); voice.ready()
+            sink.onAudioStarted(id, format, -256)
+            // Each packet decodes to 480 frames: exactly 160 RTP ticks, including across uint32 wrap.
+            for ((sequence, sample) in listOf(-256, -96, 64, 384).withIndex()) {
+                val packet = ByteArray(12 + 480 * 2)
+                packet[3] = sequence.toByte()
+                sink.onAudioRtp(id, format, packet, sample)
+            }
+            awaitAudio(voice, 4)
+            assertEquals(listOf(false, false, false, true), voice.discontinuities)
+        } finally { sink.close(); voice.released() }
+    }
+
+    @Test fun scoRejectsOldAnchoredSpeechAndCarriesTheFreshDeadlineToPlayback() {
+        val now = java.util.concurrent.atomic.AtomicLong(1_000_000_000L)
+        val hub = WebAudioHub(); lateinit var voice: Voice
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+            voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } }, nowNanos = now::get)
+        val id = AudioStreamId(100, "telephony")
+        val format = AudioFormat(AudioCodecKind.LPCM, 16000, 1, 100, "telephony")
+        fun offer(sequence: Int, sample: Int, value: Int) {
+            val packet = ByteArray(12 + 320 * 2)
+            packet[3] = sequence.toByte()
+            for (at in 12 until packet.size step 2) { packet[at] = 0; packet[at + 1] = value.toByte() }
+            sink.onAudioRtp(id, format, packet, sample)
+        }
+        try {
+            sink.onMicrophoneStarted(id, config("telephony")); voice.ready()
+            sink.onAudioStarted(id, format, 0)
+            sink.onAudioClock(id, 0, 0L)
+            offer(0, 0, 99) // Entire packet expired before arrival.
+            offer(1, 16000, 11)
+            awaitAudio(voice, 1)
+            assertEquals(1_125_000_000L, voice.deadlines.single())
+            now.set(2_000_000_000L)
+            offer(2, 16320, 88)
+            offer(3, 32000, 33)
+            awaitAudio(voice, 2)
+            assertEquals(listOf(11, 33), voice.audio.map { it.second[0].toInt() and 255 })
+            assertEquals(listOf(false, true), voice.discontinuities)
+            assertEquals(2_125_000_000L, voice.deadlines.last())
+        } finally { sink.close(); voice.released() }
+    }
+
+    @Test fun speechFinishingAfterACodecStallIsDroppedBeforeFreshOutputResumes() {
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val calls = java.util.concurrent.atomic.AtomicInteger()
+        val codec = object : org.robolectric.shadows.ShadowMediaCodec.CodecConfig.Codec {
+            override fun process(input: ByteBuffer, output: ByteBuffer) {
+                val first = calls.getAndIncrement() == 0
+                if (first) { entered.countDown(); check(release.await(5, java.util.concurrent.TimeUnit.SECONDS)) }
+                input.position(input.limit())
+                repeat(960) { output.put((if (first) 99 else 33).toByte()); output.put(0) }
+            }
+        }
+        org.robolectric.shadows.ShadowMediaCodec.addDecoder(android.media.MediaFormat.MIMETYPE_AUDIO_OPUS,
+            org.robolectric.shadows.ShadowMediaCodec.CodecConfig(65536, 65536, codec))
+        val now = java.util.concurrent.atomic.AtomicLong(1_000_000_000L)
+        val hub = WebAudioHub(); lateinit var voice: Voice
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+            voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } }, nowNanos = now::get)
+        val id = AudioStreamId(100, "telephony")
+        val format = AudioFormat(AudioCodecKind.OPUS, 48000, 1, 100, "telephony", 16000)
+        fun offer(sequence: Int, sample: Int) {
+            val packet = ByteArray(12) + byteArrayOf((19 shl 3).toByte(), 0)
+            packet[3] = sequence.toByte()
+            sink.onAudioRtp(id, format, packet, sample)
+        }
+        try {
+            sink.onMicrophoneStarted(id, config("telephony")); voice.ready()
+            sink.onAudioStarted(id, format, 0); sink.onAudioClock(id, 0, now.get())
+            offer(0, 0)
+            assertTrue("Decoder entered the real MediaCodec queue/drain path", entered.await(2, java.util.concurrent.TimeUnit.SECONDS))
+            now.set(1_400_000_000L)
+            offer(1, 6400)
+            release.countDown()
+            awaitAudio(voice, 1)
+            assertEquals(33, voice.audio.single().second[0].toInt() and 255)
+            assertEquals(1_525_000_000L, voice.deadlines.single())
+        } finally {
+            release.countDown(); sink.close(); voice.released()
+            org.robolectric.shadows.ShadowMediaCodec.clearCodecs()
+        }
+    }
+
     @Test fun replacingAnEncodedMusicWorkerRetiresItsBlockedOldPacketWithoutClosingTheReader() {
         val hub = WebAudioHub()
         val sink = BrowserAudioMediaSink(object : MediaSink {}, hub)
@@ -207,11 +300,17 @@ class BrowserAudioMediaSinkTest {
     private class Voice(private val callback: (BluetoothVoiceState) -> Unit) : BluetoothVoiceChannel {
         val starts = mutableListOf<MicrophoneConfig>()
         val audio = java.util.concurrent.CopyOnWriteArrayList<Pair<AudioStreamId, ByteArray>>()
+        val discontinuities = java.util.concurrent.CopyOnWriteArrayList<Boolean>()
+        val deadlines = java.util.concurrent.CopyOnWriteArrayList<Long>()
         var stops = 0; var closes = 0
         override fun start(config: MicrophoneConfig) { starts += config }
         override fun stop() { stops++ }
         override fun close() { closes++ }
-        override fun play(id: AudioStreamId, sampleRate: Int, channels: Int, pcm: ByteArray) { audio += id to pcm }
+        override fun play(id: AudioStreamId, sampleRate: Int, channels: Int, pcm: ByteArray, discontinuity: Boolean, deadlineNanos: Long) {
+            discontinuities += discontinuity
+            deadlines += deadlineNanos
+            audio += id to pcm
+        }
         override fun clear(id: AudioStreamId) {}
         fun ready() { callback(BluetoothVoiceState("active")) }
         fun released() { callback(BluetoothVoiceState("idle", released = true)) }
