@@ -4,6 +4,13 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.2
+
+- Explain in the Android TiPlay mode chooser that Tesla browsers may reject the default private hotspot address and that these modes provide a compatible address. Use the approved Simplified Chinese copy and equivalent translations.
+- Increment the shared Android/browser version to 0.2.20-beta.2 (code 41).
+
+Verification: 340 browser tests passed before the version bump. The remaining local Android checks were stopped at the user's request; this beta uses the existing signed Release APK workflow. Physical phone/vehicle acceptance remains pending.
+
 ## 0.2.20-beta.1
 
 - Merge DiPlay through `1b1ac5f2` (0.2.20 and subsequent fixes) with full ancestry. Keep TiPlay branding, application identity, Android phone + browser gates, serial AirPlay resource loading, casting admission and existing audio timing fixes.

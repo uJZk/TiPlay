@@ -23,5 +23,5 @@
     <string name="settings_selected_iphone">iPhone · %1$s</string>
     <string name="settings_browser_vpn_endpoint_hint">Діапазони адрес: 169.254.0.0/16, порти 1024–65535, наприклад 169.254.111.111:8080. Після зміни вручну введіть нову адресу Android на сторінці браузера й натисніть «Підключити». Залиште поле порожнім для 169.254.111.111; збережений порт залишається.</string>
     <string name="settings_browser_vpn_endpoint_invalid">Введіть адресу з 169.254.0.0/16 та порт (1024–65535), наприклад 169.254.111.111:8080.</string>
-    <string name="settings_browser_hotspot_address_explanation">Виберіть, як TiPlay забезпечує доступ із браузера автомобіля та дозвіл USB. Стандартний режим використовує адресу поточної мережі; інші режими пропонують обхідні варіанти з різними дозволами й обмеженнями.</string>
+    <string name="settings_browser_hotspot_address_explanation">Браузер Tesla може блокувати доступ до стандартної адреси приватної мережі точки доступу Android. Ці режими надають сумісну адресу.</string>
 </resources>

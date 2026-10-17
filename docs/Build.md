@@ -8,7 +8,7 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The current source
-is 0.2.20-beta.1 (code 40); the code remains above the published TiPlay 0.2.16. Run
+is 0.2.20-beta.2 (code 41); the code remains above the published TiPlay 0.2.16. Run
 `python3 scripts/build_site.py` after changing it to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of this product version.
 Download pages identify the latest verified stable APK; beta artifacts are linked
@@ -108,6 +108,14 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
 ## Beta release
+
+The current beta is **0.2.20-beta.2** (version code 41). It adds the approved
+Tesla hotspot-address explanation to the Android TiPlay mode chooser in every
+supported language. It uses the existing signed Release APK workflow and the
+same application/signing identity as beta.1. Additional local Android validation
+was skipped at the user's request; 340 browser tests had passed before the version
+bump. See [Changelog](../CHANGELOG.md) for this release's scope. The beta.1 evidence
+below describes that previous release.
 
 The 0.2.20-beta.1 release uses version code 40 and the same phone application ID,
 `com.ujzk.tiplay`, with the existing release signing identity. The browser product

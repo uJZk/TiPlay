@@ -23,5 +23,5 @@
     <string name="settings_selected_iphone">iPhone · %1$s</string>
     <string name="settings_browser_vpn_endpoint_hint">نطاق العناوين 169.254.0.0/16، والمنافذ 1024–65535، مثل 169.254.111.111:8080. بعد التغيير، أدخل عنوان أندرويد الجديد يدويًا في صفحة المتصفح ثم اضغط اتصال. اتركه فارغًا لاستخدام 169.254.111.111 مع الاحتفاظ بالمنفذ المحفوظ.</string>
     <string name="settings_browser_vpn_endpoint_invalid">أدخل عنوانًا ضمن 169.254.0.0/16 ومنفذًا (1024–65535)، مثل 169.254.111.111:8080.</string>
-    <string name="settings_browser_hotspot_address_explanation">اختر كيف يتيح TiPlay الوصول من متصفح السيارة ويتعامل مع إذن USB. يستخدم الوضع القياسي عنوان الشبكة الحالي؛ توفر الأوضاع الأخرى حلولاً بصلاحيات وقيود مختلفة.</string>
+    <string name="settings_browser_hotspot_address_explanation">قد يمنع متصفح تسلا الوصول إلى عنوان الشبكة الخاصة الافتراضي لنقطة اتصال أندرويد. توفر هذه الأوضاع عنوانًا متوافقًا.</string>
 </resources>

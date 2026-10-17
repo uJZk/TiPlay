@@ -286,6 +286,7 @@ internal class HotspotExtraAddressCard(
             val padding = TiPlayNativeUi(activity).dp(24)
             setPadding(padding, padding / 2, padding, 0)
             addView(TiPlayNativeUi(activity).label(activity.getString(R.string.settings_browser_hotspot_address_repair), heading = true))
+            addView(note(activity.getString(R.string.settings_browser_hotspot_address_explanation)))
         }
         val dialog = AlertDialog.Builder(activity)
             .setCustomTitle(body)

@@ -23,5 +23,5 @@
     <string name="settings_selected_iphone">iPhone · %1$s</string>
     <string name="settings_browser_vpn_endpoint_hint">169.254.0.0/16; port 1024–65535. Leave the address blank for the default. After changing it, manually update the Android address in the browser and tap Connect.</string>
     <string name="settings_browser_vpn_endpoint_invalid">Enter an address in 169.254.0.0/16 and a port (1024–65535), for example 169.254.111.111:8080.</string>
-    <string name="settings_browser_hotspot_address_explanation">Choose how TiPlay supports access from the car browser and USB permission handling. Standard uses the current network address; other modes offer address workarounds with different permissions and limits.</string>
+    <string name="settings_browser_hotspot_address_explanation">Tesla browsers may block access to the default private network address of an Android hotspot. These modes provide a compatible address.</string>
 </resources>
