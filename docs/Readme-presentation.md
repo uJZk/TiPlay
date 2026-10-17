@@ -6,12 +6,14 @@ The English and Simplified Chinese root READMEs share the same structure:
 overview, feature list, screenshots, installation, usage, help, contributing and
 license credits. Edit both languages together.
 
-The feature list prioritizes browser location with coordinate-system detection
-and conditional GCJ-02 → WGS84 conversion, resilience to network jitter, and
-browser-side audio/video decoding without an extra transcoding stage. USB and
-wireless CarPlay, browser touch control, adaptive display and audio/call support
-complete the list. Implementation references are [Geolocation](geolocation.md)
-and [Browser](Browser.md).
+The feature list starts with USB/wireless CarPlay, followed by AirPlay screen
+mirroring, photos and compatible unprotected media. Browser location with
+coordinate-system detection and conditional GCJ-02 → WGS84 conversion,
+resilience to network jitter, browser-side audio/video decoding without an extra
+transcoding stage, and adaptive display complete the list. Browser touch control
+and music/calls/Siri are not separate feature-list entries; their usage guidance
+remains in the README. Implementation references are [Geolocation](geolocation.md),
+[Browser](Browser.md) and [AirPlay](AirPlay.md).
 
 Credits retain DiPlay/xcertplay receiver lineage and link component license
 notices. The README has no separate upstream-components list or UI-origin
@@ -25,7 +27,7 @@ tests or assert compatibility with every vehicle/browser combination.
 
 ## Screenshot sources
 
-Four presentation PNGs live in `site/assets/screenshots/`:
+Six presentation PNGs live in `site/assets/screenshots/`:
 
 | Image | Presentation |
 | --- | --- |
@@ -33,22 +35,37 @@ Four presentation PNGs live in `site/assets/screenshots/`:
 | `android-settings.png` | Advanced settings |
 | `browser-connect.png` | Actual browser connection page |
 | `browser-carplay.png` | Attributed illustrative CarPlay composite |
+| `browser-airplay-mirror.png` | iPhone screen reference, without phone hardware frame |
+| `browser-airplay-cast.png` | Big Buck Bunny still with actual AirPlay playback controls |
 
 Android images use actual product Views rendered with Robolectric. Their phone
 frames and status bars are presentation artwork. Browser windows show the
 official player address, `https://ujzk.github.io/TiPlay/`. The CarPlay reference
-fills a 1920 × 1080 content area at its original pixel size, retaining the source
-interface's small corner shapes.
+is scaled to an 854 × 480 (480p) content area, retaining the source interface’s
+small corner shapes. All four browser images share this content resolution and
+a final size of 940 × 602 including the window frame/background. The connection
+page uses capture-only zoom of approximately 61% to show its complete form.
+The CarPlay and AirPlay images have no added demo or attribution text overlays;
+credits and illustrative status remain in the READMEs and source notes.
+
+AirPlay examples use an online iPhone screen reference and a single Big Buck Bunny
+still. The mirror has no phone hardware frame; both examples retain the browser
+window presentation. They are identified as demonstrations in the README and
+source note, without added demo text on the images. See the
+[AirPlay source note](../site/assets/screenshots/AirPlay-sources.md).
 
 Keep the [Android source note](../site/assets/screenshots/Android-sources.md),
-[browser source note](../site/assets/screenshots/Browser-sources.md), composite
-label and image descriptions consistent when replacing artwork. These images
+[browser source note](../site/assets/screenshots/Browser-sources.md) and image
+descriptions consistent when replacing artwork. These images
 are not evidence of a live TiPlay vehicle session.
 
 ## Verification and maintenance
 
 The README-only update passed local Markdown file/anchor and image-dimension
 checks, whitespace checks, site generation/assembly and all four site tests.
+The assembled site also preserves all six screenshot files byte for byte.
+The site tests initially hit a sandbox child-process restriction (`EPERM`);
+the unchanged tests passed when rerun with the required execution permissions.
 The earlier browser suite passed 340 tests. Full Android checks were stopped
 and waived by the maintainer for this documentation-only change; no completed
 Android CI result is claimed for this update.
@@ -57,3 +74,9 @@ No application code, build configuration or runtime behavior changed. Future
 README edits should retain the approved feature priorities, update both
 languages and verify image/source links. Screenshot assets use the existing
 GitHub Pages publication path; pushing them to `main` triggers that workflow.
+
+The GitHub repository description remains unchanged: the integration returned
+HTTP 403 (`Resource not accessible by integration`) when updating repository
+metadata. An owner or a token with repository administration access can set it to:
+
+> CarPlay and AirPlay in your car’s browser, powered by an Android phone. USB and wireless CarPlay, screen mirroring, photos and media playback.

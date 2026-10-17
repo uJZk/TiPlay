@@ -22,13 +22,12 @@ TiPlay 让安卓手机接收 iPhone 的 CarPlay 会话。iPhone 通过 USB 或�
 
 ## 功能列表
 
+- **USB 与无线 CarPlay**：支持数据线连接或无线连接 iPhone 与安卓手机。
+- **AirPlay**：在浏览器中进行屏幕镜像、查看照片和播放兼容的非 DRM 媒体。
 - **车机定位协同**：获取车载浏览器定位，自动判别坐标系，按需将 GCJ-02 还原为 WGS84，再转发给 iPhone。
 - **音视频抗网络波动**：网页端通过有界缓冲、时钟同步与连续音频重采样，减轻网络抖动对播放流畅度和音画同步的影响。
 - **网页端直接解码音视频**：浏览器直接解码 CarPlay 音视频，无需二次转码。
-- **USB 与无线 CarPlay**：支持数据线连接或无线连接 iPhone 与安卓手机。
-- **浏览器触控**：直接在车载浏览器中操作 CarPlay。
 - **画面自适应**：随浏览器窗口调整画面尺寸，自动选择 HEVC 或 H.264。
-- **音乐、通话与 Siri**：浏览器播放音乐，汽车蓝牙处理通话与 Siri。
 
 ## 界面展示
 
@@ -38,9 +37,15 @@ TiPlay 让安卓手机接收 iPhone 的 CarPlay 会话。iPhone 通过 USB 或�
 
 | 网页端 · 配对连接 | 网页端 · CarPlay 示意 |
 | :---: | :---: |
-| ![正式播放器地址下的 TiPlay 配对页，带浏览器窗口外框](site/assets/screenshots/browser-connect.png) | ![铺满浏览器内容区的高清 CarPlay 参考画面](site/assets/screenshots/browser-carplay.png) |
+| ![正式播放器地址下的 TiPlay 配对页，带浏览器窗口外框](site/assets/screenshots/browser-connect.png) | ![铺满 480p 浏览器内容区的 CarPlay 参考画面](site/assets/screenshots/browser-carplay.png) |
 
-安卓图由应用的实际界面渲染，模拟正常使用状态。网页连接页使用 Chromium 截取；CarPlay 图引用 LIVI 素材制作，是**合成示意图**，有效画面为 1920 × 1080，边到边铺满内容区。外框与安卓状态栏为展示装饰。这些图片不代表实车连接验证。[安卓图来源](site/assets/screenshots/Android-sources.md) · [网页图来源](site/assets/screenshots/Browser-sources.md)。
+| 网页端 · AirPlay 镜像 | 网页端 · AirPlay 媒体投屏 |
+| :---: | :---: |
+| ![TiPlay 浏览器中的 iPhone 屏幕镜像演示](site/assets/screenshots/browser-airplay-mirror.png) | ![Big Buck Bunny 单帧与 TiPlay AirPlay 媒体播放控件](site/assets/screenshots/browser-airplay-cast.png) |
+
+安卓图由应用的实际界面渲染，模拟正常使用状态。网页连接页使用 Chromium 截取；CarPlay 图引用 LIVI 素材制作，是**合成示意图**，有效画面为 854 × 480（480p），边到边铺满内容区。外框与安卓状态栏为展示装饰。这些图片不代表实车连接验证。[安卓图来源](site/assets/screenshots/Android-sources.md) · [网页图来源](site/assets/screenshots/Browser-sources.md)。
+
+AirPlay 镜像图引用 iPhone 屏幕截图，媒体投屏图使用《Big Buck Bunny》单帧与 TiPlay 实际播放控件；两张均为演示。[AirPlay 图来源](site/assets/screenshots/AirPlay-sources.md)。
 
 ## 安装与连接
 

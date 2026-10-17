@@ -22,13 +22,12 @@ The supported product is **Android phone + car browser**. Native Android head un
 
 ## Features
 
+- **USB and wireless CarPlay** — connect the iPhone to the Android phone by cable or wirelessly.
+- **AirPlay** — mirror the screen, show photos and play compatible unprotected media in the browser.
 - **Car-browser location for navigation** — obtain location from the car browser, automatically identify its coordinate system and convert GCJ-02 to WGS84 when needed before forwarding it to the iPhone.
 - **Resilient browser playback** — bounded buffering, clock synchronization and continuous audio resampling help absorb network jitter and keep audio/video in sync.
 - **Direct audio/video decoding in the browser** — decode CarPlay audio/video directly in the browser, without an extra transcoding stage.
-- **USB and wireless CarPlay** — connect the iPhone to the Android phone by cable or wirelessly.
-- **Browser touch control** — operate CarPlay from the car’s browser.
 - **Adaptive display** — adjust to the browser window and automatically select HEVC or H.264.
-- **Music, calls and Siri** — play music in the browser and use the car’s Bluetooth for calls and Siri.
 
 ## Screenshots
 
@@ -38,9 +37,15 @@ The supported product is **Android phone + car browser**. Native Android head un
 
 | Browser · Pair and connect | Browser · CarPlay illustration |
 | :---: | :---: |
-| ![TiPlay pairing page at the official player address, inside a browser window](site/assets/screenshots/browser-connect.png) | ![High-resolution CarPlay reference filling the browser content area](site/assets/screenshots/browser-carplay.png) |
+| ![TiPlay pairing page at the official player address, inside a browser window](site/assets/screenshots/browser-connect.png) | ![CarPlay reference filling the 480p browser content area](site/assets/screenshots/browser-carplay.png) |
 
-The Android images render the actual app views in a simulated normal-use state. The browser connection page is captured in Chromium; the CarPlay view is an **illustrative composite** using a LIVI reference, with a 1920 × 1080 picture filling the content area. Frames and the Android status bar are presentation artwork. These images do not document a live vehicle test. [Android image sources](site/assets/screenshots/Android-sources.md) · [Browser image sources](site/assets/screenshots/Browser-sources.md).
+| Browser · AirPlay mirroring | Browser · AirPlay media casting |
+| :---: | :---: |
+| ![iPhone screen mirroring demonstration in the TiPlay browser](site/assets/screenshots/browser-airplay-mirror.png) | ![Big Buck Bunny still with TiPlay AirPlay media playback controls](site/assets/screenshots/browser-airplay-cast.png) |
+
+The Android images render the actual app views in a simulated normal-use state. The browser connection page is captured in Chromium; the CarPlay view is an **illustrative composite** using a LIVI reference, with an 854 × 480 (480p) picture filling the content area. Frames and the Android status bar are presentation artwork. These images do not document a live vehicle test. [Android image sources](site/assets/screenshots/Android-sources.md) · [Browser image sources](site/assets/screenshots/Browser-sources.md).
+
+The AirPlay examples use an attributed iPhone screen reference and a single *Big Buck Bunny* still with TiPlay’s actual playback controls. Both are demonstrations. [AirPlay image sources](site/assets/screenshots/AirPlay-sources.md).
 
 ## Installation
 
