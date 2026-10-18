@@ -42,19 +42,28 @@ class SettingsBackupServer(
     /** The page that asks for the typed code, or null when the address cannot be typed. */
     private val codePage: ByteArray? = null,
 ) {
-    private var server: ServerSocket? = null
-    private var thread: Thread? = null
-    private var connections: ExecutorService? = null
-    private val open: MutableSet<Socket> = Collections.newSetFromMap(ConcurrentHashMap())
+    private class Run(val server: ServerSocket, val endpoint: SettingsBackupEndpoint, val connections: ExecutorService) {
+        val open: MutableSet<Socket> = Collections.newSetFromMap(ConcurrentHashMap())
+        lateinit var thread: Thread
+        @Volatile var closed = false
+        @Volatile var wrongCodes = 0
+
+        @Synchronized fun close() {
+            if (closed) return
+            closed = true
+            runCatching { server.close() }
+            connections.shutdown()
+            // Registration precedes dispatch; accept racing with close checks closed and retires itself.
+            for (socket in open) runCatching { socket.close() }
+        }
+    }
+    private val lifecycle = Any()
+    @Volatile private var current: Run? = null
     private val answering = Any()
-    private var token: String = ""
-    private var code: String = ""
-    @Volatile private var wrongCodes = 0
-    @Volatile private var closed = true
     /** Where the typed code leads on the page, for example "#report". */
     @Volatile var landing = ""
     /** False once too many wrong codes were typed. The link in the QR code keeps working. */
-    val codeEntryOpen: Boolean get() = codePage != null && wrongCodes < MAX_WRONG_CODES
+    val codeEntryOpen: Boolean get() = codePage != null && (current?.wrongCodes ?: 0) < MAX_WRONG_CODES
     /** Called on a connection thread when the last allowed wrong code was typed. */
     var onCodeEntryClosed: (() -> Unit)? = null
     var onImported: ((SettingsImportOutcome) -> Unit)? = null
@@ -81,73 +90,104 @@ class SettingsBackupServer(
     }
 
     fun start(): SettingsBackupEndpoint? {
+        while (true) {
+            val previous = current
+            if (previous != null) {
+                if (!previous.closed) return previous.endpoint
+                retire(previous)
+            }
+            synchronized(lifecycle) {
+                if (current === previous) return startLocked()
+            }
+        }
+    }
+
+    private fun startLocked(): SettingsBackupEndpoint? {
         // A typed address is worth keeping the same: the browser remembers it, and next time only the
         // code has to be typed. The link in the QR code does not care which port it carries.
         val bound = (if (codePage != null) listen(typedPort) else null) ?: listen(0) ?: return null
         val random = ByteArray(8)
         SecureRandom().nextBytes(random)
-        token = random.joinToString("") { "%02x".format(it) }
+        val token = random.joinToString("") { "%02x".format(it) }
         // Not String.format: in some locales it writes other digits than the ones a keyboard types.
-        code = SecureRandom().nextInt(CODE_SPACE).toString().padStart(CODE_DIGITS, '0')
-        wrongCodes = 0
-        server = bound
-        connections = ThreadPoolExecutor(0, MAX_CONNECTIONS, 30L, TimeUnit.SECONDS, SynchronousQueue()) { task ->
+        val code = SecureRandom().nextInt(CODE_SPACE).toString().padStart(CODE_DIGITS, '0')
+        val connections = ThreadPoolExecutor(0, MAX_CONNECTIONS, 30L, TimeUnit.SECONDS, SynchronousQueue()) { task ->
             Thread(task, "settings-backup-connection").apply { isDaemon = true }
         }
-        closed = false
-        thread = Thread({ loop() }, "settings-backup").apply { isDaemon = true; start() }
-        return SettingsBackupEndpoint(bound.localPort, token, if (codePage != null) code else "")
+        val endpoint = SettingsBackupEndpoint(bound.localPort, token, if (codePage != null) code else "")
+        val run = Run(bound, endpoint, connections)
+        run.thread = Thread({ loop(run) }, "settings-backup").apply { isDaemon = true }
+        current = run
+        run.thread.start()
+        return endpoint
     }
 
     fun stop() {
-        closed = true
-        runCatching { server?.close() }
-        server = null
-        thread = null
-        connections?.shutdown()
-        connections = null
-        // A connection still waiting for its request would otherwise outlive the page by its timeout.
-        // Walked in place: connection threads drop their own entry at any moment, and a copy taken
-        // with toList() can fail when one goes between its size check and its read.
-        for (socket in open) runCatching { socket.close() }
+        // Publication and thread startup finish together before stop can retire the run.
+        val run = synchronized(lifecycle) { current }
+        run?.let(::retire)
     }
 
-    private fun loop() {
+    private fun retire(run: Run) {
+        run.close()
+        // Some JVMs defer the listener descriptor's final close until accept unwinds.
+        // Wait outside lifecycle/answering locks so restarting can immediately rebind its port.
+        val accepting = run.thread
+        if (accepting === Thread.currentThread()) return
+        var interrupted = false
+        while (true) {
+            try {
+                accepting.join()
+                break
+            } catch (_: InterruptedException) {
+                interrupted = true
+            }
+        }
+        if (interrupted) Thread.currentThread().interrupt()
+    }
+
+    private fun loop(run: Run) {
         var lastConnection = System.nanoTime()
-        while (!closed) {
+        while (!run.closed) {
             val socket = try {
-                server?.accept()
+                run.server.accept()
             } catch (_: SocketTimeoutException) {
                 // Anyone on the car's network can reach it, so it does not wait for them forever.
-                if (closed) break
+                if (run.closed) break
                 if (System.nanoTime() - lastConnection < TimeUnit.MILLISECONDS.toNanos(idleTimeoutMillis.toLong())) continue
-                stop()
-                onIdle?.invoke()
+                run.close()
+                if (current === run) onIdle?.invoke()
                 null
             } catch (_: Exception) {
                 null
             } ?: break
             lastConnection = System.nanoTime()
+            run.open.add(socket)
+            if (run.closed || current !== run) {
+                run.open.remove(socket)
+                runCatching { socket.close() }
+                break
+            }
             try {
-                connections?.execute { handle(socket) } ?: socket.close()
+                run.connections.execute { handle(run, socket) }
             } catch (_: RejectedExecutionException) {
                 // Every thread is busy: refuse this one, and the browser asks again.
                 runCatching { socket.close() }
+                run.open.remove(socket)
             }
         }
     }
 
-    private fun handle(socket: Socket) {
-        open.add(socket)
-        if (closed) runCatching { socket.close() }
+    private fun handle(run: Run, socket: Socket) {
         try {
-            serve(socket)
+            if (!run.closed && current === run) serve(run, socket)
         } finally {
-            open.remove(socket)
+            runCatching { socket.close() }
+            run.open.remove(socket)
         }
     }
 
-    private fun serve(socket: Socket) {
+    private fun serve(run: Run, socket: Socket) {
         socket.use {
             runCatching {
                 it.soTimeout = 10_000
@@ -156,7 +196,8 @@ class SettingsBackupServer(
                 // A failure while preparing the answer is told to the browser; without an answer it
                 // would show a connection that opened and then gave nothing.
                 val (status, headers, body) = synchronized(answering) {
-                    runCatching { respond(request) }.getOrElse { failed() }
+                    if (run.closed || current !== run) return
+                    runCatching { respond(run, request) }.getOrElse { failed() }
                 }
                 it.getOutputStream().apply {
                     write(
@@ -192,13 +233,13 @@ class SettingsBackupServer(
         return null
     }
 
-    private fun respond(request: RtspMessage.Request): Triple<Int, Map<String, String>, ByteArray> {
+    private fun respond(run: Run, request: RtspMessage.Request): Triple<Int, Map<String, String>, ByteArray> {
         val path = request.path.substringBefore('?')
         if (codePage != null && path == "/" && request.method == "GET") {
             return Triple(200, mapOf("Content-Type" to "text/html; charset=utf-8", "Cache-Control" to "no-store"), codePage)
         }
-        if (codePage != null && path == "/code" && request.method == "POST") return checkCode(request.body)
-        val prefix = "/b/$token"
+        if (codePage != null && path == "/code" && request.method == "POST") return checkCode(run, request.body)
+        val prefix = "/b/${run.endpoint.token}"
         val authorized = path == prefix || path.startsWith("$prefix/")
         if (!authorized) return notFound()
         val route = path.removePrefix("$prefix/").trimEnd('/')
@@ -225,7 +266,7 @@ class SettingsBackupServer(
             )
             route == "import" && request.method == "POST" -> {
                 val outcome = import(request.body)
-                onImported?.invoke(outcome)
+                if (!run.closed && current === run) onImported?.invoke(outcome)
                 Triple(
                     200,
                     mapOf("Content-Type" to "application/json", "Cache-Control" to "no-store"),
@@ -241,15 +282,15 @@ class SettingsBackupServer(
      * A typed code is short enough to guess, so only a few wrong ones are allowed. After that no code
      * is accepted, not even the right one, until the page is opened again on the head unit.
      */
-    private fun checkCode(body: ByteArray): Triple<Int, Map<String, String>, ByteArray> {
+    private fun checkCode(run: Run, body: ByteArray): Triple<Int, Map<String, String>, ByteArray> {
         val headers = mapOf("Content-Type" to "application/json", "Cache-Control" to "no-store")
         fun answer(status: Int, json: String) = Triple(status, headers, json.toByteArray(Charsets.UTF_8))
-        if (wrongCodes >= MAX_WRONG_CODES) return answer(403, "{\"locked\":true}")
+        if (run.wrongCodes >= MAX_WRONG_CODES) return answer(403, "{\"locked\":true}")
         val typed = String(body, 0, minOf(body.size, MAX_TYPED_BYTES), Charsets.UTF_8).filter { it in '0'..'9' }
-        if (typed.length == CODE_DIGITS && tokenMatches(code, typed)) return answer(200, "{\"path\":\"/b/$token/$landing\"}")
-        wrongCodes++
-        if (wrongCodes < MAX_WRONG_CODES) return answer(403, "{\"left\":${MAX_WRONG_CODES - wrongCodes}}")
-        onCodeEntryClosed?.invoke()
+        if (typed.length == CODE_DIGITS && tokenMatches(run.endpoint.code, typed)) return answer(200, "{\"path\":\"/b/${run.endpoint.token}/$landing\"}")
+        run.wrongCodes++
+        if (run.wrongCodes < MAX_WRONG_CODES) return answer(403, "{\"left\":${MAX_WRONG_CODES - run.wrongCodes}}")
+        if (!run.closed && current === run) onCodeEntryClosed?.invoke()
         return answer(403, "{\"locked\":true}")
     }
 

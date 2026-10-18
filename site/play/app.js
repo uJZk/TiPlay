@@ -289,6 +289,7 @@ async function setUpVideo() {
   const path = videoPath;
   if (started && path.decode !== 'worker') started.worker.terminate();
   const canvas = $('screen');
+  const firstPresented = config => onVideoMessage({ type: 'decoded', id: config.streamId, epoch: config.epoch });
   if (path.decode === 'worker') {
     const { worker } = started;
     let presenter = null;
@@ -296,9 +297,11 @@ async function setUpVideo() {
       const offscreen = canvas.transferControlToOffscreen();
       worker.postMessage({ type: 'canvas', canvas: offscreen }, [offscreen]);
     } else {
-      presenter = (await import('./video.js')).createFramePresenter(canvas, { applyTimingPolicy: true, pace: true });
+      presenter = (await import('./video.js')).createFramePresenter(canvas, { applyTimingPolicy: true, pace: true, onFirstPresent: firstPresented });
     }
+    const presentationEpochs = createVideoEpochGuard(() => presenter?.close());
     worker.onmessage = ({ data }) => {
+      if (active && data.id === streamId) presentationEpochs.message(data);
       if (data.type === 'frame') {
         try {
           if (active && data.id === streamId) presenter.present(data.frame, data.config, data.timing, data.outputWindow);
@@ -332,7 +335,7 @@ async function setUpVideo() {
     };
   } else if (path.decode === 'main') {
     const { createDecoderPipeline, createFramePresenter } = await import('./video.js');
-    const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, pace: true });
+    const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, pace: true, onFirstPresent: firstPresented });
     const frames = createTimedFrames((frame, config, id, timing, outputWindow) => presenter.present(frame, config, timing, outputWindow), {
       observe(source, ready) { mediaTiming.observe('video', source, ready); },
     });
@@ -616,6 +619,7 @@ function onVideoMessage(message) {
     unsupported = message.reason === 'hdr' ? 'hdr' : message.codec;
     live = false;
   } else if (message.type === 'decoded') {
+    if (message.epoch !== config?.epoch) return;
     mediaTiming.started();
     live = true;
     outbox?.push({ k: 'dec', ep: message.epoch }, 'latest'); // repeated if its POST fails: the phone's connection proof

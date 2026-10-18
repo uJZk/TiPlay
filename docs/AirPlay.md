@@ -62,7 +62,9 @@ AirPlay borrows only `mainScreen`, preserving CarPlay audio for mixed output.
 `changeModes` transfer 3 requests the loan; only a new `modesChanged` resource 1
 `entity` confirms it. A successful write/RTSP reply or `permanentEntity` is insufficient.
 Transfer 4 returns it; CarPlay display/input resumes only after controller ownership
-is confirmed, then requests a keyframe. See [Apple's resource-management explanation](https://developer.apple.com/videos/play/wwdc2016/723/).
+is confirmed, then requests a keyframe. Screen data EOF during a requested/granted loan
+and auxiliary-screen EOF do not close the main control/audio session. Retired streams
+cannot deliver into or tear down a successor, including across control sessions. See [Apple's resource-management explanation](https://developer.apple.com/videos/play/wwdc2016/723/).
 
 Pending loans retain CarPlay picture/input and release existing touches. Mirror SETUP
 waits boundedly before supplying data ports so the initial keyframe is not lost.
@@ -118,7 +120,9 @@ Controls expose actual time/buffer/seek ranges, rate, available tracks, loading 
 Stop, without volume/fullscreen. Pause retains rate, including older APK commands
 that omit it. Playback IDs and independent seek revisions reject stale reports;
 iPhone queries acknowledge new seek targets immediately while browser actual position
-remains distinct. Replacement cancels requests/decoders/output. Live recovery is bounded.
+remains distinct. Direct-to-proxy error recovery preserves the current position/rate
+when no newer playback directive supersedes it. Replacement cancels requests/decoders/output.
+Live recovery is bounded.
 
 Authenticated resources validate browser/playback/resource identity, preserve Range,
 stream media and rewrite bounded HLS manifests/children/keys. Current-iPhone resources
@@ -127,8 +131,12 @@ Neither makes an unreachable sender reachable. FCUP serializes exchanges with
 session/peer/URL/request-ID checks; acknowledgement is not resource completion.
 Browser media and caption discovery share one serial resource transport. A read remains
 in flight until its network body finishes or is canceled, rather than merely until its
-headers arrive. Media reads use bounded byte-range units so MP4 footer reads and seeks
-can progress without holding an open-ended response. Track ranking uses master metadata;
+headers arrive. Range-capable media uses bounded byte-range units. A source ignoring Range
+retains one sequential reader across units, avoiding repeated downloads of the same prefix.
+Competing seeks/resources retire that reader before opening another body; five seconds of
+inactivity releases it. Startup probes request at most 64 KiB, including through FCUP, so
+a large video need not fit inside the broker's whole-response limit just to discover its type.
+Track ranking uses master metadata;
 SDR/decoder validation probes candidates one at a time and skips unavailable alternatives.
 Interrupted requests may be reused only within their original deadlines. Expiry,
 cancellation and replacement release the queue; consumed responses are not a live
@@ -138,7 +146,8 @@ FCUP sharing keys include the requested byte range. Range reaches both Android H
 the iPhone loader; a validated partial response is passed through once. An FCUP sender that
 returns a full body is sliced locally once; Android HTTP may legally return a full-body 200.
 Complete HLS playlists are an exception: even when requested with Range, they are rewritten
-and returned whole as 200 with an HLS content type. Applying byte offsets from the original
+and returned whole as 200 with an HLS content type. A partial playlist prefix is fetched
+whole before rewriting. Applying byte offsets from the original
 playlist after rewriting would corrupt it, and extensionless app URLs still require nested
 resources to use the authenticated proxy.
 Upstream denial is retained as a distinct

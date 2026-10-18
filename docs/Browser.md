@@ -94,7 +94,10 @@ can discard them before their playback time arrives.
 
 Each decoded stream/format epoch owns a continuous source-sample position and a
 stateful [libsoxr resampler](../site/play/vendor/soxr/README.md). Filter state survives
-packet boundaries; real timestamp gaps, seeks and stream replacement enter bounded
+packet boundaries; RTP packet adjacency stays on the nominal sample coordinate rather than
+the arrival-clock drift estimate. Distinct CarPlay streams retain separate transport IDs
+even when they share a music/guidance semantic type; mixing and ducking use the semantic
+type while stop/reset applies only to that transport. Real timestamp gaps, seeks and stream replacement enter bounded
 rebuffer/fade recovery. Temporary input shortages never flush the filter as end-of-file.
 
 ### Media clocks and synchronization
@@ -117,7 +120,10 @@ may lead matching video by at most **45 ms** or lag by at most **125 ms**. Devic
 uncertainty shrinks this interval. Extra hardware latency can be compensated by rendering
 available future PCM earlier; it is not an exception to either limit. Active audio with a
 stale/unavailable reference prevents a new unsynchronized draw. Explicitly disabled/ended
-audio permits video-only scheduling again.
+audio permits video-only scheduling again. CarPlay navigation, calls, Siri and alerts use
+an independent 20 ms arrival-anchored buffer while preserving RTP sample intervals, so a lack
+of presentation lead cannot prevent speech from starting. These speech streams do not
+constrain the video clock. Media remains presentation-synchronized.
 
 Android/browser calibration does not establish the iPhone oscillator's rate. Ordinary
 AirPlay timing anchors and realtime source-supply evidence have different confidence;
@@ -198,7 +204,9 @@ buffer estimate; transferred frames retain acknowledgement backpressure and fina
 presentation checks. When animation callbacks are available, the presenter retains
 only the newest eligible frame for the next display refresh. A deadline timer and
 measured upload budget bound that wait; the final upload/submission check still
-rejects expired or audio-incompatible frames. Workers without a usable animation
+rejects expired or audio-incompatible frames. The first-frame connection proof is emitted
+only after a successful final canvas submission, including transferred frames; decoding or
+queue admission alone is insufficient. Workers without a usable animation
 source submit immediately. Timer/immediate WebGL submissions explicitly flush queued
 GPU commands without waiting for completion; refresh callbacks use their native
 frame boundary. See [MDN's flush guidance](https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices#flush_when_expecting_results).

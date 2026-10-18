@@ -49,6 +49,58 @@ class AirPlayVideoProxyTest {
         }
     }
 
+    @Test fun boundedFcUpProbesCanReadLargeMp4WithoutRequestingTheWholeRepresentation() {
+        val bytes = ByteArray(65536) { 42 }
+        val proxy = AirPlayVideoProxy("minibili://app/large.mp4", { _, range ->
+            assertEquals("bytes=0-65535", range)
+            ReceiverResource(bytes, 206, null, mapOf("Content-Range" to "bytes 0-65535/67108864",
+                "Content-Length" to "65536", "Content-Type" to "video/mp4"))
+        })
+        try {
+            proxy.open(proxy.rootId, "bytes=0-65535") { it }!!.use {
+                assertEquals(206, it.status)
+                assertArrayEquals(bytes, it.body.readBytes())
+            }
+        } finally { proxy.close() }
+    }
+
+    @Test fun completeFcUpPartialPlaylistsAreRewrittenAsWhole200Representations() {
+        val bytes = appPlaylist.toByteArray()
+        val proxy = AirPlayVideoProxy("minibili://app/root", { _, range ->
+            assertEquals("bytes=0-65535", range)
+            ReceiverResource(bytes, 206, null, mapOf("Content-Range" to "bytes 0-${bytes.lastIndex}/${bytes.size}",
+                "Content-Length" to bytes.size.toString()))
+        })
+        try {
+            proxy.open(proxy.rootId, "bytes=0-65535") { "/resource?r=$it" }!!.use(::assertWholeRewrittenPlaylist)
+        } finally { proxy.close() }
+    }
+
+    @Test fun incompleteFcUpPlaylistProbesFetchTheWholeManifestBeforeRewriting() {
+        val bytes = appPlaylist.toByteArray()
+        val ranges = mutableListOf<String?>()
+        val proxy = AirPlayVideoProxy("minibili://app/root", { _, range ->
+            ranges += range
+            if (range != null) ReceiverResource(bytes.copyOf(16), 206, null,
+                mapOf("Content-Range" to "bytes 0-15/${bytes.size}", "Content-Length" to "16"))
+            else ReceiverResource(bytes, 200, null)
+        })
+        try {
+            proxy.open(proxy.rootId, "bytes=0-15") { "/resource?r=$it" }!!.use(::assertWholeRewrittenPlaylist)
+            assertEquals(listOf("bytes=0-15", null), ranges)
+        } finally { proxy.close() }
+    }
+
+    @Test fun completeAndroidPartialPlaylistsAreRewrittenAsWhole200Representations() {
+        val bytes = appPlaylist.toByteArray()
+        withOrigin(206, mapOf("Content-Range" to "bytes 0-${bytes.lastIndex}/${bytes.size}"), bytes) { origin, _ ->
+            val proxy = AirPlayVideoProxy("$origin/playlist", { _, _ -> error("FCUP fallback was not needed") })
+            try {
+                proxy.open(proxy.rootId, "bytes=0-65535") { "/resource?r=$it" }!!.use(::assertWholeRewrittenPlaylist)
+            } finally { proxy.close() }
+        }
+    }
+
     /** A real local HTTP exchange exercises Android-route headers without external media requests. */
     private fun withOrigin(status: Int, headers: Map<String, String>, body: ByteArray,
                            test: (String, CompletableFuture<String>) -> Unit) {

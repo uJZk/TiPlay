@@ -8,7 +8,7 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The current source
-is 0.2.20-beta.2 (code 41); the code remains above the published TiPlay 0.2.16. Run
+is 0.2.20-beta.3 (code 42); the code remains above the published TiPlay 0.2.16. Run
 `python3 scripts/build_site.py` after changing it to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of this product version.
 Download pages identify the latest verified stable APK; beta artifacts are linked
@@ -109,44 +109,37 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta release
 
-The current beta is **0.2.20-beta.2** (version code 41). It adds the approved
-Tesla hotspot-address explanation to the Android TiPlay mode chooser in every
-supported language. It uses the existing signed Release APK workflow and the
-same application/signing identity as beta.1. Additional local Android validation
-was skipped at the user's request; 340 browser tests had passed before the version
-bump. See [Changelog](../CHANGELOG.md) for this release's scope. The beta.1 evidence
-below describes that previous release.
+The current beta is **0.2.20-beta.3** (version code 42). It repairs CarPlay audio
+sample continuity, short-speech startup and concurrent-stream isolation; AirPlay
+URL resource fetching and proxy recovery; screen-loan/session ownership; and
+first-frame presentation proof. It also fixes a settings-backup rapid-restart
+race found during the full Android checks. See [Changelog](../CHANGELOG.md) for
+scope and [Testing](Testing.md) for the regression/device acceptance boundary.
 
-The 0.2.20-beta.1 release uses version code 40 and the same phone application ID,
-`com.ujzk.tiplay`, with the existing release signing identity. The browser product
-version is generated from the same Gradle property. It includes the DiPlay 0.2.20
-merge, official player skin/gestures, bounded live-video refresh pacing and the
-pure JavaScript browser libsoxr backend plus the same C engine compiled directly
-through Android JNI for SCO playback/capture. The [integration review](Upstream.md#integration-review)
-also records restored-setting isolation fixes, SCO thread scheduling and useful
-upstream features still awaiting browser adaptation. Full implementation verification is recorded in
-[Changelog](../CHANGELOG.md); DSP/runtime evidence is in the
-[resampler report](../scripts/soxr/REPORT.md).
-
-The [beta release](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.1)
-contains the signed APK, complete committed source ZIP and `SHA256SUMS.txt`.
-The final APK and source SHA-256 values are recorded in that manifest.
-The APK signing certificate SHA-256 is
+It uses `com.ujzk.tiplay` and the existing signed release workflow. The established
+APK signing certificate SHA-256 is
 `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`,
-matching 0.2.16; both runtime identity files also match 0.2.16 and the hash-verified
-pinned DiPlay 0.2.18 inputs byte for byte. Package/version/SDK metadata, all four
-native libsoxr ABIs and the Kotlin/JNI classes were verified. The source archive
-is generated from the release's exact target commit; remote attachment digests
-are checked before publication. Stable download links remain on 0.2.16.
+matching 0.2.16. Keep the two runtime identity files byte-identical to the
+hash-verified pinned DiPlay 0.2.18 inputs. The workflow verifies package/version,
+runtime assets and signatures, then attaches the signed APK, source ZIP generated
+from the exact build commit and `SHA256SUMS.txt` to the prerelease draft. Verify
+remote attachment digests before publishing the
+[beta release](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.3).
+Stable download links remain on 0.2.16.
 
-The complete source checks passed: 2,116 shared, 1,740 common and six home tests,
-required Android lint/debug builds, native C/JNI streaming DSP and release lint.
-The browser suite has 340 passing tests. SCO duration/span admission and original
-deadline checks now cover decoder stalls, resampler lookahead and AudioTrack
-queue lead; see [Testing](Testing.md#native-sco-resampling-and-continuity).
-Physical iPhone/vehicle audio, sustained JavaScript CPU usage, device-clock drift
-and perceived drag smoothness remain pending in [Testing](Testing.md) and
-[Todo](Todo.md). Temporary signing/runtime inputs stay outside Git and are
+The implementation passed 2,133 shared, 1,744 common and six home unit tests,
+358 browser tests, required Android lint/debug builds, native AirPlay JNI and
+libsoxr DSP/lifecycle checks, Chromium browser/compiled-phone, media-clock and
+MP4/HLS recovery E2E, the public-source scan and nine release-draft tests.
+Settings-backup regression checks also passed 20,000 real-socket restarts,
+including 10,000 interrupted stops.
+
+Physical Xiaoyuzhou/music/navigation audio, sustained video smoothness, actual
+iPhone screen-loan approval/return and acoustic/panel timing remain pending in
+[Testing](Testing.md) and [Todo](Todo.md). Source regressions establish the repaired
+code defects; they do not prove the exact cause of every supplied-log symptom.
+Debug retains one original input video stream without a browser-forwarding
+payload duplicate. Temporary signing/runtime inputs stay outside Git and are
 removed after verification.
 
 ## Updating an installed app

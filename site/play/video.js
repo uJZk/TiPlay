@@ -16,7 +16,7 @@ const MAX_FAILURES = 4; // decoder errors without a decoded frame before the pag
 const utf8 = new TextDecoder();
 
 /**
- * Decodes record streams. `post(message)` gets {type:'alive'|'config'|'decoded'|'keyframe'|'unsupported'|'end'};
+ * Decodes record streams. `post(message)` gets {type:'alive'|'config'|'keyframe'|'unsupported'|'end'};
  * `present(frame)` takes ownership of every decoded VideoFrame.
  */
 export function createDecoderPipeline({ post: send, present }) {
@@ -30,7 +30,7 @@ export function createDecoderPipeline({ post: send, present }) {
   const dropped = () => { totals.dropped++; decodeDroppedFrames++; };
   let decoder = null, decoderConfig = null, config = null, codecSupported = null;
   let streamId = null, timer = null;
-  let needKey = true, reportedEpoch = null, lastKeyRequest = -Infinity, failures = 0;
+  let needKey = true, lastKeyRequest = -Infinity, failures = 0;
   const post = message => send({ ...message, id: streamId });
   const records = createRecordStream({
     onRecord: (record, signal) => {
@@ -39,7 +39,6 @@ export function createDecoderPipeline({ post: send, present }) {
         closeDecoder();
         config = decoderConfig = null;
         codecSupported = null;
-        reportedEpoch = null;
         needKey = true;
         rates.decodedFps = 0;
         post({ type: 'idle' });
@@ -74,14 +73,13 @@ export function createDecoderPipeline({ post: send, present }) {
     } catch (_) {
       throw new RecordError('config is not JSON');
     }
-    const next = { epoch: record.epoch, mode: info.mode ?? null, codec: String(info.codec), width: info.width | 0, height: info.height | 0, fps: info.fps | 0 };
+    const next = { streamId, epoch: record.epoch, mode: info.mode ?? null, codec: String(info.codec), width: info.width | 0, height: info.height | 0, fps: info.fps | 0 };
     post({ type: 'config', config: next });
     // The phone repeats a byte-identical config at every stream start; keep the decoder then.
     const same = config && decoder?.state === 'configured' && ['epoch', 'mode', 'codec', 'width', 'height'].every(key => config[key] === next[key]);
     config = next;
     if (same) return;
     decodeDroppedFrames = 0;
-    reportedEpoch = null;
     // Late output of the old decoder would otherwise be drawn and reported as the first frame of the new epoch.
     closeDecoder();
     const chosen = await chooseDecoderConfig(decoderSupports, next);
@@ -194,10 +192,6 @@ export function createDecoderPipeline({ post: send, present }) {
     const timing = presentationTimes.get(key);
     presentationTimes.delete(key);
     present(frame, config, streamId, timing?.mapped, timing && { sourceTimeMs: timing.sourceTimeMs, clockGeneration: timing.clockGeneration });
-    if (config && reportedEpoch !== config.epoch) {
-      reportedEpoch = config.epoch;
-      post({ type: 'decoded', epoch: config.epoch });
-    }
   }
 
   function stop() {
@@ -208,7 +202,6 @@ export function createDecoderPipeline({ post: send, present }) {
     config = decoderConfig = null;
     streamId = null;
     codecSupported = null;
-    reportedEpoch = null;
   }
 
   return {
@@ -221,7 +214,6 @@ export function createDecoderPipeline({ post: send, present }) {
       lastTick = { at: performance.now(), decoded: totals.decoded, bytes: records.stats().bytes };
       timer = setInterval(tick, 1000);
       needKey = true;
-      reportedEpoch = null;
       return records.read(id, stream);
     },
     stop,
@@ -250,13 +242,13 @@ export function createDecoderPipeline({ post: send, present }) {
  * It keeps the last frame (closing the one before) so a resize can redraw a still CarPlay screen.
  */
 export function createFramePresenter(canvas, { now = () => performance.timeOrigin + performance.now(),
-  applyTimingPolicy = false, pace = false, onPresent } = {}) {
+  applyTimingPolicy = false, pace = false, onPresent, onFirstPresent } = {}) {
   const drawMs = new Samples();
   const fpsWindow = createFpsWindow();
   let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null, expiredFrames = 0, untimedFrames = 0, renderDroppedFrames = 0;
   let audioSyncDroppedFrames = 0;
   const audioReferences = createAudioReferenceTimeline();
-  let audioTracking = false;
+  let audioTracking = false, provenId = null, provenEpoch = null;
 
   function draw(frame, allowed, flush = true) {
     const width = lastConfig?.width || frame.displayWidth, height = lastConfig?.height || frame.displayHeight;
@@ -322,6 +314,12 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
     lastFrame?.close();
     lastFrame = frame;
     onPresent?.({ at: checkedAt, timing, audioAt: checkedAudioAt });
+    // Decode, scheduling and even texture upload may all succeed without a canvas submission.
+    // Only the final draw can prove a connection usable, including the worker-transfer fallback.
+    if (config && (provenId !== config.streamId || provenEpoch !== config.epoch)) {
+      provenId = config.streamId; provenEpoch = config.epoch;
+      onFirstPresent?.(config);
+    }
   }
   const pacer = pace ? createVideoFramePacer(presentNow, { now,
     budget: () => Math.max(4, (drawMs.percentile(95) ?? 3) + 1),
@@ -343,6 +341,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       lastFrame?.close();
       lastFrame = null;
       lastConfig = null;
+      provenId = provenEpoch = null;
       expiredFrames = untimedFrames = renderDroppedFrames = 0;
       audioSyncDroppedFrames = 0;
     },

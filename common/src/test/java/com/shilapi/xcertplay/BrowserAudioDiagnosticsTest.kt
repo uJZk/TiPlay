@@ -26,11 +26,23 @@ class BrowserAudioDiagnosticsTest {
 
     @Test fun unknownFieldsAndUnsafeTextCannotInjectCredentialsOrExtraLogLines() {
         val lines = BrowserAudioDiagnostics.lines(mapOf(
-            "code" to "1234", "url" to "https://private.test/secret", "stream7.epoch" to 4,
+            "code" to "1234", "url" to "https://private.test/secret", "stream256.epoch" to 4,
             "contextState" to "running\nsecret", "stream0.mode" to "https://private.test",
             "clockAgeMs" to Double.NaN, "renderAgeMs" to Double.POSITIVE_INFINITY,
             "renderFrames" to 256,
         ))
         assertEquals(listOf("Browser audio: stage=SNAPSHOT renderFrames=256"), lines)
+    }
+
+    @Test fun extendedTransportStreamsKeepTheirSemanticPurposeAndArrivalAnchorInDiagnostics() {
+        val lines = BrowserAudioDiagnostics.lines(mapOf(
+            "stream255.epoch" to 3, "stream255.semanticType" to 1, "stream255.anchoring" to "arrival",
+            "decoder.stream255.backend" to "webcodecs", "decoder.stream255.semanticType" to 1,
+            "stream256.epoch" to 4, "decoder.stream999.backend" to "invalid",
+        ))
+        assertEquals(2, lines.size)
+        assertTrue(lines[0].contains("stream=255")); assertTrue(lines[0].contains("semanticType=1"))
+        assertTrue(lines[0].contains("anchoring=arrival")); assertTrue(lines[1].contains("backend=webcodecs"))
+        assertTrue(lines.none { it.contains("stream=256") || it.contains("stream=999") })
     }
 }

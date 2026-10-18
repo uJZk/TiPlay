@@ -44,17 +44,23 @@ interface MediaSink {
  * streams can additionally return a PCM microphone uplink through the sink.
  */
 /**
- * Delivers a screen stream's data to [sink] only while [isCurrent]: a replaced stream's thread may still
- * be delivering when its successor starts. The check runs before each delivery, so a callback already
- * past it can still hand over one item; the successor's configuration and keyframe follow it. The iPhone
- * connects after SETUP returns the port, which is after the stream is registered as current.
+ * Check ownership and deliver under the same lock used to retire the stream. A callback that was
+ * already decrypted before replacement must not change its successor's codec, clock or samples.
  */
-internal fun currentScreenListener(type: Int, sink: MediaSink, isCurrent: () -> Boolean) = object : ScreenStream.Listener {
-    override fun onCodec(codec: VideoCodec) { if (isCurrent()) sink.onVideoCodec(type, codec) }
-    override fun onConfig(codecData: ByteArray) { if (isCurrent()) sink.onVideoConfig(type, codecData) }
-    override fun onFrame(naluBytes: ByteArray) { if (isCurrent()) sink.onVideoFrame(type, naluBytes) }
+internal fun currentScreenListener(type: Int, sink: MediaSink, deliveryLock: Any = Any(), isCurrent: () -> Boolean) = object : ScreenStream.Listener {
+    override fun onCodec(codec: VideoCodec) = synchronized(deliveryLock) { if (isCurrent()) sink.onVideoCodec(type, codec) }
+    override fun onConfig(codecData: ByteArray) = synchronized(deliveryLock) { if (isCurrent()) sink.onVideoConfig(type, codecData) }
+    override fun onFrame(naluBytes: ByteArray) = synchronized(deliveryLock) { if (isCurrent()) sink.onVideoFrame(type, naluBytes) }
     override fun onFrame(naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) {
-        if (isCurrent()) sink.onVideoFrame(type, naluBytes, senderNanos, arrivalNanos)
+        synchronized(deliveryLock) { if (isCurrent()) sink.onVideoFrame(type, naluBytes, senderNanos, arrivalNanos) }
+    }
+}
+
+internal fun currentAudioListener(deliveryLock: Any, listener: AudioStream.Listener, isCurrent: () -> Boolean) = object : AudioStream.Listener {
+    override fun onStarted(firstSample: Int) = synchronized(deliveryLock) { if (isCurrent()) listener.onStarted(firstSample) }
+    override fun onRtp(rtp: ByteArray, sample: Int) = synchronized(deliveryLock) { if (isCurrent()) listener.onRtp(rtp, sample) }
+    override fun onPacket(wire: ByteArray, rtp: ByteArray?, sample: Int?, error: Throwable?) = synchronized(deliveryLock) {
+        if (isCurrent()) listener.onPacket(wire, rtp, sample, error)
     }
 }
 
@@ -89,6 +95,11 @@ class CarPlayMediaEngine(
     private val audioMeta = ConcurrentHashMap<StreamKey, AudioMeta>()
     private val pendingMicrophone = ConcurrentHashMap<StreamKey, MicrophoneConfig>()
     private val audioCaptures = ConcurrentHashMap<StreamKey, AudioPacketCapture>()
+    // The shared sink has one renderer per full audio ID / screen type, across control sessions.
+    // All ordinary delivery, installation and retirement is serialized here; close sockets outside it.
+    private val outputLock = Any()
+    private val audioOwners = mutableMapOf<AudioStreamId, StreamKey>()
+    private val screenOwners = mutableMapOf<Int, StreamKey>()
     private val pendingIapTunnels = ConcurrentHashMap<AirPlaySession, PendingIapTunnel>()
     private val videoSettingsChannels = ConcurrentHashMap<AirPlaySession, VideoSettingsChannel>()
     private val bufferedStreams = ConcurrentHashMap<AirPlaySession, BufferedStream>()
@@ -132,39 +143,62 @@ class CarPlayMediaEngine(
         val streamKey = StreamKey(session, type)
         Log.i(TAG, "airplay screen key connectionID=${unsignedPlistDecimal(stream["streamConnectionID"])}")
         val screen = ScreenStream(key, session::logDebug)
-        sink.setVideoClockHandler(type, session::mediaTimeNanos)
-        sink.setVideoDiagnosticHandler(type) {
-            if (it == "first frame rendered") session.videoFrameRendered()
-            session.logDebug("Video: $it")
-        }
-        sink.setVideoRecoveryHandler(type) {
-            if (streams[streamKey] === screen) {
-                // The cluster asks for a keyframe of its own screen; the plain command is the main screen's.
-                val command = if (type == STREAM_TYPE_ALT_SCREEN) {
-                    mapOf("type" to "forceKeyFrame", "params" to mapOf("uuid" to AirPlayInfoPlist.ALT_UUID))
-                } else {
-                    mapOf("type" to "forceKeyFrame")
-                }
-                val sent = session.sendCommand(command)
-                session.logDebug("Video recovery: requested keyframe sent=$sent")
-            }
-        }
+        val isInstalled = { !session.isClosed && streams[streamKey] === screen }
+        val isCurrent = { isInstalled() && screenOwners[type] == streamKey }
         val port = screen.listen(
-            object : ScreenStream.Listener by currentScreenListener(type, sink, isCurrent = { streams[streamKey] === screen }) {
+            object : ScreenStream.Listener by currentScreenListener(type, sink, outputLock, isCurrent) {
                 override fun onClosed(cause: Throwable?) {
-                    Log.w(
-                        TAG,
-                        "screen stream ended type=$type reason=${cause?.message ?: "peer EOF"}",
-                    )
-                    if (streams.remove(streamKey, screen)) {
-                        sink.onScreenStreamActive(type, false)
+                    var closeSession: (() -> Unit)? = null
+                    try {
+                        synchronized(outputLock) {
+                            if (!isCurrent()) return
+                            Log.w(TAG, "screen stream ended type=$type reason=${cause?.message ?: "peer EOF"}")
+                            // Lending the main screen may make iOS end its data connection. Keep
+                            // control/audio alive; the next SETUP installs the returned screen.
+                            val loan = session.screenBorrowState
+                            if (type == STREAM_TYPE_MAIN_SCREEN &&
+                                !loan.desired && loan.owner != CarPlayScreenOwner.Accessory) {
+                                // Claim closure before releasing ownership: a new SETUP cannot
+                                // slip between the EOF decision and blocking session teardown.
+                                closeSession = session.prepareClose()
+                            }
+                            session.screenDataEnded(type)
+                            retireOutputLocked(streamKey)
+                        }
+                    } finally {
+                        // Claiming close must always reach cleanup, even if the sink throws.
+                        try { screen.close() } finally { closeSession?.invoke() }
                     }
-                    session.close()
                 }
             },
         )
-        streams.put(streamKey, screen)?.close()
-        sink.onScreenStreamActive(type, true)
+        val retired = synchronized(outputLock) {
+            if (session.isClosed) { screen.close(); return null }
+            val previous = screenOwners[type]?.let(::retireOutputLocked).orEmpty()
+            streams[streamKey] = screen
+            screenOwners[type] = streamKey
+            sink.setVideoClockHandler(type, session::mediaTimeNanos)
+            sink.setVideoDiagnosticHandler(type) {
+                // These callbacks may run inside a sink lock with a synchronous executor.
+                if (isInstalled()) {
+                    if (it == "first frame rendered") session.videoFrameRendered()
+                    session.logDebug("Video: $it")
+                }
+            }
+            sink.setVideoRecoveryHandler(type) {
+                // These callbacks may run inside a sink lock with a synchronous executor.
+                if (isInstalled()) {
+                    val command = if (type == STREAM_TYPE_ALT_SCREEN) {
+                        mapOf("type" to "forceKeyFrame", "params" to mapOf("uuid" to AirPlayInfoPlist.ALT_UUID))
+                    } else mapOf("type" to "forceKeyFrame")
+                    val sent = session.sendCommand(command)
+                    session.logDebug("Video recovery: requested keyframe sent=$sent")
+                }
+            }
+            sink.onScreenStreamActive(type, true)
+            previous
+        }
+        retired.forEach(Closeable::close)
         return port
     }
 
@@ -174,12 +208,6 @@ class CarPlayMediaEngine(
         // type 100); only the same (type, audioType) pair replaces a previous stream.
         val streamKey = StreamKey(session, type, audioType)
         val streamId = AudioStreamId(type, audioType)
-        streams.remove(streamKey)?.close()
-        audioMeta.remove(streamKey)
-        audioCaptures.remove(streamKey)?.close()
-        if (pendingMicrophone.remove(streamKey) != null) sink.onMicrophoneStopped(streamId)
-        sink.onAudioStopped(streamId)
-
         val key = outputKey(session, stream) ?: return null
         val format = AudioStreamCodec.fromFormatBits(
             (stream["audioFormat"] as? Number)?.toLong() ?: 0L,
@@ -197,7 +225,6 @@ class CarPlayMediaEngine(
         val latencyMs = (stream["audioLatencyMs"] as? Number)?.toInt() ?: 0
         val meta = AudioMeta(type, format, connectionId, latencyMs)
         val microphone = microphoneConfig(session, type, stream, format)
-        if (microphone != null) pendingMicrophone[streamKey] = microphone
         if (type == STREAM_TYPE_MAIN_AUDIO && audioType != "media") {
             session.logDebug(
                 "Audio: setup type=$type audioType=$audioType input=${stream["input"] ?: "none"} " +
@@ -209,19 +236,19 @@ class CarPlayMediaEngine(
         }
 
         val capture = audioCaptureDirectory?.let { AudioPacketCapture(it, type) }
-        if (capture != null) audioCaptures[streamKey] = capture
         val browserMicrophone = sink is BrowserBufferedAudioPolicy
         val microphoneStart = if (browserMicrophone) null else microphone?.let { config -> MicrophoneStart { sink.onMicrophoneStarted(streamId, config) } }
         val clockProbe = RtpClockProbe()
         val audio = AudioStream(key, type, session::logDebug)
+        val isCurrent = { !session.isClosed && streams[streamKey] === audio && audioOwners[streamId] == streamKey }
         val (dataPort, controlPort) = audio.listen(
-            object : AudioStream.Listener {
+            currentAudioListener(outputLock, object : AudioStream.Listener {
                 override fun onStarted(firstSample: Int) {
                     meta.firstSample = firstSample
                     meta.originNs = System.nanoTime()
                     sink.onAudioStarted(streamId, format, firstSample)
-                    sink.onAudioClock(streamId, firstSample, requireNotNull(meta.originNs) + meta.playoutLatencyMs * 1_000_000L)
-                    microphoneStart?.onDownlink()
+                    if (isCurrent()) sink.onAudioClock(streamId, firstSample, requireNotNull(meta.originNs) + meta.playoutLatencyMs * 1_000_000L)
+                    if (isCurrent()) microphoneStart?.onDownlink()
                 }
 
                 override fun onRtp(rtp: ByteArray, sample: Int) {
@@ -244,20 +271,26 @@ class CarPlayMediaEngine(
                 ) {
                     capture?.record(wire, rtp, sample, error)
                 }
-            },
+            }, isCurrent),
         )
-        streams[streamKey] = audio
-        audioMeta[streamKey] = meta
+        val retired = synchronized(outputLock) {
+            if (session.isClosed) { audio.close(); capture?.close(); return null }
+            val previous = audioOwners[streamId]?.let(::retireOutputLocked).orEmpty()
+            streams[streamKey] = audio
+            audioMeta[streamKey] = meta
+            audioOwners[streamId] = streamKey
+            if (microphone != null) pendingMicrophone[streamKey] = microphone
+            if (capture != null) audioCaptures[streamKey] = capture
+            if (browserMicrophone) microphone?.let { sink.onMicrophoneStarted(streamId, it) }
+            previous
+        }
+        retired.forEach(Closeable::close)
         // Siri may wait for input before emitting any downlink audio. SETUP already negotiates
         // the input endpoint; waiting for the first downlink packet deadlocks an input-only turn.
-        if (browserMicrophone) microphone?.let { sink.onMicrophoneStarted(streamId, it) }
-        else if (microphoneStart != null && MicrophoneStart.startsWithoutDownlink(audioType)) {
+        if (!browserMicrophone && microphoneStart != null && MicrophoneStart.startsWithoutDownlink(audioType)) {
             microphoneStart.scheduleSilentStart(microphoneScheduler, MicrophoneStart.SILENT_START_MILLIS) { startNow ->
-                // Atomic with TEARDOWN, which removes the pending entry before it stops the microphone.
-                var started = false
-                pendingMicrophone.computeIfPresent(streamKey) { _, pending ->
-                    if (pending === microphone) started = startNow()
-                    pending
+                val started = synchronized(outputLock) {
+                    isCurrent() && pendingMicrophone[streamKey] === microphone && startNow()
                 }
                 if (started) {
                     session.logDebug(
@@ -484,7 +517,9 @@ class CarPlayMediaEngine(
     }
 
     override fun onFeedback(session: AirPlaySession): Map<String, Any?>? {
-        val active = audioMeta.values.toList()
+        val active = synchronized(outputLock) {
+            audioMeta.entries.filter { it.key.session === session }.map { it.value }
+        }
         val buffered = bufferedStreams[session]
         if (active.isEmpty() && buffered == null) return null
         val streams = active.map { meta ->
@@ -525,40 +560,41 @@ class CarPlayMediaEngine(
             retireBuffered(session)
             return
         }
-        // TEARDOWN carries only the stream type; release every audioType variant of it.
-        val tornDown = streams.keys.filter { it.session === session && it.type == type }
-        tornDown.forEach { key ->
-            val streamId = AudioStreamId(key.type, key.audioType)
-            if (pendingMicrophone.remove(key) != null) sink.onMicrophoneStopped(streamId)
-            audioMeta.remove(key)
-            audioCaptures.remove(key)?.close()
-            // BufferedAudioStream owns serialized sink cleanup; stopping it first from here
-            // could interleave with its in-flight delivery and recreate a stale renderer.
-            if (key.type != BufferedAudioStream.STREAM_TYPE) sink.onAudioStopped(streamId)
-            streams.remove(key)?.close()
+        val retired = synchronized(outputLock) {
+            streams.keys.filter { it.session === session && it.type == type }
+                .flatMap(::retireOutputLocked)
         }
-        if (isScreenStreamType(type)) sink.onScreenStreamActive(type, false)
+        retired.forEach(Closeable::close)
     }
 
     override fun onSessionClosed(session: AirPlaySession) {
         clearPendingIapTunnel(session)
         retireBuffered(session)
         videoSettingsChannels.remove(session)?.close()
-        val sessionStreams = streams.keys.filter {
-            it.session === session && it.type != BufferedAudioStream.STREAM_TYPE
+        val retired = synchronized(outputLock) {
+            (streams.keys + audioMeta.keys + pendingMicrophone.keys + audioCaptures.keys)
+                .filter { it.session === session && it.type != BufferedAudioStream.STREAM_TYPE }
+                .distinct().flatMap(::retireOutputLocked)
         }
-        sessionStreams
-            .filter { isScreenStreamType(it.type) }
-            .forEach { sink.onScreenStreamActive(it.type, false) }
-        sessionStreams.forEach { streams.remove(it)?.close() }
-        audioMeta.clear()
-        pendingMicrophone.keys.filter { it.session === session }.forEach { key ->
-            if (pendingMicrophone.remove(key) != null) {
-                sink.onMicrophoneStopped(AudioStreamId(key.type, key.audioType))
-            }
+        retired.forEach(Closeable::close)
+    }
+
+    /** Detach ownership before stopping the sink; never close a socket while holding outputLock. */
+    private fun retireOutputLocked(key: StreamKey): List<Closeable> {
+        val retired = listOfNotNull(streams.remove(key), audioCaptures.remove(key))
+        audioMeta.remove(key)
+        val microphone = pendingMicrophone.remove(key)
+        val id = AudioStreamId(key.type, key.audioType)
+        if (audioOwners[id] == key) {
+            audioOwners.remove(id)
+            if (microphone != null) sink.onMicrophoneStopped(id)
+            sink.onAudioStopped(id)
         }
-        audioCaptures.values.forEach(AudioPacketCapture::close)
-        audioCaptures.clear()
+        if (screenOwners[key.type] == key) {
+            screenOwners.remove(key.type)
+            sink.onScreenStreamActive(key.type, false)
+        }
+        return retired
     }
 
     /** Removes ownership before a close that may block on delivery or invoke the sink. */
@@ -670,9 +706,6 @@ class CarPlayMediaEngine(
             32,
         )
     }
-
-    private fun isScreenStreamType(type: Int): Boolean =
-        type == STREAM_TYPE_MAIN_SCREEN || type == STREAM_TYPE_ALT_SCREEN
 
     internal companion object {
         /**

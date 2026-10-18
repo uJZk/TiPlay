@@ -16,6 +16,54 @@ import java.nio.ByteOrder
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], manifest = Config.NONE)
 class BrowserAudioMediaSinkTest {
+    @Test fun concurrentGuidanceWithTheSamePurposeKeepsSeparateTransportAndSurvivesOneEnd() {
+        val hub = WebAudioHub(); val sink = BrowserAudioMediaSink(object : MediaSink {}, hub); val reader = hub.subscribe()
+        val first = AudioStreamId(100, "navigation"); val second = AudioStreamId(101, "default")
+        val format = AudioFormat(AudioCodecKind.LPCM, 48000, 1, 100, "navigation")
+        fun offer(id: AudioStreamId, sequence: Int, value: Int) {
+            val packet = ByteArray(12) + byteArrayOf(0, value.toByte()); packet[3] = sequence.toByte()
+            sink.onAudioRtp(id, format, packet, sequence * 960)
+        }
+        try {
+            sink.onAudioStarted(first, format, 0); sink.onAudioStarted(second, format, 0)
+            val configurations = List(2) { requireNotNull(reader.take(1000)) }
+            assertEquals(setOf(1, 7), configurations.map { it[5].toInt() and 255 }.toSet())
+            assertTrue(configurations.all { String(it.copyOfRange(28, it.size)).contains("\"semanticType\":1") })
+            offer(first, 0, 11); offer(second, 0, 22)
+            val packets = List(2) { requireNotNull(pcm(reader)) }
+            assertEquals(setOf(1, 7), packets.map { it[5].toInt() and 255 }.toSet())
+            assertEquals(setOf(11, 22), packets.map(::sampleValue).toSet())
+            sink.onAudioStopped(second)
+            val ended = requireNotNull(reader.take(1000)); assertEquals(7, ended[5].toInt())
+            offer(first, 1, 33)
+            assertEquals(33, sampleValue(requireNotNull(pcm(reader))))
+            sink.onAudioStarted(second, format, 0)
+            assertEquals(7, requireNotNull(reader.take(1000))[5].toInt())
+            offer(second, 0, 44); assertEquals(44, sampleValue(requireNotNull(pcm(reader))))
+        } finally { sink.close(); reader.close() }
+    }
+
+    @Test fun exhaustedTransportSlotsRejectOnlyTheNewStreamAndReleasedSlotsCanBeReused() {
+        val hub = WebAudioHub(); val sink = BrowserAudioMediaSink(object : MediaSink {}, hub); val reader = hub.subscribe()
+        val current = AudioStreamId(100, "default"); val candidate = AudioStreamId(999, "navigation")
+        val format = AudioFormat(AudioCodecKind.LPCM, 48000, 1, 100, "default")
+        @Suppress("UNCHECKED_CAST")
+        val slots = BrowserAudioMediaSink::class.java.getDeclaredField("transportIds").apply { isAccessible = true }
+            .get(sink) as MutableMap<AudioStreamId, Int>
+        try {
+            sink.onAudioStarted(current, format, 0); reader.take(1000)
+            // Fill bookkeeping without starting hundreds of audio workers.
+            for (slot in (0..4) + (7..255)) if (slot != 1) slots[AudioStreamId(1000 + slot, "navigation")] = slot
+            sink.onAudioStarted(candidate, format, 0)
+            assertFalse(slots.containsKey(candidate)); assertEquals(254, slots.size)
+            sink.onAudioRtp(current, format, ByteArray(12) + byteArrayOf(0, 55), 0)
+            assertEquals(55, sampleValue(requireNotNull(pcm(reader))))
+            sink.onAudioStopped(AudioStreamId(1007, "navigation"))
+            sink.onAudioStarted(candidate, format, 0)
+            assertEquals(7, slots[candidate]); assertEquals(7, requireNotNull(reader.take(1000))[5].toInt())
+        } finally { sink.close(); reader.close() }
+    }
+
     @Test fun idleAacAndOpusForwardTheirAccessUnitsWithoutCreatingAndroidCodecs() {
         val hub = WebAudioHub()
         val codecCreations = java.util.concurrent.atomic.AtomicInteger()

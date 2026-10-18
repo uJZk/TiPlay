@@ -83,6 +83,53 @@ class CarPlayAudioStreamIsolationTest {
         }
     }
 
+    @Test fun oldSessionTeardownAndCloseCannotStopItsSuccessorsAudio() {
+        val stopped = mutableListOf<AudioStreamId>()
+        val engine = CarPlayMediaEngine(object : MediaSink, BrowserBufferedAudioPolicy {
+            override fun onAudioStopped(id: AudioStreamId) { stopped += id }
+        })
+        val first = session(); val second = session()
+        try {
+            engine.onAudio(first, 102, setup("media"))
+            engine.onAudio(second, 102, setup("media"))
+            stopped.clear()
+            engine.onTeardown(first, 102)
+            engine.onSessionClosed(first)
+            assertTrue(stopped.isEmpty())
+            assertNotNull(engine.onFeedback(second))
+            assertEquals(setOf(CarPlayMediaEngine.StreamKey(second, 102, "media")), streams(engine).keys)
+            engine.onSessionClosed(second)
+            assertEquals(listOf(AudioStreamId(102, "media")), stopped)
+        } finally {
+            engine.onSessionClosed(first); engine.onSessionClosed(second)
+            first.close(); second.close()
+        }
+    }
+
+    @Test fun feedbackAndCleanupStayWithinTheRequestingSessionIncludingProbeClose() {
+        val engine = CarPlayMediaEngine(object : MediaSink, BrowserBufferedAudioPolicy {})
+        val first = session(); val second = session(); val probe = session()
+        try {
+            engine.onAudio(first, 100, setup("media"))
+            engine.onAudio(second, 101, setup("default"))
+            fun feedbackTypes(session: AirPlaySession): List<Int> =
+                (engine.onFeedback(session)?.get("streams") as? List<*>).orEmpty().map {
+                    ((it as Map<*, *>)["type"] as Number).toInt()
+                }
+            assertEquals(listOf(100), feedbackTypes(first))
+            assertEquals(listOf(101), feedbackTypes(second))
+            assertNull(engine.onFeedback(probe))
+            engine.onSessionClosed(probe)
+            assertEquals(listOf(100), feedbackTypes(first))
+            assertEquals(listOf(101), feedbackTypes(second))
+            engine.onSessionClosed(first)
+            assertEquals(listOf(101), feedbackTypes(second))
+        } finally {
+            engine.onSessionClosed(first); engine.onSessionClosed(second); engine.onSessionClosed(probe)
+            first.close(); second.close(); probe.close()
+        }
+    }
+
     private fun setup(audioType: String): Map<String, Any?> = mapOf(
         "audioType" to audioType,
         "audioFormat" to 0x8000L,

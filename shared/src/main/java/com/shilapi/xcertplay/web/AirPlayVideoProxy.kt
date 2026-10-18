@@ -138,9 +138,14 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
                     if (status == 206 && !validPartial(range, responseHeaders, null))
                         fail(load, FailureReason.INVALID_RANGE_RESPONSE, status, ResourceRoute.ANDROID_HTTP)
                     val input = BufferedInputStream(RawTraffic.input("iphone/resource/$url/in", connection.inputStream))
-                    // A sender may ignore Range; whole playlists still need rewritten child URLs.
-                    if (status == 200 && isPlaylist(input)) {
+                    // A bounded probe/range can contain a complete playlist or only its prefix.
+                    // Rewriting a prefix would publish a corrupt manifest; fetch it whole first.
+                    if (isPlaylist(input)) {
                         try {
+                            if (status == 206 && !completeRepresentation(responseHeaders)) {
+                                input.close(); connection.disconnect(); connections -= connection
+                                return loadResource(url, null, route, redirects, forceProxy, load)
+                            }
                             val bytes = readPlaylist(input)
                             val rewritten = rewritePlaylist(url, bytes, forceProxy, route)
                             return Resource(200, "application/vnd.apple.mpegurl", emptyList(), ByteArrayInputStream(rewritten))
@@ -188,6 +193,11 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
             // FCUP has already applied the absolute range. Slicing these bytes again corrupts MAP/media loads.
             if (!validPartial(range, headers, bytes.size))
                 fail(load, FailureReason.INVALID_RANGE_RESPONSE, response.status, ResourceRoute.IPHONE_FCUP)
+            if (isPlaylist(BufferedInputStream(ByteArrayInputStream(bytes)))) {
+                if (!completeRepresentation(headers)) return loadResource(url, null, route, redirects, forceProxy, load)
+                return Resource(200, "application/vnd.apple.mpegurl", emptyList(),
+                    ByteArrayInputStream(rewritePlaylist(url, bytes, forceProxy, route)))
+            }
             return Resource(206, contentType(url, headers["Content-Type"]), listOf(
                 "Content-Range" to headers.getValue("Content-Range"), "Content-Length" to bytes.size.toString(),
                 "Accept-Ranges" to "bytes"), ByteArrayInputStream(bytes))
@@ -265,6 +275,10 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
             }
             return matchesRange && (bytes == null || length == bytes.toLong()) &&
                 (headers["Content-Length"]?.let { it.toLongOrNull() == length } ?: true)
+        }
+        private fun completeRepresentation(headers: Map<String, String>): Boolean {
+            val values = CONTENT_RANGE.matchEntire(headers["Content-Range"].orEmpty())?.groupValues ?: return false
+            return values[1].toLong() == 0L && values[3].toLongOrNull()?.let { it == values[2].toLong() + 1 } == true
         }
         private fun requirePlayable(url: String) {
             if (!VideoInCar.isPlayableUrl(url, iphoneLoadsAppSchemes = true) || URI(url).userInfo != null)

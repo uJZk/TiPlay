@@ -87,7 +87,10 @@ try {
       return context;
     };
   }, mode);
-  const requests=[]; page.on('request', request => requests.push(request.url()));
+  const requests=[], resourceRequests=[]; page.on('request', request => {
+    requests.push(request.url());
+    if (new URL(request.url()).pathname === '/airplay-resource') resourceRequests.push({ url: request.url(), range: request.headers().range });
+  });
   const errors=[];page.on('pageerror', e=>errors.push(e.message));
   page.on('console', message => { if (message.type() === 'error') console.log('console:',message.text()); });
 
@@ -111,6 +114,7 @@ try {
   if(result.version !== '10.1.0' || errors.length || result.fullscreen!==0 || result.volume!==0 || result.stop!==1 || result.spinner!==1 || !result.fill) throw new Error('Player integration failed');
   await page.waitForFunction(()=>events.some(event=>event.k==='ap-state' && event.ready && event.duration>0));
   await page.waitForFunction(()=>events.some(event=>event.k==='ap-diag' && event.event==='play-resolved'));
+  if (resourceRequests[0]?.range !== 'bytes=0-65535') throw new Error('Initial media probe was not bounded');
   const openingDiagnostics = await page.evaluate(()=>events.filter(event=>event.k==='ap-diag'));
   checkDiagnostics(openingDiagnostics);
   for (const expected of ['open', 'probe-start', 'probe-ready', 'loadedmetadata', 'directive-seek', 'directive-play', 'play', 'playing', 'play-resolved'])
@@ -141,6 +145,19 @@ try {
     await page.waitForFunction(() => actualVideo() !== policyEngine && actualVideo()?.readyState >= 2);
     if (!requests.some(url => url.includes('direct=1'))) throw new Error('Disabling debug did not restore direct playback');
     console.log('debug switch: active media reopened through Android and direct playback returned when disabled');
+    const recoveryPosition = await page.evaluate(() => {
+      window.recoveringEngine = actualVideo();
+      const position = Math.min(0.75, recoveringEngine.duration / 3);
+      recoveringEngine.currentTime = position;
+      return position;
+    });
+    await page.waitForFunction(() => !recoveringEngine.seeking);
+    await page.evaluate(() => recoveringEngine.dispatchEvent(new Event('error')));
+    await page.waitForFunction(() => actualVideo() !== recoveringEngine && actualVideo()?.readyState >= 2);
+    await page.waitForFunction(position => actualVideo().currentTime >= position - 0.02, recoveryPosition);
+    const recoveredPosition = await page.evaluate(() => actualVideo().currentTime);
+    if (recoveredPosition > recoveryPosition + 0.5) throw new Error('Proxy recovery did not retain the current media position');
+    console.log('direct playback error: proxy recovery retained the current media position');
   }
   const progress = await page.evaluate(() => {
     const player=actualVideo();
@@ -338,6 +355,53 @@ try {
   await page.evaluate(()=>controls.update(null));
   if(errors.length) throw new Error(`Browser errors: ${errors.join('; ')}`);
   await page.close();
+  }
+  {
+    const page = await browser.newPage();
+    const errors = []; page.on('pageerror', error => errors.push(error.message));
+    let holdRecovery = false, mediaBlocked, releaseMedia;
+    const blocked = new Promise(resolve => { mediaBlocked = resolve; });
+    const released = new Promise(resolve => { releaseMedia = resolve; });
+    await page.route('**/airplay-resource?*', async route => {
+      const request = route.request(), target = new URL(request.url());
+      if (holdRecovery && target.searchParams.get('proxy') === '1' && request.headers().range !== 'bytes=0-65535') {
+        holdRecovery = false; mediaBlocked(); await released;
+      }
+      await route.continue();
+    });
+    try {
+      await page.goto(url + '/harness');
+      await page.evaluate(async () => {
+        const { createAirPlayControls } = await import('/airplay-controls.js');
+        window.events = []; window.actualVideo = () => document.querySelector('tiplay-media')?.engine;
+        window.controls = createAirPlayControls(document.getElementById('stage'), event => events.push(event), 'en', {
+          fetchPhone: (route, init) => fetch(route, init), credentials: () => ({ code: '1234', session: 'session' }), host: () => location.host,
+        });
+        window.recoveryState = { id: 11, resource: '0', revision: 0, seekRevision: 0, target: 0, fraction: false,
+          playing: true, rate: 1, directUrl: location.origin + '/airplay-resource?r=0&direct=1' };
+        controls.update(recoveryState);
+      });
+      await page.waitForFunction(() => actualVideo()?.readyState >= 2 && events.some(event => event.event === 'play-resolved'));
+      await page.evaluate(() => { window.replacedVideo = actualVideo(); replacedVideo.pause(); replacedVideo.currentTime = 0.75; });
+      await page.waitForFunction(() => !replacedVideo.seeking);
+      holdRecovery = true;
+      await page.evaluate(() => replacedVideo.dispatchEvent(new Event('error')));
+      let blockTimeout;
+      try {
+        await Promise.race([blocked, new Promise((_, reject) => {
+          blockTimeout = setTimeout(() => reject(new Error('Proxy recovery never reached the blocked media request')), 10000);
+        })]);
+      } finally { clearTimeout(blockTimeout); }
+      await page.waitForFunction(() => actualVideo() && actualVideo() !== replacedVideo);
+      await page.evaluate(() => controls.update({ ...recoveryState, revision: 1, seekRevision: 1, target: 2, rate: 1.5, playing: false }));
+      releaseMedia();
+      await page.waitForFunction(() => actualVideo()?.readyState >= 2 && !actualVideo().seeking);
+      const recovered = await page.evaluate(() => ({ time: actualVideo().currentTime, rate: actualVideo().playbackRate, paused: actualVideo().paused }));
+      if (Math.abs(recovered.time - 2) > 0.02 || recovered.rate !== 1.5 || !recovered.paused)
+        throw new Error('A stale recovery snapshot overwrote the newer seek/rate/pause directive: ' + JSON.stringify(recovered));
+      if (errors.length) throw new Error('Recovery directive browser errors: ' + errors.join('; '));
+      console.log('proxy recovery: a newer seek, rate and pause directive superseded the old playback snapshot');
+    } finally { releaseMedia(); await page.close(); }
   }
   for (const scenario of ['autoplay-rejection', 'canvas-failure', 'retired-play-promise']) {
     const page=await browser.newPage();

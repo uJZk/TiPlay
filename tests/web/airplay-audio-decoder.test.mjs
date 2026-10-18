@@ -142,3 +142,17 @@ test('valid single ADTS header is removed defensively while raw AAC packets stay
  await decoder.decode(packetRecord([255,241,80,128,1,95,252,1,2,3]));
  assert.deepEqual([...instances[0].chunks[0].data],[1,2,3]);
 });
+
+test('extended CarPlay transport IDs retain purpose separately through configuration, PCM and end', async t => {
+  const { decoder, outputs, errors } = harness(t);
+  const common = { type: 255, epoch: 3, mode: 'carplay', flags: 2, rate: 48000, channels: 1, sequence: 0 };
+  assert.equal(await decoder.configure({ ...common, config: { codec: 'pcm', sampleRate: 48000, channels: 1, bitDepth: 16, semanticType: 1 } }), true);
+  assert.equal(await decoder.decode({ ...common, flags: 0, payload: Uint8Array.of(0x12, 0x34).buffer, presentationMs: 10000 }), true);
+  assert.equal(outputs.at(-1).type, 255); assert.equal(outputs.at(-1).semanticType, 1);
+  assert.deepEqual([...new Int16Array(outputs.at(-1).pcm)], [0x1234]);
+  await decoder.configure({ ...common, epoch: 4, config: { ended: true, semanticType: 1 } });
+  assert.equal(outputs.at(-1).ended, true); assert.equal(outputs.at(-1).semanticType, 1);
+  assert.deepEqual(errors, []);
+  assert.equal(await decoder.configure({ ...common, epoch: 5, config: { codec: 'pcm', sampleRate: 48000, channels: 1, bitDepth: 16 } }), false);
+  assert.match(errors.at(-1).message, /purpose/);
+});

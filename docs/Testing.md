@@ -107,7 +107,11 @@ Android, producer and device rates independently, inject network jitter/queue st
 calibration changes, and retain dynamic PCM through the real variable-rate JavaScript engine.
 Check burst coalescing, deadline-timer fallback, frame-interval tails, waveform error and boundary continuity, bounded phase/rate correction, queue growth,
 stream/format isolation, explicit interruption fades and rejection of old generations.
-Constant samples or counters alone do not establish audio quality.
+Fixed 1024-frame AAC packets with naturally estimated positive drift exercise the production
+resampler beyond its clock-fitting warmup; continuous nominal RTP must not acquire artificial
+sample gaps. Worklet cases cover short-lead speech with a 188 ms device pipeline, sustained
+arrival-delay steps, and concurrent streams sharing a semantic type, including ending one
+while the other remains audible. Constant samples or counters alone do not establish audio quality.
 The [libsoxr report](../scripts/soxr/REPORT.md) retains independent DSP/runtime reviews,
 format/anti-alias/120-second drift results and raw repeated performance measurements.
 These establish the supplied pure JavaScript engine’s tested behavior, not a
@@ -119,7 +123,10 @@ Verify the audio-output reference remains active with Debug off. Synthetic clock
 also test stale/invalid references, large epochs, output-device latency changes and the
 fallback's uncertainty. Audio may be at most 45 ms early and 125 ms late relative to
 matching video; filter/device delay belongs inside this window. A dropped/infeasible
-frame is an explicit recovery outcome, not a successful synchronized presentation.
+frame is an explicit recovery outcome, not a successful synchronized presentation. First-frame
+proof tests reject scheduler drops, expired paced frames and failed GPU submissions. JVM media
+ownership tests exercise old-session teardown/feedback, callbacks after replacement and screen
+EOF during a loan; retirement is atomic with delivery and cannot stop a successor.
 
 For device acceptance, record source app/iPhone, Android transport, browser/vehicle,
 output route and reproduction times. Exercise long music/navigation playback, delayed
@@ -130,6 +137,11 @@ timestamps cannot establish acoustic speaker time or panel scanout. Keep physica
 follow-up in [Todo](Todo.md#browser-and-carplay-audio).
 
 ## Ordinary AirPlay acceptance
+
+Automated URL regressions verify one sequential network body for ignored Range responses,
+bounded FCUP startup probes, complete/partial HLS rewriting and preserved time/rate when direct
+playback switches to the proxy after an error. Assert downloaded byte counts as well as output
+correctness, so repeated prefix downloads cannot pass unnoticed.
 
 Use unprotected content from an actual iPhone. Check discovery and device approval, mirroring, audio-only playback, JPEG/PNG photos, and URL MP4/HLS playback with seeking, subtitles, buffering and iPhone controls. Test stopping/replacing a cast and returning the browser display to CarPlay while retained CarPlay audio continues as designed. Exercise authentication/resource expiry and recovery after network loss.
 

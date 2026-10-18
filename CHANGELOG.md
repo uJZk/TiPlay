@@ -4,6 +4,26 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.3
+
+- Preserve nominal RTP packet adjacency during CarPlay clock-drift correction, avoiding artificial sample gaps. Start navigation, Siri, calls and alerts with independent arrival-based buffering so missing media presentation lead cannot keep short speech silent.
+- Isolate concurrent CarPlay audio streams even when they share a semantic type; retain separate decoder, mixer, transport and stop/reset ownership. Exclude short speech from the media/video clock.
+- Reuse one sequential AirPlay resource body when a source ignores Range, bound startup probes to 64 KiB, and rewrite complete/partial HLS playlists correctly. Preserve playback position/rate during proxy recovery without overriding a newer seek, pause or rate command.
+- Keep CarPlay control/audio alive when screen data ends during a requested/granted display loan. Make output replacement and delivery atomic across sessions; reject retired callbacks and isolate teardown, feedback and auxiliary-screen EOF.
+- Emit first-frame connection proof only after a successful final canvas submission and discard queued frames from superseded configurations.
+- Fix settings-backup server restart races: retire the previous listener and its connections before rebinding, isolate each opening's credentials/workers and preserve interrupted-stop behavior.
+- Document that Debug captures the original video once on input, without another browser-forwarding payload copy; clarify capture start times, archive sizes and evidence limits. Increment the shared Android/browser version to 0.2.20-beta.3 (code 42).
+
+Verification: 2,133 shared, 1,744 common and 6 home unit tests; 358 browser unit tests;
+required Android lint/debug builds; Chromium browser/compiled-phone, media-clock and
+AirPlay MP4/HLS recovery E2E; native AirPlay JNI and libsoxr DSP/lifecycle checks;
+public-source scan and 9 release-draft tests. Settings-backup regressions also passed
+20,000 real-socket restarts, including 10,000 interrupted stops.
+
+Physical iPhone/vehicle audio, long-session video smoothness and actual screen-loan
+approval/return remain pending. Code regressions establish the repaired defects,
+not the precise cause of every symptom in the supplied device log.
+
 ## 0.2.20-beta.2
 
 - Explain in the Android TiPlay mode chooser that Tesla browsers may reject the default private hotspot address and that these modes provide a compatible address. Use the approved Simplified Chinese copy and equivalent translations.

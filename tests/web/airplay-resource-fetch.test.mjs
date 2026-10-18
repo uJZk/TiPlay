@@ -145,10 +145,113 @@ for (const ignoreRange of [false, true]) test(`real tail-moov MP4 demux and pack
     const packets = new EncodedPacketSink(video);
     assert.ok((await packets.getFirstPacket()).data.length);
     assert.ok((await packets.getPacket(2)).data.length);
-    assert.ok(state.requests.some(r => Number(/^bytes=(\d+)-/.exec(r.range)?.[1]) > 1000000), 'Demuxer requested the remote moov/media region');
+    if (ignoreRange) {
+      assert.ok(state.requests.reduce((total, request) => total + request.bytes, 0) <= data.length * 2,
+        'A sequential source does not redownload each old prefix for every network unit');
+    } else assert.ok(state.requests.some(r => Number(/^bytes=(\d+)-/.exec(r.range)?.[1]) > 1000000), 'Demuxer requested the remote moov/media region');
     assert.equal(state.peak, 1); assert.equal(state.active, 0);
     assert.ok(state.requests.every(r => /bytes=\d+-\d+$/.test(r.range)));
   } finally { input.dispose(); serial.dispose(); }
+});
+
+test('a large source ignoring Range is consumed once with bounded units instead of repeatedly downloading its prefix', async () => {
+  const bytes = Buffer.alloc(16 * 1024 * 1024, 42);
+  const { fetcher, state } = fixture({ '/movie': bytes }, { ignoreRange: true, chunkBytes: 8192 });
+  const serial = createSerialMediaFetch(fetcher);
+  try {
+    assert.deepEqual(Buffer.from(await (await serial(`${origin}/movie`, { headers: { Range: 'bytes=0-' } })).arrayBuffer()), bytes);
+    assert.equal(state.requests.length, 1);
+    assert.equal(state.requests[0].bytes, bytes.length);
+    assert.equal(state.peak, 1); assert.equal(state.active, 0);
+  } finally { serial.dispose(); }
+});
+
+test('a competing seek or resource retires an idle sequential body before opening the next body', async () => {
+  const bytes = Buffer.from(Array.from({ length: 8192 }, (_, i) => i % 251));
+  const { fetcher, state } = fixture({ '/movie': bytes, '/map': Buffer.alloc(32, 7) }, { ignoreRange: true, chunkBytes: 257 });
+  const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024 });
+  try {
+    const response = await serial(`${origin}/movie`, { headers: { Range: 'bytes=0-' } });
+    const reader = response.body.getReader();
+    assert.deepEqual(Buffer.from((await reader.read()).value), bytes.subarray(0, 1024));
+    assert.equal(state.active, 1, 'The sequential reader is retained between units');
+    assert.equal((await (await serial(`${origin}/map`)).arrayBuffer()).byteLength, 32);
+    assert.deepEqual(Buffer.from((await reader.read()).value), bytes.subarray(1024, 2048));
+    const footer = await serial(`${origin}/movie`, { headers: { Range: 'bytes=8000-8191' } });
+    assert.deepEqual(Buffer.from(await footer.arrayBuffer()), bytes.subarray(8000));
+    const backward = await serial(`${origin}/movie`, { headers: { Range: 'bytes=10-29' } });
+    assert.deepEqual(Buffer.from(await backward.arrayBuffer()), bytes.subarray(10, 30));
+    await reader.cancel();
+    assert.equal(state.peak, 1);
+  } finally { serial.dispose(); }
+  assert.equal(state.active, 0);
+});
+
+test('sequential network deadlines restart per unit and cancellation releases the retained body', async () => {
+  const { fetcher, state } = fixture({ '/movie': Buffer.alloc(8192, 42) }, { ignoreRange: true, chunkBytes: 257, delay: 1 });
+  const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024, deadline: 30 });
+  try {
+    const response = await serial(`${origin}/movie`, { headers: { Range: 'bytes=0-' } });
+    const reader = response.body.getReader();
+    for (let i = 0; i < 4; i++) { assert.equal((await reader.read()).value.length, 1024); await wait(15); }
+    await reader.cancel();
+    assert.equal(state.active, 0); assert.equal(state.peak, 1);
+  } finally { serial.dispose(); }
+});
+
+test('retiring an initial whole 200 does not disable Range on a source which supports it', async () => {
+  const bytes = Buffer.from(Array.from({ length: 8192 }, (_, i) => i % 251));
+  const { fetcher, state } = fixture({ '/movie': bytes, '/map': Buffer.alloc(32) }, { chunkBytes: 257 });
+  const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024 });
+  try {
+    const reader = (await serial(`${origin}/movie`)).body.getReader();
+    assert.deepEqual(Buffer.from((await reader.read()).value), bytes.subarray(0, 1024));
+    await (await serial(`${origin}/map`)).arrayBuffer();
+    assert.deepEqual(Buffer.from((await reader.read()).value), bytes.subarray(1024, 2048));
+    assert.deepEqual(state.requests.filter(request => request.path === '/movie').map(request => request.range),
+      [null, 'bytes=1024-2047']);
+    await reader.cancel();
+    assert.equal(state.peak, 1); assert.equal(state.active, 0);
+  } finally { serial.dispose(); }
+});
+
+test('a competing network request waits for asynchronous sequential-reader cancellation', async () => {
+  const requests = []; let releaseCancellation;
+  const canceled = new Promise(resolve => { releaseCancellation = resolve; });
+  const serial = createSerialMediaFetch(async url => {
+    requests.push(String(url));
+    return new Response(new ReadableStream({
+      pull(stream) { stream.enqueue(new Uint8Array(1024).fill(42)); },
+      cancel() { return String(url).endsWith('/movie') ? canceled : undefined; },
+    }), { headers: { 'Content-Length': '8192' } });
+  }, { unitBytes: 1024 });
+  try {
+    await serial(`${origin}/movie`);
+    const next = serial(`${origin}/map`);
+    await wait(0);
+    assert.deepEqual(requests, [`${origin}/movie`]);
+    releaseCancellation();
+    const response = await next;
+    assert.deepEqual(requests, [`${origin}/movie`, `${origin}/map`]);
+    await response.body.cancel();
+  } finally { releaseCancellation(); serial.dispose(); }
+});
+
+test('abandoned sequential bodies expire while idle and dispose releases an unread response', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { fetcher, state } = fixture({ '/movie': Buffer.alloc(8192, 42) }, { ignoreRange: true });
+  const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024 });
+  const response = await serial(`${origin}/movie`);
+  assert.equal(state.active, 1);
+  t.mock.timers.tick(5000);
+  assert.equal(state.active, 0);
+  const reader = response.body.getReader();
+  assert.equal((await reader.read()).value.length, 1024);
+  assert.equal((await reader.read()).value.length, 1024, 'An expired idle body reopens at the logical cursor');
+  assert.equal(state.active, 1);
+  serial.dispose();
+  assert.equal(state.active, 0);
+  await assert.rejects(reader.read(), { name: 'AbortError' });
 });
 
 test('unknown total ranges fall back to honest sequential 200 and finish exact-unit EOF without a fabricated 206', async () => {
@@ -173,6 +276,23 @@ test('an unknown-length server ignoring a finite Range still returns the entire 
     assert.equal(response.status, 200); assert.equal(response.headers.get('Content-Range'), null);
     assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
     assert.equal(state.peak, 1); assert.equal(state.active, 0);
+  } finally { serial.dispose(); }
+});
+
+test('a new forward Range cannot turn a retained unknown-length 200 into a truncated whole response', async () => {
+  const bytes = Buffer.from(Array.from({ length: 8192 }, (_, i) => i % 251));
+  const { fetcher, state } = fixture({ '/unknown': bytes }, { unknownLength: true, ignoreRange: true, chunkBytes: 131 });
+  const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024 });
+  try {
+    const first = (await serial(`${origin}/unknown`)).body.getReader();
+    assert.deepEqual(Buffer.from((await first.read()).value), bytes.subarray(0, 1024));
+    const response = await serial(`${origin}/unknown`, { headers: { Range: 'bytes=2048-2057' } });
+    assert.equal(response.status, 200); assert.equal(response.headers.get('Content-Range'), null);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes,
+      'An ignored Range still returns the whole resource from offset zero');
+    assert.equal(state.requests.length, 2, 'The new logical request restarts once, then reuses its own sequential reader');
+    assert.equal(state.peak, 1); assert.equal(state.active, 0);
+    await first.cancel();
   } finally { serial.dispose(); }
 });
 

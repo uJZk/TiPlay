@@ -6,9 +6,9 @@ const FADE_MS = 5, RECOVERY_ERROR_MS = 30, PHASE_CORRECTION_LIMIT = 0.001;
 
 /** Stable source/sample anchors; only an interruption starts a new resampler signal. */
 export class ContinuousAudio {
-  constructor(runtime, rate, channels, outputRate, consumed, maximumMs, { buffered = false, mode = 'carplay', type = 0 } = {}) {
+  constructor(runtime, rate, channels, outputRate, consumed, maximumMs, { buffered = false, mode = 'carplay', type = 0, semanticType = type } = {}) {
     this.runtime = runtime; this.rate = rate; this.channels = channels; this.outputRate = outputRate;
-    this.consumed = consumed; this.maximumMs = maximumMs; this.buffered = buffered; this.mode = mode; this.type = type;
+    this.consumed = consumed; this.maximumMs = maximumMs; this.buffered = buffered; this.mode = mode; this.type = type; this.semanticType = semanticType;
     this.queue = []; this.sequences = new Set(); this.bytes = 0; this.counters = null;
     this.sourceAnchorMs = null; this.sourceFrame = 0; this.inputFrame = 0; this.outputFrames = 0;
     this.state = 'priming'; this.reason = 'startup'; this.clockGeneration = null;
@@ -41,8 +41,11 @@ export class ContinuousAudio {
     this.sourceAnchorMs ??= data.presentationMs;
     const nominalFrame = Math.round((data.presentationMs - this.sourceAnchorMs) * this.rate / 1000);
     const previous = this.lastPacket, consecutive = previous && ((data.sequence - previous.sequence) >>> 0) === 1;
-    const expectedStart = previous ? previous.presentationMs + (previous.end - previous.first) * 1000 / this.rate
-      / (this.sourceClock.confidence ? this.sourceClock.rate : 1) : data.presentationMs;
+    // CarPlay's RTP-derived timestamps count nominal samples, independently of
+    // the arrival oscillator fit. AirPlay's measured presentation anchors do
+    // reflect that oscillator, so only those use its rate for adjacency.
+    const anchorRate = !this.sourceClock.arrival && this.sourceClock.confidence ? this.sourceClock.rate : 1;
+    const expectedStart = previous ? previous.presentationMs + (previous.end - previous.first) * 1000 / this.rate / anchorRate : data.presentationMs;
     const precisionMs = Number.EPSILON * Math.max(1, Math.abs(expectedStart), Math.abs(data.presentationMs)) * 2;
     // A quarter sample covers quantized clock refinement; a real half-sample gap still breaks the signal.
     const connected = consecutive && Math.abs(data.presentationMs - expectedStart) <= Math.max(precisionMs, 250 / this.rate);
@@ -155,7 +158,8 @@ export class ContinuousAudio {
     }
   }
   reference(contextTimeMs) {
-    return { type: this.type, mode: this.mode, epoch: this.epoch, generation: this.generation,
+    return { type: this.type, semanticType: this.semanticType, mode: this.mode, epoch: this.epoch, generation: this.generation,
+      anchoring: this.arrivalPlayback ? 'arrival' : 'presentation',
       contextTimeMs, sourceTimeMs: this.rawCursorMs, mediaRate: this.slewRatio * this.outputRate / this.rate / this.sourceClock.rate,
       resampleRatio: this.slewRatio, networkDelayMs: this.networkDelayMs,
       filterDelayMs: this.filterDelayMs, filterUncertaintyMs: this.filterUncertaintyMs,

@@ -23,6 +23,9 @@ class BrowserAudioMediaSink(
     private val nowNanos: () -> Long = System::nanoTime,
 ) : MediaSink by video, Closeable {
     private val renderers = mutableMapOf<AudioStreamId, Decoder>()
+    // Transport identity is independent of gain/purpose. Concurrent streams can
+    // share a semantic type without replacing each other's browser decoder.
+    private val transportIds = mutableMapOf<AudioStreamId, Int>()
     private val microphoneDemands = linkedMapOf<AudioStreamId, MicrophoneConfig>()
     private var microphoneId: AudioStreamId? = null
     private var voice: BluetoothVoiceChannel? = null
@@ -38,9 +41,14 @@ class BrowserAudioMediaSink(
 
     @Synchronized override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) {
         if (closed) return
+        val transportId = transportIds[id] ?: allocateTransportId(id) ?: run {
+            Log.w("TiPlayBrowserAudio", "Browser audio stream limit reached; rejected type=${id.type} audioType=${id.audioType}")
+            return
+        }
+        transportIds[id] = transportId
         renderers.remove(id)?.close()
         voice?.clear(id)
-        renderers[id] = Decoder(id, format)
+        renderers[id] = Decoder(id, format, transportId)
     }
 
     override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {
@@ -55,9 +63,10 @@ class BrowserAudioMediaSink(
 
     @Synchronized override fun onAudioStopped(id: AudioStreamId) {
         renderers.remove(id)?.let { renderer ->
-            hub.endEncodedStream(this, semanticType(id), renderer.publication)
+            hub.endEncodedStream(this, renderer.transportId, renderer.publication)
             renderer.close()
         }
+        transportIds.remove(id)
         voice?.clear(id)
     }
 
@@ -142,11 +151,17 @@ class BrowserAudioMediaSink(
         val previous = renderers.filterKeys { !voiceOnly || BluetoothVoicePolicy.allowed(it) }
         previous.forEach { (id, decoder) ->
             renderers.remove(id)
-            if (voiceOnly) hub.endEncodedStream(this, semanticType(id), decoder.publication)
+            if (voiceOnly) hub.endEncodedStream(this, decoder.transportId, decoder.publication)
             decoder.close()
             voice?.clear(id)
-            if (!closed) renderers[id] = Decoder(id, decoder.format, decoder.timeline)
+            if (!closed) renderers[id] = Decoder(id, decoder.format, decoder.transportId, decoder.timeline)
         }
+    }
+
+    private fun allocateTransportId(id: AudioStreamId): Int? {
+        val used = transportIds.values
+        val preferred = semanticType(id)
+        return preferred.takeIf { it !in used } ?: (7 until WebAudioHub.MAX_STREAMS).firstOrNull { it !in used }
     }
 
     @Synchronized override fun close() {
@@ -159,9 +174,11 @@ class BrowserAudioMediaSink(
         if (voice == null) hub.voiceRoute(this, "idle", false)
         hub.end(this)
         resetDecoders()
+        transportIds.clear()
     }
 
-    private inner class Decoder(val id: AudioStreamId, val format: AudioFormat, val timeline: RtpAudioTimeline = RtpAudioTimeline(format.rtpClockRate)) : Closeable {
+    private inner class Decoder(val id: AudioStreamId, val format: AudioFormat, val transportId: Int,
+                                val timeline: RtpAudioTimeline = RtpAudioTimeline(format.rtpClockRate)) : Closeable {
         private val epoch = routeEpoch
         private val packets = ArrayBlockingQueue<IncomingAudioPacket>(24)
         private val order = AudioPacketOrder<IncomingAudioPacket>(nowNanos)
@@ -201,8 +218,8 @@ class BrowserAudioMediaSink(
             if (bluetoothDecode) runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
             var codec: MediaCodec? = null
             try {
-                if (browserForward) hub.beginEncodedStream(this@BrowserAudioMediaSink, semanticType(id), browserFormat(format),
-                    publication = publication, buffered = id.type == 103)
+                if (browserForward) hub.beginEncodedStream(this@BrowserAudioMediaSink, transportId, browserFormat(format),
+                    publication = publication, buffered = id.type == 103, semanticType = semanticType(id))
                 if (bluetoothDecode && format.codec != AudioCodecKind.LPCM) codec = decoderFactory(format)
                 val info = MediaCodec.BufferInfo()
                 while (running) {
@@ -218,7 +235,7 @@ class BrowserAudioMediaSink(
                         if (browserForward) {
                             hub.publishEncoded(this@BrowserAudioMediaSink, payload,
                                 sample.toDouble() * 1_000_000.0 / format.rtpClockRate, timeline.presentation(sample),
-                                id = semanticType(id), buffered = id.type == 103, publication = publication)
+                                id = transportId, buffered = id.type == 103, publication = publication)
                         } else if (!bluetoothDecode) {
                             continue
                         } else if (format.codec == AudioCodecKind.LPCM) {

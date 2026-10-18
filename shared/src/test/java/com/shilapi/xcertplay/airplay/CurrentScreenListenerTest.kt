@@ -7,6 +7,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,6 +32,10 @@ class CurrentScreenListenerTest {
     /** Records the four video deliveries; the 4-argument frame is recorded on its own, not via the 3-argument default. */
     private class RecordingSink : MediaSink {
         val events: MutableList<Event> = Collections.synchronizedList(mutableListOf())
+        val activeScreens = Collections.synchronizedSet(mutableSetOf<Int>())
+        override fun onScreenStreamActive(type: Int, active: Boolean) {
+            if (active) activeScreens.add(type) else activeScreens.remove(type)
+        }
         override fun onVideoCodec(type: Int, codec: VideoCodec) { events += Event.Codec(type, codec) }
         override fun onVideoConfig(type: Int, codecData: ByteArray) { events += Event.CodecData(type, codecData.toList()) }
         override fun onVideoFrame(type: Int, naluBytes: ByteArray) { events += Event.Frame(type, naluBytes.toList()) }
@@ -141,6 +147,128 @@ class CurrentScreenListenerTest {
         }
     }
 
+    @Test fun anotherSessionsTeardownAndLateCallbacksCannotStopTheCurrentScreen() {
+        val sink = RecordingSink()
+        val engine = CarPlayMediaEngine(sink)
+        val first = testSession()
+        val second = testSession()
+        try {
+            withSharedSecret(first); withSharedSecret(second)
+            engine.onScreen(first, 110, mapOf("streamConnectionID" to 1L))
+            val old = listenerOf(streamsOf(engine)[CarPlayMediaEngine.StreamKey(first, 110)] as ScreenStream)
+            engine.onScreen(second, 110, mapOf("streamConnectionID" to 2L))
+            val current = listenerOf(streamsOf(engine)[CarPlayMediaEngine.StreamKey(second, 110)] as ScreenStream)
+            engine.onTeardown(first, 110)
+            engine.onSessionClosed(first)
+            assertTrue(sink.activeScreens.contains(110))
+            old.deliverAll(); old.onClosed(null)
+            assertEquals(emptyList<Event>(), sink.take())
+            assertTrue(!first.isClosed); assertTrue(!second.isClosed)
+            current.deliverAll()
+            assertEquals(expected(110), sink.take())
+        } finally {
+            engine.onSessionClosed(first); engine.onSessionClosed(second)
+            first.close(); second.close()
+        }
+    }
+
+    @Test fun borrowedMainScreenEofKeepsControlAliveAndAcceptsAReturnedScreen() {
+        val sink = RecordingSink()
+        val engine = CarPlayMediaEngine(sink)
+        val session = testSession()
+        try {
+            withSharedSecret(session)
+            engine.onScreen(session, 110, mapOf("streamConnectionID" to 1L))
+            val old = listenerOf(streamsOf(engine)[CarPlayMediaEngine.StreamKey(session, 110)] as ScreenStream)
+            session.setScreenBorrowed(true)
+            old.onClosed(null)
+            assertTrue(!session.isClosed)
+            assertTrue(streamsOf(engine).isEmpty())
+            session.setScreenBorrowed(false)
+            engine.onScreen(session, 110, mapOf("streamConnectionID" to 2L))
+            val current = listenerOf(streamsOf(engine)[CarPlayMediaEngine.StreamKey(session, 110)] as ScreenStream)
+            old.onClosed(null)
+            assertTrue(!session.isClosed)
+            current.deliverAll()
+            assertEquals(expected(110), sink.take())
+        } finally { engine.onSessionClosed(session); session.close() }
+    }
+
+    @Test fun auxiliaryScreenEofDoesNotCloseTheMainScreenSession() {
+        val sink = RecordingSink()
+        val engine = CarPlayMediaEngine(sink)
+        val session = testSession()
+        try {
+            withSharedSecret(session)
+            engine.onScreen(session, 110, mapOf("streamConnectionID" to 1L))
+            engine.onScreen(session, 111, mapOf("streamConnectionID" to 2L))
+            listenerOf(streamsOf(engine)[CarPlayMediaEngine.StreamKey(session, 111)] as ScreenStream).onClosed(null)
+            assertTrue(!session.isClosed)
+            listenerOf(streamsOf(engine)[CarPlayMediaEngine.StreamKey(session, 110)] as ScreenStream).deliverAll()
+            assertEquals(expected(110), sink.take())
+        } finally { engine.onSessionClosed(session); session.close() }
+    }
+
+    @Test fun sessionCloseStopsItsOwnedMainAndAuxiliaryScreens() {
+        val sink = RecordingSink()
+        val engine = CarPlayMediaEngine(sink)
+        val session = testSession()
+        try {
+            withSharedSecret(session)
+            engine.onScreen(session, 110, mapOf("streamConnectionID" to 1L))
+            engine.onScreen(session, 111, mapOf("streamConnectionID" to 2L))
+            val old = listenerOf(streamsOf(engine)[CarPlayMediaEngine.StreamKey(session, 110)] as ScreenStream)
+            assertEquals(setOf(110, 111), sink.activeScreens)
+            engine.onSessionClosed(session)
+            assertTrue(sink.activeScreens.isEmpty())
+            assertTrue(streamsOf(engine).isEmpty())
+            old.deliverAll()
+            assertTrue(sink.take().isEmpty())
+        } finally { engine.onSessionClosed(session); session.close() }
+    }
+
+    @Test fun failingScreenStopStillCompletesClaimedSessionCloseAndReleasesThePort() {
+        var ended = 0
+        val session = testSession(object : AirPlaySessionListener {
+            override fun onSessionEnded(session: AirPlaySession) { ended++ }
+        })
+        val engine = CarPlayMediaEngine(object : MediaSink {
+            override fun onScreenStreamActive(type: Int, active: Boolean) {
+                if (!active) error("stop failed")
+            }
+        })
+        try {
+            withSharedSecret(session)
+            val port = requireNotNull(engine.onScreen(session, 110, mapOf("streamConnectionID" to 1L)))
+            val stream = streamsOf(engine)[CarPlayMediaEngine.StreamKey(session, 110)] as ScreenStream
+            assertThrows(IllegalStateException::class.java) { listenerOf(stream).onClosed(null) }
+            assertTrue(session.isClosed)
+            assertEquals(1, ended)
+            assertTrue(streamsOf(engine).isEmpty())
+            Socket().use { socket ->
+                assertThrows(java.io.IOException::class.java) {
+                    socket.connect(java.net.InetSocketAddress("::1", port), 1000)
+                }
+            }
+            session.close()
+            assertEquals(1, ended)
+        } finally { engine.onSessionClosed(session); session.close() }
+    }
+
+    @Test fun claimedSessionRetirementRejectsScreenSetupBeforeBlockingCleanup() {
+        val engine = CarPlayMediaEngine(RecordingSink())
+        val session = testSession()
+        withSharedSecret(session)
+        val cleanup = session.prepareClose()
+        assertNotNull(cleanup)
+        try {
+            assertTrue(session.isClosed)
+            assertNull(engine.onScreen(session, 110, mapOf("streamConnectionID" to 1L)))
+            assertTrue(streamsOf(engine).isEmpty())
+            assertNull(session.prepareClose())
+        } finally { cleanup?.invoke(); engine.onSessionClosed(session) }
+    }
+
     private fun withSharedSecret(session: AirPlaySession) {
         // onScreen derives the stream key from the pair-verify secret; any 32 bytes will do for routing.
         PairVerify::class.java.getDeclaredField("sharedSecret").apply { isAccessible = true }
@@ -157,7 +285,7 @@ class CurrentScreenListenerTest {
         ScreenStream::class.java.getDeclaredField("listener").apply { isAccessible = true }
             .get(screen) as ScreenStream.Listener
 
-    private fun testSession(): AirPlaySession = AirPlaySession(
+    private fun testSession(listener: AirPlaySessionListener = object : AirPlaySessionListener {}): AirPlaySession = AirPlaySession(
         socket = Socket(),
         config = AirPlayConfig(
             deviceName = "test",
@@ -169,7 +297,7 @@ class CurrentScreenListenerTest {
         identity = AirPlayIdentity.generate(),
         pairings = PairingStore(),
         mfi = null,
-        listener = object : AirPlaySessionListener {},
+        listener = listener,
         media = object : AirPlayMediaHandler {},
     )
 }

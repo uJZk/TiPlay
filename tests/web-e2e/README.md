@@ -80,7 +80,7 @@ Generate original synthetic 320×180 moving video/audio; FFmpeg needs libx264 an
 ```sh
 mkdir -p work/canvas
 ffmpeg -f lavfi -i testsrc2=size=320x180:rate=30 -f lavfi -i sine=frequency=440:sample_rate=48000 \
-  -t 4 -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart -y work/canvas/sample.mp4
+  -t 24 -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart -y work/canvas/sample.mp4
 ffmpeg -i work/canvas/sample.mp4 -c copy -hls_time 1 -hls_playlist_type vod \
   -hls_segment_filename work/canvas/part%d.ts -y work/canvas/sample.m3u8
 NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium \

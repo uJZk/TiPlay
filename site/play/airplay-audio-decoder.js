@@ -56,7 +56,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
   }
   function backend(session, value) {
     if (diagnostics) Object.assign(diagnostics['stream' + session.type] ??= pcmStats(),
-      { backend: value, epoch: session.epoch, rate: session.config.sampleRate, channels: session.config.channels });
+      { backend: value, epoch: session.epoch, rate: session.config.sampleRate, channels: session.config.channels, semanticType: session.semanticType });
   }
   const live = session => !disposed && sessions.get(session.type) === session && !session.closed;
   const notify = session => { for (const resolve of session.waiters) resolve(); session.waiters.clear(); };
@@ -77,6 +77,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
   }
   function recordFor(session, fields) {
     return { type: session.type, mode: session.mode, epoch: session.epoch, sequence: session.sequence,
+      semanticType: session.semanticType,
       flags: session.flags & ~2, rate: session.config.sampleRate, channels: session.config.channels, ...fields };
   }
   function output(session, data) {
@@ -102,18 +103,21 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
     const previous = sessions.get(record.type);
     if (previous && record.type === previous.type && ((record.epoch - previous.epoch) | 0) < 0) return false;
     reset(record.type);
+    const semanticType = record.config?.semanticType ?? previous?.semanticType ?? record.type;
     if (record.config?.ended === true) {
-      publish({ ...record, config: undefined, ended: true, flags: record.flags | 2, pcm: new ArrayBuffer(0) }); return true;
+      publish({ ...record, semanticType, config: undefined, ended: true, flags: record.flags | 2, pcm: new ArrayBuffer(0) }); return true;
     }
     const config = record.config;
     const session = { closed: false, decoder: null, software: null, config,
-      type: record.type, mode: record.mode, epoch: record.epoch, sequence: record.sequence, flags: record.flags,
+      type: record.type, semanticType, mode: record.mode, epoch: record.epoch, sequence: record.sequence, flags: record.flags,
       anchors: [], waiters: new Set(), outputSequence: 0 };
     sessions.set(record.type, session);
     try {
       if (!config || !['pcm', ...Object.keys(CODECS)].includes(config.codec) || !Number.isInteger(config.sampleRate)
         || config.sampleRate < 8000 || config.sampleRate > 96000 || ![1, 2].includes(config.channels)
         || config.sampleRate !== record.rate || config.channels !== record.channels) throw new Error('Invalid AirPlay audio configuration.');
+      if ((config.semanticType !== undefined && (!Number.isInteger(config.semanticType) || config.semanticType < 0 || config.semanticType > 4 || record.mode !== 'carplay'))
+        || (record.type >= 7 && config.semanticType === undefined)) throw new Error('Invalid CarPlay audio stream purpose.');
       publish(recordFor(session, { ended: false, flags: record.flags | 2, pcm: new ArrayBuffer(0), presentationMs: NaN }));
       if (config.codec === 'pcm') {
         if (![16, 24].includes(config.bitDepth)) throw unsupported('pcm');

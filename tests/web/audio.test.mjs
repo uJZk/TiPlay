@@ -34,6 +34,13 @@ test('mirror soundtrack keeps its own channel beside CarPlay and rejects an unla
   await assert.rejects(async () => { for await (const _ of readAudioRecords(body([record([20], { type: 6 })]))) {} });
 });
 
+test('unsigned extended CarPlay stream IDs preserve framing and reject AirPlay-mode aliases', async () => {
+  const values = [];
+  for await (const value of readAudioRecords(body([record([10], { type: 128 }), record([20], { type: 255 })]))) values.push(value);
+  assert.deepEqual(values.map(value => value.type), [128, 255]);
+  await assert.rejects(async () => { for await (const _ of readAudioRecords(body([record([20], { type: 255, flags: 4 })]))) {} });
+});
+
 test('audio mode flags retain buffered/reset flags and notify policy before timing without video config', async () => {
   for (const [bits, mode] of [[0, 'carplay'], [4, 'airplay-mirror']]) {
     const records = [];
@@ -64,6 +71,25 @@ test('empty stream reset is neither played PCM nor a clock fallback sample', asy
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(queued, 0, 'a reset must leave the initial delay free to follow the first real media sample');
     assert.equal(audio.stats().fallbackPackets, 0);
+  } finally { audio.dispose(); browser.done(); }
+});
+
+test('arrival-anchored CarPlay guidance cannot alter media timing or startup readiness', async () => {
+  const browser = mockBrowser(); let controller;
+  const timing = [], queued = [];
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
+    onTiming: (...value) => timing.push(value), onQueued: value => queued.push(value),
+    fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
+  try {
+    await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
+    await new Promise(resolve => setImmediate(resolve));
+    const at = performance.timeOrigin + performance.now(); audio.clock({ offset: at - 1000, at, rtt: 2 });
+    const guidance = record([1000, 1000], { type: 1 }); new DataView(guidance.buffer).setFloat64(20, 1000);
+    controller.enqueue(guidance); await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(timing, []); assert.deepEqual(queued, []);
+    const media = record([1000, 1000]); new DataView(media.buffer).setFloat64(20, 1000);
+    controller.enqueue(media); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(timing.length, 1); assert.deepEqual(queued, ['carplay']);
   } finally { audio.dispose(); browser.done(); }
 });
 

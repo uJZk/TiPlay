@@ -101,18 +101,21 @@ export function createAudioReferenceTimeline() {
         && reference.sequence === previous.sequence && reference.state !== 'playing' && reference.at >= previous.at;
       if (previous && (reference.generation < previous.generation || (reference.generation === previous.generation
         && (reference.sequence < previous.sequence || (reference.sequence === previous.sequence && !sameSequenceInvalidation))))) return false;
-      const required = reference.state === 'playing' || reference.playoutState === 'playing' || (previous?.required
-        && !['disabled', 'ended', 'stopped'].includes(reference.state));
+      const required = !(reference.mode === 'carplay' && reference.anchoring === 'arrival')
+        && (reference.state === 'playing' || reference.playoutState === 'playing' || (previous?.required
+          && !['disabled', 'ended', 'stopped'].includes(reference.state)));
       references.set(key, { ...reference, required });
       return true;
     },
     resolve(mode, sourceTimeMs, clockGeneration, at) {
       const candidates = [...references.values()].filter(value => value.mode === mode
+        && !(mode === 'carplay' && value.anchoring === 'arrival')
         && !['disabled', 'ended', 'stopped'].includes(value.state));
       if (!candidates.length) return { state: 'video-only', required: false };
       // Media remains the reference while navigation/alerts are mixed over it.
       // Invalid media must not be disguised by a different guidance stream.
-      candidates.sort((a, b) => (a.type === 0 || a.type === 6 ? 0 : 1) - (b.type === 0 || b.type === 6 ? 0 : 1)
+      const media = value => (value.semanticType ?? value.type) === 0 || value.type === 6;
+      candidates.sort((a, b) => (media(a) ? 0 : 1) - (media(b) ? 0 : 1)
         || b.at - a.at);
       const reference = candidates[0];
       if (!reference.required && reference.state !== 'playing') return { state: reference.state, required: false, reference };

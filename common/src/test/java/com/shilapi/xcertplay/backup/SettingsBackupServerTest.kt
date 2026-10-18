@@ -73,6 +73,33 @@ class SettingsBackupServerTest {
     }
 
     @Test
+    fun theIdleCallbackCanStopAndReopenWithoutJoiningItself() {
+        val idle = java.util.concurrent.CountDownLatch(1)
+        val reopened = AtomicReference<SettingsBackupEndpoint?>()
+        val wanted = freePort()
+        val quiet = typedServer().apply {
+            typedPort = wanted
+            idleTimeoutMillis = 100
+        }
+        quiet.onIdle = {
+            try {
+                quiet.stop()
+                quiet.idleTimeoutMillis = 5_000
+                reopened.set(quiet.start())
+            } finally {
+                idle.countDown()
+            }
+        }
+        try {
+            assertEquals(wanted, quiet.start()!!.port)
+            assertTrue(idle.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            assertEquals(wanted, reopened.get()?.port)
+        } finally {
+            quiet.stop()
+        }
+    }
+
+    @Test
     fun servesThePageOnlyUnderTheTokenPath() {
         val (status, body) = get("/b/${endpoint.token}/")
         assertEquals(200, status)
@@ -293,9 +320,63 @@ class SettingsBackupServerTest {
         val wanted = freePort()
         val typed = typedServer().apply { typedPort = wanted }
         try {
+            repeat(200) {
+                assertEquals("opening $it", wanted, typed.start()!!.port)
+                Socket("127.0.0.1", wanted).close()
+                typed.stop()
+            }
             assertEquals(wanted, typed.start()!!.port)
-            Socket("127.0.0.1", wanted).close()
+        } finally {
             typed.stop()
+        }
+    }
+
+    @Test
+    fun restartClosesConnectionsAcceptedByThePreviousOpening() {
+        val wanted = freePort()
+        val typed = typedServer().apply { typedPort = wanted }
+        try {
+            repeat(100) {
+                val previous = typed.start()!!
+                Socket("127.0.0.1", previous.port).use { socket ->
+                    socket.soTimeout = 5_000
+                    typed.stop()
+                    val restarted = typed.start()!!
+                    assertEquals(wanted, restarted.port)
+                    val end = runCatching { socket.getInputStream().read() }
+                    assertTrue(end.getOrNull() == -1 || end.exceptionOrNull() is java.net.SocketException)
+                    val connection = URL("http://127.0.0.1:${restarted.port}/b/${restarted.token}/").openConnection() as HttpURLConnection
+                    connection.connectTimeout = 5_000
+                    connection.readTimeout = 5_000
+                    try {
+                        assertEquals(200, connection.responseCode)
+                    } finally {
+                        connection.disconnect()
+                    }
+                }
+                typed.stop()
+            }
+        } finally {
+            typed.stop()
+        }
+    }
+
+    @Test
+    fun anInterruptedStopStillReleasesTheTypedPort() {
+        val wanted = freePort()
+        val typed = typedServer().apply { typedPort = wanted }
+        try {
+            repeat(100) {
+                assertEquals(wanted, typed.start()!!.port)
+                Socket("127.0.0.1", wanted).close()
+                Thread.currentThread().interrupt()
+                try {
+                    typed.stop()
+                    assertTrue(Thread.currentThread().isInterrupted)
+                } finally {
+                    Thread.interrupted()
+                }
+            }
             assertEquals(wanted, typed.start()!!.port)
         } finally {
             typed.stop()

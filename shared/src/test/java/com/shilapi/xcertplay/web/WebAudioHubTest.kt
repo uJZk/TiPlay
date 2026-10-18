@@ -6,6 +6,43 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class WebAudioHubTest {
+    @Test fun extendedUnsignedStreamsRetainTheirOwnConfigurationAudioAndEnd() {
+        val hub = WebAudioHub(); val owner = Any(); hub.begin(owner); val reader = hub.subscribe()
+        repeat(5) { reader.take(100) }
+        val format = WebAudioHub.EncodedFormat("pcm", 48000, 1, 16, 960)
+        val main = hub.publication(owner); val extra = hub.publication(owner)
+        try {
+            hub.beginEncodedStream(owner, 0, format, publication = main, semanticType = 0)
+            hub.beginEncodedStream(owner, 255, format, publication = extra, semanticType = 0)
+            val configurations = List(2) { requireNotNull(reader.take(100)) }
+            assertEquals(setOf(0, 255), configurations.map { it[5].toInt() and 255 }.toSet())
+            assertTrue(configurations.all { String(it.copyOfRange(28, it.size)).contains("\"semanticType\":0") })
+            hub.publishEncoded(owner, byteArrayOf(0, 10), 0.0, id = 0, publication = main)
+            hub.publishEncoded(owner, byteArrayOf(0, 20), 0.0, id = 255, publication = extra)
+            hub.endEncodedStream(owner, 255, extra); extra.close()
+            val ended = requireNotNull(reader.take(100))
+            assertEquals(255, ended[5].toInt() and 255)
+            assertTrue(String(ended.copyOfRange(28, ended.size)).contains("\"ended\":true"))
+            val retained = requireNotNull(reader.take(100))
+            assertEquals(0, retained[5].toInt()); assertEquals(10, retained[37].toInt())
+            hub.publishEncoded(owner, byteArrayOf(0, 30), 20_000.0, id = 0, publication = main)
+            assertEquals(30, requireNotNull(reader.take(100))[37].toInt())
+            assertNull(reader.take(10))
+            hub.beginEncodedStream(owner, 255, format, publication = main, semanticType = 1)
+            reader.take(100)
+            repeat(WebAudioHub.MAX_REALTIME_PACKETS + 1) {
+                hub.publishEncoded(owner, byteArrayOf(0, it.toByte()), it.toDouble(), id = 255, publication = main)
+            }
+            val recovered = requireNotNull(reader.take(100))
+            assertEquals(6, recovered[4].toInt()); assertEquals(255, recovered[5].toInt() and 255)
+            assertTrue(String(recovered.copyOfRange(28, recovered.size)).contains("\"semanticType\":1"))
+            assertEquals(WebAudioHub.MAX_REALTIME_PACKETS, requireNotNull(reader.take(100))[37].toInt())
+            hub.begin(Any())
+            val resets = List(6) { requireNotNull(reader.take(100)) }
+            assertEquals(setOf(0, 1, 2, 3, 4, 255), resets.map { it[5].toInt() and 255 }.toSet())
+        } finally { main.close(); extra.close(); reader.close() }
+    }
+
     @Test fun disablingCarPlayDiscardsOnlyItsAudioAndKeepsMirrorConnected() {
         val hub = WebAudioHub(); val carPlay = Any(); val mirror = Any()
         hub.begin(carPlay); hub.beginMirror(mirror); val reader = hub.subscribe()

@@ -36,7 +36,7 @@ export async function* readAudioRecords(body) {
       const channels = bytes[2], rate = header.getUint32(4);
       const headerSize = 24;
       const kind = bytes[0], type = bytes[1], mode = (bytes[3] & 12) >> 2;
-      if (![2, 6, 7].includes(kind) || type > 6 || (type === 5 && kind !== 2) || (type === 6 && mode !== 1) || (kind === 2 && type === 5 && size !== headerSize)
+      if (![2, 6, 7].includes(kind) || (type >= 7 && mode !== 0) || (type === 5 && kind !== 2) || (type === 6 && mode !== 1) || (kind === 2 && type === 5 && size !== headerSize)
         || mode > 2 || channels < 1 || channels > 2 || rate < 8000 || rate > 96000
         || (kind === 2 && (size - headerSize) % (channels * 2)) || (kind === 7 && size < headerSize + 8)) {
         throw new Error('invalid audio format');

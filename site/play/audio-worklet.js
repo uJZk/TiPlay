@@ -5,6 +5,11 @@ import { BUFFERED_AUDIO_WINDOW_MS } from './audio-buffer-policy.js';
 import { SoxrRuntime } from './streaming-resampler.js';
 import { ContinuousAudio } from './continuous-audio.js';
 
+const purpose = (type, stream) => stream.semanticType ?? type;
+const isVoice = (type, stream) => purpose(type, stream) >= 1 && purpose(type, stream) <= 4;
+const isMedia = (type, stream) => purpose(type, stream) === 0 || purpose(type, stream) === 6;
+const SPEECH_START_BUFFER_MS = 20;
+
 class TiPlayAudio extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -31,7 +36,10 @@ class TiPlayAudio extends AudioWorkletProcessor {
       if ('localTimeOriginMs' in data) this.localTimeOriginMs = data.localTimeOriginMs;
       if ('outputUncertaintyMs' in data) this.outputUncertaintyMs = data.outputUncertaintyMs;
       if ('suspended' in data) {
-        if (data.suspended && !this.suspended) for (const timeline of this.timelines.values()) if (timeline instanceof ContinuousAudio) timeline.recover('suspended');
+        if (data.suspended && !this.suspended) for (const [type, timeline] of this.timelines) if (timeline instanceof ContinuousAudio) {
+          if (timeline.arrivalPlayback) { this.retireTimeline(timeline); this.timelines.delete(type); }
+          else timeline.recover('suspended');
+        }
         this.suspended = data.suspended;
       }
       if (typeof data.debug === 'boolean') {
@@ -64,7 +72,8 @@ class TiPlayAudio extends AudioWorkletProcessor {
       if (!data.pcm.byteLength && data.flags & 2) {
         if (previousTimeline && previousEpoch === data.epoch) this.retireTimeline(previousTimeline);
         this.port.postMessage({ playout: { ...(previousTimeline instanceof ContinuousAudio ? previousTimeline.reference(currentTime * 1000) : {}),
-          type: data.type, mode: data.mode, epoch: data.epoch, generation: data.generation,
+          type: data.type, semanticType: data.semanticType ?? data.type, mode: data.mode, epoch: data.epoch, generation: data.generation,
+          anchoring: data.mode === 'carplay' && isVoice(data.type, data) ? 'arrival' : 'presentation',
           clockGeneration: this.clock?.generation, contextTimeMs: currentTime * 1000,
           state: data.ended === false ? 'priming' : 'ended', sequence: ++this.feedbackSequence } });
         this.timelines.delete(data.type); return;
@@ -73,35 +82,46 @@ class TiPlayAudio extends AudioWorkletProcessor {
         let timeline = this.timelines.get(data.type);
         if (!(timeline instanceof ContinuousAudio) || timeline.rate !== data.rate || timeline.channels !== data.channels || timeline.epoch !== data.epoch || data.flags & 2) {
           this.retireTimeline(timeline);
-          const mediaWindow = data.mode === 'carplay' && data.type === 0;
+          const mediaWindow = data.mode === 'carplay' && purpose(data.type, data) === 0;
           timeline = new ContinuousAudio(this.runtime, data.rate, data.channels, sampleRate,
             (bytes, reason, generation) => this.credit(bytes, generation, reason, data.type),
             (data.flags & 1) || mediaWindow ? BUFFERED_AUDIO_WINDOW_MS : 1000,
-            { buffered: Boolean(data.flags & 1), mode: data.mode, type: data.type });
+            { buffered: Boolean(data.flags & 1), mode: data.mode, type: data.type, semanticType: data.semanticType ?? data.type });
           timeline.debug(Boolean(this.diagnostics)); timeline.epoch = data.epoch; timeline.generation = data.generation;
-          timeline.synchronized = Number.isFinite(data.presentationMs); this.timelines.set(data.type, timeline);
+          timeline.arrivalPlayback = data.mode === 'carplay' && isVoice(data.type, data);
+          timeline.synchronized = !timeline.arrivalPlayback && Number.isFinite(data.presentationMs); this.timelines.set(data.type, timeline);
         }
         const legacy = this.streams.get(data.type);
         if (legacy) { for (const pcm of legacy.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', data.type); this.streams.delete(data.type); }
-        if (!timeline.synchronized) {
+        if (timeline.arrivalPlayback) {
+          // Guidance has no lip-sync relationship with the screen. Its sender may
+          // supply no lead at all, so a device-delay target can never catch its tail.
+          // Anchor the first sample to this render clock while retaining RTP gaps.
+          timeline.arrivalStartMs ??= currentTime * 1000 + SPEECH_START_BUFFER_MS;
+          if (Number.isFinite(data.presentationMs)) timeline.arrivalSourceMs ??= data.presentationMs
+            - (timeline.lastPacket?.end ?? 0) * 1000 / timeline.rate;
+          data.presentationMs = Number.isFinite(data.presentationMs)
+            ? timeline.arrivalStartMs + data.presentationMs - timeline.arrivalSourceMs
+            : timeline.lastPacket ? timeline.sourceAnchorMs + timeline.lastPacket.end * 1000 / timeline.rate : timeline.arrivalStartMs;
+        } else if (!timeline.synchronized) {
           const previous = timeline.lastPacket;
           data.presentationMs = previous ? timeline.sourceAnchorMs + previous.end * 1000 / timeline.rate : this.targetTime(timeline, currentTime * 1000) ?? 0;
         }
-        timeline.push(data, this.clock?.rate || 1); return;
+        timeline.push(data, timeline.arrivalPlayback ? 1 : this.clock?.rate || 1); return;
       }
       if (Number.isFinite(data.sourceTime)) {
         let timeline = this.timelines.get(data.type);
         if (!timeline || timeline.rate !== data.rate || timeline.channels !== data.channels || timeline.epoch !== data.epoch || data.flags & 2) {
           this.retireTimeline(timeline);
           // Realtime CarPlay media also arrives ahead of its negotiated playback time.
-          const mediaWindow = data.mode === 'carplay' && data.type === 0;
+          const mediaWindow = data.mode === 'carplay' && purpose(data.type, data) === 0;
           timeline = new PcmTimeline(data.rate, data.channels,
             (consumed, reason) => this.credit(consumed, data.generation, reason, data.type),
             (data.flags & 1) || mediaWindow ? BUFFERED_AUDIO_WINDOW_MS : 1000, { buffered: Boolean(data.flags & 1) });
           timeline.debug(Boolean(this.diagnostics));
           timeline.epoch = data.epoch; this.timelines.set(data.type, timeline);
         }
-        timeline.mode = data.mode;
+        timeline.mode = data.mode; timeline.semanticType = data.semanticType ?? data.type;
         const legacy = this.streams.get(data.type);
         if (legacy) { for (const pcm of legacy.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', data.type); this.streams.delete(data.type); }
         timeline.push(data); return;
@@ -112,7 +132,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
       let stream = this.streams.get(data.type);
       if (!stream || stream.rate !== data.rate || stream.channels !== data.channels || data.flags & 2) {
         if (stream) for (const pcm of stream.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', data.type);
-        stream = { rate: data.rate, channels: data.channels, queue: [], frames: 0, position: 0 };
+        stream = { rate: data.rate, channels: data.channels, semanticType: data.semanticType ?? data.type, queue: [], frames: 0, position: 0 };
         this.streams.set(data.type, stream);
       }
       const pcm = new Int16Array(data.pcm), frames = pcm.length / data.channels;
@@ -138,7 +158,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
   retireTimeline(timeline) {
     if (!timeline) return;
     if (timeline instanceof ContinuousAudio && timeline.last.some(value => value !== 0)) {
-      this.retiring.push({ samples: timeline.last.slice(), remaining: timeline.fadeFrames, total: timeline.fadeFrames, type: timeline.type });
+      this.retiring.push({ samples: timeline.last.slice(), remaining: timeline.fadeFrames, total: timeline.fadeFrames, type: timeline.type, semanticType: timeline.semanticType });
       if (this.retiring.length > 16) this.retiring.shift();
     }
     timeline.clear();
@@ -156,7 +176,21 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.port.postMessage({ diagnosticRevision: this.diagnosticRevision, diagnostics: { ...scalars, ...details, renderTimeMs: currentTime * 1000 } });
   }
   targetTime(timeline, contextMs) {
-    if (this.suspended || !this.contextAnchor) return null;
+    if (this.suspended) return null;
+    if (timeline.arrivalPlayback) {
+      const target = contextMs - (timeline.arrivalDelayMs || 0), tail = timeline.queue.at(-1);
+      if (!timeline.backend && tail && target >= timeline.sourceAnchorMs + tail.end * 1000 / timeline.rate) {
+        // After a delivery pause the source may remain behind the render clock.
+        // Re-prime from unplayed samples once, instead of chasing its moving tail.
+        const firstFrame = Math.max(timeline.queue[0].first, Math.ceil(timeline.sourceFrame));
+        const next = Math.max(timeline.rawCursorMs ?? -Infinity,
+          timeline.sourceAnchorMs + firstFrame * 1000 / timeline.rate - timeline.filterDelayMs);
+        timeline.arrivalDelayMs = contextMs - next + SPEECH_START_BUFFER_MS;
+        return next - SPEECH_START_BUFFER_MS;
+      }
+      return target;
+    }
+    if (!this.contextAnchor) return null;
     const localMs = this.contextAnchor.localTimeMs + contextMs - this.contextAnchor.contextTimeMs;
     const plans = this.plansByMode[timeline.mode] ?? this.delayPlans;
     // Buffer adaptation establishes a new queue anchor. Clock drift alone changes ASRC rate.
@@ -188,7 +222,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
     for (const timeline of this.timelines.values()) if (timeline instanceof ContinuousAudio) {
       const reference = timeline.reference(contextMs);
       reference.outputUncertaintyMs = this.outputUncertaintyMs;
-      if (!timeline.synchronized && reference.state === 'playing') reference.state = 'untimed';
+      if (!timeline.synchronized && !timeline.arrivalPlayback && reference.state === 'playing') reference.state = 'untimed';
       reference.sequence = ++this.feedbackSequence;
       this.port.postMessage({ playout: reference });
     }
@@ -208,9 +242,9 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.renderedFrames += blockFrames;
     for (const channel of output) channel.fill(0);
     let voiceActive = false;
-    for (const [type, stream] of this.streams) if (type >= 1 && type <= 4 && stream.queue.length > 0) { voiceActive = true; break; }
+    for (const [type, stream] of this.streams) if (isVoice(type, stream) && stream.queue.length > 0) { voiceActive = true; break; }
     for (const [type, stream] of this.streams) {
-      const gain = (type === 0 || type === 6) && voiceActive ? 0.2 : 1;
+      const gain = isMedia(type, stream) && voiceActive ? 0.2 : 1;
       const step = stream.rate / sampleRate;
       for (let i = 0; i < output[0].length; i++) {
         while (stream.queue.length && stream.position >= stream.queue[0].length / stream.channels) {
@@ -232,18 +266,18 @@ class TiPlayAudio extends AudioWorkletProcessor {
     const continuous = [];
     for (const [type, timeline] of this.timelines) if (timeline instanceof ContinuousAudio) {
       timeline.block ??= new Float32Array(512 * timeline.channels);
-      timeline.render(this.targetTime(timeline, contextMs), contextMs, this.clock, blockFrames, timeline.block);
+      timeline.render(this.targetTime(timeline, contextMs), contextMs, timeline.arrivalPlayback ? null : this.clock, blockFrames, timeline.block);
       continuous.push([type, timeline]);
     }
     for (let i = 0; i < blockFrames; i++) {
       let voice = voiceActive;
-      for (const [type, timeline] of continuous) if (type >= 1 && type <= 4 && timeline.state === 'playing') voice = true;
+      for (const [type, timeline] of continuous) if (isVoice(type, timeline) && timeline.state === 'playing') voice = true;
       for (const [type, timeline] of continuous) for (let c = 0; c < output.length; c++) {
-        output[c][i] += timeline.block[i * timeline.channels + Math.min(c, timeline.channels - 1)] * ((type === 0 || type === 6) && voice ? 0.2 : 1);
+        output[c][i] += timeline.block[i * timeline.channels + Math.min(c, timeline.channels - 1)] * (isMedia(type, timeline) && voice ? 0.2 : 1);
       }
       for (const tail of this.retiring) if (tail.remaining > 0) {
         for (let c = 0; c < output.length; c++) output[c][i] += tail.samples[Math.min(c, tail.samples.length - 1)]
-          * (tail.remaining - 1) / tail.total * ((tail.type === 0 || tail.type === 6) && voice ? 0.2 : 1);
+          * (tail.remaining - 1) / tail.total * (isMedia(tail.type, tail) && voice ? 0.2 : 1);
         tail.remaining--;
       }
     }
@@ -255,9 +289,9 @@ class TiPlayAudio extends AudioWorkletProcessor {
         if (timeline instanceof ContinuousAudio) continue;
         timeline.delayMs = audioDelayAt(this.plansByMode[timeline.mode] ?? this.delayPlans, wallTime);
         timeline.playbackTime = wallTime - timeline.delayMs;
-        if (type >= 1 && type <= 4 && timeline.active(timeline.playbackTime)) voice = true;
+        if (isVoice(type, timeline) && timeline.active(timeline.playbackTime)) voice = true;
       }
-      for (const [type, timeline] of this.timelines) if (!(timeline instanceof ContinuousAudio)) for (let c = 0; c < output.length; c++) output[c][i] += timeline.sample(timeline.playbackTime, c) * ((type === 0 || type === 6) && voice ? 0.2 : 1);
+      for (const [type, timeline] of this.timelines) if (!(timeline instanceof ContinuousAudio)) for (let c = 0; c < output.length; c++) output[c][i] += timeline.sample(timeline.playbackTime, c) * (isMedia(type, timeline) && voice ? 0.2 : 1);
     }
     for (const channel of output) for (let i = 0; i < channel.length; i++) {
       channel[i] = Math.max(-1, Math.min(1, channel[i]));

@@ -42,6 +42,7 @@ self.onmessage = ({ data }) => {
   else if (data.type === 'audio-output') { presenter?.audio(data.reference); frames.audio(data.reference); }
   else if (data.type === 'canvas') presenter = createFramePresenter(data.canvas, {
     applyTimingPolicy: true, pace: true,
+    onFirstPresent: config => self.postMessage({ type: 'decoded', id: config.streamId, epoch: config.epoch }),
   });
   else if (data.type === 'resize') presenter?.resize(data.width, data.height);
   else if (data.type === 'stream' || data.type === 'feed') {

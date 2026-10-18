@@ -219,3 +219,43 @@ test('real dynamic DSP drains producer drift while a different device clock and 
   assert.equal(h.player.counters.rebufferCount, 0);
   h.player.clear();
 });
+
+test('fixed AAC frames stay adjacent after natural positive arrival-clock acquisition', () => {
+  const rate = 48000, producerRate = 1.00025, packetFrames = 1024;
+  const h = harness(), quantumMs = 128000 / rate;
+  let inputFrame = 0, sequence = 0;
+  for (let quantum = 0; quantum < 75000 / quantumMs; quantum++) {
+    const contextMs = quantum * quantumMs;
+    while (inputFrame / 48 / producerRate <= contextMs + 200) {
+      const previous = h.player.lastPacket;
+      h.player.push({ pcm: pcm(inputFrame, packetFrames, rate).buffer,
+        presentationMs: h.sourceBase + inputFrame / 48, sequence: sequence++, generation: 3,
+        arrivalLocalTimeMs: inputFrame / 48 / producerRate }, 1);
+      if (previous) assert.equal(h.player.lastPacket.first, previous.end, 'nominal RTP timestamps remain contiguous after the source oscillator locks');
+      inputFrame += packetFrames;
+    }
+    h.player.render(h.sourceBase + contextMs, contextMs, h.clock, 128, h.block);
+    if (quantum > 10) {
+      assert.equal(h.player.state, 'playing');
+      assert.ok(h.block.some(value => Math.abs(value) > 0.1));
+    }
+  }
+  assert.ok(h.player.sourceClock.confidence > 0);
+  assert.ok(Math.abs((h.player.sourceClock.rate - 1) * 1e6 - 250) < 1);
+  assert.deepEqual(h.player.recoveryCounts, {}); h.player.clear();
+});
+
+test('measured AirPlay presentation anchors still use their acquired source rate for adjacency', () => {
+  const h = harness({ mode: 'airplay-mirror' }), sourceRate = 1.00035;
+  for (let second = 0; second < 90; second++) {
+    h.player.sourceClock.observe(second * 48000, second * 1000 / sourceRate);
+    h.player.sourceClock.advance(second * 1000);
+  }
+  assert.equal(h.player.sourceClock.confidence, 1);
+  for (let sequence = 0; sequence < 5; sequence++) {
+    h.player.push({ pcm: pcm(sequence * 960, 960, 48000).buffer,
+      presentationMs: h.sourceBase + sequence * 20 / sourceRate, sequence, generation: 3 });
+    assert.equal(h.player.lastPacket.first, sequence * 960);
+  }
+  h.player.clear();
+});

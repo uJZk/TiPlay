@@ -13,6 +13,7 @@ globalThis.currentTime = 0; globalThis.currentFrame = 0;
 await import('../../site/play/audio-worklet.js');
 
 function harness() {
+  globalThis.currentTime = 0; globalThis.currentFrame = 0;
   const processor = new Processor(), base = 8000000;
   const post = data => processor.port.onmessage({ data });
   post({ clock: { version: 2, generation: 1, serverOriginMs: base, localOriginMs: 0, rate: 1, state: 'locked' },
@@ -20,11 +21,11 @@ function harness() {
     outputUncertaintyMs: 1, plans: { audio: constantDelay(60), video: constantDelay(0) } });
   let frame = 0;
   const cursors = new Map();
-  function feed(type = 0, mode = 'carplay', epoch = 1, untilMs = frame / 48 + 400, gapMs = 0) {
+  function feed(type = 0, mode = 'carplay', epoch = 1, untilMs = frame / 48 + 400, gapMs = 0, semanticType = type) {
     const key = `${type}:${epoch}`, cursor = cursors.get(key) || { frame: 0, sequence: 0 };
     while (cursor.frame < untilMs * 48) {
       const pcm = Int16Array.from({ length: 960 }, (_, i) => Math.round(10000 * Math.sin((cursor.frame + i) * 2 * Math.PI * 997 / 48000)));
-      post({ type, mode, epoch, rate: 48000, channels: 1, flags: 0, sequence: cursor.sequence++, generation: 3,
+      post({ type, semanticType, mode, epoch, rate: 48000, channels: 1, flags: 0, sequence: cursor.sequence++, generation: 3,
         presentationMs: base + cursor.frame / 48 + gapMs, arrivalLocalTimeMs: frame / 48, pcm: pcm.buffer });
       cursor.frame += 960;
     }
@@ -143,4 +144,90 @@ test('disposing a retired processor releases all per-stream filters and terminat
   assert.equal(backend.handle, 0); assert.equal(h.processor.runtime, null); assert.equal(h.processor.timelines.size, 0);
   const output = [new Float32Array(128).fill(1)];
   assert.equal(h.processor.process([], [output]), false); assert.ok(output[0].every(value => value === 0));
+});
+
+test('zero-lead guidance starts with a delayed output device and never becomes the screen clock', () => {
+  for (const semanticType of [1, 2, 3, 4]) for (const leadMs of [0, 75]) {
+    const h = harness();
+    h.post({ contextAnchor: { contextTimeMs: 0, localTimeMs: 188 } });
+    let nonzero = 0;
+    for (let quantum = 0; quantum < 400; quantum++) {
+      h.feed(255, 'carplay', 1, h.frame / 48 + 20, leadMs, semanticType);
+      const output = h.render();
+      if (output[0].some(value => Math.abs(value) > 0.01)) nonzero++;
+    }
+    const player = h.processor.timelines.get(255);
+    assert.ok(nonzero > 385, 'navigation, telephone and Siri PCM play after one short startup buffer');
+    assert.equal(player.state, 'playing'); assert.deepEqual(player.recoveryCounts, {});
+    const reference = h.processor.messages.filter(value => value.playout?.type === 255).at(-1).playout;
+    assert.equal(reference.anchoring, 'arrival'); assert.equal(reference.semanticType, semanticType);
+    const references = createAudioReferenceTimeline(); references.update({ ...reference, at: 1000, audibleTimeMs: 1188 });
+    assert.equal(references.resolve('carplay', h.base + h.frame / 48, 1, 1000).state, 'video-only');
+    // A browser route returning after SCO gets a new epoch and the same short start.
+    h.post({ type: 255, semanticType, mode: 'carplay', epoch: 2, generation: 3, flags: 2, ended: true, pcm: new ArrayBuffer(0) });
+    const start = h.frame / 48;
+    const pcm = Int16Array.from({ length: 4800 }, () => 8000);
+    h.post({ type: 255, semanticType, mode: 'carplay', epoch: 3, generation: 3, flags: 0,
+      rate: 48000, channels: 1, sequence: 0, presentationMs: h.base + start, pcm: pcm.buffer });
+    let resumed = false;
+    for (let quantum = 0; quantum < 25; quantum++) if (h.render()[0].some(value => value > 0.1)) resumed = true;
+    assert.equal(resumed, true);
+    h.post({ dispose: true });
+  }
+});
+
+test('same-purpose streams mix independently and ending one preserves the other and media references', () => {
+  for (const semanticType of [0, 1]) {
+    const h = harness(), control = harness();
+    h.feed(semanticType, 'carplay', 1, 400, 0, semanticType);
+    h.feed(255, 'carplay', 1, 400, 0, semanticType);
+    control.feed(semanticType, 'carplay', 1, 400, 0, semanticType);
+    for (let quantum = 0; quantum < 30; quantum++) {
+      const a = h.render()[0], b = control.render()[0];
+      if (quantum > 15) for (let i = 0; i < 128; i++) assert.ok(Math.abs(a[i] - 2 * b[i]) < 1e-6, 'both streams contribute samples');
+    }
+    const remaining = h.processor.timelines.get(semanticType), backend = remaining.backend;
+    const references = createAudioReferenceTimeline();
+    for (const value of h.processor.messages) if (value.playout) references.update({ ...value.playout, at: 1000, audibleTimeMs: 1100 });
+    h.post({ type: 255, semanticType, mode: 'carplay', epoch: 2, flags: 2, generation: 3, ended: true, pcm: new ArrayBuffer(0) });
+    const ending = h.processor.messages.filter(value => value.playout?.type === 255).at(-1).playout;
+    references.update({ ...ending, at: 1001 });
+    assert.equal(h.processor.timelines.has(255), false); assert.equal(remaining.backend, backend);
+    if (semanticType === 0) {
+      const resolved = references.resolve('carplay', remaining.rawCursorMs, 1, 1001);
+      assert.equal(resolved.state, 'audio-output'); assert.equal(resolved.reference.type, 0);
+    }
+    for (let quantum = 0; quantum < 10; quantum++) {
+      const a = h.render()[0], b = control.render()[0];
+      if (quantum > 3) for (let i = 0; i < 128; i++) assert.ok(Math.abs(a[i] - b[i]) < 1e-6);
+    }
+    h.post({ dispose: true }); control.post({ dispose: true });
+  }
+});
+
+test('arrival-anchored navigation leaves the active media clock and resampler unchanged', () => {
+  const h = harness(); h.feed();
+  for (let i = 0; i < 20; i++) h.render();
+  const media = h.processor.timelines.get(0), backend = media.backend, before = media.rawCursorMs;
+  h.feed(255, 'carplay', 1, 400, 0, 1);
+  for (let i = 0; i < 30; i++) h.render();
+  assert.equal(media.backend, backend); assert.deepEqual(media.recoveryCounts, {});
+  assert.ok(Math.abs(media.rawCursorMs - before - 30 * 128 / 48) < 0.1);
+  const references = createAudioReferenceTimeline();
+  for (const value of h.processor.messages) if (value.playout) references.update({ ...value.playout, at: 1000, audibleTimeMs: 1100 });
+  assert.equal(references.resolve('carplay', media.rawCursorMs, 1, 1000).reference.type, 0);
+  h.post({ dispose: true });
+});
+
+test('guidance re-primes after a lasting delivery-delay step without replaying emitted samples', () => {
+  const h = harness(); let player, previous = -Infinity, resumed = 0;
+  for (let quantum = 0; quantum < 300; quantum++) {
+    if (quantum < 40 || quantum >= 100) h.feed(1, 'carplay', 1, h.frame / 48 + 20 - (quantum >= 100 ? 160 : 0));
+    const output = h.render(); player = h.processor.timelines.get(1);
+    if (Number.isFinite(player.rawCursorMs)) { assert.ok(player.rawCursorMs >= previous); previous = player.rawCursorMs; }
+    if (quantum > 130 && output[0].some(value => Math.abs(value) > 0.01)) resumed++;
+  }
+  assert.ok(resumed > 160, 'a permanent delivery offset must not leave guidance permanently priming');
+  assert.equal(player.state, 'playing'); assert.ok(player.recoveryCounts.underrun > 0);
+  h.post({ dispose: true });
 });

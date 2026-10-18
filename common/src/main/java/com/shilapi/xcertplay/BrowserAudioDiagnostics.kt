@@ -14,10 +14,11 @@ internal object BrowserAudioDiagnostics {
     private val streamFields = setOf(
         "epoch", "rate", "channels", "headMs", "tailMs", "playbackMs", "delayMs", "queueBytes", "queuePackets",
         "capacityPackets", "latePackets", "duplicatePackets", "playedPackets", "resetPackets", "invalidPackets",
-        "capacityBytes", "lateBytes", "duplicateBytes", "playedBytes", "resetBytes", "invalidBytes", "mode",
+        "capacityBytes", "lateBytes", "duplicateBytes", "playedBytes", "resetBytes", "invalidBytes", "mode", "semanticType", "anchoring",
     )
     private val decoderFields = setOf("packets", "frames", "nonzero", "peak", "errors")
-    private val decoderStreamFields = setOf("packets", "frames", "nonzero", "peak", "backend", "epoch", "rate", "channels")
+    private val decoderStreamFields = setOf("packets", "frames", "nonzero", "peak", "backend", "epoch", "rate", "channels", "semanticType")
+    private val streamKey = Regex("(?:decoder\\.)?stream([0-9]{1,3})\\..+")
     private val safeText = Regex("[A-Za-z0-9._-]{1,40}")
 
     fun lines(stats: Map<String, Any?>): List<String> = buildList {
@@ -30,7 +31,9 @@ internal object BrowserAudioDiagnostics {
         }
         line("stage=SNAPSHOT", globalFields)
         line("stage=DECODE", decoderFields, "decoder.")
-        for (stream in 0..6) {
+        val streams = stats.keys.mapNotNull { streamKey.matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }
+            .filter { it in 0..255 }.toSortedSet()
+        for (stream in streams) {
             line("stage=STREAM stream=$stream", streamFields, "stream$stream.")
             line("stage=DECODE stream=$stream", decoderStreamFields, "decoder.stream$stream.")
         }

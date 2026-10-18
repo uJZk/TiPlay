@@ -19,7 +19,7 @@ class CarPlayMediaEngineTest {
     }
 
     @Test
-    fun screenStreamTeardownReportsInactive() {
+    fun unknownScreenTeardownDoesNotChangeSinkOwnership() {
         val events = mutableListOf<Pair<Int, Boolean>>()
         val sink = object : MediaSink {
             override fun onScreenStreamActive(type: Int, active: Boolean) {
@@ -36,11 +36,11 @@ class CarPlayMediaEngineTest {
             session.close()
         }
 
-        assertEquals(listOf(110 to false), events)
+        assertTrue(events.isEmpty())
     }
 
     @Test
-    fun sessionCloseReportsAllScreenStreamsInactive() {
+    fun sessionCloseReleasesUnownedStreamsWithoutChangingSinkOwnership() {
         val events = mutableListOf<Pair<Int, Boolean>>()
         val sink = object : MediaSink {
             override fun onScreenStreamActive(type: Int, active: Boolean) {
@@ -55,14 +55,16 @@ class CarPlayMediaEngineTest {
         @Suppress("UNCHECKED_CAST")
         val streams = streamsField.get(engine) as
             MutableMap<CarPlayMediaEngine.StreamKey, Closeable>
-        streams[CarPlayMediaEngine.StreamKey(session, 110)] = Closeable {}
-        streams[CarPlayMediaEngine.StreamKey(session, 111)] = Closeable {}
-        streams[CarPlayMediaEngine.StreamKey(session, 100)] = Closeable {}
+        var closed = 0
+        streams[CarPlayMediaEngine.StreamKey(session, 110)] = Closeable { closed++ }
+        streams[CarPlayMediaEngine.StreamKey(session, 111)] = Closeable { closed++ }
+        streams[CarPlayMediaEngine.StreamKey(session, 100)] = Closeable { closed++ }
 
         engine.onSessionClosed(session)
         session.close()
 
-        assertEquals(setOf(110 to false, 111 to false), events.toSet())
+        assertTrue(events.isEmpty())
+        assertEquals(3, closed)
         assertTrue(streams.isEmpty())
     }
 

@@ -150,7 +150,14 @@ class AirPlaySession(
     }
 
     override fun close() {
-        if (!closed.compareAndSet(false, true)) return
+        prepareClose()?.invoke()
+    }
+
+    /** Claim retirement under a media ownership lock; perform blocking teardown after releasing it. */
+    internal fun prepareClose(): (() -> Unit)? =
+        if (closed.compareAndSet(false, true)) ::finishClose else null
+
+    private fun finishClose() {
         screenBorrow.close()
         notifyScreenBorrowChanged()
         mainScreenToken = null
@@ -168,6 +175,10 @@ class AirPlaySession(
 
     /** Stable identity of the usable primary screen; replaced on SETUP, absent after teardown/close. */
     internal fun mainScreenSessionToken(): Any? = if (closed.get()) null else mainScreenToken
+
+    internal fun screenDataEnded(type: Int) {
+        if (type == STREAM_TYPE_MAIN_SCREEN) mainScreenToken = null
+    }
 
     /**
      * Asks the iPhone to draw CarPlay's cluster UI on the alt screen (showUI with the display's URL,

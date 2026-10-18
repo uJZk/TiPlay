@@ -167,8 +167,10 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     if (clock?.version !== 2) record.sourceTime = sourceTime;
     record.arrivalLocalTimeMs = performance.now();
     const hasPcm = record.pcm.byteLength > 0;
+    const purpose = record.semanticType ?? record.type;
+    const arrivalAnchored = record.mode === 'carplay' && purpose >= 1 && purpose <= 4;
     if (hasPcm) {
-      if (Number.isFinite(sourceTime)) { timedPackets++; onTiming(sourceTime, record.mode); }
+      if (Number.isFinite(sourceTime)) { timedPackets++; if (!arrivalAnchored) onTiming(sourceTime, record.mode); }
       else fallbackPackets++;
     }
     clockBase ??= now() - context.currentTime * 1000;
@@ -177,7 +179,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     record.generation = playbackGeneration;
     queuedBytes += record.pcm.byteLength;
     node.port.postMessage(record, [record.pcm]);
-    if (hasPcm) onQueued(record.mode);
+    if (hasPcm && !arrivalAnchored) onQueued(record.mode);
   }
   async function stream(signal) {
     stopStream();
