@@ -164,3 +164,47 @@ test('RTC resumed audio replays configuration before an already pending transpor
   assert.deepEqual((await reader.read()).value, packet);
   controller.close(); assert.equal((await reader.read()).done, true);
 });
+
+test('RTC reports selected ICE candidate properties without exposing addresses or candidate identities', async () => {
+  class StatsPeer extends Peer {
+    async getStats() {
+      this.statsCalls = (this.statsCalls ?? 0) + 1;
+      return new Map([
+        ['transport-id-secret', { type: 'transport', selectedCandidatePairId: 'selected-id-secret' }],
+        ['selected-id-secret', { type: 'candidate-pair', state: 'succeeded', localCandidateId: 'local-id-secret', remoteCandidateId: 'remote-id-secret',
+          currentRoundTripTime: 0.008, availableOutgoingBitrate: 1234567, requestsSent: 10, requestsReceived: 8,
+          responsesSent: 8, responsesReceived: 10, bytesSent: 1234, bytesReceived: 5678 }],
+        ['local-id-secret', { type: 'local-candidate', candidateType: 'host', protocol: 'udp', address: '169.254.111.111', port: 49152 }],
+        ['remote-id-secret', { type: 'remote-candidate', candidateType: 'host', protocol: 'udp', address: '192.168.43.10', port: 49153 }],
+      ]);
+    }
+  }
+  const connection = await connectRtc({ session: 's', code: '1234', PeerConnection: StatsPeer,
+    async authenticateOffer() { Peer.last.verified = true; return { sdp: 'answer', session: 7 }; },
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  const ice = connection.stats().ice;
+  assert.equal(ice.state, 'selected');
+  assert.equal(ice.localCandidateType, 'host'); assert.equal(ice.remoteCandidateType, 'host'); assert.equal(ice.protocol, 'udp');
+  assert.equal(ice.currentRoundTripTimeMs, 8); assert.equal(ice.availableOutgoingBitrate, 1234567);
+  assert.equal(ice.requestsSent, 10); assert.equal(ice.responsesReceived, 10);
+  assert.equal(ice.bytesSent, 1234); assert.equal(ice.bytesReceived, 5678);
+  assert.ok(ice.sampleAgeMs >= 0); assert.equal(Peer.last.statsCalls, 1);
+  assert.doesNotMatch(JSON.stringify(ice), /169\.254|192\.168|secret|49152|49153/);
+  connection.close();
+});
+
+test('RTC ignores a pending ICE stats result after the connection closes', async () => {
+  let resolveStats;
+  class PendingStatsPeer extends Peer {
+    getStats() { return new Promise(resolve => { resolveStats = resolve; }); }
+  }
+  const connection = await connectRtc({ session: 's', code: '1234', PeerConnection: PendingStatsPeer,
+    async authenticateOffer() { Peer.last.verified = true; return { sdp: 'answer', session: 7 }; },
+  });
+  assert.equal(connection.stats().ice.state, 'collecting');
+  connection.close(); resolveStats(new Map());
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(connection.stats().ice.state, 'collecting');
+  assert.equal(connection.stats().ice.sampleAgeMs, null);
+});

@@ -2,10 +2,14 @@
 import { flatStats } from './link.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v65';
+export const PAGE_VERSION = 'v66';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'link.path', 'link.reconnects',
+  'transport.ice.state', 'transport.ice.localCandidateType', 'transport.ice.remoteCandidateType',
+  'transport.ice.protocol', 'transport.ice.currentRoundTripTimeMs', 'transport.ice.sampleAgeMs',
+  'transport.ice.availableOutgoingBitrate', 'transport.ice.requestsSent', 'transport.ice.requestsReceived',
+  'transport.ice.responsesSent', 'transport.ice.responsesReceived', 'transport.ice.bytesSent', 'transport.ice.bytesReceived',
   'transport.video.reassemblyMsMax', 'transport.video.consumerWaitMsMax',
   'transport.video.receivedRecords', 'transport.video.queuedRecords',
   'video.codec', 'video.currentFps', 'video.currentDelta', 'video.droppedFrames',

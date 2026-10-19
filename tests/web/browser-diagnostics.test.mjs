@@ -67,3 +67,13 @@ test('device drift and output rejection remain measurable after scalar telemetry
   assert.equal(detail.v['outputUnavailableCounts.feedback-distance'], 7);
   assert.equal(detail.v.outputUnavailableReason, 'feedback-distance');
 });
+
+test('selected ICE path and counters survive a crowded ordinary diagnostic summary', () => {
+  const ice = { state: 'selected', localCandidateType: 'host', remoteCandidateType: 'host', protocol: 'udp',
+    currentRoundTripTimeMs: 8, sampleAgeMs: 250, availableOutgoingBitrate: 12000000,
+    requestsSent: 10, requestsReceived: 9, responsesSent: 9, responsesReceived: 10, bytesSent: 123456789, bytesReceived: 987654321 };
+  const [event] = browserDiagnosticEvents({ transport: { ice },
+    video: Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`counter${i}`, i])) }, false);
+  for (const [key, value] of Object.entries(ice)) assert.equal(event.v[`transport.ice.${key}`], value);
+  assert.ok(JSON.stringify(event.v).length <= 2048);
+});

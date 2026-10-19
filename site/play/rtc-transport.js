@@ -98,10 +98,45 @@ export async function connectRtc({ fetchPhone, session, code, codecs, signal, au
   const channels = {};
   const pending = new Map();
   let nextId = 0, ended = false, authenticated = false, streams = null, handshakeTimer = null;
+  let iceTimer = null, iceBusy = false, iceSampledAt = null, iceErrors = 0;
+  let ice = { state: typeof peer.getStats === 'function' ? 'collecting' : 'unavailable' };
+  const nonnegative = value => Number.isFinite(value) && value >= 0 ? value : null;
+  // Only cache the selected path's aggregate properties. Addresses, candidate IDs and SDP stay out of diagnostics.
+  const sampleIce = async () => {
+    if (ended || iceBusy || typeof peer.getStats !== 'function') return;
+    iceBusy = true;
+    try {
+      const report = await peer.getStats();
+      if (ended) return;
+      let selectedId = null, nominated = null;
+      report.forEach(value => {
+        if (value.type === 'transport' && value.selectedCandidatePairId) selectedId = value.selectedCandidatePairId;
+        if (value.type === 'candidate-pair' && value.state === 'succeeded' && (value.nominated || value.selected) &&
+            (!nominated || value.timestamp > nominated.timestamp)) nominated = value;
+      });
+      const selected = (selectedId ? report.get(selectedId) : null) ?? nominated;
+      if (!selected || selected.type !== 'candidate-pair') ice = { state: 'no-selected-pair' };
+      else {
+        const local = report.get(selected.localCandidateId), remote = report.get(selected.remoteCandidateId);
+        const candidateType = candidate => ['host', 'srflx', 'prflx', 'relay'].includes(candidate?.candidateType) ? candidate.candidateType : null;
+        const protocol = ['udp', 'tcp'].includes(local?.protocol) ? local.protocol : ['udp', 'tcp'].includes(remote?.protocol) ? remote.protocol : null;
+        ice = {
+          state: 'selected', localCandidateType: candidateType(local), remoteCandidateType: candidateType(remote), protocol,
+          currentRoundTripTimeMs: nonnegative(selected.currentRoundTripTime) === null ? null : selected.currentRoundTripTime * 1000,
+          availableOutgoingBitrate: nonnegative(selected.availableOutgoingBitrate),
+          requestsSent: nonnegative(selected.requestsSent), requestsReceived: nonnegative(selected.requestsReceived),
+          responsesSent: nonnegative(selected.responsesSent), responsesReceived: nonnegative(selected.responsesReceived),
+          bytesSent: nonnegative(selected.bytesSent), bytesReceived: nonnegative(selected.bytesReceived),
+        };
+      }
+      iceSampledAt = performance.now();
+    } catch (_) { if (!ended) iceErrors++; }
+    finally { iceBusy = false; }
+  };
   const controller = new AbortController();
   const close = (cause = new Error('RTC connection stopped')) => {
     if (ended) return;
-    ended = true; clearTimeout(handshakeTimer); controller.abort(); signal?.removeEventListener('abort', abort);
+    ended = true; clearTimeout(handshakeTimer); clearInterval(iceTimer); controller.abort(); signal?.removeEventListener('abort', abort);
     for (const value of pending.values()) { clearTimeout(value.timer); value.reject(cause); }
     pending.clear();
     streams?.video.close(cause); streams?.audio.close(cause);
@@ -167,12 +202,14 @@ export async function connectRtc({ fetchPhone, session, code, codecs, signal, au
     };
     authenticated = true; clearTimeout(handshakeTimer);
     send({ type: 'rtc-ready', session: identity, videoCredit: RTC_VIDEO_CREDIT, audioCredit: RTC_AUDIO_CREDIT, maxMessageSize: Math.min(RTC_FRAGMENT_BYTES, peer.sctp?.maxMessageSize || RTC_FRAGMENT_BYTES) });
+    if (typeof peer.getStats === 'function') { sampleIce(); iceTimer = setInterval(sampleIce, 2500); }
     return {
       hello, video: streams.video.stream, audio: streams.audio.stream,
       control: (q, e) => request('control', { q, e }), clock: () => request('clock'),
       bye() { try { send({ id: ++nextId, type: 'bye' }); } finally { close(); } },
       close,
-      stats: () => ({ state: peer.connectionState, video: streams.video.stats(), audio: streams.audio.stats(), bufferedControlBytes: channels.control.bufferedAmount }),
+      stats: () => ({ state: peer.connectionState, ice: { ...ice, connectionState: peer.iceConnectionState ?? null,
+        sampleAgeMs: iceSampledAt === null ? null : Math.max(0, performance.now() - iceSampledAt), errors: iceErrors }, video: streams.video.stats(), audio: streams.audio.stats(), bufferedControlBytes: channels.control.bufferedAmount }),
     };
   } catch (error) { close(error); throw error; }
 }
