@@ -105,6 +105,29 @@ test('a fresh guidance report cannot hide stale or recovering main media', () =>
   assert.equal(timeline.resolve('carplay', 5800, undefined, 1800).state, 'audio-reference-stale');
 });
 
+test('control clock captures preserve the last feedback evidence until reset', () => {
+  let at = 1010000;
+  const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
+  const context = { state: 'running', currentTime: 10,
+    getOutputTimestamp: () => ({ contextTime: (at - 1000000 - 200) / 1000, performanceTime: at - 1000000 }) };
+  mapping.reference(feedback(), context);
+  assert.equal(mapping.diagnostics().outputFeedbackDeltaMs, 200);
+  at += 25; context.currentTime += .025;
+  mapping.capture(context);
+  assert.equal(mapping.diagnostics().outputFeedbackDeltaMs, 200, 'the following control sample must not erase feedback distance');
+  assert.equal(mapping.diagnostics().outputFeedbackContextMs, 10000);
+  assert.equal(mapping.diagnostics().outputFeedbackAgeMs, 25);
+  mapping.reference(feedback({ contextTimeMs: 0 }), context);
+  const rejectedDelta = mapping.diagnostics().outputFeedbackDeltaMs;
+  at += 10; context.currentTime += .01; mapping.capture(context);
+  assert.equal(mapping.diagnostics().outputFeedbackDeltaMs, rejectedDelta);
+  assert.equal(mapping.diagnostics().outputUnavailableReason, 'feedback-distance');
+  assert.equal(mapping.diagnostics().outputFeedbackAgeMs, 10);
+  mapping.reset();
+  assert.equal(mapping.diagnostics().outputFeedbackAgeMs, null);
+  assert.equal(mapping.diagnostics().outputFeedbackDeltaMs, undefined);
+});
+
 test('output mapping and content extrapolation share physical time with a slow device clock', () => {
   let at = 1700000000000, timestamp;
   const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1700000000000 });

@@ -14,6 +14,7 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
   let previousContext = null, previousTimestamp = null, timestampNotBefore = -Infinity;
   const deviceClock = new AudioDeviceClock();
   let diagnostics = { outputState: 'startup' };
+  let feedbackAt = null;
   let outputUnavailableCount = 0, outputUnavailableReason = null;
   const unavailableCounts = {};
   const rejected = reason => { outputUnavailableCount++; outputUnavailableReason = reason;
@@ -31,14 +32,16 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
     if (context !== previousContext) { previousContext = context; previousTimestamp = null; deviceClock.reset('context'); }
     deviceClock.advance(at);
     const rendered = context.currentTime * 1000;
+    Object.assign(diagnostics, { outputTimestampContextMs: null, outputTimestampPerformanceMs: null,
+      outputTimestampAgeMs: null, outputRenderedContextMs: rendered });
     let timestamp;
     try { timestamp = context.getOutputTimestamp?.(); } catch (_) { /* Older implementations may throw. */ }
     if (timestamp && Number.isFinite(timestamp.contextTime) && Number.isFinite(timestamp.performanceTime)) {
       const contextTimeMs = timestamp.contextTime * 1000;
       const performanceTimeMs = timeOrigin() + timestamp.performanceTime;
       const age = at - performanceTimeMs;
-      diagnostics = { outputTimestampContextMs: contextTimeMs, outputTimestampPerformanceMs: performanceTimeMs,
-        outputTimestampAgeMs: age, outputRenderedContextMs: rendered };
+      Object.assign(diagnostics, { outputTimestampContextMs: contextTimeMs, outputTimestampPerformanceMs: performanceTimeMs,
+        outputTimestampAgeMs: age });
       // Zero pairs are the specified startup/unavailable value. A held timestamp
       // cannot remain an output reference after suspend or a stalled device.
       const fresh = timestamp.performanceTime > 0 && contextTimeMs >= 0 && contextTimeMs <= rendered + 10
@@ -73,11 +76,15 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
   return {
     capture,
     deviceClock: () => deviceClock.snapshot(),
-    diagnostics: () => ({ ...diagnostics, outputUnavailableCount, outputUnavailableReason, outputUnavailableCounts: { ...unavailableCounts } }),
+    diagnostics: () => ({ ...diagnostics, outputFeedbackAgeMs: feedbackAt === null ? null : Math.max(0, now() - feedbackAt),
+      outputUnavailableCount, outputUnavailableReason, outputUnavailableCounts: { ...unavailableCounts } }),
     reference(feedback, context) {
       if (!feedback || typeof feedback !== 'object') return null;
       const at = now(), unavailable = reason => ({ ...feedback, at, audibleTimeMs: null,
         playoutState: feedback.state, state: reason, outputMethod: null, uncertaintyMs: null });
+      feedbackAt = at;
+      diagnostics.outputFeedbackContextMs = Number.isFinite(feedback.contextTimeMs) ? feedback.contextTimeMs : null;
+      diagnostics.outputFeedbackDeltaMs = null;
       if (feedback.state !== 'playing') return unavailable(feedback.state || 'output-unavailable');
       if (![feedback.contextTimeMs, feedback.sourceTimeMs, feedback.mediaRate].every(Number.isFinite)
         || feedback.mediaRate <= 0) { rejected('invalid-feedback'); return unavailable('output-unavailable'); }
@@ -95,7 +102,8 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
         outputMethod: mapping.outputMethod, uncertaintyMs: mapping.uncertaintyMs + Math.max(0, feedback.filterUncertaintyMs || 0),
         outputLatencyMs: mapping.outputLatencyMs };
     },
-    reset() { previousContext = previousTimestamp = null; timestampNotBefore = now(); deviceClock.reset('reset'); },
+    reset() { previousContext = previousTimestamp = null; timestampNotBefore = now(); deviceClock.reset('reset');
+      diagnostics = { outputState: 'reset' }; feedbackAt = null; },
   };
 }
 

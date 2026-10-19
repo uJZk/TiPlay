@@ -110,7 +110,7 @@ Use the version already declared by the build; changing it requires an intention
 ## Beta release
 
 The current beta is **0.2.20-beta.4** (version code 43), with browser cache and
-diagnostic revision **v62**. It adds independent audio-device clock fitting and
+diagnostic revision **v63**. It adds independent audio-device clock fitting and
 consistent resampling/output-reference conversion, moves filter calibration off
 the rendering thread, and prepares new audio nodes before connecting output.
 It fixes interleaved AirPlay audio/video repeatedly downloading ignored-Range
@@ -131,7 +131,7 @@ remote attachment digests before publishing the
 Stable download links remain on 0.2.16.
 
 The implementation passed 2,133 shared, 1,745 common and six home unit tests,
-384 browser tests, required Android lint/debug builds, the public-source scan,
+387 browser tests, required Android lint/debug builds, the public-source scan,
 nine release-draft delivery tests, and Chromium browser,
 compiled-phone, isolated media-clock and MP4/HLS controls/recovery E2E. The merged
 phone manifest confirms system-controlled rotation. Ignored-Range regressions

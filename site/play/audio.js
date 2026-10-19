@@ -58,7 +58,8 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     pcmNonzero: pcmMetrics?.nonzero ?? 0, pcmPeak: pcmMetrics?.peak ?? 0,
     ...workletMetrics,
     renderReportAgeMs: reportAt === null ? null : now() - reportAt,
-    renderAgeMs: clockBase !== null && workletMetrics ? now() - clockBase - workletMetrics.renderTimeMs : null,
+    renderAgeMs: context && workletMetrics ? Math.max(0,
+      (context.currentTime * 1000 - workletMetrics.renderTimeMs) / outputClock.deviceClock().rate) : null,
     decoder: packetDecoder.stats(),
   });
   const snapshot = () => ({ supported: support, enabled, sound: context?.state === 'running',

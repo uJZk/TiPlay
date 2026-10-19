@@ -9,11 +9,11 @@ and delivery records remain in Git history.
 - Fit the audio device/context rate independently from Android/browser and source clocks. Apply the same conversion to resampling, playback targets and audible video references; preserve the existing CarPlay deadline and audio 45 ms early / 125 ms late limits.
 - Measure real resampler filter delay in a bounded Worker, forbid cold measurement in AudioWorklet, and prepare new nodes before connecting output. Isolate concurrent installation, cold-format queues, cancellation, retired Worker callbacks and replacement connections.
 - Retain separate bounded readers for interleaved AirPlay audio/video sources that ignore Range, preventing repeated prefix downloads and stalled YouTube seeking. Keep actual reads and FCUP exchanges serialized, with reader, byte, idle and cancellation bounds.
-- Record independent device-rate/phase corrections in ppm, native output timestamp pairs and explicit output-reference rejection reasons.
+- Record independent device-rate/phase corrections in ppm, native output timestamp pairs and explicit output-reference rejection reasons. Preserve feedback age/distance across control samples, report actual per-stream render context boundaries and prevent clock offset from making fresh render reports appear stale.
 - Remove AirPlay picture double-click/double-tap seeking; retain the slider and ±10-second buttons. Make the Android phone host and icon cropper honor system rotation preferences.
-- Increment the shared Android/browser version to 0.2.20-beta.4 (code 43), with browser cache/diagnostic revision v62. Debug still captures original video once on input.
+- Increment the shared Android/browser version to 0.2.20-beta.4 (code 43), with browser cache/diagnostic revision v63. Debug still captures original video once on input.
 
-Verification: 2,133 shared, 1,745 common and 6 home unit tests; 384 browser tests;
+Verification: 2,133 shared, 1,745 common and 6 home unit tests; 387 browser tests;
 required Android lint/debug builds; Chromium browser/compiled-phone, isolated
 media-clock and MP4/HLS controls/recovery checks. Mouse and touch double-taps
 leave playback unchanged. The merged phone manifest uses system rotation policy.

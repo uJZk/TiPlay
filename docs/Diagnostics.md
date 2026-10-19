@@ -56,6 +56,12 @@ Device/context rate is recorded separately from Android/browser and source rates
 its target, confidence and reset generation. Resampling and phase correction use explicit
 ppm fields so small corrections remain visible after numeric formatting. Output evidence
 includes the native context/performance timestamp pair, its age and feedback distance.
+The last feedback's context boundary, age and distance survive later control-clock
+samples; a reset clears those anchors. Per-stream context time is the actual last
+rendered quantum boundary, and remains unavailable before rendering or after retirement.
+Render age uses current context progress and the independent device rate, so accumulated
+clock offset cannot make a fresh worklet report appear stale. Report/feedback receipt
+ages use the performance clock and remain distinct from that render age.
 Unavailable-reason counters distinguish suspended contexts, stale/backward/invalid pairs,
 missing or unbounded fallback latency, invalid feedback and excessive extrapolation.
 

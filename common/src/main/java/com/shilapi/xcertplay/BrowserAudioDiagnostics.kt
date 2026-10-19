@@ -14,13 +14,14 @@ internal object BrowserAudioDiagnostics {
         "deviceClockRatePpm", "deviceClockTargetRatePpm", "deviceClockConfidence", "deviceClockUncertaintyMs",
         "deviceClockGeneration", "deviceClockReason", "outputState", "outputUnavailableCount", "outputUnavailableReason",
         "outputTimestampContextMs", "outputTimestampPerformanceMs", "outputTimestampAgeMs", "outputRenderedContextMs", "outputFeedbackDeltaMs",
+        "outputFeedbackContextMs", "outputFeedbackAgeMs",
         "outputUnavailableCounts.context-suspended", "outputUnavailableCounts.timestamp-backwards",
         "outputUnavailableCounts.timestamp-stale", "outputUnavailableCounts.timestamp-invalid",
         "outputUnavailableCounts.missing-latency", "outputUnavailableCounts.latency-unbounded",
         "outputUnavailableCounts.invalid-feedback", "outputUnavailableCounts.feedback-distance",
     )
     private val streamFields = setOf(
-        "epoch", "rate", "channels", "headMs", "tailMs", "playbackMs", "delayMs", "queueBytes", "queuePackets",
+        "epoch", "rate", "channels", "headMs", "tailMs", "playbackMs", "contextTimeMs", "delayMs", "queueBytes", "queuePackets",
         "capacityPackets", "latePackets", "duplicatePackets", "playedPackets", "resetPackets", "invalidPackets",
         "capacityBytes", "lateBytes", "duplicateBytes", "playedBytes", "resetBytes", "invalidBytes", "mode", "semanticType", "anchoring",
         "state", "reason", "phaseErrorMs", "resampleRatePpm", "deviceRatePpm", "phaseCorrectionPpm", "sourceRatePpm", "sourceRateConfidence",

@@ -288,3 +288,18 @@ test('a queued old-generation report cannot repopulate output after an explicit 
     assert.equal(h.audioReferences.resolve('carplay', before.sourceTimeMs, 3, h.now).state, 'video-only');
   } finally { await h.close(); }
 });
+
+test('render-age diagnostics do not mistake accumulated context-clock offset for a stale report', async () => {
+  const h = await harness({ devicePpm: -4000 });
+  try {
+    await h.playing();
+    h.audio.debug(true); h.drain();
+    h.context.frames += 480000;
+    h.advanceWall(10040);
+    h.quantum();
+    const details = h.audio.stats().debug;
+    assert.equal(details.renderReportAgeMs, 0);
+    assert.ok(details.renderAgeMs >= 0 && details.renderAgeMs < 5,
+      `fresh worklet report acquired a fictitious ${details.renderAgeMs}ms age from clock offset`);
+  } finally { await h.close(); }
+});

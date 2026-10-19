@@ -280,3 +280,12 @@ test('real DSP compensates a slow output clock without recurring hard recovery o
   assert.ok(h.player.reference(0).resampleRatePpm > 3900, 'ppm telemetry preserves ratios that round to 1.00');
   h.player.clear();
 });
+
+test('stream diagnostics identify the last rendered context boundary rather than a dummy zero', () => {
+  const h = harness();
+  assert.equal(h.player.stats().contextTimeMs, null, 'an unrendered stream has no context anchor');
+  h.player.render(null, 12340, h.clock, 128, h.block);
+  assert.equal(h.player.stats().contextTimeMs, 12340 + 128000 / 48000);
+  h.player.clear();
+  assert.equal(h.player.stats().contextTimeMs, null, 'retirement cannot retain an old device anchor');
+});

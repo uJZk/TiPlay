@@ -51,12 +51,17 @@ class BrowserAudioDiagnosticsTest {
             "deviceClockRatePpm" to -4000.125, "outputUnavailableReason" to "feedback-distance",
             "outputUnavailableCounts.feedback-distance" to 7, "outputUnavailableCounts.secret" to "hidden",
             "stream0.resampleRatePpm" to 4016.064, "stream0.phaseCorrectionPpm" to 0.25,
+            "outputFeedbackContextMs" to 12342.667, "outputFeedbackAgeMs" to 20,
+            "stream0.contextTimeMs" to 12342.667,
         ))
         assertEquals(2, lines.size)
         assertTrue(lines[0].contains("deviceClockRatePpm=-4000.125"))
         assertTrue(lines[0].contains("outputUnavailableReason=feedback-distance"))
         assertTrue(lines[0].contains("outputUnavailableCounts.feedback-distance=7"))
+        assertTrue(lines[0].contains("outputFeedbackContextMs=12342.667"))
+        assertTrue(lines[0].contains("outputFeedbackAgeMs=20"))
         assertTrue(lines[1].contains("resampleRatePpm=4016.064"))
+        assertTrue(lines[1].contains("contextTimeMs=12342.667"))
         assertTrue(lines.none { it.contains("secret") || it.contains("hidden") })
     }
 }

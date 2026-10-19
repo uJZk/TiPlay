@@ -11,6 +11,7 @@ export class ContinuousAudio {
     this.consumed = consumed; this.maximumMs = maximumMs; this.buffered = buffered; this.mode = mode; this.type = type; this.semanticType = semanticType;
     this.queue = []; this.sequences = new Set(); this.bytes = 0; this.counters = null;
     this.sourceAnchorMs = null; this.sourceFrame = 0; this.inputFrame = 0; this.outputFrames = 0;
+    this.lastContextTimeMs = null;
     this.state = 'priming'; this.reason = 'startup'; this.clockGeneration = null;
     this.rawCursorMs = null; this.phaseErrorMs = 0; this.gain = 0; this.last = new Float32Array(channels);
     this.fadeFrames = Math.max(1, Math.round(FADE_MS * outputRate / 1000));
@@ -31,7 +32,7 @@ export class ContinuousAudio {
   reject(bytes, reason, generation) { if (this.counters) this.counters[reason + 'Packets']++; this.consumed(bytes, reason, generation); }
   clear() {
     for (const packet of this.queue) this.retire(packet, 'reset');
-    this.queue = []; this.backend?.dispose(); this.backend = null; this.state = 'ended';
+    this.queue = []; this.backend?.dispose(); this.backend = null; this.state = 'ended'; this.lastContextTimeMs = null;
   }
   push(data, browserRate = 1) {
     const pcm = new Int16Array(data.pcm), frames = pcm.length / this.channels;
@@ -106,6 +107,7 @@ export class ContinuousAudio {
   /** targetMs is the raw Android-media position due at the speaker for this quantum. */
   render(targetMs, contextMs, clock, frames, output, deviceRate = 1) {
     output.fill(0); this.outputFrames += frames;
+    this.lastContextTimeMs = Number.isFinite(contextMs) ? contextMs + frames * 1000 / this.outputRate : null;
     const sourceRate = this.sourceClock.advance(contextMs), clockRate = clock?.rate || 1;
     if (this.backend && clock && clock.generation !== this.clockGeneration && clock.state !== 'stale') this.recover('clock-generation');
     if (this.backend && Number.isFinite(targetMs)) {
@@ -174,6 +176,6 @@ export class ContinuousAudio {
     return { ...this.counters, queueBytes: this.bytes, queuePackets: this.queue.length,
       headMs: this.queue.length ? this.sourceAnchorMs + this.queue[0].first * 1000 / this.rate : null,
       tailMs: this.queue.length ? this.sourceAnchorMs + this.queue.at(-1).end * 1000 / this.rate : null,
-      playbackMs: this.rawCursorMs, outputFrames: this.outputFrames, state: this.state, ...this.reference(0) };
+      playbackMs: this.rawCursorMs, outputFrames: this.outputFrames, state: this.state, ...this.reference(this.lastContextTimeMs) };
   }
 }
