@@ -142,7 +142,11 @@ class CarPlayMediaEngine(
         val key = outputKey(session, stream) ?: return null
         val streamKey = StreamKey(session, type)
         Log.i(TAG, "airplay screen key connectionID=${unsignedPlistDecimal(stream["streamConnectionID"])}")
-        val screen = ScreenStream(key, session::logDebug)
+        val screen = ScreenStream(
+            key, session::logDebug,
+            receiveProbe = if (type == STREAM_TYPE_MAIN_SCREEN) CarPlayTcpProbe.controller else null,
+            sourceTimeNanos = session::mediaTimeNanos,
+        )
         val isInstalled = { !session.isClosed && streams[streamKey] === screen }
         val isCurrent = { isInstalled() && screenOwners[type] == streamKey }
         val port = screen.listen(

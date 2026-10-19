@@ -66,6 +66,12 @@ fallback is excluded because car browsers can pause it while driving. Codec prob
 does not prove a particular vehicle/browser's compatibility. Experimental mirroring,
 URL video, photos and ordinary audio follow [AirPlay.md](AirPlay.md).
 
+The selected future transport is [reliable, ordered DataChannel](CarPlay-DataChannel.md),
+with webpage-controlled hardware decoding. The [experiment roadmap](WebRTC-roadmap.md)
+records user-confirmed local WebRTC-to-Canvas playback (D); cross-device UDP,
+gear-transition continuity and real CarPlay transport remain unverified. These
+experiments do not change the current browser transport or rendering contract.
+
 The APK neither bundles nor serves the page. Protocol routes are `/hello`, `/video`,
 `/audio`, `/airplay-resource`, `/control` and `/bye`; `/`, `/play` and `/play/*` return
 404. Ordinary AirPlay `/play` is separate. Static assets/discovery are

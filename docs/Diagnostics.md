@@ -146,3 +146,45 @@ Standard metadata filters precede a bounded background queue; Debug message text
 Export runs off the UI thread, waits a bounded time for writes and snapshots under the rotation lock. It reports detail/policy omissions, losses, storage/rejected-write counts, pending work and drain timeout. The metadata completeness counter covers accepted messages in retained history; raw write failures have their own counter. abrupt Android termination can lose in-memory records. Explicit shutdown attempts a bounded flush. Crashes and Android process exits have separate report sections.
 
 Sources: `shared/.../diagnostics/RawTraffic.kt`, `RawTrafficArchive.kt`; `common/.../DiagnosticLogs.kt`, `DiagnosticLogPolicy.kt`, `DiagnosticRedactor.kt`, `SessionLogFile.kt`, `DiagnosticLogSnapshot.kt`, `DiagnosticExportStore.kt`, `DiagnosticReportContent.kt`; `shared/.../network/WirelessStartupDiagnostics.kt`; `site/play/fps-window.js`.
+
+
+## Debug TCP receive backpressure probe
+
+Debug phone APKs have a second launcher entry, **TiPlay TCP Probe**. First connect
+CarPlay normally in TiPlay and open the existing car browser page. Open the probe
+on the Android phone, keep the source picture changing (map motion or scrolling),
+and select **Start**. The 60-second run uses 15 seconds of unrestricted baseline,
+15 seconds at 70% of baseline receive bytes/second, 15 seconds at 40%, then
+15 seconds of unrestricted recovery. It does not require a new browser page or
+WebRTC. A quiet static baseline does not represent the capacity needed for motion.
+
+Only the main CarPlay video TCP reader waits, at complete-message boundaries and
+outside shared video/audio delivery locks. Audio, HFP/SCO, controls, timestamps,
+cipher ordering and the existing browser output retain their paths. The probe
+neither transcodes nor injects packet loss. Kernel and iPhone buffering mean a
+read limit is not an immediate network send limit. The feature defaults off,
+has no persisted switch or remote control endpoint, stops when its video
+connection ends, and restores unrestricted reads on **Stop** or timeout. Closing
+the probe screen permits the finite run to continue; a process restart disables it.
+
+The screen shows the phase/countdown, byte budget, completed-message bytes, frames,
+socket read attempts (not TCP packet counts), receiver throughput and gate waiting.
+`lastReceivedSourceAgeMs` is arrival time minus the source's scheduled presentation
+time, using the existing valid NTP-to-monotonic mapping. It is not capture-to-screen
+latency; a negative value means early arrival. Missing/stale synchronization is
+`unavailable`, never an arrival-time substitute. `lastFrameReceivedAgoMs` shows
+when the last complete frame arrived. The bounded text history can be shared
+from the phone; the same measurements enter the existing session diagnostics.
+
+Compare picture age during the limited phases and immediately after recovery.
+Throughput falling alone does not prove that the iPhone encoder adapted. Growing
+age followed by a burst of old frames indicates buffering; bounded age and prompt
+recovery support this device combination's use of receive backpressure. Source
+encoder behavior, actual screen latency, music continuity and USB/wireless
+interoperability still need device measurements. `TcpReceiveProbeTest` verifies
+default-off behavior, finite phases, missing/negative timing evidence, immediate
+stop/connection-retirement wakeup and stale-connection isolation.
+
+Vehicle receive-backpressure results and their implementation implications are
+recorded in the [WebRTC roadmap](WebRTC-roadmap.md#tcp-背压实测). The probe is a
+diagnostic experiment, not the production congestion-control policy.

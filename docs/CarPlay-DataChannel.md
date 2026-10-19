@@ -14,6 +14,12 @@ pipeline. Earlier proposals that defaulted to WSS do not override this decision.
 Existing behavior remains documented in [Browser](Browser.md); the requirements
 below describe the intended change, not features already shipped.
 
+Subsequent vehicle feedback confirms that standalone test D (same-browser native
+WebRTC receive track -> Processor -> Canvas) can play. This is local synthetic
+playback evidence, not proof of Android-to-car direct ICE, actual hardware use or
+P/non-P gear-transition continuity. It does not replace the selected DataChannel
+transport. Current evidence and next gates are in the [WebRTC roadmap](WebRTC-roadmap.md).
+
 ## Confirmed requirements
 
 | Area | Requirement |
@@ -72,11 +78,12 @@ touch and clock exchange -> small control messages, independent of media work
 original stream capture -> one canonical payload journal with referenced events
 ```
 
-Prefer retaining source-compressed video when compatible with actual webpage
-hardware decoding. Intermediate transcoding was not independently prohibited,
-but adds service time, thermal load, memory and quality cost; final decoding
-still must be hardware decoding in the webpage. Do not assume HEVC or AVC wins
-without actual input and browser capability evidence.
+Preserve source-compressed video without reencoding: the subsequent explicit
+constraint is never to encode the video a second time. Decryption, configuration
+parsing, AU assembly and transport packetization are allowed. Final decoding must
+still use actual hardware in the webpage. Do not assume HEVC or AVC wins without
+actual input and browser capability evidence; an unsupported source/decoder
+combination requires an explicit compatibility/recovery decision, not transcoding.
 
 ### Three different orders
 
