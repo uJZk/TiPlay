@@ -47,6 +47,7 @@ class BrowserRtcPeer internal constructor(
     @Volatile private var nativeSampleNanos = 0L
     @Volatile private var controlRecordsSent = 0L
     @Volatile private var controlBytesSent = 0L
+    @Volatile private var terminalDiagnostics: Map<String, Any?>? = null
     private val video = Sender("video", BrowserRtcProtocol.MAX_VIDEO_BYTES, 12 * 1024 * 1024, 10 * 1024 * 1024L)
     private val audio = Sender("audio", BrowserRtcProtocol.MAX_AUDIO_BYTES, 2 * 1024 * 1024, 1024 * 1024L)
 
@@ -89,6 +90,7 @@ class BrowserRtcPeer internal constructor(
 
     /** Numeric snapshots only: status/control never waits for the native signaling thread or media locks. */
     override fun diagnostics(): Map<String, Any?> {
+        terminalDiagnostics?.let { return it }
         val now = System.nanoTime()
         return mapOf(
             "session" to id, "authenticated" to authenticated, "ready" to ready, "closed" to closed.get(),
@@ -292,11 +294,15 @@ class BrowserRtcPeer internal constructor(
 
     private fun fail(reason: String) {
         if (!closed.compareAndSet(false, true)) return
+        terminalDiagnostics = diagnostics() + mapOf("failure" to reason)
         dispose(reason)
     }
 
     override fun close() {
-        if (closed.compareAndSet(false, true)) dispose()
+        if (closed.compareAndSet(false, true)) {
+            terminalDiagnostics = diagnostics()
+            dispose()
+        }
     }
 
     private fun dispose(failureReason: String? = null) {

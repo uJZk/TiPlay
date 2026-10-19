@@ -18,6 +18,12 @@ AirPlay mirror records over the same channels to preserve display ownership and
 stream continuity. AirPlay URL/photo resource fetching and its playback semantics
 remain on the existing resource path. This is not an AirPlay codec redesign.
 
+Subsequent vehicle feedback confirms that standalone test D (same-browser native
+WebRTC receive track -> Processor -> Canvas) can play. This is local synthetic
+playback evidence, not proof of Android-to-car direct ICE, actual hardware use or
+P/non-P gear-transition continuity. It does not replace the selected DataChannel
+transport. Current evidence and next gates are in the [WebRTC roadmap](WebRTC-roadmap.md).
+
 Implementation and source tests do not establish physical vehicle compatibility,
 actual webpage hardware decoder selection, acoustic latency or panel scanout.
 See [Testing](Testing.md) and [Todo](Todo.md) for the acceptance boundary.
@@ -26,7 +32,7 @@ See [Testing](Testing.md) and [Todo](Todo.md) for the acceptance boundary.
 
 | Area | Contract |
 | --- | --- |
-| Video | Preserve source-compressed input and decode dependency order. Actual final decoding must be hardware decoding in the webpage. |
+| Video | Never reencode source video. Preserve source-compressed input and decode dependency order. Actual final decoding must be hardware decoding in the webpage; device verification remains outstanding. |
 | Normal video | Signed output Delta relative to sender presentation; +300 ms ceiling, not a target buffer. |
 | Touch | Forward at the next available scheduling opportunity; smoothly advance video only toward the newest feasible output. Skipping old decoded pictures is allowed. |
 | Audio | Independent sender-relative +300 ms ceiling where a source presentation anchor exists. Touch never resets or accelerates audio. |
@@ -39,6 +45,13 @@ cannot preserve complete input and the timing ceiling during unlimited overload.
 The beta ends the affected session explicitly and reconnects rather than hiding
 compressed input loss or silently growing queues. A recovery is not a successful
 within-ceiling presentation.
+
+The [TCP receive-probe measurements](WebRTC-roadmap.md#tcp-背压实测) show that
+reading at 70%/40% of baseline accumulated about 4.5/8.18 seconds of sender-relative
+arrival delay, with a reported browser freeze; restoring unlimited reads briefly
+drained at about 41.32 Mbps/107 fps. This is evidence of receive throttling and
+backlog, not confirmed source-encoder bitrate adaptation. The probe remains an
+explicit Debug experiment, not the beta's default congestion controller.
 
 ## Four-digit pairing and authenticated signaling
 
@@ -88,6 +101,13 @@ arm64-v8a, armeabi-v7a, x86 and x86_64 libraries. See [third-party notices](Thir
 and the packaged `licenses/webrtc/` provenance and complete binary notices.
 `BrowserRtcRuntime` owns one factory and app-private persistent DTLS certificate;
 `BrowserRtcPeer` owns one data-only peer and bounded native/control work.
+
+Preserve source-compressed video without reencoding: the subsequent explicit
+constraint is never to encode the video a second time. Decryption, configuration
+parsing, AU assembly and transport packetization are allowed. Final decoding must
+still use actual hardware in the webpage. Do not assume HEVC or AVC wins without
+actual input and browser capability evidence; an unsupported source/decoder
+combination requires an explicit compatibility/recovery decision, not transcoding.
 
 The browser creates reliable ordered `video`, `audio` and `control` channels in one
 PeerConnection. They share SCTP congestion and network resources; channel separation

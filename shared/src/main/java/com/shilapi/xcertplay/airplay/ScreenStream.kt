@@ -20,7 +20,12 @@ enum class VideoCodec { H264, H265 }
  * (avcC/hvcC) or a ChaCha20-Poly1305 sealed VideoFrame. The key is the DataStream output key
  * and the per-frame nonce is an 8-byte little-endian counter.
  */
-class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String) -> Unit = {}) : Closeable {
+class ScreenStream(
+    private val key: ByteArray,
+    private val onDiagnostic: (String) -> Unit = {},
+    private val receiveProbe: TcpReceiveProbe? = null,
+    private val sourceTimeNanos: (Long) -> Long? = { null },
+) : Closeable {
     interface Listener {
         fun onCodec(codec: VideoCodec) {}
         fun onConfig(codecData: ByteArray) {}
@@ -54,6 +59,7 @@ class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        receiveProbe?.detach(this)
         safeClose(socket)
         safeClose(server)
         thread?.interrupt()
@@ -63,6 +69,9 @@ class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String
         try {
             val accepted = bound.accept()
             socket = accepted
+            if (closed.get()) { safeClose(accepted); return }
+            receiveProbe?.attach(this, onDiagnostic)
+            if (closed.get()) { receiveProbe?.detach(this); safeClose(accepted); return }
             run(accepted)
         } catch (error: Exception) {
             if (!closed.get()) listener.onClosed(error)
@@ -75,6 +84,8 @@ class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String
         try {
             val input = RawTraffic.referencedInput("iphone/ScreenStream/${sock.remoteSocketAddress}/${sock.localPort}/in", sock.getInputStream())
             while (!closed.get()) {
+                // Outside all media delivery locks. Gate whole messages, preserving framing/nonce order.
+                if (receiveProbe?.beforeRead(this) == false || closed.get()) break
                 stats.reading()
                 input.beginRange()
                 val header = readFully(input, HEADER_LEN) ?: break
@@ -83,12 +94,17 @@ class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String
                 val body = readFully(input, bodySize) ?: break
                 val arrivalNanos = System.nanoTime()
                 stats.received(HEADER_LEN + bodySize)
+                if (receiveProbe?.isRunning(this) == true) {
+                    val sender = if ((header[OPCODE_OFFSET].toInt() and 0xff) == OP_VIDEO_FRAME) ScreenCodec.senderNanos(header) else null
+                    receiveProbe.message(this, HEADER_LEN + bodySize, sender, arrivalNanos, sender?.let(sourceTimeNanos))
+                }
                 onMessage(header, body, stats, arrivalNanos, input.endRange())
                 stats.processed()
             }
         } catch (error: Exception) {
             failure = error
         } finally {
+            receiveProbe?.detach(this)
             stats.flush(ended = true)
             if (socket === sock) socket = null
             safeClose(sock)
@@ -139,6 +155,7 @@ class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String
         val output = ByteArray(length)
         var offset = 0
         while (offset < length) {
+            receiveProbe?.read(this)
             val read = input.read(output, offset, length - offset)
             if (read < 0) return null
             offset += read

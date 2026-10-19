@@ -17,6 +17,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 
 - [Browser](docs/Browser.md): pairing, receiver-aware waiting states, dismissible browser errors, resize, portal, media and shutdown.
 - [CarPlay DataChannel](docs/CarPlay-DataChannel.md): reliable ordered WebRTC beta transport, four-digit SRP pairing, independent sender-relative timing, touch-only video catch-up and one-copy capture references. Vehicle connectivity, actual hardware use and physical output timing require device acceptance.
+- [WebRTC roadmap](docs/WebRTC-roadmap.md): user-confirmed local WebRTC-to-Canvas playback (D), measured TCP receive backpressure, implemented beta stages and remaining Shizuku-address direct ICE/hardware/physical-output acceptance. Never reencode source video; Tesla pairing must work without clipboard.
 - [Settings](docs/Settings.md): short receiver status titles, separate details, drafts, immediate apply, reconnect and boot.
 - [Connection setup](docs/Connection-setup.md) and [hotspot address](docs/Hotspot-address.md).
 - [AirPlay](docs/AirPlay.md): receiver/media contracts, native/software audio negotiation,

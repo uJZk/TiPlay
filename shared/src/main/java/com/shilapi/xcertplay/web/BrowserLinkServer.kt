@@ -394,7 +394,10 @@ class BrowserLinkServer(
                     }
                     WebDebugTiming.record(record, System.nanoTime(), extended = true)?.let { if (!rtc.peer.sendVideo(it)) return@Thread }
                     if (!rtc.peer.sendVideo(record)) break
-                    if (record.kind == WebVideoRecords.KIND_END) { closeRtc(rtc, "video-ended"); break }
+                    if (record.kind == WebVideoRecords.KIND_END) {
+                        closeRtc(rtc, String(record.payload, Charsets.UTF_8).take(48))
+                        break
+                    }
                 }
             } catch (_: Exception) { closeRtc(rtc, "video-failed") }
             finally { if (!rtc.closed.get()) closeRtc(rtc, "video-consumer-ended") }
@@ -406,7 +409,7 @@ class BrowserLinkServer(
                         val record = subscription.take(HEARTBEAT_MILLIS) ?: continue
                         if (!rtc.peer.sendAudio(record)) break
                     }
-                    if (!rtc.closed.get()) closeRtc(rtc, "audio-ended")
+                    if (!rtc.closed.get()) closeRtc(rtc, subscription.endReason ?: "audio-ended")
                 } catch (_: Exception) { closeRtc(rtc, "audio-failed") }
             }, "browser-rtc-audio").apply { isDaemon = true; start() }
         }
@@ -419,7 +422,10 @@ class BrowserLinkServer(
         rtcSessions.entries.removeIf { it.value === rtc }
         rtcSlots.release()
         // A factory failure may happen before the native peer has been installed.
-        try { rtc.peer.close() } catch (_: UninitializedPropertyAccessException) { }
+        try {
+            rtc.peer.close()
+            callbacks.log("Browser RTC: final stages ${WebJson.write(rtc.peer.diagnostics())}")
+        } catch (_: UninitializedPropertyAccessException) { }
         synchronized(lock) {
             if (rtc.code != null && gate.current == rtc.session && rtcSessions.values.none {
                     it.session == rtc.session && it.code != null && !it.closed.get()

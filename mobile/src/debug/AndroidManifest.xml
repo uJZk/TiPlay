@@ -4,4 +4,11 @@
     <application android:label="TiPlay HUD Test" tools:replace="android:label">
     <receiver android:name="com.shilapi.xcertplay.hud.StarterBridgeReceiver" android:exported="true" android:permission="android.permission.DUMP" />
     <activity android:name="com.shilapi.xcertplay.hud.StandaloneHudDemoActivity" android:exported="true" android:permission="android.permission.DUMP" />
+    <activity android:name="com.shilapi.xcertplay.diagnostics.TcpReceiveProbeActivity"
+        android:exported="true" android:label="TiPlay TCP Probe">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+    </activity>
     </application></manifest>

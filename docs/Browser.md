@@ -80,6 +80,15 @@ path has the existing local-network confidentiality limits. Legacy `/hello`, `/v
 CarPlay fallback. `/`, `/play` and `/play/*` on Android return 404. See
 [DataChannel architecture and bounds](CarPlay-DataChannel.md).
 
+Source video is never reencoded: decryption, configuration parsing, access-unit assembly
+and packetization preserve the original compressed bitstream. An unsupported source
+codec requires explicit compatibility/recovery handling, not transcoding. The
+[experiment roadmap](WebRTC-roadmap.md) records the user-confirmed local D path
+(WebRTC receive track → Processor → Canvas). That result does not establish
+Android-to-car ICE, gear-transition continuity, actual webpage hardware decoding
+or real CarPlay output latency. Actual hardware decoding remains a requirement
+with device verification outstanding.
+
 [TeslaBrowserPageLinks](../common/src/main/java/com/shilapi/xcertplay/TeslaBrowserPageLinks.kt)
 and [pages.yml](../.github/workflows/pages.yml) must agree on the public page base.
 Custom saved HTTPS hosts remain usable. The [Service Worker](../site/play/sw.js)

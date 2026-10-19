@@ -13,3 +13,6 @@ shared/src/main/jni/soxr/*.c text eol=lf -whitespace linguist-vendored=true
 shared/src/main/jni/soxr/*.h text eol=lf -whitespace linguist-vendored=true
 shared/src/main/jni/soxr/COPYING.LGPL text eol=lf -whitespace
 shared/src/main/jni/soxr/LICENCE text eol=lf -whitespace
+# Retain exact pinned SRP distribution and WebRTC binary license notices.
+site/play/vendor/tssrp6a/* -text -whitespace linguist-vendored=true
+shared/src/main/assets/licenses/webrtc/* -text -whitespace linguist-vendored=true
