@@ -18,6 +18,7 @@ Start with the [English README](../README.md) or [简体中文](../README.zh-CN.
 - [Settings](Settings.md): drafts, immediate apply and connection recovery.
 - [Geolocation](geolocation.md): browser coordinate evidence, Android conversion and detection and iPhone forwarding.
 - [Testing](Testing.md) and [Todo](Todo.md): automated checks and pending physical acceptance.
+- [CarPlay DataChannel handoff](CarPlay-DataChannel.md): next-session reliable WebRTC transport implementation, confirmed constraints and unverified deployment/timing conditions.
 - [Upstream](Upstream.md): dependencies, provenance and merge policy.
 - [Third-party notices](Third-party-notices.md): credits, licenses and experimental authentication data.
 - [README presentation](Readme-presentation.md): bilingual feature list, screenshots, source notes and verification boundaries.
