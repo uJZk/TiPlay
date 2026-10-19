@@ -73,16 +73,17 @@ class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String
         var failure: Throwable? = null
         val stats = StreamReceiveStats("video", onDiagnostic)
         try {
-            val input = RawTraffic.input("iphone/ScreenStream/${sock.remoteSocketAddress}/${sock.localPort}/in", sock.getInputStream())
+            val input = RawTraffic.referencedInput("iphone/ScreenStream/${sock.remoteSocketAddress}/${sock.localPort}/in", sock.getInputStream())
             while (!closed.get()) {
                 stats.reading()
+                input.beginRange()
                 val header = readFully(input, HEADER_LEN) ?: break
                 val bodySize = readU32Le(header, 0)
                 if (bodySize > MAX_BODY) break
                 val body = readFully(input, bodySize) ?: break
                 val arrivalNanos = System.nanoTime()
                 stats.received(HEADER_LEN + bodySize)
-                onMessage(header, body, stats, arrivalNanos)
+                onMessage(header, body, stats, arrivalNanos, input.endRange())
                 stats.processed()
             }
         } catch (error: Exception) {
@@ -95,7 +96,7 @@ class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String
         }
     }
 
-    private fun onMessage(header: ByteArray, body: ByteArray, stats: StreamReceiveStats, arrivalNanos: Long) {
+    private fun onMessage(header: ByteArray, body: ByteArray, stats: StreamReceiveStats, arrivalNanos: Long, reference: RawTraffic.Reference?) {
         when (header[OPCODE_OFFSET].toInt() and 0xff) {
             OP_VIDEO_FRAME -> {
                 val payload = if (body.size >= ScreenCodec.TAG_SIZE) {
@@ -115,7 +116,9 @@ class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String
                         "head=${payload.hexPrefix(16)} chacha=${AirPlayCrypto.chachaImplementation}",
                     )
                 }
-                listener.onFrame(ScreenCodec.lengthPrefixedToAnnexB(payload), ScreenCodec.senderNanos(header), arrivalNanos)
+                val annexB = ScreenCodec.lengthPrefixedToAnnexB(payload)
+                RawTraffic.bindVideoReference(annexB, reference)
+                listener.onFrame(annexB, ScreenCodec.senderNanos(header), arrivalNanos)
             }
             OP_VIDEO_CONFIG -> {
                 val config = ScreenCodec.describeConfig(body)

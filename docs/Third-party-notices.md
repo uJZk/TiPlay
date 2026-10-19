@@ -103,3 +103,23 @@ The maneuver PNGs under `shared/src/main/assets/byd-hud-icons` were imported fro
   packages and their integrity are pinned in `scripts/videojs/package-lock.json`.
 - Retained native SpeexDSP 1.2.1 compatibility code: BSD-style licence under
   `shared/src/main/jni/speexdsp/COPYING`. The browser ships no Speex/WASM AEC.
+
+## Android WebRTC DataChannels
+
+The pinned `io.github.webrtc-sdk:android:150.7871.01` AAR supplies Chromium M150
+WebRTC/SCTP, from [webrtc-sdk/android](https://github.com/webrtc-sdk/android/tree/v150.7871.01).
+TiPlay uses reliable ordered DataChannels; it does not create WebRTC native media
+tracks. WebRTC uses BSD-3-Clause, the publisher repository uses MIT, and bundled
+components retain their individual licenses. The unmodified publisher notices,
+source URLs, AAR SHA-256 and ABI sizes are retained under
+[licenses/webrtc](../shared/src/main/assets/licenses/webrtc/PROVENANCE.txt)
+and included in APK assets with binary distributions.
+
+## Browser SRP pairing
+
+The WebRTC beta vendors `tssrp6a` 3.0.0 for browser SRP-6a arithmetic and WebCrypto
+hashing. Its distributed LICENSE is MIT; the package metadata has an inconsistent
+Apache-2.0 label, retained and disclosed in the vendor provenance. The identity/evidence
+adapter matches the existing Bouncy Castle 1.79 padded proof convention. See
+[vendored license](../site/play/vendor/tssrp6a/LICENSE) and
+[provenance](../site/play/vendor/tssrp6a/README.md).

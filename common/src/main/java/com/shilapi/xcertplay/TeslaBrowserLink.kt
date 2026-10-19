@@ -17,6 +17,7 @@ import com.shilapi.xcertplay.media.AndroidBluetoothVoiceChannel
 import com.shilapi.xcertplay.media.BluetoothVoiceFactory
 import com.shilapi.xcertplay.web.WebAudioHub
 import com.shilapi.xcertplay.web.BrowserLinkServer
+import com.shilapi.xcertplay.web.BrowserRtcRuntime
 import com.shilapi.xcertplay.web.BrowserLinkStatus
 import com.shilapi.xcertplay.web.BrowserSize
 import com.shilapi.xcertplay.web.BrowserViewport
@@ -121,6 +122,11 @@ internal object TeslaBrowserLink {
     val appServers = ServerFactory { hub, callbacks ->
         val port = app?.let(BrowserEndpointSettings::port) ?: PORT
         val server = BrowserLinkServer(hub, callbacks, "0.0.0.0", port, audioHub = audioHub)
+        app?.let { context ->
+            server.rtcFactory = com.shilapi.xcertplay.web.BrowserRtcFactory { control, failure ->
+                BrowserRtcRuntime.createPeer(context, control, failure)
+            }
+        }
         object : Server {
             override fun start() = server.start()
             override fun stop() = server.stop()

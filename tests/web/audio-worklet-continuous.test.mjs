@@ -177,9 +177,11 @@ test('zero-lead guidance starts with a delayed output device and never becomes t
     assert.ok(nonzero > 385, 'navigation, telephone and Siri PCM play after one short startup buffer');
     assert.equal(player.state, 'playing'); assert.deepEqual(player.recoveryCounts, {});
     const reference = h.processor.messages.filter(value => value.playout?.type === 255).at(-1).playout;
-    assert.equal(reference.anchoring, 'arrival'); assert.equal(reference.semanticType, semanticType);
+    assert.equal(reference.anchoring, 'presentation'); assert.equal(reference.semanticType, semanticType);
+    assert.equal(reference.senderRelativePolicyCeilingMs, 300);
+    assert.ok(reference.sourceStartupDelayMs <= 300);
     const references = createAudioReferenceTimeline(); references.update({ ...reference, at: 1000, audibleTimeMs: 1188 });
-    assert.equal(references.resolve('carplay', h.base + h.frame / 48, 1, 1000).state, 'video-only');
+    assert.equal(references.resolve('carplay', h.base + h.frame / 48, 1, 1000).state, 'audio-output');
     // A browser route returning after SCO gets a new epoch and the same short start.
     h.post({ type: 255, semanticType, mode: 'carplay', epoch: 2, generation: 3, flags: 2, ended: true, pcm: new ArrayBuffer(0) });
     const start = h.frame / 48;
@@ -222,7 +224,7 @@ test('same-purpose streams mix independently and ending one preserves the other 
   }
 });
 
-test('arrival-anchored navigation leaves the active media clock and resampler unchanged', () => {
+test('source-timed navigation leaves the active media clock and resampler unchanged', () => {
   const h = harness(); h.feed();
   for (let i = 0; i < 20; i++) h.render();
   const media = h.processor.timelines.get(0), backend = media.backend, before = media.rawCursorMs;
@@ -236,17 +238,24 @@ test('arrival-anchored navigation leaves the active media clock and resampler un
   h.post({ dispose: true });
 });
 
-test('guidance re-primes after a lasting delivery-delay step without replaying emitted samples', () => {
-  const h = harness(); let player, previous = -Infinity, resumed = 0;
-  for (let quantum = 0; quantum < 300; quantum++) {
-    if (quantum < 40 || quantum >= 100) h.feed(1, 'carplay', 1, h.frame / 48 + 20 - (quantum >= 100 ? 160 : 0));
-    const output = h.render(); player = h.processor.timelines.get(1);
-    if (Number.isFinite(player.rawCursorMs)) { assert.ok(player.rawCursorMs >= previous); previous = player.rawCursorMs; }
-    if (quantum > 130 && output[0].some(value => Math.abs(value) > 0.01)) resumed++;
+test('guidance recovers a delivery step within 300ms and reports an impossible sender deadline without replay', () => {
+  for (const deliveryStep of [50, 160]) {
+    const h = harness(); let player, previous = -Infinity, resumed = 0;
+    for (let quantum = 0; quantum < 300; quantum++) {
+      if (quantum < 40 || quantum >= 60) h.feed(1, 'carplay', 1, h.frame / 48 + 20 - (quantum >= 60 ? deliveryStep : 0));
+      const output = h.render(); player = h.processor.timelines.get(1);
+      if (Number.isFinite(player.rawCursorMs)) { assert.ok(player.rawCursorMs >= previous); previous = player.rawCursorMs; }
+      if (quantum > 150 && output[0].some(value => Math.abs(value) > 0.01)) resumed++;
+    }
+    if (deliveryStep === 50) {
+      assert.ok(resumed > 140, JSON.stringify({ resumed, state: player.state, reason: player.reason, delay: player.sourceStartupDelayMs, recovery: player.recoveryCounts, head: player.queue[0]?.first, tail: player.queue.at(-1)?.end, sourceFrame: player.sourceFrame, raw: player.rawCursorMs })); assert.equal(player.state, 'playing');
+      assert.ok(player.sourceStartupDelayMs <= 300);
+    } else {
+      assert.equal(player.state, 'infeasible'); assert.equal(player.reason, 'sender-deadline');
+      assert.ok(player.senderCeilingViolations > 0); assert.equal(resumed, 0);
+    }
+    assert.ok(player.recoveryCounts.underrun > 0); h.post({ dispose: true });
   }
-  assert.ok(resumed > 160, 'a permanent delivery offset must not leave guidance permanently priming');
-  assert.equal(player.state, 'playing'); assert.ok(player.recoveryCounts.underrun > 0);
-  h.post({ dispose: true });
 });
 
 test('output rate calibration keeps strict media and arrival guidance on independent continuous anchors', () => {

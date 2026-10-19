@@ -52,7 +52,9 @@ test('worker schedules CarPlay without a main-thread readiness round trip', asyn
   h.post({ type: 'config', id: 7, config: { epoch: 1, mode: 'carplay' } });
   h.frame(picture, { epoch: 1, mode: 'carplay' }, 7, 1010);
   assert.equal(latest(h, 'media-ready').id, 7, 'main thread still receives audio-buffer observations');
-  assert.equal(latest(h, 'frame').frame, picture, 'decode completed only 10 ms before the cap; no ACK can block it');
+  assert.equal(latest(h, 'frame'), undefined, 'future presentation waits only on the local worker clock');
+  h.advance(1010);
+  assert.equal(latest(h, 'frame').frame, picture, 'no main-thread ACK can block its due presentation');
   h.advance(1100);
   assert.equal(picture.closed, 0, 'ownership transferred before the busy main thread returned');
 });
@@ -67,15 +69,15 @@ test('worker epoch reset closes pending pictures before installing the new local
   assert.equal(old.closed, 1);
   h.post({ type: 'config', id: 1, config: { epoch: 2, mode: 'carplay' } });
   h.frame(next, { epoch: 2, mode: 'carplay' }, 1, 1050);
-  h.advance(1030);
+  h.advance(1050);
   assert.equal(latest(h, 'frame').frame, next);
 });
 
-test('worker discards CarPlay pictures decoded after the unchanged source cap', async () => {
+test('worker discards CarPlay pictures decoded after the independent 300 ms source cap', async () => {
   const h = await workerHarness(), picture = frame();
   h.send({ type: 'stream', id: 1, stream: {} });
   h.post({ type: 'config', id: 1, config: { epoch: 1, mode: 'carplay' } });
-  h.advance(1011);
+  h.advance(1311);
   h.frame(picture, { epoch: 1, mode: 'carplay' }, 1, 1010);
   assert.equal(picture.closed, 1);
   assert.equal(latest(h, 'frame'), undefined);
@@ -108,7 +110,7 @@ test('worker delivery keeps the old transfer credit across stream reset', async 
 test('main renderer rechecks the raw cap after a transferred frame waits in transit', () => {
   const context = { fillRect() {}, drawImage() { throw new Error('expired frame was drawn'); } };
   const canvas = { width: 100, height: 100, getContext: type => type === '2d' ? context : null };
-  const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => 1001 });
+  const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => 1301 });
   const picture = frame();
   presenter.present(picture, { epoch: 1, mode: 'carplay' }, 1000);
   assert.equal(picture.closed, 1);
@@ -118,29 +120,29 @@ test('main renderer rechecks the raw cap after a transferred frame waits in tran
 test('worker applies actual output references and transfers the exact narrowed A/V window', async () => {
   const h = await workerHarness(), picture = frame();
   h.send({ type: 'stream', id: 1, stream: {} });
-  h.post({ type: 'config', id: 1, config: { epoch: 1, mode: 'carplay' } });
-  h.send({ type: 'audio-output', reference: { mode: 'carplay', type: 0, epoch: 7, generation: 2, clockGeneration: 3,
+  h.post({ type: 'config', id: 1, config: { epoch: 1, mode: 'airplay-mirror' } });
+  h.send({ type: 'audio-output', reference: { mode: 'airplay-mirror', type: 0, epoch: 7, generation: 2, clockGeneration: 3,
     sequence: 1, state: 'playing', at: 1000, sourceTimeMs: 5000, audibleTimeMs: 1150,
     mediaRate: 1, uncertaintyMs: 1, outputMethod: 'timestamp' } });
-  h.frame(picture, { mode: 'carplay', epoch: 1 }, 1, 1050, { sourceTimeMs: 5000, clockGeneration: 3 });
+  h.frame(picture, { mode: 'airplay-mirror', epoch: 1 }, 1, 1050, { sourceTimeMs: 5000, clockGeneration: 3 });
   h.advance(1025); assert.equal(latest(h, 'frame'), undefined);
-  h.advance(1030);
+  h.advance(1110);
   const transfer = latest(h, 'frame');
   assert.equal(transfer.frame, picture);
   assert.equal(transfer.outputWindow.audioAt, 1150);
   assert.equal(transfer.outputWindow.earliest, 1026);
-  assert.equal(transfer.outputWindow.latest, 1050, 'raw zero cap still bounds actual-output following');
+  assert.equal(transfer.outputWindow.latest, 1194, 'audio early window stays inside the AirPlay raw cap');
   assert.equal(transfer.outputWindow.epoch, 7, 'video and audio producer epochs remain independent');
 });
 
 test('worker cannot use an invalidated active-audio reference as video-only fallback', async () => {
   const h = await workerHarness(), picture = frame();
   h.send({ type: 'stream', id: 1, stream: {} });
-  const reference = { mode: 'carplay', type: 0, epoch: 7, generation: 2, sequence: 1,
+  const reference = { mode: 'airplay-mirror', type: 0, epoch: 7, generation: 2, sequence: 1,
     state: 'playing', at: 1000, sourceTimeMs: 5000, audibleTimeMs: 1150, mediaRate: 1 };
   h.send({ type: 'audio-output', reference });
   h.send({ type: 'audio-output', reference: { ...reference, sequence: 2, state: 'rebuffering', audibleTimeMs: null } });
-  h.frame(picture, { mode: 'carplay', epoch: 1 }, 1, 1050, { sourceTimeMs: 5000 });
+  h.frame(picture, { mode: 'airplay-mirror', epoch: 1 }, 1, 1050, { sourceTimeMs: 5000 });
   h.advance(1050);
   assert.equal(picture.closed, 1);
   assert.equal(latest(h, 'frame'), undefined);

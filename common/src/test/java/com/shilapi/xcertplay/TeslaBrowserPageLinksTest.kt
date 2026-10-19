@@ -8,7 +8,7 @@ import org.junit.Test
 
 class TeslaBrowserPageLinksTest {
     @Test fun explicitConnectionLinkIncludesDefaultAddressPortAndPairingCode() {
-        assertEquals("https://ujzk.github.io/TiPlay/?t=169.254.111.111:8080#c=1234",
+        assertEquals("https://ujzk.github.io/TiPlay/webrtc/?t=169.254.111.111:8080#c=1234",
             TeslaBrowserPageLinks.pageLink(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS,
                 "1234", "169.254.111.111", 8080, explicitEndpoint = true))
     }
@@ -18,7 +18,7 @@ class TeslaBrowserPageLinksTest {
      */
     @Test fun theCarLinkNamesAPhoneOtherThanTheDefaultInTAndKeepsTheCodeInTheFragment() {
         val page = TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS
-        assertEquals("https://ujzk.github.io/TiPlay/", page)
+        assertEquals("https://ujzk.github.io/TiPlay/webrtc/", page)
         assertEquals("The default phone at 8080 needs no t", "$page#c=1234",
             TeslaBrowserPageLinks.pageLink(page, "1234", "169.254.111.111", 8080))
         assertEquals("$page?t=169.254.111.111:8081#c=1234", TeslaBrowserPageLinks.pageLink(page, "1234", "169.254.111.111", 8081))

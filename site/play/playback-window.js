@@ -11,7 +11,8 @@ export function videoSubmissionMargin(plan) {
 }
 
 /** Clamp against matching video deadlines, including the video clock's recent history. */
-export function audioDelayAt(plans, wallTime) {
+export function audioDelayAt(plans, wallTime, mode) {
+  if (mode === 'carplay') return Math.min(MEDIA_DELAY_LIMITS.carplay, delayAt(plans.audio, wallTime));
   const earliest = delayAt(plans.video, wallTime + AUDIO_PLANNED_EARLY_MS) - AUDIO_PLANNED_EARLY_MS;
   // Video may be submitted early to reserve drawing time, so retain that
   // reservation inside the audio late tolerance as well.

@@ -17,8 +17,21 @@ Debug mode is process-local and defaults off (Standard) on every process start; 
 
 Raw capture covers incoming iPhone TCP control, encrypted protocol bytes, video, audio, timing, events and iAP tunnel data; RFCOMM traffic; browser HTTP headers/query/body before parsing (including rejected requests read by the server); USB discovery, attach/detach and permission events, device descriptors, open/reopen, configuration and interface claims/releases, request initialization/queue/wait/cancel/close, USB control setup/results, USBMUX, NCM and CH341 transfers, interrupt notifications, partial writes and failed transfer results; and PCM accepted by Android AudioTrack and the verified Bluetooth SCO output. USB lifecycle events and transfers carry connection/request identifiers; asynchronous input is captured once at completion before framing or parsing, including bytes drained after a timeout, with requested/completed lengths and failures. While Debug mode is enabled, AirPlay URL resources are forced through Android and their response bodies are captured too. Disabling the switch restores normal direct-resource eligibility; active browser playback reopens when the policy changes. Android owns A2DP/HFP encoding and USB host-controller signalling: an ordinary app cannot capture Bluetooth air packets, USB bus signalling, unread kernel buffers or packets lost before delivery. AudioTrack acceptance establishes submission, not audible car playback; the `android-audio/track` channel can include non-Bluetooth routes.
 
+The WebRTC beta adds bounded stage metrics: Android hub queue,
+transport submission to browser record read (including sender queue/network/reassembly),
+browser fragment reassembly, complete-record consumer wait, record-read to decode
+submission, decode submission to output, decoded output to scheduler/draw and canvas
+submission work. Android-to-browser durations retain clock-mapping uncertainty;
+quantiles of different stages must not be added. WebCodecs decode duration includes
+opaque driver/reference-reorder work, and canvas submission does not measure panel scanout.
+These identify where to investigate, without claiming a measured vehicle bottleneck.
+
 The original video stream is captured once on the iPhone-to-Android input. Forwarding the
-video to the browser does not save another copy of that media payload.
+video to the browser does not save another copy of that media payload. RTC reference
+records contain capture session, original channel, journal sequence and byte ranges,
+plus the decrypt/Annex-B transformation and downstream epoch/sequence. File append
+is not fsync durability. `captureIntegrity` exposes write failures; after an uncertain
+partial write, new exact-range references are suppressed until the next capture session.
 
 Raw capture begins when Debug is enabled; it cannot recover earlier traffic. A successful export
 and zero recorded failures establish neither coverage of uninstrumented paths nor delivery before

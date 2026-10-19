@@ -191,12 +191,13 @@ function videoConsumer(h, initialReference) {
   h.observeReference(reference => frames.audio(reference));
   return {
     assertBlocked(clockGeneration = 3) {
+      frames.reset(); const before = draws;
       const frame = { closed: false, close() { this.closed = true; } };
-      frames.present(frame, { mode: 'carplay' }, 1, h.now + 50,
+      frames.present(frame, { mode: 'carplay' }, 1, h.now,
         { sourceTimeMs: initialReference.sourceTimeMs, clockGeneration });
-      assert.equal(frame.closed, true, 'production video drops frames while formerly active audio is unavailable');
-      assert.equal(draws, 0, 'invalid audio cannot cause transient video-only drawing');
-      assert.notEqual(frames.stats().audioSyncState, 'video-only');
+      assert.equal(frame.closed, false, 'CarPlay video is independent of audio availability');
+      assert.equal(draws, before + 1);
+      assert.equal(frames.stats().audioSyncState, 'independent');
     },
     close() { frames.reset(); },
   };

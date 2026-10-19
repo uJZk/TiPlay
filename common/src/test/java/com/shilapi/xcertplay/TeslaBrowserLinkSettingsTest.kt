@@ -181,7 +181,7 @@ class TeslaBrowserLinkSettingsTest {
         HotspotExtraAddressSettings.setEnabled(context, true)
         rerender(screen)
         assertTrue(shown(screen).contains("https://ujzk.github.io/TiPlay"))
-        assertFalse(shown(screen).any { it.startsWith("https://ujzk.github.io/TiPlay/?t=") })
+        assertFalse(shown(screen).any { it.startsWith("https://ujzk.github.io/TiPlay/webrtc/?t=") })
         assertFalse("Only the car HTTPS link is shown", shown(screen).any { it.startsWith("http://") })
 
         HotspotExtraAddressSettings.saveAddress(context, ip("100.64.7.9"))
@@ -211,7 +211,7 @@ class TeslaBrowserLinkSettingsTest {
         assertEquals(1, copies.size)
         val clipboard = context.getSystemService(ClipboardManager::class.java)
         copies[0].performClick()
-        assertEquals("https://ujzk.github.io/TiPlay/?t=10.176.81.135:8080#c=$code",
+        assertEquals("https://ujzk.github.io/TiPlay/webrtc/?t=10.176.81.135:8080#c=$code",
             clipboard.primaryClip!!.getItemAt(0).text.toString())
     }
 

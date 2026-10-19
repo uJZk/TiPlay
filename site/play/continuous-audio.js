@@ -176,6 +176,10 @@ export class ContinuousAudio {
   reference(contextTimeMs) {
     return { type: this.type, semanticType: this.semanticType, mode: this.mode, epoch: this.epoch, generation: this.generation,
       anchoring: this.arrivalPlayback ? 'arrival' : 'presentation',
+      senderTimingState: this.arrivalPlayback ? 'arrival-anchored-unverified' : this.synchronized ? 'mapped-presentation' : 'unavailable',
+      senderRelativePolicyCeilingMs: this.mode === 'carplay' && this.synchronized && !this.arrivalPlayback ? 300 : null,
+      senderCeilingViolations: this.senderCeilingViolations || 0,
+      sourceStartupDelayMs: this.sourceStartupDelayMs ?? null,
       contextTimeMs, sourceTimeMs: this.rawCursorMs, mediaRate: this.slewRatio * this.outputRate / this.rate / this.sourceClock.rate,
       resampleRatio: this.slewRatio, networkDelayMs: this.networkDelayMs,
       resampleRatePpm: (this.slewRatio * this.outputRate / this.rate - 1) * 1e6,

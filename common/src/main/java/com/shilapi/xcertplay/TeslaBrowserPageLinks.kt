@@ -18,8 +18,8 @@ import java.net.URISyntaxException
  * so it stays out of bookmarks and the browser history.
  */
 internal object TeslaBrowserPageLinks {
-    /** The page published from `site/play/` at the root of the GitHub Pages site. */
-    const val DEFAULT_PAGE_ADDRESS = "https://ujzk.github.io/TiPlay/"
+    /** Isolated WebRTC beta page; the site root continues serving the stable HTTP client. */
+    const val DEFAULT_PAGE_ADDRESS = "https://ujzk.github.io/TiPlay/webrtc/"
 
     /** The page's address before it moved to the site root; a saved copy of it means the default. */
     const val FORMER_DEFAULT_PAGE_ADDRESS = "https://ujzk.github.io/DiPlay/play/"
@@ -47,7 +47,7 @@ internal object TeslaBrowserPageLinks {
 
     /** The page address for a [saved] one: [DEFAULT_PAGE_ADDRESS] when nothing valid is saved, or the former default. */
     fun savedPageAddress(saved: String?): String =
-        saved?.takeUnless { it == FORMER_DEFAULT_PAGE_ADDRESS || it == "https://ujzk.github.io/DiPlay/" }
+        saved?.takeUnless { it == FORMER_DEFAULT_PAGE_ADDRESS || it == "https://ujzk.github.io/DiPlay/" || it == "https://ujzk.github.io/TiPlay/" }
             ?.let(::pageAddress) ?: DEFAULT_PAGE_ADDRESS
 
     /**

@@ -3,14 +3,16 @@
  * common/src/main/assets/web/app.js at commit c1bd077 (pointer handling, viewport report, reconnect loop, stats getter).
  * Modified for TiPlay, 2026-10. Source code: https://github.com/uJZk/TiPlay
  *
- * Main thread of the TiPlay browser link (protocol v1). The video fetch starts here so it gets the page's
- * local-network treatment. On the Tesla path its body is transferred to decoder-worker.js, which draws on the
+ * Main thread of the TiPlay browser link (protocol v1). Authenticated local WebRTC carries application media.
+ * On the Tesla path its video stream is transferred to decoder-worker.js, which draws on the
  * transferred canvas; other browsers take a later rung of the fallback ladder (link.js choosePath). */
 import {
   DEFAULT_HOST, PROTOCOL, addressSpaceFor, backoffDelay, choosePath, createControlOutbox, createTouchSlots,
   isCode, linkFromAddress, linkLocation, mapPoint, newSessionId, normalizeHost, supportedCodecs,
-  timeoutSignal, viewportFor,
+  viewportFor,
 } from './link.js';
+import { connectRtc, createRtcAudioSource } from './rtc-transport.js';
+import { authenticateRtcOffer } from './rtc-pairing.js';
 import { APP_VERSION } from './app-version.js';
 import { createLocationNotice } from './location-notice.js';
 import { createBrowserLocation, locationEvents } from './geolocation.js';
@@ -175,7 +177,7 @@ showLink();
 const slots = createTouchSlots();
 let session = null, active = false, phase = 'ready', notice = null;
 let attempt = 0, reconnects = 0, retryTimer = null, retryAt = 0, streamId = 0, videoAbort = null, lastError = null;
-let retryCountdownTimer = null;
+let retryCountdownTimer = null, rtc = null, rtcAudio = null, resourceToken = null;
 let config = null, live = false, status = null, unsupported = null, videoStats = {};
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 const locationNotice = createLocationNotice($('location-notice'), lang);
@@ -209,14 +211,14 @@ const browserAudio = createBrowserAudio({
   onTiming: (source, mode) => timingFor(mode).observe('audio', source),
   onQueued: mode => timingFor(mode).started(),
   onAudioReference: reference => sink?.audio(reference),
-  fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }),
+  fetchPhone: audioFetch, credentials: () => ({ code: '', session }),
 });
 mediaTiming = timingFor('carplay');
 // Pairing, touching CarPlay and using page controls already provide activation.
 // Resume playback on ordinary page gestures when autoplay is restricted.
 document.addEventListener('pointerdown', () => browserAudio.gesture(), { capture: true, passive: true });
 document.addEventListener('keydown', () => browserAudio.gesture(), { capture: true });
-const airplayControls = createAirPlayControls($('stage'), event => outbox?.push(event), lang, { fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }), host: () => link.host });
+const airplayControls = createAirPlayControls($('stage'), event => outbox?.push(event), lang, { fetchPhone: phoneFetch, credentials: () => ({ code: resourceToken ?? '', session }), host: () => link.host });
 const airplayTrust = createAirPlayTrustNotification($('airplay-trust'), event => outbox?.push(event), lang);
 browserAudio.start();
 let movePending = false, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
@@ -321,6 +323,7 @@ async function setUpVideo() {
     sink = {
       clock(clock) { worker.postMessage({ type: 'clock', clock }); },
       audio(reference) { presenter?.audio(reference); worker.postMessage({ type: 'audio-output', reference }); },
+      touch() { worker.postMessage({ type: 'touch' }); },
       open(id, body, signal) {
         if (path.feed === 'stream') worker.postMessage({ type: 'stream', id, stream: body }, [body]);
         else {
@@ -350,6 +353,7 @@ async function setUpVideo() {
       clock: pipeline.clock,
       audio(reference) { presenter.audio(reference); frames.audio(reference); },
       delay(plans) { frames.delay(plans.video); },
+      touch() { frames.touch(); },
       open(id, body) {
         stop();
         pipeline.read(id, body);
@@ -368,10 +372,10 @@ function phoneFetch(route, init = {}) {
   });
 }
 
-async function httpError(response) {
-  let word = null;
-  try { word = (await response.json()).error; } catch (_) {}
-  return Object.assign(new Error(word || `HTTP ${response.status}`), { status: response.status });
+function audioFetch(route, init = {}) {
+  if (!rtcAudio || init.signal?.aborted) return Promise.reject(new Error('RTC audio unavailable'));
+  const body = rtcAudio.open(init.signal);
+  return Promise.resolve(new Response(body, { status: 200 }));
 }
 
 let portalRevision = null;
@@ -440,6 +444,7 @@ function stop(key = null, ...args) {
   clearInterval(retryCountdownTimer);
   clearInterval(statsTimer);
   videoAbort?.abort();
+  rtc?.close(); rtc = null; rtcAudio?.close(); rtcAudio = null; resourceToken = null;
   sink?.stop();
   cancelMove();
   slots.releaseAll();
@@ -456,7 +461,7 @@ function stop(key = null, ...args) {
 }
 
 function sendBye() {
-  phoneFetch('/bye', { method: 'POST', body: JSON.stringify({ c: link.code, s: session }), keepalive: true }).catch(() => {});
+  rtc?.bye();
 }
 
 async function connectVideo() {
@@ -465,79 +470,68 @@ async function connectVideo() {
   clearTimeout(retryTimer);
   clearInterval(retryCountdownTimer);
   videoAbort?.abort();
+  rtc?.close(); rtc = null; rtcAudio?.close(); rtcAudio = null; resourceToken = null;
   live = false;
   phase = 'connecting';
   render();
   const abort = videoAbort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), 6000); // until the response headers arrive
   try {
-    const clockEstimator = createClockEstimator();
-    const clockStart = performance.timeOrigin + performance.now();
-    const helloResponse = await phoneFetch('/hello', { signal: abort.signal });
-    if (!helloResponse.ok) throw await httpError(helloResponse);
-    const hello = await helloResponse.json();
-    if (id !== streamId) return;
-    const clock = clockEstimator.observe(hello.clockMs, clockStart, performance.timeOrigin + performance.now());
-    if (hello.app !== 'TiPlay' || hello.protocol !== PROTOCOL) {
-      stop('protocol');
-      return;
-    }
     const codecs = await codecsReady;
     if (id !== streamId) return;
-    if (!sink) {
-      stop('noVideo', videoPath.reason);
-      return;
-    }
-    // The first hello can finish before asynchronous worker setup creates the sink.
-    sink.clock(clock); browserAudio.clock(clock);
+    if (!sink) { stop('noVideo', videoPath.reason); return; }
+    const clockEstimator = createClockEstimator();
+    const clockStart = performance.timeOrigin + performance.now();
+    const connected = await connectRtc({
+      fetchPhone: phoneFetch, session, code: link.code, codecs, signal: abort.signal,
+      authenticateOffer: authenticateRtcOffer,
+      onClose(error) {
+        if (active && id === streamId && !abort.signal.aborted) {
+          lastError = error; streamEnded('network');
+        }
+      },
+    });
+    if (id !== streamId) { connected.close(); return; }
+    rtc = connected;
+    const hello = connected.hello;
+    if (hello.app !== 'TiPlay' || hello.protocol !== PROTOCOL) { stop('protocol'); return; }
+    resourceToken = hello.resourceToken ?? null;
+    // The authenticated clock RPC avoids treating ICE/DTLS setup time as clock uncertainty.
+    const clockReplyStart = performance.timeOrigin + performance.now();
+    const sample = await connected.clock();
+    if (id !== streamId) return;
+    const clock = clockEstimator.observe(sample.clockMs, clockReplyStart, performance.timeOrigin + performance.now());
+    if (!clock && Number.isFinite(hello.clockMs)) clockEstimator.observe(hello.clockMs, clockStart, performance.timeOrigin + performance.now());
+    sink.clock(clockEstimator.snapshot()); browserAudio.clock(clockEstimator.snapshot());
     for (const [mode, timing] of mediaTimings) { timing.reset(); timing.mode(mode); }
     mediaTiming = timingFor('carplay');
-    const response = await phoneFetch(`/video?c=${link.code}&s=${session}&codecs=${codecs}&timing=1&lifecycle=1`, { signal: abort.signal });
-    clearTimeout(timer);
-    if (id !== streamId) {
-      response.body?.cancel().catch(() => {});
-      return;
-    }
-    if (!response.ok) throw await httpError(response);
-    sink.open(id, response.body, abort.signal);
+    rtcAudio = createRtcAudioSource(connected.audio);
+    sink.open(id, connected.video, abort.signal);
     browserAudio.attach(abort.signal, hello);
-    if (Number.isFinite(hello.clockMs)) {
-      let busy = false;
-      const clockTimer = setInterval(async () => {
-        if (busy || abort.signal.aborted) return;
-        busy = true;
-        try {
-          for (let probe = 0; probe < 3; probe++) {
-            const start = performance.timeOrigin + performance.now();
-            const response = await phoneFetch('/hello', { signal: abort.signal });
-            if (!response.ok) break;
-            const hello = await response.json();
-            clockEstimator.observe(hello.clockMs, start, performance.timeOrigin + performance.now());
-          }
-          if (!abort.signal.aborted && id === streamId) {
-            const estimate = clockEstimator.snapshot();
-            if (estimate) { sink?.clock(estimate); browserAudio.clock(estimate); }
-          }
-        } catch (_) { /* Expired clock samples produce unavailable presentation offsets, never guessed values. */ }
-        finally { busy = false; }
-      }, 5000);
-      abort.signal.addEventListener('abort', () => clearInterval(clockTimer), { once: true });
-    }
-    reportAppearance();
-    phase = 'waiting';
-    // A phone that restarted while this page stayed open has forgotten the viewport; repeat it once per stream.
-    lastViewport = '';
-    scheduleViewport();
-    render();
+    let busy = false;
+    const clockTimer = setInterval(async () => {
+      if (busy || abort.signal.aborted) return;
+      busy = true;
+      try {
+        for (let probe = 0; probe < 3; probe++) {
+          const start = performance.timeOrigin + performance.now();
+          const response = await connected.clock();
+          clockEstimator.observe(response.clockMs, start, performance.timeOrigin + performance.now());
+        }
+        if (!abort.signal.aborted && id === streamId) {
+          const estimate = clockEstimator.snapshot();
+          if (estimate) { sink?.clock(estimate); browserAudio.clock(estimate); }
+        }
+      } catch (_) { /* Expired samples remain unavailable rather than inventing a source clock. */ }
+      finally { busy = false; }
+    }, 5000);
+    abort.signal.addEventListener('abort', () => clearInterval(clockTimer), { once: true });
+    if (hello.status) applyStatus(hello.status);
+    reportAppearance(); phase = 'waiting'; lastViewport = ''; scheduleViewport(); render();
   } catch (error) {
-    clearTimeout(timer);
-    if (id !== streamId) return;
+    if (id !== streamId || abort.signal.aborted || !active) return;
     if (error.status === 401) stop('badCode');
     else if (error.status === 409) stop('replaced');
-    else {
-      lastError = error;
-      scheduleRetry(error.status === 429 ? 30000 : backoffDelay(attempt++));
-    }
+    else { lastError = error; scheduleRetry(error.status === 429 ? 30000 : backoffDelay(attempt++)); }
   }
 }
 
@@ -568,11 +562,10 @@ function scheduleRetry(delay) {
 }
 
 async function postControl(q, events) {
-  const response = await phoneFetch('/control', {
-    method: 'POST', body: JSON.stringify({ c: link.code, s: session, q, e: locationEvents(events) }), signal: timeoutSignal(3000),
-  });
-  if (!response.ok) throw await httpError(response);
-  return response.json();
+  if (!rtc) throw new Error('RTC control is connecting');
+  const outgoing = locationEvents(events);
+  if (outgoing.some(event => event.k === 't')) sink?.touch?.();
+  return rtc.control(q, outgoing);
 }
 
 function applyStatus(next) {
@@ -704,6 +697,7 @@ function pageStats() {
     video: videoStats,
     audio: browserAudio.stats(),
     control: outbox?.stats() ?? null,
+    transport: rtc ? { ...rtc.stats(), audioPlayback: rtcAudio?.stats() } : null,
   };
 }
 

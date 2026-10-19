@@ -22,8 +22,35 @@ All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LA
 | `airplay-photo.mjs` | Actual page CSP, authenticated synthetic EXIF JPEG, native decode/contain fit, ownership, resource reuse and cleanup. |
 | `airplay-audio.mjs` | Actual WebCodecs AAC-LC and CarPlay Opus decoding, nonzero PCM, sample metadata and asynchronous timeline sequence preservation. Prints ALAC/AAC-ELD capability probes; no software fallback is implied. |
 | `media-clock.mjs` | Production CSP, bundled pure JavaScript soxr/AudioWorklet, independent mixed CarPlay/mirror PCM, actual output timestamps, suspend/resume, and main/worker/OffscreenCanvas video timing. Requires H.264 decoding, AudioWorklet, `getOutputTimestamp`, OffscreenCanvas and transferable streams. |
+| `rtc.mjs` | Production four-digit SRP6a pairing with native browser WebCrypto, actual BC 1.79 cross-language vectors and forged-proof/SDP/session rejection. The full run also attempts two real Chromium peers with ICE/DTLS/SCTP, large VP8 keyframe fragmentation and decode, PCM integrity, receive credit, touch, clock, graceful bye, channel loss, stale-session rejection and reconnect. No Android JNI, packet-loss simulation, vehicle hardware decode or physical output proof. |
 
 The Performance monitor check verifies a non-intercepting overlay without replacing the media connection. Current fields are codec, actual last-second draw FPS, latest synchronized Delta and explicit browser discards; five-second offset distributions remain in diagnostics. Fake source times validate the timing path, not iPhone capture-to-display latency. Resize/reconnect checks cover browser layout/reporting, not iPhone replacement-display negotiation.
+
+## DataChannel transport
+
+```sh
+NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/rtc.mjs
+# Runs pairing and tamper checks independently of local ICE connectivity:
+NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/rtc.mjs --pairing-only
+```
+
+This harness uses the production SRP6a helper and four-digit code. Local HTTP
+carries ephemeral PAKE messages and SDP; the code and reusable password hashes
+stay off that link. It checks real Bouncy Castle 1.79 vectors and rejects a wrong
+code, forged server proof, changed binding, offer, answer or session before DTLS
+authorization. The two endpoints then attempt application fragments through actual
+browser WebRTC and the production reassembler. Server fixtures model Android's
+PAKE, record producer and control replies. No copy/paste or fingerprint entry is
+required. A successful `--pairing-only` run establishes browser PAKE behavior;
+it does not establish successful ICE, DTLS or DataChannel delivery.
+
+Chromium needs permission to enumerate interfaces and open local UDP/TCP sockets.
+The runner grants local-network access, permits loopback candidates and disables
+mDNS obfuscation for this local test; it does not prove vehicle permission prompts,
+Android interface selection or Tesla mDNS policy.
+If the execution container provides no ICE candidates, the check fails and prints
+both peers' gathering/connection states. A timeout in that environment is not
+evidence of successful DataChannel delivery.
 
 ## Media clock and actual browser output
 

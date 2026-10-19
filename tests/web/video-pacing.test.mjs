@@ -38,9 +38,9 @@ test('decoded bursts latch the newest picture once per refresh and count superse
 test('a late or throttled refresh cannot widen the raw cap or the audio window', () => {
   for (const latest of [undefined, 1010]) {
     const h = harness(); h.frame('bounded', 1020, 1, latest ? { latest } : undefined);
-    h.advance((latest ?? 1020) - 4);
+    h.advance((latest ?? 1320) - 4);
     assert.equal(h.drawn.length, 1);
-    assert.equal(h.drawn[0].at, (latest ?? 1020) - 4);
+    assert.equal(h.drawn[0].at, (latest ?? 1320) - 4);
     h.refresh(1030);
     assert.equal(h.drawn.length, 1, 'the cancelled callback cannot redraw a stale picture');
     assert.equal(h.pacer.stats().pacingDeadlineDraws, 1);

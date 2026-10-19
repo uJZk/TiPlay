@@ -17,8 +17,11 @@ internal class WebFrameQueue(
     private val maxFrames: Int = 10,
     private val maxConfigs: Int = 8,
     private val maxConfigBytes: Int = WebVideoRecords.MAX_PAYLOAD,
+    private val reliable: Boolean = false,
 ) {
     private val records = ArrayDeque<WebVideoRecord>()
+    /** A reliable queue fails explicitly rather than resuming after loss of a reference frame. */
+    var failureReason: String? = null; private set
     private var started = false
     private var gap = false
     var configCount = 0; private set
@@ -34,8 +37,15 @@ internal class WebFrameQueue(
 
     /** Queues a frame; false when it was skipped while waiting for a key frame or is larger than the queue. */
     fun offer(frame: WebVideoRecord, now: Long): Boolean {
+        if (failureReason != null) return false
         expire(now)
+        if (failureReason != null) return false
         val cost = frame.payloadLength
+        if (reliable && (cost > maxBytes || size >= maxFrames || cost > maxBytes - bytes)) {
+            overflow++
+            failureReason = "reliable-overload"
+            return false
+        }
         if (cost > maxBytes) { overflow++; invalidate(now); return false }
         if (size >= maxFrames || cost > maxBytes - bytes) {
             overflow += size
@@ -60,7 +70,11 @@ internal class WebFrameQueue(
 
     /** Queues a config record; the next frame must be a key frame of the new configuration. */
     fun offerConfig(config: WebVideoRecord, now: Long): Boolean {
-        if (configCount >= maxConfigs || config.payloadLength > maxConfigBytes - configBytes) return false
+        if (failureReason != null) return false
+        if (configCount >= maxConfigs || config.payloadLength > maxConfigBytes - configBytes) {
+            if (reliable) failureReason = "reliable-overload"
+            return false
+        }
         records.addLast(config)
         configCount++
         configBytes += config.payloadLength
@@ -80,7 +94,9 @@ internal class WebFrameQueue(
     }
 
     fun poll(now: Long): WebVideoRecord? {
+        if (failureReason != null) return null
         expire(now)
+        if (failureReason != null) return null
         val record = records.removeFirstOrNull() ?: return null
         if (record.kind == WebVideoRecords.KIND_FRAME) {
             size--
@@ -110,6 +126,10 @@ internal class WebFrameQueue(
     private fun expire(now: Long) {
         val oldest = records.firstOrNull { it.kind == WebVideoRecords.KIND_FRAME } ?: return
         if (now - oldest.queuedAtNanos >= maxAgeNanos) {
+            if (reliable) {
+                failureReason = "reliable-expired"
+                return
+            }
             expired += size
             invalidate(now)
         }

@@ -319,13 +319,13 @@ test('canvas submission reports an early source presentation as a signed offset'
 });
 
 test('the presenter rejects frames delayed by main-thread delivery and rechecks before drawing', () => {
-  let now = 1001, draws = 0, clears = 0, clockReads = 0, preparationExpires = false;
+  let now = 1301, draws = 0, clears = 0, clockReads = 0, preparationExpires = false;
   const context = { fillRect() { clears++; }, drawImage() { draws++; } };
   const canvas = { width: 800, height: 480, getContext: type => type === '2d' ? context : null, removeEventListener() {} };
-  const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => { if (preparationExpires && ++clockReads >= 2) now = 1001; return now; } });
+  const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => { if (preparationExpires && ++clockReads >= 2) now = 1301; return now; } });
   const expired = videoFrame(0); presenter.present(expired, { mode: 'carplay' }, 1000);
   assert.equal(expired.closed, true); assert.equal(draws, 0);
-  now = 999; preparationExpires = true;
+  now = 1299; preparationExpires = true;
   const crossed = videoFrame(1); presenter.present(crossed, { mode: 'carplay' }, 1000);
   assert.equal(crossed.closed, true); assert.equal(draws, 0, 'canvas submission check catches time spent preparing the draw');
   assert.equal(clears, 0, 'an expired frame never clears the retained picture');
@@ -337,10 +337,10 @@ test('the presenter rejects frames delayed by main-thread delivery and rechecks 
 });
 
 test('an expired GPU texture upload never clears or submits the canvas', () => {
-  let now = 999, proofs = 0;
+  let now = 1299, proofs = 0;
   const calls = [], canvas = { width: 800, height: 480, addEventListener() {}, removeEventListener() {} }, gl = { canvas, isContextLost: () => false };
   for (const name of ['createProgram', 'createShader', 'shaderSource', 'compileShader', 'attachShader', 'deleteShader', 'linkProgram', 'useProgram', 'createBuffer', 'bindBuffer', 'bufferData', 'getAttribLocation', 'enableVertexAttribArray', 'vertexAttribPointer', 'createTexture', 'bindTexture', 'texParameteri', 'getUniformLocation', 'uniform1i', 'viewport', 'clearColor', 'clear', 'drawArrays', 'deleteTexture', 'deleteBuffer', 'deleteProgram']) gl[name] = () => { calls.push(name); return {}; };
-  gl.texImage2D = () => { calls.push('upload'); now = 1001; };
+  gl.texImage2D = () => { calls.push('upload'); now = 1301; };
   gl.flush = () => calls.push('flush');
   canvas.getContext = type => type === 'webgl2' ? gl : null;
   const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => now, onFirstPresent: () => proofs++ });
@@ -356,7 +356,7 @@ test('an expired GPU texture upload never clears or submits the canvas', () => {
 });
 
 
-test('encoded dependency order survives PTS reordering and backlog recovery waits for a key frame', async t => {
+test('AirPlay encoded dependency order survives PTS reordering and backlog recovery waits for a key frame', async t => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   FakeDecoder.instances = []; FakeDecoder.gate = null;
   globalThis.VideoDecoder = FakeDecoder;
@@ -366,7 +366,7 @@ test('encoded dependency order survives PTS reordering and backlog recovery wait
   t.after(() => pipeline.stop());
   let controller;
   pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
-  controller.enqueue(config(1)); controller.enqueue(keyFrame(1)); await settle();
+  controller.enqueue(config(1, 'airplay-mirror')); controller.enqueue(keyFrame(1)); await settle();
   const decoder = FakeDecoder.instances.at(-1);
   const delta = (sequence, timestampUs) => encodeRecord({ kind: RECORD.FRAME, codec: 1, epoch: 1,
     sequence, timestampUs, payload: Uint8Array.of(0, 0, 0, 1, 0x41) });
@@ -392,17 +392,17 @@ test('a decoded frame dropped by audio sync proves nothing until a later frame i
   t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
   const messages = [], shown = [];
   const frames = createTimedFrames(recordingPresenter(t, messages, shown), { now: () => 1000 });
-  frames.audio({ mode: 'carplay', type: 0, epoch: 1, generation: 1, sequence: 1, clockGeneration: 1,
+  frames.audio({ mode: 'airplay-mirror', type: 0, epoch: 1, generation: 1, sequence: 1, clockGeneration: 1,
     state: 'playing', sourceTimeMs: 5000, audibleTimeMs: 1120, mediaRate: 1, at: 1000, uncertaintyMs: 0 });
   const pipeline = createDecoderPipeline({ post: message => messages.push(message), present: frames.present });
   t.after(() => { pipeline.stop(); frames.reset(); });
   let controller;
   pipeline.read(3, new ReadableStream({ start(c) { controller = c; } }));
-  controller.enqueue(config(1)); controller.enqueue(keyFrame(1)); await settle();
+  controller.enqueue(config(1, 'airplay-mirror')); controller.enqueue(keyFrame(1)); await settle();
   const dropped = videoFrame(0); FakeDecoder.instances.at(-1).output(dropped);
   assert.equal(dropped.closed, true); assert.equal(shown.length, 0);
   assert.equal(messages.some(m => m.type === 'decoded'), false);
-  frames.audio({ mode: 'carplay', type: 0, epoch: 1, generation: 1, sequence: 2, clockGeneration: 1,
+  frames.audio({ mode: 'airplay-mirror', type: 0, epoch: 1, generation: 1, sequence: 2, clockGeneration: 1,
     state: 'disabled', at: 1000 });
   FakeDecoder.instances.at(-1).output(videoFrame(1));
   FakeDecoder.instances.at(-1).output(videoFrame(2));
@@ -423,9 +423,81 @@ test('first-frame proof waits for paced drawing and is suppressed on expired fra
   t.after(() => presenter.dispose());
   presenter.present(videoFrame(0), { streamId: 9, epoch: 1, mode: 'carplay' }, 1100);
   assert.equal(proofs.length, 0); assert.equal(draws, 0);
-  at = 1101; refresh();
+  at = 1401; refresh();
   assert.equal(proofs.length, 0); assert.equal(draws, 0);
   presenter.present(videoFrame(1), { streamId: 9, epoch: 1, mode: 'carplay' }, 1200);
   at = 1150; refresh();
   assert.equal(draws, 1); assert.deepEqual(proofs, [[9, 1]]);
+});
+
+test('CarPlay decode capacity backpressures complete predictive input without resets or key requests', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const messages = [], pipeline = createDecoderPipeline({ post: message => messages.push(message), present() {} });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(7, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1)); controller.enqueue(keyFrame(1)); await settle();
+  const decoder = FakeDecoder.instances.at(-1);
+  decoder.decodeQueueSize = 12;
+  let dequeue;
+  decoder.addEventListener = (name, callback) => { if (name === 'dequeue') dequeue = callback; };
+  decoder.removeEventListener = () => {};
+  const delta = timestampUs => encodeRecord({ kind: RECORD.FRAME, codec: 1, epoch: 1, timestampUs,
+    payload: Uint8Array.of(0, 0, 0, 1, 0x41) });
+  controller.enqueue(delta(3000)); controller.enqueue(delta(2000)); await settle();
+  assert.equal(decoder.chunks.length, 1, 'reader waits instead of submitting more hardware work');
+  decoder.decodeQueueSize = 0; dequeue(); await settle();
+  assert.deepEqual(decoder.chunks.map(chunk => chunk.timestamp), [0, 3000, 2000]);
+  assert.equal(decoder.resets, undefined); assert.equal(pipeline.stats().decodeDroppedFrames, 0);
+  assert.equal(messages.some(message => message.type === 'keyframe'), false);
+  assert.equal(pipeline.stats().acceleration, 'prefer-hardware');
+  assert.equal(pipeline.stats().decoderImplementation, 'unknown', 'requested preference is not proof of hardware');
+});
+
+test('CarPlay does not accept a software-only decoder preference', async t => {
+  const original = FakeDecoder.isConfigSupported;
+  FakeDecoder.isConfigSupported = async candidate => ({ supported: candidate.hardwareAcceleration === 'no-preference' });
+  globalThis.VideoDecoder = FakeDecoder;
+  t.after(() => { FakeDecoder.isConfigSupported = original; delete globalThis.VideoDecoder; });
+  const messages = [], pipeline = createDecoderPipeline({ post: message => messages.push(message), present() {} });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(8, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1)); await settle();
+  assert.equal(pipeline.stats().codecSupported, false);
+  assert.ok(messages.some(message => message.type === 'unsupported'));
+});
+
+test('extended timing records measure bounded stages without changing encoded payload or presentation', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const shown = [], pipeline = createDecoderPipeline({ post() {}, present: (...value) => shown.push(value) });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(10, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1)); await settle();
+  const at = performance.timeOrigin + performance.now();
+  pipeline.clock({ offset: at - 1000, at, rtt: 2, uncertaintyMs: 1 });
+  const payload = new Uint8Array(24), values = new DataView(payload.buffer);
+  values.setFloat64(0, 1000, true); values.setFloat64(8, 970, true); values.setFloat64(16, 990, true);
+  controller.enqueue(encodeRecord({ kind: RECORD.TIMING, codec: 0, epoch: 1, timestampUs: 0, payload }));
+  controller.enqueue(keyFrame(1)); await settle();
+  const decoder = FakeDecoder.instances.at(-1);
+  decoder.output(videoFrame(0));
+  assert.equal(shown.length, 1); assert.equal(shown[0][3], at, 'source presentation still uses the first float64');
+  const stages = shown[0][1].stageTiming;
+  assert.ok(stages.recordReadAtMs <= stages.decodeSubmitAtMs && stages.decodeSubmitAtMs <= stages.decodedAtMs);
+  assert.deepEqual([...decoder.chunks[0].data], [0, 0, 0, 1, 0x65], 'stage evidence carries no replacement media bytes');
+  const stats = pipeline.stats();
+  assert.equal(stats.androidHubQueueMsP95, 20);
+  assert.ok(stats.androidTransportSubmitToRecordReadMsP95 >= 9);
+  assert.ok(stats.recordReadToDecodeSubmitMsP95 >= 0); assert.ok(stats.decodeMsP95 >= 0);
+  assert.equal(stats.stageClockUncertaintyMs, 1);
 });

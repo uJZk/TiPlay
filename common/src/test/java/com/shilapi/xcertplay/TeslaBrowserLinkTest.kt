@@ -131,9 +131,9 @@ class TeslaBrowserLinkTest {
         started()
         val code = TeslaBrowserLink.pairingCode(context)
         assertEquals(8081, TeslaBrowserLink.listeningPort(context))
-        assertEquals("https://ujzk.github.io/TiPlay/?t=169.254.111.111:8081#c=$code",
+        assertEquals("https://ujzk.github.io/TiPlay/webrtc/?t=169.254.111.111:8081#c=$code",
             TeslaBrowserLink.pageLink(context, null))
-        assertEquals("https://ujzk.github.io/TiPlay/?t=192.168.43.1:8081#c=$code",
+        assertEquals("https://ujzk.github.io/TiPlay/webrtc/?t=192.168.43.1:8081#c=$code",
             TeslaBrowserLink.pageLink(context, "192.168.43.1"))
     }
 

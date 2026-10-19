@@ -15,7 +15,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let support = false, enabled = true, voiceRevision = null, voiceState = 'idle', voiceError = null;
   let queuedBytes = 0, capacity = null, audioError = null, disposed = false;
   let retryTimer = null;
-  let clock = null, delayPlans = initialPlaybackPlans(), timedPackets = 0, fallbackPackets = 0;
+  let clock = null, delayPlans = initialPlaybackPlans(), timedPackets = 0, fallbackPackets = 0, arrivalAnchoredPackets = 0;
   let clockBase = null, playbackGeneration = 0;
   let debugEnabled = false, pcmMetrics = null, workletMetrics = null, reportAt = null;
   let diagnosticRevision = 0;
@@ -64,7 +64,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   });
   const snapshot = () => ({ supported: support, enabled, sound: context?.state === 'running',
     bluetooth: voiceState, browserMuted: false, error: voiceError ?? audioError,
-    timedPackets, fallbackPackets, queuedBytes, processorErrors, recoveries, processorFailed,
+    timedPackets, fallbackPackets, arrivalAnchoredPackets, queuedBytes, processorErrors, recoveries, processorFailed,
     ...(debugEnabled ? { debug: debugSnapshot() } : {}) });
   const notify = () => onState(snapshot());
   const auth = () => { const { code, session } = credentials(); return `c=${encodeURIComponent(code)}&s=${encodeURIComponent(session)}`; };
@@ -248,9 +248,11 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     if (clock?.version !== 2) record.sourceTime = sourceTime;
     record.arrivalLocalTimeMs = performance.now();
     const purpose = record.semanticType ?? record.type;
-    const arrivalAnchored = record.mode === 'carplay' && purpose >= 1 && purpose <= 4;
+    const voice = record.mode === 'carplay' && purpose >= 1 && purpose <= 4;
+    const arrivalAnchored = voice && !Number.isFinite(sourceTime);
     if (hasPcm) {
-      if (Number.isFinite(sourceTime)) { timedPackets++; if (!arrivalAnchored) onTiming(sourceTime, record.mode); }
+      if (arrivalAnchored) arrivalAnchoredPackets++;
+      else if (Number.isFinite(sourceTime)) { timedPackets++; if (!voice) onTiming(sourceTime, record.mode); }
       else fallbackPackets++;
     }
     clockBase ??= now() - context.currentTime * 1000;
@@ -258,7 +260,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     controls();
     record.generation = generation;
     node.port.postMessage(record, [record.pcm]);
-    if (hasPcm && !arrivalAnchored) onQueued(record.mode);
+    if (hasPcm && !voice) onQueued(record.mode);
   }
   async function stream(signal) {
     stopStream();

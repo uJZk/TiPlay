@@ -10,10 +10,10 @@ settings shows the same product version; playback has no corner version overlay.
 ## Connect and recover
 
 1. Configure the Android connection and permissions in TiPlay.
-2. Open <https://ujzk.github.io/TiPlay/>. First visit and updates require the host;
+2. For this WebRTC beta, open <https://ujzk.github.io/TiPlay/webrtc/>. The existing root page serves the earlier HTTP app. First visit and updates require the host;
    subsequent visits can use the Service Worker cache.
 3. Enter **Android address** and pairing code, or open Android's **Copy link**.
-   Allow browser local-network access when requested, then choose **Connect**.
+   Allow browser local-network access when requested, then choose **Connect**. Tesla users can type the address and four-digit code directly; copying/pasting a link is optional and never required.
 4. Bookmark after code import removes the URL fragment.
 
 Address/code stay visible and editable while disconnected. Connect appears above
@@ -66,12 +66,19 @@ fallback is excluded because car browsers can pause it while driving. Codec prob
 does not prove a particular vehicle/browser's compatibility. Experimental mirroring,
 URL video, photos and ordinary audio follow [AirPlay.md](AirPlay.md).
 
-The APK neither bundles nor serves the page. Protocol routes are `/hello`, `/video`,
-`/audio`, `/airplay-resource`, `/control` and `/bye`; `/`, `/play` and `/play/*` return
-404. Ordinary AirPlay `/play` is separate. Static assets/discovery are
-public; media/control require authentication. Local HTTP is unencrypted: page HTTPS
-enables WebCodecs and protects static delivery, not the phone transport. Protect the
-shared Wi-Fi and pairing link.
+The APK neither bundles nor serves the page. The beta uses reliable ordered WebRTC
+DataChannels for video, audio and controls, with source-compressed video decoded in
+the webpage. Four-digit SRP-6a pairing authenticates the complete signaling SDP before
+DTLS connection use; no fingerprint entry or clipboard is needed. Signaling uses
+`/rtc/pair/start` and `/rtc/pair/finish`; it does not send the pairing code via HTTP.
+No public STUN/TURN or Internet media relay is configured.
+
+`/airplay-resource` remains an authenticated HTTP resource path, using a temporary
+active-session bearer delivered over the encrypted control channel. That resource
+path has the existing local-network confidentiality limits. Legacy `/hello`, `/video`,
+`/audio`, `/control` and `/bye` HTTP routes remain for compatibility, not as a hidden
+CarPlay fallback. `/`, `/play` and `/play/*` on Android return 404. See
+[DataChannel architecture and bounds](CarPlay-DataChannel.md).
 
 [TeslaBrowserPageLinks](../common/src/main/java/com/shilapi/xcertplay/TeslaBrowserPageLinks.kt)
 and [pages.yml](../.github/workflows/pages.yml) must agree on the public page base.
@@ -124,15 +131,11 @@ rate can reflect scheduling as well as an oscillator, so it does not identify a 
 Actual output references map emitted content through `AudioContext.getOutputTimestamp()`.
 That pair already includes the device pipeline. Feature fallback uses reported base/output
 latencies once, marks its uncertainty and rejects unbounded mappings. Resampler content
-delay is reflected in the source position, so video must not add it again. Both worker and
-main-thread video intersect their existing mode deadline with the audible interval: audio
-may lead matching video by at most **45 ms** or lag by at most **125 ms**. Device/filter
+delay is reflected in the source position, so video must not add it again. For AirPlay, both worker and main-thread video intersect their mode deadline with the audible interval: audio may lead matching video by at most **45 ms** or lag by at most **125 ms**. CarPlay instead uses independent source-relative +300 ms video/audio ceilings and does not apply that A/V window. Device/filter
 uncertainty shrinks this interval. Extra hardware latency can be compensated by rendering
 available future PCM earlier; it is not an exception to either limit. Active audio with a
 stale/unavailable reference prevents a new unsynchronized draw. Explicitly disabled/ended
-audio permits video-only scheduling again. CarPlay navigation, calls, Siri and alerts use
-an independent 20 ms arrival-anchored buffer while preserving RTP sample intervals, so a lack
-of presentation lead cannot prevent speech from starting. These speech streams do not
+audio permits video-only scheduling again. CarPlay navigation, calls, Siri and alerts keep an independent timeline. Valid source anchors use a bounded startup reserve that preserves utterance start within the +300 ms policy; absent anchors use a clearly marked arrival-based fallback. A device pipeline that cannot meet the sender deadline is reported as infeasible. These speech streams do not
 constrain the video clock. Media remains presentation-synchronized.
 
 Android/browser calibration does not establish the iPhone oscillator's rate. Ordinary

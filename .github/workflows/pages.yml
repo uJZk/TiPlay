@@ -25,8 +25,14 @@ jobs:
       SITE_BASE_URL: ${{ vars.SITE_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
-      - run: python3 scripts/build_site.py
-      - run: python3 scripts/assemble_site.py _site
+        with:
+          fetch-depth: 0
+      - if: github.ref_name != 'feat/carplay-webrtc'
+        run: python3 scripts/build_site.py
+      - if: github.ref_name != 'feat/carplay-webrtc'
+        run: python3 scripts/assemble_site.py _site
+      - if: github.ref_name == 'feat/carplay-webrtc'
+        run: python3 scripts/assemble_beta_site.py _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

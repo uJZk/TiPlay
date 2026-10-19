@@ -11,7 +11,9 @@ import { AUDIO_EARLY_MS, AUDIO_LATE_MS } from './delay-plan.js';
 import { createAudioReferenceTimeline, OUTPUT_REFERENCE_MAX_AGE_MS } from './audio-output-clock.js';
 
 const KEY_REQUEST_INTERVAL_MS = 1000;
-const MAX_DECODE_QUEUE = 30; // half a second at 60 fps; beyond that, drop to the next key frame instead of lagging
+const MAX_DECODE_QUEUE = 30; // Legacy AirPlay recovery; CarPlay uses bounded dependency-preserving backpressure.
+const MAX_CARPLAY_DECODE_QUEUE = 12;
+const CARPLAY_DECODE_STALL_MS = 300;
 const MAX_FAILURES = 4; // decoder errors without a decoded frame before the page gives up on this config
 const utf8 = new TextDecoder();
 
@@ -24,9 +26,9 @@ export function createDecoderPipeline({ post: send, present }) {
   const decodeStarts = new Map();
   const presentationTimes = new Map();
   let clock = null;
-  const decodeMs = new Samples();
+  const decodeMs = new Samples(), decodeWaitMs = new Samples(), androidQueueMs = new Samples(), transportSubmitToRecordReadMs = new Samples();
   const totals = { decoded: 0, dropped: 0, decodeErrors: 0, backlogResets: 0, keyRequests: 0, timingRecords: 0, timingRejected: 0 };
-  let decodeDroppedFrames = 0;
+  let decodeDroppedFrames = 0, presentationTimingState = 'unobserved';
   const dropped = () => { totals.dropped++; decodeDroppedFrames++; };
   let decoder = null, decoderConfig = null, config = null, codecSupported = null;
   let streamId = null, timer = null;
@@ -44,15 +46,19 @@ export function createDecoderPipeline({ post: send, present }) {
         post({ type: 'idle' });
         return null;
       }
-      if (record.kind === RECORD.TIMING && record.payload.byteLength === 8) {
-        const presentation = new DataView(record.payload.buffer, record.payload.byteOffset, 8).getFloat64(0, true);
+      if (record.kind === RECORD.TIMING && [8, 24].includes(record.payload.byteLength)) {
+        const values = new DataView(record.payload.buffer, record.payload.byteOffset, record.payload.byteLength);
+        const presentation = values.getFloat64(0, true);
+        const queuedAtMs = values.byteLength === 24 ? values.getFloat64(8, true) : null;
+        const transportSubmitAtMs = values.byteLength === 24 ? values.getFloat64(16, true) : null;
+        if ([queuedAtMs, transportSubmitAtMs].every(Number.isFinite) && transportSubmitAtMs >= queuedAtMs) androidQueueMs.add(transportSubmitAtMs - queuedAtMs);
         const mapped = presentationTime(presentation, clock);
         totals.timingRecords++;
         if (mapped === null) totals.timingRejected++;
-        presentationTimes.set(`${record.epoch}:${record.timestampUs}`, { mapped, sourceTimeMs: presentation, clockGeneration: clock?.generation });
+        presentationTimes.set(`${record.epoch}:${record.timestampUs}`, { mapped, sourceTimeMs: presentation, clockGeneration: clock?.generation, transportSubmitAtMs });
         if (presentationTimes.size > 120) presentationTimes.delete(presentationTimes.keys().next().value);
       }
-      if (record.kind === RECORD.FRAME) decodeFrame(record);
+      if (record.kind === RECORD.FRAME) return decodeFrameWithCapacity(record, signal);
       return null;
     },
     onAlive: id => post({ type: 'alive', id }),
@@ -79,10 +85,11 @@ export function createDecoderPipeline({ post: send, present }) {
     const same = config && decoder?.state === 'configured' && ['epoch', 'mode', 'codec', 'width', 'height'].every(key => config[key] === next[key]);
     config = next;
     if (same) return;
-    decodeDroppedFrames = 0;
+    decodeDroppedFrames = 0; presentationTimingState = 'unobserved';
     // Late output of the old decoder would otherwise be drawn and reported as the first frame of the new epoch.
     closeDecoder();
-    const chosen = await chooseDecoderConfig(decoderSupports, next);
+    const chosen = await chooseDecoderConfig(candidate => next.mode === 'carplay' && candidate.hardwareAcceleration !== 'prefer-hardware'
+      ? Promise.resolve({ supported: false }) : decoderSupports(candidate), next);
     if (signal.aborted || config !== next) return; // a newer config arrived meanwhile
     decoderConfig = chosen;
     codecSupported = Boolean(chosen);
@@ -117,7 +124,7 @@ export function createDecoderPipeline({ post: send, present }) {
 
   /**
    * A decoder that reported an error is closed, so build a new one; the picture resumes at the next key frame.
-   * Repeated errors without a decoded frame suggest a broken hardware path: try any decoder, then give up.
+   * Repeated errors without output eventually reject the config. Only legacy AirPlay may try an unspecified decoder.
    */
   function failed() {
     totals.decodeErrors++;
@@ -128,7 +135,7 @@ export function createDecoderPipeline({ post: send, present }) {
       post({ type: 'unsupported', codec: decoderConfig.codec });
       return;
     }
-    if (failures > 1) decoderConfig = { ...decoderConfig, hardwareAcceleration: 'no-preference' };
+    if (failures > 1 && config?.mode !== 'carplay') decoderConfig = { ...decoderConfig, hardwareAcceleration: 'no-preference' };
     openDecoder();
     requestKeyFrame(true);
   }
@@ -141,14 +148,40 @@ export function createDecoderPipeline({ post: send, present }) {
     post({ type: 'keyframe' });
   }
 
-  function decodeFrame(record) {
+  async function decodeFrameWithCapacity(record, signal) {
+    const recordReadAtMs = performance.timeOrigin + performance.now();
+    const timing = presentationTimes.get(`${record.epoch}:${record.timestampUs}`);
+    const mappedSubmit = Number.isFinite(timing?.transportSubmitAtMs) ? presentationTime(timing.transportSubmitAtMs, clock) : null;
+    if (Number.isFinite(mappedSubmit)) transportSubmitToRecordReadMs.add(recordReadAtMs - mappedSubmit);
+    if (config?.mode === 'carplay' && decoder?.state === 'configured') {
+      const current = decoder, started = performance.now();
+      // Preserve every dependency in input order and let the stream reader exert backpressure.
+      while (current === decoder && current.state === 'configured' && current.decodeQueueSize >= MAX_CARPLAY_DECODE_QUEUE) {
+        if (signal.aborted) return;
+        if (performance.now() - started > CARPLAY_DECODE_STALL_MS) {
+          post({ type: 'overload', reason: 'decode-capacity', detail: 'CarPlay decoder stalled beyond 300 ms; reconnect required.' });
+          throw new RecordError('CarPlay decoder capacity exceeded');
+        }
+        await new Promise(resolve => {
+          const timer = setTimeout(done, 8);
+          function done() { clearTimeout(timer); current.removeEventListener?.('dequeue', done); signal.removeEventListener('abort', done); resolve(); }
+          current.addEventListener?.('dequeue', done, { once: true });
+          signal.addEventListener('abort', done, { once: true });
+        });
+      }
+      if (signal.aborted || current !== decoder) return;
+    }
+    decodeFrame(record, recordReadAtMs);
+  }
+
+  function decodeFrame(record, recordReadAtMs) {
     const key = (record.flags & FLAG.KEY) !== 0;
     if (decoder?.state !== 'configured' || (needKey && !key)) {
       dropped();
       if (decoder) requestKeyFrame();
       return;
     }
-    if (decoder.decodeQueueSize > MAX_DECODE_QUEUE) {
+    if (config?.mode !== 'carplay' && decoder.decodeQueueSize > MAX_DECODE_QUEUE) {
       totals.backlogResets++;
       decoder.reset();
       decoder.configure(decoderConfig);
@@ -161,7 +194,9 @@ export function createDecoderPipeline({ post: send, present }) {
       }
     }
     needKey = false;
-    decodeStarts.set(record.timestampUs, performance.now());
+    const decodeSubmitAtMs = performance.timeOrigin + performance.now();
+    decodeWaitMs.add(decodeSubmitAtMs - recordReadAtMs);
+    decodeStarts.set(record.timestampUs, { recordReadAtMs, decodeSubmitAtMs });
     if (decodeStarts.size > 120) decodeStarts.delete(decodeStarts.keys().next().value);
     try {
       decoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp: record.timestampUs, data: record.payload }));
@@ -181,17 +216,19 @@ export function createDecoderPipeline({ post: send, present }) {
       post({ type: 'unsupported', codec: config.codec, reason: 'hdr', detail: 'AirPlay mirroring requires SDR video.' });
       return;
     }
+    const decodedAtMs = performance.timeOrigin + performance.now();
     const started = decodeStarts.get(frame.timestamp);
     if (started !== undefined) {
       decodeStarts.delete(frame.timestamp);
-      decodeMs.add(performance.now() - started);
+      decodeMs.add(decodedAtMs - started.decodeSubmitAtMs);
     }
     totals.decoded++;
     failures = 0;
     const key = `${config?.epoch}:${frame.timestamp}`;
     const timing = presentationTimes.get(key);
     presentationTimes.delete(key);
-    present(frame, config, streamId, timing?.mapped, timing && { sourceTimeMs: timing.sourceTimeMs, clockGeneration: timing.clockGeneration });
+    presentationTimingState = Number.isFinite(timing?.mapped) ? 'mapped-presentation' : 'unavailable';
+    present(frame, { ...config, stageTiming: { ...started, decodedAtMs } }, streamId, timing?.mapped, timing && { sourceTimeMs: timing.sourceTimeMs, clockGeneration: timing.clockGeneration });
   }
 
   function stop() {
@@ -226,10 +263,16 @@ export function createDecoderPipeline({ post: send, present }) {
       // This is the requested hint; the actual decoder implementation is not exposed by WebCodecs.
       acceleration: decoderConfig?.hardwareAcceleration ?? null,
       decoderImplementation: 'unknown',
+      presentationTimingState,
+      senderRelativePolicyCeilingMs: config?.mode === 'carplay' && presentationTimingState === 'mapped-presentation' ? 300 : null,
       decodeQueueSize: decoder?.decodeQueueSize ?? 0,
       ...rates,
       decodeMsP50: decodeMs.percentile(50),
       decodeMsP95: decodeMs.percentile(95),
+      recordReadToDecodeSubmitMsP95: decodeWaitMs.percentile(95),
+      androidHubQueueMsP95: androidQueueMs.percentile(95),
+      androidTransportSubmitToRecordReadMsP95: transportSubmitToRecordReadMs.percentile(95),
+      stageClockUncertaintyMs: clock?.uncertaintyMs ?? null,
       ...records.stats(),
       ...totals,
       decodeDroppedFrames,
@@ -243,7 +286,7 @@ export function createDecoderPipeline({ post: send, present }) {
  */
 export function createFramePresenter(canvas, { now = () => performance.timeOrigin + performance.now(),
   applyTimingPolicy = false, pace = false, onPresent, onFirstPresent } = {}) {
-  const drawMs = new Samples();
+  const drawMs = new Samples(), decodedToDrawMs = new Samples();
   const fpsWindow = createFpsWindow();
   let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null, expiredFrames = 0, untimedFrames = 0, renderDroppedFrames = 0;
   let audioSyncDroppedFrames = 0;
@@ -276,7 +319,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
     const late = () => applyTimingPolicy && videoExpired(timing, config?.mode, now());
     let checkedAt = null, checkedAudioAt = outputWindow?.audioAt;
     const outsideAudioWindow = (at = now()) => {
-      if (!applyTimingPolicy) return false;
+      if (!applyTimingPolicy || config?.mode === 'carplay') return false;
       if (audioTracking) {
         const resolved = audioReferences.resolve(config?.mode, outputWindow?.sourceTimeMs, outputWindow?.clockGeneration, at);
         if (!resolved.required) return false;
@@ -306,6 +349,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
     if (!drawn) { renderDroppedFrames++; frame.close(); return; }
     if (!Number.isFinite(timing)) untimedFrames++;
     drawMs.add(performance.now() - started);
+    if (Number.isFinite(config?.stageTiming?.decodedAtMs) && Number.isFinite(checkedAt)) decodedToDrawMs.add(checkedAt - config.stageTiming.decodedAtMs);
     const at = performance.now();
     const offset = Number.isFinite(timing) ? checkedAt - timing : null;
     if (drawn) {
@@ -353,7 +397,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       canvas.removeEventListener('webglcontextrestored', restored);
       renderer.dispose?.();
     },
-    stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), expiredFrames, untimedFrames, renderDroppedFrames,
+    stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), decodedToDrawMsP95: decodedToDrawMs.percentile(95), expiredFrames, untimedFrames, renderDroppedFrames,
       audioRenderSyncDroppedFrames: audioSyncDroppedFrames, ...pacer?.stats(), ...fpsWindow.stats() }),
   };
 }

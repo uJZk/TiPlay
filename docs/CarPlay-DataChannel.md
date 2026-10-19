@@ -1,265 +1,191 @@
-# CarPlay reliable DataChannel implementation handoff
+# CarPlay reliable DataChannel
 
-## Current decision and status
+## Scope and status
 
-The next conversation should implement **reliable, ordered WebRTC DataChannel
-transport for CarPlay**, using first-principles reasoning. This conversation
-completed written design and handoff only. No transport, decoder, timing or
-runtime behavior has changed; the implementation baseline is
-`6f1d9cea4875effb0a3b7877a9ec01551e2d274e` / `0.2.20-beta.5`.
+The `feat/carplay-webrtc` branch implements the WebRTC beta, **0.2.21-beta.1**
+(code 45). The Android phone relays source-compressed video into webpage-controlled
+WebCodecs decoding; native WebRTC audio/video tracks are not used.
+The supported product remains Android phone plus car browser.
 
-The selected transport carries application media data into a webpage-controlled
-decoder. It does not select WebRTC native audio/video tracks or their playback
-pipeline. Earlier proposals that defaulted to WSS do not override this decision.
-Existing behavior remains documented in [Browser](Browser.md); the requirements
-below describe the intended change, not features already shipped.
+The beta webpage lives at <https://ujzk.github.io/TiPlay/webrtc/>. Its deployment
+assembles the existing root/download pages from the pre-migration baseline and
+adds the beta under `webrtc/`; it does not replace the existing root client.
+The beta APK selects that address, including migration of the old default saved
+address. Custom HTTPS hosts remain configurable.
 
-## Confirmed requirements
+CarPlay is the primary migration. The existing shared video/audio hub also carries
+AirPlay mirror records over the same channels to preserve display ownership and
+stream continuity. AirPlay URL/photo resource fetching and its playback semantics
+remain on the existing resource path. This is not an AirPlay codec redesign.
 
-| Area | Requirement |
+Implementation and source tests do not establish physical vehicle compatibility,
+actual webpage hardware decoder selection, acoustic latency or panel scanout.
+See [Testing](Testing.md) and [Todo](Todo.md) for the acceptance boundary.
+
+## Requirements and resource ledger
+
+| Area | Contract |
 | --- | --- |
-| Scope | CarPlay first: iPhone source, Android phone intermediary, existing car browser. AirPlay mirroring and URL casting are outside this migration's initial scope. |
-| Platform | Android application and webpage may change. Do not require a native car application, modified browser or modified driver. |
-| Video | Actual hardware decoding must occur in the car webpage. Android decoding followed by raw YUV delivery does not satisfy this requirement. Software video fallback does not satisfy it either. |
-| Normal video delay | At most **+300 ms relative to sender presentation time**, with the lowest practical delay while preserving compressed input and normal pictures as far as possible. This is a ceiling, not a fixed buffer target. Preserve signed measurements; no new hard lower bound of zero was specified. |
-| Touch | Forward immediately at the earliest available scheduling opportunity. Smoothly bring **video** Delta toward zero as quickly as smoothness permits. Complete compressed reception and dependency decoding continue; skipping old **decoded** pictures during catch-up is explicitly allowed. |
-| Audio delay | Independently at most **+300 ms relative to its sender presentation time**, normally as low as practical. The former audio-versus-video windows, including -180/+500 ms, are superseded. No additional hard A/V skew window was specified. |
-| Audio continuity | Touch must not reset, accelerate or change the audio timeline. Audio may use software decoding. |
-| Audio routing | Preserve music/navigation through the car browser. Microphone demand uses Android with verified car HFP/SCO input and corresponding voice playback. Do not use handset microphone or loudspeaker fallback; the webpage must not request microphone access. |
-| Transport | Use reliable, ordered DataChannel delivery. Do not configure partial reliability to discard compressed media after a timeout or retransmission count. |
-| Debug capture | Keep complete application-visible original streams. Store the original video payload **once**, with downstream events referencing that copy. No silent sampling or capture loss. |
+| Video | Preserve source-compressed input and decode dependency order. Actual final decoding must be hardware decoding in the webpage. |
+| Normal video | Signed output Delta relative to sender presentation; +300 ms ceiling, not a target buffer. |
+| Touch | Forward at the next available scheduling opportunity; smoothly advance video only toward the newest feasible output. Skipping old decoded pictures is allowed. |
+| Audio | Independent sender-relative +300 ms ceiling where a source presentation anchor exists. Touch never resets or accelerates audio. |
+| Routing | Music/navigation in the browser; microphone/voice through Android verified car HFP/SCO, without handset fallback or browser microphone permission. |
+| Delivery | Reliable, ordered channels, with neither maximum retransmits nor packet lifetime configured. Reliability ends if the connection fails. |
+| Capture | One original input video journal; downstream references, not duplicate media payloads. No hidden sampling. |
 
-Natural latency variation is not an instruction to refill a 300 ms buffer. An
-artificial controller that raises target latency is not required. Necessary
-startup buffering, drift correction and any adaptive policy must be justified
-separately against the minimum-delay objective. Touch release must not restore
-the previous accumulated delay.
+Sustained transport/decode/storage service must exceed source demand. Finite queues
+cannot preserve complete input and the timing ceiling during unlimited overload.
+The beta ends the affected session explicitly and reconnects rather than hiding
+compressed input loss or silently growing queues. A recovery is not a successful
+within-ceiling presentation.
 
-## Reason from requirements before choosing implementation details
+## Four-digit pairing and authenticated signaling
 
-Two independent written designs were completed without reading project code,
-existing logs or each other's proposals. Both favored preserving compressed
-video, webpage WebCodecs decoding and explicit display selection. This agreement
-is a design result, not evidence of device performance or hardware use.
+Tesla users manually enter the existing Android address and **four-digit code**.
+No clipboard, long fingerprint entry, QR scanner or native car application is
+required. A copied phone link remains optional convenience for browsers that can
+use it.
 
-For the next implementation, first derive dependencies, timing, throughput and
-resource bounds from the requirements above. Then inspect existing code for
-integration and compatibility. Do not justify a codec or timing scheme solely
-because the current implementation uses it or a previous trace looked good.
-State whether each claim is a user requirement, API guarantee, observation or
-untested assumption.
+The HTTPS webpage uses browser WebCrypto and the vendored MIT `tssrp6a` 3.0.0
+client; Android uses the existing Bouncy Castle 1.79 SRP6 server. They implement
+SRP-6a with the RFC 5054 2048-bit group, SHA-256, and Bouncy Castle's padded evidence
+messages. The adapter changes identity/evidence hashing, not SRP arithmetic.
+JVM-generated cross-language vectors cover public values, shared secret,
+client/server evidence and the session-key HMAC.
 
-Choices still open include audio decode placement and wire format, Android's
-WebRTC library/version, channel topology, signaling/identity bootstrap, exact
-queue sizes and the touch convergence curve. The proposals' Android-to-browser
-PCM path is a candidate, not a user-imposed constraint. Avoid fixing these
-choices merely to reproduce a draft.
+1. `POST /rtc/pair/start` receives only the page session ID and returns a random,
+   expiring challenge, salt and server SRP public value.
+2. `POST /rtc/pair/finish` receives the client public value, client proof and
+   gathered browser SDP offer. A challenge is consumed on every proof attempt.
+3. After checking the proof and current code, Android returns server proof,
+   gathered SDP answer, application peer ID and HMAC-SHA256 session binding.
+4. The browser verifies server proof and the binding before applying the answer.
+   The binding uses length-prefixed protocol/challenge/page identity, both SRP
+   public values, salt, complete offer/answer SDP and application peer ID. This
+   authenticates the DTLS fingerprints inside SDP without a public-CA certificate
+   on the Android endpoint.
+5. The established encrypted control channel admits the existing browser pairing
+   gate and starts media. Pairing codes do not travel in HTTP requests on this path.
 
-## Candidate component boundaries
+The shared online-guessing lockout applies to failed proofs and encrypted code
+admission. Challenges are single-use, bounded and expire after 30 seconds. Native
+peers are bounded to three, with 15-second unauthenticated and six-second inactive
+session cleanup. Replacement, new code, disable, disconnect and stop retire the
+old peer and its touches. A replacement browser cannot inherit stale media work.
 
-```text
-iPhone CarPlay
-  -> Android receive/decrypt/configuration and original timestamps
-  -> reliable DataChannel, bounded application fragmentation and flow control
-  -> webpage reassembly in encoded decode order
-  -> WebCodecs actual hardware decoding
-  -> short display queue / touch-only decoded-picture selection
-  -> Canvas / browser compositor / car display
+The four-digit secret provides limited protection against online guesses; rate
+limits remain necessary. HTTPS protects the page and its cryptographic code.
+PAKE does not make denial of service impossible. Legacy HTTP endpoints are retained
+for upstream compatibility; they keep their existing network protection limits.
+AirPlay HTTP resources receive a random active-session bearer over the encrypted
+channel, so resource URLs do not disclose the four-digit code.
 
-ordinary audio -> independent decode/transport/output timeline -> car browser
-microphone demand -> Android <-> verified car HFP/SCO
-touch and clock exchange -> small control messages, independent of media work
-original stream capture -> one canonical payload journal with referenced events
-```
+## Native and browser transport
 
-Prefer retaining source-compressed video when compatible with actual webpage
-hardware decoding. Intermediate transcoding was not independently prohibited,
-but adds service time, thermal load, memory and quality cost; final decoding
-still must be hardware decoding in the webpage. Do not assume HEVC or AVC wins
-without actual input and browser capability evidence.
+Android pins `io.github.webrtc-sdk:android:150.7871.01` (Chromium M150 fork), with
+arm64-v8a, armeabi-v7a, x86 and x86_64 libraries. See [third-party notices](Third-party-notices.md)
+and the packaged `licenses/webrtc/` provenance and complete binary notices.
+`BrowserRtcRuntime` owns one factory and app-private persistent DTLS certificate;
+`BrowserRtcPeer` owns one data-only peer and bounded native/control work.
 
-### Three different orders
+The browser creates reliable ordered `video`, `audio` and `control` channels in one
+PeerConnection. They share SCTP congestion and network resources; channel separation
+is not physical network isolation. No public STUN/TURN or Internet media relay is
+configured. Host ICE, interface selection, mDNS, hotspot isolation, VPN behavior
+and local-network permissions still need validation on each supported vehicle.
 
-| Order | Responsibility |
+Video/audio retain their existing record formats inside a 24-byte little-endian
+fragment envelope: magic `TRC1`, application session, record sequence, total length,
+fragment offset and fragment length. Complete messages are at most 16 KiB,
+including this envelope, further bounded by negotiated SCTP message size. Each
+ordered media channel has at most one incomplete record. Identity, lengths,
+continuity and negotiated limits are checked before allocation/decoding.
+
+Receiver credit and cumulative complete-record consumption acknowledgements bound
+application in-flight work independently for video and audio. `bufferedAmount`
+is only an additional native queue guard; it does not prove remote consumption.
+The receiver acknowledges when a complete record is handed to the downstream
+consumer; downstream decode backpressure prevents unlimited reads. Disabled audio
+playback explicitly consumes/discards audio while preserving transport and latest
+format metadata; its discarded bytes are counted.
+
+| Boundary | Initial bound / failure behavior |
 | --- | --- |
-| Network sequence and fragmentation | Reconstruct complete original bytes/AUs before decoder submission. |
-| Compressed decode order | Satisfy codec reference dependencies; do not sort encoded input by PTS instead of decode order. |
-| Presentation order and time | Obtain correctly ordered decoded pictures, then select their display times. |
+| Reliable Android video hub | 8 MiB, 120 frames, 200 ms oldest queued frame; explicit END on overload/expiry |
+| Reliable Android audio hub | 1 MiB, 128 ordered records, 200 ms oldest queued media; explicit close |
+| Native sender queues | 12 MiB video / 2 MiB audio; 200 ms queued or unacknowledged stall ends peer |
+| Browser receiver credit | 10 MiB video / 1 MiB audio, including complete queued and incomplete records |
+| Video decoder input | Bounded decode admission with dependency lookahead; prolonged stall ends stream, never skips predictive input |
+| Decoded pictures | At most 20 retained pictures with prompt VideoFrame release |
 
-For example, display order `I0 B1 B2 P3` can require decode order
-`I0 P3 B1 B2`, because B1/B2 reference P3. Waiting for the whole group at reception
-does not remove this dependency, and can delay useful parallel decoding.
+These are initial finite-resource policies, not measured optimal settings.
 
-WebCodecs VideoDecoder outputs pictures in presentation order. Do not add another
-codec-reorder buffer after its output callback. The application may still have a
-short display scheduler and skip decoded old pictures during touch catch-up.
-`max_num_reorder_frames` is a bitstream restriction, not a millisecond latency
-cap or an instruction to always accumulate that many frames. Do not lower a
-parameter-set declaration below the real stream's requirements to disguise delay.
+## Time, reordering and touch
 
-## DataChannel deployment and protocol work
+The three orders are separate: network fragments reconstruct original complete
+access units; compressed input remains in decode order; WebCodecs outputs pictures
+in presentation order. No second codec reorder buffer is inserted after its output.
+For example, display `I0 B1 B2 P3` can require decode input `I0 P3 B1 B2`.
+Waiting for an entire group is not required and would add avoidable delay.
 
-### HTTPS, identity and direct connectivity
+Existing source-to-Android and Android-to-browser clock mappings supply sender
+presentation references, with epochs and uncertainty. First arrival is not invented
+as source presentation zero. Without a valid source anchor, diagnostics report
+local/arrival timing and cannot claim sender-relative compliance.
 
-The webpage still needs a trustworthy secure context for WebCodecs/AudioWorklet;
-ordinary HTTP at an Android LAN IP is not such a context. Existing HTTPS page
-hosting and cached asset behavior must remain usable.
+CarPlay has independent video/audio policies with no old hard audio-versus-video
+skew window. Normal playback adds no arbitrary target buffering. Audio device
+output mapping and resampling retain their independent sample accounting and genuine
+drift correction. Source-timed speech uses a one-time bounded startup reserve to
+retain utterance start; a missing source anchor uses an explicitly unverified arrival
+fallback. An infeasible source deadline is reported rather than hidden by clock reset.
+AirPlay keeps its existing synchronization policy.
 
-DataChannel uses DTLS with fingerprints exchanged through signaling. The Android
-media endpoint does not need a browser-trusted public-CA WSS server certificate,
-but authenticated pairing/signaling must bind the expected device, session and
-DTLS fingerprint. Encryption alone is not proof of peer identity. Do not treat an
-unauthenticated HTTP exchange as an authenticated fingerprint binding. Determine
-how existing pairing, code invalidation, replacement and reconnect semantics
-establish that binding without designing an ad hoc cryptographic protocol.
+A touch advances a continuous video presentation cursor, initially using a 1.5x
+maximum catch-up speed and 4/s speed slew. Repeated touch preserves cursor/speed
+continuity; release does not restore prior accumulated delay. These constants are
+initial test policies, not verified human smoothness thresholds. Audio progress is
+independent. At equal 60 fps input/output, removing 300 ms of decoded backlog needs
+roughly 18 old decoded pictures to be skipped.
 
-If signaling uses HTTPS/WSS, that signaling endpoint still needs a trusted TLS
-certificate. These transport certificates are distinct from CarPlay accessory
-identity material; this migration does not authorize changing that identity.
+This catch-up only removes backlog after decoding. It cannot remove retransmission,
+missing reference input, decoder-internal DPB work, compositor or panel delay. If the
+newest physically available picture is +40 ms old, skipping outputs cannot achieve
+zero Delta. Per-stage evidence must establish the actual bottleneck; changing
+transport alone does not prove the field reports are fixed.
 
-Same-LAN ICE can connect using host candidates without public STUN/TURN, but
-actual browser candidate policy, mDNS resolution, Android interface selection,
-hotspot/shared-Wi-Fi isolation, VPNs and local-network permission must be tested.
-Do not silently introduce an Internet media relay. Any relay path needs an
-explicit latency, availability and deployment assessment.
+WebCodecs is configured to prefer hardware, without a CarPlay software-fallback
+configuration. The API cannot prove that a browser honors that preference.
+`powerEfficient`, low CPU, successful configuration and an empty decodeQueue are
+not hardware or physical latency proof. Supported vehicle/browser/codec combinations
+need external hardware evidence and output measurements with explicit uncertainty.
 
-### Reliability, channel separation and bounded work
+## Complete original capture
 
-- Use ordered delivery with `maxRetransmits` and `maxPacketLifeTime` unset.
-  Reliability lasts while the connection remains viable; it is not a guarantee
-  against disconnects or unlimited network outages.
-- Separate video, ordinary audio and control logically. Multiple DataChannels in
-  one PeerConnection normally share an SCTP association, congestion control and
-  resources; they do not provide the isolation of separate network paths.
-- Reassemble complete video AUs. Bound application fragments by negotiated
-  `maxMessageSize`, including application headers. Without confirmed SCTP message
-  interleaving, an initial 8–16 KiB fragment candidate avoids sending a large IDR
-  as one association-monopolizing message. Final sizing needs measurement.
-- Include session/stream/epoch identity, record sequence, AU boundaries, original
-  timestamp/timebase and configuration identity. Validate bounds, duplicates,
-  stale fragments and malformed lengths before allocating or decoding.
-- Bound bytes, oldest media age, incomplete AUs, sender in-flight work and
-  receiver resources. Use application credit/consumption feedback;
-  `bufferedAmount` is not proof of remote receipt, decode or presentation.
-- Keep control processing independent of video decode, drawing and disk I/O.
-  Preserve down/up/cancel pairing and coordinate/rotation semantics. A new browser
-  owner must retire the old peer and its pending control/media epochs.
-- Maintain necessary decode lookahead. A rule allowing only one compressed AU
-  until an output arrives can deadlock a stream requiring future reference input.
-- Select and pin the Android WebRTC dependency after checking supported ABIs,
-  threading/lifecycle, DataChannel features, licenses, APK cost and reproducible
-  builds. Do not assume existing Android media dependencies provide this API.
+`ScreenStream` retains the original encrypted input TCP headers and payloads once.
+It brackets each access unit with capture-session/channel/sequence/byte-range
+references, and records the decrypt/length-prefix-to-Annex-B transform.
+`WebVideoRecord.sourceCapture` and RTC reference metadata associate downstream
+epoch/sequence work with that canonical journal. Outgoing video is not saved again.
 
-Reliable DataChannel is not automatically faster than TCP/WSS. Retransmission,
-ordered delivery and shared congestion can still stall video. The implementation
-must expose these stalls rather than hiding them behind a growing queue.
+Capture writes synchronously with disk backpressure. File-append success is not
+an fsync durability guarantee. Partial storage failure increments public integrity
+counters and suppresses new exact-range references until a fresh capture session;
+reports must not claim those unknown ranges are complete. Control/status reads do
+not wait on the capture disk lock. See [Diagnostics](Diagnostics.md).
 
-## Timing, hardware and finite-resource boundaries
+## Validation boundary
 
-For each picture or audio sample, define Delta as actual output time minus the
-mapped **sender presentation reference**. Arrival time, decode callback time,
-RAF/draw submission and sender capture time are not interchangeable references.
-Maintain source-to-Android-to-browser monotonic-clock mappings, sample positions,
-epochs and uncertainty. First arrival must not become an invented source zero.
+Source checks cover protocol bounds/credit, SRP cross-language vectors and tampering,
+HTTP/session lifecycle, complete-input queue behavior, decoded-picture catch-up,
+independent timing, verified-route code and capture integrity. The genuine Chromium
+RTC harness exercises real ICE/DTLS/SCTP when its execution environment exposes
+usable network interfaces. A host with no ICE candidates cannot establish connectivity
+and must be reported as blocked, never replaced with a simulated success.
 
-Identify the source timestamp semantics and synchronization actually supplied by
-CarPlay. If a source presentation-clock anchor is unavailable, report only the
-local quantities that can be measured; do not claim sender-relative +300 ms.
-Calibrate compositor/panel and audio-device/DSP delay separately. Software events
-alone do not prove physical video or acoustic output latency.
-
-`prefer-hardware`, successful configuration, `powerEfficient` and low CPU do not
-prove actual hardware decoding. Establish evidence for each supported
-browser/codec/profile configuration and disclose unobservable fallback behavior.
-`decodeQueueSize = 0` does not mean DPB, driver, GPU and display queues are empty.
-Release unused VideoFrames promptly; count all simultaneously live surfaces and
-avoid submitting hundreds of milliseconds of hidden hardware work.
-
-Sustained network and decode service must exceed input demand, including large
-AU bursts and thermal operation. No finite queue fixes sustained overload. If
-complete input, finite resources and +300 ms cannot all be preserved, report the
-violation and use a real supported renegotiation/recovery boundary. Do not reset
-PTS or discard predictive compressed frames to make metrics look compliant.
-
-### Touch-only catch-up
-
-Advance a video presentation cursor continuously; choose available decoded
-pictures near it. Keep audio sample progress unchanged. At equal 60 fps source
-and display, removing 300 ms of backlog requires skipping roughly 18 decoded
-pictures. Spare display refresh capacity can reduce necessary skips.
-
-One independent proposal used continuous-speed, piecewise acceleration; the
-other used a quintic smoothstep with continuous acceleration at its endpoints.
-Their illustrative 1.5x speed and 4/s speed-change limits were paper choices,
-not verified user thresholds. Select the simplest curve that meets measured
-smoothness and convergence requirements; preserve cursor/speed continuity across
-repeated touch instead of restarting the catch-up on every move.
-
-If the newest complete, decoded picture can only become physically visible at
-+40 ms, skipping older outputs cannot produce zero Delta. Report this available
-frontier and the remaining error. A catch-up duration can exceed 300 ms while
-each displayed picture stays within its separate 300 ms age ceiling.
-
-### Audio and complete capture
-
-Keep music/navigation, speech streams and HFP transitions distinct. Correct
-source-sample accounting and bounded resampling may compensate genuine device
-clock drift; video Delta and touch must not drive audio acceleration. Verify the
-car route before microphone readiness, including cold SCO startup and loss of
-the selected device. API acceptance alone does not establish physical routing.
-
-Record original video bytes once at a canonical Android application boundary.
-AU assembly, DataChannel fragments/retransmission metadata, decoder submission
-and display decisions should reference record IDs/byte ranges rather than dump
-another full outgoing video stream. Distinguish transport loss, input gaps,
-decode failures, decoded-but-not-displayed pictures and successful submissions.
-
-Capture needs its own bounded resources and sustained storage throughput.
-Document durable versus merely queued records. If storage cannot keep up,
-reserve enough capacity to stop safely and disclose the integrity boundary;
-finite memory cannot guarantee indefinite, nonblocking, lossless recording under
-unbounded disk failure. Do not silently sample, overwrite or drop raw payload.
-
-## Verification and next actions
-
-Local handoff checks passed: `git diff --check`, local relative-link existence,
-trailing-whitespace/final-newline and project word-limit checks on this document,
-AGENTS and the updated index/Todo, plus `python3 scripts/check_public_tree.py`.
-No Android build or browser runtime tests were run for these documentation-only
-changes; no build, site or application inputs changed.
-
-This handoff has documentation-only checks. It does not establish DataChannel
-connectivity, real hardware decode, physical +300 ms compliance, touch smoothness
-or acoustic quality. Existing physical issues in [Todo](Todo.md) remain open;
-changing the transport alone does not prove the reported pops, mirror buffering
-or unexplained handset navigation output are resolved.
-
-Next conversation:
-
-1. Read this contract and derive a concise capability/timing/resource ledger
-   before selecting implementation details. Then inspect the current browser,
-   Android server, pairing, media timelines and lifecycle for integration.
-2. Define trusted signaling and authenticated peer binding; verify direct ICE
-   connectivity on supported browser/network combinations. Preserve page HTTPS,
-   pairing replacement, disable/disconnect and stale-session cleanup.
-3. Implement reliable fragmentation, application flow control and stage metrics;
-   wire WebCodecs and independent audio with the fewest justified buffers.
-4. Implement touch-only decoded-output catch-up and preserve full one-copy raw
-   capture. Keep normal playback and failure/recovery accounting distinct.
-5. Run the applicable [source checks and browser harnesses](Testing.md), then test
-   the actual iPhone/Android/car combination: large AUs, loss/retransmission,
-   long thermal sessions, repeated touch, reconnect, VPNs, HFP route changes,
-   browser suspension and storage pressure. Prove hardware use and measure
-   source-relative physical output with explicit uncertainty.
-6. Update implementation docs only as behavior lands. Rebuild generated site
-   outputs and its service-worker manifest when browser inputs change. Use the
-   existing release/deploy path when implementation and validation warrant it;
-   this handoff does not publish a new beta or deploy new media behavior.
-
-Public references: [WebCodecs](https://www.w3.org/TR/webcodecs/),
-[WebRTC](https://www.w3.org/TR/webrtc/),
-[DataChannel / RFC 8831](https://www.rfc-editor.org/rfc/rfc8831),
-[WebRTC security / RFC 8827](https://www.rfc-editor.org/rfc/rfc8827),
-[ICE / RFC 8445](https://www.rfc-editor.org/rfc/rfc8445),
-[secure contexts](https://www.w3.org/TR/secure-contexts/), and
-[Web Audio](https://www.w3.org/TR/webaudio-1.1/).
+Before treating this beta as vehicle-validated, test actual iPhone/Android/car
+combinations: host ICE on every intended network, codec/profile hardware selection,
+large keyframes, retransmission and thermal runs, repeated touch, suspend/resume,
+VPN/network transitions, HFP startup/loss/restoration and storage pressure. Measure
+sender-relative acoustic/panel output separately from software submission events.

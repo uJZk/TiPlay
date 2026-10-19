@@ -126,4 +126,62 @@ class RawTrafficTest {
             assertArrayEquals(sink.toByteArray(), Base64.getDecoder().decode(records.single { it[2] == "car/out/written" }[4]))
         } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
     }
+    @Test fun referencedScreenInputKeepsOneCopyAndBindsExactJournalByteRanges() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-reference").toFile()
+        val file = File(directory, "capture.tsv")
+        try {
+            RawTraffic.configure(file, true)
+            val original = ByteArray(100_000) { it.toByte() }
+            val input = RawTraffic.referencedInput("iphone/screen/in", original.inputStream())
+            input.beginRange()
+            val received = ByteArray(original.size)
+            assertEquals(128, input.read(received, 0, 128))
+            assertEquals(original.size - 128, input.read(received, 128, original.size - 128))
+            val reference = requireNotNull(input.endRange())
+            assertEquals(0L, reference.offset)
+            assertEquals(original.size, reference.length)
+            assertTrue(reference.lastSequence > reference.firstSequence)
+            val annexB = byteArrayOf(0, 0, 0, 1, 5)
+            RawTraffic.bindVideoReference(annexB, reference)
+            assertSame(reference, RawTraffic.videoReference(annexB))
+            val records = file.readLines().map { it.split('\t') }.filter { it[2] == "iphone/screen/in" }
+            assertEquals(reference.firstSequence, records.first()[1].toLong())
+            assertEquals(reference.lastSequence, records.last()[1].toLong())
+            assertArrayEquals(original, records.flatMap { Base64.getDecoder().decode(it[4]).toList() }.toByteArray())
+            assertEquals(true, RawTraffic.integrity()["complete"])
+            assertEquals("decrypt-then-length-prefix-to-annexb", reference.fields()["captureTransform"])
+            RawTraffic.clear()
+            assertNull(RawTraffic.videoReference(annexB))
+        } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
+    }
+
+    @Test fun failedCaptureNeverReturnsAReferenceToUnstoredPayload() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-failed-reference").toFile()
+        val file = File(directory, "capture.tsv")
+        try {
+            RawTraffic.configure(file, true)
+            RawTraffic.clear()
+            assertTrue(file.delete())
+            assertTrue(file.mkdir()) // Opening a directory as the journal must fail.
+            val input = RawTraffic.referencedInput("iphone/screen/in", byteArrayOf(1, 2, 3).inputStream())
+            input.beginRange()
+            assertArrayEquals(byteArrayOf(1, 2, 3), input.readBytes())
+            assertNull(input.endRange())
+            assertEquals(false, RawTraffic.integrity()["complete"])
+            assertTrue((RawTraffic.integrity()["failures"] as Long) > 0L)
+            assertTrue(file.delete())
+            val recoveredInput = RawTraffic.referencedInput("iphone/screen/in", byteArrayOf(4).inputStream())
+            recoveredInput.beginRange()
+            assertEquals(4, recoveredInput.read())
+            // Earlier partial appends may have changed exported offsets, so new successful bytes
+            // still cannot claim exact references until the next capture session.
+            assertNull(recoveredInput.endRange())
+            RawTraffic.clear()
+            val nextSession = RawTraffic.referencedInput("iphone/screen/in", byteArrayOf(5).inputStream())
+            nextSession.beginRange()
+            assertEquals(5, nextSession.read())
+            assertNotNull(nextSession.endRange())
+        } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
+    }
+
 }

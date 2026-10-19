@@ -147,4 +147,39 @@ class WebFrameQueueTest {
         assertFalse(WebFrameQueue(maxConfigBytes = 2).offerConfig(config(1), 0))
     }
 
+    @Test fun reliableOverflowFailsWithoutDiscardingTheDependencyChainOrResuming() {
+        val q = WebFrameQueue(maxBytes = 4, maxFrames = 2, reliable = true)
+        assertFalse(q.offer(frame(0, false, 0), 0))
+        assertTrue(q.offer(frame(1, true, 1), 1))
+        assertTrue(q.offer(frame(2, false, 2), 2))
+        assertFalse(q.offer(frame(3, false, 3), 3))
+        assertEquals("reliable-overload", q.failureReason)
+        assertEquals(2, q.size)
+        assertEquals(4, q.bytes)
+        assertEquals(1L, q.skipped) // Only startup gating; no admitted compressed record was skipped.
+        assertNull(q.poll(4))
+        assertFalse(q.offer(frame(4, true, 4), 4))
+        q.clear()
+        assertEquals(0, q.bytes)
+        assertEquals("reliable-overload", q.failureReason)
+    }
+
+    @Test fun reliableAgeFailureDoesNotBecomeAnImplicitDiscontinuity() {
+        val q = WebFrameQueue(maxAgeNanos = 50, reliable = true)
+        assertTrue(q.offer(frame(0, true, 0), 0))
+        assertTrue(q.offer(frame(1, false, 10), 10))
+        assertNull(q.poll(50))
+        assertEquals("reliable-expired", q.failureReason)
+        assertEquals(2, q.size)
+        assertEquals(0L, q.expired)
+        assertFalse(q.offer(frame(2, true, 51), 51))
+    }
+
+    @Test fun reliableConfigOverflowIsAnExplicitFailure() {
+        val q = WebFrameQueue(maxConfigs = 1, reliable = true)
+        assertTrue(q.offerConfig(config(1), 0))
+        assertFalse(q.offerConfig(config(2), 1))
+        assertEquals("reliable-overload", q.failureReason)
+    }
+
 }

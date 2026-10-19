@@ -4,6 +4,16 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.21-beta.1
+
+- Carry source-compressed video, audio and immediate controls over reliable ordered WebRTC DataChannels with bounded fragmentation, receiver credit and explicit overload recovery.
+- Preserve four-digit manual pairing for Tesla browsers without clipboard support. SRP-6a mutual proofs and a session-key SDP binding authenticate the DTLS peer; the code is not sent through HTTP signaling.
+- Apply independent CarPlay +300 ms sender-relative video/audio policies where timing is available. Touch smoothly catches up decoded video without changing the audio timeline; source-timed guidance preserves its start with bounded startup reserve.
+- Keep one original video capture with downstream byte-range references, and expose integrity boundaries after storage failures.
+- Deliver an isolated `webrtc/` beta webpage alongside the existing root client. Native WebRTC includes four Android ABIs and bundled binary license notices.
+
+Validation and remaining vehicle acceptance are recorded in [Build](docs/Build.md) and [Testing](docs/Testing.md). This beta does not establish physical latency or actual hardware decoder use from software events.
+
 ## 0.2.20-beta.5
 
 - Keep live audio resamplers intact when only the output-device clock measurement is refitted. Preserve recovery for actual context suspension and missing render quanta.

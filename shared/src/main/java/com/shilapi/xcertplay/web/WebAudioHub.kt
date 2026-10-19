@@ -8,7 +8,7 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
 /** Browser-owned audio output. Encoded AirPlay/CarPlay and PCM compatibility streams keep independent browser epochs. */
-class WebAudioHub {
+class WebAudioHub(private val nanoTime: () -> Long = System::nanoTime) {
     /** A decoder's publication lease; retiring it cannot wait for buffered music capacity. */
     class Publication internal constructor(private val hub: WebAudioHub, internal val owner: Any) : Closeable {
         @Volatile internal var active = true
@@ -141,12 +141,12 @@ class WebAudioHub {
         delivery.target.offer(record, buffered, delivery.generation, publication, delivery.streamVersion)
     }
 
-    fun subscribe(): Subscription {
+    fun subscribe(reliable: Boolean = false): Subscription {
         val target: Subscription
         val streams: List<EncodedStream>
         synchronized(this) {
-            subscription?.close()
-            target = Subscription()
+            subscription?.end("replaced")
+            target = Subscription(reliable, nanoTime)
             subscription = target
             if (voiceRevision != 0) routeRecord(target)
             streams = encodedStreams.filterNotNull()
@@ -311,9 +311,18 @@ class WebAudioHub {
         }
     }
 
-    class Subscription internal constructor() : Closeable {
+    class Subscription internal constructor(
+        val reliable: Boolean = false,
+        private val nanoTime: () -> Long = System::nanoTime,
+    ) : Closeable {
         private data class Packet(val generation: Long, val version: Long, val bytes: ByteArray,
-                                  val publication: Publication?)
+                                  val publication: Publication?, val queuedAtNanos: Long = 0L)
+        // The RTC path is a single ordered journal: codec controls and source resets never
+        // overtake or silently erase encoded packets. Finite capacity fails the whole subscription.
+        private val reliablePackets = ArrayDeque<Packet>()
+        private var reliableBytes = 0
+        @Volatile var endReason: String? = null
+            private set
         private val routes = ArrayBlockingQueue<Packet>(1)
         // Route, reset and codec controls cannot evict another stream's queued audio.
         private val resets = linkedMapOf<Int, Packet>()
@@ -342,7 +351,7 @@ class WebAudioHub {
                                                    packetBytes: Int): EncodedState {
             var configuration = encodedEpochs[id] != epoch
             var reset = pendingReset[id]
-            if (!buffered && packetBytes > 0 && !hasRoom(realtime(id), packetBytes)) {
+            if (!reliable && !buffered && packetBytes > 0 && !hasRoom(realtime(id), packetBytes)) {
                 discardLive(realtime(id))
                 configuration = true
                 reset = true
@@ -369,6 +378,10 @@ class WebAudioHub {
         }
         @Synchronized internal fun offerLiveBatch(records: List<ByteArray>, generation: Long,
                                                   version: Long, publication: Publication?) {
+            if (reliable) {
+                for (bytes in records) offerReliable(bytes, generation, version, publication)
+                return
+            }
             for (bytes in records) {
                 if (!valid(generation, version, (bytes[5].toInt() and 255), publication)) return
                 val packet = Packet(generation, version, bytes, publication)
@@ -388,6 +401,10 @@ class WebAudioHub {
                            publication: Publication? = null, version: Long = streamVersion((record[5].toInt() and 255))) {
             val id = (record[5].toInt() and 255)
             if (!valid(generation, version, id, publication)) return
+            if (reliable) {
+                offerReliable(record, generation, version, publication)
+                return
+            }
             val packet = Packet(generation, version, record, publication)
             if (id == 5) {
                 synchronized(this) {
@@ -430,14 +447,42 @@ class WebAudioHub {
             }
             if (!valid(generation, version, id, publication)) realtime(id).remove(packet)
         }
+        @Synchronized private fun offerReliable(record: ByteArray, generation: Long, version: Long,
+                                                publication: Publication?) {
+            val id = record[5].toInt() and 255
+            if (!valid(generation, version, id, publication)) return
+            if (expireReliable()) return
+            if (reliablePackets.size >= MAX_RELIABLE_PACKETS || record.size > MAX_RELIABLE_BYTES - reliableBytes) {
+                end("reliable-overload")
+                return
+            }
+            reliablePackets.addLast(Packet(generation, version, record, publication, nanoTime()))
+            reliableBytes += record.size
+            wakeReader()
+        }
+
+        /** Config-only idle streams do not expire; elapsed media age does, at both admission and delivery. */
+        private fun expireReliable(): Boolean {
+            val oldest = reliablePackets.firstOrNull { it.bytes.size > 28 && it.bytes[4].toInt() != 6 }
+            if (oldest != null && nanoTime() - oldest.queuedAtNanos >= MAX_RELIABLE_AGE_NANOS) {
+                end("reliable-expired")
+                return true
+            }
+            return closed
+        }
+
         fun take(timeoutMillis: Long): ByteArray? {
             val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
             while (!closed) {
                 val packet = synchronized(this) {
                     if (closed) return null
-                    routes.poll() ?: takeReset() ?: deferred.poll() ?: takeAudio()
+                    if (reliable) {
+                        if (expireReliable()) return null
+                        reliablePackets.removeFirstOrNull()?.also { reliableBytes -= it.bytes.size }
+                    } else routes.poll() ?: takeReset() ?: deferred.poll() ?: takeAudio()
                 }
                 if (packet != null) {
+                    if (reliable) return packet.bytes
                     prepareDelivery(packet)?.let { return it }
                     continue
                 }
@@ -484,6 +529,13 @@ class WebAudioHub {
         }
         @Synchronized internal fun clearStream(id: Int) {
             versions[id]++
+            if (reliable) {
+                // Preserve already admitted compressed bytes. The caller appends an explicit reset,
+                // configuration or ended record; older in-flight publishers lose their version lease.
+                encodedEpochs[id] = null
+                pendingReset[id] = false
+                return
+            }
             routes.removeIf { (it.bytes[5].toInt() and 255) == id }
             resets.remove(id)
             deferred.removeIf { (it.bytes[5].toInt() and 255) == id }
@@ -493,6 +545,10 @@ class WebAudioHub {
             music.removeIf { (it.bytes[5].toInt() and 255) == id }
         }
         @Synchronized internal fun discard(publication: Publication) {
+            if (reliable && reliablePackets.any { it.publication === publication }) {
+                end("source-retired")
+                return
+            }
             resets.entries.removeIf { it.value.publication === publication }
             deferred.removeIf { it.publication === publication }
             live.removeIf { it.publication === publication }
@@ -500,12 +556,19 @@ class WebAudioHub {
             music.removeIf { it.publication === publication }
         }
         @Synchronized internal fun clear() {
+            reliablePackets.clear(); reliableBytes = 0
             generation++; routes.clear(); resets.clear(); deferred.clear(); live.clear(); mirror.clear(); music.clear(); encodedEpochs.fill(null); pendingReset.fill(false)
             mirrorNext = false; realtimeSinceMusic = 0
             for (id in versions.indices) versions[id]++
             wakeReader()
         }
-        @Synchronized override fun close() { closed = true; clear() }
+        @Synchronized internal fun end(reason: String) {
+            if (closed) return
+            endReason = reason
+            closed = true
+            clear()
+        }
+        override fun close() { end("stopped") }
     }
 
     private data class Delivery(val target: Subscription, val sequence: Int, val generation: Long, val epoch: Int, val streamVersion: Long)
@@ -515,6 +578,9 @@ class WebAudioHub {
         const val AIRPLAY_MIRROR_STREAM = 6
         const val MAX_STREAMS = 256
         private fun carPlayStream(id: Int) = id in 0..4 || id in 7 until MAX_STREAMS
+        internal const val MAX_RELIABLE_PACKETS = 128
+        internal const val MAX_RELIABLE_BYTES = 1024 * 1024
+        internal const val MAX_RELIABLE_AGE_NANOS = 200_000_000L
         internal const val MAX_REALTIME_PACKETS = 64
         internal const val MAX_REALTIME_BYTES = 256 * 1024
     }

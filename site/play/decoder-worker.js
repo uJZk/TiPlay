@@ -39,6 +39,7 @@ function stop() {
 
 self.onmessage = ({ data }) => {
   if (data.type === 'clock') pipeline?.clock(data.clock);
+  else if (data.type === 'touch') frames.touch();
   else if (data.type === 'audio-output') { presenter?.audio(data.reference); frames.audio(data.reference); }
   else if (data.type === 'canvas') presenter = createFramePresenter(data.canvas, {
     applyTimingPolicy: true, pace: true,

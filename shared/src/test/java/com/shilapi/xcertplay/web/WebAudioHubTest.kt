@@ -484,4 +484,72 @@ class WebAudioHubTest {
             assertEquals(mode.audioFlags or 3, packet[7].toInt())
         }
     }
+    @Test fun reliableEncodedResetPreservesEveryAlreadyAdmittedPacketInOrder() {
+        var now = 0L
+        val hub = WebAudioHub { now }; val owner = Any(); hub.begin(owner)
+        val format = WebAudioHub.EncodedFormat("aac-lc", 48000, 2, 16, 1024)
+        hub.beginEncodedStream(owner, 0, format)
+        val reader = hub.subscribe(reliable = true)
+        assertEquals(6, reader.take(0)!![4].toInt())
+        hub.publishEncoded(owner, byteArrayOf(10), 0.0)
+        hub.publishEncoded(owner, byteArrayOf(20), 1024.0)
+        hub.flushEncoded(owner)
+        hub.publishEncoded(owner, byteArrayOf(30), 2048.0)
+        val records = List(4) { requireNotNull(reader.take(0)) }
+        assertEquals(listOf(7, 7, 6, 7), records.map { it[4].toInt() })
+        assertEquals(listOf(10, 20, 30), records.filter { it[4].toInt() == 7 }.map { it[36].toInt() })
+        assertEquals(2, ByteBuffer.wrap(records.last()).getInt(16))
+        assertFalse(reader.closed)
+        assertNull(reader.take(0))
+        reader.close()
+    }
+
+    @Test fun reliableAudioPacketAndByteBoundsTerminateWithoutBlockingOrResettingEpoch() {
+        val hub = WebAudioHub { 0L }; val owner = Any(); hub.begin(owner)
+        val format = WebAudioHub.EncodedFormat("aac-lc", 48000, 2, 16, 1024)
+        hub.beginEncodedStream(owner, 0, format, buffered = true)
+        val reader = hub.subscribe(reliable = true)
+        assertEquals(6, reader.take(0)!![4].toInt())
+        repeat(WebAudioHub.MAX_RELIABLE_PACKETS + 1) {
+            hub.publishEncoded(owner, byteArrayOf(it.toByte()), it.toDouble(), buffered = true)
+        }
+        assertTrue(reader.closed)
+        assertEquals("reliable-overload", reader.endReason)
+        assertNull(reader.take(0))
+        val next = hub.subscribe(reliable = true)
+        assertEquals(1, ByteBuffer.wrap(requireNotNull(next.take(0))).getInt(16))
+        repeat(17) { hub.publishEncoded(owner, ByteArray(WebAudioHub.MAX_PCM), it.toDouble(), buffered = true) }
+        assertTrue(next.closed)
+        assertEquals("reliable-overload", next.endReason)
+    }
+
+    @Test fun reliableAudioAgeBoundAppliesOnBothDeliveryAndAdmission() {
+        var now = 0L
+        val hub = WebAudioHub { now }; val owner = Any(); hub.begin(owner)
+        val reader = hub.subscribe(reliable = true)
+        hub.publish(owner, 0, 48000, 1, byteArrayOf(1, 0))
+        now = WebAudioHub.MAX_RELIABLE_AGE_NANOS
+        assertNull(reader.take(0))
+        assertEquals("reliable-expired", reader.endReason)
+        val next = hub.subscribe(reliable = true)
+        hub.publish(owner, 0, 48000, 1, byteArrayOf(2, 0))
+        now += WebAudioHub.MAX_RELIABLE_AGE_NANOS
+        hub.publish(owner, 0, 48000, 1, byteArrayOf(3, 0))
+        assertTrue(next.closed)
+        assertEquals("reliable-expired", next.endReason)
+    }
+
+    @Test fun reliablePublicationRetirementExposesLossInsteadOfSilentlyRemovingPendingData() {
+        val hub = WebAudioHub { 0L }; val owner = Any(); hub.begin(owner)
+        val publication = hub.publication(owner)
+        hub.beginEncodedStream(owner, 0, WebAudioHub.EncodedFormat("aac-lc", 48000, 2, 16, 1024),
+            publication = publication)
+        val reader = hub.subscribe(reliable = true)
+        reader.take(0)
+        hub.publishEncoded(owner, byteArrayOf(1), 0.0, publication = publication)
+        publication.close()
+        assertTrue(reader.closed)
+        assertEquals("source-retired", reader.endReason)
+    }
+
 }

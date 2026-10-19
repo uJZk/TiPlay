@@ -12,12 +12,15 @@ object WebDebugTiming {
         if (audio != null) put("audio", audio)
     })
 
-    fun record(frame: WebVideoRecord, now: Long): WebVideoRecord? {
+    fun record(frame: WebVideoRecord, now: Long, extended: Boolean = false): WebVideoRecord? {
         if (frame.kind != WebVideoRecords.KIND_FRAME) return null
         val presentation = frame.captureNanos ?: return null
         // Source presentation times can be ahead of now; retain their sign but reject unrelated clock domains.
         if (presentation > now + 10_000_000_000L || presentation < now - 10_000_000_000L) return null
-        val payload = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putDouble(presentation / 1e6).array()
+        val buffer = ByteBuffer.allocate(if (extended) 24 else 8).order(ByteOrder.LITTLE_ENDIAN)
+            .putDouble(presentation / 1e6)
+        if (extended) buffer.putDouble(frame.queuedAtNanos / 1e6).putDouble(now / 1e6)
+        val payload = buffer.array()
         return WebVideoRecord(KIND, 0, 0, frame.sequence, frame.epoch, frame.timestampUs, payload)
     }
 }

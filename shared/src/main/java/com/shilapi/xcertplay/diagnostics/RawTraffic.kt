@@ -18,11 +18,42 @@ object RawTraffic {
     private var file: File? = null
     private val process = java.util.UUID.randomUUID().toString()
     private var sequence = 0L
-    private var failures = 0L
-    private var lastFailure = "none"
+    @Volatile private var failures = 0L
+    @Volatile private var lastFailure = "none"
+    private val channelOffsets = mutableMapOf<String, Long>()
+    private var referenceIntegrity = true
+    private val videoReferenceLock = Any()
+    private val videoReferences = java.util.WeakHashMap<ByteArray, Reference>()
+
+    /** IDs address the single canonical input journal; payloads are not stored in downstream events. */
+    data class Reference(val session: String, val channel: String, val firstSequence: Long,
+                         val lastSequence: Long, val offset: Long, val length: Int) {
+        fun fields(): Map<String, Any?> = mapOf("captureSession" to session, "captureChannel" to channel,
+            "captureFirstRecord" to firstSequence, "captureLastRecord" to lastSequence,
+            "captureOffset" to offset, "captureLength" to length,
+            "captureBoundary" to "source-tcp-header-and-body",
+            "captureTransform" to "decrypt-then-length-prefix-to-annexb")
+    }
+
+    fun bindVideoReference(payload: ByteArray, reference: Reference?) {
+        if (!enabled || reference == null) return
+        synchronized(videoReferenceLock) { if (enabled && reference.session == sessionId) videoReferences[payload] = reference }
+    }
+
+    fun videoReference(payload: ByteArray): Reference? {
+        if (!enabled) return null
+        return synchronized(videoReferenceLock) { videoReferences[payload]?.takeIf { it.session == sessionId } }
+    }
+
+    /** Status reads never wait for capture disk I/O or hold a media/control lock behind it. */
+    fun integrity(): Map<String, Any?> {
+        val count = failures
+        return mapOf("enabled" to enabled, "failures" to count, "lastFailure" to lastFailure,
+            "complete" to (count == 0L), "durability" to "file-append-no-fsync")
+    }
 
     private var configuration = ""
-    private var sessionId: String? = null
+    @Volatile private var sessionId: String? = null
     private var needsBoundaryCheck = true
 
     fun configure(destination: File, active: Boolean, configuration: String = "") = synchronized(lock) {
@@ -40,6 +71,9 @@ object RawTraffic {
     private fun startSession() {
         val session = java.util.UUID.randomUUID().toString()
         sessionId = session
+        channelOffsets.clear()
+        referenceIntegrity = true
+        synchronized(videoReferenceLock) { videoReferences.clear() }
         record("capture/start", ("process=$process session=$session startEpochMillis=${System.currentTimeMillis()}\n" + configuration).toByteArray())
     }
 
@@ -55,11 +89,17 @@ object RawTraffic {
     }
 
     fun record(channel: String, bytes: ByteArray, offset: Int = 0, length: Int = bytes.size - offset) {
-        if (!enabled || length <= 0) return
+        recordReferenced(channel, bytes, offset, length)
+    }
+
+    private fun recordReferenced(channel: String, bytes: ByteArray, offset: Int, length: Int): Reference? {
+        if (!enabled || length <= 0) return null
         synchronized(lock) {
-            if (!enabled) return
+            if (!enabled) return null
+            val firstSequence = sequence + 1
+            val channelOffset = channelOffsets.getOrDefault(channel, 0L)
             try {
-                val target = file ?: return
+                val target = file ?: return null
                 target.parentFile?.let { if (!it.isDirectory) check(it.mkdirs()) }
                 // An interrupted append must not merge its partial line with the next session/record.
                 if (needsBoundaryCheck) {
@@ -81,12 +121,42 @@ object RawTraffic {
                         position += count
                     }
                 }
+                channelOffsets[channel] = channelOffset + length
+                return if (referenceIntegrity) Reference(requireNotNull(sessionId), channel, firstSequence, sequence, channelOffset, length) else null
             } catch (error: Exception) {
                 needsBoundaryCheck = true
                 failures++; lastFailure = error.javaClass.simpleName
+                // A partial append makes subsequent channel offsets uncertain. Keep capturing, but
+                // stop claiming exact byte references until the next explicit capture session.
+                referenceIntegrity = false
+                return null
             }
         }
     }
+
+    /** A bounded accumulator for one screen message, referencing existing source bytes only. */
+    class ReferencedInput internal constructor(private val channel: String, private val source: InputStream) : InputStream() {
+        private var range: Reference? = null
+        private var incomplete = false
+        fun beginRange() { range = null; incomplete = false }
+        fun endRange(): Reference? = range.takeUnless { incomplete }
+        private fun captured(bytes: ByteArray, offset: Int, length: Int) {
+            val next = recordReferenced(channel, bytes, offset, length)
+            if (next == null) { incomplete = true; return }
+            val previous = range
+            if (previous == null) range = next
+            else if (previous.session == next.session && previous.offset + previous.length == next.offset) {
+                range = previous.copy(lastSequence = next.lastSequence, length = previous.length + next.length)
+            } else incomplete = true
+        }
+        override fun read(): Int = source.read().also { if (it >= 0) captured(byteArrayOf(it.toByte()), 0, 1) }
+        override fun read(bytes: ByteArray, offset: Int, length: Int): Int =
+            source.read(bytes, offset, length).also { if (it > 0) captured(bytes, offset, it) }
+        override fun close() = source.close()
+        override fun available(): Int = source.available()
+    }
+
+    fun referencedInput(channel: String, source: InputStream) = ReferencedInput(channel, source)
 
     fun input(channel: String, source: InputStream): InputStream = object : InputStream() {
         override fun read(): Int = source.read().also { if (it >= 0) record(channel, byteArrayOf(it.toByte())) }

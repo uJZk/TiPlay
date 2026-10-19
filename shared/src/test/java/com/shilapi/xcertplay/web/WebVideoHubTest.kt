@@ -460,4 +460,43 @@ class WebVideoHubTest {
         assertEquals(2, calls)
     }
 
+    @Test fun reliableSubscriberEndsExplicitlyWhenACompressedFrameAgesOut() {
+        begin()
+        hub.configure(owner, VideoCodec.H264, avcc)
+        val subscriber = hub.subscribe(reliable = true)
+        assertEquals(WebVideoRecords.KIND_CONFIG, subscriber.take(0)!!.kind)
+        hub.frame(owner, idr(), 0, now)
+        hub.frame(owner, delta(), 0, now)
+        advance(200)
+        val end = requireNotNull(subscriber.take(0))
+        assertEquals(WebVideoRecords.KIND_END, end.kind)
+        assertEquals("reliable-expired", String(end.payload))
+        assertEquals("reliable-expired", subscriber.endReason)
+        assertEquals(0, subscriber.queue.bytes)
+        assertNull(hub.snapshot()["queueFrames"])
+    }
+
+    @Test fun reliableSubscriberCannotContinueAcrossAnUnannouncedNewProducer() {
+        begin()
+        hub.configure(owner, VideoCodec.H264, avcc)
+        val subscriber = hub.subscribe(reliable = true)
+        subscriber.take(0)
+        hub.frame(owner, idr(), 0, now)
+        begin(Any())
+        assertEquals("source-changed", subscriber.endReason)
+        assertEquals(WebVideoRecords.KIND_END, subscriber.take(0)!!.kind)
+    }
+
+    @Test fun reliableSubscriberOverloadEndsInsteadOfWaitingForAnotherKeyFrame() {
+        begin()
+        hub.configure(owner, VideoCodec.H264, avcc)
+        val subscriber = hub.subscribe(reliable = true)
+        subscriber.take(0)
+        hub.frame(owner, idr(), 0, now)
+        repeat(120) { hub.frame(owner, delta(), 0, now) }
+        assertEquals("reliable-overload", subscriber.endReason)
+        hub.frame(owner, idr(), 0, now)
+        assertEquals("reliable-overload", String(subscriber.take(0)!!.payload))
+    }
+
 }

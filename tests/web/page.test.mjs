@@ -9,27 +9,31 @@ import { DEFAULT_HOST, isCode, normalizeHost } from '../../site/play/link.js';
 const play = new URL('../../site/play/', import.meta.url);
 const read = name => readFileSync(new URL(name, play), 'utf8');
 
-test('the initial clock reaches a video sink whose setup finishes after hello', async () => {
+test('the authenticated clock reaches a video sink whose setup finishes before RTC connects', async () => {
   const connect = /async function connectVideo\(\) \{([\s\S]*?)\n\}/.exec(read('app.js'))[1];
   let finishSetup;
   const codecsReady = new Promise(resolve => { finishSetup = resolve; });
   const events = [];
   const run = new Function('codecsReady', 'events', `
     let streamId = 0, sink = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastViewport;
+    let rtc = null, rtcAudio = null, resourceToken = null, active = true;
     const link = { code: '1234' }, session = 'session', PROTOCOL = 1;
     const videoPath = {};
     const browserAudio = { attach() {}, clock: value => events.push(['audio-clock', value]) };
     let mediaTiming;
     const mediaTimings = new Map([['carplay', { reset: () => events.push('timing-reset'), mode() {} }]]);
     const timingFor = mode => mediaTimings.get(mode);
-    const airplayControls = { update() {} };
     const render = () => {}, reportAppearance = () => {}, scheduleViewport = () => {};
     const setInterval = () => 0, clearInterval = () => {};
     const stop = reason => { throw new Error(reason); };
-    const createClockEstimator = () => ({ observe: serverMs => ({ offset: 10, rtt: 2, at: serverMs }), snapshot: () => null });
-    const phoneFetch = async route => {
-      events.push(route);
-      return { ok: true, body: null, json: async () => ({ app: 'TiPlay', protocol: 1, clockMs: 100 }) };
+    const clock = { offset: 10, rtt: 2, at: 100 };
+    const createClockEstimator = () => ({ observe: () => clock, snapshot: () => clock });
+    const phoneFetch = () => { throw new Error('legacy media HTTP must not be used'); };
+    const authenticateRtcOffer = () => {};
+    const createRtcAudioSource = () => ({ close() {} });
+    const connectRtc = async () => {
+      events.push('rtc-authenticated');
+      return { hello: { app: 'TiPlay', protocol: 1 }, video: {}, audio: {}, clock: async () => ({ clockMs: 100 }) };
     };
     const pending = (async () => { ${connect} })();
     return {
@@ -41,15 +45,12 @@ test('the initial clock reaches a video sink whose setup finishes after hello', 
     };
   `)(codecsReady, events);
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(events, ['/hello'], 'hello finished while the decoder sink is still unavailable');
-  run.setup();
-  finishSetup('avc1');
-  await run.pending;
+  assert.deepEqual(events, [], 'WebRTC waits for decoder setup and codec capabilities');
+  run.setup(); finishSetup('avc1'); await run.pending;
+  assert.equal(events[0], 'rtc-authenticated');
   assert.deepEqual(events[1], ['clock', { offset: 10, rtt: 2, at: 100 }]);
-  assert.deepEqual(events[2], ['audio-clock', { offset: 10, rtt: 2, at: 100 }], 'audio receives the same initial clock as video');
-  assert.equal(events[3], 'timing-reset');
-  assert.match(events[4], /^\/video\?/);
-  assert.equal(events[5], 'open');
+  assert.deepEqual(events[2], ['audio-clock', { offset: 10, rtt: 2, at: 100 }]);
+  assert.equal(events[3], 'timing-reset'); assert.equal(events[4], 'open');
 });
 
 function retryPage(lastError) {
@@ -68,6 +69,8 @@ function retryPage(lastError) {
     let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort;
     let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null, config = null;
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
+    let rtc = null, rtcAudio = null, resourceToken = null;
+    const codecsReady = new Promise(() => {});
     const browserLocation = { stop() {} };
     let problem = null;
     const browserNotice = { update(value) { if (value) problem = value; } };

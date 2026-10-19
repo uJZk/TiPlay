@@ -14,11 +14,14 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.net.URLDecoder
+import java.security.SecureRandom
+import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.Semaphore
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -107,6 +110,21 @@ class BrowserLinkServer(
     private val performance = VideoPerformance()
     private val airplayDiagnostics = AirPlayPlaybackDiagnostics(callbacks::log)
     private val gate = BrowserPairingGate(callbacks::code)
+    private val rtcPairing = BrowserRtcPairing()
+    /** Set by the Android host; absent in source-only/JVM HTTP harnesses. */
+    @Volatile var rtcFactory: BrowserRtcFactory? = null
+    private class RtcSession(val session: String, val created: Long) {
+        lateinit var peer: BrowserRtcConnection
+        @Volatile var code: String? = null
+        @Volatile var lastSeen = created
+        val closed = AtomicBoolean(false)
+        var video: WebVideoSubscription? = null
+        var audio: WebAudioHub.Subscription? = null
+        val resourceToken: String = ByteArray(32).also(SecureRandom()::nextBytes)
+            .let { Base64.getUrlEncoder().withoutPadding().encodeToString(it) }
+    }
+    private val rtcSessions = ConcurrentHashMap<Int, RtcSession>()
+    private val rtcSlots = Semaphore(3)
     private val touch = BrowserTouchSlots(callbacks::onTouch)
     private val lock = Any()
     /** Held while a `/control` batch is admitted and applied, so two overlapping batches never interleave. */
@@ -149,6 +167,8 @@ class BrowserLinkServer(
     /** Ends video streams with `stopped`, closes every connection and releases the fingers. Idempotent. */
     fun stop() {
         if (!running.compareAndSet(true, false)) return
+        rtcSessions.values.toList().forEach { closeRtc(it, "stopped") }
+        rtcPairing.clear()
         closeQuietly(server)
         watchdog?.shutdownNow()
         audios.forEach { it.subscription.close(); closeQuietly(it.socket) }
@@ -235,8 +255,183 @@ class BrowserLinkServer(
             "/audio" -> streamAudio(request, socket, output)
             "/airplay-resource" -> streamAirPlayResource(request, output)
             "/control" -> respond(output, request, control(request))
+            "/rtc/pair/start" -> respond(output, request, rtcPairStart(request))
+            "/rtc/pair/finish" -> respond(output, request, rtcPairFinish(request))
             else -> respond(output, request, bye(request))
         }
+    }
+
+    private fun rtcPairStart(request: Request): Response {
+        if (rtcFactory == null) return refuse(503, "rtc-unavailable")
+        val body = jsonBody(request) ?: return refuse(400, "bad-request")
+        val session = (body["s"] as? String)?.takeIf(BrowserPairingGate::isSessionId)
+            ?: return refuse(400, "bad-request")
+        if (body.containsKey("c") || body.containsKey("code")) return refuse(400, "secret-in-signaling")
+        val code = synchronized(lock) {
+            if (gate.isLockedOut(nowMillis())) return refuse(429, "throttled")
+            callbacks.code() ?: return refuse(401, "code")
+        }
+        return try {
+            val challenge = rtcPairing.start(session, code)
+            json(200, WebJson.write(mapOf("id" to challenge.id, "salt" to challenge.salt, "B" to challenge.B)))
+        } catch (_: IllegalStateException) { refuse(429, "throttled") }
+    }
+
+    private fun rtcPairFinish(request: Request): Response {
+        val body = jsonBody(request) ?: return refuse(400, "bad-request")
+        val session = (body["s"] as? String)?.takeIf(BrowserPairingGate::isSessionId)
+            ?: return refuse(400, "bad-request")
+        val id = body["id"] as? String ?: return refuse(400, "bad-request")
+        val clientA = body["A"] as? String ?: return refuse(400, "bad-request")
+        val proof = body["M1"] as? String ?: return refuse(400, "bad-request")
+        val offer = (body["offer"] as? String)?.takeIf { it.length in 32..60_000 && it.startsWith("v=0") }
+            ?: return refuse(400, "bad-offer")
+        if (body.containsKey("c") || body.containsKey("code")) return refuse(400, "secret-in-signaling")
+        synchronized(lock) { if (gate.isLockedOut(nowMillis())) return refuse(429, "throttled") }
+        val verified = try { rtcPairing.verify(id, clientA, proof, session) } catch (_: Exception) {
+            synchronized(lock) { gate.admit(null, session, nowMillis(), false) }
+            return refuse(401, "code")
+        }
+        if (verified.code != callbacks.code()) return refuse(401, "code")
+        return rtcOffer(session, offer, verified)
+    }
+
+    /** SRP mutual proofs authenticate the short code; its session key binds both complete SDP messages. */
+    private fun rtcOffer(session: String, offer: String, verified: BrowserRtcPairing.Verified): Response {
+        val factory = rtcFactory ?: return refuse(503, "rtc-unavailable")
+        if (!rtcSlots.tryAcquire()) return refuse(503, "rtc-busy")
+        val rtc = RtcSession(session, nowMillis())
+        try {
+            rtc.peer = factory.create({ rtcControl(rtc, it) }, { closeRtc(rtc, it) })
+            if (rtc.closed.get()) { rtc.peer.close(); return refuse(503, "rtc-signaling") }
+            if (rtcSessions.putIfAbsent(rtc.peer.id, rtc) != null) {
+                closeRtc(rtc, "identity-collision")
+                return refuse(503, "rtc-signaling")
+            }
+            if (rtc.closed.get()) {
+                rtcSessions.remove(rtc.peer.id, rtc)
+                return refuse(503, "rtc-signaling")
+            }
+            val done = CountDownLatch(1)
+            var answer: String? = null
+            rtc.peer.answer(offer) { answer = it; done.countDown() }
+            if (!done.await(12, TimeUnit.SECONDS) || rtc.closed.get() || answer == null) {
+                closeRtc(rtc, "signaling-timeout")
+                return refuse(503, "rtc-signaling")
+            }
+            return json(200, WebJson.write(mapOf("type" to "answer", "sdp" to answer, "session" to rtc.peer.id,
+                "M2" to verified.serverProof, "binding" to verified.bind(offer, answer!!, rtc.peer.id.toLong()))))
+        } catch (error: Exception) {
+            closeRtc(rtc, "signaling-failed")
+            callbacks.log("Browser RTC: signaling failed (${error.javaClass.simpleName})")
+            return refuse(503, "rtc-signaling")
+        }
+    }
+
+    private fun rtcControl(rtc: RtcSession, message: String) {
+        if (rtc.closed.get() || !running.get()) return
+        if (message.length > MAX_BODY) { closeRtc(rtc, "control-too-large"); return }
+        @Suppress("UNCHECKED_CAST")
+        val body = try { WebJson.parse(message) as? Map<String, Any?> } catch (_: Exception) { null }
+            ?: run { closeRtc(rtc, "invalid-control"); return }
+        val id = body["id"].wholeNumber()?.takeIf { it in 0..9_007_199_254_740_991L }
+            ?: run { closeRtc(rtc, "invalid-rpc"); return }
+        val type = body["type"] as? String
+        val response = when {
+            body["s"] != null && body["s"] != rtc.session -> refuse(400, "session")
+            type == "auth" -> synchronized(lock) {
+                if (rtc.code != null) refuse(409, "already-authenticated")
+                else {
+                    val code = body["c"] as? String
+                    val refusal = admitLocked(code, rtc.session)
+                    if (refusal != null) refusal
+                    else {
+                        rtc.code = code
+                        rtc.lastSeen = nowMillis()
+                        rtcSessions.values.filter { it !== rtc && it.session == rtc.session && it.code != null }
+                            .forEach { closeRtc(it, "reconnected") }
+                        rtc.peer.authenticate()
+                        callbacks.onBrowserSeen(rtc.session)
+                        @Suppress("UNCHECKED_CAST")
+                        val hello = WebJson.parse(WebDebugTiming.hello(System.nanoTime(), audioHub != null)) as Map<String, Any?>
+                        json(200, WebJson.write(hello + mapOf("transport" to "webrtc", "resourceToken" to rtc.resourceToken)))
+                    }
+                }
+            }
+            rtc.code == null -> refuse(401, "authentication-required")
+            rtc.code != callbacks.code() || gate.current != rtc.session -> refuse(409, "replaced")
+            type == "clock" -> json(200, WebJson.write(mapOf("clockMs" to System.nanoTime() / 1e6)))
+            type == "control" -> control(body + mapOf("s" to rtc.session, "c" to rtc.code))
+            type == "bye" -> bye(body + mapOf("s" to rtc.session, "c" to rtc.code))
+            else -> refuse(400, "unknown-rpc")
+        }
+        rtc.lastSeen = nowMillis()
+        val result = if (response.body.isEmpty()) null else try { WebJson.parse(String(response.body, Charsets.UTF_8)) } catch (_: Exception) { null }
+        val reply = if (response.status in 200..299)
+            mapOf("id" to id, "ok" to true, "status" to response.status, "result" to result)
+        else mapOf("id" to id, "ok" to false, "status" to response.status,
+            "error" to ((result as? Map<*, *>)?.get("error") ?: "rtc-refused"))
+        rtc.peer.sendControl(WebJson.write(reply))
+        if (type == "auth" && response.status == 200) startRtcMedia(rtc)
+        if (type == "bye" || response.status == 409 || response.status == 401 || response.status == 429)
+            watchdog?.schedule({ closeRtc(rtc, "session-ended") }, 100, TimeUnit.MILLISECONDS)
+    }
+
+    private fun startRtcMedia(rtc: RtcSession) {
+        synchronized(lock) {
+            if (rtc.closed.get() || gate.current != rtc.session) return
+            rtc.video = hub.subscribe(reliable = true)
+            rtc.audio = audioHub?.subscribe(reliable = true)
+        }
+        Thread({
+            try {
+                while (!rtc.closed.get()) {
+                    val record = rtc.video?.take(HEARTBEAT_MILLIS) ?: WebVideoRecords.HEARTBEAT
+                    record.sourceCapture?.let { source ->
+                        RawTraffic.record("browser/rtc/video-reference", WebJson.write(source.fields() + mapOf(
+                            "epoch" to record.epoch, "sequence" to record.sequence, "recordKind" to record.kind,
+                        )).toByteArray(Charsets.UTF_8))
+                    }
+                    WebDebugTiming.record(record, System.nanoTime(), extended = true)?.let { if (!rtc.peer.sendVideo(it)) return@Thread }
+                    if (!rtc.peer.sendVideo(record)) break
+                    if (record.kind == WebVideoRecords.KIND_END) { closeRtc(rtc, "video-ended"); break }
+                }
+            } catch (_: Exception) { closeRtc(rtc, "video-failed") }
+            finally { if (!rtc.closed.get()) closeRtc(rtc, "video-consumer-ended") }
+        }, "browser-rtc-video").apply { isDaemon = true; start() }
+        rtc.audio?.let { subscription ->
+            Thread({
+                try {
+                    while (!rtc.closed.get() && !subscription.closed) {
+                        val record = subscription.take(HEARTBEAT_MILLIS) ?: continue
+                        if (!rtc.peer.sendAudio(record)) break
+                    }
+                    if (!rtc.closed.get()) closeRtc(rtc, "audio-ended")
+                } catch (_: Exception) { closeRtc(rtc, "audio-failed") }
+            }, "browser-rtc-audio").apply { isDaemon = true; start() }
+        }
+    }
+
+    private fun closeRtc(rtc: RtcSession, reason: String) {
+        if (!rtc.closed.compareAndSet(false, true)) return
+        rtc.video?.close()
+        rtc.audio?.close()
+        rtcSessions.entries.removeIf { it.value === rtc }
+        rtcSlots.release()
+        // A factory failure may happen before the native peer has been installed.
+        try { rtc.peer.close() } catch (_: UninitializedPropertyAccessException) { }
+        synchronized(lock) {
+            if (rtc.code != null && gate.current == rtc.session && rtcSessions.values.none {
+                    it.session == rtc.session && it.code != null && !it.closed.get()
+                }) {
+                touch.drop(rtc.session)
+                callbacks.onBrowserGone(rtc.session)
+                AirPlayTrustNotifications.browserGone(rtc.session)
+                if (callbacks.browserLocationEnabled()) com.shilapi.xcertplay.location.BrowserLocationRelay.leave(rtc.session)
+                gate.leave(rtc.code, rtc.session, nowMillis())
+            }
+        }
+        callbacks.log("Browser RTC: closed reason=${reason.take(48).filter { it.isLetterOrDigit() || it == '-' }}")
     }
 
     private fun preflight(request: Request): Response {
@@ -346,7 +541,12 @@ class BrowserLinkServer(
     private fun streamAirPlayResource(request: Request, output: OutputStream): Boolean {
         val session = request.query["s"]?.takeIf(BrowserPairingGate::isSessionId)
             ?: return respond(output, request, refuse(400, "bad-request"))
-        synchronized(lock) { admitLocked(request.query["c"], session)?.let { return respond(output, request, it) } }
+        synchronized(lock) {
+            val token = request.query["c"]
+            val rtc = rtcSessions.values.firstOrNull { it.session == session && it.resourceToken == token &&
+                it.code != null && it.code == callbacks.code() && !it.closed.get() && gate.current == session }
+            if (rtc == null) admitLocked(token, session)?.let { return respond(output, request, it) }
+        }
         val id = request.query["id"]?.toLongOrNull() ?: return respond(output, request, refuse(400, "bad-request"))
         val resourceId = request.query["r"] ?: return respond(output, request, refuse(400, "bad-request"))
         val photo = AirPlayBrowserPlayback.photo(id)
@@ -384,6 +584,10 @@ class BrowserLinkServer(
 
     private fun control(request: Request): Response {
         val body = jsonBody(request) ?: return refuse(400, "bad-request")
+        return control(body)
+    }
+
+    private fun control(body: Map<*, *>): Response {
         val session = (body["s"] as? String)?.takeIf(BrowserPairingGate::isSessionId) ?: return refuse(400, "bad-request")
         val sequence = body["q"].wholeNumber() ?: return refuse(400, "bad-request")
         val events = body["e"] as? List<*> ?: return refuse(400, "bad-request")
@@ -408,6 +612,10 @@ class BrowserLinkServer(
 
     private fun bye(request: Request): Response {
         val body = jsonBody(request) ?: return refuse(400, "bad-request")
+        return bye(body)
+    }
+
+    private fun bye(body: Map<*, *>): Response {
         val session = (body["s"] as? String)?.takeIf(BrowserPairingGate::isSessionId) ?: return refuse(400, "bad-request")
         synchronized(lock) {
             when (gate.leave(body["c"] as? String, session, nowMillis())) {
@@ -432,11 +640,13 @@ class BrowserLinkServer(
     private fun admitLocked(code: String?, session: String): Response? {
         val now = nowMillis()
         val current = gate.current
-        val liveVideo = video?.let { it.session == current && !it.stalled(now) } == true
+        val liveVideo = video?.let { it.session == current && !it.stalled(now) } == true ||
+            rtcSessions.values.any { it.session == current && it.code != null && !it.closed.get() && now - it.lastSeen <= BrowserPairingGate.STALE_MILLIS }
         val lockouts = gate.lockouts
         return when (val decision = gate.admit(code, session, now, liveVideo)) {
             is BrowserPairingGate.Decision.Accepted -> {
                 decision.replaced?.let { previous ->
+                    rtcSessions.values.filter { it.session == previous }.forEach { closeRtc(it, "replaced") }
                     callbacks.onBrowserGone(previous)
                     touch.drop(previous)
                     AirPlayTrustNotifications.browserGone(previous)
@@ -573,7 +783,9 @@ class BrowserLinkServer(
             "airplay" to AirPlayBrowserPlayback.snapshot(),
             "airplayTrust" to AirPlayTrustNotifications.prompt(session),
             "touch" to if (status.touchAvailable) "ok" else "unavailable",
-            "phone" to status.phone + mapOf("video" to hub.snapshot(), "link" to performance.snapshot()),
+            "phone" to status.phone + mapOf("video" to hub.snapshot(), "link" to performance.snapshot(),
+                "rtc" to rtcSessions.values.firstOrNull { it.session == session && it.code != null && !it.closed.get() }
+                    ?.peer?.diagnostics()),
         )
     }
 
@@ -581,6 +793,12 @@ class BrowserLinkServer(
         try {
             val now = nowMillis()
             touch.expire(now)
+            rtcSessions.values.toList().forEach { rtc ->
+                when {
+                    rtc.code == null && now - rtc.created > 15_000 -> closeRtc(rtc, "authentication-timeout")
+                    rtc.code != null && (rtc.code != callbacks.code() || now - rtc.lastSeen > BrowserPairingGate.STALE_MILLIS) -> closeRtc(rtc, "stale-session")
+                }
+            }
             videos.filter { it.stalled(now) }.forEach {
                 callbacks.log("Browser link: video stream stalled; closing it")
                 closeQuietly(it.socket)
@@ -762,7 +980,7 @@ class BrowserLinkServer(
         private const val TOKEN_CHARACTERS = "!#$%&'*+-.^_`|~"
         private val HEADER_NAME_PATTERN = Regex("[a-z0-9-]{1,48}")
         private val KEYS = setOf("home", "back", "siri")
-        private val ROUTES = mapOf("/airplay-resource" to "GET", "/hello" to "GET", "/video" to "GET", "/audio" to "GET", "/control" to "POST", "/bye" to "POST")
+        private val ROUTES = mapOf("/rtc/pair/start" to "POST", "/rtc/pair/finish" to "POST", "/airplay-resource" to "GET", "/hello" to "GET", "/video" to "GET", "/audio" to "GET", "/control" to "POST", "/bye" to "POST")
         private val RECORD_NAMES = mapOf(
             WebVideoRecords.KIND_CONFIG to "configRecords",
             WebVideoRecords.KIND_FRAME to "frameRecords",

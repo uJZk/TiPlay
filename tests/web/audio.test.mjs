@@ -74,7 +74,7 @@ test('empty stream reset is neither played PCM nor a clock fallback sample', asy
   } finally { audio.dispose(); browser.done(); }
 });
 
-test('arrival-anchored CarPlay guidance cannot alter media timing or startup readiness', async () => {
+test('source-timed and untimed CarPlay guidance keep independent diagnostics and media readiness', async () => {
   const browser = mockBrowser(); let controller;
   const timing = [], queued = [];
   const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
@@ -84,8 +84,14 @@ test('arrival-anchored CarPlay guidance cannot alter media timing or startup rea
     await audio.activate(); audio.attach(new AbortController().signal, { audio: true });
     await new Promise(resolve => setImmediate(resolve));
     const at = performance.timeOrigin + performance.now(); audio.clock({ offset: at - 1000, at, rtt: 2 });
+    const untimed = record([1000, 1000], { type: 1 });
+    controller.enqueue(untimed); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(audio.stats().arrivalAnchoredPackets, 1);
+    assert.equal(audio.stats().timedPackets, 0);
     const guidance = record([1000, 1000], { type: 1 }); new DataView(guidance.buffer).setFloat64(20, 1000);
     controller.enqueue(guidance); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(audio.stats().timedPackets, 1);
+    assert.equal(audio.stats().arrivalAnchoredPackets, 1);
     assert.deepEqual(timing, []); assert.deepEqual(queued, []);
     const media = record([1000, 1000]); new DataView(media.buffer).setFloat64(20, 1000);
     controller.enqueue(media); await new Promise(resolve => setImmediate(resolve));

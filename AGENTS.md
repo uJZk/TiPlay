@@ -16,7 +16,7 @@ Project AGENTS.md files and documents under docs/ must stay below 8,192 words ea
 Split a topic only when needed, target 4,096 words, and update the index and references.
 
 - [Browser](docs/Browser.md): pairing, receiver-aware waiting states, dismissible browser errors, resize, portal, media and shutdown.
-- [CarPlay DataChannel handoff](docs/CarPlay-DataChannel.md): next-session implementation of reliable, ordered WebRTC DataChannel from first principles; confirmed webpage hardware-decode, sender-relative timing, touch, routing and one-copy capture constraints. Design only; current runtime remains unchanged.
+- [CarPlay DataChannel](docs/CarPlay-DataChannel.md): reliable ordered WebRTC beta transport, four-digit SRP pairing, independent sender-relative timing, touch-only video catch-up and one-copy capture references. Vehicle connectivity, actual hardware use and physical output timing require device acceptance.
 - [Settings](docs/Settings.md): short receiver status titles, separate details, drafts, immediate apply, reconnect and boot.
 - [Connection setup](docs/Connection-setup.md) and [hotspot address](docs/Hotspot-address.md).
 - [AirPlay](docs/AirPlay.md): receiver/media contracts, native/software audio negotiation,

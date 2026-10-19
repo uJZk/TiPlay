@@ -64,10 +64,11 @@ test('the first timestamp after fallback playback cannot jump the effective dela
 });
 
 test('CarPlay and AirPlay mirror use their own shared delay caps', () => {
-  for (const [mode, limit] of [['carplay', 0], ['airplay-mirror', 200]]) {
+  for (const [mode, limit] of [['carplay', 300], ['airplay-mirror', 200]]) {
     const changes = [], timing = createMediaTiming(plan => changes.push(plan), () => 1000);
     timing.mode(mode); timing.observe('audio', 0); timing.observe('video', 0);
-    assert.equal(timing.limit(), limit); assert.equal(timing.delay(), Math.max(0, limit - 20)); assert.equal(timing.plan().to, Math.max(0, limit - 20));
+    const target = mode === 'carplay' ? 0 : limit - 20;
+    assert.equal(timing.limit(), limit); assert.equal(timing.delay(), target); assert.equal(timing.plan().to, target);
     assert.ok(changes.every(plans => plans.video.from >= 0 && plans.video.to >= 0 && plans.video.from <= limit && plans.video.to <= limit));
     const same = timing.plan(); timing.mode(mode); assert.equal(timing.plan(), same, 'same-mode codec/resize config preserves the common ramp');
   }
@@ -210,39 +211,33 @@ test('video presents ready frames without slow audio and drops only raw cap viol
   const ready = { close() { this.closed = true; } }, late = { close() { this.closed = true; } };
   frames.present(ready, { mode: 'airplay-mirror' }, 1, 950);
   now = 1020; frames.delay(timing.plan()); assert.deepEqual(shown, [ready], 'video uses its seventy millisecond deadline despite very late audio');
-  now = 1100; frames.present(late, { mode: 'carplay' }, 1, 960); assert.equal(late.closed, true);
+  now = 1400; frames.present(late, { mode: 'carplay' }, 1, 960); assert.equal(late.closed, true);
   assert.equal(frames.stats().scheduledExpiredFrames, 1);
-  assert.equal(videoExpired(1000, 'carplay', 1000), false); assert.equal(videoExpired(1000, 'carplay', 1000.01), true);
+  assert.equal(videoExpired(1000, 'carplay', 1000), false); assert.equal(videoExpired(1000, 'carplay', 1300.01), true);
   assert.equal(videoExpired(1000, 'airplay-mirror', 1200.01), true);
   frames.reset();
 });
 
-test('zero-cap CarPlay buffers future frames, reserves draw time, and accepts the raw boundary', () => {
-  let now = 1000, pending = null;
-  const shown = [], frames = createTimedFrames((frame, _, __, source) => shown.push({ frame, source, at: now }), {
-    now: () => now, schedule: (callback, wait) => { pending = { callback, at: now + wait }; return callback; }, cancel: () => { pending = null; },
+test('CarPlay buffers future frames in decoder output order and accepts its 300ms raw boundary', () => {
+  let now = 1000, pending;
+  const shown = [], frames = createTimedFrames(frame => shown.push(frame), {
+    now: () => now, schedule: (callback, wait) => { pending = { callback, at: now + wait }; return callback; }, cancel() {},
   });
-  const item = () => ({ close() { this.closed = true; } });
   frames.delay(constantDelay(0));
-  const later = item(), earlier = item(), duplicate = item();
-  frames.present(later, { mode: 'carplay' }, 1, 1060);
-  frames.present(earlier, { mode: 'carplay' }, 1, 1040);
-  frames.present(duplicate, { mode: 'carplay' }, 1, 1040);
-  assert.equal(duplicate.closed, true); assert.deepEqual(shown, []);
-  assert.equal(frames.stats().scheduledDroppedFrames, 1);
-  assert.ok(Math.abs(pending.at - 1020) < 0.000001);
-  now = pending.at; pending.callback(); assert.equal(shown[0].frame, earlier); assert.equal(shown[0].at, 1020);
-  now = pending.at; pending.callback(); assert.equal(shown[1].frame, later); assert.equal(shown[1].at, 1040);
-  now = 1100; const boundary = item(); frames.present(boundary, { mode: 'carplay' }, 1, 1100);
-  assert.equal(shown.at(-1).frame, boundary, 'readiness at the upper bound still permits immediate submission');
-  const late = item(); frames.present(late, { mode: 'carplay' }, 1, 1100.001);
-  now = 1100.01; frames.delay(constantDelay(0));
-  assert.equal(late.closed, undefined, 'a future frame inside the draw reservation may already be submitted');
-  const expired = item(); frames.present(expired, { mode: 'carplay' }, 1, 1100.005);
-  assert.equal(expired.closed, true); assert.equal(frames.stats().scheduledExpiredFrames, 1);
-  assert.equal(frames.stats().scheduledDroppedFrames, 2);
-  frames.reset();
-  assert.equal(frames.stats().scheduledDroppedFrames, 0, 'epoch reset excludes normal teardown');
+  const item = () => ({ close() { this.closed = true; } });
+  const first = item(), second = item(), backwards = item();
+  frames.present(first, { mode: 'carplay' }, 1, 1040);
+  frames.present(second, { mode: 'carplay' }, 1, 1060);
+  frames.present(backwards, { mode: 'carplay' }, 1, 1050);
+  assert.equal(backwards.closed, true, 'WebCodecs output order is authoritative');
+  assert.deepEqual(shown, []); now = pending.at; pending.callback(); assert.deepEqual(shown, [first]);
+  now = pending.at; pending.callback(); assert.deepEqual(shown, [first, second]);
+  frames.reset(); now = 1300;
+  const boundary = item(); frames.present(boundary, { mode: 'carplay' }, 1, 1000);
+  assert.equal(shown.at(-1), boundary);
+  const expired = item(); frames.present(expired, { mode: 'carplay' }, 1, 999.99, { sourceTimeMs: 1001 });
+  assert.equal(expired.closed, true);
+  assert.equal(frames.stats().scheduledExpiredFrames, 1); frames.reset();
 });
 
 test('late readiness inside a raw cap is drawn despite missing the adaptive target', () => {
@@ -278,12 +273,12 @@ test('a decoded burst bounds retained pictures and closes duplicate, evicted and
     frames.present(frame, { mode: 'carplay', epoch: 1 }, 1, 1500 + n,
       { sourceTimeMs: 5000 + n, clockGeneration: 1 });
   }
-  assert.equal(items.filter(frame => frame.closes === 0).length, 60);
+  assert.equal(items.filter(frame => frame.closes === 0).length, 20);
   const duplicate = { closes: 0, close() { this.closes++; } };
   frames.present(duplicate, { mode: 'carplay', epoch: 1 }, 1, 1599,
     { sourceTimeMs: 5099, clockGeneration: 1 });
   assert.equal(duplicate.closes, 1);
-  now = 1580; frames.delay(constantDelay(0));
+  now = 1600; frames.delay(constantDelay(0));
   assert.deepEqual(shown.map(frame => frame.n), [99], 'catch up to the newest due frame without moving its deadline');
   assert.ok(items.every(frame => frame.closes === 1));
   frames.reset(); assert.ok(items.every(frame => frame.closes === 1));
