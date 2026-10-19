@@ -55,4 +55,16 @@ class BrowserRtcProtocolTest {
         assertThrows(IllegalArgumentException::class.java) { BrowserRtcProtocol.messageLimit("a=max-message-size:4096\r\na=max-message-size:4096\r\n") }
         assertThrows(IllegalArgumentException::class.java) { BrowserRtcProtocol.fragment(1, 1, byteArrayOf(1), 0, 24) }
     }
+
+    @Test fun controlBatchesUseSeparateBoundWithinRemoteSctpMessageLimit() {
+        assertEquals(65536, BrowserRtcProtocol.controlLimit("v=0\r\n"))
+        assertEquals(65536, BrowserRtcProtocol.controlLimit("a=max-message-size:0\r\n"))
+        assertEquals(65536, BrowserRtcProtocol.controlLimit("a=max-message-size:262144\r\n"))
+        assertEquals(32768, BrowserRtcProtocol.controlLimit("a=max-message-size:32768\r\n"))
+        assertEquals(16384, BrowserRtcProtocol.messageLimit("a=max-message-size:32768\r\n"))
+        assertThrows(IllegalArgumentException::class.java) { BrowserRtcProtocol.controlLimit("a=max-message-size:24\r\n") }
+        assertThrows(IllegalArgumentException::class.java) {
+            BrowserRtcProtocol.controlLimit("a=max-message-size:9999999999999999999999999\r\n")
+        }
+    }
 }

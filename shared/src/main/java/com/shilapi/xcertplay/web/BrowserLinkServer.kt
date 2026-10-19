@@ -371,7 +371,10 @@ class BrowserLinkServer(
             mapOf("id" to id, "ok" to true, "status" to response.status, "result" to result)
         else mapOf("id" to id, "ok" to false, "status" to response.status,
             "error" to ((result as? Map<*, *>)?.get("error") ?: "rtc-refused"))
-        rtc.peer.sendControl(WebJson.write(reply))
+        if (!rtc.peer.sendControl(WebJson.write(reply))) {
+            closeRtc(rtc, "control-response-capacity")
+            return
+        }
         if (type == "auth" && response.status == 200) startRtcMedia(rtc)
         if (type == "bye" || response.status == 409 || response.status == 401 || response.status == 429)
             watchdog?.schedule({ closeRtc(rtc, "session-ended") }, 100, TimeUnit.MILLISECONDS)
@@ -387,6 +390,16 @@ class BrowserLinkServer(
             try {
                 while (!rtc.closed.get()) {
                     val record = rtc.video?.take(HEARTBEAT_MILLIS) ?: WebVideoRecords.HEARTBEAT
+                    if (record.kind == WebVideoRecords.KIND_END && String(record.payload, Charsets.UTF_8) in setOf("source-changed", "source-ended")) {
+                        // A video producer boundary must not restart the independent audio transport.
+                        val next = synchronized(lock) {
+                            if (rtc.closed.get() || gate.current != rtc.session) return@Thread
+                            hub.subscribe(reliable = true).also { rtc.video = it }
+                        }
+                        if (rtc.closed.get()) { next.close(); return@Thread }
+                        if (!rtc.peer.sendVideo(WebVideoRecords.IDLE)) return@Thread
+                        continue
+                    }
                     record.sourceCapture?.let { source ->
                         RawTraffic.record("browser/rtc/video-reference", WebJson.write(source.fields() + mapOf(
                             "epoch" to record.epoch, "sequence" to record.sequence, "recordKind" to record.kind,

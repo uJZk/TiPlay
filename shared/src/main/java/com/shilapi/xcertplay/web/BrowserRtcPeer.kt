@@ -42,12 +42,20 @@ class BrowserRtcPeer internal constructor(
     private var answerCallback: ((String) -> Unit)? = null
     private var answerStarted = false
     private var messageLimit = BrowserRtcProtocol.MAX_MESSAGE_BYTES
+    @Volatile private var controlMessageLimit = BrowserRtcProtocol.MAX_CONTROL_BYTES
     @Volatile private var ready = false
     @Volatile private var controlBufferedBytes = 0L
     @Volatile private var nativeSampleNanos = 0L
     @Volatile private var controlRecordsSent = 0L
     @Volatile private var controlBytesSent = 0L
     @Volatile private var terminalDiagnostics: Map<String, Any?>? = null
+    private val localCandidateCount = AtomicInteger()
+    private val localIpv4LinkLocalCandidateCount = AtomicInteger()
+    @Volatile private var remoteCandidateCount = 0
+    @Volatile private var remoteIpv4LinkLocalCandidateCount = 0
+    @Volatile private var iceGatheringState = "NEW"
+    @Volatile private var iceConnectionState = "NEW"
+    @Volatile private var peerConnectionState = "NEW"
     private val video = Sender("video", BrowserRtcProtocol.MAX_VIDEO_BYTES, 12 * 1024 * 1024, 10 * 1024 * 1024L)
     private val audio = Sender("audio", BrowserRtcProtocol.MAX_AUDIO_BYTES, 2 * 1024 * 1024, 1024 * 1024L)
 
@@ -62,7 +70,12 @@ class BrowserRtcPeer internal constructor(
         check(!answerStarted) { "offer already supplied" }
         require(offerSdp.length in 1..131072) { "invalid SDP size" }
         require(!Regex("(?m)^m=(audio|video) ").containsMatchIn(offerSdp)) { "native media tracks are not supported" }
+        val candidates = offerSdp.lineSequence().filter { it.startsWith("a=candidate:") }.toList()
+        remoteCandidateCount = candidates.size
+        remoteIpv4LinkLocalCandidateCount = candidates.count(::isIpv4LinkLocalCandidate)
         messageLimit = BrowserRtcProtocol.messageLimit(offerSdp)
+        controlMessageLimit = BrowserRtcProtocol.controlLimit(offerSdp)
+        require(controlMessageLimit >= 1024) { "remote control message size too small" }
         answerStarted = true
         answerCallback = onAnswer
         val configuration = PeerConnection.RTCConfiguration(emptyList()).apply {
@@ -99,13 +112,20 @@ class BrowserRtcPeer internal constructor(
                 "recordsSent" to controlRecordsSent, "bytesSent" to controlBytesSent,
                 "pendingReceiveTasks" to controls.queue.size),
             "nativeSampleAgeMs" to ageMillis(now, nativeSampleNanos),
+            "controlMessageLimitBytes" to controlMessageLimit,
+            "localCandidateCount" to localCandidateCount.get(), "remoteCandidateCount" to remoteCandidateCount,
+            "localIPv4LinkLocalCandidateCount" to localIpv4LinkLocalCandidateCount.get(),
+            "remoteIPv4LinkLocalCandidateCount" to remoteIpv4LinkLocalCandidateCount,
+            "iceGatheringState" to iceGatheringState, "iceConnectionState" to iceConnectionState,
+            "peerConnectionState" to peerConnectionState,
             "pendingWorkerTasks" to pendingTasks.get(), "transportBudgetMs" to 200,
         )
     }
 
     override fun sendControl(message: String): Boolean {
+        if (closed.get() || message.length > controlMessageLimit) return false
         val bytes = message.toByteArray(Charsets.UTF_8)
-        if (closed.get() || bytes.size > BrowserRtcProtocol.MAX_MESSAGE_BYTES) return false
+        if (closed.get() || bytes.size > controlMessageLimit) return false
         return synchronized(nativeLock) {
             val channel = control ?: return@synchronized false
             if (closed.get() || channel.state() != DataChannel.State.OPEN) false
@@ -254,7 +274,7 @@ class BrowserRtcPeer internal constructor(
                     execute { if (channel.state() == DataChannel.State.CLOSED) fail("$label channel closed") }
                 }
                 override fun onMessage(buffer: DataChannel.Buffer) {
-                    if (label != "control" || buffer.binary || buffer.data.remaining() > BrowserRtcProtocol.MAX_MESSAGE_BYTES) {
+                    if (label != "control" || buffer.binary || buffer.data.remaining() > controlMessageLimit) {
                         fail("invalid inbound $label message"); return
                     }
                     val bytes = ByteArray(buffer.data.remaining()).also { buffer.data.get(it) }
@@ -335,16 +355,22 @@ class BrowserRtcPeer internal constructor(
     private val observer = object : PeerConnection.Observer {
         override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+            iceConnectionState = state.name
             if (state == PeerConnection.IceConnectionState.FAILED) fail("WebRTC ICE failed")
         }
         override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
+            peerConnectionState = state.name
             if (state == PeerConnection.PeerConnectionState.FAILED) fail("WebRTC connection failed")
         }
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
+            iceGatheringState = state.name
             if (state == PeerConnection.IceGatheringState.COMPLETE) execute { finishAnswer() }
         }
-        override fun onIceCandidate(candidate: IceCandidate) = Unit
+        override fun onIceCandidate(candidate: IceCandidate) {
+            localCandidateCount.incrementAndGet()
+            if (isIpv4LinkLocalCandidate(candidate.sdp)) localIpv4LinkLocalCandidateCount.incrementAndGet()
+        }
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) = Unit
         override fun onAddStream(stream: MediaStream) = Unit
         override fun onRemoveStream(stream: MediaStream) = Unit
@@ -424,5 +450,12 @@ class BrowserRtcPeer internal constructor(
         // Local queue/credit watchdog only; physical sender-relative output also needs clock/panel evidence.
         val MEDIA_DEADLINE_NANOS = TimeUnit.MILLISECONDS.toNanos(200)
         fun ageMillis(now: Long, started: Long): Double? = if (started == 0L) null else maxOf(0L, now - started) / 1e6
+        /** Inspect only the candidate's connection-address token; diagnostics retain counts, never addresses. */
+        fun isIpv4LinkLocalCandidate(candidate: String): Boolean {
+            val address = candidate.trim().split(Regex("\\s+"), limit = 7).getOrNull(4) ?: return false
+            val octets = address.split('.')
+            return octets.size == 4 && octets[0] == "169" && octets[1] == "254" &&
+                octets.all { it.toIntOrNull()?.let { octet -> octet in 0..255 } == true }
+        }
     }
 }

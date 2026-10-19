@@ -78,7 +78,7 @@ object RawTraffic {
     }
 
     /** Binds browser reports to this enable/clear cycle, including delayed control retries. */
-    fun activeSessionId(): String? = synchronized(lock) { sessionId.takeIf { enabled } }
+    fun activeSessionId(): String? = sessionId.takeIf { enabled }
 
     /** Explicit user action; saved artifacts are independent. An active capture starts a fresh session. */
     fun clear() = synchronized(lock) {

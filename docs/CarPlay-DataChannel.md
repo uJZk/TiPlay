@@ -121,6 +121,7 @@ fragment offset and fragment length. Complete messages are at most 16 KiB,
 including this envelope, further bounded by negotiated SCTP message size. Each
 ordered media channel has at most one incomplete record. Identity, lengths,
 continuity and negotiated limits are checked before allocation/decoding.
+Control messages have a separate 64 KiB ceiling, bounded by the negotiated limit.
 
 Receiver credit and cumulative complete-record consumption acknowledgements bound
 application in-flight work independently for video and audio. `bufferedAmount`
@@ -141,7 +142,17 @@ format metadata; its discarded bytes are counted.
 
 These are initial finite-resource policies, not measured optimal settings.
 
+Video source replacement or normal retirement renews the video subscription without
+ending the authenticated peer or independent audio. Retiring one audio publication
+appends its stream-end record in order; another active stream continues. Overload
+and expired queues remain explicit failures.
+
 ## Time, reordering and touch
+
+Touch edges are submitted immediately. Moves coalesce within one microtask, and
+up/cancel/new-down invalidates a pending stale move. The RTC control outbox allows
+eight bounded requests in flight, preserving ordered submission without waiting
+one round trip per request; late older status responses cannot overwrite newer ones.
 
 The three orders are separate: network fragments reconstruct original complete
 access units; compressed input remains in decode order; WebCodecs outputs pictures

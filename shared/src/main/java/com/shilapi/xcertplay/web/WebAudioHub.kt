@@ -15,8 +15,9 @@ class WebAudioHub(private val nanoTime: () -> Long = System::nanoTime) {
             private set
         override fun close() {
             synchronized(hub) {
+                if (!active) return
                 active = false
-                hub.subscription?.discard(this)
+                hub.retirePublication(this)
             }
         }
     }
@@ -219,6 +220,26 @@ class WebAudioHub(private val nanoTime: () -> Long = System::nanoTime) {
         }
     }
 
+    /** Retire only this decoder, keeping the ordered journal and unrelated audio continuous. */
+    private fun retirePublication(publication: Publication) {
+        val target = subscription ?: return
+        if (target.reliable) {
+            encodedStreams.filterNotNull().filter { it.publication === publication }.forEach(::retireEncoded)
+            for (header in target.publicationHeaders(publication)) {
+                if (header[4].toInt() != 2) continue
+                val id = header[5].toInt() and 255
+                target.clearStream(id)
+                epochs[id]++
+                // An empty PCM reset retains the published format and follows every admitted sample.
+                ByteBuffer.wrap(header).order(ByteOrder.BIG_ENDIAN)
+                    .putInt(0, 24).putInt(12, sequence++).putInt(16, epochs[id])
+                header[7] = (header[7].toInt() or 2).toByte()
+                target.offer(header, false, target.generation)
+            }
+        }
+        target.discard(publication)
+    }
+
     private fun validPublication(owner: Any, publication: Publication?) =
         publication == null || (publication.active && publication.owner === owner)
 
@@ -321,6 +342,10 @@ class WebAudioHub(private val nanoTime: () -> Long = System::nanoTime) {
         // overtake or silently erase encoded packets. Finite capacity fails the whole subscription.
         private val reliablePackets = ArrayDeque<Packet>()
         private var reliableBytes = 0
+        // At most MAX_STREAMS fixed-size headers, never an extra retained media payload.
+        private val reliablePublications = mutableMapOf<Int, Pair<Publication, ByteArray>>()
+        @Synchronized internal fun publicationHeaders(publication: Publication): List<ByteArray> =
+            reliablePublications.values.filter { it.first === publication }.map { it.second.copyOf() }
         @Volatile var endReason: String? = null
             private set
         private val routes = ArrayBlockingQueue<Packet>(1)
@@ -458,6 +483,8 @@ class WebAudioHub(private val nanoTime: () -> Long = System::nanoTime) {
             }
             reliablePackets.addLast(Packet(generation, version, record, publication, nanoTime()))
             reliableBytes += record.size
+            if (publication == null) reliablePublications.remove(id)
+            else reliablePublications[id] = publication to record.copyOf(28)
             wakeReader()
         }
 
@@ -545,10 +572,9 @@ class WebAudioHub(private val nanoTime: () -> Long = System::nanoTime) {
             music.removeIf { (it.bytes[5].toInt() and 255) == id }
         }
         @Synchronized internal fun discard(publication: Publication) {
-            if (reliable && reliablePackets.any { it.publication === publication }) {
-                end("source-retired")
-                return
-            }
+            // Publication retirement appends a stream-scoped control at the hub. Already admitted
+            // encoded bytes remain in FIFO; only future admission checks the inactive lease.
+            if (reliable) return
             resets.entries.removeIf { it.value.publication === publication }
             deferred.removeIf { it.publication === publication }
             live.removeIf { it.publication === publication }
@@ -556,7 +582,7 @@ class WebAudioHub(private val nanoTime: () -> Long = System::nanoTime) {
             music.removeIf { it.publication === publication }
         }
         @Synchronized internal fun clear() {
-            reliablePackets.clear(); reliableBytes = 0
+            reliablePackets.clear(); reliableBytes = 0; reliablePublications.clear()
             generation++; routes.clear(); resets.clear(); deferred.clear(); live.clear(); mirror.clear(); music.clear(); encodedEpochs.fill(null); pendingReset.fill(false)
             mirrorNext = false; realtimeSinceMusic = 0
             for (id in versions.indices) versions[id]++

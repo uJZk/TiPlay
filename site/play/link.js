@@ -386,7 +386,7 @@ export function createTouchSlots(max = 2) {
 }
 
 /**
- * The `/control` sender: exactly one POST in flight, events in order. A `move` replaces a move at the queue tail,
+ * Ordered control batches, with a bounded number in flight (one by default). A `move` replaces a move at the queue tail,
  * a `latest` event replaces a queued event of the same `k`, and every other event (touch edges included) is kept.
  * More than `maxEvents` queued events clear the queue and report an overflow; the phone lifts held fingers after
  * 1500 ms without touch updates. A failed POST is not replayed as such. The next heartbeat repeats its `latest`
@@ -397,36 +397,47 @@ export function createTouchSlots(max = 2) {
  */
 export function createControlOutbox({
   send, heldContacts = () => [], onStatus = () => {}, onError = () => {},
-  now = () => Date.now(), maxEvents = 64,
+  now = () => Date.now(), maxEvents = 64, maxInFlight = 1,
 } = {}) {
-  const queue = [], retry = new Map();
+  if (!Number.isInteger(maxInFlight) || maxInFlight < 1 || maxInFlight > 32) throw new RangeError('invalid control concurrency');
+  const queue = [], retry = new Map(), versions = new Map();
   const rtt = new Samples(64);
-  let seq = 0, inFlight = false, heartbeatDue = false, closed = false, touchLost = false;
+  let seq = 0, inFlightCount = 0, lastStatusSeq = 0, eventVersion = 0, heartbeatDue = false, closed = false, touchLost = false;
   let posts = 0, failures = 0, overflows = 0;
 
+  function releaseVersions(batch) {
+    for (const entry of batch) {
+      if (versions.get(entry.event.k) === entry.version && !retry.has(entry.event.k) &&
+          !queue.some(queued => queued.event.k === entry.event.k)) versions.delete(entry.event.k);
+    }
+  }
+
   function flush() {
-    if (closed || inFlight || (!queue.length && !heartbeatDue)) return;
+    if (closed || inFlightCount >= maxInFlight || (!queue.length && !heartbeatDue)) return;
     const batch = queue.splice(0), events = batch.map(entry => entry.event);
     const q = ++seq, started = now();
     heartbeatDue = false;
-    inFlight = true;
+    inFlightCount++;
     posts++;
     Promise.resolve().then(() => send(q, events)).then(status => {
       if (closed) return;
-      inFlight = false;
+      inFlightCount--;
       rtt.add(now() - started);
-      onStatus(status);
+      releaseVersions(batch);
+      if (q > lastStatusSeq) { lastStatusSeq = q; onStatus(status); }
       flush();
     }, error => {
       if (closed) return;
-      inFlight = false;
+      inFlightCount--;
       failures++;
       // The phone may not have seen these; an event queued meanwhile already replaces one of the same `k`.
       for (const entry of batch) {
+        if (versions.get(entry.event.k) !== entry.version) continue;
         if (queue.some(queued => queued.event.k === entry.event.k)) continue;
         if (entry.kind === 'latest') retry.set(entry.event.k, entry);
         else if (entry.event.k === 't') touchLost = true;
       }
+      releaseVersions(batch);
       onError(error);
       flush();
     });
@@ -436,17 +447,19 @@ export function createControlOutbox({
     if (closed) return false;
     // A newer event of the same `k` makes the repeat of a failed one obsolete.
     retry.delete(event.k);
+    const version = ++eventVersion; versions.set(event.k, version);
     if (event.k === 't') touchLost = false;
     const tail = queue[queue.length - 1];
     const same = kind === 'latest' ? queue.find(entry => entry.event.k === event.k) : null;
     if (kind === 'move' && tail?.kind === 'move') {
-      tail.event = event;
+      tail.event = event; tail.version = version;
     } else if (same) {
-      same.event = event;
+      same.event = event; same.version = version;
     } else if (queue.length < maxEvents) {
-      queue.push({ kind, event });
+      queue.push({ kind, event, version });
     } else {
-      queue.length = 0;
+      const discarded = queue.splice(0);
+      releaseVersions([...discarded, { event, version }]);
       overflows++;
       onError(new Error('control queue overflow'));
       return false;
@@ -466,10 +479,10 @@ export function createControlOutbox({
     },
     close() {
       closed = true;
-      queue.length = 0;
+      queue.length = 0; retry.clear(); versions.clear();
     },
     stats: () => ({
-      seq, inFlight, pending: queue.length, posts, failures, overflows,
+      seq, inFlight: inFlightCount > 0, inFlightCount, pending: queue.length, posts, failures, overflows,
       rttMsP50: rtt.percentile(50), rttMsP95: rtt.percentile(95),
     }),
   };

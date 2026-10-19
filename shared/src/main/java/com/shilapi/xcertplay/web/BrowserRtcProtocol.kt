@@ -8,6 +8,7 @@ import java.util.ArrayDeque
 internal object BrowserRtcProtocol {
     const val HEADER_BYTES = 24
     const val MAX_MESSAGE_BYTES = 16 * 1024
+    const val MAX_CONTROL_BYTES = 64 * 1024
     const val MAGIC = 0x31435254 // TRC1, little endian
     const val MAX_VIDEO_BYTES = WebVideoRecords.MAX_PAYLOAD + WebVideoRecords.HEADER_SIZE
     const val MAX_AUDIO_BYTES = 1024 * 1024
@@ -21,14 +22,19 @@ internal object BrowserRtcProtocol {
             .put(bytes, offset, count).array()
     }
 
-    fun messageLimit(sdp: String): Int {
+    fun messageLimit(sdp: String): Int = negotiatedLimit(sdp, MAX_MESSAGE_BYTES)
+
+    /** Control batches have their own cap; the small media-fragment size is not a control limit. */
+    fun controlLimit(sdp: String): Int = negotiatedLimit(sdp, MAX_CONTROL_BYTES)
+
+    private fun negotiatedLimit(sdp: String, applicationLimit: Int): Int {
         val values = Regex("(?m)^a=max-message-size:(\\d+)\\r?$").findAll(sdp).toList()
         require(values.size <= 1) { "ambiguous message size" }
         val remote = values.singleOrNull()?.let {
             requireNotNull(it.groupValues[1].toLongOrNull()) { "invalid remote message size" }
         } ?: 65536L
         require(remote == 0L || remote > HEADER_BYTES) { "remote message size too small" }
-        return if (remote == 0L) MAX_MESSAGE_BYTES else minOf(remote, MAX_MESSAGE_BYTES.toLong()).toInt()
+        return if (remote == 0L) applicationLimit else minOf(remote, applicationLimit.toLong()).toInt()
     }
 }
 

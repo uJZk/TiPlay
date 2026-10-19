@@ -6,6 +6,9 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Base64
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class RawTrafficTest {
     @Test fun fullPayloadSurvivesChunkingDisableAndExportWithoutRedaction() {
@@ -182,6 +185,41 @@ class RawTrafficTest {
             assertEquals(5, nextSession.read())
             assertNotNull(nextSession.endRange())
         } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
+    }
+
+    @Test fun controlStatusReadsCompleteWhileTheCaptureDiskMonitorIsHeld() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-status-lock").toFile()
+        val file = File(directory, "capture.tsv")
+        val workers = Executors.newFixedThreadPool(2)
+        val acquired = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        try {
+            RawTraffic.configure(file, true)
+            RawTraffic.clear()
+            val expectedSession = requireNotNull(RawTraffic.activeSessionId())
+            val field = RawTraffic::class.java.getDeclaredField("lock").apply { isAccessible = true }
+            val diskMonitor = field.get(RawTraffic)
+            val holder = workers.submit {
+                synchronized(diskMonitor) {
+                    acquired.countDown()
+                    release.await()
+                }
+            }
+            assertTrue("Capture disk monitor must be held before reading status", acquired.await(1, TimeUnit.SECONDS))
+            val status = workers.submit<Pair<String?, Map<String, Any?>>> {
+                RawTraffic.activeSessionId() to RawTraffic.integrity()
+            }.get(1, TimeUnit.SECONDS)
+            assertEquals(expectedSession, status.first)
+            assertEquals(true, status.second["enabled"])
+            assertEquals(true, status.second["complete"])
+            assertFalse("Status must finish before the capture monitor is released", holder.isDone)
+        } finally {
+            release.countDown()
+            workers.shutdownNow()
+            workers.awaitTermination(1, TimeUnit.SECONDS)
+            RawTraffic.configure(file, false)
+            directory.deleteRecursively()
+        }
     }
 
 }

@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.web
 
 import com.shilapi.xcertplay.airplay.AirPlayContact
+import com.shilapi.xcertplay.airplay.VideoCodec
 import org.bouncycastle.crypto.agreement.srp.SRP6Client
 import org.bouncycastle.crypto.agreement.srp.SRP6StandardGroups
 import org.bouncycastle.crypto.digests.SHA256Digest
@@ -13,6 +14,8 @@ import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
 import java.math.BigInteger
 import java.net.Socket
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.security.SecureRandom
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executor
@@ -37,6 +40,7 @@ class BrowserRtcSessionTest {
     private val peers = CopyOnWriteArrayList<FakePeer>()
     private val identities = AtomicInteger()
     private val hub = WebVideoHub(Executor { it.run() })
+    private val audioHub = WebAudioHub()
     private val server = BrowserLinkServer(hub, object : BrowserLinkServer.Callbacks {
         override fun code() = currentCode
         override fun status() = BrowserLinkStatus(BrowserLinkStatus.State.STREAMING, touchAvailable = true)
@@ -48,7 +52,7 @@ class BrowserRtcSessionTest {
         override fun onKey(name: String) { keys += name }
         override fun onBrowserStats(stats: Map<String, Any?>) {}
         override fun log(message: String) {}
-    }, "127.0.0.1", 0, nowMillis = { now }, audioHub = WebAudioHub())
+    }, "127.0.0.1", 0, nowMillis = { now }, audioHub = audioHub)
     private var port = 0
 
     private inner class FakePeer(private val receive: (String) -> Unit, private val failure: (String) -> Unit) : BrowserRtcConnection {
@@ -57,11 +61,12 @@ class BrowserRtcSessionTest {
         val videos = CopyOnWriteArrayList<WebVideoRecord>()
         val audio = CopyOnWriteArrayList<ByteArray>()
         var receivedOffer: String? = null
+        @Volatile var allowSend = true
         @Volatile var authenticated = false
         @Volatile var closed = false
         override fun answer(offerSdp: String, onAnswer: (String) -> Unit) { receivedOffer = offerSdp; onAnswer(this@BrowserRtcSessionTest.answer) }
         override fun authenticate() { authenticated = true }
-        override fun sendControl(message: String): Boolean { replies += WebJson.parse(message) as Map<*, *>; return !closed }
+        override fun sendControl(message: String): Boolean { replies += WebJson.parse(message) as Map<*, *>; return allowSend && !closed }
         override fun sendVideo(record: WebVideoRecord): Boolean { videos += record; return !closed }
         override fun sendAudio(record: ByteArray): Boolean { audio += record; return !closed }
         override fun close() { closed = true }
@@ -302,6 +307,81 @@ class BrowserRtcSessionTest {
         repeat(4) { assertEquals(503, Proof().finish().status) }
         server.rtcFactory = BrowserRtcFactory { receive, failure -> FakePeer(receive, failure).also { peers += it } }
         assertEquals(200, Proof().finish().status)
+    }
+
+    @Test fun videoProducerChangeAndEndPreservePeerAudioTimelineAndTouchOwnership() {
+        val avcc = byteArrayOf(1, 0x64, 0x00, 0x28, -1, -31, 0, 4, 0x67, 0x64, 0x00, 0x28, 1, 0, 2, 0x68, -18)
+        val idr = byteArrayOf(0, 0, 0, 1, 0x65, 1, 2, 3)
+        val firstSource = Any(); val secondSource = Any(); val thirdSource = Any(); val audioSource = Any()
+        fun begin(owner: Any) {
+            hub.beginStream(owner, 1182, 920, 60, {}, {})
+            hub.configure(owner, VideoCodec.H264, avcc)
+        }
+        fun configs(peer: FakePeer) = peer.videos.filter { it.kind == WebVideoRecords.KIND_CONFIG }
+        fun frames(peer: FakePeer) = peer.videos.filter { it.kind == WebVideoRecords.KIND_FRAME }
+        fun idleCount(peer: FakePeer) = peer.videos.count { it.kind == WebVideoRecords.KIND_IDLE }
+        begin(firstSource); audioHub.begin(audioSource)
+        val peer = paired(); assertEquals(true, auth(peer)["ok"])
+        eventually("initial source configuration reaches the authenticated peer", { configs(peer).size == 1 })
+        hub.frame(firstSource, idr, 1_000_000_000L, System.nanoTime())
+        eventually("initial source key frame is delivered", { frames(peer).size == 1 })
+        val initialEpoch = frames(peer).last().epoch
+        val firstPcm = byteArrayOf(1, 2, 3, 4)
+        audioHub.publish(audioSource, 0, 48000, 2, firstPcm)
+        eventually("initial independent audio reaches peer", { peer.audio.any { it.size == 32 && it.copyOfRange(28, 32).contentEquals(firstPcm) } })
+        val touch = mapOf("k" to "t", "p" to listOf(listOf(0, 0.4, 0.5, true)))
+        assertEquals(true, peer.rpc("control", mapOf("q" to 1, "e" to listOf(touch)))["ok"])
+        val beforeChange = idleCount(peer)
+
+        begin(secondSource)
+        eventually("source change emits idle and new configuration", { idleCount(peer) > beforeChange && configs(peer).size == 2 })
+        hub.frame(secondSource, idr, 2_000_000_000L, System.nanoTime())
+        eventually("replacement source key frame reaches the same peer", { frames(peer).size == 2 })
+        assertTrue(frames(peer).last().epoch > initialEpoch)
+        val secondPcm = byteArrayOf(5, 6, 7, 8)
+        audioHub.publish(audioSource, 0, 48000, 2, secondPcm)
+        eventually("audio continues through video source change", { peer.audio.any { it.size == 32 && it.copyOfRange(28, 32).contentEquals(secondPcm) } })
+        assertEquals(true, peer.rpc("control", mapOf("q" to 2, "e" to listOf(touch)))["ok"])
+        assertTrue(touches.last().any { it.down })
+        val beforeEnd = idleCount(peer)
+
+        hub.endStream(secondSource)
+        eventually("ending video leaves the same peer idle", { idleCount(peer) > beforeEnd })
+        val thirdPcm = byteArrayOf(9, 10, 11, 12)
+        audioHub.publish(audioSource, 0, 48000, 2, thirdPcm)
+        eventually("audio continues while video has ended", { peer.audio.any { it.size == 32 && it.copyOfRange(28, 32).contentEquals(thirdPcm) } })
+        begin(thirdSource)
+        eventually("video restarts with a fresh configuration on the same peer", { configs(peer).size == 3 })
+        hub.frame(thirdSource, idr, 3_000_000_000L, System.nanoTime())
+        eventually("restarted video key frame is delivered", { frames(peer).size == 3 })
+        assertEquals(true, peer.rpc("control", mapOf("q" to 3, "e" to listOf(touch)))["ok"])
+        assertTrue(touches.last().any { it.down })
+        val pcm = peer.audio.filter { it.size == 32 }
+        assertEquals("video lifecycle never resets the independent audio epoch", 1,
+            pcm.map { ByteBuffer.wrap(it).order(ByteOrder.BIG_ENDIAN).getInt(16) }.toSet().size)
+        val sequences = pcm.map { ByteBuffer.wrap(it).order(ByteOrder.BIG_ENDIAN).getInt(12) }
+        assertEquals(sequences.sorted(), sequences)
+        assertEquals(sequences.size, sequences.toSet().size)
+        assertEquals(1, peers.size); assertSame(peer, peers.single())
+        assertTrue(peer.authenticated); assertFalse(peer.closed)
+        assertFalse("producer boundaries must not end the shared peer", peer.videos.any { it.kind == WebVideoRecords.KIND_END })
+        assertFalse("video producer boundaries do not release browser ownership", session in gone)
+    }
+
+    @Test fun rejectedAuthenticationReplyClosesPeerAndReleasesOwnershipBeforeMediaStarts() {
+        val failed = paired()
+        failed.allowSend = false
+        auth(failed)
+        assertTrue("a rejected auth response must immediately retire its peer", failed.closed)
+        assertTrue("media cannot start when authentication success could not reach the browser", failed.videos.isEmpty())
+        assertTrue(failed.audio.isEmpty())
+        assertTrue("the failed authenticated owner must be released", session in gone)
+        val replacement = paired(other)
+        assertEquals(true, auth(replacement, s = other)["ok"])
+        assertFalse(replacement.closed)
+        assertEquals(true, replacement.rpc("control", mapOf("q" to 1,
+            "e" to listOf(mapOf("k" to "key", "n" to "home"))))["ok"])
+        assertEquals(listOf("home"), keys.toList())
     }
 
     @Test fun stopClosesEveryPendingOrAuthenticatedPeer() {

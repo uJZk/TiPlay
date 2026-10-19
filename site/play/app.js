@@ -221,7 +221,7 @@ document.addEventListener('keydown', () => browserAudio.gesture(), { capture: tr
 const airplayControls = createAirPlayControls($('stage'), event => outbox?.push(event), lang, { fetchPhone: phoneFetch, credentials: () => ({ code: resourceToken ?? '', session }), host: () => link.host });
 const airplayTrust = createAirPlayTrustNotification($('airplay-trust'), event => outbox?.push(event), lang);
 browserAudio.start();
-let movePending = false, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
+let movePending = false, moveGeneration = 0, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
 let statsVisible = false;
 try { statsVisible = localStorage.getItem(STATS_KEY) === '1'; } catch (_) {}
 
@@ -417,7 +417,7 @@ function start() {
   fitRequestedAt = 0;
   $('panel').hidden = true;
   stage.hidden = false;
-  outbox = createControlOutbox({ send: postControl, heldContacts: () => slots.contacts(), onStatus: applyStatus, onError: controlFailed });
+  outbox = createControlOutbox({ send: postControl, maxInFlight: 8, heldContacts: () => slots.contacts(), onStatus: applyStatus, onError: controlFailed });
   reportAppearance();
   heartbeatTimer = setInterval(() => outbox.heartbeat(), 400);
   statsTimer = setInterval(() => {
@@ -711,7 +711,7 @@ Object.defineProperty(window, 'tiplayStats', { configurable: true, get: () => JS
 
 // Touch: one overlay element over the picture, which keeps the aspect of the negotiated CarPlay canvas.
 function cancelMove() {
-  movePending = false;
+  movePending = false; moveGeneration++;
 }
 
 function releaseTouches() {
@@ -737,8 +737,9 @@ function pointerMove(pointerId, clientX, clientY) {
   slots.move(pointerId, point);
   if (movePending) return;
   movePending = true;
-  requestAnimationFrame(() => {
-    if (!movePending) return;
+  const generation = moveGeneration;
+  queueMicrotask(() => {
+    if (!movePending || generation !== moveGeneration) return;
     movePending = false;
     if (slots.size) outbox?.push({ k: 't', p: slots.contacts() }, 'move');
   });
