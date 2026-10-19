@@ -87,6 +87,12 @@ These checks measure browser output-clock estimates and Canvas submission. They
 do not measure acoustic speaker delay, physical panel presentation, vehicle audio
 routes or iPhone negotiation; physical acceptance remains separate.
 
+CarPlay Canvas and audio check independent sender-relative 300 ms ceilings.
+AirPlay main/worker/OffscreenCanvas paths retain their 200 ms video cap and
+−45/+125 ms audio skew window. Worker CarPlay hardware-preference probes are
+reported separately: an unsupported headless configuration is explicitly unavailable,
+without software fallback or a claim of validated CarPlay hardware decoding.
+
 ## Compiled phone API
 
 Use a JDK 17+ (`JAVA` override) and compile the shared classes:
