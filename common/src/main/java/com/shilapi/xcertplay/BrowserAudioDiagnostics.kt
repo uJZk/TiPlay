@@ -10,11 +10,21 @@ internal object BrowserAudioDiagnostics {
         "processorErrors", "recoveries", "recoveryAttempts", "processorFailed", "renderAgeMs", "renderReportAgeMs",
         "renderFrames", "renderNonzero", "renderPeak", "processCalls", "renderTimeMs",
         "pcmPackets", "pcmFrames", "pcmNonzero", "pcmPeak",
+        "clockRatePpm", "clockGeneration", "clockUncertaintyMs", "clockRateConfidence",
+        "deviceClockRatePpm", "deviceClockTargetRatePpm", "deviceClockConfidence", "deviceClockUncertaintyMs",
+        "deviceClockGeneration", "deviceClockReason", "outputState", "outputUnavailableCount", "outputUnavailableReason",
+        "outputTimestampContextMs", "outputTimestampPerformanceMs", "outputTimestampAgeMs", "outputRenderedContextMs", "outputFeedbackDeltaMs",
+        "outputUnavailableCounts.context-suspended", "outputUnavailableCounts.timestamp-backwards",
+        "outputUnavailableCounts.timestamp-stale", "outputUnavailableCounts.timestamp-invalid",
+        "outputUnavailableCounts.missing-latency", "outputUnavailableCounts.latency-unbounded",
+        "outputUnavailableCounts.invalid-feedback", "outputUnavailableCounts.feedback-distance",
     )
     private val streamFields = setOf(
         "epoch", "rate", "channels", "headMs", "tailMs", "playbackMs", "delayMs", "queueBytes", "queuePackets",
         "capacityPackets", "latePackets", "duplicatePackets", "playedPackets", "resetPackets", "invalidPackets",
         "capacityBytes", "lateBytes", "duplicateBytes", "playedBytes", "resetBytes", "invalidBytes", "mode", "semanticType", "anchoring",
+        "state", "reason", "phaseErrorMs", "resampleRatePpm", "deviceRatePpm", "phaseCorrectionPpm", "sourceRatePpm", "sourceRateConfidence",
+        "lastRecoveryReason", "recoveryCounts.clock-step", "recoveryCounts.underrun", "recoveryCounts.device-clock-reset",
     )
     private val decoderFields = setOf("packets", "frames", "nonzero", "peak", "errors")
     private val decoderStreamFields = setOf("packets", "frames", "nonzero", "peak", "backend", "epoch", "rate", "channels", "semanticType")

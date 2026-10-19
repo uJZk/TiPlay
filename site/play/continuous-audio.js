@@ -104,7 +104,7 @@ export class ContinuousAudio {
     return true;
   }
   /** targetMs is the raw Android-media position due at the speaker for this quantum. */
-  render(targetMs, contextMs, clock, frames, output) {
+  render(targetMs, contextMs, clock, frames, output, deviceRate = 1) {
     output.fill(0); this.outputFrames += frames;
     const sourceRate = this.sourceClock.advance(contextMs), clockRate = clock?.rate || 1;
     if (this.backend && clock && clock.generation !== this.clockGeneration && clock.state !== 'stale') this.recover('clock-generation');
@@ -118,7 +118,8 @@ export class ContinuousAudio {
       return 0;
     }
     const correction = Math.max(-PHASE_CORRECTION_LIMIT, Math.min(PHASE_CORRECTION_LIMIT, this.phaseErrorMs / 10000));
-    const nextRatio = this.rate / this.outputRate * sourceRate / clockRate * (1 + correction);
+    this.deviceRate = deviceRate; this.phaseCorrectionPpm = correction * 1e6;
+    const nextRatio = this.rate / this.outputRate * sourceRate / clockRate / deviceRate * (1 + correction);
     this.backend.setRatio(nextRatio, frames);
     const firstRatio = this.slewRatio; let produced = 0, needInput = false;
     for (let call = 0; call < 16 && produced < frames; call++) {
@@ -162,6 +163,8 @@ export class ContinuousAudio {
       anchoring: this.arrivalPlayback ? 'arrival' : 'presentation',
       contextTimeMs, sourceTimeMs: this.rawCursorMs, mediaRate: this.slewRatio * this.outputRate / this.rate / this.sourceClock.rate,
       resampleRatio: this.slewRatio, networkDelayMs: this.networkDelayMs,
+      resampleRatePpm: (this.slewRatio * this.outputRate / this.rate - 1) * 1e6,
+      deviceRatePpm: ((this.deviceRate ?? 1) - 1) * 1e6, phaseCorrectionPpm: this.phaseCorrectionPpm ?? 0,
       filterDelayMs: this.filterDelayMs, filterUncertaintyMs: this.filterUncertaintyMs,
       state: this.state, reason: this.reason, clockGeneration: this.clockGeneration, phaseErrorMs: this.phaseErrorMs,
       lastRecoveryReason: this.lastRecoveryReason, recoveryCounts: { ...this.recoveryCounts },

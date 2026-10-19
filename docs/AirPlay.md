@@ -129,12 +129,14 @@ stream media and rewrite bounded HLS manifests/children/keys. Current-iPhone res
 may redirect directly, with authorized proxy fallback for failed CORS/reachability. Debug mode forces all media through Android, including nested playlists and redirects, and updates the browser directive so active playback reopens on the new route.
 Neither makes an unreachable sender reachable. FCUP serializes exchanges with
 session/peer/URL/request-ID checks; acknowledgement is not resource completion.
-Browser media and caption discovery share one serial resource transport. A read remains
-in flight until its network body finishes or is canceled, rather than merely until its
-headers arrive. Range-capable media uses bounded byte-range units. A source ignoring Range
-retains one sequential reader across units, avoiding repeated downloads of the same prefix.
-Competing seeks/resources retire that reader before opening another body; five seconds of
-inactivity releases it. Startup probes request at most 64 KiB, including through FCUP, so
+Browser media and caption discovery serialize actual network reads. Range-capable media
+uses bounded byte-range units. Sources ignoring Range retain separate sequential readers
+across interleaved audio/video reads, avoiding repeated downloads of either prefix. The
+LRU pool holds at most four readers and 4 MiB of application-retained network chunks;
+these bounds do not measure the browser's internal network buffers. Backward seeks,
+owner cancellation, eviction and five seconds of inactivity retire readers, awaiting
+cancellation before reusing their slots. FCUP exchanges remain serialized. Startup probes
+request at most 64 KiB, including through FCUP, so
 a large video need not fit inside the broker's whole-response limit just to discover its type.
 Track ranking uses master metadata;
 SDR/decoder validation probes candidates one at a time and skips unavailable alternatives.

@@ -265,30 +265,23 @@ try {
   const point = side => ({ x: area.width * (side === 'left' ? .25 : .75), y: area.height * .4 });
   await page.evaluate(() => { actualVideo().currentTime = 12; });
   await page.waitForFunction(() => !actualVideo().seeking);
-  await surface.dblclick({ position: point('left') });
-  await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime - 2) < .03);
+  for (const side of ['left', 'right']) {
+    const position = point(side);
+    await surface.dblclick({ position });
+    await page.waitForTimeout(350);
+    if (!await page.evaluate(() => actualVideo().paused && !actualVideo().seeking && Math.abs(actualVideo().currentTime - 12) < .03))
+      throw new Error(`${side} mouse double-click changed playback`);
+    await page.touchscreen.tap(area.x + position.x, area.y + position.y);
+    await page.touchscreen.tap(area.x + position.x, area.y + position.y);
+    await page.waitForTimeout(350);
+    if (!await page.evaluate(() => actualVideo().paused && !actualVideo().seeking && Math.abs(actualVideo().currentTime - 12) < .03))
+      throw new Error(`${side} touch double-tap changed playback`);
+  }
   await surface.click({ position: point('right') });
   await page.waitForTimeout(300);
-  if (!await page.evaluate(() => actualVideo().paused && Math.abs(actualVideo().currentTime - 2) < .03))
+  if (!await page.evaluate(() => actualVideo().paused && Math.abs(actualVideo().currentTime - 12) < .03))
     throw new Error('Single tap changed playback instead of only showing controls');
-  const right = point('right');
-  await page.touchscreen.tap(area.x + right.x, area.y + right.y);
-  await page.touchscreen.tap(area.x + right.x, area.y + right.y);
-  await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime - 12) < .03);
-  await page.waitForTimeout(850);
-  await page.evaluate(() => { actualVideo().currentTime = 0; });
-  await page.waitForFunction(() => !actualVideo().seeking);
-  await surface.dblclick({ position: point('right') });
-  await surface.dblclick({ position: point('right') });
-  const indicator = page.locator('media-seek-indicator');
-  if (await indicator.getAttribute('data-direction') !== 'forward' || !/^20/.test(await indicator.textContent()))
-    throw new Error('Rapid right-side seeking did not accumulate feedback');
-  await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime - 20) < .03);
-  await surface.dblclick({ position: point('right') });
-  await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime - actualVideo().duration) < .03);
-  await surface.dblclick({ position: point('left') });
-  await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime - (actualVideo().duration - 10)) < .03);
-  console.log(`${mode}: mouse/touch half-screen seeking, single-tap isolation, accumulation and duration clamp passed`);
+  console.log(`${mode}: mouse/touch double-taps do not seek; single taps only toggle controls`);
   const style = await page.locator('.airplay-stop').evaluate(button => {
     const stop = getComputedStyle(button), play = getComputedStyle(document.querySelector('media-play-button'));
     return { padding: stop.padding, border: stop.borderWidth, radius: stop.borderRadius,

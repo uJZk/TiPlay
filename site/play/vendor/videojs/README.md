@@ -13,8 +13,8 @@ and published tarball integrity. npm verifies that integrity during `npm ci`.
 Chinese locale included. There are no runtime CDN dependencies. `LICENSE`,
 `APACHE-2.0.txt`, `THIRD_PARTY_LICENSES.txt` and `player.min.js.LEGAL.txt` retain licenses and notices.
 `videojs-player.js` uses the official default skin's container, backdrop, controls
-and time-slider groups, plus Video.js half-screen double-tap gestures, accumulated
-seek indicators and accessible seek buttons for ±10 seconds. The casting
+and time-slider groups, plus Video.js single-tap controls and accessible seek buttons
+for ±10 seconds. Double-clicking or double-tapping the picture does not seek. The casting
 end action uses the same `media-button` style. `airplay-controls.css` handles
 Canvas placement and narrow layouts; page button styles exclude the player.
 The same build creates the [media toolkit bundle](../mediabunny/README.md).

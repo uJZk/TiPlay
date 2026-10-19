@@ -53,8 +53,6 @@ export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, 
       <button class="media-button airplay-stop" type="button"><svg class="media-button-icon" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><path d="M4.2 2.8 9 7.6l4.8-4.8 1.4 1.4L10.4 9l4.8 4.8-1.4 1.4L9 10.4l-4.8 4.8-1.4-1.4L7.6 9 2.8 4.2z"/></svg></button>
     </media-controls-group></media-controls-content></media-controls>
     <media-gesture type="tap" action="toggleControls"></media-gesture>
-    <media-gesture type="doubletap" action="seekStep" value="-10" region="left"></media-gesture>
-    <media-gesture type="doubletap" action="seekStep" value="10" region="right"></media-gesture>
     <media-status-announcer class="media-status-announcer"></media-status-announcer>
     <div class="video-status-indicators airplay-seek-feedback" aria-hidden="true">
       <media-seek-indicator class="media-seek-indicator"><media-icon family="default" name="chevron" class="media-seek-indicator-icon"></media-icon><media-seek-indicator-value class="media-seek-indicator-value"></media-seek-indicator-value></media-seek-indicator>

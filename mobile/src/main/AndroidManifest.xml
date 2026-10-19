@@ -21,7 +21,12 @@
         </activity>
         <activity android:name="com.shilapi.xcertplay.CarPlayHostActivity"
             android:exported="true"
-            android:theme="@style/Theme.TiPlayNative" tools:replace="android:theme">
+            android:screenOrientation="user"
+            android:theme="@style/Theme.TiPlayNative" tools:replace="android:theme,android:screenOrientation">
+        </activity>
+        <activity android:name="com.shilapi.xcertplay.ImageCropActivity"
+            android:screenOrientation="user"
+            tools:replace="android:screenOrientation">
         </activity>
         <activity android:name="com.shilapi.xcertplay.FirstUseActivity"
             android:exported="true"

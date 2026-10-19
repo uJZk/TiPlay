@@ -45,4 +45,18 @@ class BrowserAudioDiagnosticsTest {
         assertTrue(lines[0].contains("anchoring=arrival")); assertTrue(lines[1].contains("backend=webcodecs"))
         assertTrue(lines.none { it.contains("stream=256") || it.contains("stream=999") })
     }
+
+    @Test fun outputClockEvidenceRetainsPpmAndUnavailableReasonsWithoutAdmittingArbitraryKeys() {
+        val lines = BrowserAudioDiagnostics.lines(mapOf(
+            "deviceClockRatePpm" to -4000.125, "outputUnavailableReason" to "feedback-distance",
+            "outputUnavailableCounts.feedback-distance" to 7, "outputUnavailableCounts.secret" to "hidden",
+            "stream0.resampleRatePpm" to 4016.064, "stream0.phaseCorrectionPpm" to 0.25,
+        ))
+        assertEquals(2, lines.size)
+        assertTrue(lines[0].contains("deviceClockRatePpm=-4000.125"))
+        assertTrue(lines[0].contains("outputUnavailableReason=feedback-distance"))
+        assertTrue(lines[0].contains("outputUnavailableCounts.feedback-distance=7"))
+        assertTrue(lines[1].contains("resampleRatePpm=4016.064"))
+        assertTrue(lines.none { it.contains("secret") || it.contains("hidden") })
+    }
 }

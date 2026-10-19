@@ -8,7 +8,7 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The current source
-is 0.2.20-beta.3 (code 42); the code remains above the published TiPlay 0.2.16. Run
+is 0.2.20-beta.4 (code 43); the code remains above the published TiPlay 0.2.16. Run
 `python3 scripts/build_site.py` after changing it to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of this product version.
 Download pages identify the latest verified stable APK; beta artifacts are linked
@@ -109,12 +109,15 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta release
 
-The current beta is **0.2.20-beta.3** (version code 42). It repairs CarPlay audio
-sample continuity, short-speech startup and concurrent-stream isolation; AirPlay
-URL resource fetching and proxy recovery; screen-loan/session ownership; and
-first-frame presentation proof. It also fixes a settings-backup rapid-restart
-race found during the full Android checks. See [Changelog](../CHANGELOG.md) for
-scope and [Testing](Testing.md) for the regression/device acceptance boundary.
+The current beta is **0.2.20-beta.4** (version code 43), with browser cache and
+diagnostic revision **v62**. It adds independent audio-device clock fitting and
+consistent resampling/output-reference conversion, moves filter calibration off
+the rendering thread, and prepares new audio nodes before connecting output.
+It fixes interleaved AirPlay audio/video repeatedly downloading ignored-Range
+resource prefixes, and isolates preparation, cancellation and connection replacement.
+AirPlay picture double-taps no longer seek; the time slider and ±10-second buttons
+remain. The Android phone host and icon cropper follow system rotation settings.
+See [Changelog](../CHANGELOG.md) for scope and [Testing](Testing.md) for acceptance.
 
 It uses `com.ujzk.tiplay` and the existing signed release workflow. The established
 APK signing certificate SHA-256 is
@@ -124,20 +127,26 @@ hash-verified pinned DiPlay 0.2.18 inputs. The workflow verifies package/version
 runtime assets and signatures, then attaches the signed APK, source ZIP generated
 from the exact build commit and `SHA256SUMS.txt` to the prerelease draft. Verify
 remote attachment digests before publishing the
-[beta release](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.3).
+[beta release](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.4).
 Stable download links remain on 0.2.16.
 
-The implementation passed 2,133 shared, 1,744 common and six home unit tests,
-358 browser tests, required Android lint/debug builds, native AirPlay JNI and
-libsoxr DSP/lifecycle checks, Chromium browser/compiled-phone, media-clock and
-MP4/HLS recovery E2E, the public-source scan and nine release-draft tests.
-Settings-backup regression checks also passed 20,000 real-socket restarts,
-including 10,000 interrupted stops.
+The implementation passed 2,133 shared, 1,745 common and six home unit tests,
+384 browser tests, required Android lint/debug builds, the public-source scan,
+nine release-draft delivery tests, and Chromium browser,
+compiled-phone, isolated media-clock and MP4/HLS controls/recovery E2E. The merged
+phone manifest confirms system-controlled rotation. Ignored-Range regressions
+check actual downloaded bytes and bounded reader retention. Device-rate regressions
+run real DSP and video scheduling together with a 4000 ppm slow output clock.
+Run timing-sensitive browser checks without concurrent builds; a parallel-run
+starvation failure passed unchanged assertions after isolation.
 
-Physical Xiaoyuzhou/music/navigation audio, sustained video smoothness, actual
-iPhone screen-loan approval/return and acoustic/panel timing remain pending in
+Physical Xiaoyuzhou/music/navigation audio, sustained video smoothness, system
+rotation, actual iPhone screen-loan approval/return and acoustic/panel timing remain pending in
 [Testing](Testing.md) and [Todo](Todo.md). Source regressions establish the repaired
 code defects; they do not prove the exact cause of every supplied-log symptom.
+The field log does not distinguish driver/scheduling/hardware causes of slow
+context progress or identify every invalid native output-reference pair. New
+timestamp/rejection diagnostics preserve that evidence for device retesting.
 Debug retains one original input video stream without a browser-forwarding
 payload duplicate. Temporary signing/runtime inputs stay outside Git and are
 removed after verification.

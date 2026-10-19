@@ -17,9 +17,10 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.timelines = new Map(); this.epochs = new Map(); this.delayPlans = initialPlaybackPlans(); this.clockBase = null;
     this.plansByMode = {};
     this.diagnostics = null; this.lastReportTime = -Infinity; this.diagnosticRevision = null;
-    this.runtime = new SoxrRuntime(); this.clock = null; this.contextAnchor = null; this.localTimeOriginMs = 0;
+    this.runtime = new SoxrRuntime({ allowCalibration: false }); this.clock = null; this.contextAnchor = null; this.localTimeOriginMs = 0;
     this.renderedFrames = 0; this.feedbackSequence = 0; this.lastFeedbackMs = -Infinity; this.suspended = false;
     this.nextContextFrame = null; this.outputUncertaintyMs = 0;
+    this.deviceClock = { rate: 1 }; this.arrivalAnchor = null;
     this.retiring = [];
     this.disposed = false;
     this.port.onmessage = ({ data }) => {
@@ -31,7 +32,35 @@ class TiPlayAudio extends AudioWorkletProcessor {
         this.streams.clear(); this.epochs.clear(); this.retiring = []; this.runtime = null; this.disposed = true;
         return;
       }
+      if (data.calibration) {
+        const { rate, outputRate, delayMs } = data.calibration;
+        if (outputRate !== sampleRate) throw new Error('Audio calibration output rate does not match the device.');
+        this.runtime.setCalibration(rate, outputRate, delayMs);
+      }
+      if (data.prepare) {
+        const { id, rate, outputRate } = data.prepare;
+        let backend;
+        try {
+          if (outputRate !== sampleRate) throw new Error('Invalid audio preparation output rate.');
+          this.runtime.filterDelay(rate, outputRate); // Cache only; never measure on this thread.
+          backend = this.runtime.create(rate, outputRate, 2);
+          const input = new Float32Array(4096 * 2), output = new Float32Array(512 * 2);
+          backend.process(input, 4096, output);
+          for (let i = 0; i < 8; i++) backend.process(input, 0, output);
+          this.port.postMessage({ prepared: id });
+        } catch (error) { this.port.postMessage({ prepareError: id, error: error.message || String(error) }); }
+        finally { backend?.dispose(); }
+        return;
+      }
       if ('clock' in data) this.clock = data.clock;
+      if (data.deviceClock && Number.isFinite(data.deviceClock.rate) && data.deviceClock.rate >= 0.98 && data.deviceClock.rate <= 1.02) {
+        // Integrate changes without moving guidance's existing arrival anchor.
+        this.arrivalAnchor = { contextTimeMs: currentTime * 1000, timeMs: this.arrivalTime(currentTime * 1000) };
+        if (this.deviceClock.generation !== undefined && data.deviceClock.generation !== this.deviceClock.generation) {
+          for (const timeline of this.timelines.values()) if (timeline instanceof ContinuousAudio) timeline.recover('device-clock-reset');
+        }
+        this.deviceClock = data.deviceClock;
+      }
       if ('contextAnchor' in data) this.contextAnchor = data.contextAnchor;
       if ('localTimeOriginMs' in data) this.localTimeOriginMs = data.localTimeOriginMs;
       if ('outputUncertaintyMs' in data) this.outputUncertaintyMs = data.outputUncertaintyMs;
@@ -97,7 +126,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
           // Guidance has no lip-sync relationship with the screen. Its sender may
           // supply no lead at all, so a device-delay target can never catch its tail.
           // Anchor the first sample to this render clock while retaining RTP gaps.
-          timeline.arrivalStartMs ??= currentTime * 1000 + SPEECH_START_BUFFER_MS;
+          timeline.arrivalStartMs ??= this.arrivalTime(currentTime * 1000) + SPEECH_START_BUFFER_MS;
           if (Number.isFinite(data.presentationMs)) timeline.arrivalSourceMs ??= data.presentationMs
             - (timeline.lastPacket?.end ?? 0) * 1000 / timeline.rate;
           data.presentationMs = Number.isFinite(data.presentationMs)
@@ -175,23 +204,26 @@ class TiPlayAudio extends AudioWorkletProcessor {
     }
     this.port.postMessage({ diagnosticRevision: this.diagnosticRevision, diagnostics: { ...scalars, ...details, renderTimeMs: currentTime * 1000 } });
   }
+  arrivalTime(contextMs) {
+    return this.arrivalAnchor ? this.arrivalAnchor.timeMs + (contextMs - this.arrivalAnchor.contextTimeMs) / this.deviceClock.rate : contextMs;
+  }
   targetTime(timeline, contextMs) {
     if (this.suspended) return null;
     if (timeline.arrivalPlayback) {
-      const target = contextMs - (timeline.arrivalDelayMs || 0), tail = timeline.queue.at(-1);
+      const renderMs = this.arrivalTime(contextMs), target = renderMs - (timeline.arrivalDelayMs || 0), tail = timeline.queue.at(-1);
       if (!timeline.backend && tail && target >= timeline.sourceAnchorMs + tail.end * 1000 / timeline.rate) {
         // After a delivery pause the source may remain behind the render clock.
         // Re-prime from unplayed samples once, instead of chasing its moving tail.
         const firstFrame = Math.max(timeline.queue[0].first, Math.ceil(timeline.sourceFrame));
         const next = Math.max(timeline.rawCursorMs ?? -Infinity,
           timeline.sourceAnchorMs + firstFrame * 1000 / timeline.rate - timeline.filterDelayMs);
-        timeline.arrivalDelayMs = contextMs - next + SPEECH_START_BUFFER_MS;
+        timeline.arrivalDelayMs = renderMs - next + SPEECH_START_BUFFER_MS;
         return next - SPEECH_START_BUFFER_MS;
       }
       return target;
     }
     if (!this.contextAnchor) return null;
-    const localMs = this.contextAnchor.localTimeMs + contextMs - this.contextAnchor.contextTimeMs;
+    const localMs = this.contextAnchor.localTimeMs + (contextMs - this.contextAnchor.contextTimeMs) / this.deviceClock.rate;
     const plans = this.plansByMode[timeline.mode] ?? this.delayPlans;
     // Buffer adaptation establishes a new queue anchor. Clock drift alone changes ASRC rate.
     const videoTarget = Math.min(videoLimit(timeline.mode), plans.video.to);
@@ -266,7 +298,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
     const continuous = [];
     for (const [type, timeline] of this.timelines) if (timeline instanceof ContinuousAudio) {
       timeline.block ??= new Float32Array(512 * timeline.channels);
-      timeline.render(this.targetTime(timeline, contextMs), contextMs, timeline.arrivalPlayback ? null : this.clock, blockFrames, timeline.block);
+      timeline.render(this.targetTime(timeline, contextMs), contextMs, timeline.arrivalPlayback ? null : this.clock, blockFrames, timeline.block, this.deviceClock.rate);
       continuous.push([type, timeline]);
     }
     for (let i = 0; i < blockFrames; i++) {

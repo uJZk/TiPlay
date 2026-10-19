@@ -103,7 +103,9 @@ function mockBrowser({ failFirstModuleLoad = false } = {}) {
     async close() { this.state = 'closed'; }
     createMediaStreamSource() { const source = { connect(node) { this.connected = node; }, disconnect() { this.connected = null; } }; sources.push(source); return source; }
   };
-  globalThis.AudioWorkletNode = class { constructor() { this.port = { postMessage: value => messages.push(value) }; nodes.push(this); } connect() {} };
+  globalThis.AudioWorkletNode = class { constructor() { this.port = { postMessage: value => {
+    messages.push(value); if (value.prepare) queueMicrotask(() => this.port.onmessage?.({ data: { prepared: value.prepare.id } }));
+  } }; nodes.push(this); } connect() {} };
   return { messages, contexts, sources, nodes, get moduleLoads() { return moduleLoads; }, done() { globalThis.AudioContext = oldContext; globalThis.AudioWorkletNode = oldNode; } };
 }
 

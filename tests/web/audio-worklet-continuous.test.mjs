@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import { constantDelay } from '../../site/play/delay-plan.js';
 import { createAudioReferenceTimeline } from '../../site/play/audio-output-clock.js';
 import { createAirPlayAudioDecoder } from '../../site/play/airplay-audio-decoder.js';
+import { SoxrRuntime } from '../../site/play/streaming-resampler.js';
+const calibration = { rate: 48000, outputRate: 48000, delayMs: new SoxrRuntime().filterDelay(48000, 48000) };
 
 let Processor;
 globalThis.AudioWorkletProcessor = class { constructor() { this.messages = []; this.port = { postMessage: value => this.messages.push(value) }; } };
@@ -16,6 +18,7 @@ function harness() {
   globalThis.currentTime = 0; globalThis.currentFrame = 0;
   const processor = new Processor(), base = 8000000;
   const post = data => processor.port.onmessage({ data });
+  post({ calibration });
   post({ clock: { version: 2, generation: 1, serverOriginMs: base, localOriginMs: 0, rate: 1, state: 'locked' },
     contextAnchor: { contextTimeMs: 0, localTimeMs: 200 }, localTimeOriginMs: 1792159881000,
     outputUncertaintyMs: 1, plans: { audio: constantDelay(60), video: constantDelay(0) } });
@@ -229,5 +232,30 @@ test('guidance re-primes after a lasting delivery-delay step without replaying e
   }
   assert.ok(resumed > 160, 'a permanent delivery offset must not leave guidance permanently priming');
   assert.equal(player.state, 'playing'); assert.ok(player.recoveryCounts.underrun > 0);
+  h.post({ dispose: true });
+});
+
+test('output rate calibration keeps strict media and arrival guidance on independent continuous anchors', () => {
+  const h = harness(), deviceRate = 0.996;
+  h.post({ deviceClock: { rate: deviceRate, generation: 1 }, contextAnchor: { contextTimeMs: 0, localTimeMs: 188 } });
+  let voiceBlocks = 0;
+  for (let quantum = 0; quantum < 12000; quantum++) {
+    const physicalMs = h.frame / 48 / deviceRate;
+    h.feed(0, 'carplay', 1, physicalMs + 400);
+    h.feed(255, 'carplay', 1, physicalMs + 20, 0, 1);
+    const output = h.render();
+    if (quantum > 10 && output[0].some(value => Math.abs(value) > 0.1)) voiceBlocks++;
+  }
+  const media = h.processor.timelines.get(0), voice = h.processor.timelines.get(255);
+  assert.ok(voiceBlocks > 11970);
+  assert.deepEqual(media.recoveryCounts, {}); assert.deepEqual(voice.recoveryCounts, {});
+  assert.ok(Math.abs(media.phaseErrorMs) < 0.1); assert.ok(Math.abs(voice.phaseErrorMs) < 0.1);
+  assert.equal(h.processor.clock.rate, 1);
+  const voiceTime = h.processor.arrivalTime(h.frame / 48), backend = voice.backend;
+  h.post({ deviceClock: { rate: 0.99601, generation: 1 } });
+  assert.ok(Math.abs(h.processor.arrivalTime(h.frame / 48) - voiceTime) < 0.001, 'a fit refinement cannot jump the guidance clock');
+  h.render(); assert.equal(voice.backend, backend);
+  h.post({ deviceClock: { rate: 1, generation: 2 } });
+  assert.equal(media.recoveryCounts['device-clock-reset'], 1, 'a genuine output discontinuity still resets the signal');
   h.post({ dispose: true });
 });

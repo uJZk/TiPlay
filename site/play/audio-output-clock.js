@@ -1,4 +1,5 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
+import { AudioDeviceClock } from './audio-device-clock.js';
 
 export const OUTPUT_REFERENCE_MAX_AGE_MS = 750;
 export const OUTPUT_EXTRAPOLATION_MAX_MS = 1000;
@@ -11,15 +12,24 @@ const MAX_OUTPUT_LATENCY_MS = 1000;
 export function createAudioOutputMapping({ now = () => performance.timeOrigin + performance.now(),
   timeOrigin = () => performance.timeOrigin } = {}) {
   let previousContext = null, previousTimestamp = null, timestampNotBefore = -Infinity;
+  const deviceClock = new AudioDeviceClock();
+  let diagnostics = { outputState: 'startup' };
+  let outputUnavailableCount = 0, outputUnavailableReason = null;
+  const unavailableCounts = {};
+  const rejected = reason => { outputUnavailableCount++; outputUnavailableReason = reason;
+    unavailableCounts[reason] = (unavailableCounts[reason] || 0) + 1; };
+  const unavailable = reason => { diagnostics.outputState = reason; rejected(reason); return null; };
 
   function capture(context) {
     const at = now();
     if (!context || context.state !== 'running' || !Number.isFinite(context.currentTime)) {
+      if (previousTimestamp || deviceClock.points.length) deviceClock.reset('suspended');
       previousTimestamp = null;
       timestampNotBefore = at;
-      return null;
+      return unavailable('context-suspended');
     }
-    if (context !== previousContext) { previousContext = context; previousTimestamp = null; }
+    if (context !== previousContext) { previousContext = context; previousTimestamp = null; deviceClock.reset('context'); }
+    deviceClock.advance(at);
     const rendered = context.currentTime * 1000;
     let timestamp;
     try { timestamp = context.getOutputTimestamp?.(); } catch (_) { /* Older implementations may throw. */ }
@@ -27,6 +37,8 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
       const contextTimeMs = timestamp.contextTime * 1000;
       const performanceTimeMs = timeOrigin() + timestamp.performanceTime;
       const age = at - performanceTimeMs;
+      diagnostics = { outputTimestampContextMs: contextTimeMs, outputTimestampPerformanceMs: performanceTimeMs,
+        outputTimestampAgeMs: age, outputRenderedContextMs: rendered };
       // Zero pairs are the specified startup/unavailable value. A held timestamp
       // cannot remain an output reference after suspend or a stalled device.
       const fresh = timestamp.performanceTime > 0 && contextTimeMs >= 0 && contextTimeMs <= rendered + 10
@@ -34,48 +46,56 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
       const ordered = !previousTimestamp || (contextTimeMs >= previousTimestamp.contextTimeMs
         && performanceTimeMs >= previousTimestamp.performanceTimeMs);
       if (fresh && ordered) {
+        diagnostics.outputState = 'timestamp';
+        deviceClock.observe(contextTimeMs, performanceTimeMs, at);
         previousTimestamp = { contextTimeMs, performanceTimeMs };
         return { ...previousTimestamp, at, outputMethod: 'timestamp', uncertaintyMs: 0,
-          outputLatencyMs: Math.max(0, rendered - contextTimeMs) };
+          deviceRate: deviceClock.rate, outputLatencyMs: Math.max(0, (rendered - contextTimeMs) / deviceClock.rate) };
       }
       if (previousTimestamp) {
-        if (!ordered) previousTimestamp = null;
-        return null;
+        if (!ordered) { previousTimestamp = null; deviceClock.reset('backwards'); }
+        return unavailable(!ordered ? 'timestamp-backwards' : age > OUTPUT_REFERENCE_MAX_AGE_MS ? 'timestamp-stale' : 'timestamp-invalid');
       }
     }
     // These are distinct stages: destination -> host audio subsystem, then host
     // -> device. Missing outputLatency cannot bound the audible time; presenting
     // an active A/V stream then would silently assume a zero device delay.
     const base = context.baseLatency, output = context.outputLatency;
-    if (![base, output].every(value => Number.isFinite(value) && value >= 0)) return null;
+    if (![base, output].every(value => Number.isFinite(value) && value >= 0)) return unavailable('missing-latency');
     const outputLatencyMs = (base + output) * 1000;
-    if (outputLatencyMs > MAX_OUTPUT_LATENCY_MS) return null;
+    if (outputLatencyMs > MAX_OUTPUT_LATENCY_MS) return unavailable('latency-unbounded');
+    diagnostics.outputState = 'latency-estimate';
     const quantumMs = 128000 / (Number.isFinite(context.sampleRate) && context.sampleRate > 0 ? context.sampleRate : 48000);
     return { contextTimeMs: rendered, performanceTimeMs: at + outputLatencyMs, at,
-      outputMethod: 'latency-estimate', uncertaintyMs: quantumMs, outputLatencyMs };
+      outputMethod: 'latency-estimate', uncertaintyMs: quantumMs / deviceClock.rate, outputLatencyMs, deviceRate: deviceClock.rate };
   }
 
   return {
     capture,
+    deviceClock: () => deviceClock.snapshot(),
+    diagnostics: () => ({ ...diagnostics, outputUnavailableCount, outputUnavailableReason, outputUnavailableCounts: { ...unavailableCounts } }),
     reference(feedback, context) {
       if (!feedback || typeof feedback !== 'object') return null;
       const at = now(), unavailable = reason => ({ ...feedback, at, audibleTimeMs: null,
         playoutState: feedback.state, state: reason, outputMethod: null, uncertaintyMs: null });
       if (feedback.state !== 'playing') return unavailable(feedback.state || 'output-unavailable');
       if (![feedback.contextTimeMs, feedback.sourceTimeMs, feedback.mediaRate].every(Number.isFinite)
-        || feedback.mediaRate <= 0) return unavailable('output-unavailable');
+        || feedback.mediaRate <= 0) { rejected('invalid-feedback'); return unavailable('output-unavailable'); }
       const mapping = capture(context);
-      if (!mapping || Math.abs(feedback.contextTimeMs - mapping.contextTimeMs) > OUTPUT_EXTRAPOLATION_MAX_MS) {
+      diagnostics.outputFeedbackDeltaMs = mapping ? (feedback.contextTimeMs - mapping.contextTimeMs) / mapping.deviceRate : null;
+      if (!mapping || Math.abs(feedback.contextTimeMs - mapping.contextTimeMs) / mapping.deviceRate > OUTPUT_EXTRAPOLATION_MAX_MS) {
+        if (mapping) { diagnostics.outputState = 'feedback-distance'; rejected('feedback-distance'); }
         return unavailable('output-unavailable');
       }
       // sourceTimeMs describes the content actually emitted at contextTimeMs;
       // the resampler's filter delay is already reflected in that content time.
-      const renderAgeMs = Math.max(0, context.currentTime * 1000 - feedback.contextTimeMs);
-      return { ...feedback, at: at - renderAgeMs, audibleTimeMs: mapping.performanceTimeMs + feedback.contextTimeMs - mapping.contextTimeMs,
+      const renderAgeMs = Math.max(0, (context.currentTime * 1000 - feedback.contextTimeMs) / mapping.deviceRate);
+      return { ...feedback, at: at - renderAgeMs, audibleTimeMs: mapping.performanceTimeMs + (feedback.contextTimeMs - mapping.contextTimeMs) / mapping.deviceRate,
+        mediaRate: feedback.mediaRate * mapping.deviceRate, deviceRatePpm: (mapping.deviceRate - 1) * 1e6,
         outputMethod: mapping.outputMethod, uncertaintyMs: mapping.uncertaintyMs + Math.max(0, feedback.filterUncertaintyMs || 0),
         outputLatencyMs: mapping.outputLatencyMs };
     },
-    reset() { previousContext = previousTimestamp = null; timestampNotBefore = now(); },
+    reset() { previousContext = previousTimestamp = null; timestampNotBefore = now(); deviceClock.reset('reset'); },
   };
 }
 

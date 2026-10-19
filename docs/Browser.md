@@ -48,12 +48,14 @@ a newly copied link. See [hotspot address setup](Hotspot-address.md) for Tesla p
 restrictions and Root/Shizuku/VPN behavior. Existing Wi-Fi uses the current attachment;
 saved credentials do not prove attachment, create an AP or change the default route.
 
-URL video supports double-tapping the left half to rewind ten seconds and the
-right half to advance ten seconds, following [YouTube's gesture](https://support.google.com/youtube/answer/7509567?co=GENIE.Platform%3DAndroid&hl=en).
-A single tap toggles the controls. Repeated double-taps accumulate the on-picture
-seconds indicator; seeks clamp to the media bounds. Video.js owns gesture recognition,
-feedback and interactive-target filtering, so slider/menu use keeps its own actions.
-Visible ±10-second buttons remain available for keyboard and assistive access.
+The Android phone screens follow the system's rotation preference, including the
+connection host and icon cropper. Disabling automatic rotation in Android locks their orientation.
+
+URL video uses a single tap to toggle the controls; double-clicking or double-tapping
+the picture does not seek. Use the visible ±10-second buttons or the time slider to
+change position. Seeks clamp to the media bounds. Video.js owns tap recognition and
+interactive-target filtering, so slider/menu use keeps its own actions. The buttons
+also support keyboard and assistive access.
 See [Video.js gestures](https://videojs.org/docs/framework/html/reference/components/gesture).
 
 ## Playback and security
@@ -111,6 +113,14 @@ ratio smoothly; confirmed clock steps, device discontinuities and substantial ne
 target changes use separate recovery reasons. Network readiness and clock correction keep
 independent state.
 
+The device/context clock has its own rate relative to the browser performance clock.
+Valid output timestamp pairs provide a bounded, robust fit; Android/browser and source-rate
+estimates retain their separate meanings. Context-to-performance extrapolation, emitted-content
+references and resampling all use the same device-rate conversion. Guidance integrates that
+rate without moving its arrival anchor. Genuine timestamp steps, gaps and suspend/resume
+reset calibration; ordinary rate fitting does not repeatedly restart audio. Effective output
+rate can reflect scheduling as well as an oscillator, so it does not identify a hardware fault.
+
 Actual output references map emitted content through `AudioContext.getOutputTimestamp()`.
 That pair already includes the device pipeline. Feature fallback uses reported base/output
 latencies once, marks its uncertainty and rejects unbounded mappings. Resampler content
@@ -133,6 +143,11 @@ every slow network-delay trend from sender drift. Keep that uncertainty and reco
 boundary visible in diagnostics. Desktop clock/output tests establish software behavior;
 speaker sound, vehicle display latency and sustained iPhone interoperability require
 [physical acceptance](Testing.md#media-clock-and-continuous-audio-acceptance).
+
+Resampler impulse calibration runs outside the audio rendering thread. Playback waits for
+the matching source/output format and a new node's preparation before connecting output;
+queued preparation remains inside the existing audio-memory budget. Preparing a new format
+does not prove every vehicle's real-time rendering budget is met.
 
 Type 103 uses authenticated AAC-LC and bounded relay/browser reservoirs. SETRATE
 starts at an RTP anchor, GETANCHOR reads it, rate zero pauses, and FLUSHBUFFERED

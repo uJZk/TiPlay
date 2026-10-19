@@ -2,7 +2,7 @@
 import { flatStats } from './link.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v61';
+export const PAGE_VERSION = 'v62';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'link.path', 'link.reconnects',

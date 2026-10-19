@@ -6,6 +6,7 @@ import { createAirPlayAudioDecoder } from './airplay-audio-decoder.js';
 import { MAX_AUDIO_AHEAD_BYTES, MAX_DECODED_PACKET_BYTES } from './audio-buffer-policy.js';
 import { pcmStats, measurePcm } from './audio-pcm-stats.js';
 import { createAudioOutputMapping } from './audio-output-clock.js';
+import { createAudioCalibration } from './audio-calibration.js';
 
 /** Playback only. Android owns demand-driven car Bluetooth capture and speech playback. */
 export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {},
@@ -20,6 +21,9 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let diagnosticRevision = 0;
   let processorErrors = 0, recoveries = 0, processorFailed = false, recoveryAttempts = 0, recoveryTimer = null;
   let lastControlAt = -Infinity;
+  let preparingNode = null, preparationSequence = 0, pendingPublish = null, pendingPcmBytes = 0, nodeConnected = false;
+  let nodeInstallation = null;
+  const calibrations = createAudioCalibration();
   const outputClock = createAudioOutputMapping(), playoutReferences = new Map();
   const plansByMode = {};
   const encodedReservations = new Map();
@@ -30,7 +34,10 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     capacity?.(); capacity = null;
   };
   const packetDecoder = createAirPlayAudioDecoder({
-    onPcm: record => publishPcm(record),
+    onPcm: record => { publishPcm(record).catch(cause => {
+      if (disposed) return;
+      stopStream(); audioError = cause.message || String(cause); notify();
+    }); },
     onError: cause => { releaseEncoded(); audioError = cause.message || String(cause); notify(); },
   });
   const now = () => performance.timeOrigin + performance.now();
@@ -43,6 +50,10 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     clockRatePpm: clock?.rate === undefined ? null : (clock.rate - 1) * 1e6,
     clockGeneration: clock?.generation ?? null, clockUncertaintyMs: clock?.uncertaintyMs ?? null,
     clockRateConfidence: clock?.rateConfidence ?? null,
+    deviceClockRatePpm: outputClock.deviceClock().ratePpm, deviceClockTargetRatePpm: outputClock.deviceClock().targetRatePpm,
+    deviceClockConfidence: outputClock.deviceClock().confidence, deviceClockUncertaintyMs: outputClock.deviceClock().uncertaintyMs,
+    deviceClockGeneration: outputClock.deviceClock().generation, deviceClockReason: outputClock.deviceClock().reason,
+    ...outputClock.diagnostics(),
     pcmPackets: pcmMetrics?.packets ?? 0, pcmFrames: pcmMetrics?.frames ?? 0,
     pcmNonzero: pcmMetrics?.nonzero ?? 0, pcmPeak: pcmMetrics?.peak ?? 0,
     ...workletMetrics,
@@ -70,6 +81,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     lastControlAt = at;
     const output = outputClock.capture(context);
     node.port.postMessage({ clock: relativeClock(),
+      deviceClock: outputClock.deviceClock(),
       contextAnchor: output ? { contextTimeMs: output.contextTimeMs, localTimeMs: output.performanceTimeMs - performance.timeOrigin } : null,
       outputLatencyMs: output?.outputLatencyMs ?? null, outputUncertaintyMs: output?.uncertaintyMs ?? null,
       localTimeOriginMs: performance.timeOrigin, suspended: context.state !== 'running',
@@ -90,6 +102,8 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     packetDecoder.debug(next); node?.port.postMessage({ debug: next, diagnosticRevision }); notify();
   }
   function retireNode() {
+    nodeConnected = false;
+    if (preparingNode) { preparingNode.reject(new Error('Audio preparation was cancelled.')); preparingNode = null; }
     if (!node) return;
     node.onprocessorerror = null; node.port.onmessage = null;
     node.port.postMessage({ dispose: true });
@@ -101,20 +115,39 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     if (recoveryAttempts >= 2) { audioError = 'Audio processor failed repeatedly.'; notify(); return; }
     recoveryAttempts++;
     const expected = connection;
-    recoveryTimer = setTimeout(() => {
+    recoveryTimer = setTimeout(async () => {
       recoveryTimer = null;
       if (disposed || connection !== expected || expected.aborted || !enabled) return;
       try {
-        installNode(); recoveries++; processorFailed = false;
+        await installNode();
+        if (disposed || connection !== expected || expected.aborted || !enabled) return;
+        recoveries++; processorFailed = false;
         stream(expected); notify();
-      } catch (_) { retireNode(); audioError = 'Audio processor could not restart.'; recoverProcessor(); notify(); }
+      } catch (_) {
+        if (disposed) return;
+        audioError = 'Audio processor could not restart.'; recoverProcessor(); notify();
+      }
     }, 100);
   }
   function installNode() {
+    if (nodeConnected) return Promise.resolve();
+    if (!nodeInstallation) nodeInstallation = prepareNode().finally(() => { nodeInstallation = null; });
+    return nodeInstallation;
+  }
+  async function prepareNode() {
+    const calibration = await calibrations.prepare(48000, context.sampleRate || 48000);
+    if (disposed || !context) return;
     const installed = new AudioWorkletNode(context, 'tiplay-audio', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
-    node = installed; installed.connect(context.destination);
+    node = installed; nodeConnected = false;
+    const id = ++preparationSequence;
+    let resolve, reject, connected = false;
+    const prepared = new Promise((yes, no) => { resolve = yes; reject = no; });
+    const timeout = setTimeout(() => reject(new Error('Audio processor preparation timed out.')), 10000);
+    preparingNode = { installed, reject };
     installed.port.onmessage = ({ data }) => {
       if (disposed || node !== installed) return;
+      if (data.prepared === id) resolve();
+      if (data.prepareError === id) reject(new Error(data.error || 'Audio processor preparation failed.'));
       if (data.consumed && data.generation === playbackGeneration) {
         queuedBytes = Math.max(0, queuedBytes - data.consumed); capacity?.(); capacity = null;
       }
@@ -128,8 +161,19 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     installed.onprocessorerror = () => {
       if (disposed || node !== installed) return;
       processorErrors++; processorFailed = true; audioError = 'Audio processor failed.';
+      if (!connected) { reject(new Error(audioError)); return; }
       stopStream(); retireNode(); recoverProcessor(); notify();
     };
+    installed.port.postMessage({ calibration });
+    installed.port.postMessage({ prepare: { id, rate: calibration.rate, outputRate: calibration.outputRate } });
+    try {
+      await prepared;
+      if (disposed || node !== installed) return;
+      installed.connect(context.destination); connected = true; nodeConnected = true;
+    } catch (error) {
+      if (node === installed) retireNode();
+      throw error;
+    } finally { clearTimeout(timeout); if (preparingNode?.installed === installed) preparingNode = null; }
     installed.port.postMessage({ debug: debugEnabled, diagnosticRevision });
     lastControlAt = -Infinity; controls(true);
   }
@@ -146,6 +190,8 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     packetDecoder.reset();
     releaseEncoded();
     playbackGeneration++; clockBase = null;
+    if (nodeConnected || pendingPcmBytes) calibrations.cancel();
+    pendingPublish = null; pendingPcmBytes = 0;
     clearTimeout(retryTimer); retryTimer = null;
     request?.abort(); request = null;
     node?.port.postMessage({ reset: true });
@@ -154,11 +200,45 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   }
   function publishPcm(record) {
     if (pcmMetrics) measurePcm(pcmMetrics, record.pcm, record.channels);
-    if (disposed || !node) return;
+    if (disposed || !node) return Promise.resolve();
     if (!record.pcm.byteLength && record.flags & 2) encodedReservations.delete(record.type);
     else if (record.flags & 1) releaseEncoded(record.type);
-    if (context?.state !== 'running') return;
-    if (record.flags & 1 && queuedBytes + record.pcm.byteLength > MAX_AUDIO_AHEAD_BYTES) throw new Error('Decoded buffered audio exceeds its playback memory limit.');
+    if (context?.state !== 'running') return Promise.resolve();
+    if (record.flags & 1 && queuedBytes + record.pcm.byteLength > MAX_AUDIO_AHEAD_BYTES) return Promise.reject(new Error('Decoded buffered audio exceeds its playback memory limit.'));
+    const generation = playbackGeneration, installed = node, bytes = record.pcm.byteLength;
+    const outputRate = context.sampleRate || 48000;
+    const cached = bytes ? calibrations.get(record.rate, outputRate) : null;
+    if (bytes && (!cached || pendingPublish) && queuedBytes + bytes > MAX_AUDIO_AHEAD_BYTES) {
+      return Promise.reject(new Error('Audio format preparation exceeds its playback memory limit.'));
+    }
+    const send = calibration => {
+      if (disposed || generation !== playbackGeneration || node !== installed) return;
+      if (context?.state !== 'running') { queuedBytes = Math.max(0, queuedBytes - bytes); return; }
+      if (calibration) node.port.postMessage({ calibration });
+      sendPcm(record, generation);
+    };
+    queuedBytes += bytes;
+    if ((!bytes || cached) && !pendingPublish) { send(cached); return Promise.resolve(); }
+    if (pendingPcmBytes + bytes > MAX_AUDIO_AHEAD_BYTES) {
+      queuedBytes -= bytes; return Promise.reject(new Error('Audio format preparation exceeds its playback memory limit.'));
+    }
+    pendingPcmBytes += bytes;
+    const task = Promise.resolve(pendingPublish).then(async () => {
+      if (disposed || generation !== playbackGeneration || node !== installed) return;
+      const calibration = bytes ? cached || await calibrations.prepare(record.rate, outputRate) : null;
+      send(calibration);
+    }).catch(error => {
+      if (generation !== playbackGeneration || disposed) return;
+      queuedBytes = Math.max(0, queuedBytes - bytes); throw error;
+    }).finally(() => {
+      if (generation === playbackGeneration) pendingPcmBytes = Math.max(0, pendingPcmBytes - bytes);
+      if (pendingPublish === task) pendingPublish = null;
+    });
+    pendingPublish = task;
+    return task;
+  }
+  function sendPcm(record, generation) {
+    const hasPcm = record.pcm.byteLength > 0;
     if (record.pcm.byteLength) onMode(record.mode);
     // Readiness may use the current clock estimate; queued PCM retains the raw
     // media timestamp. Calibration updates adjust the playout target, never the
@@ -166,7 +246,6 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     const sourceTime = presentationTime(record.presentationMs, clock);
     if (clock?.version !== 2) record.sourceTime = sourceTime;
     record.arrivalLocalTimeMs = performance.now();
-    const hasPcm = record.pcm.byteLength > 0;
     const purpose = record.semanticType ?? record.type;
     const arrivalAnchored = record.mode === 'carplay' && purpose >= 1 && purpose <= 4;
     if (hasPcm) {
@@ -176,14 +255,13 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     clockBase ??= now() - context.currentTime * 1000;
     node.port.postMessage({ plans: delayPlans, plansByMode, clockBase });
     controls();
-    record.generation = playbackGeneration;
-    queuedBytes += record.pcm.byteLength;
+    record.generation = generation;
     node.port.postMessage(record, [record.pcm]);
     if (hasPcm && !arrivalAnchored) onQueued(record.mode);
   }
   async function stream(signal) {
     stopStream();
-    if (!support || !enabled || !node || context.state !== 'running' || !signal || signal.aborted) return;
+    if (!support || !enabled || !node || !nodeConnected || context.state !== 'running' || !signal || signal.aborted) return;
     const abort = request = new AbortController();
     const stop = () => abort.abort();
     signal.addEventListener('abort', stop, { once: true });
@@ -195,6 +273,8 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
         if (abort.signal.aborted) break;
         if (record.kind === 2 && record.type === 5) { route({ revision: record.epoch }); continue; }
         if (record.kind === 6) {
+          if (record.config?.ended !== true) await calibrations.prepare(record.rate, context.sampleRate || 48000);
+          if (abort.signal.aborted) break;
           const configured = await packetDecoder.configure(record);
           if (!abort.signal.aborted && configured) { audioError = null; notify(); }
           continue;
@@ -219,7 +299,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
           await new Promise(resolve => { capacity = resolve; });
         }
         if (abort.signal.aborted) break;
-        publishPcm(record);
+        await publishPcm(record);
       }
     } catch (failure) {
       if (!abort.signal.aborted) { audioError = String(failure.message); notify(); }
@@ -228,6 +308,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       if (request === abort) {
         packetDecoder.reset();
         releaseEncoded();
+        playbackGeneration++; pendingPublish = null; pendingPcmBytes = 0; calibrations.cancel();
         request = null; node?.port.postMessage({ reset: true }); queuedBytes = 0;
         invalidateOutput('output-unavailable');
         if (!abort.signal.aborted && connection === signal && enabled) retryTimer = setTimeout(() => stream(signal), 1000);
@@ -253,13 +334,14 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
         };
       }
       const resumed = context.resume();
-      ready ??= context.audioWorklet.addModule(new URL('audio-worklet.js', import.meta.url)).then(() => {
+      ready ??= context.audioWorklet.addModule(new URL('audio-worklet.js', import.meta.url)).then(async () => {
         if (disposed) return;
-        installNode();
+        await installNode();
       }).catch(error => { ready = null; throw error; });
       // Load the worklet even while autoplay waits for the first gesture.
-      Promise.all([ready, resumed]).then(() => { if (!disposed) {
-        if (!node) installNode();
+      Promise.all([ready, resumed]).then(async () => { if (!disposed) {
+        if (!node || !nodeConnected) await installNode();
+        if (disposed) return;
         processorFailed = false; audioError = null; stream(connection); notify();
       } }).catch(failure => { if (!disposed) { audioError = failure.message; notify(); } });
       await ready;
@@ -276,14 +358,16 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       node?.port.postMessage({ plans: delayPlans, plansByMode });
       controls(true);
     },
-    reset() { packetDecoder.reset(); releaseEncoded(); playbackGeneration++; clockBase = null; queuedBytes = 0; node?.port.postMessage({ reset: true }); capacity?.(); capacity = null; invalidateOutput('reset', true); },
+    reset() { packetDecoder.reset(); releaseEncoded(); playbackGeneration++; clockBase = null; queuedBytes = 0;
+      if (pendingPcmBytes) calibrations.cancel();
+      pendingPublish = null; pendingPcmBytes = 0; node?.port.postMessage({ reset: true }); capacity?.(); capacity = null; invalidateOutput('reset', true); },
     start() { activate(); },
     gesture() { if (!disposed && (!node || context?.state !== 'running' || processorFailed)) { recoveryAttempts = 0; activate(); } },
     attach(signal, hello) {
       this.stop(); voiceRevision = null; connection = signal; support = hello.audio === true;
       recoveryAttempts = 0;
       signal.addEventListener('abort', () => { if (connection === signal) this.stop(); }, { once: true });
-      if (!node) activate(); else stream(signal);
+      if (!node || !nodeConnected) activate(); else stream(signal);
       notify();
     },
     status(status) {
@@ -299,6 +383,6 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       notify();
     },
     stop() { clearTimeout(recoveryTimer); recoveryTimer = null; connection = null; stopStream(true, 'stopped'); voiceError = null; voiceState = 'idle'; notify(); },
-    dispose() { disposed = true; this.stop(); retireNode(); packetDecoder.dispose(); if (context) context.onstatechange = null; context?.close().catch(() => {}); context = null; ready = null; },
+    dispose() { disposed = true; this.stop(); retireNode(); packetDecoder.dispose(); calibrations.dispose(); if (context) context.onstatechange = null; context?.close().catch(() => {}); context = null; ready = null; },
   };
 }

@@ -259,3 +259,24 @@ test('measured AirPlay presentation anchors still use their acquired source rate
   }
   h.player.clear();
 });
+
+test('real DSP compensates a slow output clock without recurring hard recovery or signal holes', () => {
+  const h = harness({ channels: 2, buffered: true }), deviceRate = 0.996, quantumMs = 128000 / 48000;
+  let smallest = Infinity, maximumPhase = 0;
+  for (let quantum = 0; quantum < 90000 / quantumMs; quantum++) {
+    const contextMs = quantum * quantumMs, physicalMs = contextMs / deviceRate;
+    if (quantum % 7 === 0) h.feed(Math.ceil((physicalMs + 2000) * 48), physicalMs);
+    h.player.render(h.sourceBase + physicalMs, contextMs, h.clock, 128, h.block, deviceRate);
+    if (quantum > 10) {
+      smallest = Math.min(smallest, h.block.reduce((sum, value) => sum + value * value, 0));
+      maximumPhase = Math.max(maximumPhase, Math.abs(h.player.phaseErrorMs));
+      assert.equal(h.player.state, 'playing');
+    }
+  }
+  assert.equal(h.clock.rate, 1, 'Android/browser clock retains its original meaning');
+  assert.deepEqual(h.player.recoveryCounts, {});
+  assert.ok(maximumPhase < 0.1, `maximum phase ${maximumPhase}`);
+  assert.ok(smallest > 8, `minimum block energy ${smallest}`);
+  assert.ok(h.player.reference(0).resampleRatePpm > 3900, 'ppm telemetry preserves ratios that round to 1.00');
+  h.player.clear();
+});

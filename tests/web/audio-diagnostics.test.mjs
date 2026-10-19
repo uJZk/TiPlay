@@ -157,7 +157,9 @@ function browserHarness() {
     async close() { this.state = 'closed'; }
   };
   globalThis.AudioWorkletNode = class {
-    constructor() { this.messages = []; this.port = { postMessage: value => this.messages.push(value) }; nodes.push(this); }
+    constructor() { this.messages = []; this.port = { postMessage: value => {
+      this.messages.push(value); if (value.prepare) queueMicrotask(() => this.port.onmessage?.({ data: { prepared: value.prepare.id } }));
+    } }; nodes.push(this); }
     connect() { this.connected = true; }
     disconnect() { this.connected = false; }
   };

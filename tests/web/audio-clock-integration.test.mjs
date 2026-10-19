@@ -101,7 +101,10 @@ async function harness({ devicePpm = 90, outputDelayMs = 80 } = {}) {
     serverOriginMs: sourceOrigin, localOriginMs: epoch + 10000,
     rate, offset: epoch + 10000 - sourceOrigin, at: epoch + localMs, rtt: 2,
     state: 'tracking', uncertaintyMs: 1, offsetConfidence: 0.9, rateConfidence: 0.9 });
-  await audio.activate(); await settle();
+  let activating = true;
+  const activation = audio.activate().finally(() => { activating = false; });
+  for (let turn = 0; activating; turn++) { assert.ok(turn < 100, 'worklet preparation must settle'); await settle(); }
+  await activation; await settle();
   audio.clock(calibration());
   audio.attach(new AbortController().signal, { audio: true }); await settle();
   async function feed(untilFrame, { epoch: streamEpoch = 7, restart = false } = {}) {

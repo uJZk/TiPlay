@@ -5,31 +5,41 @@ const INPUT_FRAMES = 4096, OUTPUT_FRAMES = 512;
 
 /** A replaceable, self-hosted pure JavaScript libsoxr runtime; allocation occurs when a stream is created. */
 export class SoxrRuntime {
-  constructor() {
+  constructor({ allowCalibration = true } = {}) {
     this.exports = createSoxr().exports;
     // The generated runtime has a fixed heap; reuse its view on every render quantum.
     this.heap = new Float32Array(this.exports.memory.buffer);
     this.calibrations = new Map();
+    this.allowCalibration = allowCalibration;
   }
   create(rate, outputRate, channels) { return new StreamingResampler(this, rate, outputRate, channels); }
+  setCalibration(rate, outputRate, delayMs) {
+    if (!Number.isInteger(rate) || rate < 8000 || rate > 96000 || !Number.isInteger(outputRate)
+      || outputRate < 8000 || outputRate > 192000 || !Number.isFinite(delayMs) || Math.abs(delayMs) > 100) throw new Error('Invalid audio resampler calibration.');
+    const key = `${rate}:${outputRate}`;
+    this.calibrations.delete(key); this.calibrations.set(key, delayMs);
+    while (this.calibrations.size > 16) this.calibrations.delete(this.calibrations.keys().next().value);
+  }
   /** vr_delay() is an upstream TODO. Measure this engine's impulse energy centroid instead. */
   filterDelay(rate, outputRate) {
     const key = `${rate}:${outputRate}`;
     if (this.calibrations.has(key)) return this.calibrations.get(key);
+    if (!this.allowCalibration) throw new Error('Audio resampler format was not prepared.');
     const probe = this.create(rate, outputRate, 1), input = new Float32Array(4096), output = new Float32Array(512);
     input[256] = 1;
     let consumed = 0, emitted = 0, energy = 0, moment = 0;
-    for (let call = 0; call < 100; call++) {
-      const result = probe.process(input.subarray(consumed), input.length - consumed, output);
-      consumed += result.consumed;
-      for (let i = 0; i < result.produced; i++) { const weight = output[i] ** 2; energy += weight; moment += (emitted + i) * weight; }
-      emitted += result.produced;
-      if (!result.produced && !result.consumed) break;
-    }
-    probe.dispose();
+    try {
+      for (let call = 0; call < 100; call++) {
+        const result = probe.process(input.subarray(consumed), input.length - consumed, output);
+        consumed += result.consumed;
+        for (let i = 0; i < result.produced; i++) { const weight = output[i] ** 2; energy += weight; moment += (emitted + i) * weight; }
+        emitted += result.produced;
+        if (!result.produced && !result.consumed) break;
+      }
+    } finally { probe.dispose(); }
     if (!(energy > 0)) throw new Error('Audio resampler calibration failed.');
     const delay = (moment / energy - 256 * outputRate / rate) * 1000 / outputRate;
-    this.calibrations.set(key, delay); return delay;
+    this.setCalibration(rate, outputRate, delay); return delay;
   }
 }
 

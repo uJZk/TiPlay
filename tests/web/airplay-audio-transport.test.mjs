@@ -19,7 +19,7 @@ async function until(check){for(let turn=0;turn<1000;turn++){if(check())return;a
 function browser(t,{supported=false}={}){
  const original={AudioContext:globalThis.AudioContext,AudioWorkletNode:globalThis.AudioWorkletNode,AudioDecoder:globalThis.AudioDecoder,EncodedAudioChunk:globalThis.EncodedAudioChunk},messages=[],decoders=[];
  globalThis.AudioContext=class{constructor(){this.state='suspended';this.currentTime=0;this.audioWorklet={addModule:async()=>{}};this.destination={};}async resume(){this.state='running';}async close(){this.state='closed';}};
- globalThis.AudioWorkletNode=class{constructor(){this.port={postMessage:message=>messages.push(message)};}connect(){}};
+ globalThis.AudioWorkletNode=class{constructor(){this.port={postMessage:message=>{messages.push(message);if(message.prepare)queueMicrotask(()=>this.port.onmessage?.({data:{prepared:message.prepare.id}}));}};}connect(){}};
  globalThis.AudioDecoder=class{static async isConfigSupported(config){return{supported,config};}constructor(callbacks){this.callbacks=callbacks;this.state='unconfigured';this.decodeQueueSize=0;this.chunks=[];decoders.push(this);}configure(config){this.config=config;this.state='configured';}decode(chunk){this.chunks.push(chunk);}close(){this.state='closed';}};
  globalThis.EncodedAudioChunk=class{constructor(config){Object.assign(this,config);}};
  t.after(()=>Object.assign(globalThis,original));return{messages,decoders};

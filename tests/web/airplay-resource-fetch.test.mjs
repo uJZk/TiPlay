@@ -8,7 +8,7 @@ import { Input, UrlSource, ALL_FORMATS, EncodedPacketSink } from '../../site/pla
 const origin = 'https://fixture.test';
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 function fixture(resources, { ignoreRange = false, unknownLength = false, unknownPartialTotal = false, chunkBytes = 1024, delay = 0 } = {}) {
-  const state = { active: 0, peak: 0, requests: [] };
+  const state = { active: 0, peak: 0, reading: 0, peakReads: 0, requests: [] };
   const fetcher = async (url, init) => {
     const parsed = new URL(String(url)); assert.equal(parsed.origin, origin);
     const range = new Headers(init.headers).get('Range');
@@ -37,11 +37,14 @@ function fixture(resources, { ignoreRange = false, unknownLength = false, unknow
     const body = new ReadableStream({
       start(stream) { streamController = stream; init.signal.addEventListener('abort', abort, { once: true }); },
       async pull(stream) {
-        if (delay) await wait(delay);
-        if (finished) return;
-        if (position >= bodyBytes.length) { finish('eof'); stream.close(); return; }
-        const next = bodyBytes.subarray(position, position + chunkBytes); position += next.length; request.bytes += next.length;
-        stream.enqueue(next);
+        state.reading++; state.peakReads = Math.max(state.peakReads, state.reading);
+        try {
+          if (delay) await wait(delay);
+          if (finished) return;
+          if (position >= bodyBytes.length) { finish('eof'); stream.close(); return; }
+          const next = bodyBytes.subarray(position, position + chunkBytes); position += next.length; request.bytes += next.length;
+          stream.enqueue(next);
+        } finally { state.reading--; }
       },
       cancel() { finish('cancel'); },
     }, { highWaterMark: 0 });
@@ -166,7 +169,121 @@ test('a large source ignoring Range is consumed once with bounded units instead 
   } finally { serial.dispose(); }
 });
 
-test('a competing seek or resource retires an idle sequential body before opening the next body', async () => {
+test('interleaved unknown-length audio and video consume each ignored-Range body once, including exact-unit EOF', async () => {
+  const video = Buffer.from(Array.from({ length: 8192 }, (_, i) => i % 251)), audio = Buffer.alloc(8192, 73);
+  const { fetcher, state } = fixture({ '/video': video, '/audio': audio },
+    { ignoreRange: true, unknownLength: true, chunkBytes: 128, delay: 1 });
+  const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024 });
+  try {
+    const readers = await Promise.all(['/video', '/audio'].map(async path =>
+      (await serial(origin + path, { headers: { Range: 'bytes=0-' } })).body.getReader()));
+    const output = [[], []];
+    for (let n = 0; n < 9; n++) {
+      const results = await Promise.all(readers.map(reader => reader.read()));
+      results.forEach((result, index) => { if (!result.done) output[index].push(result.value); });
+    }
+    assert.deepEqual(Buffer.concat(output[0]), video); assert.deepEqual(Buffer.concat(output[1]), audio);
+    assert.equal(state.requests.length, 2, 'Switching tracks must not reopen a progressively larger prefix');
+    assert.equal(state.requests.reduce((bytes, request) => bytes + request.bytes, 0), video.length + audio.length);
+    assert.equal(state.peak, 2); assert.equal(state.peakReads, 1); assert.equal(state.active, 0);
+  } finally { serial.dispose(); }
+});
+
+test('real split CMAF demux and caption observers share chunked 200 sources without prefix downloads', async () => {
+  const directory = new URL('./fixtures/hls-cmaf/', import.meta.url);
+  const playlist = await readFile(new URL('index.m3u8', directory), 'utf8');
+  const init = await readFile(new URL('init.mp4', directory));
+  const padding = Buffer.alloc(16384); padding.writeUInt32BE(padding.length); padding.write('free', 4);
+  const bytes = Buffer.concat([await readFile(new URL('index0.m4s', directory)), padding]);
+  const { fetcher, state } = fixture({
+    '/root.m3u8': '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="A",DEFAULT=YES,URI="audio.m3u8"\n#EXT-X-STREAM-INF:BANDWIDTH=100000,RESOLUTION=32x18,CODECS="avc1.64000a,mp4a.40.2",AUDIO="a"\nvideo.m3u8\n',
+    '/video.m3u8': playlist.replaceAll('init.mp4', 'video-init').replaceAll('index0.m4s', 'video-media'),
+    '/audio.m3u8': playlist.replaceAll('init.mp4', 'audio-init').replaceAll('index0.m4s', 'audio-media'),
+    '/video-init': init, '/audio-init': init, '/video-media': bytes, '/audio-media': bytes,
+  }, { ignoreRange: true, unknownLength: true, chunkBytes: 512 });
+  const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024 }), observations = [];
+  const input = new Input({ source: new UrlSource(`${origin}/root.m3u8`, {
+    parallelism: 1, getRetryDelay: () => null,
+    fetchFn: async (...args) => {
+      const response = await serial(...args), observation = response.clone().arrayBuffer();
+      void observation.catch(() => {}); observations.push(observation); return response;
+    },
+  }), formats: ALL_FORMATS });
+  try {
+    const video = await input.getPrimaryVideoTrack(), audio = await video.getPrimaryPairableAudioTrack();
+    const packets = await Promise.all([video, audio].map(track => new EncodedPacketSink(track).getPacket(0.4)));
+    assert.ok(packets.every(packet => packet.data.length > 0));
+    await Promise.all(observations);
+    for (const path of ['/video-media', '/audio-media']) {
+      const requests = state.requests.filter(request => request.path === path);
+      assert.equal(requests.length, 1); assert.equal(requests[0].bytes, bytes.length);
+    }
+    assert.ok(state.peak <= 4); assert.equal(state.peakReads, 1); assert.equal(state.active, 0);
+  } finally { input.dispose(); serial.dispose(); }
+});
+
+test('reader count is bounded and an evicted consumer reopens at its logical position', async () => {
+  const bytes = Buffer.from(Array.from({ length: 8192 }, (_, i) => i % 251));
+  const { fetcher, state } = fixture({ '/one': bytes, '/two': bytes, '/three': bytes },
+    { ignoreRange: true, unknownLength: true, chunkBytes: 128 });
+  const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024, maxRetainedReaders: 2 });
+  try {
+    const one = (await serial(`${origin}/one`)).body.getReader();
+    const two = (await serial(`${origin}/two`)).body.getReader();
+    await one.read();
+    assert.deepEqual(Buffer.from((await one.read()).value), bytes.subarray(1024, 2048));
+    const three = await serial(`${origin}/three`);
+    assert.equal(state.requests.find(request => request.path === '/two').reason, 'abort', 'Least recently used reader is retired');
+    assert.equal(state.requests.find(request => request.path === '/one').reason, undefined);
+    await two.read();
+    assert.deepEqual(Buffer.from((await two.read()).value), bytes.subarray(1024, 2048));
+    assert.equal(state.requests.filter(request => request.path === '/two').length, 2);
+    assert.equal(state.peak, 2); assert.equal(state.peakReads, 1);
+    await three.body.cancel(); await one.cancel(); await two.cancel();
+  } finally { serial.dispose(); }
+  assert.equal(state.active, 0);
+});
+
+test('pending-byte pressure retires old readers and oversized chunks fail without poisoning later requests', async () => {
+  const { fetcher, state } = fixture({ '/one': Buffer.alloc(4096), '/two': Buffer.alloc(4096), '/small': Buffer.alloc(32) },
+    { ignoreRange: true, unknownLength: true, chunkBytes: 512 });
+  const serial = createSerialMediaFetch(fetcher, { unitBytes: 128, maxRetainedBytes: 768 });
+  try {
+    await serial(`${origin}/one`); await serial(`${origin}/two`);
+    assert.equal(state.requests[0].reason, 'abort', 'Two 512-byte backing chunks cannot remain inside a 768-byte budget');
+    assert.equal(state.active, 1);
+  } finally { serial.dispose(); }
+  assert.equal(state.active, 0);
+
+  const limited = createSerialMediaFetch(fetcher, { unitBytes: 128, maxRetainedBytes: 256 });
+  try {
+    await assert.rejects(limited(`${origin}/one`), /retained memory limit/);
+    assert.equal(state.active, 0);
+    assert.equal((await (await limited(`${origin}/small`)).arrayBuffer()).byteLength, 32);
+  } finally { limited.dispose(); }
+  assert.equal(state.active, 0);
+});
+
+test('canceling one retained consumer leaves another track readable and dispose closes every owner', async () => {
+  const bytes = Buffer.alloc(8192, 42);
+  const { fetcher, state } = fixture({ '/video': bytes, '/audio': bytes }, { ignoreRange: true, unknownLength: true, chunkBytes: 128 });
+  const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024 });
+  const abort = new AbortController();
+  try {
+    const video = await serial(`${origin}/video`, { signal: abort.signal });
+    const audio = await serial(`${origin}/audio`);
+    abort.abort();
+    await assert.rejects(video.arrayBuffer(), { name: 'AbortError' });
+    assert.equal(state.active, 1);
+    assert.deepEqual(Buffer.from(await audio.arrayBuffer()), bytes);
+    assert.equal(state.requests.filter(request => request.path === '/audio').length, 1);
+    await serial(`${origin}/video`); await serial(`${origin}/audio`);
+    assert.equal(state.active, 2);
+  } finally { serial.dispose(); }
+  assert.equal(state.active, 0);
+});
+
+test('a competing resource retains a sequential body while a backward seek reopens it at the correct byte', async () => {
   const bytes = Buffer.from(Array.from({ length: 8192 }, (_, i) => i % 251));
   const { fetcher, state } = fixture({ '/movie': bytes, '/map': Buffer.alloc(32, 7) }, { ignoreRange: true, chunkBytes: 257 });
   const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024 });
@@ -177,23 +294,25 @@ test('a competing seek or resource retires an idle sequential body before openin
     assert.equal(state.active, 1, 'The sequential reader is retained between units');
     assert.equal((await (await serial(`${origin}/map`)).arrayBuffer()).byteLength, 32);
     assert.deepEqual(Buffer.from((await reader.read()).value), bytes.subarray(1024, 2048));
+    assert.equal(state.requests.filter(request => request.path === '/movie').length, 1);
     const footer = await serial(`${origin}/movie`, { headers: { Range: 'bytes=8000-8191' } });
     assert.deepEqual(Buffer.from(await footer.arrayBuffer()), bytes.subarray(8000));
     const backward = await serial(`${origin}/movie`, { headers: { Range: 'bytes=10-29' } });
     assert.deepEqual(Buffer.from(await backward.arrayBuffer()), bytes.subarray(10, 30));
     await reader.cancel();
-    assert.equal(state.peak, 1);
+    assert.equal(state.peak, 2); assert.equal(state.peakReads, 1);
   } finally { serial.dispose(); }
   assert.equal(state.active, 0);
 });
 
-test('sequential network deadlines restart per unit and cancellation releases the retained body', async () => {
-  const { fetcher, state } = fixture({ '/movie': Buffer.alloc(8192, 42) }, { ignoreRange: true, chunkBytes: 257, delay: 1 });
+test('sequential network deadlines restart per unit and cancellation releases the retained body', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { fetcher, state } = fixture({ '/movie': Buffer.alloc(8192, 42) }, { ignoreRange: true, chunkBytes: 257 });
   const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024, deadline: 30 });
   try {
     const response = await serial(`${origin}/movie`, { headers: { Range: 'bytes=0-' } });
     const reader = response.body.getReader();
-    for (let i = 0; i < 4; i++) { assert.equal((await reader.read()).value.length, 1024); await wait(15); }
+    for (let i = 0; i < 4; i++) { assert.equal((await reader.read()).value.length, 1024); t.mock.timers.tick(15); }
     await reader.cancel();
     assert.equal(state.active, 0); assert.equal(state.peak, 1);
   } finally { serial.dispose(); }
@@ -202,7 +321,7 @@ test('sequential network deadlines restart per unit and cancellation releases th
 test('retiring an initial whole 200 does not disable Range on a source which supports it', async () => {
   const bytes = Buffer.from(Array.from({ length: 8192 }, (_, i) => i % 251));
   const { fetcher, state } = fixture({ '/movie': bytes, '/map': Buffer.alloc(32) }, { chunkBytes: 257 });
-  const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024 });
+  const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024, maxRetainedReaders: 1 });
   try {
     const reader = (await serial(`${origin}/movie`)).body.getReader();
     assert.deepEqual(Buffer.from((await reader.read()).value), bytes.subarray(0, 1024));
@@ -215,7 +334,7 @@ test('retiring an initial whole 200 does not disable Range on a source which sup
   } finally { serial.dispose(); }
 });
 
-test('a competing network request waits for asynchronous sequential-reader cancellation', async () => {
+test('reader-pool eviction waits for asynchronous cancellation before reusing its slot', async () => {
   const requests = []; let releaseCancellation;
   const canceled = new Promise(resolve => { releaseCancellation = resolve; });
   const serial = createSerialMediaFetch(async url => {
@@ -224,7 +343,7 @@ test('a competing network request waits for asynchronous sequential-reader cance
       pull(stream) { stream.enqueue(new Uint8Array(1024).fill(42)); },
       cancel() { return String(url).endsWith('/movie') ? canceled : undefined; },
     }), { headers: { 'Content-Length': '8192' } });
-  }, { unitBytes: 1024 });
+  }, { unitBytes: 1024, maxRetainedReaders: 1 });
   try {
     await serial(`${origin}/movie`);
     const next = serial(`${origin}/map`);
@@ -237,12 +356,13 @@ test('a competing network request waits for asynchronous sequential-reader cance
   } finally { releaseCancellation(); serial.dispose(); }
 });
 
-test('abandoned sequential bodies expire while idle and dispose releases an unread response', async t => {
+test('all abandoned sequential readers expire while idle and dispose releases an unread response', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { fetcher, state } = fixture({ '/movie': Buffer.alloc(8192, 42) }, { ignoreRange: true });
+  const { fetcher, state } = fixture({ '/movie': Buffer.alloc(8192, 42), '/audio': Buffer.alloc(8192, 73) }, { ignoreRange: true });
   const serial = createSerialMediaFetch(fetcher, { unitBytes: 1024 });
   const response = await serial(`${origin}/movie`);
-  assert.equal(state.active, 1);
+  await serial(`${origin}/audio`);
+  assert.equal(state.active, 2);
   t.mock.timers.tick(5000);
   assert.equal(state.active, 0);
   const reader = response.body.getReader();

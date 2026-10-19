@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 const UNIT_BYTES = 256 * 1024;
 const PLAYLIST_BYTES = 2 * 1024 * 1024;
+const RETAINED_READERS = 4;
+const RETAINED_BYTES = 4 * 1024 * 1024;
 const abortError = () => new DOMException('Media resource canceled.', 'AbortError');
 const check = signal => { if (signal.aborted) throw signal.reason || abortError(); };
 const length = value => /^(0|[1-9][0-9]*)$/.test(value || '') && Number.isSafeInteger(Number(value)) ? Number(value) : null;
@@ -28,18 +30,22 @@ function responseLike(response, bytes, { status = response.status, headers = new
 }
 
 /**
- * One network body at a time across a player's engine and captions. Responses exposed
- * to the demuxer are virtual streams: each pull obtains a finite network unit. A source
- * ignoring Range keeps one sequential reader between pulls; a competing request first
- * retires that reader, so an MP4 footer/seek cannot wait behind its own unfinished body.
- * Only one unit per consumer is buffered, never the file.
+ * Network reads are serialized across a player's engine and captions. Responses exposed
+ * to the demuxer are virtual streams: each pull obtains a finite network unit. A small,
+ * byte-bounded reader pool lets interleaved audio/video retain their own sequential body
+ * when Range is ignored. Seeking backwards, eviction and cancellation retire that body.
+ * Only one unit per consumer and bounded pending network chunks are buffered, never the file.
  */
 export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline = 15000,
-  unitBytes = UNIT_BYTES, playlistBytes = PLAYLIST_BYTES, busyRetries = 1 } = {}) {
+  unitBytes = UNIT_BYTES, playlistBytes = PLAYLIST_BYTES, busyRetries = 1,
+  maxRetainedReaders = RETAINED_READERS, maxRetainedBytes = RETAINED_BYTES } = {}) {
   if (!Number.isSafeInteger(unitBytes) || unitBytes < 1 || !Number.isSafeInteger(playlistBytes) || playlistBytes < unitBytes ||
-      !Number.isFinite(deadline) || deadline <= 0 || !Number.isInteger(busyRetries) || busyRetries < 0 || busyRetries > 2)
+      !Number.isFinite(deadline) || deadline <= 0 || !Number.isInteger(busyRetries) || busyRetries < 0 || busyRetries > 2 ||
+      !Number.isSafeInteger(maxRetainedReaders) || maxRetainedReaders < 1 || maxRetainedReaders > 4 ||
+      !Number.isSafeInteger(maxRetainedBytes) || maxRetainedBytes < 1 || maxRetainedBytes > RETAINED_BYTES)
     throw new TypeError('Invalid media resource limits.');
-  let tail = Promise.resolve(), retirement = Promise.resolve(), disposed = false, queued = 0, sequential = null;
+  let tail = Promise.resolve(), retirement = Promise.resolve(), disposed = false, queued = 0;
+  const sequential = new Map();
   const controllers = new Set(), playlists = new Set();
   const remember = url => {
     if (!url) return;
@@ -71,22 +77,42 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
     return JSON.stringify([url instanceof Request ? url.url : String(url), [...headers],
       init.credentials, init.mode, init.redirect]);
   };
-  function retireSequential(entry = sequential) {
+  function retireSequential(entry) {
     if (!entry) return retirement;
-    if (sequential === entry) sequential = null;
+    if (sequential.get(entry.key) === entry) sequential.delete(entry.key);
     clearTimeout(entry.idleTimer); entry.controller.abort();
+    entry.pending = null; entry.pendingBytes = 0;
     entry.closing ||= entry.reader.cancel().catch(() => {});
     retirement = Promise.all([retirement, entry.closing]).then(() => {});
     return retirement;
   }
+  function retireAll() {
+    for (const entry of sequential.values()) void retireSequential(entry);
+    return retirement;
+  }
+  function touch(entry) { sequential.delete(entry.key); sequential.set(entry.key, entry); }
+  async function retainPending(entry, value) {
+    check(entry.controller.signal);
+    if (value.byteLength > maxRetainedBytes) throw new Error('The media network chunk exceeds the retained memory limit.');
+    const pendingBytes = () => [...sequential.values()].reduce((bytes, other) => bytes + (other === entry ? 0 : other.pendingBytes), 0);
+    while (pendingBytes() + value.byteLength > maxRetainedBytes) {
+      const oldest = [...sequential.values()].find(other => other !== entry);
+      if (!oldest) break;
+      await retireSequential(oldest);
+    }
+    check(entry.controller.signal);
+    // Do not retain an arbitrarily large backing buffer behind a small view.
+    entry.pending = new Uint8Array(value); entry.pendingBytes = value.byteLength;
+  }
   async function readSequential(entry, requested, cursor, signal) {
-    clearTimeout(entry.idleTimer); entry.owner = signal;
+    clearTimeout(entry.idleTimer); entry.owner = signal; touch(entry);
     const abort = () => entry.controller.abort(signal.reason || abortError());
     signal.addEventListener('abort', abort, { once: true });
     if (signal.aborted) abort();
     const timer = setTimeout(() => entry.controller.abort(new DOMException('Media resource timed out.', 'TimeoutError')), deadline);
     try {
       check(signal); check(entry.controller.signal);
+      if (entry.pending && !entry.pendingBytes) await retainPending(entry, entry.pending);
       const start = cursor === null ? entry.total !== null && requested?.start === null
         ? Math.max(0, entry.total - requested.end) : 0 : cursor;
       if (requested && entry.total !== null && start >= entry.total) {
@@ -100,9 +126,11 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
       let size = 0;
       while (entry.next < end && !entry.eof) {
         if (!entry.pending?.length) {
+          entry.pending = null; entry.pendingBytes = 0;
           const item = await entry.nextBody();
+          check(entry.controller.signal);
           if (item.done) { entry.eof = true; break; }
-          entry.pending = item.value;
+          await retainPending(entry, item.value);
         }
         const skip = Math.min(Math.max(0, start - entry.next), entry.pending.length);
         entry.next += skip; entry.pending = entry.pending.subarray(skip);
@@ -122,19 +150,23 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
       await retireSequential(entry); throw error;
     } finally {
       clearTimeout(timer); signal.removeEventListener('abort', abort);
+      if (!entry.pending?.length) { entry.pending = null; entry.pendingBytes = 0; }
       // An abandoned logical response must not retain an idle HTTP body indefinitely.
-      if (sequential === entry) entry.idleTimer = setTimeout(() => { void retireSequential(entry); }, Math.min(deadline, 5000));
+      if (sequential.get(entry.key) === entry) entry.idleTimer = setTimeout(() => { void retireSequential(entry); }, Math.min(deadline, 5000));
     }
   }
 
   async function load(url, init, requested, cursor, knownPlaylist, signal, forceWhole = false) {
     return schedule(async () => {
       const key = sequentialKey(url, init);
-      if (!knownPlaylist && sequential?.key === key && !sequential.controller.signal.aborted &&
-          (sequential.total !== null || forceWhole) &&
-          cursor !== null && cursor >= sequential.next) return readSequential(sequential, requested, cursor, signal);
-      // This also releases an unconsumed response before a competing footer, seek or subtitle request.
-      await retireSequential();
+      const retained = sequential.get(key);
+      if (!knownPlaylist && retained && !retained.controller.signal.aborted &&
+          (retained.total !== null || forceWhole) &&
+          cursor !== null && cursor >= retained.next) return readSequential(retained, requested, cursor, signal);
+      // Another logical range on the same resource must keep its own honest byte coordinates.
+      if (retained) await retireSequential(retained);
+      while (sequential.size >= maxRetainedReaders) await retireSequential(sequential.values().next().value);
+      await retirement;
       const controller = new AbortController();
       const abort = () => controller.abort(signal.reason || abortError());
       signal.addEventListener('abort', abort, { once: true });
@@ -176,8 +208,13 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
             const part = chunk.subarray(0, prefix.length - prefixOffset); prefix.set(part, prefixOffset); prefixOffset += part.length;
             if (prefixOffset === prefix.length) break;
           }
-          const nextBody = () => prefetchedIndex < prefetched.length ? Promise.resolve({ done: false, value: prefetched[prefetchedIndex++] })
-            : prefixEnded ? Promise.resolve({ done: true }) : interruptible(reader.read(), controller.signal);
+          const nextBody = () => {
+            if (prefetchedIndex < prefetched.length) {
+              const value = prefetched[prefetchedIndex]; prefetched[prefetchedIndex++] = null;
+              return Promise.resolve({ done: false, value });
+            }
+            return prefixEnded ? Promise.resolve({ done: true }) : interruptible(reader.read(), controller.signal);
+          };
           const first = await nextBody();
           const sniff = new TextDecoder().decode(prefix).replace(/^\uFEFF/, '').startsWith('#EXTM3U');
           const isPlaylist = knownPlaylist || sniff || /mpegurl/i.test(response.headers.get('Content-Type') || '');
@@ -229,8 +266,9 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
             return { error: responseLike(response, null, { status: 416, headers: new Headers({ 'Content-Range': `bytes */${total}` }) }) };
           if (response.status !== 206) {
             const entry = { key, response, reader, controller, nextBody, pending: first.done ? null : first.value,
-              eof: first.done, total, next: 0, owner: signal, idleTimer: null, forceWhole: forceWhole || encoded || total === null };
-            sequential = entry;
+              pendingBytes: 0, eof: first.done, total, next: 0, owner: signal, idleTimer: null,
+              forceWhole: forceWhole || encoded || total === null };
+            sequential.set(key, entry);
             // An unknown-length 200 retains its honest whole-response contract even if Range was requested.
             return await readSequential(entry, total === null ? null : requested,
               total === null && !forceWhole ? 0 : start, signal);
@@ -257,9 +295,9 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
             sequential: false, forceWhole: forceWhole || encoded };
         }
       } finally {
-        // Only the retained sequential reader survives this unit. A competing task
-        // awaits its cancellation before admitting another actual network body.
-        if (sequential?.controller !== controller) {
+        // Retained readers pause between units. Retired readers finish cancellation before
+        // another task can use their slot; each actual read still runs through schedule().
+        if (sequential.get(key)?.controller !== controller) {
           controller.abort();
           if (reader) await reader.cancel().catch(() => {});
         }
@@ -301,7 +339,7 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
       let buffered = unit, closed = false, streamController;
       const end = requested?.start === null ? total : Math.min(total ?? Infinity, requested?.end !== null && requested ? requested.end + 1 : Infinity);
       const finish = () => { if (closed) return; closed = true; cleanup(); controller.signal.removeEventListener('abort', onAbort); };
-      const onAbort = () => { if (sequential?.owner === controller.signal) void retireSequential();
+      const onAbort = () => { for (const entry of sequential.values()) if (entry.owner === controller.signal) void retireSequential(entry);
         try { streamController?.error(controller.signal.reason || abortError()); } catch (_) {} finish(); };
       const body = new ReadableStream({
         start(stream) { streamController = stream; controller.signal.addEventListener('abort', onAbort, { once: true }); },
@@ -333,7 +371,7 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
   };
   serialFetch.dispose = (reason = abortError()) => {
     disposed = true;
-    void retireSequential();
+    void retireAll();
     for (const controller of controllers) controller.abort(reason);
     controllers.clear(); playlists.clear();
   };

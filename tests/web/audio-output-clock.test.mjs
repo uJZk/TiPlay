@@ -104,3 +104,28 @@ test('a fresh guidance report cannot hide stale or recovering main media', () =>
   timeline.update(feedback({ type: 2, at: 1800, audibleTimeMs: 1900, sourceTimeMs: 5800 }));
   assert.equal(timeline.resolve('carplay', 5800, undefined, 1800).state, 'audio-reference-stale');
 });
+
+test('output mapping and content extrapolation share physical time with a slow device clock', () => {
+  let at = 1700000000000, timestamp;
+  const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1700000000000 });
+  const deviceRate = 0.996;
+  const context = { state: 'running', currentTime: 0, getOutputTimestamp: () => timestamp };
+  for (let ms = 40; ms <= 30000; ms += 40) {
+    at = 1700000000000 + ms; timestamp = { contextTime: ms * deviceRate / 1000, performanceTime: ms };
+    context.currentTime = (ms * deviceRate + 188 * deviceRate) / 1000;
+    mapping.capture(context);
+  }
+  assert.ok(Math.abs(mapping.deviceClock().rate - deviceRate) < 1e-8);
+  const reference = mapping.reference(feedback({ contextTimeMs: timestamp.contextTime * 1000 + 100 * deviceRate,
+    mediaRate: 1 / deviceRate }), context);
+  assert.ok(Math.abs(reference.audibleTimeMs - at - 100) < 1e-6);
+  assert.ok(Math.abs(reference.mediaRate - 1) < 1e-8, 'source/context feedback is converted to source/performance');
+  assert.ok(Math.abs(reference.outputLatencyMs - 188) < 1e-6);
+  assert.ok(Math.abs(reference.at - (at - 88)) < 1e-6);
+  assert.ok(Math.abs(audibleTime(400500, reference, at) - at - 600) < 1e-6);
+  mapping.reference(feedback({ contextTimeMs: 0 }), context);
+  assert.equal(mapping.diagnostics().outputUnavailableReason, 'feedback-distance');
+  context.state = 'suspended'; mapping.capture(context);
+  assert.equal(mapping.deviceClock().rate, 1);
+  assert.equal(mapping.diagnostics().outputUnavailableCounts['context-suspended'], 1);
+});

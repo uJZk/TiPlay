@@ -57,3 +57,13 @@ test('the reported page version matches the service worker cache that loads it',
   const worker = readFileSync(new URL('../../site/play/sw.js', import.meta.url), 'utf8');
   assert.equal(worker.match(/const VERSION = '([^']+)'/)[1], PAGE_VERSION);
 });
+
+test('device drift and output rejection remain measurable after scalar telemetry rounding', () => {
+  const [, detail] = browserDiagnosticEvents({ audio: { debug: { deviceClockRatePpm: -4000.125,
+    outputUnavailableReason: 'feedback-distance', outputUnavailableCounts: { 'feedback-distance': 7 },
+    stream0: { resampleRatio: 1.004016, resampleRatePpm: 4016.064, phaseCorrectionPpm: 0.125 } } } }, false, true);
+  assert.equal(detail.v.deviceClockRatePpm, -4000.12);
+  assert.equal(detail.v['stream0.resampleRatePpm'], 4016.06);
+  assert.equal(detail.v['outputUnavailableCounts.feedback-distance'], 7);
+  assert.equal(detail.v.outputUnavailableReason, 'feedback-distance');
+});

@@ -99,6 +99,10 @@ and browser-selected HEVC independent of the old preference.
 6. With CarPlay sound enabled, check browser music/navigation, Siri and calls. Verify microphone permission denial still permits playback; microphone demand must use a verified car HFP/SCO route and release it afterwards. The browser must never request microphone access. With CarPlay audio disabled, verify the intended iPhone-to-car Bluetooth path. Check echo, navigation attenuation, timing and route restoration on the actual car.
 7. Export diagnostics in Standard and Debug modes and use **Share**. Confirm Standard exports only a TXT and Debug exports a ZIP using the same timestamp naming pattern. Check log TXT, per-channel BIN/PCM files, millisecond/sequence/offset indexes, preserved history and absence of a clipboard action. Test storage fallbacks and retention of the newest eight fallback reports. Confirm the main-page performance hint follows the switch; each enable creates a session with version/configuration, restarting the process defaults to Standard, saving retains raw history, and Clear preserves saved ZIPs while starting a fresh session if still active. Confirm Debug forces active AirPlay URL playback through Android and disabling it restores direct eligibility. Verify ZIP MIME types in Downloads, document-picker and Share flows; reconstruct streams using the indexes and confirm exporting does not consume or truncate the capture.
 
+On the Android phone, turn system automatic rotation off and verify that the connection
+host, settings, permission checklist and icon cropper honor the user's orientation.
+Turn it on again and verify normal system-controlled rotation.
+
 ## Media clock and continuous audio acceptance
 
 Run the browser clock, continuous-audio, AudioWorklet, frame-pacing and main-thread integration tests
@@ -112,6 +116,12 @@ resampler beyond its clock-fitting warmup; continuous nominal RTP must not acqui
 sample gaps. Worklet cases cover short-lead speech with a 188 ms device pipeline, sustained
 arrival-delay steps, and concurrent streams sharing a semantic type, including ending one
 while the other remains audible. Constant samples or counters alone do not establish audio quality.
+Independent device-rate cases include a context clock running 4000 ppm slow while the
+Android/browser mapping stays at unit rate. Production worklet, resampler, output mapping
+and video scheduler run together with dynamic PCM, checking sustained output without
+clock-step resets, unavailable-reference drops or wider video/A/V limits. Calibration
+tests verify real format-specific measurements, cancellation and bounded preparation;
+the worklet must not perform cold impulse measurements during playback.
 The [libsoxr report](../scripts/soxr/REPORT.md) retains independent DSP/runtime reviews,
 format/anti-alias/120-second drift results and raw repeated performance measurements.
 These establish the supplied pure JavaScript engine’s tested behavior, not a
@@ -119,6 +129,8 @@ whole-worklet hardware deadline or universal CPU improvement.
 
 Use the [browser E2E harness](../tests/web-e2e/README.md) for actual CSP, pure JavaScript loading,
 AudioWorklet output, output timestamps, worker/main Canvas paths and context suspend/resume.
+Run timing-sensitive browser checks separately from Gradle builds and other browser harnesses;
+resource contention can starve actual rendering. Keep timing assertions unchanged when isolating a failure.
 Verify the audio-output reference remains active with Debug off. Synthetic clocks must
 also test stale/invalid references, large epochs, output-device latency changes and the
 fallback's uncertainty. Audio may be at most 45 ms early and 125 ms late relative to
@@ -138,7 +150,9 @@ follow-up in [Todo](Todo.md#browser-and-carplay-audio).
 
 ## Ordinary AirPlay acceptance
 
-Automated URL regressions verify one sequential network body for ignored Range responses,
+Automated URL regressions verify bounded retained readers for ignored Range responses,
+including interleaved audio/video with unknown-length 200 responses, LRU/byte limits,
+independent cancellation and idle cleanup. They also verify
 bounded FCUP startup probes, complete/partial HLS rewriting and preserved time/rate when direct
 playback switches to the proxy after an error. Assert downloaded byte counts as well as output
 correctness, so repeated prefix downloads cannot pass unnoticed.

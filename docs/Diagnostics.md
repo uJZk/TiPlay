@@ -52,6 +52,13 @@ their recorded anchors. A small phase correction must not be classified as a new
 Source-supply rate inferred from realtime ingress is weaker evidence than a sender timing
 anchor, especially when network queuing changes slowly.
 
+Device/context rate is recorded separately from Android/browser and source rates, with
+its target, confidence and reset generation. Resampling and phase correction use explicit
+ppm fields so small corrections remain visible after numeric formatting. Output evidence
+includes the native context/performance timestamp pair, its age and feedback distance.
+Unavailable-reason counters distinguish suspended contexts, stale/backward/invalid pairs,
+missing or unbounded fallback latency, invalid feedback and excessive extrapolation.
+
 Audio output references needed for synchronization remain active in Standard mode;
 Debug controls detailed collection only. Video records unavailable/infeasible audio sync
 and explicit sync drops. `getOutputTimestamp` establishes the browser's device-output
