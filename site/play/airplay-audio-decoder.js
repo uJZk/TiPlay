@@ -93,7 +93,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       let anchor = session.anchors[0];
       for (const candidate of session.anchors) { if (candidate.timestamp > data.timestamp) break; anchor = candidate; }
       const presentationMs = Number.isFinite(anchor?.presentationMs) ? anchor.presentationMs + (data.timestamp - anchor.timestamp) / 1000 : NaN;
-      publish(recordFor(session, { pcm: pcm.buffer, rate, presentationMs,
+      publish(recordFor(session, { pcm: pcm.buffer, rate, presentationMs, decodeTimestampUs: data.timestamp,
         flags: (anchor?.flags ?? session.flags) & ~2, sequence: session.outputSequence++ >>> 0 })); notify(session);
     } catch (cause) { failure(session, cause); }
     finally { data.close(); }
@@ -161,14 +161,15 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       session.sequence = record.sequence; session.flags = record.flags;
       if (session.config.codec === 'pcm') {
         if (record.payload.byteLength > session.config.sampleRate * session.config.channels * (session.config.bitDepth / 8)) throw new Error('AirPlay PCM packet exceeds the playback memory limit.');
-        publish(recordFor(session, { pcm: decodePcmPacket(record.payload, session.config), presentationMs: record.presentationMs })); return true;
+        publish(recordFor(session, { pcm: decodePcmPacket(record.payload, session.config), presentationMs: record.presentationMs,
+          decodeTimestampUs: record.decodeTimestampUs })); return true;
       }
       if (!Number.isFinite(record.decodeTimestampUs) || Math.abs(record.decodeTimestampUs) > Number.MAX_SAFE_INTEGER || !record.payload.byteLength) throw new Error('Invalid AirPlay audio timestamp or packet.');
       const timestamp = Math.round(record.decodeTimestampUs);
       if (session.software) {
         const pcm = await session.software.decode(rawAacPacket(record.payload));
         if (!live(session)) return false;
-        publish(recordFor(session, { pcm, presentationMs: record.presentationMs,
+        publish(recordFor(session, { pcm, presentationMs: record.presentationMs, decodeTimestampUs: record.decodeTimestampUs,
           flags: record.flags & ~2, sequence: session.outputSequence++ >>> 0 })); notify(session);
         return true;
       }

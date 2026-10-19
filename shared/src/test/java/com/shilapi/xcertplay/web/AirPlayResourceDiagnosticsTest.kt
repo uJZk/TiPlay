@@ -4,6 +4,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayResourceDiagnosticsTest {
+    @Test fun networkFailuresRecordOnlyBoundedExceptionClassesAndOneCauseLevel() {
+        val messages = mutableListOf<String>()
+        val diagnostics = AirPlayResourceDiagnostics(messages::add) { false }
+        val failure = AirPlayVideoProxy.Failure(AirPlayVideoProxy.FailureReason.RESOURCE_IO,
+            route = AirPlayVideoProxy.ResourceRoute.ANDROID_HTTP)
+        val secret = "https://private-host/media?token=private-secret\r\nforged log entry"
+        for (cause in listOf(java.net.UnknownHostException(secret), java.net.SocketTimeoutException(secret),
+            javax.net.ssl.SSLHandshakeException(secret))) {
+            diagnostics.failure(1, failure, cause)
+            assertTrue(messages.last().endsWith("exception=${cause.javaClass.simpleName}"))
+        }
+        val nested = java.net.UnknownHostException(secret).apply { initCause(IllegalStateException(secret)) }
+        diagnostics.failure(2, failure, java.io.IOException(secret, nested))
+        assertTrue(messages.last().endsWith("exception=IOException cause=UnknownHostException"))
+        assertFalse(messages.last().contains("IllegalStateException"))
+        diagnostics.failure(3, failure, object : java.io.IOException(secret) {})
+        assertTrue(messages.last().endsWith("exception=Other"))
+        assertTrue(messages.all { it.contains("reason=resource-io") && it.length < 256 })
+        assertFalse(messages.joinToString().contains("private-host"))
+        assertFalse(messages.joinToString().contains("private-secret"))
+        assertFalse(messages.joinToString().contains("forged"))
+        assertFalse(messages.any { it.contains('\r') || it.contains('\n') })
+    }
+
     @Test fun debugMetadataCanSwitchImmediatelyAndRecoversTheCdnDenialWithoutLeakingCredentials() {
         var debug = false
         val messages = mutableListOf<String>()

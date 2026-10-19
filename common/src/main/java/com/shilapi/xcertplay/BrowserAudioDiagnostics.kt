@@ -4,6 +4,9 @@ import java.util.Locale
 
 /** Scalar evidence only; paired browser telemetry must not become an arbitrary log-writing API. */
 internal object BrowserAudioDiagnostics {
+    // The source logger redacts and caps metadata at 700 characters, even in Debug.
+    // Leave room for its timestamp and keep each scalar intact before that boundary.
+    private const val LINE_BUDGET = 600
     private val globalFields = setOf(
         "pageVersion", "omittedFields", "contextState", "contextTimeMs", "contextRate", "clockBase",
         "clockOffsetMs", "clockAgeMs", "clockRttMs", "contextBaseLatencyMs", "contextOutputLatencyMs",
@@ -15,6 +18,7 @@ internal object BrowserAudioDiagnostics {
         "deviceClockGeneration", "deviceClockReason", "outputState", "outputUnavailableCount", "outputUnavailableReason",
         "outputTimestampContextMs", "outputTimestampPerformanceMs", "outputTimestampAgeMs", "outputRenderedContextMs", "outputFeedbackDeltaMs",
         "outputFeedbackContextMs", "outputFeedbackAgeMs",
+        "outputTimestampCaptureMs", "outputTimestampHoldoverAgeMs",
         "outputUnavailableCounts.context-suspended", "outputUnavailableCounts.timestamp-backwards",
         "outputUnavailableCounts.timestamp-stale", "outputUnavailableCounts.timestamp-invalid",
         "outputUnavailableCounts.missing-latency", "outputUnavailableCounts.latency-unbounded",
@@ -38,7 +42,16 @@ internal object BrowserAudioDiagnostics {
                 val value = value(stats[keyPrefix + field]) ?: return@mapNotNull null
                 "$field=$value"
             }
-            if (entries.isNotEmpty()) add("Browser audio: $prefix ${entries.joinToString(" ")}")
+            val header = "Browser audio: $prefix"
+            var current = StringBuilder(header)
+            for (entry in entries) {
+                if (current.length > header.length && current.length + 1 + entry.length > LINE_BUDGET) {
+                    add(current.toString())
+                    current = StringBuilder(header)
+                }
+                current.append(' ').append(entry)
+            }
+            if (current.length > header.length) add(current.toString())
         }
         line("stage=SNAPSHOT", globalFields)
         line("stage=DECODE", decoderFields, "decoder.")

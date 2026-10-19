@@ -11,7 +11,7 @@ const MAX_OUTPUT_LATENCY_MS = 1000;
  */
 export function createAudioOutputMapping({ now = () => performance.timeOrigin + performance.now(),
   timeOrigin = () => performance.timeOrigin } = {}) {
-  let previousContext = null, previousTimestamp = null, timestampNotBefore = -Infinity;
+  let previousContext = null, previousTimestamp = null, pendingTimestamp = null, previousRendered = null, timestampNotBefore = -Infinity;
   const deviceClock = new AudioDeviceClock();
   let diagnostics = { outputState: 'startup' };
   let feedbackAt = null;
@@ -22,20 +22,83 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
   const unavailable = reason => { diagnostics.outputState = reason; rejected(reason); return null; };
 
   function capture(context) {
-    const at = now();
+    const startedAt = now();
     if (!context || context.state !== 'running' || !Number.isFinite(context.currentTime)) {
       if (previousTimestamp || deviceClock.points.length) deviceClock.reset('suspended');
-      previousTimestamp = null;
-      timestampNotBefore = at;
+      previousTimestamp = pendingTimestamp = previousRendered = null;
+      timestampNotBefore = startedAt;
       return unavailable('context-suspended');
     }
-    if (context !== previousContext) { previousContext = context; previousTimestamp = null; deviceClock.reset('context'); }
-    deviceClock.advance(at);
-    const rendered = context.currentTime * 1000;
-    Object.assign(diagnostics, { outputTimestampContextMs: null, outputTimestampPerformanceMs: null,
-      outputTimestampAgeMs: null, outputRenderedContextMs: rendered });
+    if (context !== previousContext) { previousContext = context; previousTimestamp = pendingTimestamp = previousRendered = null; deviceClock.reset('context'); }
     let timestamp;
     try { timestamp = context.getOutputTimestamp?.(); } catch (_) { /* Older implementations may throw. */ }
+    // Native getters can block or yield a newer snapshot. Validate against clocks
+    // sampled after that call, rather than misclassifying its result as future.
+    const rendered = context.currentTime * 1000, at = now();
+    deviceClock.advance(at);
+    const quantumMs = 128000 / (Number.isFinite(context.sampleRate) && context.sampleRate > 0 ? context.sampleRate : 48000);
+    Object.assign(diagnostics, { outputTimestampContextMs: null, outputTimestampPerformanceMs: null,
+      outputTimestampAgeMs: null, outputRenderedContextMs: rendered,
+      outputTimestampCaptureMs: Math.max(0, at - startedAt), outputTimestampHoldoverAgeMs: null });
+    if (context.state !== 'running' || !Number.isFinite(rendered)) {
+      previousTimestamp = pendingTimestamp = previousRendered = null; timestampNotBefore = at; deviceClock.reset('suspended');
+      return unavailable('context-suspended');
+    }
+    if (previousRendered !== null && rendered < previousRendered) {
+      // Unlike a backward output measurement, a backward render cursor really
+      // retires the old sample domain. The worklet observes its own counter too.
+      previousTimestamp = pendingTimestamp = null; timestampNotBefore = at; deviceClock.reset('context-backwards');
+    }
+    previousRendered = rendered;
+    const holdover = (reason = null, candidate = null) => {
+      if (reason) rejected(reason);
+      diagnostics.outputState = reason || 'timestamp-holdover';
+      const refuse = () => reason ? null : unavailable('timestamp-invalid');
+      const previous = previousTimestamp;
+      if (!previous) return refuse();
+      // A known pipeline contradiction retires trust in the old anchor until
+      // advancing native samples establish a mapping again, even if the driver
+      // briefly returns that old snapshot among its newer samples.
+      if (pendingTimestamp) {
+        if (candidate) pendingTimestamp = candidate;
+        return refuse();
+      }
+      const age = at - previous.performanceTimeMs, elapsed = at - previous.at;
+      const unchangedLatency = name => !reason && context[name] === undefined && previous[name] === undefined
+        || Number.isFinite(context[name]) && Number.isFinite(previous[name])
+          && Math.abs(context[name] - previous[name]) * 1000 <= quantumMs;
+      const continuous = elapsed >= 0 && rendered >= previous.rendered
+        && Math.abs(rendered - previous.rendered - elapsed * deviceClock.rate) <= 40;
+      if (age < -20 || age > OUTPUT_REFERENCE_MAX_AGE_MS || !continuous
+        || !unchangedLatency('baseLatency') || !unchangedLatency('outputLatency')) {
+        if (candidate) pendingTimestamp = candidate;
+        return refuse();
+      }
+      let innovationMs = 0;
+      if (timestamp && timestamp.performanceTime > 0 && Number.isFinite(timestamp.contextTime)
+        && Number.isFinite(timestamp.performanceTime)) {
+        const nativeDeltaMs = timeOrigin() + timestamp.performanceTime - previous.performanceTimeMs;
+        innovationMs = (timestamp.contextTime * 1000 - previous.contextTimeMs) / deviceClock.rate - nativeDeltaMs;
+        // Continuous rendering and unchanged latency attributes do not establish
+        // an unchanged speaker pipeline. A contradictory native pair may be a
+        // real latency step; only a nearby pair consistent with the old mapping
+        // can justify holding it, with that disagreement reserved as uncertainty.
+        const innovationLimitMs = quantumMs / deviceClock.rate + (deviceClock.uncertaintyMs || 0)
+          + Math.abs(nativeDeltaMs) * .02;
+        if (Math.abs(nativeDeltaMs) > OUTPUT_REFERENCE_MAX_AGE_MS || Math.abs(innovationMs) > innovationLimitMs) {
+          if (candidate) pendingTimestamp = candidate;
+          return refuse();
+        }
+      }
+      diagnostics.outputState = 'timestamp-holdover'; diagnostics.outputTimestampHoldoverAgeMs = Math.max(0, age);
+      return { contextTimeMs: previous.contextTimeMs, performanceTimeMs: previous.performanceTimeMs, at,
+        outputMethod: 'timestamp-holdover',
+        // Reserve a quantum, the measured fit dispersion, and worst-case 2%
+        // rate error while this old, still bounded native anchor is held.
+        uncertaintyMs: quantumMs / deviceClock.rate + (deviceClock.uncertaintyMs || 0)
+          + Math.max(0, age) * 0.02 + Math.abs(innovationMs),
+        deviceRate: deviceClock.rate, outputLatencyMs: Math.max(0, (rendered - previous.contextTimeMs) / deviceClock.rate - age) };
+    };
     if (timestamp && Number.isFinite(timestamp.contextTime) && Number.isFinite(timestamp.performanceTime)) {
       const contextTimeMs = timestamp.contextTime * 1000;
       const performanceTimeMs = timeOrigin() + timestamp.performanceTime;
@@ -48,18 +111,32 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
         && age >= -20 && age <= OUTPUT_REFERENCE_MAX_AGE_MS && performanceTimeMs >= timestampNotBefore;
       const ordered = !previousTimestamp || (contextTimeMs >= previousTimestamp.contextTimeMs
         && performanceTimeMs >= previousTimestamp.performanceTimeMs);
-      if (fresh && ordered) {
+      // A real pipeline increase can leave several output positions below the
+      // old cursor. Two coherent fresh pairs establish that new mapping safely.
+      const pendingDeltaMs = pendingTimestamp ? performanceTimeMs - pendingTimestamp.performanceTimeMs : 0;
+      const recovered = fresh && !ordered && pendingTimestamp && pendingDeltaMs > 0
+        && pendingDeltaMs <= OUTPUT_REFERENCE_MAX_AGE_MS && contextTimeMs > pendingTimestamp.contextTimeMs
+        && Math.abs((contextTimeMs - pendingTimestamp.contextTimeMs) / deviceClock.rate - pendingDeltaMs)
+          <= quantumMs / deviceClock.rate + (deviceClock.uncertaintyMs || 0) + pendingDeltaMs * .02;
+      if (fresh && (ordered || recovered)) {
+        if (recovered) deviceClock.reset('output-step');
+        const moved = !previousTimestamp || contextTimeMs !== previousTimestamp.contextTimeMs
+          || performanceTimeMs !== previousTimestamp.performanceTimeMs;
+        if (!moved) return holdover();
         diagnostics.outputState = 'timestamp';
         deviceClock.observe(contextTimeMs, performanceTimeMs, at);
-        previousTimestamp = { contextTimeMs, performanceTimeMs };
-        return { ...previousTimestamp, at, outputMethod: 'timestamp', uncertaintyMs: 0,
+        if (moved) previousTimestamp = { contextTimeMs, performanceTimeMs, at, rendered,
+          baseLatency: context.baseLatency, outputLatency: context.outputLatency };
+        pendingTimestamp = null;
+        return { contextTimeMs, performanceTimeMs, at, outputMethod: 'timestamp', uncertaintyMs: 0,
           deviceRate: deviceClock.rate, outputLatencyMs: Math.max(0, (rendered - contextTimeMs) / deviceClock.rate) };
       }
       if (previousTimestamp) {
-        if (!ordered) { previousTimestamp = null; deviceClock.reset('backwards'); }
-        return unavailable(!ordered ? 'timestamp-backwards' : age > OUTPUT_REFERENCE_MAX_AGE_MS ? 'timestamp-stale' : 'timestamp-invalid');
+        return holdover(!ordered ? 'timestamp-backwards' : age > OUTPUT_REFERENCE_MAX_AGE_MS ? 'timestamp-stale' : 'timestamp-invalid',
+          fresh ? { contextTimeMs, performanceTimeMs } : null);
       }
     }
+    if (previousTimestamp) return holdover('timestamp-invalid');
     // These are distinct stages: destination -> host audio subsystem, then host
     // -> device. Missing outputLatency cannot bound the audible time; presenting
     // an active A/V stream then would silently assume a zero device delay.
@@ -68,7 +145,6 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
     const outputLatencyMs = (base + output) * 1000;
     if (outputLatencyMs > MAX_OUTPUT_LATENCY_MS) return unavailable('latency-unbounded');
     diagnostics.outputState = 'latency-estimate';
-    const quantumMs = 128000 / (Number.isFinite(context.sampleRate) && context.sampleRate > 0 ? context.sampleRate : 48000);
     return { contextTimeMs: rendered, performanceTimeMs: at + outputLatencyMs, at,
       outputMethod: 'latency-estimate', uncertaintyMs: quantumMs / deviceClock.rate, outputLatencyMs, deviceRate: deviceClock.rate };
   }
@@ -97,12 +173,12 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
       // sourceTimeMs describes the content actually emitted at contextTimeMs;
       // the resampler's filter delay is already reflected in that content time.
       const renderAgeMs = Math.max(0, (context.currentTime * 1000 - feedback.contextTimeMs) / mapping.deviceRate);
-      return { ...feedback, at: at - renderAgeMs, audibleTimeMs: mapping.performanceTimeMs + (feedback.contextTimeMs - mapping.contextTimeMs) / mapping.deviceRate,
+      return { ...feedback, at: mapping.at - renderAgeMs, audibleTimeMs: mapping.performanceTimeMs + (feedback.contextTimeMs - mapping.contextTimeMs) / mapping.deviceRate,
         mediaRate: feedback.mediaRate * mapping.deviceRate, deviceRatePpm: (mapping.deviceRate - 1) * 1e6,
         outputMethod: mapping.outputMethod, uncertaintyMs: mapping.uncertaintyMs + Math.max(0, feedback.filterUncertaintyMs || 0),
         outputLatencyMs: mapping.outputLatencyMs };
     },
-    reset() { previousContext = previousTimestamp = null; timestampNotBefore = now(); deviceClock.reset('reset');
+    reset() { previousContext = previousTimestamp = pendingTimestamp = previousRendered = null; timestampNotBefore = now(); deviceClock.reset('reset');
       diagnostics = { outputState: 'reset' }; feedbackAt = null; },
   };
 }

@@ -36,12 +36,14 @@ TiPlay supports Android phone + car browser only. These checks remain open; auto
 
 ## Browser and CarPlay audio
 
+- [ ] Retest native output-timestamp noise with the measurement-reset fix: distinguish sampling-call duration, bounded held-anchor age and genuine context interruptions. Listen for remaining pops in music and mirror audio; zero decoder errors or continuous software samples do not establish vehicle speaker quality.
 - [ ] Verify uninterrupted Apple Music and Xiaoyuzhou sound through batched real-time delivery, concurrent buffered music/mirroring and slow-browser recovery. Separate RTP loss, relay drops, decode stalls, HTTP jitter and browser underruns; verify bounded buffering during long playback, pause/seek and network variation.
 - [ ] Validate implemented RTP sampling timestamp → `RtpAudioTimeline` → browser PCM scheduling, including anchors, drift, wraparound, reordering, missing packets, stream switches and independent music/navigation/call resets.
 - [ ] Test microphone permission and demand-driven Android HFP/SCO switching, fixed navigation attenuation, Siri/calls, acoustic echo behavior and reconnect with the actual iPhone and vehicle. Verify audio opt-out consistently uses iPhone-to-car Bluetooth and re-enabling restores idle browser playback. See [browser audio](Browser.md).
 
 ## Ordinary AirPlay
 
+- [ ] Retest mirror smoothness after stabilizing audio sample coordinates and output references. The vehicle's H.264 decode callback latency remains about 216–226 ms in the supplied trace; its decoder/bitstream buffering cause is unconfirmed. Recheck YouTube buffering and resource failures after bounded gateway retries; persistent network/FCUP failures remain possible.
 - [ ] Verify discovery cold launch, CarPlay disconnect/reconnect, hotspot changes and AirPlay disable/re-enable; check service names, stale TXT and actual ports. Validate screen borrowing/return, sender preemption, mixed audio and iOS actively ending CarPlay. See [AirPlay contracts](AirPlay.md).
 - [ ] With actual iPhone apps (including Photos, Bilibili and YouTube), test first/repeated cast and reconnect with and without active CarPlay. Distinguish native `PUT /photo` JPEG/PNG from type-110 mirroring; test `cacheOnly`/`displayCached`, cache-miss 412, EXIF orientation and stop cleanup. Slideshow scheduling is outside the advertised scope.
 - [ ] Test first approval, reject, five-second timeout, browser disconnect and settings-page notification; verified-key trust, reconnect, forgetting, concurrent owners and stale callbacks. Legacy HTTP identity must not become persistent trust through a name/IP alone.

@@ -169,7 +169,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
                 connection.disconnect(); connections -= connection
                 // A destination's failure belongs to that destination; do not retry the old origin.
                 if (followingRedirect) throw error
-                if (error !is Failure) diagnostics.failure(load, Failure(FailureReason.RESOURCE_IO, route = ResourceRoute.ANDROID_HTTP))
+                if (error !is Failure) diagnostics.failure(load, Failure(FailureReason.RESOURCE_IO, route = ResourceRoute.ANDROID_HTTP), error)
                 broker = iphoneResource() ?: throw (error as? Failure
                     ?: Failure(FailureReason.RESOURCE_IO, route = ResourceRoute.ANDROID_HTTP))
             }

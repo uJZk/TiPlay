@@ -2,6 +2,7 @@ package com.shilapi.xcertplay.web
 
 import com.shilapi.xcertplay.diagnostics.DiagnosticErrorText
 import com.shilapi.xcertplay.diagnostics.RawTraffic
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 
@@ -22,8 +23,16 @@ internal class AirPlayResourceDiagnostics(private val log: (String) -> Unit,
             (if (deny.isEmpty()) "" else " denyReason=\"$deny\"") + " detail=DEBUG")
     }
 
-    fun failure(load: Long, error: AirPlayVideoProxy.Failure) = emit(
-        "resource stage=FAILURE load=$load route=${error.route ?: "NONE"} status=${error.status ?: "ABSENT"} reason=${error.reason.wire}")
+    fun failure(load: Long, error: AirPlayVideoProxy.Failure, cause: IOException? = null) {
+        val detail = cause?.let {
+            " exception=${exceptionType(it)}" + (it.cause?.let { nested -> " cause=${exceptionType(nested)}" } ?: "")
+        }.orEmpty()
+        emit("resource stage=FAILURE load=$load route=${error.route ?: "NONE"} status=${error.status ?: "ABSENT"} reason=${error.reason.wire}$detail")
+    }
+
+    /** Class names only: network exception messages often contain private hosts and signed URLs. */
+    private fun exceptionType(error: Throwable): String = error.javaClass.simpleName
+        .takeIf { SAFE_EXCEPTION_TYPE.matches(it) } ?: "Other"
 
     private fun emit(message: String) { runCatching { log(message) } }
 
@@ -37,6 +46,7 @@ internal class AirPlayResourceDiagnostics(private val log: (String) -> Unit,
     }
 
     companion object {
+        private val SAFE_EXCEPTION_TYPE = Regex("[A-Za-z_][A-Za-z0-9_]{0,63}")
         private val SAFE_CONTENT_RANGE = Regex("bytes (?:[0-9]{1,18}-[0-9]{1,18}/(?:[0-9]{1,18}|\\*)|\\*/[0-9]{1,18})")
     }
 }

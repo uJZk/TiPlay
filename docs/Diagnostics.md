@@ -62,6 +62,14 @@ rendered quantum boundary, and remains unavailable before rendering or after ret
 Render age uses current context progress and the independent device rate, so accumulated
 clock offset cannot make a fresh worklet report appear stale. Report/feedback receipt
 ages use the performance clock and remain distinct from that render age.
+Native timestamp sampling records the getter's duration and validates the result against
+clocks read after it returns. During repeated snapshots or brief measurement noise,
+`timestamp-holdover` identifies use of the last validated pair, with its original age and
+growing uncertainty. Repeated pairs do not refresh that anchor's lifetime. A held pair
+expires after 750 ms, cannot cross a context interruption or detected latency change,
+and retains the 1000 ms extrapolation limit; it does not widen the A/V window.
+Audio snapshots repeat their stage in bounded lines so the metadata redactor's line cap
+cannot silently remove output-clock fields near the end of a full snapshot.
 Unavailable-reason counters distinguish suspended contexts, stale/backward/invalid pairs,
 missing or unbounded fallback latency, invalid feedback and excessive extrapolation.
 
@@ -106,9 +114,11 @@ The bounded status summary prioritizes these fields; per-stream audio retains it
 separate diagnostic budget.
 
 Resource diagnostics distinguish Android HTTP from iPhone FCUP, preserve upstream status
-and report bounded denial details in Debug. Service diagnostics distinguish missing
-permission from foreground eligibility; a granted microphone permission alone does not
-establish permission to start microphone capture in the background.
+and report bounded denial details in Debug. Android resource I/O failures retain bounded
+exception class names and one cause class, excluding exception messages and private URLs.
+Service diagnostics distinguish missing permission from foreground eligibility; a granted
+microphone permission alone does not establish permission to start microphone capture
+in the background.
 
 ## Reading wireless startup evidence
 

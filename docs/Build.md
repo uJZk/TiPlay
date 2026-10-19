@@ -8,7 +8,7 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The current source
-is 0.2.20-beta.4 (code 43); the code remains above the published TiPlay 0.2.16. Run
+is 0.2.20-beta.5 (code 44); the code remains above the published TiPlay 0.2.16. Run
 `python3 scripts/build_site.py` after changing it to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of this product version.
 Download pages identify the latest verified stable APK; beta artifacts are linked
@@ -109,14 +109,16 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta release
 
-The current beta is **0.2.20-beta.4** (version code 43), with browser cache and
-diagnostic revision **v63**. It adds independent audio-device clock fitting and
-consistent resampling/output-reference conversion, moves filter calibration off
-the rendering thread, and prepares new audio nodes before connecting output.
-It fixes interleaved AirPlay audio/video repeatedly downloading ignored-Range
-resource prefixes, and isolates preparation, cancellation and connection replacement.
-AirPlay picture double-taps no longer seek; the time slider and ±10-second buttons
-remain. The Android phone host and icon cropper follow system rotation settings.
+The current beta is **0.2.20-beta.5** (version code 44), with browser cache and
+diagnostic revision **v64**. It preserves live audio resamplers when output-device
+clock measurements are refitted, samples clocks after native timestamp reads, and
+bridges brief measurement noise using a bounded validated anchor with growing
+uncertainty. Real context interruptions still recover, and the A/V limits remain.
+Mirror audio uses decoded sample timestamps for continuity so presentation-clock
+refinements cannot create artificial PCM gaps. Transient AirPlay resource 502/504
+responses get the same single retry as 503 within the original request deadline.
+Audio metadata is split at whole-field boundaries to preserve clock evidence;
+resource I/O diagnostics record safe exception class names without private URLs.
 See [Changelog](../CHANGELOG.md) for scope and [Testing](Testing.md) for acceptance.
 
 It uses `com.ujzk.tiplay` and the existing signed release workflow. The established
@@ -127,26 +129,27 @@ hash-verified pinned DiPlay 0.2.18 inputs. The workflow verifies package/version
 runtime assets and signatures, then attaches the signed APK, source ZIP generated
 from the exact build commit and `SHA256SUMS.txt` to the prerelease draft. Verify
 remote attachment digests before publishing the
-[beta release](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.4).
+[beta release](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.5).
 Stable download links remain on 0.2.16.
 
-The implementation passed 2,133 shared, 1,745 common and six home unit tests,
-387 browser tests, required Android lint/debug builds, the public-source scan,
-nine release-draft delivery tests, and Chromium browser,
-compiled-phone, isolated media-clock and MP4/HLS controls/recovery E2E. The merged
-phone manifest confirms system-controlled rotation. Ignored-Range regressions
-check actual downloaded bytes and bounded reader retention. Device-rate regressions
-run real DSP and video scheduling together with a 4000 ppm slow output clock.
-Run timing-sensitive browser checks without concurrent builds; a parallel-run
-starvation failure passed unchanged assertions after isolation.
+The implementation passed 2,135 shared, 1,746 common and six home unit tests,
+399 browser tests, required Android lint/debug builds, the public-source scan,
+nine release-draft delivery tests, and isolated Chromium audio, media-clock and
+MP4/HLS controls/recovery checks. Mirror packet-header replay removes nine false
+sample gaps across 1,189 captured packets. Real-DSP and six-hour virtual-clock
+regressions retain independent speaker-timing checks, including repeated native
+timestamps and real output-latency changes. Run timing-sensitive browser checks
+without concurrent builds.
 
 Physical Xiaoyuzhou/music/navigation audio, sustained video smoothness, system
 rotation, actual iPhone screen-loan approval/return and acoustic/panel timing remain pending in
 [Testing](Testing.md) and [Todo](Todo.md). Source regressions establish the repaired
 code defects; they do not prove the exact cause of every supplied-log symptom.
-The field log does not distinguish driver/scheduling/hardware causes of slow
-context progress or identify every invalid native output-reference pair. New
-timestamp/rejection diagnostics preserve that evidence for device retesting.
+The field log does not identify every remaining pop, the reason for roughly
+220 ms mirror H.264 decode callbacks, or the underlying YouTube resource I/O
+exception. Internet access on both phones does not establish successful retrieval
+of a particular redirected media resource. Timestamp sampling/held-anchor and safe
+network exception diagnostics preserve that evidence for device retesting.
 Debug retains one original input video stream without a browser-forwarding
 payload duplicate. Temporary signing/runtime inputs stay outside Git and are
 removed after verification.

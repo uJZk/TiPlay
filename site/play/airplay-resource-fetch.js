@@ -186,7 +186,7 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
             cache: 'no-store', referrerPolicy: 'no-referrer' })), controller.signal);
           if (!response.ok) {
             await response.body?.cancel().catch(() => {});
-            if (response.status === 503 && attempt < busyRetries) {
+            if ([502, 503, 504].includes(response.status) && attempt < busyRetries) {
               await interruptible(new Promise(resolve => setTimeout(resolve, 100)), controller.signal);
               continue;
             }

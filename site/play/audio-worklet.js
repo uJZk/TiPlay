@@ -56,9 +56,9 @@ class TiPlayAudio extends AudioWorkletProcessor {
       if (data.deviceClock && Number.isFinite(data.deviceClock.rate) && data.deviceClock.rate >= 0.98 && data.deviceClock.rate <= 1.02) {
         // Integrate changes without moving guidance's existing arrival anchor.
         this.arrivalAnchor = { contextTimeMs: currentTime * 1000, timeMs: this.arrivalTime(currentTime * 1000) };
-        if (this.deviceClock.generation !== undefined && data.deviceClock.generation !== this.deviceClock.generation) {
-          for (const timeline of this.timelines.values()) if (timeline instanceof ContinuousAudio) timeline.recover('device-clock-reset');
-        }
+        // A generation identifies the timestamp measurement fit, not a jump in
+        // emitted samples. Suspend and the actual render counter recover below;
+        // restarting a noisy fit must preserve the live resampler signal.
         this.deviceClock = data.deviceClock;
       }
       if ('contextAnchor' in data) this.contextAnchor = data.contextAnchor;

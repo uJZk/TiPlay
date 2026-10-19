@@ -4,6 +4,16 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.5
+
+- Keep live audio resamplers intact when only the output-device clock measurement is refitted. Preserve recovery for actual context suspension and missing render quanta.
+- Sample clocks after native output-timestamp reads. Reject bad new pairs while allowing a recent validated anchor to bridge brief measurement noise, with explicit growing uncertainty and the existing age, extrapolation and A/V limits.
+- Preserve decoded sample timestamps for mirror audio so presentation-clock refinements do not create artificial PCM gaps; retain real missing-sample boundaries.
+- Retry transient AirPlay resource 502/504 responses once, as with 503, within the original request deadline and cancellation scope.
+- Preserve complete audio clock fields in bounded metadata lines, including native sampling duration and held-anchor age. Original video capture remains input-only.
+
+Verification: 399 browser tests; 2,135 shared, 1,746 common and 6 home unit tests; Android CI lint/debug builds; isolated Chromium audio, media-clock and MP4/HLS checks. Physical phone/vehicle acceptance remains pending.
+
 ## 0.2.20-beta.4
 
 - Fit the audio device/context rate independently from Android/browser and source clocks. Apply the same conversion to resampling, playback targets and audible video references; preserve the existing CarPlay deadline and audio 45 ms early / 125 ms late limits.
@@ -104,7 +114,7 @@ Verification: 1,967 shared, 1,552 common and 6 home unit tests; 229 browser test
 
 Source verification: 1,967 shared, 1,532 common and 6 home unit tests; 229 browser tests; Android CI lint/debug builds; public-source scan; 9 release-draft tests. Physical phone/vehicle acceptance remains pending.
 
-## Unreleased
+## Earlier integration
 
 - Merge DiPlay through `c30d3f0df` while retaining Android phone + car browser scope and upstream ancestry.
 - Apply valid settings immediately and reconnect when needed without closing settings. Support All (USB first), Wireless and USB, with independent CarPlay opt-out and continuous recovery while enabled.

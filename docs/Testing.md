@@ -122,6 +122,15 @@ and video scheduler run together with dynamic PCM, checking sustained output wit
 clock-step resets, unavailable-reference drops or wider video/A/V limits. Calibration
 tests verify real format-specific measurements, cancellation and bounded preparation;
 the worklet must not perform cold impulse measurements during playback.
+Output-clock regressions inject future/backward native pairs, slow timestamp getters and
+measurement refits while rendering dynamic audio through the real resampler. Measurement
+generation changes must preserve its live state; actual suspension or skipped render
+quanta must still recover. Held output anchors retain the original expiry and accumulate
+uncertainty. Mirror packet tests distinguish presentation-clock refinement from stable
+decoded sample coordinates, and retain real RTP/sample gaps.
+Synthetic pipeline changes also use an independent emitted-sample/output-time oracle,
+including lagging platform latency attributes; passing the mapper's own timing checks
+alone cannot establish correct skew.
 The [libsoxr report](../scripts/soxr/REPORT.md) retains independent DSP/runtime reviews,
 format/anti-alias/120-second drift results and raw repeated performance measurements.
 These establish the supplied pure JavaScript engine’s tested behavior, not a
@@ -156,6 +165,9 @@ independent cancellation and idle cleanup. They also verify
 bounded FCUP startup probes, complete/partial HLS rewriting and preserved time/rate when direct
 playback switches to the proxy after an error. Assert downloaded byte counts as well as output
 correctness, so repeated prefix downloads cannot pass unnoticed.
+Transient 502/503/504 GET responses receive at most one retry within the original
+resource deadline. Tests check cancellation during the retry delay and no retries for
+403/404 responses; a repeated upstream failure must still surface as an error.
 
 Use unprotected content from an actual iPhone. Check discovery and device approval, mirroring, audio-only playback, JPEG/PNG photos, and URL MP4/HLS playback with seeking, subtitles, buffering and iPhone controls. Test stopping/replacing a cast and returning the browser display to CarPlay while retained CarPlay audio continues as designed. Exercise authentication/resource expiry and recovery after network loss.
 

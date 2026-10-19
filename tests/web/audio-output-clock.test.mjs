@@ -128,6 +128,91 @@ test('control clock captures preserve the last feedback evidence until reset', (
   assert.equal(mapping.diagnostics().outputFeedbackDeltaMs, undefined);
 });
 
+test('output timestamp validation samples current clocks after a slow native timestamp call', () => {
+  let at = 1010000, callDelayMs = 0;
+  const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
+  const context = { state: 'running', currentTime: 10, getOutputTimestamp() {
+    at += callDelayMs; this.currentTime += callDelayMs / 1000;
+    return { contextTime: this.currentTime - 0.2, performanceTime: at - 1000000 };
+  } };
+  assert.equal(mapping.capture(context).outputMethod, 'timestamp');
+  at += 40; context.currentTime += 0.04; callDelayMs = 40;
+  const output = mapping.capture(context);
+  assert.equal(output?.outputMethod, 'timestamp', 'time spent obtaining a pair cannot make that pair appear to come from the future');
+  assert.ok(Math.abs(output.outputLatencyMs - 200) < 1e-8);
+  assert.equal(mapping.diagnostics().outputTimestampCaptureMs, 40);
+  const receivedAt = at;
+  const reference = mapping.reference(feedback({ contextTimeMs: context.currentTime * 1000 }), context);
+  assert.ok(Math.abs(reference.at - receivedAt) < 1e-8, 'native sampling time cannot be subtracted twice from the feedback render boundary');
+});
+
+test('a noisy timestamp uses a bounded, explicitly uncertain holdover without accepting the bad pair', () => {
+  let at = 1010000, output = { contextTime: 9.8, performanceTime: 10000 };
+  const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
+  const context = { state: 'running', currentTime: 10, sampleRate: 48000,
+    baseLatency: 0.012, outputLatency: 0.188, getOutputTimestamp: () => output };
+  mapping.capture(context);
+  at += 40; context.currentTime += 0.04;
+  output = { contextTime: 9.79, performanceTime: 9990 };
+  const held = mapping.capture(context);
+  assert.equal(held?.outputMethod, 'timestamp-holdover');
+  assert.equal(held.contextTimeMs, 9800, 'the backward native sample never replaces the good output anchor');
+  assert.equal(held.performanceTimeMs, 1010000);
+  assert.ok(held.uncertaintyMs > 0);
+  assert.equal(mapping.diagnostics().outputTimestampHoldoverAgeMs, 40);
+  assert.equal(mapping.diagnostics().outputUnavailableCounts['timestamp-backwards'], 1);
+  at += 40; context.currentTime += 0.04;
+  assert.ok(mapping.capture(context).uncertaintyMs > held.uncertaintyMs);
+  at += 671; context.currentTime += 0.671;
+  assert.equal(mapping.capture(context), null, 'a rejected stream cannot refresh the good anchor beyond 750ms');
+  mapping.reset(); at += 1; output = { contextTime: context.currentTime - 0.2, performanceTime: at - 1000000 };
+  mapping.capture(context); at += 40; context.currentTime += 0.04; context.outputLatency = 0.288;
+  output = { contextTime: context.currentTime - 0.2, performanceTime: at - 1000000 + 40 };
+  assert.equal(mapping.capture(context), null, 'a changed reported output path cannot reuse an old route anchor');
+});
+
+test('a real context-counter reversal abandons the old native output anchor', () => {
+  let at = 1010000, output = { contextTime: 9.8, performanceTime: 10000 };
+  const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
+  const context = { state: 'running', currentTime: 10, getOutputTimestamp: () => output };
+  mapping.capture(context);
+  at += 40; context.currentTime = 9; output = { contextTime: 8.8, performanceTime: 10040 };
+  const fresh = mapping.capture(context);
+  assert.equal(fresh?.contextTimeMs, 8800, 'a real render reversal cannot remain tied to the old higher sample counter');
+  assert.equal(fresh.outputMethod, 'timestamp');
+  assert.equal(mapping.deviceClock().reason, 'context-backwards');
+});
+
+test('a repeated native pair cannot refresh its route history or hide an output latency change', () => {
+  let at = 1010000, output = { contextTime: 9.8, performanceTime: 10000 };
+  const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
+  const context = { state: 'running', currentTime: 10, baseLatency: .012, outputLatency: .188,
+    getOutputTimestamp: () => output };
+  mapping.capture(context);
+  at += 40; context.currentTime += .04; context.outputLatency = .288;
+  assert.equal(mapping.capture(context), null, 'a changed output path needs an advancing native timestamp');
+  at += 40; context.currentTime += .04; output = { contextTime: 9.79, performanceTime: 10080 };
+  assert.equal(mapping.capture(context), null, 'an old pair cannot acquire the new route latency merely by being returned again');
+});
+
+test('a native pipeline step invalidates holdover even if reported latency attributes stay unchanged', () => {
+  for (const nextLatencyMs of [180, 260]) {
+    let at = 1010000, latencyMs = 30, cachedPair = null;
+    const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
+    const context = { state: 'running', currentTime: 10, sampleRate: 48000, baseLatency: .01, outputLatency: .02,
+      getOutputTimestamp: () => cachedPair || ({ contextTime: (at - 1000000 - latencyMs) / 1000, performanceTime: at - 1000000 }) };
+    const originalPair = context.getOutputTimestamp();
+    mapping.capture(context);
+    at += 100; context.currentTime += .1; latencyMs = nextLatencyMs;
+    assert.equal(mapping.capture(context), null, 'a backward pair contradicting the old mapping is not harmless measurement noise');
+    cachedPair = originalPair;
+    assert.equal(mapping.capture(context), null, 'a repeated old snapshot cannot revive an anchor contradicted by the changed pipeline');
+    cachedPair = null;
+    at += 100; context.currentTime += .1;
+    assert.equal(mapping.capture(context)?.outputMethod, 'timestamp', 'two coherent native pairs establish the changed output path, even below the old counter');
+  }
+});
+
 test('output mapping and content extrapolation share physical time with a slow device clock', () => {
   let at = 1700000000000, timestamp;
   const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1700000000000 });

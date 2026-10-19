@@ -52,6 +52,7 @@ class BrowserAudioDiagnosticsTest {
             "outputUnavailableCounts.feedback-distance" to 7, "outputUnavailableCounts.secret" to "hidden",
             "stream0.resampleRatePpm" to 4016.064, "stream0.phaseCorrectionPpm" to 0.25,
             "outputFeedbackContextMs" to 12342.667, "outputFeedbackAgeMs" to 20,
+            "outputTimestampCaptureMs" to 40, "outputTimestampHoldoverAgeMs" to 70,
             "stream0.contextTimeMs" to 12342.667,
         ))
         assertEquals(2, lines.size)
@@ -60,8 +61,34 @@ class BrowserAudioDiagnosticsTest {
         assertTrue(lines[0].contains("outputUnavailableCounts.feedback-distance=7"))
         assertTrue(lines[0].contains("outputFeedbackContextMs=12342.667"))
         assertTrue(lines[0].contains("outputFeedbackAgeMs=20"))
+        assertTrue(lines[0].contains("outputTimestampCaptureMs=40"))
+        assertTrue(lines[0].contains("outputTimestampHoldoverAgeMs=70"))
         assertTrue(lines[1].contains("resampleRatePpm=4016.064"))
         assertTrue(lines[1].contains("contextTimeMs=12342.667"))
         assertTrue(lines.none { it.contains("secret") || it.contains("hidden") })
+    }
+
+    @Test fun fullClockEvidenceSurvivesTheMetadataRedactorWithoutLosingTailFields() {
+        val fields = listOf(
+            "contextTimeMs", "contextRate", "clockBase", "clockOffsetMs", "clockAgeMs", "clockRttMs",
+            "contextBaseLatencyMs", "contextOutputLatencyMs", "processorErrors", "recoveries", "recoveryAttempts",
+            "renderAgeMs", "renderReportAgeMs", "renderFrames", "renderNonzero", "renderPeak", "processCalls",
+            "renderTimeMs", "pcmPackets", "pcmFrames", "pcmNonzero", "pcmPeak", "clockRatePpm", "clockGeneration",
+            "clockUncertaintyMs", "clockRateConfidence", "deviceClockRatePpm", "deviceClockTargetRatePpm",
+            "deviceClockConfidence", "deviceClockUncertaintyMs", "deviceClockGeneration", "outputUnavailableCount",
+            "outputTimestampContextMs", "outputTimestampPerformanceMs", "outputTimestampAgeMs", "outputRenderedContextMs",
+            "outputFeedbackDeltaMs", "outputFeedbackContextMs", "outputFeedbackAgeMs",
+            "outputUnavailableCounts.timestamp-backwards", "outputUnavailableCounts.timestamp-invalid",
+        )
+        val lines = BrowserAudioDiagnostics.lines(fields.associateWith { 1_792_120_000_000.125 })
+        assertTrue("A full snapshot must be split before the metadata cap", lines.size > 1)
+        for (line in lines) {
+            val timestamped = "2026-10-19 11:54:40.607 +0800  $line"
+            assertEquals("Metadata must retain every scalar", timestamped, DiagnosticRedactor.redact(timestamped))
+        }
+        for (field in fields) {
+            val occurrences = lines.sumOf { Regex("(?:^| )${Regex.escape(field)}=").findAll(it).count() }
+            assertEquals("Exactly one complete value for $field", 1, occurrences)
+        }
     }
 }

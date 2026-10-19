@@ -107,6 +107,20 @@ test('suspend/resume and device sample-counter jumps recover through fades witho
   assert.equal(player.recoveryCounts['device-clock-jump'], 1);
 });
 
+test('restarting the output timestamp fit preserves a continuous device sample counter and live filter', () => {
+  const h = harness(); h.post({ deviceClock: { generation: 10, rate: 1 } }); h.feed();
+  for (let i = 0; i < 30; i++) h.render();
+  const player = h.processor.timelines.get(0), backend = player.backend;
+  const cursor = player.rawCursorMs;
+  // A rejected/backward native timestamp restarts only its measurement fit.
+  // AudioContext suspend and actual render-counter jumps have separate signals.
+  h.post({ deviceClock: { generation: 11, rate: 1 } });
+  for (let i = 0; i < 30; i++) { h.feed(); h.render(); }
+  assert.equal(player.backend, backend, 'measurement generations do not interrupt the emitted signal');
+  assert.equal(player.recoveryCounts['device-clock-reset'], undefined);
+  assert.ok(player.rawCursorMs > cursor);
+});
+
 test('real source-time gaps remain gaps in the new engine even with consecutive sequences', () => {
   for (const gapMs of [0.5, 1]) {
     const h = harness(); h.feed(0, 'carplay', 1, 20);
@@ -256,6 +270,10 @@ test('output rate calibration keeps strict media and arrival guidance on indepen
   assert.ok(Math.abs(h.processor.arrivalTime(h.frame / 48) - voiceTime) < 0.001, 'a fit refinement cannot jump the guidance clock');
   h.render(); assert.equal(voice.backend, backend);
   h.post({ deviceClock: { rate: 1, generation: 2 } });
-  assert.equal(media.recoveryCounts['device-clock-reset'], 1, 'a genuine output discontinuity still resets the signal');
+  assert.deepEqual(media.recoveryCounts, {}, 'restarting a measurement fit preserves the media signal');
+  assert.equal(voice.backend, backend, 'measurement restarts also preserve guidance');
+  h.jump(1200); h.render();
+  assert.equal(media.recoveryCounts['device-clock-jump'], 1, 'a genuine render-counter discontinuity still resets the signal');
+  assert.equal(voice.recoveryCounts['device-clock-jump'], 1);
   h.post({ dispose: true });
 });

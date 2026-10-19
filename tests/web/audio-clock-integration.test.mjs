@@ -119,11 +119,11 @@ async function harness({ devicePpm = 90, outputDelayMs = 80 } = {}) {
     }
     await settle();
   }
-  function quantum() {
-    drain(); const node = nodes.at(-1), output = [new Float32Array(128), new Float32Array(128)];
+  function quantum(deliver = true) {
+    if (deliver) drain(); const node = nodes.at(-1), output = [new Float32Array(128), new Float32Array(128)];
     assert.equal(node.processor.process([], [output]), true);
     context.frames += 128; localMs += 128000 / (48000 * (1 + devicePpm / 1e6));
-    drain(); runTimers(); return output[0];
+    if (deliver) { drain(); runTimers(); } return output[0];
   }
   async function playing() { await feed(48000); for (let i = 0; i < 30; i++) quantum(); }
   return { audio, nodes, requests, postedPcm, feedback, references, audioReferences, calibration,
@@ -139,6 +139,50 @@ async function harness({ devicePpm = 90, outputDelayMs = 80 } = {}) {
     },
   };
 }
+
+test('real DSP stays continuous through transient native timestamp faults, slow reads and measurement restarts', async () => {
+  const h = await harness({ devicePpm: -4000 });
+  try {
+    await h.playing();
+    const processor = h.nodes[0].processor, player = processor.timelines.get(0), backend = player.backend;
+    const nativeTimestamp = h.context.getOutputTimestamp.bind(h.context);
+    let fault = null, reads = 0, minimumEnergy = Infinity, maximumStep = 0, previous = null;
+    const observe = block => {
+      minimumEnergy = Math.min(minimumEnergy, block.reduce((sum, value) => sum + value ** 2, 0));
+      for (const sample of block) {
+        if (previous !== null) maximumStep = Math.max(maximumStep, Math.abs(sample - previous));
+        previous = sample;
+      }
+    };
+    h.context.getOutputTimestamp = () => {
+      reads++;
+      if (fault === 'slow') {
+        fault = null;
+        // Audio keeps rendering while the main thread waits for a native getter.
+        for (let i = 0; i < 15; i++) observe(h.quantum(false));
+      }
+      const timestamp = nativeTimestamp();
+      if (fault === 'future') timestamp.performanceTime += 100;
+      if (fault === 'backward') { timestamp.contextTime -= .2; timestamp.performanceTime -= 200; }
+      return timestamp;
+    };
+    for (let quantum = 0; quantum < 2400; quantum++) {
+      if (quantum % 30 === 0) await h.feed(Math.ceil(((h.localMs - 10000) + 700) * 48));
+      fault = quantum >= 300 && quantum < 320 ? 'future' : quantum >= 500 && quantum < 520 ? 'backward' : null;
+      if (quantum === 700) { fault = 'slow'; h.audio.clock(h.calibration()); }
+      if (quantum === 900) processor.port.onmessage({ data: {
+        deviceClock: { generation: 100, rate: processor.deviceClock.rate },
+      } });
+      observe(h.quantum());
+    }
+    assert.equal(player.backend, backend, 'rejected measurements and fit generations preserve the actual Soxr filter');
+    assert.deepEqual(player.recoveryCounts, {});
+    assert.ok(reads > 100);
+    assert.ok(minimumEnergy > 3, `dynamic audio keeps every block audible: ${minimumEnergy}`);
+    assert.ok(maximumStep < .3, `native measurements cannot introduce waveform discontinuities: ${maximumStep}`);
+    assert.ok(h.references.some(reference => reference?.outputMethod === 'timestamp-holdover'));
+  } finally { await h.close(); }
+});
 
 function videoConsumer(h, initialReference) {
   let draws = 0, timer = 0;

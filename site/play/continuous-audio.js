@@ -10,7 +10,7 @@ export class ContinuousAudio {
     this.runtime = runtime; this.rate = rate; this.channels = channels; this.outputRate = outputRate;
     this.consumed = consumed; this.maximumMs = maximumMs; this.buffered = buffered; this.mode = mode; this.type = type; this.semanticType = semanticType;
     this.queue = []; this.sequences = new Set(); this.bytes = 0; this.counters = null;
-    this.sourceAnchorMs = null; this.sourceFrame = 0; this.inputFrame = 0; this.outputFrames = 0;
+    this.sourceAnchorMs = null; this.sampleAnchorUs = null; this.sourceFrame = 0; this.inputFrame = 0; this.outputFrames = 0;
     this.lastContextTimeMs = null;
     this.state = 'priming'; this.reason = 'startup'; this.clockGeneration = null;
     this.rawCursorMs = null; this.phaseErrorMs = 0; this.gain = 0; this.last = new Float32Array(channels);
@@ -40,20 +40,33 @@ export class ContinuousAudio {
     if (!Number.isInteger(frames) || frames * 1000 / this.rate > MAX_PCM_PACKET_MS) { this.reject(pcm.byteLength, 'invalid', data.generation); return; }
     if (this.sequences.has(data.sequence)) { this.reject(pcm.byteLength, 'duplicate', data.generation); return; }
     this.sourceAnchorMs ??= data.presentationMs;
-    const nominalFrame = Math.round((data.presentationMs - this.sourceAnchorMs) * this.rate / 1000);
+    let nominalFrame = Math.round((data.presentationMs - this.sourceAnchorMs) * this.rate / 1000);
+    const sampleTimeUs = this.mode === 'airplay-mirror' && Number.isFinite(data.decodeTimestampUs) ? data.decodeTimestampUs : null;
+    if (sampleTimeUs !== null) {
+      this.sampleAnchorUs ??= sampleTimeUs - nominalFrame * 1000000 / this.rate;
+      nominalFrame = Math.round((sampleTimeUs - this.sampleAnchorUs) * this.rate / 1000000);
+    }
     const previous = this.lastPacket, consecutive = previous && ((data.sequence - previous.sequence) >>> 0) === 1;
     // CarPlay's RTP-derived timestamps count nominal samples, independently of
-    // the arrival oscillator fit. AirPlay's measured presentation anchors do
-    // reflect that oscillator, so only those use its rate for adjacency.
+    // the arrival oscillator fit. Presentation-only AirPlay anchors reflect that
+    // oscillator, so their compatibility path uses its rate for adjacency.
     const anchorRate = !this.sourceClock.arrival && this.sourceClock.confidence ? this.sourceClock.rate : 1;
     const expectedStart = previous ? previous.presentationMs + (previous.end - previous.first) * 1000 / this.rate / anchorRate : data.presentationMs;
-    const precisionMs = Number.EPSILON * Math.max(1, Math.abs(expectedStart), Math.abs(data.presentationMs)) * 2;
+    // RTP/decode timestamps count source samples. Refining an NTP presentation
+    // anchor changes its clock mapping, not the packet's sample continuity.
+    const sampleTimed = sampleTimeUs !== null && Number.isFinite(previous?.decodeTimestampUs);
+    const deltaMs = sampleTimed ? (sampleTimeUs - previous.decodeTimestampUs) / 1000
+      - (previous.end - previous.first) * 1000 / this.rate : data.presentationMs - expectedStart;
+    const precisionMs = Number.EPSILON * (sampleTimed
+      ? Math.max(1, Math.abs(sampleTimeUs), Math.abs(previous.decodeTimestampUs)) / 1000
+      : Math.max(1, Math.abs(expectedStart), Math.abs(data.presentationMs))) * 2;
     // A quarter sample covers quantized clock refinement; a real half-sample gap still breaks the signal.
-    const connected = consecutive && Math.abs(data.presentationMs - expectedStart) <= Math.max(precisionMs, 250 / this.rate);
+    const connected = consecutive && Math.abs(deltaMs) <= Math.max(precisionMs, 250 / this.rate);
     let first = connected ? previous.end : nominalFrame;
-    if (consecutive && !connected && first <= previous.end && data.presentationMs > expectedStart) first = previous.end + 1;
+    if (consecutive && !connected && first <= previous.end && deltaMs > 0) first = previous.end + 1;
     if (this.backend && first + frames <= this.inputFrame) { this.reject(pcm.byteLength, 'late', data.generation); return; }
-    const packet = { pcm, first, end: first + frames, sequence: data.sequence, generation: data.generation, presentationMs: data.presentationMs };
+    const packet = { pcm, first, end: first + frames, sequence: data.sequence, generation: data.generation,
+      presentationMs: data.presentationMs, decodeTimestampUs: sampleTimeUs };
     this.queue.push(packet); this.sequences.add(packet.sequence); this.bytes += pcm.byteLength;
     this.queue.sort((a, b) => a.first - b.first);
     this.lastPacket = packet;

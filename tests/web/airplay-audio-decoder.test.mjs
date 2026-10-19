@@ -28,7 +28,8 @@ function outputData(planes, timestamp = 1000000, sampleRate = 44100) {
 }
 function harness(t, options = {}) {
   const codecs = fakeCodecs(options), outputs = [], errors = [];
-  const decoder = createAirPlayAudioDecoder({ onPcm: record => outputs.push(record), onError: error => errors.push(error), AudioDecoder: codecs.Decoder, EncodedAudioChunk: codecs.Chunk, probeTimeout: options.probeTimeout ?? 1000 });
+  const decoder = createAirPlayAudioDecoder({ onPcm: record => outputs.push(record), onError: error => errors.push(error), AudioDecoder: codecs.Decoder, EncodedAudioChunk: codecs.Chunk, probeTimeout: options.probeTimeout ?? 1000,
+    softwareEldFactory: options.softwareEldFactory });
   t.after(() => decoder.dispose()); return { decoder, outputs, errors, ...codecs };
 }
 
@@ -50,6 +51,7 @@ test('AudioData planes interleave to PCM16 and retain epoch and presentation tim
   instances[0].callbacks.output(data); const record = outputs.find(record => record.pcm.byteLength);
   assert.ok(record); assert.equal(data.closed, true); assert.equal(record.epoch, 7); assert.equal(record.rate, 44100); assert.equal(record.channels, 2);
   assert.equal(record.mode, 'airplay-mirror'); assert.equal(record.presentationMs, 10002);
+  assert.equal(record.decodeTimestampUs, 1002000, 'PCM starts at the decoded AudioData sample, independently of the input packet anchor');
   const samples = [...new Int16Array(record.pcm)];
   assert.equal(samples[0], -32768); assert.equal(samples.at(-1), -32768); assert.equal(samples[5], 32767); assert.equal(samples[6], 32767);
   assert.equal(samples[2], 0); assert.ok(Math.abs(samples[1]-8192)<=1); assert.ok(Math.abs(samples[3]+8192)<=1); assert.ok(Math.abs(samples[4]-16384)<=1);
@@ -68,10 +70,25 @@ test('PCM16 network big endian and PCM24 signed samples decode in browser JavaSc
   await decoder.configure(configRecord({codec:'pcm',sampleRate:48000,channels:1,bitDepth:16,littleEndian:false},1));
   await decoder.decode(packetRecord([0x80,0x00,0x00,0x00,0x7f,0xff],1,{rate:48000,channels:1}));
   assert.deepEqual([...new Int16Array(outputs.at(-1).pcm)],[-32768,0,32767]);
+  assert.equal(outputs.at(-1).decodeTimestampUs, 1000000);
   await decoder.configure(configRecord({codec:'pcm',sampleRate:44100,channels:1,bitDepth:24,littleEndian:false},2));
   await decoder.decode(packetRecord([0x80,0x00,0x00,0x00,0x00,0x00,0x7f,0xff,0xff],2,{channels:1}));
   assert.deepEqual([...new Int16Array(outputs.at(-1).pcm)],[-32768,0,32767]);
   assert.equal(instances.length,0);
+});
+
+test('software AAC-ELD retains the source sample timestamp independently of presentation refinements', async t => {
+  const { decoder, outputs, errors } = harness(t, { supported: () => false, softwareEldFactory: () => ({
+    ready: Promise.resolve(), decode: async () => new Int16Array(480 * 2).fill(123).buffer, close() {},
+  }) });
+  await decoder.configure(configRecord({ codec: 'aac-eld', sampleRate: 44100, channels: 2, bitDepth: 16,
+    samplesPerFrame: 480, asc: [248,232,80,0] }));
+  const timestamp = 7000000000 + 480000000 / 44100;
+  await decoder.decode(packetRecord([1,2,3], 1, { decodeTimestampUs: timestamp, presentationMs: 10000.25 }));
+  assert.equal(outputs.at(-1).decodeTimestampUs, timestamp);
+  assert.equal(outputs.at(-1).presentationMs, 10000.25);
+  assert.equal(outputs.at(-1).pcm.byteLength, 480 * 2 * 2);
+  assert.deepEqual(errors, []);
 });
 
 test('PCM16 little endian preserves sign and frame count without a native decoder', async t => {

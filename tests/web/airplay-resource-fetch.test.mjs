@@ -455,15 +455,17 @@ test('abort while queued/body reading, logical response cancel, errors and dispo
   assert.equal(state.peak, 1); assert.equal(state.active, 0);
 });
 
-test('an actual body deadline and bounded busy retry cancel the old body before the next resource', async () => {
-  let canceled = 0, calls = 0;
-  const serial = createSerialMediaFetch(async (_url, init) => {
-    calls++;
-    if (calls === 1) return new Response(new ReadableStream({ cancel() { canceled++; } }), { status: 503 });
-    return new Response('Recovered');
-  }, { unitBytes: 16, busyRetries: 1 });
-  try { assert.equal(await (await serial(`${origin}/busy`)).text(), 'Recovered'); assert.equal(calls, 2); assert.equal(canceled, 1); }
-  finally { serial.dispose(); }
+test('an actual body deadline and bounded transient retry cancel the old body before the next resource', async () => {
+  for (const status of [502, 503, 504]) {
+    let canceled = 0, calls = 0;
+    const serial = createSerialMediaFetch(async () => {
+      calls++;
+      if (calls === 1) return new Response(new ReadableStream({ cancel() { canceled++; } }), { status });
+      return new Response('Recovered');
+    }, { unitBytes: 16, busyRetries: 1 });
+    try { assert.equal(await (await serial(`${origin}/busy`)).text(), 'Recovered'); assert.equal(calls, 2); assert.equal(canceled, 1); }
+    finally { serial.dispose(); }
+  }
   let bodyCanceled = false;
   const timeout = createSerialMediaFetch(async url => String(url).endsWith('/hung')
     ? new Response(new ReadableStream({ cancel() { bodyCanceled = true; } })) : new Response('Next request'), { deadline: 10 });
@@ -471,6 +473,30 @@ test('an actual body deadline and bounded busy retry cancel the old body before 
     await assert.rejects(timeout(`${origin}/hung`), { name: 'TimeoutError' });
     assert.ok(bodyCanceled); assert.equal(await (await timeout(`${origin}/good`)).text(), 'Next request');
   } finally { timeout.dispose(); }
+});
+
+test('transient media retries remain bounded and cannot outlive cancellation or the original deadline', async () => {
+  for (const status of [403, 404, 502]) {
+    let calls = 0;
+    const serial = createSerialMediaFetch(async () => { calls++; return new Response(null, { status }); });
+    try {
+      assert.equal((await serial(`${origin}/unavailable`)).status, status);
+      assert.equal(calls, status === 502 ? 2 : 1, 'only transient gateway failures receive the one retry');
+    } finally { serial.dispose(); }
+  }
+  for (const cancel of [false, true]) {
+    let calls = 0, timer;
+    const controller = new AbortController();
+    const serial = createSerialMediaFetch(async () => {
+      calls++;
+      if (cancel) timer = setTimeout(() => controller.abort(), 10);
+      return new Response(null, { status: 502 });
+    }, { deadline: cancel ? 1000 : 10 });
+    try {
+      await assert.rejects(serial(`${origin}/unavailable`, { signal: controller.signal }), { name: cancel ? 'AbortError' : 'TimeoutError' });
+      assert.equal(calls, 1, 'a canceled retry delay cannot begin another resource');
+    } finally { clearTimeout(timer); serial.dispose(); }
+  }
 });
 
 test('CORS-hidden Content-Range is retried as a complete resource instead of inventing a partial length', async () => {

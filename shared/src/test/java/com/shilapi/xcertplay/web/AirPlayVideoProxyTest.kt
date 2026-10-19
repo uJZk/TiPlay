@@ -315,6 +315,23 @@ class AirPlayVideoProxyTest {
         }
     }
 
+    @Test fun androidConnectionFailurePreservesItsSafeClassWhenFcUpCannotRecover() {
+        val port = ServerSocket(0).use { it.localPort }
+        val messages = mutableListOf<String>()
+        val signed = "http://private.example.test/video?token=private-secret"
+        withLocalOrigins(mapOf("private.example.test" to "http://127.0.0.1:$port")) {
+            val proxy = AirPlayVideoProxy(signed, { _, _ -> null }, log = messages::add)
+            try {
+                val failure = assertThrows(AirPlayVideoProxy.Failure::class.java) { proxy.open(proxy.rootId, null) { it } }
+                assertEquals(AirPlayVideoProxy.FailureReason.RESOURCE_IO, failure.reason)
+                assertEquals(AirPlayVideoProxy.ResourceRoute.ANDROID_HTTP, failure.route)
+                assertTrue(messages.any { it.contains("reason=resource-io exception=ConnectException") })
+                assertFalse(messages.joinToString().contains("private.example.test"))
+                assertFalse(messages.joinToString().contains("private-secret"))
+            } finally { proxy.close() }
+        }
+    }
+
     @Test fun androidPartialResponsePreservesContentRangeWithoutCallingFcUp() {
         withOrigin(206, mapOf("Content-Range" to "bytes 100-102/200", "Content-Type" to "video/mp4"), byteArrayOf(4, 5, 6)) { origin, _ ->
             val proxy = AirPlayVideoProxy("$origin/video.m4s", { _, _ -> error("FCUP fallback was not needed") })

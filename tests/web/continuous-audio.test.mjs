@@ -260,6 +260,42 @@ test('measured AirPlay presentation anchors still use their acquired source rate
   h.player.clear();
 });
 
+test('AirPlay sample timestamps preserve the signal across presentation-clock refinements', () => {
+  const rate = 44100, packetFrames = 480, h = harness({ rate, mode: 'airplay-mirror' });
+  const quantumMs = 128000 / 48000;
+  let inputFrame = 0, sequence = 0;
+  for (let quantum = 0; quantum < 4000; quantum++) {
+    const contextMs = quantum * quantumMs;
+    while (inputFrame * 1000 / rate < contextMs + 150) {
+      const correction = inputFrame < rate * 2 ? 0 : inputFrame < rate * 5 ? 0.25 : -1.5;
+      const previous = h.player.lastPacket;
+      h.player.push({ pcm: pcm(inputFrame, packetFrames, rate).buffer,
+        presentationMs: h.sourceBase + inputFrame * 1000 / rate + correction,
+        decodeTimestampUs: 7000000000 + inputFrame * 1000000 / rate, sequence: sequence++, generation: 3 });
+      if (previous) assert.equal(h.player.lastPacket.first, previous.end, 'a new NTP anchor cannot insert or remove source samples');
+      inputFrame += packetFrames;
+    }
+    h.player.render(h.sourceBase + contextMs, contextMs, h.clock, 128, h.block);
+    if (quantum > 10) assert.equal(h.player.state, 'playing');
+  }
+  assert.deepEqual(h.player.recoveryCounts, {});
+  h.player.clear();
+});
+
+test('AirPlay stable sample coordinates retain real packet loss and half-sample gaps', () => {
+  for (const gap of [0.5, 480]) {
+    const rate = 44100, h = harness({ rate, mode: 'airplay-mirror' });
+    h.player.push({ pcm: pcm(0, 480, rate).buffer, presentationMs: h.sourceBase,
+      decodeTimestampUs: 7000000000, sequence: 0, generation: 3 });
+    h.player.push({ pcm: pcm(480, 480, rate).buffer,
+      presentationMs: h.sourceBase + 480000 / rate - 1.5,
+      decodeTimestampUs: 7000000000 + (480 + gap) * 1000000 / rate, sequence: 1, generation: 3 });
+    assert.equal(h.player.queue[1].first, 480 + Math.round(gap));
+    assert.equal(h.player.read(0, 960), 480, 'presentation-clock movement must not hide missing source samples');
+    h.player.clear();
+  }
+});
+
 test('real DSP compensates a slow output clock without recurring hard recovery or signal holes', () => {
   const h = harness({ channels: 2, buffered: true }), deviceRate = 0.996, quantumMs = 128000 / 48000;
   let smallest = Infinity, maximumPhase = 0;

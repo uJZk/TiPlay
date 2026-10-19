@@ -41,6 +41,38 @@ test('video follows actual audible output inside the unchanged zero CarPlay cap'
   frames.reset();
 });
 
+test('a repeated native output pair reserves drift error at the physical late125ms boundary', () => {
+  const origin = 1700000000000, clock = virtualClock(origin + 10000), deviceRate = .996;
+  const deviceLatency = 80, audioDelay = 110, sourceAt = time => 700000000 + time - origin;
+  const mapping = createAudioOutputMapping({ now: clock.now, timeOrigin: () => origin });
+  const nativePair = { contextTime: (10000 - deviceLatency) * deviceRate / 1000, performanceTime: 10000 };
+  const context = { state: 'running', sampleRate: 48000, baseLatency: .012, outputLatency: .08,
+    get currentTime() { return (clock.now() - origin) * deviceRate / 1000; }, getOutputTimestamp: () => nativePair };
+  mapping.capture(context);
+  clock.advance(clock.now() + 500);
+  const producer = { at: clock.now(), sourceTimeMs: sourceAt(clock.now() + deviceLatency - audioDelay) };
+  const reference = mapping.reference({ mode: 'carplay', type: 0, epoch: 1, generation: 1, sequence: 1,
+    state: 'playing', contextTimeMs: context.currentTime * 1000, sourceTimeMs: producer.sourceTimeMs,
+    mediaRate: 1 / deviceRate }, context);
+  let draws = 0;
+  const frames = createTimedFrames((frame, config, id, timing) => {
+    const physicalAudioAt = producer.at + deviceLatency + sourceAt(timing) - producer.sourceTimeMs;
+    const physicalSkew = physicalAudioAt - clock.now();
+    assert.ok(physicalSkew >= -45 - .001 && physicalSkew <= 125 + .001,
+      `a held native pair must not hide the real speaker skew ${physicalSkew}ms`);
+    draws++; frame.close();
+  }, clock);
+  frames.delay(constantDelay(0)); frames.audio(reference);
+  const timing = clock.now() + 30;
+  frames.present(picture(), { mode: 'carplay' }, 1, timing, { sourceTimeMs: sourceAt(timing) });
+  clock.advance(clock.now() + 99);
+  assert.equal(draws, 1, 'bounded drift uncertainty still permits a feasible picture');
+  assert.equal(reference.outputMethod, 'timestamp-holdover');
+  assert.ok(reference.uncertaintyMs >= 10);
+  assert.equal(mapping.diagnostics().outputUnavailableCount, 0, 'an ordinary repeated snapshot is not an invalid native sample');
+  frames.reset();
+});
+
 test('audio late125/early45 boundaries include delay uncertainty without enlarging either window', () => {
   for (const uncertainty of [0, 4]) {
     const clock = virtualClock(), shown = [];
@@ -150,11 +182,20 @@ test('six virtual hours retain skew with clock drift, jitter and dynamic output 
   const clockRate = 1.00047, start = origin + 10000;
   const clock = virtualClock(start), mapping = createAudioOutputMapping({ now: clock.now, timeOrigin: () => origin });
   let deviceLatency = 30, audioDelay = 90, frameCount = 0, sequence = 0, largestSkew = -Infinity, smallestSkew = Infinity;
+  let producerBoundary = null;
   const context = { state: 'running', currentTime: 10, sampleRate: 48000, baseLatency: 0.01, outputLatency: 0.02,
     getOutputTimestamp: () => ({ contextTime: (clock.now() - origin - deviceLatency) / 1000, performanceTime: clock.now() - origin }) };
   const sourceAt = time => serverOrigin + (time - origin) / clockRate;
   const frames = createTimedFrames((frame, config, id, timing, window) => {
     const skew = window.audioAt - clock.now();
+    // Independent speaker oracle: this emitted sample reaches the device after
+    // its real pipeline delay, then source samples advance at the source clock.
+    // Do not derive this truth from the output mapping under test.
+    const physicalAudioAt = producerBoundary.at + deviceLatency
+      + (sourceAt(timing) - producerBoundary.sourceTimeMs) * clockRate;
+    const physicalSkew = physicalAudioAt - clock.now();
+    assert.ok(physicalSkew >= -45 - .001 && physicalSkew <= 125 + .001,
+      `physical audio/video skew ${physicalSkew}ms at device latency ${deviceLatency}ms (mapping claimed ${skew}ms)`);
     largestSkew = Math.max(largestSkew, skew); smallestSkew = Math.min(smallestSkew, skew); frameCount++;
     assert.ok(skew >= -45 - 0.001 && skew <= 125 + 0.001);
     assert.ok(clock.now() <= timing, 'strict CarPlay source cap never expands for a slow device');
@@ -166,12 +207,13 @@ test('six virtual hours retain skew with clock drift, jitter and dynamic output 
     deviceLatency = [30, 180, 55, 260][Math.floor(elapsed / 300000) % 4];
     audioDelay = [90, 120, 40, -10][Math.floor(elapsed / 300000) % 4];
     context.currentTime = (clock.now() - origin) / 1000;
+    producerBoundary = { at: clock.now(), sourceTimeMs: sourceAt(clock.now() + deviceLatency - audioDelay) };
     // A longer device pipeline is offset by render-ahead, using the producer's
     // available future PCM; the total actual skew, not device latency alone, is
     // what determines whether a video frame is feasible.
     const reference = mapping.reference({ mode: 'carplay', type: 0, epoch: 1, generation: 1, clockGeneration: 1,
       sequence: ++sequence, state: 'playing', contextTimeMs: context.currentTime * 1000,
-      sourceTimeMs: sourceAt(clock.now() + deviceLatency - audioDelay), mediaRate: 1 / clockRate, filterDelayMs: 14 }, context);
+      sourceTimeMs: producerBoundary.sourceTimeMs, mediaRate: 1 / clockRate, filterDelayMs: 14 }, context);
     frames.audio(reference);
     const lead = 25 + ((elapsed / 100 * 17) % 31);
     const timing = clock.now() + lead;
