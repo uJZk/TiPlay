@@ -208,3 +208,53 @@ test('RTC ignores a pending ICE stats result after the connection closes', async
   assert.equal(connection.stats().ice.state, 'collecting');
   assert.equal(connection.stats().ice.sampleAgeMs, null);
 });
+
+test('RTC reports local ICE, authenticated signaling, remote ICE and encrypted authentication in order', async () => {
+  class CandidatePeer extends Peer {
+    async createOffer() { return { type: 'offer', sdp: 'v=0\r\na=candidate:1 1 udp 1 169.254.111.111 5555 typ host\r\n' }; }
+  }
+  const progress = [];
+  const connection = await connectRtc({ session: 'secret-browser-session', code: '9876', PeerConnection: CandidatePeer,
+    onProgress: value => progress.push(value),
+    async authenticateOffer() {
+      Peer.last.verified = true;
+      return { sdp: 'v=0\r\na=candidate:2 1 udp 1 192.168.43.1 6666 typ host\r\n', session: 7 };
+    },
+  });
+  assert.deepEqual(progress.map(value => value.stage), ['local-ice', 'pairing', 'remote-ice', 'dc-auth', 'connected']);
+  assert.equal(progress[1].localCandidates, 1); assert.equal(progress[1].localLinkLocalCandidates, 1);
+  assert.equal(progress[2].remoteCandidates, 1); assert.equal(progress[2].remoteLinkLocalCandidates, 0);
+  assert.doesNotMatch(JSON.stringify(progress), /169\.254\.111|192\.168\.43|5555|6666|9876|secret-browser-session|a=candidate/);
+  connection.close();
+});
+
+test('an authenticated answer with no remote candidates preserves its ICE timeout stage and safe counts', async t => {
+  const originalTimer = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', (callback, milliseconds, ...args) => originalTimer(callback, milliseconds === 12000 ? 0 : milliseconds, ...args));
+  class NoRoutePeer extends Peer {
+    async setRemoteDescription(value) { this.remoteDescription = value; this.connectionState = 'connecting'; this.iceConnectionState = 'checking'; }
+  }
+  const progress = [];
+  await assert.rejects(connectRtc({ session: 'secret-session', code: '9876', PeerConnection: NoRoutePeer,
+    onProgress: value => progress.push(value),
+    async authenticateOffer() { return { sdp: 'v=0\r\na=ice-pwd:secret-password\r\n', session: 7 }; },
+  }), error => {
+    assert.equal(error.rtcReason, 'timeout'); assert.equal(error.rtcDiagnostic.stage, 'remote-ice');
+    assert.equal(error.rtcDiagnostic.remoteCandidates, 0); assert.equal(error.rtcDiagnostic.remoteLinkLocalCandidates, 0);
+    assert.equal(error.rtcDiagnostic.iceState, 'checking');
+    assert.doesNotMatch(JSON.stringify(error.rtcDiagnostic), /secret|9876|ice-pwd|v=0/);
+    return true;
+  });
+  assert.equal(progress.at(-1).stage, 'remote-ice');
+  assert.equal(Peer.last.sent.length, 0, 'no encrypted auth is attempted before the channels open');
+  assert.equal(Peer.last.closed, true);
+});
+
+test('signaling failure retains the pairing stage instead of becoming an unspecified lost connection', async () => {
+  await assert.rejects(connectRtc({ session: 's', code: '9876', PeerConnection: Peer,
+    async authenticateOffer() { throw Object.assign(new TypeError('Failed to fetch'), { rtcReason: 'fetch' }); },
+  }), error => {
+    assert.equal(error.rtcReason, 'fetch'); assert.equal(error.rtcDiagnostic.stage, 'pairing');
+    assert.equal(error.rtcDiagnostic.remoteCandidates, 0); return true;
+  });
+});

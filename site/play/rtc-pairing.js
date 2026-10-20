@@ -42,14 +42,18 @@ export function pairingTranscript(fields) {
 }
 
 async function post(fetchPhone, path, payload, signal) {
-  const response = await fetchPhone(path, { method: 'POST', body: JSON.stringify(payload), signal });
-  const result = await response.json();
-  if (!response.ok) throw Object.assign(new Error(result.error || 'Phone pairing failed.'), { status: response.status });
+  let response;
+  try { response = await fetchPhone(path, { method: 'POST', body: JSON.stringify(payload), signal }); }
+  catch (error) { if (!signal?.aborted) error.rtcReason = 'fetch'; throw error; }
+  let result = null;
+  try { result = await response.json(); } catch (_) { /* Keep an HTTP refusal's status even for an HTML error page. */ }
+  if (!response.ok) throw Object.assign(new Error('Phone pairing request refused.'), { status: response.status });
+  if (!result || typeof result !== 'object' || Array.isArray(result)) throw Object.assign(new Error('Invalid phone pairing response.'), { rtcReason: 'bad-response' });
   return result;
 }
 
 /** A mature SRP6a PAKE authenticates the phone and SDP using the existing four-digit code alone. */
-export async function authenticateRtcOffer({ fetchPhone, session, code, offer, signal }) {
+async function verifyRtcOffer({ fetchPhone, session, code, offer, signal }) {
   if (!/^[0-9]{4}$/.test(code)) throw new Error('Enter the four-digit pairing code from TiPlay.');
   const routines = pairingRoutines();
   const step1 = await new SRPClientSession(routines).step1(IDENTITY, code);
@@ -70,4 +74,12 @@ export async function authenticateRtcOffer({ fetchPhone, session, code, offer, s
   const transcript = pairingTranscript([PROTOCOL, challenge.id, session, a, challenge.B, challenge.salt, offer, answer.sdp, answer.session]);
   if (!await crypto.subtle.verify('HMAC', key, binding, transcript)) throw new Error('Phone verification failed. Re-enter the pairing code.');
   return { sdp: answer.sdp, session: answer.session };
+}
+
+export async function authenticateRtcOffer(options) {
+  try { return await verifyRtcOffer(options); }
+  catch (error) {
+    if (!error.rtcReason && error.status === undefined && error.name !== 'AbortError') error.rtcReason = 'pairing';
+    throw error;
+  }
 }

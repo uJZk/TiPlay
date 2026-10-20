@@ -60,7 +60,23 @@ test('four-digit pairing authenticates SDP without exposing a password or reusab
 });
 
 test('wrong password, forged server proof and SDP/session transcript splice all fail closed', async () => {
-  await assert.rejects(exchange({ clientCode: '0000' }), /code did not match/);
+  await assert.rejects(exchange({ clientCode: '0000' }), error => error.status === 401);
   for (const changed of ['sdp', 'offer', 'session']) await assert.rejects(exchange({ changed }), /verification failed/);
   await assert.rejects(exchange({ changed: 'proof' }), /Bad server credentials/);
+});
+
+
+test('HTTP interface failures keep their status even when the server returns HTML', async () => {
+  for (const status of [404, 503]) {
+    await assert.rejects(authenticateRtcOffer({ session: vector.session, code: vector.code, offer: vector.offer,
+      fetchPhone: async () => ({ ok: false, status, json: async () => { throw new SyntaxError('HTML error'); } }),
+    }), error => error.status === status);
+  }
+});
+
+test('network fetch failure is distinct from PAKE evidence rejection', async () => {
+  await assert.rejects(authenticateRtcOffer({ session: vector.session, code: vector.code, offer: vector.offer,
+    fetchPhone: async () => { throw new TypeError('Failed to fetch'); },
+  }), error => error.rtcReason === 'fetch');
+  await assert.rejects(exchange({ changed: 'proof' }), error => error.rtcReason === 'pairing');
 });

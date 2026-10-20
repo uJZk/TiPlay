@@ -27,7 +27,8 @@ import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
 import { createAirPlayTrustNotification } from './airplay-trust.js';
 import { createBrowserNotice } from './browser-notice.js';
-import { browserDiagnosticEvents } from './browser-diagnostics.js';
+import { browserDiagnosticEvents, PAGE_VERSION } from './browser-diagnostics.js';
+import { rtcFailureReason, rtcFailureSummary } from './rtc-diagnostics.js';
 
 const STRINGS = {
   en: {
@@ -50,6 +51,25 @@ const STRINGS = {
     ready: 'Ready to connect.',
     stopped: 'Disconnected.',
     connecting: 'Connecting to the Android device…',
+    rtcLocalIce: 'Preparing this browser’s direct connection…',
+    rtcPairing: 'Contacting Android and verifying the pairing code…',
+    rtcRemoteIce: 'Android verified. Opening the direct data channels…',
+    rtcAuth: 'Data channels open. Authenticating the media session…',
+    rtcConnected: 'Connection established. Preparing playback…',
+    rtcCandidates: 'Candidates: browser {0} (169.254: {1}), Android {2} (169.254: {3}).',
+    rtcFetch: 'Cannot reach the Android HTTP service. Check the address and local-network permission.',
+    rtcMissingInterface: 'Android has no WebRTC pairing interface. Check that the matching test APK is installed.',
+    rtcAndroidSignaling: 'Android could not prepare the WebRTC connection. Check its diagnostic report.',
+    rtcPairingFailed: 'The phone’s pairing verification failed. Re-enter the current pairing code.',
+    rtcBadResponse: 'Android returned an invalid pairing response.',
+    rtcIceFailed: 'The direct ICE/data-channel connection failed.',
+    rtcUnsupported: 'This browser does not provide WebRTC data channels.',
+    rtcConnectionFailed: 'The connection failed at this stage.',
+    rtcLocalTimeout: 'The browser’s local ICE candidate collection timed out.',
+    rtcPairingTimeout: 'Contacting and verifying Android timed out.',
+    rtcRemoteTimeout: 'Android was verified, but opening ICE/data channels timed out.',
+    rtcAuthTimeout: 'The data channels opened, but session authentication timed out.',
+    rtcRetryDetail: '{0} Last stage: {1} Retrying in {2} s…',
     unreachable: 'The Android device does not answer. Retrying in {0} s…',
     lost: 'Connection lost. Retrying in {0} s…',
     throttled: 'Too many wrong pairing codes. Retrying in {0} s…',
@@ -101,6 +121,25 @@ const STRINGS = {
     ready: '可以连接。',
     stopped: '已断开。',
     connecting: '正在连接安卓端…',
+    rtcLocalIce: '正在准备车机浏览器的直连候选地址…',
+    rtcPairing: '正在联系安卓端并验证配对码…',
+    rtcRemoteIce: '安卓端已通过验证，正在建立 ICE / 数据通道…',
+    rtcAuth: '数据通道已打开，正在认证媒体会话…',
+    rtcConnected: '连接已建立，正在准备播放…',
+    rtcCandidates: '候选数：浏览器 {0}（169.254：{1}），安卓端 {2}（169.254：{3}）。',
+    rtcFetch: '无法访问安卓端 HTTP 服务，请检查地址和本地网络访问权限。',
+    rtcMissingInterface: '安卓端缺少 WebRTC 配对接口，请确认安装了配套测试 APK。',
+    rtcAndroidSignaling: '安卓端未能准备 WebRTC 连接，请查看安卓端诊断报告。',
+    rtcPairingFailed: '安卓端的配对校验未通过，请重新输入当前配对码。',
+    rtcBadResponse: '安卓端返回了无效的配对响应。',
+    rtcIceFailed: 'ICE / 数据通道直连失败。',
+    rtcUnsupported: '此浏览器未提供 WebRTC 数据通道。',
+    rtcConnectionFailed: '连接在此阶段失败。',
+    rtcLocalTimeout: '浏览器收集本机 ICE 候选地址超时。',
+    rtcPairingTimeout: '联系安卓端或验证配对超时。',
+    rtcRemoteTimeout: '安卓端已验证，但建立 ICE / 数据通道超时。',
+    rtcAuthTimeout: '数据通道已打开，但媒体会话认证超时。',
+    rtcRetryDetail: '{0} 最后阶段：{1} {2} 秒后重试…',
     unreachable: '安卓端没有响应，{0} 秒后重试…',
     lost: '连接中断，{0} 秒后重试…',
     throttled: '配对码错误次数过多，{0} 秒后重试…',
@@ -149,7 +188,7 @@ const renderReconnect = createReconnectOverlay({
 document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
 for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
 $('stats').setAttribute('aria-label', t('statsLabel'));
-$('page-version').textContent = `TiPlay ${APP_VERSION}`;
+$('page-version').textContent = `TiPlay ${APP_VERSION} · ${PAGE_VERSION}`;
 
 function loadLink() {
   try {
@@ -177,7 +216,7 @@ showLink();
 const slots = createTouchSlots();
 let session = null, active = false, phase = 'ready', notice = null;
 let attempt = 0, reconnects = 0, retryTimer = null, retryAt = 0, streamId = 0, videoAbort = null, lastError = null;
-let retryCountdownTimer = null, rtc = null, rtcAudio = null, resourceToken = null;
+let retryCountdownTimer = null, rtc = null, rtcAudio = null, resourceToken = null, rtcProgress = null;
 let config = null, live = false, status = null, unsupported = null, videoStats = {};
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 const locationNotice = createLocationNotice($('location-notice'), lang);
@@ -473,6 +512,7 @@ async function connectVideo() {
   rtc?.close(); rtc = null; rtcAudio?.close(); rtcAudio = null; resourceToken = null;
   live = false;
   phase = 'connecting';
+  rtcProgress = null;
   render();
   const abort = videoAbort = new AbortController();
   try {
@@ -484,9 +524,12 @@ async function connectVideo() {
     const connected = await connectRtc({
       fetchPhone: phoneFetch, session, code: link.code, codecs, signal: abort.signal,
       authenticateOffer: authenticateRtcOffer,
+      onProgress(progress) {
+        if (active && id === streamId && !abort.signal.aborted) { rtcProgress = progress; render(); }
+      },
       onClose(error) {
         if (active && id === streamId && !abort.signal.aborted) {
-          lastError = error; streamEnded('network');
+          lastError = error; streamEnded('network', error);
         }
       },
     });
@@ -529,13 +572,15 @@ async function connectVideo() {
     reportAppearance(); phase = 'waiting'; lastViewport = ''; scheduleViewport(); render();
   } catch (error) {
     if (id !== streamId || abort.signal.aborted || !active) return;
+    error.rtcReason = rtcFailureReason(error);
+    if (!error.rtcDiagnostic && rtcProgress) error.rtcDiagnostic = rtcProgress;
     if (error.status === 401) stop('badCode');
     else if (error.status === 409) stop('replaced');
     else { lastError = error; scheduleRetry(error.status === 429 ? 30000 : backoffDelay(attempt++)); }
   }
 }
 
-function streamEnded(reason) {
+function streamEnded(reason, error = null) {
   sink?.stop();
   videoAbort?.abort();
   live = false;
@@ -544,7 +589,7 @@ function streamEnded(reason) {
     stop('replaced');
     return;
   }
-  lastError = null;
+  lastError = error;
   scheduleRetry(backoffDelay(attempt++));
 }
 
@@ -655,6 +700,29 @@ function renderStats() {
   $('stats').textContent = formatPerformanceMonitor(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats);
 }
 
+function rtcStageText(stage) {
+  const key = { 'local-ice': 'rtcLocalIce', pairing: 'rtcPairing', 'remote-ice': 'rtcRemoteIce',
+    'dc-auth': 'rtcAuth', connected: 'rtcConnected' }[stage];
+  return t(key ?? 'connecting');
+}
+
+function rtcCandidateText(value) {
+  if (!value || !Number.isInteger(value.localCandidates) || !Number.isInteger(value.remoteCandidates)) return '';
+  return t('rtcCandidates', value.localCandidates, value.localLinkLocalCandidates ?? 0,
+    value.remoteCandidates, value.remoteLinkLocalCandidates ?? 0);
+}
+
+function rtcRetryText(error, seconds) {
+  const failure = rtcFailureSummary(error);
+  let key = { fetch: 'rtcFetch', 'missing-interface': 'rtcMissingInterface', 'android-signaling': 'rtcAndroidSignaling',
+    pairing: 'rtcPairingFailed', 'bad-response': 'rtcBadResponse', ice: 'rtcIceFailed', unsupported: 'rtcUnsupported' }[failure.reason];
+  if (failure.reason === 'timeout') key = { 'local-ice': 'rtcLocalTimeout', pairing: 'rtcPairingTimeout',
+    'remote-ice': 'rtcRemoteTimeout', 'dc-auth': 'rtcAuthTimeout' }[failure.stage];
+  const detail = t('rtcRetryDetail', t(key ?? 'rtcConnectionFailed'), rtcStageText(failure.stage), seconds);
+  const candidates = rtcCandidateText(failure);
+  return candidates ? `${detail} ${candidates}` : detail;
+}
+
 function statusText() {
   if (!active) {
     if (notice?.key === 'noVideo') return t('pictureUnavailable');
@@ -662,9 +730,14 @@ function statusText() {
     return t(link.code ? 'ready' : 'enterCode');
   }
   if (unsupported) return t('pictureUnavailable');
-  if (phase === 'connecting') return t('connecting');
+  if (phase === 'connecting') {
+    if (!rtcProgress) return t('connecting');
+    const text = rtcStageText(rtcProgress.stage), candidates = rtcCandidateText(rtcProgress);
+    return candidates ? `${text} ${candidates}` : text;
+  }
   if (phase === 'retry') {
     const seconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
+    if (lastError?.status !== 429 && (lastError?.rtcReason || lastError?.rtcDiagnostic)) return rtcRetryText(lastError, seconds);
     return t(lastError?.status === 429 ? 'throttled' : lastError ? 'unreachable' : 'lost', seconds);
   }
   const playback = status?.airplay;
@@ -693,7 +766,8 @@ function statusText() {
 function pageStats() {
   return {
     themeDark: appearance.matches,
-    link: { path: videoPath.path, fallback: videoPath.reason, codecs: probedCodecs, phase, attempt, reconnects, live, unsupported },
+    link: { path: videoPath.path, fallback: videoPath.reason, codecs: probedCodecs, phase, attempt, reconnects, live, unsupported,
+      connection: rtcProgress, failure: lastError ? rtcFailureSummary(lastError) : null },
     video: videoStats,
     audio: browserAudio.stats(),
     control: outbox?.stats() ?? null,

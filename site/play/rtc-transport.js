@@ -1,5 +1,7 @@
 /*! SPDX-License-Identifier: GPL-3.0-only
  * Reliable local WebRTC transport. Media remains application data for WebCodecs/AudioWorklet. */
+import { candidateCounts, rtcFailureReason } from './rtc-diagnostics.js';
+
 export const RTC_FRAGMENT_BYTES = 16384;
 export const RTC_HEADER_BYTES = 24;
 export const RTC_MAGIC = 0x31435254;
@@ -91,10 +93,27 @@ function waitFor(target, event, ready, signal, timeoutMs = 12000) {
 
 /** The PAKE exchange authenticates the complete SDP transcript before applying the answer. */
 export async function connectRtc({ fetchPhone, session, code, codecs, signal, authenticateOffer,
-  PeerConnection = globalThis.RTCPeerConnection, onClose = () => {} }) {
+  PeerConnection = globalThis.RTCPeerConnection, onClose = () => {}, onProgress = () => {} }) {
   if (!PeerConnection) throw new Error('WebRTC DataChannel is unavailable');
   if (typeof authenticateOffer !== 'function') throw new Error('Authenticated RTC pairing is required');
   const peer = new PeerConnection({ iceServers: [], iceTransportPolicy: 'all', bundlePolicy: 'max-bundle' });
+  let stage = 'local-ice', remoteCounts = { total: 0, linkLocal: 0 }, terminalCause = null;
+  const diagnostic = () => {
+    const local = candidateCounts(peer.localDescription?.sdp);
+    return { stage, localCandidates: local.total, localLinkLocalCandidates: local.linkLocal,
+      remoteCandidates: remoteCounts.total, remoteLinkLocalCandidates: remoteCounts.linkLocal,
+      iceState: peer.iceConnectionState ?? null, gatheringState: peer.iceGatheringState ?? null,
+      connectionState: peer.connectionState ?? null };
+  };
+  const progress = next => {
+    if (next) stage = next;
+    try { onProgress(diagnostic()); } catch (_) { /* A status observer cannot interrupt authentication. */ }
+  };
+  const annotate = error => {
+    error.rtcReason = rtcFailureReason(error);
+    error.rtcDiagnostic = diagnostic();
+    return error;
+  };
   const channels = {};
   const pending = new Map();
   let nextId = 0, ended = false, authenticated = false, streams = null, handshakeTimer = null;
@@ -136,13 +155,14 @@ export async function connectRtc({ fetchPhone, session, code, codecs, signal, au
   const controller = new AbortController();
   const close = (cause = new Error('RTC connection stopped')) => {
     if (ended) return;
+    terminalCause = annotate(cause);
     ended = true; clearTimeout(handshakeTimer); clearInterval(iceTimer); controller.abort(); signal?.removeEventListener('abort', abort);
-    for (const value of pending.values()) { clearTimeout(value.timer); value.reject(cause); }
+    for (const value of pending.values()) { clearTimeout(value.timer); value.reject(terminalCause); }
     pending.clear();
-    streams?.video.close(cause); streams?.audio.close(cause);
+    streams?.video.close(terminalCause); streams?.audio.close(terminalCause);
     for (const channel of Object.values(channels)) { channel.onmessage = null; channel.close(); }
     peer.close();
-    if (authenticated) onClose(cause);
+    if (authenticated) onClose(terminalCause);
   };
   handshakeTimer = setTimeout(() => close(new Error('RTC connection timed out')), 20000);
   const abort = () => close();
@@ -160,10 +180,14 @@ export async function connectRtc({ fetchPhone, session, code, codecs, signal, au
     pending.set(id, { resolve, reject, timer });
     try { send({ ...data, type, id }); } catch (error) { clearTimeout(timer); pending.delete(id); reject(error); }
   });
+  peer.addEventListener('icegatheringstatechange', () => { if (!ended) progress(); });
+  peer.addEventListener('iceconnectionstatechange', () => { if (!ended) progress(); });
   peer.addEventListener('connectionstatechange', () => {
+    if (!ended) progress();
     if (['failed', 'closed', 'disconnected'].includes(peer.connectionState)) close(new Error(`RTC ${peer.connectionState}`));
   });
   try {
+    progress('local-ice');
     for (const label of ['video', 'audio', 'control']) {
       const channel = channels[label] = peer.createDataChannel(label, { ordered: true });
       channel.binaryType = 'arraybuffer';
@@ -186,12 +210,15 @@ export async function connectRtc({ fetchPhone, session, code, codecs, signal, au
     }
     await peer.setLocalDescription(await peer.createOffer());
     await waitFor(peer, 'icegatheringstatechange', () => peer.iceGatheringState === 'complete', controller.signal);
+    progress('pairing');
     const answer = await authenticateOffer({ fetchPhone, session, code, offer: peer.localDescription.sdp, signal: controller.signal });
     const sdp = answer.sdp;
     if (typeof sdp !== 'string') throw new Error('Invalid RTC answer');
-    if (ended) throw new Error('RTC connection stopped');
+    if (ended) throw terminalCause ?? new Error('RTC connection stopped');
+    remoteCounts = candidateCounts(sdp); progress('remote-ice');
     await peer.setRemoteDescription({ type: 'answer', sdp });
     await Promise.all(Object.values(channels).map(channel => waitFor(channel, 'open', () => channel.readyState === 'open', controller.signal)));
+    progress('dc-auth');
     const hello = await request('auth', { c: code, s: session, codecs, timing: 1, lifecycle: 1 });
     if (ended) throw new Error('RTC connection stopped');
     const identity = answer.session ?? hello.session;
@@ -200,7 +227,7 @@ export async function connectRtc({ fetchPhone, session, code, codecs, signal, au
       video: createRtcRecordStream({ session: identity, channel: 'video', credit: RTC_VIDEO_CREDIT, maxRecordBytes: 8 * 1024 * 1024 + 24, acknowledge: send, fail: close }),
       audio: createRtcRecordStream({ session: identity, channel: 'audio', credit: RTC_AUDIO_CREDIT, maxRecordBytes: RTC_AUDIO_CREDIT, acknowledge: send, fail: close }),
     };
-    authenticated = true; clearTimeout(handshakeTimer);
+    authenticated = true; clearTimeout(handshakeTimer); progress('connected');
     send({ type: 'rtc-ready', session: identity, videoCredit: RTC_VIDEO_CREDIT, audioCredit: RTC_AUDIO_CREDIT, maxMessageSize: Math.min(RTC_FRAGMENT_BYTES, peer.sctp?.maxMessageSize || RTC_FRAGMENT_BYTES) });
     if (typeof peer.getStats === 'function') { sampleIce(); iceTimer = setInterval(sampleIce, 2500); }
     return {
@@ -211,7 +238,10 @@ export async function connectRtc({ fetchPhone, session, code, codecs, signal, au
       stats: () => ({ state: peer.connectionState, ice: { ...ice, connectionState: peer.iceConnectionState ?? null,
         sampleAgeMs: iceSampledAt === null ? null : Math.max(0, performance.now() - iceSampledAt), errors: iceErrors }, video: streams.video.stats(), audio: streams.audio.stats(), bufferedControlBytes: channels.control.bufferedAmount }),
     };
-  } catch (error) { close(error); throw error; }
+  } catch (error) {
+    const failure = terminalCause ?? annotate(error);
+    close(failure); throw failure;
+  }
 }
 
 /** Mute/autoplay suspension retires a playback subscription, not the encrypted transport.

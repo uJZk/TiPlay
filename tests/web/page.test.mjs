@@ -69,7 +69,7 @@ function retryPage(lastError) {
     let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort;
     let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null, config = null;
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
-    let rtc = null, rtcAudio = null, resourceToken = null;
+    let rtc = null, rtcAudio = null, resourceToken = null, rtcProgress = null;
     const codecsReady = new Promise(() => {});
     const browserLocation = { stop() {} };
     let problem = null;
@@ -286,5 +286,6 @@ test('browser settings uses the Android product version without a playback overl
   const html = read('index.html');
   assert.match(html, /<footer><a id="page-version" href="https:\/\/github.com\/uJZk\/TiPlay\/releases"><\/a><\/footer>/);
   assert.doesNotMatch(html, /<small id="page-version"/);
+  assert.match(read('app.js'), /TiPlay \$\{APP_VERSION\} · \$\{PAGE_VERSION\}/);
   assert.doesNotMatch(read('style.css'), /#page-version\s*\{[^}]*position:fixed/);
 });

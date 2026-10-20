@@ -54,7 +54,7 @@ protocol logic, real HTTP/SRP exchange and injected peer lifecycle, including
 replacement and same-session reconnect ownership. Reliable hub/capture tests check
 explicit overflow/expiry and canonical input references without output duplication.
 
-The beta source passed 2,182 shared, 1,746 common and six home unit tests, 424
+The beta source passed 2,182 shared, 1,746 common and six home unit tests, 432
 browser unit tests, eight isolated-site tests, nine release-draft tests and native
 libsoxr checks. Seven capture tests were then rerun against the final status-read
 change, including a held disk-monitor concurrency check. Required debug lint and

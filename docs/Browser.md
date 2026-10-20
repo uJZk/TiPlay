@@ -31,6 +31,12 @@ no timeout, and rerenders cannot reopen a dismissed error; explicitly starting a
 new connection resets dismissal. Location guidance keeps its separate persistent
 card. Receiver fault details stay on Android, below its short status title.
 
+The page footer identifies both the app version and browser revision. During RTC
+setup the page distinguishes local address gathering, contacting Android, establishing
+the direct channel and authenticating that channel. Failures retain the stage and
+bounded candidate/state counters without SDP, addresses or pairing secrets. An
+eight-second retry countdown describes the next attempt, not Android response time.
+
 Network failure retries with a countdown; rejected codes stop retries and require the
 current code. Another paired browser can take over, and the displaced page can use
 Connect to reclaim the display. Wrong-code [lockout](../shared/src/main/java/com/shilapi/xcertplay/web/BrowserPairingGate.kt)
