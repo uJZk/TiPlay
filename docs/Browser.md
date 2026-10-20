@@ -4,7 +4,7 @@ TiPlay shows CarPlay from an Android phone in the car browser. The iPhone
 connects by wireless CarPlay or USB; the browser reaches Android through its hotspot
 or shared Wi-Fi that permits communication between devices.
 
-The settings footer links **TiPlay 0.2.21-beta.1** to the project releases. Android Main
+The settings footer links **TiPlay 0.2.21-beta.2** to the project releases. Android Main
 settings shows the same product version; playback has no corner version overlay.
 
 ## Connect and recover

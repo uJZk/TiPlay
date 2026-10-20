@@ -56,7 +56,14 @@ const STRINGS = {
     rtcRemoteIce: 'Android verified. Opening the direct data channels…',
     rtcAuth: 'Data channels open. Authenticating the media session…',
     rtcConnected: 'Connection established. Preparing playback…',
-    rtcCandidates: 'Candidates: browser {0} (169.254: {1}), Android {2} (169.254: {3}).',
+    rtcCandidates: 'Candidate totals: browser {0}, Android {1}.',
+    rtcBrowserClasses: 'Browser: {0}.',
+    rtcAndroidClasses: 'Android: {0}.',
+    rtcPrivateIpv4: 'private IPv4',
+    rtcCgnatIpv4: 'CGNAT IPv4',
+    rtcLinkLocal: 'link-local IPv4',
+    rtcStates: 'ICE {0}, peer {1}; DC video/audio/control {2}/{3}/{4}.',
+    rtcAndroidNoCandidates: 'Android’s answer contains no ICE candidates; no Android candidate is available for the direct connection.',
     rtcFetch: 'Cannot reach the Android HTTP service. Check the address and local-network permission.',
     rtcMissingInterface: 'Android has no WebRTC pairing interface. Check that the matching test APK is installed.',
     rtcAndroidSignaling: 'Android could not prepare the WebRTC connection. Check its diagnostic report.',
@@ -126,7 +133,14 @@ const STRINGS = {
     rtcRemoteIce: '安卓端已通过验证，正在建立 ICE / 数据通道…',
     rtcAuth: '数据通道已打开，正在认证媒体会话…',
     rtcConnected: '连接已建立，正在准备播放…',
-    rtcCandidates: '候选数：浏览器 {0}（169.254：{1}），安卓端 {2}（169.254：{3}）。',
+    rtcCandidates: '候选总数：浏览器 {0}，安卓端 {1}。',
+    rtcBrowserClasses: '浏览器分类：{0}。',
+    rtcAndroidClasses: '安卓分类：{0}。',
+    rtcPrivateIpv4: '私有 IPv4',
+    rtcCgnatIpv4: 'CGNAT IPv4',
+    rtcLinkLocal: '链路本地 IPv4',
+    rtcStates: 'ICE {0}，Peer {1}；DC 视频/音频/控制 {2}/{3}/{4}。',
+    rtcAndroidNoCandidates: '安卓端响应中没有 ICE 候选，当前没有可用于直连的安卓候选。',
     rtcFetch: '无法访问安卓端 HTTP 服务，请检查地址和本地网络访问权限。',
     rtcMissingInterface: '安卓端缺少 WebRTC 配对接口，请确认安装了配套测试 APK。',
     rtcAndroidSignaling: '安卓端未能准备 WebRTC 连接，请查看安卓端诊断报告。',
@@ -708,8 +722,18 @@ function rtcStageText(stage) {
 
 function rtcCandidateText(value) {
   if (!value || !Number.isInteger(value.localCandidates) || !Number.isInteger(value.remoteCandidates)) return '';
-  return t('rtcCandidates', value.localCandidates, value.localLinkLocalCandidates ?? 0,
-    value.remoteCandidates, value.remoteLinkLocalCandidates ?? 0);
+  const pieces = [t('rtcCandidates', value.localCandidates, value.remoteCandidates)];
+  const categories = [['UdpCandidates', 'UDP'], ['TcpCandidates', 'TCP'], ['PrivateIpv4Candidates', t('rtcPrivateIpv4')],
+    ['CgnatIpv4Candidates', t('rtcCgnatIpv4')], ['LinkLocalCandidates', t('rtcLinkLocal')], ['Ipv6Candidates', 'IPv6'], ['MdnsCandidates', 'mDNS']];
+  for (const [prefix, key] of [['local', 'rtcBrowserClasses'], ['remote', 'rtcAndroidClasses']]) {
+    const nonzero = categories.filter(([field]) => value[prefix + field] > 0)
+      .map(([field, label]) => `${label}:${value[prefix + field]}`);
+    if (nonzero.length) pieces.push(t(key, nonzero.join(', ')));
+  }
+  if (value.iceState || value.connectionState) pieces.push(t('rtcStates', value.iceState ?? '—', value.connectionState ?? '—',
+    value.videoChannelState ?? '—', value.audioChannelState ?? '—', value.controlChannelState ?? '—'));
+  if (['remote-ice', 'dc-auth', 'connected'].includes(value.stage) && value.remoteCandidates === 0) pieces.push(t('rtcAndroidNoCandidates'));
+  return pieces.join(' ');
 }
 
 function rtcRetryText(error, seconds) {

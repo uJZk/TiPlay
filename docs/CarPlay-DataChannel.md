@@ -2,8 +2,8 @@
 
 ## Scope and status
 
-The `feat/carplay-webrtc` branch implements the WebRTC beta, **0.2.21-beta.1**
-(code 45). The Android phone relays source-compressed video into webpage-controlled
+The `feat/carplay-webrtc` branch implements the WebRTC beta, **0.2.21-beta.2**
+(code 46). The Android phone relays source-compressed video into webpage-controlled
 WebCodecs decoding; native WebRTC audio/video tracks are not used.
 The supported product remains Android phone plus car browser.
 
@@ -101,6 +101,19 @@ arm64-v8a, armeabi-v7a, x86 and x86_64 libraries. See [third-party notices](Thir
 and the packaged `licenses/webrtc/` provenance and complete binary notices.
 `BrowserRtcRuntime` owns one factory and app-private persistent DTLS certificate;
 `BrowserRtcPeer` owns one data-only peer and bounded native/control work.
+
+The browser-only factory disables the Android NetworkMonitor so host ICE can
+enumerate kernel interfaces, including hotspot aliases created by Shizuku/Root
+that have no ConnectivityManager Network handle. Sockets still bind their source
+address; Android routing and VPN policy determine actual reachability. This loses
+per-Network socket binding and Android network-change notifications, and does not
+prove an ICE path is usable. Other application networking is unchanged. Vehicle
+acceptance must cover mobile-data/VPN combinations and hotspot restart.
+
+Browser diagnostics show candidate totals and anonymous address/protocol categories,
+ICE/peer states and each channel's state. These are candidate descriptions, not the
+HTTP address entered by the user. Android logs emit a compact connection summary
+before media statistics so the standard diagnostic line limit cannot hide it.
 
 Preserve source-compressed video without reencoding: the subsequent explicit
 constraint is never to encode the video a second time. Decryption, configuration

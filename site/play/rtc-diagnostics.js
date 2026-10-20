@@ -4,14 +4,30 @@ const STATES = new Set(['new', 'checking', 'connected', 'completed', 'failed', '
 
 /** Counts only: addresses, SDP credentials and certificate material never enter diagnostic snapshots. */
 export function candidateCounts(sdp) {
-  let total = 0, linkLocal = 0;
+  const counts = { total: 0, linkLocal: 0, udp: 0, tcp: 0, privateIpv4: 0, cgnatIpv4: 0, ipv6: 0, mdns: 0 };
   for (const line of String(sdp ?? '').split(/\r?\n/)) {
     if (!line.startsWith('a=candidate:')) continue;
-    total++;
-    const address = line.trim().split(/\s+/)[4];
-    if (/^169\.254\.\d{1,3}\.\d{1,3}$/.test(address ?? '')) linkLocal++;
+    counts.total++;
+    const fields = line.trim().split(/\s+/), protocol = fields[2]?.toLowerCase(), address = fields[4] ?? '';
+    if (protocol === 'udp' || protocol === 'tcp') counts[protocol]++;
+    if (/\.local\.?$/i.test(address)) counts.mdns++;
+    else if (address.includes(':')) counts.ipv6++;
+    else if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(address)) {
+      const octets = address.split('.').map(Number), [a, b] = octets;
+      if (octets.some(value => value > 255)) continue;
+      if (a === 169 && b === 254) counts.linkLocal++;
+      else if (a === 100 && b >= 64 && b <= 127) counts.cgnatIpv4++;
+      else if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) counts.privateIpv4++;
+    }
   }
-  return { total, linkLocal };
+  return counts;
+}
+
+const CANDIDATE_DIMENSIONS = { Candidates: 'total', LinkLocalCandidates: 'linkLocal', UdpCandidates: 'udp', TcpCandidates: 'tcp',
+  PrivateIpv4Candidates: 'privateIpv4', CgnatIpv4Candidates: 'cgnatIpv4', Ipv6Candidates: 'ipv6', MdnsCandidates: 'mdns' };
+
+export function candidateDiagnosticFields(prefix, counts) {
+  return Object.fromEntries(Object.entries(CANDIDATE_DIMENSIONS).map(([name, key]) => [prefix + name, counts[key]]));
 }
 
 export function rtcFailureReason(error) {
@@ -32,11 +48,14 @@ export function rtcFailureReason(error) {
 export function rtcFailureSummary(error) {
   const source = error?.rtcDiagnostic ?? {};
   const result = { reason: rtcFailureReason(error), stage: STAGES.has(source.stage) ? source.stage : null };
-  for (const key of ['localCandidates', 'localLinkLocalCandidates', 'remoteCandidates', 'remoteLinkLocalCandidates']) {
+  for (const key of ['local', 'remote'].flatMap(prefix => Object.keys(candidateDiagnosticFields(prefix, {})))) {
     result[key] = Number.isInteger(source[key]) && source[key] >= 0 ? source[key] : null;
   }
   for (const key of ['iceState', 'gatheringState', 'connectionState']) {
     result[key] = STATES.has(source[key]) ? source[key] : null;
+  }
+  for (const key of ['videoChannelState', 'audioChannelState', 'controlChannelState']) {
+    result[key] = ['connecting', 'open', 'closing', 'closed', 'unavailable'].includes(source[key]) ? source[key] : null;
   }
   return result;
 }

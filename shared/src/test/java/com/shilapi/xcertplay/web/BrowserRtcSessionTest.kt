@@ -38,6 +38,7 @@ class BrowserRtcSessionTest {
     private val touches = CopyOnWriteArrayList<List<AirPlayContact>>()
     private val requests = CopyOnWriteArrayList<Pair<String, Map<String, Any?>>>()
     private val peers = CopyOnWriteArrayList<FakePeer>()
+    private val logs = CopyOnWriteArrayList<String>()
     private val identities = AtomicInteger()
     private val hub = WebVideoHub(Executor { it.run() })
     private val audioHub = WebAudioHub()
@@ -51,7 +52,7 @@ class BrowserRtcSessionTest {
         override fun onFit() {}
         override fun onKey(name: String) { keys += name }
         override fun onBrowserStats(stats: Map<String, Any?>) {}
-        override fun log(message: String) {}
+        override fun log(message: String) { logs += message }
     }, "127.0.0.1", 0, nowMillis = { now }, audioHub = audioHub)
     private var port = 0
 
@@ -64,12 +65,19 @@ class BrowserRtcSessionTest {
         @Volatile var allowSend = true
         @Volatile var authenticated = false
         @Volatile var closed = false
+        @Volatile var diagnosticSnapshot = emptyMap<String, Any?>()
+        @Volatile var diagnosticFailure: RuntimeException? = null
+        @Volatile var closeFailure: RuntimeException? = null
         override fun answer(offerSdp: String, onAnswer: (String) -> Unit) { receivedOffer = offerSdp; onAnswer(this@BrowserRtcSessionTest.answer) }
         override fun authenticate() { authenticated = true }
         override fun sendControl(message: String): Boolean { replies += WebJson.parse(message) as Map<*, *>; return allowSend && !closed }
         override fun sendVideo(record: WebVideoRecord): Boolean { videos += record; return !closed }
         override fun sendAudio(record: ByteArray): Boolean { audio += record; return !closed }
-        override fun close() { closed = true }
+        override fun diagnostics(): Map<String, Any?> {
+            diagnosticFailure?.let { throw it }
+            return diagnosticSnapshot
+        }
+        override fun close() { closed = true; closeFailure?.let { throw it } }
         fun rpc(type: String, values: Map<String, Any?> = emptyMap()): Map<*, *> {
             val id = replies.size + 1
             receive(WebJson.write(values + mapOf("id" to id, "type" to type)))
@@ -307,6 +315,65 @@ class BrowserRtcSessionTest {
         repeat(4) { assertEquals(503, Proof().finish().status) }
         server.rtcFactory = BrowserRtcFactory { receive, failure -> FakePeer(receive, failure).also { peers += it } }
         assertEquals(200, Proof().finish().status)
+    }
+
+    @Test fun unauthenticatedIceFailureKeepsBoundedConnectionSummaryBeforeLargeMediaCounters() {
+        val peer = paired()
+        peer.closeFailure = NativeCloseFailureWithAnExceptionTypeNameLongerThanFortyEightCharacters()
+        peer.diagnosticSnapshot = linkedMapOf(
+            "video" to mapOf("privatePayload" to "x".repeat(3000)),
+            "authenticated" to false, "ready" to false, "closed" to false,
+            "networkMode" to "android-network-monitor",
+            "localCandidateCount" to Int.MAX_VALUE, "remoteCandidateCount" to Int.MAX_VALUE,
+            "localIPv4LinkLocalCandidateCount" to Int.MAX_VALUE, "remoteIPv4LinkLocalCandidateCount" to Int.MAX_VALUE,
+            "iceGatheringState" to "DISCONNECTED", "iceConnectionState" to "DISCONNECTED", "peerConnectionState" to "DISCONNECTED",
+            "privateAddress" to "169.254.111.111", "sdp" to "private SDP",
+        )
+        peer.fail("WebRTC ICE failed")
+        assertTrue(peer.closed); assertFalse(peer.authenticated)
+        val prefix = "Browser RTC: connection summary "
+        val summary = logs.single { it.startsWith(prefix) }
+        assertTrue("connection diagnostics must survive the host's 700-character log bound", summary.length < 700)
+        assertTrue(logs.indexOf(summary) < logs.indexOfFirst { it.startsWith("Browser RTC: final stages ") })
+        val value = WebJson.parse(summary.removePrefix(prefix)) as Map<*, *>
+        assertEquals(false, value["authenticated"]); assertEquals(false, value["ready"])
+        assertEquals(true, value["closed"]); assertEquals(true, value["peerInitialized"])
+        assertEquals("android-network-monitor", value["networkMode"])
+        assertEquals(Int.MAX_VALUE.toLong(), value["localCandidateCount"])
+        assertEquals(Int.MAX_VALUE.toLong(), value["localIPv4LinkLocalCandidateCount"])
+        assertEquals("DISCONNECTED", value["iceGatheringState"]); assertEquals("DISCONNECTED", value["iceConnectionState"])
+        assertEquals(48, (value["closeError"] as String).length)
+        assertFalse(summary.contains("private")); assertFalse(summary.contains("169.254")); assertFalse(value.containsKey("video"))
+    }
+
+    private class NativeCloseFailureWithAnExceptionTypeNameLongerThanFortyEightCharacters : RuntimeException()
+
+    @Test fun diagnosticCollectionFailureStillLogsConnectionSummaryAndRetiresUnauthenticatedPeer() {
+        val peer = paired()
+        peer.diagnosticFailure = IllegalStateException("private SDP must not enter summary")
+        peer.fail("WebRTC authentication timed out")
+        assertTrue(peer.closed); assertFalse(peer.authenticated)
+        val prefix = "Browser RTC: connection summary "
+        val summary = logs.single { it.startsWith(prefix) }
+        assertTrue(summary.length < 700)
+        val value = WebJson.parse(summary.removePrefix(prefix)) as Map<*, *>
+        assertEquals(false, value["authenticated"]); assertEquals(true, value["closed"])
+        assertEquals("failed", value["diagnostics"]); assertEquals("IllegalStateException", value["diagnosticError"])
+        assertFalse(logs.any { it.contains("private SDP") })
+        assertFalse(logs.any { it.startsWith("Browser RTC: final stages ") })
+        assertEquals(200, Proof(other).finish().status)
+    }
+
+    @Test fun factoryFailureLogsConnectionSummaryBeforePeerInstallation() {
+        server.rtcFactory = BrowserRtcFactory { _, _ -> throw IllegalStateException("private initialization detail") }
+        assertEquals(503, Proof().finish().status)
+        val prefix = "Browser RTC: connection summary "
+        val summary = logs.single { it.startsWith(prefix) }
+        assertTrue(summary.length < 700)
+        val value = WebJson.parse(summary.removePrefix(prefix)) as Map<*, *>
+        assertEquals(false, value["authenticated"]); assertEquals(true, value["closed"])
+        assertEquals(false, value["peerInitialized"]); assertEquals("no-peer", value["diagnostics"])
+        assertFalse(summary.contains("private"))
     }
 
     @Test fun videoProducerChangeAndEndPreservePeerAudioTimelineAndTouchOwnership() {

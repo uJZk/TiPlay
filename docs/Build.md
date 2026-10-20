@@ -8,7 +8,7 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The current source
-is 0.2.21-beta.1 (code 45); the code remains above the published TiPlay 0.2.16. Run
+is 0.2.21-beta.2 (code 46); the code remains above the published TiPlay 0.2.16. Run
 `python3 scripts/build_site.py` after changing it to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of this product version.
 Download pages identify the latest verified stable APK; beta artifacts are linked
@@ -109,8 +109,8 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta release
 
-The WebRTC beta is **0.2.21-beta.1** (version code 45), browser diagnostic/cache
-revision **v69**. Its implementation, authenticated four-digit pairing, independent
+The WebRTC beta is **0.2.21-beta.2** (version code 46), browser diagnostic/cache
+revision **v70**. Its implementation, authenticated four-digit pairing, independent
 timing, resource bounds and device acceptance limits are in
 [CarPlay DataChannel](CarPlay-DataChannel.md).
 

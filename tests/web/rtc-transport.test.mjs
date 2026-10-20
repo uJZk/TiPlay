@@ -223,7 +223,8 @@ test('RTC reports local ICE, authenticated signaling, remote ICE and encrypted a
       return { sdp: 'v=0\r\na=candidate:2 1 udp 1 192.168.43.1 6666 typ host\r\n', session: 7 };
     },
   });
-  assert.deepEqual(progress.map(value => value.stage), ['local-ice', 'pairing', 'remote-ice', 'dc-auth', 'connected']);
+  assert.deepEqual(progress.map(value => value.stage).filter((stage, i, stages) => stage !== stages[i - 1]),
+    ['local-ice', 'pairing', 'remote-ice', 'dc-auth', 'connected']);
   assert.equal(progress[1].localCandidates, 1); assert.equal(progress[1].localLinkLocalCandidates, 1);
   assert.equal(progress[2].remoteCandidates, 1); assert.equal(progress[2].remoteLinkLocalCandidates, 0);
   assert.doesNotMatch(JSON.stringify(progress), /169\.254\.111|192\.168\.43|5555|6666|9876|secret-browser-session|a=candidate/);
@@ -350,4 +351,30 @@ test('a late real candidate is used at the total deadline even when its 500 ms w
   assert.equal(await pending, actualSdp);
   assert.equal(callbacks.size, 0);
   assert.doesNotMatch(actualSdp, /end-of-candidates/);
+});
+
+test('progress snapshots distinguish ICE from peer and individual data-channel opening', async () => {
+  class StatePeer extends Peer {
+    async createOffer() { return { type: 'offer', sdp: PUBLIC_OFFER + 'a=candidate:2 1 tcp 1 100.111.111.111 6666 typ host\r\n' }; }
+    async setRemoteDescription(value) {
+      this.remoteDescription = value; this.iceConnectionState = 'connected'; this.connectionState = 'connecting';
+      this.dispatchEvent(new Event('iceconnectionstatechange'));
+      for (const { channel } of this.channels) { channel.readyState = 'open'; channel.dispatchEvent(new Event('open')); }
+      this.connectionState = 'connected'; this.dispatchEvent(new Event('connectionstatechange'));
+    }
+  }
+  const progress = [];
+  const connection = await connectRtc({ session: 'private-session', code: '9876', PeerConnection: StatePeer,
+    onProgress: value => progress.push(value),
+    async authenticateOffer() { return { sdp: 'v=0\r\na=candidate:3 1 udp 1 hidden.local 7777 typ host\r\n', session: 7 }; },
+  });
+  const opening = progress.find(value => value.videoChannelState === 'open' && value.audioChannelState === 'connecting');
+  assert.equal(opening.iceState, 'connected'); assert.equal(opening.connectionState, 'connecting');
+  assert.equal(opening.controlChannelState, 'connecting');
+  const final = progress.at(-1);
+  assert.equal(final.localCandidates, 2); assert.equal(final.localUdpCandidates, 1); assert.equal(final.localTcpCandidates, 1);
+  assert.equal(final.localCgnatIpv4Candidates, 1); assert.equal(final.remoteMdnsCandidates, 1);
+  assert.equal(final.connectionState, 'connected'); assert.equal(final.controlChannelState, 'open');
+  assert.doesNotMatch(JSON.stringify(progress), /100\.111|hidden\.local|192\.168|private-session|9876|6666|7777/);
+  connection.close();
 });

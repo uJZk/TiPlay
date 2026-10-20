@@ -11,6 +11,7 @@ import java.util.Date
 
 /** One native factory and DTLS identity per process; the private identity never leaves app storage. */
 object BrowserRtcRuntime {
+    internal const val NETWORK_MODE = "kernel-interfaces"
     private var factory: PeerConnectionFactory? = null
     private var certificate: RtcCertificatePem? = null
     private var pin: String? = null
@@ -44,7 +45,12 @@ object BrowserRtcRuntime {
         }
         val fingerprint = MessageDigest.getInstance("SHA-256").digest(decodeCertificate(identity.certificate).encoded)
             .joinToString("") { "%02x".format(it.toInt() and 255) }
-        val nativeFactory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+        // A hotspot/secondary LAN address need not be a ConnectivityManager Network. For this
+        // browser-only factory, enumerate kernel interfaces and bind sockets to their source IPs.
+        // Android/Linux routing (including UID/VPN policy) still selects the path; this does not
+        // force an interface or introduce STUN/TURN. The iPhone transport uses its own stack.
+        val options = PeerConnectionFactory.Options().apply { disableNetworkMonitor = true }
+        val nativeFactory = PeerConnectionFactory.builder().setOptions(options).createPeerConnectionFactory()
         certificate = identity
         pin = fingerprint
         factory = nativeFactory

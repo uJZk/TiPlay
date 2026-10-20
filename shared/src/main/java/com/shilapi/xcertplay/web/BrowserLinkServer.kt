@@ -434,11 +434,38 @@ class BrowserLinkServer(
         rtc.audio?.close()
         rtcSessions.entries.removeIf { it.value === rtc }
         rtcSlots.release()
-        // A factory failure may happen before the native peer has been installed.
-        try {
-            rtc.peer.close()
-            callbacks.log("Browser RTC: final stages ${WebJson.write(rtc.peer.diagnostics())}")
-        } catch (_: UninitializedPropertyAccessException) { }
+        // A factory failure may happen before the native peer has been installed. Keep the small
+        // connection summary ahead of media counters so the host's 700-character redactor retains it.
+        val peer = try { rtc.peer } catch (_: UninitializedPropertyAccessException) { null }
+        val close = runCatching { peer?.close() }
+        val stages = runCatching { peer?.diagnostics() ?: emptyMap() }
+        val snapshot = stages.getOrNull().orEmpty()
+        val summary = linkedMapOf<String, Any?>(
+            "authenticated" to (snapshot["authenticated"] as? Boolean ?: (rtc.code != null)),
+            "ready" to (snapshot["ready"] as? Boolean), "closed" to true,
+            "networkMode" to (snapshot["networkMode"] as? String)?.takeIf { it in setOf("kernel-interfaces", "android-network-monitor") },
+            "peerInitialized" to (peer != null),
+            "diagnostics" to when { peer == null -> "no-peer"; stages.isFailure -> "failed"; else -> "available" },
+        )
+        for (field in listOf("localCandidateCount", "remoteCandidateCount", "localIPv4LinkLocalCandidateCount", "remoteIPv4LinkLocalCandidateCount")) {
+            val count = when (val value = snapshot[field]) {
+                is Int -> value.toLong()
+                is Long -> value
+                else -> null
+            }
+            summary[field] = count?.takeIf { it in 0..Int.MAX_VALUE.toLong() }
+        }
+        val states = setOf("NEW", "CHECKING", "CONNECTED", "COMPLETED", "FAILED", "DISCONNECTED", "CLOSED", "GATHERING", "COMPLETE", "CONNECTING")
+        for (field in listOf("iceGatheringState", "iceConnectionState", "peerConnectionState")) {
+            summary[field] = (snapshot[field] as? String)?.takeIf { it in states }
+        }
+        for ((field, error) in listOf("closeError" to close.exceptionOrNull(), "diagnosticError" to stages.exceptionOrNull())) {
+            error?.let { failure ->
+                summary[field] = failure.javaClass.simpleName.filter { it.isLetterOrDigit() || it == '_' || it == '$' }.take(48)
+            }
+        }
+        callbacks.log("Browser RTC: connection summary ${WebJson.write(summary)}")
+        if (stages.isSuccess && peer != null) callbacks.log("Browser RTC: final stages ${WebJson.write(snapshot)}")
         synchronized(lock) {
             if (rtc.code != null && gate.current == rtc.session && rtcSessions.values.none {
                     it.session == rtc.session && it.code != null && !it.closed.get()

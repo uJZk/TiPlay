@@ -107,6 +107,7 @@ class BrowserRtcPeer internal constructor(
         val now = System.nanoTime()
         return mapOf(
             "session" to id, "authenticated" to authenticated, "ready" to ready, "closed" to closed.get(),
+            "networkMode" to BrowserRtcRuntime.NETWORK_MODE,
             "video" to video.diagnostics(now), "audio" to audio.diagnostics(now),
             "control" to mapOf("nativeBufferedBytes" to controlBufferedBytes,
                 "recordsSent" to controlRecordsSent, "bytesSent" to controlBytesSent,

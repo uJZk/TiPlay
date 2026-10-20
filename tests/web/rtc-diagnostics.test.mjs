@@ -4,11 +4,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { candidateCounts, rtcFailureReason, rtcFailureSummary } from '../../site/play/rtc-diagnostics.js';
 
-test('candidate summaries retain only total and IPv4 link-local counts', () => {
+test('candidate summaries retain anonymous protocol and address-class counts', () => {
   const sdp = 'v=0\r\na=ice-pwd:secret\r\na=candidate:1 1 udp 1 169.254.111.111 5555 typ host\r\n' +
     'a=candidate:2 1 udp 1 masked.local 6666 typ host\r\na=candidate:3 1 tcp 1 192.168.43.1 7777 typ host\r\n';
-  assert.deepEqual(candidateCounts(sdp), { total: 3, linkLocal: 1 });
-  assert.deepEqual(candidateCounts(), { total: 0, linkLocal: 0 });
+  assert.deepEqual(candidateCounts(sdp), { total: 3, linkLocal: 1, udp: 2, tcp: 1, privateIpv4: 1, cgnatIpv4: 0, ipv6: 0, mdns: 1 });
+  assert.deepEqual(candidateCounts(), { total: 0, linkLocal: 0, udp: 0, tcp: 0, privateIpv4: 0, cgnatIpv4: 0, ipv6: 0, mdns: 0 });
 });
 
 test('failure summaries exclude exception details, SDP, passwords and session identifiers', () => {
@@ -41,7 +41,9 @@ test('the page displays distinct HTTP, PAKE and answered-but-not-connected failu
       remoteCandidates: 0, remoteLinkLocalCandidates: 0 };
     const timed = page.rtcRetryText({ rtcReason: 'timeout', rtcDiagnostic: diagnostic, message: 'secret 9876' }, 8);
     assert.match(timed, language === 'zh' ? /安卓端已验证.*超时/ : /Android was verified.*timed out/);
-    assert.match(timed, /169\.254/); assert.match(timed, /8/); assert.doesNotMatch(timed, /secret|9876/);
+    assert.match(timed, language === 'zh' ? /候选总数：浏览器 1，安卓端 0/ : /Candidate totals: browser 1, Android 0/);
+    assert.match(timed, language === 'zh' ? /安卓端响应中没有 ICE 候选/ : /Android’s answer contains no ICE candidates/);
+    assert.doesNotMatch(timed, /169\.254/); assert.match(timed, /8/); assert.doesNotMatch(timed, /secret|9876/);
     const absent = page.rtcRetryText({ status: 404, rtcDiagnostic: { stage: 'pairing' } }, 8);
     assert.match(absent, language === 'zh' ? /缺少 WebRTC 配对接口/ : /no WebRTC pairing interface/);
     const signaling = page.rtcRetryText({ status: 503, rtcDiagnostic: { stage: 'pairing' } }, 8);
@@ -50,5 +52,29 @@ test('the page displays distinct HTTP, PAKE and answered-but-not-connected failu
     assert.match(fetch, /HTTP/);
     const proof = page.rtcRetryText({ rtcReason: 'pairing', rtcDiagnostic: { stage: 'pairing' } }, 8);
     assert.match(proof, language === 'zh' ? /配对校验未通过/ : /pairing verification failed/);
+  }
+});
+
+test('CGNAT, private IPv4, IPv6 and mDNS remain distinct without retaining addresses', () => {
+  const addresses = ['100.111.111.111', '100.64.0.1', '100.127.255.254', '100.128.0.1',
+    '10.2.3.4', '172.16.0.1', '172.31.255.254', '172.32.0.1', '192.168.4.1', '169.254.2.3', 'fd12::1234', 'hidden.local'];
+  const sdp = addresses.map((address, index) => `a=candidate:${index} 1 ${index % 2 ? 'tcp' : 'udp'} 1 ${address} 5555 typ host`).join('\r\n');
+  const counts = candidateCounts(sdp);
+  assert.deepEqual(counts, { total: 12, udp: 6, tcp: 6, privateIpv4: 4, cgnatIpv4: 3, linkLocal: 1, ipv6: 1, mdns: 1 });
+  assert.doesNotMatch(JSON.stringify(counts), /100\.111|169\.254|fd12|hidden|5555|candidate/);
+});
+
+test('connection hints show nonzero classes and independent ICE, peer and three channel states', () => {
+  const diagnostic = { stage: 'remote-ice', localCandidates: 2, remoteCandidates: 1,
+    localUdpCandidates: 2, remoteUdpCandidates: 1, localCgnatIpv4Candidates: 1, localMdnsCandidates: 1,
+    remotePrivateIpv4Candidates: 1, localLinkLocalCandidates: 0, remoteLinkLocalCandidates: 0,
+    iceState: 'connected', connectionState: 'connecting', videoChannelState: 'connecting',
+    audioChannelState: 'connecting', controlChannelState: 'open' };
+  for (const language of ['en', 'zh']) {
+    const text = pageText(language).rtcRetryText({ rtcReason: 'timeout', rtcDiagnostic: diagnostic }, 8);
+    assert.match(text, /UDP:2/); assert.match(text, /CGNAT IPv4:1/); assert.match(text, /mDNS:1/);
+    assert.match(text, /ICE connected/); assert.match(text, language === 'zh' ? /Peer connecting/ : /peer connecting/);
+    assert.match(text, /connecting\/connecting\/open/);
+    assert.doesNotMatch(text, /169\.254|link-local|链路本地|contains no ICE|没有 ICE 候选/);
   }
 });

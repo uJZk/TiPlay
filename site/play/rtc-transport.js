@@ -1,6 +1,6 @@
 /*! SPDX-License-Identifier: GPL-3.0-only
  * Reliable local WebRTC transport. Media remains application data for WebCodecs/AudioWorklet. */
-import { candidateCounts, rtcFailureReason } from './rtc-diagnostics.js';
+import { candidateCounts, candidateDiagnosticFields, rtcFailureReason } from './rtc-diagnostics.js';
 
 export const RTC_FRAGMENT_BYTES = 16384;
 export const RTC_HEADER_BYTES = 24;
@@ -137,13 +137,14 @@ export async function connectRtc({ fetchPhone, session, code, codecs, signal, au
   if (!PeerConnection) throw new Error('WebRTC DataChannel is unavailable');
   if (typeof authenticateOffer !== 'function') throw new Error('Authenticated RTC pairing is required');
   const peer = new PeerConnection({ iceServers: [], iceTransportPolicy: 'all', bundlePolicy: 'max-bundle' });
-  let stage = 'local-ice', remoteCounts = { total: 0, linkLocal: 0 }, terminalCause = null;
+  let stage = 'local-ice', remoteCounts = candidateCounts(), terminalCause = null;
   const diagnostic = () => {
     const local = candidateCounts(peer.localDescription?.sdp);
-    return { stage, localCandidates: local.total, localLinkLocalCandidates: local.linkLocal,
-      remoteCandidates: remoteCounts.total, remoteLinkLocalCandidates: remoteCounts.linkLocal,
+    return { stage, ...candidateDiagnosticFields('local', local), ...candidateDiagnosticFields('remote', remoteCounts),
       iceState: peer.iceConnectionState ?? null, gatheringState: peer.iceGatheringState ?? null,
-      connectionState: peer.connectionState ?? null };
+      connectionState: peer.connectionState ?? null,
+      videoChannelState: channels.video?.readyState ?? 'unavailable', audioChannelState: channels.audio?.readyState ?? 'unavailable',
+      controlChannelState: channels.control?.readyState ?? 'unavailable' };
   };
   const progress = next => {
     if (next) stage = next;
@@ -220,6 +221,7 @@ export async function connectRtc({ fetchPhone, session, code, codecs, signal, au
     pending.set(id, { resolve, reject, timer });
     try { send({ ...data, type, id }); } catch (error) { clearTimeout(timer); pending.delete(id); reject(error); }
   });
+  peer.addEventListener('icecandidate', () => { if (!ended) progress(); });
   peer.addEventListener('icegatheringstatechange', () => { if (!ended) progress(); });
   peer.addEventListener('iceconnectionstatechange', () => { if (!ended) progress(); });
   peer.addEventListener('connectionstatechange', () => {
@@ -231,6 +233,7 @@ export async function connectRtc({ fetchPhone, session, code, codecs, signal, au
     for (const label of ['video', 'audio', 'control']) {
       const channel = channels[label] = peer.createDataChannel(label, { ordered: true });
       channel.binaryType = 'arraybuffer';
+      channel.addEventListener('open', () => { if (!ended) progress(); });
       channel.addEventListener('close', () => close(new Error(`RTC ${label} channel closed`)));
       channel.addEventListener('error', () => close(new Error(`RTC ${label} channel error`)));
       channel.onmessage = ({ data }) => {
