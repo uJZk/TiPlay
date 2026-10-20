@@ -28,7 +28,7 @@ test('debug audio retains every stream independently of the ordinary video stats
   const page = { video: Object.fromEntries(Array.from({ length: 80 }, (_, i) => [`counter${i}`, i])),
     audio: { sound: true, queuedBytes: 479232, debug } };
   const events = browserDiagnosticEvents(page, true, true, 'capture-cycle-1');
-  assert.equal(events.length, 2);
+  assert.equal(events.length, 3);
   assert.ok(JSON.stringify(events[0].v).length <= 2048);
   assert.equal(events[0].v.themeDark, true);
   assert.ok(!Object.keys(events[0].v).some(key => key.startsWith('audio.debug')));

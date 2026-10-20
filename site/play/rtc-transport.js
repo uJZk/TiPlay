@@ -278,7 +278,7 @@ export async function connectRtc({ fetchPhone, session, code, codecs, signal, au
       control: (q, e) => request('control', { q, e }), clock: () => request('clock'),
       bye() { try { send({ id: ++nextId, type: 'bye' }); } finally { close(); } },
       close,
-      stats: () => ({ state: peer.connectionState, ice: { ...ice, connectionState: peer.iceConnectionState ?? null,
+      stats: () => ({ state: peer.connectionState, controlMessageLimitBytes: Math.min(64 * 1024, peer.sctp?.maxMessageSize || 64 * 1024), ice: { ...ice, connectionState: peer.iceConnectionState ?? null,
         sampleAgeMs: iceSampledAt === null ? null : Math.max(0, performance.now() - iceSampledAt), errors: iceErrors }, video: streams.video.stats(), audio: streams.audio.stats(), bufferedControlBytes: channels.control.bufferedAmount }),
     };
   } catch (error) {

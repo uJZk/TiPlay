@@ -94,6 +94,9 @@ class ScreenStream(
                 val body = readFully(input, bodySize) ?: break
                 val arrivalNanos = System.nanoTime()
                 stats.received(HEADER_LEN + bodySize)
+                if ((header[OPCODE_OFFSET].toInt() and 0xff) == OP_VIDEO_FRAME) {
+                    stats.videoFrame(ScreenCodec.senderNanos(header), arrivalNanos)
+                }
                 if (receiveProbe?.isRunning(this) == true) {
                     val sender = if ((header[OPCODE_OFFSET].toInt() and 0xff) == OP_VIDEO_FRAME) ScreenCodec.senderNanos(header) else null
                     receiveProbe.message(this, HEADER_LEN + bodySize, sender, arrivalNanos, sender?.let(sourceTimeNanos))

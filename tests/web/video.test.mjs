@@ -501,3 +501,37 @@ test('extended timing records measure bounded stages without changing encoded pa
   assert.ok(stats.recordReadToDecodeSubmitMsP95 >= 0); assert.ok(stats.decodeMsP95 >= 0);
   assert.equal(stats.stageClockUncertaintyMs, 1);
 });
+
+test('video read/decoded/draw evidence counts actual frame records and keeps explicit stream/epoch identity', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const shown = [], messages = [];
+  const present = recordingPresenter(t, messages, shown);
+  const pipeline = createDecoderPipeline({ post() {}, present });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(42, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(7)); await settle();
+  controller.enqueue(keyFrame(7)); await settle();
+  FakeDecoder.instances.at(-1).output(videoFrame(0));
+  const stats = pipeline.stats();
+  assert.equal(stats.streamGeneration, 42); assert.equal(stats.epoch, 7); assert.equal(stats.mode, 'carplay');
+  assert.equal(stats.readFrames, 1); assert.equal(stats.readFrameBytes, 5); assert.equal(stats.decoded, 1);
+  assert.equal(stats.sourceForwardPtsSamples, 0, 'missing presentation anchors do not invent source cadence');
+  assert.equal(shown.length, 1);
+});
+
+test('draw evidence counts successful media submissions and resets at the presenter epoch boundary', () => {
+  const canvas = { width: 100, height: 100, removeEventListener() {},
+    getContext: type => type === '2d' ? { fillRect() {}, drawImage() {} } : null };
+  const presenter = createFramePresenter(canvas);
+  presenter.present(videoFrame(0), { mode: 'carplay', streamId: 42, epoch: 7 });
+  assert.equal(presenter.stats().drawnFrames, 1);
+  presenter.resize(200, 200);
+  assert.equal(presenter.stats().drawnFrames, 1, 'resize redraw is not another source picture');
+  presenter.close(); assert.equal(presenter.stats().drawnFrames, 0);
+  presenter.dispose();
+});

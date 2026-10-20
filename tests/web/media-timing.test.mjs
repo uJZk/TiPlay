@@ -283,3 +283,27 @@ test('a decoded burst bounds retained pictures and closes duplicate, evicted and
   assert.ok(items.every(frame => frame.closes === 1));
   frames.reset(); assert.ok(items.every(frame => frame.closes === 1));
 });
+
+test('scheduler diagnostic reason subsets explain existing discards without changing their total', () => {
+  let at = 1000, pending = null;
+  const shown = [];
+  const frames = createTimedFrames(frame => shown.push(frame), { now: () => at,
+    schedule: callback => { pending = callback; return callback; }, cancel: () => { pending = null; } });
+  const picture = () => ({ closed: 0, close() { this.closed++; } });
+  const first = picture(), stale = picture(), next = picture();
+  frames.present(first, { mode: 'carplay' }, 1, 1050);
+  frames.present(stale, { mode: 'carplay' }, 1, 1050);
+  frames.present(next, { mode: 'carplay' }, 1, 1060);
+  assert.equal(stale.closed, 1); assert.equal(frames.stats().scheduledStaleFrames, 1);
+  at = 1070; pending();
+  assert.equal(shown.at(-1), next); assert.equal(first.closed, 1);
+  assert.equal(frames.stats().scheduledCoalescedFrames, 1);
+  assert.equal(frames.stats().scheduledDroppedFrames, 2);
+  assert.equal(frames.stats().touchSkippedFrames, 0);
+  frames.reset(); assert.equal(frames.stats().scheduledDroppedFrames, 0);
+  assert.equal(frames.stats().scheduledCoalescedFrames, 0); assert.equal(frames.stats().scheduledStaleFrames, 0);
+  at = 1000;
+  for (let i = 0; i < 21; i++) frames.present(picture(), { mode: 'carplay' }, 1, 1100 + i * 10);
+  assert.equal(frames.stats().scheduledCapacityFrames, 1); assert.equal(frames.stats().scheduledDroppedFrames, 1);
+  frames.reset();
+});

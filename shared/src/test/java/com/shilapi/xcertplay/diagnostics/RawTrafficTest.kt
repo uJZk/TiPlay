@@ -11,6 +11,48 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class RawTrafficTest {
+    @Test fun delayedSessionWriteCannotCrossClearOrDisableEvenAfterItHasStartedWaitingForTheDiskMonitor() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-session-gate").toFile()
+        val file = File(directory, "capture.tsv")
+        val workers = Executors.newSingleThreadExecutor()
+        try {
+            RawTraffic.configure(file, true)
+            val original = requireNotNull(RawTraffic.activeSessionId())
+            val field = RawTraffic::class.java.getDeclaredField("lock").apply { isAccessible = true }
+            val diskMonitor = field.get(RawTraffic)
+            fun delayedAcross(expectedSession: String, boundary: () -> Unit): Boolean {
+                val waiting = CountDownLatch(1)
+                val writerThread = java.util.concurrent.atomic.AtomicReference<Thread>()
+                val delayed = synchronized(diskMonitor) {
+                    val write = workers.submit<Boolean> {
+                        writerThread.set(Thread.currentThread())
+                        waiting.countDown()
+                        RawTraffic.recordForSession(expectedSession, "browser/video-diagnostics", "old-report".toByteArray())
+                    }
+                    assertTrue(waiting.await(1, TimeUnit.SECONDS))
+                    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+                    while (writerThread.get()?.state != Thread.State.BLOCKED && System.nanoTime() < deadline) Thread.yield()
+                    assertEquals("The stale writer must already be waiting for the capture monitor", Thread.State.BLOCKED, writerThread.get()?.state)
+                    boundary()
+                    write
+                }
+                return delayed.get(1, TimeUnit.SECONDS)
+            }
+            assertFalse(delayedAcross(original) { RawTraffic.clear() })
+            val current = requireNotNull(RawTraffic.activeSessionId())
+            assertNotEquals(original, current)
+            assertTrue(RawTraffic.recordForSession(current, "browser/video-diagnostics", "new-report".toByteArray()))
+            assertFalse(delayedAcross(current) { RawTraffic.configure(file, false) })
+            RawTraffic.configure(file, true)
+            assertFalse(RawTraffic.recordForSession(current, "browser/video-diagnostics", "stale-enabled-report".toByteArray()))
+            val records = file.readLines().map { it.split('\t') }.filter { it[2] == "browser/video-diagnostics" }
+            assertEquals(listOf("new-report"), records.map { String(Base64.getDecoder().decode(it[4]), Charsets.UTF_8) })
+        } finally {
+            workers.shutdownNow(); workers.awaitTermination(1, TimeUnit.SECONDS)
+            RawTraffic.configure(file, false); directory.deleteRecursively()
+        }
+    }
+
     @Test fun fullPayloadSurvivesChunkingDisableAndExportWithoutRedaction() {
         val directory = java.nio.file.Files.createTempDirectory("traffic-test").toFile()
         val file = File(directory, "capture.tsv")

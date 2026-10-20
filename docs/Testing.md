@@ -54,19 +54,29 @@ protocol logic, real HTTP/SRP exchange and injected peer lifecycle, including
 replacement and same-session reconnect ownership. Reliable hub/capture tests check
 explicit overflow/expiry and canonical input references without output duplication.
 
-The beta source passed 2,186 shared, 1,746 common and six home unit tests, 441
-browser unit tests, eight isolated-site tests, nine release-draft tests and native
-libsoxr checks. Capture tests include a held disk-monitor concurrency check.
+The beta.3 source passed 2,203 shared, 1,748 common and six home unit tests, 450
+browser unit tests, eight isolated-site tests and nine release-draft tests.
+Capture tests include a held disk-monitor concurrency check.
 Browser tests cover gathering that never completes, late candidates at the deadline,
 unaltered SDP snapshots, abort cleanup, anonymous candidate classes and independent
 ICE/peer/channel states. Session tests retain a compact connection summary on
 unauthenticated failure, diagnostic exceptions and peer-initialization failure.
-Required debug lint and
-all three debug builds passed. The actual Chromium media-clock harness passed independent
+Diagnostic tests share a production-shaped 215-field browser/Android fixture,
+verify low control-message budgets, capture/stream/epoch interval isolation,
+typed receiver validation and bounded TXT lines. A held journal-lock test checks
+clear/disable against delayed reports. Source-frame tests distinguish complete
+video from configuration/keepalives and preserve PTS/arrival gap pairs across
+window boundaries, including missing, repeated and backward PTS.
+The first parallel common run hit an existing old-port rebind probe with
+`Address already in use`; the full required command passed with one test fork,
+without changing product code or relaxing assertions. Required debug lint and
+all three debug builds passed. Earlier native libsoxr checks passed. The earlier
+actual Chromium media-clock harness passed independent
 CarPlay Canvas/audio source caps and the retained AirPlay main/worker/offscreen
 policy. CarPlay worker hardware decoding is unavailable on that cloud browser;
 actual browser WebCrypto pairing/tamper checks passed, while real SCTP connectivity
 remains blocked by the environment's lack of host ICE candidates.
+Those native and Chromium checks were not repeated for this diagnostic-only change.
 
 `python3 -m unittest discover -s tests -p 'test_beta_site.py'` checks isolated beta
 assembly, compares every stable output byte against an independently assembled

@@ -92,6 +92,16 @@ object RawTraffic {
         recordReferenced(channel, bytes, offset, length)
     }
 
+    /** Session validation and append share the clear/enable monitor: delayed reports cannot enter a new capture. */
+    fun recordForSession(expectedSession: String, channel: String, bytes: ByteArray): Boolean = synchronized(lock) {
+        if (!enabled || sessionId != expectedSession || bytes.isEmpty()) return@synchronized false
+        val previousSequence = sequence
+        val previousFailures = failures
+        recordReferenced(channel, bytes, 0, bytes.size)
+        // A previous loss may disable exact byte references while later records still append successfully.
+        sequence != previousSequence && failures == previousFailures
+    }
+
     private fun recordReferenced(channel: String, bytes: ByteArray, offset: Int, length: Int): Reference? {
         if (!enabled || length <= 0) return null
         synchronized(lock) {

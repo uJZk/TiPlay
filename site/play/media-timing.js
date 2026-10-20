@@ -71,7 +71,7 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
   const audioReferences = createAudioReferenceTimeline();
   const cursor = createVideoCatchUpCursor();
   const decodedToSchedulerMs = new Samples();
-  let catchUpSkippedFrames = 0, ceilingViolations = 0;
+  let catchUpSkippedFrames = 0, ceilingViolations = 0, coalescedFrames = 0, staleFrames = 0, capacityFrames = 0;
   const drop = frame => { droppedFrames++; frame.close(); };
 
   function outputWindow(item, at) {
@@ -113,7 +113,7 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
       const due = window ? Math.min(window.latest, Math.max(window.earliest, networkAt)) : networkAt;
       if (at < due) { nextAt = due; break; }
       queue.shift();
-      if (selected) { if (carplay && cursor.active()) catchUpSkippedFrames++; drop(selected.frame); }
+      if (selected) { coalescedFrames++; if (carplay && cursor.active()) catchUpSkippedFrames++; drop(selected.frame); }
       selected = { ...item, window };
     }
     if (selected) {
@@ -133,7 +133,7 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
       // Refining the network clock can move its mapped presentation estimate;
       // decoded media order belongs to the stable source coordinate instead.
       const order = Number.isFinite(sourceTimeMs) ? sourceTimeMs : timing;
-      if (order <= last || (config?.mode === 'carplay' && queue.length && order <= queue.at(-1).order) || queue.some(item => item.order === order)) { drop(frame); return; }
+      if (order <= last || (config?.mode === 'carplay' && queue.length && order <= queue.at(-1).order) || queue.some(item => item.order === order)) { staleFrames++; drop(frame); return; }
       if (videoExpired(timing, config?.mode, now())) { expiredFrames++; if (config?.mode === 'carplay') ceilingViolations++; drop(frame); return; }
       const item = { frame, config, id, timing, sourceTimeMs, order, clockGeneration: source?.clockGeneration, ready: false };
       if (config?.mode === 'carplay') cursor.start(timing, now());
@@ -143,7 +143,7 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
       // Keep this item pending until that observation has completed.
       observe(timing, now());
       item.ready = true;
-      while (queue.length > (config?.mode === 'carplay' ? 20 : 60)) drop(queue.shift().frame);
+      while (queue.length > (config?.mode === 'carplay' ? 20 : 60)) { capacityFrames++; drop(queue.shift().frame); }
       pump();
     },
     delay(value) { plan = value; pump(); },
@@ -153,12 +153,13 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
       pump();
     },
     stats: () => ({ scheduledExpiredFrames: expiredFrames, scheduledDroppedFrames: droppedFrames,
+      scheduledCoalescedFrames: coalescedFrames, scheduledStaleFrames: staleFrames, scheduledCapacityFrames: capacityFrames,
       audioSyncDroppedFrames: syncDroppedFrames, audioSyncUnavailableFrames: syncUnavailableFrames,
       audioSyncState: syncState, audioOutputMethod: outputMethod, decodedToSchedulerMsP95: decodedToSchedulerMs.percentile(95), decodedQueueSize: queue.length,
       videoCeilingViolations: ceilingViolations, touchSkippedFrames: catchUpSkippedFrames, ...cursor.stats(now()) }),
     plan: () => plan,
     reset() { if (timer !== null) cancel(timer); timer = null; for (const item of queue) item.frame.close(); queue = []; last = -Infinity;
-      expiredFrames = droppedFrames = syncDroppedFrames = syncUnavailableFrames = catchUpSkippedFrames = ceilingViolations = 0;
+      expiredFrames = droppedFrames = syncDroppedFrames = syncUnavailableFrames = catchUpSkippedFrames = ceilingViolations = coalescedFrames = staleFrames = capacityFrames = 0;
       cursor.reset(); syncState = 'video-only'; },
   };
 }

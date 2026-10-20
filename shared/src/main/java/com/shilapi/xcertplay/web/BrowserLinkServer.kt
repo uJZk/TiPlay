@@ -70,6 +70,8 @@ class BrowserLinkServer(
         fun onBrowserStats(stats: Map<String, Any?>)
         /** Debug-only decoded-audio/render diagnostics, independently bounded from ordinary stats. */
         fun onBrowserAudioDiagnostics(stats: Map<String, Any?>) {}
+        /** Every accepted Debug video sample, independent of the ordinary stats throttle. */
+        fun onBrowserVideoDiagnostics(stats: Map<String, Any?>) {}
         /** Diagnostics for the session log. The server never puts codes, session ids or addresses in them. */
         fun log(message: String)
     }
@@ -751,6 +753,16 @@ class BrowserLinkServer(
                 val stats = stats(fields["v"], MAX_AUDIO_DIAGNOSTICS)
                 if (stats == null) performance.count("audioDiagnosticsRejected")
                 else callbacks.onBrowserAudioDiagnostics(stats)
+            }
+            "video-diag" -> {
+                val capture = fields["d"] as? String ?: return
+                if (RawTraffic.activeSessionId() != capture) return
+                val stats = BrowserVideoDiagnosticsSchema.parse(fields["v"])
+                if (stats == null) { performance.count("videoDiagnosticsRejected"); return }
+                val bytes = WebJson.write(stats).toByteArray(Charsets.UTF_8)
+                if (RawTraffic.recordForSession(capture, "browser/video-diagnostics", bytes)) {
+                    callbacks.onBrowserVideoDiagnostics(stats)
+                }
             }
             "ap-state" -> {
                 val id = fields["id"].wholeNumber() ?: return

@@ -2,8 +2,8 @@
 
 ## Scope and status
 
-The `feat/carplay-webrtc` branch implements the WebRTC beta, **0.2.21-beta.2**
-(code 46). The Android phone relays source-compressed video into webpage-controlled
+The `feat/carplay-webrtc` branch implements the WebRTC beta, **0.2.21-beta.3**
+(code 47). The Android phone relays source-compressed video into webpage-controlled
 WebCodecs decoding; native WebRTC audio/video tracks are not used.
 The supported product remains Android phone plus car browser.
 
@@ -18,11 +18,14 @@ AirPlay mirror records over the same channels to preserve display ownership and
 stream continuity. AirPlay URL/photo resource fetching and its playback semantics
 remain on the existing resource path. This is not an AirPlay codec redesign.
 
-Subsequent vehicle feedback confirms that standalone test D (same-browser native
-WebRTC receive track -> Processor -> Canvas) can play. This is local synthetic
-playback evidence, not proof of Android-to-car direct ICE, actual hardware use or
-P/non-P gear-transition continuity. It does not replace the selected DataChannel
-transport. Current evidence and next gates are in the [WebRTC roadmap](WebRTC-roadmap.md).
+Vehicle feedback and the beta.2/v70 log confirm real CarPlay playback over the
+DataChannel path through WebCodecs Worker and Canvas. The short capture has no
+reported sequence gap, decoder error or RTC reconnect; it retains post-decode
+discards and sparse source-frame timing that require further diagnosis. Earlier
+standalone test D remains evidence for local synthetic playback only. Selected
+ICE protocol, sustained gear-transition continuity, actual hardware use and
+physical output timing still require verification. Current evidence and next
+gates are in the [WebRTC roadmap](WebRTC-roadmap.md).
 
 Implementation and source tests do not establish physical vehicle compatibility,
 actual webpage hardware decoder selection, acoustic latency or panel scanout.
@@ -114,6 +117,15 @@ Browser diagnostics show candidate totals and anonymous address/protocol categor
 ICE/peer states and each channel's state. These are candidate descriptions, not the
 HTTP address entered by the user. Android logs emit a compact connection summary
 before media statistics so the standard diagnostic line limit cannot hide it.
+
+Debug video evidence has an independently bounded `video-diag` event and a
+capture-session-checked journal entry. Scoped raw counters and per-epoch interval baselines
+separate source/read/decoded/draw rates and the five additive drop components;
+scheduler reasons and touch counts remain subsets. Safe native sender and ICE
+metrics accompany the sample. `Video source:` windows count complete source frames
+separately from configuration/keepalives, preserving source PTS and arrival gaps.
+Missing/budget-omitted fields are explicit. These additions observe the existing
+pipeline; they do not widen deadlines, add buffering or change which frame is shown.
 
 Preserve source-compressed video without reencoding: the subsequent explicit
 constraint is never to encode the video a second time. Decryption, configuration

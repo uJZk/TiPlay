@@ -39,6 +39,7 @@ class BrowserRtcSessionTest {
     private val requests = CopyOnWriteArrayList<Pair<String, Map<String, Any?>>>()
     private val peers = CopyOnWriteArrayList<FakePeer>()
     private val logs = CopyOnWriteArrayList<String>()
+    private val videoDiagnostics = CopyOnWriteArrayList<Map<String, Any?>>()
     private val identities = AtomicInteger()
     private val hub = WebVideoHub(Executor { it.run() })
     private val audioHub = WebAudioHub()
@@ -52,6 +53,7 @@ class BrowserRtcSessionTest {
         override fun onFit() {}
         override fun onKey(name: String) { keys += name }
         override fun onBrowserStats(stats: Map<String, Any?>) {}
+        override fun onBrowserVideoDiagnostics(stats: Map<String, Any?>) { videoDiagnostics += stats }
         override fun log(message: String) { logs += message }
     }, "127.0.0.1", 0, nowMillis = { now }, audioHub = audioHub)
     private var port = 0
@@ -153,6 +155,14 @@ class BrowserRtcSessionTest {
     }
     private fun auth(peer: FakePeer, s: String = session, c: String = code) = peer.rpc("auth", mapOf("s" to s, "c" to c, "codecs" to "avc1", "timing" to 1, "lifecycle" to 1))
     private fun result(reply: Map<*, *>) = reply["result"] as Map<*, *>
+
+    private fun videoDiagnostic(sample: Int) = linkedMapOf<String, Any?>("schema" to 1, "pageVersion" to "v71",
+        "sample" to sample, "streamGeneration" to 2, "epoch" to 7, "raw.readFrames" to sample * 60,
+        "raw.scheduledDroppedFrames" to sample, "raw.mode" to "carplay", "interval.state" to "valid")
+
+    private fun diagnosticJournal(file: java.io.File): List<Map<*, *>> = file.readLines().map { it.split('\t') }
+        .filter { it.size == 5 && it[2] == "browser/video-diagnostics" }
+        .map { WebJson.parse(String(java.util.Base64.getDecoder().decode(it[4]), Charsets.UTF_8)) as Map<*, *> }
     private fun eventually(message: String, predicate: () -> Boolean) {
         val end = System.nanoTime() + 3_000_000_000L
         while (!predicate() && System.nanoTime() < end) Thread.sleep(10)
@@ -183,6 +193,94 @@ class BrowserRtcSessionTest {
         eventually("bye retires RTC", { peer.closed })
         assertTrue(session in gone)
         assertTrue(requests.all { (path, body) -> !path.contains(code) && !body.containsKey("c") && !body.containsKey("code") })
+    }
+
+    @Test fun rtcControlJournalsEveryValidatedVideoSampleAndRetiresCaptureTokensAcrossClearAndDisable() {
+        val directory = java.nio.file.Files.createTempDirectory("rtc-video-diagnostics").toFile()
+        val capture = java.io.File(directory, "capture.tsv")
+        try {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, true)
+            com.shilapi.xcertplay.diagnostics.RawTraffic.clear()
+            val peer = paired(); auth(peer)
+            var sequence = 0
+            fun emit(sample: Int, captureId: String) = peer.rpc("control", mapOf("q" to ++sequence, "e" to listOf(
+                mapOf("k" to "video-diag", "d" to captureId, "v" to videoDiagnostic(sample)))))
+            val original = requireNotNull(com.shilapi.xcertplay.diagnostics.RawTraffic.activeSessionId())
+            assertEquals(true, emit(1, original)["ok"])
+            assertEquals(true, emit(2, original)["ok"])
+            assertEquals("Diagnostic samples must not use the ordinary ten-second stats throttle", listOf(1L, 2L), videoDiagnostics.map { it["sample"] })
+            assertEquals(videoDiagnostics.toList(), diagnosticJournal(capture))
+            com.shilapi.xcertplay.diagnostics.RawTraffic.clear()
+            val cleared = requireNotNull(com.shilapi.xcertplay.diagnostics.RawTraffic.activeSessionId())
+            emit(3, original)
+            assertEquals(2, videoDiagnostics.size); assertTrue(diagnosticJournal(capture).isEmpty())
+            emit(4, cleared)
+            assertEquals(listOf(4L), diagnosticJournal(capture).map { it["sample"] })
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            emit(5, cleared)
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, true)
+            emit(6, cleared)
+            assertEquals(3, videoDiagnostics.size)
+            val reopened = requireNotNull(com.shilapi.xcertplay.diagnostics.RawTraffic.activeSessionId())
+            emit(7, reopened)
+            assertEquals(listOf(1L, 2L, 4L, 7L), videoDiagnostics.map { it["sample"] })
+            assertEquals(listOf(4L, 7L), diagnosticJournal(capture).map { it["sample"] })
+            assertFalse("Safe journal contains no pairing credentials or video payload", diagnosticJournal(capture).any {
+                it.containsKey("c") || it.containsKey("s") || it.containsKey("payload") || it.containsKey("d")
+            })
+            assertFalse(peer.closed)
+        } finally {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun rtcVideoDiagnosticsRejectMalformedOversizedOrUnversionedReportsWithoutInterruptingControl() {
+        val directory = java.nio.file.Files.createTempDirectory("rtc-invalid-video-diagnostics").toFile()
+        val capture = java.io.File(directory, "capture.tsv")
+        try {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, true)
+            com.shilapi.xcertplay.diagnostics.RawTraffic.clear()
+            val peer = paired(); auth(peer)
+            val id = requireNotNull(com.shilapi.xcertplay.diagnostics.RawTraffic.activeSessionId())
+            val invalid = listOf(
+                videoDiagnostic(1) + ("schema" to 2), videoDiagnostic(1) - "schema",
+                videoDiagnostic(1) + ("raw.readFrames" to "100.111.111.111"),
+                videoDiagnostic(1) + ("raw.readFrames" to mapOf("hidden" to 1)),
+                videoDiagnostic(1) + ("code" to "private-pin"), videoDiagnostic(1) + ("pageVersion" to "x".repeat(20_000)),
+                videoDiagnostic(1) + (0..256).associate { "field$it" to it },
+            )
+            invalid.forEachIndexed { index, values ->
+                assertEquals(true, peer.rpc("control", mapOf("q" to index + 1, "e" to listOf(mapOf("k" to "video-diag", "d" to id, "v" to values))))["ok"])
+            }
+            assertTrue(videoDiagnostics.isEmpty()); assertTrue(diagnosticJournal(capture).isEmpty()); assertFalse(peer.closed)
+            assertEquals(true, peer.rpc("control", mapOf("q" to 99, "e" to listOf(mapOf("k" to "key", "n" to "home"))))["ok"])
+            assertEquals(listOf("home"), keys.toList())
+        } finally {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun failedDiagnosticJournalAppendCannotInvokeMetadataCallback() {
+        val directory = java.nio.file.Files.createTempDirectory("rtc-failed-video-journal").toFile()
+        val capture = java.io.File(directory, "capture.tsv")
+        try {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, true)
+            com.shilapi.xcertplay.diagnostics.RawTraffic.clear()
+            val peer = paired(); auth(peer)
+            val id = requireNotNull(com.shilapi.xcertplay.diagnostics.RawTraffic.activeSessionId())
+            assertTrue(capture.delete()); assertTrue(capture.mkdir())
+            assertEquals(true, peer.rpc("control", mapOf("q" to 1, "e" to listOf(mapOf("k" to "video-diag", "d" to id, "v" to videoDiagnostic(1)))))["ok"])
+            assertTrue(videoDiagnostics.isEmpty())
+            assertTrue((com.shilapi.xcertplay.diagnostics.RawTraffic.integrity()["failures"] as Long) > 0)
+            assertFalse(peer.closed)
+        } finally {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            capture.deleteRecursively()
+            com.shilapi.xcertplay.diagnostics.RawTraffic.clear()
+            directory.deleteRecursively()
+        }
     }
 
     @Test fun wrongPasswordNeverCreatesAPeer() {

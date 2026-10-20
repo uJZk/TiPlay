@@ -26,8 +26,10 @@ export function createDecoderPipeline({ post: send, present }) {
   const decodeStarts = new Map();
   const presentationTimes = new Map();
   let clock = null;
+  const readFrameIntervals = new Samples(), sourceForwardPtsIntervals = new Samples();
+  let lastReadAt = null, lastSource = null;
   const decodeMs = new Samples(), decodeWaitMs = new Samples(), androidQueueMs = new Samples(), transportSubmitToRecordReadMs = new Samples();
-  const totals = { decoded: 0, dropped: 0, decodeErrors: 0, backlogResets: 0, keyRequests: 0, timingRecords: 0, timingRejected: 0 };
+  const totals = { decoded: 0, dropped: 0, decodeErrors: 0, backlogResets: 0, keyRequests: 0, timingRecords: 0, timingRejected: 0, readFrames: 0, readFrameBytes: 0, sourceForwardPtsSamples: 0, sourceReorderedPts: 0 };
   let decodeDroppedFrames = 0, presentationTimingState = 'unobserved';
   const dropped = () => { totals.dropped++; decodeDroppedFrames++; };
   let decoder = null, decoderConfig = null, config = null, codecSupported = null;
@@ -58,7 +60,21 @@ export function createDecoderPipeline({ post: send, present }) {
         presentationTimes.set(`${record.epoch}:${record.timestampUs}`, { mapped, sourceTimeMs: presentation, clockGeneration: clock?.generation, transportSubmitAtMs });
         if (presentationTimes.size > 120) presentationTimes.delete(presentationTimes.keys().next().value);
       }
-      if (record.kind === RECORD.FRAME) return decodeFrameWithCapacity(record, signal);
+      if (record.kind === RECORD.FRAME) {
+        const at = performance.now();
+        if (lastReadAt !== null && at >= lastReadAt) readFrameIntervals.add(at - lastReadAt);
+        lastReadAt = at; totals.readFrames++; totals.readFrameBytes += record.payload.byteLength;
+        const source = presentationTimes.get(`${record.epoch}:${record.timestampUs}`);
+        if (Number.isFinite(source?.mapped) && Number.isFinite(source?.sourceTimeMs)) {
+          if (lastSource && lastSource.epoch === record.epoch && lastSource.generation === source.clockGeneration) {
+            const interval = source.sourceTimeMs - lastSource.at;
+            if (interval >= 0) { sourceForwardPtsIntervals.add(interval); totals.sourceForwardPtsSamples++; }
+            else totals.sourceReorderedPts++;
+          }
+          lastSource = { epoch: record.epoch, generation: source.clockGeneration, at: source.sourceTimeMs };
+        } else lastSource = null;
+        return decodeFrameWithCapacity(record, signal);
+      }
       return null;
     },
     onAlive: id => post({ type: 'alive', id }),
@@ -120,6 +136,7 @@ export function createDecoderPipeline({ post: send, present }) {
     decoder = null;
     decodeStarts.clear();
     presentationTimes.clear();
+    lastReadAt = lastSource = null;
   }
 
   /**
@@ -255,7 +272,7 @@ export function createDecoderPipeline({ post: send, present }) {
     },
     stop,
     stats: () => ({
-      codec: config?.codec ?? null,
+      codec: config?.codec ?? null, epoch: config?.epoch ?? null, mode: config?.mode ?? null, streamGeneration: streamId,
       codecSupported,
       clockRttMs: clock && performance.timeOrigin + performance.now() - clock.at <= 15000 ? clock.rtt : null,
       width: config?.width ?? null,
@@ -267,6 +284,7 @@ export function createDecoderPipeline({ post: send, present }) {
       senderRelativePolicyCeilingMs: config?.mode === 'carplay' && presentationTimingState === 'mapped-presentation' ? 300 : null,
       decodeQueueSize: decoder?.decodeQueueSize ?? 0,
       ...rates,
+      readFrameIntervalMsP95: readFrameIntervals.percentile(95), sourceForwardPtsIntervalMsP95: sourceForwardPtsIntervals.percentile(95),
       decodeMsP50: decodeMs.percentile(50),
       decodeMsP95: decodeMs.percentile(95),
       recordReadToDecodeSubmitMsP95: decodeWaitMs.percentile(95),
@@ -289,7 +307,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
   const drawMs = new Samples(), decodedToDrawMs = new Samples();
   const fpsWindow = createFpsWindow();
   let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null, expiredFrames = 0, untimedFrames = 0, renderDroppedFrames = 0;
-  let audioSyncDroppedFrames = 0;
+  let audioSyncDroppedFrames = 0, drawnFrames = 0;
   const audioReferences = createAudioReferenceTimeline();
   let audioTracking = false, provenId = null, provenEpoch = null;
 
@@ -312,7 +330,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
   function presentNow(frame, config, timing, outputWindow, reason = 'immediate') {
     if (lastConfig?.epoch !== config?.epoch) {
       fpsWindow.reset();
-      expiredFrames = untimedFrames = renderDroppedFrames = 0;
+      expiredFrames = untimedFrames = renderDroppedFrames = drawnFrames = 0;
       audioSyncDroppedFrames = 0;
     }
     lastConfig = config;
@@ -353,7 +371,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
     const at = performance.now();
     const offset = Number.isFinite(timing) ? checkedAt - timing : null;
     if (drawn) {
-      fpsWindow.frame(at, 1, offset);
+      drawnFrames++; fpsWindow.frame(at, 1, offset);
     }
     lastFrame?.close();
     lastFrame = frame;
@@ -386,7 +404,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       lastFrame = null;
       lastConfig = null;
       provenId = provenEpoch = null;
-      expiredFrames = untimedFrames = renderDroppedFrames = 0;
+      expiredFrames = untimedFrames = renderDroppedFrames = drawnFrames = 0;
       audioSyncDroppedFrames = 0;
     },
     dispose() {
@@ -397,7 +415,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       canvas.removeEventListener('webglcontextrestored', restored);
       renderer.dispose?.();
     },
-    stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), decodedToDrawMsP95: decodedToDrawMs.percentile(95), expiredFrames, untimedFrames, renderDroppedFrames,
+    stats: () => ({ drawnFrames, renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), decodedToDrawMsP95: decodedToDrawMs.percentile(95), expiredFrames, untimedFrames, renderDroppedFrames,
       audioRenderSyncDroppedFrames: audioSyncDroppedFrames, ...pacer?.stats(), ...fpsWindow.stats() }),
   };
 }

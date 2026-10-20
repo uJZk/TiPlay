@@ -26,6 +26,41 @@ quantiles of different stages must not be added. WebCodecs decode duration inclu
 opaque driver/reference-reorder work, and canvas submission does not measure panel scanout.
 These identify where to investigate, without claiming a measured vehicle bottleneck.
 
+The video diagnostic event has its own Debug-only budget, separate from the ordinary
+2 KiB status and audio diagnostics. It records the five additive drop components,
+non-additive scheduler reasons and touch subsets, source/read/decoded/draw evidence,
+queues and stage timings, safe ICE/control metrics and the native sender snapshot.
+Schema, page, non-sensitive stream generation, epoch and sample identity distinguish
+successive snapshots. Interval deltas require a matching generation/epoch and
+nondecreasing counters; a new capture, stream or epoch starts a baseline instead
+of interpreting a reset as loss. Missing fields stay missing. Any budget omission
+is reported explicitly, including when the negotiated control-message limit is low.
+Counter-scope fields distinguish pipeline-lifetime counters from epoch-reset
+counters; rolling stage samples can span epochs. Compare interval deltas within
+one identity rather than dividing mixed-scope cumulative totals.
+
+Accepted video snapshots are captured on `browser/video-diagnostics` only for the
+current Debug capture. Capture-session checking and journal append are atomic, so
+a delayed report cannot enter a new capture after clear/disable. The metadata TXT
+also splits the snapshot into short lines with the same sample identity; ordinary
+status throttling does not suppress these dedicated snapshots. The event contains
+scalar telemetry, not authentication, touch coordinates, location, SDP, addresses,
+media bytes or native peer session identifiers. It does not change playback policy.
+
+`Video source:` is a separate receive-thread window summary. It counts only complete
+video-frame messages, excluding configuration and keepalives, and reports a local
+stream/window identity, cumulative frame numbers, actual window FPS, adjacent source
+PTS steps/missing/repeats/backward steps and adjacent complete-frame arrival gaps.
+Source PTS and monotonic arrival timestamps are compared only within their own
+domains. Window-boundary gaps remain visible, while new streams have separate
+identity and state. Missing PTS is not replaced with arrival time. Neither a sparse
+source cadence nor a PTS step alone proves network loss or source malfunction.
+The companion `Video source gap:` line preserves the frame pair for each window's
+largest PTS and arrival gaps, together with both measurements for that same pair.
+These maxima may come from different pairs. Source stream IDs are independent of
+browser video generations and epochs; associate them using timestamps and input
+references rather than equating their numbers.
+
 The original video stream is captured once on the iPhone-to-Android input. Forwarding the
 video to the browser does not save another copy of that media payload. RTC reference
 records contain capture session, original channel, journal sequence and byte ranges,
@@ -125,6 +160,13 @@ from slow serial input requests. `pacingDroppedFrames` counts superseded pending
 pictures; it does not count source/network loss or prove actual panel presentation.
 The bounded status summary prioritizes these fields; per-stream audio retains its own
 separate diagnostic budget.
+
+For a video-stutter reproduction, enable Debug before starting the browser session,
+keep one viewport size, include a short static interval followed by continuous
+scrolling/animation, and note the visible pause time. Wait about ten seconds after
+the pause before exporting, so the next diagnostic window is included. Changing
+the viewport can restart the source and reset per-epoch drop counters; report that
+separately from an interrupted RTC connection.
 
 Resource diagnostics distinguish Android HTTP from iPhone FCUP, preserve upstream status
 and report bounded denial details in Debug. Android resource I/O failures retain bounded

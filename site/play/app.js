@@ -29,6 +29,7 @@ import { createAirPlayTrustNotification } from './airplay-trust.js';
 import { createBrowserNotice } from './browser-notice.js';
 import { browserDiagnosticEvents, PAGE_VERSION } from './browser-diagnostics.js';
 import { rtcFailureReason, rtcFailureSummary } from './rtc-diagnostics.js';
+import { createVideoDiagnosticTracker, safeSenderDiagnostics } from './video-diagnostics.js';
 
 const STRINGS = {
   en: {
@@ -191,6 +192,7 @@ const t = (key, ...args) => (STRINGS[lang][key] ?? STRINGS.en[key]).replace(/\{(
 const CODEC_NAMES = { avc1: 'H.264', avc3: 'H.264', hvc1: 'HEVC', hev1: 'HEVC', vp8: 'VP8', vp09: 'VP9', av01: 'AV1' };
 const LINK_KEY = 'tiplay.link', STATS_KEY = 'tiplay.stats';
 const $ = id => document.getElementById(id);
+const videoDiagnosticTracker = createVideoDiagnosticTracker();
 const browserNotice = createBrowserNotice($('browser-notice'), lang);
 const stage = $('stage'), touch = $('touch');
 const codecName = codec => CODEC_NAMES[String(codec).split('.')[0]] ?? codec;
@@ -474,7 +476,7 @@ function start() {
   reportAppearance();
   heartbeatTimer = setInterval(() => outbox.heartbeat(), 400);
   statsTimer = setInterval(() => {
-    for (const event of browserDiagnosticEvents(pageStats(), appearance.matches, status?.debug === true, status?.debugSession)) outbox.push(event, 'latest');
+    for (const event of browserDiagnosticEvents(pageStats(), appearance.matches, status?.debug === true, status?.debugSession, videoDiagnosticTracker)) outbox.push(event, 'latest');
   }, 5000);
   outbox.heartbeat();
   resizeCanvas();
@@ -678,7 +680,8 @@ function onVideoMessage(message) {
     keepScreenOn();
   } else if (message.type === 'keyframe') outbox?.push({ k: 'kf' }, 'latest');
   else if (message.type === 'end' && message.id === streamId) streamEnded(message.reason);
-  else if (message.type === 'stats') videoStats = performanceStats(message.stats);
+  else if (message.type === 'stats') videoStats = performanceStats({ ...message.stats,
+    streamGeneration: message.id, transferDroppedFrames: message.stats.transferDroppedFrames ?? 0 });
   render();
 }
 
@@ -793,6 +796,7 @@ function pageStats() {
     link: { path: videoPath.path, fallback: videoPath.reason, codecs: probedCodecs, phase, attempt, reconnects, live, unsupported,
       connection: rtcProgress, failure: lastError ? rtcFailureSummary(lastError) : null },
     video: videoStats,
+    sender: safeSenderDiagnostics(status?.phone?.rtc),
     audio: browserAudio.stats(),
     control: outbox?.stats() ?? null,
     transport: rtc ? { ...rtc.stats(), audioPlayback: rtcAudio?.stats() } : null,

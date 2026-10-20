@@ -594,6 +594,11 @@ internal object TeslaBrowserLink {
                 !com.shilapi.xcertplay.diagnostics.RawTraffic.enabled) return
             BrowserAudioDiagnostics.lines(stats).forEach(::log)
         }
+        override fun onBrowserVideoDiagnostics(stats: Map<String, Any?>) {
+            if (DiagnosticLogPolicy.level != DiagnosticLogLevel.DEBUG ||
+                !com.shilapi.xcertplay.diagnostics.RawTraffic.enabled) return
+            BrowserVideoDiagnostics.lines(stats).forEach(::log)
+        }
         override fun log(message: String) = this@TeslaBrowserLink.log(message)
     }
 
