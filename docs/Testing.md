@@ -43,6 +43,63 @@ arrival-based fallback before an anchor exists. In-place recovery may emit a
 5 ms decay of the last audible sample. Physical SCO/device latency and long
 session clock drift still require [device acceptance](Todo.md#browser-and-carplay-audio).
 
+## WebRTC integrated acceptance
+
+Run browser unit tests, shared Android pairing/transport tests and the applicable
+real-PeerConnection harness after integrating changes. SRP vectors come from actual
+Bouncy Castle 1.79 and cover public values, mutual proofs and HMAC binding. Reject
+wrong code, replay/expired challenges, changed SDP/server proofs and retired owners.
+Protocol checks cover TDR1 fragmentation, record credit, independent audio
+subscription barriers, control limits, cancellation, decoder admission and
+explicit overload/stall recovery. No HTTP media/control fallback may bypass SRP.
+
+The integrated source passed 237 scoped Android regressions, 473 browser tests,
+90 full-page checks, 17 real-PeerConnection checks, seven SRP security cases with
+Bouncy Castle vectors and 24 JVM compatibility checks. Media-clock and AirPlay
+photo/audio/MP4/HLS E2E passed. Full-page Chromium playback used an explicit
+software-only test override, with strict desktop hardware-unavailable rejection
+checked separately. The full Android CI run is skipped at the user’s explicit request. Signed hashes,
+root deployment and publication are tracked in [Build](Build.md#beta-release).
+
+Remote 0.2.21-beta.3/v71 historically passed 2,203 shared, 1,748 common and six home
+unit tests, 450 browser tests, eight isolated-site checks and nine release-draft
+checks. Those counts belong to the old experimental source and do not validate
+beta.6. The former isolated-site assembler is no longer the production deployment:
+`https://ujzk.github.io/TiPlay/` is replaced directly, the independent `/webrtc/`
+site is removed without alias/redirect. Download pages explicitly link beta.6;
+the historical 0.2.16 release/download URL is no longer available.
+
+Preserve remote diagnostic coverage when running the integrated suite: bounded
+independent video snapshots, capture-session/stream/epoch interval baselines,
+233-field production-shaped fixture validation, anonymous ICE/native metrics,
+missing/budget-omitted fields, held journal-lock races and complete-frame source
+PTS/arrival windows. Source cadence excludes configuration/keepalive records and
+retains missing, repeated, backward and cross-window PTS/arrival gaps. These tests
+observe source pauses and consumer progress; they do not prove network loss or
+remove the need to reproduce the historical source-frame stalls.
+
+Use the current [browser harness instructions](../tests/web-e2e/README.md) for real
+SRP/ICE/DTLS/SCTP. A browser that cannot enumerate usable host ICE candidates is a
+blocked environment result, not a simulated success. Full-page software overrides
+must never be reported as hardware-decode evidence. URL/photo/audio harnesses
+remain applicable because resource playback is retained.
+
+On the intended vehicle, manually enter the official root URL, Android address and
+four-digit code. Check wrong-code lockout, new code, same-page reconnect, replacement
+owners, disable/disconnect, cached/offline reopen and local-network denial. Exercise
+large access units, retransmission, shared Wi-Fi/hotspot/VPN, Shizuku aliases,
+suspend/resume, sustained heat and storage pressure. Use source/read/decode/draw and
+native queue/credit evidence to distinguish source supply from transport retirement
+or decoded refresh replacement. Reproduce the old beta.3 200ms-guard/reconnect and
+7.75-second source-gap scenarios rather than claiming them fixed from counts alone.
+
+Confirm actual vehicle hardware decoding and source-relative panel/acoustic output
+with uncertainty. Repeat touch without resetting audio; test source-anchor loss,
+independent speech/media epochs and verified HFP startup/loss/restoration. The live
++300ms enforcement includes known software clock/output/filter uncertainty, while
+upstream iPhone NTP uncertainty is not separately transmitted. Missing anchors stay
+unknown and `within-bound` is not a physical latency certificate.
+
 ## Receiver status and browser notices
 
 Regression checks distinguish receiver preparation, waiting, handshake, readiness,

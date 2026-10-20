@@ -23,6 +23,21 @@ class WebDebugTimingTest {
         assertArrayEquals(byteArrayOf(1, 2), frame.payload)
     }
 
+    @Test fun extendedRtcTimingSeparatesHubQueueAndTransportSubmissionWithoutChangingSource() {
+        val source = WebVideoRecord(2, 1, 1, 7, 3, 99, byteArrayOf(1, 2),
+            queuedAtNanos = 1_010_000_000, captureNanos = 1_000_000_000)
+        val timing = WebDebugTiming.record(source, 1_050_000_000, extended = true)!!
+        val fields = ByteBuffer.wrap(timing.payload).order(ByteOrder.LITTLE_ENDIAN)
+        assertEquals(24, timing.payload.size)
+        assertEquals(1000.0, fields.double, 0.0)
+        assertEquals(1010.0, fields.double, 0.0)
+        assertEquals(1050.0, fields.double, 0.0)
+        assertEquals(source.sequence, timing.sequence)
+        assertEquals(source.timestampUs, timing.timestampUs)
+        assertArrayEquals(byteArrayOf(1, 2), source.payload)
+        assertEquals(8, WebDebugTiming.record(source, 1_050_000_000)!!.payload.size)
+    }
+
     @Test fun missingOrUnrelatedMediaClocksProduceNoTimingRecord() {
         assertNull(WebDebugTiming.record(frame(null), 100))
         assertNotNull(WebDebugTiming.record(frame(101), 100))

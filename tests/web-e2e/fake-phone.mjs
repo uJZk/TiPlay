@@ -2,6 +2,8 @@
 // Synthetic phone source with real browser DataChannels when rtcPage is supplied.
 // Retained direct HTTP record/control routes are used only by compatibility/resource tests.
 import { createServer } from 'node:http';
+import { randomBytes } from 'node:crypto';
+import { installSrpFixture } from './srp-fixture.mjs';
 import { History, listen, closeServer } from './resources.mjs';
 import { RECORD, FLAG, encodeRecord } from '../../site/play/link.js';
 import { RTC_TRANSPORT, RTC_MAGIC, RTC_HEADER_BYTES, RTC_FRAGMENT_BYTES } from '../../site/play/webrtc-transport.js';
@@ -34,14 +36,14 @@ export function parseIvf(buffer) {
  * HTTP or DataChannel controls land in `events` as `{s, q, event}`.
  * rtcPage must be a separate real browser page on a secure test origin.
  */
-export function startFakePhone({ code, frames, width, height, fps = 30, codec = 'vp8', host = '127.0.0.1', rtcPage = null }) {
+export function startFakePhone({ code, frames, width, height, fps = 30, codec = 'vp8', host = '127.0.0.1', rtcPage = null, moduleBase = '/' }) {
   let portalRevision = 0;
   const events = new History(), requests = new History(), preflights = new History(), bridgeErrors = new History();
   const peerError = error => bridgeErrors.push(error.message);
   rtcPage?.on('pageerror', peerError);
   let current = null, lastSeen = 0, video = null, fit = false, viewport = null, videoCount = 0, corrupt = false, framesWritten = 0;
   const replaced = new Set(), lastQ = new Map();
-  let rtcEpoch = 0;
+  let rtcEpoch = 0, resourceToken = null;
   const config = new TextEncoder().encode(JSON.stringify({ mode: 'carplay', codec, width, height, fps, format: 'annexb', marker: 'none' }));
 
   function closeVideo(reason) {
@@ -62,7 +64,7 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
   }
 
   /** Latest session wins; a replaced session gets 409 from then on. */
-  function authorize(res, c, s) {
+  function authorize(res, c, s, keepVideo = false) {
     if (c !== code) return json(res, 401, { error: 'code' }), false;
     if (!/^[A-Za-z0-9_-]{16,64}$/.test(s ?? '')) return json(res, 400, { error: 'bad-request' }), false;
     if (replaced.has(s)) return json(res, 409, { error: 'replaced' }), false;
@@ -75,7 +77,7 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
         if (replaced.size >= 1024) return json(res, 503, { error: 'session-limit' }), false;
         replaced.add(current);
       }
-      closeVideo('replaced');
+      if (!keepVideo) closeVideo('replaced');
       current = s;
     }
     lastSeen = Date.now();
@@ -140,7 +142,7 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
 
   function status(q) {
     return {
-      q, state: 'streaming', codec, display: { w: width, h: height }, viewport, fit, touch: 'ok', portalRevision,
+      q, clockMs: performance.now(), state: 'streaming', codec, display: { w: width, h: height }, viewport, fit, touch: 'ok', portalRevision,
       phone: { fake: 1, videoStreams: videoCount },
     };
   }
@@ -169,6 +171,19 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
         state.channels[channel.label] = channel;
         if (channel.label === 'control') channel.onmessage = async ({ data }) => {
           const message = JSON.parse(data);
+          if (message.k === 'auth') {
+            const response = await globalThis.__fakePhoneAuth(message, epoch);
+            state.authorized = !response.error;
+            if (channel.readyState === 'open') channel.send(JSON.stringify(response));
+            return;
+          }
+          if (!state.authorized) throw new Error('media/control admitted before encrypted auth');
+          if (message.k === 'audio-ready' && message.enabled) { channel.send(JSON.stringify({ k: 'audio-barrier', generation: message.generation, sequence: 0, epoch })); return; }
+          if (message.k === 'bye') {
+            const response = await globalThis.__fakePhoneBye(message, epoch);
+            if (channel.readyState === 'open') channel.send(JSON.stringify(response));
+            return;
+          }
           if (message.k === 'ack') {
             if (message.channel !== 'video' || state.unconsumed.get(message.q) !== message.bytes) throw new Error('invalid fake-phone consumption credit');
             state.unconsumed.delete(message.q); state.bytes -= message.bytes;
@@ -188,7 +203,7 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
       });
       state.send = records => {
         const channel = state.channels.video;
-        if (channel?.readyState !== 'open' || channel.bufferedAmount > 1024 * 1024
+        if (!state.authorized || channel?.readyState !== 'open' || channel.bufferedAmount > 1024 * 1024
           || state.bytes + records.reduce((bytes, record) => bytes + record.length, 0) > 4 * 1024 * 1024) return false;
         for (const bytes of records) {
           const sequence = state.sequence++;
@@ -237,7 +252,9 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://phone');
-    requests.push({ method: req.method, path: url.pathname });
+    const requestEvidence = { method: req.method, path: url.pathname,
+      secretInUrl: ['c', 'code'].some(key => url.searchParams.get(key) === code) };
+    requests.push(requestEvidence);
     if (req.headers.origin) {
       res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
       res.setHeader('Vary', 'Origin');
@@ -257,13 +274,28 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     const route = `${req.method} ${url.pathname}`;
     if (route === 'GET /hello') return json(res, 200, { app: 'TiPlay', protocol: 1, clockMs: performance.now(),
       ...(rtcPage ? { transport: RTC_TRANSPORT } : {}) });
-    if (route === 'POST /rtc' && rtcPage) {
+    if (rtcPage && ['/rtc', '/control', '/video', '/audio'].includes(url.pathname)) return json(res, 410, { error: 'transport-required' });
+    if (rtcPage && (route === 'POST /rtc/pair/start' || route === 'POST /rtc/pair/finish')) {
       let body;
       try { body = JSON.parse(await readBody(req)); } catch (_) { return json(res, 400, { error: 'bad-request' }); }
-      if (!authorize(res, body.c, body.s)) return;
-      if (typeof body.offer !== 'string' || body.offer.length > 48 * 1024) return json(res, 400, { error: 'bad-request' });
-      try { return json(res, 200, await streamRtc(body.offer)); }
-      catch (error) { return json(res, 500, { error: 'rtc-failed', detail: error.message }); }
+      requestEvidence.signalingFields = Object.keys(body).sort();
+      if ('c' in body || 'code' in body) return json(res, 400, { error: 'plaintext-code' });
+      try {
+        if (url.pathname.endsWith('/start')) {
+          const result = await rtcPage.evaluate(body => globalThis.__srpFixture.start(body), body);
+          return json(res, result.status, result.body);
+        }
+        const checked = await rtcPage.evaluate(body => globalThis.__srpFixture.verify(body), body);
+        if (checked.status !== 200) return json(res, checked.status, checked.body);
+        const answer = await streamRtc(body.offer);
+        const result = await rtcPage.evaluate(({ body, answer }) => globalThis.__srpFixture.bind(body, answer), { body, answer });
+        return json(res, result.status, result.body);
+      } catch (error) { return json(res, 500, { error: 'rtc-failed', detail: error.message }); }
+    }
+    if (rtcPage && route === 'POST /bye') {
+      let body; try { body = JSON.parse(await readBody(req)); } catch (_) { return json(res, 400, { error: 'bad-request' }); }
+      if (body.c !== resourceToken || body.s !== current) return json(res, 401, { error: 'token' });
+      closeVideo('stopped'); current = null; return res.writeHead(204).end();
     }
     if (route === 'GET /video') {
       if (authorize(res, url.searchParams.get('c'), url.searchParams.get('s'))) streamVideo(res, url.searchParams.get('timing') === '1');
@@ -289,12 +321,27 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     json(res, 404, { error: 'not-found' });
   });
 
-  return Promise.resolve(rtcPage?.exposeFunction('__fakePhoneControl', (body, epoch) => {
-    if (epoch !== video?.rtcEpoch || body.s !== current || replaced.has(body.s)) return { q: body.q, error: 'replaced', status: 409 };
-    if (body.c !== code) return { q: body.q, error: 'code', status: 401 };
-    lastSeen = Date.now();
-    return applyControl(body);
-  })).then(() => listen(server, host)).then(() => ({
+  const setup = rtcPage ? (async () => {
+    await installSrpFixture(rtcPage, { code, moduleBase });
+    await rtcPage.exposeFunction('__fakePhoneAuth', (body, epoch) => {
+      let refusal;
+      const response = { writeHead(status) { refusal = status; }, end() {} };
+      if (epoch !== video?.rtcEpoch || !authorize(response, body.c, body.s, true)) return { q: body.q, error: refusal === 409 ? 'replaced' : 'code', status: refusal || 401 };
+      resourceToken = randomBytes(32).toString('base64url');
+      return { q: body.q, app: 'TiPlay', protocol: 1, clockMs: performance.now(), audio: false,
+        transport: RTC_TRANSPORT, resourceToken, ...status(body.q) };
+    });
+    await rtcPage.exposeFunction('__fakePhoneControl', (body, epoch) => {
+      if (epoch !== video?.rtcEpoch || body.s !== current || replaced.has(body.s)) return { q: body.q, error: 'replaced', status: 409 };
+      if ('c' in body) throw new Error('ordinary DC control unexpectedly repeats the pairing code');
+      lastSeen = Date.now(); return applyControl(body);
+    });
+    await rtcPage.exposeFunction('__fakePhoneBye', (body, epoch) => {
+      if (epoch !== video?.rtcEpoch || body.s !== current) return { q: body.q, error: 'replaced', status: 409 };
+      current = null; return { q: body.q, stopped: true };
+    });
+  })() : Promise.resolve();
+  return setup.then(() => listen(server, host)).then(() => ({
     port: server.address().port,
     events, requests, preflights, bridgeErrors,
     assertHistories() { for (const history of [events, requests, preflights, bridgeErrors]) history.assertComplete(); },

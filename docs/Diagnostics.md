@@ -17,8 +17,56 @@ Debug mode is process-local and defaults off (Standard) on every process start; 
 
 Raw capture covers incoming iPhone TCP control, encrypted protocol bytes, video, audio, timing, events and iAP tunnel data; RFCOMM traffic; browser HTTP headers/query/body before parsing (including rejected requests read by the server); USB discovery, attach/detach and permission events, device descriptors, open/reopen, configuration and interface claims/releases, request initialization/queue/wait/cancel/close, USB control setup/results, USBMUX, NCM and CH341 transfers, interrupt notifications, partial writes and failed transfer results; and PCM accepted by Android AudioTrack and the verified Bluetooth SCO output. USB lifecycle events and transfers carry connection/request identifiers; asynchronous input is captured once at completion before framing or parsing, including bytes drained after a timeout, with requested/completed lengths and failures. While Debug mode is enabled, AirPlay URL resources are forced through Android and their response bodies are captured too. Disabling the switch restores normal direct-resource eligibility; active browser playback reopens when the policy changes. Android owns A2DP/HFP encoding and USB host-controller signalling: an ordinary app cannot capture Bluetooth air packets, USB bus signalling, unread kernel buffers or packets lost before delivery. AudioTrack acceptance establishes submission, not audible car playback; the `android-audio/track` channel can include non-Bluetooth routes.
 
+The integrated WebRTC path retains bounded stage metrics: Android hub queue,
+transport submission to browser record read (including sender queue/network/reassembly),
+browser fragment reassembly, complete-record consumer wait, record-read to decode
+submission, decode submission to output, decoded output to scheduler/draw and canvas
+submission work. Android-to-browser durations retain clock-mapping uncertainty;
+quantiles of different stages must not be added. WebCodecs decode duration includes
+opaque driver/reference-reorder work, and canvas submission does not measure panel scanout.
+These identify where to investigate, without claiming a measured vehicle bottleneck.
+
+The video diagnostic event has its own Debug-only budget, separate from the ordinary
+2 KiB status and audio diagnostics. It records the five additive drop components,
+non-additive scheduler reasons and touch subsets, source/read/decoded/draw evidence,
+queues and stage timings, safe ICE/control metrics and the native sender snapshot.
+Schema, page, non-sensitive stream generation, epoch and sample identity distinguish
+successive snapshots. Interval deltas require a matching generation/epoch and
+nondecreasing counters; a new capture, stream or epoch starts a baseline instead
+of interpreting a reset as loss. Missing fields stay missing. Any budget omission
+is reported explicitly, including when the negotiated control-message limit is low.
+Counter-scope fields distinguish pipeline-lifetime counters from epoch-reset
+counters; rolling stage samples can span epochs. Compare interval deltas within
+one identity rather than dividing mixed-scope cumulative totals.
+
+Accepted video snapshots are captured on `browser/video-diagnostics` only for the
+current Debug capture. Capture-session checking and journal append are atomic, so
+a delayed report cannot enter a new capture after clear/disable. The metadata TXT
+also splits the snapshot into short lines with the same sample identity; ordinary
+status throttling does not suppress these dedicated snapshots. The event contains
+scalar telemetry, not authentication, touch coordinates, location, SDP, addresses,
+media bytes or native peer session identifiers. It does not change playback policy.
+
+`Video source:` is a separate receive-thread window summary. It counts only complete
+video-frame messages, excluding configuration and keepalives, and reports a local
+stream/window identity, cumulative frame numbers, actual window FPS, adjacent source
+PTS steps/missing/repeats/backward steps and adjacent complete-frame arrival gaps.
+Source PTS and monotonic arrival timestamps are compared only within their own
+domains. Window-boundary gaps remain visible, while new streams have separate
+identity and state. Missing PTS is not replaced with arrival time. Neither a sparse
+source cadence nor a PTS step alone proves network loss or source malfunction.
+The companion `Video source gap:` line preserves the frame pair for each window's
+largest PTS and arrival gaps, together with both measurements for that same pair.
+These maxima may come from different pairs. Source stream IDs are independent of
+browser video generations and epochs; associate them using timestamps and input
+references rather than equating their numbers.
+
 The original video stream is captured once on the iPhone-to-Android input. Forwarding the
-video to the browser does not save another copy of that media payload.
+video to the browser does not save another copy of that media payload. RTC reference
+records contain capture session, original channel, journal sequence and byte ranges,
+plus the decrypt/Annex-B transformation and downstream epoch/sequence. File append
+is not fsync durability. `captureIntegrity` exposes write failures; after an uncertain
+partial write, new exact-range references are suppressed until the next capture session.
 
 Raw capture begins when Debug is enabled; it cannot recover earlier traffic. A successful export
 and zero recorded failures establish neither coverage of uninstrumented paths nor delivery before
@@ -137,6 +185,13 @@ from slow serial input requests. `pacingDroppedFrames` counts superseded pending
 pictures; it does not count source/network loss or prove actual panel presentation.
 The bounded status summary prioritizes these fields; per-stream audio retains its own
 separate diagnostic budget.
+
+For a video-stutter reproduction, enable Debug before starting the browser session,
+keep one viewport size, include a short static interval followed by continuous
+scrolling/animation, and note the visible pause time. Wait about ten seconds after
+the pause before exporting, so the next diagnostic window is included. Changing
+the viewport can restart the source and reset per-epoch drop counters; report that
+separately from an interrupted RTC connection.
 
 Resource diagnostics distinguish Android HTTP from iPhone FCUP, preserve upstream status
 and report bounded denial details in Debug. Android resource I/O failures retain bounded

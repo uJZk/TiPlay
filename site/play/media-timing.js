@@ -2,6 +2,7 @@
 import { MEDIA_DELAY_LIMITS, constantDelay, delayAt, mediaDeadline, planDelay, playbackProfile, DELAY_PLAN_LEAD_MS } from './delay-plan.js';
 import { initialPlaybackPlans, audioDelayAt, videoExpired, videoSubmissionMargin, VIDEO_SUBMIT_MARGIN_MS } from './playback-window.js';
 import { createAudioReferenceTimeline } from './audio-output-clock.js';
+import { Samples } from './link.js';
 export { INITIAL_MEDIA_DELAY, MAX_MEDIA_DELAY } from './delay-plan.js';
 
 /** A repeated configuration is not a new presentation epoch. */
@@ -89,11 +90,16 @@ export function createMediaTiming(change = () => {}, now = () => performance.tim
     limit: () => policy().maxDelayMs,
   };
 }
-/** Orders decoded frames only. Encoded video remains in decoder dependency order. */
+/** Schedule decoded pictures. CarPlay preserves WebCodecs presentation order; compressed dependencies remain untouched. */
 export function createTimedFrames(present, { now = () => performance.timeOrigin + performance.now(), schedule = setTimeout, cancel = clearTimeout, observe = () => {} } = {}) {
   let queue = [], timer = null, plan = constantDelay(), last = -Infinity, expiredFrames = 0, droppedFrames = 0;
   let syncDroppedFrames = 0, syncUnavailableFrames = 0, syncState = 'video-only', outputMethod = null;
   let queuedBytes = 0, resourceDroppedFrames = 0, untimedFrames = 0;
+  let coalescedFrames = 0, staleFrames = 0, catchUpSkippedFrames = 0, ceilingViolations = 0, lastFrontier = null;
+  const decodedToSchedulerMs = new Samples();
+  const cursorSpeed = at => 1 - (delayAt(plan, at + 0.5) - delayAt(plan, at - 0.5));
+  const catchingUp = at => /^carplay(?:-touch)?$/.test(plan.playbackProfile)
+    && ((plan.playbackProfile === 'carplay-touch' && delayAt(plan, at) > 0.5) || cursorSpeed(at) > 1.0001);
   const audioReferences = createAudioReferenceTimeline();
   const drop = frame => { droppedFrames++; frame.close(); };
   const shift = () => { const item = queue.shift(); queuedBytes -= item.bytes; return item; };
@@ -122,16 +128,22 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
     let nextAt = null;
     while (queue.length && queue[0].ready) {
       const item = queue[0];
-      if (videoExpired(item.timing, item.config?.mode, at)) { shift(); expiredFrames++; drop(item.frame); continue; }
+      if (videoExpired(item.timing, item.config?.mode, at)) { shift(); expiredFrames++;
+        if (item.config?.mode === 'carplay') ceilingViolations++; drop(item.frame); continue; }
       const window = outputWindow(item, at);
       const networkAt = mediaDeadline(item.timing - margin, plan, at);
       const due = networkAt;
       if (at < due) { nextAt = due; break; }
       shift();
-      if (selected) drop(selected.frame);
+      if (selected) { coalescedFrames++;
+        if (selected.config?.mode === 'carplay' && catchingUp(at)) catchUpSkippedFrames++;
+        drop(selected.frame); }
       selected = { ...item, window };
     }
-    if (selected) { last = selected.order; present(selected.frame, selected.config, selected.id, selected.timing, selected.window); }
+    if (selected) {
+      if (Number.isFinite(selected.config?.stageTiming?.decodedAtMs)) decodedToSchedulerMs.add(at - selected.config.stageTiming.decodedAtMs);
+      last = selected.order; present(selected.frame, selected.config, selected.id, selected.timing, selected.window);
+    }
     if (nextAt !== null) timer = schedule(pump, Math.max(1, nextAt - now()));
   }
   return {
@@ -145,7 +157,8 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
       // Refining the network clock can move its mapped presentation estimate;
       // decoded media order belongs to the stable source coordinate instead.
       const order = Number.isFinite(sourceTimeMs) ? sourceTimeMs : timing;
-      if (order <= last || queue.some(item => item.order === order)) { drop(frame); return; }
+      if (order <= last || (config?.mode === 'carplay' && queue.length && order <= queue.at(-1).order)
+        || queue.some(item => item.order === order)) { staleFrames++; drop(frame); return; }
       // Conservative RGBA surface accounting also bounds GPU-backed frames.
       const width = Number(frame.codedWidth || frame.displayWidth || config?.width || 0);
       const height = Number(frame.codedHeight || frame.displayHeight || config?.height || 0);
@@ -153,7 +166,9 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
       const profile = playbackProfile(plan.playbackProfile || config?.mode);
       if (bytes > profile.maxVideoBytes) { resourceDroppedFrames++; drop(frame); return; }
       const item = { frame, config, id, timing, sourceTimeMs, order, bytes, clockGeneration: source?.clockGeneration, ready: false };
-      queue.push(item); queue.sort((a, b) => a.order - b.order);
+      lastFrontier = timing;
+      queue.push(item);
+      if (config?.mode !== 'carplay') queue.sort((a, b) => a.order - b.order);
       queuedBytes += bytes;
       // Applying the local observation may synchronously update the plan and pump.
       // Keep this item pending until that observation has completed.
@@ -170,13 +185,18 @@ export function createTimedFrames(present, { now = () => performance.timeOrigin 
       pump();
     },
     stats: () => ({ scheduledExpiredFrames: expiredFrames, scheduledDroppedFrames: droppedFrames,
+      scheduledCoalescedFrames: coalescedFrames, scheduledStaleFrames: staleFrames, scheduledCapacityFrames: resourceDroppedFrames,
+      decodedToSchedulerMsP95: decodedToSchedulerMs.percentile(95), decodedQueueSize: queue.length,
+      videoCeilingViolations: ceilingViolations, touchSkippedFrames: catchUpSkippedFrames,
+      videoCursorSpeed: cursorSpeed(now()), videoCursorDeltaMs: lastFrontier === null ? null : delayAt(plan, now()),
+      decodedFrontierDeltaMs: lastFrontier === null ? null : now() - lastFrontier, touchCatchUpActive: catchingUp(now()),
       audioSyncDroppedFrames: syncDroppedFrames, audioSyncUnavailableFrames: syncUnavailableFrames,
       audioSyncState: syncState, audioOutputMethod: outputMethod, decodedQueueFrames: queue.length,
       decodedQueueBytes: queuedBytes, decodedResourceDroppedFrames: resourceDroppedFrames, untimedScheduledFrames: untimedFrames,
       playbackProfile: plan.playbackProfile || 'default' }),
     plan: () => plan,
     reset() { if (timer !== null) cancel(timer); timer = null; for (const item of queue) item.frame.close(); queue = []; last = -Infinity;
-      queuedBytes = resourceDroppedFrames = untimedFrames = 0;
+      queuedBytes = resourceDroppedFrames = untimedFrames = coalescedFrames = staleFrames = catchUpSkippedFrames = ceilingViolations = 0; lastFrontier = null;
       expiredFrames = droppedFrames = syncDroppedFrames = syncUnavailableFrames = 0; syncState = 'video-only'; },
   };
 }

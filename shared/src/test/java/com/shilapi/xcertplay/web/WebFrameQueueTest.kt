@@ -16,21 +16,24 @@ class WebFrameQueueTest {
         assertTrue(q.offer(frame(0, true, 0), 0))
         assertTrue(q.offer(frame(1, false, 1), 1))
         assertFalse(q.offer(frame(2, false, 2), 2))
-        assertEquals("media-overload", q.failureReason)
+        assertEquals("reliable-overload", q.failureReason)
         assertEquals(2, q.size)
-        assertEquals(0L, q.overflow)
+        assertEquals(1L, q.overflow)
         assertEquals(0L, q.skipped)
-        assertEquals(0, q.poll(3)!!.sequence)
-        assertEquals(1, q.poll(4)!!.sequence)
+        assertNull(q.poll(3))
+        assertEquals(2, q.size)
     }
 
-    @Test fun reliableAgeLimitIsAnExplicitFailureInsteadOfSilentExpiration() {
+    @Test fun reliableAgeDoesNotPreventAdmissionWhileTheQueueStillHasCapacity() {
         val q = WebFrameQueue(maxAgeNanos = 50, reliable = true)
         assertTrue(q.offer(frame(0, true, 0), 0))
-        assertFalse(q.offer(frame(1, false, 50), 50))
-        assertEquals("media-age-limit", q.failureReason)
-        assertEquals(1, q.size)
+        assertTrue(q.offer(frame(1, false, 50), 50))
+        assertNull(q.failureReason)
+        assertEquals(2, q.size)
         assertEquals(0L, q.expired)
+        assertEquals(0, q.poll(50)!!.sequence)
+        assertEquals(1, q.poll(60)!!.sequence)
+        assertEquals(1L, q.overAgeFrames)
     }
 
     private fun frame(sequence: Int, key: Boolean, now: Long, size: Int = 2) = WebVideoRecord(
@@ -167,6 +170,79 @@ class WebFrameQueueTest {
         assertEquals(0, q.configBytes)
         assertNull(q.poll(0))
         assertFalse(WebFrameQueue(maxConfigBytes = 2).offerConfig(config(1), 0))
+    }
+
+    @Test fun reliableOverflowFailsWithoutDiscardingTheDependencyChainOrResuming() {
+        val q = WebFrameQueue(maxBytes = 4, maxFrames = 2, reliable = true)
+        assertFalse(q.offer(frame(0, false, 0), 0))
+        assertTrue(q.offer(frame(1, true, 1), 1))
+        assertTrue(q.offer(frame(2, false, 2), 2))
+        assertFalse(q.offer(frame(3, false, 3), 3))
+        assertEquals("reliable-overload", q.failureReason)
+        assertEquals(2, q.size)
+        assertEquals(4, q.bytes)
+        assertEquals(1L, q.skipped) // Only startup gating; no admitted compressed record was skipped.
+        assertNull(q.poll(4))
+        assertFalse(q.offer(frame(4, true, 4), 4))
+        q.clear()
+        assertEquals(0, q.bytes)
+        assertEquals("reliable-overload", q.failureReason)
+    }
+
+    @Test fun reliableJitterDrainsTheCompleteDependencyChainWithoutResetOrDiscontinuity() {
+        val q = WebFrameQueue(maxAgeNanos = 50, reliable = true)
+        assertTrue(q.offer(frame(0, true, 0), 0))
+        assertTrue(q.offer(frame(1, false, 10), 10))
+        val key = requireNotNull(q.poll(50))
+        assertEquals(0, key.sequence)
+        assertEquals(WebVideoRecords.FLAG_KEY_FRAME, key.flags)
+        assertNull(q.failureReason)
+        assertEquals(1, q.size)
+        assertEquals(0L, q.expired)
+        assertTrue(q.offer(frame(2, false, 51), 51))
+        val delta = requireNotNull(q.poll(70))
+        assertEquals(1, delta.sequence)
+        assertEquals(0, delta.flags)
+        assertEquals(2, requireNotNull(q.poll(80)).sequence)
+        assertEquals(2L, q.overAgeFrames)
+        assertEquals(60L, q.maxQueueAgeNanos)
+        assertNull(q.failureReason)
+    }
+
+    @Test fun reliableConfigOverflowIsAnExplicitFailure() {
+        val q = WebFrameQueue(maxConfigs = 1, reliable = true)
+        assertTrue(q.offerConfig(config(1), 0))
+        assertFalse(q.offerConfig(config(2), 1))
+        assertEquals("reliable-overload", q.failureReason)
+    }
+
+    @Test fun sourceBoundariesKeepAdmittedFramesInOrderAndCoalesceOnlyAdjacentBoundaries() {
+        val q = WebFrameQueue(reliable = true)
+        assertTrue(q.offer(frame(0, true, 0), 0))
+        assertTrue(q.offer(frame(1, false, 1), 1))
+        assertTrue(q.offerBoundary(2))
+        assertTrue(q.offerBoundary(3))
+        assertEquals(1, q.boundaryCount)
+        assertTrue(q.offerConfig(config(2), 4))
+        assertTrue(q.offer(frame(2, true, 5), 5))
+        val records = List(5) { requireNotNull(q.poll(10)) }
+        assertEquals(listOf(2, 2, 6, 1, 2), records.map { it.kind })
+        assertEquals(listOf(0, 1, 2), records.filter { it.kind == WebVideoRecords.KIND_FRAME }.map { it.sequence })
+        assertEquals(0, q.boundaryCount)
+        assertNull(q.failureReason)
+    }
+
+    @Test fun alternatingSourceBoundariesAndPicturesHaveAFiniteBoundaryBudget() {
+        val q = WebFrameQueue(maxConfigs = 2, reliable = true)
+        assertTrue(q.offer(frame(0, true, 0), 0))
+        assertTrue(q.offerBoundary(1))
+        assertTrue(q.offer(frame(1, true, 2), 2))
+        assertTrue(q.offerBoundary(3))
+        assertTrue(q.offer(frame(2, true, 4), 4))
+        assertFalse(q.offerBoundary(5))
+        assertEquals(2, q.boundaryCount)
+        assertEquals("reliable-overload", q.failureReason)
+        assertNull(q.poll(6))
     }
 
 }

@@ -14,7 +14,8 @@ internal class BrowserTransportDiagnostics(
     private var generation: String? = null
     private var counters = emptyMap<String, Double>()
 
-    @Synchronized fun report(stats: Map<String, Any?>, debug: Boolean) {
+    @Synchronized fun report(source: Map<String, Any?>, debug: Boolean) {
+        val stats = normalized(source)
         val values = FIELDS.flatten().mapNotNull { key -> scalar(key, stats[key])?.let { key to it } }.toMap()
         if (values.isEmpty()) return
         values["transport.generation"]?.let {
@@ -70,6 +71,30 @@ internal class BrowserTransportDiagnostics(
 
     private fun emit(line: String) { runCatching { log(line) } }
 
+    /** Ordinary st telemetry is already flat. Accept both deployed RTC layouts without
+     * turning missing counters into zero or interpreting candidate addresses/SDP. */
+    private fun normalized(source: Map<String, Any?>): Map<String, Any?> = source.toMutableMap().apply {
+        fun alias(target: String, vararg candidates: String) {
+            if (this[target] == null) candidates.firstNotNullOfOrNull { source[it] }?.let { this[target] = it }
+        }
+        alias("transport.reason", "link.failure.reason")
+        alias("transport.stage", "link.failure.stage", "link.connection.stage")
+        alias("transport.iceState", "transport.ice.connectionState", "link.failure.iceState", "link.connection.iceState")
+        alias("transport.connectionState", "link.failure.connectionState", "link.connection.connectionState", "transport.state")
+        alias("transport.selectedProtocol", "transport.ice.protocol")
+        alias("transport.rttMs", "transport.ice.currentRoundTripTimeMs")
+        alias("transport.localCandidateType", "transport.ice.localCandidateType")
+        alias("transport.remoteCandidateType", "transport.ice.remoteCandidateType")
+        alias("transport.statsErrors", "transport.ice.errors")
+        alias("transport.controlFailures", "control.failures")
+        for (field in listOf("localCandidates", "localUdpCandidates", "remoteCandidates", "remoteUdpCandidates")) {
+            alias("transport.$field", "link.failure.$field", "link.connection.$field")
+        }
+        if (this["transport.state"] == null && source["link.phase"] == "retry" && source["link.failure.reason"] is String) {
+            this["transport.state"] = "failed"
+        }
+    }
+
     private fun scalar(key: String, value: Any?): String? = when (value) {
         is Number -> value.toDouble().takeIf(Double::isFinite)?.let {
             if (it % 1.0 == 0.0 && kotlin.math.abs(it) < 9e15) it.toLong().toString()
@@ -94,20 +119,30 @@ internal class BrowserTransportDiagnostics(
             "transport.remoteCandidateType", "video.playbackProfile",
             "audio.sourceDeadlineState", "audio.sourceDeadlineReason", "audio.sourceDeadlineStream")
         private val IMPORTANT_UNKNOWN_REASONS = setOf("source-anchor-unavailable", "output-clock-unavailable", "clock-uncertainty-unavailable")
-        private val STAGES = listOf("STATE", "CANDIDATES", "FLOW", "PIPELINE", "AUDIO")
+        private val STAGES = listOf("STATE", "CANDIDATES", "FLOW", "PIPELINE", "AUDIO", "SENDER")
         private val FIELDS = listOf(
             STATE_FIELDS + listOf("transport.selectedProtocol", "transport.rttMs", "transport.localCandidateType", "transport.remoteCandidateType"),
             listOf("transport.localCandidates", "transport.localUdpCandidates", "transport.remoteCandidates", "transport.remoteUdpCandidates",
                 "transport.iceCandidateErrors", "transport.lastIceCandidateErrorCode", "transport.statsErrors"),
             listOf("transport.queuedBytes", "transport.highWaterBytes", "transport.fragmentsReceived", "transport.bytesReceived",
                 "transport.reassemblyErrors", "transport.recordsReceived", "transport.recordsConsumed", "transport.audioDiscardedRecords",
-                "transport.controlRequests", "transport.controlFailures"),
-            listOf("video.playbackProfile", "video.decodeQueueSize", "video.decodeErrors", "video.decodeStalled", "video.decodeStalls",
+                "transport.controlRequests", "transport.controlFailures") + listOf("video", "audio").flatMap { kind ->
+                listOf("retainedBytes", "consumedBytes", "queuedRecords", "partialBytes", "receivedRecords", "receivedFragments",
+                    "peakRetainedBytes", "reassemblyMsMax", "consumerWaitMsMax").map { "transport.$kind.$it" }
+            },
+            listOf("video.streamGeneration", "video.epoch", "video.playbackProfile", "video.decodeQueueSize", "video.decodeErrors", "video.decodeStalled", "video.decodeStalls",
                 "video.decodeBackpressureWaits", "video.decodeBackpressureMs", "video.decoderAbortedFrames", "video.decodeOnlyFrames",
                 "video.decodedQueueFrames", "video.decodedQueueBytes", "video.decodedResourceDroppedFrames", "video.untimedScheduledFrames",
+                "video.decodeInFlightFrames", "video.decodeInFlightBytes", "video.decodeDroppedFrames", "video.scheduledDroppedFrames",
+                "video.transferDroppedFrames", "video.renderDroppedFrames", "video.pacingDroppedFrames", "video.droppedFrames",
                 "video.currentFps", "video.currentDelta", "video.lastDrawAgeMs", "video.frameIntervalP95Ms"),
             listOf("audio.sourceDeadlineState", "audio.sourceDeadlineReason", "audio.sourceDeltaUpperMs",
                 "audio.sourceDeadlineRejectedFrames", "audio.sourceDeadlineStream", "audio.sourceDeadlineEpoch"),
+            listOf("video", "audio").flatMap { kind ->
+                listOf("queueBytes", "queueRecords", "queueLimitBytes", "oldestQueuedAgeMs", "receiverReservedBytes",
+                    "receiverConsumedBytes", "receiverInFlightBytes", "oldestUnackedAgeMs", "nativeBufferedBytes",
+                    "acceptedRecords", "recordsSent", "wireBytesSent").map { "sender.$kind.$it" }
+            },
         )
     }
 }

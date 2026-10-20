@@ -32,6 +32,9 @@ class BrowserPairingGate(private val code: () -> String?) {
     @get:Synchronized var lockouts = 0
         private set
 
+    /** PAKE proof attempts share the existing online guessing budget with legacy requests. */
+    @Synchronized fun isLockedOut(now: Long): Boolean = lockedUntil?.let { now < it } == true
+
     /** An authenticated request from [session]; [currentHasVideo] says whether the current session streams video. */
     @Synchronized fun admit(code: String?, session: String, now: Long, currentHasVideo: Boolean): Decision {
         check(code, now)?.let { return it }

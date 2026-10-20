@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.web
 
 import com.shilapi.xcertplay.airplay.VideoCodec
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import java.io.Closeable
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -81,6 +82,7 @@ class WebVideoHub(
                 log("Web video: stream deferred source=$source current=${displayOwner.source}")
                 return
             }
+            val replacingStream = this.owner != null
             this.owner = owner
             stream = Stream(width, height, fps, requestKeyFrame, report, mode)
             pendingKeyFrame = null
@@ -88,7 +90,10 @@ class WebVideoHub(
             lastCodec = null
             lastRecord = null
             lastKeyFrameRequestNanos = null
-            subscription?.queue?.requireKeyFrame(nanoTime())
+            subscription?.let {
+                // A new producer is an explicit stream boundary, never a silent compressed gap.
+                if (it.reliable && replacingStream) it.offerIdle() else it.queue.requireKeyFrame(nanoTime())
+            }
         }
         log("Web video: stream started source=$source size=${width}x$height fps=$fps")
     }
@@ -146,12 +151,13 @@ class WebVideoHub(
             val record = if (WebVideoCodecs.isKeyFrame(config.codec, annexB)) {
                 WebVideoRecord(
                     WebVideoRecords.KIND_FRAME, WebVideoRecords.FLAG_KEY_FRAME or WebVideoRecords.FLAG_PARAMETER_SETS or outputFlags,
-                    WebVideoRecords.codecId(config.codec), sequence, config.epoch, timestampUs, annexB, config.parameterSets, now, captureNanos,
+                    WebVideoRecords.codecId(config.codec), sequence, config.epoch, timestampUs, annexB, config.parameterSets,
+                    now, captureNanos, RawTraffic.videoReference(annexB),
                 )
             } else {
                 WebVideoRecord(
                     WebVideoRecords.KIND_FRAME, outputFlags, WebVideoRecords.codecId(config.codec), sequence, config.epoch, timestampUs,
-                    annexB, null, now, captureNanos,
+                    annexB, null, now, captureNanos, RawTraffic.videoReference(annexB),
                 )
             }
             if (subscription.queue.offer(record, now)) subscription.signal()
@@ -251,13 +257,18 @@ class WebVideoHub(
                 "viewer" to (queue != null),
                 "queueFrames" to queue?.size,
                 "queueBytes" to queue?.bytes,
+                "queueBoundaries" to queue?.boundaryCount,
                 "expiredFrames" to queue?.expired,
                 "overflowFrames" to queue?.overflow,
                 "skippedFrames" to queue?.skipped,
+                "reliable" to subscription?.reliable,
+                "queueFailure" to queue?.failureReason,
+                "overAgeFrames" to queue?.overAgeFrames,
+                "maxQueueAgeMs" to queue?.maxQueueAgeNanos?.div(1e6),
             )
         }
         // Outside the lock: summarising the timings must not hold up the screen thread.
-        return counters + ("performance" to performance.snapshot())
+        return counters + ("performance" to performance.snapshot()) + ("captureIntegrity" to RawTraffic.integrity())
     }
 
     /** Starts a subscription: it gets the current config first, then frames from the next key frame, which is requested now. */
@@ -321,11 +332,12 @@ internal class WebVideoSubscription(
     private val hub: WebVideoHub,
     private val available: Condition,
     now: Long,
-    reliable: Boolean = false,
+    val reliable: Boolean = false,
 ) : Closeable {
-    val queue = (if (reliable) WebFrameQueue(maxAgeNanos = 300_000_000L,
-        maxBytes = 16 * 1024 * 1024, maxFrames = 120, reliable = true) else WebFrameQueue())
-        .apply { requireKeyFrame(now) }
+    val queue = (if (reliable) WebFrameQueue(maxAgeNanos = 200_000_000L,
+        maxBytes = WebVideoRecords.MAX_PAYLOAD, maxFrames = 120, reliable = true)
+        else WebFrameQueue()).apply { requireKeyFrame(now) }
+    var endReason: String? = null; private set
     private var end: WebVideoRecord? = null
     private var idle = false
 
@@ -344,7 +356,7 @@ internal class WebVideoSubscription(
                     return WebVideoRecords.IDLE
                 }
                 val record = queue.poll(hub.now())
-                queue.failureReason?.let { endLocked(it); return end }
+                queue.failureReason?.let { endLocked(it); return requireNotNull(end) }
                 record?.let { return it }
                 if (remaining <= 0L) return null
                 remaining = available.awaitNanos(remaining)
@@ -356,7 +368,10 @@ internal class WebVideoSubscription(
     fun end(reason: String) = hub.lock.withLock { endLocked(reason) }
 
     internal fun endLocked(reason: String) {
-        if (end == null) end = WebVideoRecords.end(reason)
+        if (end == null) {
+            endReason = reason
+            end = WebVideoRecords.end(reason)
+        }
         queue.clear()
         hub.unsubscribe(this)
         available.signalAll()
@@ -365,11 +380,15 @@ internal class WebVideoSubscription(
     internal fun offerConfig(record: WebVideoRecord, now: Long) {
         if (end != null) return
         idle = false
-        if (!queue.offerConfig(record, now)) endLocked("slow-consumer") else signal()
+        if (!queue.offerConfig(record, now)) endLocked(queue.failureReason ?: "slow-consumer") else signal()
     }
 
     internal fun offerIdle() {
         if (end != null) return
+        if (reliable) {
+            if (!queue.offerBoundary(hub.now())) endLocked(queue.failureReason ?: "slow-consumer") else signal()
+            return
+        }
         queue.clear()
         idle = true
         signal()

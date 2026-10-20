@@ -4,6 +4,41 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BrowserTransportDiagnosticsTest {
+    @Test fun productionBrowserSummaryFixtureKeepsNestedRtcAndAudioFailuresInStandardMetadata() {
+        val path = "shared/src/test/resources/Browser-standard-diagnostics-v1.json"
+        val file = listOf(java.io.File(path), java.io.File("../$path")).first { it.isFile }
+        // Use the actual shared/server JSON reader across its Kotlin internal module boundary.
+        val parser = Class.forName("com.shilapi.xcertplay.web.WebJson")
+        val fixture = parser.getMethod("parse", String::class.java)
+            .invoke(parser.getField("INSTANCE").get(null), file.readText()) as Map<*, *>
+        assertEquals("st", fixture["k"])
+        val selected = (fixture["v"] as Map<*, *>).entries.associate { (key, value) -> key as String to value }
+        // Remote main uses nested ice/video stats and link failure evidence. Remove only the
+        // parallel compatibility fields to prove that layout is independently observable.
+        val nested = selected - setOf("transport.stage", "transport.reason", "transport.generation")
+        val directory = java.nio.file.Files.createTempDirectory("browser-standard-fixture").toFile()
+        val previous = DiagnosticLogPolicy.level
+        try {
+            DiagnosticLogPolicy.level = DiagnosticLogLevel.STANDARD
+            SessionLogFile(directory.resolve("diplay.log")).use { log ->
+                val diagnostics = BrowserTransportDiagnostics(log::append)
+                diagnostics.report(nested, false)
+                val saved = log.file.readText()
+                assertTrue(saved, saved.contains("reason=ice"))
+                assertTrue(saved, saved.contains("stage=remote-ice"))
+                assertTrue(saved, saved.contains("localUdpCandidates=2") && saved.contains("remoteUdpCandidates=1"))
+                assertTrue(saved, saved.contains("selectedProtocol=udp") && saved.contains("rttMs=8"))
+                assertTrue(saved, saved.contains("video.retainedBytes=1024") && saved.contains("video.receivedRecords=12"))
+                assertTrue(saved, saved.contains("decodeStalls=1") && saved.contains("playbackProfile=carplay-touch"))
+                assertTrue(saved, saved.contains("stage=AUDIO") && saved.contains("sourceDeadlineRejectedFrames=128"))
+                assertTrue(saved, saved.contains("sourceDeadlineReason=source-deadline"))
+                assertTrue(saved.lines().filter(String::isNotEmpty).all { it.length <= 600 })
+                diagnostics.report(nested, false)
+                assertEquals("Repeated identical failures must not replace earlier evidence with log flood", saved, log.file.readText())
+            }
+        } finally { DiagnosticLogPolicy.level = previous; directory.deleteRecursively() }
+    }
+
     @Test fun standardAudioDeadlineSchemaKeepsTheActualRejectionReasonWithoutVideoOrDebugFields() {
         val lines = mutableListOf<String>()
         val diagnostics = BrowserTransportDiagnostics(lines::add)

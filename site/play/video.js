@@ -28,9 +28,11 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
   const decodeStarts = new Map();
   const presentationTimes = new Map();
   let clock = null;
-  const decodeMs = new Samples();
+  const readFrameIntervals = new Samples(), sourceForwardPtsIntervals = new Samples();
+  const decodeMs = new Samples(), decodeAdmissionMs = new Samples(), androidQueueMs = new Samples(), transportSubmitToRecordReadMs = new Samples();
+  let lastReadAt = null, lastSource = null, presentationTimingState = 'unobserved';
   const totals = { decoded: 0, dropped: 0, decodeErrors: 0, backlogResets: 0, keyRequests: 0, timingRecords: 0, timingRejected: 0,
-    decodeBackpressureWaits: 0, decodeBackpressureMs: 0, decodeStalls: 0, decoderAbortedFrames: 0, decodeOnlyFrames: 0 };
+    decodeBackpressureWaits: 0, decodeBackpressureMs: 0, decodeStalls: 0, decoderAbortedFrames: 0, decodeOnlyFrames: 0, readFrames: 0, readFrameBytes: 0, sourceForwardPtsSamples: 0, sourceReorderedPts: 0 };
   const decodeWaiters = new Set();
   let decodeBytes = 0, decoderErrorName = null, decoderErrorMessage = null;
   let decodeDroppedFrames = 0;
@@ -51,15 +53,36 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
         post({ type: 'idle' });
         return null;
       }
-      if (record.kind === RECORD.TIMING && record.payload.byteLength === 8) {
-        const presentation = new DataView(record.payload.buffer, record.payload.byteOffset, 8).getFloat64(0, true);
+      if (record.kind === RECORD.TIMING && [8, 24].includes(record.payload.byteLength)) {
+        const values = new DataView(record.payload.buffer, record.payload.byteOffset, record.payload.byteLength);
+        const presentation = values.getFloat64(0, true);
+        const queuedAtMs = values.byteLength === 24 ? values.getFloat64(8, true) : null;
+        const transportSubmitAtMs = values.byteLength === 24 ? values.getFloat64(16, true) : null;
+        if ([queuedAtMs, transportSubmitAtMs].every(Number.isFinite) && transportSubmitAtMs >= queuedAtMs) androidQueueMs.add(transportSubmitAtMs - queuedAtMs);
         const mapped = presentationTime(presentation, clock);
         totals.timingRecords++;
         if (mapped === null) totals.timingRejected++;
-        presentationTimes.set(`${record.epoch}:${record.timestampUs}`, { mapped, sourceTimeMs: presentation, clockGeneration: clock?.generation });
+        presentationTimes.set(`${record.epoch}:${record.timestampUs}`, { mapped, sourceTimeMs: presentation,
+          clockGeneration: clock?.generation, transportSubmitAtMs });
         if (presentationTimes.size > 120) presentationTimes.delete(presentationTimes.keys().next().value);
       }
-      if (record.kind === RECORD.FRAME) return decodeFrame(record, signal);
+      if (record.kind === RECORD.FRAME) {
+        const at = performance.now(), recordReadAtMs = performance.timeOrigin + at;
+        if (lastReadAt !== null && at >= lastReadAt) readFrameIntervals.add(at - lastReadAt);
+        lastReadAt = at; totals.readFrames++; totals.readFrameBytes += record.payload.byteLength;
+        const source = presentationTimes.get(`${record.epoch}:${record.timestampUs}`);
+        if (Number.isFinite(source?.mapped) && Number.isFinite(source?.sourceTimeMs)) {
+          if (lastSource && lastSource.epoch === record.epoch && lastSource.generation === source.clockGeneration) {
+            const interval = source.sourceTimeMs - lastSource.at;
+            if (interval >= 0) { sourceForwardPtsIntervals.add(interval); totals.sourceForwardPtsSamples++; }
+            else totals.sourceReorderedPts++;
+          }
+          lastSource = { epoch: record.epoch, generation: source.clockGeneration, at: source.sourceTimeMs };
+        } else lastSource = null;
+        const mappedSubmit = Number.isFinite(source?.transportSubmitAtMs) ? presentationTime(source.transportSubmitAtMs, clock) : null;
+        if (Number.isFinite(mappedSubmit)) transportSubmitToRecordReadMs.add(recordReadAtMs - mappedSubmit);
+        return decodeFrame(record, signal, recordReadAtMs);
+      }
       return null;
     },
     onAlive: id => post({ type: 'alive', id }),
@@ -86,7 +109,7 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
     const same = config && decoder?.state === 'configured' && ['epoch', 'mode', 'codec', 'width', 'height'].every(key => config[key] === next[key]);
     config = next;
     if (same) return;
-    decodeDroppedFrames = 0;
+    decodeDroppedFrames = 0; presentationTimingState = 'unobserved';
     // Late output of the old decoder would otherwise be drawn and reported as the first frame of the new epoch.
     closeDecoder();
     let chosen, probeTimer;
@@ -139,6 +162,7 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
     decodeStarts.clear();
     decodeBytes = 0;
     presentationTimes.clear();
+    lastReadAt = lastSource = null;
     for (const wake of decodeWaiters) wake();
   }
 
@@ -212,7 +236,7 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
     });
   }
 
-  async function decodeFrame(record, signal) {
+  async function decodeFrame(record, signal, recordReadAtMs) {
     const key = (record.flags & FLAG.KEY) !== 0;
     if (config && record.epoch !== config.epoch) throw new RecordStreamError('video-epoch', 'Encoded frame does not belong to the configured video epoch');
     if (decoder?.state !== 'configured' || (needKey && !key)) {
@@ -225,7 +249,9 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
     if (signal.aborted) return;
     if (decodeStarts.has(record.timestampUs)) throw new RecordStreamError('video-timestamp', 'Duplicate timestamp in outstanding encoded video');
     needKey = false;
-    decodeStarts.set(record.timestampUs, { at: performance.now(), bytes: record.payload.byteLength,
+    const decodeSubmitAtMs = performance.timeOrigin + performance.now();
+    decodeAdmissionMs.add(decodeSubmitAtMs - recordReadAtMs);
+    decodeStarts.set(record.timestampUs, { recordReadAtMs, decodeSubmitAtMs, bytes: record.payload.byteLength,
       decodeOnly: (record.flags & FLAG.DECODE_ONLY) !== 0 });
     decodeBytes += record.payload.byteLength;
     try {
@@ -246,11 +272,12 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
       post({ type: 'unsupported', codec: config.codec, reason: 'hdr', detail: 'AirPlay mirroring requires SDR video.' });
       return;
     }
+    const decodedAtMs = performance.timeOrigin + performance.now();
     const started = decodeStarts.get(frame.timestamp);
     if (started !== undefined) {
       decodeStarts.delete(frame.timestamp);
       decodeBytes -= started.bytes;
-      decodeMs.add(performance.now() - started.at);
+      decodeMs.add(decodedAtMs - started.decodeSubmitAtMs);
       for (const wake of decodeWaiters) wake();
     }
     totals.decoded++;
@@ -258,8 +285,9 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
     const key = `${config?.epoch}:${frame.timestamp}`;
     const timing = presentationTimes.get(key);
     presentationTimes.delete(key);
+    presentationTimingState = Number.isFinite(timing?.mapped) ? 'mapped-presentation' : 'unavailable';
     if (started?.decodeOnly) { totals.decodeOnlyFrames++; frame.close(); return; }
-    present(frame, config, streamId, timing?.mapped, timing && { sourceTimeMs: timing.sourceTimeMs, clockGeneration: timing.clockGeneration });
+    present(frame, { ...config, stageTiming: { recordReadAtMs: started?.recordReadAtMs, decodeSubmitAtMs: started?.decodeSubmitAtMs, decodedAtMs } }, streamId, timing?.mapped, timing && { sourceTimeMs: timing.sourceTimeMs, clockGeneration: timing.clockGeneration });
   }
 
   function stop() {
@@ -286,7 +314,7 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
     },
     stop,
     stats: () => ({
-      codec: config?.codec ?? null,
+      codec: config?.codec ?? null, epoch: config?.epoch ?? null, mode: config?.mode ?? null, streamGeneration: streamId,
       codecSupported,
       clockRttMs: clock && performance.timeOrigin + performance.now() - clock.at <= 15000 ? clock.rtt : null,
       width: config?.width ?? null,
@@ -294,11 +322,18 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
       // This is the requested hint; the actual decoder implementation is not exposed by WebCodecs.
       acceleration: decoderConfig?.hardwareAcceleration ?? null,
       decoderImplementation: 'unknown',
+      presentationTimingState,
+      senderRelativePolicyCeilingMs: config?.mode === 'carplay' && presentationTimingState === 'mapped-presentation' ? 300 : null,
       decodeQueueSize: decoder?.decodeQueueSize ?? 0,
       decodeInFlightFrames: decodeStarts.size,
       decodeInFlightBytes: decodeBytes,
       decoderErrorName, decoderErrorMessage,
       ...rates,
+      readFrameIntervalMsP95: readFrameIntervals.percentile(95), sourceForwardPtsIntervalMsP95: sourceForwardPtsIntervals.percentile(95),
+      recordReadToDecodeSubmitMsP95: decodeAdmissionMs.percentile(95),
+      androidHubQueueMsP95: androidQueueMs.percentile(95),
+      androidTransportSubmitToRecordReadMsP95: transportSubmitToRecordReadMs.percentile(95),
+      stageClockUncertaintyMs: clock?.uncertaintyMs ?? null,
       decodeMsP50: decodeMs.percentile(50),
       decodeMsP95: decodeMs.percentile(95),
       ...records.stats(),
@@ -314,10 +349,10 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
  */
 export function createFramePresenter(canvas, { now = () => performance.timeOrigin + performance.now(),
   applyTimingPolicy = false, pace = false, onPresent, onFirstPresent } = {}) {
-  const drawMs = new Samples();
+  const drawMs = new Samples(), decodedToDrawMs = new Samples();
   const fpsWindow = createFpsWindow();
   let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null, expiredFrames = 0, untimedFrames = 0, renderDroppedFrames = 0;
-  let audioReferenceState = 'video-only', audioVideoSkewMs = null;
+  let audioReferenceState = 'video-only', audioVideoSkewMs = null, drawnFrames = 0;
   const audioReferences = createAudioReferenceTimeline();
   let audioTracking = false, provenId = null, provenEpoch = null;
 
@@ -340,7 +375,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
   function presentNow(frame, config, timing, outputWindow, reason = 'immediate') {
     if (lastConfig?.epoch !== config?.epoch) {
       fpsWindow.reset();
-      expiredFrames = untimedFrames = renderDroppedFrames = 0;
+      expiredFrames = untimedFrames = renderDroppedFrames = drawnFrames = 0;
       audioReferenceState = 'video-only'; audioVideoSkewMs = null;
     }
     lastConfig = config;
@@ -371,10 +406,11 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
     if (!drawn) { renderDroppedFrames++; frame.close(); return; }
     if (!Number.isFinite(timing)) untimedFrames++;
     drawMs.add(performance.now() - started);
+    if (Number.isFinite(config?.stageTiming?.decodedAtMs) && Number.isFinite(checkedAt)) decodedToDrawMs.add(checkedAt - config.stageTiming.decodedAtMs);
     const at = performance.now();
     const offset = Number.isFinite(timing) ? checkedAt - timing : null;
     if (drawn) {
-      fpsWindow.frame(at, 1, offset);
+      drawnFrames++; fpsWindow.frame(at, 1, offset);
     }
     lastFrame?.close();
     lastFrame = frame;
@@ -407,7 +443,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       lastFrame = null;
       lastConfig = null;
       provenId = provenEpoch = null;
-      expiredFrames = untimedFrames = renderDroppedFrames = 0;
+      expiredFrames = untimedFrames = renderDroppedFrames = drawnFrames = 0;
       audioReferenceState = 'video-only'; audioVideoSkewMs = null;
     },
     dispose() {
@@ -418,7 +454,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       canvas.removeEventListener('webglcontextrestored', restored);
       renderer.dispose?.();
     },
-    stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), expiredFrames, untimedFrames, renderDroppedFrames,
+    stats: () => ({ drawnFrames, decodedToDrawMsP95: decodedToDrawMs.percentile(95), renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), expiredFrames, untimedFrames, renderDroppedFrames,
       audioRenderSyncDroppedFrames: 0, audioReferenceState, audioVideoSkewMs, ...pacer?.stats(), ...fpsWindow.stats() }),
   };
 }

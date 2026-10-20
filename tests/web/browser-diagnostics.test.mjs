@@ -48,7 +48,7 @@ test('debug audio retains every stream independently of the ordinary video stats
   const page = { video: Object.fromEntries(Array.from({ length: 80 }, (_, i) => [`counter${i}`, i])),
     audio: { sound: true, queuedBytes: 479232, debug } };
   const events = browserDiagnosticEvents(page, true, true, 'capture-cycle-1');
-  assert.equal(events.length, 2);
+  assert.equal(events.length, 3);
   assert.ok(JSON.stringify(events[0].v).length <= 2048);
   assert.equal(events[0].v.themeDark, true);
   assert.ok(!Object.keys(events[0].v).some(key => key.startsWith('audio.debug')));
@@ -86,4 +86,29 @@ test('device drift and output rejection remain measurable after scalar telemetry
   assert.equal(detail.v['stream0.resampleRatePpm'], 4016.06);
   assert.equal(detail.v['outputUnavailableCounts.feedback-distance'], 7);
   assert.equal(detail.v.outputUnavailableReason, 'feedback-distance');
+});
+
+test('selected ICE path and counters survive a crowded ordinary diagnostic summary', () => {
+  const ice = { state: 'selected', localCandidateType: 'host', remoteCandidateType: 'host', protocol: 'udp',
+    currentRoundTripTimeMs: 8, sampleAgeMs: 250, availableOutgoingBitrate: 12000000,
+    requestsSent: 10, requestsReceived: 9, responsesSent: 9, responsesReceived: 10, bytesSent: 123456789, bytesReceived: 987654321 };
+  const [event] = browserDiagnosticEvents({ transport: { ice },
+    video: Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`counter${i}`, i])) }, false);
+  for (const [key, value] of Object.entries(ice)) assert.equal(event.v[`transport.ice.${key}`], value);
+  assert.ok(JSON.stringify(event.v).length <= 2048);
+});
+
+
+test('the canonical Standard selector fixture preserves actual pairing, ICE, deadline and resource evidence across native delivery', () => {
+  const fixture = JSON.parse(readFileSync(new URL('../../shared/src/test/resources/Browser-standard-diagnostics-v1.json', import.meta.url), 'utf8'));
+  const [actual] = browserDiagnosticEvents(fixture.input.page, fixture.input.themeDark);
+  assert.deepEqual(actual, { k: fixture.k, v: fixture.v });
+  for (const key of ['link.failure.reason', 'link.failure.stage', 'link.connection.stage',
+    'link.connection.localCandidates', 'link.connection.localUdpCandidates', 'link.connection.remoteCandidates', 'link.connection.remoteUdpCandidates',
+    'transport.ice.state', 'transport.ice.protocol', 'transport.ice.currentRoundTripTimeMs',
+    'transport.video.retainedBytes', 'transport.video.receivedRecords',
+    'audio.sourceDeadlineState', 'audio.sourceDeadlineReason', 'audio.sourceDeltaUpperMs',
+    'audio.sourceDeadlineRejectedFrames', 'audio.sourceDeadlineStream', 'audio.sourceDeadlineEpoch',
+    'video.decodeStalls', 'video.playbackProfile', 'control.rttMsP95']) assert.ok(key in actual.v, key);
+  assert.ok(Buffer.byteLength(JSON.stringify(actual.v)) <= 2048);
 });

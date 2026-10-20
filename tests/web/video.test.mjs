@@ -561,3 +561,94 @@ test('first-frame proof waits for paced drawing and is suppressed on expired fra
   at += 50; refresh();
   assert.equal(draws, 1); assert.deepEqual(proofs, [[9, 1]]);
 });
+
+test('extended timing records measure bounded stages without changing encoded payload or presentation', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const shown = [], pipeline = createDecoderPipeline({ post() {}, present: (...value) => shown.push(value) });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(10, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1)); await settle();
+  const at = performance.timeOrigin + performance.now();
+  pipeline.clock({ offset: at - 1000, at, rtt: 2, uncertaintyMs: 1 });
+  const payload = new Uint8Array(24), values = new DataView(payload.buffer);
+  values.setFloat64(0, 1000, true); values.setFloat64(8, 970, true); values.setFloat64(16, 990, true);
+  controller.enqueue(encodeRecord({ kind: RECORD.TIMING, codec: 0, epoch: 1, timestampUs: 0, payload }));
+  controller.enqueue(keyFrame(1)); await settle();
+  const decoder = FakeDecoder.instances.at(-1);
+  decoder.output(videoFrame(0));
+  assert.equal(shown.length, 1); assert.equal(shown[0][3], at, 'source presentation still uses the first float64');
+  const stages = shown[0][1].stageTiming;
+  assert.ok(stages.recordReadAtMs <= stages.decodeSubmitAtMs && stages.decodeSubmitAtMs <= stages.decodedAtMs);
+  assert.deepEqual([...decoder.chunks[0].data], [0, 0, 0, 1, 0x65], 'stage evidence carries no replacement media bytes');
+  const stats = pipeline.stats();
+  assert.equal(stats.androidHubQueueMsP95, 20);
+  assert.ok(stats.androidTransportSubmitToRecordReadMsP95 >= 9);
+  assert.ok(stats.recordReadToDecodeSubmitMsP95 >= 0); assert.ok(stats.decodeMsP95 >= 0);
+  assert.equal(stats.stageClockUncertaintyMs, 1);
+});
+
+test('video read/decoded/draw evidence counts actual frame records and keeps explicit stream/epoch identity', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const shown = [], messages = [];
+  const present = recordingPresenter(t, messages, shown);
+  const pipeline = createDecoderPipeline({ post() {}, present });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(42, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(7)); await settle();
+  controller.enqueue(keyFrame(7)); await settle();
+  FakeDecoder.instances.at(-1).output(videoFrame(0));
+  const stats = pipeline.stats();
+  assert.equal(stats.streamGeneration, 42); assert.equal(stats.epoch, 7); assert.equal(stats.mode, 'carplay');
+  assert.equal(stats.readFrames, 1); assert.equal(stats.readFrameBytes, 5); assert.equal(stats.decoded, 1);
+  assert.equal(stats.sourceForwardPtsSamples, 0, 'missing presentation anchors do not invent source cadence');
+  assert.equal(shown.length, 1);
+});
+
+test('draw evidence counts successful media submissions and resets at the presenter epoch boundary', () => {
+  const canvas = { width: 100, height: 100, removeEventListener() {},
+    getContext: type => type === '2d' ? { fillRect() {}, drawImage() {} } : null };
+  const presenter = createFramePresenter(canvas);
+  presenter.present(videoFrame(0), { mode: 'carplay', streamId: 42, epoch: 7 });
+  assert.equal(presenter.stats().drawnFrames, 1);
+  presenter.resize(200, 200);
+  assert.equal(presenter.stats().drawnFrames, 1, 'resize redraw is not another source picture');
+  presenter.close(); assert.equal(presenter.stats().drawnFrames, 0);
+  presenter.dispose();
+});
+
+
+test('source cadence separates forward presentation intervals from encoded dependency reordering', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const pipeline = createDecoderPipeline({ post() {}, present(frame) { frame.close(); } });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(42, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(7)); await settle();
+  const at = performance.timeOrigin + performance.now();
+  pipeline.clock({ offset: at - 1000, at, rtt: 2, uncertaintyMs: 1 });
+  for (const [n, timestampUs, sourceMs] of [[0, 0, 1000], [1, 3000, 1040], [2, 2000, 1020]]) {
+    const payload = new Uint8Array(8); new DataView(payload.buffer).setFloat64(0, sourceMs, true);
+    controller.enqueue(encodeRecord({ kind: RECORD.TIMING, epoch: 7, timestampUs, payload }));
+    controller.enqueue(encodeRecord({ kind: RECORD.FRAME, flags: n === 0 ? FLAG.KEY : 0, epoch: 7,
+      sequence: n, timestampUs, payload: Uint8Array.of(0, 0, 0, 1, n === 0 ? 0x65 : 0x41) }));
+  }
+  await settle();
+  assert.deepEqual(FakeDecoder.instances.at(-1).chunks.map(chunk => chunk.timestamp), [0, 3000, 2000]);
+  assert.equal(pipeline.stats().readFrames, 3); assert.equal(pipeline.stats().readFrameBytes, 15);
+  assert.equal(pipeline.stats().sourceForwardPtsSamples, 1); assert.equal(pipeline.stats().sourceReorderedPts, 1);
+  assert.equal(pipeline.stats().sourceForwardPtsIntervalMsP95, 40);
+});

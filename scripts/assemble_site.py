@@ -13,6 +13,7 @@ site/ stays the only copy of these files in git. Run scripts/build_site.py first
 """
 from pathlib import Path
 import shutil
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,10 +47,25 @@ self.addEventListener('activate', event => event.waitUntil(self.registration.unr
 '''
 
 
+def validate_public_files(directory: Path) -> None:
+    blocked = {'.pk8', '.p7b', '.pem', '.key', '.p12', '.pfx', '.jks', '.keystore', '.apk', '.aab'}
+    private_block = re.compile(rb'-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----\s+[A-Za-z0-9+/=\r\n]{40,}')
+    for path in (directory, *directory.rglob('*')):
+        if path.is_symlink():
+            raise ValueError('Links are forbidden in public site inputs')
+        if not path.is_file():
+            continue
+        if ('.private' in path.parts or path.name == '.env' or path.name.startswith('.env.')
+                or path.suffix.lower() in blocked or private_block.search(path.read_bytes())):
+            raise ValueError('Credential or distribution files are forbidden in public site inputs')
+
+
+
 def assemble(out: Path) -> None:
     out = out.resolve()
     if out == ROOT or out in ROOT.parents or out == SITE or SITE in out.parents or out in SITE.parents:
         raise SystemExit(f'Refusing to assemble into {out}: choose a directory outside site/ and not above the repository')
+    validate_public_files(SITE)
     page = sorted(path.name for path in PAGE.iterdir())
     editions = sorted(path.name for path in SITE.iterdir()
                       if path.is_dir() and path != PAGE and (path / 'index.html').is_file())

@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listen, closeServer } from './resources.mjs';
+import { installSrpFixture } from './srp-fixture.mjs';
 
 const { chromium } = createRequire(import.meta.url)('playwright-core');
 const root = fileURLToPath(new URL('../../site/play/', import.meta.url));
@@ -27,8 +28,10 @@ try {
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
+  await installSrpFixture(page);
   const result = await page.evaluate(async () => {
     const { createRtcMediaTransport, RTC_MAGIC, RTC_HEADER_BYTES, RTC_FRAGMENT_BYTES, RTC_TRANSPORT } = await import('/webrtc-transport.js');
+    const { authenticateRtcOffer } = await import('/rtc-pairing.js');
     const checks = [];
     function check(condition, message) { if (!condition) throw new Error(message); checks.push(message); }
     async function until(predicate, label, timeout = 5000) {
@@ -42,12 +45,21 @@ try {
       const remote = new RTCPeerConnection({ iceServers: [] });
       const channels = {}, messages = [], errors = [], epoch = 41;
       let offerCandidates = 0, answerCandidates = 0;
-      let nextAudioSequence = 0, staleOnNextOpen = null;
+      let nextAudioSequence = 0, staleOnNextOpen = null, authorized = false;
       remote.ondatachannel = ({ channel }) => {
         channels[channel.label] = channel;
         if (channel.label === 'control') channel.onmessage = ({ data }) => {
           const message = JSON.parse(data); messages.push(message);
-          if (message.e) channel.send(JSON.stringify({ q: message.q, state: 'streaming', touch: 'ok' }));
+          if (message.k === 'auth') {
+            if (message.c !== '2718' || message.s !== 'integration_session_01') throw new Error('encrypted auth identity mismatch');
+            authorized = true;
+            channel.send(JSON.stringify({ q: message.q, app: 'TiPlay', protocol: 1, transport: RTC_TRANSPORT,
+              audio: true, clockMs: performance.now(), resourceToken: 'A'.repeat(43) }));
+            return;
+          }
+          if (!authorized) throw new Error('control admitted before encrypted authentication');
+          if (message.k === 'bye') channel.send(JSON.stringify({ q: message.q, stopped: true }));
+          if (message.e) setTimeout(() => { if (channel.readyState === 'open') channel.send(JSON.stringify({ q: message.q, state: 'streaming', touch: 'ok', clockMs: performance.now() })); }, 30);
           if (message.k === 'audio-ready' && message.enabled) {
             if (staleOnNextOpen) { send('audio', staleOnNextOpen, nextAudioSequence); staleOnNextOpen = null; }
             channel.send(JSON.stringify({ k: 'audio-barrier', generation: message.generation,
@@ -59,14 +71,27 @@ try {
       const transport = createRtcMediaTransport({ signal: controller.signal,
         credentials: () => ({ code: '2718', session: 'integration_session_01' }),
         onError: error => errors.push(error.reason),
-        exchange: async sdp => {
-          offerCandidates = (sdp.match(/^a=candidate:/gm) || []).length;
-          await remote.setRemoteDescription({ type: 'offer', sdp });
-          await remote.setLocalDescription(await remote.createAnswer());
-          await until(() => remote.iceGatheringState === 'complete', 'remote ICE');
-          answerCandidates = (remote.localDescription.sdp.match(/^a=candidate:/gm) || []).length;
-          return { type: 'answer', sdp: remote.localDescription.sdp, epoch, fragmentBytes: RTC_FRAGMENT_BYTES, transport: RTC_TRANSPORT };
-        } });
+        exchange: sdp => authenticateRtcOffer({ session: 'integration_session_01', code: '2718', offer: sdp,
+          fetchPhone: async (path, options) => {
+            const body = JSON.parse(options.body);
+            if ('c' in body || 'code' in body) throw new Error('SRP signaling exposed the code');
+            let response;
+            if (path.endsWith('/start')) response = await globalThis.__srpFixture.start(body);
+            else {
+              response = await globalThis.__srpFixture.verify(body);
+              if (response.status === 200) {
+                offerCandidates = (body.offer.match(/^a=candidate:/gm) || []).length;
+                await remote.setRemoteDescription({ type: 'offer', sdp: body.offer });
+                await remote.setLocalDescription(await remote.createAnswer());
+                await until(() => remote.iceGatheringState === 'complete', 'remote ICE');
+                answerCandidates = (remote.localDescription.sdp.match(/^a=candidate:/gm) || []).length;
+                response = await globalThis.__srpFixture.bind(body, { type: 'answer', sdp: remote.localDescription.sdp,
+                  epoch, session: epoch, fragmentBytes: RTC_FRAGMENT_BYTES, transport: RTC_TRANSPORT });
+                if ('resourceToken' in response.body) throw new Error('SRP finish exposed resource bearer');
+              }
+            }
+            return new Response(JSON.stringify(response.body), { status: response.status, headers: { 'Content-Type': 'application/json' } });
+          } }) });
       try { await transport.connect(); }
       catch (error) {
         const evidence = JSON.stringify({ local: transport.stats(), remote: remote.connectionState,
@@ -77,6 +102,7 @@ try {
       }
       await until(() => Object.keys(channels).length === 3 && Object.values(channels).every(channel => channel.readyState === 'open'), 'three channels');
       function send(name, bytes, sequence, recordEpoch = epoch) {
+        if (!authorized) throw new Error('media admitted before encrypted auth');
         const channel = channels[name];
         if (name === 'audio') nextAudioSequence = (sequence + 1) >>> 0;
         for (let offset = 0; offset < bytes.length;) {
@@ -93,6 +119,9 @@ try {
     }
     const session = await pair();
     try {
+      check(session.transport.hello().app === 'TiPlay' && Number.isFinite(session.transport.clockSample().serverMs)
+        && session.transport.resourceToken()?.length === 43 && !('resourceToken' in session.transport.hello()),
+        'mutual SRP and encrypted auth establish the trusted clock and private resource bearer');
       check(Object.values(session.channels).every(channel => channel.ordered && channel.maxRetransmits === null && channel.maxPacketLifeTime === null), 'three real channels use reliable ordered delivery');
       const large = Uint8Array.from({ length: 512 * 1024 + 37 }, (_, index) => (index * 31) % 251);
       const tail = new Uint8Array([19, 27, 83]);
@@ -108,6 +137,8 @@ try {
       check(acknowledgement.bytes === large.length, 'consumption credit accounts for the exact complete record');
       const control = await session.transport.control(9, [{ k: 't', p: [[0, 0.4, 0.6, 1]] }]);
       check(control.q === 9 && control.touch === 'ok' && session.messages.some(message => message.e?.[0]?.k === 't'), 'touch and status round trip over the separate control channel');
+      const concurrent = await Promise.all(Array.from({ length: 8 }, (_, index) => session.transport.control(20 + index, [{ k: 'hb' }])));
+      check(concurrent.every((reply, index) => reply.q === 20 + index), 'eight concurrent ordered controls survive delayed real-channel replies');
       const audio = session.transport.openAudio().getReader();
       await until(() => session.messages.some(message => message.k === 'audio-ready' && message.enabled), 'audio activation');
       session.send('audio', new Uint8Array([3, 1, 4, 1, 5]), 0);
@@ -125,6 +156,8 @@ try {
       await reopened.cancel();
       const statistics = session.transport.stats();
       check(statistics.recordsReceived === 5 && statistics.highWaterBytes <= 16 * 1024 * 1024 + 2 * 1024 * 1024, 'real delivery exposes bounded queue and record evidence');
+      const bye = await session.transport.bye();
+      check(bye.stopped && session.messages.some(message => message.k === 'bye' && !('c' in message)), 'graceful encrypted bye needs no pairing code');
       session.controller.abort();
       check(!session.transport.isConnected(), 'owner abort closes the peer and all media');
       await reader.cancel().catch(() => {});

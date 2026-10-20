@@ -6,7 +6,7 @@ import { createTimedFrames } from '../../site/play/media-timing.js';
 import { constantDelay } from '../../site/play/delay-plan.js';
 import { SoxrRuntime } from '../../site/play/streaming-resampler.js';
 
-test('independent slow output clock keeps real worklet audio and CarPlay video synchronized', async () => {
+test('independent slow output clock keeps audio continuous while CarPlay video runs independently', async () => {
   const globals = ['AudioWorkletProcessor', 'registerProcessor', 'sampleRate', 'currentTime'];
   const saved = new Map(globals.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   const origin = 1_800_000_000_000, sourceOrigin = 800000, rate = 48000, deviceRate = 0.996;
@@ -26,10 +26,12 @@ test('independent slow output clock keeps real worklet audio and CarPlay video s
     getOutputTimestamp() { return { contextTime: this.currentTime - outputLatencyMs * deviceRate / 1000, performanceTime: 10000 + elapsed }; } };
   const mapping = createAudioOutputMapping({ now, timeOrigin: () => origin });
   const frames = createTimedFrames((frame, _config, _id, timing, window) => {
-    const skew = window.audioAt - now();
+    assert.equal(window?.earliest, undefined, 'audio evidence cannot impose an early video gate');
+    assert.equal(window?.latest, undefined, 'audio evidence cannot impose a late video gate');
+    const skew = now() - timing;
     minimumSkew = Math.min(minimumSkew, skew); maximumSkew = Math.max(maximumSkew, skew);
-    assert.ok(now() <= timing + 0.001, 'the zero CarPlay mode cap stays unchanged');
-    assert.ok(skew >= -45.001 && skew <= 125.001, 'actual audible output stays inside the existing A/V window');
+    assert.ok(now() <= timing + 300.001, 'the independent CarPlay video ceiling is 300 ms');
+    assert.ok(skew <= 300.001, 'video age is independently bounded');
     draws++; frame.close();
   }, { now, schedule(callback, delay) { const id = ++timerId; timers.set(id, { callback, at: now() + delay }); return id; },
     cancel: id => timers.delete(id) });
@@ -86,7 +88,7 @@ test('independent slow output clock keeps real worklet audio and CarPlay video s
     assert.ok(minimumEnergy > 8, 'dynamic PCM remains audible without reset fades');
     assert.ok(Math.abs(mapping.deviceClock().rate - deviceRate) < 0.00001);
     assert.equal(frames.stats().audioSyncUnavailableFrames, 0);
-    assert.ok(minimumSkew >= -45.001 && maximumSkew <= 125.001);
+    assert.ok(maximumSkew <= 300.001);
   } finally {
     frames.reset(); output?.port.onmessage({ data: { dispose: true } });
     for (const [name, descriptor] of saved) {

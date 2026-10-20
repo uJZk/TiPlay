@@ -5,6 +5,18 @@ import org.junit.Test
 import java.nio.ByteOrder
 
 class BrowserRtcProtocolTest {
+    @Test fun progressingAcknowledgementsDoNotTreatOldRecordAgeAsAStall() {
+        val credit = BrowserRtcCredit(100)
+        credit.sent(0, 50, 0)
+        credit.sent(1, 50, 1_000_000)
+        assertTrue(credit.acknowledge(0, 50, 5_000_000_000))
+        assertEquals(6_999L, credit.oldestAgeMillis(7_000_000_000))
+        assertEquals(2_000L, credit.noProgressMillis(7_000_000_000))
+        assertEquals(6_001L, credit.noProgressMillis(11_001_000_000))
+        assertTrue(credit.acknowledge(1, 50, 11_002_000_000))
+        assertEquals(0L, credit.noProgressMillis(99_000_000_000))
+        assertEquals(100L, credit.consumedBytes)
+    }
     @Test fun unsignedSequenceWrapRetainsTheWireBitsAndRejectsInvalidNumbers() {
         assertEquals(Int.MAX_VALUE, BrowserRtcProtocol.unsignedInt(0x7fff_ffffL))
         assertEquals(Int.MIN_VALUE, BrowserRtcProtocol.unsignedInt(0x8000_0000L))

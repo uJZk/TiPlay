@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { History, listen, closeServer } from './resources.mjs';
+import { pairingCodeLeaks } from './privacy.mjs';
 // End-to-end production-page check against a real browser DataChannel peer and synthetic phone media.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
@@ -249,7 +250,7 @@ async function main() {
     const peerContext = await browser.newContext({ serviceWorkers: 'block' });
     const rtcPage = await peerContext.newPage();
     await rtcPage.goto(`${origin}/blank`);
-    const phone = await startFakePhone({ code: CODE, frames, width: WIDTH, height: HEIGHT, fps: FPS, rtcPage });
+    const phone = await startFakePhone({ code: CODE, frames, width: WIDTH, height: HEIGHT, fps: FPS, rtcPage, moduleBase: PAGE_PATH });
     phoneServers.push(phone);
     const failures = new History();
     const page = await context.newPage();
@@ -297,7 +298,11 @@ async function main() {
     check(!phone.requests.some(request => ['/video', '/audio'].includes(request.path)), 'normal playback opens no legacy HTTP media stream');
     check(first.page.link.path === 'worker' && first.page.link.fallback === null, 'Chromium takes the Tesla path: worker, transferred stream, OffscreenCanvas');
     check(first.page.video.decodedFps > 0, `decodedFps ${first.page.video.decodedFps} with renderer ${first.page.video.renderer} (${first.page.video.acceleration})`);
-    check(!JSON.stringify(first).includes(CODE), 'tiplayStats never contains the pairing code');
+    check(pairingCodeLeaks(first, CODE).length === 0, `tiplayStats contains no semantic pairing-code leak (${pairingCodeLeaks(first, CODE).join(', ') || 'none'})`);
+    const signaling = phone.requests.filter(request => request.method === 'POST' && request.path.startsWith('/rtc/pair/'));
+    check(signaling.length >= 2 && signaling.every(request => !request.secretInUrl &&
+      request.signalingFields?.join(',') === (request.path.endsWith('/start') ? 's' : 'A,M1,id,offer,s')),
+    'HTTP pairing carries only the permitted PAKE/session/SDP fields and no code');
     check(await page.evaluate(() => location.hash === ''), 'the link fragment was removed from the address');
     check(await page.evaluate(port => location.search === `?t=127.0.0.1:${port}`, phone.port), 'the address bar keeps ?t= so a bookmark reopens this phone');
     check(await page.evaluate(code => JSON.parse(localStorage.getItem('tiplay.link')).code === code, CODE), 'the link was stored');
@@ -346,14 +351,14 @@ async function main() {
     checkTap(await tap(page, phone, 0.25, 0.75), 0.25, 0.75, 'worker');
 
     const st = await waitFor('decoded stats event', () => eventsOf(phone, 'st').map(entry => entry.event)
-      .find(event => event.v['video.decodedFps'] > 0 && event.v['link.path'] === 'worker'), 8000);
-    check(JSON.stringify(st.v).length <= 2048 && st.v['video.decodedFps'] > 0 && st.v['link.path'] === 'worker',
-      `stats event with ${Object.keys(st.v).length} fields, including the path`);
+      .find(event => event.v['video.currentFps'] > 0 && event.v['link.path'] === 'worker'), 8000);
+    check(JSON.stringify(st.v).length <= 2048 && st.v['video.currentFps'] > 0 && st.v['link.path'] === 'worker',
+      `bounded stats event with ${Object.keys(st.v).length} fields, draw rate and path`);
     check(st.v.themeDark === false, 'periodic decoded stats preserve Boolean browser appearance');
 
     const decodedBefore = eventsOf(phone, 'dec').length, streamsBefore = phone.videoCount, viewportsBefore = eventsOf(phone, 'vp').length;
     check(await page.locator('#reconnect').isHidden(), 'the reconnect surface is hidden after the first decoded frame');
-    await page.route('**/hello', route => route.abort());
+    await page.route('**/rtc/pair/**', route => route.abort());
     phone.dropVideo();
     await page.waitForSelector('#reconnect:not([hidden])');
     check(await page.textContent('#reconnect-settings') === 'Setting', 'the reconnect action is Setting');
@@ -371,11 +376,10 @@ async function main() {
     check(phone.videoCount === streamsBeforeResume, 'resuming from the portal does not replace the reconnect session');
     check(await page.locator('#browser-settings, #bar, #fullscreen').count() === 0, 'no redundant modal, playback header or fullscreen control remains');
     for (const colorScheme of ['dark', 'light']) {
-      const appearanceEventsBefore = eventsOf(phone, 'st').length;
       await page.emulateMedia({ colorScheme });
-      const appearanceReport = await waitFor(`${colorScheme} authenticated appearance report`, () =>
-        eventsOf(phone, 'st').slice(appearanceEventsBefore).find(entry => entry.event.v.themeDark === (colorScheme === 'dark')), 3000);
-      check(typeof appearanceReport.event.v.themeDark === 'boolean', `${colorScheme}: theme change reaches the phone as a Boolean while reconnecting`);
+      await waitFor(`${colorScheme} local appearance while the encrypted channel reconnects`, async () =>
+        (await stats(page)).page.themeDark === (colorScheme === 'dark'));
+      check(true, `${colorScheme}: appearance updates locally while controls wait for a new authenticated channel`);
       for (const viewport of [{ width: 1000, height: 700 }, { width: 390, height: 844 }, { width: 640, height: 240 }]) {
         await page.setViewportSize(viewport);
         const layout = await page.evaluate(() => {
@@ -392,20 +396,20 @@ async function main() {
           Math.abs(layout.cx - viewport.width / 2) < 1 && Math.abs(layout.cy - viewport.height / 2) < 1 && layout.inert &&
           layout.button.x <= 20 && layout.button.y > viewport.height / 2 &&
           layout.button.bottom < viewport.height && layout.message < viewport.height,
-        `${colorScheme} ${viewport.width}×${viewport.height}: full viewport, centered logo, reachable action and blocked CarPlay input`);
+        `${colorScheme} ${viewport.width}×${viewport.height}: full viewport, centered logo, reachable action and blocked CarPlay input (${JSON.stringify(layout)})`);
         check(layout.base === 'rgb(25, 33, 46)', `${colorScheme}: shared low-luminance material`);
         check(layout.wallpaper.includes('reconnect-wallpaper-blurred.png') && layout.blur === 'none',
           `${colorScheme}: the same pre-rendered wallpaper without a runtime filter`);
       }
     }
     await page.setViewportSize({ width: 1000, height: 700 });
-    await page.unroute('**/hello');
+    await page.unroute('**/rtc/pair/**');
     await waitFor('a new RTC media connection', () => phone.videoCount > streamsBefore);
     await waitFor('decoding after the reconnect', () => eventsOf(phone, 'dec').length > decodedBefore);
     check(await page.locator('#reconnect').isHidden(), 'the reconnect surface disappears after recovery decodes a frame');
     const statsAfterRecovery = eventsOf(phone, 'st').length;
     await waitFor('periodic appearance after recovery', () => eventsOf(phone, 'st').slice(statsAfterRecovery)
-      .some(entry => entry.event.v['video.decodedFps'] > 0 && entry.event.v.themeDark === false), 8000);
+      .some(entry => entry.event.v['video.currentFps'] > 0 && entry.event.v.themeDark === false), 8000);
     check(true, 'periodic decoded stats keep Boolean appearance after reconnect');
     check(true, `the page renegotiated RTC after the drop (${phone.videoCount} sessions) and decoded again`);
     await waitFor('the viewport after the reconnect', () => eventsOf(phone, 'vp').length > viewportsBefore, 3000).catch(() => {});

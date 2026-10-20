@@ -8,18 +8,20 @@ WebCodecs decoding and Canvas presentation; Android creates no RTP media track,
 video encoder or browser microphone path. AirPlay URL casting retains its existing
 resource/demux pipeline and uses the shared smoothness-first casting profile.
 
-`AndroidBrowserRtcFactory` is injected by the Android product; JVM server tests use
+The Android product injects its native RTC runtime; JVM server tests use
 an injectable peer. The current page requires `webrtc-datachannel-v1` and does not
 silently revert to HTTP media. Android disables the old `/video` and `/audio` routes
-with 410; old cached pages are outside acceptance. `/control` remains a startup/status
-bootstrap before the DataChannel is ready. HTTP media fixtures remain only in the
-factory-free JVM server tests.
+with 410; old cached pages are outside acceptance. Old `/control` and `/rtc` routes
+are disabled rather than used for bootstrap. HTTP retains SRP pairing, public
+discovery and random-token resources/retirement only. Protocol fixtures do not
+provide a product fallback.
 
 The four policies and current verification boundaries are in the
-[WebRTC roadmap](WebRTC-roadmap.md). Standalone vehicle D can play, and desktop
-real-PeerConnection tests exercise the transport. Neither proves Android/vehicle
-UDP reachability, actual car hardware decoding, physical latency or P/non-P
-continuity. Those remain device acceptance work.
+[WebRTC roadmap](WebRTC-roadmap.md). Earlier beta.2/v70 had user-confirmed real CarPlay playback; beta.3/v71 recorded
+desktop host-to-host UDP and source-cadence/reconnect evidence. Standalone D remains
+a local synthetic playback observation. Desktop real-PeerConnection tests exercise
+the transport. These observations do not establish current integrated vehicle
+reachability, actual car hardware decoding, physical latency or P/non-P continuity. Those remain device acceptance work.
 
 ## Confirmed requirements
 
@@ -50,8 +52,8 @@ API guarantees, source tests, device observations and untested assumptions.
 
 The implementation preserves existing codec/PCM audio records and browser decode
 semantics. It pins the Android SDK, channel topology, bounds and touch policy below.
-Trusted bootstrap identity and physical performance remain explicit unresolved
-boundaries; no source-level choice establishes vehicle acceptance.
+The SRP-authenticated transcript binds bootstrap identity; physical performance
+and actual vehicle compatibility remain unresolved boundaries; no source-level choice establishes vehicle acceptance.
 
 ## Component boundaries
 
@@ -98,29 +100,52 @@ parameter-set declaration below the real stream's requirements to disguise delay
 
 ## DataChannel deployment and protocol work
 
-### HTTPS, identity and direct connectivity
+### HTTPS, four-digit pairing and authenticated signaling
 
-The webpage still needs a trustworthy secure context for WebCodecs/AudioWorklet;
-ordinary HTTP at an Android LAN IP is not such a context. Existing HTTPS page
-hosting and cached asset behavior must remain usable.
+Tesla users manually enter the existing Android address and **four-digit code**.
+No clipboard, long fingerprint entry, QR scanner or native car application is
+required. A copied phone link remains optional convenience for browsers that can
+use it.
 
-DataChannel uses DTLS with fingerprints exchanged through signaling. The Android
-media endpoint does not need a browser-trusted public-CA WSS server certificate,
-but authenticated pairing/signaling must bind the expected device, session and
-DTLS fingerprint. Encryption alone is not proof of peer identity. Do not treat an
-unauthenticated HTTP exchange as an authenticated fingerprint binding. Determine
-how existing pairing, code invalidation, replacement and reconnect semantics
-establish that binding without designing an ad hoc cryptographic protocol.
+The HTTPS webpage uses browser WebCrypto and the vendored MIT `tssrp6a` 3.0.0
+client; Android uses the existing Bouncy Castle 1.79 SRP6 server. They implement
+SRP-6a with the RFC 5054 2048-bit group, SHA-256, and Bouncy Castle's padded evidence
+messages. The adapter changes identity/evidence hashing, not SRP arithmetic.
+JVM-generated cross-language vectors cover public values, shared secret,
+client/server evidence and the session-key HMAC.
 
-If signaling uses HTTPS/WSS, that signaling endpoint still needs a trusted TLS
-certificate. These transport certificates are distinct from CarPlay accessory
-identity material; this migration does not authorize changing that identity.
+1. `POST /rtc/pair/start` receives only the page session ID and returns a random,
+   expiring challenge, salt and server SRP public value.
+2. `POST /rtc/pair/finish` receives the client public value, client proof and
+   gathered browser SDP offer. A challenge is consumed on every proof attempt.
+3. After checking the proof and current code, Android returns server proof,
+   gathered SDP answer, application peer ID and HMAC-SHA256 session binding.
+4. The browser verifies server proof and the binding before applying the answer.
+   The binding uses length-prefixed protocol/challenge/page identity, both SRP
+   public values, salt, complete offer/answer SDP and application peer ID. This
+   authenticates the DTLS fingerprints inside SDP without a public-CA certificate
+   on the Android endpoint.
+5. The established encrypted control channel must receive `{k:'auth',q,s,c}` before
+   the existing ownership gate releases media. The four-digit code is sent only
+   inside that DTLS-protected channel, never through HTTP signaling.
+6. Only the successful encrypted admission response supplies the random resource
+   bearer. HTTP finish does not expose it; HTTP resource and bye operations use
+   this token rather than the four-digit code. Authenticated control status supplies
+   clock observations; public `/hello` timing is not a trusted media clock anchor.
 
-Same-LAN ICE can connect using host candidates without public STUN/TURN, but
-actual browser candidate policy, mDNS resolution, Android interface selection,
-hotspot/shared-Wi-Fi isolation, VPNs and local-network permission must be tested.
-Do not silently introduce an Internet media relay. Any relay path needs an
-explicit latency, availability and deployment assessment.
+The shared online-guessing lockout applies to failed proofs and encrypted code
+admission. Challenges are single-use, bounded and expire after 30 seconds. Native
+peers are bounded to three, with 15-second unauthenticated and six-second inactive
+session cleanup. Replacement, new code, disable, disconnect and stop retire the
+old peer and its touches. A replacement browser cannot inherit stale media work.
+
+The four-digit secret provides limited protection against online guesses; rate
+limits remain necessary. HTTPS protects the page and its cryptographic code.
+PAKE does not make denial of service impossible. Legacy authenticated HTTP media/control routes are disabled in the Android product;
+factory-free protocol fixtures are not a product fallback.
+AirPlay HTTP resources receive a random active-session bearer over the encrypted
+channel, so resource URLs do not disclose the four-digit code.
+
 
 ### Reliability, channel separation and bounded work
 
@@ -219,19 +244,27 @@ unbounded disk failure. Do not silently sample, overwrite or drop raw payload.
 
 ## Implementation and verification
 
-The Android dependency is `io.github.webrtc-sdk:android:144.7559.12` (WebRTC M144),
-pinned from Maven Central with four project ABIs and minSdk 21; TiPlay keeps 25.
-See [licenses and artifact provenance](Third-party-notices.md#runtime-dependencies).
-Native peer disposal runs outside WebRTC callbacks, control work is bounded and
-media/credit stalls retire the session explicitly.
+The Android dependency is `io.github.webrtc-sdk:android:150.7871.01` (WebRTC M150),
+pinned from Maven Central with four project ABIs; TiPlay keeps minSdk 25.
+See [licenses and artifact provenance](Third-party-notices.md#android-webrtc-datachannels).
+The official page replaces the root at <https://ujzk.github.io/TiPlay/>; the old
+independent `/webrtc/` site is removed without an alias or redirect. The APK uses
+the root. Native peer disposal runs outside WebRTC callbacks, control work is bounded and
+media/credit stalls retire the session explicitly. A 200ms oldest-media age is
+diagnostic evidence rather than an immediate session-ending condition; bounded
+overflow and six seconds without genuine consumption progress remain recovery
+boundaries. Revalidate the historical reconnect symptom on the actual device.
 
-`POST /rtc` accepts `{c,s,offer}` through the existing pairing/ownership gate and
-returns `{type,sdp,epoch,fragmentBytes,transport}`. Non-trickle local ICE carries
-three reliable ordered channels: `control`, `video`, `audio`. No public STUN/TURN
-is configured. The Android factory disables the Java network monitor so real
-hotspot/Shizuku aliases can be enumerated by native interfaces without requiring
-a ConnectivityManager network handle. It does not invent or rewrite candidates.
-Actual UDP binding/reachability and hotspot restoration still require the vehicle.
+`POST /rtc/pair/start` and `POST /rtc/pair/finish` carry the SRP exchange described
+above; the browser verifies the server evidence and transcript binding before
+applying the answer. The native peer and existing ownership gate then admit
+`control`, `video` and `audio` as reliable ordered channels. No bare `{c,s,offer}`
+HTTP endpoint admits a production peer, and media/control never fall back to HTTP.
+No public STUN/TURN is configured. Native interface enumeration supports real
+hotspot/Shizuku aliases without requiring a ConnectivityManager handle; it does
+not invent or rewrite candidates. It also loses Android per-Network socket binding
+and network-change notifications. Actual route, VPN behavior, UDP reachability
+and hotspot restoration still require device verification.
 
 Each binary message is at most 16 KiB including a 24-byte little-endian header:
 
@@ -279,8 +312,9 @@ Physical acceptance must cover `169.254.111.111`, loss/retransmission, large AUs
 long thermal sessions, repeated touch, gear transitions, background/foreground,
 VPNs, HFP route changes, hotspot restart, replacement owners and storage pressure.
 Measure source-relative physical output with explicit clock uncertainty. The
-short code over HTTP preserves the old trusted-LAN boundary; resistance to active
-fingerprint substitution still requires trusted signaling/bootstrap.
+SRP proof and length-prefixed session-key binding authenticate both SDP transcripts,
+including DTLS fingerprints. Four-digit online guessing and denial-of-service
+limits remain; HTTP AirPlay resources have separate LAN confidentiality limits.
 
 Public references: [WebCodecs](https://www.w3.org/TR/webcodecs/),
 [WebRTC](https://www.w3.org/TR/webrtc/),

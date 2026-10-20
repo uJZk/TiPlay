@@ -210,7 +210,7 @@ test('video presents without slow audio and independently enforces the source ca
   frames.reset();
 });
 
-test('zero-delay CarPlay buffers future frames and reserves draw time inside its independent ceiling', () => {
+test('CarPlay preserves WebCodecs output order and reserves draw time inside its independent ceiling', () => {
   let now = 1000, pending = null;
   const shown = [], frames = createTimedFrames((frame, _, __, source) => shown.push({ frame, source, at: now }), {
     now: () => now, schedule: (callback, wait) => { pending = { callback, at: now + wait }; return callback; }, cancel: () => { pending = null; },
@@ -221,11 +221,11 @@ test('zero-delay CarPlay buffers future frames and reserves draw time inside its
   frames.present(later, { mode: 'carplay' }, 1, 1060);
   frames.present(earlier, { mode: 'carplay' }, 1, 1040);
   frames.present(duplicate, { mode: 'carplay' }, 1, 1040);
-  assert.equal(duplicate.closed, true); assert.deepEqual(shown, []);
-  assert.equal(frames.stats().scheduledDroppedFrames, 1);
-  assert.ok(Math.abs(pending.at - 1020) < 0.000001);
-  now = pending.at; pending.callback(); assert.equal(shown[0].frame, earlier); assert.equal(shown[0].at, 1020);
-  now = pending.at; pending.callback(); assert.equal(shown[1].frame, later); assert.equal(shown[1].at, 1040);
+  assert.equal(earlier.closed, true); assert.equal(duplicate.closed, true); assert.deepEqual(shown, []);
+  assert.equal(frames.stats().scheduledDroppedFrames, 2);
+  assert.equal(frames.stats().scheduledStaleFrames, 2);
+  assert.ok(Math.abs(pending.at - 1040) < 0.000001);
+  now = pending.at; pending.callback(); assert.equal(shown[0].frame, later); assert.equal(shown[0].at, 1040);
   now = 1100; const boundary = item(); frames.present(boundary, { mode: 'carplay' }, 1, 1100);
   assert.equal(shown.at(-1).frame, boundary, 'readiness at the upper bound still permits immediate submission');
   const late = item(); frames.present(late, { mode: 'carplay' }, 1, 1100.001);
@@ -233,7 +233,8 @@ test('zero-delay CarPlay buffers future frames and reserves draw time inside its
   assert.equal(late.closed, undefined, 'a future frame inside the draw reservation may already be submitted');
   now = 1500; const expired = item(); frames.present(expired, { mode: 'carplay' }, 1, 1100.005);
   assert.equal(expired.closed, true); assert.equal(frames.stats().scheduledExpiredFrames, 1);
-  assert.equal(frames.stats().scheduledDroppedFrames, 2);
+  assert.equal(frames.stats().scheduledDroppedFrames, 3);
+  assert.equal(frames.stats().videoCeilingViolations, 1);
   frames.reset();
   assert.equal(frames.stats().scheduledDroppedFrames, 0, 'epoch reset excludes normal teardown');
 });
@@ -306,4 +307,23 @@ test('decoded surfaces are bounded by bytes as well as frame count', () => {
   assert.equal(frames.stats().decodedQueueFrames, 2);
   assert.equal(frames.stats().decodedResourceDroppedFrames, 18);
   frames.reset(); assert.ok(pictures.every(frame => frame.closes === 1));
+});
+
+
+test('scheduler diagnostics separate source cadence, coalescing and resource limits without adding subsets to drops', () => {
+  let now = 1000, pending;
+  const shown = [], frames = createTimedFrames(frame => shown.push(frame), { now: () => now,
+    schedule: callback => { pending = callback; return callback; }, cancel() {} });
+  frames.delay({ ...constantDelay(100), playbackProfile: 'carplay-touch' });
+  const picture = () => ({ displayWidth: 100, displayHeight: 100, close() { this.closed = true; } });
+  const first = picture(), second = picture();
+  frames.present(first, { mode: 'carplay', stageTiming: { decodedAtMs: 990 } }, 1, 1000);
+  frames.present(second, { mode: 'carplay', stageTiming: { decodedAtMs: 995 } }, 1, 1010);
+  now = 1110; pending();
+  assert.deepEqual(shown, [second]); assert.equal(first.closed, true);
+  const stats = frames.stats();
+  assert.equal(stats.scheduledCoalescedFrames, 1); assert.equal(stats.touchSkippedFrames, 1);
+  assert.equal(stats.scheduledDroppedFrames, 1); assert.equal(stats.scheduledCapacityFrames, 0);
+  assert.equal(stats.decodedToSchedulerMsP95, 115); assert.equal(stats.decodedFrontierDeltaMs, 100);
+  frames.reset(); assert.equal(frames.stats().touchSkippedFrames, 0); assert.equal(frames.stats().decodedQueueBytes, 0);
 });

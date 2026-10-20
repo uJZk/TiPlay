@@ -1,5 +1,5 @@
 name: Publish site
-# The TiPlay page (site/play/) at the site root, the download pages under download/. See docs/Browser.md.
+# Publish the authenticated WebRTC product at the root and versioned downloads under download/.
 on:
   push:
     branches: [main]
@@ -25,8 +25,12 @@ jobs:
       SITE_BASE_URL: ${{ vars.SITE_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
-      - run: python3 scripts/build_site.py
-      - run: python3 scripts/assemble_site.py _site
+      - name: Generate the product version and versioned download pages
+        run: python3 scripts/build_site.py
+      - name: Verify root layout and public assets
+        run: python3 -m unittest discover -s tests -p 'test_site_deployment.py'
+      - name: Assemble the single production site
+        run: python3 scripts/assemble_site.py _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

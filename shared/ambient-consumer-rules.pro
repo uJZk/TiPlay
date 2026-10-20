@@ -8,3 +8,5 @@
 -keep class com.shilapi.xcertplay.transport.IphoneUsbGrantTool {
     public static void main(java.lang.String[]);
 }
+# The pinned WebRTC AAR calls Java classes/methods by their JNI names.
+-keep class org.webrtc.** { *; }

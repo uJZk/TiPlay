@@ -4,9 +4,10 @@
 package com.shilapi.xcertplay.web
 
 /**
- * The records waiting for one `/video` writer. Caller holds the hub lock. Predictive frames are never
- * retained across a gap: when the oldest frame is too old, or the queue is full, every queued frame is
- * dropped and frames are skipped until the next key frame, which then carries [WebVideoRecords.FLAG_DISCONTINUITY].
+ * The records waiting for one media writer. Caller holds the hub lock. Reliable delivery preserves
+ * admitted frames in order, measures old media, and fails explicitly on finite-capacity overflow.
+ * The retained HTTP queue drops a dependency chain on age/overflow and resumes at a key frame
+ * carrying [WebVideoRecords.FLAG_DISCONTINUITY].
  * Config records keep their place between frames. A full config budget rejects the new record so the caller
  * can end the subscription instead of continuing without a required configuration.
  */
@@ -20,10 +21,13 @@ internal class WebFrameQueue(
     private val reliable: Boolean = false,
 ) {
     private val records = ArrayDeque<WebVideoRecord>()
+    /** A reliable queue fails explicitly rather than resuming after loss of a reference frame. */
+    var failureReason: String? = null; private set
     private var started = false
     private var gap = false
     var configCount = 0; private set
     var configBytes = 0; private set
+    var boundaryCount = 0; private set
     var size = 0; private set
     var bytes = 0; private set
     var needsKeyFrame = true; private set
@@ -32,16 +36,19 @@ internal class WebFrameQueue(
     var expired = 0L; private set
     var overflow = 0L; private set
     var skipped = 0L; private set
-    /** Reliable delivery must fail explicitly instead of silently damaging compressed dependencies. */
-    var failureReason: String? = null; private set
+    /** Reliable input keeps its dependency chain; old media is measured rather than erased. */
+    var overAgeFrames = 0L; private set
+    var maxQueueAgeNanos = 0L; private set
 
     /** Queues a frame; false when it was skipped while waiting for a key frame or is larger than the queue. */
     fun offer(frame: WebVideoRecord, now: Long): Boolean {
+        if (failureReason != null) return false
         expire(now)
         if (failureReason != null) return false
         val cost = frame.payloadLength
-        if (reliable && (cost > maxBytes - bytes || size >= maxFrames)) {
-            failureReason = "media-overload"
+        if (reliable && (cost > maxBytes || size >= maxFrames || cost > maxBytes - bytes)) {
+            overflow++
+            failureReason = "reliable-overload"
             return false
         }
         if (cost > maxBytes) { overflow++; invalidate(now); return false }
@@ -68,10 +75,29 @@ internal class WebFrameQueue(
 
     /** Queues a config record; the next frame must be a key frame of the new configuration. */
     fun offerConfig(config: WebVideoRecord, now: Long): Boolean {
-        if (configCount >= maxConfigs || config.payloadLength > maxConfigBytes - configBytes) return false
+        if (failureReason != null) return false
+        if (configCount >= maxConfigs || config.payloadLength > maxConfigBytes - configBytes) {
+            if (reliable) failureReason = "reliable-overload"
+            return false
+        }
         records.addLast(config)
         configCount++
         configBytes += config.payloadLength
+        requireKeyFrame(now)
+        return true
+    }
+
+    /** A source boundary follows admitted AUs and precedes the next configuration, without a subscriber gap. */
+    fun offerBoundary(now: Long): Boolean {
+        check(reliable)
+        if (failureReason != null) return false
+        if (records.lastOrNull()?.kind == WebVideoRecords.KIND_IDLE) return true
+        if (boundaryCount >= maxConfigs) {
+            failureReason = "reliable-overload"
+            return false
+        }
+        records.addLast(WebVideoRecords.IDLE)
+        boundaryCount++
         requireKeyFrame(now)
         return true
     }
@@ -83,19 +109,25 @@ internal class WebFrameQueue(
         bytes = 0
         configCount = 0
         configBytes = 0
+        boundaryCount = 0
         waitingSinceNanos = null
         needsKeyFrame = true
     }
 
     fun poll(now: Long): WebVideoRecord? {
+        if (failureReason != null) return null
         expire(now)
+        if (failureReason != null) return null
         val record = records.removeFirstOrNull() ?: return null
         if (record.kind == WebVideoRecords.KIND_FRAME) {
+            if (reliable && now - record.queuedAtNanos >= maxAgeNanos) overAgeFrames++
             size--
             bytes -= record.payloadLength
         } else if (record.kind == WebVideoRecords.KIND_CONFIG) {
             configCount--
             configBytes -= record.payloadLength
+        } else if (record.kind == WebVideoRecords.KIND_IDLE) {
+            boundaryCount--
         }
         return record
     }
@@ -117,8 +149,11 @@ internal class WebFrameQueue(
 
     private fun expire(now: Long) {
         val oldest = records.firstOrNull { it.kind == WebVideoRecords.KIND_FRAME } ?: return
-        if (now - oldest.queuedAtNanos >= maxAgeNanos) {
-            if (reliable) { failureReason = "media-age-limit"; return }
+        val age = (now - oldest.queuedAtNanos).coerceAtLeast(0)
+        maxQueueAgeNanos = maxOf(maxQueueAgeNanos, age)
+        // Media age is not a no-progress timeout. Reliable queues drain in full until capacity
+        // fails; the peer separately bounds consumption/credit stalls by its progress deadline.
+        if (age >= maxAgeNanos && !reliable) {
             expired += size
             invalidate(now)
         }

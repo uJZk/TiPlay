@@ -6,6 +6,9 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Base64
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class RawTrafficTest {
     @Test fun archiveReopensEvictedChannelsWithoutLosingOrReorderingTheirBytes() {
@@ -79,6 +82,48 @@ class RawTrafficTest {
             assertEquals("capture/start", second.readLines().first().split('\t')[2])
             assertTrue(String(Base64.getDecoder().decode(second.readLines().first().split('\t')[4])).contains("version=second"))
         } finally { RawTraffic.configure(second, false); directory.deleteRecursively() }
+    }
+
+    @Test fun delayedSessionWriteCannotCrossClearOrDisableEvenAfterItHasStartedWaitingForTheDiskMonitor() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-session-gate").toFile()
+        val file = File(directory, "capture.tsv")
+        val workers = Executors.newSingleThreadExecutor()
+        try {
+            RawTraffic.configure(file, true)
+            val original = requireNotNull(RawTraffic.activeSessionId())
+            val field = RawTraffic::class.java.getDeclaredField("lock").apply { isAccessible = true }
+            val diskMonitor = field.get(RawTraffic)
+            fun delayedAcross(expectedSession: String, boundary: () -> Unit): Boolean {
+                val waiting = CountDownLatch(1)
+                val writerThread = java.util.concurrent.atomic.AtomicReference<Thread>()
+                val delayed = synchronized(diskMonitor) {
+                    val write = workers.submit<Boolean> {
+                        writerThread.set(Thread.currentThread())
+                        waiting.countDown()
+                        RawTraffic.recordForSession(expectedSession, "browser/video-diagnostics", "old-report".toByteArray())
+                    }
+                    assertTrue(waiting.await(1, TimeUnit.SECONDS))
+                    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+                    while (writerThread.get()?.state != Thread.State.BLOCKED && System.nanoTime() < deadline) Thread.yield()
+                    assertEquals("The stale writer must already be waiting for the capture monitor", Thread.State.BLOCKED, writerThread.get()?.state)
+                    boundary()
+                    write
+                }
+                return delayed.get(1, TimeUnit.SECONDS)
+            }
+            assertFalse(delayedAcross(original) { RawTraffic.clear() })
+            val current = requireNotNull(RawTraffic.activeSessionId())
+            assertNotEquals(original, current)
+            assertTrue(RawTraffic.recordForSession(current, "browser/video-diagnostics", "new-report".toByteArray()))
+            assertFalse(delayedAcross(current) { RawTraffic.configure(file, false) })
+            RawTraffic.configure(file, true)
+            assertFalse(RawTraffic.recordForSession(current, "browser/video-diagnostics", "stale-enabled-report".toByteArray()))
+            val records = file.readLines().map { it.split('\t') }.filter { it[2] == "browser/video-diagnostics" }
+            assertEquals(listOf("new-report"), records.map { String(Base64.getDecoder().decode(it[4]), Charsets.UTF_8) })
+        } finally {
+            workers.shutdownNow(); workers.awaitTermination(1, TimeUnit.SECONDS)
+            RawTraffic.configure(file, false); directory.deleteRecursively()
+        }
     }
 
     @Test fun fullPayloadSurvivesChunkingDisableAndExportWithoutRedaction() {
@@ -199,4 +244,97 @@ class RawTrafficTest {
             assertArrayEquals(sink.toByteArray(), Base64.getDecoder().decode(records.single { it[2] == "car/out/written" }[4]))
         } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
     }
+    @Test fun referencedScreenInputKeepsOneCopyAndBindsExactJournalByteRanges() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-reference").toFile()
+        val file = File(directory, "capture.tsv")
+        try {
+            RawTraffic.configure(file, true)
+            val original = ByteArray(100_000) { it.toByte() }
+            val input = RawTraffic.referencedInput("iphone/screen/in", original.inputStream())
+            input.beginRange()
+            val received = ByteArray(original.size)
+            assertEquals(128, input.read(received, 0, 128))
+            assertEquals(original.size - 128, input.read(received, 128, original.size - 128))
+            val reference = requireNotNull(input.endRange())
+            assertEquals(0L, reference.offset)
+            assertEquals(original.size, reference.length)
+            assertTrue(reference.lastSequence > reference.firstSequence)
+            val annexB = byteArrayOf(0, 0, 0, 1, 5)
+            RawTraffic.bindVideoReference(annexB, reference)
+            assertSame(reference, RawTraffic.videoReference(annexB))
+            val records = file.readLines().map { it.split('\t') }.filter { it[2] == "iphone/screen/in" }
+            assertEquals(reference.firstSequence, records.first()[1].toLong())
+            assertEquals(reference.lastSequence, records.last()[1].toLong())
+            assertArrayEquals(original, records.flatMap { Base64.getDecoder().decode(it[4]).toList() }.toByteArray())
+            assertEquals(true, RawTraffic.integrity()["complete"])
+            assertEquals("decrypt-then-length-prefix-to-annexb", reference.fields()["captureTransform"])
+            RawTraffic.clear()
+            assertNull(RawTraffic.videoReference(annexB))
+        } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
+    }
+
+    @Test fun failedCaptureNeverReturnsAReferenceToUnstoredPayload() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-failed-reference").toFile()
+        val file = File(directory, "capture.tsv")
+        try {
+            RawTraffic.configure(file, true)
+            RawTraffic.clear()
+            assertTrue(file.delete())
+            assertTrue(file.mkdir()) // Opening a directory as the journal must fail.
+            val input = RawTraffic.referencedInput("iphone/screen/in", byteArrayOf(1, 2, 3).inputStream())
+            input.beginRange()
+            assertArrayEquals(byteArrayOf(1, 2, 3), input.readBytes())
+            assertNull(input.endRange())
+            assertEquals(false, RawTraffic.integrity()["complete"])
+            assertTrue((RawTraffic.integrity()["failures"] as Long) > 0L)
+            assertTrue(file.delete())
+            val recoveredInput = RawTraffic.referencedInput("iphone/screen/in", byteArrayOf(4).inputStream())
+            recoveredInput.beginRange()
+            assertEquals(4, recoveredInput.read())
+            // Earlier partial appends may have changed exported offsets, so new successful bytes
+            // still cannot claim exact references until the next capture session.
+            assertNull(recoveredInput.endRange())
+            RawTraffic.clear()
+            val nextSession = RawTraffic.referencedInput("iphone/screen/in", byteArrayOf(5).inputStream())
+            nextSession.beginRange()
+            assertEquals(5, nextSession.read())
+            assertNotNull(nextSession.endRange())
+        } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
+    }
+
+    @Test fun controlStatusReadsCompleteWhileTheCaptureDiskMonitorIsHeld() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-status-lock").toFile()
+        val file = File(directory, "capture.tsv")
+        val workers = Executors.newFixedThreadPool(2)
+        val acquired = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        try {
+            RawTraffic.configure(file, true)
+            RawTraffic.clear()
+            val expectedSession = requireNotNull(RawTraffic.activeSessionId())
+            val field = RawTraffic::class.java.getDeclaredField("lock").apply { isAccessible = true }
+            val diskMonitor = field.get(RawTraffic)
+            val holder = workers.submit {
+                synchronized(diskMonitor) {
+                    acquired.countDown()
+                    release.await()
+                }
+            }
+            assertTrue("Capture disk monitor must be held before reading status", acquired.await(1, TimeUnit.SECONDS))
+            val status = workers.submit<Pair<String?, Map<String, Any?>>> {
+                RawTraffic.activeSessionId() to RawTraffic.integrity()
+            }.get(1, TimeUnit.SECONDS)
+            assertEquals(expectedSession, status.first)
+            assertEquals(true, status.second["enabled"])
+            assertEquals(true, status.second["complete"])
+            assertFalse("Status must finish before the capture monitor is released", holder.isDone)
+        } finally {
+            release.countDown()
+            workers.shutdownNow()
+            workers.awaitTermination(1, TimeUnit.SECONDS)
+            RawTraffic.configure(file, false)
+            directory.deleteRecursively()
+        }
+    }
+
 }

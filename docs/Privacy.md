@@ -24,6 +24,17 @@ Retained upstream DiLink cluster code, hidden from the phone/browser product, ca
 
 Browser storage retains the pairing code, phone address and confirmed coordinate-system type (plus browser UA and record version). Location coordinates are not persisted. When enabled, browser positions travel only over the paired local control channel to Android and onward to the iPhone. High accuracy Android GPS supplies the initial position and coordinate-system comparison; it stops when a known browser position is available and resumes if browser fixes expire. See [geolocation](geolocation.md) for permissions, caching and the opt-out.
 
-Browser storage retains no position history. TiPlay removes the code from the link fragment after opening; fragments are not sent to the static host, but the endpoint in `?t=` is. Pairing-authorized local HTTP requests send the code and WebRTC offer/answer to the phone. Established DataChannels encrypt video, audio and control with DTLS. HTTP bootstrap, startup/status control and proxied AirPlay URL resources remain unencrypted; Android disables the old HTTP video/audio endpoints. A short pairing code sent over HTTP does not authenticate DTLS fingerprints against an active network attacker; the HTTPS page alone does not fix that trust boundary. Use secured, trusted Wi-Fi. TiPlay configures no public STUN/TURN or Internet media relay.
+Browser storage retains no position history. TiPlay removes the code from the link
+fragment after opening; fragments are not sent to the static host, but the endpoint
+in `?t=` is. Local HTTP carries SRP challenge/proof messages and SDP, never the
+four-digit pairing code. Mutual SRP proofs and a session-key transcript binding
+authenticate the DTLS fingerprints before the connection is used. Established
+DataChannels encrypt media and control. The short code still requires online-guess
+limits, and the HTTPS page must remain trusted. AirPlay HTTP resources use random
+active-session bearer tokens delivered only after encrypted control admission;
+HTTP pairing finish never returns them. HTTP bye uses the same random token; those HTTP bodies
+and tokens retain local-network confidentiality limits. The Android product disables
+old code-authorized HTTP media/control routes. No public STUN/TURN or Internet media
+relay is configured.
 
 **New code** invalidates the old code and ends the browser session. Changing Android address/port preserves the code but requires a manual browser address update or new pairing link; no endpoint migration is sent. The static site has no analytics script or account.

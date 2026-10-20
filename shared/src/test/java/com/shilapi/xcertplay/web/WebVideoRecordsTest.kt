@@ -1,9 +1,11 @@
 package com.shilapi.xcertplay.web
 
 import com.shilapi.xcertplay.airplay.VideoCodec
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -13,6 +15,20 @@ import java.util.concurrent.Executor
 
 class WebVideoRecordsTest {
     private fun bytes(vararg values: Int) = ByteArray(values.size) { values[it].toByte() }
+
+    @Test fun addingDiscontinuityKeepsDecodeOnlyFlagsAndTheCanonicalSourceReference() {
+        val payload = bytes(0, 0, 0, 1, 0x65)
+        val reference = RawTraffic.Reference("test-capture", "iphone/source", 10, 12, 128, 133)
+        val original = WebVideoRecord(WebVideoRecords.KIND_FRAME,
+            WebVideoRecords.FLAG_KEY_FRAME or WebVideoRecords.FLAG_DECODE_ONLY,
+            WebVideoRecords.CODEC_H264, 7, 3, 99, payload, sourceCapture = reference)
+        val decorated = original.withFlags(WebVideoRecords.FLAG_DISCONTINUITY)
+        assertSame(payload, decorated.payload)
+        assertSame(reference, decorated.sourceCapture)
+        assertEquals(original.timestampUs, decorated.timestampUs)
+        assertEquals(WebVideoRecords.FLAG_KEY_FRAME or WebVideoRecords.FLAG_DECODE_ONLY or
+            WebVideoRecords.FLAG_DISCONTINUITY, WebVideoRecords.readHeader(WebVideoRecords.encode(decorated)).flags)
+    }
 
     @Test fun headerFieldsAreLittleEndianAndRoundTrip() {
         val record = WebVideoRecord(

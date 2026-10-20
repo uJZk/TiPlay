@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.web
 
 import com.shilapi.xcertplay.airplay.VideoCodec
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import java.util.Base64
 
 /**
@@ -20,12 +21,14 @@ class WebVideoRecord(
     val queuedAtNanos: Long = 0L,
     /** Source scheduled presentation time mapped to System.nanoTime; the retained name is wire-path compatibility. */
     val captureNanos: Long? = null,
+    /** Canonical source TCP record/range; downstream diagnostics reference it without another video dump. */
+    val sourceCapture: RawTraffic.Reference? = null,
 ) {
     val payloadLength: Int get() = (prefix?.size ?: 0) + payload.size
     val keyFrame: Boolean get() = flags and WebVideoRecords.FLAG_KEY_FRAME != 0
 
     fun withFlags(extra: Int) =
-        WebVideoRecord(kind, flags or extra, codec, sequence, epoch, timestampUs, payload, prefix, queuedAtNanos, captureNanos)
+        WebVideoRecord(kind, flags or extra, codec, sequence, epoch, timestampUs, payload, prefix, queuedAtNanos, captureNanos, sourceCapture)
 }
 
 /** Wire format of the browser video stream (protocol v1). */

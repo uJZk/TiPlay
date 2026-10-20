@@ -5,13 +5,17 @@ import { createRtcMediaTransport, RTC_FRAGMENT_BYTES, RTC_HEADER_BYTES, RTC_MAGI
 
 class Channel {
   constructor(label, options) { this.label = label; this.options = options; this.readyState = 'connecting'; this.bufferedAmount = 0; this.sent = []; }
-  send(value) { this.sent.push(JSON.parse(value)); }
+  send(value) {
+    const message = JSON.parse(value); this.sent.push(message);
+    if (message.k === 'auth') queueMicrotask(() => this.receive(JSON.stringify({ q: message.q, app: 'TiPlay', protocol: 1,
+      clockMs: 100, audio: true, transport: RTC_TRANSPORT, resourceToken: 'r'.repeat(43) })));
+  }
   close() { this.readyState = 'closed'; this.onclose?.(); }
   receive(value) { this.onmessage?.({ data: value }); }
 }
-class Peer {
+class Peer extends EventTarget {
   static latest;
-  constructor(options) { Peer.latest = this; this.options = options; this.channels = {}; this.iceGatheringState = 'complete'; this.iceConnectionState = 'new'; this.connectionState = 'new'; }
+  constructor(options) { super(); Peer.latest = this; this.options = options; this.channels = {}; this.iceGatheringState = 'complete'; this.iceConnectionState = 'new'; this.connectionState = 'new'; }
   createDataChannel(label, options) { return this.channels[label] = new Channel(label, options); }
   async createOffer() { return { type: 'offer', sdp: 'local-offer\r\na=candidate:1 1 udp 1 192.0.2.1 5000 typ host\r\n' }; }
   async setLocalDescription(description) { this.localDescription = description; }
@@ -42,7 +46,7 @@ test('direct peer uses reliable ordered channels and never configures a relay or
     for (const channel of Object.values(f.channels)) assert.deepEqual(channel.options, { ordered: true });
     assert.equal(f.media.stats().generation, 7);
     const response = f.media.control(1, [{ k: 't', p: [[0, 0.3, 0.4, 1]] }]);
-    assert.deepEqual(f.channels.control.sent.at(-1), { c: '1234', s: 'safe', q: 1, e: [{ k: 't', p: [[0, 0.3, 0.4, 1]] }] });
+    assert.deepEqual(f.channels.control.sent.at(-1), { s: 'safe', q: 1, e: [{ k: 't', p: [[0, 0.3, 0.4, 1]] }] });
     f.channels.control.receive(JSON.stringify({ q: 1, state: 'streaming' }));
     assert.deepEqual(await response, { q: 1, state: 'streaming' });
   } finally { f.media.close(); }
@@ -56,16 +60,16 @@ test('fragmented records retain bytes and credits wait for downstream consumptio
     for (let offset = 0; offset < input.length; offset += 16000) {
       f.channels.video.receive(fragment(input.subarray(offset, offset + 16000), { offset, total: input.length }));
     }
-    assert.equal(f.channels.control.sent.length, 0);
+    assert.equal(f.channels.control.sent.filter(value => value.k === 'ack').length, 0);
     assert.equal(f.media.stats().queuedBytes, input.length);
     const output = (await reader.read()).value;
     assert.deepEqual(output, input);
-    assert.equal(f.channels.control.sent.length, 0, 'offering bytes does not prove decoder admission');
+    assert.equal(f.channels.control.sent.filter(value => value.k === 'ack').length, 0, 'offering bytes does not prove decoder admission');
     structuredClone(output, { transfer: [output.buffer] });
     assert.equal(output.byteLength, 0);
     const next = reader.read();
     await settle();
-    assert.deepEqual(f.channels.control.sent, [{ k: 'ack', channel: 'video', q: 0, bytes: input.length }]);
+    assert.deepEqual(f.channels.control.sent.filter(value => value.k === 'ack'), [{ k: 'ack', channel: 'video', q: 0, bytes: input.length }]);
     assert.equal(f.media.stats().queuedBytes, 0, 'detaching the payload cannot lose resource accounting');
     f.channels.video.receive(fragment(Uint8Array.of(9, 8), { q: 1 }));
     assert.deepEqual((await next).value, Uint8Array.of(9, 8));

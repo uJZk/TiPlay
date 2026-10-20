@@ -4,56 +4,68 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { APP_VERSION } from '../../site/play/app-version.js';
-import { DEFAULT_HOST, isCode, normalizeHost } from '../../site/play/link.js';
+import { DEFAULT_HOST, abortable, isCode, normalizeHost } from '../../site/play/link.js';
 
 const play = new URL('../../site/play/', import.meta.url);
 const read = name => readFileSync(new URL(name, play), 'utf8');
 
-test('the initial clock reaches a video sink whose setup finishes after hello', async () => {
-  const connect = /async function connectVideo\(\) \{([\s\S]*?)\n\}/.exec(read('app.js'))[1];
+test('decoder setup precedes pairing and the first authenticated clock reaches video and audio before media opens', async () => {
+  const connect = /async function connectVideo\(\) \{([\s\S]*?)\n\}/.exec(read('app.js'))[0];
   let finishSetup;
   const codecsReady = new Promise(resolve => { finishSetup = resolve; });
   const events = [];
-  const run = new Function('codecsReady', 'events', `
+  const run = new Function('codecsReady', 'events', 'abortable', `
     let streamId = 0, sink = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastViewport, rtcMedia;
-    const link = { code: '1234' }, session = 'session', PROTOCOL = 1;
-    const videoPath = {};
-    const RTC_TRANSPORT = 'webrtc-datachannel-v1';
-    const createRtcMediaTransport = options => ({
-      video: null, connect: async () => { await options.exchange('offer'); }, openAudio() {},
-    });
-    const browserAudio = { attach() {}, clock: value => events.push(['audio-clock', value]) };
-    let mediaTiming;
-    const mediaTimings = new Map([['carplay', { reset: () => events.push('timing-reset'), mode() {} }]]);
+    let rtcProgress, resourceToken, controlClock, outbox = null, heartbeatTimer, mediaTiming;
+    const controlWaiters = new Set();
+    const link = { code: '1234' }, session = 'owner', PROTOCOL = 1, videoPath = {};
+    const clock = { offset: 10, rtt: 2, at: 100 };
+    let authenticated = false;
+    const phoneFetch = () => { throw new Error('No unauthenticated HTTP media/control or clock request is allowed.'); };
+    const authenticateRtcOffer = async options => {
+      if (options.session !== 'owner' || options.code !== '1234' || options.offer !== 'offer') throw new Error('wrong pairing owner');
+      events.push(['pairing', options.session]); return { sdp: 'verified-answer', epoch: 7 };
+    };
+    const hello = { app: 'TiPlay', protocol: 1, audio: true, transport: 'webrtc-datachannel-v1' };
+    const createRtcMediaTransport = options => {
+      events.push(['peer-created']);
+      return {
+        video: null, connect: async () => { await options.exchange('offer'); authenticated = true; events.push(['authenticated']); },
+        resourceToken: () => 'random-resource-capability', clockSample: () => ({ serverMs: 100, started: 90, ended: 110 }),
+        hello: () => hello, openAudio() {},
+      };
+    };
+    const browserAudio = { attach(_signal, value) { events.push(['audio-attach', value]); }, clock: value => events.push(['audio-clock', value]) };
+    const mediaTimings = new Map([['carplay', { reset: () => events.push(['timing-reset']), mode() {} }]]);
     const timingFor = mode => mediaTimings.get(mode);
-    const airplayControls = { update() {} };
-    const render = () => {}, reportAppearance = () => {}, scheduleViewport = () => {};
+    const render = () => {}, reportAppearance = () => events.push(['appearance']), scheduleViewport = () => events.push(['viewport']);
     const setInterval = () => 0, clearInterval = () => {};
-    const stop = reason => { throw new Error(reason); };
-    const createClockEstimator = () => ({ observe: serverMs => ({ offset: 10, rtt: 2, at: serverMs }), snapshot: () => null });
-    const phoneFetch = async route => {
-      events.push(route);
-      return { ok: true, body: null, json: async () => ({ app: 'TiPlay', protocol: 1, clockMs: 100, transport: RTC_TRANSPORT }) };
+    const stop = reason => { throw new Error(reason); }, scheduleRetry = () => { throw new Error('Unexpected retry'); };
+    const createClockEstimator = () => ({ observe: (...sample) => { events.push(['clock-sample', ...sample]); return clock; } });
+    const postControl = () => {}, applyStatus = () => {}, controlFailed = () => {}, slots = { contacts: () => [] };
+    const createControlOutbox = options => {
+      if (!authenticated || options.maxInFlight !== 8) throw new Error('control started before authenticated RTC');
+      events.push(['outbox']); return { heartbeat: () => events.push(['control-heartbeat']) };
     };
-    const pending = (async () => { ${connect} })();
-    return {
-      pending,
-      setup() { sink = {
-        clock: value => events.push(['clock', value]),
-        open: () => events.push('open'),
-      }; },
-    };
-  `)(codecsReady, events);
+    ${connect}
+    const pending = connectVideo();
+    return { pending, setup() { sink = {
+      clock: value => events.push(['video-clock', value]), open: () => events.push(['open']),
+    }; } };
+  `)(codecsReady, events, abortable);
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(events, ['/hello'], 'hello finished while the decoder sink is still unavailable');
-  run.setup();
-  finishSetup('avc1');
-  await run.pending;
-  assert.deepEqual(events[1], ['clock', { offset: 10, rtt: 2, at: 100 }]);
-  assert.deepEqual(events[2], ['audio-clock', { offset: 10, rtt: 2, at: 100 }], 'audio receives the same initial clock as video');
-  assert.equal(events[3], 'timing-reset');
-  assert.equal(events[4], '/rtc');
-  assert.equal(events[5], 'open');
+  assert.deepEqual(events, [], 'decoder setup must finish before pairing or control begins');
+  run.setup(); finishSetup('avc1'); await run.pending;
+  const index = name => events.findIndex(([type]) => type === name);
+  assert.ok(index('pairing') >= 0 && index('authenticated') > index('pairing'));
+  assert.deepEqual(events.find(([type]) => type === 'clock-sample'), ['clock-sample', 100, 90, 110]);
+  for (const name of ['video-clock', 'audio-clock']) {
+    const value = events.find(([type, sample]) => type === name && sample !== null);
+    assert.deepEqual(value, [name, { offset: 10, rtt: 2, at: 100 }]);
+    assert.ok(events.indexOf(value) > index('authenticated') && events.indexOf(value) < index('open'));
+  }
+  assert.ok(index('outbox') > index('authenticated') && index('control-heartbeat') > index('outbox'));
+  assert.deepEqual(events.find(([type]) => type === 'audio-attach')[1], { app: 'TiPlay', protocol: 1, audio: true, transport: 'webrtc-datachannel-v1' });
 });
 
 function retryPage(lastError) {
@@ -69,7 +81,8 @@ function retryPage(lastError) {
     const id = ++nextId; timers.set(id, { callback, at: now + delay, repeat }); return id;
   };
   const page = new Function('$', 'Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'renderReconnect', 'lastError', `
-    let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort, rtcMedia;
+    let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort, rtcMedia, rtcProgress, resourceToken, controlClock;
+    const controlWaiters = new Set(), codecsReady = new Promise(() => {}), abortable = value => value;
     let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null, config = null;
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
     const browserLocation = { stop() {} };
@@ -298,7 +311,7 @@ test('retired outbox senders cannot use the current session or its peer', async 
   const post = new Function('calls', `
     const active = true, session = 'new-owner';
     const rtcMedia = { isConnected: () => true, control: (...args) => { calls.push(args); return { q: args[0] }; } };
-    const locationEvents = events => events;
+    const locationEvents = events => events, controlWaiters = new Set(), controlClock = null;
     ${control}
     return postControl;
   `)(calls);
@@ -308,28 +321,49 @@ test('retired outbox senders cannot use the current session or its peer', async 
 });
 
 
-test('a failed connection attempt aborts its unresolved HTTP signaling exchange before scheduling retry', async () => {
+test('a failed connection attempt cancels its unresolved SRP exchange before scheduling retry', async () => {
   const connect = /async function connectVideo\(\) \{([\s\S]*?)\n\}/.exec(read('app.js'))[0];
-  const run = new Function(`
+  const run = new Function('abortable', `
     let streamId = 0, rtcMedia = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastError, lastViewport;
-    const session = 'owner', link = { code: '1234' }, RTC_TRANSPORT = 'webrtc-datachannel-v1', PROTOCOL = 1;
-    let aborted = false, retries = 0;
+    let rtcProgress, resourceToken, controlClock;
+    const session = 'owner', link = { code: '1234' }, controlWaiters = new Set();
+    let aborted = false, retries = 0, exchangeCalled = false;
     const sink = { stop() {}, clock() {} }, browserAudio = { clock() {} }, codecsReady = Promise.resolve('avc1');
     const videoPath = {}, render = () => {}, reportDiagnostics = () => {}, backoffDelay = () => 500;
     const scheduleRetry = () => retries++;
     let attempt = 0, mediaTiming;
     const timing = { reset() {}, mode() {} }, mediaTimings = new Map([['carplay', timing]]), timingFor = () => timing;
     const createClockEstimator = () => ({ observe: () => null });
-    const phoneFetch = async (route, options) => {
-      if (route === '/hello') return { ok: true, json: async () => ({ app: 'TiPlay', protocol: 1, transport: RTC_TRANSPORT }) };
-      return new Promise((_, reject) => options.signal.addEventListener('abort', () => { aborted = true; reject(new Error('aborted')); }));
+    const phoneFetch = () => { throw new Error('Unexpected plaintext bootstrap.'); };
+    const authenticateRtcOffer = ({ signal }) => {
+      exchangeCalled = true;
+      return new Promise((_, reject) => signal.addEventListener('abort', () => { aborted = true; reject(new Error('aborted')); }));
     };
     const createRtcMediaTransport = options => ({ connect: async () => {
       options.exchange('offer').catch(() => {});
       throw Object.assign(new Error('connect-timeout'), { reason: 'connect-timeout' });
     } });
     ${connect}
-    return connectVideo().then(() => ({ aborted, retries }));
+    return connectVideo().then(() => ({ exchangeCalled, aborted, retries }));
   `);
-  assert.deepEqual(await run(), { aborted: true, retries: 1 });
+  assert.deepEqual(await run(abortable), { exchangeCalled: true, aborted: true, retries: 1 });
+});
+
+test('controls wait for authenticated RTC and cannot cross ownership changes during that wait', async () => {
+  const control = /async function postControl\([^\n]*\) \{([\s\S]*?)\n\}/.exec(read('app.js'))[0];
+  const calls = [];
+  const fixture = new Function('calls', `
+    let active = true, session = 'old-owner', rtcMedia = null, controlClock = null;
+    const controlWaiters = new Set(), locationEvents = events => events;
+    ${control}
+    return { postControl, pending: () => controlWaiters.size,
+      ready(owner) { session = owner; rtcMedia = { isConnected: () => true, control: (...args) => { calls.push(args); return { q: args[0] }; } };
+        for (const waiter of controlWaiters) waiter.resolve(); controlWaiters.clear(); } };
+  `)(calls);
+  const pending = fixture.postControl(1, [{ k: 't', p: [[0, .5, .5, 1]] }], 'old-owner');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fixture.pending(), 1); assert.deepEqual(calls, []);
+  fixture.ready('new-owner');
+  await assert.rejects(pending, /owner retired/); assert.deepEqual(calls, []);
+  assert.deepEqual(await fixture.postControl(2, [], 'new-owner'), { q: 2 });
 });

@@ -56,18 +56,26 @@ internal class BrowserRtcCredit(private val maxBytes: Int) {
     private data class Pending(val sequence: Int, val bytes: Int, val since: Long)
     private val pending = ArrayDeque<Pending>()
     var bytes = 0; private set
+    var reservedBytes = 0L; private set
+    var consumedBytes = 0L; private set
+    private var lastProgressNanos = 0L
     fun canSend(size: Int) = size in 1..maxBytes && bytes <= maxBytes - size
     fun sent(sequence: Int, size: Int, now: Long) {
         check(canSend(size))
+        if (pending.isEmpty()) lastProgressNanos = now
         pending.addLast(Pending(sequence, size, now))
         bytes += size
+        reservedBytes += size
     }
-    fun acknowledge(sequence: Int, size: Int): Boolean {
+    fun acknowledge(sequence: Int, size: Int, now: Long = System.nanoTime()): Boolean {
         val first = pending.firstOrNull() ?: return false
         if (first.sequence != sequence || first.bytes != size) return false
         pending.removeFirst()
         bytes -= size
+        consumedBytes += size
+        lastProgressNanos = now
         return true
     }
     fun oldestAgeMillis(now: Long): Long = pending.firstOrNull()?.let { (now - it.since) / 1_000_000 } ?: 0L
+    fun noProgressMillis(now: Long): Long = if (pending.isEmpty()) 0L else (now - lastProgressNanos) / 1_000_000
 }

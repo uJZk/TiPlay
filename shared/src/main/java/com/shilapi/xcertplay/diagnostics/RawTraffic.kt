@@ -1,12 +1,12 @@
 package com.shilapi.xcertplay.diagnostics
 
+import java.io.BufferedWriter
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Base64
 import java.net.DatagramPacket
 import java.net.DatagramSocket
-import java.io.BufferedWriter
 
 /** Opt-in, lossless application I/O capture. No sampling, redaction, queue or rotation.
  * Writes apply disk backpressure. Android/kernel Bluetooth and USB bus packets are outside this API.
@@ -19,17 +19,50 @@ object RawTraffic {
     private var file: File? = null
     private val process = java.util.UUID.randomUUID().toString()
     private var sequence = 0L
-    private var failures = 0L
-    private var lastFailure = "none"
+    @Volatile private var failures = 0L
+    @Volatile private var lastFailure = "none"
     private var lastFailureText = ""
     private var firstFailureEpochMillis = 0L
     private var lastFailureEpochMillis = 0L
     private var failedByteAttempts = 0L
     private var lastFailureChannel = "none"
     private var writer: BufferedWriter? = null
+    private val channelOffsets = mutableMapOf<String, Long>()
+    @Volatile private var referenceIntegrity = true
+    private val videoReferenceLock = Any()
+    private val videoReferences = java.util.WeakHashMap<ByteArray, Reference>()
+
+    /** IDs address the single canonical input journal; payloads are not stored in downstream events. */
+    data class Reference(val session: String, val channel: String, val firstSequence: Long,
+                         val lastSequence: Long, val offset: Long, val length: Int) {
+        fun fields(): Map<String, Any?> = mapOf("captureSession" to session, "captureChannel" to channel,
+            "captureFirstRecord" to firstSequence, "captureLastRecord" to lastSequence,
+            "captureOffset" to offset, "captureLength" to length,
+            "captureBoundary" to "source-tcp-header-and-body",
+            "captureTransform" to "decrypt-then-length-prefix-to-annexb")
+    }
+
+    fun bindVideoReference(payload: ByteArray, reference: Reference?) {
+        if (!enabled || reference == null) return
+        synchronized(videoReferenceLock) { if (enabled && reference.session == sessionId) videoReferences[payload] = reference }
+    }
+
+    fun videoReference(payload: ByteArray): Reference? {
+        if (!enabled) return null
+        return synchronized(videoReferenceLock) { videoReferences[payload]?.takeIf { it.session == sessionId } }
+    }
+
+    /** Status reads never wait for capture disk I/O or hold a media/control lock behind it. */
+    fun integrity(): Map<String, Any?> {
+        val count = failures
+        return mapOf("enabled" to enabled, "failures" to count, "lastFailure" to lastFailure,
+            "complete" to (count == 0L), "referenceIntegrity" to referenceIntegrity,
+            "coverage" to if (count == 0L) "no-observed-write-failure" else "partial",
+            "durability" to "application-flush-no-fsync")
+    }
 
     private var configuration = ""
-    private var sessionId: String? = null
+    @Volatile private var sessionId: String? = null
     private var pendingSessionHeader: ByteArray? = null
     private var needsBoundaryCheck = true
 
@@ -50,12 +83,15 @@ object RawTraffic {
     private fun startSession() {
         val session = java.util.UUID.randomUUID().toString()
         sessionId = session
+        channelOffsets.clear()
+        referenceIntegrity = true
+        synchronized(videoReferenceLock) { videoReferences.clear() }
         pendingSessionHeader = ("process=$process session=$session startEpochMillis=${System.currentTimeMillis()}\n" + configuration).toByteArray()
         record("capture/start", requireNotNull(pendingSessionHeader))
     }
 
     /** Binds browser reports to this enable/clear cycle, including delayed control retries. */
-    fun activeSessionId(): String? = synchronized(lock) { sessionId.takeIf { enabled } }
+    fun activeSessionId(): String? = sessionId.takeIf { enabled }
 
     /** Explicit user action; saved artifacts are independent. An active capture starts a fresh session. */
     fun clear() = synchronized(lock) {
@@ -69,20 +105,42 @@ object RawTraffic {
     }
 
     fun record(channel: String, bytes: ByteArray, offset: Int = 0, length: Int = bytes.size - offset) {
-        if (!enabled || length <= 0) return
+        recordReferenced(channel, bytes, offset, length)
+    }
+
+    /** Session validation and append share the clear/enable monitor: delayed reports cannot enter a new capture. */
+    fun recordForSession(expectedSession: String, channel: String, bytes: ByteArray): Boolean = synchronized(lock) {
+        if (!enabled || sessionId != expectedSession || bytes.isEmpty()) return@synchronized false
+        val previousSequence = sequence
+        val previousFailures = failures
+        recordReferenced(channel, bytes, 0, bytes.size)
+        // A previous loss may disable exact byte references while later records still append successfully.
+        sequence != previousSequence && failures == previousFailures
+    }
+
+    private fun recordReferenced(channel: String, bytes: ByteArray, offset: Int, length: Int): Reference? {
+        if (!enabled || length <= 0) return null
         synchronized(lock) {
-            if (!enabled) return
+            if (!enabled) return null
             if (channel != "capture/start") {
                 pendingSessionHeader?.let { record("capture/start", it) }
                 if (pendingSessionHeader != null) {
                     failure(java.io.IOException("Capture session marker unavailable"), channel, length.toLong())
-                    return
+                    return null
                 }
             }
+            // Session recovery may have appended its header; references start at this payload only.
+            val firstSequence = sequence + 1
+            val channelOffset = channelOffsets.getOrDefault(channel, 0L)
             try {
-                val target = file ?: return
+                val target = file ?: return null
                 target.parentFile?.let {
                     if (!it.isDirectory && !it.mkdirs()) throw java.io.IOException("Could not create capture directory")
+                }
+                // A removed/replaced journal must not silently keep accepting bytes into an orphaned descriptor.
+                if (writer != null && !target.isFile) {
+                    closeWriter()
+                    throw java.io.IOException("Capture journal unavailable")
                 }
                 // An interrupted append must not merge its partial line with the next session/record.
                 if (needsBoundaryCheck) {
@@ -107,10 +165,13 @@ object RawTraffic {
                 // This is application I/O completion, not an fsync/power-loss durability guarantee.
                 output.flush()
                 if (channel == "capture/start") pendingSessionHeader = null
+                channelOffsets[channel] = channelOffset + length
+                return if (referenceIntegrity) Reference(requireNotNull(sessionId), channel, firstSequence, sequence, channelOffset, length) else null
             } catch (error: Exception) {
                 needsBoundaryCheck = true
                 closeWriter()
                 failure(error, channel, length.toLong())
+                return null
             }
         }
     }
@@ -131,7 +192,34 @@ object RawTraffic {
         // Retain the source category, never a URL, peer address or arbitrary channel suffix.
         lastFailureChannel = channel.substringBefore('/').takeIf { it in SOURCE_CATEGORIES } ?: "other"
         failedByteAttempts += bytes
+        // A partial append makes subsequent channel offsets uncertain. Keep capturing, but
+        // stop claiming exact byte references until the next explicit capture session.
+        referenceIntegrity = false
     }
+
+    /** A bounded accumulator for one screen message, referencing existing source bytes only. */
+    class ReferencedInput internal constructor(private val channel: String, private val source: InputStream) : InputStream() {
+        private var range: Reference? = null
+        private var incomplete = false
+        fun beginRange() { range = null; incomplete = false }
+        fun endRange(): Reference? = range.takeUnless { incomplete }
+        private fun captured(bytes: ByteArray, offset: Int, length: Int) {
+            val next = recordReferenced(channel, bytes, offset, length)
+            if (next == null) { incomplete = true; return }
+            val previous = range
+            if (previous == null) range = next
+            else if (previous.session == next.session && previous.offset + previous.length == next.offset) {
+                range = previous.copy(lastSequence = next.lastSequence, length = previous.length + next.length)
+            } else incomplete = true
+        }
+        override fun read(): Int = source.read().also { if (it >= 0) captured(byteArrayOf(it.toByte()), 0, 1) }
+        override fun read(bytes: ByteArray, offset: Int, length: Int): Int =
+            source.read(bytes, offset, length).also { if (it > 0) captured(bytes, offset, it) }
+        override fun close() = source.close()
+        override fun available(): Int = source.available()
+    }
+
+    fun referencedInput(channel: String, source: InputStream) = ReferencedInput(channel, source)
 
     fun input(channel: String, source: InputStream): InputStream = object : InputStream() {
         override fun read(): Int = source.read().also { if (it >= 0) record(channel, byteArrayOf(it.toByte())) }
@@ -185,7 +273,7 @@ object RawTraffic {
                 "RAW_CAPTURE_INTEGRITY coverage=${if (failures == 0L) "no-observed-write-failure" else "partial"} " +
                 "firstFailureEpochMillis=$firstFailureEpochMillis lastFailureEpochMillis=$lastFailureEpochMillis " +
                 "failedByteAttempts=$failedByteAttempts lastFailureSource=$lastFailureChannel " +
-                "lastFailureText=$lastFailureText durability=application-flush\n")
+                "lastFailureText=$lastFailureText referenceIntegrity=$referenceIntegrity durability=application-flush\n")
     }
 
     fun writeArchive(output: OutputStream, logName: String, report: String, temporaryRoot: File) =

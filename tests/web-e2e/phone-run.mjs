@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // JVM compatibility-server checks. Production playback is verified by run.mjs and webrtc.mjs.
-// RealPhone has no Android native WebRTC implementation; the production page must reject it.
+// RealPhone has no Android native WebRTC implementation; the production page must never fall back to its compatibility streams.
 import { History, listen, closeServer } from './resources.mjs';
+import { pairingCodeLeaks } from './privacy.mjs';
 import { RecordParser, RECORD, FLAG } from '../../site/play/link.js';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
@@ -54,6 +55,17 @@ function kotlinStdlib() {
   throw new Error(`kotlin-stdlib ${version} not found under ${base}; set KOTLIN_STDLIB`);
 }
 
+function bouncyCastle() {
+  if (process.env.BCPROV_JAR) return process.env.BCPROV_JAR;
+  const version = /^bouncycastle\s*=\s*"([^"]+)"/m.exec(readFileSync(join(ROOT, 'gradle/libs.versions.toml'), 'utf8'))?.[1];
+  const base = join(process.env.GRADLE_USER_HOME ?? join(homedir(), '.gradle'), 'caches/modules-2/files-2.1/org.bouncycastle/bcprov-jdk18on', version ?? '');
+  for (const hash of existsSync(base) ? readdirSync(base) : []) {
+    const jar = join(base, hash, `bcprov-jdk18on-${version}.jar`);
+    if (existsSync(jar)) return jar;
+  }
+  throw new Error(`bcprov-jdk18on ${version} not found under ${base}; set BCPROV_JAR`);
+}
+
 /** A three-second 1280×720 H.264 clip (Annex-B, AUDs, an IDR every second), or null without ffmpeg/libx264. */
 function encodeClip(dir) {
   const clip = join(dir, 'clip.h264');
@@ -70,7 +82,7 @@ function encodeClip(dir) {
 /** Starts RealPhone.java and collects its JSON events. */
 async function startPhone(clip) {
   for (const path of [SHARED_CLASSES, PAGE_DIR]) if (!existsSync(path)) throw new Error(`${path} is missing; build :shared first (see README.md)`);
-  const args = ['-cp', `${SHARED_CLASSES}:${kotlinStdlib()}`, join(ROOT, 'tests/web-e2e/RealPhone.java'), '--port', '0',
+  const args = ['-cp', `${SHARED_CLASSES}:${kotlinStdlib()}:${bouncyCastle()}`, join(ROOT, 'tests/web-e2e/RealPhone.java'), '--port', '0',
     '--bind', '0.0.0.0', '--code', CODE, '--width', String(WIDTH), '--height', String(HEIGHT), '--fps', String(FPS)];
   if (clip) args.push('--clip', clip);
   const child = spawn(JAVA, args, { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -212,7 +224,10 @@ async function main() {
     check(phone.since(mark, 'viewport').length > 0 && phone.since(mark, 'touch').length >= 2, 'explicit legacy controls preserve viewport and down/up ordering');
     const unavailable = await fetch(`${origin}/rtc`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ c: CODE, s: session, offer: 'v=0\r\n' }) });
-    check(unavailable.status === 503 && (await unavailable.json()).error === 'rtc-unavailable', 'the JVM server reports absent Android native RTC instead of faking an answer');
+    check(unavailable.status === 410 && (await unavailable.json()).error === 'transport-required', 'the removed plaintext RTC bootstrap stays retired even in the compatibility fixture');
+    const pairing = await fetch(`${origin}/rtc/pair/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ s: session }) });
+    check(pairing.status === 503 && (await pairing.json()).error === 'rtc-unavailable', 'SRP pairing reports absent Android native RTC instead of faking an answer');
     const restart = phone.events.length; phone.command('restart');
     await waitFor('next source session', () => phone.since(restart, 'restarted').length);
     const next = await readLegacyRecords(origin, session);
@@ -227,16 +242,17 @@ async function main() {
     page.on('request', request => requests.push({ method: request.method(), url: request.url() }));
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${pageHost.address().port}/?t=127.0.0.1:${phone.port}#c=${CODE}`);
-    await waitFor('explicit protocol mismatch notice', async () => /does not match this page/.test(await page.textContent('#browser-notice-message')));
-    check(!requests.some(request => ['/video', '/audio', '/rtc'].includes(new URL(request.url).pathname)), 'the production page rejects a server without RTC and opens no compatibility media stream');
-    check(await page.evaluate(() => location.hash === ''), 'pairing credentials are removed from the address bar even on a protocol mismatch');
-    check(!errors.length, `protocol mismatch has no unhandled page error${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+    await waitFor('SRP refusal without a native RTC implementation', () => requests.some(request => new URL(request.url).pathname === '/rtc/pair/start'));
+    await waitFor('the production page to retain retry state', async () => (await page.evaluate(() => globalThis.tiplayStats?.page.link.phase)) === 'retry');
+    check(!requests.some(request => ['/video', '/audio', '/rtc'].includes(new URL(request.url).pathname)), 'the production page retries secure pairing and opens no compatibility media stream');
+    check(await page.evaluate(() => location.hash === ''), 'pairing credentials are removed from the address bar even when secure pairing is unavailable');
+    check(!errors.length, `secure pairing refusal has no unhandled page error${errors.length ? `: ${errors.join(' | ')}` : ''}`);
     requests.assertComplete(); errors.assertComplete();
     await context.close();
     const output = JSON.stringify(phone.events);
-    check(!output.includes(CODE) && !output.includes(session), 'shared server diagnostics omit pairing code and browser owner token');
+    check(pairingCodeLeaks(phone.events, CODE).length === 0 && !output.includes(session), 'shared server diagnostics omit pairing code and browser owner token');
     phone.events.assertComplete(); phone.stderr.assertComplete();
-    log('all checks passed (compatibility server and production rejection only; Android native RTC is outside this JVM harness)');
+    log('all checks passed (compatibility server and secure production refusal only; Android native RTC is outside this JVM harness)');
   } finally {
     try { await browser?.close(); } finally {
       try { await phone?.close(); } finally {

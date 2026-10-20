@@ -16,8 +16,8 @@ Project AGENTS.md files and documents under docs/ must stay below 8,192 words ea
 Split a topic only when needed, target 4,096 words, and update the index and references.
 
 - [Browser](docs/Browser.md): pairing, receiver-aware waiting states, dismissible browser errors, resize, portal, media and shutdown.
-- [CarPlay DataChannel contract](docs/CarPlay-DataChannel.md): reliable, ordered WebRTC transport, webpage decoding, independent timing, touch, routing and one-copy capture constraints; protocol and trust boundaries.
-- [WebRTC roadmap](docs/WebRTC-roadmap.md): implemented product path, four playback profiles, current vehicle evidence and remaining Shizuku/physical acceptance.
+- [CarPlay DataChannel contract](docs/CarPlay-DataChannel.md): reliable, ordered WebRTC transport, webpage decoding, independent timing, touch, routing and one-copy capture constraints; four-digit SRP-6a authenticated SDP binding and protocol bounds.
+- [WebRTC roadmap](docs/WebRTC-roadmap.md): formal root deployment, four playback profiles, preserved beta.2/beta.3 playback and source-cadence evidence, and remaining physical acceptance.
 - [Settings](docs/Settings.md): short receiver status titles, separate details, drafts, immediate apply, reconnect and boot.
 - [Connection setup](docs/Connection-setup.md) and [hotspot address](docs/Hotspot-address.md).
 - [AirPlay](docs/AirPlay.md): receiver/media contracts, native/software audio negotiation,

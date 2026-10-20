@@ -102,7 +102,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
         if (previousTimeline && previousEpoch === data.epoch) this.retireTimeline(previousTimeline);
         this.port.postMessage({ playout: { ...(previousTimeline instanceof ContinuousAudio ? previousTimeline.reference(currentTime * 1000) : {}),
           type: data.type, semanticType: data.semanticType ?? data.type, mode: data.mode, epoch: data.epoch, generation: data.generation,
-          anchoring: data.mode === 'carplay' && isVoice(data.type, data) ? 'arrival' : 'presentation',
+          anchoring: previousTimeline?.arrivalPlayback ? 'arrival' : 'presentation',
           clockGeneration: this.clock?.generation, contextTimeMs: currentTime * 1000,
           state: data.ended === false ? 'priming' : 'ended', sequence: ++this.feedbackSequence } });
         this.timelines.delete(data.type); return;
@@ -117,13 +117,23 @@ class TiPlayAudio extends AudioWorkletProcessor {
             (data.flags & 1) || mediaWindow ? BUFFERED_AUDIO_WINDOW_MS : 1000,
             { buffered: Boolean(data.flags & 1), mode: data.mode, type: data.type, semanticType: data.semanticType ?? data.type });
           timeline.debug(Boolean(this.diagnostics)); timeline.epoch = data.epoch; timeline.generation = data.generation;
-          timeline.arrivalPlayback = data.mode === 'carplay' && isVoice(data.type, data);
+          timeline.arrivalPlayback = data.mode === 'carplay' && isVoice(data.type, data) && !Number.isFinite(data.presentationMs);
           timeline.synchronized = !timeline.arrivalPlayback && Number.isFinite(data.presentationMs); this.timelines.set(data.type, timeline);
         }
         const legacy = this.streams.get(data.type);
         if (legacy) { for (const pcm of legacy.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', data.type); this.streams.delete(data.type); }
+        if (timeline.arrivalPlayback && Number.isFinite(data.presentationMs)) {
+          // A real source anchor can arrive after an untimed utterance has begun.
+          // Translate its existing sample coordinate instead of replaying or skipping its start.
+          const offset = data.presentationMs - (timeline.sourceAnchorMs + (timeline.lastPacket?.end ?? 0) * 1000 / timeline.rate);
+          timeline.sourceAnchorMs += offset;
+          if (Number.isFinite(timeline.rawCursorMs)) timeline.rawCursorMs += offset;
+          for (const packet of timeline.queue) packet.presentationMs += offset;
+          if (timeline.lastPacket && !timeline.queue.includes(timeline.lastPacket)) timeline.lastPacket.presentationMs += offset;
+          timeline.arrivalPlayback = false; timeline.synchronized = true;
+        }
         if (timeline.arrivalPlayback) {
-          // Guidance has no lip-sync relationship with the screen. Its sender may
+          // Untimed guidance has no lip-sync relationship with the screen. Its sender may
           // supply no lead at all, so a device-delay target can never catch its tail.
           // Anchor the first sample to this render clock while retaining RTP gaps.
           timeline.arrivalStartMs ??= this.arrivalTime(currentTime * 1000) + SPEECH_START_BUFFER_MS;
@@ -229,7 +239,32 @@ class TiPlayAudio extends AudioWorkletProcessor {
     // deadline. Its actual emitted source cursor is checked separately below.
     const uncertainty = Math.max(0, this.outputUncertaintyMs || 0) + timeline.filterUncertaintyMs
       + Math.max(0, this.clock?.uncertaintyMs || 0);
-    const proposed = Math.min(plans.audio.to, audioLimit(timeline.mode) - uncertainty - AUDIO_RECOVERY_ERROR_MS);
+    const latest = audioLimit(timeline.mode) - uncertainty - AUDIO_RECOVERY_ERROR_MS;
+    let desired = plans.audio.to;
+    if (timeline.mode === 'carplay' && isVoice(timeline.type, timeline) && timeline.synchronized) {
+      const clock = this.clock;
+      if (!clock || ![clock.localOriginMs, clock.serverOriginMs].every(Number.isFinite)) return null;
+      const recoveries = Object.entries(timeline.recoveryCounts).reduce((total, [reason, count]) => total + (reason === 'network-buffer' ? 0 : count), 0);
+      const tailSource = timeline.queue.length ? timeline.sourceAnchorMs + timeline.queue.at(-1).end * 1000 / timeline.rate : -Infinity;
+      const recoveredInput = !timeline.backend && Number.isFinite(timeline.rawCursorMs)
+        && recoveries > (timeline.startupRecoveryCount || 0) && tailSource > timeline.rawCursorMs + 10;
+      if (timeline.sourceStartupDelayMs === undefined || recoveredInput) {
+        timeline.startupRecoveryCount = recoveries;
+        const source = timeline.rawCursorMs ?? timeline.sourceAnchorMs;
+        const mapped = clock.localOriginMs + (source - clock.serverOriginMs) * (clock.rate || 1);
+        // Preserve the utterance's first available sample. This one startup reserve
+        // accounts for actual output lead, never video Delta or touch activity.
+        timeline.sourceStartupDelayMs = Math.max(0, localMs - mapped) + SPEECH_START_BUFFER_MS;
+      }
+      if (timeline.sourceStartupDelayMs > latest) {
+        if (timeline.backend) timeline.recover('sender-deadline');
+        timeline.state = 'infeasible'; timeline.reason = 'sender-deadline';
+        timeline.senderCeilingViolations = (timeline.senderCeilingViolations || 0) + 1;
+        return null;
+      }
+      desired = Math.max(desired, timeline.sourceStartupDelayMs);
+    }
+    const proposed = Math.min(desired, latest);
     if (timeline.networkDelayMs === undefined) timeline.networkDelayMs = proposed;
     else if (Math.abs(proposed - timeline.networkDelayMs) >= 8) {
       timeline.networkDelayMs = proposed;

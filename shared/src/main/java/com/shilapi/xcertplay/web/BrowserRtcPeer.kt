@@ -37,6 +37,7 @@ interface BrowserRtcSession : Closeable {
     fun snapshot(): Map<String, Any?>
     fun maintain()
     fun retire(reason: String) { close() }
+    fun authenticate()
 }
 
 /** Only the Android product constructs this factory. No RTP tracks, microphone or video encoder. */
@@ -80,10 +81,12 @@ private class AndroidBrowserRtcPeer(
     @Volatile private var audioSubscription: WebAudioHub.Subscription? = null
     private val audioLease = BrowserRtcAudioLease()
     @Volatile private var connected = false
+    @Volatile private var authenticated = false
     @Volatile private var everConnected = false
     @Volatile private var disconnectedSince: Long? = null
     @Volatile private var state = "new"
     private val created = System.nanoTime()
+    @Volatile private var firstCandidateNanos: Long? = null
     private val records = java.util.concurrent.atomic.AtomicLong()
     private val audioCapture = BrowserRtcAudioCapture(epoch)
     private val candidateCounts = ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
@@ -119,7 +122,14 @@ private class AndroidBrowserRtcPeer(
             awaitSdp("remote-description") { connection!!.setRemoteDescription(it, SessionDescription(SessionDescription.Type.OFFER, offer)) }
             val answer = awaitSdp("create-answer") { connection!!.createAnswer(it, MediaConstraints()) }
             awaitSdp("local-description") { connection!!.setLocalDescription(it, requireNotNull(answer)) }
-            check(gathering.await(5, TimeUnit.SECONDS)) { "ice-gather-timeout" }
+            val gatherDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (!closed.get() && gathering.count > 0) {
+                val now = System.nanoTime()
+                val first = firstCandidateNanos
+                if (first != null && now - first >= 500_000_000L) break
+                check(now < gatherDeadline) { "ice-gather-timeout" }
+                gathering.await(50, TimeUnit.MILLISECONDS)
+            }
             check(!closed.get()) { "peer retired" }
             state = "connecting"
             log("Browser RTC: stage=signaling epoch=$epoch state=answer candidates=host enumeration=interfaces transport=${BrowserRtcProtocol.NAME}")
@@ -141,6 +151,7 @@ private class AndroidBrowserRtcPeer(
             }
         }
         override fun onIceCandidate(candidate: IceCandidate) {
+            if (firstCandidateNanos == null) firstCandidateNanos = System.nanoTime()
             val description = candidateDescription(candidate)
             candidateCounts.computeIfAbsent(description) { java.util.concurrent.atomic.AtomicInteger() }.incrementAndGet()
         }
@@ -210,6 +221,7 @@ private class AndroidBrowserRtcPeer(
         RawTraffic.record("browser/rtc/$epoch/control/in", bytes)
         try {
             val fields = WebJson.parse(String(bytes, Charsets.UTF_8)) as? Map<*, *> ?: error("control-object")
+            check(authenticated || fields["k"] == "auth") { "authentication-required" }
             when (fields["k"]) {
                 "ack" -> {
                     val credit = credits[fields["channel"]] ?: error("ack-channel")
@@ -234,6 +246,7 @@ private class AndroidBrowserRtcPeer(
                 else -> {
                     val response = control(fields)
                     sendControl(response)
+                    if (fields["k"] == "auth") authenticate()
                 }
             }
         } catch (error: Exception) {
@@ -245,10 +258,22 @@ private class AndroidBrowserRtcPeer(
     private fun pumpVideo() {
         var sequence = 0
         try {
-            val subscription = video.subscribe(reliable = true).also { videoSubscription = it }
+            awaitAuthentication()
+            var subscription = video.subscribe(reliable = true).also { videoSubscription = it }
             while (!closed.get()) {
                 val record = subscription.take(1_000) ?: WebVideoRecords.HEARTBEAT
-                WebDebugTiming.record(record, System.nanoTime())?.let {
+                if (record.kind == WebVideoRecords.KIND_END && String(record.payload, Charsets.UTF_8) in setOf("source-ended", "source-changed")) {
+                    subscription.close()
+                    sendRecord("video", sequence++, BrowserRtcRecord.video(WebVideoRecords.IDLE))
+                    subscription = video.subscribe(reliable = true).also { videoSubscription = it }
+                    continue
+                }
+                record.sourceCapture?.let { source ->
+                    RawTraffic.recordForSession(source.session, "browser/rtc/video-reference",
+                        WebJson.write(source.fields() + mapOf("epoch" to record.epoch,
+                            "sequence" to record.sequence, "recordKind" to record.kind)).toByteArray(Charsets.UTF_8))
+                }
+                WebDebugTiming.record(record, System.nanoTime(), extended = true)?.let {
                     sendRecord("video", sequence++, BrowserRtcRecord.video(it))
                 }
                 sendRecord("video", sequence++, BrowserRtcRecord.video(record))
@@ -262,6 +287,7 @@ private class AndroidBrowserRtcPeer(
         var sequence = 0
         var announced: BrowserRtcAudioLease.Lease? = null
         try {
+            awaitAuthentication()
             while (!closed.get()) {
                 val lease = synchronized(wake) {
                     while (!closed.get() && audioLease.current() == null) wake.wait(250)
@@ -279,7 +305,7 @@ private class AndroidBrowserRtcPeer(
                     log("Browser RTC: stage=audio-barrier epoch=$epoch generation=${lease.generation.toLong() and 0xffff_ffffL} minSequence=${sequence.toLong() and 0xffff_ffffL} state=local-enqueue")
                 }
                 if (!audioLease.owns(lease)) continue
-                val subscription = audio?.subscribe()?.also { audioSubscription = it } ?: break
+                val subscription = audio?.subscribe(reliable = true)?.also { audioSubscription = it } ?: break
                 try {
                     while (!closed.get() && audioLease.owns(lease) && !subscription.closed) {
                         val bytes = subscription.take(1_000) ?: continue
@@ -298,9 +324,27 @@ private class AndroidBrowserRtcPeer(
                             break
                         }
                     }
+                    if (!closed.get()) audioLease.terminalReason(lease, subscription)?.let { reason ->
+                        log("Browser RTC: stage=audio-subscription epoch=$epoch reason=$reason " +
+                            "generation=${lease.generation.toLong() and 0xffff_ffffL} " +
+                            "overAgePackets=${subscription.ageExceededPackets} maxQueueAgeMs=${subscription.maxQueueAgeMillis}")
+                        fail(reason)
+                    }
                 } finally { subscription.close(); audioSubscription = null }
             }
         } catch (error: Exception) { if (!closed.get()) failed("audio", error) }
+    }
+
+    override fun authenticate() {
+        check(!closed.get()) { "peer-closed" }
+        synchronized(wake) { authenticated = true; wake.notifyAll() }
+    }
+
+    private fun awaitAuthentication() {
+        synchronized(wake) {
+            while (!closed.get() && !authenticated) wake.wait(100)
+            check(!closed.get()) { "peer-closed" }
+        }
     }
 
     private fun sendControl(response: String) {
@@ -317,11 +361,11 @@ private class AndroidBrowserRtcPeer(
         val maximum = if (label == "video") WebVideoRecords.MAX_PAYLOAD + WebVideoRecords.HEADER_SIZE else 1024 * 1024
         check(bytes.size in 1..maximum) { "record-size" }
         val credit = requireNotNull(credits[label])
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(6)
+        var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(6)
         synchronized(wake) {
             while (!closed.get() && !credit.canSend(bytes.size)) {
                 if (!admit()) throw BrowserRtcAudioLeaseRetired()
-                check(System.nanoTime() < deadline) { "consumer-credit-timeout" }
+                check(credit.noProgressMillis(System.nanoTime()) < 6_000) { "consumer-credit-timeout" }
                 wake.wait(100)
             }
             check(!closed.get()) { "peer-closed" }
@@ -329,12 +373,15 @@ private class AndroidBrowserRtcPeer(
             credit.sent(sequence, bytes.size, System.nanoTime())
         }
         var offset = 0
+        var previousBuffered = Long.MAX_VALUE
         while (offset < bytes.size && !closed.get()) {
             val channel = requireNotNull(channels[label])
             while (!closed.get()) {
+                val buffered = synchronized(nativeLock) { if (closed.get()) 0 else channel.bufferedAmount() }
+                if (buffered < previousBuffered) deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(6)
+                previousBuffered = buffered
                 val busy = synchronized(nativeLock) { !closed.get() &&
-                    (channel.bufferedAmount() > 256 * 1024 || controlPending.get() > 0 ||
-                        (channels["control"]?.bufferedAmount() ?: 0) > 0) }
+                    (buffered > 256 * 1024 || controlPending.get() > 0 || (channels["control"]?.bufferedAmount() ?: 0) > 0) }
                 if (!busy) break
                 check(System.nanoTime() < deadline) { "transport-buffer-timeout" }
                 synchronized(wake) { if (!closed.get()) wake.wait(10) }
@@ -345,6 +392,7 @@ private class AndroidBrowserRtcPeer(
                 check(!closed.get() && channel.send(DataChannel.Buffer(fragment, true))) { "transport-send" }
             }
             offset += count
+            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(6)
         }
         check(offset == bytes.size) { "peer-closed" }
         records.incrementAndGet()
@@ -354,9 +402,9 @@ private class AndroidBrowserRtcPeer(
         if (closed.get()) return
         val now = System.nanoTime()
         val reason = synchronized(wake) {
-            if (credits.values.any { it.oldestAgeMillis(now) > 6_000 }) "consumer-stalled"
+            if (credits.values.any { it.noProgressMillis(now) > 6_000 }) "consumer-stalled"
             else if (now - created > TimeUnit.SECONDS.toNanos(15) &&
-                (!everConnected || !channelStarted.containsAll(setOf("video", "audio", "control")))) "peer-open-timeout"
+                (!authenticated || !everConnected || !channelStarted.containsAll(setOf("video", "audio", "control")))) "peer-open-timeout"
             else if (disconnectedSince?.let { now - it > TimeUnit.SECONDS.toNanos(6) } == true) "ice-disconnected-timeout"
             else null
         }
@@ -365,9 +413,20 @@ private class AndroidBrowserRtcPeer(
 
     override fun snapshot(): Map<String, Any?> = synchronized(wake) {
         mapOf("transport" to BrowserRtcProtocol.NAME, "epoch" to epoch, "state" to state,
-            "live" to live, "records" to records.get(), "videoInFlightBytes" to credits["video"]?.bytes,
+            "live" to live, "authenticated" to authenticated, "records" to records.get(), "videoInFlightBytes" to credits["video"]?.bytes,
             "audioInFlightBytes" to credits["audio"]?.bytes,
-            "oldestAgeMs" to credits.values.maxOf { it.oldestAgeMillis(System.nanoTime()) })
+            "oldestAgeMs" to credits.values.maxOf { it.oldestAgeMillis(System.nanoTime()) },
+            "noProgressMs" to credits.values.maxOf { it.noProgressMillis(System.nanoTime()) },
+            "networkMode" to "kernel-interfaces", "ready" to (authenticated && connected), "closed" to closed.get(),
+            "video" to creditSnapshot("video"), "audio" to creditSnapshot("audio"))
+    }
+
+    private fun creditSnapshot(label: String): Map<String, Any?> {
+        val credit = requireNotNull(credits[label])
+        return mapOf("receiverWindowBytes" to if (label == "video") BrowserRtcProtocol.VIDEO_WINDOW else BrowserRtcProtocol.AUDIO_WINDOW,
+            "receiverReservedBytes" to credit.reservedBytes, "receiverConsumedBytes" to credit.consumedBytes,
+            "receiverInFlightBytes" to credit.bytes, "oldestUnackedAgeMs" to credit.oldestAgeMillis(System.nanoTime()),
+            "noProgressMs" to credit.noProgressMillis(System.nanoTime()))
     }
 
     private fun failed(stage: String, error: Exception) {
@@ -397,6 +456,11 @@ private class AndroidBrowserRtcPeer(
         state = "closed"
         val evidence = snapshot()
         log("Browser RTC: stage=close epoch=$epoch reason=$reason videoInFlightBytes=${evidence["videoInFlightBytes"]} audioInFlightBytes=${evidence["audioInFlightBytes"]} oldestAgeMs=${evidence["oldestAgeMs"]} records=${records.get()}")
+        for (label in listOf("video", "audio")) {
+            val credit = synchronized(wake) { creditSnapshot(label) }
+            log("Browser RTC: stage=close-credit epoch=$epoch channel=$label reason=$reason " +
+                credit.entries.joinToString(" ") { "${it.key}=${it.value}" })
+        }
         videoSubscription?.close()
         audioSubscription?.close()
         synchronized(wake) { wake.notifyAll() }

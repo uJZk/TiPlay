@@ -6,9 +6,9 @@
  * TiPlay browser link: direct reliable DataChannels carry compressed video and independent audio.
  * WebCodecs and Canvas run in the decoder worker when supported. */
 import {
-  DEFAULT_HOST, PROTOCOL, addressSpaceFor, backoffDelay, choosePath, createControlOutbox, createTouchSlots,
+  DEFAULT_HOST, abortable, addressSpaceFor, backoffDelay, choosePath, createControlOutbox, createTouchSlots,
   isCode, linkFromAddress, linkLocation, mapPoint, newSessionId, normalizeHost, supportedCodecs,
-  timeoutSignal, viewportFor,
+  viewportFor,
 } from './link.js';
 import { APP_VERSION } from './app-version.js';
 import { createLocationNotice } from './location-notice.js';
@@ -18,6 +18,9 @@ import { probeMirrorCapabilities, probeMirrorAudioFormats } from './airplay-capa
 import { createReconnectOverlay } from './reconnect.js';
 import { pumpChunkStream } from './transport.js';
 import { createRtcMediaTransport, RTC_TRANSPORT } from './webrtc-transport.js';
+import { authenticateRtcOffer } from './rtc-pairing.js';
+import { rtcFailureSummary } from './rtc-diagnostics.js';
+import { createVideoDiagnosticTracker, safeSenderDiagnostics } from './video-diagnostics.js';
 import { formatPerformanceMonitor, performanceStats } from './fps-window.js';
 import { createClockEstimator } from './clock-sync.js';
 import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from './media-timing.js';
@@ -25,10 +28,36 @@ import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
 import { createAirPlayTrustNotification } from './airplay-trust.js';
 import { createBrowserNotice } from './browser-notice.js';
-import { browserDiagnosticEvents } from './browser-diagnostics.js';
+import { browserDiagnosticEvents, PAGE_VERSION } from './browser-diagnostics.js';
 
 const STRINGS = {
   en: {
+    rtcLocalIce: 'Preparing this browser’s direct connection…',
+    rtcPairing: 'Contacting Android and verifying the pairing code…',
+    rtcRemoteIce: 'Android verified. Opening the direct data channels…',
+    rtcAuth: 'Data channels open. Authenticating the media session…',
+    rtcConnected: 'Connection established. Preparing playback…',
+    rtcCandidates: 'Candidate totals: browser {0}, Android {1}.',
+    rtcBrowserClasses: 'Browser: {0}.',
+    rtcAndroidClasses: 'Android: {0}.',
+    rtcPrivateIpv4: 'private IPv4',
+    rtcCgnatIpv4: 'CGNAT IPv4',
+    rtcLinkLocal: 'link-local IPv4',
+    rtcStates: 'ICE {0}, peer {1}; DC video/audio/control {2}/{3}/{4}.',
+    rtcAndroidNoCandidates: 'Android’s answer contains no ICE candidates; no Android candidate is available for the direct connection.',
+    rtcFetch: 'Cannot reach the Android HTTP service. Check the address and local-network permission.',
+    rtcMissingInterface: 'Android has no WebRTC pairing interface. Check that the matching test APK is installed.',
+    rtcAndroidSignaling: 'Android could not prepare the WebRTC connection. Check its diagnostic report.',
+    rtcPairingFailed: 'The phone’s pairing verification failed. Re-enter the current pairing code.',
+    rtcBadResponse: 'Android returned an invalid pairing response.',
+    rtcIceFailed: 'The direct ICE/data-channel connection failed.',
+    rtcUnsupported: 'This browser does not provide WebRTC data channels.',
+    rtcConnectionFailed: 'The connection failed at this stage.',
+    rtcLocalTimeout: 'The browser’s local ICE candidate collection timed out.',
+    rtcPairingTimeout: 'Contacting and verifying Android timed out.',
+    rtcRemoteTimeout: 'Android was verified, but opening ICE/data channels timed out.',
+    rtcAuthTimeout: 'The data channels opened, but session authentication timed out.',
+    rtcRetryDetail: '{0} Last stage: {1} Retrying in {2} s…',
     heading: 'Connect to TiPlay',
     intro: 'Connect this screen and your Android device to the same network. Enter the code shown in TiPlay to display CarPlay.',
     codeLabel: 'Pairing code',
@@ -82,6 +111,32 @@ const STRINGS = {
     invalidHost: 'Enter an IPv4 address with port, for example 169.254.111.111:8080.',
   },
   zh: {
+    rtcLocalIce: '正在准备车机浏览器的直连候选地址…',
+    rtcPairing: '正在联系安卓端并验证配对码…',
+    rtcRemoteIce: '安卓端已通过验证，正在建立 ICE / 数据通道…',
+    rtcAuth: '数据通道已打开，正在认证媒体会话…',
+    rtcConnected: '连接已建立，正在准备播放…',
+    rtcCandidates: '候选总数：浏览器 {0}，安卓端 {1}。',
+    rtcBrowserClasses: '浏览器分类：{0}。',
+    rtcAndroidClasses: '安卓分类：{0}。',
+    rtcPrivateIpv4: '私有 IPv4',
+    rtcCgnatIpv4: 'CGNAT IPv4',
+    rtcLinkLocal: '链路本地 IPv4',
+    rtcStates: 'ICE {0}，Peer {1}；DC 视频/音频/控制 {2}/{3}/{4}。',
+    rtcAndroidNoCandidates: '安卓端响应中没有 ICE 候选，当前没有可用于直连的安卓候选。',
+    rtcFetch: '无法访问安卓端 HTTP 服务，请检查地址和本地网络访问权限。',
+    rtcMissingInterface: '安卓端缺少 WebRTC 配对接口，请确认安装了配套测试 APK。',
+    rtcAndroidSignaling: '安卓端未能准备 WebRTC 连接，请查看安卓端诊断报告。',
+    rtcPairingFailed: '安卓端的配对校验未通过，请重新输入当前配对码。',
+    rtcBadResponse: '安卓端返回了无效的配对响应。',
+    rtcIceFailed: 'ICE / 数据通道直连失败。',
+    rtcUnsupported: '此浏览器未提供 WebRTC 数据通道。',
+    rtcConnectionFailed: '连接在此阶段失败。',
+    rtcLocalTimeout: '浏览器收集本机 ICE 候选地址超时。',
+    rtcPairingTimeout: '联系安卓端或验证配对超时。',
+    rtcRemoteTimeout: '安卓端已验证，但建立 ICE / 数据通道超时。',
+    rtcAuthTimeout: '数据通道已打开，但媒体会话认证超时。',
+    rtcRetryDetail: '{0} 最后阶段：{1} {2} 秒后重试…',
     heading: '连接 TiPlay',
     intro: '让这块屏幕与安卓端连接同一网络，输入 TiPlay 显示的配对码，即可显示 CarPlay。',
     codeLabel: '配对码',
@@ -179,7 +234,9 @@ showLink();
 const slots = createTouchSlots();
 let session = null, active = false, phase = 'ready', notice = null;
 let attempt = 0, reconnects = 0, retryTimer = null, retryAt = 0, streamId = 0, videoAbort = null, lastError = null;
-let retryCountdownTimer = null, rtcMedia = null;
+let retryCountdownTimer = null, rtcMedia = null, rtcProgress = null, resourceToken = null;
+let controlClock = null;
+const controlWaiters = new Set(), videoDiagnosticTracker = createVideoDiagnosticTracker();
 let config = null, live = false, status = null, unsupported = null, videoStats = {};
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 const locationNotice = createLocationNotice($('location-notice'), lang);
@@ -214,17 +271,17 @@ const browserAudio = createBrowserAudio({
   onQueued: mode => timingFor(mode).started(),
   onAudioReference: reference => sink?.audio(reference),
   onSourceDeadline: () => reportDiagnostics(),
-  fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }),
+  fetchPhone: phoneFetch, credentials: () => ({ code: resourceToken, session }),
 });
 mediaTiming = timingFor('carplay');
 // Pairing, touching CarPlay and using page controls already provide activation.
 // Resume playback on ordinary page gestures when autoplay is restricted.
 document.addEventListener('pointerdown', () => browserAudio.gesture(), { capture: true, passive: true });
 document.addEventListener('keydown', () => browserAudio.gesture(), { capture: true });
-const airplayControls = createAirPlayControls($('stage'), event => outbox?.push(event), lang, { fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }), host: () => link.host });
+const airplayControls = createAirPlayControls($('stage'), event => outbox?.push(event), lang, { fetchPhone: phoneFetch, credentials: () => ({ code: resourceToken, session }), host: () => link.host });
 const airplayTrust = createAirPlayTrustNotification($('airplay-trust'), event => outbox?.push(event), lang);
 browserAudio.start();
-let movePending = false, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
+let movePending = false, moveGeneration = 0, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
 let statsVisible = false;
 try { statsVisible = localStorage.getItem(STATS_KEY) === '1'; } catch (_) {}
 
@@ -420,12 +477,8 @@ function start() {
   fitRequestedAt = 0;
   $('panel').hidden = true;
   stage.hidden = false;
-  const ownerSession = session;
-  outbox = createControlOutbox({ send: (q, events) => postControl(q, events, ownerSession), heldContacts: () => slots.contacts(), onStatus: applyStatus, onError: controlFailed });
-  reportAppearance();
-  heartbeatTimer = setInterval(() => outbox.heartbeat(), 400);
+  // Pairing and media authentication complete before any application control can be sent.
   statsTimer = setInterval(reportDiagnostics, 5000);
-  outbox.heartbeat();
   resizeCanvas();
   scheduleViewport();
   keepScreenOn();
@@ -447,6 +500,8 @@ function stop(key = null, ...args) {
   clearInterval(statsTimer);
   videoAbort?.abort();
   rtcMedia?.close();
+  resourceToken = null; controlClock = null;
+  for (const waiter of controlWaiters) waiter.reject(new Error('Browser control owner retired.')); controlWaiters.clear();
   sink?.stop();
   cancelMove();
   slots.releaseAll();
@@ -463,13 +518,14 @@ function stop(key = null, ...args) {
 }
 
 function sendBye() {
-  phoneFetch('/bye', { method: 'POST', body: JSON.stringify({ c: link.code, s: session }), keepalive: true }).catch(() => {});
+  rtcMedia?.bye().catch(() => {});
+  if (resourceToken) phoneFetch('/bye', { method: 'POST', body: JSON.stringify({ c: resourceToken, s: session }), keepalive: true }).catch(() => {});
 }
 
 async function connectVideo() {
   const id = ++streamId;
   rtcMedia?.close();
-  rtcMedia = null;
+  rtcMedia = null; resourceToken = null; controlClock = null; rtcProgress = null;
   sink?.stop();
   clearTimeout(retryTimer);
   clearInterval(retryCountdownTimer);
@@ -479,47 +535,26 @@ async function connectVideo() {
   render();
   const ownerSession = session;
   const abort = videoAbort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), 18000); // includes direct ICE and both peers' candidate gathering
+  const timer = setTimeout(() => abort.abort(), 40000); // includes direct ICE and both peers' candidate gathering
   try {
     const clockEstimator = createClockEstimator();
-    const clockStart = performance.timeOrigin + performance.now();
-    const helloResponse = await phoneFetch('/hello', { signal: abort.signal });
-    if (!helloResponse.ok) throw await httpError(helloResponse);
-    const hello = await helloResponse.json();
-    if (id !== streamId) return;
-    const clock = clockEstimator.observe(hello.clockMs, clockStart, performance.timeOrigin + performance.now());
-    if (hello.app !== 'TiPlay' || hello.protocol !== PROTOCOL) {
-      clearTimeout(timer);
-      stop('protocol');
-      return;
-    }
-    await codecsReady;
+    await abortable(codecsReady, abort.signal);
     if (id !== streamId) return;
     if (!sink) {
       clearTimeout(timer);
       stop('noVideo', videoPath.reason);
       return;
     }
-    // The first hello can finish before asynchronous worker setup creates the sink.
-    sink.clock(clock); browserAudio.clock(clock);
+    // Source timing remains unknown until the authenticated channel provides a clock sample.
+    sink.clock(null); browserAudio.clock(null);
     for (const [mode, timing] of mediaTimings) { timing.reset(); timing.mode(mode); }
     mediaTiming = timingFor('carplay');
-    if (hello.transport !== RTC_TRANSPORT) {
-      clearTimeout(timer);
-      stop('protocol');
-      return;
-    }
     let opened = false;
     const media = rtcMedia = createRtcMediaTransport({
       signal: abort.signal,
       credentials: () => ({ code: link.code, session: ownerSession }),
-      exchange: async offer => {
-        const response = await phoneFetch('/rtc', {
-          method: 'POST', body: JSON.stringify({ c: link.code, s: ownerSession, offer }), signal: abort.signal,
-        });
-        if (!response.ok) throw await httpError(response);
-        return response.json();
-      },
+      exchange: offer => authenticateRtcOffer({ fetchPhone: phoneFetch, session: ownerSession, code: link.code, offer, signal: abort.signal }),
+      onProgress: progress => { if (id === streamId && !abort.signal.aborted) { rtcProgress = progress; render(); } },
       onError: error => {
         if (!opened || abort.signal.aborted || id !== streamId) return;
         lastError = error;
@@ -531,30 +566,19 @@ async function connectVideo() {
     clearTimeout(timer);
     if (id !== streamId || abort.signal.aborted) { media.close(); return; }
     opened = true;
+    resourceToken = media.resourceToken();
+    const sample = media.clockSample();
+    const clock = clockEstimator.observe(sample.serverMs, sample.started, sample.ended);
+    sink.clock(clock); browserAudio.clock(clock);
+    controlClock = { media, estimator: clockEstimator };
     sink.open(id, media.video, abort.signal);
-    browserAudio.attach(abort.signal, hello, () => media.openAudio());
-    if (Number.isFinite(hello.clockMs)) {
-      let busy = false;
-      const clockTimer = setInterval(async () => {
-        if (busy || abort.signal.aborted) return;
-        busy = true;
-        try {
-          for (let probe = 0; probe < 3; probe++) {
-            const start = performance.timeOrigin + performance.now();
-            const response = await phoneFetch('/hello', { signal: abort.signal });
-            if (!response.ok) break;
-            const hello = await response.json();
-            clockEstimator.observe(hello.clockMs, start, performance.timeOrigin + performance.now());
-          }
-          if (!abort.signal.aborted && id === streamId) {
-            const estimate = clockEstimator.snapshot();
-            if (estimate) { sink?.clock(estimate); browserAudio.clock(estimate); }
-          }
-        } catch (_) { /* Expired clock samples produce unavailable presentation offsets, never guessed values. */ }
-        finally { busy = false; }
-      }, 5000);
-      abort.signal.addEventListener('abort', () => clearInterval(clockTimer), { once: true });
+    browserAudio.attach(abort.signal, media.hello(), () => media.openAudio());
+    if (!outbox) {
+      outbox = createControlOutbox({ maxInFlight: 8, send: (q, events) => postControl(q, events, ownerSession), heldContacts: () => slots.contacts(), onStatus: applyStatus, onError: controlFailed });
+      heartbeatTimer = setInterval(() => outbox?.heartbeat(), 400);
     }
+    for (const waiter of controlWaiters) waiter.resolve(); controlWaiters.clear();
+    outbox.heartbeat();
     reportAppearance();
     phase = 'waiting';
     // A phone that restarted while this page stayed open has forgotten the viewport; repeat it once per stream.
@@ -606,14 +630,21 @@ function scheduleRetry(delay) {
 }
 
 async function postControl(q, events, ownerSession = session) {
-  if (!active || session !== ownerSession) throw new Error('Browser control owner retired.');
-  const media = rtcMedia;
-  if (media?.isConnected()) return media.control(q, locationEvents(events));
-  const response = await phoneFetch('/control', {
-    method: 'POST', body: JSON.stringify({ c: link.code, s: ownerSession, q, e: locationEvents(events) }), signal: timeoutSignal(3000),
-  });
-  if (!response.ok) throw await httpError(response);
-  return response.json();
+  const assertOwner = () => { if (!active || session !== ownerSession) throw new Error('Browser control owner retired.'); };
+  assertOwner();
+  let media = rtcMedia;
+  while (!media?.isConnected()) {
+    await new Promise((resolve, reject) => controlWaiters.add({ resolve, reject }));
+    assertOwner(); media = rtcMedia;
+  }
+  const started = performance.timeOrigin + performance.now();
+  const result = await media.control(q, locationEvents(events));
+  assertOwner();
+  if (media === rtcMedia && controlClock?.media === media) {
+    const clock = controlClock.estimator.observe(result.clockMs, started, performance.timeOrigin + performance.now());
+    if (clock) { sink?.clock(clock); browserAudio.clock(clock); }
+  }
+  return result;
 }
 
 function applyStatus(next) {
@@ -703,6 +734,39 @@ function renderStats() {
   $('stats').textContent = formatPerformanceMonitor(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats);
 }
 
+function rtcStageText(stage) {
+  const key = { 'local-ice': 'rtcLocalIce', pairing: 'rtcPairing', 'remote-ice': 'rtcRemoteIce',
+    'dc-auth': 'rtcAuth', connected: 'rtcConnected' }[stage];
+  return t(key ?? 'connecting');
+}
+
+function rtcCandidateText(value) {
+  if (!value || !Number.isInteger(value.localCandidates) || !Number.isInteger(value.remoteCandidates)) return '';
+  const pieces = [t('rtcCandidates', value.localCandidates, value.remoteCandidates)];
+  const categories = [['UdpCandidates', 'UDP'], ['TcpCandidates', 'TCP'], ['PrivateIpv4Candidates', t('rtcPrivateIpv4')],
+    ['CgnatIpv4Candidates', t('rtcCgnatIpv4')], ['LinkLocalCandidates', t('rtcLinkLocal')], ['Ipv6Candidates', 'IPv6'], ['MdnsCandidates', 'mDNS']];
+  for (const [prefix, key] of [['local', 'rtcBrowserClasses'], ['remote', 'rtcAndroidClasses']]) {
+    const nonzero = categories.filter(([field]) => value[prefix + field] > 0)
+      .map(([field, label]) => `${label}:${value[prefix + field]}`);
+    if (nonzero.length) pieces.push(t(key, nonzero.join(', ')));
+  }
+  if (value.iceState || value.connectionState) pieces.push(t('rtcStates', value.iceState ?? '—', value.connectionState ?? '—',
+    value.videoChannelState ?? '—', value.audioChannelState ?? '—', value.controlChannelState ?? '—'));
+  if (['remote-ice', 'dc-auth', 'connected'].includes(value.stage) && value.remoteCandidates === 0) pieces.push(t('rtcAndroidNoCandidates'));
+  return pieces.join(' ');
+}
+
+function rtcRetryText(error, seconds) {
+  const failure = rtcFailureSummary(error);
+  let key = { fetch: 'rtcFetch', 'missing-interface': 'rtcMissingInterface', 'android-signaling': 'rtcAndroidSignaling',
+    pairing: 'rtcPairingFailed', 'bad-response': 'rtcBadResponse', ice: 'rtcIceFailed', unsupported: 'rtcUnsupported' }[failure.reason];
+  if (failure.reason === 'timeout') key = { 'local-ice': 'rtcLocalTimeout', pairing: 'rtcPairingTimeout',
+    'remote-ice': 'rtcRemoteTimeout', 'dc-auth': 'rtcAuthTimeout' }[failure.stage];
+  const detail = t('rtcRetryDetail', t(key ?? 'rtcConnectionFailed'), rtcStageText(failure.stage), seconds);
+  const candidates = rtcCandidateText(failure);
+  return candidates ? `${detail} ${candidates}` : detail;
+}
+
 function statusText() {
   if (!active) {
     if (notice?.key === 'noVideo') return t('pictureUnavailable');
@@ -710,9 +774,14 @@ function statusText() {
     return t(link.code ? 'ready' : 'enterCode');
   }
   if (unsupported) return t('pictureUnavailable');
-  if (phase === 'connecting') return t('connecting');
+  if (phase === 'connecting') {
+    if (!rtcProgress) return t('connecting');
+    const candidates = rtcCandidateText(rtcProgress), text = rtcStageText(rtcProgress.stage);
+    return `${PAGE_VERSION} · ${candidates ? `${text} ${candidates}` : text}`;
+  }
   if (phase === 'retry') {
     const seconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
+    if (lastError?.status !== 429 && (lastError?.rtcReason || lastError?.rtcDiagnostic)) return `${PAGE_VERSION} · ${rtcRetryText(lastError, seconds)}`;
     return t(lastError?.status === 429 ? 'throttled' : lastError ? 'unreachable' : 'lost', seconds);
   }
   const playback = status?.airplay;
@@ -739,15 +808,16 @@ function statusText() {
 }
 
 function reportDiagnostics() {
-  for (const event of browserDiagnosticEvents(pageStats(), appearance.matches, status?.debug === true, status?.debugSession)) outbox?.push(event, 'latest');
+  for (const event of browserDiagnosticEvents(pageStats(), appearance.matches, status?.debug === true, status?.debugSession, videoDiagnosticTracker)) outbox?.push(event, 'latest');
 }
 
 function pageStats() {
   return {
     themeDark: appearance.matches,
-    link: { path: videoPath.path, fallback: videoPath.reason, codecs: probedCodecs, phase, attempt, reconnects, live, unsupported, errorReason: lastError?.reason ?? null },
+    link: { path: videoPath.path, fallback: videoPath.reason, codecs: probedCodecs, phase, attempt, reconnects, live, unsupported, errorReason: lastError?.reason ?? lastError?.rtcReason ?? null, connection: rtcProgress, failure: lastError ? rtcFailureSummary(lastError) : null },
     transport: rtcMedia?.stats() ?? null,
     video: videoStats,
+    sender: safeSenderDiagnostics(status?.phone?.rtc),
     audio: browserAudio.stats(),
     control: outbox?.stats() ?? null,
   };
@@ -763,7 +833,7 @@ Object.defineProperty(window, 'tiplayStats', { configurable: true, get: () => JS
 
 // Touch: one overlay element over the picture, which keeps the aspect of the negotiated CarPlay canvas.
 function cancelMove() {
-  movePending = false;
+  movePending = false; moveGeneration++;
 }
 
 function releaseTouches() {
@@ -797,8 +867,9 @@ function pointerMove(pointerId, clientX, clientY) {
   setInteraction(true);
   if (movePending) return;
   movePending = true;
-  requestAnimationFrame(() => {
-    if (!movePending) return;
+  const generation = ++moveGeneration;
+  queueMicrotask(() => {
+    if (!movePending || generation !== moveGeneration) return;
     movePending = false;
     if (slots.size) outbox?.push({ k: 't', p: slots.contacts() }, 'move');
   });

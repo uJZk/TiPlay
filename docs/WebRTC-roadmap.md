@@ -4,15 +4,18 @@
 
 正式网页媒体入口已改为可靠有序 WebRTC DataChannel，不再静默回退到 HTTP
 媒体流。安卓正式产品关闭旧 `/video`、`/audio` 入口，旧缓存网页不在验收范围。
-`/control` 仅在 DataChannel 就绪前承担启动/状态上报。安卓只做接收、解密、配置/AU 整理和分片，车端网页复用 WebCodecs
+HTTP 只保留 SRP 配对、公开发现和随机 bearer 资源读取/退出；控制只走已认证 DataChannel。安卓只做接收、解密、配置/AU 整理和分片，车端网页复用 WebCodecs
 与 Canvas；视频永不二次编码。AirPlay 镜像与普通音频复用同一传输，URL
 投屏保留资源读取/解复用路径，使用共享投屏播放策略。
 
 协议、资源和信任边界见 [DataChannel 契约](CarPlay-DataChannel.md)。当前代码
-不等于已发布 APK，也不等于实车验收通过。用户已确认的 **D 可以播放** 仍然
-只是同一车浏览器内 WebRTC 接收视频轨 → Processor → VideoFrame → Canvas
-的本机合成源证据。它不能替代安卓到车端 ICE、实际硬解、换挡持续播放、
-真实 CarPlay 或物理时延测量。
+不等于已发布 APK，也不等于实车验收通过。先前 **D 可以播放** 是同一车浏览器内 WebRTC 接收视频轨 → Processor → VideoFrame → Canvas
+的本机合成源证据。它不能替代实际硬解、换挡持续播放或物理时延测量。此前 beta.2/v70 已有
+用户确认的真实 CarPlay 播放，beta.3/v71 已记录电脑 host↔host UDP；这些旧版
+观察仍不代表当前整合版已通过设备验收。正式页面覆盖
+<https://ujzk.github.io/TiPlay/>，删除独立 `/webrtc/` 子站，不留别名或重定向；
+APK 默认使用正式根页。目标为 0.2.20-beta.6/code48、网页 v72，最终发布状态以
+[构建记录](Build.md#beta-release)为准。
 
 ## 四场景播放策略
 
@@ -36,9 +39,10 @@ NTP 锚点不确定度尚未在线格式中单独传递，`within-bound` 只表�
 
 ## 传输与资源约束
 
-- `POST /rtc` 复用配对、浏览器所有权和退役语义，交换完整 offer/answer。
+- `/rtc/pair/start` 与 `/rtc/pair/finish` 使用 SRP-6a 双向证明和会话密钥
+  绑定完整 offer/answer SDP；四位码不在 HTTP 信令中传送。保留浏览器所有权与退役语义。
   `control`、`video`、`audio` 均 reliable ordered，不设部分可靠重传限制。
-- 安卓依赖固定 `io.github.webrtc-sdk:android:144.7559.12`；已核查四 ABI、
+- 安卓依赖固定 `io.github.webrtc-sdk:android:150.7871.01`；已核查四 ABI、
   最低 API、实际 AAR 与许可证，见 [第三方说明](Third-party-notices.md)。
 - 媒体只走直连 host ICE，无公共 STUN/TURN 或互联网媒体中转。分片最多
   16 KiB（含 24 字节头），保留传输 epoch、record sequence、完整长度和偏移；
@@ -71,12 +75,18 @@ flush；存储失败记录首末时间与来源，不能把 flush 当成断电�
 日志无法证明应用读取前的丢包、不可观测的硬解选择、GPU/面板扫描或真实
 扬声器输出，也不能承诺解释所有理论上的硬件/系统错误。
 
-## 信任边界
+## 配对与信任边界
 
-HTTPS 页保护静态资源并提供安全上下文；DataChannel 通过 DTLS 加密。现有
-短配对码经局域网 HTTP 传递，只保留原先的可信局域网授权边界，**尚未提供
-抗主动中间人替换指纹的可信信令绑定**。不得把 DTLS 本身或配对成功写成
-设备身份已经得到密码学认证。可信 bootstrap/成熟认证方案仍列为工程后续。
+HTTPS 页保护静态代码并提供安全上下文。四位码通过 SRP-6a 双向证明使用，
+而不是在 HTTP 中发送；浏览器验证服务器证明及完整 SDP 的会话密钥 HMAC 后
+才应用 answer，DTLS 指纹包含在该认证绑定中。Tesla 手工输入地址与四位码
+即可，不需要剪贴板、长指纹或新的车端应用。单次 challenge、在线猜测锁定、
+未认证 peer 与会话数量/超时限制仍然必要，不能把 PAKE 写成可防止拒绝服务。
+AirPlay HTTP 资源的随机会话 bearer 从加密控制通道发放；HTTP 资源本身仍有
+局域网机密性限制。SRP 验证后仍须在 DTLS 控制通道完成 `{k:'auth',q,s,c}`，才释放媒体和所有权。
+随机资源 bearer 仅随认证成功的加密响应发放，不在 HTTP finish 暴露；
+资源/bye 只用该 token。可信时钟样本来自认证 DC status，公开 `/hello` 不作
+可信时间锚点。媒体与控制不回落到裸码 HTTP 路由。
 
 ## 验证与实车验收
 
@@ -94,6 +104,30 @@ AirPlay 接收/资源取消和日志导出。桌面无硬解时，严格硬件�
 4. 大 AU、丢包重传、持续运动、热负载、后台恢复、接管、触控反复切换、
    AirPlay 镜像/URL/CarPlay 借屏归还与 HFP/SCO 路由。
 5. Debug 存储压力、捕获完整性、故障恢复及原始视频只有一份。
+
+## 保留的实测证据与后续排查
+
+远端 0.2.21-beta.2/v70 的约 72 秒采集覆盖真实 CarPlay HEVC → WebCodecs
+Worker → Canvas；摘要未见 reader 序号缺口、解码错误或 RTC 重连。用户确认
+改用 Shizuku 地址 `100.111.111.111` 后可播放，但地址与接口枚举并非单变量对照，
+不能单独认定某种地址类别或 NetworkMonitor 是根因。换挡与硬解仍未验收。
+
+beta.3/v71 的 Windows Edge 155 测试选中 host↔host UDP。2026-10-20
+13:31:00.195（UTC+08:00）最老未确认记录约 202.41 ms 时触发旧版 RTC
+退休；新订阅至 13:31:06.795 才转交首个 FRAME，约 6.600 秒。40 张源帧
+未进入 reader（28 张处于无订阅窗口，12 张在旧在途记录中）；面板 19 次
+Drops 均为刷新替换，不能拿 reader gaps=0 或面板计数宣称端到端无损。
+
+源帧 771→772 的 PTS/安卓到达间隔为 6083.333/6104.816 ms；860→861
+为 7733.333/7751.066 ms，后一空隙有用户确认的卡住现象。间隔已在 RTC
+发送前出现，但不能因此唯一归因于 iPhone 编码器。独立 `Video source:` /
+`Video source gap:` 摘要、阶段快照与原始输入引用须继续保留，用同设备、
+尺寸和运动负载区分源停供、消费进展、传输退休与刷新替换。
+
+这些是旧实验版的实测问题；当前 TDR1 有限信用/停滞策略与旧 TRC1 的
+200 ms 最老记录保护不同：200 ms 只作诊断，真实消费无进展六秒或容量
+溢出才走恢复边界。仍须重新验证整合后的恢复，不能仅凭重构宣称
+6.6 秒重连或 7.75 秒源停供已在实车消除。原始设备捕获不提交仓库。
 
 ## 保留的车端实验与 TCP 证据
 

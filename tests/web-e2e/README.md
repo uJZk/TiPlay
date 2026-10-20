@@ -32,8 +32,38 @@ All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LA
 | `airplay-photo.mjs` | Actual page CSP, authenticated synthetic EXIF JPEG, native decode/contain fit, ownership, resource reuse and cleanup. |
 | `airplay-audio.mjs` | Actual WebCodecs AAC-LC and CarPlay Opus decoding, nonzero PCM, sample metadata and asynchronous timeline sequence preservation. Prints ALAC/AAC-ELD capability probes; no software fallback is implied. |
 | `media-clock.mjs` | Production CSP, bundled pure JavaScript soxr/AudioWorklet, independent mixed CarPlay/mirror PCM, actual output timestamps, suspend/resume, and main/worker/OffscreenCanvas video timing. Requires H.264 decoding, AudioWorklet, `getOutputTimestamp`, OffscreenCanvas and transferable streams. |
+| `rtc.mjs` | Production four-digit SRP6a pairing with native browser WebCrypto, actual BC 1.79 cross-language vectors and forged-proof/SDP/session rejection. The full run then checks two real Chromium peers with ICE/DTLS/SCTP, byte-exact large-record fragmentation, independent audio consumption and reopen barriers, receive credit, eight concurrent delayed control replies, trusted clock, graceful bye, abort, malformed epochs and bounded signaling timeout. No Android JNI, packet-loss simulation, vehicle hardware decode or physical output proof. |
 
 The Performance monitor check verifies a non-intercepting overlay without replacing the media connection. Current fields are codec, actual last-second draw FPS, latest synchronized Delta and explicit browser discards; five-second offset distributions remain in diagnostics. Fake source times validate the timing path, not iPhone capture-to-display latency. Resize/reconnect checks cover browser layout/reporting, not iPhone replacement-display negotiation.
+
+## DataChannel transport
+
+```sh
+NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/rtc.mjs
+# Runs pairing and tamper checks independently of local ICE connectivity:
+NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/rtc.mjs --pairing-only
+```
+
+This harness uses the production SRP6a helper and four-digit code. Local HTTP
+carries ephemeral PAKE messages and SDP; the code and reusable password hashes
+stay off that link. It checks real Bouncy Castle 1.79 vectors and rejects a wrong
+code, forged server proof, changed binding, offer, answer or session before DTLS
+authorization. Only the subsequent encrypted DataChannel auth releases media and a random
+resource token. The HTTP answer has no resource token. The two endpoints then
+send TDR1 application fragments through actual browser WebRTC and the production
+reassembler. Receive acknowledgements reflect reader consumption; audio reopen
+waits for the matching generation barrier. Server fixtures model Android's
+PAKE, record producer and control replies. No copy/paste or fingerprint entry is
+required. A successful `--pairing-only` run establishes browser PAKE behavior;
+it does not establish successful ICE, DTLS or DataChannel delivery.
+
+Chromium needs permission to enumerate interfaces and open local UDP/TCP sockets.
+The runner grants local-network access, permits loopback candidates and disables
+mDNS obfuscation for this local test; it does not prove vehicle permission prompts,
+Android interface selection or Tesla mDNS policy.
+If the execution container provides no ICE candidates, the check fails and prints
+both peers' gathering/connection states. A timeout in that environment is not
+evidence of successful DataChannel delivery.
 
 ## Media clock and actual browser output
 
@@ -70,6 +100,13 @@ These checks measure browser output-clock estimates and Canvas submission. They
 do not measure acoustic speaker delay, physical panel presentation, vehicle audio
 routes or iPhone negotiation; physical acceptance remains separate.
 
+CarPlay Canvas and audio check independent sender-relative 300 ms ceilings.
+AirPlay mirror Canvas and audio check the same independent 300 ms ceilings;
+audio skew is diagnostic and does not gate video. These bounds cover known
+software clock/output mappings, not unknown upstream capture or physical output.
+Worker hardware-preference probes are reported separately: an unsupported headless configuration is explicitly unavailable,
+without software fallback or a claim of validated CarPlay hardware decoding.
+
 ## Compiled phone API
 
 Use a JDK 17+ (`JAVA` override) and compile the shared classes:
@@ -79,13 +116,14 @@ Use a JDK 17+ (`JAVA` override) and compile the shared classes:
 NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/phone-run.mjs
 ```
 
-`SHARED_CLASSES` overrides the default Gradle class directory. The script finds the matching Kotlin standard-library jar from `gradle/libs.versions.toml` in the Gradle cache; use `KOTLIN_STDLIB` for another location. `PAGE_DIR` overrides `site/play/`. Optional FFmpeg/libx264 generates real Annex-B input (`FFMPEG` override); otherwise the harness builds synthetic SPS/PPS/slices.
+`SHARED_CLASSES` overrides the default Gradle class directory. `BCPROV_JAR` can override the Bouncy Castle dependency discovered in the Gradle cache. The script finds the matching Kotlin standard-library jar from `gradle/libs.versions.toml` in the Gradle cache; use `KOTLIN_STDLIB` for another location. `PAGE_DIR` overrides `site/play/`. Optional FFmpeg/libx264 generates real Annex-B input (`FFMPEG` override); otherwise the harness builds synthetic SPS/PPS/slices.
 
 `RealPhone.java` wires `BrowserOnlyMediaSink` → `WebMediaSink` → `WebVideoHub` to an
 API-only `BrowserLinkServer` with its RTC factory explicitly absent. Node requests
 the retained compatibility `/video` records and `/control` API directly. The
-current production page must show a protocol mismatch and open no compatibility
-media transport. Successful compatibility checks do not establish the Android
+current production page attempts SRP, retains a retry state after the explicit
+`rtc-unavailable` response, and opens no compatibility media transport. The old
+plaintext `/rtc` route remains HTTP 410 even in this fixture. Successful compatibility checks do not establish the Android
 native RTC library, device UDP reachability, hardware decode or physical output.
 
 ## AirPlay media

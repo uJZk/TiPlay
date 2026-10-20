@@ -45,16 +45,9 @@ CarPlay and the CarPlay icon are Apple Inc. marks/assets. This asset is not cove
 - Kotlin standard library — JetBrains; Apache License 2.0.
 - Bouncy Castle 1.79 — The Legion of the Bouncy Castle Inc.; Bouncy Castle license (MIT-style).
 - JmDNS 3.6.3 — JmDNS contributors; Apache License 2.0.
-- WebRTC Android SDK `io.github.webrtc-sdk:android:144.7559.12` — the WebRTC
-  project authors and WebRTC SDKs. The Maven POM declares BSD-3-Clause; the SDK
-  build repository retains an MIT license. Both [WebRTC BSD license](licenses/dependencies/WebRTC-BSD-3-Clause.txt)
-  and [SDK MIT license](licenses/dependencies/WebRTC-SDK-MIT.txt), plus the
-  [WebRTC patent grant](licenses/dependencies/WebRTC-PATENTS.txt), accompany this source.
-  The [SDK release](https://github.com/webrtc-sdk/android/releases/tag/v144.7559.12)
-  corresponds to [WebRTC source `0bbf3dd72c44824f20b06f22b3e0fca133556e12`](https://github.com/webrtc-sdk/webrtc/tree/0bbf3dd72c44824f20b06f22b3e0fca133556e12).
-  Maven Central AAR SHA-256 is `d1564a43a85d0687db51862a590263c6764f9ac8f87e7960b1e9c9f222b898aa`.
-  It contains all four project ABIs and requires API 21 or later; TiPlay retains API 25.
-  It supplies ICE/DTLS/SCTP DataChannels; TiPlay does not create native audio/video tracks.
+- WebRTC Android SDK `io.github.webrtc-sdk:android:150.7871.01` — Chromium M150
+  DataChannels; [binary notices and exact provenance](#android-webrtc-datachannels)
+  are retained in APK assets, including bundled component licenses.
 - geocoordinates-rs 0.14.2 — geocoordinates-rs contributors; MIT OR Apache-2.0. The Android AAR is from [uJZk/geocoordinates-rs](https://github.com/uJZk/geocoordinates-rs/releases/tag/android-v0.14.2), with upstream [justin13888/geocoordinates-rs](https://github.com/justin13888/geocoordinates-rs). Licenses, checksum and artifact provenance are in [shared/libs/geocoordinates](../shared/libs/geocoordinates/README.md).
 - JNA 5.18.1 (Android AAR) — JNA contributors; LGPL-2.1-or-later OR Apache-2.0; used under Apache-2.0 for the geocoordinates UniFFI bindings. [Project](https://github.com/java-native-access/jna/tree/5.18.1), [license selection](licenses/dependencies/JNA-LICENSE.txt) and [Apache-2.0 text](licenses/dependencies/JNA-APACHE-2.0.txt).
 - SLF4J — QOS.ch; MIT license.
@@ -113,3 +106,23 @@ The maneuver PNGs under `shared/src/main/assets/byd-hud-icons` were imported fro
   packages and their integrity are pinned in `scripts/videojs/package-lock.json`.
 - Retained native SpeexDSP 1.2.1 compatibility code: BSD-style licence under
   `shared/src/main/jni/speexdsp/COPYING`. The browser ships no Speex/WASM AEC.
+
+## Android WebRTC DataChannels
+
+The pinned `io.github.webrtc-sdk:android:150.7871.01` AAR supplies Chromium M150
+WebRTC/SCTP, from [webrtc-sdk/android](https://github.com/webrtc-sdk/android/tree/v150.7871.01).
+TiPlay uses reliable ordered DataChannels; it does not create WebRTC native media
+tracks. WebRTC uses BSD-3-Clause, the publisher repository uses MIT, and bundled
+components retain their individual licenses. The unmodified publisher notices,
+source URLs, AAR SHA-256 and ABI sizes are retained under
+[licenses/webrtc](../shared/src/main/assets/licenses/webrtc/PROVENANCE.txt)
+and included in APK assets with binary distributions.
+
+## Browser SRP pairing
+
+The browser vendors `tssrp6a` 3.0.0 for browser SRP-6a arithmetic and WebCrypto
+hashing. Its distributed LICENSE is MIT; the package metadata has an inconsistent
+Apache-2.0 label, retained and disclosed in the vendor provenance. The identity/evidence
+adapter matches the existing Bouncy Castle 1.79 padded proof convention. See
+[vendored license](../site/play/vendor/tssrp6a/LICENSE) and
+[provenance](../site/play/vendor/tssrp6a/README.md).

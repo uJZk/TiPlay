@@ -70,12 +70,12 @@ Public preview for compatible BYD Android head units. Android 7.1+ (API 25) rema
 
 ## Updating and reporting problems
 
-Install the official APK over the previous public release to preserve settings and pairing records. The package remains `com.shihab.diplay`; release packaging verifies the existing signing certificate. Source builds omit runtime authentication assets by default; see [building from source](BUILD.md).
+Install the official APK over the previous public release to preserve settings and pairing records. The package remains `com.shihab.diplay`; release packaging verifies the existing signing certificate. Source builds omit runtime authentication assets by default; see [building from source](Build.md).
 
 Reproduce remaining problems on **0.2.20**, then open **Settings → Diagnostics → Save diagnostic report**. Android 10+ normally saves to **Downloads/DiPlay**; on Android 7.1–9, DiPlay asks for storage access and saves there too. If it is unavailable, follow the save confirmation and use **View report** or **Share**. Review the `.txt` and attach it to a matching [existing issue](https://github.com/shihabal3amri/DiPlay/issues) or [new issue](https://github.com/shihabal3amri/DiPlay/issues/new/choose). Connection reports require the diagnostic log. Reports are not uploaded automatically.
 
 Include car/head unit, Android/DiLink and full firmware, iPhone/iOS, USB or wireless mode, relevant settings, reproduction steps and failure time.
 
-See [validation](VALIDATION.md) for automated checks. No new maintainer vehicle test of the complete release is claimed. The entries marked "Pending in-car acceptance", the music playback-rate adjustment, the call loudspeaker fallback, the wired and car hotspot changes, the dashboard map changes and the experimental options above need current in-car feedback; test optional features while parked.
+See [validation](Testing.md) for automated checks. No new maintainer vehicle test of the complete release is claimed. The entries marked "Pending in-car acceptance", the music playback-rate adjustment, the call loudspeaker fallback, the wired and car hotspot changes, the dashboard map changes and the experimental options above need current in-car feedback; test optional features while parked.
 
 Thanks to the contributors linked in the 34 pull requests above, and to the users supplying diagnostic reports and vehicle feedback.

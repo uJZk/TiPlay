@@ -18,8 +18,8 @@ Start with the [English README](../README.md) or [简体中文](../README.zh-CN.
 - [Settings](Settings.md): drafts, immediate apply and connection recovery.
 - [Geolocation](geolocation.md): browser coordinate evidence, Android conversion and detection and iPhone forwarding.
 - [Testing](Testing.md) and [Todo](Todo.md): automated checks and pending physical acceptance.
-- [CarPlay DataChannel contract](CarPlay-DataChannel.md): reliable WebRTC transport, framing/credit, independent timing and trust boundaries.
-- [WebRTC roadmap](WebRTC-roadmap.md): current implementation, four playback profiles, Shizuku/UDP reachability and remaining physical acceptance.
+- [CarPlay DataChannel contract](CarPlay-DataChannel.md): reliable WebRTC transport, SRP-authenticated SDP binding, framing/credit and independent timing.
+- [WebRTC roadmap](WebRTC-roadmap.md): formal root deployment, four playback profiles, preserved experimental playback/source-cadence evidence and remaining physical acceptance.
 - [Upstream](Upstream.md): dependencies, provenance and merge policy.
 - [Third-party notices](Third-party-notices.md): credits, licenses and experimental authentication data.
 - [README presentation](Readme-presentation.md): bilingual feature list, screenshots, source notes and verification boundaries.

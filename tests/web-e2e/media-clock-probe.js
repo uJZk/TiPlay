@@ -10,7 +10,7 @@ const fail = message => { throw new Error(message); };
 globalThis.__audioProbeReady = true;
 
 globalThis.startAudioProbe = async () => {
-  let audio, videoTimer, controlTimer, frames, presenter;
+  let audio, videoTimer, controlTimer, frames, presenter, mirrorFrames, mirrorPresenter;
   const abort = new AbortController(), nativeContext = globalThis.AudioContext, contexts = [], violations = [];
   addEventListener('securitypolicyviolation', event => violations.push({ directive: event.effectiveDirective, blocked: event.blockedURI }));
   globalThis.AudioContext = class extends nativeContext {
@@ -40,11 +40,13 @@ globalThis.startAudioProbe = async () => {
     const canvas = document.getElementById('picture'), input = document.createElement('canvas');
     input.width = 160; input.height = 90;
     const painter = input.getContext('2d');
-    presenter = createFramePresenter(canvas, { applyTimingPolicy: true, pace: true,
-      onPresent({ at, timing, audioAt }) {
-        if (Number.isFinite(audioAt)) draws.push({ skew: audioAt - at, sourceDelay: at - timing });
-      },
-    });
+    const recordDraw = mode => ({ at, timing, audioAt }) => draws.push({ mode,
+      skew: Number.isFinite(audioAt) ? audioAt - at : null, sourceDelay: Number.isFinite(timing) ? at - timing : null });
+    presenter = createFramePresenter(canvas, { applyTimingPolicy: true, pace: true, onPresent: recordDraw('carplay') });
+    const mirrorCanvas = document.createElement('canvas'); mirrorCanvas.width = 160; mirrorCanvas.height = 90; document.body.append(mirrorCanvas);
+    mirrorPresenter = createFramePresenter(mirrorCanvas, { applyTimingPolicy: true, pace: true, onPresent: recordDraw('airplay-mirror') });
+    mirrorFrames = createTimedFrames((frame, config, id, timing, outputWindow) => mirrorPresenter.present(frame, config, timing, outputWindow));
+    mirrorFrames.delay(constantDelay(60));
     frames = createTimedFrames((frame, config, id, timing, outputWindow) => {
       presenter.present(frame, config, timing, outputWindow);
     });
@@ -59,7 +61,7 @@ globalThis.startAudioProbe = async () => {
         }
       },
       onAudioReference(reference) {
-        presenter.audio(reference); frames.audio(reference);
+        presenter.audio(reference); frames.audio(reference); mirrorPresenter.audio(reference); mirrorFrames.audio(reference);
         for (const probe of workerProbes) probe.audio(reference);
         if (reference) {
           states.push({ mode: reference.mode, state: reference.state, at: performance.now() });
@@ -67,7 +69,8 @@ globalThis.startAudioProbe = async () => {
             if (!debugEnabled) referencesWithoutDebug++;
             reports.push({ mode: reference.mode, method: reference.outputMethod, latencyMs: reference.outputLatencyMs,
               filterDelayMs: reference.filterDelayMs, uncertaintyMs: reference.uncertaintyMs,
-              source: reference.sourceTimeMs, rate: reference.mediaRate });
+              source: reference.sourceTimeMs, rate: reference.mediaRate,
+              sourceDelayMs: reference.audibleTimeMs - (performance.timeOrigin + localOrigin + (reference.sourceTimeMs - sourceOrigin) * rate) });
             if (reference.mode === 'carplay') lastReference = reference;
           }
         }
@@ -112,6 +115,10 @@ globalThis.startAudioProbe = async () => {
     audio.start();
     workerProbes.push(await createWorkerProbe(false, clock()));
     workerProbes.push(await createWorkerProbe(true, clock()));
+    // Keep the production hardware preference. Unavailable native decoders are
+    // reported explicitly; Canvas/audio timing still use real browser outputs.
+    workerProbes.push(await createWorkerProbe(false, clock(), 'carplay'));
+    workerProbes.push(await createWorkerProbe(true, clock(), 'carplay'));
     controlTimer = setInterval(() => { const value = clock(); audio.clock(value); for (const probe of workerProbes) probe.clock(value); }, 100);
     videoTimer = setInterval(() => {
       // The desktop H.264 decoder may retain several frames. Deliver future
@@ -121,6 +128,9 @@ globalThis.startAudioProbe = async () => {
       painter.fillStyle = '#ee9922'; painter.fillRect(sequence % 120, 20, 20, 50);
       const frame = new VideoFrame(input, { timestamp: Math.round(local * 1000) });
       frames.present(frame, { mode: 'carplay', epoch: 1, width: 160, height: 90 }, 1,
+        performance.timeOrigin + local, { sourceTimeMs: rawSourceAt(local), clockGeneration: 1 });
+      mirrorFrames.present(new VideoFrame(input, { timestamp: Math.round(local * 1000) }),
+        { mode: 'airplay-mirror', epoch: 1, width: 160, height: 90 }, 1,
         performance.timeOrigin + local, { sourceTimeMs: rawSourceAt(local), clockGeneration: 1 });
       for (const probe of workerProbes) probe.frame(local, rawSourceAt(local));
     }, 1000 / 30);
@@ -150,31 +160,47 @@ globalThis.startAudioProbe = async () => {
     if (!(diagnosticPeak > .05 && diagnosticNonzero > 1000)) fail('Actual worklet output did not contain the nonzero waveform');
     if (violations.length) fail('Production CSP blocked integration');
     if (audioErrors.length) fail('Audio integration reported errors: ' + audioErrors.join('; '));
-    if (draws.length < 50 || draws.some(value => value.skew < -45 || value.skew > 125 || value.sourceDelay > 0)) {
-      fail('A/V Canvas submission escaped the exact skew/cap window');
+    const outside = value => !Number.isFinite(value.sourceDelay) || value.sourceDelay > 300;
+    const carplayDraws = draws.filter(value => value.mode === 'carplay'), mirrorDraws = draws.filter(value => value.mode === 'airplay-mirror');
+    if (carplayDraws.length < 50 || mirrorDraws.length < 50 || draws.some(outside)) {
+      fail('Canvas submission escaped an independent sender-relative 300ms ceiling');
+    }
+    if (reports.some(value => !Number.isFinite(value.sourceDelayMs) || !Number.isFinite(value.uncertaintyMs) || value.sourceDelayMs + value.uncertaintyMs > 300)) {
+      fail('Audio output exceeded its independent sender-relative 300ms ceiling including uncertainty');
     }
     const workers = workerProbes.map(probe => probe.result());
     for (const result of workers) {
-      if (result.errors.length || !(result.stats?.decoded > 100)) fail('Actual ' + result.mode + ' decode failed: ' + JSON.stringify(result));
+      if (result.errors.length) fail('Actual ' + result.mode + ' worker failed: ' + JSON.stringify(result));
+      if (result.unsupported) continue;
+      if (!(result.stats?.decoded > 100)) fail('Actual ' + result.mode + ' decode failed: ' + JSON.stringify(result));
       if (result.mode === 'offscreen' && !(result.stats?.currentFps > 10)) fail('Actual worker OffscreenCanvas did not draw');
-      if (result.mode === 'transfer' && (result.draws < 50 || result.minSkew < -45 || result.maxSkew > 125)) fail('Actual transferred video violated the A/V window: ' + JSON.stringify(result));
+      if (result.mode === 'transfer' && (result.draws < 50 || result.maxSourceDelay > 300)) {
+        fail('Actual transferred video violated its independent source cap: ' + JSON.stringify(result));
+      }
     }
     globalThis.__audioProbeResult = { done: true, ok: true, browser: navigator.userAgent,
       secureContext: isSecureContext, resamplerCsp: 'production policy, no bypass', outputBeforeSuspend,
       summary: { carplayReferences: primary.length, mixedMirrorReferences: reports.length - primary.length, referencesWithoutDebug,
         peak: diagnosticPeak, nonzero: diagnosticNonzero, draws: draws.length,
-        minSkewMs: Math.min(...draws.map(value => value.skew)), maxSkewMs: Math.max(...draws.map(value => value.skew)),
+        carplayDraws: carplayDraws.length, mirrorDraws: mirrorDraws.length,
+        carplayMaxSourceDelayMs: Math.max(...carplayDraws.map(value => value.sourceDelay)),
+        mirrorMaxSourceDelayMs: Math.max(...mirrorDraws.map(value => value.sourceDelay)),
+        mirrorAudioMaxSourceDelayMs: Math.max(...reports.filter(value => value.mode === 'airplay-mirror').map(value => value.sourceDelayMs + value.uncertaintyMs)),
+        carplayAudioMaxSourceDelayMs: Math.max(...primary.map(value => value.sourceDelayMs + value.uncertaintyMs)),
+        hardwareDecode: workers.map(value => ({ mode: value.mediaMode, path: value.mode,
+          state: value.unsupported ? 'unavailable-on-this-browser' : 'requested-hardware-implementation-unproven' })),
+        minAirplaySkewMs: Math.min(...mirrorDraws.map(value => value.skew)), maxAirplaySkewMs: Math.max(...mirrorDraws.map(value => value.skew)),
         scheduler: frames.stats(), presenter: presenter.stats() },
       states, reports: reports.filter((_, index) => index % 10 === 0), lastReference, workers,
       physicalOutputMeasured: false };
   } catch (error) {
     globalThis.__audioProbeResult = { done: true, ok: false, error: error.stack || String(error),
       violations, audioErrors, states: states.slice(-30), reports: reports.slice(-30),
-      diagnosticPeak, diagnosticNonzero, draws: { count: draws.length, outside: draws.filter(value => value.skew < -45 || value.skew > 125 || value.sourceDelay > 0) }, scheduler: frames?.stats(), presenter: presenter?.stats(), workers: workerProbes.map(probe => probe.result()) };
+      diagnosticPeak, diagnosticNonzero, draws: { count: draws.length, outside: draws.filter(value => !Number.isFinite(value.sourceDelay) || value.sourceDelay > 300) }, scheduler: frames?.stats(), presenter: presenter?.stats(), workers: workerProbes.map(probe => probe.result()) };
   } finally {
     clearInterval(videoTimer); clearInterval(controlTimer); abort.abort(); audio?.dispose();
     for (const timer of packetTimers) clearInterval(timer);
-    frames?.reset(); presenter?.dispose(); globalThis.AudioContext = nativeContext;
+    frames?.reset(); presenter?.dispose(); mirrorFrames?.reset(); mirrorPresenter?.dispose(); globalThis.AudioContext = nativeContext;
     for (const probe of workerProbes) probe.dispose();
   }
 };

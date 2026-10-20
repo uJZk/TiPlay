@@ -480,4 +480,81 @@ class WebVideoHubTest {
         assertEquals(2, calls)
     }
 
+    @Test fun reliableSubscriberDrainsOldCompressedFramesWithoutRetiringAnOtherwiseUsableStream() {
+        begin()
+        hub.configure(owner, VideoCodec.H264, avcc)
+        val subscriber = hub.subscribe(reliable = true)
+        assertEquals(WebVideoRecords.KIND_CONFIG, subscriber.take(0)!!.kind)
+        hub.frame(owner, idr(), 0, now)
+        hub.frame(owner, delta(), 0, now)
+        advance(200)
+        val key = requireNotNull(subscriber.take(0))
+        assertEquals(WebVideoRecords.KIND_FRAME, key.kind)
+        advance(16)
+        hub.frame(owner, delta(), 0, now)
+        val delta = requireNotNull(subscriber.take(0))
+        assertEquals(key.sequence + 1, delta.sequence)
+        assertEquals(0, delta.flags)
+        assertEquals(key.sequence + 2, requireNotNull(subscriber.take(0)).sequence)
+        assertNull(subscriber.endReason)
+        assertEquals(0, subscriber.queue.bytes)
+        assertEquals(2L, hub.snapshot()["overAgeFrames"])
+        assertEquals(216.0, hub.snapshot()["maxQueueAgeMs"])
+        assertEquals(0, hub.snapshot()["queueFrames"])
+    }
+
+    @Test fun reliableSubscriberGetsAnOrderedBoundaryWhenTheProducerChanges() {
+        begin()
+        hub.configure(owner, VideoCodec.H264, avcc)
+        val subscriber = hub.subscribe(reliable = true)
+        subscriber.take(0)
+        hub.frame(owner, idr(), 0, now)
+        val nextOwner = Any()
+        begin(nextOwner)
+        hub.configure(nextOwner, VideoCodec.H264, avcc)
+        val nextPayload = idr()
+        hub.frame(nextOwner, nextPayload, 0, now)
+        // The next source has already produced its only IDR before the writer resumes reading.
+        assertEquals(WebVideoRecords.KIND_FRAME, subscriber.take(0)!!.kind)
+        assertEquals(WebVideoRecords.KIND_IDLE, subscriber.take(0)!!.kind)
+        assertEquals(WebVideoRecords.KIND_CONFIG, subscriber.take(0)!!.kind)
+        assertSame(nextPayload, subscriber.take(0)!!.payload)
+        assertNull(subscriber.endReason)
+    }
+
+    @Test fun aSourceEndKeepsTheSubscriptionForAnImmediatelyAvailableNewPicture() {
+        begin()
+        hub.configure(owner, VideoCodec.H264, avcc)
+        val previous = hub.subscribe(reliable = true)
+        previous.take(0)
+        hub.frame(owner, idr(), 0, now)
+        hub.endStream(owner)
+        val newOwner = Any()
+        begin(newOwner)
+        hub.configure(newOwner, VideoCodec.H264, avcc)
+        val payload = idr()
+        hub.frame(newOwner, payload, 0, now, decodeOnly = true)
+        assertEquals(WebVideoRecords.KIND_FRAME, requireNotNull(previous.take(0)).kind)
+        assertEquals(WebVideoRecords.KIND_IDLE, requireNotNull(previous.take(0)).kind)
+        assertEquals(WebVideoRecords.KIND_CONFIG, requireNotNull(previous.take(0)).kind)
+        val frame = requireNotNull(previous.take(0))
+        assertEquals(WebVideoRecords.KIND_FRAME, frame.kind)
+        assertSame(payload, frame.payload)
+        assertEquals(WebVideoRecords.FLAG_DECODE_ONLY, frame.flags and WebVideoRecords.FLAG_DECODE_ONLY)
+        assertNull(previous.endReason)
+        assertNull(previous.take(0))
+    }
+
+    @Test fun reliableSubscriberOverloadEndsInsteadOfWaitingForAnotherKeyFrame() {
+        begin()
+        hub.configure(owner, VideoCodec.H264, avcc)
+        val subscriber = hub.subscribe(reliable = true)
+        subscriber.take(0)
+        hub.frame(owner, idr(), 0, now)
+        repeat(120) { hub.frame(owner, delta(), 0, now) }
+        assertEquals("reliable-overload", subscriber.endReason)
+        hub.frame(owner, idr(), 0, now)
+        assertEquals("reliable-overload", String(subscriber.take(0)!!.payload))
+    }
+
 }

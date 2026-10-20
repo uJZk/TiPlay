@@ -82,22 +82,26 @@ class ScreenStream(
         var failure: Throwable? = null
         val stats = StreamReceiveStats("video", onDiagnostic)
         try {
-            val input = RawTraffic.input("iphone/ScreenStream/${sock.remoteSocketAddress}/${sock.localPort}/in", sock.getInputStream())
+            val input = RawTraffic.referencedInput("iphone/ScreenStream/${sock.remoteSocketAddress}/${sock.localPort}/in", sock.getInputStream())
             while (!closed.get()) {
                 // Outside all media delivery locks. Gate whole messages, preserving framing/nonce order.
                 if (receiveProbe?.beforeRead(this) == false || closed.get()) break
                 stats.reading()
+                input.beginRange()
                 val header = readFully(input, HEADER_LEN) ?: break
                 val bodySize = readU32Le(header, 0)
                 if (bodySize > MAX_BODY) break
                 val body = readFully(input, bodySize) ?: break
                 val arrivalNanos = System.nanoTime()
                 stats.received(HEADER_LEN + bodySize)
+                if ((header[OPCODE_OFFSET].toInt() and 0xff) == OP_VIDEO_FRAME) {
+                    stats.videoFrame(ScreenCodec.senderNanos(header), arrivalNanos)
+                }
                 if (receiveProbe?.isRunning(this) == true) {
                     val sender = if ((header[OPCODE_OFFSET].toInt() and 0xff) == OP_VIDEO_FRAME) ScreenCodec.senderNanos(header) else null
                     receiveProbe.message(this, HEADER_LEN + bodySize, sender, arrivalNanos, sender?.let(sourceTimeNanos))
                 }
-                onMessage(header, body, stats, arrivalNanos)
+                onMessage(header, body, stats, arrivalNanos, input.endRange())
                 stats.processed()
             }
         } catch (error: Exception) {
@@ -111,7 +115,7 @@ class ScreenStream(
         }
     }
 
-    private fun onMessage(header: ByteArray, body: ByteArray, stats: StreamReceiveStats, arrivalNanos: Long) {
+    private fun onMessage(header: ByteArray, body: ByteArray, stats: StreamReceiveStats, arrivalNanos: Long, reference: RawTraffic.Reference?) {
         when (header[OPCODE_OFFSET].toInt() and 0xff) {
             OP_VIDEO_FRAME -> {
                 val payload = if (body.size >= ScreenCodec.TAG_SIZE) {
@@ -131,7 +135,9 @@ class ScreenStream(
                         "head=${payload.hexPrefix(16)} chacha=${AirPlayCrypto.chachaImplementation}",
                     )
                 }
-                listener.onFrame(ScreenCodec.lengthPrefixedToAnnexB(payload), ScreenCodec.senderNanos(header), arrivalNanos)
+                val annexB = ScreenCodec.lengthPrefixedToAnnexB(payload)
+                RawTraffic.bindVideoReference(annexB, reference)
+                listener.onFrame(annexB, ScreenCodec.senderNanos(header), arrivalNanos)
             }
             OP_VIDEO_CONFIG -> {
                 val config = ScreenCodec.describeConfig(body)

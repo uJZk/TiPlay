@@ -1,5 +1,8 @@
 package com.shilapi.xcertplay.airplay
 
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
+
 /** Receive-thread timing only: no payloads, endpoint addresses, or route data. */
 internal class StreamReceiveStats(
     private val label: String,
@@ -30,6 +33,26 @@ internal class StreamReceiveStats(
     private var decryptBytes = 0L
     private var decryptSumNs = 0L
     private var maxDecryptNs = 0L
+    private val videoSourceId = if (label == "video") videoSources.incrementAndGet() else null
+    private var sourceWindow = 0L
+    private var videoFrames = 0L
+    private var totalVideoFrames = 0L
+    private var previousVideoArrivalNs: Long? = null
+    private var previousVideoSenderNs: Long? = null
+    private var arrivalSteps = 0L
+    private var maxVideoArrivalNs = 0L
+    private var videoArrivalsOver50Ms = 0L
+    private var videoArrivalsOver250Ms = 0L
+    private var ptsPositiveSteps = 0L
+    private var ptsMissing = 0L
+    private var ptsRepeat = 0L
+    private var ptsBackwards = 0L
+    private var minVideoPtsNs: Long? = null
+    private var maxVideoPtsNs = 0L
+    private var sumVideoPtsNs = 0.0
+    private data class VideoGap(val fromFrame: Long, val toFrame: Long, val ptsNs: Long?, val arrivalNs: Long?)
+    private var maxPtsPair: VideoGap? = null
+    private var maxArrivalPair: VideoGap? = null
 
     fun reading() { readStart = nowNs() }
 
@@ -67,6 +90,54 @@ internal class StreamReceiveStats(
         if (timestamp != null) lastTimestamp = timestamp
     }
 
+    /** A complete OP_VIDEO_FRAME body, before decrypt/forward; config and keepalives never call this.
+     * Sender timestamps are NTP-derived; only adjacent values in that same domain are compared.
+     * Arrival timestamps reuse the receive loop's monotonic body-completion time.
+     */
+    fun videoFrame(senderNanos: Long, arrivalNanos: Long) {
+        if (videoSourceId == null) return
+        videoFrames++
+        totalVideoFrames++
+        val ptsInterval = if (senderNanos == 0L) null else previousVideoSenderNs?.let { senderNanos - it }
+        previousVideoArrivalNs?.let { previous ->
+            val interval = arrivalNanos - previous
+            if (interval >= 0L) {
+                arrivalSteps++
+                if (maxArrivalPair == null || interval > maxVideoArrivalNs) {
+                    maxArrivalPair = VideoGap(totalVideoFrames - 1, totalVideoFrames, ptsInterval, interval)
+                    maxVideoArrivalNs = interval
+                }
+                if (interval >= 50_000_000L) videoArrivalsOver50Ms++
+                if (interval >= LONG_READ_NS) videoArrivalsOver250Ms++
+            }
+        }
+        if (senderNanos == 0L) {
+            ptsMissing++
+            previousVideoSenderNs = null
+            previousVideoArrivalNs = arrivalNanos
+            return
+        }
+        previousVideoSenderNs?.let { previous ->
+            val interval = senderNanos - previous
+            when {
+                interval > 0L -> {
+                    ptsPositiveSteps++
+                    minVideoPtsNs = minOf(minVideoPtsNs ?: interval, interval)
+                    if (interval > maxVideoPtsNs) {
+                        maxVideoPtsNs = interval
+                        maxPtsPair = VideoGap(totalVideoFrames - 1, totalVideoFrames, interval,
+                            previousVideoArrivalNs?.let { arrivalNanos - it })
+                    }
+                    sumVideoPtsNs += interval.toDouble()
+                }
+                interval == 0L -> ptsRepeat++
+                else -> ptsBackwards++
+            }
+        }
+        previousVideoSenderNs = senderNanos
+        previousVideoArrivalNs = arrivalNanos
+    }
+
     /** One payload opened in [durationNs]; reported only for streams that call it. */
     fun decrypted(durationNs: Long, size: Int) {
         decryptSamples++
@@ -91,6 +162,11 @@ internal class StreamReceiveStats(
             "windowMs=${(now - windowStart).coerceAtLeast(0) / 1_000_000} " +
             "readsOver250Ms=$readsOver250Ms seqGapAfterReadOver250Ms=$seqGapAfterReadOver250Ms " +
             "seqMissingAfterReadOver250Ms=$seqMissingAfterReadOver250Ms" + decryptSummary()) }
+        if (videoSourceId != null) {
+            sourceWindow++
+            runCatching { report(videoSourceSummary(now, ended)) }
+            runCatching { report(videoSourceGapSummary()) }
+        }
         windowStart = now
         decryptSamples = 0
         decryptBytes = 0
@@ -110,6 +186,56 @@ internal class StreamReceiveStats(
         lastSequenceGap = "none"
         lastSequenceGapAtMs = -1L
         lateOrDuplicate = 0
+        videoFrames = 0
+        arrivalSteps = 0
+        maxVideoArrivalNs = 0
+        videoArrivalsOver50Ms = 0
+        videoArrivalsOver250Ms = 0
+        ptsPositiveSteps = 0
+        ptsMissing = 0
+        ptsRepeat = 0
+        ptsBackwards = 0
+        minVideoPtsNs = null
+        maxVideoPtsNs = 0
+        sumVideoPtsNs = 0.0
+        maxPtsPair = null
+        maxArrivalPair = null
+    }
+
+    private fun videoSourceSummary(now: Long, ended: Boolean): String {
+        val duration = (now - windowStart).coerceAtLeast(0)
+        val fps = if (duration > 0L) String.format(Locale.ROOT, "%.1f", videoFrames * 1e9 / duration) else "unknown"
+        val first = if (videoFrames > 0L) (totalVideoFrames - videoFrames + 1).toString() else "unknown"
+        val last = if (videoFrames > 0L) totalVideoFrames.toString() else "unknown"
+        val ptsMin = minVideoPtsNs?.div(1000)?.toString() ?: "unknown"
+        val ptsMean = if (ptsPositiveSteps > 0L) (sumVideoPtsNs / ptsPositiveSteps / 1000).toLong().toString() else "unknown"
+        val ptsMax = if (ptsPositiveSteps > 0L) (maxVideoPtsNs / 1000).toString() else "unknown"
+        val arrivalMax = if (arrivalSteps > 0L) (maxVideoArrivalNs / 1_000_000).toString() else "unknown"
+        return "Video source: stream=$videoSourceId window=$sourceWindow firstFrame=$first lastFrame=$last " +
+            "frames=$videoFrames fps=$fps windowMs=${duration / 1_000_000} " +
+            "ptsPositiveSteps=$ptsPositiveSteps ptsMissing=$ptsMissing ptsRepeat=$ptsRepeat ptsBackwards=$ptsBackwards " +
+            "ptsMinUs=$ptsMin ptsMeanUs=$ptsMean ptsMaxUs=$ptsMax " +
+            "arrivalSteps=$arrivalSteps arrivalMaxMs=$arrivalMax " +
+            "arrivalOver50Ms=$videoArrivalsOver50Ms arrivalOver250Ms=$videoArrivalsOver250Ms ended=$ended"
+    }
+
+    /** Maxima can belong to different adjacent frames; retain each pair's other clock-domain gap. */
+    private fun videoSourceGapSummary(): String {
+        fun ptsState(gap: VideoGap?): String = when {
+            gap?.ptsNs == null -> "unknown"
+            gap.ptsNs > 0L -> "forward"
+            gap.ptsNs == 0L -> "repeat"
+            else -> "backwards"
+        }
+        fun frame(value: Long?) = value?.toString() ?: "unknown"
+        fun us(value: Long?) = value?.div(1000)?.toString() ?: "unknown"
+        return "Video source gap: stream=$videoSourceId window=$sourceWindow " +
+            "maxPtsFrom=${frame(maxPtsPair?.fromFrame)} maxPtsTo=${frame(maxPtsPair?.toFrame)} " +
+            "maxPtsState=${ptsState(maxPtsPair)} maxPtsGapUs=${us(maxPtsPair?.ptsNs)} " +
+            "maxPtsArrivalGapUs=${us(maxPtsPair?.arrivalNs)} " +
+            "maxArrivalFrom=${frame(maxArrivalPair?.fromFrame)} maxArrivalTo=${frame(maxArrivalPair?.toFrame)} " +
+            "maxArrivalPtsState=${ptsState(maxArrivalPair)} maxArrivalPtsGapUs=${us(maxArrivalPair?.ptsNs)} " +
+            "maxArrivalGapUs=${us(maxArrivalPair?.arrivalNs)}"
     }
 
     private fun Int.toUnsignedLong(): Long = toLong() and 0xffff_ffffL
@@ -121,6 +247,9 @@ internal class StreamReceiveStats(
             "decryptMBps=$mbPerSecond"
     }
 
-    private companion object { const val LONG_READ_NS = 250_000_000L }
+    private companion object {
+        const val LONG_READ_NS = 250_000_000L
+        val videoSources = AtomicLong(0)
+    }
 
 }

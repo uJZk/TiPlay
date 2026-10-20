@@ -28,7 +28,8 @@ if parts.scheme != 'https' or not parts.hostname or parts.query or parts.fragmen
     raise SystemExit(f'SITE_BASE_URL must be an https:// address without a query or fragment, not {SITE_URL!r}')
 BASE = SITE_URL + 'download/'
 REPO = 'https://github.com/uJZk/TiPlay'
-VERSION = '0.2.16'
+# The download page and running product must name the same published release.
+VERSION = app_version
 RELEASE = REPO + '/releases'
 # GitHub /latest excludes prereleases; point to the published version displayed below.
 DOWNLOAD = REPO + '/releases/tag/v' + VERSION

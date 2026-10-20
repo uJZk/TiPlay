@@ -26,6 +26,10 @@ internal class BrowserRtcAudioLease {
 
     @Synchronized fun current(): Lease? = if (enabled) Lease(requireNotNull(generation), revision) else null
     @Synchronized fun owns(lease: Lease): Boolean = enabled && generation == lease.generation && revision == lease.revision
+
+    /** A failed reliable journal cannot be resumed by silently creating another subscription. */
+    @Synchronized fun terminalReason(lease: Lease, subscription: WebAudioHub.Subscription): String? =
+        if (owns(lease) && subscription.closed) subscription.endReason ?: "audio-subscription-closed" else null
 }
 
 /** A whole unsent audio record can be retired before credit admission; a partial record must finish. */

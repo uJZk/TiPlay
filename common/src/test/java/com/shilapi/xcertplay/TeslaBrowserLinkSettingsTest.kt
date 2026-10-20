@@ -93,7 +93,7 @@ class TeslaBrowserLinkSettingsTest {
         val connection = pages.getValue(R.string.connection)
         assertFalse(connection.any { it.startsWith(page) })
         assertTrue(connection.contains(pairing + code))
-        assertTrue(connection.contains("https://ujzk.github.io/TiPlay"))
+        assertTrue(connection.contains(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS.removeSuffix("/")))
         (pages - R.string.connection).values.plusElement(overview).forEach { texts ->
             assertFalse(texts.any { it.startsWith(page) || it.startsWith(pairing) || it.contains("#c=") })
         }
@@ -180,7 +180,7 @@ class TeslaBrowserLinkSettingsTest {
         // The website stays plain when the address changes.
         HotspotExtraAddressSettings.setEnabled(context, true)
         rerender(screen)
-        assertTrue(shown(screen).contains("https://ujzk.github.io/TiPlay"))
+        assertTrue(shown(screen).contains(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS.removeSuffix("/")))
         assertFalse(shown(screen).any { it.startsWith("https://ujzk.github.io/TiPlay/?t=") })
         assertFalse("Only the car HTTPS link is shown", shown(screen).any { it.startsWith("http://") })
 
@@ -197,7 +197,7 @@ class TeslaBrowserLinkSettingsTest {
         HotspotExtraAddressSettings.setEnabled(context, false)
         screen = openConnection()
         assertTrue("Without any address the site remains visible",
-            shown(screen).contains("https://ujzk.github.io/TiPlay"))
+            shown(screen).contains(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS.removeSuffix("/")))
         assertEquals("Only the hotspot status says so", 1,
             shown(screen).count { it == screen.getString(R.string.settings_hotspot_not_found) })
     }
@@ -231,7 +231,7 @@ class TeslaBrowserLinkSettingsTest {
         val labels = shown(screen)
         val expected = listOf(
             screen.getString(R.string.settings_browser_link_car),
-            "https://ujzk.github.io/TiPlay",
+            TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS.removeSuffix("/"),
             screen.getString(R.string.settings_browser_link_copy),
             screen.getString(R.string.settings_browser_pairing_code) + " · " + TeslaBrowserLink.pairingCode(context),
             screen.getString(R.string.settings_browser_android_address),
@@ -287,7 +287,7 @@ class TeslaBrowserLinkSettingsTest {
         val code = TeslaBrowserLink.pairingCode(context)
         assertEquals(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS, TeslaBrowserLink.pageAddress(context))
         assertFalse(shown(screen).any { it.startsWith(screen.getString(R.string.settings_browser_page_address)) })
-        assertTrue(shown(screen).contains("https://ujzk.github.io/TiPlay"))
+        assertTrue(shown(screen).contains(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS.removeSuffix("/")))
         assertFalse(shown(screen).any { it.contains("github.io/DiPlay/play/") })
     }
 
@@ -306,7 +306,7 @@ class TeslaBrowserLinkSettingsTest {
         val new = TeslaBrowserLink.pairingCode(context)
         assertNotEquals(old, new)
         assertTrue(shown(screen).contains(prefix + new))
-        assertTrue(shown(screen).contains("https://ujzk.github.io/TiPlay"))
+        assertTrue(shown(screen).contains(TeslaBrowserPageLinks.DEFAULT_PAGE_ADDRESS.removeSuffix("/")))
         assertFalse(shown(screen).any { it.contains("#c=$old") })
     }
 

@@ -6,10 +6,12 @@ and delivery records remain in Git history.
 
 ## 0.2.20-beta.6
 
-Publication pending; target version code 48 and browser cache/diagnostic revision v65.
-These notes describe the reviewed local baseline; integration with newer remote-main
-changes and final integrated validation remain pending.
+Publication pending; target version code 48 and browser cache/diagnostic revision v72.
+This release integrates the remote 0.2.21 WebRTC experiments into the formal root
+page; local integrated validation has passed and remote publication remains pending.
 
+- Publish the formal browser at `https://ujzk.github.io/TiPlay/`, replacing the former HTTP client. Remove the independent `/webrtc/` site without an alias or redirect; point download pages to the explicitly labeled beta.6 release instead of the unavailable 0.2.16 asset.
+- Retain four-digit SRP-6a mutual proofs and session-key binding of the complete offer/answer SDP. Pairing codes never travel through HTTP signaling; media and controls start only on the authenticated encrypted channel.
 - Make reliable, ordered WebRTC DataChannels the formal CarPlay/live AirPlay media path. Reuse compressed video and audio records, bounded fragmentation/credit, session ownership and independent audio subscription generations. Never reencode video. The current page requires WebRTC; legacy HTTP media endpoints return 410 and cached older pages must update.
 - Apply shared policies for CarPlay touch, ordinary CarPlay, AirPlay mirror and URL casting. Smoothly catch up decoded video during touch without changing audio, retain independent live +300 ms software deadlines, and favor casting continuity with bounded startup/recovery prebuffering.
 - Preserve complete compressed decoder dependencies under congestion with bounded admission and explicit stall recovery. Request hardware for live video without intentional software downgrade; actual vehicle hardware use remains unverified.
@@ -17,17 +19,40 @@ changes and final integrated validation remain pending.
 - Enforce the audio deadline against actual emitted sample position and known clock/device/filter uncertainty. Suppress an expired output quantum with an explicit recovery reason; missing measurement anchors stay unknown.
 - Preserve actionable bounded ICE, channel, credit, decoder, audio and capture failure evidence. Keep the original video payload once, repair duplicate capture writers, report capture integrity failures and retain safe exception causes without private network details.
 
-Baseline verification: 3,924 Android unit tests plus 120 final scoped regressions; 436 browser
-tests; 14 real-DataChannel transport checks; required Android lint/debug builds
-(0 Error/Fatal, 38 warnings); public-source/release-draft checks; Chromium full-page
-and AirPlay photo/audio/MP4/HLS E2E. Full-page playback uses an explicit test-only
-software override; strict hardware-unavailable behavior is checked separately.
-Signed build hashes, remote page deployment and release publication remain pending.
+Integrated local verification: 237 scoped Android regressions, 473 browser tests,
+90 full-page checks, 17 real-DataChannel checks, seven SRP security cases and
+24 JVM compatibility checks; all three required lint/debug builds (0 Error/Fatal,
+38 warnings); media-clock and AirPlay photo/audio/MP4/HLS E2E.
+Full-page playback uses an explicit test-only software override; strict desktop
+hardware-unavailable behavior is checked separately. Full Android CI is skipped at the user’s explicit request; signed build hashes,
+remote page deployment and publication remain pending.
 
 Physical phone/vehicle acceptance remains incomplete. The +300 ms checks describe
 known software mappings, with upstream iPhone NTP uncertainty still uncarried;
-they do not prove acoustic/panel latency. Local HTTP pairing retains the trusted-LAN
-boundary and does not prevent active DTLS-fingerprint substitution.
+they do not prove acoustic/panel latency. SRP authenticates the signaling transcript,
+while the four-digit secret still requires online-guess limits. HTTP resource bearer
+access retains local-network confidentiality limits.
+
+## 0.2.21-beta.3 (remote experimental history)
+
+- Add independently bounded Debug video snapshots, scoped source/read/decode/draw counters, interval baselines and source PTS/arrival cadence diagnostics. Preserve source-compressed input and one-copy capture references.
+- Record desktop host-to-host UDP evidence. A 200 ms oldest-record guard caused RTC retirement and about 6.6 seconds until replacement forwarding; 40 source frames never reached a reader. A separate user-confirmed 7.75-second source-frame gap remains a device investigation item.
+
+Historical verification: 2,203 shared, 1,748 common and six home unit tests; 450 browser tests; eight isolated-site checks; nine release-draft checks; required lint/debug builds. These results belong to the remote v71 experiment, not the integrated beta.6 build.
+
+## 0.2.21-beta.2 (remote experimental history)
+
+- Retain the user-confirmed real CarPlay HEVC → WebCodecs Worker → Canvas playback on v70 with kernel-interface host ICE enumeration. The short capture reported no reader sequence gap, decoder error or RTC reconnect; hardware use, gear transitions and physical latency were not established.
+
+## 0.2.21-beta.1
+
+- Carry source-compressed video, audio and immediate controls over reliable ordered WebRTC DataChannels with bounded fragmentation, receiver credit and explicit overload recovery.
+- Preserve four-digit manual pairing for Tesla browsers without clipboard support. SRP-6a mutual proofs and a session-key SDP binding authenticate the DTLS peer; the code is not sent through HTTP signaling.
+- Apply independent CarPlay +300 ms sender-relative video/audio policies where timing is available. Touch smoothly catches up decoded video without changing the audio timeline; source-timed guidance preserves its start with bounded startup reserve.
+- Keep one original video capture with downstream byte-range references, and expose integrity boundaries after storage failures.
+- Deliver an isolated `webrtc/` beta webpage alongside the existing root client. Native WebRTC includes four Android ABIs and bundled binary license notices.
+
+Validation and remaining vehicle acceptance are recorded in [Build](docs/Build.md) and [Testing](docs/Testing.md). This beta does not establish physical latency or actual hardware decoder use from software events.
 
 ## 0.2.20-beta.5
 

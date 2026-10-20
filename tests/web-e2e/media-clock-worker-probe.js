@@ -29,17 +29,21 @@ for (let index = 0, position = 0; index < nals.length; index++) {
 }
 input.dispose();
 
-export async function createWorkerProbe(offscreen, clock) {
+export async function createWorkerProbe(offscreen, clock, mediaMode = 'airplay-mirror') {
   const mode = offscreen ? 'offscreen' : 'transfer';
   const canvas = document.createElement('canvas'); canvas.width = 160; canvas.height = 90; document.body.append(canvas);
   const worker = new Worker('/play/decoder-worker.js', { type: 'module' });
   let controller, sequence = 0, lastStats = null, draws = 0, minSkew = Infinity, maxSkew = -Infinity;
+  let unsupported = null, minSourceDelay = Infinity, maxSourceDelay = -Infinity, missingAudioWindowDraws = 0;
   const errors = [], references = new Map();
   const presenter = offscreen ? null : createFramePresenter(canvas, { applyTimingPolicy: true, pace: true,
-    onPresent({ at, audioAt }) {
-      if (!Number.isFinite(audioAt)) return;
-      const skew = audioAt - at;
-      minSkew = Math.min(minSkew, skew); maxSkew = Math.max(maxSkew, skew); draws++;
+    onPresent({ at, timing, audioAt }) {
+      const sourceDelay = at - timing;
+      minSourceDelay = Math.min(minSourceDelay, sourceDelay); maxSourceDelay = Math.max(maxSourceDelay, sourceDelay); draws++;
+      if (Number.isFinite(audioAt)) {
+        const skew = audioAt - at;
+        minSkew = Math.min(minSkew, skew); maxSkew = Math.max(maxSkew, skew);
+      } else if (mediaMode === 'airplay-mirror') missingAudioWindowDraws++;
     },
   });
   await new Promise((resolve, reject) => {
@@ -52,7 +56,7 @@ export async function createWorkerProbe(offscreen, clock) {
   worker.onerror = event => errors.push(event.message);
   worker.onmessage = ({ data }) => {
     if (data.type === 'stats') lastStats = data.stats;
-    else if (data.type === 'unsupported') errors.push(JSON.stringify(data));
+    else if (data.type === 'unsupported') unsupported = data;
     else if (data.type === 'frame') {
       try {
         presenter.present(data.frame, data.config, data.timing, data.outputWindow);
@@ -67,7 +71,7 @@ export async function createWorkerProbe(offscreen, clock) {
   const stream = new ReadableStream({ start(value) { controller = value; } });
   worker.postMessage({ type: 'stream', id: 1, stream }, [stream]);
   controller.enqueue(encodeRecord({ kind: RECORD.CONFIG, epoch: 1, payload: new TextEncoder().encode(JSON.stringify({
-    mode: 'carplay', codec: decoderConfig.codec, width: decoderConfig.codedWidth, height: decoderConfig.codedHeight, fps: 30,
+    mode: mediaMode, codec: decoderConfig.codec, width: decoderConfig.codedWidth, height: decoderConfig.codedHeight, fps: 30,
   })) }));
   return {
     mode,
@@ -79,12 +83,13 @@ export async function createWorkerProbe(offscreen, clock) {
     },
     clock(value) { worker.postMessage({ type: 'clock', clock: value }); },
     frame(localTimeMs, rawSourceTimeMs) {
+      if (unsupported) return;
       const timestampUs = Math.round(localTimeMs * 1000), timing = new Uint8Array(8);
       new DataView(timing.buffer).setFloat64(0, rawSourceTimeMs, true);
       controller.enqueue(encodeRecord({ kind: RECORD.TIMING, epoch: 1, sequence, timestampUs, payload: timing }));
       controller.enqueue(encodeRecord({ kind: RECORD.FRAME, flags: FLAG.KEY, epoch: 1, sequence: sequence++, timestampUs, payload: keyframe }));
     },
-    result() { return { mode, draws, minSkew, maxSkew, errors, stats: lastStats, presenter: presenter?.stats() }; },
+    result() { return { mode, mediaMode, draws, minSkew, maxSkew, minSourceDelay, maxSourceDelay, missingAudioWindowDraws, unsupported, errors, stats: lastStats, presenter: presenter?.stats() }; },
     dispose() { try { controller.close(); } catch (_) {} worker.postMessage({ type: 'dispose' }); presenter?.dispose(); },
   };
 }

@@ -4,7 +4,7 @@ TiPlay shows CarPlay from an Android phone in the car browser. The iPhone
 connects by wireless CarPlay or USB; the browser reaches Android through its hotspot
 or shared Wi-Fi that permits communication between devices.
 
-The settings footer links **TiPlay 0.2.20** to the project releases. Android Main
+The settings footer links the shared **TiPlay product version** to the project releases. Android Main
 settings shows the same product version; playback has no corner version overlay.
 
 ## Connect and recover
@@ -30,6 +30,13 @@ the existing notification-card style with a Close button. These explanations hav
 no timeout, and rerenders cannot reopen a dismissed error; explicitly starting a
 new connection resets dismissal. Location guidance keeps its separate persistent
 card. Receiver fault details stay on Android, below its short status title.
+
+During setup, the page distinguishes local candidate gathering, contacting Android,
+SRP authentication and direct-channel readiness. Failure reports preserve the stage
+and bounded anonymous candidate/state counters without SDP, addresses or pairing
+secrets. The retry countdown describes the next attempt, not Android response time.
+The complete gathered SDP snapshot is covered by the authenticated transcript;
+no fictitious candidate or end-of-candidates marker is invented.
 
 Network failure retries with a countdown; rejected codes stop retries and require the
 current code. Another paired browser can take over, and the displaced page can use
@@ -74,24 +81,34 @@ independent media decoder compatibility policy. The [roadmap](WebRTC-roadmap.md)
 implemented behavior from Shizuku-address ICE, vehicle gear-transition continuity
 and physical latency acceptance.
 
-The APK neither bundles nor serves the page. `/hello` and pairing-authorized `/rtc`
-bootstrap direct host ICE; video/audio/control then use separate ordered reliable
-channels. The current page requires that transport and never silently falls back to
-HTTP media. The Android product returns 410 for `/video` and `/audio`; old cached pages
-are outside the supported product. `/control` handles startup/reconnection status and
-capabilities before the DataChannel opens. Other routes are `/airplay-resource` and
-`/bye`; `/`, `/play` and `/play/*` return 404.
-Ordinary AirPlay `/play` is separate. DataChannels use DTLS encryption, but local HTTP
-bootstrap and AirPlay URL resources remain unencrypted. The short HTTP pairing code
-does not bind DTLS fingerprints against an active network attacker. Protect the shared
-Wi-Fi and pairing link; page HTTPS protects static delivery, not bootstrap identity.
+The APK neither bundles nor serves the page. The formal page is
+<https://ujzk.github.io/TiPlay/>; its deployment replaces the former root client
+and removes the independent `/webrtc/` site without an alias or redirect. The APK
+uses the root; custom saved HTTPS hosts remain configurable.
+
+Four-digit SRP-6a pairing uses `/rtc/pair/start` and `/rtc/pair/finish` over local
+HTTP. Mutual proofs and a session-key binding authenticate the complete offer/answer
+SDP, including DTLS fingerprints, before the browser applies the answer. Pairing
+codes are not sent in HTTP signaling. Tesla users can type the address/code;
+clipboard and long fingerprint entry are unnecessary. Online-guess limits remain
+necessary for a four-digit secret. After proof verification, the encrypted control
+channel still admits `{k:'auth',q,s,c}` before media/ownership is released.
+
+After authentication, video/audio/control use reliable ordered DataChannels with
+no public STUN/TURN or Internet media relay. Public `/hello` identifies protocol
+availability; old code-authorized HTTP media/control routes are not a fallback.
+`/video` and `/audio` return 410 in the Android product. `/airplay-resource` uses a
+random active-session bearer delivered only by successful encrypted admission;
+HTTP finish does not expose it. HTTP bye also uses this random token; the HTTP resource
+body retains local-network confidentiality limits. `/`, `/play` and `/play/*` on
+Android return 404; ordinary iPhone AirPlay `/play` is a separate server.
 
 [TeslaBrowserPageLinks](../common/src/main/java/com/shilapi/xcertplay/TeslaBrowserPageLinks.kt)
 and [pages.yml](../.github/workflows/pages.yml) must agree on the public page base.
 Custom saved HTTPS hosts remain usable. The [Service Worker](../site/play/sw.js)
 caches only page assets, never phone media/unrelated downloads. Asset changes require
-a complete manifest/new cache identity; old-location forwarders preserve pairing
-parameters and retire old workers.
+a complete manifest/new cache identity. The removed `/webrtc/` location receives
+no compatibility alias or redirect in this deployment.
 
 ## Audio and microphone
 
@@ -117,7 +134,8 @@ rebuffer/fade recovery. Temporary input shortages never flush the filter as end-
 
 ### Media clocks and synchronization
 
-HTTP clock probes estimate both Android/browser time offset and relative clock rate
+Authenticated control status supplies the clock exchanges; public `/hello` timing
+is not a trusted source anchor. These exchanges estimate both Android/browser time offset and relative clock rate
 from a bounded history, filtering high-delay and inconsistent observations. Centered
 coordinates avoid deriving rate from enormous absolute timestamps. Ordinary calibration
 refines a target; it does not remap queued audio packets. AudioWorklet advances an integer
