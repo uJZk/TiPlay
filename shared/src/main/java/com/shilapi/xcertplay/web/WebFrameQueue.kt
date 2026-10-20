@@ -17,6 +17,7 @@ internal class WebFrameQueue(
     private val maxFrames: Int = 10,
     private val maxConfigs: Int = 8,
     private val maxConfigBytes: Int = WebVideoRecords.MAX_PAYLOAD,
+    private val reliable: Boolean = false,
 ) {
     private val records = ArrayDeque<WebVideoRecord>()
     private var started = false
@@ -31,11 +32,18 @@ internal class WebFrameQueue(
     var expired = 0L; private set
     var overflow = 0L; private set
     var skipped = 0L; private set
+    /** Reliable delivery must fail explicitly instead of silently damaging compressed dependencies. */
+    var failureReason: String? = null; private set
 
     /** Queues a frame; false when it was skipped while waiting for a key frame or is larger than the queue. */
     fun offer(frame: WebVideoRecord, now: Long): Boolean {
         expire(now)
+        if (failureReason != null) return false
         val cost = frame.payloadLength
+        if (reliable && (cost > maxBytes - bytes || size >= maxFrames)) {
+            failureReason = "media-overload"
+            return false
+        }
         if (cost > maxBytes) { overflow++; invalidate(now); return false }
         if (size >= maxFrames || cost > maxBytes - bytes) {
             overflow += size
@@ -110,6 +118,7 @@ internal class WebFrameQueue(
     private fun expire(now: Long) {
         val oldest = records.firstOrNull { it.kind == WebVideoRecords.KIND_FRAME } ?: return
         if (now - oldest.queuedAtNanos >= maxAgeNanos) {
+            if (reliable) { failureReason = "media-age-limit"; return }
             expired += size
             invalidate(now)
         }

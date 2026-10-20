@@ -13,10 +13,14 @@ internal object DiagnosticRedactor {
     private val pairingCode = Regex("(?i)\\b(?:pair(?:ing)?[._ -]?id|api[._-]?key|secret|access[._-]?token|refresh[._-]?token)\\s*[=:]|\\bpair(?:ing)?[._ -]?code\\s*[=:][ \\t]*(?!(?:yes|no)(?:\\s|$))[^\\s]+")
     private val controls = Regex("[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029]")
     private val ipv6 = Regex("(?i)(?:[0-9a-f]{1,4}:)*[0-9a-f]{0,4}::[0-9a-f:]*(?:%[a-z0-9_.-]+)?|(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}")
+    private val safeCredentialPlaceholder = Regex("(?i)\\b(?:password|passphrase|passwd|token|(?:access|refresh|auth)[-_]?token|api[-_]?key|secret|private[-_ ]?key|session(?:[-_]?id)?|pair(?:ing)?(?:[-_ ]?(?:id|code|record))?|code|c|s)\\s*[:=]\\s*\\[redacted\\]")
     fun redact(line: String): String? {
         if (line.contains("TRACE ") || line.contains("PHONE ") || controls.containsMatchIn(line)) return null
-        if (secret.containsMatchIn(line) || namedDevice.containsMatchIn(line) || headers.containsMatchIn(line) || pairingCode.containsMatchIn(line)) return null
-        return line.replace(resourceUrl, "[url]").replace(mac, "[address]").replace(identifier, "[identifier]")
+        // ErrorText already removed the value. Do not discard the surrounding failure merely
+        // because its harmless placeholder still contains a credential field's name.
+        val safe = safeCredentialPlaceholder.replace(line, "[credential]")
+        if (secret.containsMatchIn(safe) || namedDevice.containsMatchIn(safe) || headers.containsMatchIn(safe) || pairingCode.containsMatchIn(safe)) return null
+        return safe.replace(resourceUrl, "[url]").replace(mac, "[address]").replace(identifier, "[identifier]")
             .replace(address, "[ip]").replace(ipv6, "[ip]").take(700)
     }
 }

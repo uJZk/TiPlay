@@ -27,7 +27,7 @@ AudioWorklet PCM. Its size depends on capture duration and source bitrate, and d
 completeness. Compare `sessions.tsv`, event time ranges, per-channel bytes and failure/reconstruction
 counters. Retained sessions may come from different application versions with different capture coverage.
 
-The app-private `logs/raw-traffic.tsv` appends records as `epochMillis`, process-local sequence, channel, byte count and Base64 bytes, separated by tabs. A capture/start record identifies the process. Large payloads are split into consecutive records of at most 48 KiB without omitting any bytes; concatenate decoded records for a channel to recover its stream. Output `/attempt` and `/written` records distinguish attempted and accepted bytes. Bytes are stored synchronously with disk backpressure; storage failures increment the exported `RAW_CAPTURE failures` count. Capture files retain all sessions across mode changes and process restarts until explicitly cleared from the saved-ZIP dialog or app data is cleared. Disabling Debug mode stops new raw records but preserves earlier evidence. Storage use can grow substantially, especially for video.
+The app-private `logs/raw-traffic.tsv` appends records as `epochMillis`, process-local sequence, channel, byte count and Base64 bytes, separated by tabs. A capture/start record identifies the process. Large payloads are split into consecutive records of at most 48 KiB without omitting any bytes; concatenate decoded records for a channel to recover its stream. Output `/attempt` and `/written` records distinguish attempted and accepted bytes. Bytes are stored synchronously with disk backpressure using a reused writer, flushed after each record. This is application flush, not an `fsync` or power-loss durability guarantee. Storage failures increment the exported `RAW_CAPTURE failures` count and preserve first/last failure times, source category, safe cause and failed-byte-attempt upper bound. Capture files retain all sessions across mode changes and process restarts until explicitly cleared from the saved-ZIP dialog or app data is cleared. Disabling Debug mode stops new raw records but preserves earlier evidence. Storage use can grow substantially, especially for video.
 
 Standard mode saves a single `TiPlay-yyyyMMdd-HHmmss-SSS.txt` containing the diagnostic report, without raw traffic. Debug mode uses the same naming pattern with `.zip`. The ZIP contains:
 
@@ -36,7 +36,7 @@ Standard mode saves a single `TiPlay-yyyyMMdd-HHmmss-SSS.txt` containing the dia
 - `events.tsv`: UTC Unix milliseconds, process-local sequence, stream path, byte offset and byte length for each record. File order is capture order; capture/start markers identify process changes when sequence numbers restart.
 - `streams.tsv`: stream paths, original channel names encoded as Base64 UTF-8 and total byte counts. Labels preserve PCM rate/configuration and output attempt/written distinctions.
 - `sessions.tsv`: session IDs, start times and Base64 UTF-8 capture/start metadata containing application version, capture configuration and process UUID.
-- `capture.txt`: snapshot time, byte count, capture failures and format instructions.
+- `capture.txt`: snapshot time, byte count, capture failures, `RAW_CAPTURE_INTEGRITY` boundary and format instructions. `no-observed-write-failure` records the instrumented writer's observations; `partial` identifies a known integrity failure.
 
 Saving prepares one immutable-length snapshot off the UI thread and spools stream data to temporary app-cache files, keeping payloads and the event index out of memory. Storage fallbacks and private share copies reuse the same finished ZIP; newly captured data belongs to a later export. Temporary export files are removed on success or handled failure. A process killed during export can leave cache files; the next process initialization removes these abandoned export artifacts. Malformed/interrupted records are preserved in `unparsed.tsv`; `capture.txt` reports their count and explicitly marks reconstruction as incomplete. Valid records still export. New appends repair an incomplete line boundary without discarding the fragment. Storage/read failures still fail export instead of returning a partial success. Sharing uses `text/plain` or `application/zip` consistently with the saved artifact; the result dialog has no clipboard action.
 
@@ -67,18 +67,18 @@ clocks read after it returns. During repeated snapshots or brief measurement noi
 `timestamp-holdover` identifies use of the last validated pair, with its original age and
 growing uncertainty. Repeated pairs do not refresh that anchor's lifetime. A held pair
 expires after 750 ms, cannot cross a context interruption or detected latency change,
-and retains the 1000 ms extrapolation limit; it does not widen the A/V window.
+and retains the 1000 ms extrapolation limit; it does not widen either live source deadline.
 Audio snapshots repeat their stage in bounded lines so the metadata redactor's line cap
 cannot silently remove output-clock fields near the end of a full snapshot.
 Unavailable-reason counters distinguish suspended contexts, stale/backward/invalid pairs,
 missing or unbounded fallback latency, invalid feedback and excessive extrapolation.
 
-Audio output references needed for synchronization remain active in Standard mode;
-Debug controls detailed collection only. Video records unavailable/infeasible audio sync
-and explicit sync drops. `getOutputTimestamp` establishes the browser's device-output
-mapping, not measured sound at vehicle speakers. Its device latency and the resampler's
-already-accounted content delay must not be added twice. Missing/stale output evidence
-cannot justify claiming that audio stayed within the 45 ms early / 125 ms late window.
+Audio output references remain active in Standard mode; Debug controls detailed
+collection only. Video records reference availability and audio/video skew while
+continuing its independent presentation timeline. `getOutputTimestamp` establishes
+the browser's device-output mapping, not measured sound at vehicle speakers. Its
+device latency and the resampler's already-accounted content delay must not be added
+twice. Missing/stale output evidence cannot prove sender-relative 300 ms compliance.
 
 Debug records the loaded page's cache identity, decoder backend/frame/nonzero/peak counters,
 AudioContext time/state and latency, clock mapping, AudioWorklet heartbeat/age, rendered
@@ -96,9 +96,34 @@ reaching the queue; rendered nonzero output establishes samples produced by the 
 Neither proves sound reached vehicle speakers. A full queue can result from a stopped
 worklet or a clock that has not reached its contents: interpret its head/tail/playback
 timestamps with heartbeat and discard counters. Debug raw capture also retains the
-authenticated browser audio response, including codec configuration and decrypted encoded
-packets or PCM. Its `browser/audio` attempt/written channels distinguish attempted writes
-from bytes accepted by the socket; they do not capture browser speaker output.
+browser audio records, including codec configuration, resets and decrypted encoded
+packets or PCM. DataChannel capture stores each record once under
+`browser/audio/rtc/<epoch>/records`; its `events` channel references unsigned record
+sequence/bytes and `attempt`, `local-enqueue` or `failed`. Local enqueue means SCTP
+accepted the bytes on Android, not remote consumption, decoding or sound. HTTP
+`browser/audio` fixtures retain socket-write semantics in factory-free JVM tests;
+the Android product disables that media route.
+
+`Browser transport` records stage, transport epoch, host/UDP candidate counts,
+ICE/connection state, safe candidate types, queue/credit counters and decoder
+stagnation. State/failure changes are retained immediately in Standard; repeated
+healthy details are Debug-limited. Audio consumer barriers prevent old subscriptions
+from replaying in-flight audio after re-enable. Independent source-deadline evidence
+distinguishes `within-bound`, `violated` and `unknown` measurements; rejected output quanta
+are recovery events, not successful playback. Candidate IPs, SDP credentials and
+private resource URLs are excluded from these metadata lines.
+The audio rejection count is cumulative across page streams/epochs; its state and
+stream/epoch identify the current worst active reference. Use Debug stream details
+for per-stream attribution. Raw control capture starts at the admitted worker input;
+early rejection, overload and retirement can precede it. A zero write-failure count
+does not establish a complete SCTP/DTLS packet capture.
+Debug also retains incoming DataChannel control once under
+`browser/rtc/<epoch>/control/in`, before parsing on the bounded control worker;
+the native callback does not perform capture I/O. This has the same unredacted
+credential/personal-data boundary as the retained HTTP input capture.
+The deadline estimate includes known Android/browser/output/filter uncertainty;
+upstream iPhone NTP-anchor uncertainty is not separately carried on the wire.
+`within-bound` therefore describes this software mapping, not a physical latency certificate.
 
 Browser audio uses the bundled pure JavaScript libsoxr backend inside AudioWorklet.
 It requires neither WebAssembly nor JavaScript evaluation permissions. Worklet module

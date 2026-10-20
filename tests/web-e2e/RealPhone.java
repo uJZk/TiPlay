@@ -131,7 +131,7 @@ public class RealPhone {
                 @Override public void log(String message) { emit("log", "source", "server", "message", message); }
             };
             server = new BrowserLinkServer(hub, callbacks, options.getOrDefault("bind", "0.0.0.0"),
-                Integer.parseInt(options.getOrDefault("port", "0")), () -> System.nanoTime() / 1_000_000, new WebAudioHub());
+                Integer.parseInt(options.getOrDefault("port", "0")), () -> System.nanoTime() / 1_000_000, new WebAudioHub(), null);
             // start() returns kotlin.Result<Int>, an inline class, so its JVM name is mangled.
             BrowserLinkServer.class.getMethod("start-d1pmJ48").invoke(server);
             if (server.getLocalPort() <= 0) {
@@ -142,8 +142,7 @@ public class RealPhone {
             startSession(hub, clip, width, height, fps);
             AtomicInteger next = new AtomicInteger();
             long frameNanos = 1_000_000_000L / fps;
-            // CarPlay's raw deadline is zero: model scheduled presentation ahead of arrival,
-            // so the real presenter can submit early instead of correctly expiring every fixture frame.
+            // Synthetic source presentation reference for direct protocol/timing checks.
             long syntheticSourceOrigin = System.nanoTime() + 250_000_000L;
             long[] count = {0};
             feeder.scheduleAtFixedRate(() -> {

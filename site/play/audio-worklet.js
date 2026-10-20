@@ -1,9 +1,9 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 import { PcmTimeline } from './pcm-timeline.js';
-import { initialPlaybackPlans, audioDelayAt, videoLimit } from './playback-window.js';
+import { initialPlaybackPlans, audioDelayAt, audioLimit } from './playback-window.js';
 import { BUFFERED_AUDIO_WINDOW_MS } from './audio-buffer-policy.js';
 import { SoxrRuntime } from './streaming-resampler.js';
-import { ContinuousAudio } from './continuous-audio.js';
+import { ContinuousAudio, AUDIO_RECOVERY_ERROR_MS } from './continuous-audio.js';
 
 const purpose = (type, stream) => stream.semanticType ?? type;
 const isVoice = (type, stream) => purpose(type, stream) >= 1 && purpose(type, stream) <= 4;
@@ -225,19 +225,11 @@ class TiPlayAudio extends AudioWorkletProcessor {
     if (!this.contextAnchor) return null;
     const localMs = this.contextAnchor.localTimeMs + (contextMs - this.contextAnchor.contextTimeMs) / this.deviceClock.rate;
     const plans = this.plansByMode[timeline.mode] ?? this.delayPlans;
-    // Buffer adaptation establishes a new queue anchor. Clock drift alone changes ASRC rate.
-    const videoTarget = Math.min(videoLimit(timeline.mode), plans.video.to);
-    const stablePlans = { video: { from: videoTarget, to: videoTarget, at: 0, duration: 0 },
-      audio: { from: plans.audio.to, to: plans.audio.to, at: 0, duration: 0 } };
-    const uncertainty = Math.max(0, this.outputUncertaintyMs || 0) + timeline.filterUncertaintyMs;
-    const at = localMs + this.localTimeOriginMs;
-    const earliest = audioDelayAt({ ...stablePlans, audio: { from: -1e9, to: -1e9, at: 0, duration: 0 } }, at) + uncertainty;
-    const latest = audioDelayAt({ ...stablePlans, audio: { from: 1e9, to: 1e9, at: 0, duration: 0 } }, at) - uncertainty;
-    if (earliest > latest) {
-      if (timeline.backend) timeline.recover('output-uncertainty');
-      timeline.state = 'infeasible'; timeline.reason = 'output-uncertainty'; return null;
-    }
-    const proposed = Math.max(earliest, Math.min(latest, audioDelayAt(stablePlans, at)));
+    // Reserve the resampler's phase-recovery window inside this track's own
+    // deadline. Its actual emitted source cursor is checked separately below.
+    const uncertainty = Math.max(0, this.outputUncertaintyMs || 0) + timeline.filterUncertaintyMs
+      + Math.max(0, this.clock?.uncertaintyMs || 0);
+    const proposed = Math.min(plans.audio.to, audioLimit(timeline.mode) - uncertainty - AUDIO_RECOVERY_ERROR_MS);
     if (timeline.networkDelayMs === undefined) timeline.networkDelayMs = proposed;
     else if (Math.abs(proposed - timeline.networkDelayMs) >= 8) {
       timeline.networkDelayMs = proposed;
@@ -254,7 +246,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
     for (const timeline of this.timelines.values()) if (timeline instanceof ContinuousAudio) {
       const reference = timeline.reference(contextMs);
       reference.outputUncertaintyMs = this.outputUncertaintyMs;
-      if (!timeline.synchronized && !timeline.arrivalPlayback && reference.state === 'playing') reference.state = 'untimed';
+      if ((!timeline.synchronized || timeline.sourceDeadlineState === 'unknown') && !timeline.arrivalPlayback && reference.state === 'playing') reference.state = 'untimed';
       reference.sequence = ++this.feedbackSequence;
       this.port.postMessage({ playout: reference });
     }
@@ -298,7 +290,18 @@ class TiPlayAudio extends AudioWorkletProcessor {
     const continuous = [];
     for (const [type, timeline] of this.timelines) if (timeline instanceof ContinuousAudio) {
       timeline.block ??= new Float32Array(512 * timeline.channels);
-      timeline.render(this.targetTime(timeline, contextMs), contextMs, timeline.arrivalPlayback ? null : this.clock, blockFrames, timeline.block, this.deviceClock.rate);
+      const outputAt = this.contextAnchor && this.contextAnchor.localTimeMs
+        + (contextMs - this.contextAnchor.contextTimeMs) / this.deviceClock.rate;
+      const unknownReason = timeline.arrivalPlayback ? 'arrival-anchored' : !timeline.synchronized ? 'source-anchor-unavailable'
+        : !this.contextAnchor || !Number.isFinite(this.outputUncertaintyMs) ? 'output-clock-unavailable'
+        : !this.clock || this.clock.state === 'stale' ? 'source-clock-unavailable'
+        : !Number.isFinite(this.clock.uncertaintyMs) ? 'clock-uncertainty-unavailable' : null;
+      const deadline = unknownReason ? { unknownReason } : {
+          outputAt, limitMs: audioLimit(timeline.mode),
+          uncertaintyMs: Math.max(0, this.outputUncertaintyMs) + Math.max(0, this.clock.uncertaintyMs) + timeline.filterUncertaintyMs,
+        };
+      timeline.render(this.targetTime(timeline, contextMs), contextMs, timeline.arrivalPlayback ? null : this.clock,
+        blockFrames, timeline.block, this.deviceClock.rate, deadline);
       continuous.push([type, timeline]);
     }
     for (let i = 0; i < blockFrames; i++) {

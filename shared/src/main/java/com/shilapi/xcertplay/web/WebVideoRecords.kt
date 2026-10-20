@@ -45,6 +45,8 @@ object WebVideoRecords {
     /** Frames were dropped before this one. */
     const val FLAG_DISCONTINUITY = 2
     const val FLAG_PARAMETER_SETS = 4
+    /** Decode this access unit to retain prediction dependencies, then release its output without drawing. */
+    const val FLAG_DECODE_ONLY = 8
 
     const val CODEC_NONE = 0
     const val CODEC_H264 = 1

@@ -66,18 +66,25 @@ fallback is excluded because car browsers can pause it while driving. Codec prob
 does not prove a particular vehicle/browser's compatibility. Experimental mirroring,
 URL video, photos and ordinary audio follow [AirPlay.md](AirPlay.md).
 
-The selected future transport is [reliable, ordered DataChannel](CarPlay-DataChannel.md),
-with webpage-controlled hardware decoding. The [experiment roadmap](WebRTC-roadmap.md)
-records user-confirmed local WebRTC-to-Canvas playback (D); cross-device UDP,
-gear-transition continuity and real CarPlay transport remain unverified. These
-experiments do not change the current browser transport or rendering contract.
+The product media path uses [reliable, ordered DataChannels](CarPlay-DataChannel.md),
+with webpage-controlled WebCodecs decoding. Encoded source video is never reencoded.
+Live CarPlay/mirroring requests hardware decoding without an intentional software
+fallback; that hint cannot prove actual hardware use. URL casting retains its
+independent media decoder compatibility policy. The [roadmap](WebRTC-roadmap.md) separates
+implemented behavior from Shizuku-address ICE, vehicle gear-transition continuity
+and physical latency acceptance.
 
-The APK neither bundles nor serves the page. Protocol routes are `/hello`, `/video`,
-`/audio`, `/airplay-resource`, `/control` and `/bye`; `/`, `/play` and `/play/*` return
-404. Ordinary AirPlay `/play` is separate. Static assets/discovery are
-public; media/control require authentication. Local HTTP is unencrypted: page HTTPS
-enables WebCodecs and protects static delivery, not the phone transport. Protect the
-shared Wi-Fi and pairing link.
+The APK neither bundles nor serves the page. `/hello` and pairing-authorized `/rtc`
+bootstrap direct host ICE; video/audio/control then use separate ordered reliable
+channels. The current page requires that transport and never silently falls back to
+HTTP media. The Android product returns 410 for `/video` and `/audio`; old cached pages
+are outside the supported product. `/control` handles startup/reconnection status and
+capabilities before the DataChannel opens. Other routes are `/airplay-resource` and
+`/bye`; `/`, `/play` and `/play/*` return 404.
+Ordinary AirPlay `/play` is separate. DataChannels use DTLS encryption, but local HTTP
+bootstrap and AirPlay URL resources remain unencrypted. The short HTTP pairing code
+does not bind DTLS fingerprints against an active network attacker. Protect the shared
+Wi-Fi and pairing link; page HTTPS protects static delivery, not bootstrap identity.
 
 [TeslaBrowserPageLinks](../common/src/main/java/com/shilapi/xcertplay/TeslaBrowserPageLinks.kt)
 and [pages.yml](../.github/workflows/pages.yml) must agree on the public page base.
@@ -130,16 +137,16 @@ rate can reflect scheduling as well as an oscillator, so it does not identify a 
 Actual output references map emitted content through `AudioContext.getOutputTimestamp()`.
 That pair already includes the device pipeline. Feature fallback uses reported base/output
 latencies once, marks its uncertainty and rejects unbounded mappings. Resampler content
-delay is reflected in the source position, so video must not add it again. Both worker and
-main-thread video intersect their existing mode deadline with the audible interval: audio
-may lead matching video by at most **45 ms** or lag by at most **125 ms**. Device/filter
-uncertainty shrinks this interval. Extra hardware latency can be compensated by rendering
-available future PCM earlier; it is not an exception to either limit. Active audio with a
-stale/unavailable reference prevents a new unsynchronized draw. Explicitly disabled/ended
-audio permits video-only scheduling again. CarPlay navigation, calls, Siri and alerts use
+delay is reflected in the source position, so video must not add it again. Live video
+and audio have independent sender-relative **+300 ms** ceilings. Output references
+measure skew and uncertainty; missing or stale audio evidence does not freeze video.
+Touch advances only the video cursor and cannot reset or accelerate audio. The former
+45 ms early / 125 ms late audio-versus-video window is superseded for live presentation.
+CarPlay navigation, calls, Siri and alerts use
 an independent 20 ms arrival-anchored buffer while preserving RTP sample intervals, so a lack
 of presentation lead cannot prevent speech from starting. These speech streams do not
-constrain the video clock. Media remains presentation-synchronized.
+constrain the video clock. Source/Android/browser anchors retain their confidence;
+arrival fallback is never presented as proof of sender-relative compliance.
 
 Android/browser calibration does not establish the iPhone oscillator's rate. Ordinary
 AirPlay timing anchors and realtime source-supply evidence have different confidence;
@@ -170,7 +177,7 @@ and [pacing #484](https://github.com/shihabal3amri/DiPlay/pull/484).
 On iPhone call/Siri microphone demand, Android routes speech and navigation to the
 unique car HFP/SCO route while browser music and ordinary AirPlay audio continue.
 Route transitions retire only the affected speech/guidance streams, preserving
-music queues, decoders and the audio HTTP connection. Both AudioRecord input
+music queues, decoders and the audio DataChannel subscription. Both AudioRecord input
 and AudioTrack output must actually confirm Bluetooth. Busy routes and ambiguous headsets are refused; there is no handset/browser microphone fallback.
 Permission/focus/route loss stops devices and reports failure. Android's Bluetooth
 stack owns mSBC/CVSD; TiPlay supplies PCM.
@@ -220,21 +227,26 @@ physical screen refresh, capture-to-screen latency or prove hardware decode.
 See [Diagnostics.md](Diagnostics.md).
 
 Decoded live video is scheduled in the decoder worker without a per-frame
-main-thread readiness acknowledgement. Timing observations still update the audio
-buffer estimate; transferred frames retain acknowledgement backpressure and final
+main-thread readiness acknowledgement. Video and audio readiness observations update
+their own timing plans; transferred frames retain acknowledgement backpressure and final
 presentation checks. When animation callbacks are available, the presenter retains
 only the newest eligible frame for the next display refresh. A deadline timer and
 measured upload budget bound that wait; the final upload/submission check still
-rejects expired or audio-incompatible frames. The first-frame connection proof is emitted
+rejects expired frames. The first-frame connection proof is emitted
 only after a successful final canvas submission, including transferred frames; decoding or
 queue admission alone is insufficient. Workers without a usable animation
 source submit immediately. Timer/immediate WebGL submissions explicitly flush queued
 GPU commands without waiting for completion; refresh callbacks use their native
 frame boundary. See [MDN's flush guidance](https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices#flush_when_expecting_results).
 Superseded pending pictures count as pacing drops.
-Source delay caps remain CarPlay 0 ms and AirPlay mirroring
-200 ms; actual output references retain the audio 45 ms early / 125 ms late window.
-Live video adds no uncalibrated buffering. Live
+Four shared profiles control tradeoffs: CarPlay touch favors latency slightly,
+ordinary CarPlay favors smoothness, AirPlay mirror favors smoothness slightly,
+and URL casting favors smoothness strongly. Live CarPlay/mirror ceilings are 300 ms;
+these are limits, not fixed buffers. Touch uses continuous video-only catch-up and a
+750 ms interaction hold without restoring the old backlog on release. URL casting
+uses a media clock with 750 ms startup / 1500 ms recovery watermarks, bounded by GPU
+memory and available content; these values are implementation defaults awaiting vehicle tuning.
+Live
 audio follows its receiver sample/latency anchor; buffered music follows SETRATE.
 Arrival playback is an explicit synchronization fallback. Physical output latency
 requires device measurement; acceptance remains in [Todo.md](Todo.md).

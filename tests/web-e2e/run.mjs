@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { History, listen, closeServer } from './resources.mjs';
-// End-to-end check of site/play against the fake phone in headless Chromium. Not part of CI; see README.md.
+// End-to-end production-page check against a real browser DataChannel peer and synthetic phone media.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -23,6 +23,24 @@ const DOWNLOAD_PATH = `${PAGE_PATH}download/`;
 import { DEFAULT_HOST } from '../../site/play/link.js';
 const CHROMIUM = process.env.CHROMIUM ?? ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find(existsSync);
 const FFMPEG = process.env.FFMPEG ?? 'ffmpeg';
+const SOFTWARE_VIDEO = process.env.E2E_SOFTWARE_VIDEO === '1';
+// Explicit desktop-test instrumentation only. Production still requests hardware and has no software fallback.
+const SOFTWARE_VIDEO_OVERRIDE = `(() => {
+  const Native = globalThis.VideoDecoder;
+  if (!Native) return;
+  globalThis.VideoDecoder = class extends Native {
+    static isConfigSupported(config) { return Native.isConfigSupported({ ...config, hardwareAcceleration: 'no-preference' }); }
+    configure(config) { super.configure({ ...config, hardwareAcceleration: 'no-preference' }); }
+  };
+})();`;
+async function configureTestDecoder(context) {
+  if (!SOFTWARE_VIDEO) return;
+  await context.addInitScript(SOFTWARE_VIDEO_OVERRIDE);
+  await context.route('**/decoder-worker.js', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, body: `${SOFTWARE_VIDEO_OVERRIDE}\n${await response.text()}` });
+  });
+}
 
 // Init scripts that take one feature away, to drive the page down its fallback ladder.
 const NO_STREAM_TRANSFER = `for (const type of [MessagePort, Worker]) {
@@ -161,8 +179,7 @@ function checkTap(touches, x, y, label) {
 }
 
 /**
- * Sends garbage key frames until `broken(page)` holds. One is usually enough, but on a loaded machine a backlog reset
- * can discard it before it reaches the decoder.
+ * Sends garbage key frames until the decoder reports the explicit codec error.
  */
 async function corruptUntil(phone, page, broken) {
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -190,6 +207,7 @@ async function checkCanvas(page, label) {
 /** Opens the page in a fresh context and checks that it decodes on `expected` and maps a tap. */
 async function checkPath(browser, url, phone, expected, prepare) {
   const context = await browser.newContext({ viewport: { width: 900, height: 640 }, hasTouch: true, locale: 'en-US', serviceWorkers: 'block' });
+  await configureTestDecoder(context);
   if (typeof prepare === 'string') await context.addInitScript(prepare);
   else if (prepare) await prepare(context);
   const page = await context.newPage();
@@ -217,8 +235,10 @@ async function main() {
     pageServer = await startPageServer();
     const origin = `http://127.0.0.1:${pageServer.address().port}`;
     // Both the page host and phone protocol server are local test servers.
-    browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-proxy-server'] });
+    browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-sandbox', '--no-proxy-server'] });
     const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 1.5, hasTouch: true, locale: 'en-US' });
+    await configureTestDecoder(context);
+    if (SOFTWARE_VIDEO) log('EXPLICIT TEST MODE: native WebCodecs hardware hints are overridden to no-preference; this run does not prove hardware video decoding');
     let frames = encodeIvf('libvpx');
     if (frames) log(`encoded ${frames.length} VP8 frames with ffmpeg/libvpx`);
     else {
@@ -226,7 +246,10 @@ async function main() {
       log(`encoded ${frames.length} VP8 frames with the browser's VideoEncoder`);
     }
     if (!frames[0]?.key) throw new Error('the clip must start with a key frame');
-    const phone = await startFakePhone({ code: CODE, frames, width: WIDTH, height: HEIGHT, fps: FPS });
+    const peerContext = await browser.newContext({ serviceWorkers: 'block' });
+    const rtcPage = await peerContext.newPage();
+    await rtcPage.goto(`${origin}/blank`);
+    const phone = await startFakePhone({ code: CODE, frames, width: WIDTH, height: HEIGHT, fps: FPS, rtcPage });
     phoneServers.push(phone);
     const failures = new History();
     const page = await context.newPage();
@@ -241,10 +264,37 @@ async function main() {
       return wallpaper.naturalWidth > 0;
     }), 'the browser loads and decodes the actual wallpaper asset');
 
-    await waitFor('a dec event', () => eventsOf(phone, 'dec').length);
+    const hardwareSupported = await rtcPage.evaluate(async () => {
+      try { return (await VideoDecoder.isConfigSupported({ codec: 'vp8', codedWidth: 800, codedHeight: 480,
+        optimizeForLatency: true, hardwareAcceleration: 'prefer-hardware' })).supported; } catch (_) { return false; }
+    });
+    if (!SOFTWARE_VIDEO && !hardwareSupported) {
+      await waitFor('an explicit unsupported-hardware configuration', async () => (await stats(page))?.page.video.codecSupported === false);
+      const capability = await stats(page);
+      check(capability.page.transport.state === 'connected' && capability.page.link.unsupported === 'vp8' && capability.page.video.decoded === 0,
+        'an unavailable hardware-requested decoder produces an explicit unsupported state after real RTC delivery');
+      check(/cannot decode/.test(await page.textContent('#browser-notice-message')), 'the page explains the unsupported video capability');
+      check(!phone.requests.some(request => ['/video', '/audio'].includes(request.path)), 'capability failure opens no hidden legacy media transport');
+      phone.assertHistories();
+      log('hardware-capability case passed; full playback checks were not run (use a supported decoder or explicit E2E_SOFTWARE_VIDEO=1 test instrumentation)');
+      return;
+    }
+
+    await waitFor('a dec event', () => eventsOf(phone, 'dec').length).catch(async error => {
+      const peer = await rtcPage.evaluate(() => {
+        const state = globalThis.__fakeRtc;
+        return state && { connection: state.peer.connectionState, ice: state.peer.iceConnectionState,
+          channels: Object.fromEntries(Object.entries(state.channels).map(([name, channel]) => [name, channel.readyState])),
+          sequence: state.sequence, bytes: state.bytes };
+      });
+      throw new Error(`${error.message}; page=${JSON.stringify(await stats(page))}; peer=${JSON.stringify(peer)}; source=${JSON.stringify(phone.streamStats)}; bridge=${JSON.stringify(phone.bridgeErrors)}; requests=${JSON.stringify(phone.requests)}`);
+    });
     check(eventsOf(phone, 'dec')[0].event.ep === 1, 'the fake phone heard "dec" for epoch 1');
     await waitFor('decoded frames', async () => (await stats(page)).page.video.decodedFps > 0);
     const first = await stats(page);
+    check(first.page.transport?.transport === 'webrtc-datachannel-v1' && first.page.transport?.state === 'connected',
+      'the complete production page receives compressed media over real reliable DataChannels');
+    check(!phone.requests.some(request => ['/video', '/audio'].includes(request.path)), 'normal playback opens no legacy HTTP media stream');
     check(first.page.link.path === 'worker' && first.page.link.fallback === null, 'Chromium takes the Tesla path: worker, transferred stream, OffscreenCanvas');
     check(first.page.video.decodedFps > 0, `decodedFps ${first.page.video.decodedFps} with renderer ${first.page.video.renderer} (${first.page.video.acceleration})`);
     check(!JSON.stringify(first).includes(CODE), 'tiplayStats never contains the pairing code');
@@ -350,14 +400,14 @@ async function main() {
     }
     await page.setViewportSize({ width: 1000, height: 700 });
     await page.unroute('**/hello');
-    await waitFor('a new /video request', () => phone.videoCount > streamsBefore);
+    await waitFor('a new RTC media connection', () => phone.videoCount > streamsBefore);
     await waitFor('decoding after the reconnect', () => eventsOf(phone, 'dec').length > decodedBefore);
     check(await page.locator('#reconnect').isHidden(), 'the reconnect surface disappears after recovery decodes a frame');
     const statsAfterRecovery = eventsOf(phone, 'st').length;
     await waitFor('periodic appearance after recovery', () => eventsOf(phone, 'st').slice(statsAfterRecovery)
       .some(entry => entry.event.v['video.decodedFps'] > 0 && entry.event.v.themeDark === false), 8000);
     check(true, 'periodic decoded stats keep Boolean appearance after reconnect');
-    check(true, `the page reopened /video after the drop (${phone.videoCount} streams) and decoded again`);
+    check(true, `the page renegotiated RTC after the drop (${phone.videoCount} sessions) and decoded again`);
     await waitFor('the viewport after the reconnect', () => eventsOf(phone, 'vp').length > viewportsBefore, 3000).catch(() => {});
     check(eventsOf(phone, 'vp').length > viewportsBefore, 'the page repeats its viewport on the new stream, for a phone that restarted');
 
@@ -460,6 +510,7 @@ async function main() {
     failures.assertComplete();
     fromWorker.assertComplete();
     for (const server of phoneServers) server.assertHistories();
+    check(!phone.bridgeErrors.length, `the synthetic source bridge has no errors${phone.bridgeErrors.length ? `: ${phone.bridgeErrors.join(' | ')}` : ''}`);
     log('all checks passed');
   } finally {
     try { await browser?.close(); } finally {

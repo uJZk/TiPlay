@@ -193,11 +193,19 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     }
 
     /** An iPhone app may own its HLS playlists. Request them on reverse HTTP, as UxPlay does. */
-    fun loadResource(url: String, range: String? = null): ReceiverResource? {
+    fun loadResource(url: String, range: String? = null): ReceiverResource? = loadResource(url, range, null)
+
+    /** Capture before asynchronous browser startup; a retired item must never request from its successor. */
+    fun resourceLoader(): (String, String?) -> ReceiverResource? {
+        val generation = synchronized(ownership) { playbackGeneration }
+        return { url, range -> loadResource(url, range, generation) }
+    }
+
+    private fun loadResource(url: String, range: String?, generation: Long?): ReceiverResource? {
         if (range != null && !ReceiverResource.byteRange.matches(range)) return null
         if (!com.shilapi.xcertplay.airplay.VideoInCar.isPlayableUrl(url, iphoneLoadsAppSchemes = true)) return null
         val acquisition = synchronized(ownership) {
-            if (closed.get()) return null
+            if (closed.get() || generation != null && playbackGeneration != generation) return null
             val session = playbackId ?: return null
             val peer = playbackPeer ?: return null
             if (reverseForPlayback() == null) {
@@ -810,6 +818,20 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         }, idle = {
                             synchronized(ownership) { if (audioOrder === order && owner === this) deliver(order.drain()) }
                             retransmit()
+                        }, failed = { _, _ ->
+                            synchronized(ownership) {
+                                // A retired drain cannot mute or release a replacement stream. The picture
+                                // and its timing/key negotiation survive a soundtrack transport failure.
+                                if (owner === this && audio === receiver && audioOrder === order) {
+                                    audio = null; audioOrder = null
+                                    listener.stopMirrorAudio()
+                                    if (mirror == null) {
+                                        listener.stopPlayback()
+                                        owner = null
+                                        listener.status("listening")
+                                    }
+                                }
+                            }
                         })
                         val ports = receiver.start()
                         if (audio != null && owner === this) listener.stopMirrorAudio()
@@ -823,28 +845,48 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                     val clock = requireNotNull(timing)
                     val connectionId = (stream["streamConnectionID"] as? Number)?.toLong() ?: error("missing connection id")
                     mirrorPreparation = this
-                    mirror?.close()
                     val token = Any()
                     mirrorToken = token
-                    val receiver = ReceiverMirrorStream(streamKey, connectionId, peer, listener.mirrorSink(), clock,
-                        log = { listener.log("c=$diagnosticId $it") }, hevcEnabled = config.hevcEnabled) {
-                        synchronized(ownership) {
-                            if (owner === this && mirrorToken === token) {
-                                timing?.reportVideoEnd()
-                                mirror = null
-                                mirrorToken = null
-                                owner = if (audio != null) this else null
-                                // A data-channel EOF ends the picture, not the RTSP session. Keep timing
-                                // and transport keys until TEARDOWN/control EOF, allowing its reply or
-                                // another SETUP on this connection.
-                                listener.status(if (audio != null) "audio" else "listening")
+                    val previous = mirror
+                    mirror = null
+                    var output: WebMediaSink? = null
+                    try {
+                        previous?.close()
+                        val sink = listener.mirrorSink()
+                        output = sink
+                        val receiver = ReceiverMirrorStream(streamKey, connectionId, peer, sink, clock,
+                            log = { listener.log("c=$diagnosticId $it") }, hevcEnabled = config.hevcEnabled) {
+                            synchronized(ownership) {
+                                if (owner === this && mirrorToken === token) {
+                                    timing?.reportVideoEnd()
+                                    mirror = null
+                                    mirrorToken = null
+                                    owner = if (audio != null) this else null
+                                    // A data-channel EOF ends the picture, not the RTSP session. Keep timing
+                                    // and transport keys until TEARDOWN/control EOF, allowing its reply or
+                                    // another SETUP on this connection.
+                                    listener.status(if (audio != null) "audio" else "listening")
+                                }
                             }
                         }
+                        mirror = receiver; owner = this
+                        val dataPort = receiver.start()
+                        listener.status("mirror")
+                        mapOf("type" to 110, "dataPort" to dataPort)
+                    } catch (error: Exception) {
+                        if (mirrorToken === token) {
+                            // Sink approval and port binding can fail after the preceding stream was
+                            // retired. Its old EOF callback has an obsolete token and cannot clean up.
+                            mirrorToken = null
+                            mirror?.close(); mirror = null
+                            output?.close()
+                            if (mirrorPreparation === this) mirrorPreparation = null
+                            if (owner === this) owner = if (audio != null) this else null
+                            timing?.reportVideoEnd()
+                            listener.status(if (audio != null) "audio" else "listening")
+                        }
+                        throw error
                     }
-                    mirror = receiver; owner = this
-                    val dataPort = receiver.start()
-                    listener.status("mirror")
-                    mapOf("type" to 110, "dataPort" to dataPort)
                 }
             }
             plist(response)

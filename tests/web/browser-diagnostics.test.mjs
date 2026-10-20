@@ -7,14 +7,34 @@ import { AUDIO_DIAGNOSTIC_BYTES, PAGE_VERSION, browserDiagnosticEvents } from '.
 test('busy video summaries retain cadence, audio and touch RTT within the ordinary budget', () => {
   const video = { ...Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`counter${i}`, i])),
     currentFps: 48, currentDelta: -19, frameIntervalP95Ms: 61, frameIntervalMaxMs: 128,
-    pacingMode: 'display-refresh', pacingDroppedFrames: 3 };
+    pacingMode: 'display-refresh', pacingDroppedFrames: 3,
+    playbackProfile: 'carplay-touch', decodedQueueFrames: 3, decodedQueueBytes: 24000000, decodedResourceDroppedFrames: 2 };
   const [event] = browserDiagnosticEvents({ video, control: { rttMsP95: 72, pending: 1 },
     audio: { sound: true, queuedBytes: 4096 } }, false);
   assert.equal(event.v['video.frameIntervalP95Ms'], 61);
   assert.equal(event.v['video.currentFps'], 48);
   assert.equal(event.v['video.pacingDroppedFrames'], 3);
+  assert.equal(event.v['video.playbackProfile'], 'carplay-touch');
+  assert.equal(event.v['video.decodedQueueBytes'], 24000000);
   assert.equal(event.v['control.rttMsP95'], 72);
   assert.equal(event.v['audio.queuedBytes'], 4096);
+  assert.ok(JSON.stringify(event.v).length <= 2048);
+});
+
+test('transport failure and bounded resource evidence survives a busy video summary', () => {
+  const transport = { transport: 'webrtc-datachannel', state: 'failed', reason: 'fragment-order', generation: 7,
+    queuedBytes: 1000, highWaterBytes: 2048, reassemblyErrors: 1, controlFailures: 2,
+    iceState: 'connected', connectionState: 'failed', fragmentsReceived: 1200, bytesReceived: 128000,
+    recordsReceived: 100, recordsConsumed: 90, audioDiscardedRecords: 0, controlRequests: 72 };
+  const video = { ...Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`counter${i}`, i])),
+    currentFps: 48, currentDelta: -19, frameIntervalP95Ms: 61, frameIntervalMaxMs: 128,
+    pacingMode: 'display-refresh', pacingDroppedFrames: 3 };
+  const [event] = browserDiagnosticEvents({ video, transport, control: { rttMsP95: 72, pending: 1 },
+    audio: { sound: true, queuedBytes: 4096 } }, false);
+  for (const [key, value] of Object.entries(transport)) assert.equal(event.v[`transport.${key}`], value);
+  assert.equal(event.v['audio.queuedBytes'], 4096);
+  assert.equal(event.v['control.rttMsP95'], 72);
+  assert.equal(event.v['video.frameIntervalP95Ms'], 61);
   assert.ok(JSON.stringify(event.v).length <= 2048);
 });
 

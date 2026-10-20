@@ -110,6 +110,23 @@ class DiagnosticRedactorTest {
             assertNull(line, DiagnosticRedactor.redact(line))
         }
     }
+
+    @Test fun standardKeepsFailureContextAfterSharedErrorTextHasRemovedCredentials() {
+        DiagnosticLogPolicy.level = DiagnosticLogLevel.STANDARD
+        val directory = Files.createTempDirectory("diagnostic-sanitized-failure").toFile()
+        try {
+            val text = com.shilapi.xcertplay.diagnostics.DiagnosticErrorText.sanitize("Invalid request token=private-value password=private-password")
+            SessionLogFile(directory.resolve("diplay.log")).use { log ->
+                log.append("receiver protocol c=1 stage=DISPATCH exception=IllegalArgumentException errorText=$text")
+                log.append("receiver protocol c=1 stage=DISPATCH exception=IllegalArgumentException token=raw-private-value")
+            }
+            val saved = directory.resolve("diplay.log").readText()
+            assertTrue(saved, saved.contains("stage=DISPATCH exception=IllegalArgumentException"))
+            assertTrue(saved, saved.contains("errorText=Invalid request [credential] [credential]"))
+            assertFalse(saved, saved.contains("private"))
+            assertEquals(1, saved.lineSequence().filter { it.isNotEmpty() }.count())
+        } finally { directory.deleteRecursively() }
+    }
     @Test fun stateTransitionsSurviveWithoutAddressesOrIdentifiers() {
         val line = DiagnosticRedactor.redact("connected peer=C0:A6:00:29:58:0A ip=192.168.31.71 id=0123456789abcdef0123456789abcdef ipv6=fe80::1234:5678:abcd:9%p2p0")!!
         assertTrue(line.contains("connected"))

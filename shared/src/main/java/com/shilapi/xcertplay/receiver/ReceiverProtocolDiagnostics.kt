@@ -78,7 +78,7 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
 
     fun failure(connection: Long, stage: Stage, error: Exception) {
         val type = error.javaClass.simpleName.filter { it.isLetterOrDigit() || it == '_' }.take(64)
-        emit("c=$connection stage=$stage exception=$type errorText=${DiagnosticErrorText.sanitize(runCatching { error.message }.getOrNull())}")
+        emit("c=$connection stage=$stage exception=$type causes=${DiagnosticErrorText.types(error)} errorText=${DiagnosticErrorText.sanitize(runCatching { error.message }.getOrNull())}")
     }
 
     fun setup(connection: Long, dict: Map<*, *>, verified: Boolean, handshakeBytes: Int) {

@@ -325,3 +325,46 @@ test('stream diagnostics identify the last rendered context boundary rather than
   h.player.clear();
   assert.equal(h.player.stats().contextTimeMs, null, 'retirement cannot retain an old device anchor');
 });
+
+test('real PCM marker oracle rejects a quantum beyond its independent source deadline, including recovery tails', () => {
+  const rate = 48000, sourceOrigin = 800000;
+  const player = new ContinuousAudio(runtime, rate, 1, rate, () => {}, 1000, { mode: 'carplay' });
+  // This marker is measured from the actual resampled waveform, independently
+  // of rawCursorMs and the deadline calculation under test.
+  for (let first = 0; first < 16000; first += 800) player.push({
+    pcm: Int16Array.from({ length: 800 }, (_, index) => first + index).buffer,
+    presentationMs: sourceOrigin + first / 48, sequence: first / 800, generation: 1, arrivalLocalTimeMs: first / 48,
+  });
+  const clock = { generation: 1, state: 'tracking', rate: 1, serverOriginMs: sourceOrigin, localOriginMs: 0 };
+  const block = new Float32Array(128);
+  for (let quantum = 0; quantum < 20; quantum++) {
+    const context = quantum * 128 / 48;
+    player.render(sourceOrigin + context, context, clock, 128, block, 1,
+      { outputAt: context + 280, limitMs: 300, uncertaintyMs: 2 });
+    if (quantum > 5) {
+      const markerSourceMs = block[100] * 32768 / 48;
+      const acousticAt = context + 280 + 100 / 48;
+      assert.ok(Math.abs(acousticAt - markerSourceMs - 280) < 1, `actual PCM delay ${acousticAt - markerSourceMs}ms at quantum ${quantum} confirms the source-to-speaker oracle`);
+      assert.equal(player.sourceDeadlineState, 'within-bound');
+    }
+  }
+  const context = 20 * 128 / 48;
+  clock.localOriginMs = -29; // A real accepted phase refinement, below the 30ms reset threshold.
+  player.render(sourceOrigin + context + 29, context, clock, 128, block, 1,
+    { outputAt: context + 280, limitMs: 300, uncertaintyMs: 2 });
+  assert.equal(player.sourceDeadlineState, 'violated');
+  assert.ok(player.sourceDeltaUpperMs > 300);
+  assert.equal(player.sourceDeadlineRejectedFrames, 128);
+  assert.ok(block.every(value => value === 0), 'expired PCM and its crossfade tail never reach the destination');
+  assert.equal(player.lastRecoveryReason, 'source-deadline');
+  player.clear();
+});
+
+test('unobservable source/output uncertainty stays unknown while valid continuous audio may continue', () => {
+  const h = harness(); h.feed(10000);
+  h.player.render(h.sourceBase, 0, h.clock, 128, h.block, 1, { unknownReason: 'clock-uncertainty-unavailable' });
+  assert.equal(h.player.sourceDeadlineState, 'unknown');
+  assert.equal(h.player.sourceDeadlineReason, 'clock-uncertainty-unavailable');
+  assert.equal(h.player.sourceDeltaUpperMs, null);
+  assert.equal(h.player.state, 'playing'); h.player.clear();
+});

@@ -19,7 +19,7 @@ function harness() {
   const processor = new Processor(), base = 8000000;
   const post = data => processor.port.onmessage({ data });
   post({ calibration });
-  post({ clock: { version: 2, generation: 1, serverOriginMs: base, localOriginMs: 0, rate: 1, state: 'locked' },
+  post({ clock: { version: 2, generation: 1, serverOriginMs: base, localOriginMs: 0, rate: 1, state: 'locked', uncertaintyMs: 0 },
     contextAnchor: { contextTimeMs: 0, localTimeMs: 200 }, localTimeOriginMs: 1792159881000,
     outputUncertaintyMs: 1, plans: { audio: constantDelay(60), video: constantDelay(0) } });
   let frame = 0;
@@ -276,4 +276,22 @@ test('output rate calibration keeps strict media and arrival guidance on indepen
   assert.equal(media.recoveryCounts['device-clock-jump'], 1, 'a genuine render-counter discontinuity still resets the signal');
   assert.equal(voice.recoveryCounts['device-clock-jump'], 1);
   h.post({ dispose: true });
+});
+
+test('independent audio deadline reserves uncertainty and video-only touch plans leave the filter unchanged', () => {
+  const h = harness(); h.feed();
+  h.post({ plans: { video: constantDelay(180), audio: constantDelay(280) } });
+  for (let quantum = 0; quantum < 100; quantum++) { h.feed(); h.render(); }
+  const player = h.processor.timelines.get(0), backend = player.backend, recoveries = { ...player.recoveryCounts };
+  assert.equal(player.networkDelayMs, 268, '300ms includes the 30ms phase budget plus 1ms output and 1ms filter uncertainty');
+  assert.equal(player.sourceDeadlineState, 'within-bound'); assert.ok(player.sourceDeltaUpperMs <= 300);
+  h.post({ plans: { video: constantDelay(0), audio: constantDelay(280) } });
+  for (let quantum = 0; quantum < 100; quantum++) { h.feed(); h.render(); }
+  assert.equal(player.backend, backend); assert.deepEqual(player.recoveryCounts, recoveries);
+  assert.equal(player.networkDelayMs, 268); assert.equal(player.sourceDeadlineRejectedFrames, 0);
+  h.post({ clock: { version: 2, generation: 1, serverOriginMs: h.base, localOriginMs: 0, rate: 1, state: 'locked' } });
+  for (let quantum = 0; quantum < 20; quantum++) { h.feed(); h.render(); }
+  assert.equal(player.sourceDeadlineState, 'unknown');
+  assert.equal(player.sourceDeadlineReason, 'clock-uncertainty-unavailable');
+  assert.equal(h.processor.messages.filter(value => value.playout).at(-1).playout.state, 'untimed');
 });

@@ -125,7 +125,8 @@ class WebVideoHub(
 
     /** One Annex-B access unit. [annexB] is shared with the Android decoder: it is queued as is, never copied or changed. */
     @JvmOverloads
-    fun frame(owner: Any, annexB: ByteArray, senderNanos: Long, arrivalNanos: Long, captureNanos: Long? = null) {
+    fun frame(owner: Any, annexB: ByteArray, senderNanos: Long, arrivalNanos: Long, captureNanos: Long? = null,
+              decodeOnly: Boolean = false) {
         val force = lock.withLock {
             if (owner !== this.owner) return
             val config = config ?: return
@@ -141,18 +142,20 @@ class WebVideoHub(
             else (arrivalNanos - originArrivalNanos) / 1000
             performance.count("input")
             val subscription = subscription ?: return
+            val outputFlags = if (decodeOnly) WebVideoRecords.FLAG_DECODE_ONLY else 0
             val record = if (WebVideoCodecs.isKeyFrame(config.codec, annexB)) {
                 WebVideoRecord(
-                    WebVideoRecords.KIND_FRAME, WebVideoRecords.FLAG_KEY_FRAME or WebVideoRecords.FLAG_PARAMETER_SETS,
+                    WebVideoRecords.KIND_FRAME, WebVideoRecords.FLAG_KEY_FRAME or WebVideoRecords.FLAG_PARAMETER_SETS or outputFlags,
                     WebVideoRecords.codecId(config.codec), sequence, config.epoch, timestampUs, annexB, config.parameterSets, now, captureNanos,
                 )
             } else {
                 WebVideoRecord(
-                    WebVideoRecords.KIND_FRAME, 0, WebVideoRecords.codecId(config.codec), sequence, config.epoch, timestampUs,
+                    WebVideoRecords.KIND_FRAME, outputFlags, WebVideoRecords.codecId(config.codec), sequence, config.epoch, timestampUs,
                     annexB, null, now, captureNanos,
                 )
             }
             if (subscription.queue.offer(record, now)) subscription.signal()
+            subscription.queue.failureReason?.let(subscription::endLocked)
             keyFrameDue(subscription, now)
         } ?: return
         requestKeyFrame(force)
@@ -258,11 +261,11 @@ class WebVideoHub(
     }
 
     /** Starts a subscription: it gets the current config first, then frames from the next key frame, which is requested now. */
-    internal fun subscribe(): WebVideoSubscription {
+    internal fun subscribe(reliable: Boolean = false): WebVideoSubscription {
         val subscription = lock.withLock {
             val now = nanoTime()
             subscription?.endLocked("replaced")
-            WebVideoSubscription(this, lock.newCondition(), now).also { next ->
+            WebVideoSubscription(this, lock.newCondition(), now, reliable).also { next ->
                 subscription = next
                 config?.let { next.offerConfig(it.message, now) }
             }
@@ -318,8 +321,11 @@ internal class WebVideoSubscription(
     private val hub: WebVideoHub,
     private val available: Condition,
     now: Long,
+    reliable: Boolean = false,
 ) : Closeable {
-    val queue = WebFrameQueue().apply { requireKeyFrame(now) }
+    val queue = (if (reliable) WebFrameQueue(maxAgeNanos = 300_000_000L,
+        maxBytes = 16 * 1024 * 1024, maxFrames = 120, reliable = true) else WebFrameQueue())
+        .apply { requireKeyFrame(now) }
     private var end: WebVideoRecord? = null
     private var idle = false
 
@@ -337,7 +343,9 @@ internal class WebVideoSubscription(
                     idle = false
                     return WebVideoRecords.IDLE
                 }
-                queue.poll(hub.now())?.let { return it }
+                val record = queue.poll(hub.now())
+                queue.failureReason?.let { endLocked(it); return end }
+                record?.let { return it }
                 if (remaining <= 0L) return null
                 remaining = available.awaitNanos(remaining)
             }

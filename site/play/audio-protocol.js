@@ -2,8 +2,11 @@
 export const MAX_AUDIO_RECORD = 256 * 1024;
 
 /** CarPlay PCM and ordinary AirPlay codec packets share the same timestamped transport header. */
-export async function* readAudioRecords(body) {
+export async function* readAudioRecords(body, signal) {
   const reader = body.getReader();
+  const stop = () => reader.cancel().catch(() => {});
+  signal?.addEventListener('abort', stop, { once: true });
+  if (signal?.aborted) stop();
   let chunk = new Uint8Array(), offset = 0;
   async function read(size) {
     const bytes = new Uint8Array(size);
@@ -55,6 +58,7 @@ export async function* readAudioRecords(body) {
       yield record;
     }
   } finally {
+    signal?.removeEventListener('abort', stop);
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }

@@ -14,9 +14,9 @@ internal object DiagnosticLogPolicy {
 
     private val failureWord = Regex("(?i)\\b(failed|failure|rejected|denied|timeout|timed out|exception|crash|anr|invalid|unavailable)\\b(?!\\s*[=:])")
     private val errorValue = Regex("(?i)\\b(?:error|errorCode|exception|failureClass)=([^\\s]+)")
-    private val lossValue = Regex("(?i)\\b[A-Za-z]*(?:dropped|drop|underruns|overruns|failures|readErrors|sendErrors|inErrors|rcvbufErrors|inCsumErrors|missedErrors)(?:Delta|Total)?=([+]?[0-9]+)")
+    private val lossValue = Regex("(?i)\\b[A-Za-z]*(?:dropped|drop|underruns|overruns|failures|errors|stalls|violations|malformed|incomplete)(?:Delta|Total)?=([+]?[0-9]+)")
     private val badStatus = Regex("(?i)\\bstatus=([45][0-9]{2}|INVALID)\\b")
-    private val errorEvent = Regex("(?i)\\b(event|state|reason|result)=(?:error|failed|browser-failed|decoder-error|timed_out|invalid|rejected|denied)\\b|\\b(?:failed|failure|denied|rejected|timeout|invalid|unavailable)=true\\b|\\bcommandWritten=false\\b|\\berror\\b(?!\\s*[=:])")
+    private val errorEvent = Regex("(?i)\\b(event|state|reason|result)=(?:error|failed|browser-failed|decoder-error|timed_out|invalid|rejected|denied|credit-stall|receiver-overflow|fragment-(?:size|epoch|bounds|order)|control-timeout|ice-failed|peer-disconnected|channel-closed|connect-timeout)\\b|\\b(?:failed|failure|denied|rejected|timeout|invalid|unavailable|stalled)=true\\b|\\bcommandWritten=false\\b|\\berror\\b(?!\\s*[=:])")
     private val finalSummary = Regex("(?i)\\b(ended=true|stage=(?:END|FINISH|STOP)|summary|io final)\\b|^Media clock (?:final|snapshot):")
     private val protocolDetail = Regex("(?i)\\bstage=(?:REQUEST|RESPONSE|REVERSE_REPLY|PARAMETERS|PLAYBACK_INFO|PACKET|FORWARDED|TIMING|ENCODED_FRAME|READ|DISPATCH|WRITE)\\b")
 

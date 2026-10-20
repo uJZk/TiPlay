@@ -25,7 +25,9 @@ internal class AirPlayResourceDiagnostics(private val log: (String) -> Unit,
 
     fun failure(load: Long, error: AirPlayVideoProxy.Failure, cause: IOException? = null) {
         val detail = cause?.let {
-            " exception=${exceptionType(it)}" + (it.cause?.let { nested -> " cause=${exceptionType(nested)}" } ?: "")
+            " exception=${exceptionType(it)}" +
+                (runCatching { it.cause }.getOrNull()?.let { nested -> " cause=${exceptionType(nested)}" } ?: "") +
+                " causes=${DiagnosticErrorText.types(it)}"
         }.orEmpty()
         emit("resource stage=FAILURE load=$load route=${error.route ?: "NONE"} status=${error.status ?: "ABSENT"} reason=${error.reason.wire}$detail")
     }

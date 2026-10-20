@@ -1,17 +1,21 @@
 /*! SPDX-License-Identifier: GPL-3.0-only
  * TiPlay WebCodecs video: §3 records → VideoDecoder → frames, and a presenter that draws frames on a canvas
  * (WebGL, 2D as a fallback). Runs in decoder-worker.js on the Tesla path, or on the main thread as a fallback. */
-import { FLAG, RECORD, RecordError, Samples, chooseDecoderConfig, createRecordStream, letterbox } from './link.js';
+import { FLAG, RECORD, RecordError, RecordStreamError, Samples, abortable, chooseDecoderConfig, createRecordStream, letterbox } from './link.js';
 import { createFpsWindow } from './fps-window.js';
 import { createVideoFramePacer } from './video-pacing.js';
 import { presentationTime } from './clock-sync.js';
 import { videoExpired } from './playback-window.js';
 import { hasHdrTransfer } from './airplay-sdr.js';
-import { AUDIO_EARLY_MS, AUDIO_LATE_MS } from './delay-plan.js';
-import { createAudioReferenceTimeline, OUTPUT_REFERENCE_MAX_AGE_MS } from './audio-output-clock.js';
+import { createAudioReferenceTimeline } from './audio-output-clock.js';
 
 const KEY_REQUEST_INTERVAL_MS = 1000;
-const MAX_DECODE_QUEUE = 30; // half a second at 60 fps; beyond that, drop to the next key frame instead of lagging
+const MAX_DECODE_QUEUE = 16;
+// decodeQueueSize excludes reference pictures already accepted by the decoder.
+// Retain enough lookahead for reordered streams while bounding hidden work too.
+const MAX_DECODE_IN_FLIGHT = 48;
+const MAX_DECODE_BYTES = 32 * 1024 * 1024;
+const DECODE_WAIT_TIMEOUT_MS = 1000;
 const MAX_FAILURES = 4; // decoder errors without a decoded frame before the page gives up on this config
 const utf8 = new TextDecoder();
 
@@ -19,13 +23,16 @@ const utf8 = new TextDecoder();
  * Decodes record streams. `post(message)` gets {type:'alive'|'config'|'keyframe'|'unsupported'|'end'};
  * `present(frame)` takes ownership of every decoded VideoFrame.
  */
-export function createDecoderPipeline({ post: send, present }) {
+export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECODE_WAIT_TIMEOUT_MS, decoderProbeWaitMs = 3000 }) {
   const decoderSupports = config => VideoDecoder.isConfigSupported(config);
   const decodeStarts = new Map();
   const presentationTimes = new Map();
   let clock = null;
   const decodeMs = new Samples();
-  const totals = { decoded: 0, dropped: 0, decodeErrors: 0, backlogResets: 0, keyRequests: 0, timingRecords: 0, timingRejected: 0 };
+  const totals = { decoded: 0, dropped: 0, decodeErrors: 0, backlogResets: 0, keyRequests: 0, timingRecords: 0, timingRejected: 0,
+    decodeBackpressureWaits: 0, decodeBackpressureMs: 0, decodeStalls: 0, decoderAbortedFrames: 0, decodeOnlyFrames: 0 };
+  const decodeWaiters = new Set();
+  let decodeBytes = 0, decoderErrorName = null, decoderErrorMessage = null;
   let decodeDroppedFrames = 0;
   const dropped = () => { totals.dropped++; decodeDroppedFrames++; };
   let decoder = null, decoderConfig = null, config = null, codecSupported = null;
@@ -52,7 +59,7 @@ export function createDecoderPipeline({ post: send, present }) {
         presentationTimes.set(`${record.epoch}:${record.timestampUs}`, { mapped, sourceTimeMs: presentation, clockGeneration: clock?.generation });
         if (presentationTimes.size > 120) presentationTimes.delete(presentationTimes.keys().next().value);
       }
-      if (record.kind === RECORD.FRAME) decodeFrame(record);
+      if (record.kind === RECORD.FRAME) return decodeFrame(record, signal);
       return null;
     },
     onAlive: id => post({ type: 'alive', id }),
@@ -82,7 +89,17 @@ export function createDecoderPipeline({ post: send, present }) {
     decodeDroppedFrames = 0;
     // Late output of the old decoder would otherwise be drawn and reported as the first frame of the new epoch.
     closeDecoder();
-    const chosen = await chooseDecoderConfig(decoderSupports, next);
+    let chosen, probeTimer;
+    try {
+      chosen = await abortable(Promise.race([
+        chooseDecoderConfig(decoderSupports, next),
+        new Promise((_, reject) => { probeTimer = setTimeout(() => reject(new RecordStreamError('decoder-probe-timeout', 'VideoDecoder capability query did not complete')), decoderProbeWaitMs); }),
+      ]), signal);
+    } catch (error) {
+      if (signal.aborted) return;
+      recordDecoderError(error);
+      throw error;
+    } finally { clearTimeout(probeTimer); }
     if (signal.aborted || config !== next) return; // a newer config arrived meanwhile
     decoderConfig = chosen;
     codecSupported = Boolean(chosen);
@@ -99,28 +116,44 @@ export function createDecoderPipeline({ post: send, present }) {
     closeDecoder();
     const created = new VideoDecoder({
       output: frame => onFrame(created, frame),
-      error: () => {
-        if (created === decoder) failed();
+      error: error => {
+        if (created === decoder) failed(error);
       },
     });
     decoder = created;
-    decoder.configure(decoderConfig);
+    try { decoder.configure(decoderConfig); }
+    catch (error) {
+      recordDecoderError(error);
+      closeDecoder(); codecSupported = false;
+      post({ type: 'unsupported', codec: config?.codec, reason: 'decoder-configuration', detail: decoderErrorMessage });
+      return false;
+    }
     needKey = true;
+    return true;
   }
 
   function closeDecoder() {
     if (decoder && decoder.state !== 'closed') decoder.close();
     decoder = null;
+    totals.decoderAbortedFrames += decodeStarts.size;
     decodeStarts.clear();
+    decodeBytes = 0;
     presentationTimes.clear();
+    for (const wake of decodeWaiters) wake();
   }
 
   /**
    * A decoder that reported an error is closed, so build a new one; the picture resumes at the next key frame.
-   * Repeated errors without a decoded frame suggest a broken hardware path: try any decoder, then give up.
+   * Repeated errors without a decoded frame end this configuration; never opt into software decoding.
    */
-  function failed() {
+  function recordDecoderError(error) {
     totals.decodeErrors++;
+    decoderErrorName = String(error?.name ?? 'Error');
+    decoderErrorMessage = String(error?.message ?? 'VideoDecoder reported an error').slice(0, 512);
+  }
+
+  function failed(error) {
+    recordDecoderError(error);
     failures++;
     if (failures > MAX_FAILURES) {
       closeDecoder();
@@ -128,46 +161,78 @@ export function createDecoderPipeline({ post: send, present }) {
       post({ type: 'unsupported', codec: decoderConfig.codec });
       return;
     }
-    if (failures > 1) decoderConfig = { ...decoderConfig, hardwareAcceleration: 'no-preference' };
-    openDecoder();
-    requestKeyFrame(true);
+    if (openDecoder()) requestKeyFrame();
   }
 
-  function requestKeyFrame(force = false) {
+  function requestKeyFrame() {
     const now = performance.now();
-    if (!force && now - lastKeyRequest < KEY_REQUEST_INTERVAL_MS) return;
+    if (now - lastKeyRequest < KEY_REQUEST_INTERVAL_MS) return;
     lastKeyRequest = now;
     totals.keyRequests++;
     post({ type: 'keyframe' });
   }
 
-  function decodeFrame(record) {
+  function decodeRoom(bytes) {
+    return decoder?.state === 'configured' && decoder.decodeQueueSize < MAX_DECODE_QUEUE
+      && decodeStarts.size < MAX_DECODE_IN_FLIGHT && decodeBytes + bytes <= MAX_DECODE_BYTES;
+  }
+
+  /** Stop pulling encoded records until decoder capacity returns; never drop a dependency to catch up. */
+  function waitForDecodeRoom(bytes, signal) {
+    if (decodeRoom(bytes)) return null;
+    const source = decoder, started = performance.now();
+    totals.decodeBackpressureWaits++;
+    return new Promise((resolve, reject) => {
+      let timer = null, done = false;
+      const finish = error => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        signal.removeEventListener('abort', aborted);
+        source?.removeEventListener?.('dequeue', wake);
+        decodeWaiters.delete(wake);
+        totals.decodeBackpressureMs += performance.now() - started;
+        if (error) reject(error); else resolve();
+      };
+      const aborted = () => finish(new Error('stream stopped'));
+      const wake = () => {
+        if (source !== decoder || source?.state !== 'configured') finish(new RecordStreamError('decode-reset', 'Decoder changed while waiting for complete input'));
+        else if (decodeRoom(bytes)) finish();
+      };
+      decodeWaiters.add(wake);
+      source?.addEventListener?.('dequeue', wake);
+      signal.addEventListener('abort', aborted, { once: true });
+      timer = setTimeout(() => {
+        totals.decodeStalls++;
+        decoderErrorName = 'DecodeBackpressureError';
+        decoderErrorMessage = 'Decoder capacity did not return before the bounded wait expired';
+        finish(new RecordStreamError('decode-stalled', decoderErrorMessage));
+      }, decodeWaitMs);
+      if (signal.aborted) aborted(); else wake();
+    });
+  }
+
+  async function decodeFrame(record, signal) {
     const key = (record.flags & FLAG.KEY) !== 0;
+    if (config && record.epoch !== config.epoch) throw new RecordStreamError('video-epoch', 'Encoded frame does not belong to the configured video epoch');
     if (decoder?.state !== 'configured' || (needKey && !key)) {
       dropped();
       if (decoder) requestKeyFrame();
       return;
     }
-    if (decoder.decodeQueueSize > MAX_DECODE_QUEUE) {
-      totals.backlogResets++;
-      decoder.reset();
-      decoder.configure(decoderConfig);
-      decodeStarts.clear();
-      needKey = true;
-      if (!key) {
-        dropped();
-        requestKeyFrame(true);
-        return;
-      }
-    }
+    const pending = waitForDecodeRoom(record.payload.byteLength, signal);
+    if (pending) await pending;
+    if (signal.aborted) return;
+    if (decodeStarts.has(record.timestampUs)) throw new RecordStreamError('video-timestamp', 'Duplicate timestamp in outstanding encoded video');
     needKey = false;
-    decodeStarts.set(record.timestampUs, performance.now());
-    if (decodeStarts.size > 120) decodeStarts.delete(decodeStarts.keys().next().value);
+    decodeStarts.set(record.timestampUs, { at: performance.now(), bytes: record.payload.byteLength,
+      decodeOnly: (record.flags & FLAG.DECODE_ONLY) !== 0 });
+    decodeBytes += record.payload.byteLength;
     try {
       decoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp: record.timestampUs, data: record.payload }));
-    } catch (_) {
+    } catch (error) {
       dropped(); // This input was rejected; decoder-internal reset losses are not observable.
-      failed();
+      failed(error);
     }
   }
 
@@ -184,13 +249,16 @@ export function createDecoderPipeline({ post: send, present }) {
     const started = decodeStarts.get(frame.timestamp);
     if (started !== undefined) {
       decodeStarts.delete(frame.timestamp);
-      decodeMs.add(performance.now() - started);
+      decodeBytes -= started.bytes;
+      decodeMs.add(performance.now() - started.at);
+      for (const wake of decodeWaiters) wake();
     }
     totals.decoded++;
     failures = 0;
     const key = `${config?.epoch}:${frame.timestamp}`;
     const timing = presentationTimes.get(key);
     presentationTimes.delete(key);
+    if (started?.decodeOnly) { totals.decodeOnlyFrames++; frame.close(); return; }
     present(frame, config, streamId, timing?.mapped, timing && { sourceTimeMs: timing.sourceTimeMs, clockGeneration: timing.clockGeneration });
   }
 
@@ -227,6 +295,9 @@ export function createDecoderPipeline({ post: send, present }) {
       acceleration: decoderConfig?.hardwareAcceleration ?? null,
       decoderImplementation: 'unknown',
       decodeQueueSize: decoder?.decodeQueueSize ?? 0,
+      decodeInFlightFrames: decodeStarts.size,
+      decodeInFlightBytes: decodeBytes,
+      decoderErrorName, decoderErrorMessage,
       ...rates,
       decodeMsP50: decodeMs.percentile(50),
       decodeMsP95: decodeMs.percentile(95),
@@ -246,7 +317,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
   const drawMs = new Samples();
   const fpsWindow = createFpsWindow();
   let renderer = createRenderer(canvas), lastFrame = null, lastConfig = null, expiredFrames = 0, untimedFrames = 0, renderDroppedFrames = 0;
-  let audioSyncDroppedFrames = 0;
+  let audioReferenceState = 'video-only', audioVideoSkewMs = null;
   const audioReferences = createAudioReferenceTimeline();
   let audioTracking = false, provenId = null, provenEpoch = null;
 
@@ -270,39 +341,33 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
     if (lastConfig?.epoch !== config?.epoch) {
       fpsWindow.reset();
       expiredFrames = untimedFrames = renderDroppedFrames = 0;
-      audioSyncDroppedFrames = 0;
+      audioReferenceState = 'video-only'; audioVideoSkewMs = null;
     }
     lastConfig = config;
     const late = () => applyTimingPolicy && videoExpired(timing, config?.mode, now());
     let checkedAt = null, checkedAudioAt = outputWindow?.audioAt;
-    const outsideAudioWindow = (at = now()) => {
-      if (!applyTimingPolicy) return false;
+    const observeAudio = at => {
       if (audioTracking) {
         const resolved = audioReferences.resolve(config?.mode, outputWindow?.sourceTimeMs, outputWindow?.clockGeneration, at);
-        if (!resolved.required) return false;
-        if (!Number.isFinite(resolved.audioAt)) return true;
-        checkedAudioAt = resolved.audioAt;
-        return at < resolved.audioAt + resolved.uncertaintyMs - AUDIO_LATE_MS
-          || at > resolved.audioAt - resolved.uncertaintyMs + AUDIO_EARLY_MS;
+        audioReferenceState = resolved.state;
+        checkedAudioAt = Number.isFinite(resolved.audioAt) ? resolved.audioAt : null;
+      } else {
+        audioReferenceState = outputWindow?.state ?? (Number.isFinite(checkedAudioAt) ? 'audio-output' : 'video-only');
       }
-      return outputWindow && (at < outputWindow.at || at - outputWindow.at > OUTPUT_REFERENCE_MAX_AGE_MS
-        || at < outputWindow.earliest || at > outputWindow.latest);
+      audioVideoSkewMs = Number.isFinite(checkedAudioAt) ? checkedAudioAt - at : null;
     };
     if (late()) { expiredFrames++; renderDroppedFrames++; frame.close(); return; }
-    if (outsideAudioWindow()) { audioSyncDroppedFrames++; renderDroppedFrames++; frame.close(); return; }
     const started = performance.now();
     let drawn;
     let expired = false;
-    let audioExpired = false;
     try { drawn = draw(frame, () => {
       checkedAt = now();
       expired = applyTimingPolicy && videoExpired(timing, config?.mode, checkedAt);
-      audioExpired = outsideAudioWindow(checkedAt);
-      return !expired && !audioExpired;
+      observeAudio(checkedAt);
+      return !expired;
     }, reason !== 'refresh') !== false; }
     catch (error) { renderDroppedFrames++; frame.close(); throw error; }
     if (expired) { expiredFrames++; renderDroppedFrames++; frame.close(); return; }
-    if (audioExpired) { audioSyncDroppedFrames++; renderDroppedFrames++; frame.close(); return; }
     if (!drawn) { renderDroppedFrames++; frame.close(); return; }
     if (!Number.isFinite(timing)) untimedFrames++;
     drawMs.add(performance.now() - started);
@@ -343,7 +408,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       lastConfig = null;
       provenId = provenEpoch = null;
       expiredFrames = untimedFrames = renderDroppedFrames = 0;
-      audioSyncDroppedFrames = 0;
+      audioReferenceState = 'video-only'; audioVideoSkewMs = null;
     },
     dispose() {
       pacer?.reset(); fpsWindow.reset();
@@ -354,7 +419,7 @@ export function createFramePresenter(canvas, { now = () => performance.timeOrigi
       renderer.dispose?.();
     },
     stats: () => ({ renderer: renderer.kind, canvas: `${canvas.width}x${canvas.height}`, drawMsP95: drawMs.percentile(95), expiredFrames, untimedFrames, renderDroppedFrames,
-      audioRenderSyncDroppedFrames: audioSyncDroppedFrames, ...pacer?.stats(), ...fpsWindow.stats() }),
+      audioRenderSyncDroppedFrames: 0, audioReferenceState, audioVideoSkewMs, ...pacer?.stats(), ...fpsWindow.stats() }),
   };
 }
 

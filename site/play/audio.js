@@ -10,11 +10,11 @@ import { createAudioCalibration } from './audio-calibration.js';
 
 /** Playback only. Android owns demand-driven car Bluetooth capture and speech playback. */
 export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {},
-  onAudioReference = () => {} }) {
+  onAudioReference = () => {}, onSourceDeadline = () => {} }) {
   let context = null, node = null, ready = null, connection = null, request = null;
   let support = false, enabled = true, voiceRevision = null, voiceState = 'idle', voiceError = null;
   let queuedBytes = 0, capacity = null, audioError = null, disposed = false;
-  let retryTimer = null;
+  let retryTimer = null, mediaSource = null;
   let clock = null, delayPlans = initialPlaybackPlans(), timedPackets = 0, fallbackPackets = 0;
   let clockBase = null, playbackGeneration = 0;
   let debugEnabled = false, pcmMetrics = null, workletMetrics = null, reportAt = null;
@@ -25,6 +25,49 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let nodeInstallation = null;
   const calibrations = createAudioCalibration();
   const outputClock = createAudioOutputMapping(), playoutReferences = new Map();
+  // Keep one counter per bounded logical stream. Epoch changes retire its local counter,
+  // while the page-wide rejection total survives stream replacement and processor recovery.
+  const deadlineStreams = new Map();
+  let deadlineRejectedFrames = 0, deadlineEventSequence = 0;
+  const importantUnknown = new Set(['source-anchor-unavailable', 'output-clock-unavailable', 'clock-uncertainty-unavailable']);
+  const deadlineReasons = new Set([...importantUnknown, 'source-deadline', 'no-output']);
+  function observeSourceDeadline(reference) {
+    if (!['carplay', 'airplay-mirror', 'airplay-audio'].includes(reference.mode)
+      || !Number.isInteger(reference.type) || reference.type < 0 || reference.type > 255) return;
+    const key = `${reference.mode}-${reference.type}`, identity = `${reference.generation}:${reference.epoch}`;
+    let entry = deadlineStreams.get(key);
+    if (!entry || entry.identity !== identity) {
+      if (!entry && deadlineStreams.size >= 3 * 256) return;
+      entry = { identity, rejected: 0, unknownReasons: new Set(), violatedReasons: new Set() };
+      deadlineStreams.set(key, entry);
+    }
+    const rejected = Number.isSafeInteger(reference.sourceDeadlineRejectedFrames) && reference.sourceDeadlineRejectedFrames >= 0
+      ? reference.sourceDeadlineRejectedFrames : entry.rejected;
+    const added = Math.max(0, rejected - entry.rejected);
+    entry.rejected = Math.max(entry.rejected, rejected); deadlineRejectedFrames += added;
+    entry.state = ['unknown', 'within-bound', 'violated'].includes(reference.sourceDeadlineState) ? reference.sourceDeadlineState : 'unknown';
+    entry.epoch = Number.isSafeInteger(reference.epoch) ? reference.epoch : null;
+    entry.reason = deadlineReasons.has(reference.sourceDeadlineReason) ? reference.sourceDeadlineReason : null;
+    entry.upper = Number.isFinite(reference.sourceDeltaUpperMs) ? reference.sourceDeltaUpperMs : null;
+    entry.active = !['retired', 'stopped', 'ended'].includes(reference.playoutState ?? reference.state);
+    const firstUnknown = entry.state === 'unknown' && importantUnknown.has(entry.reason) && !entry.unknownReasons.has(entry.reason);
+    const firstViolation = entry.state === 'violated' && !entry.violatedReasons.has(entry.reason);
+    if (firstUnknown) entry.unknownReasons.add(entry.reason);
+    if (firstViolation) entry.violatedReasons.add(entry.reason);
+    if (added || firstUnknown || firstViolation) {
+      entry.priority = ++deadlineEventSequence;
+      try { onSourceDeadline(); } catch (_) {} // Diagnostic delivery cannot interrupt audio feedback.
+    }
+  }
+  function sourceDeadlineStats() {
+    const rank = { violated: 0, unknown: 1, 'within-bound': 2 };
+    const active = [...deadlineStreams.entries()].filter(([, entry]) => entry.active)
+      .sort((a, b) => rank[a[1].state] - rank[b[1].state] || (b[1].priority ?? 0) - (a[1].priority ?? 0) || a[0].localeCompare(b[0]));
+    const [stream, entry] = active[0] ?? [];
+    return { sourceDeadlineState: entry?.state ?? 'unknown', sourceDeadlineReason: entry ? entry.reason ?? 'none' : 'no-audio',
+      sourceDeltaUpperMs: entry?.upper ?? null, sourceDeadlineRejectedFrames: deadlineRejectedFrames,
+      sourceDeadlineStream: stream ?? 'none', sourceDeadlineEpoch: entry?.epoch ?? null };
+  }
   const plansByMode = {};
   const encodedReservations = new Map();
   const reservedBytes = () => [...encodedReservations.values()].reduce((total, bytes) => total + bytes, 0);
@@ -65,6 +108,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   const snapshot = () => ({ supported: support, enabled, sound: context?.state === 'running',
     bluetooth: voiceState, browserMuted: false, error: voiceError ?? audioError,
     timedPackets, fallbackPackets, queuedBytes, processorErrors, recoveries, processorFailed,
+    ...sourceDeadlineStats(),
     ...(debugEnabled ? { debug: debugSnapshot() } : {}) });
   const notify = () => onState(snapshot());
   const auth = () => { const { code, session } = credentials(); return `c=${encodeURIComponent(code)}&s=${encodeURIComponent(session)}`; };
@@ -90,6 +134,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   }
   function invalidateOutput(state, clear = false) {
     outputClock.reset();
+    for (const entry of deadlineStreams.values()) entry.active = false;
     if (clear) { playoutReferences.clear(); onAudioReference(null); return; }
     for (const [key, previous] of playoutReferences) {
       const reference = { ...previous, state, playoutState: state, audibleTimeMs: null, at: now() };
@@ -155,7 +200,10 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       if (debugEnabled && data.diagnosticRevision === diagnosticRevision && data.diagnostics) { workletMetrics = data.diagnostics; reportAt = now(); }
       if (data.playout && data.playout.generation === playbackGeneration) {
         const reference = outputClock.reference(data.playout, context);
-        if (reference) { playoutReferences.set(`${reference.mode}:${reference.type}`, reference); onAudioReference(reference); }
+        if (reference) {
+          playoutReferences.set(`${reference.mode}:${reference.type}`, reference);
+          observeSourceDeadline(reference); onAudioReference(reference);
+        }
         controls();
       }
     };
@@ -267,10 +315,11 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     const stop = () => abort.abort();
     signal.addEventListener('abort', stop, { once: true });
     try {
-      const response = await fetchPhone(`/audio?${auth()}`, { signal: abort.signal });
+      const response = mediaSource ? { ok: true, body: mediaSource() }
+        : await fetchPhone(`/audio?${auth()}`, { signal: abort.signal });
       if (!response.ok) throw new Error(`Audio HTTP ${response.status}`);
       audioError = null; notify();
-      for await (const record of readAudioRecords(response.body)) {
+      for await (const record of readAudioRecords(response.body, abort.signal)) {
         if (abort.signal.aborted) break;
         if (record.kind === 2 && record.type === 5) { route({ revision: record.epoch }); continue; }
         if (record.kind === 6) {
@@ -364,8 +413,8 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       pendingPublish = null; pendingPcmBytes = 0; node?.port.postMessage({ reset: true }); capacity?.(); capacity = null; invalidateOutput('reset', true); },
     start() { activate(); },
     gesture() { if (!disposed && (!node || context?.state !== 'running' || processorFailed)) { recoveryAttempts = 0; activate(); } },
-    attach(signal, hello) {
-      this.stop(); voiceRevision = null; connection = signal; support = hello.audio === true;
+    attach(signal, hello, openMedia = null) {
+      this.stop(); voiceRevision = null; connection = signal; mediaSource = openMedia; support = hello.audio === true;
       recoveryAttempts = 0;
       signal.addEventListener('abort', () => { if (connection === signal) this.stop(); }, { once: true });
       if (!node || !nodeConnected) activate(); else stream(signal);
@@ -383,7 +432,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       }
       notify();
     },
-    stop() { clearTimeout(recoveryTimer); recoveryTimer = null; connection = null; stopStream(true, 'stopped'); voiceError = null; voiceState = 'idle'; notify(); },
+    stop() { clearTimeout(recoveryTimer); recoveryTimer = null; connection = null; mediaSource = null; stopStream(true, 'stopped'); voiceError = null; voiceState = 'idle'; notify(); },
     dispose() { disposed = true; this.stop(); retireNode(); packetDecoder.dispose(); calibrations.dispose(); if (context) context.onstatechange = null; context?.close().catch(() => {}); context = null; ready = null; },
   };
 }

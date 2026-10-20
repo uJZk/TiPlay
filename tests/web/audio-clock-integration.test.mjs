@@ -186,16 +186,16 @@ test('real DSP stays continuous through transient native timestamp faults, slow 
 
 function videoConsumer(h, initialReference) {
   let draws = 0, timer = 0;
-  const frames = createTimedFrames(() => draws++, { now: () => h.now, schedule: () => ++timer, cancel() {} });
+  const frames = createTimedFrames(frame => { draws++; frame.close(); }, { now: () => h.now, schedule: () => ++timer, cancel() {} });
   frames.delay(constantDelay(0)); frames.audio(initialReference);
   h.observeReference(reference => frames.audio(reference));
   return {
-    assertBlocked(clockGeneration = 3) {
+    assertIndependent(clockGeneration = 3) {
       const frame = { closed: false, close() { this.closed = true; } };
-      frames.present(frame, { mode: 'carplay' }, 1, h.now + 50,
+      frames.present(frame, { mode: 'carplay' }, 1, h.now,
         { sourceTimeMs: initialReference.sourceTimeMs, clockGeneration });
-      assert.equal(frame.closed, true, 'production video drops frames while formerly active audio is unavailable');
-      assert.equal(draws, 0, 'invalid audio cannot cause transient video-only drawing');
+      assert.equal(frame.closed, true, 'the presenter owns and releases the independently available video');
+      assert.ok(draws > 0, 'unavailable audio cannot freeze independent video');
       assert.notEqual(frames.stats().audioSyncState, 'video-only');
     },
     close() { frames.reset(); },
@@ -256,7 +256,7 @@ test('suspend invalidates the active producer identity and resumes through the r
     assert.equal(invalid.mode, before.mode); assert.equal(invalid.epoch, before.epoch);
     assert.equal(invalid.state, 'suspended'); assert.equal(invalid.audibleTimeMs, null);
     assert.equal(h.audioReferences.resolve('carplay', before.sourceTimeMs, 3, h.now).required, true);
-    video.assertBlocked();
+    video.assertIndependent();
     h.advanceWall(50); await h.context.resume(); h.drain();
     for (let i = 0; i < 30; i++) h.quantum();
     const resumed = h.references.findLast(value => value?.state === 'playing');
@@ -280,7 +280,7 @@ test('EOF and processor failure preserve invalid audio identity while replacemen
       assert.equal(resolved.required, true, `${failure} must keep audio required while output is unavailable`);
       assert.notEqual(resolved.state, 'video-only');
       assert.equal(h.references.at(-1).audibleTimeMs, null);
-      video.assertBlocked();
+      video.assertIndependent();
       h.advanceWall(failure === 'eof' ? 1001 : 101); await h.settle();
       await h.feed(96000, { epoch: 8, restart: true });
       for (let i = 0; i < 40; i++) h.quantum();
@@ -305,7 +305,7 @@ test('clock generation recovery rejects earlier source/output references without
     const video = videoConsumer(h, before);
     h.audio.clock(h.calibration(4)); h.drain();
     assert.equal(h.audioReferences.resolve('carplay', before.sourceTimeMs, 4, h.now).state, 'clock-generation');
-    video.assertBlocked(4);
+    video.assertIndependent(4);
     for (let i = 0; i < 30; i++) h.quantum();
     const after = h.references.findLast(value => value?.state === 'playing');
     assert.equal(after.clockGeneration, 4);

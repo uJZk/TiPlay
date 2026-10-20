@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { airPlayAudioDecoderConfig } from './airplay-audio-decoder.js';
+import { chooseDecoderConfig } from './link.js';
 const results = new Map();
 const audioResults = new WeakMap();
 
@@ -43,7 +44,7 @@ export function probeMirrorAudioFormats(Decoder = globalThis.AudioDecoder, probe
   return promise;
 }
 
-/** Report actual decoder support for the next mirror negotiation; never restart the current stream. */
+/** Match the production hardware request for the next mirror negotiation; this probe does not prove actual hardware use. */
 export function probeMirrorCapabilities(width, height, Decoder = globalThis.VideoDecoder) {
   const w = Math.max(2, Math.min(3840, Math.floor(width / 2) * 2));
   const h = Math.max(2, Math.min(2160, Math.floor(height / 2) * 2));
@@ -55,10 +56,10 @@ export function probeMirrorCapabilities(width, height, Decoder = globalThis.Vide
       let timer;
       try {
         const result = await Promise.race([
-          Decoder.isConfigSupported({ codec, codedWidth: x, codedHeight: y, optimizeForLatency: true }),
-          new Promise(resolve => { timer = setTimeout(() => resolve({ supported: false }), 1000); }),
+          chooseDecoderConfig(config => Decoder.isConfigSupported(config), { codec, width: x, height: y }),
+          new Promise(resolve => { timer = setTimeout(() => resolve(null), 1000); }),
         ]);
-        return result.supported === true;
+        return Boolean(result);
       } catch (_) { return false; } finally { clearTimeout(timer); }
     };
     let maxWidth = 0, maxHeight = 0;

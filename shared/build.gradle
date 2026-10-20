@@ -46,6 +46,8 @@ dependencies {
     implementation libs.androidx.app
     implementation libs.bouncycastle
     implementation libs.jmdns
+    // Pinned native DTLS/SCTP/ICE stack; media stays encoded application data.
+    implementation 'io.github.webrtc-sdk:android:144.7559.12'
     // TiPlay: the Shizuku hotspot address method (docs/HOTSPOT_ADDRESS.md).
     implementation libs.shizuku.api
     implementation libs.shizuku.provider

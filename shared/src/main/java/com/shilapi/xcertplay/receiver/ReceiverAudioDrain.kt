@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.receiver
 
 import com.shilapi.xcertplay.diagnostics.RawTraffic
+import com.shilapi.xcertplay.diagnostics.DiagnosticErrorText
 import java.io.Closeable
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -14,7 +15,8 @@ import java.util.concurrent.atomic.AtomicLong
 class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String) -> Unit = {},
                          private val packetReceived: ((ByteArray) -> Unit)? = null,
                          private val controlReceived: ((ByteArray) -> Unit)? = null,
-                         private val idle: (() -> Unit)? = null) : Closeable {
+                         private val idle: (() -> Unit)? = null,
+                         private val failed: ((String, Exception) -> Unit)? = null) : Closeable {
     private class Counts {
         val packets = AtomicLong()
         val bytes = AtomicLong()
@@ -32,7 +34,7 @@ class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String
     @Synchronized fun sendControl(packet: ByteArray, port: Int) {
         if (closed.get() || port !in 1..65535 || packet.size !in 1..64) return
         runCatching { control?.send(DatagramPacket(packet, packet.size, peer, port)) }
-            .onFailure { emit("audioDrain stage=RESEND_FAILED") }
+            .onFailure { emit("audioDrain stage=RESEND_FAILED exception=${it.javaClass.simpleName} errorText=${DiagnosticErrorText.describe(it)}") }
     }
 
     /** Real dual-stack UDP ports, in data/control order. */
@@ -78,7 +80,14 @@ class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String
         while (!closed.get()) {
             try {
                 packet.length = buffer.size
-                RawTraffic.receive(socket, packet)
+                try {
+                    RawTraffic.receive(socket, packet)
+                } catch (error: SocketTimeoutException) {
+                    // Callback failures must pass through the same retirement path as receive failures.
+                    // An exception from a catch block would otherwise silently kill only the data worker.
+                    if (!closed.get() && channel == "DATA") idle?.invoke()
+                    continue
+                }
                 if (closed.get()) return
                 if (packet.address != peer) {
                     val rejected = counts.rejected.incrementAndGet()
@@ -90,12 +99,12 @@ class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String
                 else controlReceived?.invoke(buffer.copyOf(packet.length))
                 val packets = counts.packets.incrementAndGet()
                 if (sample(packets)) emit("audioDrain stage=DRAINED channel=$channel packets=$packets bytes=$bytes")
-            } catch (_: SocketTimeoutException) {
-                if (!closed.get() && channel == "DATA") idle?.invoke()
-            } catch (_: Exception) {
-                if (!closed.get()) {
+            } catch (error: Exception) {
+                if (closed.compareAndSet(false, true)) {
                     counts.failures.incrementAndGet()
-                    emit("audioDrain stage=FAILED channel=$channel")
+                    emit("audioDrain stage=FAILED channel=$channel exception=${error.javaClass.simpleName} errorText=${DiagnosticErrorText.describe(error)}")
+                    releaseSockets()
+                    runCatching { failed?.invoke(channel, error) }
                 }
                 return
             }
@@ -105,6 +114,10 @@ class ReceiverAudioDrain(private val peer: InetAddress, private val log: (String
     @Synchronized
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        releaseSockets()
+    }
+
+    @Synchronized private fun releaseSockets() {
         data?.close()
         control?.close()
         // Closing the sockets unblocks receive; do not wait on workers from service shutdown.

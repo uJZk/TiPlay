@@ -120,7 +120,8 @@ internal object TeslaBrowserLink {
     /** The app's server: every IPv4 address, so it answers on the hotspot's own and its extra address alike. */
     val appServers = ServerFactory { hub, callbacks ->
         val port = app?.let(BrowserEndpointSettings::port) ?: PORT
-        val server = BrowserLinkServer(hub, callbacks, "0.0.0.0", port, audioHub = audioHub)
+        val rtc = app?.let { com.shilapi.xcertplay.web.AndroidBrowserRtcFactory(it, hub, audioHub, callbacks::log) }
+        val server = BrowserLinkServer(hub, callbacks, "0.0.0.0", port, audioHub = audioHub, rtcFactory = rtc)
         object : Server {
             override fun start() = server.start()
             override fun stop() = server.stop()
@@ -501,6 +502,8 @@ internal object TeslaBrowserLink {
         )
     }
 
+    private val transportDiagnostics = BrowserTransportDiagnostics(::log)
+
     /** One line for the session log at most every 10 s: numbers and short names only. */
     internal fun statsLine(stats: Map<String, Any?>): String = buildString {
         append("Browser:")
@@ -560,6 +563,7 @@ internal object TeslaBrowserLink {
                 else CarPlayBackgroundSession.snapshot()?.controller
                     ?.takeIf { it.phoneBrowserMode() }?.sendNightMode(reportedNight)
             }
+            transportDiagnostics.report(stats, DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG)
             val now = clock()
             val anomalies: Map<String, Long>
             synchronized(statsLock) {

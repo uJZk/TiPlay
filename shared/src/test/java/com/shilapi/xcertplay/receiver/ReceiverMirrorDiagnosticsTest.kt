@@ -50,6 +50,24 @@ class ReceiverMirrorDiagnosticsTest {
         assertFalse(logs.any { it.contains("secret") || it.contains("transport key") })
     }
 
+    @Test fun wrappedCipherFailureRetainsCauseClassesWithoutFormattingCipherMessages() {
+        val messages = mutableListOf<String>()
+        val diagnostics = ReceiverMirrorDiagnostics(messages::add)
+        diagnostics.failure(ReceiverMirrorDiagnostics.Stage.DECRYPT,
+            IllegalStateException("secret cipher input", javax.crypto.BadPaddingException("secret key material")))
+        assertTrue(messages.single().contains("causes=IllegalStateException<-BadPaddingException"))
+        assertFalse(messages.single().contains("secret"))
+    }
+
+    @Test fun intentionalSuspensionIsCountedSeparatelyFromForwardingOrDecoderLoss() {
+        val messages = mutableListOf<String>()
+        val diagnostics = ReceiverMirrorDiagnostics(messages::add)
+        diagnostics.forwarded(1024, keyFrame = true, annexB = true, decodeOnly = true)
+        diagnostics.forwarded(512, keyFrame = false, annexB = true)
+        diagnostics.end(ReceiverMirrorDiagnostics.End.CLOSED)
+        assertTrue(messages.last().contains("frames=2 keyFrames=1 annexBFrames=2 decodeOnlyFrames=1"))
+    }
+
     @Test fun stableParserReasonSurvivesStandardAndSizeGeometryDetailsFollowLiveDebugToggle() {
         val logs = mutableListOf<String>()
         var debug = false

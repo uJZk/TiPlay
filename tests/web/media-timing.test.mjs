@@ -2,22 +2,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from '../../site/play/media-timing.js';
-import { constantDelay, delayAt, planDelay, mediaDeadline } from '../../site/play/delay-plan.js';
+import { constantDelay, delayAt, planDelay, mediaDeadline, playbackProfile } from '../../site/play/delay-plan.js';
 import { audioDelayAt, videoExpired } from '../../site/play/playback-window.js';
 import { PcmTimeline } from '../../site/play/pcm-timeline.js';
 
-test('audio readiness never delays video and audio remains within its relative window', () => {
+test('audio readiness and video readiness retain independent bounded plans', () => {
   let now = 1000;
-  const changes = [], timing = createMediaTiming(value => changes.push(value), () => now);
-  timing.observe('video', 950); assert.equal(timing.delay(), 70);
-  const video = timing.plan();
-  timing.observe('audio', 0); assert.equal(timing.plan(), video); assert.equal(timing.delay(), 70);
-  assert.equal(timing.delay('audio'), 195);
-  now = 1200; timing.observe('audio', 0); assert.equal(timing.plan(), video);
-  assert.equal(timing.delay('audio'), 195);
+  const timing = createMediaTiming(() => {}, () => now); timing.mode('carplay');
+  timing.observe('video', 950); const video = timing.plan();
+  timing.observe('audio', 0);
+  assert.equal(timing.plan(), video); assert.equal(timing.delay(), 70);
+  assert.equal(timing.delay('audio'), 280);
+  const audio = timing.plan('audio'); now = 1200; timing.observe('video', 1190);
+  assert.equal(timing.plan('audio'), audio);
   timing.reset(); assert.equal(timing.delay(), 60); assert.equal(timing.delay('audio'), 60);
-  assert.ok(changes.length > 0);
 });
+
 test('a common ramp presents each video timestamp while continuous audio reaches the same source time', () => {
   let now = 1000, pending = null;
   const observed = [], frames = createTimedFrames((frame, _, __, source) => observed.push({ source, at: now }), {
@@ -59,14 +59,14 @@ test('the first timestamp after fallback playback cannot jump the effective dela
   const timing = createMediaTiming(() => {}, () => now);
   timing.started();
   timing.observe('audio', 800);
-  assert.equal(timing.plan('audio').to, 185); assert.equal(timing.delay('audio'), 60); assert.equal(timing.delay(), 60);
+  assert.equal(timing.plan('audio').to, 220); assert.equal(timing.delay('audio'), 60); assert.equal(timing.delay(), 60);
   now = 1086; assert.ok(Math.abs(timing.delay('audio') - 60.02) < 0.000001);
 });
 
 test('CarPlay and AirPlay mirror use their own shared delay caps', () => {
-  for (const [mode, limit] of [['carplay', 0], ['airplay-mirror', 200]]) {
+  for (const [mode, limit] of [['carplay', 300], ['airplay-mirror', 300], ['airplay-cast', 3000]]) {
     const changes = [], timing = createMediaTiming(plan => changes.push(plan), () => 1000);
-    timing.mode(mode); timing.observe('audio', 0); timing.observe('video', 0);
+    timing.mode(mode); timing.observe('audio', -10000); timing.observe('video', -10000);
     assert.equal(timing.limit(), limit); assert.equal(timing.delay(), Math.max(0, limit - 20)); assert.equal(timing.plan().to, Math.max(0, limit - 20));
     assert.ok(changes.every(plans => plans.video.from >= 0 && plans.video.to >= 0 && plans.video.from <= limit && plans.video.to <= limit));
     const same = timing.plan(); timing.mode(mode); assert.equal(timing.plan(), same, 'same-mode codec/resize config preserves the common ramp');
@@ -78,10 +78,10 @@ test('mode switches discard an old high delay plan without clearing independent 
   const timing = createMediaTiming(() => {}, () => now), audio = new PcmTimeline(8000, 1, () => {}, 2500);
   timing.mode('airplay-mirror'); timing.observe('video', 0); timing.observe('audio', 0);
   audio.push({ sourceTime: 1000, sequence: 0, pcm: new Int16Array(160).fill(16384).buffer });
-  timing.mode('airplay-mirror'); assert.equal(timing.delay(), 180); assert.equal(timing.plan().previous, undefined);
+  timing.mode('airplay-mirror'); assert.equal(timing.delay(), 280); assert.equal(timing.plan().previous, undefined);
   timing.mode('carplay'); assert.equal(timing.delay(), 0); assert.equal(timing.plan().previous, undefined);
   assert.equal(audio.sample(1000, 0), 0.5, 'policy owns no PCM queue and cannot clear newly arrived audio');
-  now = 2000; timing.observe('video', 0); assert.equal(timing.plan().to, 0);
+  now = 2000; timing.observe('video', 0); assert.equal(timing.plan().to, 280);
 });
 
 test('fallback video deadlines and decoded buffering fit the 500ms submission limit', () => {
@@ -90,7 +90,7 @@ test('fallback video deadlines and decoded buffering fit the 500ms submission li
   const plan = constantDelay(480), first = { close() { this.closed = true; } };
   assert.ok(Math.abs(mediaDeadline(1000, plan, now) - 1480) < 0.000001);
   frames.delay(plan); frames.present(first, {}, 1, 1000);
-  for (let i = 1; i <= 30; i++) frames.present({ close() {} }, {}, 1, 1000 + i * 1000 / 60);
+  for (let i = 1; i <= 20; i++) frames.present({ close() {} }, {}, 1, 1000 + i * 1000 / 60);
   assert.equal(first.closed, undefined, 'early frames cannot evict the first one before its deadline');
   now = 1480; frames.delay(plan); assert.equal(first.shown, true); frames.reset();
 });
@@ -183,25 +183,18 @@ test('repeated video configuration preserves queued frames until the actual epoc
   epochs.message({ type: 'idle' }); assert.equal(idle.closed, true);
 });
 
-test('audio early and late limits follow matching video deadlines through frequent ramp changes', () => {
+test('frequent video ramp changes never alter audio source position', () => {
+  const audio = planDelay(constantDelay(60), 90, 900);
   let video = constantDelay(80);
-  const history = [{ at: 0, video }];
-  for (const [at, target] of [[1000, 120], [1050, 200], [1100, 80], [1150, 180], [1200, 70]]) {
-    video = planDelay(video, target, at); history.push({ at, video });
-  }
-  const actualVideoDelay = wall => delayAt(history.filter(item => item.at <= wall).at(-1).video, wall);
-  for (let wall = 1200; wall <= 1325; wall += 0.125) {
-    for (const raw of [0, 1000]) {
-      const plans = { video, audio: constantDelay(raw) }, source = wall - audioDelayAt(plans, wall);
-      const deadline = mediaDeadline(source, video, wall - 126);
-      const offset = wall - deadline;
-      assert.ok(offset >= -25.000001 && offset <= 125.000001);
-      if (raw === 1000) assert.ok(Math.abs(audioDelayAt(plans, wall) - (actualVideoDelay(wall - 125) + 125)) < 0.000001, 'late window uses actual historical video ramp');
+  for (const [at, target] of [[1000, 120], [1050, 200], [1100, 0], [1150, 180], [1200, 70]]) {
+    video = planDelay(video, target, at);
+    for (let wall = at; wall < at + 125; wall += 0.125) {
+      assert.equal(audioDelayAt({ video, audio }, wall), delayAt(audio, wall));
     }
   }
 });
 
-test('video presents ready frames without slow audio and drops only raw cap violations', () => {
+test('video presents without slow audio and independently enforces the source cap', () => {
   let now = 1000;
   const shown = [], timing = createMediaTiming(() => {}, () => now);
   timing.mode('airplay-mirror'); timing.observe('video', 950); timing.observe('audio', 0);
@@ -209,15 +202,15 @@ test('video presents ready frames without slow audio and drops only raw cap viol
   frames.delay(timing.plan());
   const ready = { close() { this.closed = true; } }, late = { close() { this.closed = true; } };
   frames.present(ready, { mode: 'airplay-mirror' }, 1, 950);
-  now = 1020; frames.delay(timing.plan()); assert.deepEqual(shown, [ready], 'video uses its seventy millisecond deadline despite very late audio');
-  now = 1100; frames.present(late, { mode: 'carplay' }, 1, 960); assert.equal(late.closed, true);
+  now = 1030; frames.delay(timing.plan()); assert.deepEqual(shown, [ready]);
+  now = 1400; frames.present(late, { mode: 'carplay' }, 1, 960); assert.equal(late.closed, true);
   assert.equal(frames.stats().scheduledExpiredFrames, 1);
-  assert.equal(videoExpired(1000, 'carplay', 1000), false); assert.equal(videoExpired(1000, 'carplay', 1000.01), true);
-  assert.equal(videoExpired(1000, 'airplay-mirror', 1200.01), true);
+  assert.equal(videoExpired(1000, 'carplay', 1300), false);
+  assert.equal(videoExpired(1000, 'carplay', 1300.01), true);
   frames.reset();
 });
 
-test('zero-cap CarPlay buffers future frames, reserves draw time, and accepts the raw boundary', () => {
+test('zero-delay CarPlay buffers future frames and reserves draw time inside its independent ceiling', () => {
   let now = 1000, pending = null;
   const shown = [], frames = createTimedFrames((frame, _, __, source) => shown.push({ frame, source, at: now }), {
     now: () => now, schedule: (callback, wait) => { pending = { callback, at: now + wait }; return callback; }, cancel: () => { pending = null; },
@@ -238,7 +231,7 @@ test('zero-cap CarPlay buffers future frames, reserves draw time, and accepts th
   const late = item(); frames.present(late, { mode: 'carplay' }, 1, 1100.001);
   now = 1100.01; frames.delay(constantDelay(0));
   assert.equal(late.closed, undefined, 'a future frame inside the draw reservation may already be submitted');
-  const expired = item(); frames.present(expired, { mode: 'carplay' }, 1, 1100.005);
+  now = 1500; const expired = item(); frames.present(expired, { mode: 'carplay' }, 1, 1100.005);
   assert.equal(expired.closed, true); assert.equal(frames.stats().scheduledExpiredFrames, 1);
   assert.equal(frames.stats().scheduledDroppedFrames, 2);
   frames.reset();
@@ -254,17 +247,30 @@ test('late readiness inside a raw cap is drawn despite missing the adaptive targ
   frames.reset();
 });
 
-test('zero-cap audio retains the 125ms late tolerance relative to early video submission', () => {
-  const video = constantDelay(0), wall = 1000;
-  for (const delay of [0, 1000]) {
-    const source = wall - audioDelayAt({ video, audio: constantDelay(delay) }, wall);
-    const submission = source - 20;
-    const offset = wall - submission;
-    assert.ok(offset >= -45 && offset <= 125);
-    if (delay === 1000) assert.equal(offset, 125);
+test('touch convergence is continuous, bounded and leaves every audio sample on its original timeline', () => {
+  let now = 1000;
+  const timing = createMediaTiming(() => {}, () => now); timing.mode('carplay');
+  timing.observe('video', 900); timing.observe('audio', 880); timing.started();
+  const audio = timing.plan('audio'), before = timing.delay();
+  timing.interaction(true); const convergence = timing.plan();
+  assert.equal(timing.delay(), before); assert.equal(convergence.to, 0);
+  assert.equal(timing.profile().name, 'carplay-touch');
+  for (let step = 0; step < 12; step++) {
+    now += 20; timing.interaction(true);
+    assert.equal(timing.plan(), convergence, 'moves extend activity without restarting the curve');
+    assert.equal(timing.plan('audio'), audio);
+    assert.equal(timing.delay('audio'), delayAt(audio, now));
+  }
+  timing.interaction(false); const released = timing.plan();
+  now += 751; assert.equal(timing.profile().name, 'carplay'); assert.equal(timing.plan(), released);
+  now += convergence.duration; assert.equal(timing.delay(), 0, 'release does not restore accumulated delay');
+  timing.observe('video', now + 10); assert.equal(timing.plan().to, 20, 'fresh readiness cannot revive the pre-touch backlog estimate');
+  assert.equal(timing.plan('audio'), audio);
+  let previous = delayAt(convergence, convergence.at);
+  for (let at = convergence.at + 1; at <= convergence.at + convergence.duration; at++) {
+    const next = delayAt(convergence, at); assert.ok(previous - next <= 0.25001); previous = next;
   }
 });
-
 
 test('a decoded burst bounds retained pictures and closes duplicate, evicted and expired frames once', () => {
   let now = 1000;
@@ -278,7 +284,7 @@ test('a decoded burst bounds retained pictures and closes duplicate, evicted and
     frames.present(frame, { mode: 'carplay', epoch: 1 }, 1, 1500 + n,
       { sourceTimeMs: 5000 + n, clockGeneration: 1 });
   }
-  assert.equal(items.filter(frame => frame.closes === 0).length, 60);
+  assert.equal(items.filter(frame => frame.closes === 0).length, playbackProfile('carplay').maxVideoFrames);
   const duplicate = { closes: 0, close() { this.closes++; } };
   frames.present(duplicate, { mode: 'carplay', epoch: 1 }, 1, 1599,
     { sourceTimeMs: 5099, clockGeneration: 1 });
@@ -287,4 +293,17 @@ test('a decoded burst bounds retained pictures and closes duplicate, evicted and
   assert.deepEqual(shown.map(frame => frame.n), [99], 'catch up to the newest due frame without moving its deadline');
   assert.ok(items.every(frame => frame.closes === 1));
   frames.reset(); assert.ok(items.every(frame => frame.closes === 1));
+});
+
+test('decoded surfaces are bounded by bytes as well as frame count', () => {
+  const frames = createTimedFrames(frame => frame.close(), { now: () => 0, schedule: () => 1, cancel() {} });
+  const pictures = [];
+  for (let n = 0; n < 20; n++) {
+    const frame = { codedWidth: 3840, codedHeight: 2160, closes: 0, close() { this.closes++; } }; pictures.push(frame);
+    frames.present(frame, { mode: 'carplay' }, 1, 5000 + n);
+    assert.ok(frames.stats().decodedQueueBytes <= playbackProfile('carplay').maxVideoBytes);
+  }
+  assert.equal(frames.stats().decodedQueueFrames, 2);
+  assert.equal(frames.stats().decodedResourceDroppedFrames, 18);
+  frames.reset(); assert.ok(pictures.every(frame => frame.closes === 1));
 });

@@ -8,6 +8,79 @@ import java.io.File
 import java.util.Base64
 
 class RawTrafficTest {
+    @Test fun archiveReopensEvictedChannelsWithoutLosingOrReorderingTheirBytes() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-many-channels").toFile()
+        val file = File(directory, "capture.tsv")
+        try {
+            RawTraffic.configure(file, true)
+            repeat(3) { round -> repeat(35) { channel ->
+                RawTraffic.record("test/channel-$channel", byteArrayOf(round.toByte(), channel.toByte()))
+            } }
+            val output = ByteArrayOutputStream()
+            RawTraffic.writeArchive(output, "report.txt", "summary", directory)
+            val entries = linkedMapOf<String, ByteArray>()
+            java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { zip ->
+                while (true) { val entry = zip.nextEntry ?: break; entries[entry.name] = zip.readBytes() }
+            }
+            entries.getValue("streams.tsv").toString(Charsets.UTF_8).lines().drop(1).filter { it.isNotEmpty() }.forEach { line ->
+                val fields = line.split('\t')
+                val name = String(Base64.getDecoder().decode(fields[1]))
+                if (name.startsWith("test/channel-")) {
+                    val channel = name.substringAfterLast('-').toInt().toByte()
+                    assertArrayEquals(byteArrayOf(0, channel, 1, channel, 2, channel), entries.getValue(fields[0]))
+                }
+            }
+            assertTrue(directory.listFiles()!!.none { it.name.startsWith("traffic-export-") })
+        } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
+    }
+
+    @Test fun writeFailureHasAnExplicitBoundaryAndRecoveryRetainsTheActiveSessionMetadata() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-failure").toFile()
+        val blocker = File(directory, "blocked-parent").apply { writeText("blocked") }
+        val file = File(blocker, "capture.tsv")
+        try {
+            RawTraffic.configure(file, true, "version=failure-recovery")
+            RawTraffic.record("iphone/private-host/in", byteArrayOf(1, 2, 3))
+            assertTrue(blocker.delete())
+            assertTrue(blocker.mkdir())
+            RawTraffic.record("iphone/in", byteArrayOf(9, 8))
+            val output = ByteArrayOutputStream()
+            RawTraffic.writeArchive(output, "report.txt", "summary", directory)
+            val entries = linkedMapOf<String, ByteArray>()
+            java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { zip ->
+                while (true) { val entry = zip.nextEntry ?: break; entries[entry.name] = zip.readBytes() }
+            }
+            val status = entries.getValue("capture.txt").toString(Charsets.UTF_8)
+            assertTrue(status, status.contains("coverage=partial"))
+            assertTrue(status, status.contains("lastFailureSource=iphone"))
+            assertTrue(status, status.contains("durability=application-flush"))
+            assertFalse(status, status.contains("firstFailureEpochMillis=0"))
+            assertFalse(status, status.contains("private-host"))
+            val sessionLines = entries.getValue("sessions.tsv").toString(Charsets.UTF_8).trim().lines()
+            assertEquals(2, sessionLines.size)
+            assertTrue(String(Base64.getDecoder().decode(sessionLines[1].split('\t')[2])).contains("version=failure-recovery"))
+            assertTrue(entries.values.any { it.contentEquals(byteArrayOf(9, 8)) })
+            RawTraffic.clear()
+        } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
+    }
+
+    @Test fun changingActiveDestinationStartsANewSessionAndFlushesTheOldFile() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-destination").toFile()
+        val first = File(directory, "first.tsv")
+        val second = File(directory, "second.tsv")
+        try {
+            RawTraffic.configure(first, true, "version=first")
+            val firstSession = RawTraffic.activeSessionId()
+            RawTraffic.record("iphone/in", byteArrayOf(1))
+            RawTraffic.configure(second, true, "version=second")
+            assertNotEquals(firstSession, RawTraffic.activeSessionId())
+            RawTraffic.record("iphone/in", byteArrayOf(2))
+            assertTrue(first.readLines().any { it.split('\t')[2] == "iphone/in" })
+            assertEquals("capture/start", second.readLines().first().split('\t')[2])
+            assertTrue(String(Base64.getDecoder().decode(second.readLines().first().split('\t')[4])).contains("version=second"))
+        } finally { RawTraffic.configure(second, false); directory.deleteRecursively() }
+    }
+
     @Test fun fullPayloadSurvivesChunkingDisableAndExportWithoutRedaction() {
         val directory = java.nio.file.Files.createTempDirectory("traffic-test").toFile()
         val file = File(directory, "capture.tsv")

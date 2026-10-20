@@ -6,7 +6,8 @@ import { intersectMediaRanges, mediaTimeRanges, mergeMediaRanges, videoQueueFull
 const flush = async () => { for (let i = 0; i < 150; i++) await Promise.resolve(); };
 
 function fixture({ audio = true, video = true, live = false, timestampOrigin = 100, duration = 20, deferVideo = null,
-  missingFrameDuration = false, onClock = null, alternateAudio = false, expiredLiveWindow = false, sampleColor = null } = {}) {
+  missingFrameDuration = false, onClock = null, alternateAudio = false, expiredLiveWindow = false, sampleColor = null,
+  deferVideoAt = 1, frameWidth = 16, frameHeight = 9 } = {}) {
   let wall = 0, next = 0, reads = { video: 0, audio: 0 }, audioContexts = 0;
   const selection = { primaryAudio: 0, pairableAudio: 0 };
   const callbacks = new Map(), inputs = [], samples = [], pictures = [], nodes = [], events = [];
@@ -28,7 +29,7 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
   const sample = time => {
     const result = { timestamp: time, duration: missingFrameDuration ? 0 : 0.1, displayWidth: 16, displayHeight: 9,
       colorSpace: sampleColor,
-      codedWidth: 16, codedHeight: 9, closed: 0, close() { this.closed++; } };
+      codedWidth: frameWidth, codedHeight: frameHeight, closed: 0, close() { this.closed++; } };
     samples.push(result); return result;
   };
   class VideoSampleSink {
@@ -41,7 +42,7 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
           reads.video++;
           if (expiredLiveWindow && inputs.length === 1 && reads.video === 25) throw new TypeError('HTTP 404: expired live segment');
           const value = sample(timestampOrigin + index++ / 10);
-          if (deferVideo && reads.video === 1) await deferVideo;
+          if (deferVideo && reads.video === deferVideoAt) await deferVideo;
           return { value, done: false };
         },
         async return() { stopped = true; return { done: true }; },
@@ -227,4 +228,25 @@ test('caption clock follows every presentation tick without waiting for the thro
   assert.equal(h.media.error, null); h.media.pause();
   assert.ok(Math.abs(observed.at(-1) - h.media.currentTime) < 0.001);
   h.media.dispose();
+});
+
+test('casting waits for useful startup coverage instead of playing every short network burst', async () => {
+  let release; const pending = new Promise(resolve => { release = resolve; });
+  const h = fixture({ deferVideo: pending, deferVideoAt: 3 });
+  await h.media.load('https://example.test/movie.mp4'); await flush();
+  const playing = h.media.play(); await flush(); await h.tick();
+  assert.equal(h.media.currentTime, 0); assert.equal(h.nodes.length, 0);
+  assert.equal(h.events.includes('playing'), false, 'two decoded frames do not repeatedly start and stall a cast');
+  release(); await flush(); await h.tick(); await playing;
+  assert.equal(h.events.includes('playing'), true); assert.ok(h.nodes.length > 0);
+  h.media.dispose(); await flush(); assert.ok(h.samples.every(value => value.closed === 1));
+});
+
+test('casting starts within its decoded-surface budget when a high-resolution queue cannot reach the time watermark', async () => {
+  const h = fixture({ frameWidth: 3840, frameHeight: 2160 });
+  await h.media.load('https://example.test/movie.mp4'); await flush();
+  assert.ok(h.reads.video <= 5, 'one displayed, three queued and one pending 4K sample stay finite');
+  const playing = h.media.play(); await flush(); await h.tick(); await playing;
+  assert.ok(h.events.includes('playing'), 'bounded GPU memory cannot deadlock startup');
+  h.media.dispose(); await flush(); assert.ok(h.samples.every(value => value.closed === 1));
 });

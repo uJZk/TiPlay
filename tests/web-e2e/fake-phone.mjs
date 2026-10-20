@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// A stand-in for the phone's BrowserLinkServer (protocol v1, §2–§4 of the browser-link contract), enough for the page:
-// /hello, /video with records, /control with status, /bye, OPTIONS with CORS and Private Network Access headers.
+// Synthetic phone source with real browser DataChannels when rtcPage is supplied.
+// Retained direct HTTP record/control routes are used only by compatibility/resource tests.
 import { createServer } from 'node:http';
 import { History, listen, closeServer } from './resources.mjs';
 import { RECORD, FLAG, encodeRecord } from '../../site/play/link.js';
+import { RTC_TRANSPORT, RTC_MAGIC, RTC_HEADER_BYTES, RTC_FRAGMENT_BYTES } from '../../site/play/webrtc-transport.js';
 
 const json = (res, status, body) => {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -30,20 +31,31 @@ export function parseIvf(buffer) {
 
 /**
  * Starts the fake phone. `frames` loop at `fps`; every stream starts at frame 0, which must be a key frame.
- * Events from /control land in `events` as `{s, q, event}`.
+ * HTTP or DataChannel controls land in `events` as `{s, q, event}`.
+ * rtcPage must be a separate real browser page on a secure test origin.
  */
-export function startFakePhone({ code, frames, width, height, fps = 30, codec = 'vp8', host = '127.0.0.1' }) {
+export function startFakePhone({ code, frames, width, height, fps = 30, codec = 'vp8', host = '127.0.0.1', rtcPage = null }) {
   let portalRevision = 0;
-  const events = new History(), requests = new History(), preflights = new History();
+  const events = new History(), requests = new History(), preflights = new History(), bridgeErrors = new History();
+  const peerError = error => bridgeErrors.push(error.message);
+  rtcPage?.on('pageerror', peerError);
   let current = null, lastSeen = 0, video = null, fit = false, viewport = null, videoCount = 0, corrupt = false, framesWritten = 0;
   const replaced = new Set(), lastQ = new Map();
-  const config = new TextEncoder().encode(JSON.stringify({ codec, width, height, fps, format: 'annexb', marker: 'none' }));
+  let rtcEpoch = 0;
+  const config = new TextEncoder().encode(JSON.stringify({ mode: 'carplay', codec, width, height, fps, format: 'annexb', marker: 'none' }));
 
   function closeVideo(reason) {
     if (!video) return;
     const { res, timer, drain } = video;
+    const previous = video;
     video = null;
     clearInterval(timer);
+    if (previous.rtcEpoch) {
+      void rtcPage.evaluate(epoch => {
+        if (globalThis.__fakeRtc?.epoch === epoch) { globalThis.__fakeRtc.peer.close(); globalThis.__fakeRtc = null; }
+      }, previous.rtcEpoch).catch(() => {});
+      return;
+    }
     res.off('drain', drain);
     if (reason && !res.writableNeedDrain) res.end(encodeRecord({ kind: RECORD.END, payload: new TextEncoder().encode(reason) }));
     else res.socket?.destroy();
@@ -133,6 +145,96 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     };
   }
 
+  function applyControl(body) {
+    if (body.q > (lastQ.get(body.s) ?? 0)) {
+      lastQ.set(body.s, body.q);
+      for (const event of body.e) {
+        events.push({ s: body.s, q: body.q, event });
+        if (event.k === 'vp') viewport = { w: event.w, h: event.h };
+        if (event.k === 'kf') video?.restart();
+      }
+    }
+    return status(lastQ.get(body.s));
+  }
+
+  /** The remote endpoint is a real browser PeerConnection; Node only supplies the synthetic compressed source. */
+  async function streamRtc(sdp) {
+    closeVideo('replaced');
+    const epoch = ++rtcEpoch;
+    const answer = await rtcPage.evaluate(async ({ sdp, epoch, magic, headerBytes, fragmentBytes }) => {
+      globalThis.__fakeRtc?.peer.close();
+      const peer = new RTCPeerConnection({ iceServers: [] });
+      const state = globalThis.__fakeRtc = { peer, epoch, channels: {}, sequence: 0, unconsumed: new Map(), bytes: 0 };
+      peer.ondatachannel = ({ channel }) => {
+        state.channels[channel.label] = channel;
+        if (channel.label === 'control') channel.onmessage = async ({ data }) => {
+          const message = JSON.parse(data);
+          if (message.k === 'ack') {
+            if (message.channel !== 'video' || state.unconsumed.get(message.q) !== message.bytes) throw new Error('invalid fake-phone consumption credit');
+            state.unconsumed.delete(message.q); state.bytes -= message.bytes;
+          } else if (Array.isArray(message.e)) {
+            const response = await globalThis.__fakePhoneControl(message, epoch);
+            if (globalThis.__fakeRtc === state && channel.readyState === 'open') channel.send(JSON.stringify(response));
+          }
+        };
+      };
+      await peer.setRemoteDescription({ type: 'offer', sdp });
+      await peer.setLocalDescription(await peer.createAnswer());
+      if (peer.iceGatheringState !== 'complete') await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { peer.close(); reject(new Error('fake-phone ICE gathering timed out')); }, 5000);
+        peer.addEventListener('icegatheringstatechange', () => {
+          if (peer.iceGatheringState === 'complete') { clearTimeout(timer); resolve(); }
+        });
+      });
+      state.send = records => {
+        const channel = state.channels.video;
+        if (channel?.readyState !== 'open' || channel.bufferedAmount > 1024 * 1024
+          || state.bytes + records.reduce((bytes, record) => bytes + record.length, 0) > 4 * 1024 * 1024) return false;
+        for (const bytes of records) {
+          const sequence = state.sequence++;
+          state.unconsumed.set(sequence, bytes.length); state.bytes += bytes.length;
+          for (let offset = 0; offset < bytes.length;) {
+            const size = Math.min(bytes.length - offset, fragmentBytes - headerBytes);
+            const fragment = new Uint8Array(headerBytes + size), header = new DataView(fragment.buffer);
+            [magic, epoch, sequence, bytes.length, offset, size].forEach((value, index) => header.setUint32(index * 4, value, true));
+            fragment.set(bytes.subarray(offset, offset + size), headerBytes); channel.send(fragment); offset += size;
+          }
+        }
+        return true;
+      };
+      return peer.localDescription.sdp;
+    }, { sdp, epoch, magic: RTC_MAGIC, headerBytes: RTC_HEADER_BYTES, fragmentBytes: RTC_FRAGMENT_BYTES });
+    let sequence = 0, cursor = 0, configSent = false, sending = false;
+    const stream = { rtcEpoch: epoch, restart: () => { cursor = 0; }, bufferedBytes: 0, blocked: true,
+      timer: setInterval(async () => {
+        if (video !== stream || sending) return;
+        sending = true;
+        try {
+          const frame = corrupt ? { key: true, data: new Uint8Array(2000).fill(0x5a) } : frames[cursor % frames.length];
+          const payload = new Uint8Array(8); new DataView(payload.buffer).setFloat64(0, performance.now() - 50, true);
+          const timestampUs = Math.round(sequence * 1e6 / fps);
+          const batch = [
+            ...(!configSent ? [encodeRecord({ kind: RECORD.CONFIG, epoch: 1, payload: config })] : []),
+            encodeRecord({ kind: RECORD.TIMING, epoch: 1, sequence, timestampUs, payload }),
+            encodeRecord({ kind: RECORD.FRAME, flags: frame.key ? FLAG.KEY : 0, epoch: 1, sequence, timestampUs, payload: frame.data }),
+          ];
+          const result = await rtcPage.evaluate(({ epoch, records }) => {
+            const state = globalThis.__fakeRtc;
+            if (state?.epoch !== epoch) return null;
+            const sent = state.send(records.map(bytes => Uint8Array.from(atob(bytes), char => char.charCodeAt(0))));
+            return { sent, bytes: state.bytes };
+          }, { epoch, records: batch.map(record => Buffer.from(record).toString('base64')) });
+          if (video !== stream || !result) return;
+          stream.blocked = !result.sent; stream.bufferedBytes = result.bytes;
+          if (result.sent) { cursor++; sequence++; framesWritten++; configSent = true; corrupt = false; }
+        } catch (error) {
+          if (video === stream) { bridgeErrors.push(error.message); closeVideo(null); }
+        } finally { sending = false; }
+      }, 1000 / fps) };
+    video = stream; videoCount++;
+    return { type: 'answer', sdp: answer, epoch, transport: RTC_TRANSPORT, fragmentBytes: RTC_FRAGMENT_BYTES };
+  }
+
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://phone');
     requests.push({ method: req.method, path: url.pathname });
@@ -153,7 +255,16 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
       return res.end();
     }
     const route = `${req.method} ${url.pathname}`;
-    if (route === 'GET /hello') return json(res, 200, { app: 'TiPlay', protocol: 1, clockMs: performance.now() });
+    if (route === 'GET /hello') return json(res, 200, { app: 'TiPlay', protocol: 1, clockMs: performance.now(),
+      ...(rtcPage ? { transport: RTC_TRANSPORT } : {}) });
+    if (route === 'POST /rtc' && rtcPage) {
+      let body;
+      try { body = JSON.parse(await readBody(req)); } catch (_) { return json(res, 400, { error: 'bad-request' }); }
+      if (!authorize(res, body.c, body.s)) return;
+      if (typeof body.offer !== 'string' || body.offer.length > 48 * 1024) return json(res, 400, { error: 'bad-request' });
+      try { return json(res, 200, await streamRtc(body.offer)); }
+      catch (error) { return json(res, 500, { error: 'rtc-failed', detail: error.message }); }
+    }
     if (route === 'GET /video') {
       if (authorize(res, url.searchParams.get('c'), url.searchParams.get('s'))) streamVideo(res, url.searchParams.get('timing') === '1');
       return;
@@ -172,34 +283,32 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
         res.writeHead(204);
         return res.end();
       }
-      if (body.q > (lastQ.get(body.s) ?? 0)) {
-        lastQ.set(body.s, body.q);
-        for (const event of body.e) {
-          events.push({ s: body.s, q: body.q, event });
-          if (event.k === 'vp') viewport = { w: event.w, h: event.h };
-          if (event.k === 'kf') video?.restart();
-        }
-      }
-      return json(res, 200, status(lastQ.get(body.s)));
+      return json(res, 200, applyControl(body));
     }
     if (['/hello', '/video', '/control', '/bye'].includes(url.pathname)) return json(res, 405, { error: 'method' });
     json(res, 404, { error: 'not-found' });
   });
 
-  return listen(server, host).then(() => ({
+  return Promise.resolve(rtcPage?.exposeFunction('__fakePhoneControl', (body, epoch) => {
+    if (epoch !== video?.rtcEpoch || body.s !== current || replaced.has(body.s)) return { q: body.q, error: 'replaced', status: 409 };
+    if (body.c !== code) return { q: body.q, error: 'code', status: 401 };
+    lastSeen = Date.now();
+    return applyControl(body);
+  })).then(() => listen(server, host)).then(() => ({
     port: server.address().port,
-    events, requests, preflights,
-    assertHistories() { for (const history of [events, requests, preflights]) history.assertComplete(); },
+    events, requests, preflights, bridgeErrors,
+    assertHistories() { for (const history of [events, requests, preflights, bridgeErrors]) history.assertComplete(); },
     get videoCount() { return videoCount; },
-    get streamStats() { return { framesWritten, blocked: Boolean(video?.blocked), bufferedBytes: video?.res.writableLength ?? 0, active: Boolean(video) }; },
+    get streamStats() { return { framesWritten, blocked: Boolean(video?.blocked), bufferedBytes: video?.bufferedBytes ?? video?.res?.writableLength ?? 0, active: Boolean(video) }; },
     setFit(value) { fit = value; },
     requestPortal() { portalRevision++; },
-    /** Drops the current /video socket without an end record, as a vanished hotspot would. */
+    /** Drops the current RTC peer or compatibility socket, as a vanished hotspot would. */
     dropVideo() { closeVideo(null); },
     /** Sends a key frame of garbage next, which the browser's decoder rejects. */
     corruptNextFrame() { corrupt = true; },
     close() {
       closeVideo('stopped');
+      rtcPage?.off('pageerror', peerError);
       return closeServer(server);
     },
   }));

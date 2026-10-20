@@ -241,4 +241,24 @@ class AirPlayCastPlayerSeekTest {
         assertArrayEquals(byteArrayOf(-1, -40, -1, -39), resource.bytes())
     }
 
+    @Test fun anUndispatchedReplacementImmediatelyRetiresTheOldItemsResourceProvider() {
+        TeslaBrowserLink.resetForTest()
+        var oldLoads = 0
+        val player = AirPlayCastPlayer({ _, _ -> oldLoads++; null }) { _, _ -> }
+        try {
+            assertTrue(player.play(ReceiverPlay("minibili://app/old.mp4", 0.0, false)))
+            shadowOf(Looper.getMainLooper()).idle()
+            val old = AirPlayBrowserPlayback.video(AirPlayBrowserPlayback.snapshot()!!["id"] as Long)!!
+            assertTrue(player.play(replacementVideo()))
+            assertThrows(com.shilapi.xcertplay.web.AirPlayVideoProxy.Failure::class.java) {
+                old.proxy.open(old.proxy.rootId, null) { it }
+            }
+            assertEquals("No old URL may reach the current receiver while main-thread replacement is pending", 0, oldLoads)
+        } finally {
+            player.close()
+            shadowOf(Looper.getMainLooper()).idle()
+            TeslaBrowserLink.resetForTest()
+        }
+    }
+
 }

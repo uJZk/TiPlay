@@ -12,7 +12,7 @@ and channel persistence tests still run. The isolated native Wi-Fi scan switch
 fixture calls a channel-only builder that does not own that switch; shared channel
 cases are retained.
 
-For browser/media changes, use the applicable [Chromium harness](../tests/web-e2e/README.md): browser link and recovery, real shared-server wiring, URL MP4/HLS playback, still photos under production CSP, or ordinary AirPlay audio. Native AirPlay changes also require `python3 scripts/test_airplay_native.py`. Rebuild generated site outputs with [the Pages workflow](../.github/workflows/pages.yml) when their inputs change.
+For browser/media changes, use the applicable [Chromium harness](../tests/web-e2e/README.md): real DataChannel fragmentation/credit/control, browser link and recovery, shared-server compatibility wiring, URL MP4/HLS playback, still photos under production CSP, or ordinary AirPlay audio. `webrtc.mjs` uses two real PeerConnections and verifies byte-exact large records, application consumption credit, independent audio, control, epoch rejection, cancellation and signaling deadlines. A managed browser that disables non-proxied UDP cannot exercise host ICE; use a dedicated test browser without changing the machine policy. Native AirPlay changes also require `python3 scripts/test_airplay_native.py`. Rebuild generated site outputs with [the Pages workflow](../.github/workflows/pages.yml) when their inputs change.
 
 Desktop simulations and codec probes cannot establish Tesla firmware support, iPhone interoperability, autoplay behavior, vehicle sound or sustained performance. Record which checks ran and which physical checks remain.
 
@@ -142,8 +142,9 @@ Run timing-sensitive browser checks separately from Gradle builds and other brow
 resource contention can starve actual rendering. Keep timing assertions unchanged when isolating a failure.
 Verify the audio-output reference remains active with Debug off. Synthetic clocks must
 also test stale/invalid references, large epochs, output-device latency changes and the
-fallback's uncertainty. Audio may be at most 45 ms early and 125 ms late relative to
-matching video; filter/device delay belongs inside this window. A dropped/infeasible
+fallback's uncertainty. Live video and audio independently retain a sender-relative
+300 ms ceiling; touch must leave the audio timeline unchanged. Missing audio references
+retain unavailable/skew evidence while video continues. A dropped/infeasible
 frame is an explicit recovery outcome, not a successful synchronized presentation. First-frame
 proof tests reject scheduler drops, expired paced frames and failed GPU submissions. JVM media
 ownership tests exercise old-session teardown/feedback, callbacks after replacement and screen

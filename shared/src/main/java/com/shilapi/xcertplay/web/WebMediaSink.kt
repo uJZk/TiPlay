@@ -68,7 +68,13 @@ class WebMediaSink(
     override fun onVideoFrame(type: Int, naluBytes: ByteArray) = onVideoFrame(type, naluBytes, 0L, System.nanoTime())
 
     override fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) {
-        if (type == MAIN_SCREEN) hub.frame(this, naluBytes, senderNanos, arrivalNanos, mediaClock?.invoke(senderNanos))
+        onVideoFrame(type, naluBytes, senderNanos, arrivalNanos, decodeOnly = false)
+    }
+
+    /** Sender suspension hides decoded output while preserving every compressed prediction dependency. */
+    fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long, decodeOnly: Boolean) {
+        if (type == MAIN_SCREEN) hub.frame(this, naluBytes, senderNanos, arrivalNanos,
+            mediaClock?.invoke(senderNanos), decodeOnly)
     }
 
     override fun setVideoClockHandler(type: Int, handler: (Long) -> Long?) {

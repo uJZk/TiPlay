@@ -15,9 +15,13 @@ test('the initial clock reaches a video sink whose setup finishes after hello', 
   const codecsReady = new Promise(resolve => { finishSetup = resolve; });
   const events = [];
   const run = new Function('codecsReady', 'events', `
-    let streamId = 0, sink = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastViewport;
+    let streamId = 0, sink = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastViewport, rtcMedia;
     const link = { code: '1234' }, session = 'session', PROTOCOL = 1;
     const videoPath = {};
+    const RTC_TRANSPORT = 'webrtc-datachannel-v1';
+    const createRtcMediaTransport = options => ({
+      video: null, connect: async () => { await options.exchange('offer'); }, openAudio() {},
+    });
     const browserAudio = { attach() {}, clock: value => events.push(['audio-clock', value]) };
     let mediaTiming;
     const mediaTimings = new Map([['carplay', { reset: () => events.push('timing-reset'), mode() {} }]]);
@@ -29,7 +33,7 @@ test('the initial clock reaches a video sink whose setup finishes after hello', 
     const createClockEstimator = () => ({ observe: serverMs => ({ offset: 10, rtt: 2, at: serverMs }), snapshot: () => null });
     const phoneFetch = async route => {
       events.push(route);
-      return { ok: true, body: null, json: async () => ({ app: 'TiPlay', protocol: 1, clockMs: 100 }) };
+      return { ok: true, body: null, json: async () => ({ app: 'TiPlay', protocol: 1, clockMs: 100, transport: RTC_TRANSPORT }) };
     };
     const pending = (async () => { ${connect} })();
     return {
@@ -48,7 +52,7 @@ test('the initial clock reaches a video sink whose setup finishes after hello', 
   assert.deepEqual(events[1], ['clock', { offset: 10, rtt: 2, at: 100 }]);
   assert.deepEqual(events[2], ['audio-clock', { offset: 10, rtt: 2, at: 100 }], 'audio receives the same initial clock as video');
   assert.equal(events[3], 'timing-reset');
-  assert.match(events[4], /^\/video\?/);
+  assert.equal(events[4], '/rtc');
   assert.equal(events[5], 'open');
 });
 
@@ -65,7 +69,7 @@ function retryPage(lastError) {
     const id = ++nextId; timers.set(id, { callback, at: now + delay, repeat }); return id;
   };
   const page = new Function('$', 'Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'renderReconnect', 'lastError', `
-    let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort;
+    let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort, rtcMedia;
     let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null, config = null;
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
     const browserLocation = { stop() {} };
@@ -73,7 +77,7 @@ function retryPage(lastError) {
     const browserNotice = { update(value) { if (value) problem = value; } };
     const codecName = value => value;
     const videoStats = {};
-    const statsVisible = false, link = { code: '1234' }, stage = {};
+    const statsVisible = false, link = { code: '1234' }, stage = {}, session = 'session';
     const airplayControls = { update() {}, videoActive: () => false };
     let trustVisible = true, trustClears = 0;
     const airplayTrust = { clear() { trustVisible = false; trustClears++; } };
@@ -284,4 +288,48 @@ test('browser settings uses the Android product version without a playback overl
   assert.match(html, /<footer><a id="page-version" href="https:\/\/github.com\/uJZk\/TiPlay\/releases"><\/a><\/footer>/);
   assert.doesNotMatch(html, /<small id="page-version"/);
   assert.doesNotMatch(read('style.css'), /#page-version\s*\{[^}]*position:fixed/);
+});
+
+
+test('retired outbox senders cannot use the current session or its peer', async () => {
+  const source = read('app.js');
+  const control = /async function postControl\([^\n]*\) \{([\s\S]*?)\n\}/.exec(source)[0];
+  const calls = [];
+  const post = new Function('calls', `
+    const active = true, session = 'new-owner';
+    const rtcMedia = { isConnected: () => true, control: (...args) => { calls.push(args); return { q: args[0] }; } };
+    const locationEvents = events => events;
+    ${control}
+    return postControl;
+  `)(calls);
+  await assert.rejects(post(1, [{ k: 't', p: [[0, 0.5, 0.5, 1]] }], 'retired-owner'), /owner retired/);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(await post(2, [], 'new-owner'), { q: 2 });
+});
+
+
+test('a failed connection attempt aborts its unresolved HTTP signaling exchange before scheduling retry', async () => {
+  const connect = /async function connectVideo\(\) \{([\s\S]*?)\n\}/.exec(read('app.js'))[0];
+  const run = new Function(`
+    let streamId = 0, rtcMedia = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastError, lastViewport;
+    const session = 'owner', link = { code: '1234' }, RTC_TRANSPORT = 'webrtc-datachannel-v1', PROTOCOL = 1;
+    let aborted = false, retries = 0;
+    const sink = { stop() {}, clock() {} }, browserAudio = { clock() {} }, codecsReady = Promise.resolve('avc1');
+    const videoPath = {}, render = () => {}, reportDiagnostics = () => {}, backoffDelay = () => 500;
+    const scheduleRetry = () => retries++;
+    let attempt = 0, mediaTiming;
+    const timing = { reset() {}, mode() {} }, mediaTimings = new Map([['carplay', timing]]), timingFor = () => timing;
+    const createClockEstimator = () => ({ observe: () => null });
+    const phoneFetch = async (route, options) => {
+      if (route === '/hello') return { ok: true, json: async () => ({ app: 'TiPlay', protocol: 1, transport: RTC_TRANSPORT }) };
+      return new Promise((_, reject) => options.signal.addEventListener('abort', () => { aborted = true; reject(new Error('aborted')); }));
+    };
+    const createRtcMediaTransport = options => ({ connect: async () => {
+      options.exchange('offer').catch(() => {});
+      throw Object.assign(new Error('connect-timeout'), { reason: 'connect-timeout' });
+    } });
+    ${connect}
+    return connectVideo().then(() => ({ aborted, retries }));
+  `);
+  assert.deepEqual(await run(), { aborted: true, retries: 1 });
 });

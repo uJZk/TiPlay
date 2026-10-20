@@ -5,6 +5,9 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.io.IOException
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -86,6 +89,41 @@ class ReceiverAudioDrainTest {
             drain.start()
             fail("A closed drain must not open sockets")
         } catch (_: IllegalStateException) { }
+    }
+
+    @Test fun receiveAndIdleCallbackFailuresRetireBothPortsOnceAndExplainTheFailure() {
+        val peer = InetAddress.getByName("127.0.0.1")
+        for (source in listOf("DATA", "CONTROL", "IDLE")) {
+            val logs = CopyOnWriteArrayList<String>()
+            val failures = CopyOnWriteArrayList<String>()
+            val retired = CountDownLatch(1)
+            val callback: () -> Unit = { throw IOException("decode failed https://private.example/audio?token=secret") }
+            ReceiverAudioDrain(peer, logs::add,
+                packetReceived = { if (source == "DATA") callback() },
+                controlReceived = { if (source == "CONTROL") callback() },
+                idle = if (source == "IDLE") callback else null,
+                failed = { channel, error ->
+                    assertTrue(error is IOException)
+                    failures += channel
+                    retired.countDown()
+                }).use { drain ->
+                val ports = drain.start()
+                if (source != "IDLE") DatagramSocket(0, peer).use { sender ->
+                    send(sender, peer, if (source == "DATA") ports.first else ports.second, byteArrayOf(1))
+                }
+                assertTrue("$source failure must notify its owner", retired.await(2, TimeUnit.SECONDS))
+                assertEquals(listOf(if (source == "CONTROL") "CONTROL" else "DATA"), failures)
+                assertEquals(1, logs.count { it.contains("stage=FAILED") })
+                assertEquals(1, logs.count { it.contains("stage=END") })
+                assertTrue(logs.any { it.contains("exception=IOException") && it.contains("decode failed") })
+                assertFalse(logs.any { it.contains("private.example") || it.contains("token=secret") })
+                for (port in listOf(ports.first, ports.second)) DatagramSocket(null).use { rebound ->
+                    awaitReleasedUdpPort(rebound, InetSocketAddress(InetAddress.getByName("::"), port))
+                }
+                drain.close()
+                assertEquals(1, logs.count { it.contains("stage=END") })
+            }
+        }
     }
 
     private fun send(sender: DatagramSocket, address: InetAddress, port: Int, payload: ByteArray) {

@@ -19,6 +19,11 @@ class DiagnosticLogPolicyTest {
             "Audio: decoder stats inputQueuedTotal=20 inputDroppedTotal=0 ended=true",
             "receiver mirror stage=END reason=CLOSED frames=100",
             "Media clock final: tx=5 rxResponse=5 sendFailures=0 synced=true",
+            "Browser: transport.reason=fragment-order transport.state=failed",
+            "Browser: transport.reason=credit-stall transport.queuedBytes=8388608",
+            "Browser: transport.reason=channel-closed transport.reassemblyErrors=1",
+            "Browser: decoded=100 decoderErrors=1 queue=0",
+            "Browser: transport.state=connected sourceDeadlineViolations=2",
         )
         messages.forEach { assertTrue(it, DiagnosticLogPolicy.shouldRecord(it, DiagnosticLogLevel.STANDARD)) }
     }

@@ -11,6 +11,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WebFrameQueueTest {
+    @Test fun reliableOverloadFailsWithoutDroppingPredictiveInput() {
+        val q = WebFrameQueue(maxAgeNanos = 50, maxBytes = 4, maxFrames = 2, reliable = true)
+        assertTrue(q.offer(frame(0, true, 0), 0))
+        assertTrue(q.offer(frame(1, false, 1), 1))
+        assertFalse(q.offer(frame(2, false, 2), 2))
+        assertEquals("media-overload", q.failureReason)
+        assertEquals(2, q.size)
+        assertEquals(0L, q.overflow)
+        assertEquals(0L, q.skipped)
+        assertEquals(0, q.poll(3)!!.sequence)
+        assertEquals(1, q.poll(4)!!.sequence)
+    }
+
+    @Test fun reliableAgeLimitIsAnExplicitFailureInsteadOfSilentExpiration() {
+        val q = WebFrameQueue(maxAgeNanos = 50, reliable = true)
+        assertTrue(q.offer(frame(0, true, 0), 0))
+        assertFalse(q.offer(frame(1, false, 50), 50))
+        assertEquals("media-age-limit", q.failureReason)
+        assertEquals(1, q.size)
+        assertEquals(0L, q.expired)
+    }
+
     private fun frame(sequence: Int, key: Boolean, now: Long, size: Int = 2) = WebVideoRecord(
         WebVideoRecords.KIND_FRAME, if (key) WebVideoRecords.FLAG_KEY_FRAME else 0, WebVideoRecords.CODEC_H264,
         sequence, 1, 0L, ByteArray(size), queuedAtNanos = now,

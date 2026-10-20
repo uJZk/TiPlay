@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayResourceDiagnosticsTest {
-    @Test fun networkFailuresRecordOnlyBoundedExceptionClassesAndOneCauseLevel() {
+    @Test fun networkFailuresRecordBoundedCauseClassesWithoutPrivateMessages() {
         val messages = mutableListOf<String>()
         val diagnostics = AirPlayResourceDiagnostics(messages::add) { false }
         val failure = AirPlayVideoProxy.Failure(AirPlayVideoProxy.FailureReason.RESOURCE_IO,
@@ -13,14 +13,16 @@ class AirPlayResourceDiagnosticsTest {
         for (cause in listOf(java.net.UnknownHostException(secret), java.net.SocketTimeoutException(secret),
             javax.net.ssl.SSLHandshakeException(secret))) {
             diagnostics.failure(1, failure, cause)
-            assertTrue(messages.last().endsWith("exception=${cause.javaClass.simpleName}"))
+            assertTrue(messages.last().contains("reason=resource-io exception=${cause.javaClass.simpleName}"))
+            assertTrue(messages.last().endsWith("causes=${cause.javaClass.simpleName}"))
         }
         val nested = java.net.UnknownHostException(secret).apply { initCause(IllegalStateException(secret)) }
         diagnostics.failure(2, failure, java.io.IOException(secret, nested))
-        assertTrue(messages.last().endsWith("exception=IOException cause=UnknownHostException"))
-        assertFalse(messages.last().contains("IllegalStateException"))
+        assertTrue(messages.last().contains("reason=resource-io exception=IOException cause=UnknownHostException"))
+        assertTrue(messages.last().contains("causes=IOException<-UnknownHostException<-IllegalStateException"))
         diagnostics.failure(3, failure, object : java.io.IOException(secret) {})
-        assertTrue(messages.last().endsWith("exception=Other"))
+        assertTrue(messages.last().contains("reason=resource-io exception=Other"))
+        assertTrue(messages.last().endsWith("causes=OTHER"))
         assertTrue(messages.all { it.contains("reason=resource-io") && it.length < 256 })
         assertFalse(messages.joinToString().contains("private-host"))
         assertFalse(messages.joinToString().contains("private-secret"))

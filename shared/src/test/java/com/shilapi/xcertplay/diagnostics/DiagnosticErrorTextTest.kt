@@ -4,6 +4,32 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DiagnosticErrorTextTest {
+    @Test fun nestedFailuresRetainTheirCauseWithoutResourceSecretsOrUnboundedMessages() {
+        val failure = java.io.IOException("resource failed https://private.example/media?token=private-secret",
+            java.util.concurrent.ExecutionException(java.net.SocketTimeoutException("read timed out\r\n192.168.49.1:7000")))
+        val text = DiagnosticErrorText.describe(failure)
+        assertTrue(text, text.contains("IOException:resource failed [url]"))
+        assertTrue(text, text.contains("ExecutionException"))
+        assertTrue(text, text.contains("SocketTimeoutException:read timed out"))
+        assertFalse(text, text.contains("private"))
+        assertFalse(text, text.contains("192.168"))
+        assertFalse(text, text.contains('\n'))
+        assertEquals("IOException<-ExecutionException<-SocketTimeoutException", DiagnosticErrorText.types(failure))
+        assertEquals("none", DiagnosticErrorText.describe(null))
+        assertTrue(DiagnosticErrorText.describe(RuntimeException("x".repeat(10_000))).length <= 700)
+    }
+
+    @Test fun cyclicAndBrokenThrowableAccessorsDoNotBreakDiagnosticCollection() {
+        val cyclic = object : RuntimeException() { override val cause: Throwable get() = this }
+        assertTrue(DiagnosticErrorText.describe(cyclic).endsWith("[cause-cycle]"))
+        val broken = object : RuntimeException() {
+            override val message: String get() = error("unavailable")
+            override val cause: Throwable get() = error("unavailable")
+        }
+        assertEquals("OTHER", DiagnosticErrorText.describe(broken))
+        assertEquals("OTHER", DiagnosticErrorText.types(broken))
+    }
+
     @Test fun usefulFailureWordingSurvivesAsOneBoundedLine() {
         assertEquals("play() failed because the user did not interact with the document first.",
             DiagnosticErrorText.sanitize("play() failed because the user did not interact with the document first."))
@@ -48,6 +74,21 @@ class DiagnosticErrorTextTest {
         assertTrue(filtered.startsWith("Connection refused"))
         listOf("192.168", "::1", "fe80", "C0:A6", "C0-A6", "12345678", "012345").forEach {
             assertFalse(filtered, filtered.contains(it))
+        }
+    }
+
+    @Test fun nativeWebrtcFailuresNeverExposeIcePasswordsOrDescriptionsOfNetworkCandidates() {
+        val values = listOf(
+            "Failed to set remote description: invalid a=ice-pwd:short-secret-value",
+            "Failed to parse a=ice-ufrag:short-secret-value",
+            "Failed to parse a=fingerprint:sha-256 01:23:45:67:89:ab:cd:ef",
+            "Failed to parse a=candidate:123 1 udp 99 private-host.local 5000 typ host",
+        )
+        values.forEach { message ->
+            val safe = DiagnosticErrorText.sanitize(message)
+            assertTrue(safe, safe.startsWith("Failed"))
+            assertTrue(safe, safe.contains("[webrtc-identity]"))
+            listOf("short-secret", "01:23", "private-host", "5000").forEach { assertFalse(safe, safe.contains(it)) }
         }
     }
 }

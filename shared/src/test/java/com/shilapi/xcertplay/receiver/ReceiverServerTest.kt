@@ -176,11 +176,15 @@ class ReceiverServerTest {
         val logs = CopyOnWriteArrayList<String>()
         val ended = CountDownLatch(1)
         @Volatile var prepared = 0
+        @Volatile var rejectedMirrorSinks = 0
         var stopped = 0
         var sought = 0.0
         var speed = 1.0
         override fun prepareMirror() { prepared++ }
-        override fun mirrorSink() = WebMediaSink(hub, 1920, 1080, 60)
+        override fun mirrorSink(): WebMediaSink {
+            if (rejectedMirrorSinks > 0) { rejectedMirrorSinks--; error("CarPlay screen loan was not confirmed") }
+            return WebMediaSink(hub, 1920, 1080, 60)
+        }
         override fun play(item: ReceiverPlay) { items.add(item) }
         override fun stopPlayback() { stopped++ }
         override fun seek(seconds: Double) { sought = seconds }
@@ -728,9 +732,14 @@ class ReceiverServerTest {
     @Test fun partialMirrorHeaderEndsImmediatelyInsteadOfReusingUnknownFraming() =
         encryptedMirrorProbe(false, partialHeader = true)
 
+    @Test fun failedReplacementScreenLoanReleasesOnlyTheFailedPictureAndCanRetryWithTheSameKeys() {
+        encryptedMirrorProbe(false, failedReplacement = true)
+        encryptedMirrorProbe(false, audioDrain = true, failedReplacement = true)
+    }
+
     private fun encryptedMirrorProbe(teardown: Boolean, dataEofRecovery: Boolean = false, audioDrain: Boolean = false,
                                      sleepResume: Boolean = false, dataSocketResume: Boolean = false,
-                                     partialHeader: Boolean = false) {
+                                     partialHeader: Boolean = false, failedReplacement: Boolean = false) {
         val identity = AirPlayIdentity.generate()
         val listener = Listener()
         val rawKey = ByteArray(16) { (it + 1).toByte() }
@@ -806,12 +815,55 @@ class ReceiverServerTest {
                 val second = byteArrayOf(0, 0, 0, 2, 0x41, 1)
                 data.getOutputStream().write(packet(0, encryption.update(first)) + packet(0, encryption.update(second)))
                 assertNotNull(subscription.take(5000)); assertNotNull(subscription.take(5000))
+                if (failedReplacement) {
+                    listener.rejectedMirrorSinks = 1
+                    val failed = control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(
+                        mapOf("type" to 110, "streamConnectionID" to 1235L),
+                    ))))
+                    assertEquals("400", failed.path)
+                    assertNull(listener.hub.info())
+                    assertEquals(if (audioDrain) "audio" else "listening", listener.states.last())
+                    assertFalse("A screen-loan failure must not retire the timing clock", listener.logs.any { it.contains("Media clock final:") })
+                    connect(receiver.port).use { competing ->
+                        assertEquals(if (audioDrain) 453 else 200, competing.status("SETUP", "/",
+                            BplistCodec.encode(emptyMap<String, Any?>()), id = "ffeeddccbbaa00998877665544332211"))
+                    }
+                    for (audioPort in audioPorts) assertThrows(BindException::class.java) {
+                        DatagramSocket(null).use { it.bind(InetSocketAddress(InetAddress.getByName("::"), audioPort)) }
+                    }
+                    assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_IDLE, subscription.take(5000)!!.kind)
+                    val replacement = control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(
+                        mapOf("type" to 110, "streamConnectionID" to 1236L),
+                    ))))
+                    assertEquals("200", replacement.path)
+                    val replacementInfo = BplistCodec.decode(replacement.body) as Map<*, *>
+                    val replacementPort = (((replacementInfo["streams"] as List<*>).single() as Map<*, *>)["dataPort"] as Number).toInt()
+                    connect(replacementPort).use { resumed ->
+                        resumed.getOutputStream().write(packet(1, avcc))
+                        assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_CONFIG, subscription.take(5000)!!.kind)
+                        val nextEncryption = aesCtr(AirPlayCrypto.sha512("AirPlayStreamKey1236".toByteArray(), mirrorKey).copyOf(16),
+                            AirPlayCrypto.sha512("AirPlayStreamIV1236".toByteArray(), mirrorKey).copyOf(16))
+                        resumed.getOutputStream().write(packet(0, nextEncryption.update(first)))
+                        assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_FRAME, subscription.take(5000)!!.kind)
+                        assertEquals(200, control.status("TEARDOWN", "/"))
+                        assertNull(listener.hub.info())
+                    }
+                    return
+                }
                 if (sleepResume) {
                     val epoch = listener.hub.info()!!.epoch
                     data.getOutputStream().write(packet(1, avcc, 0x56) +
                         packet(0, encryption.update(second)) + packet(1, avcc, 0x16) +
                         packet(0, encryption.update(second)))
-                    assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_FRAME, subscription.take(5000)!!.kind)
+                    val hidden = requireNotNull(subscription.take(5000))
+                    assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_FRAME, hidden.kind)
+                    assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.FLAG_DECODE_ONLY,
+                        hidden.flags and com.shilapi.xcertplay.web.WebVideoRecords.FLAG_DECODE_ONLY)
+                    assertArrayEquals(byteArrayOf(0, 0, 0, 1, 0x41, 1), hidden.payload)
+                    val resumed = requireNotNull(subscription.take(5000))
+                    assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_FRAME, resumed.kind)
+                    assertEquals(0, resumed.flags and com.shilapi.xcertplay.web.WebVideoRecords.FLAG_DECODE_ONLY)
+                    assertEquals(hidden.sequence + 1, resumed.sequence)
                     assertEquals(epoch, listener.hub.info()!!.epoch)
                 }
                 if (dataSocketResume) {
@@ -924,6 +976,42 @@ class ReceiverServerTest {
                     assertArrayEquals(byteArrayOf(1, 2, 3), resource.bytes)
                     assertEquals(mapOf("Content-Range" to "bytes 1523-1525/2000", "Content-Length" to "3",
                         "Content-Type" to "video/mp4", "Deny-Reason" to "safe diagnostic text"), resource.headers)
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun resourceLoadersRemainBoundToTheItemAcrossReplacementAndCancelPendingOldLoads() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                assertEquals(200, control.status("POST", "/play", "Content-Location: mlhls://app/old.m3u8\r\n".toByteArray()))
+                connect(receiver.port).use { reverse ->
+                    reverse.upgradeReverse()
+                    val oldLoader = receiver.resourceLoader()
+                    val oldLoad = java.util.concurrent.CompletableFuture.supplyAsync { oldLoader("mlhls://app/old.ts", null) }
+                    val oldRequest = readReceiverRequest(reverse.getInputStream())!!.body.toString(Charsets.UTF_8)
+                    assertTrue(oldRequest.contains("mlhls://app/old.ts"))
+                    assertEquals(200, control.status("POST", "/play", "Content-Location: mlhls://app/new.m3u8\r\n".toByteArray()))
+                    assertNull(oldLoad.get(1, TimeUnit.SECONDS))
+                    assertNull("A cancelled old HTTP fallback must not dispatch to the new item", oldLoader("mlhls://app/late-old.ts", null))
+                    reverse.soTimeout = 100
+                    assertThrows(java.net.SocketTimeoutException::class.java) { readReceiverRequest(reverse.getInputStream()) }
+                    reverse.soTimeout = 5000
+                    val newLoader = receiver.resourceLoader()
+                    val next = java.util.concurrent.CompletableFuture.supplyAsync { newLoader("mlhls://app/new.ts", null) }
+                    val xml = readReceiverRequest(reverse.getInputStream())!!.body.toString(Charsets.UTF_8)
+                    assertTrue(xml.contains("mlhls://app/new.ts"))
+                    val id = Regex("<key>FCUP_Response_RequestID</key><integer>([0-9]+)</integer>").find(xml)!!.groupValues[1].toLong()
+                    val answer = BplistCodec.encode(mapOf("type" to "unhandledURLResponse", "params" to mapOf(
+                        "FCUP_Response_RequestID" to id, "FCUP_Response_URL" to "mlhls://app/new.ts",
+                        "FCUP_Response_StatusCode" to 0, "FCUP_Response_Data" to byteArrayOf(42),
+                    )))
+                    assertEquals(200, control.status("POST", "/action", answer))
+                    assertArrayEquals(byteArrayOf(42), next.get(1, TimeUnit.SECONDS)!!.bytes)
+                    receiver.finishPlayback()
+                    assertNull(newLoader("mlhls://app/after-stop.ts", null))
                 }
             }
         } finally { receiver.close() }

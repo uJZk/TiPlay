@@ -3,9 +3,8 @@
  * common/src/main/assets/web/app.js at commit c1bd077 (pointer handling, viewport report, reconnect loop, stats getter).
  * Modified for TiPlay, 2026-10. Source code: https://github.com/uJZk/TiPlay
  *
- * Main thread of the TiPlay browser link (protocol v1). The video fetch starts here so it gets the page's
- * local-network treatment. On the Tesla path its body is transferred to decoder-worker.js, which draws on the
- * transferred canvas; other browsers take a later rung of the fallback ladder (link.js choosePath). */
+ * TiPlay browser link: direct reliable DataChannels carry compressed video and independent audio.
+ * WebCodecs and Canvas run in the decoder worker when supported. */
 import {
   DEFAULT_HOST, PROTOCOL, addressSpaceFor, backoffDelay, choosePath, createControlOutbox, createTouchSlots,
   isCode, linkFromAddress, linkLocation, mapPoint, newSessionId, normalizeHost, supportedCodecs,
@@ -18,6 +17,7 @@ import { followAppearance } from './appearance.js';
 import { probeMirrorCapabilities, probeMirrorAudioFormats } from './airplay-capabilities.js';
 import { createReconnectOverlay } from './reconnect.js';
 import { pumpChunkStream } from './transport.js';
+import { createRtcMediaTransport, RTC_TRANSPORT } from './webrtc-transport.js';
 import { formatPerformanceMonitor, performanceStats } from './fps-window.js';
 import { createClockEstimator } from './clock-sync.js';
 import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from './media-timing.js';
@@ -72,6 +72,8 @@ const STRINGS = {
     badCode: 'The pairing code is wrong. Check it in TiPlay on the Android device.',
     replaced: 'Another browser took over the display. Connect again to take it back.',
     protocol: 'TiPlay on the Android device does not match this page. Update the app.',
+    unsupportedTransport: 'This browser cannot connect to TiPlay. Use a current browser with WebRTC support.',
+    directConnectionUnavailable: 'The browser could not open a local connection. Allow local-network access and check that both devices use the same network.',
     unsupported: 'This browser cannot decode {0}.',
     unsupportedHevc: 'This browser cannot decode this HEVC stream. Reconnect to report decoder support again.',
     unsupportedHdr: 'AirPlay mirroring requires SDR video; this source sends HDR.',
@@ -123,6 +125,8 @@ const STRINGS = {
     badCode: '配对码不正确，请在安卓端上的 TiPlay 中核对。',
     replaced: '另一个浏览器接管了画面。再次连接即可收回。',
     protocol: '安卓端上的 TiPlay 与本页不匹配，请更新应用。',
+    unsupportedTransport: '此浏览器无法连接 TiPlay，请使用支持 WebRTC 的新版浏览器。',
+    directConnectionUnavailable: '浏览器无法建立本地连接。请允许访问本地网络，并检查两台设备是否连接同一网络。',
     unsupported: '此浏览器无法解码 {0}。',
     unsupportedHevc: '此浏览器无法解码此 HEVC 视频流，请重新连接以再次汇报解码能力。',
     unsupportedHdr: 'AirPlay 镜像需要 SDR 视频，当前来源发送的是 HDR。',
@@ -175,7 +179,7 @@ showLink();
 const slots = createTouchSlots();
 let session = null, active = false, phase = 'ready', notice = null;
 let attempt = 0, reconnects = 0, retryTimer = null, retryAt = 0, streamId = 0, videoAbort = null, lastError = null;
-let retryCountdownTimer = null;
+let retryCountdownTimer = null, rtcMedia = null;
 let config = null, live = false, status = null, unsupported = null, videoStats = {};
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 const locationNotice = createLocationNotice($('location-notice'), lang);
@@ -209,6 +213,7 @@ const browserAudio = createBrowserAudio({
   onTiming: (source, mode) => timingFor(mode).observe('audio', source),
   onQueued: mode => timingFor(mode).started(),
   onAudioReference: reference => sink?.audio(reference),
+  onSourceDeadline: () => reportDiagnostics(),
   fetchPhone: phoneFetch, credentials: () => ({ code: link.code, session }),
 });
 mediaTiming = timingFor('carplay');
@@ -321,6 +326,7 @@ async function setUpVideo() {
     sink = {
       clock(clock) { worker.postMessage({ type: 'clock', clock }); },
       audio(reference) { presenter?.audio(reference); worker.postMessage({ type: 'audio-output', reference }); },
+      interaction(active) { worker.postMessage({ type: 'interaction', active }); },
       open(id, body, signal) {
         if (path.feed === 'stream') worker.postMessage({ type: 'stream', id, stream: body }, [body]);
         else {
@@ -350,6 +356,7 @@ async function setUpVideo() {
       clock: pipeline.clock,
       audio(reference) { presenter.audio(reference); frames.audio(reference); },
       delay(plans) { frames.delay(plans.video); },
+      interaction(active) { mediaTiming.interaction(active); },
       open(id, body) {
         stop();
         pipeline.read(id, body);
@@ -413,12 +420,11 @@ function start() {
   fitRequestedAt = 0;
   $('panel').hidden = true;
   stage.hidden = false;
-  outbox = createControlOutbox({ send: postControl, heldContacts: () => slots.contacts(), onStatus: applyStatus, onError: controlFailed });
+  const ownerSession = session;
+  outbox = createControlOutbox({ send: (q, events) => postControl(q, events, ownerSession), heldContacts: () => slots.contacts(), onStatus: applyStatus, onError: controlFailed });
   reportAppearance();
   heartbeatTimer = setInterval(() => outbox.heartbeat(), 400);
-  statsTimer = setInterval(() => {
-    for (const event of browserDiagnosticEvents(pageStats(), appearance.matches, status?.debug === true, status?.debugSession)) outbox.push(event, 'latest');
-  }, 5000);
+  statsTimer = setInterval(reportDiagnostics, 5000);
   outbox.heartbeat();
   resizeCanvas();
   scheduleViewport();
@@ -440,6 +446,7 @@ function stop(key = null, ...args) {
   clearInterval(retryCountdownTimer);
   clearInterval(statsTimer);
   videoAbort?.abort();
+  rtcMedia?.close();
   sink?.stop();
   cancelMove();
   slots.releaseAll();
@@ -461,6 +468,8 @@ function sendBye() {
 
 async function connectVideo() {
   const id = ++streamId;
+  rtcMedia?.close();
+  rtcMedia = null;
   sink?.stop();
   clearTimeout(retryTimer);
   clearInterval(retryCountdownTimer);
@@ -468,8 +477,9 @@ async function connectVideo() {
   live = false;
   phase = 'connecting';
   render();
+  const ownerSession = session;
   const abort = videoAbort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), 6000); // until the response headers arrive
+  const timer = setTimeout(() => abort.abort(), 18000); // includes direct ICE and both peers' candidate gathering
   try {
     const clockEstimator = createClockEstimator();
     const clockStart = performance.timeOrigin + performance.now();
@@ -479,12 +489,14 @@ async function connectVideo() {
     if (id !== streamId) return;
     const clock = clockEstimator.observe(hello.clockMs, clockStart, performance.timeOrigin + performance.now());
     if (hello.app !== 'TiPlay' || hello.protocol !== PROTOCOL) {
+      clearTimeout(timer);
       stop('protocol');
       return;
     }
-    const codecs = await codecsReady;
+    await codecsReady;
     if (id !== streamId) return;
     if (!sink) {
+      clearTimeout(timer);
       stop('noVideo', videoPath.reason);
       return;
     }
@@ -492,15 +504,35 @@ async function connectVideo() {
     sink.clock(clock); browserAudio.clock(clock);
     for (const [mode, timing] of mediaTimings) { timing.reset(); timing.mode(mode); }
     mediaTiming = timingFor('carplay');
-    const response = await phoneFetch(`/video?c=${link.code}&s=${session}&codecs=${codecs}&timing=1&lifecycle=1`, { signal: abort.signal });
-    clearTimeout(timer);
-    if (id !== streamId) {
-      response.body?.cancel().catch(() => {});
+    if (hello.transport !== RTC_TRANSPORT) {
+      clearTimeout(timer);
+      stop('protocol');
       return;
     }
-    if (!response.ok) throw await httpError(response);
-    sink.open(id, response.body, abort.signal);
-    browserAudio.attach(abort.signal, hello);
+    let opened = false;
+    const media = rtcMedia = createRtcMediaTransport({
+      signal: abort.signal,
+      credentials: () => ({ code: link.code, session: ownerSession }),
+      exchange: async offer => {
+        const response = await phoneFetch('/rtc', {
+          method: 'POST', body: JSON.stringify({ c: link.code, s: ownerSession, offer }), signal: abort.signal,
+        });
+        if (!response.ok) throw await httpError(response);
+        return response.json();
+      },
+      onError: error => {
+        if (!opened || abort.signal.aborted || id !== streamId) return;
+        lastError = error;
+        reportDiagnostics();
+        streamEnded(error.reason ?? 'transport-failed');
+      },
+    });
+    await media.connect();
+    clearTimeout(timer);
+    if (id !== streamId || abort.signal.aborted) { media.close(); return; }
+    opened = true;
+    sink.open(id, media.video, abort.signal);
+    browserAudio.attach(abort.signal, hello, () => media.openAudio());
     if (Number.isFinite(hello.clockMs)) {
       let busy = false;
       const clockTimer = setInterval(async () => {
@@ -532,25 +564,31 @@ async function connectVideo() {
   } catch (error) {
     clearTimeout(timer);
     if (id !== streamId) return;
+    abort.abort(); // Retire signaling fetches as well as the peer before starting another attempt.
     if (error.status === 401) stop('badCode');
     else if (error.status === 409) stop('replaced');
+    else if (error.reason === 'webrtc-unavailable') stop('unsupportedTransport');
+    else if (error.reason === 'unsupported-message-size') stop('protocol');
     else {
       lastError = error;
+      reportDiagnostics();
+      if (/^no-(local|remote)-(udp-)?candidates$/.test(error.reason ?? '')) browserNotice.update({ id: 'direct-connection', text: t('directConnectionUnavailable') });
       scheduleRetry(error.status === 429 ? 30000 : backoffDelay(attempt++));
     }
   }
 }
 
 function streamEnded(reason) {
-  sink?.stop();
   videoAbort?.abort();
+  rtcMedia?.close();
+  sink?.stop();
   live = false;
   releaseTouches();
   if (reason === 'replaced') {
     stop('replaced');
     return;
   }
-  lastError = null;
+  if (reason !== 'closed' && reason !== 'end') lastError ??= Object.assign(new Error(reason), { reason });
   scheduleRetry(backoffDelay(attempt++));
 }
 
@@ -567,9 +605,12 @@ function scheduleRetry(delay) {
   render();
 }
 
-async function postControl(q, events) {
+async function postControl(q, events, ownerSession = session) {
+  if (!active || session !== ownerSession) throw new Error('Browser control owner retired.');
+  const media = rtcMedia;
+  if (media?.isConnected()) return media.control(q, locationEvents(events));
   const response = await phoneFetch('/control', {
-    method: 'POST', body: JSON.stringify({ c: link.code, s: session, q, e: locationEvents(events) }), signal: timeoutSignal(3000),
+    method: 'POST', body: JSON.stringify({ c: link.code, s: ownerSession, q, e: locationEvents(events) }), signal: timeoutSignal(3000),
   });
   if (!response.ok) throw await httpError(response);
   return response.json();
@@ -605,7 +646,7 @@ function onVideoMessage(message) {
   else if (message.type === 'config') {
     mediaTiming = timingFor(message.config.mode);
     sink?.delay?.(mediaTiming.plans());
-    // Audio has its own ordered per-type reset/epoch. Its HTTP response may deliver
+    // Audio has its own ordered per-type reset/epoch. Its channel may deliver
     // the new producer's PCM before this config, so video cannot clear that audio.
     if (config?.epoch !== message.config.epoch) videoStats = {};
     config = message.config;
@@ -697,10 +738,15 @@ function statusText() {
   return t(key ?? 'waitingSource');
 }
 
+function reportDiagnostics() {
+  for (const event of browserDiagnosticEvents(pageStats(), appearance.matches, status?.debug === true, status?.debugSession)) outbox?.push(event, 'latest');
+}
+
 function pageStats() {
   return {
     themeDark: appearance.matches,
-    link: { path: videoPath.path, fallback: videoPath.reason, codecs: probedCodecs, phase, attempt, reconnects, live, unsupported },
+    link: { path: videoPath.path, fallback: videoPath.reason, codecs: probedCodecs, phase, attempt, reconnects, live, unsupported, errorReason: lastError?.reason ?? null },
+    transport: rtcMedia?.stats() ?? null,
     video: videoStats,
     audio: browserAudio.stats(),
     control: outbox?.stats() ?? null,
@@ -723,7 +769,13 @@ function cancelMove() {
 function releaseTouches() {
   cancelMove();
   const lifted = slots.releaseAll();
-  if (lifted.length) outbox?.push({ k: 't', p: lifted });
+  if (lifted.length) { outbox?.push({ k: 't', p: lifted }); setInteraction(false); }
+}
+
+function setInteraction(active) {
+  if (config?.mode !== 'carplay') return;
+  mediaTiming.interaction(active);
+  sink?.interaction?.(active);
 }
 
 /** Returns true when the pointer took a slot. */
@@ -733,6 +785,7 @@ function pointerDown(pointerId, clientX, clientY) {
   if (!point || !slots.down(pointerId, point)) return false;
   cancelMove();
   outbox.push({ k: 't', p: slots.contacts() });
+  setInteraction(true);
   return true;
 }
 
@@ -741,6 +794,7 @@ function pointerMove(pointerId, clientX, clientY) {
   const point = mapPoint(clientX, clientY, touch.getBoundingClientRect(), config.width, config.height, true);
   if (!point) return;
   slots.move(pointerId, point);
+  setInteraction(true);
   if (movePending) return;
   movePending = true;
   requestAnimationFrame(() => {
@@ -755,6 +809,7 @@ function pointerUp(pointerId) {
   if (!contacts) return;
   cancelMove();
   outbox?.push({ k: 't', p: contacts });
+  setInteraction(slots.size > 0);
 }
 
 touch.addEventListener('contextmenu', event => event.preventDefault());

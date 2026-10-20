@@ -6,6 +6,7 @@ import java.io.OutputStream
 import java.util.Base64
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.io.BufferedWriter
 
 /** Opt-in, lossless application I/O capture. No sampling, redaction, queue or rotation.
  * Writes apply disk backpressure. Android/kernel Bluetooth and USB bus packets are outside this API.
@@ -20,15 +21,24 @@ object RawTraffic {
     private var sequence = 0L
     private var failures = 0L
     private var lastFailure = "none"
+    private var lastFailureText = ""
+    private var firstFailureEpochMillis = 0L
+    private var lastFailureEpochMillis = 0L
+    private var failedByteAttempts = 0L
+    private var lastFailureChannel = "none"
+    private var writer: BufferedWriter? = null
 
     private var configuration = ""
     private var sessionId: String? = null
+    private var pendingSessionHeader: ByteArray? = null
     private var needsBoundaryCheck = true
 
     fun configure(destination: File, active: Boolean, configuration: String = "") = synchronized(lock) {
-        val starting = active && !enabled
+        val changed = file != destination
+        val starting = active && (!enabled || changed)
         if (!active && enabled) record("capture/stop", "disabled".toByteArray())
-        if (file != destination || starting) needsBoundaryCheck = true
+        if (changed || !active) closeWriter()
+        if (changed || starting) needsBoundaryCheck = true
         file = destination
         enabled = active
         if (starting) {
@@ -40,7 +50,8 @@ object RawTraffic {
     private fun startSession() {
         val session = java.util.UUID.randomUUID().toString()
         sessionId = session
-        record("capture/start", ("process=$process session=$session startEpochMillis=${System.currentTimeMillis()}\n" + configuration).toByteArray())
+        pendingSessionHeader = ("process=$process session=$session startEpochMillis=${System.currentTimeMillis()}\n" + configuration).toByteArray()
+        record("capture/start", requireNotNull(pendingSessionHeader))
     }
 
     /** Binds browser reports to this enable/clear cycle, including delayed control retries. */
@@ -48,9 +59,12 @@ object RawTraffic {
 
     /** Explicit user action; saved artifacts are independent. An active capture starts a fresh session. */
     fun clear() = synchronized(lock) {
+        closeWriter()
         val target = file
         check(target == null || !target.exists() || target.delete()) { "Could not clear raw capture" }
         failures = 0; lastFailure = "none"
+        lastFailureText = ""; firstFailureEpochMillis = 0; lastFailureEpochMillis = 0
+        failedByteAttempts = 0; lastFailureChannel = "none"; needsBoundaryCheck = true
         if (enabled) startSession()
     }
 
@@ -58,9 +72,18 @@ object RawTraffic {
         if (!enabled || length <= 0) return
         synchronized(lock) {
             if (!enabled) return
+            if (channel != "capture/start") {
+                pendingSessionHeader?.let { record("capture/start", it) }
+                if (pendingSessionHeader != null) {
+                    failure(java.io.IOException("Capture session marker unavailable"), channel, length.toLong())
+                    return
+                }
+            }
             try {
                 val target = file ?: return
-                target.parentFile?.let { if (!it.isDirectory) check(it.mkdirs()) }
+                target.parentFile?.let {
+                    if (!it.isDirectory && !it.mkdirs()) throw java.io.IOException("Could not create capture directory")
+                }
                 // An interrupted append must not merge its partial line with the next session/record.
                 if (needsBoundaryCheck) {
                     java.io.RandomAccessFile(target, "rw").use { tail ->
@@ -71,21 +94,43 @@ object RawTraffic {
                     }
                     needsBoundaryCheck = false
                 }
-                java.io.FileOutputStream(target, true).bufferedWriter().use { writer ->
-                    var position = offset
-                    val end = offset + length
-                    while (position < end) {
-                        val count = minOf(48 * 1024, end - position)
-                        val encoded = Base64.getEncoder().encodeToString(bytes.copyOfRange(position, position + count))
-                        writer.append("${System.currentTimeMillis()}\t${++sequence}\t$channel\t$count\t$encoded\n")
-                        position += count
-                    }
+                val output = writer ?: java.io.FileOutputStream(target, true).bufferedWriter().also { writer = it }
+                var position = offset
+                val end = offset + length
+                while (position < end) {
+                    val count = minOf(48 * 1024, end - position)
+                    val encoded = Base64.getEncoder().encodeToString(bytes.copyOfRange(position, position + count))
+                    output.append("${System.currentTimeMillis()}\t${++sequence}\t$channel\t$count\t$encoded\n")
+                    position += count
                 }
+                // No payload queue: every call flushes before returning, applying disk backpressure.
+                // This is application I/O completion, not an fsync/power-loss durability guarantee.
+                output.flush()
+                if (channel == "capture/start") pendingSessionHeader = null
             } catch (error: Exception) {
                 needsBoundaryCheck = true
-                failures++; lastFailure = error.javaClass.simpleName
+                closeWriter()
+                failure(error, channel, length.toLong())
             }
         }
+    }
+
+    private fun closeWriter() {
+        val current = writer ?: return
+        writer = null
+        try { current.close() } catch (error: Exception) { failure(error, "capture/close", 0) }
+    }
+
+    private fun failure(error: Exception, channel: String, bytes: Long) {
+        val time = System.currentTimeMillis()
+        if (firstFailureEpochMillis == 0L) firstFailureEpochMillis = time
+        lastFailureEpochMillis = time
+        failures++
+        lastFailure = error.javaClass.simpleName.filter { it.isLetterOrDigit() || it == '_' }.take(64).ifEmpty { "OTHER" }
+        lastFailureText = DiagnosticErrorText.sanitize(runCatching { error.message }.getOrNull())
+        // Retain the source category, never a URL, peer address or arbitrary channel suffix.
+        lastFailureChannel = channel.substringBefore('/').takeIf { it in SOURCE_CATEGORIES } ?: "other"
+        failedByteAttempts += bytes
     }
 
     fun input(channel: String, source: InputStream): InputStream = object : InputStream() {
@@ -135,9 +180,16 @@ object RawTraffic {
 
     private fun snapshot(): Snapshot = synchronized(lock) {
         val length = file?.length() ?: 0L
-        Snapshot(if (length == 0L) java.io.ByteArrayInputStream(byteArrayOf()) else file!!.inputStream(), length, "RAW_CAPTURE failures=$failures lastFailure=$lastFailure enabled=$enabled format=tsv-base64 bytes=$length snapshotEpochMillis=${System.currentTimeMillis()}\n")
+        Snapshot(if (length == 0L) java.io.ByteArrayInputStream(byteArrayOf()) else file!!.inputStream(), length,
+            "RAW_CAPTURE failures=$failures lastFailure=$lastFailure enabled=$enabled format=tsv-base64 bytes=$length snapshotEpochMillis=${System.currentTimeMillis()}\n" +
+                "RAW_CAPTURE_INTEGRITY coverage=${if (failures == 0L) "no-observed-write-failure" else "partial"} " +
+                "firstFailureEpochMillis=$firstFailureEpochMillis lastFailureEpochMillis=$lastFailureEpochMillis " +
+                "failedByteAttempts=$failedByteAttempts lastFailureSource=$lastFailureChannel " +
+                "lastFailureText=$lastFailureText durability=application-flush\n")
     }
 
     fun writeArchive(output: OutputStream, logName: String, report: String, temporaryRoot: File) =
         snapshot().use { RawTrafficArchive.write(output, logName, report, it, temporaryRoot) }
+
+    private val SOURCE_CATEGORIES = setOf("capture", "iphone", "browser", "usb", "android-audio", "car-bluetooth")
 }

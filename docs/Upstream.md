@@ -12,6 +12,7 @@ TiPlay is a GPL-3.0 derivative of [DiPlay by shihabal3amri](https://github.com/s
 | [FDK AAC](https://github.com/mstorsjo/fdk-aac) | Third-party modified AAC-ELD browser fallback; [source, modifications and license](../site/play/vendor/aac-eld/README.md). |
 | [libsoxr](https://github.com/chirlu/soxr) | Browser streaming variable-rate resampler and native Android SCO resampling; [browser source/build provenance](../site/play/vendor/soxr/README.md) and [Android C/JNI subset](../shared/src/main/jni/soxr/README.md). |
 | [UxPlay](https://github.com/FDH2/UxPlay) | Ordinary AirPlay protocol reference and native transport-key modules; `ec203121355220dd90278a369eeabb0b8ba4f14a`, [native provenance](../shared/src/main/jni/airplay/README.md). |
+| [WebRTC Android SDK](https://github.com/webrtc-sdk/android) | Fixed `144.7559.12` Maven AAR for local reliable DataChannels; upstream WebRTC `0bbf3dd72c44824f20b06f22b3e0fca133556e12`, [licenses/provenance](Third-party-notices.md#runtime-dependencies). |
 
 Review security, protocol, playback and lifecycle changes since each baseline. Update adopted code, pins, provenance, licenses and validation together. Source ancestry and the runtime identity selected for an APK are separate; see [Build](Build.md#runtime-identity).
 

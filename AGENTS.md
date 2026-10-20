@@ -16,8 +16,8 @@ Project AGENTS.md files and documents under docs/ must stay below 8,192 words ea
 Split a topic only when needed, target 4,096 words, and update the index and references.
 
 - [Browser](docs/Browser.md): pairing, receiver-aware waiting states, dismissible browser errors, resize, portal, media and shutdown.
-- [CarPlay DataChannel handoff](docs/CarPlay-DataChannel.md): next-session implementation of reliable, ordered WebRTC DataChannel from first principles; confirmed webpage hardware-decode, sender-relative timing, touch, routing and one-copy capture constraints. Design only; current runtime remains unchanged.
-- [WebRTC roadmap](docs/WebRTC-roadmap.md): current vehicle evidence (D local WebRTC playback works), TCP receive-probe results, Shizuku UDP verification and remaining implementation gates. Follow the DataChannel handoff for the selected product transport.
+- [CarPlay DataChannel contract](docs/CarPlay-DataChannel.md): reliable, ordered WebRTC transport, webpage decoding, independent timing, touch, routing and one-copy capture constraints; protocol and trust boundaries.
+- [WebRTC roadmap](docs/WebRTC-roadmap.md): implemented product path, four playback profiles, current vehicle evidence and remaining Shizuku/physical acceptance.
 - [Settings](docs/Settings.md): short receiver status titles, separate details, drafts, immediate apply, reconnect and boot.
 - [Connection setup](docs/Connection-setup.md) and [hotspot address](docs/Hotspot-address.md).
 - [AirPlay](docs/AirPlay.md): receiver/media contracts, native/software audio negotiation,
@@ -26,7 +26,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 - [Diagnostics](docs/Diagnostics.md): opt-in unredacted capture sessions, browser decode/render evidence, process-default-off and clear behavior, Standard TXT/Debug ZIP formats and Debug-only AirPlay proxy routing; [privacy](docs/Privacy.md).
   Status refresh, permission reminders, iPhone Bluetooth audio copy and USB lifecycle capture validation are recorded in [Testing](docs/Testing.md#debug-raw-capture-and-car-bluetooth-hints); remaining device checks are in [Todo](docs/Todo.md#connection-settings-and-browser).
 - [Geolocation](docs/geolocation.md): implemented GPS fallback, datum detection/conversion, browser cache and iPhone forwarding. Verification is in [Testing](docs/Testing.md#location-and-notification-verification); physical follow-up is in [Todo](docs/Todo.md#location).
-- [Build](docs/Build.md), including the [0.2.20-beta.5 release record and verification limits](docs/Build.md#beta-release), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md). Permission-checklist/browser-readiness verification is recorded in Testing; physical follow-up is in [Todo](docs/Todo.md#connection-settings-and-browser).
+- [Build](docs/Build.md), including the [0.2.20-beta.6 release preparation and verification limits](docs/Build.md#beta-release), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md). Permission-checklist/browser-readiness verification is recorded in Testing; physical follow-up is in [Todo](docs/Todo.md#connection-settings-and-browser).
   Consolidated hints, explicit-operation feedback and their device checks are in [Testing](docs/Testing.md#phone-and-browser-acceptance).
   Receiver-status verification and remaining device checks are in [Testing](docs/Testing.md#receiver-status-and-browser-notices);
   provisioned-JDK proxy certificate setup is in [Build](docs/Build.md#managed-cloud-certificate-trust).

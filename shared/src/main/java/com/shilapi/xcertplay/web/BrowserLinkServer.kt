@@ -46,6 +46,7 @@ class BrowserLinkServer(
     private val port: Int = DEFAULT_PORT,
     private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000 },
     private val audioHub: WebAudioHub? = null,
+    private val rtcFactory: BrowserRtcFactory? = null,
 ) {
     /** What the server needs from the app. Called on server threads; implementations must not block. */
     interface Callbacks {
@@ -112,6 +113,7 @@ class BrowserLinkServer(
     /** Held while a `/control` batch is admitted and applied, so two overlapping batches never interleave. */
     private val applying = Any()
     private var video: VideoStream? = null
+    private var rtc: BrowserRtcSession? = null
     private var appliedSession: String? = null
     private var appliedSequence: Long? = null
     @Volatile private var server: ServerSocket? = null
@@ -151,6 +153,7 @@ class BrowserLinkServer(
         if (!running.compareAndSet(true, false)) return
         closeQuietly(server)
         watchdog?.shutdownNow()
+        synchronized(lock) { rtc?.retire("server-stopped"); rtc = null }
         audios.forEach { it.subscription.close(); closeQuietly(it.socket) }
         videos.forEach { it.subscription.end("stopped") }
         // Give each writer a moment to send its end record; a stalled one is cut off below.
@@ -229,8 +232,16 @@ class BrowserLinkServer(
         if (request.method != method) {
             return respond(output, request, refuse(405, "method", listOf("Allow" to "$method, OPTIONS")))
         }
+        // The Android product uses WebRTC exclusively for media. Source-only JVM fixtures can
+        // still exercise the HTTP record protocol without loading an Android native library.
+        if (rtcFactory != null && (request.path == "/video" || request.path == "/audio")) {
+            return respond(output, request, refuse(410, "transport-required"))
+        }
         return when (request.path) {
-            "/hello" -> respond(output, request, json(200, WebDebugTiming.hello(System.nanoTime(), audio = audioHub != null)))
+            "/hello" -> respond(output, request, json(200, WebJson.write(mapOf("app" to "TiPlay", "protocol" to 1,
+                "clockMs" to System.nanoTime() / 1e6, "audio" to (audioHub != null),
+                "transport" to if (rtcFactory != null) BrowserRtcProtocol.NAME else "http-records-v1"))))
+            "/rtc" -> respond(output, request, rtc(request))
             "/video" -> streamVideo(request, socket, output)
             "/audio" -> streamAudio(request, socket, output)
             "/airplay-resource" -> streamAirPlayResource(request, output)
@@ -384,6 +395,10 @@ class BrowserLinkServer(
 
     private fun control(request: Request): Response {
         val body = jsonBody(request) ?: return refuse(400, "bad-request")
+        return controlBody(body)
+    }
+
+    private fun controlBody(body: Map<*, *>): Response {
         val session = (body["s"] as? String)?.takeIf(BrowserPairingGate::isSessionId) ?: return refuse(400, "bad-request")
         val sequence = body["q"].wholeNumber() ?: return refuse(400, "bad-request")
         val events = body["e"] as? List<*> ?: return refuse(400, "bad-request")
@@ -406,10 +421,48 @@ class BrowserLinkServer(
         return json(200, WebJson.write(status(synchronized(lock) { appliedSequence }, session)))
     }
 
+    /** Pairing admission binds the offer/answer to the current browser ownership lease. */
+    private fun rtc(request: Request): Response {
+        val factory = rtcFactory ?: return refuse(503, "rtc-unavailable")
+        val body = jsonBody(request) ?: return refuse(400, "bad-request")
+        val session = (body["s"] as? String)?.takeIf(BrowserPairingGate::isSessionId) ?: return refuse(400, "bad-request")
+        val offer = (body["offer"] as? String)?.takeIf { it.length in 1..48 * 1024 } ?: return refuse(400, "bad-request")
+        val next = synchronized(applying) { synchronized(lock) {
+            admitLocked(body["c"] as? String, session)?.let { return it }
+            rtc?.retire("peer-replaced")
+            var owner: BrowserRtcSession? = null
+            factory.create(session) { fields ->
+                // Session and code are still validated for every DC control batch, including retirement.
+                if (fields["s"] != session) throw IllegalArgumentException("rtc-session")
+                val response = synchronized(applying) {
+                    synchronized(lock) {
+                        if (owner == null || rtc !== owner || !owner!!.live) throw IllegalStateException("rtc-owner-retired")
+                    }
+                    controlBody(fields)
+                }
+                if (response.status != 200) throw IllegalStateException("rtc-control-${response.status}")
+                String(response.body, Charsets.UTF_8)
+            }.also { owner = it; rtc = it }
+        } }
+        return try {
+            val answer = next.answer(offer)
+            synchronized(lock) {
+                if (rtc !== next || gate.current != session) { next.retire("owner-replaced"); return refuse(409, "replaced") }
+            }
+            json(200, WebJson.write(mapOf("type" to "answer", "sdp" to answer, "epoch" to next.epoch,
+                "fragmentBytes" to BrowserRtcProtocol.MESSAGE_BYTES, "transport" to BrowserRtcProtocol.NAME)))
+        } catch (error: Exception) {
+            next.retire("signaling-failed")
+            synchronized(lock) { if (rtc === next) rtc = null }
+            callbacks.log("Browser link: RTC signaling failed exception=${error.javaClass.simpleName}")
+            refuse(503, "rtc-signaling-failed")
+        }
+    }
+
     private fun bye(request: Request): Response {
         val body = jsonBody(request) ?: return refuse(400, "bad-request")
         val session = (body["s"] as? String)?.takeIf(BrowserPairingGate::isSessionId) ?: return refuse(400, "bad-request")
-        synchronized(lock) {
+        synchronized(applying) { synchronized(lock) {
             when (gate.leave(body["c"] as? String, session, nowMillis())) {
                 is BrowserPairingGate.Decision.Accepted -> {
                     callbacks.onBrowserGone(session)
@@ -417,13 +470,14 @@ class BrowserLinkServer(
                     AirPlayTrustNotifications.browserGone(session)
                     if (callbacks.browserLocationEnabled()) com.shilapi.xcertplay.location.BrowserLocationRelay.leave(session)
                     video?.takeIf { it.session == session }?.subscription?.end("bye")
+                    rtc?.takeIf { it.session == session }?.let { it.retire("page-bye"); rtc = null }
                     audios.filter { it.session == session }.forEach { it.subscription.close(); closeQuietly(it.socket) }
                 }
                 BrowserPairingGate.Decision.Unauthorized -> return refuse(401, "code")
                 BrowserPairingGate.Decision.Throttled -> return refuse(429, "throttled")
                 BrowserPairingGate.Decision.Replaced -> return refuse(409, "replaced")
             }
-        }
+        } }
         callbacks.log("Browser link: session ended by the page")
         return Response(204)
     }
@@ -432,7 +486,8 @@ class BrowserLinkServer(
     private fun admitLocked(code: String?, session: String): Response? {
         val now = nowMillis()
         val current = gate.current
-        val liveVideo = video?.let { it.session == current && !it.stalled(now) } == true
+        val liveVideo = video?.let { it.session == current && !it.stalled(now) } == true ||
+            rtc?.let { it.session == current && it.live } == true
         val lockouts = gate.lockouts
         return when (val decision = gate.admit(code, session, now, liveVideo)) {
             is BrowserPairingGate.Decision.Accepted -> {
@@ -442,6 +497,7 @@ class BrowserLinkServer(
                     AirPlayTrustNotifications.browserGone(previous)
                     if (callbacks.browserLocationEnabled()) com.shilapi.xcertplay.location.BrowserLocationRelay.leave(previous)
                     video?.takeIf { it.session == previous }?.subscription?.end("replaced")
+                    rtc?.takeIf { it.session == previous }?.let { it.retire("owner-replaced"); rtc = null }
                     audios.filter { it.session == previous }.forEach { it.subscription.close(); closeQuietly(it.socket) }
                     callbacks.log("Browser link: a new page session replaced the previous one")
                 }
@@ -573,13 +629,18 @@ class BrowserLinkServer(
             "airplay" to AirPlayBrowserPlayback.snapshot(),
             "airplayTrust" to AirPlayTrustNotifications.prompt(session),
             "touch" to if (status.touchAvailable) "ok" else "unavailable",
-            "phone" to status.phone + mapOf("video" to hub.snapshot(), "link" to performance.snapshot()),
+            "phone" to status.phone + mapOf("video" to hub.snapshot(), "link" to performance.snapshot(),
+                "rtc" to synchronized(lock) { rtc?.snapshot() }),
         )
     }
 
     private fun tick() {
         try {
             val now = nowMillis()
+            synchronized(lock) {
+                if (callbacks.code() == null) { rtc?.retire("pairing-disabled"); rtc = null }
+                else rtc?.maintain()
+            }
             touch.expire(now)
             videos.filter { it.stalled(now) }.forEach {
                 callbacks.log("Browser link: video stream stalled; closing it")
@@ -762,7 +823,7 @@ class BrowserLinkServer(
         private const val TOKEN_CHARACTERS = "!#$%&'*+-.^_`|~"
         private val HEADER_NAME_PATTERN = Regex("[a-z0-9-]{1,48}")
         private val KEYS = setOf("home", "back", "siri")
-        private val ROUTES = mapOf("/airplay-resource" to "GET", "/hello" to "GET", "/video" to "GET", "/audio" to "GET", "/control" to "POST", "/bye" to "POST")
+        private val ROUTES = mapOf("/airplay-resource" to "GET", "/hello" to "GET", "/rtc" to "POST", "/video" to "GET", "/audio" to "GET", "/control" to "POST", "/bye" to "POST")
         private val RECORD_NAMES = mapOf(
             WebVideoRecords.KIND_CONFIG to "configRecords",
             WebVideoRecords.KIND_FRAME to "frameRecords",
@@ -772,7 +833,7 @@ class BrowserLinkServer(
         )
         private val REASONS = mapOf(
             200 to "OK", 206 to "Partial Content", 307 to "Temporary Redirect", 416 to "Range Not Satisfiable", 502 to "Bad Gateway", 204 to "No Content", 400 to "Bad Request", 401 to "Unauthorized", 404 to "Not Found",
-            405 to "Method Not Allowed", 409 to "Conflict", 421 to "Misdirected Request", 429 to "Too Many Requests",
+            405 to "Method Not Allowed", 409 to "Conflict", 410 to "Gone", 421 to "Misdirected Request", 429 to "Too Many Requests",
             503 to "Service Unavailable",
         )
 

@@ -89,6 +89,26 @@ class WebVideoHubTest {
         assertEquals(0, deltaRecord.flags)
     }
 
+    @Test fun decodeOnlyAccessUnitsKeepKeyFlagsSequenceTimestampsAndOriginalPayload() {
+        begin()
+        hub.configure(owner, VideoCodec.H264, avcc)
+        val subscription = hub.subscribe(reliable = true)
+        val key = idr()
+        val hidden = delta()
+        hub.frame(owner, key, 1_000_000_000, now, decodeOnly = true)
+        hub.frame(owner, hidden, 1_016_667_000, now, decodeOnly = true)
+        hub.frame(owner, delta(), 1_033_333_000, now)
+        val (_, keyRecord, hiddenRecord, visibleRecord) = subscription.drain()
+        assertEquals(WebVideoRecords.FLAG_KEY_FRAME or WebVideoRecords.FLAG_PARAMETER_SETS or
+            WebVideoRecords.FLAG_DECODE_ONLY, keyRecord.flags)
+        assertEquals(WebVideoRecords.FLAG_DECODE_ONLY, hiddenRecord.flags)
+        assertEquals(0, visibleRecord.flags)
+        assertSame(key, keyRecord.payload)
+        assertSame(hidden, hiddenRecord.payload)
+        assertEquals(listOf(0, 1, 2), listOf(keyRecord.sequence, hiddenRecord.sequence, visibleRecord.sequence))
+        assertEquals(listOf(0L, 16_667L, 33_333L), listOf(keyRecord.timestampUs, hiddenRecord.timestampUs, visibleRecord.timestampUs))
+    }
+
     @Test fun sequenceCountsEveryFrameAndTimestampsAreRelativeToTheEpoch() {
         begin()
         hub.configure(owner, VideoCodec.H264, avcc)

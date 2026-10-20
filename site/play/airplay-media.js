@@ -5,11 +5,15 @@ import { audioTrackLabel, createAudioTrackList, preferredAudioTrack } from './ai
 import { fetchSdrMediaResource, hasHdrTransfer, requireSdrTrack, sdrError } from './airplay-sdr.js';
 import { decodableAudioTracks, selectPlayableTrack } from './airplay-track-selection.js';
 import { createSerialMediaFetch } from './airplay-resource-fetch.js';
+import { playbackProfile } from './delay-plan.js';
 import { clampMediaTime, intersectMediaRanges, mediaRangeEnd, mediaTimeRanges, mergeMediaRanges,
   videoQueueFull } from './airplay-media-state.js';
 
 const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
-const MAX_AUDIO_AHEAD = 3;
+const CAST_PROFILE = playbackProfile('airplay-cast');
+const VIDEO_BUFFER_LIMITS = Object.freeze({ maxFrames: CAST_PROFILE.maxVideoFrames,
+  maxBytes: CAST_PROFILE.maxVideoBytes, maxAhead: CAST_PROFILE.maxVideoAheadMs / 1000 });
+const MAX_AUDIO_AHEAD = CAST_PROFILE.maxAudioAheadMs / 1000;
 const MAX_AUDIO_SCHEDULE = 0.5;
 const FRAME_EPSILON = 0.002;
 const abortError = () => new DOMException('Media playback was interrupted.', 'AbortError');
@@ -123,7 +127,7 @@ export function createMediaEngine(surface, options = {}) {
       video: [], audio: [], videoTrack: null, audioTrack: null, videoDone: false, audioDone: false,
       videoReady: false, audioReady: false, metadataReady: false, nodes: new Set(), scheduledEnd: position,
       start: position, audioEnd: position, tempo: null, tempoRate: null, tempoStart: position, tempoOutput: 0,
-      ready, readyResolve, readyReject, readySettled: false, waiters: new Set() };
+      ready, readyResolve, readyReject, readySettled: false, hasPlayed: false, waiters: new Set() };
     generation = item;
     void open(item).catch(cause => { if (active(item)) { item.readyReject(cause); fail(cause); } });
     schedule(); return ready;
@@ -261,7 +265,7 @@ export function createMediaEngine(surface, options = {}) {
       .samples(origin + item.start)[Symbol.asyncIterator]();
     item.iterators.push(iterator);
     while (active(item)) {
-      while (active(item) && videoQueueFull(item.video, readPosition())) await waitForRoom(item);
+      while (active(item) && videoQueueFull(item.video, readPosition(), VIDEO_BUFFER_LIMITS)) await waitForRoom(item);
       if (!active(item)) break;
       const next = await iterator.next();
       if (!active(item)) { next.value?.close(); break; }
@@ -272,7 +276,13 @@ export function createMediaEngine(surface, options = {}) {
       if (end < item.start - FRAME_EPSILON) { sample.close(); continue; }
       const frame = { sample, start, end, bytes: sample.codedWidth * sample.codedHeight * 4
         || sample.displayWidth * sample.displayHeight * 4, unknownDuration: sample.duration <= 0 };
-      if (frame.bytes > 96 * 1024 * 1024) { sample.close(); throw new Error('The decoded video frame exceeds the playback memory limit.'); }
+      if (frame.bytes > CAST_PROFILE.maxVideoBytes) { sample.close(); throw new Error('The decoded video frame exceeds the playback memory limit.'); }
+      while (active(item) && item.video.reduce((bytes, queued) => bytes + queued.bytes, 0) + frame.bytes > CAST_PROFILE.maxVideoBytes) {
+        item.videoBudgetBlocked = true;
+        notify(item); await waitForRoom(item);
+      }
+      item.videoBudgetBlocked = false;
+      if (!active(item)) { sample.close(); break; }
       const previous = item.video[item.video.length - 1] || (held?.serial === item.serial ? held : null);
       if (previous?.unknownDuration && frame.start > previous.start) previous.end = frame.start;
       item.video.push(frame); totalVideoFrames++; item.videoReady = true;
@@ -386,6 +396,20 @@ export function createMediaEngine(surface, options = {}) {
     if (!Number.isFinite(end)) end = Number.isFinite(duration) ? duration : position;
     return end;
   }
+  function bufferedForPlayback(item, end) {
+    const target = (item.hasPlayed ? CAST_PROFILE.resumeBufferMs : CAST_PROFILE.startupBufferMs) / 1000 * rate;
+    if (end - position >= target - FRAME_EPSILON) return true;
+    const ranges = trackRanges(item);
+    const videoEnd = mediaRangeEnd(ranges.video, position), audioEnd = mediaRangeEnd(ranges.audio, position);
+    // A short file or a limiting decoder/surface budget must not deadlock the
+    // startup watermark. Decode no extra surfaces merely to satisfy a target.
+    const videoSaturated = item.videoTrack && videoEnd <= end + FRAME_EPSILON
+      && (item.videoDone || item.videoBudgetBlocked || videoQueueFull(item.video, position, VIDEO_BUFFER_LIMITS));
+    const audioSaturated = item.audioTrack && audioEnd <= end + FRAME_EPSILON
+      && (item.audioDone || audioEnd - position >= MAX_AUDIO_AHEAD - FRAME_EPSILON
+        || item.audio.reduce((bytes, chunk) => bytes + chunk.channels.reduce((sum, channel) => sum + channel.byteLength, 0), 0) >= MAX_AUDIO_BYTES);
+    return Boolean(videoSaturated || audioSaturated);
+  }
   function checkReady(item) {
     if (!active(item) || !item.metadataReady || !item.videoReady || !item.audioReady) return;
     if (!item.readySettled) {
@@ -455,10 +479,11 @@ export function createMediaEngine(surface, options = {}) {
     }
     const end = playableEnd(item);
     const canRun = !paused && !seeking && item.readySettled && end > position + FRAME_EPSILON
+      && (running || bufferedForPlayback(item, end))
       && (!item.audioTrack || context?.state === 'running');
     if (canRun) {
       if (!running) {
-        clockPosition = position; clockTime = currentClock(); running = true;
+        clockPosition = position; clockTime = currentClock(); running = true; item.hasPlayed = true;
         scheduleAudio(item, end); item.waiting = false; event('playing'); settlePlay();
       } else scheduleAudio(item, end);
     } else if (running) { freeze(); if (!paused) event('waiting'); }

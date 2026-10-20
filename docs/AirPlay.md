@@ -112,7 +112,10 @@ resource needed to become ready. Loading, readiness and failure remain asynchron
 through playback information and events.
 
 TiPlay owns one audio-leading clock, bounded queues, buffering, seek and rate;
-silent video uses monotonic time. Underrun freezes both streams; playable buffers use
+silent video uses monotonic time. The shared URL-casting profile favors smoothness:
+750 ms startup / 1500 ms recovery watermarks, with frame/time/GPU-byte limits and
+early readiness when a short resource ends or the bounded queue is full. These
+defaults require vehicle tuning. Underrun freezes both streams; playable buffers use
 their intersection. HLS date-time is not media position. Video.js uses its official default skin with ±10-second seek controls and a
 matching casting-end button, and adapts this engine,
 without a second HTML video clock. SoundTouch preserves pitch during rate changes.

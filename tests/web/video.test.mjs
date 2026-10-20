@@ -5,10 +5,11 @@ import assert from 'node:assert/strict';
 import { FLAG, RECORD, encodeRecord } from '../../site/play/link.js';
 import { createDecoderPipeline, createFramePresenter } from '../../site/play/video.js';
 import { createTimedFrames } from '../../site/play/media-timing.js';
+import { videoLimit } from '../../site/play/playback-window.js';
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-class FakeDecoder {
+class FakeDecoder extends EventTarget {
   static instances = [];
   static gate = null;
 
@@ -16,15 +17,17 @@ class FakeDecoder {
     return (FakeDecoder.gate ?? Promise.resolve()).then(() => ({ supported: true, config }));
   }
 
-  constructor({ output }) {
+  constructor({ output, error }) {
+    super();
     this.output = output;
+    this.error = error;
     this.state = 'unconfigured';
     this.decodeQueueSize = 0;
     this.chunks = [];
     FakeDecoder.instances.push(this);
   }
 
-  configure() { this.state = 'configured'; }
+  configure(config) { this.state = 'configured'; this.config = config; }
   decode(chunk) { this.chunks.push(chunk); }
   close() { this.state = 'closed'; }
   reset() { this.state = 'unconfigured'; this.decodeQueueSize = 0; this.resets = (this.resets || 0) + 1; }
@@ -304,6 +307,29 @@ test('video pipeline preserves source mode in CONFIG messages and presented fram
   assert.deepEqual(presented, ['carplay', 'airplay-mirror']);
 });
 
+test('decode-only mirror AUs preserve decoder dependencies without presenting suspended pictures', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const shown = [], pipeline = createDecoderPipeline({ post() {}, present: frame => shown.push(frame) });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1, 'airplay-mirror'));
+  controller.enqueue(encodeRecord({ kind: RECORD.FRAME, flags: FLAG.KEY | FLAG.DECODE_ONLY, epoch: 1, timestampUs: 1, payload: Uint8Array.of(0x65) }));
+  controller.enqueue(encodeRecord({ kind: RECORD.FRAME, flags: FLAG.DECODE_ONLY, epoch: 1, timestampUs: 2, payload: Uint8Array.of(0x41) }));
+  controller.enqueue(encodeRecord({ kind: RECORD.FRAME, epoch: 1, timestampUs: 3, payload: Uint8Array.of(0x41) }));
+  await settle();
+  const decoder = FakeDecoder.instances.at(-1), hidden = [videoFrame(1), videoFrame(2)], visible = videoFrame(3);
+  hidden.forEach(frame => decoder.output(frame)); decoder.output(visible);
+  assert.deepEqual(decoder.chunks.map(chunk => chunk.timestamp), [1, 2, 3]);
+  assert.ok(hidden.every(frame => frame.closed)); assert.deepEqual(shown, [visible]);
+  assert.equal(pipeline.stats().decoded, 3); assert.equal(pipeline.stats().decodeOnlyFrames, 2);
+  assert.equal(pipeline.stats().decodeDroppedFrames, 0); assert.equal(pipeline.stats().decodeInFlightFrames, 0);
+});
+
 test('canvas submission reports an early source presentation as a signed offset', async () => {
   const { createFramePresenter } = await import('../../site/play/video.js');
   const context = { fillRect() {}, drawImage() {} };
@@ -319,13 +345,14 @@ test('canvas submission reports an early source presentation as a signed offset'
 });
 
 test('the presenter rejects frames delayed by main-thread delivery and rechecks before drawing', () => {
-  let now = 1001, draws = 0, clears = 0, clockReads = 0, preparationExpires = false;
+  const deadline = 1000 + videoLimit('carplay');
+  let now = deadline + 1, draws = 0, clears = 0, clockReads = 0, preparationExpires = false;
   const context = { fillRect() { clears++; }, drawImage() { draws++; } };
   const canvas = { width: 800, height: 480, getContext: type => type === '2d' ? context : null, removeEventListener() {} };
-  const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => { if (preparationExpires && ++clockReads >= 2) now = 1001; return now; } });
+  const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => { if (preparationExpires && ++clockReads >= 2) now = deadline + 1; return now; } });
   const expired = videoFrame(0); presenter.present(expired, { mode: 'carplay' }, 1000);
   assert.equal(expired.closed, true); assert.equal(draws, 0);
-  now = 999; preparationExpires = true;
+  now = deadline - 1; preparationExpires = true;
   const crossed = videoFrame(1); presenter.present(crossed, { mode: 'carplay' }, 1000);
   assert.equal(crossed.closed, true); assert.equal(draws, 0, 'canvas submission check catches time spent preparing the draw');
   assert.equal(clears, 0, 'an expired frame never clears the retained picture');
@@ -337,10 +364,11 @@ test('the presenter rejects frames delayed by main-thread delivery and rechecks 
 });
 
 test('an expired GPU texture upload never clears or submits the canvas', () => {
-  let now = 999, proofs = 0;
+  const deadline = 1000 + videoLimit('carplay');
+  let now = deadline - 1, proofs = 0;
   const calls = [], canvas = { width: 800, height: 480, addEventListener() {}, removeEventListener() {} }, gl = { canvas, isContextLost: () => false };
   for (const name of ['createProgram', 'createShader', 'shaderSource', 'compileShader', 'attachShader', 'deleteShader', 'linkProgram', 'useProgram', 'createBuffer', 'bindBuffer', 'bufferData', 'getAttribLocation', 'enableVertexAttribArray', 'vertexAttribPointer', 'createTexture', 'bindTexture', 'texParameteri', 'getUniformLocation', 'uniform1i', 'viewport', 'clearColor', 'clear', 'drawArrays', 'deleteTexture', 'deleteBuffer', 'deleteProgram']) gl[name] = () => { calls.push(name); return {}; };
-  gl.texImage2D = () => { calls.push('upload'); now = 1001; };
+  gl.texImage2D = () => { calls.push('upload'); now = deadline + 1; };
   gl.flush = () => calls.push('flush');
   canvas.getContext = type => type === 'webgl2' ? gl : null;
   const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => now, onFirstPresent: () => proofs++ });
@@ -356,7 +384,7 @@ test('an expired GPU texture upload never clears or submits the canvas', () => {
 });
 
 
-test('encoded dependency order survives PTS reordering and backlog recovery waits for a key frame', async t => {
+test('encoded dependency order survives PTS reordering and backpressure without resetting or losing input', async t => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   FakeDecoder.instances = []; FakeDecoder.gate = null;
   globalThis.VideoDecoder = FakeDecoder;
@@ -373,18 +401,122 @@ test('encoded dependency order survives PTS reordering and backlog recovery wait
   controller.enqueue(delta(1, 3000)); controller.enqueue(delta(2, 2000)); await settle();
   assert.deepEqual(decoder.chunks.map(chunk => chunk.timestamp), [0, 3000, 2000],
     'encoded reference/decode order cannot be sorted by presentation timestamps');
-  decoder.decodeQueueSize = 31;
+  decoder.decodeQueueSize = 16;
   controller.enqueue(delta(3, 4000)); controller.enqueue(delta(4, 5000)); await settle();
-  assert.equal(decoder.resets, 1); assert.equal(decoder.chunks.length, 3);
-  assert.equal(pipeline.stats().backlogResets, 1);
-  assert.equal(pipeline.stats().decodeDroppedFrames, 2);
-  assert.ok(messages.some(message => message.type === 'keyframe'));
-  controller.enqueue(keyFrame(1)); controller.enqueue(delta(5, 6000)); await settle();
-  assert.deepEqual(decoder.chunks.slice(-2).map(chunk => chunk.type), ['key', 'delta']);
+  assert.equal(decoder.resets, undefined); assert.equal(decoder.chunks.length, 3);
+  assert.equal(pipeline.stats().backlogResets, 0);
+  assert.equal(pipeline.stats().decodeDroppedFrames, 0);
+  assert.equal(pipeline.stats().decodeBackpressureWaits, 1);
+  assert.equal(messages.some(message => message.type === 'keyframe'), false);
+  decoder.decodeQueueSize = 0; decoder.dispatchEvent(new Event('dequeue')); await settle();
+  assert.deepEqual(decoder.chunks.map(chunk => chunk.timestamp), [0, 3000, 2000, 4000, 5000]);
+  assert.equal(pipeline.stats().decodeInFlightFrames, 5);
+  assert.equal(decoder.config.hardwareAcceleration, 'prefer-hardware');
+});
+
+test('accepted decoder work is bounded even when decodeQueueSize is zero', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const pipeline = createDecoderPipeline({ post() {}, present: frame => frame.close() });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1)); controller.enqueue(keyFrame(1));
+  for (let timestampUs = 1; timestampUs < 49; timestampUs++) controller.enqueue(encodeRecord({
+    kind: RECORD.FRAME, codec: 1, epoch: 1, timestampUs, payload: Uint8Array.of(0, 0, 0, 1, 0x41),
+  }));
+  await settle();
+  const decoder = FakeDecoder.instances.at(-1);
+  assert.equal(decoder.decodeQueueSize, 0);
+  assert.equal(decoder.chunks.length, 48, 'hidden decoder/reference work has a separate finite budget');
+  assert.equal(pipeline.stats().decodeInFlightFrames, 48);
+  decoder.output(videoFrame(0)); await settle();
+  assert.equal(decoder.chunks.length, 49, 'a completed output returns one unit of capacity');
+  assert.equal(pipeline.stats().decodeDroppedFrames, 0);
+});
+
+test('a stalled decoder ends explicitly and stop cancels pending capacity waits', async t => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout'] });
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const messages = [], pipeline = createDecoderPipeline({ post: value => messages.push(value), present() {} });
+  t.after(() => pipeline.stop());
+  let controller;
+  let reading = pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1)); controller.enqueue(keyFrame(1)); await settle();
+  FakeDecoder.instances.at(-1).decodeQueueSize = 16;
+  const next = () => encodeRecord({ kind: RECORD.FRAME, codec: 1, epoch: 1, timestampUs: 1, payload: Uint8Array.of(0x41) });
+  controller.enqueue(next()); await settle();
+  t.mock.timers.tick(1001); await reading;
+  assert.deepEqual(messages.filter(value => value.type === 'end').map(value => value.reason), ['decode-stalled']);
+  assert.equal(pipeline.stats().decodeStalls, 1);
+  assert.equal(pipeline.stats().decodeDroppedFrames, 0, 'overload does not silently skip the waiting compressed record');
+  reading = pipeline.read(2, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1)); controller.enqueue(keyFrame(1)); await settle();
+  FakeDecoder.instances.at(-1).decodeQueueSize = 16;
+  controller.enqueue(next()); await settle(); pipeline.stop(); await reading;
+  t.mock.timers.tick(5000); await settle();
+  assert.equal(messages.filter(value => value.type === 'end').length, 1, 'stopped waits cannot end the replacement stream later');
+});
+
+test('decoder recovery retains its hardware request and rate-limits keyframe requests', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const messages = [], pipeline = createDecoderPipeline({ post: value => messages.push(value), present() {} });
+  t.after(() => pipeline.stop());
+  pipeline.read(1, new ReadableStream({ start(value) { value.enqueue(config(1)); } }));
+  await settle();
+  for (let i = 0; i < 3; i++) FakeDecoder.instances.at(-1).error(new DOMException('hardware path failed', 'OperationError'));
+  assert.equal(FakeDecoder.instances.length, 4);
+  assert.ok(FakeDecoder.instances.every(decoder => decoder.config.hardwareAcceleration === 'prefer-hardware'));
+  assert.equal(messages.filter(value => value.type === 'keyframe').length, 1);
+  assert.equal(pipeline.stats().decoderErrorName, 'OperationError');
+  assert.equal(pipeline.stats().decoderErrorMessage, 'hardware path failed');
+});
+
+test('configuration resource failure is explicit and preserves the decoder error evidence', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  t.mock.method(FakeDecoder.prototype, 'configure', () => { throw new DOMException('hardware resources exhausted', 'QuotaExceededError'); });
+  const messages = [], pipeline = createDecoderPipeline({ post: value => messages.push(value), present() { assert.fail('configuration failed'); } });
+  t.after(() => pipeline.stop());
+  pipeline.read(1, new ReadableStream({ start(value) { value.enqueue(config(1)); value.enqueue(keyFrame(1)); } }));
+  await settle();
+  assert.equal(pipeline.stats().codecSupported, false);
+  assert.equal(pipeline.stats().decoderErrorName, 'QuotaExceededError');
+  assert.equal(pipeline.stats().decoderErrorMessage, 'hardware resources exhausted');
+  assert.equal(messages.find(value => value.type === 'unsupported').reason, 'decoder-configuration');
+  assert.equal(FakeDecoder.instances.at(-1).state, 'closed');
+});
+
+test('a hung source-configuration capability query has a bounded diagnostic failure', async t => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout'] });
+  FakeDecoder.instances = []; FakeDecoder.gate = new Promise(() => {});
+  globalThis.VideoDecoder = FakeDecoder;
+  t.after(() => { delete globalThis.VideoDecoder; FakeDecoder.gate = null; });
+  const messages = [], pipeline = createDecoderPipeline({ post: value => messages.push(value), present() {} });
+  t.after(() => pipeline.stop());
+  const reading = pipeline.read(1, new ReadableStream({ start(value) { value.enqueue(config(1)); } }));
+  await settle(); t.mock.timers.tick(3001); await reading;
+  assert.deepEqual(messages.filter(value => value.type === 'end').map(value => value.reason), ['decoder-probe-timeout']);
+  assert.equal(pipeline.stats().decoderErrorName, 'RecordStreamError');
+  assert.match(pipeline.stats().decoderErrorMessage, /capability query/);
+  assert.equal(FakeDecoder.instances.length, 0);
 });
 
 
-test('a decoded frame dropped by audio sync proves nothing until a later frame is actually drawn', async t => {
+test('missing audio timestamps do not block untimed video or its first canvas proof', async t => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   globalThis.VideoDecoder = FakeDecoder;
   globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
@@ -399,14 +531,14 @@ test('a decoded frame dropped by audio sync proves nothing until a later frame i
   let controller;
   pipeline.read(3, new ReadableStream({ start(c) { controller = c; } }));
   controller.enqueue(config(1)); controller.enqueue(keyFrame(1)); await settle();
-  const dropped = videoFrame(0); FakeDecoder.instances.at(-1).output(dropped);
-  assert.equal(dropped.closed, true); assert.equal(shown.length, 0);
-  assert.equal(messages.some(m => m.type === 'decoded'), false);
+  const untimed = videoFrame(0); FakeDecoder.instances.at(-1).output(untimed);
+  assert.equal(untimed.closed, false); assert.equal(shown.length, 1);
+  assert.equal(messages.some(m => m.type === 'decoded'), true);
   frames.audio({ mode: 'carplay', type: 0, epoch: 1, generation: 1, sequence: 2, clockGeneration: 1,
     state: 'disabled', at: 1000 });
   FakeDecoder.instances.at(-1).output(videoFrame(1));
   FakeDecoder.instances.at(-1).output(videoFrame(2));
-  assert.equal(shown.length, 2);
+  assert.equal(shown.length, 3);
   assert.deepEqual(messages.filter(m => m.type === 'decoded').map(m => [m.id, m.epoch]), [[3, 1]]);
 });
 
@@ -423,9 +555,9 @@ test('first-frame proof waits for paced drawing and is suppressed on expired fra
   t.after(() => presenter.dispose());
   presenter.present(videoFrame(0), { streamId: 9, epoch: 1, mode: 'carplay' }, 1100);
   assert.equal(proofs.length, 0); assert.equal(draws, 0);
-  at = 1101; refresh();
+  at = 1101 + videoLimit('carplay'); refresh();
   assert.equal(proofs.length, 0); assert.equal(draws, 0);
-  presenter.present(videoFrame(1), { streamId: 9, epoch: 1, mode: 'carplay' }, 1200);
-  at = 1150; refresh();
+  presenter.present(videoFrame(1), { streamId: 9, epoch: 1, mode: 'carplay' }, at + 100);
+  at += 50; refresh();
   assert.equal(draws, 1); assert.deepEqual(proofs, [[9, 1]]);
 });

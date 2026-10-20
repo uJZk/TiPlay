@@ -1,103 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-only
+// JVM compatibility-server checks. Production playback is verified by run.mjs and webrtc.mjs.
+// RealPhone has no Android native WebRTC implementation; the production page must reject it.
 import { History, listen, closeServer } from './resources.mjs';
-// End-to-end check of the real phone side: RealPhone.java runs the app's BrowserLinkServer, WebVideoHub,
-// BrowserOnlyMediaSink and WebMediaSink (compiled :shared classes) with an H.264 clip. A separate static server
-// hosts the browser page, matching the HTTPS page + phone protocol split. Not part of CI; see README.md.
-//
-// The first run forces an unsupported H.264 decoder to check transport and the page's message independently of
-// installed codecs. The LAN run checks the secure-context requirement; the third uses a decoder stand-in to verify chunks.
+import { RecordParser, RECORD, FLAG } from '../../site/play/link.js';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { connect } from 'node:net';
-import { homedir, networkInterfaces, tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
-const { chromium } = createRequire(import.meta.url)('playwright-core'); // resolved through NODE_PATH
-
+const { chromium } = createRequire(import.meta.url)('playwright-core');
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const CODE = '2718';
-const WIDTH = 1280, HEIGHT = 720, FPS = 30;
+const CODE = '2718', WIDTH = 1280, HEIGHT = 720, FPS = 30;
 const CHROMIUM = process.env.CHROMIUM ?? ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find(existsSync);
-const JAVA = process.env.JAVA ?? 'java';
-const FFMPEG = process.env.FFMPEG ?? 'ffmpeg';
+const JAVA = process.env.JAVA ?? 'java', FFMPEG = process.env.FFMPEG ?? 'ffmpeg';
 const PAGE_DIR = process.env.PAGE_DIR ?? join(ROOT, 'site/play');
 const SHARED_CLASSES = process.env.SHARED_CLASSES ?? join(ROOT, 'shared/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes');
-// A VideoDecoder stand-in for the decoder worker: it checks the chunks the phone sent and draws a plain frame for each.
-const DECODER_STAND_IN = `(() => {
-  const info = { chunks: 0, keys: 0, firstKeyTypes: null, firstDeltaTypes: null, badStartCodes: 0, failures: 0, configs: [], configsOverflow: 0 };
-  let failNext = false;
-  self.addEventListener('message', event => { if (event.data && event.data.type === 'stand-in-fail') failNext = true; });
-  const nalTypes = data => {
-    const types = [];
-    for (let i = 0; i + 4 < data.length; i++) {
-      if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 0 && data[i + 3] === 1) { types.push(data[i + 4] & 0x1f); i += 3; }
-    }
-    return types;
-  };
-  setInterval(() => self.postMessage({ type: 'stand-in', info: JSON.parse(JSON.stringify(info)) }), 200);
-  self.VideoDecoder = class {
-    static async isConfigSupported(config) { return { supported: /^avc1\\./.test(config.codec), config }; }
-    constructor({ output, error }) { this.output = output; this.error = error; this.state = 'unconfigured'; this.decodeQueueSize = 0; }
-    configure(config) {
-      if (info.configs.length < 64) info.configs.push(config.codec + ' ' + config.codedWidth + 'x' + config.codedHeight);
-      else info.configsOverflow++;
-      this.state = 'configured';
-      this.canvas = new OffscreenCanvas(config.codedWidth, config.codedHeight);
-      this.context = this.canvas.getContext('2d');
-    }
-    decode(chunk) {
-      if (this.state !== 'configured') throw new DOMException('not configured', 'InvalidStateError');
-      const data = new Uint8Array(chunk.byteLength);
-      chunk.copyTo(data);
-      info.chunks++;
-      if (data[0] !== 0 || data[1] !== 0 || data[2] !== 0 || data[3] !== 1) info.badStartCodes++;
-      if (chunk.type === 'key') { info.keys++; if (!info.firstKeyTypes) info.firstKeyTypes = nalTypes(data); }
-      else if (!info.firstDeltaTypes) info.firstDeltaTypes = nalTypes(data);
-      if (failNext) {
-        failNext = false;
-        info.failures++;
-        this.state = 'closed';
-        setTimeout(() => this.error(new DOMException('stand-in decode failure', 'EncodingError')));
-        return;
-      }
-      this.decodeQueueSize++;
-      setTimeout(() => {
-        this.decodeQueueSize--;
-        if (this.state !== 'configured') return;
-        this.context.fillStyle = 'hsl(' + (info.chunks * 7 % 360) + ' 60% 40%)';
-        this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        this.output(new VideoFrame(this.canvas, { timestamp: chunk.timestamp }));
-      });
-    }
-    flush() { return Promise.resolve(); }
-    reset() { this.decodeQueueSize = 0; this.state = 'unconfigured'; }
-    close() { this.state = 'closed'; }
-  };
-})();
-`;
-// Main-thread side of the stand-in: keeps the workers and their stand-in reports.
-const WATCH_WORKERS = `(() => {
-  const Native = window.Worker;
-  window.__workers = [];
-  window.__standIn = null;
-  window.Worker = class extends Native {
-    constructor(...args) {
-      super(...args);
-      if (window.__workers.length >= 64) { super.terminate(); throw new Error('too many live test workers'); }
-      window.__workers.push(this);
-      this.addEventListener('message', event => { if (event.data && event.data.type === 'stand-in') window.__standIn = event.data.info; });
-    }
-    terminate() {
-      const index = window.__workers.indexOf(this);
-      if (index >= 0) window.__workers.splice(index, 1);
-      super.terminate();
-    }
-  };
-})();`;
 
 function log(message) {
   console.log(`[phone-e2e] ${message}`);
@@ -202,55 +124,6 @@ async function startPhone(clip) {
 
 }
 
-function lanAddress() {
-  return Object.values(networkInterfaces()).flat().find(entry => entry.family === 'IPv4' && !entry.internal)?.address ?? null;
-}
-
-const stats = page => page.evaluate(() => window.tiplayStats);
-
-/** Collects what a page does: its requests to the phone and its console problems. */
-function watch(page) {
-  const seen = { requests: new History(), problems: new History(), responses: new History() };
-  page.on('request', request => seen.requests.push({ url: request.url(), method: request.method(), headers: request.headers() }));
-  page.on('response', response => seen.responses.push(`${response.status()} ${new URL(response.url()).pathname}`));
-  page.on('requestfailed', request => seen.responses.push(`failed ${new URL(request.url()).pathname} ${request.failure()?.errorText}`));
-  page.on('console', message => {
-    if (message.type() === 'error' || /Content Security Policy|Refused to/i.test(message.text())) seen.problems.push(message.text());
-  });
-  page.on('pageerror', error => seen.problems.push(`pageerror: ${error.message}`));
-  return seen;
-}
-
-/** Separate page/phone origins; the code only in authenticated media streams, no Referer to the phone, no CSP or script errors. */
-async function checkRequests(page, seen, origin, label) {
-  const counts = (await stats(page)).phone?.link?.counts ?? {};
-  check(!counts.busy, `${label}: the phone never answered busy (${JSON.stringify(counts)})`);
-  for (const history of Object.values(seen)) history.assertComplete();
-  const pageOrigin = new URL(page.url()).origin;
-  const foreign = seen.requests.filter(request => ![pageOrigin, origin].includes(new URL(request.url).origin));
-  check(!foreign.length, `${label}: requests go only to the page host and phone${foreign.length ? `, not ${foreign[0].url}` : ''}`);
-  const leaks = seen.requests.filter(request => request.url.includes(CODE) && !['/video', '/audio'].includes(new URL(request.url).pathname));
-  check(!leaks.length, `${label}: only authenticated /video or /audio carries the pairing code in its URL${leaks.length ? `, not ${leaks[0].url}` : ''}`);
-  const referred = seen.requests.filter(request => new URL(request.url).origin === origin && request.headers.referer);
-  check(!referred.length, `${label}: no request sends a Referer${referred.length ? ` (${referred[0].url})` : ''}`);
-  const problems = seen.problems.filter(text => !/Failed to load resource|ERR_CONNECTION_RESET|ERR_EMPTY_RESPONSE|network error/i.test(text));
-  check(!problems.length, `${label}: no CSP violations or page errors${problems.length ? `: ${problems.join(' | ')}` : ''}`);
-}
-
-/** Opens the separately hosted page with an explicit phone address and pairing fragment. */
-async function openPage(context, origin, phoneOrigin, label) {
-  const page = await context.newPage();
-  const seen = watch(page);
-  const phoneHost = new URL(phoneOrigin).host;
-  await page.goto(`${origin}/?t=${phoneHost}#c=${CODE}`);
-  const state = await page.evaluate(() => ({ href: location.href, hash: location.hash, link: localStorage.getItem('tiplay.link') }));
-  check(state.href === `${origin}/?t=${phoneHost}` && state.hash === '',
-    `${label}: the hosted page keeps the phone address and removes #c= (${state.href})`);
-  const stored = JSON.parse(state.link ?? 'null');
-  check(stored?.code === CODE && stored?.host === phoneHost, `${label}: the code and explicit phone address are stored (${stored?.host})`);
-  return { page, seen };
-}
-
 async function checkProtocolOnly(origin) {
   for (const path of ['/', '/play', '/play/', '/play/app.js', '/play/sw.js', '/play/reconnect-wallpaper-blurred.png']) {
     const response = await fetch(`${origin}${path}`, { redirect: 'manual' });
@@ -277,34 +150,6 @@ function rawStatus(origin, request) {
   });
 }
 
-/** Replaces VideoDecoder in the decoder worker with the stand-in, and keeps the workers for the stand-in's reports. */
-async function useDecoderStandIn(context) {
-  await context.addInitScript(WATCH_WORKERS);
-  await context.route('**/decoder-worker.js', async route => {
-    const response = await route.fetch();
-    await route.fulfill({ response, body: `${DECODER_STAND_IN}\n${await response.text()}` });
-  });
-}
-
-/** A tap at x/y of the letterboxed picture must reach onTouch as slot 0 down then up, with slot 1 idle, normalized. */
-async function checkTap(page, phone, x, y, label) {
-  const rect = await page.evaluate(() => JSON.parse(JSON.stringify(document.getElementById('touch').getBoundingClientRect())));
-  const scale = Math.min(rect.width / WIDTH, rect.height / HEIGHT);
-  const left = rect.left + (rect.width - WIDTH * scale) / 2, top = rect.top + (rect.height - HEIGHT * scale) / 2;
-  const mark = phone.events.length;
-  await page.touchscreen.tap(left + x * WIDTH * scale, top + y * HEIGHT * scale);
-  const touches = await waitFor('a touch down and up', () => {
-    const all = phone.since(mark, 'touch').map(event => event.contacts);
-    return all.length >= 2 && all;
-  });
-  const near = (contact, down) => contact[0] === 0 && Math.abs(contact[1] - x) < 0.01 && Math.abs(contact[2] - y) < 0.01 && contact[3] === down;
-  const idle = contact => contact[0] === 1 && contact[3] === false;
-  check(touches[0].length === 2 && near(touches[0][0], true) && idle(touches[0][1]) &&
-    touches.at(-1).length === 2 && near(touches.at(-1)[0], false) && idle(touches.at(-1)[1]),
-  `${label}: a tap at ${x}/${y} reaches onTouch as ${JSON.stringify(touches[0])} then ${JSON.stringify(touches.at(-1))}`);
-}
-
-/** The page from another origin, as the public HTTPS page is: a static server for the page directory at its root. */
 function startPageHost() {
   const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', svg: 'image/svg+xml', png: 'image/png' };
   const server = createServer((req, res) => {
@@ -317,259 +162,87 @@ function startPageHost() {
   return listen(server, '0.0.0.0');
 }
 
-/** Stats keys that TeslaBrowserLink.statsLine puts in the session log (its STATS_FIELDS). */
-function statsLogKeys() {
-  const source = readFileSync(join(ROOT, 'common/src/main/java/com/shilapi/xcertplay/TeslaBrowserLink.kt'), 'utf8');
-  const block = /STATS_FIELDS = listOf\(([\s\S]*?)\n\s*\)/.exec(source)?.[1] ?? '';
-  return [...block.matchAll(/"[^"]+" to "([^"]+)"/g)].map(match => match[1]);
+async function readLegacyRecords(origin, session) {
+  const response = await fetch(`${origin}/video?c=${CODE}&s=${session}&codecs=avc1&timing=1`, { signal: AbortSignal.timeout(10000) });
+  check(response.status === 200, 'the explicit compatibility API accepts authenticated compressed-video subscription');
+  const reader = response.body.getReader(), parser = new RecordParser(), records = [];
+  try {
+    while (records.filter(record => record.kind === RECORD.FRAME).length < 8) {
+      const chunk = await reader.read();
+      if (chunk.done) throw new Error('compatibility stream ended before the expected records');
+      records.push(...parser.push(chunk.value));
+    }
+  } finally { await reader.cancel().catch(() => {}); }
+  return records;
 }
 
 async function main() {
   const dir = mkdtempSync(join(tmpdir(), 'tiplay-phone-e2e-'));
   let phone, browser, pageHost;
   try {
-    const clip = encodeClip(dir);
-    phone = await startPhone(clip);
-    const clipInfo = phone.events.find(event => event.event === 'clip');
-    log(`RealPhone listens on port ${phone.port} with ${clipInfo.units} access units (${clipInfo.source}), page ${PAGE_DIR}`);
-    const config = await waitFor('the config log', () => phone.logs(0).find(text => text.startsWith('Web video: config epoch=1 ')));
-    const codec = /codec=(\S+)/.exec(config)[1];
-    // Chrome counts this container's LAN address as public; a hotspot address is local, so make it local here too.
-    const address = lanAddress();
-    browser = await chromium.launch({ executablePath: CHROMIUM,
-      // Keep the local test servers out of any system proxy, including their LAN address.
-      args: ['--no-proxy-server', ...(address ? [`--ip-address-space-overrides=${address}:${phone.port}=local`] : [])] });
-    const sessions = new Set();
-    let standInSession;
-    const local = `http://127.0.0.1:${phone.port}`;
-    await checkProtocolOnly(local);
-    pageHost = await startPageHost();
-    const pageOrigin = `http://127.0.0.1:${pageHost.address().port}`;
-
-    // 1. Secure context (loopback): explicitly test the unsupported-codec branch on the Tesla path.
-    {
-      const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 1.5, hasTouch: true, locale: 'en-US' });
-      await context.route('**/decoder-worker.js', async route => {
-        const response = await route.fetch();
-        await route.fulfill({ response, body: `if (self.VideoDecoder) self.VideoDecoder.isConfigSupported = async config => ({ supported: false, config });\n${await response.text()}` });
-      });
-      const mark = phone.events.length;
-      const { page, seen } = await openPage(context, pageOrigin, local, 'loopback');
-      const opened = await waitFor('the video stream', () => phone.logs(mark).find(text => text.startsWith('Browser link: video stream opened')));
-      check(true, `the page opened /video with the code (${opened})`);
-      const first = await waitFor('the config record', async () => {
-        const value = await stats(page);
-        return value.page.video.codec && value;
-      });
-      check(first.page.link.path === 'worker', `a secure context takes the Tesla path (${first.page.link.path}${first.page.link.path === 'worker' ? '' :
-        `; ${first.page.link.fallback}; responses ${seen.responses.join(', ')}; phone ${JSON.stringify(first.phone?.link?.counts)}`})`);
-      check(first.page.video.codec === codec && first.page.video.width === WIDTH && first.page.video.height === HEIGHT,
-        `the page got the config record: ${first.page.video.codec} ${first.page.video.width}x${first.page.video.height}`);
-      const status = await waitFor('the unsupported message', async () => {
-        const text = await page.textContent('#browser-notice-message');
-        return /cannot decode/.test(text) && text;
-      });
-      check(status === 'This browser cannot decode H.264.' && (await stats(page)).page.link.unsupported === codec,
-        `without an H.264 decoder the page says "${status}"`);
-      const rect = await page.evaluate(() => JSON.parse(JSON.stringify(document.getElementById('stage').getBoundingClientRect())));
-      const viewport = await waitFor('a viewport', () => phone.since(mark, 'viewport').at(-1));
-      check(viewport.cw === Math.round(rect.width) && viewport.ch === Math.round(rect.height) && viewport.dpr === 1.5 &&
-        viewport.w === Math.round(rect.width * 1.5 / 2) * 2 && viewport.h === Math.round(rect.height * 1.5 / 2) * 2,
-      `onViewport got ${viewport.w}x${viewport.h} (css ${viewport.cw}x${viewport.ch}, dpr ${viewport.dpr}) for the video area`);
-      const beat = phone.events.length;
-      await sleep(2000);
-      const beats = phone.since(beat, 'control').length;
-      check(beats >= 4 && beats <= 8, `${beats} /control requests in 2 s (one heartbeat every 400 ms)`);
-      const st = await waitFor('unsupported-codec stats event', () => phone.since(mark, 'stats')
-        .find(event => event.values['link.path'] === 'worker' && event.values['link.unsupported'] === codec), 8000);
-      check(st.values['link.path'] === 'worker' && st.values['link.unsupported'] === codec,
-        `onBrowserStats got the page's stats with path and the unsupported codec (${Object.keys(st.values).length} fields)`);
-      const registered = await waitFor('the service worker', () => page.evaluate(() =>
-        navigator.serviceWorker.getRegistration().then(registration => Boolean(registration?.active))), 8000).catch(() => false);
-      check(registered, `the separately hosted page registers its service worker${registered ? '' : `; responses ${seen.responses.join(', ')}; errors ${seen.problems.join(', ')}`}`);
-      const video = seen.requests.find(request => new URL(request.url).pathname === '/video');
-      sessions.add(new URL(video.url).searchParams.get('s'));
-      await checkRequests(page, seen, local, 'loopback');
-      await context.close();
-    }
-
-    // 2. Plain HTTP outside loopback does not offer a video/MSE fallback.
-    if (address) {
-      const lan = `http://${address}:${pageHost.address().port}`;
-      const context = await browser.newContext();
-      const page = await context.newPage();
-      await page.goto(lan);
-      await waitFor('unsupported non-secure page', () => page.isDisabled('#connect'));
-      check((await page.textContent('#browser-notice-message')).includes('not a secure context'), 'LAN page explains the secure WebCodecs requirement');
-      check(await page.locator('video').count() === 0, 'LAN page has no removed video element');
-      await context.close();
-    }
-
-    // 3. A VideoDecoder stand-in in the worker: decoded frames, dec → "first frame rendered", taps, fit, key frames, restart.
-    {
-      const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 1.5, hasTouch: true,
-        locale: 'en-US', serviceWorkers: 'block' });
-      await useDecoderStandIn(context);
-      // The preceding loopback check may already have acknowledged this epoch; each scenario owns a fresh session.
-      const startMark = phone.events.length;
-      phone.command('restart');
-      standInSession = (await waitFor('the stand-in session', () => phone.since(startMark, 'restarted').at(-1))).session;
-      const mark = phone.events.length;
-      const { page, seen } = await openPage(context, pageOrigin, local, 'stand-in');
-      const rendered = await waitFor('"first frame rendered"', () => phone.since(mark, 'diagnostic').find(event => event.message === 'first frame rendered'));
-      check(rendered.session === standInSession, 'the page decoded the fresh epoch and its "dec" reached the session\'s diagnostic handler as "first frame rendered"');
-      await waitFor('decoded frames', async () => (await stats(page)).page.video.decodedFps > 0);
-      await waitFor('scheduled frames actually drawn', async () => (await stats(page)).page.video.currentFps > 0);
-      const standIn = await page.evaluate(() => window.__standIn);
-      const [sps, pps, ...idr] = standIn.firstKeyTypes ?? [];
-      check(sps === 7 && pps === 8 && idr.length && idr.every(type => type === 5) && standIn.firstDeltaTypes?.every(type => type === 1) &&
-        standIn.badStartCodes === 0,
-      `key frames arrive as SPS, PPS and IDR slices, deltas as slices, all with 4-byte start codes (${standIn.chunks} chunks, ${standIn.keys} keys)`);
-      check(standIn.configsOverflow === 0, 'the decoder config evidence remains complete');
-      check(standIn.configs[0] === `${codec} ${WIDTH}x${HEIGHT}`, `VideoDecoder is configured as ${standIn.configs[0]}, without a description`);
-      const status = await page.textContent('#status');
-      check(/^H\.264 · \d+ fps$/.test(status), `the status line reads "${status}"`);
-
-      await checkTap(page, phone, 0.25, 0.75, 'stand-in');
-
-      // The stats fields the session log line uses exist in the page's st event.
-      const st = await waitFor('a stats event while decoding', () => phone.since(mark, 'stats').find(event => event.values['video.decoded'] > 0), 8000);
-      const keys = statsLogKeys();
-      const missing = keys.filter(key => !(key in st.values));
-      check(keys.length >= 5 && !missing.length, `the page's st event has every field of the session log line (${keys.join(', ')})${missing.length ? `; missing ${missing}; captured stats ${JSON.stringify(st.values)}` : ''}`);
-      const size = await page.evaluate(() => window.tiplayStats && JSON.stringify(window.tiplayStats.page).length);
-      log(`stats snapshot ${size} bytes; st event ${JSON.stringify(st.values).length} bytes of 2048`);
-
-      // The action lives in the portal; the CarPlay icon opens it through the real status revision.
-      await waitFor('a canvas mismatch', async () => (await stats(page)).status.fit === true);
-      phone.command('portal');
-      await page.waitForSelector('#panel:not([hidden])');
-      // "Apply and reconnect" shows while status.fit is true and sends {"k":"fit"}.
-      await page.waitForSelector('#fit:not([hidden])', { timeout: 5000 });
-      const fitMark = phone.events.length;
-      await page.click('#fit');
-      await waitFor('onFit', () => phone.since(fitMark, 'fit').length);
-      check(true, '"Apply and reconnect" reaches onFit');
-      phone.command('fit-off');
-      await page.waitForSelector('#fit', { state: 'hidden', timeout: 5000 });
-      check(true, 'the button hides once the status no longer asks to fit');
-      await page.click('#connect');
-      await page.waitForSelector('#stage:not([hidden])');
-
-      // A decoder error: the page asks for a key frame, the hub asks the session, and the picture comes back.
-      const keyMark = phone.events.length;
-      await page.evaluate(() => window.__workers.forEach(worker => worker.postMessage({ type: 'stand-in-fail' })));
-      await waitFor('the decoder failure', async () => (await stats(page)).page.video.decodeErrors > 0);
-      const decodedAtError = (await stats(page)).page.video.decoded;
-      await waitFor('a key frame request', () => phone.since(keyMark, 'keyframe-request').length);
-      await waitFor('decoding after the error', async () => (await stats(page)).page.video.decoded > decodedAtError + 10);
-      check(phone.logs(keyMark).every(text => !text.startsWith('Web video: config epoch=')),
-        'after a decoder error the page\'s "kf" reached the session\'s recovery handler; the repeated config kept the epoch');
-
-      // A new CarPlay session: the old tap is closed, the old session's screen comes up late, the new one keeps the hub.
-      const restartMark = phone.events.length;
-      phone.command('restart');
-      const second = await waitFor('"first frame rendered" for the next session',
-        () => phone.since(restartMark, 'diagnostic').find(event => event.session === standInSession + 1 && event.message === 'first frame rendered'))
-        .catch(async error => { throw new Error(`${error.message}; restart evidence ${JSON.stringify(phone.events.slice(restartMark).filter(event => ['restarted', 'diagnostic', 'keyframe-request', 'log'].includes(event.event)))}; page ${JSON.stringify(await stats(page))}`); });
-      check(Boolean(second) && phone.logs(restartMark).filter(text => text.startsWith('Web video: stream started')).length === 1,
-        'after a restart the page decoded the next epoch of the new session; the retired session\'s late screen did not take the hub');
-      const restartedStats = await waitFor('new-session decoder statistics', async () => {
-        const video = (await stats(page)).page.video;
-        return Number.isFinite(video.decoded) && video;
-      });
-      const decodedAfterRestart = restartedStats.decoded;
-      await waitFor('decoding after the restart', async () => (await stats(page)).page.video.decoded > decodedAfterRestart + 20)
-        .catch(async error => { throw new Error(`${error.message}; initial decoded ${decodedAfterRestart}; page ${JSON.stringify(await stats(page))}; restart events ${JSON.stringify(phone.events.slice(restartMark))}`); });
-      check((await stats(page)).page.video.codec === codec, 'the page keeps decoding the new session');
-
-      const video = seen.requests.find(request => new URL(request.url).pathname === '/video');
-      sessions.add(new URL(video.url).searchParams.get('s'));
-      await checkRequests(page, seen, local, 'stand-in');
-
-      // Leaving the page sends /bye.
-      const byeMark = phone.events.length;
-      const byes = new History();
-      context.on('request', request => { if (request.url().endsWith('/bye')) byes.push(`request ${request.postData()}`); });
-      context.on('requestfailed', request => { if (request.url().endsWith('/bye')) byes.push(`failed ${request.failure()?.errorText}`); });
-      context.on('response', response => { if (response.url().endsWith('/bye')) byes.push(`response ${response.status()}`); });
-      // Playwright's request interception can drop a keepalive request of a page that is going away.
-      await context.unrouteAll();
-      await page.goto('about:blank');
-      await waitFor('the bye', () => phone.logs(byeMark).includes('Browser link: session ended by the page'))
-        .catch(error => { throw new Error(`${error.message}; the phone logged ${JSON.stringify(phone.events.slice(byeMark))}; bye ${byes}`); });
-      byes.assertComplete();
-      check(true, 'leaving the page ends its session with /bye');
-      await context.close();
-    }
-
-    // 4. The page from another origin, as the Tesla opens the public HTTPS page: CORS on the real server, the stand-in decodes.
-    {
-      const host = await startPageHost();
-      const origin = `http://127.0.0.1:${host.address().port}`;
-      try {
-        const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 1.5, hasTouch: true,
-          locale: 'en-US', serviceWorkers: 'block' });
-        await useDecoderStandIn(context);
-        const page = await context.newPage();
-        const seen = watch(page);
-        const cors = new History();
-        page.on('response', response => {
-          if (new URL(response.url()).port === String(phone.port)) cors.push({ path: new URL(response.url()).pathname, headers: response.headers() });
-        });
-        // A new session: its first frame rendered can only come from this page ("dec" counts once per epoch).
-        const mark = phone.events.length;
-        phone.command('restart');
-        await waitFor('the next session', () => phone.since(mark, 'restarted').length);
-        await page.goto(`${origin}/?t=127.0.0.1:${phone.port}#c=${CODE}`);
-        const decoded = await waitFor('"first frame rendered" from the other origin',
-          () => phone.since(mark, 'diagnostic').find(event => event.message === 'first frame rendered'));
-        check(decoded.session === standInSession + 2, 'a page from another origin decodes the new session and its "dec" reaches that session');
-        cors.assertComplete();
-        for (const history of Object.values(seen)) history.assertComplete();
-        const echoed = cors.filter(entry => ['/hello', '/video', '/control'].includes(entry.path));
-        check(echoed.length >= 3 && echoed.every(entry => entry.headers['access-control-allow-origin'] === origin &&
-          /\bOrigin\b/.test(entry.headers.vary ?? '') && entry.headers['cache-control'] === 'no-store'),
-        `the phone echoes the page's origin with Vary: Origin and no-store on ${[...new Set(echoed.map(entry => entry.path))].join(', ')}`);
-        await checkTap(page, phone, 0.6, 0.3, 'other origin');
-        const phoneRequests = seen.requests.filter(request => new URL(request.url).port === String(phone.port));
-        check(phoneRequests.every(request => !request.headers.referer) &&
-          phoneRequests.filter(request => request.url.includes(CODE)).every(request => ['/video', '/audio'].includes(new URL(request.url).pathname)),
-        'other origin: only authenticated /video or /audio carries the code in its URL, and no request to the phone sends a Referer');
-        const video = phoneRequests.find(request => new URL(request.url).pathname === '/video');
-        sessions.add(new URL(video.url).searchParams.get('s'));
-        const counts = (await stats(page)).phone?.link?.counts ?? {};
-        check(!counts.busy, 'other origin: the phone never answered busy');
-        await context.unrouteAll();
-        await context.close();
-      } finally {
-        await closeServer(host);
+    phone = await startPhone(encodeClip(dir));
+    const origin = `http://127.0.0.1:${phone.port}`, session = 'legacy_e2e_session_01';
+    await checkProtocolOnly(origin);
+    const hello = await fetch(`${origin}/hello`).then(response => response.json());
+    check(hello.transport === 'http-records-v1', 'the JVM fixture explicitly identifies its compatibility transport');
+    const control = (q, events) => fetch(`${origin}/control`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ c: CODE, s: session, q, e: events }), signal: AbortSignal.timeout(5000) });
+    const denied = await fetch(`${origin}/video?c=0000&s=${session}`);
+    check(denied.status === 401, 'the compatibility API rejects an incorrect pairing code');
+    const first = await readLegacyRecords(origin, session);
+    const configuration = first.find(record => record.kind === RECORD.CONFIG);
+    const info = JSON.parse(new TextDecoder().decode(configuration.payload));
+    check(info.codec.startsWith('avc1.') && info.width === WIDTH && info.height === HEIGHT, 'real shared code preserves H.264 configuration and dimensions');
+    const key = first.find(record => record.kind === RECORD.FRAME);
+    const nalTypes = bytes => {
+      const result = [];
+      for (let offset = 0; offset + 4 < bytes.length; offset++) if (bytes[offset] === 0 && bytes[offset + 1] === 0 && bytes[offset + 2] === 0 && bytes[offset + 3] === 1) {
+        result.push(bytes[offset + 4] & 31); offset += 3;
       }
-    }
+      return result;
+    };
+    const types = nalTypes(key.payload);
+    check(Boolean(key.flags & FLAG.KEY) && types[0] === 7 && types[1] === 8 && types.slice(2).every(type => type === 5),
+      'the first compatibility AU contains unchanged Annex-B SPS, PPS and IDR slices');
+    check(first.some(record => record.kind === RECORD.TIMING), 'source presentation reference remains a separate timing record');
+    const mark = phone.events.length;
+    await control(1, [{ k: 'vp', w: 1280, h: 720, cw: 1280, ch: 720, dpr: 1 }, { k: 't', p: [[0, 0.25, 0.75, 1]] }]);
+    await control(2, [{ k: 't', p: [[0, 0.25, 0.75, 0]] }, { k: 'dec', ep: configuration.epoch }, { k: 'kf' }]);
+    await waitFor('compatibility callbacks', () => phone.since(mark, 'touch').length >= 2);
+    check(phone.since(mark, 'viewport').length > 0 && phone.since(mark, 'touch').length >= 2, 'explicit legacy controls preserve viewport and down/up ordering');
+    const unavailable = await fetch(`${origin}/rtc`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ c: CODE, s: session, offer: 'v=0\r\n' }) });
+    check(unavailable.status === 503 && (await unavailable.json()).error === 'rtc-unavailable', 'the JVM server reports absent Android native RTC instead of faking an answer');
+    const restart = phone.events.length; phone.command('restart');
+    await waitFor('next source session', () => phone.since(restart, 'restarted').length);
+    const next = await readLegacyRecords(origin, session);
+    check(next.find(record => record.kind === RECORD.CONFIG).epoch > configuration.epoch, 'a new source owner retires the previous compressed-media epoch');
+    const ended = await fetch(`${origin}/bye`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ c: CODE, s: session }) });
+    check(ended.status === 204, 'explicit compatibility-owner departure releases the session');
 
-    const output = JSON.stringify(phone.events.filter(event => event.event !== 'listening'));
-    check(!output.includes(CODE), 'the phone side never logs or reports the pairing code');
-    const leaked = [...sessions].filter(id => id && output.includes(id));
-    check(sessions.size >= 2 && !leaked.length, `the phone side never logs a page session id (${sessions.size} sessions)`);
-    const failures = phone.events.filter(event => event.event === 'tap-error' || (event.event === 'log' && /failed/.test(event.message) &&
-      !/video stream ended reason=write failed/.test(event.message)));
-    check(!failures.length, `no tap or server failures${failures.length ? `: ${JSON.stringify(failures)}` : ''}`);
-    phone.events.assertComplete();
-    phone.stderr.assertComplete();
-    log('all checks passed');
+    pageHost = await startPageHost();
+    browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-sandbox', '--no-proxy-server'] });
+    const context = await browser.newContext({ locale: 'en-US', serviceWorkers: 'block' });
+    const page = await context.newPage(), requests = new History(), errors = new History();
+    page.on('request', request => requests.push({ method: request.method(), url: request.url() }));
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`http://127.0.0.1:${pageHost.address().port}/?t=127.0.0.1:${phone.port}#c=${CODE}`);
+    await waitFor('explicit protocol mismatch notice', async () => /does not match this page/.test(await page.textContent('#browser-notice-message')));
+    check(!requests.some(request => ['/video', '/audio', '/rtc'].includes(new URL(request.url).pathname)), 'the production page rejects a server without RTC and opens no compatibility media stream');
+    check(await page.evaluate(() => location.hash === ''), 'pairing credentials are removed from the address bar even on a protocol mismatch');
+    check(!errors.length, `protocol mismatch has no unhandled page error${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+    requests.assertComplete(); errors.assertComplete();
+    await context.close();
+    const output = JSON.stringify(phone.events);
+    check(!output.includes(CODE) && !output.includes(session), 'shared server diagnostics omit pairing code and browser owner token');
+    phone.events.assertComplete(); phone.stderr.assertComplete();
+    log('all checks passed (compatibility server and production rejection only; Android native RTC is outside this JVM harness)');
   } finally {
     try { await browser?.close(); } finally {
       try { await phone?.close(); } finally {
-        try { if (pageHost) await closeServer(pageHost); } finally {
-          rmSync(dir, { recursive: true, force: true });
-        }
+        try { await closeServer(pageHost); } finally { rmSync(dir, { recursive: true, force: true }); }
       }
     }
-    if (phone?.stderr.length) log(`RealPhone stderr:\n${phone.stderr.join('\n')}`);
   }
 }
-
-main().catch(error => {
-  console.error(`[phone-e2e] FAILED: ${error.message}`);
-  process.exitCode = 1;
-});
+main().catch(error => { console.error(`[phone-e2e] FAILED: ${error.message}`); process.exitCode = 1; });

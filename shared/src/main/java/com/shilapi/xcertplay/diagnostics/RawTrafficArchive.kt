@@ -12,6 +12,21 @@ internal object RawTrafficArchive {
         val directory = java.nio.file.Files.createTempDirectory(temporaryRoot.toPath(), "traffic-export-").toFile()
         data class Stream(val channel: String, val name: String, val file: File, var length: Long = 0)
         val streams = linkedMapOf<String, Stream>()
+        // Media captures contain many short records on a small set of active channels.
+        // Reuse a bounded set of file handles instead of reopening a file for every packet.
+        val outputs = java.util.LinkedHashMap<File, java.io.BufferedOutputStream>(16, .75f, true)
+        fun append(stream: Stream, bytes: ByteArray) {
+            val output = outputs[stream.file] ?: run {
+                if (outputs.size >= 16) {
+                    val oldest = outputs.entries.iterator()
+                    val entry = oldest.next()
+                    oldest.remove()
+                    entry.value.close()
+                }
+                java.io.FileOutputStream(stream.file, true).buffered().also { outputs[stream.file] = it }
+            }
+            output.write(bytes)
+        }
         val sessions = linkedMapOf<String, Pair<String, String>>()
         var session = "legacy"
         var unparsedRecords = 0L
@@ -51,13 +66,15 @@ internal object RawTrafficArchive {
                                 val name = "streams/$session/${streams.size + 1}-$label.$extension"
                                 Stream(channel, name, File(directory, "stream-${streams.size + 1}"))
                             }
-                            stream.file.appendBytes(bytes)
+                            append(stream, bytes)
                             writer.append("$time\t$sequence\t${stream.name}\t${stream.length}\t${bytes.size}\n")
                             stream.length += bytes.size
                         }
                     }
                 }
             }
+            outputs.values.forEach { it.close() }
+            outputs.clear()
             // Free the compressor without closing the caller's destination stream.
             ZipOutputStream(object : java.io.FilterOutputStream(output) {
                 override fun close() = flush()
@@ -99,6 +116,9 @@ internal object RawTrafficArchive {
                 }
                 streams.values.forEach { stream -> entry(stream.name) { stream.file.inputStream().use { it.copyTo(zip) } } }
             }
-        } finally { directory.deleteRecursively() }
+        } finally {
+            outputs.values.forEach { runCatching { it.close() } }
+            directory.deleteRecursively()
+        }
     }
 }

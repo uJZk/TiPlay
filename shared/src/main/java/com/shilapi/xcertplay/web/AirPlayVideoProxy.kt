@@ -90,6 +90,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
         val uri = URI(url)
         val direct = uri.scheme.lowercase() in listOf("http", "https")
         fun iphoneResource(): ReceiverResource? {
+            if (closed.get()) throw IOException("Playback ended")
             diagnostics.request(load, ResourceRoute.IPHONE_FCUP, range, redirects)
             return iphone(url, range).also { response ->
                 diagnostics.response(load, ResourceRoute.IPHONE_FCUP, response?.status, response?.bytes?.size,
@@ -167,6 +168,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
                 fail(load, statusReason(status), status, ResourceRoute.ANDROID_HTTP)
             } catch (error: IOException) {
                 connection.disconnect(); connections -= connection
+                if (closed.get()) throw IOException("Playback ended", error)
                 // A destination's failure belongs to that destination; do not retry the old origin.
                 if (followingRedirect) throw error
                 if (error !is Failure) diagnostics.failure(load, Failure(FailureReason.RESOURCE_IO, route = ResourceRoute.ANDROID_HTTP), error)

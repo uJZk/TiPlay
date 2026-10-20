@@ -2,6 +2,7 @@ package com.shilapi.xcertplay.receiver
 
 import com.shilapi.xcertplay.airplay.VideoCodec
 import com.shilapi.xcertplay.diagnostics.RawTraffic
+import com.shilapi.xcertplay.diagnostics.DiagnosticErrorText
 
 /** Bounded mirror metadata. Payloads, cipher inputs, transport keys and peer identities are never formatted. */
 internal class ReceiverMirrorDiagnostics(private val log: (String) -> Unit,
@@ -15,6 +16,7 @@ internal class ReceiverMirrorDiagnostics(private val log: (String) -> Unit,
     private var geometries = 0L
     private var keyFrames = 0L
     private var annexBFrames = 0L
+    private var decodeOnlyFrames = 0L
     private var firstSenderNanos: Long? = null
     private var firstSenderArrivalNanos: Long? = null
     private var firstArrivalNanos: Long? = null
@@ -50,11 +52,12 @@ internal class ReceiverMirrorDiagnostics(private val log: (String) -> Unit,
             "sampleEntryBytes=${config.sampleEntryBytes} paddingBytes=${config.paddingBytes} " +
             "recordBytes=${config.record.size} nalLengthBytes=${config.lengthBytes} width=$width height=$height")
     }
-    fun forwarded(bytes: Int, keyFrame: Boolean, annexB: Boolean) {
+    fun forwarded(bytes: Int, keyFrame: Boolean, annexB: Boolean, decodeOnly: Boolean = false) {
         frames++
         if (keyFrame) keyFrames++
         if (annexB) annexBFrames++
-        if (sample(frames)) emit("mirror stage=FORWARDED frameBytes=$bytes frames=$frames keyFrames=$keyFrames annexBFrames=$annexBFrames")
+        if (decodeOnly) decodeOnlyFrames++
+        if (sample(frames)) emit("mirror stage=FORWARDED frameBytes=$bytes frames=$frames keyFrames=$keyFrames annexBFrames=$annexBFrames decodeOnlyFrames=$decodeOnlyFrames")
     }
     /** Relative times distinguish source pacing from receiver work without recording protocol timestamps. */
     fun timing(senderNanos: Long, arrivalNanos: Long, bodyReadNanos: Long, publishNanos: Long) {
@@ -73,12 +76,12 @@ internal class ReceiverMirrorDiagnostics(private val log: (String) -> Unit,
     fun failure(stage: Stage, error: Exception) {
         val type = error.javaClass.simpleName.filter { it.isLetterOrDigit() || it == '_' }.take(64)
         val config = error as? ReceiverMirrorCodec.ConfigurationException
-        emit("mirror stage=$stage exception=$type reason=${config?.reason ?: "UNCLASSIFIED"}")
+        emit("mirror stage=$stage exception=$type reason=${config?.reason ?: "UNCLASSIFIED"} causes=${DiagnosticErrorText.types(error)}")
         if (debug()) emit("mirror stage=FAILURE_DETAIL failedStage=$stage reason=${config?.reason ?: "UNCLASSIFIED"} " +
             "inputBytes=$inputBytes codec=$codec recordBytes=$recordBytes width=$width height=$height " +
             "offset=${config?.offset} boxBytes=${config?.boxBytes}")
     }
-    fun end(reason: End) = emit("mirror stage=END reason=$reason packets=$packets configs=$configs frames=$frames keyFrames=$keyFrames annexBFrames=$annexBFrames sinceLastFrameMs=${lastArrivalNanos?.let { (nanoTime() - it) / 1_000_000 }}")
+    fun end(reason: End) = emit("mirror stage=END reason=$reason packets=$packets configs=$configs frames=$frames keyFrames=$keyFrames annexBFrames=$annexBFrames decodeOnlyFrames=$decodeOnlyFrames sinceLastFrameMs=${lastArrivalNanos?.let { (nanoTime() - it) / 1_000_000 }}")
     private fun sample(count: Long) = count <= 3 || count % 120L == 0L
     private fun emit(message: String) { runCatching { log(message) } }
 }

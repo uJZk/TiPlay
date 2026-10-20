@@ -98,18 +98,18 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
                     0 -> {
                         stage = ReceiverMirrorDiagnostics.Stage.DECRYPT
                         val plain = cipher.update(body)
-                        if (plain != null && plain.isNotEmpty() && !suspended) {
+                        if (plain != null && plain.isNotEmpty()) {
                             stage = ReceiverMirrorDiagnostics.Stage.FRAME_VALIDATE
                             val frame = ReceiverMirrorCodec.annexB(plain, lengthBytes)
                             ReceiverMirrorCodec.requireSdrFrame(frame, codec)
                             stage = ReceiverMirrorDiagnostics.Stage.PUBLISH
                             val senderNanos = ScreenCodec.senderNanos(header)
                             val publishStart = System.nanoTime()
-                            sink.onVideoFrame(110, frame, senderNanos, arrivalNanos)
+                            sink.onVideoFrame(110, frame, senderNanos, arrivalNanos, decodeOnly = suspended)
                             val publishNanos = System.nanoTime() - publishStart
                             val annexB = frame.size >= 5 && frame[0] == 0.toByte() && frame[1] == 0.toByte() &&
                                 (frame[2] == 1.toByte() || (frame[2] == 0.toByte() && frame[3] == 1.toByte()))
-                            diagnostics.forwarded(frame.size, WebVideoCodecs.isKeyFrame(codec, frame), annexB)
+                            diagnostics.forwarded(frame.size, WebVideoCodecs.isKeyFrame(codec, frame), annexB, decodeOnly = suspended)
                             diagnostics.timing(senderNanos, arrivalNanos, arrivalNanos - bodyStart, publishNanos)
                         }
                     }
@@ -128,7 +128,6 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
                         diagnostics.envelope(config)
                         codec = config.codec
                         lengthBytes = config.lengthBytes
-                        if (suspended) continue
                         stage = ReceiverMirrorDiagnostics.Stage.PUBLISH
                         val geometryChanged = width != configuredWidth || height != configuredHeight
                         if (geometryChanged) {

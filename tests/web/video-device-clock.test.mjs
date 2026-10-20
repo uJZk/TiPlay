@@ -54,8 +54,8 @@ test('independent slow output clock keeps real worklet audio and CarPlay video s
       if (elapsed - lastControlsMs >= 20) {
         lastControlsMs = elapsed;
         const anchor = mapping.capture(context);
-        post({ clock: { version: 2, generation: 1, rate: 1, state: 'tracking', serverOriginMs: sourceOrigin, localOriginMs: 10000 },
-          deviceClock: mapping.deviceClock(), contextAnchor: { contextTimeMs: anchor.contextTimeMs, localTimeMs: anchor.performanceTimeMs - origin },
+        post({ clock: { version: 2, generation: 1, rate: 1, state: 'tracking', uncertaintyMs: 0, serverOriginMs: sourceOrigin, localOriginMs: 10000 },
+          deviceClock: mapping.deviceClock(), outputUncertaintyMs: anchor.uncertaintyMs, contextAnchor: { contextTimeMs: anchor.contextTimeMs, localTimeMs: anchor.performanceTimeMs - origin },
           localTimeOriginMs: origin, plans: { video: constantDelay(0), audio: constantDelay(audioDelayMs) } });
       }
       while (inputFrame / 48 < elapsed + 2000) {

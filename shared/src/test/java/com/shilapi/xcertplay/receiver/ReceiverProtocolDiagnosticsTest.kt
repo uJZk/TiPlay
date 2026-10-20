@@ -26,7 +26,7 @@ class ReceiverProtocolDiagnosticsTest {
         assertFalse(output.contains("private-host"))
         assertFalse(output.contains("authorization"))
         assertTrue(output.contains("method=OTHER path=OTHER"))
-        assertEquals("c=1 stage=DISPATCH exception=IllegalArgumentException errorText=${DiagnosticErrorText.sanitize(failureText)}",
+        assertEquals("c=1 stage=DISPATCH exception=IllegalArgumentException causes=IllegalArgumentException errorText=${DiagnosticErrorText.sanitize(failureText)}",
             messages.first { it.contains("exception=") })
         assertTrue(output.contains("Invalid request"))
         assertTrue(output.contains("streams=[110,96,OTHER]"))

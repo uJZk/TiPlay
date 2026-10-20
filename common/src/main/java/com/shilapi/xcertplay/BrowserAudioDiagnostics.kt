@@ -29,7 +29,9 @@ internal object BrowserAudioDiagnostics {
         "capacityPackets", "latePackets", "duplicatePackets", "playedPackets", "resetPackets", "invalidPackets",
         "capacityBytes", "lateBytes", "duplicateBytes", "playedBytes", "resetBytes", "invalidBytes", "mode", "semanticType", "anchoring",
         "state", "reason", "phaseErrorMs", "resampleRatePpm", "deviceRatePpm", "phaseCorrectionPpm", "sourceRatePpm", "sourceRateConfidence",
+        "sourceDeadlineState", "sourceDeadlineReason", "sourceDeltaMs", "sourceDeltaUpperMs", "sourceDeadlineRejectedFrames",
         "lastRecoveryReason", "recoveryCounts.clock-step", "recoveryCounts.underrun", "recoveryCounts.device-clock-reset",
+        "recoveryCounts.source-deadline",
     )
     private val decoderFields = setOf("packets", "frames", "nonzero", "peak", "errors")
     private val decoderStreamFields = setOf("packets", "frames", "nonzero", "peak", "backend", "epoch", "rate", "channels", "semanticType")

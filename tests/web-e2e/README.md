@@ -11,13 +11,23 @@ npm install --prefix /tmp/pw playwright-core
 NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/run.mjs
 ```
 
+The default general harness keeps the production `prefer-hardware` request. On a
+desktop browser that rejects it, the harness checks the explicit unsupported
+capability state and stops before playback cases. To exercise real compressed
+WebCodecs decode and the complete page on such a machine, explicitly set
+`E2E_SOFTWARE_VIDEO=1`. That harness-only instrumentation replaces the native
+decoder's hardware hint with `no-preference` in the main page and worker; its
+output labels the override. It does not establish hardware decoding or change
+production behavior.
+
 All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LAN servers require direct access. `run.mjs` and `phone-run.mjs` print `ok -` checks and finish with `all checks passed`, or exit nonzero on failure. Other harnesses print results and exit nonzero on assertion failure.
 
 | Script | Coverage and extra requirements |
 | --- | --- |
 | `geolocation.mjs` | Actual Chromium geolocation permissions/watch, browser-local datum cache across reload, release on opt-out, and persistent guidance with an explicit close action. Uses a module fixture without vehicle/Android sensors. |
-| `run.mjs` | Fake-phone VP8 streaming, pairing/code privacy, current default endpoint from `site/play/link.js`, touch/viewport, telemetry, reconnect/keyframe recovery, localization, takeover, nested hosting and offline Service Worker cache boundaries. Exercises worker-stream, worker-chunk, worker-frame and main-thread fallback. Optional FFmpeg/libvpx (`FFMPEG` override); otherwise browser `VideoEncoder`, also forced by `E2E_VP8=browser`. |
-| `phone-run.mjs` | Compiled shared phone API with a separate page server: removed local-page routes, Host/CORS/cache rules, H.264 framing, authenticated control/touch, epochs, recovery, `/bye` and privacy. Uses an unsupported-codec case and an explicit decoder stand-in; it is not an Android-device test. |
+| `webrtc.mjs` | Production transport against a second real Chromium PeerConnection: reliable ordered channels, fragmentation, byte-exact record reconstruction, consumption credit, independent audio cancellation, touch/control, owner abort, malformed epochs and bounded signaling timeout. No synthetic RTCPeerConnection or media API is substituted. |
+| `run.mjs` | Complete production page over a real browser DataChannel peer with synthetic phone VP8 input, pairing/code privacy, touch/viewport, telemetry, reconnect/keyframe recovery, localization, takeover, nested hosting and offline Service Worker cache boundaries. Exercises worker-stream, worker-chunk, worker-frame and main-thread fallback, and asserts no legacy HTTP media stream opens. Optional FFmpeg/libvpx (`FFMPEG` override); otherwise browser `VideoEncoder`, also forced by `E2E_VP8=browser`. |
+| `phone-run.mjs` | Compiled JVM shared compatibility API: removed local-page routes, Host/cache rules, H.264 framing, authenticated control/touch, source-owner epochs, `/bye` and privacy. Directly requests legacy records and verifies the production page rejects this server's missing native RTC. It does not test production playback or Android native WebRTC. |
 | `airplay-video.mjs` | Real Mediabunny/WebCodecs playback engine, Video.js controls/skin, canvas pixels, seek/pause/rate, ±10-second buttons, mouse/touch double-tap isolation, narrow layout with production CSS, captions, mute restoration, ownership, disposal and sanitized failure diagnostics under production CSP. Needs an MP4 fixture; HLS optional. |
 | `airplay-photo.mjs` | Actual page CSP, authenticated synthetic EXIF JPEG, native decode/contain fit, ownership, resource reuse and cleanup. |
 | `airplay-audio.mjs` | Actual WebCodecs AAC-LC and CarPlay Opus decoding, nonzero PCM, sample metadata and asynchronous timeline sequence preservation. Prints ALAC/AAC-ELD capability probes; no software fallback is implied. |
@@ -38,7 +48,7 @@ loopback. It verifies output references before enabling diagnostic capture, then
 checks nonzero worklet output, independent CarPlay/mirror producers, an actual
 context suspend/resume and clock refinement. Main-thread presentation, real H.264
 worker decode with frame transfer, and worker OffscreenCanvas use the same output
-reference and retain the production video caps and audio early/late window.
+reference and retain separate source-relative video and audio timelines.
 
 The page runs with WebAssembly disabled and no eval permission. It still requires
 actual nonzero worklet output and Standard-mode references; it cannot pass by
@@ -71,7 +81,12 @@ NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/pho
 
 `SHARED_CLASSES` overrides the default Gradle class directory. The script finds the matching Kotlin standard-library jar from `gradle/libs.versions.toml` in the Gradle cache; use `KOTLIN_STDLIB` for another location. `PAGE_DIR` overrides `site/play/`. Optional FFmpeg/libx264 generates real Annex-B input (`FFMPEG` override); otherwise the harness builds synthetic SPS/PPS/slices.
 
-`RealPhone.java` wires `BrowserOnlyMediaSink` → `WebMediaSink` → `WebVideoHub` to an API-only `BrowserLinkServer`. Loopback and separate-origin runs check secure playback; a LAN HTTP page checks rejection of an insecure context. Authenticated `/video` and `/audio` may carry the code in their URL; other requests must not leak it or send a Referer. Request interception is removed before navigation so Playwright does not discard the outgoing keepalive `/bye`.
+`RealPhone.java` wires `BrowserOnlyMediaSink` → `WebMediaSink` → `WebVideoHub` to an
+API-only `BrowserLinkServer` with its RTC factory explicitly absent. Node requests
+the retained compatibility `/video` records and `/control` API directly. The
+current production page must show a protocol mismatch and open no compatibility
+media transport. Successful compatibility checks do not establish the Android
+native RTC library, device UDP reachability, hardware decode or physical output.
 
 ## AirPlay media
 

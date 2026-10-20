@@ -52,7 +52,8 @@ test('worker schedules CarPlay without a main-thread readiness round trip', asyn
   h.post({ type: 'config', id: 7, config: { epoch: 1, mode: 'carplay' } });
   h.frame(picture, { epoch: 1, mode: 'carplay' }, 7, 1010);
   assert.equal(latest(h, 'media-ready').id, 7, 'main thread still receives audio-buffer observations');
-  assert.equal(latest(h, 'frame').frame, picture, 'decode completed only 10 ms before the cap; no ACK can block it');
+  h.advance(1030);
+  assert.equal(latest(h, 'frame').frame, picture, 'the worker owns its readiness plan without awaiting a main-thread ACK');
   h.advance(1100);
   assert.equal(picture.closed, 0, 'ownership transferred before the busy main thread returned');
 });
@@ -67,15 +68,15 @@ test('worker epoch reset closes pending pictures before installing the new local
   assert.equal(old.closed, 1);
   h.post({ type: 'config', id: 1, config: { epoch: 2, mode: 'carplay' } });
   h.frame(next, { epoch: 2, mode: 'carplay' }, 1, 1050);
-  h.advance(1030);
+  h.advance(1070);
   assert.equal(latest(h, 'frame').frame, next);
 });
 
-test('worker discards CarPlay pictures decoded after the unchanged source cap', async () => {
+test('worker discards decoded pictures beyond the independent 300ms source ceiling', async () => {
   const h = await workerHarness(), picture = frame();
   h.send({ type: 'stream', id: 1, stream: {} });
   h.post({ type: 'config', id: 1, config: { epoch: 1, mode: 'carplay' } });
-  h.advance(1011);
+  h.advance(1311);
   h.frame(picture, { epoch: 1, mode: 'carplay' }, 1, 1010);
   assert.equal(picture.closed, 1);
   assert.equal(latest(h, 'frame'), undefined);
@@ -108,14 +109,14 @@ test('worker delivery keeps the old transfer credit across stream reset', async 
 test('main renderer rechecks the raw cap after a transferred frame waits in transit', () => {
   const context = { fillRect() {}, drawImage() { throw new Error('expired frame was drawn'); } };
   const canvas = { width: 100, height: 100, getContext: type => type === '2d' ? context : null };
-  const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => 1001 });
+  const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, now: () => 1301 });
   const picture = frame();
   presenter.present(picture, { epoch: 1, mode: 'carplay' }, 1000);
   assert.equal(picture.closed, 1);
   assert.equal(presenter.stats().expiredFrames, 1);
 });
 
-test('worker applies actual output references and transfers the exact narrowed A/V window', async () => {
+test('worker transfers audio output evidence without narrowing the independent video deadline', async () => {
   const h = await workerHarness(), picture = frame();
   h.send({ type: 'stream', id: 1, stream: {} });
   h.post({ type: 'config', id: 1, config: { epoch: 1, mode: 'carplay' } });
@@ -124,24 +125,39 @@ test('worker applies actual output references and transfers the exact narrowed A
     mediaRate: 1, uncertaintyMs: 1, outputMethod: 'timestamp' } });
   h.frame(picture, { mode: 'carplay', epoch: 1 }, 1, 1050, { sourceTimeMs: 5000, clockGeneration: 3 });
   h.advance(1025); assert.equal(latest(h, 'frame'), undefined);
-  h.advance(1030);
+  h.advance(1070);
   const transfer = latest(h, 'frame');
   assert.equal(transfer.frame, picture);
   assert.equal(transfer.outputWindow.audioAt, 1150);
-  assert.equal(transfer.outputWindow.earliest, 1026);
-  assert.equal(transfer.outputWindow.latest, 1050, 'raw zero cap still bounds actual-output following');
+  assert.equal(transfer.outputWindow.uncertaintyMs, 1);
+  assert.equal(transfer.outputWindow.latest, undefined, 'audio evidence does not add a video gate');
   assert.equal(transfer.outputWindow.epoch, 7, 'video and audio producer epochs remain independent');
 });
 
-test('worker cannot use an invalidated active-audio reference as video-only fallback', async () => {
+test('worker keeps invalid audio evidence explicit while continuing independently available video', async () => {
   const h = await workerHarness(), picture = frame();
   h.send({ type: 'stream', id: 1, stream: {} });
+  h.post({ type: 'config', id: 1, config: { epoch: 1, mode: 'carplay' } });
   const reference = { mode: 'carplay', type: 0, epoch: 7, generation: 2, sequence: 1,
     state: 'playing', at: 1000, sourceTimeMs: 5000, audibleTimeMs: 1150, mediaRate: 1 };
   h.send({ type: 'audio-output', reference });
   h.send({ type: 'audio-output', reference: { ...reference, sequence: 2, state: 'rebuffering', audibleTimeMs: null } });
   h.frame(picture, { mode: 'carplay', epoch: 1 }, 1, 1050, { sourceTimeMs: 5000 });
-  h.advance(1050);
-  assert.equal(picture.closed, 1);
-  assert.equal(latest(h, 'frame'), undefined);
+  h.advance(1070);
+  assert.equal(picture.closed, 0);
+  assert.equal(latest(h, 'frame').frame, picture);
+  assert.equal(latest(h, 'frame').outputWindow.audioAt, undefined);
+});
+
+test('worker interaction messages accelerate only the pending video plan', async () => {
+  const ordinary = await workerHarness(), touched = await workerHarness();
+  for (const h of [ordinary, touched]) {
+    h.send({ type: 'stream', id: 1, stream: {} });
+    h.post({ type: 'config', id: 1, config: { epoch: 1, mode: 'carplay' } });
+    h.frame(frame(), { mode: 'carplay', epoch: 1 }, 1, 1050);
+  }
+  touched.send({ type: 'interaction', active: true });
+  for (const h of [ordinary, touched]) h.advance(1065);
+  assert.equal(latest(ordinary, 'frame'), undefined);
+  assert.ok(latest(touched, 'frame'), 'touch selects decoded video sooner without a main-thread readiness round trip');
 });

@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DEFAULT_HOST, FLAG, HEADER_BYTES, MAX_PAYLOAD, RECORD, RecordError, RecordParser, Samples, addressSpaceFor,
+  DEFAULT_HOST, FLAG, HEADER_BYTES, MAX_PAYLOAD, RECORD, RecordError, RecordStreamError, RecordParser, Samples, addressSpaceFor,
   backoffDelay, buildLink, chooseDecoderConfig, choosePath, createControlOutbox, createRecordStream, createTouchSlots,
   encodeRecord, flatStats, hostParam, letterbox, linkFromAddress, linkLocation, mapPoint, newSessionId, normalizeHost, parseLinkHash,
   parseLinkSearch, supportedCodecs, viewportFor,
@@ -253,6 +253,19 @@ test('a silent stream times out, and a replaced or stopped one reports nothing',
   f.stream.stop();
   assert.deepEqual(f.ends, [[1, 'timeout'], [3, 'closed']]);
   assert.ok(first && second);
+});
+
+test('consumer backpressure suspends the network watchdog and preserves its explicit failure reason', async () => {
+  let resume;
+  const pending = new Promise((_, reject) => { resume = reject; });
+  const f = recordStreamFixture({ onRecord: () => pending });
+  const reading = f.stream.read(9, streamOf([encodeRecord({ kind: RECORD.FRAME })]));
+  await new Promise(resolve => setImmediate(resolve));
+  f.advance(5000); f.stream.watchdog();
+  assert.deepEqual(f.ends, [], 'decode work is not misreported as a network silence');
+  resume(new RecordStreamError('decode-stalled', 'capacity did not return'));
+  await reading;
+  assert.deepEqual(f.ends, [[9, 'decode-stalled']]);
 });
 
 test('the video path takes the Tesla rung when everything is there and replaces only what is missing', () => {
@@ -513,15 +526,15 @@ test('codec probing lists the families the decoder accepts', async () => {
     return { supported: config.codec !== 'av01.0.08M.08' };
   };
   assert.deepEqual(await supportedCodecs(supports), ['avc1', 'vp8', 'vp09']);
-  assert.deepEqual(seen[0], { codec: 'avc1.640028', codedWidth: 1280, codedHeight: 720 });
+  assert.deepEqual(seen[0], { codec: 'avc1.640028', codedWidth: 1280, codedHeight: 720, optimizeForLatency: true, hardwareAcceleration: 'prefer-hardware' });
 });
 
-test('the decoder config prefers hardware and falls back to any decoder', async () => {
+test('the decoder config requests hardware without opting into a software fallback', async () => {
   const record = { codec: 'vp8', width: 800, height: 480 };
   const expected = { codec: 'vp8', codedWidth: 800, codedHeight: 480, optimizeForLatency: true };
   assert.deepEqual(await chooseDecoderConfig(async () => ({ supported: true }), record), { ...expected, hardwareAcceleration: 'prefer-hardware' });
   const softwareOnly = async config => ({ supported: config.hardwareAcceleration !== 'prefer-hardware' });
-  assert.deepEqual(await chooseDecoderConfig(softwareOnly, record), { ...expected, hardwareAcceleration: 'no-preference' });
+  assert.equal(await chooseDecoderConfig(softwareOnly, record), null);
   assert.equal(await chooseDecoderConfig(async () => ({ supported: false }), record), null);
   assert.equal(await chooseDecoderConfig(async () => { throw new TypeError('bad codec'); }, record), null);
 });
@@ -558,4 +571,30 @@ test('stopping a stream unblocks a pending configuration and releases its reader
   assert.equal(signal.aborted, true);
   assert.equal(body.locked, false);
   assert.deepEqual(ends, []);
+});
+
+
+test('source codec reporting excludes software-only HEVC so negotiation can retain hardware-compatible H.264', async () => {
+  const configurations = [];
+  const supported = await supportedCodecs(async config => {
+    configurations.push(config);
+    return { supported: config.codec.startsWith('avc1') || config.hardwareAcceleration !== 'prefer-hardware' };
+  });
+  assert.deepEqual(supported, ['avc1']);
+  assert.ok(configurations.every(config => config.hardwareAcceleration === 'prefer-hardware' && config.optimizeForLatency === true));
+});
+
+
+test('a hung capability query cannot block pairing indefinitely or advertise unknown codecs', async () => {
+  assert.deepEqual(await supportedCodecs(() => new Promise(() => {}), { avc1: 'avc1.640028' }, 5), []);
+});
+
+
+test('closing an outbox before its send microtask prevents retired controls from reaching another owner', async () => {
+  const sent = [];
+  const outbox = createControlOutbox({ send: (...message) => { sent.push(message); return {}; } });
+  outbox.push({ k: 't', p: [[0, 0.5, 0.5, 1]] });
+  outbox.close();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(sent, []);
 });

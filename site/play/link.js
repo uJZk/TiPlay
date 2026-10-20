@@ -9,7 +9,7 @@
 export const DEFAULT_HOST = '169.254.111.111:8080';
 export const PROTOCOL = 1;
 export const RECORD = Object.freeze({ CONFIG: 1, FRAME: 2, HEARTBEAT: 3, END: 4, TIMING: 5, IDLE: 6 });
-export const FLAG = Object.freeze({ KEY: 1, DISCONTINUITY: 2, PARAMETER_SETS: 4 });
+export const FLAG = Object.freeze({ KEY: 1, DISCONTINUITY: 2, PARAMETER_SETS: 4, DECODE_ONLY: 8 });
 export const HEADER_BYTES = 24;
 export const MAX_PAYLOAD = 8 * 1024 * 1024;
 
@@ -131,6 +131,11 @@ export function choosePath(features) {
 }
 
 export class RecordError extends Error {}
+
+/** A stable failure boundary for a consumer that cannot preserve complete media. */
+export class RecordStreamError extends Error {
+  constructor(reason, message) { super(message); this.name = 'RecordStreamError'; this.reason = reason; }
+}
 
 /**
  * Reassembles §3 video records from arbitrary chunks. A payload that lies inside one chunk is returned as a view of
@@ -259,7 +264,7 @@ export function createRecordStream({ onRecord, onAlive = () => {}, onEnd = () =>
     stop();
     const reader = stream.getReader();
     const parser = new RecordParser();
-    const mine = current = { id, reader, abort: new AbortController(), lastRecordAt: now(), alive: false, lastSequence: null };
+    const mine = current = { id, reader, abort: new AbortController(), lastRecordAt: now(), processing: false, alive: false, lastSequence: null };
     let reason = 'closed';
     try {
       reading: for (;;) {
@@ -289,14 +294,21 @@ export function createRecordStream({ onRecord, onAlive = () => {}, onEnd = () =>
             mine.lastSequence = record.sequence;
             if (record.flags & FLAG.DISCONTINUITY) totals.discontinuities++;
           }
-          const pending = onRecord(record, mine.abort.signal);
-          if (pending) await abortable(pending, mine.abort.signal);
+          mine.processing = true;
+          try {
+            const pending = onRecord(record, mine.abort.signal);
+            if (pending) await abortable(pending, mine.abort.signal);
+          } finally {
+            mine.processing = false;
+            // Consumer backpressure is not a gap in incoming network activity.
+            mine.lastRecordAt = now();
+          }
           if (current !== mine) return;
         }
       }
     } catch (error) {
       if (current !== mine) return;
-      reason = error instanceof RecordError ? 'bad-record' : 'error';
+      reason = error instanceof RecordStreamError ? error.reason : error instanceof RecordError ? 'bad-record' : 'error';
     } finally {
       reader.cancel().catch(() => {});
       reader.releaseLock();
@@ -311,7 +323,7 @@ export function createRecordStream({ onRecord, onAlive = () => {}, onEnd = () =>
     read,
     stop,
     watchdog() {
-      if (!current || now() - current.lastRecordAt <= timeoutMs) return;
+      if (!current || current.processing || now() - current.lastRecordAt <= timeoutMs) return;
       const { id } = current;
       stop();
       onEnd(id, 'timeout');
@@ -411,7 +423,7 @@ export function createControlOutbox({
     heartbeatDue = false;
     inFlight = true;
     posts++;
-    Promise.resolve().then(() => send(q, events)).then(status => {
+    Promise.resolve().then(() => { if (!closed) return send(q, events); }).then(status => {
       if (closed) return;
       inFlight = false;
       rtt.add(now() - started);
@@ -484,33 +496,33 @@ export function viewportFor(cssWidth, cssHeight, devicePixelRatio) {
   return { w, h, cw: Math.round(cssWidth), ch: Math.round(cssHeight), dpr: Math.round(dpr * 100) / 100 };
 }
 
-/** Representative codec strings for the diagnostic `codecs=` list of `/video`. */
+/** Representative codec strings used to report compatible source codec families. */
 export const PROBE_CODECS = Object.freeze({
   avc1: 'avc1.640028', hvc1: 'hvc1.1.6.L120.90', vp8: 'vp8', vp09: 'vp09.00.40.08', av01: 'av01.0.08M.08',
 });
 
-/** Names from `codecs` whose string `isConfigSupported` accepts at 1280×720. */
-export async function supportedCodecs(isConfigSupported, codecs = PROBE_CODECS) {
+/** Probe the same hardware-requested configuration used by production decoding at 1280×720. */
+export async function supportedCodecs(isConfigSupported, codecs = PROBE_CODECS, probeTimeout = 1000) {
   const results = await Promise.all(Object.entries(codecs).map(async ([name, codec]) => {
+    let timer;
     try {
-      return (await isConfigSupported({ codec, codedWidth: 1280, codedHeight: 720 })).supported ? name : null;
-    } catch (_) {
-      return null;
-    }
+      const config = await Promise.race([
+        chooseDecoderConfig(isConfigSupported, { codec, width: 1280, height: 720 }),
+        new Promise(resolve => { timer = setTimeout(() => resolve(null), probeTimeout); }),
+      ]);
+      return config ? name : null;
+    } finally { clearTimeout(timer); }
   }));
   return results.filter(Boolean);
 }
 
-/** The decoder config for a §3 config record: hardware preferred, any decoder otherwise; null when unsupported. */
+/** Request hardware decoding for a config record; return null when that configuration is unsupported. */
 export async function chooseDecoderConfig(isConfigSupported, { codec, width, height }) {
-  for (const hardwareAcceleration of ['prefer-hardware', 'no-preference']) {
-    const config = { codec, codedWidth: width, codedHeight: height, optimizeForLatency: true, hardwareAcceleration };
-    try {
-      if ((await isConfigSupported(config)).supported) return config;
-    } catch (_) {
-      // An invalid codec string throws; the next preference cannot fix that, but it costs nothing to ask.
-    }
-  }
+  const config = { codec, codedWidth: width, codedHeight: height, optimizeForLatency: true, hardwareAcceleration: 'prefer-hardware' };
+  try {
+    // This is a request hint, not proof of the implementation actually selected.
+    if ((await isConfigSupported(config)).supported) return config;
+  } catch (_) { /* An invalid or unsupported configuration has no software fallback. */ }
   return null;
 }
 

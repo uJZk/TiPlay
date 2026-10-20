@@ -7,12 +7,14 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The current source
-is 0.2.20-beta.5 (code 44); the code remains above the published TiPlay 0.2.16. Run
-`python3 scripts/build_site.py` after changing it to regenerate `app-version.js`.
-The browser diagnostic/cache revision is independent of this product version.
-Download pages identify the latest verified stable APK; beta artifacts are linked
-from GitHub Releases. Debug APK metadata retains its diagnostic suffix.
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). Release preparation
+targets **0.2.20-beta.6** (code **48**), above published TiPlay 0.2.16. Run
+`python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
+The browser diagnostic/cache revision is independent of the product version;
+this release uses **v65** with WebRTC DataChannel as the formal live-media path.
+Signed artifacts, exact build commit/checksums and remote publication are pending
+verification in the beta record below. Stable download pages remain on 0.2.16;
+beta artifacts belong to GitHub Releases. Debug APK metadata retains its diagnostic suffix.
 
 ### Check the source build
 
@@ -109,50 +111,73 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta release
 
-The current beta is **0.2.20-beta.5** (version code 44), with browser cache and
-diagnostic revision **v64**. It preserves live audio resamplers when output-device
-clock measurements are refitted, samples clocks after native timestamp reads, and
-bridges brief measurement noise using a bounded validated anchor with growing
-uncertainty. Real context interruptions still recover, and the A/V limits remain.
-Mirror audio uses decoded sample timestamps for continuity so presentation-clock
-refinements cannot create artificial PCM gaps. Transient AirPlay resource 502/504
-responses get the same single retry as 503 within the original request deadline.
-Audio metadata is split at whole-field boundaries to preserve clock evidence;
-resource I/O diagnostics record safe exception class names without private URLs.
-See [Changelog](../CHANGELOG.md) for scope and [Testing](Testing.md) for acceptance.
+The planned prerelease is [TiPlay 0.2.20-beta.6](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.6)
+(version code **48**), with browser cache/diagnostic revision **v65**.
+The reviewed local implementation completed the baseline checks below. Integration
+with newer remote-main changes and final integrated validation are pending, as are
+signed APK construction, artifact hashes, exact build commit and remote release/page
+deployment results. This
+record does not yet establish a published release or deployed page.
 
-It uses `com.ujzk.tiplay` and the existing signed release workflow. The established
-APK signing certificate SHA-256 is
+Reliable, ordered WebRTC DataChannels are now the formal CarPlay/live AirPlay
+media path, with shared framing, bounded credit, ownership/epoch isolation and
+independent audio subscriptions. Compressed video is never reencoded. The current
+page has no HTTP media fallback; legacy `/video` and `/audio` return **410
+transport-required**, so cached older pages must update. Live decoding requests
+hardware without an intentional software fallback; the hint cannot establish
+actual hardware use. URL casting retains its resource/demux path and existing
+codec compatibility policy.
+
+Four shared profiles implement the selected priorities: CarPlay touch favors
+latency slightly, ordinary CarPlay favors smoothness, AirPlay mirror favors
+smoothness slightly, and URL casting favors smoothness strongly. Touch advances
+only decoded video, preserves convergence across move events and never changes
+the audio plan. Live audio/video have independent +300 ms software deadlines;
+URL casting uses bounded 750 ms startup / 1500 ms recovery watermarks. These are
+implementation defaults, not a claim of completed vehicle tuning.
+
+AirPlay mirroring sender-protocol suspend continues dependency decoding and
+suppresses decoded output. This adds no user pause button; internal `pauseDisplay`
+screen arbitration and the `DECODE_ONLY` media flag serve different boundaries.
+The release also fixes audio-drain failures, retired URL-operation ownership,
+source-deadline enforcement, incomplete fault evidence, duplicate raw-capture
+writers and unnecessary sensitive exception details. Original application-visible
+video is captured once on Android input; downstream events reference that record.
+See [Changelog](../CHANGELOG.md), [WebRTC roadmap](WebRTC-roadmap.md) and
+[Diagnostics](Diagnostics.md) for scope and evidence boundaries.
+
+The reviewed implementation baseline passed **3,924** Android unit tests (2,166 shared, 1,752 common,
+six home), **120** final scoped Android regressions, **436** browser tests,
+**14** real-DataChannel transport checks, required Android lint/debug builds,
+public-source scanning and release-draft checks. Android lint reports **0
+Error/Fatal and 38 warnings**. Chromium full-page playback passed with the explicit
+`E2E_SOFTWARE_VIDEO=1` test override; strict desktop hardware-unavailable behavior
+was verified separately. AirPlay photo, audio and MP4/HLS video E2E passed. The
+override validates real compressed decoding/application wiring and provides no
+vehicle hardware-decode evidence. Run timing-sensitive browser checks without
+concurrent builds. These baseline results do not establish final remote-main integration checks or
+replace signed release lint/build and artifact verification.
+
+The release uses `com.ujzk.tiplay` and the existing signed release workflow. The
+established APK signing certificate SHA-256 is
 `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`,
-matching 0.2.16. Keep the two runtime identity files byte-identical to the
-hash-verified pinned DiPlay 0.2.18 inputs. The workflow verifies package/version,
-runtime assets and signatures, then attaches the signed APK, source ZIP generated
-from the exact build commit and `SHA256SUMS.txt` to the prerelease draft. Verify
-remote attachment digests before publishing the
-[beta release](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.5).
-Stable download links remain on 0.2.16.
+matching 0.2.16; the beta.6 APK signature must still be verified against it. Keep
+both runtime identity files byte-identical to the hash-verified pinned DiPlay
+0.2.18 inputs. The workflow checks package/version, runtime assets and signatures,
+then attaches the signed APK, source ZIP generated from the exact build commit and
+`SHA256SUMS.txt` to a prerelease draft. Verify remote attachment digests before
+publishing. Temporary signing/runtime inputs stay outside Git and are removed
+after verification. Stable download links remain on 0.2.16.
 
-The implementation passed 2,135 shared, 1,746 common and six home unit tests,
-399 browser tests, required Android lint/debug builds, the public-source scan,
-nine release-draft delivery tests, and isolated Chromium audio, media-clock and
-MP4/HLS controls/recovery checks. Mirror packet-header replay removes nine false
-sample gaps across 1,189 captured packets. Real-DSP and six-hour virtual-clock
-regressions retain independent speaker-timing checks, including repeated native
-timestamps and real output-latency changes. Run timing-sensitive browser checks
-without concurrent builds.
-
-Physical Xiaoyuzhou/music/navigation audio, sustained video smoothness, system
-rotation, actual iPhone screen-loan approval/return and acoustic/panel timing remain pending in
-[Testing](Testing.md) and [Todo](Todo.md). Source regressions establish the repaired
-code defects; they do not prove the exact cause of every supplied-log symptom.
-The field log does not identify every remaining pop, the reason for roughly
-220 ms mirror H.264 decode callbacks, or the underlying YouTube resource I/O
-exception. Internet access on both phones does not establish successful retrieval
-of a particular redirected media resource. Timestamp sampling/held-anchor and safe
-network exception diagnostics preserve that evidence for device retesting.
-Debug retains one original input video stream without a browser-forwarding
-payload duplicate. Temporary signing/runtime inputs stay outside Git and are
-removed after verification.
+Physical iPhone/Android/car acceptance remains incomplete: Shizuku-address host
+ICE, actual hardware decode, gear transitions, sustained thermal smoothness,
+HFP/SCO routing, audio quality and acoustic/panel timing need device measurement.
+The +300 ms checks cover known software clock/output/filter mappings; upstream
+iPhone NTP-anchor uncertainty is not separately carried on the wire, so
+`within-bound` does not prove physical sender-relative compliance. Missing anchors
+remain unknown. The short pairing code over local HTTP retains the trusted-LAN
+boundary and does not resist active fingerprint substitution; DTLS alone does
+not authenticate bootstrap identity. See [Testing](Testing.md) and [Todo](Todo.md).
 
 ## Updating an installed app
 

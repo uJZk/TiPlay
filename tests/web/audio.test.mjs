@@ -6,6 +6,7 @@ import { createBrowserAudio } from '../../site/play/audio.js';
 import { audioDelayAt } from '../../site/play/playback-window.js';
 import { createFramePresenter } from '../../site/play/video.js';
 import { constantDelay, delayAt, planDelay } from '../../site/play/delay-plan.js';
+import { browserDiagnosticEvents } from '../../site/play/browser-diagnostics.js';
 
 function record(samples, { rate = 48000, channels = 1, flags = 0, type = 0 } = {}) {
   const bytes = new Uint8Array(28 + samples.length * 2), view = new DataView(bytes.buffer);
@@ -108,6 +109,62 @@ function mockBrowser({ failFirstModuleLoad = false } = {}) {
   } }; nodes.push(this); } connect() {} };
   return { messages, contexts, sources, nodes, get moduleLoads() { return moduleLoads; }, done() { globalThis.AudioContext = oldContext; globalThis.AudioWorkletNode = oldNode; } };
 }
+
+test('actual Standard audio stats carry deadline faults without Debug or video-reference telemetry', async () => {
+  const browser = mockBrowser(), notifications = [];
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
+    fetchPhone: async () => ({ ok: true, body: new ReadableStream({}) }),
+    onSourceDeadline: () => notifications.push(browserDiagnosticEvents({ audio: audio.stats() }, false, false)[0]),
+  });
+  try {
+    await audio.activate();
+    await new Promise(resolve => setImmediate(resolve));
+    const generation = browser.messages.filter(value => value.reset).length;
+    const publish = (fields = {}) => browser.nodes[0].port.onmessage({ data: { playout: {
+      mode: 'carplay', type: 0, epoch: 1, generation, state: 'recovering',
+      sourceDeadlineState: 'violated', sourceDeadlineReason: 'source-deadline',
+      sourceDeltaUpperMs: 305, sourceDeadlineRejectedFrames: 128, ...fields,
+    } } });
+    publish();
+    const event = notifications.at(-1);
+    assert.equal(audio.stats().debug, undefined);
+    assert.equal(event.v['audio.sourceDeadlineState'], 'violated');
+    assert.equal(event.v['audio.sourceDeadlineReason'], 'source-deadline');
+    assert.equal(event.v['audio.sourceDeltaUpperMs'], 305);
+    assert.equal(event.v['audio.sourceDeadlineRejectedFrames'], 128);
+    assert.equal(event.v['audio.sourceDeadlineStream'], 'carplay-0');
+    assert.equal(event.v['audio.sourceDeadlineEpoch'], 1);
+    const before = notifications.length;
+    publish();
+    assert.equal(notifications.length, before, 'the same cumulative rejection is not sent again');
+    publish({ epoch: 2, sourceDeadlineRejectedFrames: 64 });
+    assert.equal(audio.stats().sourceDeadlineRejectedFrames, 192, 'epoch replacement adds only its new rejected frames');
+    audio.reset();
+    publish({ epoch: 1, sourceDeadlineRejectedFrames: 128 });
+    assert.equal(audio.stats().sourceDeadlineRejectedFrames, 192, 'retired playback-generation feedback is ignored');
+  } finally { audio.dispose(); browser.done(); }
+});
+
+test('alternating healthy and unknown audio streams do not flood immediate Standard diagnostics', async () => {
+  const browser = mockBrowser(); let notifications = 0;
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
+    fetchPhone: async () => ({ ok: true, body: new ReadableStream({}) }), onSourceDeadline: () => notifications++ });
+  try {
+    await audio.activate();
+    await new Promise(resolve => setImmediate(resolve));
+    const generation = browser.messages.filter(value => value.reset).length;
+    for (let i = 0; i < 100; i++) for (const type of [0, 1]) browser.nodes[0].port.onmessage({ data: { playout: {
+      mode: 'carplay', type, epoch: 1, generation, state: 'playing',
+      sourceDeadlineState: type ? 'unknown' : 'within-bound',
+      sourceDeadlineReason: type ? 'source-anchor-unavailable' : null,
+      sourceDeltaUpperMs: type ? null : 100, sourceDeadlineRejectedFrames: 0,
+    } } });
+    assert.equal(notifications, 1, 'only the first important unavailable reason is sent immediately');
+    assert.equal(audio.stats().sourceDeadlineState, 'unknown');
+    assert.equal(audio.stats().sourceDeadlineStream, 'carplay-1');
+    assert.equal(audio.stats().sourceDeadlineRejectedFrames, 0);
+  } finally { audio.dispose(); browser.done(); }
+});
 
 test('a transient worklet load failure can recover without refreshing a running context', async () => {
   for (const retry of ['gesture', 'attach']) {
@@ -344,7 +401,7 @@ test('worklet mixes separate streams and bounds an unpaced music producer', asyn
     const wall = 1060 + (currentTime + 127 / 48000) * 1000;
     assert.ok(Math.abs(smooth.timelines.get(0).through - (wall - delayAt(plan, wall))) < 0.000001);
   }
-  for (const [rawAudioDelay, audioWall, videoWall] of [[0, 1055, 1100], [1000, 1205, 1080]]) {
+  for (const [rawAudioDelay, audioWall, videoWall] of [[0, 1000, 1100], [200, 1200, 1080]]) {
     globalThis.currentTime = 0;
     const matched = new Processor(), plans = { video: constantDelay(80), audio: constantDelay(rawAudioDelay) };
     matched.port.onmessage({ data: { plans, clockBase: audioWall } });
@@ -357,7 +414,7 @@ test('worklet mixes separate streams and bounds an unpaced music producer', asyn
     presenter.present({ timestamp: 1000, displayWidth: 800, displayHeight: 480, close() {} }, { epoch: 1, mode: 'carplay' }, 1000);
     assert.equal(submitted.length, 1);
     const actualOffset = audioWall - submitted[0].at;
-    assert.ok(actualOffset >= -45 && actualOffset <= 125, 'actual worklet sample versus matching canvas submission stays within the accepted window');
+    assert.equal(actualOffset, audioWall - videoWall, 'video submission cannot retime the independently scheduled audio sample');
     assert.ok(matched.messages.some(message => message.consumed === 960), 'too-late PCM never makes video wait');
     presenter.dispose();
   }
@@ -367,4 +424,45 @@ test('worklet mixes separate streams and bounds an unpaced music producer', asyn
   assert.ok(left.every(value => value === 1), 'overlapping prompts saturate instead of producing out-of-range samples');
   delete globalThis.currentTime;
   delete globalThis.AudioWorkletProcessor; delete globalThis.registerProcessor; delete globalThis.sampleRate;
+});
+
+
+test('cancelling a pending DataChannel audio read releases its subscription without waiting for a packet', async () => {
+  let cancelled = 0;
+  const abort = new AbortController();
+  const source = new ReadableStream({ cancel() { cancelled++; } });
+  const records = readAudioRecords(source, abort.signal);
+  const next = records.next();
+  await new Promise(resolve => setImmediate(resolve));
+  abort.abort();
+  assert.equal((await next).done, true);
+  assert.equal(cancelled, 1);
+  assert.equal(source.locked, false);
+});
+
+test('DataChannel audio shares the existing playback path and reopens a fresh subscription after disable', async () => {
+  const browser = mockBrowser();
+  const sources = [];
+  let opened = 0, cancelled = 0, http = 0;
+  const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: () => { http++; throw new Error('Unexpected HTTP media'); } });
+  try {
+    await audio.activate();
+    audio.attach(new AbortController().signal, { audio: true }, () => {
+      opened++;
+      return new ReadableStream({ start(controller) { sources.push(controller); }, cancel() { cancelled++; } });
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(opened, 1);
+    sources[0].enqueue(record([1, 2, 3]));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(audio.stats().queuedBytes, 6);
+    audio.status({ audio: false });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(cancelled, 1);
+    audio.status({ audio: true });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(opened, 2);
+    assert.equal(audio.stats().queuedBytes, 0);
+    assert.equal(http, 0);
+  } finally { audio.dispose(); browser.done(); }
 });

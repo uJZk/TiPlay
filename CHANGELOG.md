@@ -4,6 +4,31 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.6
+
+Publication pending; target version code 48 and browser cache/diagnostic revision v65.
+These notes describe the reviewed local baseline; integration with newer remote-main
+changes and final integrated validation remain pending.
+
+- Make reliable, ordered WebRTC DataChannels the formal CarPlay/live AirPlay media path. Reuse compressed video and audio records, bounded fragmentation/credit, session ownership and independent audio subscription generations. Never reencode video. The current page requires WebRTC; legacy HTTP media endpoints return 410 and cached older pages must update.
+- Apply shared policies for CarPlay touch, ordinary CarPlay, AirPlay mirror and URL casting. Smoothly catch up decoded video during touch without changing audio, retain independent live +300 ms software deadlines, and favor casting continuity with bounded startup/recovery prebuffering.
+- Preserve complete compressed decoder dependencies under congestion with bounded admission and explicit stall recovery. Request hardware for live video without intentional software downgrade; actual vehicle hardware use remains unverified.
+- Keep dependency decoding during sender-protocol AirPlay mirroring suspend while suppressing decoded output. This is separate from internal screen arbitration and introduces no user pause button. Fix audio-drain failure cleanup and prevent retired URL operations from controlling a newer playback owner.
+- Enforce the audio deadline against actual emitted sample position and known clock/device/filter uncertainty. Suppress an expired output quantum with an explicit recovery reason; missing measurement anchors stay unknown.
+- Preserve actionable bounded ICE, channel, credit, decoder, audio and capture failure evidence. Keep the original video payload once, repair duplicate capture writers, report capture integrity failures and retain safe exception causes without private network details.
+
+Baseline verification: 3,924 Android unit tests plus 120 final scoped regressions; 436 browser
+tests; 14 real-DataChannel transport checks; required Android lint/debug builds
+(0 Error/Fatal, 38 warnings); public-source/release-draft checks; Chromium full-page
+and AirPlay photo/audio/MP4/HLS E2E. Full-page playback uses an explicit test-only
+software override; strict hardware-unavailable behavior is checked separately.
+Signed build hashes, remote page deployment and release publication remain pending.
+
+Physical phone/vehicle acceptance remains incomplete. The +300 ms checks describe
+known software mappings, with upstream iPhone NTP uncertainty still uncarried;
+they do not prove acoustic/panel latency. Local HTTP pairing retains the trusted-LAN
+boundary and does not prevent active DTLS-fingerprint substitution.
+
 ## 0.2.20-beta.5
 
 - Keep live audio resamplers intact when only the output-device clock measurement is refitted. Preserve recovery for actual context suspension and missing render quanta.

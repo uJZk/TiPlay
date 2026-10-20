@@ -51,12 +51,14 @@ internal class AirPlayCastPlayer(private val resource: (String, String?) -> Rece
         return if (generation == epoch && activeGeneration == epoch) current else ReceiverPlayback(buffering = true)
     }
 
-    fun play(item: ReceiverPlay): Boolean {
+    fun play(item: ReceiverPlay, loadResource: (String, String?) -> ReceiverResource? = resource): Boolean {
         val token = requests.incrementAndGet()
         return main.post {
             if (!live(token)) return@post
             stopNow(AirPlayVideoDiagnostics.StopReason.REPLACED, token)
-            val playback = AirPlayVideoPlayback(item, resource, ::logDiagnostic) { event -> main.post {
+            val playback = AirPlayVideoPlayback(item, { url, range ->
+                if (live(token)) loadResource(url, range) else null
+            }, ::logDiagnostic) { event -> main.post {
                 if (live(token)) {
                     if (event == "stopped" || event == "failed") stopNow(
                         if (event == "failed") AirPlayVideoDiagnostics.StopReason.BROWSER_FAILED else AirPlayVideoDiagnostics.StopReason.BROWSER_ENDED, token,

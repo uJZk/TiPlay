@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BrowserAudioDiagnosticsTest {
+    @Test fun independentSourceDeadlineAndUnavailableClockReasonRemainVisible() {
+        val lines = BrowserAudioDiagnostics.lines(mapOf("stream0.sourceDeadlineState" to "unknown",
+            "stream0.sourceDeadlineReason" to "source-anchor-unavailable", "stream0.sourceDeltaUpperMs" to 305,
+            "stream0.sourceDeadlineRejectedFrames" to 128, "stream0.recoveryCounts.source-deadline" to 1))
+        assertTrue(lines.single().contains("sourceDeadlineState=unknown"))
+        assertTrue(lines.single().contains("sourceDeadlineReason=source-anchor-unavailable"))
+        assertTrue(lines.single().contains("sourceDeadlineRejectedFrames=128"))
+        assertTrue(lines.single().contains("recoveryCounts.source-deadline=1"))
+    }
     @Test fun separatesDecodedPcmFromRenderedOutputAndTheStreamsClock() {
         val lines = BrowserAudioDiagnostics.lines(mapOf(
             "pageVersion" to "v52", "contextState" to "running", "contextTimeMs" to 5000,

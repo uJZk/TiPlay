@@ -332,6 +332,24 @@ class AirPlayVideoProxyTest {
         }
     }
 
+    @Test fun cancellationAfterAnAndroidResponseCannotFallBackToTheCurrentIphone() {
+        withOrigin(403, emptyMap(), byteArrayOf()) { origin, _ ->
+            var fallbackLoads = 0
+            lateinit var proxy: AirPlayVideoProxy
+            proxy = AirPlayVideoProxy("$origin/movie.mp4", { _, _ ->
+                fallbackLoads++
+                ReceiverResource(byteArrayOf(42), 200, null)
+            }, log = { message ->
+                // A UI replacement can close the item after HTTP completed but before its FCUP retry.
+                if (message.contains("route=ANDROID_HTTP status=403")) proxy.close()
+            })
+            try {
+                assertThrows(IOException::class.java) { proxy.open(proxy.rootId, null) { it } }
+                assertEquals(0, fallbackLoads)
+            } finally { proxy.close() }
+        }
+    }
+
     @Test fun androidPartialResponsePreservesContentRangeWithoutCallingFcUp() {
         withOrigin(206, mapOf("Content-Range" to "bytes 100-102/200", "Content-Type" to "video/mp4"), byteArrayOf(4, 5, 6)) { origin, _ ->
             val proxy = AirPlayVideoProxy("$origin/video.m4s", { _, _ -> error("FCUP fallback was not needed") })

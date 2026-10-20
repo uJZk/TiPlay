@@ -2,7 +2,8 @@
 import { MAX_AUDIO_AHEAD_BYTES, MAX_PCM_PACKET_MS, MAX_TIMELINE_PACKETS } from './audio-buffer-policy.js';
 import { AudioSourceClock } from './audio-source-clock.js';
 
-const FADE_MS = 5, RECOVERY_ERROR_MS = 30, PHASE_CORRECTION_LIMIT = 0.001;
+export const AUDIO_RECOVERY_ERROR_MS = 30;
+const FADE_MS = 5, PHASE_CORRECTION_LIMIT = 0.001;
 
 /** Stable source/sample anchors; only an interruption starts a new resampler signal. */
 export class ContinuousAudio {
@@ -22,6 +23,9 @@ export class ContinuousAudio {
     this.sourceClock = new AudioSourceClock(rate, { arrival: mode === 'carplay' && !buffered });
     this.backend = null; this.slewRatio = rate / outputRate; this.lastPacket = null; this.missingSince = null;
     this.lastRecoveryReason = null; this.recoveryCounts = {};
+    this.sourceDeadlineState = 'unknown'; this.sourceDeltaMs = null; this.sourceDeltaUpperMs = null;
+    this.sourceDeadlineReason = 'no-output';
+    this.sourceDeadlineRejectedFrames = 0;
   }
   debug(enabled) { this.counters = enabled ? { capacityPackets: 0, latePackets: 0, duplicatePackets: 0, playedPackets: 0, resetPackets: 0, invalidPackets: 0, rebufferCount: 0 } : null; }
   retire(packet, reason) {
@@ -118,25 +122,29 @@ export class ContinuousAudio {
     return true;
   }
   /** targetMs is the raw Android-media position due at the speaker for this quantum. */
-  render(targetMs, contextMs, clock, frames, output, deviceRate = 1) {
+  render(targetMs, contextMs, clock, frames, output, deviceRate = 1, deadline = null) {
     output.fill(0); this.outputFrames += frames;
+    this.sourceDeadlineState = 'unknown'; this.sourceDeltaMs = this.sourceDeltaUpperMs = null;
+    this.sourceDeadlineReason = deadline?.unknownReason || 'no-output';
     this.lastContextTimeMs = Number.isFinite(contextMs) ? contextMs + frames * 1000 / this.outputRate : null;
     const sourceRate = this.sourceClock.advance(contextMs), clockRate = clock?.rate || 1;
     if (this.backend && clock && clock.generation !== this.clockGeneration && clock.state !== 'stale') this.recover('clock-generation');
     if (this.backend && Number.isFinite(targetMs)) {
       this.phaseErrorMs = targetMs - this.rawCursorMs;
-      if (Math.abs(this.phaseErrorMs) > RECOVERY_ERROR_MS) this.recover('clock-step');
+      if (Math.abs(this.phaseErrorMs) > AUDIO_RECOVERY_ERROR_MS) this.recover('clock-step');
     }
     if (!this.backend && Number.isFinite(targetMs)) this.start(targetMs, clock?.generation);
     if (!this.backend) {
       this.fadeTail(output, 0, frames); this.recoveryTail.set(this.last); this.recoveryRemaining = this.tailRemaining;
+      this.checkDeadline(deadline, clock, this.rawCursorMs, frames * 1000 / this.outputRate / deviceRate, 0, output, frames);
       return 0;
     }
     const correction = Math.max(-PHASE_CORRECTION_LIMIT, Math.min(PHASE_CORRECTION_LIMIT, this.phaseErrorMs / 10000));
     this.deviceRate = deviceRate; this.phaseCorrectionPpm = correction * 1e6;
     const nextRatio = this.rate / this.outputRate * sourceRate / clockRate / deviceRate * (1 + correction);
     this.backend.setRatio(nextRatio, frames);
-    const firstRatio = this.slewRatio; let produced = 0, needInput = false;
+    const firstRatio = this.slewRatio, firstSourceMs = this.rawCursorMs;
+    let produced = 0, needInput = false;
     for (let call = 0; call < 16 && produced < frames; call++) {
       // Keep filter state across network packet boundaries; never flush at a temporary shortage.
       // Drain the filter before feeding again: producer lead belongs to the bounded PCM queue.
@@ -164,7 +172,32 @@ export class ContinuousAudio {
     this.rawCursorMs += advanced * 1000 / this.rate / sourceRate;
     this.slewRatio = finalRatio;
     if (produced < frames) { this.fadeTail(output, produced, frames); this.recover('underrun'); }
+    const localSpan = frames * 1000 / this.outputRate / deviceRate;
+    const sourceSpan = produced * Math.min(firstRatio, finalRatio) * 1000 / this.rate / sourceRate * (clock?.rate || 1);
+    if (!this.checkDeadline(deadline, clock, firstSourceMs, localSpan, sourceSpan, output, frames)) return 0;
     return produced;
+  }
+  checkDeadline(deadline, clock, firstSourceMs, localSpan, sourceSpan, output, frames) {
+    if (deadline && clock && Number.isFinite(firstSourceMs) && Number.isFinite(deadline.outputAt)
+      && Number.isFinite(clock.localOriginMs) && Number.isFinite(clock.serverOriginMs)
+      && Number.isFinite(clock.rate) && clock.rate > 0) {
+      const mappedSource = clock.localOriginMs + (firstSourceMs - clock.serverOriginMs) * clock.rate;
+      this.sourceDeltaMs = deadline.outputAt - mappedSource;
+      // A conservative bound across the complete quantum includes the slowest
+      // slew ratio, device oscillator, filter and both clock uncertainties.
+      this.sourceDeltaUpperMs = this.sourceDeltaMs + Math.max(0, localSpan - sourceSpan) + deadline.uncertaintyMs;
+      this.sourceDeadlineState = this.sourceDeltaUpperMs <= deadline.limitMs ? 'within-bound' : 'violated';
+      this.sourceDeadlineReason = this.sourceDeadlineState === 'violated' ? 'source-deadline' : null;
+      if (this.sourceDeadlineState === 'violated') {
+        // The whole quantum is still application-owned. Never emit expired
+        // content or crossfade an expired recovery tail into fresh output.
+        output.fill(0); this.sourceDeadlineRejectedFrames += frames;
+        this.recover('source-deadline'); this.last.fill(0); this.recoveryTail.fill(0);
+        this.recoveryRemaining = this.tailRemaining = 0;
+        return false;
+      }
+    }
+    return true;
   }
   fadeTail(output, from, frames) {
     for (let i = from; i < frames; i++) {
@@ -182,6 +215,9 @@ export class ContinuousAudio {
       deviceRatePpm: ((this.deviceRate ?? 1) - 1) * 1e6, phaseCorrectionPpm: this.phaseCorrectionPpm ?? 0,
       filterDelayMs: this.filterDelayMs, filterUncertaintyMs: this.filterUncertaintyMs,
       state: this.state, reason: this.reason, clockGeneration: this.clockGeneration, phaseErrorMs: this.phaseErrorMs,
+      sourceDeadlineState: this.sourceDeadlineState, sourceDeltaMs: this.sourceDeltaMs, sourceDeltaUpperMs: this.sourceDeltaUpperMs,
+      sourceDeadlineReason: this.sourceDeadlineReason,
+      sourceDeadlineRejectedFrames: this.sourceDeadlineRejectedFrames,
       lastRecoveryReason: this.lastRecoveryReason, recoveryCounts: { ...this.recoveryCounts },
       sourceRatePpm: (this.sourceClock.rate - 1) * 1e6, sourceRateConfidence: this.sourceClock.confidence };
   }
