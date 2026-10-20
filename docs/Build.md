@@ -121,14 +121,16 @@ Runtime assets remain byte-identical to the hash-verified pinned DiPlay 0.2.18 A
 used by preceding releases. Debug source checks exclude those assets; the final
 release build receives only the two runtime files and its external signing input.
 
-The beta browser address is <https://ujzk.github.io/TiPlay/webrtc/>. Dispatching the
-Pages workflow from `feat/carplay-webrtc` runs `scripts/assemble_beta_site.py`:
+The beta browser address is <https://ujzk.github.io/TiPlay/webrtc/>. The Pages
+workflow on main and on manually dispatched repair branches runs
+`scripts/assemble_beta_site.py`:
 the existing site root/download pages are rebuilt from baseline
 `ef0834151040d7c4f63dd3ce68787d146f48afe6`, and the current page is copied only to
 `webrtc/`. Beta Service Worker caches use a separate prefix. The APK selects the
 beta page; an old saved default migrates to it. Stable download links stay on 0.2.16.
-A later ordinary main deployment replaces the assembled output, so beta hosting
-must be preserved deliberately while the beta is in use.
+This layout does not depend on the branch name and survives merging/deleting the
+implementation branch. Promoting WebRTC to the site root requires a separate
+intentional deployment change after acceptance.
 
 Automated/source verification and remaining device checks are recorded in
 [Testing](Testing.md). A cloud Chromium environment that cannot enumerate host ICE

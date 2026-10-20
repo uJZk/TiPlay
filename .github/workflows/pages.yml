@@ -1,9 +1,9 @@
 name: Publish site
-# The TiPlay page (site/play/) at the site root, the download pages under download/. See docs/Browser.md.
+# Keep the stable HTTP site and publish the current WebRTC beta at /webrtc/.
 on:
   push:
     branches: [main]
-    paths: ['gradle.properties', 'site/**', 'scripts/build_site.py', 'scripts/assemble_site.py', '.github/workflows/pages.yml']
+    paths: ['gradle.properties', 'site/**', 'scripts/build_site.py', 'scripts/assemble_site.py', 'scripts/assemble_beta_site.py', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,11 +27,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - if: github.ref_name != 'feat/carplay-webrtc'
-        run: python3 scripts/build_site.py
-      - if: github.ref_name != 'feat/carplay-webrtc'
-        run: python3 scripts/assemble_site.py _site
-      - if: github.ref_name == 'feat/carplay-webrtc'
+      # Preserve this layout on main and on future repair branches until promotion.
+      - name: Assemble stable site and isolated WebRTC beta
         run: python3 scripts/assemble_beta_site.py _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

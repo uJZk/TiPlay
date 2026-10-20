@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-The `feat/carplay-webrtc` branch implements the WebRTC beta, **0.2.21-beta.3**
+The current implementation provides the WebRTC beta, **0.2.21-beta.3**
 (code 47). The Android phone relays source-compressed video into webpage-controlled
 WebCodecs decoding; native WebRTC audio/video tracks are not used.
 The supported product remains Android phone plus car browser.
@@ -26,6 +26,12 @@ standalone test D remains evidence for local synthetic playback only. Selected
 ICE protocol, sustained gear-transition continuity, actual hardware use and
 physical output timing still require verification. Current evidence and next
 gates are in the [WebRTC roadmap](WebRTC-roadmap.md).
+
+The subsequent beta.3/v71 Windows Edge test selected host-to-host UDP but hit the
+200 ms oldest-record guard, closing RTC and taking about 6.6 seconds to forward
+the replacement subscription's first frame. Its 19 refresh replacements exclude
+40 source frames not read across that reconnect. This is a known recovery issue,
+not a completed fix; see the [next-session entry](WebRTC-roadmap.md#下一次会话修复入口).
 
 Implementation and source tests do not establish physical vehicle compatibility,
 actual webpage hardware decoder selection, acoustic latency or panel scanout.

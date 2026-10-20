@@ -19,7 +19,7 @@ Start with the [English README](../README.md) or [简体中文](../README.zh-CN.
 - [Geolocation](geolocation.md): browser coordinate evidence, Android conversion and detection and iPhone forwarding.
 - [Testing](Testing.md) and [Todo](Todo.md): automated checks and pending physical acceptance.
 - [CarPlay DataChannel](CarPlay-DataChannel.md): reliable WebRTC beta transport, four-digit authenticated signaling, resource bounds and physical acceptance limits.
-- [WebRTC roadmap](WebRTC-roadmap.md): user-confirmed local D playback, TCP backpressure measurements, beta implementation progress and remaining Shizuku/UDP, gear-transition and hardware gates.
+- [WebRTC roadmap](WebRTC-roadmap.md): delivered beta.3/v71, desktop UDP and reconnect evidence, the next-session repair entry, and remaining Tesla gear-transition/hardware gates.
 - [Upstream](Upstream.md): dependencies, provenance and merge policy.
 - [Third-party notices](Third-party-notices.md): credits, licenses and experimental authentication data.
 - [README presentation](Readme-presentation.md): bilingual feature list, screenshots, source notes and verification boundaries.
