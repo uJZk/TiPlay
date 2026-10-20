@@ -15,8 +15,9 @@ this release targets **v73** with WebRTC DataChannel as the formal live-media pa
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
 independent `/webrtc/` subsite without an alias or redirect; the APK defaults to the
 root. The beta record below distinguishes completed source checks from pending
-signed artifacts, exact build commit/checksums and deployment verification. Published
-download links must identify the verified release. Debug APK metadata retains its diagnostic suffix.
+signed artifacts, exact build commit/checksums and deployment verification. Every
+language's download entry opens the GitHub Releases index without a version-specific
+URL. Debug APK metadata retains its diagnostic suffix.
 
 ### Check the source build
 
@@ -177,13 +178,15 @@ make inaccessible decoder/panel/speaker state observable.
 | Checksums and attachments | `SHA256SUMS.txt`, exact attachment set and independently fetched attachment digests; pending. |
 | Signing/runtime provenance | Compare the APK certificate and both packaged runtime identity files with the intended verified inputs; pending. |
 | Root webpage | Pages run/deployment SHA, actual `app-version.js` beta.7 metadata, v73 manifest/cache closure and deployed asset bytes; pending. |
-| Publication | Prerelease status, tag target and beta.7 download links; pending. |
+| Publication | Prerelease status, tag target and version-independent Releases-index download entries; pending. |
 
 Keep signing material and runtime identities outside Git. The established signing
 certificate fingerprint is recorded under historical provenance below; that history
 does not verify a newly built APK. Follow the [signed release procedure](#signed-release)
 for package/signature/runtime checks, source archives and checksums. Publication
 records must use the actual beta.7 commit and run/artifact results, not beta.6 values.
+The signed APK remains pinned to its build tag; the later download-entry change is
+web-only, so record the Pages deployment commit separately from the APK build commit.
 
 Physical iPhone/Android/car acceptance remains incomplete: actual hardware decoding,
 Shizuku-address host ICE, gear transitions, sustained thermal smoothness, HFP/SCO,

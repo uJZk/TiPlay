@@ -75,7 +75,8 @@ unit tests, 450 browser tests, eight isolated-site checks and nine release-draft
 checks. Those counts belong to the old experimental source and do not validate
 the current beta. The former isolated-site assembler is no longer the production deployment:
 `https://ujzk.github.io/TiPlay/` is replaced directly, the independent `/webrtc/`
-site is removed without alias/redirect. Download pages explicitly link beta.7;
+site is removed without alias/redirect. All language download pages link to the
+GitHub Releases index without a version-specific URL;
 the historical 0.2.16 release/download URL is no longer available.
 
 Preserve remote diagnostic coverage when running the integrated suite: bounded

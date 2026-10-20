@@ -9,6 +9,7 @@ and delivery records remain in Git history.
 Version code 49 and browser cache/diagnostic revision v73. Signed artifacts and
 deployment verification are recorded in [Build](docs/Build.md#beta-release).
 
+- Point every language's download entry to the GitHub Releases index without a version-specific URL.
 - Prevent URL casting from waiting indefinitely for an unreachable prebuffer target under bounded decoded-sample resources. Account for retained pictures and the next sample, and allow progress from actual playable coverage after the normal wait without claiming knowledge of the hardware decoder pool.
 - Make the existing Play control resume an unactivated casting AudioContext and report actual buffering instead of play intent. Preserve pictures through known presentation gaps, bounded silence through delayed audio starts, and cancellation of pending playback commands.
 - Record casting codec/configuration hints, queue ownership and successful closes, audio resume state, resource progress and failure context before and after cleanup. Preserve Standard errors and cleanup evidence across sampling limits.

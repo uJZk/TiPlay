@@ -39,9 +39,9 @@ test('download metadata and project actions use the TiPlay destinations', () => 
   assert.ok(html.includes('rel="canonical" href="https://ujzk.github.io/TiPlay/download/"'));
   for (const language of Object.keys(JSON.parse(readFileSync(join(SITE, 'content.json'), 'utf8')))) {
     const edition = readFileSync(join(SITE, language === 'en' ? '' : language, 'index.html'), 'utf8');
-    assert.ok(edition.includes(`href="https://github.com/uJZk/TiPlay/releases/tag/v${version}"`), language);
+    assert.ok(edition.includes('class="button" href="https://github.com/uJZk/TiPlay/releases"'), language);
     assert.ok(edition.includes(`<bdi>${version}</bdi>`), language);
-    assert.ok(!edition.includes('/releases/tag/v0.2.16'), language);
+    assert.ok(!edition.includes('/releases/tag/'), language);
   }
   assert.ok(html.includes('href="https://github.com/uJZk/TiPlay/issues"'));
   assert.ok(!html.includes('https://github.com/uJZk/DiPlay'));

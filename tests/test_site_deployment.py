@@ -34,9 +34,9 @@ class SiteDeploymentTest(unittest.TestCase):
             for language in editions:
                 page = 'index.html' if language == 'en' else f'{language}/index.html'
                 downloads = (out / 'download' / page).read_text()
-                self.assertIn(f'https://github.com/uJZk/TiPlay/releases/tag/v{version}', downloads, language)
+                self.assertIn('class="button" href="https://github.com/uJZk/TiPlay/releases"', downloads, language)
                 self.assertIn(f'<bdi>{version}</bdi>', downloads, language)
-                self.assertNotIn('/releases/tag/v0.2.16', downloads, language)
+                self.assertNotIn('/releases/tag/', downloads, language)
             self.assertEqual((site.PAGE / 'app-version.js').read_bytes(), (out / 'app-version.js').read_bytes())
             assets = json.loads(re.search(r'const ASSETS = (\[.*?\]);', (out / 'sw.js').read_text()).group(1))
             for asset in assets:
