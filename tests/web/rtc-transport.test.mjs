@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { connectRtc, createRtcRecordStream, createRtcAudioSource, RTC_MAGIC } from '../../site/play/rtc-transport.js';
+import { connectRtc, gatherLocalOffer, createRtcRecordStream, createRtcAudioSource, RTC_MAGIC } from '../../site/play/rtc-transport.js';
+
+const PUBLIC_OFFER = 'v=0\r\na=candidate:1 1 udp 1 192.168.43.10 5555 typ host\r\n';
 
 function fragment({ session = 7, record = 1, total, offset = 0, payload }) {
   const bytes = new Uint8Array(24 + payload.length), view = new DataView(bytes.buffer);
@@ -74,7 +76,7 @@ class Peer extends EventTarget {
     this.connectionState = 'new'; this.iceGatheringState = 'complete'; this.sctp = { maxMessageSize: 65536 };
   }
   createDataChannel(label, options) { this.channels.push({ label, options, channel: new Channel(label, this) }); return this.channels.at(-1).channel; }
-  async createOffer() { return { type: 'offer', sdp: 'public-offer' }; }
+  async createOffer() { return { type: 'offer', sdp: PUBLIC_OFFER }; }
   async setLocalDescription(value) { this.localDescription = value; }
   async setRemoteDescription(value) {
     assert.equal(this.verified, true, 'authentication precedes remote SDP');
@@ -92,7 +94,7 @@ test('RTC sends no pairing secret over signaling and uses reliable separate chan
       assert.equal(answer.sdp, 'authenticated-answer'); Peer.last.verified = true; return answer;
     },
     async fetchPhone(route, init) {
-      assert.equal(route, '/test/authenticated-signaling'); assert.deepEqual(JSON.parse(init.body), { s: 'session', offer: 'public-offer' });
+      assert.equal(route, '/test/authenticated-signaling'); assert.deepEqual(JSON.parse(init.body), { s: 'session', offer: PUBLIC_OFFER });
       assert.equal(init.body.includes('9876'), false);
       return new Response(JSON.stringify({ sdp: 'authenticated-answer', session: 7 }));
     },
@@ -257,4 +259,95 @@ test('signaling failure retains the pairing stage instead of becoming an unspeci
     assert.equal(error.rtcReason, 'fetch'); assert.equal(error.rtcDiagnostic.stage, 'pairing');
     assert.equal(error.rtcDiagnostic.remoteCandidates, 0); return true;
   });
+});
+
+test('a browser that never completes gathering signals its unmodified current SDP after the candidate window', async () => {
+  let nativeSnapshot;
+  class GatheringPeer extends Peer {
+    constructor(options) { super(options); this.iceGatheringState = 'gathering'; }
+    async createOffer() { return { type: 'offer', sdp: PUBLIC_OFFER + 'a=ice-ufrag:original\r\na=fingerprint:sha-256 ORIGINAL\r\n' }; }
+    async setLocalDescription(value) {
+      this.localDescription = value;
+      setTimeout(() => {
+        this.localDescription = { ...value, sdp: value.sdp + 'a=candidate:2 1 udp 1 169.254.111.111 6666 typ host\r\n' };
+        nativeSnapshot = this.localDescription.sdp;
+        this.dispatchEvent(new Event('icecandidate'));
+      }, 20);
+    }
+  }
+  let exchanges = 0;
+  const connection = await connectRtc({ session: 's', code: '1234', PeerConnection: GatheringPeer,
+    async authenticateOffer({ offer }) {
+      exchanges++; assert.equal(Peer.last.iceGatheringState, 'gathering');
+      assert.equal(offer, nativeSnapshot, 'the current browser SDP is passed intact into authenticated signaling');
+      assert.doesNotMatch(offer, /end-of-candidates/);
+      assert.match(offer, /ice-ufrag:original/); assert.match(offer, /fingerprint:sha-256 ORIGINAL/);
+      Peer.last.verified = true; return { sdp: 'answer', session: 7 };
+    },
+  });
+  assert.equal(exchanges, 1); assert.equal(connection.hello.app, 'TiPlay');
+  connection.close();
+});
+
+test('normal completed ICE gathering immediately uses the exact browser SDP', async () => {
+  const peer = new Peer({}); peer.localDescription = { type: 'offer', sdp: PUBLIC_OFFER };
+  assert.equal(await gatherLocalOffer(peer), PUBLIC_OFFER);
+});
+
+test('ICE complete before the short candidate window immediately finishes and clears both timers', async t => {
+  const originalSet = globalThis.setTimeout, originalClear = globalThis.clearTimeout, timers = new Set();
+  t.mock.method(globalThis, 'setTimeout', (callback, ms, ...args) => {
+    const id = originalSet(callback, ms, ...args); timers.add(id); return id;
+  });
+  t.mock.method(globalThis, 'clearTimeout', id => { timers.delete(id); return originalClear(id); });
+  const peer = new Peer({}); peer.iceGatheringState = 'gathering'; peer.localDescription = { sdp: PUBLIC_OFFER };
+  const offer = gatherLocalOffer(peer);
+  assert.equal(timers.size, 2);
+  peer.iceGatheringState = 'complete'; peer.dispatchEvent(new Event('icegatheringstatechange'));
+  assert.equal(await offer, PUBLIC_OFFER); assert.equal(timers.size, 0);
+});
+
+test('no local candidates still fail at the local ICE stage without contacting Android', async t => {
+  const originalTimer = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', (callback, ms, ...args) => originalTimer(callback, ms === 12000 ? 1 : ms, ...args));
+  class EmptyPeer extends Peer {
+    async createOffer() { return { type: 'offer', sdp: 'v=0\r\n' }; }
+  }
+  let contacted = false;
+  await assert.rejects(connectRtc({ session: 's', code: '1234', PeerConnection: EmptyPeer,
+    async authenticateOffer() { contacted = true; throw new Error('must not contact phone'); },
+  }), error => error.rtcReason === 'timeout' && error.rtcDiagnostic.stage === 'local-ice' && error.rtcDiagnostic.localCandidates === 0);
+  assert.equal(contacted, false); assert.equal(Peer.last.closed, true);
+});
+
+test('abort during the candidate window clears every gather timer and ignores later candidate events', async t => {
+  const originalSet = globalThis.setTimeout, originalClear = globalThis.clearTimeout, timers = new Set();
+  t.mock.method(globalThis, 'setTimeout', (callback, ms, ...args) => {
+    const id = originalSet(callback, ms, ...args); timers.add(id); return id;
+  });
+  t.mock.method(globalThis, 'clearTimeout', id => { timers.delete(id); return originalClear(id); });
+  const peer = new Peer({}); peer.iceGatheringState = 'gathering'; peer.localDescription = { sdp: PUBLIC_OFFER };
+  const abort = new AbortController(), pending = gatherLocalOffer(peer, abort.signal);
+  assert.equal(timers.size, 2); abort.abort();
+  await assert.rejects(pending, /stopped/);
+  assert.equal(timers.size, 0);
+  peer.dispatchEvent(new Event('icecandidate')); peer.dispatchEvent(new Event('icegatheringstatechange'));
+  assert.equal(timers.size, 0);
+});
+
+test('a late real candidate is used at the total deadline even when its 500 ms window is still pending', async t => {
+  const callbacks = new Map();
+  t.mock.method(globalThis, 'setTimeout', (callback, ms) => { callbacks.set(ms, callback); return ms; });
+  t.mock.method(globalThis, 'clearTimeout', id => { callbacks.delete(id); });
+  const peer = new Peer({}); peer.iceGatheringState = 'gathering'; peer.localDescription = { sdp: 'v=0\r\n' };
+  const pending = gatherLocalOffer(peer);
+  const deadline = callbacks.get(12000);
+  const actualSdp = PUBLIC_OFFER + 'a=ice-ufrag:late-original\r\na=fingerprint:sha-256 UNCHANGED\r\n';
+  peer.localDescription = { sdp: actualSdp };
+  peer.dispatchEvent(new Event('icecandidate'));
+  assert.equal(typeof callbacks.get(500), 'function');
+  deadline();
+  assert.equal(await pending, actualSdp);
+  assert.equal(callbacks.size, 0);
+  assert.doesNotMatch(actualSdp, /end-of-candidates/);
 });

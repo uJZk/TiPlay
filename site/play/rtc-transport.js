@@ -91,6 +91,46 @@ function waitFor(target, event, ready, signal, timeoutMs = 12000) {
   });
 }
 
+/** Non-trickle host-only ICE uses an authentic current SDP snapshot after a bounded candidate window.
+ * Some browsers keep gathering indefinitely even after usable host candidates exist. */
+export function gatherLocalOffer(peer, signal) {
+  return new Promise((resolve, reject) => {
+    let deadline = null, candidateWindow = null, settled = false;
+    const finish = (error, sdp) => {
+      if (settled) return;
+      settled = true; clearTimeout(deadline); clearTimeout(candidateWindow);
+      peer.removeEventListener('icecandidate', changed);
+      peer.removeEventListener('icegatheringstatechange', changed);
+      signal?.removeEventListener('abort', aborted);
+      error ? reject(error) : resolve(sdp);
+    };
+    const snapshot = () => {
+      const sdp = peer.localDescription?.sdp;
+      return typeof sdp === 'string' && candidateCounts(sdp).total > 0 ? sdp : null;
+    };
+    const changed = () => {
+      const sdp = snapshot();
+      if (!sdp) return;
+      if (peer.iceGatheringState === 'complete') { finish(null, sdp); return; }
+      if (candidateWindow === null) candidateWindow = setTimeout(() => {
+        const current = snapshot();
+        if (current) finish(null, current);
+      }, 500);
+    };
+    const aborted = () => finish(new Error('RTC connection stopped'));
+    if (signal?.aborted) { aborted(); return; }
+    peer.addEventListener('icecandidate', changed);
+    peer.addEventListener('icegatheringstatechange', changed);
+    signal?.addEventListener('abort', aborted, { once: true });
+    deadline = setTimeout(() => {
+      const current = snapshot();
+      if (current) finish(null, current);
+      else finish(new Error('RTC local ICE candidate collection timed out'));
+    }, 12000);
+    changed();
+  });
+}
+
 /** The PAKE exchange authenticates the complete SDP transcript before applying the answer. */
 export async function connectRtc({ fetchPhone, session, code, codecs, signal, authenticateOffer,
   PeerConnection = globalThis.RTCPeerConnection, onClose = () => {}, onProgress = () => {} }) {
@@ -209,9 +249,9 @@ export async function connectRtc({ fetchPhone, session, code, codecs, signal, au
       };
     }
     await peer.setLocalDescription(await peer.createOffer());
-    await waitFor(peer, 'icegatheringstatechange', () => peer.iceGatheringState === 'complete', controller.signal);
+    const offer = await gatherLocalOffer(peer, controller.signal);
     progress('pairing');
-    const answer = await authenticateOffer({ fetchPhone, session, code, offer: peer.localDescription.sdp, signal: controller.signal });
+    const answer = await authenticateOffer({ fetchPhone, session, code, offer, signal: controller.signal });
     const sdp = answer.sdp;
     if (typeof sdp !== 'string') throw new Error('Invalid RTC answer');
     if (ended) throw terminalCause ?? new Error('RTC connection stopped');

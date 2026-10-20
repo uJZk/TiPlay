@@ -110,7 +110,7 @@ Use the version already declared by the build; changing it requires an intention
 ## Beta release
 
 The WebRTC beta is **0.2.21-beta.1** (version code 45), browser diagnostic/cache
-revision **v68**. Its implementation, authenticated four-digit pairing, independent
+revision **v69**. Its implementation, authenticated four-digit pairing, independent
 timing, resource bounds and device acceptance limits are in
 [CarPlay DataChannel](CarPlay-DataChannel.md).
 

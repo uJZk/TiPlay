@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { APP_VERSION } from '../../site/play/app-version.js';
+import { PAGE_VERSION } from '../../site/play/browser-diagnostics.js';
 import { DEFAULT_HOST, isCode, normalizeHost } from '../../site/play/link.js';
 
 const play = new URL('../../site/play/', import.meta.url);
@@ -66,6 +67,7 @@ function retryPage(lastError) {
     const id = ++nextId; timers.set(id, { callback, at: now + delay, repeat }); return id;
   };
   const page = new Function('$', 'Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'renderReconnect', 'lastError', `
+    const PAGE_VERSION = ${JSON.stringify(PAGE_VERSION)};
     let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort;
     let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null, config = null;
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
@@ -157,12 +159,12 @@ test('retry messages count down every second without receiving a phone heartbeat
   for (const [error, key] of [[null, 'lost'], [{ status: 503 }, 'unreachable'], [{ status: 429 }, 'throttled']]) {
     const page = retryPage(error);
     page.scheduleRetry(3000);
-    assert.equal(page.text(), `${key}:3`);
-    page.advance(1000); assert.equal(page.text(), `${key}:2`);
-    page.advance(1000); assert.equal(page.text(), `${key}:1`);
-    assert.deepEqual(page.overlays, [`${key}:3`, `${key}:2`, `${key}:1`], 'both waiting overlay and settings status receive the actual countdown');
+    assert.equal(page.text(), `${PAGE_VERSION} · ${key}:3`);
+    page.advance(1000); assert.equal(page.text(), `${PAGE_VERSION} · ${key}:2`);
+    page.advance(1000); assert.equal(page.text(), `${PAGE_VERSION} · ${key}:1`);
+    assert.deepEqual(page.overlays, [`${PAGE_VERSION} · ${key}:3`, `${PAGE_VERSION} · ${key}:2`, `${PAGE_VERSION} · ${key}:1`], 'both waiting overlay and settings status receive the actual countdown');
     page.advance(1000);
-    assert.equal(page.text(), 'connecting'); assert.equal(page.reconnects(), 1);
+    assert.equal(page.text(), `${PAGE_VERSION} · connecting`); assert.equal(page.reconnects(), 1);
     assert.equal(page.intervals(), 0, 'the connection attempt clears the countdown timer');
   }
 });
@@ -175,7 +177,7 @@ test('replacing a retry schedule cancels the previous countdown and reconnect at
   const notifications = page.overlays.length;
   page.advance(500);
   assert.equal(page.overlays.length, notifications, 'the old one-second timer must be cancelled');
-  page.advance(500); assert.equal(page.text(), 'lost:3');
+  page.advance(500); assert.equal(page.text(), `${PAGE_VERSION} · lost:3`);
   page.advance(1500); assert.equal(page.reconnects(), 0, 'the original reconnect deadline must be cancelled');
   page.advance(1500); assert.equal(page.reconnects(), 1); assert.equal(page.intervals(), 0);
 });

@@ -731,14 +731,14 @@ function statusText() {
   }
   if (unsupported) return t('pictureUnavailable');
   if (phase === 'connecting') {
-    if (!rtcProgress) return t('connecting');
+    if (!rtcProgress) return `${PAGE_VERSION} · ${t('connecting')}`;
     const text = rtcStageText(rtcProgress.stage), candidates = rtcCandidateText(rtcProgress);
-    return candidates ? `${text} ${candidates}` : text;
+    return `${PAGE_VERSION} · ${candidates ? `${text} ${candidates}` : text}`;
   }
   if (phase === 'retry') {
     const seconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
-    if (lastError?.status !== 429 && (lastError?.rtcReason || lastError?.rtcDiagnostic)) return rtcRetryText(lastError, seconds);
-    return t(lastError?.status === 429 ? 'throttled' : lastError ? 'unreachable' : 'lost', seconds);
+    if (lastError?.status !== 429 && (lastError?.rtcReason || lastError?.rtcDiagnostic)) return `${PAGE_VERSION} · ${rtcRetryText(lastError, seconds)}`;
+    return `${PAGE_VERSION} · ${t(lastError?.status === 429 ? 'throttled' : lastError ? 'unreachable' : 'lost', seconds)}`;
   }
   const playback = status?.airplay;
   if (playback?.kind === 'audio') return t('airPlayAudio');

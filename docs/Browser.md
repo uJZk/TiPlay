@@ -36,6 +36,12 @@ setup the page distinguishes local address gathering, contacting Android, establ
 the direct channel and authenticating that channel. Failures retain the stage and
 bounded candidate/state counters without SDP, addresses or pairing secrets. An
 eight-second retry countdown describes the next attempt, not Android response time.
+Connecting and retry messages also identify the browser revision. A browser that
+never reports gathering complete can continue with its real local SDP after the
+first candidate's 500 ms collection window; completion proceeds immediately. The
+12-second deadline uses any candidate already available, and fails explicitly when
+none exists. The snapshot stays unchanged inside the authenticated SDP transcript;
+no end-of-candidates marker is invented and no later trickle endpoint is added.
 
 Network failure retries with a countdown; rejected codes stop retries and require the
 current code. Another paired browser can take over, and the displaced page can use
