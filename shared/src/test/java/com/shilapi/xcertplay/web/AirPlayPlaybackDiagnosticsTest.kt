@@ -4,6 +4,141 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayPlaybackDiagnosticsTest {
+    @Test fun actualFaultAndChangedCleanupSnapshotsBypassThePeriodicGateWithoutRepeatingErrorProgress() {
+        val lines = mutableListOf<String>()
+        var now = 0L
+        val diagnostics = AirPlayPlaybackDiagnostics(lines::add, debug = { false }, nowMillis = { now })
+        diagnostics.event(7, engineFixture(), true)
+        now = 1
+        diagnostics.event(7, engineFixture("failureEvent"), true)
+        assertEquals("A running decoder failure cannot be discarded after a recent stall snapshot", 15, lines.size)
+        assertTrue(lines.takeLast(7).all { it.contains("stalled=false recovered=false") })
+        assertTrue(lines.takeLast(7).any { it.contains("codec=vp09.00.10.08.01.01.01.01.00") })
+        val cleanup = engineFixture("cleanupEvent")
+        diagnostics.event(7, cleanup, true)
+        assertEquals("The synchronous cleanup state must survive the 250 ms gate", 22, lines.size)
+        assertTrue(lines.takeLast(7).any { it.contains("videoOwnedFrames=1") && it.contains("samplesClosed=56") })
+        diagnostics.event(7, cleanup, true)
+        val engine = cleanup["engine"] as Map<*, *>
+        diagnostics.event(7, cleanup + ("engine" to (engine + ("clockTime" to 999))), true)
+        now = 4999; diagnostics.event(7, cleanup, true)
+        assertEquals("A periodic error state or changing clock must not force repeated snapshots", 22, lines.size)
+        now = 5001; diagnostics.event(7, cleanup, true)
+        assertEquals(29, lines.size)
+        diagnostics.event(7, engineFixture("failureEvent"), false)
+        assertEquals("A retired player can only emit its existing inactive EVENT, never an engine snapshot", 30, lines.size)
+    }
+
+    @Test fun semanticFailureSnapshotsSurviveEvenWhenNoPlayingIntentOrErrorWaitReasonExists() {
+        val fixture = engineFixture()
+        val engine = (fixture["engine"] as Map<*, *>) + mapOf("running" to false, "intentPlaying" to false, "waitReason" to "paused")
+        val lines = mutableListOf<String>()
+        val diagnostics = AirPlayPlaybackDiagnostics(lines::add, debug = { false }, nowMillis = { 0L })
+        for (event in listOf("error", "open-error", "canvas-error", "play-rejected")) {
+            diagnostics.event(7, fixture + mapOf("event" to event, "engine" to engine), true)
+        }
+        assertEquals(32, lines.size)
+        assertEquals(4, lines.count { it.contains("stage=ENGINE_CODEC") })
+        assertTrue(lines.all { it.length <= 600 })
+    }
+    @Test fun fullNineComponentAv1CodecIsRetainedButAdditionalComponentsAreRejected() {
+        val fixture = engineFixture()
+        val engine = fixture["engine"] as Map<*, *>
+        val codec = "av01.0.08M.08.0.110.01.01.01.0"
+        assertEquals(9, codec.count { it == '.' })
+        fun record(value: String): String {
+            val lines = mutableListOf<String>()
+            AirPlayPlaybackDiagnostics(lines::add, debug = { false }).event(7,
+                fixture + ("engine" to (engine + ("codec" to value))), true)
+            return lines.single { it.contains("stage=ENGINE_CODEC") }
+        }
+        assertTrue(record(codec).contains("codec=$codec "))
+        assertTrue(record("$codec.0").contains("codec=unknown "))
+    }
+    @Test fun productionBrowserEngineFixtureKeepsThePendingResumeCauseAndQueueBudgetInBoundedLines() {
+        val fields = engineFixture()
+        val lines = mutableListOf<String>()
+        var now = 0L
+        val diagnostics = AirPlayPlaybackDiagnostics(lines::add, debug = { false }, nowMillis = { now })
+        diagnostics.event(7, fields, true)
+        assertEquals(7, lines.size)
+        assertTrue(lines.all { it.length <= 600 && it.contains("id=7 revision=3 generation=4 active=true stalled=true") })
+        assertTrue(lines[0], lines[0].contains("waitReason=audio-context-resume") && lines[0].contains("resumePending=true"))
+        assertTrue(lines[0], lines[0].contains("contextState=suspended") && lines[0].contains("stallElapsedMs=5000"))
+        assertTrue(lines[1], lines[1].contains("playableEnd=12.7") && lines[1].contains("limitingTrack=audio"))
+        assertTrue(lines[2], lines[2].contains("videoBytes=24883200") && lines[2].contains("audioReadPending=true"))
+        assertTrue(lines[2], lines[2].contains("videoCapacityFrames=32") && lines[2].contains("videoCapacityBytes=100663296"))
+        diagnostics.event(7, fields, true)
+        now = 4999; diagnostics.event(7, fields, true)
+        assertEquals(7, lines.size)
+        now = 5000; diagnostics.event(7, fields, true)
+        assertEquals(14, lines.size)
+        now = 10000; diagnostics.event(7, fields, false)
+        assertEquals("Retired players cannot replace the active engine snapshot", 14, lines.size)
+        assertTrue(lines[3], lines[3].contains("codec=vp09.00.10.08.01.01.01.01.00") && lines[3].contains("actualHardware=unknown"))
+        assertTrue(lines[4], lines[4].contains("samplesReceived=57") && lines[4].contains("samplesClosed=53"))
+        assertTrue(lines[5], lines[5].contains("userActivationHasBeenActive=false") && lines[5].contains("audioResumeCompleted=0"))
+        assertTrue(lines[6], lines[6].contains("resourceLastResult=eof") && lines[6].contains("resourceLastStatus=206"))
+    }
+
+    @Test fun healthyEngineDetailsAreDebugOnlyAndUnknownValuesCannotLeakOrExceedTheLineBudget() {
+        val fixture = engineFixture()
+        val original = fixture["engine"] as Map<*, *>
+        val healthy = fixture + ("engine" to (original + mapOf("running" to true, "waitReason" to "none")))
+        val standard = mutableListOf<String>()
+        AirPlayPlaybackDiagnostics(standard::add, debug = { false }).event(7, healthy, true)
+        assertTrue(standard.isEmpty())
+        val lines = mutableListOf<String>()
+        val hostile = original.mapValues { (_, value) -> if (value is Number) 9_007_199_254_740_991L else value } +
+            mapOf("waitReason" to "https://private.test/?token=secret", "contextState" to "password=secret",
+                "url" to "secret", "videoFrames" to 1.5, "audioBytes" to Double.NaN, "clockTime" to Double.POSITIVE_INFINITY)
+        AirPlayPlaybackDiagnostics(lines::add, debug = { false }).event(Long.MAX_VALUE,
+            fixture + mapOf("revision" to 9_007_199_254_740_991L, "engine" to hostile), true)
+        assertEquals(7, lines.size)
+        assertTrue(lines.all { it.length <= 600 && !it.contains("secret") && !it.contains('\n') })
+        assertTrue(lines[0].contains("waitReason=unknown") && lines[0].contains("clockTime=unknown"))
+        assertTrue(lines[2].contains("videoFrames=unknown") && lines[2].contains("audioBytes=unknown"))
+        val debug = mutableListOf<String>()
+        AirPlayPlaybackDiagnostics(debug::add, debug = { true }).event(7, healthy, true)
+        assertEquals(7, debug.size)
+        val maximum = mutableListOf<String>()
+        AirPlayPlaybackDiagnostics(maximum::add, debug = { false }).event(Long.MAX_VALUE, engineFixture("maximumEvent"), true)
+        assertEquals(7, maximum.size)
+        assertTrue(maximum.joinToString("\n"), maximum.all { it.length <= 600 })
+    }
+
+    @Test fun oneRecoveryRequiresTheSameAcceptedStallIdentityAndSourceReplacementsClearIt() {
+        val fixture = engineFixture()
+        val engine = fixture["engine"] as Map<*, *>
+        val recovered = fixture + ("engine" to (engine + mapOf("running" to true, "waitReason" to "none",
+            "startReason" to "read-progress-fallback", "readProgressFallbacks" to 1)))
+        val lines = mutableListOf<String>()
+        var now = 0L
+        val diagnostics = AirPlayPlaybackDiagnostics(lines::add, debug = { false }, nowMillis = { now })
+        diagnostics.event(7, fixture, true)
+        now = 1000
+        diagnostics.event(7, recovered, true)
+        assertEquals(14, lines.size)
+        assertTrue(lines.takeLast(7).all { it.contains("recovered=true") && it.contains("stalled=false") })
+        assertTrue(lines.any { it.contains("startReason=read-progress-fallback") && it.contains("readProgressFallbacks=1") })
+        now = 20000; diagnostics.event(7, recovered, true)
+        assertEquals("Healthy Standard progress cannot repeat a recovery", 14, lines.size)
+        diagnostics.event(7, fixture, true)
+        now = 21000; diagnostics.event(7, recovered + ("revision" to 4), true)
+        diagnostics.event(7, recovered + ("engine" to (engine + mapOf("generation" to 5, "running" to true))), true)
+        diagnostics.event(7, recovered, true)
+        assertEquals("A newer command/generation retires the old stall identity", 21, lines.size)
+        now = 30000; diagnostics.event(7, fixture, true)
+        diagnostics.event(7, mapOf("revision" to 3, "event" to "open"), true)
+        val afterOpen = lines.size
+        now = 31000; diagnostics.event(7, recovered, true)
+        assertEquals("A rebuilt source cannot claim the retired source's recovery", afterOpen, lines.size)
+    }
+
+    private fun engineFixture(key: String = "event"): Map<*, *> {
+        val text = checkNotNull(javaClass.classLoader?.getResource("AirPlay-playback-diagnostics-v1.json")).readText()
+        return (WebJson.parse(text) as Map<*, *>)[key] as Map<*, *>
+    }
     @Test fun rateChangesReportImmediatelyWithoutLoggingUntrustedRateOrActionText() {
         val lines = mutableListOf<String>()
         val diagnostics = AirPlayPlaybackDiagnostics(lines::add) { 0L }

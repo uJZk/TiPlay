@@ -511,3 +511,67 @@ test('CORS-hidden Content-Range is retried as a complete resource instead of inv
     assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes); assert.deepEqual(requests, ['bytes=0-63', null]);
   } finally { serial.dispose(); }
 });
+
+test('resource diagnostics expose actual active work, queued work and downloaded bytes without request data', async () => {
+  let release; const gate = new Promise(resolve => { release = resolve; });
+  let downloaded = 0;
+  const serial = createSerialMediaFetch(async url => {
+    const bytes = new TextEncoder().encode(String(url).endsWith('/first') ? 'first' : 'next');
+    let emitted = false;
+    return new Response(new ReadableStream({ async pull(controller) {
+      await gate;
+      if (emitted) { controller.close(); return; }
+      emitted = true; downloaded += bytes.length; controller.enqueue(bytes); controller.close();
+    } }), { headers: { 'Content-Length': String(bytes.length) } });
+  }, { unitBytes: 16 });
+  const first = serial('https://private.example/first'), second = serial('https://private.example/next');
+  try {
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    const blocked = serial.getDiagnostics();
+    assert.equal(blocked.resourceActive, 1); assert.equal(blocked.resourceQueued, 1); assert.equal(blocked.resourceBytes, 0);
+    assert.equal(Object.keys(blocked).length, 10);
+    assert.equal(JSON.stringify(blocked).includes('private.example'), false);
+    release();
+    assert.equal(await (await first).text(), 'first'); assert.equal(await (await second).text(), 'next');
+    const done = serial.getDiagnostics();
+    assert.equal(done.resourceBytes, downloaded); assert.equal(downloaded, 9);
+    assert.equal(done.resourceActive, 0); assert.equal(done.resourceQueued, 0);
+    assert.ok(done.resourceLastProgressAgeMs >= 0); assert.equal(done.resourceLastStatus, 200);
+    assert.equal(done.resourceTimeouts, 0); assert.equal(done.resourceCancellations, 0);
+  } finally { release(); serial.dispose(); }
+});
+
+test('resource diagnostics distinguish a timed-out body from explicit consumer cancellation', async () => {
+  const serial = createSerialMediaFetch(async () => new Response(new ReadableStream({ cancel() {} })), { deadline: 10 });
+  try {
+    await assert.rejects(serial(`${origin}/timeout`), { name: 'TimeoutError' });
+    const timedOut = serial.getDiagnostics();
+    assert.equal(timedOut.resourceTimeouts, 1); assert.equal(timedOut.resourceCancellations, 0);
+    assert.equal(timedOut.resourceLastResult, 'timeout'); assert.equal(timedOut.resourceActive, 0);
+    const controller = new AbortController(), pending = serial(`${origin}/cancel`, { signal: controller.signal });
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    assert.equal(serial.getDiagnostics().resourceActive, 1, 'the canceled request had an actual body read in progress');
+    controller.abort(); await assert.rejects(pending, { name: 'AbortError' });
+    for (let i = 0; i < 100 && serial.getDiagnostics().resourceActive; i++) await Promise.resolve();
+    const canceled = serial.getDiagnostics();
+    assert.equal(canceled.resourceTimeouts, 1); assert.equal(canceled.resourceCancellations, 1);
+    assert.equal(canceled.resourceLastResult, 'cancelled'); assert.equal(canceled.resourceActive, 0);
+  } finally { serial.dispose(); }
+});
+
+test('resource diagnostics count ignored ranges and backwards body restarts against actual network evidence', async () => {
+  const { fetcher, state } = fixture({ '/movie': Buffer.alloc(40, 65) }, { ignoreRange: true, chunkBytes: 2 });
+  const serial = createSerialMediaFetch(fetcher, { unitBytes: 4 });
+  let reader;
+  try {
+    const first = await serial(`${origin}/movie`, { headers: { Range: 'bytes=0-15' } });
+    reader = first.body.getReader(); assert.equal((await reader.read()).value.length, 4);
+    const second = await serial(`${origin}/movie`, { headers: { Range: 'bytes=0-3' } });
+    assert.equal((await second.arrayBuffer()).byteLength, 4);
+    const diagnostic = serial.getDiagnostics();
+    assert.equal(diagnostic.resourceRangeIgnored, state.requests.filter(request => request.range).length);
+    assert.equal(diagnostic.resourceRangeIgnored, 2); assert.equal(diagnostic.resourceBackwardRestarts, 1);
+    assert.equal(diagnostic.resourceBytes, state.requests.reduce((sum, request) => sum + request.bytes, 0));
+    assert.equal(diagnostic.resourceActive, 0); assert.equal(diagnostic.resourceQueued, 0);
+  } finally { await reader?.cancel(); serial.dispose(); }
+});

@@ -4,11 +4,13 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v72';
+export const PAGE_VERSION = 'v73';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
   'video.decodeDroppedFrames', 'video.scheduledDroppedFrames', 'video.transferDroppedFrames', 'video.renderDroppedFrames', 'video.pacingDroppedFrames',
+  'video.playbackProfile', 'video.decodedQueueFrames', 'video.decodedQueueBytes', 'video.scheduledCapacityFrames',
+  'video.currentDelta', 'video.currentFps', 'video.frameIntervalP95Ms',
   'link.path', 'link.reconnects', 'link.failure.reason', 'link.failure.stage',
   'link.connection.stage', 'link.connection.localCandidates', 'link.connection.localUdpCandidates',
   'link.connection.remoteCandidates', 'link.connection.remoteUdpCandidates',
@@ -17,6 +19,12 @@ const SUMMARY_KEYS = [
   'transport.controlFailures', 'transport.iceState', 'transport.connectionState',
   'audio.sourceDeadlineState', 'audio.sourceDeadlineReason', 'audio.sourceDeltaUpperMs',
   'audio.sourceDeadlineRejectedFrames', 'audio.sourceDeadlineStream', 'audio.sourceDeadlineEpoch',
+  'video.scheduledCapacityFrames', 'video.policyInteractionStarts', 'video.policyInteractionReleases', 'video.policyProfileSwitches',
+  'video.sourceClockState', 'video.sourceClockAgeMs', 'video.sourceClockGeneration', 'video.sourceClockMaxAgeMs', 'video.stageClockUncertaintyMs',
+  'video.clockEstimatorState', 'video.clockEstimatorObservationAgeMs', 'video.clockEstimatorSelectedAgeMs',
+  'video.policyVideoReadinessMs', 'video.policyVideoMarginMs', 'video.policyVideoTargetMs', 'video.policyTargetReason',
+  'video.policyMaxDelayMs', 'video.policySubmitMarginMs', 'video.policyMaxVideoFrames', 'video.policyMaxVideoBytes',
+  'video.policyInteractionActive', 'video.policyHoldRemainingMs',
   'video.playbackProfile', 'video.decodedQueueFrames', 'video.decodedQueueBytes', 'video.decodedResourceDroppedFrames',
   'video.decodeStalls', 'video.decodeErrors', 'video.decodeQueueSize',
   'control.rttMsP50', 'control.rttMsP95', 'control.pending', 'control.failures',
@@ -35,6 +43,8 @@ const SUMMARY_KEYS = [
   'video.recordReadToDecodeSubmitMsP95', 'video.decodeMsP95', 'video.decodedToSchedulerMsP95', 'video.decodedToDrawMsP95',
   'video.drawMsP95', 'video.timingRecords', 'video.timingRejected', 'video.clockRttMs', 'video.presentationOffset90',
   'video.presentationOffsetHigh5', 'video.presentationOffsetSamples', 'video.gaps', 'video.dropped',
+  'video.policyVideoPlanFromMs', 'video.policyVideoPlanDurationMs', 'video.policyVideoPlanRemainingMs',
+  'video.policyVideoLeadRemainingMs', 'video.policyPlanChanges',
 ];
 
 /** Audio details have their own budget, so video stats cannot crowd out render evidence. */

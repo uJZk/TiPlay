@@ -53,7 +53,16 @@ Protocol checks cover TDR1 fragmentation, record credit, independent audio
 subscription barriers, control limits, cancellation, decoder admission and
 explicit overload/stall recovery. No HTTP media/control fallback may bypass SRP.
 
-The integrated source passed 237 scoped Android regressions, 473 browser tests,
+The beta.7/v73 source passed 528 browser tests and 121 distinct scoped native
+regressions across targeted rounds, including the final 31-test run and mobile
+debug build. Captured Minibili and ordinary MP4/HLS browser replay passed before
+the final diagnostic-only changes. Live policy and clock evidence is described
+in [Diagnostics](Diagnostics.md#live-video-policy-evidence); these tests do not
+establish optimal vehicle thresholds or a unique field failure cause. Full Android
+CI remains skipped at the user's request; signed build and deployment evidence
+is tracked in [Build](Build.md#beta-release).
+
+The historical beta.6 integrated source passed 237 scoped Android regressions, 473 browser tests,
 90 full-page checks, 17 real-PeerConnection checks, seven SRP security cases with
 Bouncy Castle vectors and 24 JVM compatibility checks. Media-clock and AirPlay
 photo/audio/MP4/HLS E2E passed. Full-page Chromium playback used an explicit
@@ -64,14 +73,15 @@ root deployment and publication are tracked in [Build](Build.md#beta-release).
 Remote 0.2.21-beta.3/v71 historically passed 2,203 shared, 1,748 common and six home
 unit tests, 450 browser tests, eight isolated-site checks and nine release-draft
 checks. Those counts belong to the old experimental source and do not validate
-beta.6. The former isolated-site assembler is no longer the production deployment:
+the current beta. The former isolated-site assembler is no longer the production deployment:
 `https://ujzk.github.io/TiPlay/` is replaced directly, the independent `/webrtc/`
-site is removed without alias/redirect. Download pages explicitly link beta.6;
+site is removed without alias/redirect. Download pages explicitly link beta.7;
 the historical 0.2.16 release/download URL is no longer available.
 
 Preserve remote diagnostic coverage when running the integrated suite: bounded
 independent video snapshots, capture-session/stream/epoch interval baselines,
-233-field production-shaped fixture validation, anonymous ICE/native metrics,
+legacy 233-field and current 258-field-allowlist production-shaped fixture validation
+(the current wire payload remains limited to 256 fields), anonymous ICE/native metrics,
 missing/budget-omitted fields, held journal-lock races and complete-frame source
 PTS/arrival windows. Source cadence excludes configuration/keepalive records and
 retains missing, repeated, backward and cross-window PTS/arrival gaps. These tests

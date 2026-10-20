@@ -1,5 +1,5 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
-const STALE_AFTER_MS = 15000;
+export const CLOCK_STALE_AFTER_MS = 15000;
 const DEFAULTS = Object.freeze({
   maxSamples: 96, historyMs: 600000, bucketMs: 1000,
   minRateSamples: 8, minRateSpanMs: 60000, maxRatePpm: 2000,
@@ -38,8 +38,14 @@ export function mapClockTime(serverMs, clock) {
   return Number.isFinite(mapped) ? mapped : null;
 }
 
+/** Freshness of the authenticated Android/browser mapping, not a physical source-latency measurement. */
+export function presentationClockState(clock, now = absoluteNow()) {
+  if (!clock || !Number.isFinite(clock.at) || !Number.isFinite(now) || now < clock.at) return 'unavailable';
+  return now - clock.at > CLOCK_STALE_AFTER_MS ? 'stale' : 'fresh';
+}
+
 export function presentationTime(serverMs, clock, now = absoluteNow()) {
-  if (!clock || !Number.isFinite(clock.at) || !Number.isFinite(now) || now - clock.at > STALE_AFTER_MS || now < clock.at) return null;
+  if (presentationClockState(clock, now) !== 'fresh') return null;
   const presentation = mapClockTime(serverMs, clock);
   return presentation !== null && Math.abs(now - presentation) <= 10000 ? presentation : null;
 }
@@ -79,8 +85,26 @@ export function createClockEstimator(options = {}) {
 
   function snapshot(now = absoluteNow()) {
     if (suspended || pendingJump.length || !mapping || !Number.isFinite(now) ||
-        now < mapping.at || now - mapping.at > STALE_AFTER_MS) return null;
+        now < mapping.at || now - mapping.at > CLOCK_STALE_AFTER_MS) return null;
     return { ...mapping };
+  }
+
+  /** Observation freshness and selected-fit freshness are different, read-only evidence. */
+  function diagnostics(now = absoluteNow()) {
+    const age = at => Number.isFinite(now) && Number.isFinite(at) && now >= at ? now - at : undefined;
+    const observationAge = age(lastObservation?.at), selectedAge = age(mapping?.at);
+    let state = 'unavailable';
+    if (suspended) state = 'suspended';
+    else if (pendingJump.length) state = 'pending-jump';
+    else if (observationAge !== undefined && selectedAge !== undefined) {
+      state = observationAge > CLOCK_STALE_AFTER_MS ? 'observation-stale'
+        : selectedAge > CLOCK_STALE_AFTER_MS ? 'selected-stale' : 'fresh';
+    }
+    return {
+      clockEstimatorState: state,
+      ...(observationAge !== undefined ? { clockEstimatorObservationAgeMs: observationAge } : {}),
+      ...(selectedAge !== undefined ? { clockEstimatorSelectedAgeMs: selectedAge } : {}),
+    };
   }
 
   function calibrate() {
@@ -157,7 +181,7 @@ export function createClockEstimator(options = {}) {
     const observation = { serverMs, localMs: start + sample.rtt / 2, rtt: sample.rtt, at: end };
     if (lastObservation) {
       if (end < lastObservation.at) reset('local-backward');
-      else if (end - lastObservation.at > STALE_AFTER_MS) reset('stale');
+      else if (end - lastObservation.at > CLOCK_STALE_AFTER_MS) reset('stale');
       else if (serverMs < lastObservation.serverMs - Math.max(2, sample.rtt + lastObservation.rtt)) reset('server-backward');
     }
     lastObservation = observation;
@@ -219,7 +243,7 @@ export function createClockEstimator(options = {}) {
   }
 
   return {
-    observe, snapshot, reset,
+    observe, snapshot, diagnostics, reset,
     suspend() { if (!suspended) { suspended = true; reset('suspend'); } },
     resume() { suspended = false; },
   };

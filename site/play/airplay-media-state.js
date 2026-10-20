@@ -43,7 +43,9 @@ export function clampMediaTime(time, duration) {
 }
 
 /** GPU-backed samples remain bounded even when timestamps or sample durations are malformed. */
-export function videoQueueFull(queue, position, { maxFrames = 48, maxBytes = 96 * 1024 * 1024, maxAhead = 2 } = {}) {
-  return queue.length >= maxFrames || queue.reduce((bytes, item) => bytes + item.bytes, 0) >= maxBytes
+export function videoQueueFull(queue, position, { maxFrames = 48, maxBytes = 96 * 1024 * 1024, maxAhead = 2,
+  retainedBytes = 0, nextBytes = 0 } = {}) {
+  const bytes = queue.reduce((sum, item) => sum + item.bytes, 0) + retainedBytes;
+  return queue.length >= maxFrames || bytes >= maxBytes || nextBytes > 0 && bytes + nextBytes > maxBytes
     || (queue.length > 0 && queue[queue.length - 1].end - position >= maxAhead);
 }

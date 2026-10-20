@@ -10,6 +10,7 @@ import java.io.ByteArrayInputStream
 import java.io.Closeable
 import java.io.IOException
 import java.io.InputStream
+import java.io.FilterInputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
@@ -20,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong
 /** Session-scoped streaming proxy. The browser never supplies an upstream URL or sees app URLs. */
 class AirPlayVideoProxy(private val root: String, private val iphone: (String, String?) -> ReceiverResource?,
                        private val iphoneHost: String? = null, log: (String) -> Unit = {}) : Closeable {
-    enum class ResourceRoute { ANDROID_HTTP, IPHONE_FCUP }
+    enum class ResourceRoute { ANDROID_HTTP, IPHONE_FCUP, BROWSER_DIRECT }
     enum class FailureReason(val wire: String) {
         UPSTREAM_FORBIDDEN("upstream-forbidden"), UPSTREAM_UNAUTHORIZED("upstream-unauthorized"),
         UPSTREAM_HTTP_ERROR("upstream-http-error"), INVALID_RANGE_RESPONSE("invalid-range-response"),
@@ -28,13 +29,27 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
         RESOURCE_TOO_LARGE("resource-too-large"), REDIRECT_LIMIT("redirect-limit"),
         UNSUPPORTED_RESOURCE("unsupported-resource"),
     }
-    class Failure(val reason: FailureReason, val status: Int? = null, val route: ResourceRoute? = null) :
+    class Failure(val reason: FailureReason, val status: Int? = null, val route: ResourceRoute? = null,
+                  internal val load: Long? = null) :
         IOException("AirPlay resource ${reason.wire}") {
         val error: String get() = "media-${reason.wire}"
     }
+    internal data class Reference(val load: Long, val route: ResourceRoute,
+                                  val headersMillis: Long? = null, val responseMillis: Long? = null)
     class Resource(val status: Int, val type: String, val headers: List<Pair<String, String>>,
                    val body: InputStream, private val cleanup: () -> Unit = {}) : Closeable {
-        override fun close() { try { body.close() } finally { cleanup() } }
+        internal var reference: Reference? = null
+        private val closed = AtomicBoolean(false)
+        override fun close() {
+            if (!closed.compareAndSet(false, true)) return
+            var failure: Throwable? = null
+            try { body.close() } catch (error: Throwable) { failure = error }
+            try { cleanup() } catch (error: Throwable) {
+                val primary = failure
+                if (primary == null) failure = error else if (primary !== error) primary.addSuppressed(error)
+            }
+            failure?.let { throw it }
+        }
     }
     private val closed = AtomicBoolean(false)
     private val loads = AtomicLong()
@@ -72,12 +87,19 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
         if (range != null && !ReceiverResource.byteRange.matches(range))
             return Resource(416, "application/octet-stream", emptyList(), ByteArrayInputStream(ByteArray(0)))
         val url = synchronized(this) { if (closed.get()) null else if (id == rootId) root else urls[id] } ?: return null
-        val resource = loadResource(url, range, route, 0, forceProxy, loads.incrementAndGet())
+        val load = loads.incrementAndGet()
+        val resource = try { loadResource(url, range, route, 0, forceProxy, load) }
+        catch (error: Exception) {
+            if (error is Failure && error.load != null) throw error
+            throw Failure((error as? Failure)?.reason ?: FailureReason.RESOURCE_IO,
+                (error as? Failure)?.status, (error as? Failure)?.route, load).also { it.initCause(error) }
+        }
         bodies += resource
         if (closed.get()) { bodies -= resource; resource.close(); return null }
-        return Resource(resource.status, resource.type, resource.headers, resource.body) {
-            bodies -= resource; resource.close()
-        }
+        // The delegate owns the body and connection cleanup. Do not close its body twice.
+        return Resource(resource.status, resource.type, resource.headers, object : FilterInputStream(resource.body) {
+            override fun close() = resource.close()
+        }) { bodies -= resource }.also { it.reference = resource.reference }
     }
 
     private fun loadResource(url: String, range: String?, route: (String) -> String, redirects: Int,
@@ -86,15 +108,25 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
         if (closed.get()) throw IOException("Playback ended")
         directUrl(url)?.takeIf { !forceProxy }?.let { direct ->
             return Resource(307, "application/octet-stream", listOf("Location" to direct), ByteArrayInputStream(ByteArray(0)))
+                .at(load, ResourceRoute.BROWSER_DIRECT)
         }
         val uri = URI(url)
         val direct = uri.scheme.lowercase() in listOf("http", "https")
+        var brokerResponseMillis: Long? = null
         fun iphoneResource(): ReceiverResource? {
             if (closed.get()) throw IOException("Playback ended")
             diagnostics.request(load, ResourceRoute.IPHONE_FCUP, range, redirects)
-            return iphone(url, range).also { response ->
+            val started = System.nanoTime()
+            val response = try { iphone(url, range) } catch (error: IOException) {
+                val failure = Failure(FailureReason.RESOURCE_IO, route = ResourceRoute.IPHONE_FCUP, load = load)
+                failure.initCause(error)
+                diagnostics.failure(load, failure, error)
+                throw failure
+            }
+            return response.also { response ->
+                brokerResponseMillis = elapsedMillis(started)
                 diagnostics.response(load, ResourceRoute.IPHONE_FCUP, response?.status, response?.bytes?.size,
-                    ReceiverResource.headers(response?.headers))
+                    ReceiverResource.headers(response?.headers), responseMillis = brokerResponseMillis)
             }
         }
         var broker = if (!direct || uri.host == iphoneHost || uri.path.orEmpty().endsWith(".m3u8", true)) iphoneResource() else null
@@ -111,11 +143,14 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
             if (closed.get()) { connections -= connection; connection.disconnect(); throw IOException("Playback ended") }
             var followingRedirect = false
             try {
+                val started = System.nanoTime()
                 val status = connection.responseCode
+                val headersMillis = elapsedMillis(started)
                 val responseHeaders = ReceiverResource.headers(connection.headerFields.entries.mapNotNull { entry ->
                     entry.key?.let { name -> name to entry.value.singleOrNull() }
                 }.toMap())
-                diagnostics.response(load, ResourceRoute.ANDROID_HTTP, status, null, responseHeaders)
+                diagnostics.response(load, ResourceRoute.ANDROID_HTTP, status, null, responseHeaders,
+                    headersMillis = headersMillis, responseMillis = headersMillis)
                 if (RawTraffic.enabled) RawTraffic.record("iphone/resource/$url/response-headers",
                     "status=$status headers=${connection.headerFields}".toByteArray())
                 if (status !in 200..399 && RawTraffic.enabled) connection.errorStream?.use { body ->
@@ -150,20 +185,22 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
                             val bytes = readPlaylist(input)
                             val rewritten = rewritePlaylist(url, bytes, forceProxy, route)
                             return Resource(200, "application/vnd.apple.mpegurl", emptyList(), ByteArrayInputStream(rewritten))
+                                .at(load, ResourceRoute.ANDROID_HTTP, headersMillis, headersMillis)
                         } finally { input.close(); connection.disconnect(); connections -= connection }
                     }
                     val headers = listOf("Content-Length", "Content-Range", "Accept-Ranges").mapNotNull { name ->
                         connection.getHeaderField(name)?.takeIf { it.all { c -> c in ' '..'~' } }?.let { name to it }
                     }
                     return Resource(status, contentType(url, connection.contentType), headers, input) {
-                        connection.disconnect(); connections -= connection
-                    }
+                        try { connection.disconnect() } finally { connections -= connection }
+                    }.at(load, ResourceRoute.ANDROID_HTTP, headersMillis, headersMillis)
                 }
                 if (status == 416) {
                     val headers = connection.getHeaderField("Content-Range")?.takeIf { UNSATISFIED_RANGE.matches(it) }
                         ?.let { listOf("Content-Range" to it) } ?: emptyList()
                     connection.disconnect(); connections -= connection
                     return Resource(416, "application/octet-stream", headers, ByteArrayInputStream(ByteArray(0)))
+                        .at(load, ResourceRoute.ANDROID_HTTP, headersMillis, headersMillis)
                 }
                 fail(load, statusReason(status), status, ResourceRoute.ANDROID_HTTP)
             } catch (error: IOException) {
@@ -173,7 +210,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
                 if (followingRedirect) throw error
                 if (error !is Failure) diagnostics.failure(load, Failure(FailureReason.RESOURCE_IO, route = ResourceRoute.ANDROID_HTTP), error)
                 broker = iphoneResource() ?: throw (error as? Failure
-                    ?: Failure(FailureReason.RESOURCE_IO, route = ResourceRoute.ANDROID_HTTP))
+                    ?: Failure(FailureReason.RESOURCE_IO, route = ResourceRoute.ANDROID_HTTP, load = load))
             }
         }
         val response = broker ?: fail(load, FailureReason.RESOURCE_UNAVAILABLE, route = ResourceRoute.IPHONE_FCUP)
@@ -186,6 +223,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
         if (response.status == 416) {
             val unsatisfied = headers["Content-Range"]?.takeIf { UNSATISFIED_RANGE.matches(it) }
             return Resource(416, "application/octet-stream", unsatisfied?.let { listOf("Content-Range" to it) }.orEmpty(), ByteArrayInputStream(ByteArray(0)))
+                .at(load, ResourceRoute.IPHONE_FCUP, responseMillis = brokerResponseMillis)
         }
         if (response.status != null && response.status != 0 && response.status !in 200..299)
             fail(load, statusReason(response.status), response.status, ResourceRoute.IPHONE_FCUP)
@@ -199,20 +237,28 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
                 if (!completeRepresentation(headers)) return loadResource(url, null, route, redirects, forceProxy, load)
                 return Resource(200, "application/vnd.apple.mpegurl", emptyList(),
                     ByteArrayInputStream(rewritePlaylist(url, bytes, forceProxy, route)))
+                    .at(load, ResourceRoute.IPHONE_FCUP, responseMillis = brokerResponseMillis)
             }
             return Resource(206, contentType(url, headers["Content-Type"]), listOf(
                 "Content-Range" to headers.getValue("Content-Range"), "Content-Length" to bytes.size.toString(),
                 "Accept-Ranges" to "bytes"), ByteArrayInputStream(bytes))
+                .at(load, ResourceRoute.IPHONE_FCUP, responseMillis = brokerResponseMillis)
         }
         // Return rewritten whole playlists as 200 even when the browser requested a range.
         if (isPlaylist(BufferedInputStream(ByteArrayInputStream(bytes))))
             return Resource(200, "application/vnd.apple.mpegurl", emptyList(), ByteArrayInputStream(rewritePlaylist(url, bytes, forceProxy, route)))
+                .at(load, ResourceRoute.IPHONE_FCUP, responseMillis = brokerResponseMillis)
         // App loaders may ignore Range and return the full 200/0 representation; range it locally once.
         return byteResource(url, bytes, range, headers["Content-Type"])
+            .at(load, ResourceRoute.IPHONE_FCUP, responseMillis = brokerResponseMillis)
     }
 
+    private fun Resource.at(load: Long, route: ResourceRoute, headersMillis: Long? = null,
+                            responseMillis: Long? = null) = also { reference = Reference(load, route, headersMillis, responseMillis) }
+    private fun elapsedMillis(started: Long) = ((System.nanoTime() - started) / 1_000_000).coerceAtLeast(0)
+
     private fun fail(load: Long, reason: FailureReason, status: Int? = null, route: ResourceRoute? = null): Nothing {
-        val error = Failure(reason, status, route)
+        val error = Failure(reason, status, route, load)
         diagnostics.failure(load, error)
         throw error
     }
@@ -241,7 +287,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
         synchronized(this) { urls.clear() }
         // Disconnecting a blocked HTTP read may wait on a socket lock. Never do that on Android's UI thread.
         Thread({
-            connections.forEach { it.disconnect() }; connections.clear()
+            connections.forEach { runCatching { it.disconnect() } }; connections.clear()
             bodies.forEach { runCatching { it.close() } }; bodies.clear()
         }, "airplay-proxy-close").apply { isDaemon = true; start() }
     }

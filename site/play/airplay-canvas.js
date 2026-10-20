@@ -3,7 +3,7 @@ import { createRenderer } from './video.js';
 import { letterbox } from './link.js';
 
 /** Takes ownership of decoded Mediabunny samples, including the retained paused picture. */
-export function createFrameCanvas(container, onError) {
+export function createFrameCanvas(container, onError, onSampleClosed = () => {}) {
   const canvas = document.createElement('canvas');
   canvas.className = 'airplay-canvas'; canvas.setAttribute('aria-hidden', 'true');
   let renderer = createRenderer(canvas), last = null, disposed = false, contextLost = false, oriented = null;
@@ -40,7 +40,12 @@ export function createFrameCanvas(container, onError) {
   canvas.addEventListener('webglcontextlost', lost); canvas.addEventListener('webglcontextrestored', restored);
   const observer = new ResizeObserver(draw); observer.observe(container);
   container.prepend(canvas); container.classList.add('airplay-canvas-mode');
-  function clear() { last?.close(); last = null; canvas.width = canvas.width; }
+  function closeSample(sample) {
+    if (!sample) return;
+    sample.close();
+    try { onSampleClosed(sample); } catch (_) { /* Observers never own rendering or cleanup. */ }
+  }
+  function clear() { closeSample(last); last = null; canvas.width = canvas.width; }
   function dispose() {
     if (disposed) return;
     disposed = true; observer.disconnect(); clear(); renderer.dispose?.(); oriented = null;
@@ -50,7 +55,7 @@ export function createFrameCanvas(container, onError) {
   }
   return {
     canvas,
-    present(sample) { if (disposed) { sample.close(); return; } const previous = last; last = sample; previous?.close(); draw(); },
+    present(sample) { if (disposed) { closeSample(sample); return; } const previous = last; last = sample; closeSample(previous); draw(); },
     redraw: draw, clear, dispose,
   };
 }

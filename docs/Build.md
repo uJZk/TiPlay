@@ -7,14 +7,16 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The current beta is **0.2.20-beta.6** (code **48**), above remote 0.2.21-beta.3 (code 47). Run
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). Release preparation
+targets **0.2.20-beta.7** (code **49**), following beta.6/code48. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-this release uses **v72** with WebRTC DataChannel as the formal live-media path.
+this release targets **v73** with WebRTC DataChannel as the formal live-media path.
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
 independent `/webrtc/` subsite without an alias or redirect; the APK defaults to the
-root. Signed artifacts, exact build commit/checksums and deployment verification are
-recorded in the beta record below. The download pages explicitly link this beta version and its GitHub Release. Debug APK metadata retains its diagnostic suffix.
+root. The beta record below distinguishes completed source checks from pending
+signed artifacts, exact build commit/checksums and deployment verification. Published
+download links must identify the verified release. Debug APK metadata retains its diagnostic suffix.
 
 ### Check the source build
 
@@ -83,7 +85,7 @@ Its APK SHA-256 is `4d32a780b33fb9662beaeffa711c6703ffd1ba591afbe31daf0861753339
 The APK signature matches 0.2.15, its source ZIP matches that commit's `git archive`,
 and both runtime identity files match the pinned inputs used by 0.2.15. That release record
 includes the source archive and `SHA256SUMS.txt`. Its former release/download URL
-now returns 404; current download pages explicitly select beta.6. Historical
+returned 404 during beta.6 verification. Current release preparation is recorded below. Historical
 automated checks passed; physical
 phone/vehicle, system authorization and VPN acceptance remain in [Testing](Testing.md)
 and [Todo](Todo.md).
@@ -112,110 +114,111 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta release
 
-The published prerelease is [TiPlay 0.2.20-beta.6](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.6)
-(version code **48**), with browser cache/diagnostic revision **v72**.
-The integrated source passed the local checks below. The complete Android CI run
-was skipped at the user’s explicit request; its automatic run was cancelled.
-The signed release and root page were independently verified before publication.
+The next release target is **TiPlay 0.2.20-beta.7**, version code **49**, with
+browser cache/diagnostic revision **v73**. The user authorized the beta APK and
+necessary root-page update. **Signing, release publication and deployment have not
+yet been verified for this version.** The intended tag is `v0.2.20-beta.7`; a planned
+name is not evidence that a tag, attachment or deployment exists.
 
-Reliable, ordered WebRTC DataChannels are now the formal CarPlay/live AirPlay
-media path, with shared framing, bounded credit, ownership/epoch isolation and
-independent audio subscriptions. Compressed video is never reencoded. SRP-6a authenticates the four-digit pairing and binds the full SDP transcript before
-media/control admission; the code is never sent in HTTP signaling. The current
-page has no HTTP media fallback; legacy `/video` and `/audio` return **410
-transport-required**, so cached older pages must update. Live decoding requests
-hardware without an intentional software fallback; the hint cannot establish
-actual hardware use. URL casting retains its resource/demux path and existing
-codec compatibility policy.
+This release retains beta.6's reliable ordered WebRTC/SRP transport, independent
+live audio/video clocks and single formal page at `https://ujzk.github.io/TiPlay/`.
+It adds reproducible URL-casting recovery and diagnostic fixes:
 
-Four shared profiles implement the selected priorities: CarPlay touch favors
-latency slightly, ordinary CarPlay favors smoothness, AirPlay mirror favors
-smoothness slightly, and URL casting favors smoothness strongly. Touch advances
-only decoded video, preserves convergence across move events and never changes
-the audio plan. Live audio/video have independent +300 ms software deadlines;
-URL casting uses bounded 750 ms startup / 1500 ms recovery watermarks. These are
-implementation defaults, not a claim of completed vehicle tuning.
+- The existing Play control resumes the URL engine's AudioContext within trusted
+  user activation. Readiness/play intent no longer substitutes for actual clock
+  progress, and pending resume/gesture state remains observable.
+- Video admission includes the held picture and replacement headroom. A limiting
+  pending read can use existing playable coverage after the normal wait, rather
+  than deadlocking below an unreachable watermark. Valid still-image/VFR gaps
+  retain the preceding picture; long audio introductions generate bounded silence.
+- Errors preserve the safe state before cleanup and separately report actual
+  application ownership afterwards. Resource open/transfer terminals distinguish
+  upstream readiness, completed local writes, unknown partial writes and browser
+  delivery that has not been established.
+- Four-scenario diagnostics expose the actual applied plan, used margin, capacities,
+  interaction counters and source-clock freshness. Estimator observation age and
+  selected-anchor age remain separate. These are read-only observations, not new
+  profile tuning or proof of hardware decoding/physical latency.
 
-AirPlay mirroring sender-protocol suspend continues dependency decoding and
-suppresses decoded output. This adds no user pause button; internal `pauseDisplay`
-screen arbitration and the `DECODE_ONLY` media flag serve different boundaries.
-The release also fixes audio-drain failures, retired URL-operation ownership,
-source-deadline enforcement, incomplete fault evidence, duplicate raw-capture
-writers and unnecessary sensitive exception details. Original application-visible
-video is captured once on Android input; downstream events reference that record when an exact canonical capture reference is available.
-See [Changelog](../CHANGELOG.md), [WebRTC roadmap](WebRTC-roadmap.md) and
-[Diagnostics](Diagnostics.md) for scope and evidence boundaries.
+The 750/1500 ms URL watermarks remain targets subject to actual coverage and
+application budgets. Touch affects only live video; its target is forced to zero,
+so the profile's 8 ms metadata margin is not an actual used margin. The 300 ms live
+limit remains a software mapping boundary. See [AirPlay](AirPlay.md),
+[Diagnostics](Diagnostics.md) and the [WebRTC roadmap](WebRTC-roadmap.md) for the
+contracts and measured limits.
 
-The integrated source passed **237** scoped Android regressions (130 shared and
-107 common), **473** browser unit tests, **90** full-page checks, **17** real paired
-PeerConnection checks, seven SRP security cases with Bouncy Castle vectors and
-24 JVM compatibility checks. Media-clock and AirPlay photo, audio and MP4/HLS
-video E2E passed. The full-page test uses the explicit `E2E_SOFTWARE_VIDEO=1`
-override; strict desktop hardware-unavailable behavior is verified separately.
-The override proves real compressed decoding/application wiring and provides no
-vehicle hardware-decode evidence. Run timing-sensitive checks without concurrent
-builds. All three required lint/debug builds passed with 0 Error/Fatal and 38 warnings.
-The user explicitly requested
-skipping the full Android CI run; this release does not claim the entire integrated
-JVM suite passed. Signed release lint/build and artifact verification also passed,
-as recorded below.
+### Source validation and remaining scope
 
-The release uses `com.ujzk.tiplay` and the existing signed release workflow. The
-established APK signing certificate SHA-256 is
-`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`,
-matching the independently downloaded 0.2.20-beta.5 APK. The beta.6 APK certificate
-was independently verified against that actual APK. Both runtime identity files
-are byte-identical to the hash-verified pinned DiPlay 0.2.18 inputs. The release workflow passed `lintRelease` and `assembleRelease`, verified package,
-version and runtime inputs, and removed temporary signing/runtime inputs. Both
-independent artifact checks verified the APK signature, all four WebRTC ABIs,
-16 KiB ELF LOAD alignment of every supported 64-bit native library, APK
-`zipalign -P 16` and the exact source ZIP. The retained legacy JNA
-`armeabi`/`mips`/`mips64` entries are byte-identical to beta.5.
-The source ZIP is byte-identical to `git archive` of the build commit below;
-subsequent documentation-only commits do not move that release tag.
-
-Published **2026-10-20 17:07:54 UTC+08:00** as a prerelease:
-
-| Evidence | Verified value |
+| Check | Evidence for this change |
 | --- | --- |
-| Build commit / release tag | `a95ecb18cd65861d767484df81da7bf281c7dd3c` / `v0.2.20-beta.6` |
-| APK | `TiPlay-0.2.20-beta.6.apk`, 100,962,601 bytes |
-| APK SHA-256 | `b00d36221e18a91684826b4f806380d4a3df944fdb37afe7fd83971625c24588` |
-| Source ZIP | `TiPlay-0.2.20-beta.6-source.zip`, 20,630,516 bytes |
-| Source ZIP SHA-256 | `b05e2c58e39e051b769ae211c5331a5ee5a130c5e28c6f18edb2dd1ceb54fae3` |
-| Signed build / private draft | [Actions 39396954548](https://github.com/uJZk/TiPlay/actions/runs/39396954548), success |
-| Pages deployment | [Actions 39396881145](https://github.com/uJZk/TiPlay/actions/runs/39396881145), success |
-| Full Android CI | [Actions 39396881037](https://github.com/uJZk/TiPlay/actions/runs/39396881037), cancelled per user request |
+| Full browser unit suite | **528 passed**. This is source-level browser coverage, not a signed-APK or vehicle test. |
+| Version/site preflight | **29** selected Node checks, **9** release-draft checks, **2** site checks and the public-tree scan passed. These are scoped preparation checks, not additional full-suite runs. |
+| Final targeted Android/JVM run | **31 passed** in the last scoped run. |
+| Targeted Android/JVM coverage across rounds | **121 distinct tests** across multiple rounds. This overlaps the last 31 and is not one clean full-suite run of the final tree. |
+| Phone debug APK | Debug build passed; it does not establish release signing or packaged runtime identity. |
+| Actual captured-media replay | Passed before the final diagnostics-only changes. It establishes real compressed playback/gesture recovery at that earlier source state; it was not rerun on the final release artifact. |
+| Complete Android CI | Skipped at the user's explicit request. Targeted checks and a debug build do not replace the full unit/lint/build command. |
+| Signed release and deployed page | Pending the checks below. |
 
-The release contains exactly the APK, matching source ZIP and `SHA256SUMS.txt`;
-remote attachment sizes and SHA-256 digests match the verified local artifacts.
-At `https://ujzk.github.io/TiPlay/`, all 130 checked paths matched this build's
-bytes, including 105 v72 cache entries and all eight beta.6 download languages.
-The former `/webrtc/` and `/WebRTC/` directories/indexes and old
-`rtc-transport.js` return 404. Current download links explicitly identify beta.6.
+The recorded replay proves a matching failure mechanism, not the unique cause of
+the field attempt. The capture also contains valid mirror and CarPlay windows;
+capacity evictions, sparse source cadence and temporarily stale mappings have
+separate evidence. No forwarded touch experiment establishes physical touch-policy
+performance. New getters/logging do not change the clock-selection algorithm or
+make inaccessible decoder/panel/speaker state observable.
 
-Physical iPhone/Android/car acceptance remains incomplete: Shizuku-address host
-ICE, actual hardware decode, gear transitions, sustained thermal smoothness,
-HFP/SCO routing, audio quality and acoustic/panel timing need device measurement.
-The +300 ms checks cover known software clock/output/filter mappings; upstream
-iPhone NTP-anchor uncertainty is not separately carried on the wire, so
-`within-bound` does not prove physical sender-relative compliance. Missing anchors
-remain unknown. SRP mutual proofs and a session-key binding authenticate the full SDP, including
-DTLS fingerprints. The four-digit secret still needs online-guess limits; SRP
-does not prevent denial of service. HTTP AirPlay resources use random session
-bearers delivered over encrypted control and retain LAN confidentiality limits. See [Testing](Testing.md) and [Todo](Todo.md).
+### Pending artifact and deployment verification
+
+| Item | Required evidence before marking verified |
+| --- | --- |
+| Build commit and release tag | Exact committed build SHA and tag `v0.2.20-beta.7`; pending. |
+| Signed phone APK | Expected `TiPlay-0.2.20-beta.7.apk`; build/run, size, SHA-256, package/version and signature verification pending. |
+| Matching source archive | Expected `TiPlay-0.2.20-beta.7-source.zip`; exact `git archive` comparison, size and SHA-256 pending. |
+| Checksums and attachments | `SHA256SUMS.txt`, exact attachment set and independently fetched attachment digests; pending. |
+| Signing/runtime provenance | Compare the APK certificate and both packaged runtime identity files with the intended verified inputs; pending. |
+| Root webpage | Pages run/deployment SHA, actual `app-version.js` beta.7 metadata, v73 manifest/cache closure and deployed asset bytes; pending. |
+| Publication | Prerelease status, tag target and beta.7 download links; pending. |
+
+Keep signing material and runtime identities outside Git. The established signing
+certificate fingerprint is recorded under historical provenance below; that history
+does not verify a newly built APK. Follow the [signed release procedure](#signed-release)
+for package/signature/runtime checks, source archives and checksums. Publication
+records must use the actual beta.7 commit and run/artifact results, not beta.6 values.
+
+Physical iPhone/Android/car acceptance remains incomplete: actual hardware decoding,
+Shizuku-address host ICE, gear transitions, sustained thermal smoothness, HFP/SCO,
+audio quality and acoustic/panel timing require device measurement. Known software
+clock/output/filter bounds omit separately propagated upstream iPhone NTP-anchor
+uncertainty; `within-bound` is not a physical latency certificate. See
+[Testing](Testing.md) and [Todo](Todo.md).
 
 ### Retained experimental provenance
 
-Remote main's 0.2.21-beta.1/.2/.3 experiments used the independent `/webrtc/` page;
-beta.3 was code 47 / browser v71. The recorded beta.3 source was
+[TiPlay 0.2.20-beta.6](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.6)
+was published with code **48** / page **v72**. The following values identify that
+historical release only and are not beta.7 build or deployment evidence:
+
+| Historical beta.6 item | Recorded value |
+| --- | --- |
+| Build commit | `a95ecb18cd65861d767484df81da7bf281c7dd3c` |
+| APK SHA-256 | `b00d36221e18a91684826b4f806380d4a3df944fdb37afe7fd83971625c24588` |
+| Source ZIP SHA-256 | `b05e2c58e39e051b769ae211c5331a5ee5a130c5e28c6f18edb2dd1ceb54fae3` |
+| Signing certificate SHA-256 | `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506` |
+| Signed build / Pages | [Actions 39396954548](https://github.com/uJZk/TiPlay/actions/runs/39396954548) / [Actions 39396881145](https://github.com/uJZk/TiPlay/actions/runs/39396881145) |
+
+Beta.6's runtime files matched the hash-verified pinned DiPlay 0.2.18 inputs, and
+its signing certificate matched the independently downloaded beta.5 APK. Its source
+ZIP matched the recorded build commit. These comparisons must be repeated for a new
+release. The root promotion and deletion of the isolated `/webrtc/` page were beta.6
+changes; beta.7 continues that single-root layout.
+
+Earlier remote 0.2.21-beta.1/.2/.3 experiments used the independent `/webrtc/` page;
+beta.3 was code **47** / page **v71**, from
 `1592a061d8ad167fabe9d25f0c19ad8b21ca9183`, with APK SHA-256
 `3dfb5bb3737088b35a7bf6e93643a70da0dd2109892e77701f7e2fb46c370c87`.
-Its 2,203 shared / 1,748 common / six home / 450 browser checks are historical,
-not evidence that beta.6's combined source has passed. Beta.6 uses code 48 to
-remain newer for Android in-place updates despite retaining the requested product
-version name. The root promotion and removal of the isolated subsite are intentional
-changes from that experimental layout. Download links explicitly identify 0.2.20-beta.6.
+Their test counts and source-cadence observations are historical, not validation of
+the combined beta.7 source. Code49 preserves Android update ordering while retaining
+the requested 0.2.20 product-version line.
 
 ## Updating an installed app
 

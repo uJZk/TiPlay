@@ -23,22 +23,27 @@ export function createVideoEpochGuard(clear) {
 export function createMediaTiming(change = () => {}, now = () => performance.timeOrigin + performance.now()) {
   let plans = initialPlaybackPlans(), first = { video: true, audio: true }, mode = null;
   let touching = false, interactionUntil = -Infinity, lastVideoProfile = null;
+  // Diagnostic counts span this timing owner's lifetime, including stream/epoch resets.
+  let interactionStarts = 0, interactionReleases = 0, profileSwitches = 0, planChanges = 0;
+  let decision = { reason: 'initial' };
   const tracks = new Map();
   const policy = () => playbackProfile(mode, mode === 'carplay' && (touching || now() < interactionUntil));
-  const decorate = profile => {
+  const decorate = (profile, previous = plans.video.playbackProfile) => {
     if (plans.video.playbackProfile === profile.name) return false;
+    if (previous !== profile.name) profileSwitches++;
     plans = { ...plans, video: { ...plans.video, playbackProfile: profile.name } };
     return true;
   };
   function targetPlan(track, target, profile = policy(), immediate = false) {
     if (target === plans[track].to) return track === 'video' && decorate(profile);
     const video = track === 'video';
+    const previousProfile = plans.video.playbackProfile;
     plans = { ...plans, [track]: first[track] ? constantDelay(target, now())
       : planDelay(plans[track], target, now(), video ? {
         leadMs: immediate ? 0 : DELAY_PLAN_LEAD_MS,
         decreaseRate: profile.videoDecreaseRate, smooth: immediate,
       } : undefined) };
-    if (video) decorate(profile);
+    if (video) { planChanges++; decorate(profile, previousProfile); }
     return true;
   }
   return {
@@ -58,6 +63,9 @@ export function createMediaTiming(change = () => {}, now = () => performance.tim
       const target = track === 'video' && interacting ? 0
         : Math.min(Math.max(0, profile.maxDelayMs - VIDEO_SUBMIT_MARGIN_MS),
           Math.max(profile.initialDelayMs, delay + (track === 'video' ? profile.jitterMarginMs : 20)));
+      if (track === 'video') decision = { readiness: delay, margin: interacting ? 0 : profile.jitterMarginMs,
+        reason: interacting ? 'touch' : target < Math.max(profile.initialDelayMs, delay + profile.jitterMarginMs)
+          ? 'ceiling' : profile.initialDelayMs > delay + profile.jitterMarginMs ? 'initial-floor' : 'readiness' };
       if (targetPlan(track, target, profile, track === 'video' && interacting)) change(plans);
       first[track] = false;
     },
@@ -67,27 +75,45 @@ export function createMediaTiming(change = () => {}, now = () => performance.tim
       const profile = policy();
       // Audio configurations/epochs are managed separately by the audio path.
       // A video mode notification must not seek an already running audio plan.
+      if (plans.video.playbackProfile !== profile.name) profileSwitches++;
+      planChanges++; decision = { reason: 'initial' };
       plans = { video: { ...constantDelay(profile.initialDelayMs, now()), playbackProfile: profile.name }, audio: plans.audio };
       change(plans);
     },
     interaction(active = true) {
       if (mode !== 'carplay') return;
       const already = policy().name === 'carplay-touch';
+      if (Boolean(active) !== touching) { if (active) interactionStarts++; else interactionReleases++; }
       touching = Boolean(active); interactionUntil = now() + playbackProfile('carplay').interactionHoldMs;
       if (active && !already) tracks.delete('video');
       if (active) lastVideoProfile = 'carplay-touch';
       // Repeated move/down events extend the hold without restarting convergence.
       // Release never restores the pre-touch delay or changes the audio plan.
+      if (active && !already) decision = { reason: 'touch', margin: 0 };
       if (active && targetPlan('video', 0, policy(), true)) change(plans);
     },
     reset() { tracks.clear(); first = { video: true, audio: true }; mode = null;
-      touching = false; interactionUntil = -Infinity; lastVideoProfile = null; plans = initialPlaybackPlans(now()); change(plans); },
+      touching = false; interactionUntil = -Infinity; lastVideoProfile = null; decision = { reason: 'initial' };
+      plans = initialPlaybackPlans(now()); change(plans); },
     started() { first = { video: false, audio: false }; },
     delay: (track = 'video') => track === 'audio' ? audioDelayAt(plans, now()) : delayAt(plans.video, now()),
     plan: (track = 'video') => plans[track],
     plans: () => plans,
     profile: policy,
     limit: () => policy().maxDelayMs,
+    /** Read only the applied video plan. Eligibility can expire before another frame applies it. */
+    stats() {
+      const at = now(), plan = plans.video, applied = playbackProfile(plan.playbackProfile);
+      return { policyVideoReadinessMs: decision.readiness, policyVideoMarginMs: decision.margin,
+        policyVideoTargetMs: plan.to, policyVideoPlanFromMs: plan.from, policyVideoPlanDurationMs: plan.duration,
+        policyVideoPlanRemainingMs: Math.max(0, plan.duration - Math.max(0, at - plan.at)),
+        policyVideoLeadRemainingMs: Math.max(0, plan.at - at), policyTargetReason: decision.reason,
+        policyInteractionActive: touching, policyHoldRemainingMs: Math.max(0, interactionUntil - at),
+        policyInteractionStarts: interactionStarts, policyInteractionReleases: interactionReleases,
+        policyProfileSwitches: profileSwitches, policyPlanChanges: planChanges,
+        policyMaxDelayMs: applied.maxDelayMs, policyMaxVideoFrames: applied.maxVideoFrames,
+        policyMaxVideoBytes: applied.maxVideoBytes, policySubmitMarginMs: VIDEO_SUBMIT_MARGIN_MS };
+    },
   };
 }
 /** Schedule decoded pictures. CarPlay preserves WebCodecs presentation order; compressed dependencies remain untouched. */

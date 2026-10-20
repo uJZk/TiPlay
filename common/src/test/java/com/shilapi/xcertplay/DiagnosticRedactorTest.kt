@@ -111,6 +111,39 @@ class DiagnosticRedactorTest {
         }
     }
 
+    @Test fun strictCodecProfilesSurviveAddressRedactionWithoutExemptingLocationsOrCredentials() {
+        val vp9 = "vp09.00.10.08.01.01.01.01.00"
+        val av1 = "av01.0.08M.08.0.110.01.01.01.0"
+        val source = "browser video stage=ENGINE_CODEC codec=$vp9 peer=192.168.49.1 ipv6=fe80::abcd%wlan0 nextCodec=$av1"
+        val saved = DiagnosticRedactor.redact(source)!!
+        assertTrue(saved, saved.contains("codec=$vp9"))
+        assertFalse(saved, saved.contains("192.168.49.1") || saved.contains("fe80::abcd"))
+        assertEquals("codec=$av1", DiagnosticRedactor.redact("codec=$av1"))
+        assertEquals("codec=avc1.640028", DiagnosticRedactor.redact("codec=avc1.640028"))
+        assertEquals("codec=vp09.00.10.08", DiagnosticRedactor.redact("codec=vp09.00.10.08"))
+        assertEquals("source=[url] codec=$vp9", DiagnosticRedactor.redact("source=https://private.test/video?codec=$vp9 codec=$vp9"))
+        assertEquals("codec=[url]", DiagnosticRedactor.redact("codec=https://private.test/video?codec=$vp9"))
+        for (text in listOf("codec=avc1.password", "codec=vp09.token", "codec=av01.0 password=private", "codec=avc1.token=private"))
+            assertNull(text, DiagnosticRedactor.redact(text))
+        // A similar field or pre-existing placeholder text has no codec privilege.
+        assertFalse(DiagnosticRedactor.redact("othercodec=vp09.00.10.08")!!.contains("09.00.10.08"))
+        assertEquals("[codec0] peer=[ip]", DiagnosticRedactor.redact("[codec0] peer=192.168.49.1"))
+        val oversized = "codec=avc1." + "f".repeat(16) + "." + "f".repeat(16) + "." + "f".repeat(16) + " peer=192.168.49.1"
+        assertFalse(DiagnosticRedactor.redact(oversized)!!.contains("192.168.49.1"))
+    }
+
+    @Test fun invalidCodecProfilesCannotDisguiseRealAddressesAsCodecComponents() {
+        for (codec in listOf("av01.192.168.1.1", "avc1.192.168.1.1", "hvc1.192.168.1.1",
+            "av01.0.08M.08.0.110.192.168.1.1")) {
+            val saved = DiagnosticRedactor.redact("codec=$codec peer=192.168.49.1 ipv6=fe80::abcd%wlan0")!!
+            assertFalse(saved, saved.contains("192.168.1.1") || saved.contains("192.168.49.1") || saved.contains("fe80::abcd"))
+        }
+        for (codec in listOf("vp09.00.99.08.01.01.01.01.00", "vp09.00.10.12.01.01.01.01.00")) {
+            val saved = DiagnosticRedactor.redact("codec=$codec")!!
+            assertFalse("Invalid level or profile/bit-depth must not receive an address exemption: $saved", saved.contains(codec))
+        }
+    }
+
     @Test fun standardKeepsFailureContextAfterSharedErrorTextHasRemovedCredentials() {
         DiagnosticLogPolicy.level = DiagnosticLogLevel.STANDARD
         val directory = Files.createTempDirectory("diagnostic-sanitized-failure").toFile()

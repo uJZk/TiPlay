@@ -11,7 +11,7 @@ import { constantDelay } from '../../site/play/delay-plan.js';
 // Execute the actual worker message handler with a deterministic decoder and clock.
 // This tests messages crossing the scheduling boundary, rather than matching code text.
 async function workerHarness() {
-  let callbacks, at = 1000;
+  let callbacks, at = 1000, reportStats;
   const messages = [], timers = new Map();
   let timerId = 0;
   const schedule = (callback, wait) => { const id = ++timerId; timers.set(id, { callback, at: at + wait }); return id; };
@@ -30,12 +30,13 @@ async function workerHarness() {
     createMediaTiming: change => createMediaTiming(change, () => at),
     createVideoEpochGuard, createFrameDelivery,
     createChunkStream: () => { throw new Error('unexpected port feed'); },
-    setInterval: () => 1, clearInterval() {},
+    setInterval: callback => { reportStats = callback; return 1; }, clearInterval() {},
   });
   return {
     messages,
     send: data => self.onmessage({ data }),
     post: message => callbacks.post(message),
+    stats() { reportStats(); return messages.filter(message => message.type === 'stats').at(-1).stats; },
     frame(frame, config, id, timing, source) { callbacks.present(frame, config, id, timing, source); },
     advance(value) {
       at = value;
@@ -45,6 +46,23 @@ async function workerHarness() {
 }
 function frame() { return { closed: 0, close() { this.closed++; } }; }
 function latest(harness, type) { return harness.messages.filter(message => message.type === type).at(-1); }
+
+test('worker diagnostic policy comes from its actual scheduling owner and retains a short touch', async () => {
+  const h = await workerHarness();
+  h.send({ type: 'stream', id: 7, stream: {} });
+  h.post({ type: 'config', id: 7, config: { epoch: 1, mode: 'carplay' } });
+  h.frame(frame(), { epoch: 1, mode: 'carplay' }, 7, 900);
+  assert.equal(h.stats().policyVideoTargetMs, 120); assert.equal(h.stats().policyVideoReadinessMs, 100);
+  assert.equal(h.stats().policyVideoMarginMs, 20); assert.equal(h.stats().playbackProfile, 'carplay');
+  h.send({ type: 'interaction', active: true }); h.send({ type: 'interaction', active: true });
+  h.send({ type: 'interaction', active: false });
+  h.advance(2000);
+  const measured = h.stats();
+  assert.equal(measured.playbackProfile, 'carplay-touch'); assert.equal(measured.policyVideoTargetMs, 0);
+  assert.equal(measured.policyVideoMarginMs, 0); assert.equal(measured.policyInteractionActive, false);
+  assert.equal(measured.policyHoldRemainingMs, 0); assert.equal(measured.policyInteractionStarts, 1);
+  assert.equal(measured.policyInteractionReleases, 1);
+});
 
 test('worker schedules CarPlay without a main-thread readiness round trip', async () => {
   const h = await workerHarness(), picture = frame();

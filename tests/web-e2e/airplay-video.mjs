@@ -7,11 +7,18 @@ const { chromium } = createRequire(import.meta.url)('playwright-core');
 const root = fileURLToPath(new URL('../../site/play/', import.meta.url)).replace(/\/$/, '');
 const sample = process.env.TEST_VIDEO_MP4;
 const hls = process.env.TEST_VIDEO_HLS;
+const soakSeconds = Number(process.env.TEST_CAST_SOAK_SECONDS || 0);
+if (!Number.isFinite(soakSeconds) || soakSeconds < 0 || soakSeconds > 60) throw new Error('TEST_CAST_SOAK_SECONDS must be between 0 and 60');
 const diagnosticFields = new Set(['k', 'id', 'revision', 'event', 'position', 'duration', 'paused', 'ended',
-  'seeking', 'dragging', 'readyState', 'networkState', 'rate', 'errorCode', 'errorName', 'errorText']);
+  'seeking', 'dragging', 'readyState', 'networkState', 'rate', 'errorCode', 'errorName', 'errorText', 'engine']);
 function checkDiagnostics(entries) {
   if (!entries.length || entries.some(entry => Object.keys(entry).some(key => !diagnosticFields.has(key))))
     throw new Error('AirPlay diagnostic schema contains an unexpected field');
+  for (const entry of entries) if (entry.engine && (typeof entry.engine !== 'object' || Array.isArray(entry.engine) ||
+    Object.entries(entry.engine).some(([key, value]) => /^(?:url|src|resourceUrl|resourceToken|token|session|password|secret|path)$/i.test(key) ||
+      !(typeof value === 'boolean' || typeof value === 'number' && Number.isFinite(value) ||
+        typeof value === 'string' && value.length <= 128 && !/[\r\n]/.test(value) && !/(?:https?:|bearer |[?&](?:c|s)=)/i.test(value)))))
+    throw new Error('AirPlay engine diagnostics contain unsafe or non-scalar data');
   if (JSON.stringify(entries).includes('private.example') || JSON.stringify(entries).includes('private-session'))
     throw new Error('AirPlay diagnostics exposed private resource or exception text');
 }
@@ -56,7 +63,8 @@ try {
   for (const mode of ['webgl', '2d', ...(hls ? ['hls'] : [])]) {
   const page = await browser.newPage({ hasTouch:true });
   await page.addInitScript(mode => {
-    window.pictures = [];
+    window.pictures = []; window.drawClock = [];
+    window.lightweightReadback = false; window.lastPicturePixels = null;
     window.actualVideo = () => document.querySelector('tiplay-media')?.engine;
     window.mediaResource = mode === 'hls' ? 'hls' : '0';
     window.playerLanguage = mode === 'hls' ? 'zh' : 'en';
@@ -72,6 +80,11 @@ try {
       context[method] = function(...args) {
         const result = draw.apply(this, args);
         if (canvas.className !== 'airplay-canvas') return result;
+        drawClock.push({ at: performance.now(), position: actualVideo().currentTime });
+        if (lightweightReadback && drawClock.length % 30 !== 0 && lastPicturePixels) {
+          pictures.push({ ...lastPicturePixels, width: canvas.width, height: canvas.height, time: actualVideo().currentTime });
+          return result;
+        }
         // Readback is test instrumentation only; production never reads video pixels into JS.
         const pixels = type === '2d' ? this.getImageData(0, 0, canvas.width, canvas.height).data : new Uint8Array(canvas.width * canvas.height * 4);
         if (type !== '2d') this.readPixels(0, 0, canvas.width, canvas.height, this.RGBA, this.UNSIGNED_BYTE, pixels);
@@ -80,8 +93,8 @@ try {
           colored ||= Boolean(pixels[i] || pixels[i + 1] || pixels[i + 2]);
           hash = (Math.imul(hash, 31) + pixels[i] + 3 * pixels[i + 1] + 7 * pixels[i + 2]) | 0;
         }
-        pictures.push({ type, hash, colored, width: canvas.width, height: canvas.height,
-          time: actualVideo().currentTime, corner: Array.from(pixels.slice(0, 3)) });
+        lastPicturePixels = { type, hash, colored, corner: Array.from(pixels.slice(0, 3)) };
+        pictures.push({ ...lastPicturePixels, width: canvas.width, height: canvas.height, time: actualVideo().currentTime });
         return result;
       };
       return context;
@@ -121,11 +134,39 @@ try {
     if (!openingDiagnostics.some(entry=>entry.event===expected)) throw new Error(`Missing initial AirPlay diagnostic: ${expected}`);
   await page.waitForFunction(()=>new Set(pictures.filter(p=>p.colored).map(p=>p.hash)).size>=2);
   const picture = await page.evaluate(() => ({ ...pictures.at(-1), nativeVideos: document.querySelectorAll('video').length,
-    canvases: document.querySelectorAll('.airplay-canvas').length }));
-  if (!picture.colored || picture.nativeVideos !== 0 || picture.canvases !== 1 || picture.width > 320 || picture.corner.some(Boolean))
+    canvases: document.querySelectorAll('.airplay-canvas').length, intrinsicWidth: actualVideo().videoWidth }));
+  if (!picture.colored || !(picture.intrinsicWidth > 0) || picture.nativeVideos !== 0 || picture.canvases !== 1 || picture.width > Math.min(800, picture.intrinsicWidth) || picture.corner.some(Boolean))
     throw new Error('Canvas pixels, source resolution cap, single engine or letterboxing failed');
   if ((mode === '2d') !== (picture.type === '2d')) throw new Error('Unexpected canvas renderer');
   console.log(`${mode}: decoded video pictures reached the canvas without a native video clock`);
+  const runningDiagnostics = openingDiagnostics.filter(entry => entry.engine?.running);
+  if (!runningDiagnostics.some(entry => entry.engine.intentPlaying && entry.engine.waitReason === 'none'))
+    throw new Error('Readiness was reported without evidence that the real playback clock started');
+  if (soakSeconds > 0) {
+    const continuity = await page.evaluate(async seconds => {
+      lightweightReadback = true;
+      const engine = actualVideo(), began = performance.now(), start = engine.currentTime;
+      const mark = events.length, drawMark = drawClock.length, states = [];
+      while (performance.now() - began < seconds * 1000 && !engine.ended && !engine.error) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        states.push({ at: performance.now(), position: engine.currentTime, buffering: engine.buffering,
+          ...engine.getPlaybackDiagnostics() });
+      }
+      const elapsed = (performance.now() - began) / 1000, position = engine.currentTime;
+      lightweightReadback = false;
+      const frames = drawClock.slice(drawMark);
+      const waits = events.slice(mark).filter(event => event.k === 'ap-diag' && event.event === 'waiting').length;
+      return { start, position, elapsed, rate: engine.playbackRate, duration: engine.duration, ended: engine.ended,
+        error: engine.error, waits, frames: frames.length, last: states.at(-1),
+        maxDrawGapMs: frames.length > 1 ? Math.max(...frames.slice(1).map((frame, index) => frame.at - frames[index].at)) : null };
+    }, soakSeconds);
+    const expected = Math.min(continuity.duration, continuity.start + continuity.elapsed * continuity.rate);
+    if (continuity.error || continuity.waits || continuity.frames < 2 || continuity.position < expected - 0.2 ||
+      !continuity.ended && (!continuity.last?.running || continuity.last.buffering))
+      throw new Error('Continuous available URL media did not follow its independent wall clock: ' + JSON.stringify(continuity));
+    console.log(JSON.stringify({ mode, continuousPlayback: continuity }));
+  }
+
   if (mode === 'hls' && !/[\u4e00-\u9fff]/.test(await page.locator('media-play-button').getAttribute('aria-label')))
     throw new Error('Chinese controls did not use the bundled locale');
   if (mode === 'webgl') {
@@ -179,7 +220,7 @@ try {
   if(await page.evaluate(()=>events.filter(event=>event.k==='ap-diag').length)!==pausedDiagnostics)
     throw new Error('Periodic AirPlay reports emitted extra diagnostics');
   await page.evaluate(()=>document.getElementById('stage').style.height='800px');
-  await page.waitForFunction(()=>pictures.at(-1).width===320 && pictures.at(-1).height===320);
+  await page.waitForFunction(()=>{ const expected=Math.min(800,actualVideo().videoWidth); return pictures.at(-1).width===expected && pictures.at(-1).height===expected; });
   if(mode==='webgl') {
     await page.evaluate(()=>{
       const canvas=document.querySelector('.airplay-canvas');

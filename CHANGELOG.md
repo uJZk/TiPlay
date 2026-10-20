@@ -4,6 +4,24 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.7
+
+Version code 49 and browser cache/diagnostic revision v73. Signed artifacts and
+deployment verification are recorded in [Build](docs/Build.md#beta-release).
+
+- Prevent URL casting from waiting indefinitely for an unreachable prebuffer target under bounded decoded-sample resources. Account for retained pictures and the next sample, and allow progress from actual playable coverage after the normal wait without claiming knowledge of the hardware decoder pool.
+- Make the existing Play control resume an unactivated casting AudioContext and report actual buffering instead of play intent. Preserve pictures through known presentation gaps, bounded silence through delayed audio starts, and cancellation of pending playback commands.
+- Record casting codec/configuration hints, queue ownership and successful closes, audio resume state, resource progress and failure context before and after cleanup. Preserve Standard errors and cleanup evidence across sampling limits.
+- Add live CarPlay/mirror policy snapshots for effective targets, readiness, capacity, short-touch transition counts and clock freshness. Separate recent clock observations from the selected anchor; retain capacity and clock-state changes in Standard without per-frame or per-move logging.
+- Distinguish upstream headers from completed transfer writes, short EOF, retired owners, read/write/close failures and bounded refusal reasons. Preserve legitimate AV1/VP9 codec diagnostics while redacting private addresses and credentials.
+
+Verification: 528 browser tests and 121 distinct scoped native tests across targeted
+rounds, including the final 31-test run and mobile debug build. Captured Minibili
+and ordinary MP4/HLS browser replay passed before the final diagnostic-only changes.
+Full Android CI remains skipped at the user's request. Field evidence does not
+establish a unique Minibili cause, actual hardware pool size or optimal live-profile
+thresholds; physical acceptance remains pending.
+
 ## 0.2.20-beta.6
 
 Published as a prerelease: version code 48 and browser cache/diagnostic revision v72.

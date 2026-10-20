@@ -772,13 +772,16 @@ class BrowserLinkServerTest {
             val id = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
             val path = "/airplay-resource?id=$id&r=${playback.proxy.rootId}&s=$session"
             assertEquals(401, get("$path&c=0000").status)
+            assertTrue(logs.any { it.contains("stage=REFUSED") && it.contains("status=401 reason=pairing") })
             assertEquals(0, requests.get())
             val response = get("$path&c=$code")
             assertEquals(200, response.status)
             assertArrayEquals(byteArrayOf(1, 2, 3), response.body)
             binding.close()
             assertEquals(404, get("$path&c=$code").status)
+            assertTrue(logs.any { it.contains("stage=REFUSED") && it.contains("status=404 reason=playback-not-found") })
             assertEquals(1, requests.get())
+            assertFalse(logs.joinToString().contains("$code&"))
         } finally { binding.close(); playback.close() }
     }
 

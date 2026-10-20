@@ -7,7 +7,9 @@ object BrowserVideoDiagnosticsSchema {
     private const val MAX_NUMBER = 9_007_199_254_740_991.0
     private fun words(text: String) = text.split(' ').filter(String::isNotEmpty)
     private val counters = words("readFrames readFrameBytes decoded drawnFrames records bytes gaps discontinuities decodeErrors backlogResets keyRequests timingRecords timingRejected sourceForwardPtsSamples sourceReorderedPts decodeDroppedFrames scheduledDroppedFrames transferDroppedFrames renderDroppedFrames pacingDroppedFrames droppedFrames scheduledExpiredFrames scheduledCoalescedFrames scheduledStaleFrames scheduledCapacityFrames audioSyncDroppedFrames audioSyncUnavailableFrames videoCeilingViolations touchSkippedFrames expiredFrames untimedFrames audioRenderSyncDroppedFrames pacingRefreshDraws pacingDeadlineDraws decodeStalls decodeBackpressureWaits decoderAbortedFrames decodeOnlyFrames decodedResourceDroppedFrames untimedScheduledFrames")
-    private val values = words("currentFps currentDelta lastDrawAgeMs frameIntervalP95Ms frameIntervalMaxMs decodedFps bytesPerSec width height decodeQueueSize decodedQueueSize clockRttMs readFrameIntervalMsP95 sourceForwardPtsIntervalMsP95 decodeMsP50 decodeMsP95 recordReadToDecodeSubmitMsP95 androidHubQueueMsP95 androidTransportSubmitToRecordReadMsP95 stageClockUncertaintyMs decodedToSchedulerMsP95 decodedToDrawMsP95 drawMsP95 presentationOffset90 presentationOffsetHigh5 presentationOffsetSamples senderRelativePolicyCeilingMs videoCursorSpeed videoCursorDeltaMs decodedFrontierDeltaMs touchCatchUpActive decodeBackpressureMs decodedQueueFrames decodedQueueBytes decodeInFlightFrames decodeInFlightBytes")
+    private val values = words("currentFps currentDelta lastDrawAgeMs frameIntervalP95Ms frameIntervalMaxMs decodedFps bytesPerSec width height decodeQueueSize decodedQueueSize clockRttMs readFrameIntervalMsP95 sourceForwardPtsIntervalMsP95 decodeMsP50 decodeMsP95 recordReadToDecodeSubmitMsP95 androidHubQueueMsP95 androidTransportSubmitToRecordReadMsP95 stageClockUncertaintyMs decodedToSchedulerMsP95 decodedToDrawMsP95 drawMsP95 presentationOffset90 presentationOffsetHigh5 presentationOffsetSamples senderRelativePolicyCeilingMs videoCursorSpeed videoCursorDeltaMs decodedFrontierDeltaMs touchCatchUpActive decodeBackpressureMs decodedQueueFrames decodedQueueBytes decodeInFlightFrames decodeInFlightBytes policyVideoReadinessMs policyVideoMarginMs policyVideoTargetMs policyVideoPlanFromMs policyVideoPlanDurationMs policyVideoPlanRemainingMs policyVideoLeadRemainingMs policyInteractionActive policyHoldRemainingMs policyInteractionStarts policyInteractionReleases policyProfileSwitches policyPlanChanges policyMaxDelayMs policyMaxVideoFrames policyMaxVideoBytes policySubmitMarginMs sourceClockAgeMs sourceClockGeneration sourceClockMaxAgeMs")
+    private val wholePolicy = words("policyInteractionStarts policyInteractionReleases policyProfileSwitches policyPlanChanges policyMaxVideoFrames policyMaxVideoBytes sourceClockGeneration sourceClockMaxAgeMs").toSet()
+    private val estimatorValues = words("clockEstimatorObservationAgeMs clockEstimatorSelectedAgeMs")
     private val receiver = words("retainedBytes consumedBytes queuedRecords partialBytes receivedRecords receivedFragments peakRetainedBytes reassemblyMsMean reassemblyMsMax consumerWaitMsMean consumerWaitMsMax")
     private val ice = words("currentRoundTripTimeMs availableOutgoingBitrate requestsSent requestsReceived responsesSent responsesReceived bytesSent bytesReceived sampleAgeMs errors")
     private val control = words("seq inFlight inFlightCount pending posts failures overflows rttMsP50 rttMsP95")
@@ -23,6 +25,9 @@ object BrowserVideoDiagnosticsSchema {
         "raw.presentationTimingState" to words("unobserved unavailable mapped-presentation").toSet(),
         "raw.pacingMode" to words("display-refresh immediate").toSet(),
         "raw.playbackProfile" to words("default carplay carplay-touch airplay-mirror airplay-cast airplay-audio").toSet(),
+        "raw.policyTargetReason" to words("initial touch readiness initial-floor ceiling").toSet(),
+        "raw.sourceClockState" to words("fresh stale unavailable").toSet(),
+        "raw.clockEstimatorState" to words("unavailable suspended pending-jump observation-stale selected-stale fresh").toSet(),
         "raw.pipelineCounterScope" to setOf("pipeline-lifetime"),
         "raw.decodeDropCounterScope" to setOf("epoch-reset"),
         "raw.schedulerCounterScope" to setOf("epoch-reset"),
@@ -41,9 +46,9 @@ object BrowserVideoDiagnosticsSchema {
         val nativeStates = words("NEW CHECKING CONNECTED COMPLETED FAILED DISCONNECTED CLOSED GATHERING COMPLETE CONNECTING").toSet()
         for (field in words("iceGatheringState iceConnectionState peerConnectionState")) put("sender.$field", nativeStates)
     }
-    val booleanFields = setOf("raw.touchCatchUpActive", "control.inFlight", "sender.authenticated", "sender.ready", "sender.closed")
+    val booleanFields = setOf("raw.touchCatchUpActive", "raw.policyInteractionActive", "control.inFlight", "sender.authenticated", "sender.ready", "sender.closed")
     val fields: Set<String> = linkedSetOf("schema", "pageVersion", "omittedFields", "sample", "streamGeneration", "epoch", "interval.durationMs").apply {
-        addAll(counters.map { "interval.$it" }); addAll((counters + values).map { "raw.$it" })
+        addAll(counters.map { "interval.$it" }); addAll((counters + values + estimatorValues).map { "raw.$it" })
         addAll(receiver.map { "transport.video.$it" }); addAll(ice.map { "transport.ice.$it" })
         addAll(control.map { "control.$it" }); addAll(senderRoot.map { "sender.$it" })
         for (kind in listOf("video", "audio")) addAll(senderMedia.map { "sender.$kind.$it" })
@@ -85,6 +90,9 @@ object BrowserVideoDiagnosticsSchema {
                 else -> {
                     val number = (item as? Number)?.toDouble() ?: return null
                     if (!number.isFinite() || kotlin.math.abs(number) > MAX_NUMBER) return null
+                    val field = name.removePrefix("raw.")
+                    if ((field.startsWith("policy") || field.startsWith("sourceClock") || field.startsWith("clockEstimator")) && number < 0) return null
+                    if (field in wholePolicy && number % 1.0 != 0.0) return null
                     if (name in setOf("schema", "sample", "streamGeneration", "epoch", "omittedFields") && (number < 0 || number % 1.0 != 0.0)) return null
                 }
             }

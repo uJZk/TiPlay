@@ -23,6 +23,7 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -111,6 +112,8 @@ class BrowserLinkServer(
     private val preflightLogged = AtomicBoolean(false)
     private val performance = VideoPerformance()
     private val airplayDiagnostics = AirPlayPlaybackDiagnostics(callbacks::log)
+    private val resourceDiagnostics = AirPlayResourceDiagnostics(callbacks::log)
+    private val resourceTransfers = AtomicLong()
     private val gate = BrowserPairingGate(callbacks::code)
     private val rtcPairing = BrowserRtcPairing()
     private val touch = BrowserTouchSlots(callbacks::onTouch)
@@ -367,44 +370,76 @@ class BrowserLinkServer(
     }
 
     private fun streamAirPlayResource(request: Request, output: OutputStream): Boolean {
+        val requestStarted = System.nanoTime()
+        val transferRequest = resourceTransfers.incrementAndGet()
+        val parsedId = request.query["id"]?.toLongOrNull()
+        val numericResource = request.query["r"]?.toLongOrNull()?.takeIf { it >= 0 }
+        fun elapsed(started: Long) = ((System.nanoTime() - started) / 1_000_000).coerceAtLeast(0)
+        fun refused(response: Response, reason: AirPlayResourceDiagnostics.RefusalReason): Boolean {
+            resourceDiagnostics.refusal(transferRequest, parsedId, response.status, reason, nowMillis())
+            return respond(output, request, response)
+        }
         val session = request.query["s"]?.takeIf(BrowserPairingGate::isSessionId)
-            ?: return respond(output, request, refuse(400, "bad-request"))
+            ?: return refused(refuse(400, "bad-request"), AirPlayResourceDiagnostics.RefusalReason.BAD_SESSION)
         synchronized(lock) {
             val refusal = if (rtcFactory == null) admitLocked(request.query["c"], session)
                 else if (resourceOwnerLocked(session, request.query["c"]) == null) refuse(401, "resource-token") else null
-            refusal?.let { return respond(output, request, it) }
+            refusal?.let {
+                val reason = if (rtcFactory != null) AirPlayResourceDiagnostics.RefusalReason.RESOURCE_TOKEN
+                else when (it.status) {
+                    429 -> AirPlayResourceDiagnostics.RefusalReason.THROTTLED
+                    409 -> AirPlayResourceDiagnostics.RefusalReason.REPLACED
+                    else -> AirPlayResourceDiagnostics.RefusalReason.PAIRING
+                }
+                return refused(it, reason)
+            }
         }
-        val id = request.query["id"]?.toLongOrNull() ?: return respond(output, request, refuse(400, "bad-request"))
-        val resourceId = request.query["r"] ?: return respond(output, request, refuse(400, "bad-request"))
+        val id = parsedId ?: return refused(refuse(400, "bad-request"), AirPlayResourceDiagnostics.RefusalReason.BAD_ID)
+        val resourceId = request.query["r"]
+            ?: return refused(refuse(400, "bad-request"), AirPlayResourceDiagnostics.RefusalReason.BAD_RESOURCE)
         val photo = AirPlayBrowserPlayback.photo(id)
         val playback = AirPlayBrowserPlayback.video(id)
-        if (photo == null && playback == null) return respond(output, request, refuse(404, "not-found"))
+        if (photo == null && playback == null) return refused(refuse(404, "not-found"), AirPlayResourceDiagnostics.RefusalReason.PLAYBACK_NOT_FOUND)
         val forceProxy = request.query["proxy"] == "1"
         playback?.proxy?.directResource(resourceId)?.takeIf { !forceProxy }?.let { direct ->
+            resourceDiagnostics.opened(transferRequest, id, numericResource,
+                AirPlayVideoProxy.Reference(0, AirPlayVideoProxy.ResourceRoute.BROWSER_DIRECT), 307, 0, elapsed(requestStarted))
             return respond(output, request, Response(307, headers = listOf("Location" to direct)))
         }
+        val openStarted = System.nanoTime()
         val resource = try {
             if (photo != null) { if (resourceId == "photo") photo.open(request.headers["range"]) else null }
             else playback!!.proxy.open(resourceId, request.headers["range"], forceProxy) { child ->
                 "/airplay-resource?id=$id&r=${AirPlayVideoProxy.query(child)}&c=${AirPlayVideoProxy.query(request.query["c"].orEmpty())}&s=${AirPlayVideoProxy.query(session)}${if (forceProxy) "&proxy=1" else ""}"
             }
         } catch (error: AirPlayVideoProxy.Failure) {
-            callbacks.log("AirPlay resource failed reason=${error.reason.wire} status=${error.status ?: "unknown"} route=${error.route ?: "unknown"}")
+            resourceDiagnostics.openFailure(transferRequest, id, numericResource, error, elapsed(openStarted), elapsed(requestStarted))
             return respond(output, request, refuse(502, error.error))
         } catch (error: Exception) {
-            callbacks.log("AirPlay resource failed reason=resource-io exception=${error.javaClass.simpleName}")
+            resourceDiagnostics.openFailure(transferRequest, id, numericResource, error, elapsed(openStarted), elapsed(requestStarted))
             return respond(output, request, refuse(502, "media-unavailable"))
         }
-            ?: return respond(output, request, refuse(404, "not-found"))
-        resource.use {
-            output.write(head(it.status, request, it.headers + listOf("Content-Type" to it.type,
-                "Access-Control-Expose-Headers" to "Content-Type, Content-Length, Content-Range, Accept-Ranges", "Cache-Control" to "no-store", "Connection" to "close")))
-            val buffer = ByteArray(32 * 1024)
-            while (running.get() && gate.current == session && (if (photo != null) AirPlayBrowserPlayback.photo(id) === photo else AirPlayBrowserPlayback.video(id) === playback)) {
-                val count = it.body.read(buffer)
-                if (count < 0) break
-                output.write(buffer, 0, count)
-            }
+            ?: return refused(refuse(404, "not-found"), AirPlayResourceDiagnostics.RefusalReason.RESOURCE_NOT_FOUND)
+        val openMillis = elapsed(openStarted)
+        resourceDiagnostics.opened(transferRequest, id, numericResource, resource.reference,
+            resource.status, openMillis, elapsed(requestStarted))
+        resource.use { scoped ->
+            resourceDiagnostics.transfer(scoped, output,
+            head(scoped.status, request, scoped.headers + listOf("Content-Type" to scoped.type,
+                "Access-Control-Expose-Headers" to "Content-Type, Content-Length, Content-Range, Accept-Ranges",
+                "Cache-Control" to "no-store", "Connection" to "close")),
+            request = transferRequest, playbackId = id, resourceId = numericResource,
+            revision = (playback?.source()?.get("revision") as? Number)?.toLong(),
+            timing = AirPlayResourceDiagnostics.Timing(requestStarted, openMillis),
+            owner = {
+                when {
+                    !running.get() -> AirPlayResourceDiagnostics.TransferOwner.SERVER_STOPPED
+                    gate.current != session -> AirPlayResourceDiagnostics.TransferOwner.BROWSER_RETIRED
+                    (if (photo != null) AirPlayBrowserPlayback.photo(id) !== photo
+                        else AirPlayBrowserPlayback.video(id) !== playback) -> AirPlayResourceDiagnostics.TransferOwner.PLAYBACK_RETIRED
+                    else -> AirPlayResourceDiagnostics.TransferOwner.ACTIVE
+                }
+            })
         }
         return false
     }

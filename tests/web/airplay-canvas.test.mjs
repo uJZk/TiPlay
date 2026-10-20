@@ -101,3 +101,32 @@ test('draw failures close the borrowed frame and retained sample and report once
   const late = h.sample(); picture.present(late); h.resize(); picture.dispose();
   assert.equal(late.closed, 1); assert.equal(failures.length, 1);
 });
+
+test('sample close observers report successful ownership release once and cannot interrupt rendering', t => {
+  const h = harness(t), observations = [], failures = [];
+  const picture = createFrameCanvas(h.container, error => failures.push(error), sample => {
+    observations.push({ sample, closed: sample.closed });
+    if (observations.length === 1) throw new Error('diagnostic observer failed');
+  });
+  const first = h.sample(), second = h.sample(), third = h.sample();
+  picture.present(first); picture.redraw();
+  assert.equal(observations.length, 0, 'drawing a retained sample does not release its ownership');
+  picture.present(second); picture.clear(); picture.clear(); picture.present(third); picture.dispose(); picture.dispose();
+  const late = h.sample(); picture.present(late);
+  assert.deepEqual(observations.map(entry => entry.sample), [first, second, third, late]);
+  assert.ok(observations.every(entry => entry.closed === 1));
+  assert.deepEqual(failures, []); assert.ok(h.draws.length >= 3);
+});
+
+test('sample close observers never claim a release when the owned sample close failed', t => {
+  const h = harness(t), observations = [];
+  const picture = createFrameCanvas(h.container, assert.fail, sample => observations.push(sample));
+  const failed = h.sample({ close() { throw new Error('close did not complete'); } });
+  picture.present(failed);
+  assert.throws(() => picture.clear(), /close did not complete/);
+  assert.deepEqual(observations, []);
+  // Retire the test sample successfully so cleanup still follows the ownership contract.
+  failed.close = function () { this.closed++; };
+  picture.clear(); picture.dispose();
+  assert.deepEqual(observations, [failed]); assert.equal(failed.closed, 1);
+});

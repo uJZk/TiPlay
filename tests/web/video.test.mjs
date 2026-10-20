@@ -39,6 +39,25 @@ const config = (epoch, mode = 'carplay') => encodeRecord({
 const keyFrame = epoch => encodeRecord({ kind: RECORD.FRAME, flags: FLAG.KEY, codec: 1, epoch, payload: Uint8Array.of(0, 0, 0, 1, 0x65) });
 const videoFrame = timestamp => ({ timestamp, closed: false, close() { this.closed = true; } });
 
+test('decoder clock diagnostics share the presentation freshness boundary and snapshot instant', t => {
+  let at = 1000;
+  t.mock.method(performance, 'now', () => at);
+  const pipeline = createDecoderPipeline({ post() {}, present() {} });
+  const anchor = performance.timeOrigin + at;
+  pipeline.clock({ at: anchor, generation: 4, rtt: 3, uncertaintyMs: 2, offset: 0 });
+  let stats = pipeline.stats();
+  assert.equal(stats.sourceClockState, 'fresh'); assert.equal(stats.sourceClockAgeMs, 0);
+  assert.equal(stats.sourceClockGeneration, 4); assert.equal(stats.sourceClockMaxAgeMs, 15000);
+  assert.equal(stats.stageClockUncertaintyMs, 2); assert.equal(stats.clockRttMs, 3);
+  at += 15000;
+  assert.equal(pipeline.stats().sourceClockState, 'fresh');
+  at += .001;
+  stats = pipeline.stats();
+  assert.equal(stats.sourceClockState, 'stale'); assert.equal(stats.clockRttMs, null);
+  pipeline.clock(null); stats = pipeline.stats();
+  assert.equal(stats.sourceClockState, 'unavailable'); assert.equal(stats.sourceClockAgeMs, null);
+});
+
 function recordingPresenter(t, messages, presented) {
   const canvas = { width: 800, height: 480, removeEventListener() {},
     getContext: type => type === '2d' ? { fillRect() {}, drawImage() {} } : null };

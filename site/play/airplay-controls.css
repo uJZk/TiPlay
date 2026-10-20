@@ -13,6 +13,10 @@
 .media-seek-button-backward-label { left:-1px; }
 .media-seek-button-forward-label { right:-1px; }
 .airplay-error { position:absolute; inset:40% 16px auto; text-align:center; pointer-events:none; }
+.airplay-gesture { position:absolute; inset:auto 16px 84px; text-align:center; pointer-events:none; text-shadow:0 1px 3px #000; }
+.airplay-player [data-gesture-required] .media-play-button-play-icon { display:block !important; }
+.airplay-player [data-gesture-required] .media-play-button-pause-icon,
+.airplay-player [data-gesture-required] .media-play-button-restart-icon { display:none !important; }
 .airplay-photo-stop { position:absolute; z-index:3; bottom:max(16px,env(safe-area-inset-bottom)); right:max(16px,env(safe-area-inset-right)); }
 .airplay-captions { position:absolute; inset:auto 10% 84px; z-index:1; text-align:center; white-space:pre-line; color:#fff; font:20px sans-serif; text-shadow:0 1px 3px #000,0 -1px 3px #000; pointer-events:none; }
 @container media-root (width < 32rem) {

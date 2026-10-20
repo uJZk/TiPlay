@@ -26,9 +26,29 @@ class BrowserVideoDiagnosticsSchemaTest {
         val event = WebJson.parse(fixture) as Map<*, *>
         val input = event["v"] as Map<*, *>
         val valid = requireNotNull(BrowserVideoDiagnosticsSchema.parse(input))
-        assertEquals("The browser and Android must share the exact protocol-v1 field list", BrowserVideoDiagnosticsSchema.fields, valid.keys)
+        assertTrue("Historical captures remain an accepted subset", BrowserVideoDiagnosticsSchema.fields.containsAll(valid.keys))
         assertEquals(input, valid)
         assertTrue(WebJson.write(valid).toByteArray(Charsets.UTF_8).size <= 16 * 1024)
+    }
+
+    @Test fun actualLivePolicySelectorSharesTheExactAllowlistAndRetainsPrioritiesWithoutIncreasingTheWireBudget() {
+        val fixture = javaClass.getResourceAsStream("/Browser-live-policy-diagnostics-v1.json")!!.bufferedReader().use { it.readText() }
+        val event = WebJson.parse(fixture) as Map<*, *>
+        val debug = event["debug"] as Map<*, *>
+        val input = debug["v"] as Map<*, *>
+        val valid = requireNotNull(BrowserVideoDiagnosticsSchema.parse(input))
+        assertEquals(BrowserVideoDiagnosticsSchema.fields, (event["schemaFields"] as List<*>).toSet())
+        assertEquals(256, valid.size); assertEquals(2.0, (valid["omittedFields"] as Number).toDouble(), 0.0)
+        assertEquals(input, valid)
+        for (key in listOf("raw.policyVideoTargetMs", "raw.policyVideoReadinessMs", "raw.policyVideoMarginMs",
+            "raw.policyInteractionStarts", "raw.policyProfileSwitches", "raw.policyVideoPlanDurationMs",
+            "raw.sourceClockState", "raw.sourceClockAgeMs", "raw.clockEstimatorState", "raw.clockEstimatorSelectedAgeMs"))
+            assertTrue(key, valid.containsKey(key))
+        assertTrue(WebJson.write(valid).toByteArray(Charsets.UTF_8).size <= BrowserVideoDiagnosticsSchema.MAX_BYTES)
+        for (bad in listOf("raw.policyVideoTargetMs" to -1, "raw.policyInteractionStarts" to 1.5,
+            "raw.policyInteractionActive" to 1, "raw.sourceClockState" to "private-state",
+            "raw.clockEstimatorState" to "private-state", "raw.clockEstimatorSelectedAgeMs" to -1))
+            assertNull(bad.first, BrowserVideoDiagnosticsSchema.parse(sample() + bad))
     }
 
     @Test fun unknownSchemaCredentialsNestedOrMistypedFieldsCannotEnterTheJournal() {

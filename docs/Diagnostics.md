@@ -193,12 +193,203 @@ the pause before exporting, so the next diagnostic window is included. Changing
 the viewport can restart the source and reset per-epoch drop counters; report that
 separately from an interrupted RTC connection.
 
-Resource diagnostics distinguish Android HTTP from iPhone FCUP, preserve upstream status
-and report bounded denial details in Debug. Android resource I/O failures retain bounded
-exception class names and one cause class, excluding exception messages and private URLs.
 Service diagnostics distinguish missing permission from foreground eligibility; a granted
 microphone permission alone does not establish permission to start microphone capture
 in the background.
+
+## Live video policy evidence
+
+CarPlay and AirPlay mirroring use the actual scheduling owner's read-only policy
+snapshot. `playbackProfile` identifies the applied video plan, not a newly inferred
+profile after an idle hold expires. The getter does not change scheduling, clock
+selection or audio. These fields accompany the existing browser reports, normally
+about five seconds apart; they are not snapshots taken at every capacity eviction.
+
+| Fields | Interpretation |
+| --- | --- |
+| `policyVideoReadinessMs`, `policyVideoMarginMs`, `policyVideoTargetMs`, `policyTargetReason` | Observed/decayed readiness, actual used margin and the applied plan's target. Reasons are `initial`, `touch`, `readiness`, `initial-floor` or `ceiling`. Unobserved readiness/margin stays missing. |
+| `policyVideoPlanFromMs`, `policyVideoPlanDurationMs`, `policyVideoPlanRemainingMs`, `policyVideoLeadRemainingMs` | Plan origin and convergence duration/remaining time, with the initial lead wait reported separately. During that wait, convergence remaining can still equal its full duration. These are not the current cursor delay; compare `videoCursorDeltaMs` and `videoCursorSpeed`. |
+| `policyInteractionActive`, `policyHoldRemainingMs` | Physical interaction state versus remaining activity hold. Active interaction can remain true with zero hold remaining; release and applied-profile expiry are separate observations. |
+| `policyInteractionStarts`, `policyInteractionReleases`, `policyProfileSwitches`, `policyPlanChanges` | Cumulative timing-owner counts that survive its stream/epoch resets. They preserve short transitions between reports without logging each move; a new owner starts a new baseline. |
+| `policyMaxDelayMs`, `policyMaxVideoFrames`, `policyMaxVideoBytes`, `policySubmitMarginMs` | Applied policy capacities and submission reservation. Frame/byte limits describe application decoded-picture queues, not vendor pools or measured GPU use. |
+
+For live video, the target formula reserves the existing 20 ms submission allowance
+once from the 300 ms software limit, giving a maximum target of 280 ms. Submission
+scheduling uses the allowance already represented by that plan; do not subtract
+another 20 ms when interpreting it. CarPlay touch forces the video target to zero.
+The profile's 8 ms margin is not used in that target formula: the actual used margin
+is zero. Neither zero target nor the configured 20/30 ms ordinary/mirror margins
+establish zero latency or empirically optimal tuning. Touch affects video only.
+
+`sourceClockState` (`fresh`, `stale`, `unavailable`), `sourceClockAgeMs`,
+`sourceClockGeneration` and `sourceClockMaxAgeMs` describe the mapping available to the
+decoder. The same 15-second freshness rule governs presentation mapping; uncertainty
+remains in `stageClockUncertaintyMs`. A fresh clock alone does not establish that a
+particular picture has valid source timing. Untimed scheduled pictures cannot be
+counted as verified source-relative 300 ms compliance.
+
+The main control estimator reports a different boundary:
+`clockEstimatorObservationAgeMs` is the age of its last RTT-valid observation;
+`clockEstimatorSelectedAgeMs` is the age of the selected mapping anchor.
+`clockEstimatorState` distinguishes `unavailable`, `suspended`, `pending-jump`,
+`observation-stale`, `selected-stale` and `fresh`. Missing ages stay unknown, not zero.
+Continuing clock replies can coexist with an old selected anchor. `selected-stale`
+is a derived state, not proof of one particular RTT-filter rejection or a stopped
+main thread. Compare estimator evidence with the decoder's mapping rather than
+renaming an old mapping timestamp as a gap in clock probes.
+
+Standard `Browser transport: stage=POLICY` preserves observed profile/interaction
+counter changes, capacity-drop increases and clock-validity boundaries, and can
+accompany existing transport/failure boundaries. Healthy periodic detail remains
+Debug-only. Plan changes, ages and each move do not create per-frame Standard logs.
+The ordinary bounded status prioritizes core policy evidence; complete plan fields
+can require Debug. An allowlist entry does not guarantee that a budgeted payload
+contains it; check omission counts and keep absent fields unknown.
+
+A captured reproduction contains three valid intervals per live mode after each
+initial baseline. Mirroring added 859 read frames and 863 draws with no increase in
+any of the five additive drop categories. CarPlay added 322 reads, 325 decodes and
+223 draws, with 95 capacity evictions and six pacing replacements. Already queued
+pictures can make interval draws exceed reads; these counters have different stage
+boundaries. CarPlay also had sparse source presentation/read cadence, so low draw
+rate cannot all be attributed to browser drops. Its coded picture size made the
+64 MiB byte budget admit four queued pictures before the 24-frame limit; aggregate
+counts do not reconstruct each eviction's instantaneous cursor or target.
+
+The same CarPlay evidence includes a mapping age above 18 seconds and 37 newly
+untimed scheduled pictures, while control exchanges continued. It does not identify
+the exact anchor-selection cause or certify those pictures' latency. A later raw
+CarPlay return has no simultaneous browser-quality snapshot. No forwarded `t` touch
+event or active touch-profile window was captured, so the 750 ms hold and 1.25x
+convergence remain unvalidated on that device. These observations establish neither
+universal smoothness nor absence of live playback, and do not tune the profile
+constants or measure physical panel/acoustic output.
+
+## AirPlay URL playback evidence
+
+URL casting has its own media engine and AudioContext. CarPlay/mirror audio telemetry
+does not establish that this context is running. Compare playback ID, command revision
+and engine generation before interpreting successive snapshots. A settled old command
+keeps its revision without acquiring a newer engine's snapshot; retired/inactive players
+cannot report a current engine. `ready`, play intent, `loadedmetadata` and
+`readyState=3` do not establish actual `playing`, a resolved play promise or an advancing
+media clock. A pending AudioContext resume can leave decoded media ready while position
+stays at a seek target.
+
+The bounded engine snapshot is split into fixed groups so the metadata line limit does
+not silently discard the later fields:
+
+| Group | Evidence |
+| --- | --- |
+| `ENGINE_STATE` | Playing intent versus running clock, wait reason, AudioContext state/resume pending, clock anchor and stall elapsed/count. |
+| `ENGINE_BUFFER` | Position, playable/per-track ends, scheduled audio end, limiting track, target/time capacities, startup decision and read-progress fallback count. |
+| `ENGINE_PIPELINE` | Queue counts/bytes, frame/byte capacities, pending sink reads, budget blocking and end-of-stream flags. |
+| `ENGINE_CODEC` | Validated complete short codec/profile token, coded/display dimensions, observed sample cadence/duration, support probe and requested hardware/latency hints. |
+| `ENGINE_OWNERSHIP` | Retained sample generation, held/pending/total application-owned samples and estimated bytes; received/closed samples, pending video-read age and last sample age. |
+| `ENGINE_AUDIO` | Resume requested/completed/failed counts, known user-activation state, required gesture and requested context latency hint. |
+| `ENGINE_NETWORK` | Serialized resource-reader activity/queue, byte progress and its age, timeouts/cancellations, backward restarts, ignored ranges and safe last status/result. |
+
+Semantic media/command edges remain visible. Engine-state changes are sampled from
+progress/timeupdate events with a 250 ms minimum interval; an unchanged snapshot with
+play intent but no running clock repeats at most every five seconds, and healthy state
+at most every ten seconds. Android applies a further unchanged-state deduplication.
+Standard, the default mode, retains semantic media/command edges, failures and explicit
+`stalled=true` evidence. One recovery snapshot can follow an accepted stall only for
+the same playback ID, revision and generation; source replacement is not recovery of
+that identity. Unchanged healthy detail is Debug-only. These are sampling
+intervals when events execute, not an independent watchdog: a blocked browser main
+thread cannot emit a timely snapshot. Group lines carry the same identity, and missing
+fields remain unknown rather than becoming zero or false.
+
+An engine failure preserves an immutable snapshot before cleanup, including the
+available codec token, requested hints, known dimensions, original play intent, queues and
+context state. The error event carries this snapshot; a separate post-cleanup snapshot
+reports actual application ownership and successful closes. A canvas-retained picture
+can legitimately leave one held sample after queue/decoder cleanup; it must not be
+reported as zero until that picture is closed. Both snapshots use the same bounded
+schema and retain unknown fields as unknown.
+
+Standard retains `error`, `open-error`, `canvas-error` and `play-rejected` failure
+edges, the first terminal error snapshot and one changed cleanup snapshot after the
+fault without the ordinary 250 ms gate. Repeated identical terminal states, or changes
+only to clock values, remain limited to five seconds. An error state is never reported
+as recovery of a prior stall. These observations describe application cleanup, not
+vendor-internal decoder outputs or physical surface release.
+
+Read `waitReason` with both track coverage and context state. Suspended/resuming audio,
+startup/recovery watermarks, a timeline gap and a starved track are different causes
+of a stopped clock. Smaller decoded queues do not prove network starvation; a reader
+can stop requesting because its consumer has stopped pulling. A fallback based on
+pending-read age does not identify hardware pool exhaustion. The
+[URL engine limits](AirPlay.md#url-engine-and-captions) are separate application
+budgets, not a total GPU or network-memory measurement.
+`resourceBytes` is the serialized reader's cumulative response-body bytes read,
+including rereads; it is neither unique media coverage nor bytes consumed by the
+decoder. Network progress and last-result fields cannot measure decoder-internal
+work or audio reaching the speakers. `resourceLastStatus=0` means no recorded response
+status; actual HTTP statuses are restricted to 100–599.
+
+Codec support and `requestedHardwareAcceleration` describe negotiation/requested
+configuration. They do not identify the actual decoder backend;
+`actualHardware`, `poolCapacity` and `vendorBuffers` remain explicitly unknown. Sample cadence and
+`samplesReceived` describe samples delivered to the application sink. `samplesClosed`
+counts successful first application closes; neither counter observes all vendor
+decoder outputs or physical GPU-surface release. These two counters span the engine
+lifetime, while video queue counts describe the active generation. Held/pending/owned
+counts can include a picture retained across generation changes; use
+`videoHeldGeneration` rather than attributing it to the new queue. Estimated video bytes use coded
+RGBA8-equivalent size. They exclude vendor/reference buffers and rendering allocations;
+application receipt/close cannot establish that an internal buffer leak is absent.
+
+Finite-surface tests reproduce a code-level startup deadlock when the engine waits for
+an additional sample before recognizing its capacity. They do not measure a vehicle's
+surface pool. Local replay also demonstrates that an unactivated, suspended
+AudioContext can produce matching readiness-without-progress symptoms and resume
+after a real Play action. The field report did not collect that context state or pool
+capacity, so neither mechanism is established as its sole cause. Observed complete
+upstream response blocks likewise do not establish their final delivery to the browser.
+
+Resource diagnostics distinguish Android HTTP from iPhone FCUP, preserve upstream status
+and report bounded denial details in Debug. Resource I/O failures retain bounded
+exception classes, excluding exception messages and private URLs.
+`LOADED phase=headers-ready delivery=unproven` is an upstream milestone.
+For HTTP, it means response headers are available; FCUP may already have a buffered
+body. It proves neither completion of the browser-facing transfer nor decode or
+playback. `OPEN_END` joins the browser handler's request to the proxy load and safe
+resource identity. Successful opens are Debug-only; `phase=open failed=true` retains
+open failures in Standard with safe exception classes and upstream status when known.
+`BROWSER_DIRECT` establishes the native 307 redirect only; Android cannot establish
+completion of the browser's subsequent direct request.
+`REFUSED` records rejected admission by a fixed reason: repeated refusals are limited
+to one line per reason per five seconds, with total/suppressed counters instead of
+untrusted URLs or token values.
+
+Each admitted body transfer has one `TRANSFER_END`, with request/load,
+playback/resource/revision identity, route/status, phase/reason, owner, EOF and safe
+exception classes. Matching `TRANSFER_BYTES` and `TRANSFER_TIMING` lines preserve
+accounting and timing separately. Successful complete 2xx EOF terminal groups are Debug-only; failures,
+short EOF, cancellation, retirement and close failures remain in Standard. No
+per-chunk metadata log is added.
+
+`expectedBytes` comes from a valid Content-Length and may be unknown. `readBytes`
+counts body bytes returned by resource reads; `writtenBytes` counts body bytes in
+output-write calls that returned successfully. Header bytes are excluded. A throwing
+write may have partially accepted its input: `writeUnknownBytes` is that call's
+unresolved byte-count upper bound, not a measured accepted or lost byte count.
+`writeAccounting=completed-calls` states this boundary. Even successful writes prove
+only local submission, not browser receipt or consumption. A socket error alone does
+not prove user cancellation; `cancel=UNKNOWN` preserves that distinction.
+
+Timing scopes overlap and must not be added. `headersMs` measures an upstream HTTP
+hop until response headers; open/transfer summaries retain the final upstream hop.
+FCUP has no separately observed header time, so it remains
+unknown. `responseMs` is that HTTP header wait or the FCUP exchange until its buffered
+response. `openMs` spans resource preparation, potentially including redirects, FCUP
+and playlist reads/rewriting. `requestMs` starts at browser handler entry, not at the
+browser's original fetch call. In `TRANSFER_TIMING scope=handler`, `transferMs` covers
+header/body writes and resource close after open; it excludes resource-open time.
+These stages establish local progress and failure boundaries, not end-to-end network
+throughput or browser consumption.
 
 ## Reading wireless startup evidence
 

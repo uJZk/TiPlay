@@ -4,7 +4,7 @@
 import { FLAG, RECORD, RecordError, RecordStreamError, Samples, abortable, chooseDecoderConfig, createRecordStream, letterbox } from './link.js';
 import { createFpsWindow } from './fps-window.js';
 import { createVideoFramePacer } from './video-pacing.js';
-import { presentationTime } from './clock-sync.js';
+import { presentationTime, presentationClockState, CLOCK_STALE_AFTER_MS } from './clock-sync.js';
 import { videoExpired } from './playback-window.js';
 import { hasHdrTransfer } from './airplay-sdr.js';
 import { createAudioReferenceTimeline } from './audio-output-clock.js';
@@ -313,10 +313,16 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
       return records.read(id, stream);
     },
     stop,
-    stats: () => ({
+    stats: () => {
+      const at = performance.timeOrigin + performance.now(), sourceClockState = presentationClockState(clock, at);
+      return {
       codec: config?.codec ?? null, epoch: config?.epoch ?? null, mode: config?.mode ?? null, streamGeneration: streamId,
       codecSupported,
-      clockRttMs: clock && performance.timeOrigin + performance.now() - clock.at <= 15000 ? clock.rtt : null,
+      clockRttMs: sourceClockState === 'fresh' ? clock.rtt : null,
+      sourceClockState,
+      sourceClockAgeMs: Number.isFinite(clock?.at) && at >= clock.at ? at - clock.at : null,
+      sourceClockGeneration: clock?.generation,
+      sourceClockMaxAgeMs: CLOCK_STALE_AFTER_MS,
       width: config?.width ?? null,
       height: config?.height ?? null,
       // This is the requested hint; the actual decoder implementation is not exposed by WebCodecs.
@@ -339,7 +345,8 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
       ...records.stats(),
       ...totals,
       decodeDroppedFrames,
-    }),
+      };
+    },
   };
 }
 

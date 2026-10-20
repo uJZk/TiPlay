@@ -14,7 +14,7 @@ HTTP 只保留 SRP 配对、公开发现和随机 bearer 资源读取/退出；�
 用户确认的真实 CarPlay 播放，beta.3/v71 已记录电脑 host↔host UDP；这些旧版
 观察仍不代表当前整合版已通过设备验收。正式页面覆盖
 <https://ujzk.github.io/TiPlay/>，删除独立 `/webrtc/` 子站，不留别名或重定向；
-APK 默认使用正式根页。目标为 0.2.20-beta.6/code48、网页 v72，最终发布状态以
+APK 默认使用正式根页。目标为 0.2.20-beta.7/code49、网页 v73，最终发布状态以
 [构建记录](Build.md#beta-release)为准。
 
 ## 四场景播放策略

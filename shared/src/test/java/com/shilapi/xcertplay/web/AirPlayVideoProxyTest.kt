@@ -13,6 +13,17 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 class AirPlayVideoProxyTest {
+    @Test fun aFailedBrokerOpenStillReportsItsNumericLoadAndOriginalCause() {
+        val original = java.net.SocketTimeoutException("https://private.test/media?token=secret")
+        val proxy = AirPlayVideoProxy("mlhls://app/video", { _, _ -> throw original })
+        try {
+            val error = runCatching { proxy.open(proxy.rootId, null) { it } }.exceptionOrNull()
+            assertTrue(error is AirPlayVideoProxy.Failure)
+            assertEquals(1L, (error as AirPlayVideoProxy.Failure).load)
+            assertEquals(AirPlayVideoProxy.ResourceRoute.IPHONE_FCUP, error.route)
+            assertSame(original, error.cause)
+        } finally { proxy.close() }
+    }
     private val appPlaylist = "#EXTM3U\n#EXT-X-MAP:URI=\"minibili://app/init.mp4\"\n#EXTINF:1,\nminibili://app/segment.m4s\n"
     private fun assertWholeRewrittenPlaylist(resource: AirPlayVideoProxy.Resource) {
         assertEquals(200, resource.status)
@@ -32,7 +43,13 @@ class AirPlayVideoProxyTest {
                 ReceiverResource(appPlaylist.toByteArray(), status, null)
             })
             try {
-                proxy.open(proxy.rootId, range) { "/resource?r=$it" }!!.use(::assertWholeRewrittenPlaylist)
+                proxy.open(proxy.rootId, range) { "/resource?r=$it" }!!.use {
+                    assertEquals(1L, it.reference!!.load)
+                    assertEquals(AirPlayVideoProxy.ResourceRoute.IPHONE_FCUP, it.reference!!.route)
+                    assertNull(it.reference!!.headersMillis)
+                    assertTrue(it.reference!!.responseMillis!! >= 0)
+                    assertWholeRewrittenPlaylist(it)
+                }
             } finally { proxy.close() }
         }
     }
@@ -42,7 +59,13 @@ class AirPlayVideoProxyTest {
             withOrigin(200, mapOf("Content-Type" to "application/octet-stream"), appPlaylist.toByteArray()) { origin, request ->
                 val proxy = AirPlayVideoProxy("$origin/playlist", { _, _ -> null })
                 try {
-                    proxy.open(proxy.rootId, range) { "/resource?r=$it" }!!.use(::assertWholeRewrittenPlaylist)
+                    proxy.open(proxy.rootId, range) { "/resource?r=$it" }!!.use {
+                        assertEquals(1L, it.reference!!.load)
+                        assertEquals(AirPlayVideoProxy.ResourceRoute.ANDROID_HTTP, it.reference!!.route)
+                        assertTrue(it.reference!!.headersMillis!! >= 0)
+                        assertEquals(it.reference!!.headersMillis, it.reference!!.responseMillis)
+                        assertWholeRewrittenPlaylist(it)
+                    }
                     assertTrue(request.get(2, TimeUnit.SECONDS).contains("Range: $range\r\n", true))
                 } finally { proxy.close() }
             }

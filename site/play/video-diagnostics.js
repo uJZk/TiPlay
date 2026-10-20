@@ -14,7 +14,13 @@ export const VIDEO_VALUE_FIELDS = ['currentFps', 'currentDelta', 'lastDrawAgeMs'
   'androidHubQueueMsP95', 'androidTransportSubmitToRecordReadMsP95', 'stageClockUncertaintyMs',
   'decodedToSchedulerMsP95', 'decodedToDrawMsP95', 'drawMsP95', 'presentationOffset90', 'presentationOffsetHigh5',
   'presentationOffsetSamples', 'senderRelativePolicyCeilingMs', 'videoCursorSpeed', 'videoCursorDeltaMs', 'decodedFrontierDeltaMs', 'touchCatchUpActive',
-  'decodeBackpressureMs', 'decodedQueueFrames', 'decodedQueueBytes', 'decodeInFlightFrames', 'decodeInFlightBytes'];
+  'decodeBackpressureMs', 'decodedQueueFrames', 'decodedQueueBytes', 'decodeInFlightFrames', 'decodeInFlightBytes',
+  'policyVideoReadinessMs', 'policyVideoMarginMs', 'policyVideoTargetMs', 'policyVideoPlanFromMs',
+  'policyVideoPlanDurationMs', 'policyVideoPlanRemainingMs', 'policyVideoLeadRemainingMs',
+  'policyInteractionActive', 'policyHoldRemainingMs', 'policyInteractionStarts', 'policyInteractionReleases',
+  'policyProfileSwitches', 'policyPlanChanges', 'policyMaxDelayMs', 'policyMaxVideoFrames', 'policyMaxVideoBytes', 'policySubmitMarginMs',
+  'sourceClockAgeMs', 'sourceClockGeneration', 'sourceClockMaxAgeMs',
+  'clockEstimatorObservationAgeMs', 'clockEstimatorSelectedAgeMs'];
 export const RECEIVER_FIELDS = ['retainedBytes', 'consumedBytes', 'queuedRecords', 'partialBytes', 'receivedRecords', 'receivedFragments',
   'peakRetainedBytes', 'reassemblyMsMean', 'reassemblyMsMax', 'consumerWaitMsMean', 'consumerWaitMsMax'];
 export const ICE_FIELDS = ['currentRoundTripTimeMs', 'availableOutgoingBitrate', 'requestsSent', 'requestsReceived', 'responsesSent',
@@ -34,6 +40,9 @@ const ENUM_FIELDS = {
   'raw.decoderImplementation': ['unknown'], 'raw.presentationTimingState': ['unobserved', 'unavailable', 'mapped-presentation'],
   'raw.pacingMode': ['display-refresh', 'immediate'],
   'raw.playbackProfile': ['default', 'carplay', 'carplay-touch', 'airplay-mirror', 'airplay-cast', 'airplay-audio'],
+  'raw.policyTargetReason': ['initial', 'touch', 'readiness', 'initial-floor', 'ceiling'],
+  'raw.sourceClockState': ['fresh', 'stale', 'unavailable'],
+  'raw.clockEstimatorState': ['unavailable', 'suspended', 'pending-jump', 'observation-stale', 'selected-stale', 'fresh'],
   'transport.ice.state': ['collecting', 'unavailable', 'no-selected-pair', 'selected'],
   'transport.ice.localCandidateType': ['host', 'srflx', 'prflx', 'relay'],
   'transport.ice.remoteCandidateType': ['host', 'srflx', 'prflx', 'relay'], 'transport.ice.protocol': ['udp', 'tcp'],
@@ -43,13 +52,21 @@ const ENUM_FIELDS = {
 const NATIVE_STATES = ['NEW', 'CHECKING', 'CONNECTED', 'COMPLETED', 'FAILED', 'DISCONNECTED', 'CLOSED', 'GATHERING', 'COMPLETE', 'CONNECTING'];
 for (const key of ['iceGatheringState', 'iceConnectionState', 'peerConnectionState']) ENUM_FIELDS[`sender.${key}`] = NATIVE_STATES;
 
-const BOOLEAN_FIELDS = new Set(['raw.touchCatchUpActive', 'control.inFlight', 'sender.authenticated', 'sender.ready', 'sender.closed', 'authenticated', 'ready', 'closed']);
+const BOOLEAN_FIELDS = new Set(['raw.touchCatchUpActive', 'raw.policyInteractionActive', 'control.inFlight', 'sender.authenticated', 'sender.ready', 'sender.closed', 'authenticated', 'ready', 'closed']);
 const finiteNumber = value => Number.isFinite(value) && Math.abs(value) <= 9e15;
+const WHOLE_POLICY_FIELDS = new Set(['policyInteractionStarts', 'policyInteractionReleases', 'policyProfileSwitches',
+  'policyPlanChanges', 'policyMaxVideoFrames', 'policyMaxVideoBytes', 'sourceClockGeneration', 'sourceClockMaxAgeMs']);
+const nonnegativePolicyField = key => key.startsWith('policy') || key.startsWith('sourceClock') || key.startsWith('clockEstimator');
 
 function scalars(output, prefix, source, fields) {
   for (const key of fields) {
     const value = source?.[key];
-    if (finiteNumber(value) || (typeof value === 'boolean' && BOOLEAN_FIELDS.has(prefix + key))) output[prefix + key] = value;
+    if (BOOLEAN_FIELDS.has(prefix + key)) {
+      if (typeof value === 'boolean') output[prefix + key] = value;
+      continue;
+    }
+    if (finiteNumber(value) && (!nonnegativePolicyField(key) || value >= 0) &&
+        (!WHOLE_POLICY_FIELDS.has(key) || Number.isSafeInteger(value))) output[prefix + key] = value;
   }
 }
 function enums(output, source) {
@@ -102,7 +119,7 @@ export function videoDiagnosticValues(page, capture, tracker) {
   const video = page.video ?? {}, result = { schema: 1, ...tracker.observe(video, capture) };
   scalars(result, 'raw.', video, [...VIDEO_COUNTER_FIELDS, ...VIDEO_VALUE_FIELDS]);
   const codec = typeof video.codec === 'string' ? video.codec.split('.')[0] : null;
-  const selectedEnums = { 'raw.codec': codec, ...Object.fromEntries(['mode', 'acceleration', 'decoderImplementation', 'presentationTimingState', 'pacingMode', 'playbackProfile']
+  const selectedEnums = { 'raw.codec': codec, ...Object.fromEntries(['mode', 'acceleration', 'decoderImplementation', 'presentationTimingState', 'pacingMode', 'playbackProfile', 'policyTargetReason', 'sourceClockState', 'clockEstimatorState']
     .map(key => [`raw.${key}`, video[key]])) };
   result['raw.pipelineCounterScope'] = 'pipeline-lifetime'; result['raw.decodeDropCounterScope'] = 'epoch-reset'; result['raw.schedulerCounterScope'] = 'epoch-reset';
   result['raw.transferCounterScope'] = 'epoch-reset'; result['raw.renderCounterScope'] = 'epoch-reset';
@@ -145,7 +162,14 @@ export function packVideoDiagnosticValues(source, pageVersion, byteLimit = VIDEO
   let omitted = 0;
   const priority = ['schema', 'sample', 'streamGeneration', 'epoch', 'raw.mode', 'raw.droppedFrames', ...DROP_FIELDS.map(key => `raw.${key}`),
     'raw.readFrames', 'raw.decoded', 'raw.drawnFrames', 'raw.touchSkippedFrames', 'raw.scheduledCoalescedFrames', 'raw.scheduledStaleFrames',
-    'raw.scheduledCapacityFrames', 'raw.touchSubset', 'raw.schedulerReasonSubset', 'interval.state', 'interval.durationMs'];
+    'raw.scheduledCapacityFrames', 'raw.touchSubset', 'raw.schedulerReasonSubset', 'interval.state', 'interval.durationMs',
+    ...['playbackProfile', 'policyVideoReadinessMs', 'policyVideoMarginMs', 'policyVideoTargetMs', 'policyVideoPlanFromMs',
+      'policyVideoPlanDurationMs', 'policyVideoPlanRemainingMs', 'policyVideoLeadRemainingMs', 'policyTargetReason',
+      'policyInteractionActive', 'policyHoldRemainingMs', 'policyInteractionStarts', 'policyInteractionReleases',
+      'policyProfileSwitches', 'policyPlanChanges', 'policyMaxDelayMs', 'policyMaxVideoFrames', 'policyMaxVideoBytes',
+      'policySubmitMarginMs', 'sourceClockState', 'sourceClockAgeMs', 'sourceClockGeneration', 'sourceClockMaxAgeMs',
+      'clockEstimatorState', 'clockEstimatorObservationAgeMs', 'clockEstimatorSelectedAgeMs',
+      'stageClockUncertaintyMs'].map(key => `raw.${key}`)];
   for (const key of [...new Set([...priority, ...Object.keys(source)])]) {
     if (!(key in source)) continue;
     const original = source[key];

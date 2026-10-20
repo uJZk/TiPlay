@@ -102,6 +102,9 @@ An externally revoked display can still replace the browser decoder epoch. Ordin
 mirroring has no confirmed sender keyframe-request implementation, so the local
 recovery callback cannot guarantee a new independently decodable frame. Continuing
 prediction frames alone cannot restore a decoder whose initial keyframe was lost.
+Read live policy, source-clock freshness and capacity-drop evidence separately from
+URL buffering; the [live diagnostics](Diagnostics.md#live-video-policy-evidence)
+describe the measured windows and remaining tuning limits.
 
 ## URL engine and captions
 
@@ -113,10 +116,12 @@ through playback information and events.
 
 TiPlay owns one audio-leading clock, bounded queues, buffering, seek and rate;
 silent video uses monotonic time. The shared URL-casting profile favors smoothness:
-750 ms startup / 1500 ms recovery watermarks, with frame/time/GPU-byte limits and
-early readiness when a short resource ends or the bounded queue is full. These
-defaults require vehicle tuning. Underrun freezes both streams; playable buffers use
-their intersection. HLS date-time is not media position. Video.js uses its official default skin with ±10-second seek controls and a
+750 ms startup / 1500 ms recovery are target playback-time watermarks, not guaranteed
+decoded coverage. The corresponding media-time target is multiplied by playback rate.
+Short-resource EOF, a limiting application budget or a bounded pending-read wait can
+permit playback from smaller real coverage; diagnostics distinguish these decisions.
+These defaults require vehicle tuning. Underrun freezes both streams; playable buffers
+use their intersection. HLS date-time is not media position. Video.js uses its official default skin with ±10-second seek controls and a
 matching casting-end button, and adapts this engine,
 without a second HTML video clock. SoundTouch preserves pitch during rate changes.
 Controls expose actual time/buffer/seek ranges, rate, available tracks, loading and
@@ -127,14 +132,62 @@ remains distinct. Direct-to-proxy error recovery preserves the current position/
 when no newer playback directive supersedes it. Replacement cancels requests/decoders/output.
 Live recovery is bounded.
 
+The URL engine has separate admission limits; they must not be added or described as
+one total-memory or total-GPU limit:
+
+| Limit | Scope |
+| --- | --- |
+| 32 frames | Application queue of decoded video samples waiting for presentation; the retained canvas picture is separate. |
+| 96 MiB | Admission estimate for the current video queue plus retained picture, reserving the estimated next sample. It uses coded width × coded height × four bytes, not measured GPU allocation. An already decoded sample awaiting admission is reported separately. |
+| 2 seconds | Video media-time lookahead checked before another sink read; sample granularity can cross the threshold. |
+| 3 seconds | Audio media-time lookahead checked before another sink read; an admitted packet can cross the threshold. A single decoded audio packet longer than three seconds is rejected. |
+| 12 MiB | Decoded PCM queue admission threshold checked before the next audio read, not a total PCM hard limit. An admitted packet or tempo output can append in full and cross it; incoming packets, processing and scheduled Web Audio copies are separate. |
+| 16 MiB | Mediabunny's configured compressed resource cache; it does not measure decoder surfaces or all browser network storage. |
+| 256 KiB | Ordinary serialized resource-read unit, not a complete-file size limit. Playlists and resource probes have their own bounds. |
+
+Read admission includes the retained picture and anticipates a replacement rather
+than requiring one more decoded frame to discover capacity pressure. Both pictures
+must fit the estimate, so a single sample above 48 MiB is rejected. A finite-surface
+regression demonstrates the failure this prevents: at 1080p/30, a pool holding thirteen
+application samples could stop at about 433 ms before the former next-frame budget
+check, while fourteen allowed startup. This is a controlled code-level failure model;
+the browser's actual hardware pool capacity was not measured in field evidence.
+Pending reads can also reflect resource or decoder waiting. A
+`read-progress-fallback` starts from existing playable coverage after the normal
+startup/recovery wait; it does not assert that hardware buffers are full.
+
+Mediabunny also owns internal decoded samples and decoder/reference buffers outside
+the application queue. Its current sink has no public decoded-prefetch-size option;
+holding fewer application pictures does not establish a total surface bound. The
+canvas retains one sample, and an incoming sample or orientation/render resources can
+coexist with it. Application sample receipt/close counters cannot measure vendor
+decoder output or physical surface release. Likewise, a supported codec and requested
+hardware/latency hint do not establish the decoder's actual hardware implementation.
+See [URL playback evidence](Diagnostics.md#airplay-url-playback-evidence) for the
+observed stages and their limits.
+
+Readiness and play intent are distinct from an advancing clock. With audio, a suspended
+AudioContext or pending resume can leave decoded media ready without actual playback;
+user activation may be required. Seek, rate and audio-track changes retire the old
+generation and rebuild both queues at the shared position. A retained video picture
+covers the interval until its successor's presentation timestamp, including still-image
+and variable-frame-rate gaps; this does not fabricate missing audio coverage.
+Failures preserve the available state before cleanup and report actual ownership
+afterwards separately. A canvas-retained picture can remain held until it is closed;
+queue cleanup alone does not establish that all samples or vendor surfaces were released.
+
 Authenticated resources validate browser/playback/resource identity, preserve Range,
 stream media and rewrite bounded HLS manifests/children/keys. Current-iPhone resources
 may redirect directly, with authorized proxy fallback for failed CORS/reachability. Debug mode forces all media through Android, including nested playlists and redirects, and updates the browser directive so active playback reopens on the new route.
 Neither makes an unreachable sender reachable. FCUP serializes exchanges with
 session/peer/URL/request-ID checks; acknowledgement is not resource completion.
 Browser media and caption discovery serialize actual network reads. Range-capable media
-uses bounded byte-range units. Sources ignoring Range retain separate sequential readers
-across interleaved audio/video reads, avoiding repeated downloads of either prefix. The
+uses bounded byte-range units. When Range is ignored, a sequential body is reused per
+resource identity: URL, headers excluding Range and fetch credentials/mode/redirect.
+Different identities can retain separate readers. Interleaved audio/video reads from
+the same URL and identity still retire that reader on a backward logical range and may
+download the prefix again; `resourceBackwardRestarts` and `resourceRangeIgnored` expose
+these observations without recording the URL. The
 LRU pool holds at most four readers and 4 MiB of application-retained network chunks;
 these bounds do not measure the browser's internal network buffers. Backward seeks,
 owner cancellation, eviction and five seconds of inactivity retire readers, awaiting

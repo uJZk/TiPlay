@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createClockEstimator, mapClockTime, presentationTime, sampleClock } from '../../site/play/clock-sync.js';
 
 function simulation({ rate = 1.00018, serverOrigin = 3_000_000_000_000, localOrigin = 1_800_000_000_000 } = {}) {
@@ -215,4 +216,49 @@ test('a short high-delay outage permits anchored holdover without turning networ
   assert.equal(after.generation, before.generation);
   assert.ok(after.rateConfidence > 0.5);
   assert.ok(Math.abs(mapClockTime(clock.server(150000), after) - clock.local(150000)) < 0.1);
+});
+
+test('read-only diagnostics distinguish missing observations, stale observations and pending clock steps', () => {
+  const estimator = createClockEstimator();
+  assert.deepEqual(estimator.diagnostics(1000), { clockEstimatorState: 'unavailable' });
+  const first = estimator.observe(1000, 1499, 1501);
+  assert.deepEqual(estimator.diagnostics(1501), {
+    clockEstimatorState: 'fresh', clockEstimatorObservationAgeMs: 0, clockEstimatorSelectedAgeMs: 0,
+  });
+  assert.deepEqual(estimator.diagnostics(16502), {
+    clockEstimatorState: 'observation-stale', clockEstimatorObservationAgeMs: 15001,
+    clockEstimatorSelectedAgeMs: 15001,
+  });
+  assert.deepEqual(estimator.snapshot(1501), first, 'reading a future diagnostic must not reset or age the estimator state');
+  assert.deepEqual(estimator.diagnostics(1500), { clockEstimatorState: 'unavailable' }, 'future timestamps stay missing');
+  assert.equal(estimator.observe(2000, 5499, 5501), null);
+  assert.deepEqual(estimator.diagnostics(5501), {
+    clockEstimatorState: 'pending-jump', clockEstimatorObservationAgeMs: 0, clockEstimatorSelectedAgeMs: 4000,
+  });
+  estimator.suspend();
+  assert.deepEqual(estimator.diagnostics(5501), { clockEstimatorState: 'suspended' });
+  estimator.resume();
+  assert.deepEqual(estimator.diagnostics(5501), { clockEstimatorState: 'unavailable' });
+});
+
+test('continuous valid probes can leave an older low-RTT selected fit stale without resetting the clock', () => {
+  const estimator = createClockEstimator();
+  for (let second = 0; second < 50; second++) {
+    estimator.observe(second * 1000, second * 1000 + 499, second * 1000 + 501);
+  }
+  const before = estimator.snapshot(49501);
+  for (let second = 50; second < 70; second++) {
+    // Every 20 ms round trip has the same midpoint/offset; these are valid new
+    // observations, but the existing low-delay fit still selects older 2 ms probes.
+    estimator.observe(second * 1000, second * 1000 + 490, second * 1000 + 510);
+  }
+  const expected = JSON.parse(readFileSync(new URL('./fixtures/clock-estimator-diagnostics.json', import.meta.url)));
+  assert.deepEqual(estimator.diagnostics(69510), expected);
+  assert.equal(estimator.snapshot(69510), null, 'diagnostics must not weaken the live freshness guard');
+  assert.deepEqual(estimator.diagnostics(69510), expected, 'repeated reads must not advance selected or observation timestamps');
+  const recovered = estimator.observe(70000, 70499, 70501);
+  assert.equal(recovered.generation, before.generation, 'diagnostic reads must not turn RTT selection into a reset');
+  assert.deepEqual(estimator.diagnostics(70501), {
+    clockEstimatorState: 'fresh', clockEstimatorObservationAgeMs: 0, clockEstimatorSelectedAgeMs: 0,
+  });
 });

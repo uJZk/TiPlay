@@ -6,6 +6,7 @@ import { fetchSdrMediaResource, hasHdrTransfer, requireSdrTrack, sdrError } from
 import { decodableAudioTracks, selectPlayableTrack } from './airplay-track-selection.js';
 import { createSerialMediaFetch } from './airplay-resource-fetch.js';
 import { playbackProfile } from './delay-plan.js';
+import { sanitizePlaybackDiagnostics } from './airplay-diagnostics.js';
 import { clampMediaTime, intersectMediaRanges, mediaRangeEnd, mediaTimeRanges, mergeMediaRanges,
   videoQueueFull } from './airplay-media-state.js';
 
@@ -28,17 +29,70 @@ export function createMediaEngine(surface, options = {}) {
     { signal: options.signal, deadline: options.resourceDeadline || 15000 });
   const canvas = options.presenter || createFrameCanvas(surface, cause => {
     options.onCanvasError?.(cause); fail(cause);
-  });
+  }, observeSampleClosed);
   let libraryPromise, library, source = null, generation = null, serial = 0, disposed = false;
   let context = null, gain = null, animation = null, position = 0, duration = NaN, origin = 0;
   let paused = true, seeking = false, ended = false, readyState = 0, networkState = 0, error = null;
   let rate = 1, defaultRate = 1, muted = false, volume = 1, width = 0, height = 0;
   let running = false, clockTime = 0, clockPosition = 0, lastUpdate = -Infinity;
   let held = null, totalVideoFrames = 0, droppedVideoFrames = 0;
+  let resumeRequests = 0;
+  let audioResumeRequests = 0, audioResumeCompleted = 0, audioResumeFailed = 0, audioResumePromise = null;
+  let samplesReceived = 0, samplesClosed = 0;
+  const sampleOwners = new WeakMap(), closedSamples = new WeakSet(), pendingSamples = new Map();
+  options.presenter?.setSampleCloseObserver?.(observeSampleClosed);
   const playWaiters = new Set();
   const event = type => { if (!disposed) media.dispatchEvent(new Event(type)); };
   const active = item => !disposed && item === generation && !item.closed;
   const audioTracks = createAudioTrackList(selectAudioTrack);
+
+  function observeSampleClosed(sample) {
+    if (sampleOwners.has(sample) && !closedSamples.has(sample)) {
+      closedSamples.add(sample); samplesClosed++;
+      if (held?.sampleId === sampleOwners.get(sample).id) held = null;
+    }
+  }
+  function closeSample(sample) {
+    if (!sample || closedSamples.has(sample)) return;
+    sample.close(); observeSampleClosed(sample);
+  }
+  function observeSample(item, sample) {
+    samplesReceived++; sampleOwners.set(sample, { generation: item.serial, id: samplesReceived });
+    item.lastSampleAt = now();
+    const timestamp = sample.timestamp;
+    if (Number.isFinite(item.lastSampleTimestamp) && timestamp > item.lastSampleTimestamp)
+      item.observedSampleCadenceMs = (timestamp - item.lastSampleTimestamp) * 1000;
+    item.lastSampleTimestamp = timestamp;
+    item.observedSampleDurationMs = sample.duration > 0 ? sample.duration * 1000 : null;
+    for (const key of ['codedWidth', 'codedHeight', 'displayWidth', 'displayHeight'])
+      if (Number.isFinite(sample[key])) item[key] = sample[key];
+  }
+  function resumeAudio(force = false) {
+    if (!context || context.state === 'running') return Promise.resolve();
+    if (audioResumePromise && !force) return audioResumePromise;
+    audioResumeRequests++; resumeRequests++;
+    let request;
+    try { request = context.resume(); }
+    catch (cause) { request = Promise.reject(cause); }
+    const pending = Promise.resolve(request).then(() => { audioResumeCompleted++; schedule(); event('progress'); }, cause => {
+      audioResumeFailed++; event('progress'); throw cause;
+    }).finally(() => { resumeRequests--; if (audioResumePromise === pending) audioResumePromise = null; });
+    audioResumePromise = pending;
+    event('progress');
+    return pending;
+  }
+  function resumeFromGesture() {
+    // Invoke resume synchronously inside the existing Play control's trusted activation.
+    const resumed = resumeAudio(true);
+    void resumed.catch(() => {});
+    return play();
+  }
+
+  function videoFull(item, at) {
+    const retainedBytes = held?.bytes || 0;
+    const nextBytes = item.video[item.video.length - 1]?.bytes || retainedBytes;
+    return videoQueueFull(item.video, at, { ...VIDEO_BUFFER_LIMITS, retainedBytes, nextBytes });
+  }
 
   function publishClock() {
     try { options.onClock?.(readPosition()); } catch (_) { /* Captions must not interrupt decoding or audio. */ }
@@ -76,7 +130,7 @@ export function createMediaEngine(surface, options = {}) {
     // Returning the sinks cancels their decoding and closes prefetched samples. The source-level
     // Input stays alive across pause/seek so HLS sliding windows keep their original timeline.
     for (const iterator of item.iterators) void iterator.return?.().catch(() => {});
-    for (const frame of item.video) frame.sample.close();
+    for (const frame of item.video) closeSample(frame.sample);
     item.video.length = 0; item.audio.length = 0; item.tempo?.dispose();
     notifyRoom(item); item.readyReject(abortError());
   }
@@ -88,11 +142,27 @@ export function createMediaEngine(surface, options = {}) {
   }
   function fail(cause) {
     if (disposed || error) return;
+    // Keep the failed pipeline's known state before cleanup retires its generation.
+    // The same scalar whitelist is used by diagnostics, and observations cannot
+    // interrupt failure handling even if a provider's getter throws.
+    const beforeCleanup = failureSnapshot();
     generation?.readyReject(cause);
     freeze(); closeGeneration(); closeSource(); paused = true; seeking = false; readyState = 0; networkState = 3;
     error = { code: cause?.name === 'NotSupportedError' ? 4 : 3, name: cause?.name || 'Error', message: cause?.message || String(cause) };
     settlePlay(cause instanceof Error ? cause : new Error(error.message));
-    const failureEvent = new Event('error'); failureEvent.error = cause; media.dispatchEvent(failureEvent);
+    const failureEvent = new Event('error');
+    try {
+      failureEvent.error = cause;
+      failureEvent.playbackDiagnostics = beforeCleanup;
+      failureEvent.cleanupDiagnostics = failureSnapshot();
+    } catch (_) { /* Cleanup and error delivery must not depend on diagnostic properties. */ }
+    media.dispatchEvent(failureEvent);
+  }
+  function failureSnapshot() {
+    try {
+      const snapshot = sanitizePlaybackDiagnostics({ ...playbackDiagnostics(), waitReason: 'error' });
+      return snapshot ? Object.freeze(snapshot) : null;
+    } catch (_) { return null; }
   }
   function readFailure(item, cause) {
     if (!active(item)) return;
@@ -107,7 +177,7 @@ export function createMediaEngine(surface, options = {}) {
         session.controller = new AbortController(); session.input = null; session.tracksPromise = null;
         // A slid-out live window has no recoverable old seek position. Start its fresh window
         // with a fresh caption origin and preserve the user's play/pause/rate intent.
-        session.origin = null; session.prepared = false; position = 0; held = null; readyState = 0;
+        session.origin = null; session.prepared = false; position = 0; readyState = 0;
         try { options.onResync?.(session.src, session.type); } catch (_) {}
         event('resync'); event('waiting'); void begin(0, false); return;
       }
@@ -127,6 +197,8 @@ export function createMediaEngine(surface, options = {}) {
       video: [], audio: [], videoTrack: null, audioTrack: null, videoDone: false, audioDone: false,
       videoReady: false, audioReady: false, metadataReady: false, nodes: new Set(), scheduledEnd: position,
       start: position, audioEnd: position, tempo: null, tempoRate: null, tempoStart: position, tempoOutput: 0,
+      videoReadPending: false, audioReadPending: false, videoReadStarted: null, audioReadStarted: null,
+      openStartedAt: now(), stallStarted: null, stallCount: 0, startReason: 'none', readProgressFallbacks: 0,
       ready, readyResolve, readyReject, readySettled: false, hasPlayed: false, waiters: new Set() };
     generation = item;
     void open(item).catch(cause => { if (active(item)) { item.readyReject(cause); fail(cause); } });
@@ -206,6 +278,8 @@ export function createMediaEngine(surface, options = {}) {
     session.live = nextDuration === Infinity;
     if (!Object.is(duration, nextDuration)) { duration = nextDuration; event('durationchange'); }
     if (width !== nextWidth || height !== nextHeight) { width = nextWidth; height = nextHeight; event('resize'); }
+    if (Number.isFinite(nextWidth)) item.displayWidth = nextWidth;
+    if (Number.isFinite(nextHeight)) item.displayHeight = nextHeight;
     position = clampMediaTime(position, duration); item.start = position; item.audioEnd = position;
     item.videoReady = !item.videoTrack; item.audioReady = !item.audioTrack; item.metadataReady = true;
     readyState = 1; event('loadedmetadata');
@@ -256,36 +330,62 @@ export function createMediaEngine(surface, options = {}) {
   async function pumpVideo(item, lib) {
     let acceleration = 'no-preference';
     const Decoder = options.VideoDecoder || globalThis.VideoDecoder;
+    const config = await item.videoTrack.getDecoderConfig?.();
+    item.codec = config?.codec;
+    try {
+      for (const key of ['codedWidth', 'codedHeight']) if (Number.isFinite(config?.[key])) item[key] = config[key];
+    } catch (_) { /* Optional diagnostic dimensions never change codec admission. */ }
+    item.hardwareSupportProbe = Decoder?.isConfigSupported && config ? 'unknown' : 'unavailable';
     if (Decoder?.isConfigSupported && item.videoTrack.getDecoderConfig) {
-      const config = await item.videoTrack.getDecoderConfig();
-      try { if (config && (await Decoder.isConfigSupported({ ...config, hardwareAcceleration: 'prefer-hardware' })).supported) acceleration = 'prefer-hardware'; } catch (_) {}
+      try {
+        const supported = config && (await Decoder.isConfigSupported({ ...config, hardwareAcceleration: 'prefer-hardware' })).supported;
+        item.hardwareSupportProbe = supported ? 'supported' : 'unsupported';
+        if (supported) acceleration = 'prefer-hardware';
+      } catch (_) { item.hardwareSupportProbe = 'error'; }
     }
+    item.requestedHardwareAcceleration = acceleration;
     if (!active(item)) return;
     const iterator = new lib.VideoSampleSink(item.videoTrack, { hardwareAcceleration: acceleration })
       .samples(origin + item.start)[Symbol.asyncIterator]();
     item.iterators.push(iterator);
     while (active(item)) {
-      while (active(item) && videoQueueFull(item.video, readPosition(), VIDEO_BUFFER_LIMITS)) await waitForRoom(item);
+      while (active(item) && videoFull(item, readPosition())) {
+        item.videoBudgetBlocked = true; notify(item); await waitForRoom(item);
+      }
+      item.videoBudgetBlocked = false;
       if (!active(item)) break;
-      const next = await iterator.next();
-      if (!active(item)) { next.value?.close(); break; }
+      let next;
+      item.videoReadPending = true; item.videoReadStarted = now();
+      try { next = await iterator.next(); }
+      finally { item.videoReadPending = false; item.videoReadStarted = null; }
+      if (next.value) observeSample(item, next.value);
+      if (!active(item)) { closeSample(next.value); break; }
       if (next.done) { item.videoDone = true; item.videoReady = true; notify(item); break; }
       const sample = next.value, start = sample.timestamp - origin;
-      if (hasHdrTransfer(sample.colorSpace)) { sample.close(); throw sdrError(); }
+      if (hasHdrTransfer(sample.colorSpace)) { closeSample(sample); throw sdrError(); }
       const end = start + Math.max(sample.duration, 1 / 120);
-      if (end < item.start - FRAME_EPSILON) { sample.close(); continue; }
+      if (end < item.start - FRAME_EPSILON) { closeSample(sample); continue; }
       const frame = { sample, start, end, bytes: sample.codedWidth * sample.codedHeight * 4
         || sample.displayWidth * sample.displayHeight * 4, unknownDuration: sample.duration <= 0 };
-      if (frame.bytes > CAST_PROFILE.maxVideoBytes) { sample.close(); throw new Error('The decoded video frame exceeds the playback memory limit.'); }
-      while (active(item) && item.video.reduce((bytes, queued) => bytes + queued.bytes, 0) + frame.bytes > CAST_PROFILE.maxVideoBytes) {
+      if (frame.bytes > CAST_PROFILE.maxVideoBytes) { closeSample(sample); throw new Error('The decoded video frame exceeds the playback memory limit.'); }
+      // Continuous presentation needs the retained picture and its replacement at once.
+      if (frame.bytes * 2 > CAST_PROFILE.maxVideoBytes) {
+        closeSample(sample); throw new DOMException('The video requires more than the bounded two-frame playback surface budget.', 'NotSupportedError');
+      }
+      pendingSamples.set(item.serial, frame.bytes);
+      while (active(item) && (held?.bytes || 0) + item.video.reduce((bytes, queued) => bytes + queued.bytes, 0) + frame.bytes > CAST_PROFILE.maxVideoBytes) {
         item.videoBudgetBlocked = true;
         notify(item); await waitForRoom(item);
       }
       item.videoBudgetBlocked = false;
-      if (!active(item)) { sample.close(); break; }
+      if (!active(item)) { pendingSamples.delete(item.serial); closeSample(sample); break; }
       const previous = item.video[item.video.length - 1] || (held?.serial === item.serial ? held : null);
-      if (previous?.unknownDuration && frame.start > previous.start) previous.end = frame.start;
+      // Canvas retains the last picture until the next presentation timestamp. A video's
+      // sample duration need not span a legitimate still-image or variable-frame-rate gap.
+      // This extends picture coverage only; audio keeps its own continuous sample timeline.
+      if (previous && frame.start > previous.start) previous.end = frame.start;
       item.video.push(frame); totalVideoFrames++; item.videoReady = true;
+      pendingSamples.delete(item.serial);
       if (held?.serial !== item.serial && frame.start > position) frame.start = position;
       if (held?.serial !== item.serial || seeking || (paused && frame.start <= position + FRAME_EPSILON)) presentDue(item, position);
       notify(item);
@@ -296,6 +396,7 @@ export function createMediaEngine(surface, options = {}) {
       const Context = options.AudioContext || globalThis.AudioContext || globalThis.webkitAudioContext;
       if (!Context) throw new DOMException('Web Audio is unavailable.', 'NotSupportedError');
       context = new Context({ latencyHint: 'interactive' });
+      context.addEventListener?.('statechange', () => { schedule(); event('progress'); });
       gain = context.createGain(); gain.gain.value = muted ? 0 : volume; gain.connect(context.destination);
     }
     return context;
@@ -330,7 +431,10 @@ export function createMediaEngine(surface, options = {}) {
         await waitForRoom(item);
       }
       if (!active(item)) break;
-      const next = await iterator.next();
+      let next;
+      item.audioReadPending = true; item.audioReadStarted = now();
+      try { next = await iterator.next(); }
+      finally { item.audioReadPending = false; item.audioReadStarted = null; }
       if (!active(item)) break;
       if (next.done) {
         if (item.tempo) appendStretched(item, item.tempo.finish(), sampleRate);
@@ -349,14 +453,22 @@ export function createMediaEngine(surface, options = {}) {
       const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).subarray(offset));
       const actualStart = start + offset / sampleRate;
       const gap = actualStart - decodedEnd;
-      if (gap > MAX_AUDIO_AHEAD) throw new Error('The audio timeline has a discontinuity.');
+      if (!Number.isFinite(gap)) throw new Error('The audio timeline has an invalid timestamp.');
       if (gap > 0.002) {
-        // Tracks may start at different times. Silence in a timestamp gap is decoded, playable coverage.
-        const silence = new Float32Array(Math.round(gap * sampleRate));
-        if (rate === 1) appendAudio(item, [silence, silence], sampleRate, decodedEnd, actualStart);
-        else {
-          if (!item.tempo) { item.tempo = createTempoProcessor(lib.SoundTouchCore, sampleRate, rate); item.tempoStart = decodedEnd; }
-          appendStretched(item, item.tempo.push(silence), sampleRate);
+        // Track offsets are legitimate. Fill only bounded blocks as the clock makes
+        // room, so a long silent introduction neither allocates its duration nor fails.
+        for (let cursor = decodedEnd; active(item) && cursor < actualStart - 1 / sampleRate;) {
+          while (active(item) && (item.audioEnd - readPosition() >= MAX_AUDIO_AHEAD
+            || item.audio.reduce((bytes, chunk) => bytes + chunk.channels.length * chunk.channels[0].byteLength, 0) >= MAX_AUDIO_BYTES)) await waitForRoom(item);
+          if (!active(item)) return;
+          const length = Math.max(1, Math.min(Math.round(sampleRate * 0.25), Math.round((actualStart - cursor) * sampleRate)));
+          const silence = new Float32Array(length), next = Math.min(actualStart, cursor + length / sampleRate);
+          if (rate === 1) appendAudio(item, [silence, silence], sampleRate, cursor, next);
+          else {
+            if (!item.tempo) { item.tempo = createTempoProcessor(lib.SoundTouchCore, sampleRate, rate); item.tempoStart = cursor; }
+            appendStretched(item, item.tempo.push(silence), sampleRate);
+          }
+          cursor = next; notify(item);
         }
       }
       if (rate === 1) appendAudio(item, channels, sampleRate, actualStart, end);
@@ -396,19 +508,100 @@ export function createMediaEngine(surface, options = {}) {
     if (!Number.isFinite(end)) end = Number.isFinite(duration) ? duration : position;
     return end;
   }
-  function bufferedForPlayback(item, end) {
+  function bufferDecision(item, end) {
     const target = (item.hasPlayed ? CAST_PROFILE.resumeBufferMs : CAST_PROFILE.startupBufferMs) / 1000 * rate;
-    if (end - position >= target - FRAME_EPSILON) return true;
+    if (end - position >= target - FRAME_EPSILON) return { ready: true, reason: 'watermark' };
     const ranges = trackRanges(item);
     const videoEnd = mediaRangeEnd(ranges.video, position), audioEnd = mediaRangeEnd(ranges.audio, position);
     // A short file or a limiting decoder/surface budget must not deadlock the
     // startup watermark. Decode no extra surfaces merely to satisfy a target.
     const videoSaturated = item.videoTrack && videoEnd <= end + FRAME_EPSILON
-      && (item.videoDone || item.videoBudgetBlocked || videoQueueFull(item.video, position, VIDEO_BUFFER_LIMITS));
+      && (item.videoDone || item.videoBudgetBlocked || videoFull(item, position));
     const audioSaturated = item.audioTrack && audioEnd <= end + FRAME_EPSILON
       && (item.audioDone || audioEnd - position >= MAX_AUDIO_AHEAD - FRAME_EPSILON
         || item.audio.reduce((bytes, chunk) => bytes + chunk.channels.reduce((sum, channel) => sum + channel.byteLength, 0), 0) >= MAX_AUDIO_BYTES);
-    return Boolean(videoSaturated || audioSaturated);
+    if (videoSaturated) return { ready: true, reason: item.videoDone ? 'end-of-stream' : 'video-budget' };
+    if (audioSaturated) return { ready: true, reason: item.audioDone ? 'end-of-stream' : 'audio-budget' };
+    // A decoder may require its already delivered surfaces to be returned before next()
+    // can finish. Its actual pool is private. After the normal startup/recovery wait,
+    // use only real playable coverage; do not label this unknown read as hardware full.
+    const budget = (item.hasPlayed ? CAST_PROFILE.resumeBufferMs : CAST_PROFILE.startupBufferMs) / 1000;
+    const waitingVideo = item.videoTrack && videoEnd <= end + FRAME_EPSILON && item.videoReadPending
+      && now() - item.videoReadStarted >= budget;
+    const waitingAudio = item.audioTrack && audioEnd <= end + FRAME_EPSILON && item.audioReadPending
+      && now() - item.audioReadStarted >= budget;
+    if (end > position + FRAME_EPSILON && (waitingVideo || waitingAudio)) return { ready: true, reason: 'read-progress-fallback' };
+    return { ready: false, reason: item.hasPlayed ? 'resume-watermark' : 'startup-watermark' };
+  }
+  function bufferedForPlayback(item, end) { return bufferDecision(item, end).ready; }
+  function playbackDiagnostics() {
+    const item = generation, at = readPosition(), ranges = trackRanges(item);
+    const videoEnd = item?.videoTrack ? mediaRangeEnd(ranges.video, at) : at;
+    const audioEnd = item?.audioTrack ? mediaRangeEnd(ranges.audio, at) : at;
+    const end = playableEnd(item);
+    const videoFrames = item?.video.length || 0;
+    const videoBytes = item?.video.reduce((bytes, frame) => bytes + frame.bytes, 0) || 0;
+    const audioChunks = item?.audio.length || 0;
+    const audioBytes = item?.audio.reduce((bytes, chunk) => bytes + chunk.channels.reduce((sum, channel) => sum + channel.byteLength, 0), 0) || 0;
+    const audioActive = item?.audioTrack && !(item.audioDone && at >= item.audioEnd - FRAME_EPSILON);
+    let limitingTrack = item?.videoTrack ? 'video' : audioActive ? 'audio' : 'none';
+    if (item?.videoTrack && audioActive) limitingTrack = Math.abs(videoEnd - audioEnd) <= FRAME_EPSILON ? 'both'
+      : videoEnd < audioEnd ? 'video' : 'audio';
+    let waitReason = 'none';
+    if (error) waitReason = 'error';
+    else if (ended) waitReason = 'ended';
+    else if (!source || disposed) waitReason = 'no-source';
+    else if (paused && !seeking) waitReason = 'paused';
+    else if (!item?.metadataReady) waitReason = 'preparing';
+    else if (seeking) waitReason = 'seeking';
+    else if (!item.videoReady) waitReason = 'video-starved';
+    else if (!item.audioReady) waitReason = 'audio-starved';
+    else if (item.audioTrack && context?.state !== 'running') {
+      waitReason = resumeRequests ? 'audio-context-resume'
+        : context?.state === 'closed' ? 'audio-context-closed' : 'audio-context-suspended';
+    } else if (end <= at + FRAME_EPSILON) {
+      const videoGap = item.videoTrack && item.video.some(frame => frame.start > at + 0.025);
+      const audioGap = audioActive && item.audio.some(chunk => chunk.start > at + 0.025);
+      waitReason = videoGap || audioGap ? 'timeline-gap' : limitingTrack === 'audio' ? 'audio-starved' : 'video-starved';
+    } else if (!running) {
+      waitReason = bufferedForPlayback(item, end) ? 'clock-stalled'
+        : item.hasPlayed ? 'resume-watermark' : 'startup-watermark';
+    }
+    return {
+      generation: item?.serial ?? serial, running, intentPlaying: !paused,
+      waitReason, contextState: context?.state || 'unavailable', resumePending: resumeRequests > 0,
+      clockSource: item?.audioTrack ? 'audio' : 'performance', clockTime: currentClock(), clockPosition,
+      scheduledEnd: item?.scheduledEnd ?? at, position: at, playableEnd: end, videoEnd, audioEnd,
+      targetMs: (item?.hasPlayed ? CAST_PROFILE.resumeBufferMs : CAST_PROFILE.startupBufferMs) * rate,
+      hasPlayed: item?.hasPlayed === true, limitingTrack,
+      videoFrames, videoBytes, videoBudgetBlocked: item?.videoBudgetBlocked === true, videoDone: item?.videoDone === true,
+      audioChunks, audioBytes, audioDone: item?.audioDone === true,
+      videoReadPending: item?.videoReadPending === true, audioReadPending: item?.audioReadPending === true,
+      startReason: item?.startReason || 'none', readProgressFallbacks: item?.readProgressFallbacks || 0,
+      codec: item?.codec, codedWidth: item?.codedWidth, codedHeight: item?.codedHeight,
+      displayWidth: item?.displayWidth, displayHeight: item?.displayHeight,
+      observedSampleCadenceMs: item?.observedSampleCadenceMs, observedSampleDurationMs: item?.observedSampleDurationMs,
+      requestedHardwareAcceleration: item?.requestedHardwareAcceleration || 'no-preference',
+      hardwareSupportProbe: item?.hardwareSupportProbe || 'unknown', requestedVideoLatencyHint: 'not-requested', requestedAudioLatencyHint: 'interactive',
+      videoHeldFrames: held ? 1 : 0, videoHeldBytes: held?.bytes || 0,
+      videoPendingFrames: pendingSamples.size, videoPendingBytes: [...pendingSamples.values()].reduce((bytes, value) => bytes + value, 0),
+      videoOwnedFrames: videoFrames + (held ? 1 : 0) + pendingSamples.size,
+      videoOwnedBytes: videoBytes + (held?.bytes || 0) + [...pendingSamples.values()].reduce((bytes, value) => bytes + value, 0),
+      samplesReceived, samplesClosed,
+      videoSinkReadPendingMs: item?.videoReadPending ? Math.max(0, (now() - item.videoReadStarted) * 1000) : 0,
+      lastSampleAgeMs: Number.isFinite(item?.lastSampleAt) ? Math.max(0, (now() - item.lastSampleAt) * 1000) : undefined,
+      audioResumeRequests, audioResumeCompleted, audioResumeFailed,
+      userActivationHasBeenActive: globalThis.navigator?.userActivation?.hasBeenActive,
+      gestureRequired: !paused && Boolean(item?.audioTrack) && context?.state === 'suspended',
+      videoHeldGeneration: held?.serial,
+      videoCapacityFrames: VIDEO_BUFFER_LIMITS.maxFrames, videoCapacityBytes: VIDEO_BUFFER_LIMITS.maxBytes,
+      videoCapacityAheadMs: VIDEO_BUFFER_LIMITS.maxAhead * 1000,
+      audioCapacityBytes: MAX_AUDIO_BYTES, audioCapacityAheadMs: MAX_AUDIO_AHEAD * 1000,
+      stallElapsedMs: item?.stallStarted !== null && item?.stallStarted !== undefined && !paused && !running
+        ? Math.max(0, (now() - item.stallStarted) * 1000) : 0,
+      stallCount: item?.stallCount || 0,
+      ...fetchResource.getDiagnostics?.(),
+    };
   }
   function checkReady(item) {
     if (!active(item) || !item.metadataReady || !item.videoReady || !item.audioReady) return;
@@ -424,11 +617,12 @@ export function createMediaEngine(surface, options = {}) {
     let selected = null;
     while (item.video.length && item.video[0].start <= at + FRAME_EPSILON) {
       const frame = item.video.shift();
-      if (selected) { selected.sample.close(); droppedVideoFrames++; }
+      if (selected) { closeSample(selected.sample); droppedVideoFrames++; }
       selected = frame;
     }
     if (selected) {
-      held = { start: selected.start, end: selected.end, serial: item.serial, unknownDuration: selected.unknownDuration };
+      held = { start: selected.start, end: selected.end, bytes: selected.bytes, serial: item.serial,
+        sampleId: sampleOwners.get(selected.sample)?.id, unknownDuration: selected.unknownDuration };
       canvas.present(selected.sample);
     }
     notifyRoom(item);
@@ -461,6 +655,23 @@ export function createMediaEngine(surface, options = {}) {
     closeGeneration(); readyState = 2; networkState = 1;
     publishClock(); event('timeupdate'); event('ended'); settlePlay();
   }
+  function checkReadProgress(item) {
+    if (running || paused && !seeking && item.readySettled) return true;
+    // A blocked AudioContext needs activation, not a decoder/network timeout.
+    if (item.audioTrack && context && context.state !== 'running') return true;
+    const waitingSince = item.stallStarted ?? (!item.readySettled || seeking ? item.openStartedAt : now());
+    const deadline = (options.resourceDeadline || 15000) / 1000;
+    if (now() - waitingSince < deadline) return true;
+    const videoPending = item.videoReadPending && now() - Math.max(item.videoReadStarted, waitingSince) >= deadline;
+    const audioPending = item.audioReadPending && now() - Math.max(item.audioReadStarted, waitingSince) >= deadline;
+    if (!videoPending && !audioPending) return true;
+    const resources = fetchResource.getDiagnostics?.();
+    const networkPending = resources?.resourceActive > 0 || resources?.resourceQueued > 0;
+    if (networkPending && resources.resourceLastProgressAgeMs < deadline * 1000) return true;
+    readFailure(item, new DOMException(networkPending ? 'Media resource reading made no progress.'
+      : 'Media sample reading made no progress without an active resource request.', 'TimeoutError'));
+    return false;
+  }
   function tick() {
     animation = null;
     if (disposed) return;
@@ -483,11 +694,20 @@ export function createMediaEngine(surface, options = {}) {
       && (!item.audioTrack || context?.state === 'running');
     if (canRun) {
       if (!running) {
+        item.startReason = bufferDecision(item, end).reason;
+        if (item.startReason === 'read-progress-fallback') item.readProgressFallbacks = Math.min(0xffffffff, item.readProgressFallbacks + 1);
         clockPosition = position; clockTime = currentClock(); running = true; item.hasPlayed = true;
         scheduleAudio(item, end); item.waiting = false; event('playing'); settlePlay();
       } else scheduleAudio(item, end);
-    } else if (running) { freeze(); if (!paused) event('waiting'); }
-    else if (!paused && readyState < 3) eventWaiting(item);
+    } else {
+      if (running) freeze();
+      if (!paused) eventWaiting(item);
+    }
+    if (item.readySettled) readyState = playableEnd(item) - position > 0.1 ? 3 : 2;
+    if (!paused && !running) {
+      if (item.stallStarted === null) { item.stallStarted = now(); item.stallCount = Math.min(0xffffffff, item.stallCount + 1); }
+    } else item.stallStarted = null;
+    if (!checkReadProgress(item)) return;
     if (now() - lastUpdate >= 0.25) { lastUpdate = now(); event('timeupdate'); }
     schedule();
   }
@@ -525,7 +745,7 @@ export function createMediaEngine(surface, options = {}) {
       if (disposed || paused || source !== intentSource) throw abortError();
       if (generation?.audioTrack) {
         const audio = await audioContext();
-        if (audio.state !== 'running') await audio.resume();
+        if (audio.state !== 'running') await Promise.race([resumeAudio(), promise]);
       }
       if (disposed || paused || source !== intentSource) throw abortError();
       schedule();
@@ -570,6 +790,9 @@ export function createMediaEngine(surface, options = {}) {
   getter('buffered', () => mediaTimeRanges(bufferedRanges()));
   getter('seekable', () => mediaTimeRanges(Number.isFinite(duration) && duration > 0 ? [[0, duration]] : bufferedRanges()));
   getter('paused', () => paused); getter('seeking', () => seeking); getter('ended', () => ended);
+  getter('buffering', () => !ended && (!paused || seeking)
+    && (!running || Boolean(generation?.audioTrack && context?.state !== 'running')));
+  getter('gestureRequired', () => !paused && Boolean(generation?.audioTrack) && context?.state === 'suspended');
   getter('readyState', () => readyState); getter('networkState', () => networkState); getter('error', () => error);
   getter('videoWidth', () => width); getter('videoHeight', () => height);
   getter('playbackRate', () => rate, value => {
@@ -588,7 +811,7 @@ export function createMediaEngine(surface, options = {}) {
     muted = next; if (gain) gain.gain.value = muted ? 0 : volume; event('volumechange'); });
   getter('volume', () => volume, value => { const next = Number(value); if (!Number.isFinite(next) || next < 0 || next > 1) throw new DOMException('Volume must be between 0 and 1.', 'IndexSizeError');
     if (next === volume) return; volume = next; if (gain) gain.gain.value = muted ? 0 : volume; event('volumechange'); });
-  Object.assign(media, { play, pause, load, dispose, selectAudioTrack,
+  Object.assign(media, { play, pause, load, dispose, selectAudioTrack, resumeFromGesture, getPlaybackDiagnostics: playbackDiagnostics,
     getVideoPlaybackQuality: () => ({ creationTime: now() * 1000, totalVideoFrames, droppedVideoFrames, corruptedVideoFrames: 0 }) });
   options.signal?.addEventListener('abort', dispose, { once: true });
   if (options.signal?.aborted) dispose();

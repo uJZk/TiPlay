@@ -417,7 +417,7 @@ async function setUpVideo() {
       open(id, body) {
         stop();
         pipeline.read(id, body);
-        timer = setInterval(() => onVideoMessage({ type: 'stats', id, stats: { ...pipeline.stats(), ...frames.stats(), ...presenter.stats() } }), 1000);
+        timer = setInterval(() => onVideoMessage({ type: 'stats', id, stats: { ...pipeline.stats(), ...frames.stats(), ...mediaTiming.stats(), ...presenter.stats() } }), 1000);
       },
       stop,
       dispose() { stop(); presenter.dispose(); },
@@ -812,11 +812,14 @@ function reportDiagnostics() {
 }
 
 function pageStats() {
+  const estimator = controlClock?.estimator.diagnostics();
   return {
     themeDark: appearance.matches,
     link: { path: videoPath.path, fallback: videoPath.reason, codecs: probedCodecs, phase, attempt, reconnects, live, unsupported, errorReason: lastError?.reason ?? lastError?.rtcReason ?? null, connection: rtcProgress, failure: lastError ? rtcFailureSummary(lastError) : null },
     transport: rtcMedia?.stats() ?? null,
-    video: videoStats,
+    video: { ...videoStats, clockEstimatorState: estimator?.clockEstimatorState,
+      clockEstimatorObservationAgeMs: estimator?.clockEstimatorObservationAgeMs,
+      clockEstimatorSelectedAgeMs: estimator?.clockEstimatorSelectedAgeMs },
     sender: safeSenderDiagnostics(status?.phone?.rtc),
     audio: browserAudio.stats(),
     control: outbox?.stats() ?? null,

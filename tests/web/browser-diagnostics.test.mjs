@@ -112,3 +112,21 @@ test('the canonical Standard selector fixture preserves actual pairing, ICE, dea
     'video.decodeStalls', 'video.playbackProfile', 'control.rttMsP95']) assert.ok(key in actual.v, key);
   assert.ok(Buffer.byteLength(JSON.stringify(actual.v)) <= 2048);
 });
+
+test('a dense live policy summary retains owner, all drop components, actual target, capacity and both clock views', () => {
+  const fixture = JSON.parse(readFileSync(new URL('../../shared/src/test/resources/Browser-live-policy-diagnostics-v1.json', import.meta.url), 'utf8'));
+  const [actual] = browserDiagnosticEvents(fixture.input.page, fixture.input.themeDark);
+  assert.deepEqual(actual, fixture.standard);
+  const source = fixture.input.page.video;
+  for (const key of ['streamGeneration', 'epoch', 'droppedFrames', 'decodeDroppedFrames', 'scheduledDroppedFrames',
+    'transferDroppedFrames', 'renderDroppedFrames', 'pacingDroppedFrames', 'playbackProfile', 'decodedQueueFrames',
+    'decodedQueueBytes', 'scheduledCapacityFrames', 'currentDelta', 'currentFps', 'frameIntervalP95Ms',
+    'policyVideoTargetMs', 'policyVideoReadinessMs', 'policyVideoMarginMs', 'policyMaxDelayMs', 'policySubmitMarginMs',
+    'policyMaxVideoFrames', 'policyMaxVideoBytes', 'policyInteractionStarts', 'policyInteractionReleases',
+    'policyProfileSwitches', 'sourceClockState', 'sourceClockAgeMs', 'clockEstimatorState',
+    'clockEstimatorObservationAgeMs', 'clockEstimatorSelectedAgeMs']) assert.equal(actual.v[`video.${key}`], source[key], key);
+  assert.equal(actual.v['transport.state'], 'failed'); assert.equal(actual.v['audio.sourceDeadlineState'], 'violated');
+  assert.equal(actual.v['control.rttMsP95'], fixture.input.page.control.rttMsP95);
+  assert.ok(Buffer.byteLength(JSON.stringify(actual.v)) <= 2048);
+  assert.equal(actual.v['video.policyVideoPlanDurationMs'], undefined, 'full plan detail uses the separately bounded Debug record');
+});

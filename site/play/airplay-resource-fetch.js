@@ -45,6 +45,24 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
       !Number.isSafeInteger(maxRetainedBytes) || maxRetainedBytes < 1 || maxRetainedBytes > RETAINED_BYTES)
     throw new TypeError('Invalid media resource limits.');
   let tail = Promise.resolve(), retirement = Promise.resolve(), disposed = false, queued = 0;
+  let activeUnits = 0, receivedBytes = 0, lastProgress = null, lastResult = 'idle', lastStatus = 0;
+  let timeouts = 0, cancellations = 0, backwardRestarts = 0, rangeIgnored = 0;
+  const failedReasons = new WeakSet();
+  const time = () => performance.now();
+  function recordFailure(cause) {
+    if (cause && typeof cause === 'object') {
+      if (failedReasons.has(cause)) return;
+      failedReasons.add(cause);
+    }
+    if (cause?.name === 'TimeoutError') { timeouts++; lastResult = 'timeout'; }
+    else if (cause?.name === 'AbortError') { cancellations++; lastResult = 'cancelled'; }
+    else lastResult = 'error';
+  }
+  async function readBody(reader, signal) {
+    const result = await interruptible(reader.read(), signal);
+    if (!result.done) { receivedBytes += result.value.byteLength; lastProgress = time(); }
+    return result;
+  }
   const sequential = new Map();
   const controllers = new Set(), playlists = new Set();
   const remember = url => {
@@ -68,7 +86,15 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
     check(signal);
     if (queued >= 64) return Promise.reject(new Error('Too many pending media resources.'));
     queued++;
-    const result = tail.then(() => { check(signal); return task(); }).finally(() => { queued--; });
+    const result = tail.then(async () => {
+      check(signal); activeUnits++;
+      try {
+        const value = await task();
+        lastResult = value?.error && !value.error.ok ? 'http-error' : value?.eof ? 'eof' : 'success';
+        return value;
+      } catch (cause) { recordFailure(cause); throw cause; }
+      finally { activeUnits--; }
+    }).finally(() => { queued--; });
     tail = result.catch(() => {});
     return interruptible(result, signal);
   };
@@ -147,7 +173,8 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
       return { response: entry.response, bytes: buffer.subarray(0, size), start, next: start + size,
         total: entry.total, eof, sequential: entry.total === null, forceWhole: entry.forceWhole };
     } catch (error) {
-      await retireSequential(entry); throw error;
+      const reason = entry.controller.signal.aborted ? entry.controller.signal.reason || error : error;
+      await retireSequential(entry); throw reason;
     } finally {
       clearTimeout(timer); signal.removeEventListener('abort', abort);
       if (!entry.pending?.length) { entry.pending = null; entry.pendingBytes = 0; }
@@ -164,7 +191,10 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
           (retained.total !== null || forceWhole) &&
           cursor !== null && cursor >= retained.next) return readSequential(retained, requested, cursor, signal);
       // Another logical range on the same resource must keep its own honest byte coordinates.
-      if (retained) await retireSequential(retained);
+      if (retained) {
+        if (cursor !== null && cursor < retained.next) backwardRestarts++;
+        await retireSequential(retained);
+      }
       while (sequential.size >= maxRetainedReaders) await retireSequential(sequential.values().next().value);
       await retirement;
       const controller = new AbortController();
@@ -184,6 +214,8 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
           }
           const response = await interruptible(Promise.resolve(fetcher(url, { ...init, headers, signal: controller.signal,
             cache: 'no-store', referrerPolicy: 'no-referrer' })), controller.signal);
+          lastStatus = response.status; lastProgress = time();
+          if (headers.has('Range') && response.status === 200) rangeIgnored++;
           if (!response.ok) {
             await response.body?.cancel().catch(() => {});
             if ([502, 503, 504].includes(response.status) && attempt < busyRetries) {
@@ -199,7 +231,7 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
           // than assuming one read contains the playlist signature.
           const prefetched = []; let prefixSize = 0, prefixEnded = false;
           while (prefixSize < 10) {
-            const item = await interruptible(reader.read(), controller.signal);
+            const item = await readBody(reader, controller.signal);
             if (item.done) { prefixEnded = true; break; }
             prefetched.push(item.value); prefixSize += item.value.length;
           }
@@ -213,7 +245,7 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
               const value = prefetched[prefetchedIndex]; prefetched[prefetchedIndex++] = null;
               return Promise.resolve({ done: false, value });
             }
-            return prefixEnded ? Promise.resolve({ done: true }) : interruptible(reader.read(), controller.signal);
+            return prefixEnded ? Promise.resolve({ done: true }) : readBody(reader, controller.signal);
           };
           const first = await nextBody();
           const sniff = new TextDecoder().decode(prefix).replace(/^\uFEFF/, '').startsWith('#EXTM3U');
@@ -339,7 +371,8 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
       let buffered = unit, closed = false, streamController;
       const end = requested?.start === null ? total : Math.min(total ?? Infinity, requested?.end !== null && requested ? requested.end + 1 : Infinity);
       const finish = () => { if (closed) return; closed = true; cleanup(); controller.signal.removeEventListener('abort', onAbort); };
-      const onAbort = () => { for (const entry of sequential.values()) if (entry.owner === controller.signal) void retireSequential(entry);
+      const onAbort = () => { recordFailure(controller.signal.reason);
+        for (const entry of sequential.values()) if (entry.owner === controller.signal) void retireSequential(entry);
         try { streamController?.error(controller.signal.reason || abortError()); } catch (_) {} finish(); };
       const body = new ReadableStream({
         start(stream) { streamController = stream; controller.signal.addEventListener('abort', onAbort, { once: true }); },
@@ -357,7 +390,7 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
             if (!unit.bytes.length || unit.eof || cursor >= end) { finish(); stream.close(); }
           } catch (error) { finish(); stream.error(error); }
         },
-        cancel(reason) { controller.abort(reason || abortError()); finish(); },
+        cancel(reason) { controller.abort(reason || abortError()); recordFailure(controller.signal.reason); finish(); },
       }, { highWaterMark: 0 });
       const clean = new Headers(initial.response.headers);
       clean.delete('Content-Range'); clean.delete('Content-Length'); clean.delete('Content-Encoding');
@@ -375,5 +408,11 @@ export function createSerialMediaFetch(fetcher, { signal: parentSignal, deadline
     for (const controller of controllers) controller.abort(reason);
     controllers.clear(); playlists.clear();
   };
+  serialFetch.getDiagnostics = () => ({
+    resourceActive: activeUnits, resourceQueued: Math.max(0, queued - activeUnits), resourceBytes: receivedBytes,
+    resourceLastProgressAgeMs: lastProgress === null ? undefined : Math.max(0, time() - lastProgress),
+    resourceLastResult: lastResult, resourceLastStatus: lastStatus, resourceTimeouts: timeouts,
+    resourceCancellations: cancellations, resourceBackwardRestarts: backwardRestarts, resourceRangeIgnored: rangeIgnored,
+  });
   return serialFetch;
 }

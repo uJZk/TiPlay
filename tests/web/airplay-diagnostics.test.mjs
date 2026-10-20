@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { airplayDiagnostic, createAirPlayDiagnostics, sanitizeErrorText } from '../../site/play/airplay-diagnostics.js';
+import { readFileSync } from 'node:fs';
+import { airplayDiagnostic, createAirPlayDiagnostics, playbackDiagnostics, sanitizeErrorText } from '../../site/play/airplay-diagnostics.js';
 
 function fixture() {
   const events = [];
@@ -159,4 +160,190 @@ test('play completion carries its command revision and diagnostic failures leave
   assert.doesNotThrow(() => diagnostics.event('explicit-stop'));
   assert.equal(f.media.paused, false);
   diagnostics.dispose(); f.diagnostics.dispose();
+});
+
+test('the cross-language engine fixture is actual bounded browser output', () => {
+  const fixture = JSON.parse(readFileSync(new URL('../../shared/src/test/resources/AirPlay-playback-diagnostics-v1.json', import.meta.url)));
+  assert.deepEqual(airplayDiagnostic('engine-state', fixture.input.state, {
+    media: { ...fixture.input.media, getPlaybackDiagnostics: () => fixture.input.engine },
+  }), fixture.event);
+  assert.deepEqual(airplayDiagnostic('engine-state', fixture.maximumInput.state, {
+    media: { ...fixture.maximumInput.media, getPlaybackDiagnostics: () => fixture.maximumInput.engine },
+  }), fixture.maximumEvent);
+  assert.equal(Buffer.byteLength(JSON.stringify(fixture.event)), fixture.normalBytes);
+  assert.equal(Buffer.byteLength(JSON.stringify(fixture.maximumEvent)), fixture.maximumBytes);
+  assert.equal(Object.keys(fixture.event.engine).length, 72);
+  assert.ok(fixture.normalBytes <= 2100);
+  assert.ok(fixture.maximumBytes <= 2800);
+  const failure = fixture.failureInput;
+  assert.deepEqual(airplayDiagnostic('error', failure.state, {
+    media: failure.media, error: failure.media.error, engineSnapshot: failure.before,
+  }), fixture.failureEvent);
+  assert.deepEqual(airplayDiagnostic('engine-state', failure.state, {
+    media: failure.media, engineSnapshot: failure.after,
+  }), fixture.cleanupEvent);
+});
+
+test('engine snapshots keep clock, watermark and decoder evidence without arbitrary fields', () => {
+  const fixture = JSON.parse(readFileSync(new URL('../../shared/src/test/resources/AirPlay-playback-diagnostics-v1.json', import.meta.url)));
+  const secret = 'https://private.test/video?token=do-not-copy';
+  const source = { ...fixture.input.engine, url: secret, trackLabel: secret, decoderConfig: { description: secret },
+    position: Infinity, videoBytes: NaN, videoFrames: 1.5, waitReason: secret, contextState: secret };
+  const snapshot = playbackDiagnostics({ getPlaybackDiagnostics: () => source });
+  assert.equal(snapshot.resumePending, true);
+  assert.equal(snapshot.audioReadPending, true);
+  assert.equal(snapshot.targetMs, 1000);
+  assert.equal(snapshot.videoCapacityFrames, 32);
+  assert.equal(snapshot.audioCapacityBytes, 12582912);
+  for (const key of ['url', 'trackLabel', 'decoderConfig', 'position', 'videoBytes', 'videoFrames', 'waitReason', 'contextState'])
+    assert.equal(Object.hasOwn(snapshot, key), false);
+  assert.equal(JSON.stringify(snapshot).includes('private'), false);
+  assert.equal(playbackDiagnostics({ getPlaybackDiagnostics() { throw new Error(secret); } }), null);
+});
+
+test('engine samples retain pending play and changing reasons with bounded stall and healthy frequency', () => {
+  const events = []; let now = 0, active = true;
+  const engine = { generation: 1, intentPlaying: true, running: false, contextState: 'suspended',
+    resumePending: true, waitReason: 'audio-context-resume', position: 0 };
+  const media = Object.assign(new EventTarget(), { getPlaybackDiagnostics: () => engine });
+  const diagnostics = createAirPlayDiagnostics(entry => events.push(entry), {
+    state: () => ({ id: 1, revision: 0 }), media: () => media, now: () => now, active: () => active,
+  });
+  diagnostics.monitor(media, new EventTarget());
+  for (let i = 0; i < 100; i++) media.dispatchEvent(new Event('progress'));
+  assert.equal(events.length, 1);
+  now = 4750; media.dispatchEvent(new Event('timeupdate'));
+  assert.equal(events.length, 1);
+  now = 5000; media.dispatchEvent(new Event('timeupdate'));
+  assert.equal(events.length, 2);
+  engine.contextState = 'running'; engine.resumePending = false; engine.waitReason = 'startup-watermark';
+  now = 5001; media.dispatchEvent(new Event('progress'));
+  assert.equal(events.length, 2);
+  now = 5250; media.dispatchEvent(new Event('progress'));
+  assert.equal(events.length, 3);
+  assert.equal(events.at(-1).engine.waitReason, 'startup-watermark');
+  engine.running = true; engine.waitReason = 'none';
+  now = 5500; media.dispatchEvent(new Event('timeupdate'));
+  assert.equal(events.length, 4);
+  now = 15250; media.dispatchEvent(new Event('timeupdate'));
+  assert.equal(events.length, 4);
+  now = 15500; media.dispatchEvent(new Event('timeupdate'));
+  assert.equal(events.length, 5);
+  active = false; now += 10000; media.dispatchEvent(new Event('timeupdate'));
+  assert.equal(events.length, 5);
+  diagnostics.dispose();
+});
+
+test('proxy fallback and live resync are observable bounded transitions', () => {
+  const f = fixture();
+  f.diagnostics.event('proxy-fallback');
+  f.media.dispatchEvent(new Event('resync'));
+  assert.deepEqual(f.events.map(entry => entry.event), ['proxy-fallback', 'resync']);
+  f.diagnostics.dispose();
+});
+
+test('a settled old command cannot relabel the active generation snapshot with its retired revision', () => {
+  const f = fixture();
+  f.media.getPlaybackDiagnostics = () => ({ generation: 2, running: true, intentPlaying: true });
+  f.diagnostics.event('play-resolved', undefined, { id: 7, revision: 2 });
+  assert.equal(f.events[0].revision, 2);
+  assert.equal(Object.hasOwn(f.events[0], 'engine'), false);
+  f.diagnostics.event('playing');
+  assert.equal(f.events[1].engine.generation, 2);
+  f.diagnostics.dispose();
+});
+
+test('codec hints, application ownership, activation and resource progress use fixed bounded fields', () => {
+  const source = { codec: 'av01.0.08M.08', codedWidth: 3840, codedHeight: 2160, displayWidth: 3840, displayHeight: 2160,
+    observedSampleCadenceMs: 41.666666, observedSampleDurationMs: 41.666666,
+    requestedHardwareAcceleration: 'prefer-hardware', hardwareSupportProbe: 'supported',
+    requestedVideoLatencyHint: 'not-requested', requestedAudioLatencyHint: 'interactive',
+    videoHeldFrames: 1, videoHeldBytes: 33177600, videoPendingFrames: 0, videoPendingBytes: 0,
+    videoOwnedFrames: 3, videoOwnedBytes: 99532800, samplesReceived: 57, samplesClosed: 54,
+    videoSinkReadPendingMs: 5300, lastSampleAgeMs: 5300, audioResumeRequests: 1, audioResumeCompleted: 0,
+    audioResumeFailed: 0, userActivationHasBeenActive: false,
+    resourceActive: 0, resourceQueued: 0, resourceBytes: 262144, resourceLastProgressAgeMs: 5400,
+    resourceLastResult: 'eof', resourceLastStatus: 206, resourceTimeouts: 0, resourceCancellations: 1, resourceBackwardRestarts: 0, resourceRangeIgnored: 1,
+    actualHardware: 'private hardware identifier', poolCapacity: 3, vendorBuffers: 8 };
+  const output = playbackDiagnostics({ getPlaybackDiagnostics: () => source });
+  assert.equal(output.codec, source.codec);
+  assert.equal(output.observedSampleCadenceMs, 41.667);
+  assert.equal(output.samplesClosed, 54);
+  assert.equal(output.userActivationHasBeenActive, false);
+  assert.equal(output.resourceRangeIgnored, 1);
+  for (const key of ['actualHardware', 'poolCapacity', 'vendorBuffers']) assert.equal(Object.hasOwn(output, key), false);
+  for (const codec of ['https://private.test/a', 'token=hidden', 'avc1.' + 'f'.repeat(44), 'avc1.secret/token'])
+    assert.equal(Object.hasOwn(playbackDiagnostics({ getPlaybackDiagnostics: () => ({ codec }) }) ?? {}, 'codec'), false);
+  const invalid = playbackDiagnostics({ getPlaybackDiagnostics: () => ({ ...source,
+    codedWidth: 32769, displayHeight: -1, observedSampleCadenceMs: NaN, samplesClosed: 1.5,
+    hardwareSupportProbe: 'actually-hardware', resourceLastResult: 'https://private.test', resourceLastStatus: 600, userActivationHasBeenActive: 'false' }) });
+  for (const key of ['codedWidth', 'displayHeight', 'observedSampleCadenceMs', 'samplesClosed', 'hardwareSupportProbe', 'resourceLastResult', 'resourceLastStatus', 'userActivationHasBeenActive'])
+    assert.equal(Object.hasOwn(invalid, key), false);
+});
+
+test('progress bursts are gated before expensive snapshots while playback edges remain immediate', () => {
+  let time = 0, reads = 0;
+  const events = [], engine = { generation: 1, running: false, intentPlaying: true, waitReason: 'preparing' };
+  const media = Object.assign(new EventTarget(), { getPlaybackDiagnostics() { reads++; return engine; } });
+  const diagnostics = createAirPlayDiagnostics(entry => events.push(entry), {
+    state: () => ({ id: 1, revision: 0 }), media: () => media, now: () => time,
+  });
+  diagnostics.monitor(media, new EventTarget());
+  for (let i = 0; i < 1000; i++) media.dispatchEvent(new Event('progress'));
+  assert.equal(reads, 2); // One probe and the first emitted snapshot; all later probes are skipped.
+  assert.equal(events.length, 1);
+  time = 100; engine.waitReason = 'audio-context-resume';
+  media.dispatchEvent(new Event('waiting'));
+  assert.equal(reads, 3);
+  assert.equal(events.at(-1).event, 'waiting');
+  assert.equal(events.at(-1).engine.waitReason, 'audio-context-resume');
+  time = 249; media.dispatchEvent(new Event('progress'));
+  assert.equal(reads, 3);
+  time = 250; media.dispatchEvent(new Event('progress'));
+  assert.equal(reads, 5);
+  assert.equal(events.at(-1).event, 'engine-state');
+  assert.equal(events.at(-1).engine.waitReason, 'audio-context-resume');
+  diagnostics.dispose();
+});
+
+test('the complete nine-component AV1 codec token survives while additional components remain invalid', () => {
+  const codec = 'av01.0.08M.08.0.110.01.01.01.0';
+  assert.equal(codec.split('.').length - 1, 9);
+  assert.equal(playbackDiagnostics({ getPlaybackDiagnostics: () => ({ codec }) }).codec, codec);
+  assert.equal(playbackDiagnostics({ getPlaybackDiagnostics: () => ({ codec: codec + '.0' }) }), null);
+});
+
+test('failure edges preserve sanitized pre-cleanup evidence and terminal ownership before player retirement', () => {
+  const f = fixture();
+  const before = { generation: 4, running: true, intentPlaying: true, waitReason: 'error', codec: 'av01.0.08M.08',
+    hardwareSupportProbe: 'unavailable', videoOwnedFrames: 2, samplesReceived: 6, samplesClosed: 4,
+    url: 'https://private.test/?token=secret', decoderConfig: { description: 'private media' } };
+  const after = { generation: 4, running: false, intentPlaying: false, waitReason: 'error',
+    videoOwnedFrames: 1, samplesReceived: 6, samplesClosed: 5 };
+  f.media.getPlaybackDiagnostics = () => after;
+  f.media.error = { code: 3, name: 'EncodingError', message: 'Decode failed for https://private.test/?token=secret' };
+  const failure = Object.assign(new Event('error'), { error: f.media.error,
+    playbackDiagnostics: before, cleanupDiagnostics: after });
+  // This is the same listener ordering as controls' proxy fallback, which disposes the player.
+  f.media.addEventListener('error', () => f.diagnostics.dispose());
+  f.media.dispatchEvent(failure);
+  assert.deepEqual(f.events.map(entry => entry.event), ['error', 'engine-state']);
+  assert.equal(f.events[0].engine.codec, 'av01.0.08M.08');
+  assert.equal(f.events[0].engine.running, true);
+  assert.equal(f.events[0].engine.hardwareSupportProbe, 'unavailable');
+  assert.equal(f.events[1].engine.videoOwnedFrames, 1);
+  assert.equal(f.events[1].engine.samplesClosed, 5);
+  assert.equal(f.events[1].engine.intentPlaying, false);
+  assert.equal(JSON.stringify(f.events).includes('private'), false);
+  assert.equal(JSON.stringify(f.events).includes('secret'), false);
+  before.samplesClosed = 6;
+  assert.equal(f.events[0].engine.samplesClosed, 4);
+});
+
+test('identical terminal snapshots do not duplicate a fault edge', () => {
+  const f = fixture();
+  const snapshot = { generation: 1, running: false, intentPlaying: false, waitReason: 'error', samplesClosed: 0 };
+  f.media.dispatchEvent(Object.assign(new Event('error'), { playbackDiagnostics: snapshot, cleanupDiagnostics: snapshot }));
+  assert.deepEqual(f.events.map(entry => entry.event), ['error']);
+  f.diagnostics.dispose();
 });

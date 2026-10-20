@@ -71,13 +71,33 @@ test('explicit selectors exclude addresses, SDP, codes, session and exception te
   assert.ok(Object.keys(values).every(key => VIDEO_DIAGNOSTIC_FIELDS.includes(key)));
 });
 
-test('production cross-language fixture covers every allowed field and retains finite raw and interval evidence', () => {
+test('the historical cross-language fixture remains accepted after additive diagnostics', () => {
   assert.equal(fixture.k, 'video-diag'); assert.equal(fixture.v.schema, 1);
-  assert.deepEqual(Object.keys(fixture.v).sort(), [...VIDEO_DIAGNOSTIC_FIELDS].sort());
+  assert.ok(Object.keys(fixture.v).every(key => VIDEO_DIAGNOSTIC_FIELDS.includes(key)));
   assert.equal(fixture.v['interval.state'], 'valid'); assert.equal(fixture.v.streamGeneration, 3); assert.equal(fixture.v.epoch, 7);
   assert.equal(fixture.v['sender.authenticated'], true); assert.equal(fixture.v['control.inFlight'], true);
   assert.equal(fixture.v.omittedFields, 0);
   assert.ok(Object.keys(fixture.v).length <= 256); assert.ok(Buffer.byteLength(JSON.stringify(fixture.v)) <= VIDEO_DIAGNOSTIC_BYTES);
+});
+
+test('live policy fixture keeps exact cross-language fields while packing priority evidence into the unchanged budget', () => {
+  const current = JSON.parse(readFileSync(new URL('../../shared/src/test/resources/Browser-live-policy-diagnostics-v1.json', import.meta.url)));
+  assert.deepEqual(current.schemaFields.sort(), [...VIDEO_DIAGNOSTIC_FIELDS].sort());
+  const packed = packVideoDiagnosticValues(current.inputValues, PAGE_VERSION);
+  assert.deepEqual(current.debug.v, packed);
+  assert.equal(Object.keys(packed).length, 256); assert.equal(packed.omittedFields, 2);
+  assert.ok(Buffer.byteLength(JSON.stringify(packed)) <= VIDEO_DIAGNOSTIC_BYTES);
+  for (const key of ['streamGeneration', 'epoch', ...DROP_FIELDS.map(key => `raw.${key}`),
+    'raw.playbackProfile', 'raw.policyVideoTargetMs', 'raw.policyVideoReadinessMs', 'raw.policyVideoMarginMs',
+    'raw.policyInteractionStarts', 'raw.policyInteractionReleases', 'raw.policyProfileSwitches',
+    'raw.policyVideoPlanDurationMs', 'raw.policyVideoPlanRemainingMs', 'raw.policyVideoLeadRemainingMs',
+    'raw.sourceClockState', 'raw.sourceClockAgeMs', 'raw.clockEstimatorState', 'raw.clockEstimatorObservationAgeMs',
+    'raw.clockEstimatorSelectedAgeMs']) assert.equal(packed[key], current.inputValues[key], key);
+  const invalid = videoDiagnosticValues({ video: video({ policyVideoTargetMs: -1, policyInteractionStarts: .5,
+    policyInteractionActive: 1, sourceClockAgeMs: -1, sourceClockState: 'private-url',
+    clockEstimatorState: 'secret', clockEstimatorObservationAgeMs: -1 }) }, 'capture', createVideoDiagnosticTracker());
+  for (const key of ['policyVideoTargetMs', 'policyInteractionStarts', 'policyInteractionActive', 'sourceClockAgeMs',
+    'sourceClockState', 'clockEstimatorState', 'clockEstimatorObservationAgeMs']) assert.equal(invalid[`raw.${key}`], undefined);
 });
 
 test('negotiated control budgets contain dense audio/video/st plus RPC and representative touch/viewport', () => {

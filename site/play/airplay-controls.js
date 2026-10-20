@@ -9,6 +9,7 @@ export function playbackState(value) {
 }
 /** A paused item is idle; only an unfinished seek can still be buffering while paused. */
 export function playbackBuffering(media, waiting = false) {
+  if (typeof media.buffering === 'boolean') return media.buffering;
   return !media.ended && (!media.paused || media.seeking) && (waiting || media.seeking || media.readyState < 3);
 }
 /** Older APK directives omit rate; their play/pause commands preserve the browser's selected speed. */

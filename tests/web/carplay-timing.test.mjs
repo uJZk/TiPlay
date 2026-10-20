@@ -5,6 +5,52 @@ import { createMediaTiming, createTimedFrames } from '../../site/play/media-timi
 import { audioDelayAt, videoExpired } from '../../site/play/playback-window.js';
 import { constantDelay, delayAt, playbackProfile } from '../../site/play/delay-plan.js';
 
+test('policy evidence reads the applied target and used margin without changing playback', () => {
+  let at = 1000;
+  const timing = createMediaTiming(() => {}, () => at);
+  timing.mode('carplay');
+  assert.equal(timing.stats().policyVideoReadinessMs, undefined, 'unknown readiness cannot become a measured zero');
+  timing.observe('video', 900);
+  const plan = timing.plan(), before = timing.stats();
+  assert.equal(before.policyVideoReadinessMs, 100); assert.equal(before.policyVideoMarginMs, 20);
+  assert.equal(before.policyVideoTargetMs, 120); assert.equal(before.policyTargetReason, 'readiness');
+  assert.equal(before.policyMaxDelayMs, 300); assert.equal(before.policySubmitMarginMs, 20);
+  assert.equal(before.policyMaxVideoFrames, 24); assert.equal(before.policyMaxVideoBytes, 64 * 1024 * 1024);
+  for (let i = 0; i < 10; i++) assert.deepEqual(timing.stats(), before);
+  assert.equal(timing.plan(), plan, 'diagnostics cannot apply or replace a plan');
+  timing.mode('airplay-mirror'); timing.observe('video', 995);
+  assert.equal(timing.stats().policyVideoTargetMs, 40); assert.equal(timing.stats().policyVideoMarginMs, 30);
+  assert.equal(timing.stats().policyTargetReason, 'initial-floor');
+  timing.observe('video', 0);
+  assert.equal(timing.stats().policyVideoTargetMs, 280); assert.equal(timing.stats().policyTargetReason, 'ceiling');
+});
+
+test('short touch evidence counts transitions once and separates physical touch, hold and applied convergence', () => {
+  let at = 1000;
+  const timing = createMediaTiming(() => {}, () => at);
+  timing.mode('carplay'); timing.observe('video', 750); timing.started();
+  const baseline = timing.stats();
+  timing.interaction(true); timing.interaction(true);
+  const entered = timing.stats(), plan = timing.plan();
+  assert.equal(entered.policyInteractionStarts, 1); assert.equal(entered.policyProfileSwitches, baseline.policyProfileSwitches + 1);
+  assert.equal(entered.policyVideoMarginMs, 0); assert.equal(entered.policyVideoTargetMs, 0);
+  assert.equal(entered.policyTargetReason, 'touch'); assert.equal(entered.policyVideoLeadRemainingMs, 0);
+  assert.ok(entered.policyVideoPlanDurationMs > 0); assert.equal(entered.policyInteractionActive, true);
+  at += 10; timing.interaction(true); timing.interaction(false); timing.interaction(false);
+  assert.equal(timing.stats().policyInteractionStarts, 1); assert.equal(timing.stats().policyInteractionReleases, 1);
+  assert.equal(timing.plan(), plan, 'duplicate main/sink notifications and moves cannot restart convergence');
+  at += 749;
+  assert.equal(timing.stats().policyInteractionActive, false); assert.equal(timing.stats().policyHoldRemainingMs, 1);
+  at += 2;
+  const expired = timing.stats();
+  assert.equal(expired.policyHoldRemainingMs, 0); assert.equal(timing.plan().playbackProfile, 'carplay-touch', 'reading expired eligibility cannot apply a different plan');
+  timing.observe('video', at - 50);
+  assert.equal(timing.plan().playbackProfile, 'carplay'); assert.equal(timing.stats().policyVideoMarginMs, 20);
+  const counts = timing.stats(); timing.reset();
+  for (const key of ['policyInteractionStarts', 'policyInteractionReleases', 'policyProfileSwitches', 'policyPlanChanges'])
+    assert.equal(timing.stats()[key], counts[key], 'lifetime counters survive stream resets');
+});
+
 test('CarPlay readiness keeps bounded independent timelines with a smoother non-interactive profile', () => {
   let at = 1000;
   const timing = createMediaTiming(() => {}, () => at);

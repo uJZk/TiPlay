@@ -58,6 +58,7 @@ export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, 
       <media-seek-indicator class="media-seek-indicator"><media-icon family="default" name="chevron" class="media-seek-indicator-icon"></media-icon><media-seek-indicator-value class="media-seek-indicator-value"></media-seek-indicator-value></media-seek-indicator>
     </div>
     <p class="airplay-error" role="alert" hidden></p>
+    <p class="airplay-gesture" role="status" hidden>${lang === 'zh' ? '点击播放以开始投屏' : 'Tap Play to start casting'}</p>
   </media-container></video-player>`;
   const element = locale.querySelector('video-player');
   const surface = locale.querySelector('media-container');
@@ -80,6 +81,32 @@ export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, 
   media.addTextTrack = (...args) => subtitles.addTextTrack(...args);
   elementMedia.initialize(media);
   surface.prepend(elementMedia);
+  const playButton = surface.querySelector('media-play-button');
+  const gestureHint = surface.querySelector('.airplay-gesture');
+  const gestureLabel = lang === 'zh' ? '开始播放' : 'Start playback';
+  let gestureLabelActive = false;
+  const syncGesture = () => {
+    const blocked = media.gestureRequired;
+    surface.toggleAttribute('data-gesture-required', blocked);
+    gestureHint.hidden = !blocked;
+    if (blocked) {
+      playButton.setAttribute('aria-label', gestureLabel); playButton.setAttribute('title', gestureLabel);
+    } else if (gestureLabelActive) {
+      const label = media.paused ? (lang === 'zh' ? '播放' : 'Play') : (lang === 'zh' ? '暂停' : 'Pause');
+      playButton.setAttribute('aria-label', label); playButton.setAttribute('title', label);
+    }
+    gestureLabelActive = blocked;
+  };
+  const gestureEvents = ['play', 'pause', 'waiting', 'playing', 'progress', 'error'];
+  for (const type of gestureEvents) media.addEventListener(type, syncGesture);
+  const gesturePlay = event => {
+    if (!event.isTrusted || !media.gestureRequired || !event.target.closest?.('media-play-button')) return;
+    // Preserve the pending play intent: the existing button resumes the blocked clock
+    // instead of toggling it to pause on the first trusted activation.
+    event.preventDefault(); event.stopImmediatePropagation();
+    void media.resumeFromGesture().catch(() => {});
+  };
+  surface.addEventListener('click', gesturePlay, true);
   const captionClock = () => subtitles.update(media.currentTime);
   for (const type of ['timeupdate', 'seeked', 'loadeddata']) media.addEventListener(type, captionClock);
   const end = locale.querySelector('.airplay-stop');
@@ -135,6 +162,8 @@ export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, 
       captions.dispose();
       subtitles.dispose();
       for (const type of ['timeupdate', 'seeked', 'loadeddata']) media.removeEventListener(type, captionClock);
+      for (const type of gestureEvents) media.removeEventListener(type, syncGesture);
+      surface.removeEventListener('click', gesturePlay, true);
       media.dispose(); elementMedia.adapter.destroy();
       serialFetchResource.dispose();
       locale.remove();
