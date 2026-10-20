@@ -7,15 +7,15 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). Release preparation
-targets **0.2.20-beta.7** (code **49**), following beta.6/code48. Run
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). The current prerelease
+is **0.2.20-beta.7** (code **49**), following beta.6/code48. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-this release targets **v73** with WebRTC DataChannel as the formal live-media path.
+the paired page uses **v73** with WebRTC DataChannel as the formal live-media path.
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
 independent `/webrtc/` subsite without an alias or redirect; the APK defaults to the
-root. The beta record below distinguishes completed source checks from pending
-signed artifacts, exact build commit/checksums and deployment verification. Every
+root. The beta record below distinguishes the signed APK's build commit from the
+webpage commit and records deployment verification separately. Every
 language's download entry opens the GitHub Releases index without a version-specific
 URL. Debug APK metadata retains its diagnostic suffix.
 
@@ -86,7 +86,7 @@ Its APK SHA-256 is `4d32a780b33fb9662beaeffa711c6703ffd1ba591afbe31daf0861753339
 The APK signature matches 0.2.15, its source ZIP matches that commit's `git archive`,
 and both runtime identity files match the pinned inputs used by 0.2.15. That release record
 includes the source archive and `SHA256SUMS.txt`. Its former release/download URL
-returned 404 during beta.6 verification. Current release preparation is recorded below. Historical
+returned 404 during beta.6 verification. The current release record is below. Historical
 automated checks passed; physical
 phone/vehicle, system authorization and VPN acceptance remain in [Testing](Testing.md)
 and [Todo](Todo.md).
@@ -115,11 +115,12 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta release
 
-The next release target is **TiPlay 0.2.20-beta.7**, version code **49**, with
-browser cache/diagnostic revision **v73**. The user authorized the beta APK and
-necessary root-page update. **Signing, release publication and deployment have not
-yet been verified for this version.** The intended tag is `v0.2.20-beta.7`; a planned
-name is not evidence that a tag, attachment or deployment exists.
+[TiPlay 0.2.20-beta.7](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.7),
+version code **49**, was published as a prerelease at **2026-10-20 10:54:57 UTC**
+(release ID **418290685**, not a draft). Its paired webpage revision is **v73**.
+The APK and webpage use different source commits, recorded below. APK publication,
+artifact checks and the root-page rollout are verified. Download entry points use the version-independent
+[GitHub Releases index](https://github.com/uJZk/TiPlay/releases).
 
 This release retains beta.6's reliable ordered WebRTC/SRP transport, independent
 live audio/video clocks and single formal page at `https://ujzk.github.io/TiPlay/`.
@@ -153,13 +154,14 @@ contracts and measured limits.
 | Check | Evidence for this change |
 | --- | --- |
 | Full browser unit suite | **528 passed**. This is source-level browser coverage, not a signed-APK or vehicle test. |
-| Version/site preflight | **29** selected Node checks, **9** release-draft checks, **2** site checks and the public-tree scan passed. These are scoped preparation checks, not additional full-suite runs. |
+| Version/site preflight | APK preparation passed **29** selected Node, **9** release-draft and **2** site checks plus the public-tree scan. The later download-entry-only website change passed **20** selected Node and **2** site checks plus the scan. These scoped runs overlap and are not additional full-suite totals. |
 | Final targeted Android/JVM run | **31 passed** in the last scoped run. |
 | Targeted Android/JVM coverage across rounds | **121 distinct tests** across multiple rounds. This overlaps the last 31 and is not one clean full-suite run of the final tree. |
 | Phone debug APK | Debug build passed; it does not establish release signing or packaged runtime identity. |
 | Actual captured-media replay | Passed before the final diagnostics-only changes. It establishes real compressed playback/gesture recovery at that earlier source state; it was not rerun on the final release artifact. |
 | Complete Android CI | Skipped at the user's explicit request. Targeted checks and a debug build do not replace the full unit/lint/build command. |
-| Signed release and deployed page | Pending the checks below. |
+| Signed release | Release lint/build and independent artifact checks passed; details below. |
+| Deployed page | Pages succeeded and online asset/version/download-entry checks passed; this is separate from APK validation. |
 
 The recorded replay proves a matching failure mechanism, not the unique cause of
 the field attempt. The capture also contains valid mirror and CarPlay windows;
@@ -168,25 +170,45 @@ separate evidence. No forwarded touch experiment establishes physical touch-poli
 performance. New getters/logging do not change the clock-selection algorithm or
 make inaccessible decoder/panel/speaker state observable.
 
-### Pending artifact and deployment verification
+### Artifact and deployment evidence
 
-| Item | Required evidence before marking verified |
+| Item | Verified value or current state |
 | --- | --- |
-| Build commit and release tag | Exact committed build SHA and tag `v0.2.20-beta.7`; pending. |
-| Signed phone APK | Expected `TiPlay-0.2.20-beta.7.apk`; build/run, size, SHA-256, package/version and signature verification pending. |
-| Matching source archive | Expected `TiPlay-0.2.20-beta.7-source.zip`; exact `git archive` comparison, size and SHA-256 pending. |
-| Checksums and attachments | `SHA256SUMS.txt`, exact attachment set and independently fetched attachment digests; pending. |
-| Signing/runtime provenance | Compare the APK certificate and both packaged runtime identity files with the intended verified inputs; pending. |
-| Root webpage | Pages run/deployment SHA, actual `app-version.js` beta.7 metadata, v73 manifest/cache closure and deployed asset bytes; pending. |
-| Publication | Prerelease status, tag target and version-independent Releases-index download entries; pending. |
+| APK build / tag | `725d16666c62e18ff78903462642fb68fa9b5a4e` / `v0.2.20-beta.7` |
+| Website source | `4db1502867a79045bf6d52978dfe3f644ea0ab0a`; subsequent download-entry-only change, not the APK source archive |
+| Signed workflow | [Actions 39409841930](https://github.com/uJZk/TiPlay/actions/runs/39409841930), success |
+| APK | `TiPlay-0.2.20-beta.7.apk`, 100,995,365 bytes; SHA-256 `2feb3249daa642879570bc0b946e7d14b76cf8059ad0208d299375b0410812ad` |
+| Source archive | `TiPlay-0.2.20-beta.7-source.zip`, 20,688,319 bytes; SHA-256 `12084436688877feda5e2eb4251da4553766cf035163281b5e050a5a471c3573` |
+| Checksums | `SHA256SUMS.txt`, 189 bytes; SHA-256 `76f7a7e1be43b00f23465a3682d69b30f63bfa16a8ebea0d451aced306313563` |
+| Root webpage | [Actions 39411310017](https://github.com/uJZk/TiPlay/actions/runs/39411310017), success at website commit `4db1502867a79045bf6d52978dfe3f644ea0ab0a`; online verification passed |
 
-Keep signing material and runtime identities outside Git. The established signing
-certificate fingerprint is recorded under historical provenance below; that history
-does not verify a newly built APK. Follow the [signed release procedure](#signed-release)
-for package/signature/runtime checks, source archives and checksums. Publication
-records must use the actual beta.7 commit and run/artifact results, not beta.6 values.
-The signed APK remains pinned to its build tag; the later download-entry change is
-web-only, so record the Pages deployment commit separately from the APK build commit.
+The signed workflow passed `lintRelease` and `assembleRelease` and removed temporary
+signing/runtime inputs. Independent verification confirmed package
+`com.ujzk.tiplay`, version/code **0.2.20-beta.7/49**, and `debuggable=false`.
+The certificate SHA-256 is
+`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`,
+matching the actual published beta.6 APK after a fresh metadata/digest check. Both runtime identity files are
+byte-identical to the verified pinned DiPlay 0.2.18 inputs; no additional credential
+containers were found. All four WebRTC ABIs, all 18 supported 64-bit native libraries'
+16 KiB ELF LOAD alignment and APK `zipalign -c -P 16 4` passed verification.
+
+The release contains exactly the APK, matching source ZIP and checksum file above.
+Independent downloads before publication matched all three sizes and digests.
+Post-publication checks confirmed unchanged attachment identities/digests and public
+release/index/checksum access; public HEAD checks matched the APK/source lengths.
+The source ZIP is
+byte-identical to `git archive` of the **APK build commit**, not the later webpage
+commit. Keep that tag/archive pinned when adding subsequent documentation or website
+commits. These artifact checks do not replace the full Android CI skipped by request.
+
+At `https://ujzk.github.io/TiPlay/`, **165/165** checked URLs matched the website
+commit: 137 assembled files, 17 directory aliases and 11 critical entries without
+query strings. This covers all **105** v73 cache entries and beta.7 version metadata.
+All eight ordinary download pages also matched without query strings, retained the
+beta.7 badge and opened the generic GitHub Releases index. The removed `webrtc/`,
+`WebRTC/`, both corresponding `index.html` paths and `rtc-transport.js` returned
+404 both with and without query strings. These are deployed-file checks, not vehicle
+playback or physical latency acceptance.
 
 Physical iPhone/Android/car acceptance remains incomplete: actual hardware decoding,
 Shizuku-address host ICE, gear transitions, sustained thermal smoothness, HFP/SCO,
