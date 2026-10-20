@@ -115,9 +115,11 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta release
 
-The current release target is **TiPlay 0.2.20-beta.8**, version code **50**, paired
-with webpage **v74** at <https://ujzk.github.io/TiPlay/>. Signing, publication and
-online checks are pending until recorded below. Download entry points retain the
+[TiPlay 0.2.20-beta.8](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.8),
+version code **50**, was published as a prerelease at **2026-10-20 12:26:10 UTC**
+(release ID **418367006**, not a draft). Its paired webpage is **v74** at
+<https://ujzk.github.io/TiPlay/>. Signing, publication and root deployment are
+verified below. Download entry points retain the
 version-independent [GitHub Releases index](https://github.com/uJZk/TiPlay/releases).
 
 This change prevents control/diagnostic work from blocking live media and preserves
@@ -140,8 +142,9 @@ not established. See [Diagnostics](Diagnostics.md), [AirPlay](AirPlay.md) and th
 | Complete browser page | **90 checks passed** with an explicit test-only software decoder override; **4** default-policy checks correctly exposed desktop hardware unavailability. |
 | Ordinary URL playback | 44.1 kHz AAC MP4/HLS playback, controls, seek/rate, cleanup and diagnostics passed. |
 | Native offline audio signal | **4 rate combinations passed** against a whole-buffer reference. The 44.1 kHz graph followed by one continuous 48 kHz device-equivalent conversion had no zero frames and maximum step residual 1.49e-8 in the measured window. |
+| Version/site preflight | After the metadata-only beta.8 version update, **36** selected browser tests, **9** release-draft and **2** site tests plus the public-tree scan passed. These overlap the full suite. |
 | Complete Android CI | Skipped at the user's explicit request; these scoped checks do not replace it. |
-| Signed release / root deployment | Pending the workflow and independent artifact/online checks. |
+| Signed release / root deployment | Release lint/build, independent APK/source/attachment checks and **181/181** deployed-file checks passed. |
 
 Native/desktop evidence does not establish vehicle hardware decoding, physical
 speaker/panel latency or long-session acoustic quality. Debug raw capture still
@@ -151,10 +154,46 @@ lossless capture on a slow/failing disk. Physical acceptance remains in
 
 ### Artifact and deployment evidence
 
-Pending the signed beta.8 workflow, exact-build source/archive checks, publication
-and v74 root-page rollout. The release will contain exactly its APK, matching
-source ZIP and `SHA256SUMS.txt`. No user capture or local runtime/signing input is
-part of the source archive.
+| Item | Verified value |
+| --- | --- |
+| APK build / tag | `b62e843d873def57d94f9ac794bbcd383e8db301` / `v0.2.20-beta.8` |
+| Website source | The same `b62e843d873def57d94f9ac794bbcd383e8db301`; later release-record documentation does not retag the build. |
+| Signed workflow | [Actions 39420652253](https://github.com/uJZk/TiPlay/actions/runs/39420652253), release and draft jobs successful |
+| APK | `TiPlay-0.2.20-beta.8.apk`, 101,011,749 bytes; SHA-256 `050b3ff8f4a2a34ef0feda88e7088e90d13b6d00de5fcc85f83269436274c75f` |
+| Source archive | `TiPlay-0.2.20-beta.8-source.zip`, 20,717,337 bytes; SHA-256 `35a014dc75850b7a8f806ef44fec09fe09135991e6189b0166e895dcaa148c61` |
+| Checksums | `SHA256SUMS.txt`, 189 bytes; SHA-256 `5b360cd162749c745fd8005649a9112c445d42007d2e0274973a1f4b151d943b` |
+| Root webpage | [Actions 39420661572](https://github.com/uJZk/TiPlay/actions/runs/39420661572), successful at the website commit above |
+
+Independent verification confirmed `com.ujzk.tiplay`, beta.8/code50 and
+`debuggable=false`. Its verified certificate SHA-256 is
+`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`,
+matching the actual hash-verified published beta.7 APK. The two runtime identity
+files are byte-identical to the hash-pinned DiPlay 0.2.18 inputs. All four WebRTC
+ABIs, all 18 supported 64-bit libraries' 16 KiB ELF LOAD alignment and
+`zipalign -c -P 16 4` passed. The three retained legacy JNA library paths/bytes
+also match beta.7; this does not establish support for additional WebRTC ABIs.
+
+The source ZIP is byte-identical to `git archive` of the exact build commit. It
+contains no `work/`, field-capture logs, signing inputs or credential containers.
+The release contains exactly the APK, source ZIP and checksum file above; all
+three independent downloads matched their remote sizes/digests and checksum
+coverage before publication. Public-access verification is recorded separately
+from these authenticated pre-publication artifact checks.
+
+After publication, fresh API checks confirmed `draft=false`, `prerelease=true`
+and unchanged attachment IDs, sizes, digests and release notes. The public release
+page, Releases index and checksum download returned 200; the downloaded checksum
+bytes matched, and public APK/source HEAD checks matched the expected lengths
+(**5/5** HTTP checks). The build tag/archive remain pinned when adding this later
+release-record documentation.
+
+At the official root, **181/181** checked URLs matched the assembled website
+commit: 137 public files, 17 directory aliases, 19 critical entries without query
+strings and eight ordinary language download URLs. All **105** v74 cache entries
+matched. The eight language editions show beta.8 and every Releases link uses the
+generic index. The removed `webrtc/`, `WebRTC/`, both corresponding `index.html`
+paths and `rtc-transport.js` returned 404 with and without query strings
+(**10/10** checks). These are deployed-file checks, not physical playback tests.
 
 ### Previous beta.7 provenance
 
