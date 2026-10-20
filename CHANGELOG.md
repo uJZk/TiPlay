@@ -6,9 +6,9 @@ and delivery records remain in Git history.
 
 ## 0.2.20-beta.6
 
-Publication pending; target version code 48 and browser cache/diagnostic revision v72.
+Published as a prerelease: version code 48 and browser cache/diagnostic revision v72.
 This release integrates the remote 0.2.21 WebRTC experiments into the formal root
-page; local integrated validation has passed and remote publication remains pending.
+page; the signed APK, matching source, checksums and root deployment are verified.
 
 - Publish the formal browser at `https://ujzk.github.io/TiPlay/`, replacing the former HTTP client. Remove the independent `/webrtc/` site without an alias or redirect; point download pages to the explicitly labeled beta.6 release instead of the unavailable 0.2.16 asset.
 - Retain four-digit SRP-6a mutual proofs and session-key binding of the complete offer/answer SDP. Pairing codes never travel through HTTP signaling; media and controls start only on the authenticated encrypted channel.
@@ -24,8 +24,10 @@ Integrated local verification: 237 scoped Android regressions, 473 browser tests
 24 JVM compatibility checks; all three required lint/debug builds (0 Error/Fatal,
 38 warnings); media-clock and AirPlay photo/audio/MP4/HLS E2E.
 Full-page playback uses an explicit test-only software override; strict desktop
-hardware-unavailable behavior is checked separately. Full Android CI is skipped at the user’s explicit request; signed build hashes,
-remote page deployment and publication remain pending.
+hardware-unavailable behavior is checked separately. Full Android CI was skipped at the user’s explicit request. Signed release lint/build,
+APK signature/runtime/source/checksums and all 130 deployed paths passed independent
+verification. See [Build](docs/Build.md#beta-release) for the exact commit, hashes and
+Actions evidence.
 
 Physical phone/vehicle acceptance remains incomplete. The +300 ms checks describe
 known software mappings, with upstream iPhone NTP uncertainty still uncarried;
