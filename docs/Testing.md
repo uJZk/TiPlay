@@ -62,6 +62,32 @@ establish optimal vehicle thresholds or a unique field failure cause. Full Andro
 CI remains skipped at the user's request; signed build and deployment evidence
 is tracked in [Build](Build.md#beta-release).
 
+The beta.8/v74 control/audio correction passed all 561 browser tests on
+Node 22.23.3, 52 scoped Android tests across seven actual classes, and the mobile
+debug build. Native queue regressions hold an application RPC while 300 ordinary
+ACKs drain, preserve canonical capture ordering and verify authentication,
+audio-lease FIFO, malformed credit, owner retirement and bounded overload evidence.
+Real Chromium DataChannel integration passed 17 checks, and ordinary 44.1 kHz AAC
+MP4/HLS replay passed using the actual media engine, controls and diagnostics.
+The complete page passed 90 checks with the explicit software-only test override,
+including all four worker/main paths, touch, reconnection and v74 offline cache.
+Four default-policy checks separately confirmed an explicit unsupported state on
+the desktop hardware-unavailable path. Neither result establishes actual vehicle
+hardware decoding.
+
+The independent URL signal oracle exercises production packet trimming and partial
+scheduling with continuous tone/sample-identity inputs. It reproduced all eight
+original failures and checks genuine single-sample gaps/overlaps, fractional seek,
+format changes, pause/resume and tempo output. The native
+[`url-audio-signal.mjs`](../tests/web-e2e/url-audio-signal.mjs) harness compares the
+production AudioBufferSource graph with a whole-buffer reference in four rate
+combinations. On Chromium 151.0.7922.34, the final 44.1 kHz graph followed by one
+continuous 48 kHz device-equivalent conversion had no zero frames, maximum step
+residual 1.49e-8 and relative error -169.54 dB over the measured 1.7-second window.
+Both constructor-requested and actual graph rates were observed. This offline
+conversion checks signal continuity; it does not measure the physical device
+driver, speaker output or vehicle latency. Full Android CI remains skipped.
+
 The historical beta.6 integrated source passed 237 scoped Android regressions, 473 browser tests,
 90 full-page checks, 17 real-PeerConnection checks, seven SRP security cases with
 Bouncy Castle vectors and 24 JVM compatibility checks. Media-clock and AirPlay

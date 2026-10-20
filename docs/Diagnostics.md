@@ -26,6 +26,24 @@ quantiles of different stages must not be added. WebCodecs decode duration inclu
 opaque driver/reference-reorder work, and canvas submission does not measure panel scanout.
 These identify where to investigate, without claiming a measured vehicle bottleneck.
 
+Native `stage=control-work` groups record ingress/RPC queue occupancy, high-water
+marks, limits, rejected/abandoned work and processing costs by ACK, authentication,
+audio lease and application RPC. Queue wait, synchronous raw-capture time, parsing
+and application work have separate totals/maxima; active work also retains its
+phase and elapsed time. Debug repeats these bounded groups every ten seconds;
+retirement preserves them in Standard too. Raw capture remains synchronous and
+can still backpressure media through its shared disk writer. Queue isolation does
+not establish that a slow or failing disk can sustain lossless capture.
+
+Source-deadline faults request a compact first snapshot; identity churn is merged
+within the existing five-second cadence, while cumulative counters remain in
+periodic reports. The first-fault and terminal status snapshots have separate
+bounded outbox slots so ordinary telemetry cannot overwrite them or consume touch
+edge capacity. Terminal evidence is collected before decoder/peer cleanup, with
+the current failure reason and known closed-channel label. Logging failure cannot
+prevent cleanup. Sending remains best effort: a retired owner or broken connection
+can prevent delivery, even when a local snapshot was preserved.
+
 The video diagnostic event has its own Debug-only budget, separate from the ordinary
 2 KiB status and audio diagnostics. It records the five additive drop components,
 non-additive scheduler reasons and touch subsets, source/read/decoded/draw evidence,
@@ -265,6 +283,18 @@ convergence remain unvalidated on that device. These observations establish neit
 universal smoothness nor absence of live playback, and do not tune the profile
 constants or measure physical panel/acoustic output.
 
+The later beta.7/v73 capture reports a return to the waiting/connecting page, not
+an observed browser-process crash. At 19:17:42–46 UTC+8, both media ACK streams
+stopped advancing while control RPCs continued and diagnostic traffic rose to
+12–17 status reports per second, often with full audio/video details. The browser's
+first retry retained `timeout`; another peer ended with native `control-overload`
+only 76 ms after its last media ACK progress. Normal audio/video ACKs accounted for
+95.1% of the processed messages on that peer's shared 64-task control executor.
+These observations expose control/diagnostic interference with media delivery;
+zero decode errors/stalls do not establish a hardware-decoder failure. Capture
+timestamps mark Android worker processing, not browser transmission, and the old
+capture lacks queue-wait, raw-write and callback-duration attribution.
+
 ## AirPlay URL playback evidence
 
 URL casting has its own media engine and AudioContext. CarPlay/mirror audio telemetry
@@ -275,6 +305,15 @@ cannot report a current engine. `ready`, play intent, `loadedmetadata` and
 `readyState=3` do not establish actual `playing`, a resolved play promise or an advancing
 media clock. A pending AudioContext resume can leave decoded media ready while position
 stays at a seek target.
+
+In that beta.7/v73 capture, all three URL playback attempts reached actual playing
+with a running context and advancing position. Reported rate was 1.0; the sampled
+running windows had scheduled audio ahead rather than a stopped startup clock.
+This differs from the earlier readiness-without-progress case. Independent
+continuous-PCM regression inputs also exposed sample loss and repetition in the
+production URL packet-trimming and partial-scheduling code. Plan continuity and
+real browser rendering must be checked separately; neither establishes the
+vehicle's acoustic output or excludes a discontinuity in the original media.
 
 The bounded engine snapshot is split into fixed groups so the metadata line limit does
 not silently discard the later fields:
@@ -288,13 +327,21 @@ not silently discard the later fields:
 | `ENGINE_OWNERSHIP` | Retained sample generation, held/pending/total application-owned samples and estimated bytes; received/closed samples, pending video-read age and last sample age. |
 | `ENGINE_AUDIO` | Resume requested/completed/failed counts, known user-activation state, required gesture and requested context latency hint. |
 | `ENGINE_NETWORK` | Serialized resource-reader activity/queue, byte progress and its age, timeouts/cancellations, backward restarts, ignored ranges and safe last status/result. |
+| `ENGINE_PCM` | Decoded source rate/channels, requested and actual context rates, decoded frames and separate seek/overlap trims. |
+| `ENGINE_CONTINUITY` | Subsample timestamp alignment count/max correction, inserted silence, source PCM peak, over-full-scale and non-finite sample counts. |
+| `ENGINE_SCHEDULE` | Submitted frames, accumulated node-time gaps/overlaps and late-start count/max delay. |
 
 Semantic media/command edges remain visible. Engine-state changes are sampled from
 progress/timeupdate events with a 250 ms minimum interval; an unchanged snapshot with
 play intent but no running clock repeats at most every five seconds, and healthy state
 at most every ten seconds. Android applies a further unchanged-state deduplication.
 Standard, the default mode, retains semantic media/command edges, failures and explicit
-`stalled=true` evidence. One recovery snapshot can follow an accepted stall only for
+`stalled=true` evidence. Changes to overlap trimming, inserted silence, scheduling
+gaps/overlaps, late starts or invalid/over-full-scale PCM also admit a bounded
+continuity snapshot at most every five seconds. Silence can be a legitimate track
+offset; it is not an error label. Normal decoded/scheduled growth, seek trimming
+and subsample alignment alone do not trigger extra Standard reports. One recovery
+snapshot can follow an accepted stall only for
 the same playback ID, revision and generation; source replacement is not recovery of
 that identity. Unchanged healthy detail is Debug-only. These are sampling
 intervals when events execute, not an independent watchdog: a blocked browser main
@@ -328,6 +375,14 @@ including rereads; it is neither unique media coverage nor bytes consumed by the
 decoder. Network progress and last-result fields cannot measure decoder-internal
 work or audio reaching the speakers. `resourceLastStatus=0` means no recorded response
 status; actual HTTP statuses are restricted to 100–599.
+
+PCM level counters inspect the decoded source, before context mixing, gain and
+device conversion. Scheduling continuity compares planned node times and submitted
+sample counts; it does not record the browser's final mixed PCM or prove speaker
+output. Unknown context/source rates remain unknown. Local continuous-tone and
+sample-identity inputs reproduce the old packet-trim and partial-node defects;
+native OfflineAudioContext rendering separately checks node/resampler continuity
+against an independent whole-buffer reference.
 
 Codec support and `requestedHardwareAcceleration` describe negotiation/requested
 configuration. They do not identify the actual decoder backend;

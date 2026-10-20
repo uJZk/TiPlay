@@ -86,7 +86,14 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
       return null;
     },
     onAlive: id => post({ type: 'alive', id }),
-    onEnd: (id, reason) => { stop(); send({ type: 'end', id, reason }); },
+    onEnd: (id, reason) => {
+      // Cleanup retires the codec/epoch and in-flight work. Preserve their last
+      // scalar evidence for the owner before it closes the shared peer.
+      let stats;
+      try { stats = api.stats(); } catch (_) {} // Fault evidence must never prevent retirement.
+      stop();
+      send({ type: 'end', id, reason, stats });
+    },
   });
   let rates = { decodedFps: 0, bytesPerSec: 0 }, lastTick = { at: performance.now(), decoded: 0, bytes: 0 };
   function tick() {
@@ -300,7 +307,7 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
     codecSupported = null;
   }
 
-  return {
+  const api = {
     /** Every stream starts with a config record and a key frame; outputs still in the decoder are harmless. */
     clock(value) { clock = value; },
     read(id, stream) {
@@ -348,6 +355,7 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
       };
     },
   };
+  return api;
 }
 
 /**

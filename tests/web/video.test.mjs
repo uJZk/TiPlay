@@ -473,6 +473,11 @@ test('a stalled decoder ends explicitly and stop cancels pending capacity waits'
   controller.enqueue(next()); await settle();
   t.mock.timers.tick(1001); await reading;
   assert.deepEqual(messages.filter(value => value.type === 'end').map(value => value.reason), ['decode-stalled']);
+  const terminal = messages.find(value => value.type === 'end').stats;
+  assert.equal(terminal.codec, 'avc1.640028'); assert.equal(terminal.epoch, 1);
+  assert.equal(terminal.decodeQueueSize, 16); assert.equal(terminal.decodeInFlightFrames, 1);
+  assert.equal(terminal.decoderErrorName, 'DecodeBackpressureError');
+  assert.equal(pipeline.stats().codec, null); assert.equal(pipeline.stats().decodeInFlightFrames, 0);
   assert.equal(pipeline.stats().decodeStalls, 1);
   assert.equal(pipeline.stats().decodeDroppedFrames, 0, 'overload does not silently skip the waiting compressed record');
   reading = pipeline.read(2, new ReadableStream({ start(value) { controller = value; } }));

@@ -5,9 +5,62 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { APP_VERSION } from '../../site/play/app-version.js';
 import { DEFAULT_HOST, abortable, isCode, normalizeHost } from '../../site/play/link.js';
+import { browserDiagnosticEvents } from '../../site/play/browser-diagnostics.js';
 
 const play = new URL('../../site/play/', import.meta.url);
 const read = name => readFileSync(new URL(name, play), 'utf8');
+
+test('rejected audio blocks request compact diagnostics only for a first source fault', () => {
+  const callback = /onSourceDeadline: (\(\{ first \}\) => \{[\s\S]*?\n  \}),/.exec(read('app.js'))[1];
+  const events = []; let snapshots = 0;
+  const report = new Function('faultDiagnostics', 'browserDiagnosticEvents', 'pageStats', 'appearance', `return ${callback}`)(
+    { report: event => events.push(event) }, browserDiagnosticEvents,
+    () => { snapshots++; return { audio: { sourceDeadlineState: 'violated', sourceDeadlineRejectedFrames: 128,
+      debug: { contextState: 'running', privateLargeDebug: 'not part of the fault summary' } } }; }, { matches: false });
+  report({ first: true });
+  for (let i = 0; i < 1000; i++) report({ first: false });
+  assert.equal(snapshots, 1); assert.equal(events.length, 1); assert.equal(events[0].k, 'st');
+  assert.equal(events[0].v['audio.sourceDeadlineState'], 'violated');
+  assert.equal(events[0].v['audio.sourceDeadlineRejectedFrames'], 128);
+  assert.ok(!JSON.stringify(events).includes('privateLargeDebug'));
+});
+
+test('a media terminal records its current reason before cleanup and cannot retry the same owner twice', () => {
+  const source = /function streamEnded\([^\n]*\) \{[\s\S]*?\n\}/.exec(read('app.js'))[0];
+  const events = [];
+  const run = new Function('events', 'failLog', `
+    let streamId = 9, terminalDiagnosticId = null, live = true;
+    let lastError = Object.assign(new Error('prior connection'), { reason: 'ice-failed' });
+    const faultDiagnostics = { reset: () => events.push('fault-reset') };
+    const videoAbort = { abort: () => events.push('abort') }, rtcMedia = { close: () => events.push('close') };
+    const sink = { stop: () => events.push('sink-stop') }, releaseTouches = () => {};
+    const reportDiagnostics = () => { events.push(['diagnostic', lastError.reason]); if (failLog) throw new Error('diagnostic failed'); };
+    const scheduleRetry = () => events.push('retry'), backoffDelay = () => 100, stop = () => {};
+    let attempt = 0;
+    ${source}
+    streamEnded('timeout'); streamEnded('network');
+    return lastError.reason;
+  `);
+  assert.equal(run(events), 'timeout');
+  assert.deepEqual(events, ['fault-reset', ['diagnostic', 'timeout'], 'abort', 'close', 'sink-stop', 'retry']);
+  const failed = [];
+  assert.equal(run(failed, true), 'timeout');
+  assert.deepEqual(failed, events, 'a failed diagnostic cannot bypass any cleanup or create a second retry');
+});
+
+test('the terminal decoder snapshot reaches page diagnostics before stream retirement', () => {
+  const source = /function onVideoMessage\([^\n]*\) \{[\s\S]*?\n\}/.exec(read('app.js'))[0];
+  const run = new Function(`
+    const active = true, streamId = 3; let videoStats = { codec: 'old', decodeInFlightFrames: 0 };
+    const performanceStats = value => value, render = () => {};
+    let terminal;
+    const streamEnded = reason => { terminal = { reason, stats: { ...videoStats } }; };
+    ${source}
+    onVideoMessage({ type: 'end', id: 3, reason: 'decode-stalled', stats: { codec: 'hvc1.1.6.L93.B0', epoch: 8, decodeInFlightFrames: 48 } });
+    return terminal;
+  `);
+  assert.deepEqual(run(), { reason: 'decode-stalled', stats: { codec: 'hvc1.1.6.L93.B0', epoch: 8, decodeInFlightFrames: 48 } });
+});
 
 test('decoder setup precedes pairing and the first authenticated clock reaches video and audio before media opens', async () => {
   const connect = /async function connectVideo\(\) \{([\s\S]*?)\n\}/.exec(read('app.js'))[0];
@@ -15,7 +68,8 @@ test('decoder setup precedes pairing and the first authenticated clock reaches v
   const codecsReady = new Promise(resolve => { finishSetup = resolve; });
   const events = [];
   const run = new Function('codecsReady', 'events', 'abortable', `
-    let streamId = 0, sink = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastViewport, rtcMedia;
+    let streamId = 0, sink = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastViewport, rtcMedia, lastError;
+    const faultDiagnostics = { reset() {} };
     let rtcProgress, resourceToken, controlClock, outbox = null, heartbeatTimer, mediaTiming;
     const controlWaiters = new Set();
     const link = { code: '1234' }, session = 'owner', PROTOCOL = 1, videoPath = {};
@@ -95,6 +149,7 @@ function retryPage(lastError) {
     let trustVisible = true, trustClears = 0;
     const airplayTrust = { clear() { trustVisible = false; trustClears++; } };
     const browserAudio = { stop() {} }, sink = { stop() {} }, slots = { releaseAll() {} };
+    const faultDiagnostics = { reset() {} };
     const cancelViewport = () => {}, cancelMove = () => {}, renderStats = () => {};
     const t = (key, ...args) => args.length ? key + ':' + args.join(',') : key;
     const phoneFetch = () => new Promise(() => {});
@@ -326,6 +381,7 @@ test('a failed connection attempt cancels its unresolved SRP exchange before sch
   const run = new Function('abortable', `
     let streamId = 0, rtcMedia = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastError, lastViewport;
     let rtcProgress, resourceToken, controlClock;
+    const faultDiagnostics = { reset() {} };
     const session = 'owner', link = { code: '1234' }, controlWaiters = new Set();
     let aborted = false, retries = 0, exchangeCalled = false;
     const sink = { stop() {}, clock() {} }, browserAudio = { clock() {} }, codecsReady = Promise.resolve('avc1');

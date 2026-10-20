@@ -2,7 +2,78 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { AUDIO_DIAGNOSTIC_BYTES, PAGE_VERSION, browserDiagnosticEvents } from '../../site/play/browser-diagnostics.js';
+import { AUDIO_DIAGNOSTIC_BYTES, PAGE_VERSION, browserDiagnosticEvents, createFaultDiagnosticReporter } from '../../site/play/browser-diagnostics.js';
+import { VIDEO_COUNTER_FIELDS, VIDEO_VALUE_FIELDS } from '../../site/play/video-diagnostics.js';
+
+function faultReporterFixture() {
+  let at = 0, next = 0;
+  const timers = new Map(), sent = [];
+  const reporter = createFaultDiagnosticReporter({ emit: event => sent.push({ at, event }), now: () => at,
+    schedule: (run, delay) => { const id = ++next; timers.set(id, { at: at + delay, run }); return id; },
+    cancel: id => timers.delete(id) });
+  return { reporter, sent, timers, advance(value) {
+    const target = at + value;
+    for (;;) {
+      const task = [...timers.entries()].filter(([, timer]) => timer.at <= target).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!task) break;
+      const [id, timer] = task; timers.delete(id); at = timer.at; timer.run();
+    }
+    at = target;
+  } };
+}
+
+test('fault identity churn retains the latest triggering snapshot within the regular diagnostic cadence', () => {
+  const f = faultReporterFixture();
+  f.reporter.report({ k: 'st', v: { epoch: 0 } });
+  let event;
+  for (let epoch = 1; epoch <= 1000; epoch++) f.reporter.report(event = { k: 'st', v: { epoch, rejected: epoch * 128 } });
+  event.v.rejected = 0;
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.timers.size, 1);
+  f.advance(4999); assert.equal(f.sent.length, 1);
+  f.advance(1);
+  assert.deepEqual(f.sent.map(value => [value.at, value.event.v]), [[0, { epoch: 0 }], [5000, { epoch: 1000, rejected: 128000 }]]);
+  assert.equal(f.timers.size, 0);
+});
+
+test('connection retirement cancels old pending faults without reopening the global immediate allowance', () => {
+  const f = faultReporterFixture();
+  f.reporter.report({ k: 'st', v: { epoch: 1 } });
+  f.advance(100);
+  f.reporter.report({ k: 'st', v: { epoch: 2 } });
+  f.reporter.reset();
+  assert.equal(f.timers.size, 0);
+  f.reporter.report({ k: 'st', v: { epoch: 3 } });
+  assert.equal(f.sent.length, 1);
+  f.advance(4900);
+  assert.deepEqual(f.sent.map(value => value.event.v.epoch), [1, 3]);
+});
+
+test('fault delivery failures cannot interrupt media feedback or cause an immediate retry loop', () => {
+  let attempts = 0, at = 0, pending;
+  const reporter = createFaultDiagnosticReporter({ emit() { attempts++; throw new Error('retired outbox'); }, now: () => at,
+    schedule: run => { pending = run; return 1; }, cancel() {} });
+  assert.doesNotThrow(() => reporter.report({ k: 'st', v: {} }));
+  reporter.report({ k: 'st', v: {} });
+  assert.equal(attempts, 1);
+  at = 5000; pending();
+  assert.equal(attempts, 2);
+});
+
+test('dense details reserve two protected fault summaries within a 16 KiB control message', () => {
+  const page = { transport: { controlMessageLimitBytes: 16 * 1024 },
+    video: { ...Object.fromEntries([...VIDEO_COUNTER_FIELDS, ...VIDEO_VALUE_FIELDS].map(key => [key, 123456789])),
+      streamGeneration: 3, epoch: 7, mode: 'airplay-mirror', codec: 'avc1.640028' },
+    audio: { debug: Object.fromEntries(Array.from({ length: 256 }, (_, i) => [`counter${i}`, 123456789])) } };
+  const [regular, ...details] = browserDiagnosticEvents(page, false, true, 'capture');
+  assert.equal(details.length, 2);
+  assert.ok(details.every(event => event.v.omittedFields > 0), 'the test exercises dense snapshots, not empty details');
+  const first = browserDiagnosticEvents(page, false)[0], terminal = browserDiagnosticEvents(page, false)[0];
+  const touches = Array.from({ length: 16 }, (_, i) => ({ k: 't', p: [[0, .5, .5, i % 2], [1, .25, .75, i % 2]] }));
+  const batch = { s: 'bounded-owner-session-1', q: 123456, e: [first, terminal, regular, ...details, ...touches,
+    { k: 'vp', w: 1920, h: 1080, dpr: 2 }, { k: 'loc', lat: 0, lon: 0, accuracy: 5 }] };
+  assert.ok(Buffer.byteLength(JSON.stringify(batch)) <= 16 * 1024);
+});
 
 test('busy video summaries retain cadence, audio and touch RTT within the ordinary budget', () => {
   const video = { ...Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`counter${i}`, i])),

@@ -4,17 +4,18 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v73';
+export const PAGE_VERSION = 'v74';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
   'video.decodeDroppedFrames', 'video.scheduledDroppedFrames', 'video.transferDroppedFrames', 'video.renderDroppedFrames', 'video.pacingDroppedFrames',
   'video.playbackProfile', 'video.decodedQueueFrames', 'video.decodedQueueBytes', 'video.scheduledCapacityFrames',
   'video.currentDelta', 'video.currentFps', 'video.frameIntervalP95Ms',
-  'link.path', 'link.reconnects', 'link.failure.reason', 'link.failure.stage',
+  'link.path', 'link.reconnects', 'link.errorReason', 'link.failure.reason', 'link.failure.stage',
   'link.connection.stage', 'link.connection.localCandidates', 'link.connection.localUdpCandidates',
   'link.connection.remoteCandidates', 'link.connection.remoteUdpCandidates',
   'transport.transport', 'transport.state', 'transport.stage', 'transport.reason', 'transport.generation',
+  'transport.channelClosedLabel',
   'transport.queuedBytes', 'transport.highWaterBytes', 'transport.reassemblyErrors',
   'transport.controlFailures', 'transport.iceState', 'transport.connectionState',
   'audio.sourceDeadlineState', 'audio.sourceDeadlineReason', 'audio.sourceDeltaUpperMs',
@@ -47,14 +48,43 @@ const SUMMARY_KEYS = [
   'video.policyVideoLeadRemainingMs', 'video.policyPlanChanges',
 ];
 
+/** First faults lead immediately; identity churn shares the existing diagnostic cadence.
+ * Keep the triggering scalar snapshot, so a later recovery cannot rewrite its evidence. */
+export function createFaultDiagnosticReporter({ emit, intervalMs = 5000, now = () => performance.now(),
+  schedule = setTimeout, cancel = clearTimeout }) {
+  let last = -Infinity, pending = null, timer = null;
+  const flush = () => {
+    timer = null;
+    if (!pending) return;
+    const event = pending; pending = null; last = now();
+    try { emit(event); } catch (_) {} // Logging cannot interrupt media feedback.
+  };
+  return {
+    report(event) {
+      pending = { ...event, v: { ...event.v } };
+      const remaining = intervalMs - (now() - last);
+      if (remaining <= 0) {
+        if (timer !== null) cancel(timer);
+        flush();
+      } else if (timer === null) timer = schedule(flush, remaining);
+    },
+    reset() {
+      if (timer !== null) cancel(timer);
+      timer = null; pending = null;
+      // Retiring a connection must not reopen the global immediate-report allowance.
+    },
+  };
+}
+
 /** Audio details have their own budget, so video stats cannot crowd out render evidence. */
 export function browserDiagnosticEvents(page, themeDark, debug = false, debugSession = null, videoTracker = null) {
   const { debug: audioDebug, ...audio } = page.audio ?? {};
   const controlCap = Math.min(64 * 1024, Math.max(0, Number.isFinite(page.transport?.controlMessageLimitBytes)
     ? page.transport.controlMessageLimitBytes : 64 * 1024));
   const ordinaryBudget = Math.min(2048 - 24, Math.max(128, controlCap - 1024));
-  // These events can share one existing control batch. Leave room for its envelope and ordinary user input.
-  const detailBudget = Math.min(16 * 1024, Math.floor(Math.max(0, controlCap - ordinaryBudget - 4096) / 2));
+  // A batch may retain a first-fault and a terminal st alongside ordinary telemetry.
+  // Reserve all three summaries before details, the envelope and ordinary input.
+  const detailBudget = Math.min(16 * 1024, Math.floor(Math.max(0, controlCap - ordinaryBudget * 3 - 4096) / 2));
   const details = [], omissions = {};
   if (debug && audioDebug) {
     const full = flatStats(audioDebug, Infinity), values = { pageVersion: PAGE_VERSION, omittedFields: 0 };

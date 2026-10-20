@@ -56,7 +56,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     if (firstViolation) entry.violatedReasons.add(entry.reason);
     if (added || firstUnknown || firstViolation) {
       entry.priority = ++deadlineEventSequence;
-      try { onSourceDeadline(); } catch (_) {} // Diagnostic delivery cannot interrupt audio feedback.
+      try { onSourceDeadline({ first: firstUnknown || firstViolation }); } catch (_) {} // Diagnostic delivery cannot interrupt audio feedback.
     }
   }
   function sourceDeadlineStats() {

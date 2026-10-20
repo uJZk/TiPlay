@@ -247,7 +247,11 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       stats.sctpCauseCode = event.error?.sctpCauseCode ?? null;
       fail('channel-error', `WebRTC ${channel.label} channel failed.`);
     };
-    channel.onclose = () => { if (!closed) fail('channel-closed', `WebRTC ${channel.label} channel closed.`); };
+    channel.onclose = () => {
+      if (closed) return;
+      stats.channelClosedLabel = channel.label;
+      fail('channel-closed', `WebRTC ${channel.label} channel closed.`);
+    };
   }
   peer.onicecandidateerror = event => {
     stats.iceCandidateErrors++; stats.lastIceCandidateErrorCode = event.errorCode ?? null;

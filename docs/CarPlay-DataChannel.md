@@ -250,7 +250,15 @@ See [licenses and artifact provenance](Third-party-notices.md#android-webrtc-dat
 The official page replaces the root at <https://ujzk.github.io/TiPlay/>; the old
 independent `/webrtc/` site is removed without an alias or redirect. The APK uses
 the root. Native peer disposal runs outside WebRTC callbacks, control work is bounded and
-media/credit stalls retire the session explicitly. A 200ms oldest-media age is
+media/credit stalls retire the session explicitly. Canonical control input uses
+one FIFO ingress worker with a 256 KiB/2,048-message burst mailbox and a 64 KiB
+per-message limit. ACK validation/credit advancement stays independent of the
+64-task application RPC queue; authentication is a cross-worker barrier, and
+audio-subscription changes retain application FIFO ordering. These are finite
+resource bounds, not guarantees against an indefinitely blocked capture disk.
+Pending diagnostic RPCs no longer stop both media pumps. A fair native-send lock
+gives waiting control replies a send opportunity while preserving media-buffer
+limits. A 200ms oldest-media age is
 diagnostic evidence rather than an immediate session-ending condition; bounded
 overflow and six seconds without genuine consumption progress remain recovery
 boundaries. Revalidate the historical reconnect symptom on the actual device.

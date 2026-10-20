@@ -172,6 +172,16 @@ user activation may be required. Seek, rate and audio-track changes retire the o
 generation and rebuild both queues at the shared position. A retained video picture
 covers the interval until its successor's presentation timestamp, including still-image
 and variable-frame-rate gaps; this does not fabricate missing audio coverage.
+Decoded audio durations and scheduling cursors use integer PCM-frame counts.
+Continuous packet timestamps are aligned only within half a source sample;
+initial seek trimming and genuine gaps/overlaps remain distinct. Partial scheduling
+advances by the samples actually submitted rather than a floating-point target.
+The URL AudioContext requests the decoded source rate and verifies that the browser
+honors it. This keeps short source nodes on one sample grid; the browser converts
+the complete context stream to the output device's rate. Same-format generations
+reuse the context, while a changed audio format retires it before preparing the
+replacement. Unsupported context rates fail explicitly. Requested/context rates
+do not measure the physical device's oscillator or speaker output.
 Failures preserve the available state before cleanup and report actual ownership
 afterwards separately. A canvas-retained picture can remain held until it is closed;
 queue cleanup alone does not establish that all samples or vendor surfaces were released.

@@ -32,17 +32,26 @@ const ENGINE_NUMBERS = ['generation', 'clockTime', 'clockPosition', 'scheduledEn
   'audioResumeRequests', 'audioResumeCompleted', 'audioResumeFailed',
   'resourceActive', 'resourceQueued', 'resourceBytes', 'resourceLastProgressAgeMs', 'resourceTimeouts',
   'resourceCancellations', 'resourceBackwardRestarts', 'resourceRangeIgnored', 'resourceLastStatus',
-  'videoHeldGeneration', 'readProgressFallbacks'];
+  'videoHeldGeneration', 'readProgressFallbacks',
+  'audioSourceRate', 'audioRequestedContextRate', 'audioContextRate', 'audioSourceChannels',
+  'audioDecodedFrames', 'audioSeekTrimmedFrames', 'audioOverlapTrimmedFrames', 'audioAlignedPackets',
+  'audioAlignmentMaxUs', 'audioSilenceFrames', 'audioScheduledFrames', 'audioScheduleGapUs', 'audioScheduleOverlapUs',
+  'audioLateStarts', 'audioLateStartMaxMs', 'audioPcmPeak', 'audioPcmOverFullScaleSamples', 'audioNonFiniteSamples'];
 const ENGINE_WHOLE = new Set(['generation', 'videoFrames', 'videoBytes', 'audioChunks', 'audioBytes', 'stallCount',
   'videoCapacityFrames', 'videoCapacityBytes', 'audioCapacityBytes', 'codedWidth', 'codedHeight', 'displayWidth', 'displayHeight',
   'videoHeldFrames', 'videoHeldBytes', 'videoPendingFrames', 'videoPendingBytes', 'videoOwnedFrames', 'videoOwnedBytes',
   'samplesReceived', 'samplesClosed', 'audioResumeRequests', 'audioResumeCompleted', 'audioResumeFailed',
   'resourceActive', 'resourceQueued', 'resourceBytes', 'resourceTimeouts', 'resourceCancellations', 'resourceBackwardRestarts', 'resourceRangeIgnored', 'resourceLastStatus',
-  'videoHeldGeneration', 'readProgressFallbacks']);
+  'videoHeldGeneration', 'readProgressFallbacks',
+  'audioSourceRate', 'audioRequestedContextRate', 'audioContextRate', 'audioSourceChannels',
+  'audioDecodedFrames', 'audioSeekTrimmedFrames', 'audioOverlapTrimmedFrames', 'audioAlignedPackets',
+  'audioSilenceFrames', 'audioScheduledFrames', 'audioLateStarts', 'audioPcmOverFullScaleSamples', 'audioNonFiniteSamples']);
 const ENGINE_DIMENSIONS = new Set(['codedWidth', 'codedHeight', 'displayWidth', 'displayHeight']);
 const CODEC = /^(?:avc|h264|hevc|h265|vp8|vp9|av1|avc1|avc3|hvc1|hev1|vp09|av01|mp4v)(?:\.[a-z0-9]{1,16}){0,9}$/i;
 const ENGINE_SIGNATURE = ['generation', 'running', 'intentPlaying', 'waitReason', 'contextState', 'resumePending',
   'clockSource', 'limitingTrack', 'videoBudgetBlocked', 'videoDone', 'audioDone', 'gestureRequired', 'startReason', 'stallCount'];
+const AUDIO_CONTINUITY_COUNTERS = ['audioOverlapTrimmedFrames', 'audioSilenceFrames', 'audioScheduleGapUs',
+  'audioScheduleOverlapUs', 'audioLateStarts', 'audioPcmOverFullScaleSamples', 'audioNonFiniteSamples'];
 
 /** A fixed scalar schema: never forward a media object, resource location or decoder configuration. */
 export function playbackDiagnostics(media) {
@@ -62,6 +71,8 @@ export function sanitizePlaybackDiagnostics(source) {
       const value = source[key];
       if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER &&
           (!ENGINE_WHOLE.has(key) || Number.isSafeInteger(value)) && (!ENGINE_DIMENSIONS.has(key) || value <= 32768) &&
+          (!['audioSourceRate', 'audioRequestedContextRate', 'audioContextRate'].includes(key) || value >= 3000 && value <= 384000) &&
+          (key !== 'audioSourceChannels' || value >= 1 && value <= 8) &&
           (key !== 'resourceLastStatus' || value === 0 || value >= 100 && value <= 599))
         result[key] = value < 1e12 ? Math.round(value * 1000) / 1000 : value;
     }
@@ -128,7 +139,7 @@ export function airplayDiagnostic(event, state, { media, dragging = false, error
 export function createAirPlayDiagnostics(send, { state, media = () => null, active = () => true,
   now = () => performance.now() } = {}) {
   let disposed = false, dragging = false;
-  let lastProbe = -Infinity, lastSample = -Infinity, lastSignature = null;
+  let lastProbe = -Infinity, lastSample = -Infinity, lastSignature = null, lastContinuity = null;
   const listeners = [];
   function event(name, error, source, engineSnapshot) {
     if (disposed || !active()) return;
@@ -154,9 +165,12 @@ export function createAirPlayDiagnostics(send, { state, media = () => null, acti
     const engine = playbackDiagnostics(media());
     if (!engine) return;
     const signature = JSON.stringify(ENGINE_SIGNATURE.map(key => engine[key] ?? null));
+    const continuity = JSON.stringify([state()?.id, state()?.revision, engine.generation,
+      ...AUDIO_CONTINUITY_COUNTERS.map(key => engine[key] ?? 0)]);
+    const continuityChanged = continuity !== lastContinuity && AUDIO_CONTINUITY_COUNTERS.some(key => engine[key] > 0);
     const stalled = engine.intentPlaying === true && engine.running === false;
-    if (time - lastSample < (signature === lastSignature ? stalled ? 5000 : 10000 : 250)) return;
-    lastSample = time; lastSignature = signature;
+    if (time - lastSample < (signature === lastSignature ? stalled || continuityChanged ? 5000 : 10000 : 250)) return;
+    lastSample = time; lastSignature = signature; lastContinuity = continuity;
     event('engine-state');
   }
   return {

@@ -4,6 +4,33 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayPlaybackDiagnosticsTest {
+    @Test fun changedPcmContinuitySurvivesStandardAtFiveSecondsWithoutLabelingSilenceAsAnError() {
+        val fixture = engineFixture()
+        val original = fixture["engine"] as Map<*, *>
+        val healthy = fixture + ("engine" to (original + mapOf("running" to true, "waitReason" to "none")))
+        val continuity = engineFixture("continuityEvent")
+        val lines = mutableListOf<String>()
+        var now = 0L
+        val diagnostics = AirPlayPlaybackDiagnostics(lines::add, debug = { false }, nowMillis = { now })
+        diagnostics.event(7, fixture, true)
+        now = 1000; diagnostics.event(7, healthy, true)
+        assertEquals(20, lines.size)
+        now = 5999; diagnostics.event(7, continuity, true)
+        assertEquals(20, lines.size)
+        now = 6000; diagnostics.event(7, continuity, true)
+        assertEquals(30, lines.size)
+        assertTrue(lines.takeLast(10).all { it.contains("stalled=false recovered=false") && it.length <= 600 })
+        assertTrue(lines.last().contains("audioScheduleGapUs=22.676"))
+        assertTrue(lines.any { it.contains("stage=ENGINE_CONTINUITY") && it.contains("audioSilenceFrames=1") })
+        now = 12000; diagnostics.event(7, continuity, true)
+        val engine = continuity["engine"] as Map<*, *>
+        diagnostics.event(7, continuity + ("engine" to (engine + mapOf("audioDecodedFrames" to 882000,
+            "audioAlignedPackets" to 100, "audioSeekTrimmedFrames" to 1))), true)
+        assertEquals("Unchanged continuity or normal PCM growth cannot produce Standard summaries", 30, lines.size)
+        now = 13000
+        diagnostics.event(7, continuity + ("engine" to (engine + ("audioScheduleOverlapUs" to 22.676))), false)
+        assertEquals("An inactive player cannot add PCM details", 30, lines.size)
+    }
     @Test fun actualFaultAndChangedCleanupSnapshotsBypassThePeriodicGateWithoutRepeatingErrorProgress() {
         val lines = mutableListOf<String>()
         var now = 0L
@@ -11,22 +38,22 @@ class AirPlayPlaybackDiagnosticsTest {
         diagnostics.event(7, engineFixture(), true)
         now = 1
         diagnostics.event(7, engineFixture("failureEvent"), true)
-        assertEquals("A running decoder failure cannot be discarded after a recent stall snapshot", 15, lines.size)
-        assertTrue(lines.takeLast(7).all { it.contains("stalled=false recovered=false") })
-        assertTrue(lines.takeLast(7).any { it.contains("codec=vp09.00.10.08.01.01.01.01.00") })
+        assertEquals("A running decoder failure cannot be discarded after a recent stall snapshot", 21, lines.size)
+        assertTrue(lines.takeLast(10).all { it.contains("stalled=false recovered=false") })
+        assertTrue(lines.takeLast(10).any { it.contains("codec=vp09.00.10.08.01.01.01.01.00") })
         val cleanup = engineFixture("cleanupEvent")
         diagnostics.event(7, cleanup, true)
-        assertEquals("The synchronous cleanup state must survive the 250 ms gate", 22, lines.size)
-        assertTrue(lines.takeLast(7).any { it.contains("videoOwnedFrames=1") && it.contains("samplesClosed=56") })
+        assertEquals("The synchronous cleanup state must survive the 250 ms gate", 31, lines.size)
+        assertTrue(lines.takeLast(10).any { it.contains("videoOwnedFrames=1") && it.contains("samplesClosed=56") })
         diagnostics.event(7, cleanup, true)
         val engine = cleanup["engine"] as Map<*, *>
         diagnostics.event(7, cleanup + ("engine" to (engine + ("clockTime" to 999))), true)
         now = 4999; diagnostics.event(7, cleanup, true)
-        assertEquals("A periodic error state or changing clock must not force repeated snapshots", 22, lines.size)
+        assertEquals("A periodic error state or changing clock must not force repeated snapshots", 31, lines.size)
         now = 5001; diagnostics.event(7, cleanup, true)
-        assertEquals(29, lines.size)
+        assertEquals(41, lines.size)
         diagnostics.event(7, engineFixture("failureEvent"), false)
-        assertEquals("A retired player can only emit its existing inactive EVENT, never an engine snapshot", 30, lines.size)
+        assertEquals("A retired player can only emit its existing inactive EVENT, never an engine snapshot", 42, lines.size)
     }
 
     @Test fun semanticFailureSnapshotsSurviveEvenWhenNoPlayingIntentOrErrorWaitReasonExists() {
@@ -37,7 +64,7 @@ class AirPlayPlaybackDiagnosticsTest {
         for (event in listOf("error", "open-error", "canvas-error", "play-rejected")) {
             diagnostics.event(7, fixture + mapOf("event" to event, "engine" to engine), true)
         }
-        assertEquals(32, lines.size)
+        assertEquals(44, lines.size)
         assertEquals(4, lines.count { it.contains("stage=ENGINE_CODEC") })
         assertTrue(lines.all { it.length <= 600 })
     }
@@ -61,7 +88,7 @@ class AirPlayPlaybackDiagnosticsTest {
         var now = 0L
         val diagnostics = AirPlayPlaybackDiagnostics(lines::add, debug = { false }, nowMillis = { now })
         diagnostics.event(7, fields, true)
-        assertEquals(7, lines.size)
+        assertEquals(10, lines.size)
         assertTrue(lines.all { it.length <= 600 && it.contains("id=7 revision=3 generation=4 active=true stalled=true") })
         assertTrue(lines[0], lines[0].contains("waitReason=audio-context-resume") && lines[0].contains("resumePending=true"))
         assertTrue(lines[0], lines[0].contains("contextState=suspended") && lines[0].contains("stallElapsedMs=5000"))
@@ -70,11 +97,11 @@ class AirPlayPlaybackDiagnosticsTest {
         assertTrue(lines[2], lines[2].contains("videoCapacityFrames=32") && lines[2].contains("videoCapacityBytes=100663296"))
         diagnostics.event(7, fields, true)
         now = 4999; diagnostics.event(7, fields, true)
-        assertEquals(7, lines.size)
+        assertEquals(10, lines.size)
         now = 5000; diagnostics.event(7, fields, true)
-        assertEquals(14, lines.size)
+        assertEquals(20, lines.size)
         now = 10000; diagnostics.event(7, fields, false)
-        assertEquals("Retired players cannot replace the active engine snapshot", 14, lines.size)
+        assertEquals("Retired players cannot replace the active engine snapshot", 20, lines.size)
         assertTrue(lines[3], lines[3].contains("codec=vp09.00.10.08.01.01.01.01.00") && lines[3].contains("actualHardware=unknown"))
         assertTrue(lines[4], lines[4].contains("samplesReceived=57") && lines[4].contains("samplesClosed=53"))
         assertTrue(lines[5], lines[5].contains("userActivationHasBeenActive=false") && lines[5].contains("audioResumeCompleted=0"))
@@ -94,16 +121,16 @@ class AirPlayPlaybackDiagnosticsTest {
                 "url" to "secret", "videoFrames" to 1.5, "audioBytes" to Double.NaN, "clockTime" to Double.POSITIVE_INFINITY)
         AirPlayPlaybackDiagnostics(lines::add, debug = { false }).event(Long.MAX_VALUE,
             fixture + mapOf("revision" to 9_007_199_254_740_991L, "engine" to hostile), true)
-        assertEquals(7, lines.size)
+        assertEquals(10, lines.size)
         assertTrue(lines.all { it.length <= 600 && !it.contains("secret") && !it.contains('\n') })
         assertTrue(lines[0].contains("waitReason=unknown") && lines[0].contains("clockTime=unknown"))
         assertTrue(lines[2].contains("videoFrames=unknown") && lines[2].contains("audioBytes=unknown"))
         val debug = mutableListOf<String>()
         AirPlayPlaybackDiagnostics(debug::add, debug = { true }).event(7, healthy, true)
-        assertEquals(7, debug.size)
+        assertEquals(10, debug.size)
         val maximum = mutableListOf<String>()
         AirPlayPlaybackDiagnostics(maximum::add, debug = { false }).event(Long.MAX_VALUE, engineFixture("maximumEvent"), true)
-        assertEquals(7, maximum.size)
+        assertEquals(10, maximum.size)
         assertTrue(maximum.joinToString("\n"), maximum.all { it.length <= 600 })
     }
 
@@ -118,16 +145,16 @@ class AirPlayPlaybackDiagnosticsTest {
         diagnostics.event(7, fixture, true)
         now = 1000
         diagnostics.event(7, recovered, true)
-        assertEquals(14, lines.size)
-        assertTrue(lines.takeLast(7).all { it.contains("recovered=true") && it.contains("stalled=false") })
+        assertEquals(20, lines.size)
+        assertTrue(lines.takeLast(10).all { it.contains("recovered=true") && it.contains("stalled=false") })
         assertTrue(lines.any { it.contains("startReason=read-progress-fallback") && it.contains("readProgressFallbacks=1") })
         now = 20000; diagnostics.event(7, recovered, true)
-        assertEquals("Healthy Standard progress cannot repeat a recovery", 14, lines.size)
+        assertEquals("Healthy Standard progress cannot repeat a recovery", 20, lines.size)
         diagnostics.event(7, fixture, true)
         now = 21000; diagnostics.event(7, recovered + ("revision" to 4), true)
         diagnostics.event(7, recovered + ("engine" to (engine + mapOf("generation" to 5, "running" to true))), true)
         diagnostics.event(7, recovered, true)
-        assertEquals("A newer command/generation retires the old stall identity", 21, lines.size)
+        assertEquals("A newer command/generation retires the old stall identity", 30, lines.size)
         now = 30000; diagnostics.event(7, fixture, true)
         diagnostics.event(7, mapOf("revision" to 3, "event" to "open"), true)
         val afterOpen = lines.size

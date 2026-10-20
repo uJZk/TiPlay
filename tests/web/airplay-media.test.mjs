@@ -5,6 +5,7 @@ import { SoundTouchCore } from '../../site/play/vendor/mediabunny/mediabunny.min
 import { createMediaEngine } from '../../site/play/airplay-media.js';
 import { airplayDiagnostic, createAirPlayDiagnostics } from '../../site/play/airplay-diagnostics.js';
 import { intersectMediaRanges, mediaTimeRanges, mergeMediaRanges, videoQueueFull } from '../../site/play/airplay-media-state.js';
+import { inspectUrlAudioSignal, renderScheduledUrlAudio, urlAudioSample } from './fixtures/url-audio-signal.mjs';
 
 const flush = async () => { for (let i = 0; i < 150; i++) await Promise.resolve(); };
 
@@ -14,7 +15,9 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
   surfacePool = Infinity, resumeGate = null, resumeState = 'running', videoCadence = null,
   audioSampleRate = 1000, audioSamplesPerPacket = 100, audioStart = 0, audioDuration = duration, videoDuration = duration,
   deferAudio = null, deferAudioAt = 1, videoErrorAt = Infinity, videoError = null,
-  videoConfig = null, VideoDecoder = undefined } = {}) {
+  videoConfig = null, VideoDecoder = undefined, audioSignal = null, audioTimestamp = value => value,
+  audioClockQuantumFrames = 0, audioContextSampleRate = audioSampleRate, honorAudioSampleRate = true,
+  alternateAudioSampleRate = audioSampleRate } = {}) {
   let wall = 0, next = 0, reads = { video: 0, audio: 0 }, audioContexts = 0;
   const selection = { primaryAudio: 0, pairableAudio: 0 };
   const durations = videoCadence?.durationTicks.map(ticks => ticks / videoCadence.timescale);
@@ -22,15 +25,14 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
   for (const duration of durations || []) prefix.push(prefix.at(-1) + duration);
   const videoTime = index => durations ? Math.floor(index / durations.length) * prefix.at(-1) + prefix[index % durations.length] : index / videoFps;
   const videoSampleDuration = index => durations ? durations[index % durations.length] : 1 / videoFps;
-  const audioPeriod = audioSamplesPerPacket / audioSampleRate;
-  const callbacks = new Map(), inputs = [], samples = [], pictures = [], nodes = [], events = [], sinkOptions = [];
+  const callbacks = new Map(), inputs = [], samples = [], pictures = [], nodes = [], events = [], sinkOptions = [], contexts = [];
   const videoTrack = { canDecode: async () => true, isLive: async () => live,
     getDecoderConfig: async () => videoConfig,
     getDisplayWidth: async () => frameWidth, getDisplayHeight: async () => frameHeight,
     getPrimaryPairableAudioTrack: async () => { selection.pairableAudio++; return audio ? audioTrack : null; } };
   const audioTrack = { canDecode: async () => true, isLive: async () => live };
   const otherAudio = { canDecode: async () => true, isLive: async () => live, getName: async () => '中文', getLanguageCode: async () => 'zho' };
-  const decodedAudio = [], surfaceWaiters = new Set();
+  const decodedAudio = [], audioTrims = [], surfaceWaiters = new Set();
   const wakeSurfaces = () => { for (const wake of surfaceWaiters) wake(); surfaceWaiters.clear(); };
   if (alternateAudio) videoTrack.getPairableAudioTracks = async () => [audioTrack, otherAudio];
   class Input {
@@ -70,8 +72,9 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
     }
   }
   class AudioBufferSink {
-    constructor(track) { decodedAudio.push(track); }
+    constructor(track) { decodedAudio.push(track); this.sampleRate = track === otherAudio ? alternateAudioSampleRate : audioSampleRate; }
     buffers(start) {
+      const sampleRate = this.sampleRate, audioPeriod = audioSamplesPerPacket / sampleRate;
       let index = Math.max(0, Math.floor((start - timestampOrigin - audioStart) / audioPeriod + 0.00001)), stopped = false;
       return {
         [Symbol.asyncIterator]() { return this; },
@@ -79,10 +82,17 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
           if (stopped || index * audioPeriod >= audioDuration - 0.000001) return { done: true };
           reads.audio++;
           if (deferAudio && reads.audio === deferAudioAt) await deferAudio;
-          const timestamp = timestampOrigin + audioStart + index++ * audioPeriod;
+          const packetIndex = index++, timestamp = audioTimestamp(timestampOrigin + audioStart + packetIndex * audioPeriod, packetIndex);
           return { done: false, value: { timestamp, duration: audioPeriod, buffer: {
-            sampleRate: audioSampleRate, numberOfChannels: 2, length: audioSamplesPerPacket, duration: audioPeriod,
-            getChannelData: () => new Float32Array(audioSamplesPerPacket).fill(0.1),
+            sampleRate, numberOfChannels: 2, length: audioSamplesPerPacket, duration: audioPeriod,
+            getChannelData(channel) {
+              const samples = audioSignal
+                ? Float32Array.from({ length: audioSamplesPerPacket }, (_, frame) => audioSignal(packetIndex * audioSamplesPerPacket + frame, channel, sampleRate))
+                : new Float32Array(audioSamplesPerPacket).fill(0.1);
+              const subarray = samples.subarray.bind(samples);
+              samples.subarray = (offset, end) => { audioTrims.push({ packetIndex, channel, offset }); return subarray(offset, end); };
+              return samples;
+            },
           } } };
         },
         async return() { stopped = true; return { done: true }; },
@@ -90,11 +100,18 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
     }
   }
   class AudioContext {
-    constructor() { audioContexts++; this.currentTime = 0; this.state = 'suspended'; }
-    createGain() { return { gain: { value: 1 }, connect() {} }; }
-    createBuffer(channels, length, sampleRate) { return { channels, length, sampleRate, copyToChannel() {} }; }
+    constructor(options = {}) { audioContexts++; contexts.push(this); this.currentTime = this.elapsed = 0; this.state = 'suspended';
+      this.requestedOptions = options; this.sampleRate = honorAudioSampleRate ? options.sampleRate || audioContextSampleRate : audioContextSampleRate; }
+    createGain() { return { gain: { value: 1 }, connect() {}, disconnect() {} }; }
+    createBuffer(channels, length, sampleRate) {
+      const data = Array.from({ length: channels }, () => new Float32Array(length));
+      return { channels, numberOfChannels: channels, length, sampleRate, duration: length / sampleRate,
+        copyToChannel(samples, channel) { data[channel].set(samples); }, getChannelData(channel) { return data[channel]; } };
+    }
     createBufferSource() {
-      const node = { connect() {}, disconnect() {}, start(time) { this.time = time; }, stop() { this.stopped = true; } };
+      const context = this;
+      const node = { context, connect() {}, disconnect() {}, start(time) { this.time = time; this.scheduledAt = context.currentTime; },
+        stop() { this.stopped = true; this.stopTime = context.currentTime; } };
       nodes.push(node); return node;
     }
     async resume() { if (resumeGate) await resumeGate; this.state = resumeState; }
@@ -105,7 +122,7 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
   const media = createMediaEngine(null, {
     library: { Input, UrlSource: class { constructor(src, options) { this.src = src; this.options = options; } },
       VideoSampleSink, AudioBufferSink, ALL_FORMATS: [], SoundTouchCore },
-    AudioContext: class extends AudioContext { constructor() { super(); contextInstance = this; } }, VideoDecoder,
+    AudioContext: class extends AudioContext { constructor(...args) { super(...args); contextInstance = this; } }, VideoDecoder,
     onClock,
     now: () => wall, requestFrame: callback => { callbacks.set(++next, callback); return next; },
     cancelFrame: id => callbacks.delete(id),
@@ -114,10 +131,18 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
       dispose() { closePresented(pictures.at(-1)); } },
   });
   for (const type of ['playing', 'pause', 'waiting', 'seeked', 'loadeddata', 'error', 'resync', 'ended']) media.addEventListener(type, () => events.push(type));
-  return { media, reads, inputs, samples, pictures, nodes, events, selection, decodedAudio, otherAudio, sinkOptions, audioContexts: () => audioContexts,
-    context: () => contextInstance,
+  const advanceClock = advance => {
+    wall += advance;
+    if (contextInstance?.state === 'running') {
+      contextInstance.elapsed += advance;
+      contextInstance.currentTime = audioClockQuantumFrames
+        ? Math.floor(contextInstance.elapsed * contextInstance.sampleRate / audioClockQuantumFrames) * audioClockQuantumFrames / contextInstance.sampleRate : contextInstance.elapsed;
+    }
+  };
+  return { media, reads, inputs, samples, pictures, nodes, events, selection, decodedAudio, audioTrims, otherAudio, sinkOptions, audioContexts: () => audioContexts,
+    context: () => contextInstance, contexts, advanceClock,
     async tick(advance = 0) {
-      wall += advance; if (contextInstance?.state === 'running') contextInstance.currentTime += advance;
+      advanceClock(advance);
       const [id, callback] = callbacks.entries().next().value; callbacks.delete(id); callback(); await flush();
     } };
 }
@@ -171,6 +196,163 @@ test('audio clock leads, a stall cannot skip unscheduled audio, and paused seek 
   assert.equal(h.media.currentTime, 8); assert.ok(h.events.includes('seeked'));
   assert.equal(h.inputs.length, 1, 'seek and pause retain source metadata/cache');
   h.media.dispose(); assert.ok(h.samples.every(value => value.closed === 1));
+});
+
+for (const scenario of [
+  { name: '48k exact packet PTS', rate: 48000, origin: 100, quantize: false },
+  { name: '44.1k exact packet PTS', rate: 44100, origin: 0, quantize: false },
+  { name: '48k microsecond PTS with a finite video pool', rate: 48000, origin: 0, quantize: true, video: true },
+  { name: '44.1k microsecond PTS with a finite video pool', rate: 44100, origin: 100, quantize: true, video: true },
+  { name: '44.1k PCM when the device defaults to 48k', rate: 44100, contextRate: 48000, origin: 0, quantize: false },
+  { name: '48k PCM when the device defaults to 44.1k', rate: 48000, contextRate: 44100, origin: 0, quantize: false },
+  { name: '48k PCM with fractional video PTS', rate: 48000, origin: 0, quantize: false, video: true, fps: 60000 / 1001, pool: 12 },
+  { name: '44.1k PCM with fractional video PTS', rate: 44100, origin: 0, quantize: false, video: true, fps: 60000 / 1001, pool: 12 },
+]) test(`URL audio signal: ${scenario.name} preserves every source sample across scheduling slices`, async () => {
+  const h = fixture({ duration: 3, video: Boolean(scenario.video), videoFps: scenario.fps || 30, surfacePool: scenario.pool || 6,
+    timestampOrigin: scenario.origin, audioSampleRate: scenario.rate, audioSamplesPerPacket: 1024,
+    audioSignal: urlAudioSample, audioClockQuantumFrames: 128, audioContextSampleRate: scenario.contextRate || scenario.rate,
+    audioTimestamp: value => scenario.quantize ? Math.round(value * 1e6) / 1e6 : value });
+  try {
+    await h.media.load('https://fixture.test/continuous-url-audio.mp4'); await flush();
+    let started = false;
+    const playing = h.media.play().then(() => { started = true; }); void playing.catch(() => {}); await flush();
+    const jitter = [1 / 60, 0.0166, 0.0167, 0.02, 0.0133];
+    for (let tick = 0; tick < 240 && h.media.currentTime < 2; tick++) await h.tick(jitter[tick % jitter.length]);
+    assert.equal(started, true); assert.equal(h.media.error, null);
+    const rendered = renderScheduledUrlAudio(h.nodes, scenario.rate, 2);
+    const signal = inspectUrlAudioSignal(rendered, 0.1, 1.8);
+    const pumpTrimmed = new Set();
+    for (const trim of h.audioTrims.filter(trim => trim.channel === 0))
+      for (let offset = 0; offset < trim.offset; offset++) pumpTrimmed.add(trim.packetIndex * 1024 + offset);
+    signal.pumpTrimGapFrames = [...pumpTrimmed].filter(frame => frame >= Math.round(0.1 * scenario.rate)
+      && frame < Math.round(1.8 * scenario.rate) && rendered.coverage[frame] === 0).length;
+    signal.otherScheduleGapFrames = signal.gaps - signal.pumpTrimGapFrames;
+    let previousEnd = null;
+    signal.scheduledSourceSkips = signal.scheduledSourceRepeats = 0;
+    for (const node of h.nodes) {
+      const pcm = node.buffer.getChannelData(1);
+      const first = Math.round(pcm[0] * 2 ** 20) - 1, last = Math.round(pcm.at(-1) * 2 ** 20) - 1;
+      if (first >= Math.round(0.1 * scenario.rate) && first < Math.round(1.8 * scenario.rate) && previousEnd !== null) {
+        if (first > previousEnd + 1) signal.scheduledSourceSkips += first - previousEnd - 1;
+        if (first <= previousEnd) signal.scheduledSourceRepeats += previousEnd - first + 1;
+      }
+      previousEnd = last;
+    }
+    assert.equal(signal.gaps, 0, `available URL PCM must not acquire silent sample holes: ${JSON.stringify(signal)}`);
+    assert.equal(signal.overlaps, 0, `a source sample must not overlap its neighbour: ${JSON.stringify(signal)}`);
+    assert.equal(signal.frameIdentityErrors, 0, `PCM identities must survive packet trims and partial rAF slices: ${JSON.stringify(signal)}`);
+    assert.ok(signal.maximumPhaseErrorRadians < 1e-4, `continuous tone phase must survive scheduling: ${JSON.stringify(signal)}`);
+    assert.ok(signal.relativeErrorDb < -70, `the scheduled graph must preserve the original signal: ${JSON.stringify(signal)}`);
+  } finally { h.media.dispose(); }
+});
+
+test('URL audio boundaries: initial fractional seek excludes every pre-seek source sample', async () => {
+  const sampleRate = 48000, first = 4097, target = (first - 0.99) / sampleRate;
+  const h = fixture({ video: false, duration: 3, timestampOrigin: 100, audioSampleRate: sampleRate,
+    audioSamplesPerPacket: 1024, audioSignal: urlAudioSample });
+  try {
+    await h.media.load('https://fixture.test/seek.mp4'); h.media.currentTime = target; await flush();
+    const playing = h.media.play(); await flush(); await h.tick(); await playing;
+    const pcm = h.nodes[0].buffer.getChannelData(1);
+    assert.equal(Math.round(pcm[0] * 2 ** 20) - 1, first, 'initial seek uses a ceiling even below half a PCM frame');
+    assert.equal(h.media.getPlaybackDiagnostics().audioSeekTrimmedFrames, first % 1024);
+    assert.equal(h.media.getPlaybackDiagnostics().audioSilenceFrames, 0, 'a fractional seek is not a source gap');
+  } finally { h.media.dispose(); }
+});
+
+for (const delta of [1, -1, 144, -144]) test(`URL audio boundaries: a real ${delta}-frame PTS discontinuity remains explicit`, async () => {
+  const sampleRate = 48000, boundary = 4096;
+  const h = fixture({ video: false, duration: 3, timestampOrigin: 0, audioSampleRate: sampleRate,
+    audioSamplesPerPacket: 1024, audioSignal: urlAudioSample,
+    audioTimestamp: (time, index) => time + (index >= 4 ? delta / sampleRate : 0) });
+  try {
+    await h.media.load('https://fixture.test/discontinuity.mp4'); await flush();
+    const playing = h.media.play(); await flush(); await h.tick(); await playing;
+    for (let tick = 0; tick < 60; tick++) await h.tick(1 / 60);
+    const rendered = renderScheduledUrlAudio(h.nodes, sampleRate, 0.8);
+    for (let frame = boundary - 16; frame < boundary + Math.abs(delta) + 2048; frame++) {
+      const silence = delta > 0 && frame >= boundary && frame < boundary + delta;
+      const source = frame < boundary ? frame : frame - delta;
+      assert.equal(rendered.coverage[frame], 1, `timeline frame ${frame} must have one explicit source`);
+      assert.equal(rendered.channels[1][frame], silence ? 0 : Math.fround(urlAudioSample(source, 1, sampleRate)), `source identity at frame ${frame}`);
+      assert.equal(rendered.channels[0][frame], silence ? 0 : Math.fround(urlAudioSample(source, 0, sampleRate)), `tone at frame ${frame}`);
+    }
+    const diagnostics = h.media.getPlaybackDiagnostics();
+    assert.equal(diagnostics.audioSilenceFrames, Math.max(0, delta));
+    assert.equal(diagnostics.audioOverlapTrimmedFrames, Math.max(0, -delta));
+  } finally { h.media.dispose(); }
+});
+
+test('URL audio boundaries: requested source sample rate is observed and an ignored request fails explicitly', async () => {
+  const h = fixture({ video: false, audioSampleRate: 44100, audioContextSampleRate: 48000, honorAudioSampleRate: false });
+  try {
+    await h.media.load('https://fixture.test/context-rate.mp4'); await flush();
+    await assert.rejects(h.media.play(), { name: 'NotSupportedError' });
+    assert.equal(h.context().requestedOptions.sampleRate, 44100);
+    assert.equal(h.context().sampleRate, 48000); assert.equal(h.context().state, 'closed');
+    assert.equal(h.nodes.length, 0, 'a context at an unexpected rate must never schedule per-packet resampling');
+  } finally { h.media.dispose(); }
+});
+
+test('URL audio boundaries: same-format seek reuses the graph and selecting another source rate retires it', async () => {
+  const h = fixture({ alternateAudio: true, alternateAudioSampleRate: 48000, audioSampleRate: 44100,
+    audioSamplesPerPacket: 1024, audioSignal: urlAudioSample });
+  try {
+    await h.media.load('https://fixture.test/multi-audio.mp4'); await flush();
+    const playing = h.media.play(); await flush(); await h.tick(); await playing;
+    const firstContext = h.context(); h.media.currentTime = 1; await flush(); await h.tick();
+    assert.equal(h.context(), firstContext); assert.equal(h.audioContexts(), 1);
+    assert.equal(h.media.selectAudioTrack('1'), true); await flush();
+    for (let tick = 0; tick < 5; tick++) await h.tick(1 / 60);
+    assert.equal(h.audioContexts(), 2); assert.equal(firstContext.state, 'closed');
+    assert.equal(h.context().requestedOptions.sampleRate, 48000); assert.equal(h.context().sampleRate, 48000);
+    assert.ok(h.nodes.some(node => node.context === h.context()));
+    assert.ok(h.nodes.every(node => node.context.sampleRate === node.buffer.sampleRate), 'no PCM may be submitted to the old format graph during preparation');
+    assert.equal(h.media.error, null); assert.ok(h.media.currentTime > 1);
+  } finally { h.media.dispose(); }
+});
+
+test('URL audio boundaries: pause/resume and a tempo edit retain a source-rate graph without scheduling holes', async () => {
+  const sampleRate = 44100;
+  const h = fixture({ video: false, duration: 8, timestampOrigin: 0, audioSampleRate: sampleRate,
+    audioSamplesPerPacket: 1024, audioSignal: urlAudioSample, audioClockQuantumFrames: 128 });
+  try {
+    await h.media.load('https://fixture.test/tempo.mp4'); await flush();
+    let playing = h.media.play(); await flush(); await h.tick(); await playing;
+    for (let tick = 0; tick < 20; tick++) await h.tick(1 / 60);
+    h.media.pause(); const pausedAt = h.media.currentTime, context = h.context();
+    await flush(); h.advanceClock(0.1); assert.equal(h.media.currentTime, pausedAt);
+    const resumedNode = h.nodes.length;
+    playing = h.media.play(); await flush(); await h.tick(); await playing;
+    for (let tick = 0; tick < 35; tick++) await h.tick(1 / 60);
+    assert.equal(h.context(), context);
+    const resumed = renderScheduledUrlAudio(h.nodes.slice(resumedNode), sampleRate, 0.6);
+    for (let frame = Math.round(0.05 * sampleRate); frame < Math.round(0.5 * sampleRate); frame++)
+      assert.equal(resumed.coverage[frame], 1, `steady resumed output frame ${frame} has exactly one scheduled sample`);
+    const rateNode = h.nodes.length, rateStart = h.media.currentTime;
+    h.media.playbackRate = 2; await flush();
+    for (let tick = 0; tick < 45; tick++) await h.tick(1 / 60);
+    assert.equal(h.context(), context); assert.equal(h.media.error, null);
+    assert.ok(h.media.currentTime > rateStart + 1, 'the tempo-edited graph must actually advance');
+    const stretched = renderScheduledUrlAudio(h.nodes.slice(rateNode), sampleRate, 0.7);
+    for (let frame = Math.round(0.05 * sampleRate); frame < Math.round(0.6 * sampleRate); frame++)
+      assert.equal(stretched.coverage[frame], 1, `WSOLA output frame ${frame} has exactly one scheduled sample`);
+    assert.ok(h.nodes.every(node => node.context.sampleRate === node.buffer.sampleRate));
+  } finally { h.media.dispose(); }
+});
+
+for (const empty of [true, false]) test(`URL audio boundaries: ${empty ? 'empty audio' : 'seek beyond audio'} leaves video tail on its own clock`, async () => {
+  const h = fixture({ duration: 4, audioDuration: empty ? 0 : 0.5, audioSampleRate: 48000, audioSamplesPerPacket: 1024 });
+  try {
+    await h.media.load('https://fixture.test/video-tail.mp4'); await flush();
+    if (!empty) { h.media.currentTime = 2; await flush(); }
+    const start = h.media.currentTime, playing = h.media.play(); void playing.catch(() => {}); await flush();
+    for (let tick = 0; tick < 40; tick++) await h.tick(1 / 60);
+    await playing;
+    assert.ok(h.media.currentTime > start + 0.5); assert.equal(h.audioContexts(), 0);
+    assert.equal(h.media.buffering, false); assert.equal(h.media.gestureRequired, false);
+    assert.equal(h.media.getPlaybackDiagnostics().clockSource, 'performance');
+  } finally { h.media.dispose(); }
 });
 
 test('source replacement closes a late decoded frame without drawing or changing the new source', async () => {

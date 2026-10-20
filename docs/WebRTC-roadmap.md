@@ -14,8 +14,10 @@ HTTP 只保留 SRP 配对、公开发现和随机 bearer 资源读取/退出；�
 用户确认的真实 CarPlay 播放，beta.3/v71 已记录电脑 host↔host UDP；这些旧版
 观察仍不代表当前整合版已通过设备验收。正式页面覆盖
 <https://ujzk.github.io/TiPlay/>，删除独立 `/webrtc/` 子站，不留别名或重定向；
-APK 默认使用正式根页。目标为 0.2.20-beta.7/code49、网页 v73，最终发布状态以
-[构建记录](Build.md#beta-release)为准。
+APK 默认使用正式根页。本轮发布目标为 0.2.20-beta.8/code50、网页 v74，发布状态以
+[构建记录](Build.md#beta-release)为准。v74 修复了控制排队阻塞媒体、
+诊断上报放大，以及 URL 音频裁剪、分段调度和重采样接缝；现场证据与验证边界见
+[诊断](Diagnostics.md#airplay-url-playback-evidence)和[测试](Testing.md#webrtc-integrated-acceptance)。
 
 ## 四场景播放策略
 
@@ -26,7 +28,7 @@ APK 默认使用正式根页。目标为 0.2.20-beta.7/code49、网页 v73，最
 | --- | --- | --- |
 | CarPlay 触控 | 延迟略优先于流畅 | 触控立即转发；只推进视频游标，quintic 平滑追赶最高 1.25x；750 ms 活动保持；重复 move 不重启；松手不回填旧积压 |
 | CarPlay 非触控 | 流畅优先于延迟 | readiness +20 ms 抖动余量、缓慢减少视频等待，独立源相对 300 ms 上限 |
-| AirPlay 镜像 | 流畅略优先于延迟 | readiness +30 ms 余量、40 ms 初始计划；独立源相对 300 ms 上限；暂停期间继续完整解码、隐藏输出 |
+| AirPlay 镜像 | 流畅略优先于延迟 | readiness +30 ms 余量、40 ms 初始计划；独立源相对 300 ms 上限；遵循 iOS 镜像暂停信号，继续完整解码而不提交画面 |
 | AirPlay 投屏 | 流畅远优先于延迟 | 以音频领先的媒体时钟预缓冲：启动 750 ms / 恢复 1500 ms；时间、帧数和 GPU 字节共同有界，资源满或短片结束时不因水位死锁 |
 
 CarPlay/镜像的 300 ms 是独立音视频上限，不是固定缓冲，也不再使用旧的

@@ -18,11 +18,11 @@ import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
-import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /** Injectable so source/JVM harnesses need not load Android native WebRTC. */
 fun interface BrowserRtcFactory {
@@ -64,15 +64,20 @@ private class AndroidBrowserRtcPeer(
     private val closed = AtomicBoolean(false)
     private val lifecycle = Executors.newSingleThreadExecutor { Thread(it, "browser-rtc-peer").apply { isDaemon = true } }
     private val media = Executors.newFixedThreadPool(2) { Thread(it, "browser-rtc-media").apply { isDaemon = true } }
-    private val controls = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(64),
-        { Thread(it, "browser-rtc-control").apply { isDaemon = true } })
-    private val controlPending = java.util.concurrent.atomic.AtomicInteger()
+    private val controls = BrowserRtcControlQueue(
+        authenticated = { authenticated },
+        capture = { RawTraffic.record("browser/rtc/$epoch/control/in", it) },
+        acknowledge = ::receiveAcknowledgement,
+        application = ::receiveApplicationControl,
+        respond = ::respondToControl,
+        failure = ::controlFailure,
+    )
     private val channels = ConcurrentHashMap<String, DataChannel>()
     private val channelStarted = ConcurrentHashMap.newKeySet<String>()
     private val credits = mapOf("video" to BrowserRtcCredit(BrowserRtcProtocol.VIDEO_WINDOW),
         "audio" to BrowserRtcCredit(BrowserRtcProtocol.AUDIO_WINDOW))
     private val wake = Object()
-    private val nativeLock = Any()
+    private val nativeLock = ReentrantLock(true)
     private val admission = Any()
     private val gathering = CountDownLatch(1)
     private var factory: PeerConnectionFactory? = null
@@ -86,6 +91,9 @@ private class AndroidBrowserRtcPeer(
     @Volatile private var disconnectedSince: Long? = null
     @Volatile private var state = "new"
     private val created = System.nanoTime()
+    private var lastControlDiagnostics = created
+    @Volatile private var closedChannel = "none"
+    @Volatile private var closedChannelPreviousState = "none"
     @Volatile private var firstCandidateNanos: Long? = null
     private val records = java.util.concurrent.atomic.AtomicLong()
     private val audioCapture = BrowserRtcAudioCapture(epoch)
@@ -179,25 +187,26 @@ private class AndroidBrowserRtcPeer(
                 fail("unexpected-channel"); return
             }
             channel.registerObserver(object : DataChannel.Observer {
+                private var previousState = channel.state()
                 override fun onBufferedAmountChange(previousAmount: Long) { synchronized(wake) { wake.notifyAll() } }
                 override fun onStateChange() {
                     if (closed.get()) return
-                    if (channel.state() == DataChannel.State.OPEN) startChannel(label)
-                    else if (channel.state() == DataChannel.State.CLOSED) fail("channel-closed")
+                    val current = channel.state()
+                    val before = previousState
+                    previousState = current
+                    if (current == DataChannel.State.OPEN) startChannel(label)
+                    else if (current == DataChannel.State.CLOSED) {
+                        closedChannel = label
+                        closedChannelPreviousState = before.name.lowercase()
+                        fail("channel-closed")
+                    }
                     synchronized(wake) { wake.notifyAll() }
                 }
                 override fun onMessage(buffer: DataChannel.Buffer) {
                     if (label != "control" || buffer.binary || buffer.data.remaining() > 64 * 1024) { fail("invalid-control"); return }
                     val bytes = ByteArray(buffer.data.remaining()).also(buffer.data::get)
                     // Native callback must never perform app callbacks, source writes or HTTP/disk I/O.
-                    if (!closed.get()) {
-                        controlPending.incrementAndGet()
-                        try { controls.execute { try { receiveControl(bytes) } finally {
-                            controlPending.decrementAndGet(); synchronized(wake) { wake.notifyAll() }
-                        } } } catch (_: java.util.concurrent.RejectedExecutionException) {
-                            controlPending.decrementAndGet(); fail("control-overload")
-                        }
-                    }
+                    if (!closed.get()) controls.offer(bytes)
                 }
             })
             // OPEN may precede registration for remotely-created channels.
@@ -214,45 +223,56 @@ private class AndroidBrowserRtcPeer(
         catch (_: java.util.concurrent.RejectedExecutionException) { if (!closed.get()) fail("media-executor-rejected") }
     }
 
-    private fun receiveControl(bytes: ByteArray) {
-        if (closed.get()) return
-        // Canonical application-visible DC control input, before parsing/rejection. Capture
-        // stays on the bounded control executor, never on libwebrtc's native callback thread.
-        RawTraffic.record("browser/rtc/$epoch/control/in", bytes)
-        try {
-            val fields = WebJson.parse(String(bytes, Charsets.UTF_8)) as? Map<*, *> ?: error("control-object")
-            check(authenticated || fields["k"] == "auth") { "authentication-required" }
-            when (fields["k"]) {
-                "ack" -> {
-                    val credit = credits[fields["channel"]] ?: error("ack-channel")
-                    val sequence = BrowserRtcProtocol.unsignedInt(fields["q"]) ?: error("ack-sequence")
-                    val size = fields["bytes"].exactInt() ?: error("ack-size")
-                    synchronized(wake) {
-                        check(credit.acknowledge(sequence, size)) { "ack-order" }
-                        wake.notifyAll()
-                    }
-                }
-                "audio-ready" -> {
-                    val enabled = fields["enabled"] as? Boolean ?: error("audio-ready")
-                    val generation = BrowserRtcProtocol.unsignedInt(fields["generation"]) ?: error("audio-generation")
-                    val changed = synchronized(wake) {
-                        val changed = audioLease.request(enabled, generation)
-                        if (changed) audioSubscription?.close()
-                        wake.notifyAll()
-                        changed
-                    }
-                    log("Browser RTC: stage=audio-lease epoch=$epoch generation=${generation.toLong() and 0xffff_ffffL} enabled=$enabled changed=$changed")
-                }
-                else -> {
-                    val response = control(fields)
-                    sendControl(response)
-                    if (fields["k"] == "auth") authenticate()
-                }
-            }
-        } catch (error: Exception) {
-            logFailure("control", error)
-            fail("control-protocol")
+    private fun receiveAcknowledgement(fields: Map<*, *>) {
+        val credit = credits[fields["channel"]] ?: error("ack-channel")
+        val sequence = BrowserRtcProtocol.unsignedInt(fields["q"]) ?: error("ack-sequence")
+        val size = fields["bytes"].exactInt() ?: error("ack-size")
+        synchronized(wake) {
+            if (closed.get()) return
+            check(authenticated) { "authentication-required" }
+            check(credit.acknowledge(sequence, size)) { "ack-order" }
+            wake.notifyAll()
         }
+    }
+
+    private fun receiveApplicationControl(fields: Map<*, *>): String? {
+        if (closed.get()) return null
+        if (fields["k"] == "audio-ready") {
+            val enabled = fields["enabled"] as? Boolean ?: error("audio-ready")
+            val generation = BrowserRtcProtocol.unsignedInt(fields["generation"]) ?: error("audio-generation")
+            val changed = synchronized(wake) {
+                if (closed.get()) return null
+                check(authenticated) { "authentication-required" }
+                val changed = audioLease.request(enabled, generation)
+                if (changed) audioSubscription?.close()
+                wake.notifyAll()
+                changed
+            }
+            log("Browser RTC: stage=audio-lease epoch=$epoch generation=${generation.toLong() and 0xffff_ffffL} enabled=$enabled changed=$changed")
+            return null
+        }
+        return control(fields)
+    }
+
+    private fun respondToControl(fields: Map<*, *>, response: String) {
+        // The queue also guards publication: a slow old owner's result cannot reach a new peer.
+        if (closed.get()) return
+        sendControl(response)
+        if (fields["k"] == "auth") authenticate()
+    }
+
+    private fun controlFailure(reason: String, error: Exception?) {
+        // An ingress-capacity failure can originate in a native callback. Keep diagnostics,
+        // application log I/O and peer retirement on an owned Java lifecycle thread.
+        val action = Runnable {
+            if (!closed.get()) {
+                if (reason == "control-protocol") error?.let { logFailure("control", it) }
+                else log("Browser RTC: stage=control epoch=$epoch reason=$reason exception=${DiagnosticErrorText.types(error)}")
+                fail(reason)
+            }
+        }
+        try { lifecycle.execute(action) }
+        catch (_: java.util.concurrent.RejectedExecutionException) { cleanupExecutor.execute(action) }
     }
 
     private fun pumpVideo() {
@@ -336,8 +356,10 @@ private class AndroidBrowserRtcPeer(
     }
 
     override fun authenticate() {
-        check(!closed.get()) { "peer-closed" }
-        synchronized(wake) { authenticated = true; wake.notifyAll() }
+        synchronized(wake) {
+            check(!closed.get()) { "peer-closed" }
+            authenticated = true; wake.notifyAll()
+        }
     }
 
     private fun awaitAuthentication() {
@@ -349,7 +371,7 @@ private class AndroidBrowserRtcPeer(
 
     private fun sendControl(response: String) {
         val channel = channels["control"] ?: error("control-unavailable")
-        synchronized(nativeLock) {
+        nativeLock.withLock {
             if (!closed.get()) {
                 check(channel.bufferedAmount() <= 64 * 1024) { "control-buffer-limit" }
                 check(channel.send(DataChannel.Buffer(ByteBuffer.wrap(response.toByteArray(Charsets.UTF_8)), false))) { "control-send" }
@@ -377,18 +399,18 @@ private class AndroidBrowserRtcPeer(
         while (offset < bytes.size && !closed.get()) {
             val channel = requireNotNull(channels[label])
             while (!closed.get()) {
-                val buffered = synchronized(nativeLock) { if (closed.get()) 0 else channel.bufferedAmount() }
+                val buffered = nativeLock.withLock { if (closed.get()) 0 else channel.bufferedAmount() }
                 if (buffered < previousBuffered) deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(6)
                 previousBuffered = buffered
-                val busy = synchronized(nativeLock) { !closed.get() &&
-                    (buffered > 256 * 1024 || controlPending.get() > 0 || (channels["control"]?.bufferedAmount() ?: 0) > 0) }
-                if (!busy) break
+                // A fair send lock gives a waiting control response its next send opportunity.
+                // Pending diagnostics and tiny control buffers must not stop both media pumps.
+                if (buffered <= 256 * 1024) break
                 check(System.nanoTime() < deadline) { "transport-buffer-timeout" }
                 synchronized(wake) { if (!closed.get()) wake.wait(10) }
             }
             val fragment = BrowserRtcProtocol.fragment(epoch, sequence, bytes, offset)
             val count = fragment.remaining() - BrowserRtcProtocol.HEADER
-            synchronized(nativeLock) {
+            nativeLock.withLock {
                 check(!closed.get() && channel.send(DataChannel.Buffer(fragment, true))) { "transport-send" }
             }
             offset += count
@@ -409,6 +431,10 @@ private class AndroidBrowserRtcPeer(
             else null
         }
         reason?.let(::fail)
+        if (!closed.get() && RawTraffic.enabled && now - lastControlDiagnostics >= TimeUnit.SECONDS.toNanos(10)) {
+            lastControlDiagnostics = now
+            controls.diagnosticLines(epoch, "periodic").forEach(log)
+        }
     }
 
     override fun snapshot(): Map<String, Any?> = synchronized(wake) {
@@ -418,7 +444,7 @@ private class AndroidBrowserRtcPeer(
             "oldestAgeMs" to credits.values.maxOf { it.oldestAgeMillis(System.nanoTime()) },
             "noProgressMs" to credits.values.maxOf { it.noProgressMillis(System.nanoTime()) },
             "networkMode" to "kernel-interfaces", "ready" to (authenticated && connected), "closed" to closed.get(),
-            "video" to creditSnapshot("video"), "audio" to creditSnapshot("audio"))
+            "video" to creditSnapshot("video"), "audio" to creditSnapshot("audio"), "control" to controls.summary())
     }
 
     private fun creditSnapshot(label: String): Map<String, Any?> {
@@ -444,7 +470,7 @@ private class AndroidBrowserRtcPeer(
     private fun fail(reason: String) {
         if (closed.get()) return
         val evidence = snapshot()
-        log("Browser RTC: stage=retire epoch=$epoch reason=$reason videoInFlightBytes=${evidence["videoInFlightBytes"]} audioInFlightBytes=${evidence["audioInFlightBytes"]} oldestAgeMs=${evidence["oldestAgeMs"]} records=${records.get()}")
+        log("Browser RTC: stage=retire epoch=$epoch reason=$reason closedChannel=$closedChannel closedChannelPreviousState=$closedChannelPreviousState videoInFlightBytes=${evidence["videoInFlightBytes"]} audioInFlightBytes=${evidence["audioInFlightBytes"]} oldestAgeMs=${evidence["oldestAgeMs"]} records=${records.get()}")
         retire(reason)
     }
 
@@ -452,23 +478,26 @@ private class AndroidBrowserRtcPeer(
 
     override fun retire(reason: String) {
         if (!closed.compareAndSet(false, true)) return
+        synchronized(wake) { authenticated = false; wake.notifyAll() }
         val retiredChannels = synchronized(admission) { channels.values.toList().also { channels.clear() } }
         state = "closed"
         val evidence = snapshot()
-        log("Browser RTC: stage=close epoch=$epoch reason=$reason videoInFlightBytes=${evidence["videoInFlightBytes"]} audioInFlightBytes=${evidence["audioInFlightBytes"]} oldestAgeMs=${evidence["oldestAgeMs"]} records=${records.get()}")
+        log("Browser RTC: stage=close epoch=$epoch reason=$reason closedChannel=$closedChannel closedChannelPreviousState=$closedChannelPreviousState videoInFlightBytes=${evidence["videoInFlightBytes"]} audioInFlightBytes=${evidence["audioInFlightBytes"]} oldestAgeMs=${evidence["oldestAgeMs"]} records=${records.get()}")
         for (label in listOf("video", "audio")) {
             val credit = synchronized(wake) { creditSnapshot(label) }
             log("Browser RTC: stage=close-credit epoch=$epoch channel=$label reason=$reason " +
                 credit.entries.joinToString(" ") { "${it.key}=${it.value}" })
         }
+        controls.close()
+        controls.diagnosticLines(epoch, reason).forEach(log)
         videoSubscription?.close()
         audioSubscription?.close()
         synchronized(wake) { wake.notifyAll() }
-        media.shutdownNow(); controls.shutdownNow()
+        media.shutdownNow()
         gathering.countDown()
         // Never dispose inside a libwebrtc callback; native signaling-thread joins can deadlock.
         val cleanup = Runnable {
-            synchronized(nativeLock) {
+            nativeLock.withLock {
                 retiredChannels.forEach(::disposeChannel)
                 connection?.let { peer ->
                     cleanup("peer-close") { peer.close() }
@@ -487,7 +516,7 @@ private class AndroidBrowserRtcPeer(
     private fun disposeOrphan(channel: DataChannel) {
         // A DCEP callback can arrive after this peer's executor is shut down.
         // Process-owned disposal keeps native joins off the signaling callback thread.
-        cleanupExecutor.execute { synchronized(nativeLock) { disposeChannel(channel) } }
+        cleanupExecutor.execute { nativeLock.withLock { disposeChannel(channel) } }
     }
 
     private fun disposeChannel(channel: DataChannel) {

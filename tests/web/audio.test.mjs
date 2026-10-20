@@ -117,10 +117,10 @@ function mockBrowser({ failFirstModuleLoad = false } = {}) {
 }
 
 test('actual Standard audio stats carry deadline faults without Debug or video-reference telemetry', async () => {
-  const browser = mockBrowser(), notifications = [];
+  const browser = mockBrowser(), notifications = [], firstFaults = [];
   const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }),
     fetchPhone: async () => ({ ok: true, body: new ReadableStream({}) }),
-    onSourceDeadline: () => notifications.push(browserDiagnosticEvents({ audio: audio.stats() }, false, false)[0]),
+    onSourceDeadline: event => { firstFaults.push(event.first); notifications.push(browserDiagnosticEvents({ audio: audio.stats() }, false, false)[0]); },
   });
   try {
     await audio.activate();
@@ -132,6 +132,7 @@ test('actual Standard audio stats carry deadline faults without Debug or video-r
       sourceDeltaUpperMs: 305, sourceDeadlineRejectedFrames: 128, ...fields,
     } } });
     publish();
+    assert.deepEqual(firstFaults, [true]);
     const event = notifications.at(-1);
     assert.equal(audio.stats().debug, undefined);
     assert.equal(event.v['audio.sourceDeadlineState'], 'violated');
@@ -143,11 +144,14 @@ test('actual Standard audio stats carry deadline faults without Debug or video-r
     const before = notifications.length;
     publish();
     assert.equal(notifications.length, before, 'the same cumulative rejection is not sent again');
+    publish({ sourceDeadlineRejectedFrames: 256 });
+    assert.deepEqual(firstFaults, [true, false], 'additional rejected blocks are cumulative updates, not new immediate faults');
     publish({ epoch: 2, sourceDeadlineRejectedFrames: 64 });
-    assert.equal(audio.stats().sourceDeadlineRejectedFrames, 192, 'epoch replacement adds only its new rejected frames');
+    assert.deepEqual(firstFaults, [true, false, true], 'a new epoch retains its first fault');
+    assert.equal(audio.stats().sourceDeadlineRejectedFrames, 320, 'epoch replacement adds only its new rejected frames');
     audio.reset();
     publish({ epoch: 1, sourceDeadlineRejectedFrames: 128 });
-    assert.equal(audio.stats().sourceDeadlineRejectedFrames, 192, 'retired playback-generation feedback is ignored');
+    assert.equal(audio.stats().sourceDeadlineRejectedFrames, 320, 'retired playback-generation feedback is ignored');
   } finally { audio.dispose(); browser.done(); }
 });
 

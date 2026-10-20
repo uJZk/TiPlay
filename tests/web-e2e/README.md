@@ -31,10 +31,20 @@ All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LA
 | `airplay-video.mjs` | Real Mediabunny/WebCodecs playback engine, Video.js controls/skin, canvas pixels, seek/pause/rate, ±10-second buttons, mouse/touch double-tap isolation, narrow layout with production CSS, captions, mute restoration, ownership, disposal and sanitized failure diagnostics under production CSP. Needs an MP4 fixture; HLS optional. |
 | `airplay-photo.mjs` | Actual page CSP, authenticated synthetic EXIF JPEG, native decode/contain fit, ownership, resource reuse and cleanup. |
 | `airplay-audio.mjs` | Actual WebCodecs AAC-LC and CarPlay Opus decoding, nonzero PCM, sample metadata and asynchronous timeline sequence preservation. Prints ALAC/AAC-ELD capability probes; no software fallback is implied. |
+| `url-audio-signal.mjs` | Production URL engine with synthetic decoded PCM, actual native OfflineAudioContext source nodes, and a native whole-buffer reference. Checks source-rate context requests, packet/slice continuity and one continuous whole-context resampling stage for 44.1/48 kHz output. No mirror worklet or captured media is used. |
 | `media-clock.mjs` | Production CSP, bundled pure JavaScript soxr/AudioWorklet, independent mixed CarPlay/mirror PCM, actual output timestamps, suspend/resume, and main/worker/OffscreenCanvas video timing. Requires H.264 decoding, AudioWorklet, `getOutputTimestamp`, OffscreenCanvas and transferable streams. |
 | `rtc.mjs` | Production four-digit SRP6a pairing with native browser WebCrypto, actual BC 1.79 cross-language vectors and forged-proof/SDP/session rejection. The full run then checks two real Chromium peers with ICE/DTLS/SCTP, byte-exact large-record fragmentation, independent audio consumption and reopen barriers, receive credit, eight concurrent delayed control replies, trusted clock, graceful bye, abort, malformed epochs and bounded signaling timeout. No Android JNI, packet-loss simulation, vehicle hardware decode or physical output proof. |
 
 The Performance monitor check verifies a non-intercepting overlay without replacing the media connection. Current fields are codec, actual last-second draw FPS, latest synchronized Delta and explicit browser discards; five-second offset distributions remain in diagnostics. Fake source times validate the timing path, not iPhone capture-to-display latency. Resize/reconnect checks cover browser layout/reporting, not iPhone replacement-display negotiation.
+
+For URL audio signal regression, run
+`NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/url-audio-signal.mjs`.
+`TEST_URL_AUDIO_ENGINE=/absolute/path/to/airplay-media.js` optionally selects a
+frozen source snapshot for a before/after check; the runner reports its SHA-256.
+The deterministic scheduling clock creates the production graph before native
+offline rendering. This measures PCM, node boundaries and native resampling;
+it does not establish live device deadlines, autoplay permission or audible
+speaker behavior. Keep this separate from the mirror decoder/worklet checks.
 
 ## DataChannel transport
 

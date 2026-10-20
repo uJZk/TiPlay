@@ -34,6 +34,19 @@ class BrowserTransportDiagnosticsTest {
         } finally { DiagnosticLogPolicy.level = previous; directory.deleteRecursively() }
     }
 
+    @Test fun currentParserTerminalReasonTakesPrecedenceOverTheLaterGenericConnectionSummary() {
+        val lines = mutableListOf<String>()
+        BrowserTransportDiagnostics(lines::add).report(mapOf("transport.state" to "failed", "link.phase" to "retry",
+            "link.errorReason" to "timeout", "link.failure.reason" to "connection", "link.failure.stage" to "connected",
+            "transport.channelClosedLabel" to "audio"), false)
+        assertTrue(lines.any { it.contains("stage=STATE") && it.contains("reason=timeout") })
+        assertFalse(lines.joinToString(" ").contains("reason=connection"))
+        assertTrue(lines.joinToString(" ").contains("channelClosedLabel=audio"))
+        lines.clear()
+        BrowserTransportDiagnostics(lines::add).report(mapOf("transport.state" to "failed", "transport.channelClosedLabel" to "private-peer"), false)
+        assertFalse(lines.joinToString(" ").contains("private-peer"))
+    }
+
     @Test fun productionLivePolicySelectorKeepsAppliedThresholdsAndClockEvidenceInActualStandardStorage() {
         val fixture = readFixture("shared/src/test/resources/Browser-live-policy-diagnostics-v1.json")
         val event = fixture["standard"] as Map<*, *>

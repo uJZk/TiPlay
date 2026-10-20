@@ -496,6 +496,50 @@ test('the queue is bounded at 64 events', async () => {
   assert.deepEqual(f.posts[1].events, [touch(2)]);
 });
 
+test('first and terminal diagnostic snapshots survive regular telemetry while all eight requests are occupied', async () => {
+  const f = outboxFixture({ maxInFlight: 8 });
+  for (let i = 0; i < 8; i++) f.outbox.heartbeat();
+  await f.settle();
+  assert.equal(f.posts.length, 8);
+  const first = { k: 'st', v: { reason: 'source-deadline', rejected: 128 } };
+  const terminal = { k: 'st', v: { reason: 'timeout' } };
+  assert.equal(f.outbox.push(first, 'fault'), true);
+  assert.equal(f.outbox.push({ k: 'st', v: { reason: 'later fault' } }, 'fault'), false);
+  assert.equal(f.outbox.push(terminal, 'terminal'), true);
+  for (let rejected = 256; rejected <= 1280; rejected += 128) f.outbox.push({ k: 'st', v: { rejected } }, 'latest');
+  assert.equal(f.outbox.stats().pending, 3);
+  await f.answer();
+  assert.deepEqual(f.posts[8].events, [first, terminal, { k: 'st', v: { rejected: 1280 } }]);
+});
+
+test('protected diagnostic slots do not evict or consume the touch edge queue', async () => {
+  const f = outboxFixture();
+  f.outbox.push(touch(0)); await f.settle();
+  const touches = Array.from({ length: 64 }, (_, i) => touch(i / 64, i % 2));
+  for (const event of touches) assert.equal(f.outbox.push(event), true);
+  const first = { k: 'st', v: { first: 1 } }, terminal = { k: 'st', v: { terminal: 1 } };
+  assert.equal(f.outbox.push(first, 'fault'), true);
+  assert.equal(f.outbox.push(terminal, 'terminal'), true);
+  assert.equal(f.outbox.push({ k: 't', p: [] }, 'fault'), false, 'the two dedicated slots accept scalar telemetry only');
+  assert.equal(f.outbox.stats().pending, 66); assert.equal(f.errors.length, 0);
+  await f.answer();
+  assert.deepEqual(f.posts[1].events, [first, terminal, ...touches]);
+});
+
+test('failed first-fault evidence retries on heartbeat independently of newer regular telemetry', async () => {
+  const f = outboxFixture({ maxInFlight: 2 });
+  const first = { k: 'st', v: { reason: 'source-deadline', rejected: 128 } };
+  f.outbox.push(first, 'fault');
+  f.outbox.push({ k: 'st', v: { rejected: 256 } }, 'latest');
+  await f.settle();
+  f.posts[0].done = true; f.posts[0].reject(new TypeError('connection lost')); await f.settle();
+  await f.answer();
+  assert.equal(f.outbox.push({ k: 'st', v: { rejected: 512 } }, 'fault'), false, 'a failed first snapshot remains protected');
+  f.outbox.push({ k: 'st', v: { rejected: 1024 } }, 'latest');
+  f.outbox.heartbeat(); await f.settle();
+  assert.ok(f.posts.some(post => post.q > 2 && post.events.some(event => event === first)));
+});
+
 test('a closed outbox ignores the answer in flight and sends nothing more', async () => {
   const f = outboxFixture();
   f.outbox.push(touch(0));

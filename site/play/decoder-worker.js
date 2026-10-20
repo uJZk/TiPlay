@@ -21,7 +21,10 @@ const timing = createMediaTiming(plans => frames.delay(plans.video));
 const epochs = createVideoEpochGuard(() => { frames.reset(); timing.reset(); presenter?.close(); delivery.stop(); });
 const pipeline = typeof VideoDecoder === 'function' ? createDecoderPipeline({
   post: message => {
-    if (message.type === 'end') stop();
+    if (message.type === 'end') {
+      message = { ...message, stats: { ...message.stats, ...frames.stats(), ...timing.stats(), ...delivery.stats(), ...presenter?.stats() } };
+      stop();
+    }
     epochs.message(message);
     if (message.type === 'config') timing.mode(message.config.mode);
     self.postMessage(message);

@@ -126,7 +126,7 @@ internal class BrowserTransportDiagnostics(
         fun alias(target: String, vararg candidates: String) {
             if (this[target] == null) candidates.firstNotNullOfOrNull { source[it] }?.let { this[target] = it }
         }
-        alias("transport.reason", "link.failure.reason")
+        alias("transport.reason", "link.errorReason", "link.failure.reason")
         alias("transport.stage", "link.failure.stage", "link.connection.stage")
         alias("transport.iceState", "transport.ice.connectionState", "link.failure.iceState", "link.connection.iceState")
         alias("transport.connectionState", "link.failure.connectionState", "link.connection.connectionState", "transport.state")
@@ -145,6 +145,7 @@ internal class BrowserTransportDiagnostics(
     }
 
     private fun scalar(key: String, value: Any?): String? {
+        if (key == "transport.channelClosedLabel") return (value as? String)?.takeIf { it in setOf("control", "video", "audio") }
         POLICY_ENUMS[key]?.let { allowed -> return (value as? String)?.takeIf { it in allowed } }
         if (key == "video.policyInteractionActive") return when (value) {
             is Boolean -> value.toString()
@@ -172,13 +173,13 @@ internal class BrowserTransportDiagnostics(
         private val SAFE_TEXT = Regex("[A-Za-z0-9._-]{1,48}")
         private val NORMAL_END_REASONS = setOf("none", "stopped", "transport-closed", "video-cancelled")
         private val STATE_FIELDS = listOf("transport.transport", "transport.state", "transport.stage", "transport.reason",
-            "transport.generation", "transport.iceState", "transport.connectionState")
+            "transport.generation", "transport.iceState", "transport.connectionState", "transport.channelClosedLabel")
         private val ERROR_COUNTERS = listOf("transport.reassemblyErrors", "transport.controlFailures", "transport.iceCandidateErrors",
             "transport.statsErrors", "video.decodeErrors", "video.decodeStalls", "video.decodedResourceDroppedFrames", "video.scheduledCapacityFrames",
             "audio.sourceDeadlineRejectedFrames")
         private val TEXT_FIELDS = setOf("transport.transport", "transport.state", "transport.stage", "transport.reason",
             "transport.iceState", "transport.connectionState", "transport.selectedProtocol", "transport.localCandidateType",
-            "transport.remoteCandidateType", "video.playbackProfile",
+            "transport.remoteCandidateType", "transport.channelClosedLabel", "video.playbackProfile",
             "audio.sourceDeadlineState", "audio.sourceDeadlineReason", "audio.sourceDeadlineStream")
         private val IMPORTANT_UNKNOWN_REASONS = setOf("source-anchor-unavailable", "output-clock-unavailable", "clock-uncertainty-unavailable")
         private val POLICY_SCOPE = listOf("transport.generation", "video.streamGeneration", "video.epoch")

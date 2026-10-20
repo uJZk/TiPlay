@@ -4,6 +4,23 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.8
+
+Version code 50 and browser cache/diagnostic revision v74. Signed artifacts and
+deployment verification are recorded in [Build](docs/Build.md#beta-release).
+
+- Prevent pending control diagnostics from stopping both live media pumps. Process media ACKs independently of slow application RPCs while retaining authentication barriers, audio-lease ordering, bounded queues and owner retirement.
+- Bound source-deadline diagnostic bursts and preserve first-fault/terminal snapshots independently of ordinary telemetry. Keep decoder evidence before cleanup, record the current failure and closed channel, and separate queue wait, raw-capture, parsing and application work costs.
+- Preserve URL PCM samples across packet timestamp quantization, seek trimming and partial scheduling. Match the AudioContext to the decoded source rate so short nodes do not repeatedly restart cross-rate resampling; safely rebuild for audio-format changes and preserve interrupted-context behavior.
+- Add bounded source/context-rate, PCM-level, trimming and scheduling-continuity diagnostics, with changed continuity evidence in Standard mode. Healthy counters do not create per-node logging.
+
+Verification: 561 browser tests, 52 scoped Android tests and mobile debug assembly;
+17 real DataChannel checks, 90 full-page checks using an explicit test-only software
+decoder override, four default desktop hardware-unavailable checks, ordinary
+44.1 kHz AAC MP4/HLS playback and four native offline audio signal cases. Full
+Android CI remains skipped at the user's request. Vehicle hardware decoding,
+speaker output and physical latency still require device acceptance.
+
 ## 0.2.20-beta.7
 
 Version code 49 and browser cache/diagnostic revision v73. Signed artifacts and

@@ -52,6 +52,18 @@ test('direct peer uses reliable ordered channels and never configures a relay or
   } finally { f.media.close(); }
 });
 
+test('a remote channel close preserves its safe label while local retirement cannot overwrite it', async () => {
+  const f = await fixture();
+  f.channels.audio.close();
+  assert.equal(f.errors.length, 1); assert.equal(f.errors[0].reason, 'channel-closed');
+  assert.equal(f.media.stats().channelClosedLabel, 'audio');
+  assert.equal(f.media.stats().reason, 'channel-closed');
+  assert.equal(f.errors[0].rtcDiagnostic.audioChannelState, 'closed');
+  f.channels.video.close(); f.media.close();
+  assert.equal(f.media.stats().channelClosedLabel, 'audio');
+  assert.equal(f.errors.length, 1);
+});
+
 test('fragmented records retain bytes and credits wait for downstream consumption, including transferred buffers', async () => {
   const f = await fixture();
   const reader = f.media.video.getReader();

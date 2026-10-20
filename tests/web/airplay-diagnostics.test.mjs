@@ -172,9 +172,12 @@ test('the cross-language engine fixture is actual bounded browser output', () =>
   }), fixture.maximumEvent);
   assert.equal(Buffer.byteLength(JSON.stringify(fixture.event)), fixture.normalBytes);
   assert.equal(Buffer.byteLength(JSON.stringify(fixture.maximumEvent)), fixture.maximumBytes);
-  assert.equal(Object.keys(fixture.event.engine).length, 72);
-  assert.ok(fixture.normalBytes <= 2100);
-  assert.ok(fixture.maximumBytes <= 2800);
+  assert.equal(Object.keys(fixture.event.engine).length, 90);
+  assert.ok(fixture.normalBytes <= 2700);
+  assert.ok(fixture.maximumBytes <= 3700);
+  assert.deepEqual(airplayDiagnostic('engine-state', fixture.continuityInput.state, {
+    media: { ...fixture.continuityInput.media, getPlaybackDiagnostics: () => fixture.continuityInput.engine },
+  }), fixture.continuityEvent);
   const failure = fixture.failureInput;
   assert.deepEqual(airplayDiagnostic('error', failure.state, {
     media: failure.media, error: failure.media.error, engineSnapshot: failure.before,
@@ -346,4 +349,37 @@ test('identical terminal snapshots do not duplicate a fault edge', () => {
   f.media.dispatchEvent(Object.assign(new Event('error'), { playbackDiagnostics: snapshot, cleanupDiagnostics: snapshot }));
   assert.deepEqual(f.events.map(entry => entry.event), ['error']);
   f.diagnostics.dispose();
+});
+
+test('PCM continuity uses bounded scalar evidence and changed anomalies use the existing five-second cadence', () => {
+  const events = []; let time = 0;
+  const engine = { generation: 1, running: true, intentPlaying: true, waitReason: 'none',
+    audioSourceRate: 44100, audioRequestedContextRate: 44100, audioContextRate: 44100, audioSourceChannels: 2,
+    audioDecodedFrames: 1024, audioSeekTrimmedFrames: 0, audioOverlapTrimmedFrames: 0, audioAlignedPackets: 1,
+    audioAlignmentMaxUs: 11.111, audioSilenceFrames: 0, audioScheduledFrames: 1024,
+    audioScheduleGapUs: 0, audioScheduleOverlapUs: 0, audioLateStarts: 0, audioLateStartMaxMs: 0,
+    audioPcmPeak: 0.73, audioPcmOverFullScaleSamples: 0, audioNonFiniteSamples: 0 };
+  const media = Object.assign(new EventTarget(), { getPlaybackDiagnostics: () => engine });
+  const diagnostics = createAirPlayDiagnostics(entry => events.push(entry), {
+    state: () => ({ id: 1, revision: 0 }), media: () => media, now: () => time,
+  });
+  diagnostics.monitor(media, new EventTarget());
+  media.dispatchEvent(new Event('progress'));
+  time = 5000; engine.audioDecodedFrames++; engine.audioSeekTrimmedFrames++; engine.audioAlignedPackets++;
+  media.dispatchEvent(new Event('progress'));
+  assert.equal(events.length, 1, 'normal PCM growth and initial seek clipping do not cause fault cadence');
+  engine.audioSilenceFrames = 1; time = 5250; media.dispatchEvent(new Event('progress'));
+  assert.equal(events.length, 2);
+  assert.equal(events.at(-1).engine.audioSilenceFrames, 1);
+  engine.audioScheduleGapUs = 22.676; time = 5500; media.dispatchEvent(new Event('progress'));
+  assert.equal(events.length, 2);
+  time = 10250; media.dispatchEvent(new Event('progress'));
+  assert.equal(events.length, 3);
+  assert.equal(events.at(-1).engine.audioScheduleGapUs, 22.676);
+  diagnostics.dispose();
+  const invalid = playbackDiagnostics({ getPlaybackDiagnostics: () => ({ ...engine,
+    audioSourceRate: 0, audioContextRate: 384001, audioSourceChannels: 9, audioDecodedFrames: 1.5,
+    audioPcmPeak: Infinity, audioScheduleGapUs: -1, samples: new Float32Array([0.5]), url: 'private' }) });
+  for (const key of ['audioSourceRate', 'audioContextRate', 'audioSourceChannels', 'audioDecodedFrames',
+    'audioPcmPeak', 'audioScheduleGapUs', 'samples', 'url']) assert.equal(Object.hasOwn(invalid, key), false);
 });

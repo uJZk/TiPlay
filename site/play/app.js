@@ -28,7 +28,7 @@ import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
 import { createAirPlayTrustNotification } from './airplay-trust.js';
 import { createBrowserNotice } from './browser-notice.js';
-import { browserDiagnosticEvents, PAGE_VERSION } from './browser-diagnostics.js';
+import { browserDiagnosticEvents, createFaultDiagnosticReporter, PAGE_VERSION } from './browser-diagnostics.js';
 
 const STRINGS = {
   en: {
@@ -239,6 +239,8 @@ let controlClock = null;
 const controlWaiters = new Set(), videoDiagnosticTracker = createVideoDiagnosticTracker();
 let config = null, live = false, status = null, unsupported = null, videoStats = {};
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
+let terminalDiagnosticId = null;
+const faultDiagnostics = createFaultDiagnosticReporter({ emit: event => outbox?.push(event, 'fault') });
 const locationNotice = createLocationNotice($('location-notice'), lang);
 const browserLocation = createBrowserLocation({
   onIssue: reason => locationNotice.show(reason),
@@ -270,7 +272,11 @@ const browserAudio = createBrowserAudio({
   onTiming: (source, mode) => timingFor(mode).observe('audio', source),
   onQueued: mode => timingFor(mode).started(),
   onAudioReference: reference => sink?.audio(reference),
-  onSourceDeadline: () => reportDiagnostics(),
+  onSourceDeadline: ({ first }) => {
+    // Cumulative rejected blocks remain visible in the regular five-second report.
+    // Only a new source identity/reason requests an immediate, compact fault event.
+    if (first) faultDiagnostics.report(browserDiagnosticEvents(pageStats(), appearance.matches)[0]);
+  },
   fetchPhone: phoneFetch, credentials: () => ({ code: resourceToken, session }),
 });
 mediaTiming = timingFor('carplay');
@@ -404,6 +410,9 @@ async function setUpVideo() {
     });
     const epochs = createVideoEpochGuard(() => { frames.reset(); presenter.close(); });
     const pipeline = createDecoderPipeline({ post: message => {
+      if (message.type === 'end') message = { ...message, stats: {
+        ...message.stats, ...frames.stats(), ...mediaTiming.stats(), ...presenter.stats(),
+      } };
       epochs.message(message);
       onVideoMessage(message);
     }, present: frames.present });
@@ -487,6 +496,7 @@ function start() {
 
 function stop(key = null, ...args) {
   cancelViewport();
+  faultDiagnostics.reset();
   notice = key ? { key, args } : null;
   active = false;
   browserAudio.stop();
@@ -524,6 +534,7 @@ function sendBye() {
 
 async function connectVideo() {
   const id = ++streamId;
+  faultDiagnostics.reset();
   rtcMedia?.close();
   rtcMedia = null; resourceToken = null; controlClock = null; rtcProgress = null;
   sink?.stop();
@@ -557,15 +568,14 @@ async function connectVideo() {
       onProgress: progress => { if (id === streamId && !abort.signal.aborted) { rtcProgress = progress; render(); } },
       onError: error => {
         if (!opened || abort.signal.aborted || id !== streamId) return;
-        lastError = error;
-        reportDiagnostics();
-        streamEnded(error.reason ?? 'transport-failed');
+        streamEnded(error.reason ?? 'transport-failed', error);
       },
     });
     await media.connect();
     clearTimeout(timer);
     if (id !== streamId || abort.signal.aborted) { media.close(); return; }
     opened = true;
+    lastError = null;
     resourceToken = media.resourceToken();
     const sample = media.clockSample();
     const clock = clockEstimator.observe(sample.serverMs, sample.started, sample.ended);
@@ -602,7 +612,12 @@ async function connectVideo() {
   }
 }
 
-function streamEnded(reason) {
+function streamEnded(reason, error = null) {
+  if (terminalDiagnosticId === streamId) return;
+  terminalDiagnosticId = streamId;
+  faultDiagnostics.reset();
+  if (reason !== 'closed' && reason !== 'end') lastError = error ?? Object.assign(new Error(reason), { reason });
+  try { reportDiagnostics('terminal'); } catch (_) {} // Evidence collection must not prevent media retirement.
   videoAbort?.abort();
   rtcMedia?.close();
   sink?.stop();
@@ -612,7 +627,6 @@ function streamEnded(reason) {
     stop('replaced');
     return;
   }
-  if (reason !== 'closed' && reason !== 'end') lastError ??= Object.assign(new Error(reason), { reason });
   scheduleRetry(backoffDelay(attempt++));
 }
 
@@ -697,7 +711,10 @@ function onVideoMessage(message) {
     outbox?.push({ k: 'dec', ep: message.epoch }, 'latest'); // repeated if its POST fails: the phone's connection proof
     keepScreenOn();
   } else if (message.type === 'keyframe') outbox?.push({ k: 'kf' }, 'latest');
-  else if (message.type === 'end' && message.id === streamId) streamEnded(message.reason);
+  else if (message.type === 'end' && message.id === streamId) {
+    if (message.stats) videoStats = performanceStats({ ...videoStats, ...message.stats });
+    streamEnded(message.reason);
+  }
   else if (message.type === 'stats') videoStats = performanceStats(message.stats);
   render();
 }
@@ -807,8 +824,8 @@ function statusText() {
   return t(key ?? 'waitingSource');
 }
 
-function reportDiagnostics() {
-  for (const event of browserDiagnosticEvents(pageStats(), appearance.matches, status?.debug === true, status?.debugSession, videoDiagnosticTracker)) outbox?.push(event, 'latest');
+function reportDiagnostics(kind = 'latest') {
+  for (const event of browserDiagnosticEvents(pageStats(), appearance.matches, status?.debug === true, status?.debugSession, videoDiagnosticTracker)) outbox?.push(event, event.k === 'st' ? kind : 'latest');
 }
 
 function pageStats() {

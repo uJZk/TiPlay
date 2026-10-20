@@ -16,6 +16,7 @@ internal class AirPlayPlaybackDiagnostics(
     private var lastStalledIdentity: String? = null
     private var lastErrorSignature: String? = null
     private var errorCleanupPending = false
+    private var lastAudioContinuity: String? = null
 
     @Synchronized fun report(id: Long, fields: Map<*, *>, accepted: Boolean) {
         val flags = "id=$id revision=${whole(fields["revision"])} accepted=$accepted " +
@@ -37,6 +38,7 @@ internal class AirPlayPlaybackDiagnostics(
         if (active && event in setOf("open", "resync", "proxy-fallback")) {
             lastStalledIdentity = null; lastEngineSignature = null
             lastErrorSignature = null; errorCleanupPending = false
+            lastAudioContinuity = null
         }
         val error = (fields["errorName"] as? String)?.takeIf { it in ERRORS } ?: "OTHER"
         if (event != "engine-state") emit("browser video stage=EVENT id=$id revision=${whole(fields["revision"])} event=$event active=$active " +
@@ -62,6 +64,8 @@ internal class AirPlayPlaybackDiagnostics(
             values[key] = when {
                 key in ENGINE_DIMENSIONS && value != null && value > 32768 -> "unknown"
                 key == "resourceLastStatus" && value != null && value != 0.0 && value !in 100.0..599.0 -> "unknown"
+                key in AUDIO_RATES && value != null && value !in 3000.0..384000.0 -> "unknown"
+                key == "audioSourceChannels" && value != null && value !in 1.0..8.0 -> "unknown"
                 else -> engineNumber(source[key], key in ENGINE_WHOLE)
             }
         }
@@ -79,12 +83,19 @@ internal class AirPlayPlaybackDiagnostics(
         val errorSignature = "$identity " + values.filterKeys { it !in ERROR_VOLATILE_FIELDS }.toString()
         val errorBoundary = semanticFailure || (errorState &&
             (lastErrorSignature == null || (errorCleanupPending && errorSignature != lastErrorSignature)))
+        val now = nowMillis()
+        val continuity = "$identity " + AUDIO_CONTINUITY_COUNTERS.joinToString(" ") { values[it] ?: "unknown" }
+        val continuityChanged = continuity != lastAudioContinuity && AUDIO_CONTINUITY_COUNTERS.any {
+            values[it]?.toDoubleOrNull()?.let { value -> value > 0 } == true
+        }
+        // Continuity observations include legitimate silent introductions; they are not error labels.
+        val audioBoundary = identity != null && continuityChanged &&
+            (lastEngineSignature == null || now - lastEngineMillis >= 5_000)
         // Standard keeps one same-identity recovery edge; healthy periodic summaries are Debug only.
-        if (!stalled && !recovered && !errorState && !semanticFailure && !debug()) return
+        if (!stalled && !recovered && !errorState && !semanticFailure && !audioBoundary && !debug()) return
         val prefix = "id=$id revision=$revision generation=${values["generation"]} active=true stalled=$stalled recovered=$recovered"
         val signature = prefix + ENGINE_SIGNATURE.joinToString(" ") { "$it=${values[it]}" }
-        val now = nowMillis()
-        if (!errorBoundary && lastEngineSignature != null) {
+        if (!errorBoundary && !audioBoundary && lastEngineSignature != null) {
             val elapsed = now - lastEngineMillis
             if (elapsed < 250 || (signature == lastEngineSignature && elapsed < if (stalled || errorState) 5_000 else 10_000)) return
         }
@@ -92,6 +103,7 @@ internal class AirPlayPlaybackDiagnostics(
         lastStalledIdentity = if (stalled && !errorState && !semanticFailure) identity else null
         lastErrorSignature = if (errorState || semanticFailure) errorSignature else null
         errorCleanupPending = semanticFailure
+        lastAudioContinuity = continuity
         ENGINE_GROUPS.forEach { (stage, keys) ->
             val boundary = when (stage) {
                 "ENGINE_CODEC" -> " actualHardware=unknown poolCapacity=unknown vendorBuffers=unknown"
@@ -158,13 +170,23 @@ internal class AirPlayPlaybackDiagnostics(
             "samplesReceived", "samplesClosed", "videoSinkReadPendingMs", "lastSampleAgeMs", "videoHeldGeneration",
             "audioResumeRequests", "audioResumeCompleted", "audioResumeFailed", "readProgressFallbacks",
             "resourceActive", "resourceQueued", "resourceBytes", "resourceLastProgressAgeMs", "resourceTimeouts",
-            "resourceCancellations", "resourceBackwardRestarts", "resourceRangeIgnored", "resourceLastStatus")
+            "resourceCancellations", "resourceBackwardRestarts", "resourceRangeIgnored", "resourceLastStatus",
+            "audioSourceRate", "audioRequestedContextRate", "audioContextRate", "audioSourceChannels",
+            "audioDecodedFrames", "audioSeekTrimmedFrames", "audioOverlapTrimmedFrames", "audioAlignedPackets",
+            "audioAlignmentMaxUs", "audioSilenceFrames", "audioScheduledFrames", "audioScheduleGapUs", "audioScheduleOverlapUs",
+            "audioLateStarts", "audioLateStartMaxMs", "audioPcmPeak", "audioPcmOverFullScaleSamples", "audioNonFiniteSamples")
         private val ENGINE_WHOLE = setOf("generation", "videoFrames", "videoBytes", "audioChunks", "audioBytes", "stallCount",
             "videoCapacityFrames", "videoCapacityBytes", "audioCapacityBytes", "codedWidth", "codedHeight", "displayWidth", "displayHeight",
             "videoHeldFrames", "videoHeldBytes", "videoPendingFrames", "videoPendingBytes", "videoOwnedFrames", "videoOwnedBytes",
             "samplesReceived", "samplesClosed", "videoHeldGeneration", "audioResumeRequests", "audioResumeCompleted", "audioResumeFailed",
             "readProgressFallbacks", "resourceActive", "resourceQueued", "resourceBytes", "resourceTimeouts", "resourceCancellations",
-            "resourceBackwardRestarts", "resourceRangeIgnored", "resourceLastStatus")
+            "resourceBackwardRestarts", "resourceRangeIgnored", "resourceLastStatus",
+            "audioSourceRate", "audioRequestedContextRate", "audioContextRate", "audioSourceChannels",
+            "audioDecodedFrames", "audioSeekTrimmedFrames", "audioOverlapTrimmedFrames", "audioAlignedPackets",
+            "audioSilenceFrames", "audioScheduledFrames", "audioLateStarts", "audioPcmOverFullScaleSamples", "audioNonFiniteSamples")
+        private val AUDIO_RATES = setOf("audioSourceRate", "audioRequestedContextRate", "audioContextRate")
+        private val AUDIO_CONTINUITY_COUNTERS = listOf("audioOverlapTrimmedFrames", "audioSilenceFrames", "audioScheduleGapUs",
+            "audioScheduleOverlapUs", "audioLateStarts", "audioPcmOverFullScaleSamples", "audioNonFiniteSamples")
         private val ENGINE_DIMENSIONS = setOf("codedWidth", "codedHeight", "displayWidth", "displayHeight")
         private val FAILURE_EVENTS = setOf("error", "open-error", "canvas-error", "play-rejected")
         private val ERROR_VOLATILE_FIELDS = setOf("clockTime", "clockPosition", "position", "playableEnd", "videoEnd", "audioEnd",
@@ -187,6 +209,11 @@ internal class AirPlayPlaybackDiagnostics(
                 "gestureRequired", "requestedAudioLatencyHint"),
             "ENGINE_NETWORK" to listOf("resourceActive", "resourceQueued", "resourceBytes", "resourceLastProgressAgeMs", "resourceLastResult",
                 "resourceTimeouts", "resourceCancellations", "resourceBackwardRestarts", "resourceRangeIgnored", "resourceLastStatus"),
+            "ENGINE_PCM" to listOf("audioSourceRate", "audioRequestedContextRate", "audioContextRate", "audioSourceChannels",
+                "audioDecodedFrames", "audioSeekTrimmedFrames", "audioOverlapTrimmedFrames"),
+            "ENGINE_CONTINUITY" to listOf("audioAlignedPackets", "audioAlignmentMaxUs", "audioSilenceFrames", "audioPcmPeak",
+                "audioPcmOverFullScaleSamples", "audioNonFiniteSamples"),
+            "ENGINE_SCHEDULE" to listOf("audioScheduledFrames", "audioScheduleGapUs", "audioScheduleOverlapUs", "audioLateStarts", "audioLateStartMaxMs"),
         )
     }
 }
