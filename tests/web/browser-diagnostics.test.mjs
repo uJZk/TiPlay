@@ -159,6 +159,53 @@ test('device drift and output rejection remain measurable after scalar telemetry
   assert.equal(detail.v.outputUnavailableReason, 'feedback-distance');
 });
 
+test('dense audio evidence protects every source fit and actual quantum without increasing the existing field or byte limits', () => {
+  for (const controlMessageLimitBytes of [16 * 1024, 64 * 1024]) {
+    const debug = { ...Object.fromEntries(Array.from({ length: 700 }, (_, i) => [`optional${i}`, i])),
+      contextState: 'running', contextRate: 48000, renderQuantumFrames: 128, renderQuantumMinFrames: 64, renderQuantumMaxFrames: 256,
+      deviceClockFitStatus: 'holdover', deviceClockFitRejectReason: 'noisy', deviceClockUncertaintyMs: 3.000001,
+      deviceClockRatePpm: -1801.73, deviceClockConfidence: 0 };
+    for (let stream = 0; stream < 8; stream++) debug[`stream${stream}`] = {
+      ...Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`optional${i}`, i])),
+      epoch: 10 + stream, state: 'rebuffering', lastRecoveryReason: 'network-buffer',
+      sourceClockFitStatus: 'holdover', sourceClockFitRejectReason: 'noisy',
+      sourceClockDispersionMs: .500001, sourceClockPoints: 121, sourceClockSpanMs: 120000,
+      sourceClockAcceptedFitAgeMs: 3500, sourceClockFitRejected: 8,
+    };
+    const [, detail] = browserDiagnosticEvents({ transport: { controlMessageLimitBytes }, audio: { debug } }, false, true, 'capture');
+    assert.ok(detail.v.omittedFields > 0);
+    assert.ok(Object.keys(detail.v).length <= 256);
+    const ordinary = 2048 - 24, budget = Math.min(16 * 1024, Math.floor((controlMessageLimitBytes - ordinary * 3 - 4096) / 2));
+    assert.ok(Buffer.byteLength(JSON.stringify(detail.v)) <= budget);
+    for (let stream = 0; stream < 8; stream++) {
+      assert.equal(detail.v[`stream${stream}.epoch`], 10 + stream);
+      assert.equal(detail.v[`stream${stream}.state`], 'rebuffering');
+      assert.equal(detail.v[`stream${stream}.lastRecoveryReason`], 'network-buffer');
+      assert.equal(detail.v[`stream${stream}.sourceClockFitStatus`], 'holdover');
+      assert.equal(detail.v[`stream${stream}.sourceClockFitRejectReason`], 'noisy');
+      assert.equal(detail.v[`stream${stream}.sourceClockDispersionMs`], .500001);
+    }
+    assert.equal(detail.v.renderQuantumFrames, 128); assert.equal(detail.v.renderQuantumMinFrames, 64); assert.equal(detail.v.renderQuantumMaxFrames, 256);
+    assert.equal(detail.v.deviceClockUncertaintyMs, 3.000001);
+    assert.equal(detail.v.deviceClockFitStatus, 'holdover'); assert.equal(detail.v.deviceClockFitRejectReason, 'noisy');
+    assert.equal(detail.v.deviceClockRatePpm, -1801.73); assert.equal(detail.v.deviceClockConfidence, 0);
+    assert.equal(browserDiagnosticEvents({ audio: { debug } }, false, false).length, 1);
+  }
+});
+
+test('clock dispersion retains six print decimals while ordinary audio numbers retain their existing rounding', () => {
+  const [, detail] = browserDiagnosticEvents({ audio: { debug: { deviceClockUncertaintyMs: 3.0000014,
+    deviceClockRatePpm: 1.234567, stream6: { sourceClockDispersionMs: .5000014, sourceClockSpanMs: 30000.123456,
+      sourceClockFitRejectReason: 'noisy', sourceClockAcceptedFitAgeMs: null },
+    stream0: { sourceClockFitStatus: 'disabled', sourceClockFitRejectReason: 'buffered-prefetch' } } } }, false, true);
+  assert.equal(detail.v.deviceClockUncertaintyMs, 3.000001);
+  assert.equal(detail.v['stream6.sourceClockDispersionMs'], .500001);
+  assert.equal(detail.v.deviceClockRatePpm, 1.23);
+  assert.equal(detail.v['stream6.sourceClockSpanMs'], 30000.12);
+  assert.equal(Object.hasOwn(detail.v, 'stream6.sourceClockAcceptedFitAgeMs'), false);
+  assert.equal(detail.v['stream0.sourceClockFitRejectReason'], 'buffered-prefetch');
+});
+
 test('selected ICE path and counters survive a crowded ordinary diagnostic summary', () => {
   const ice = { state: 'selected', localCandidateType: 'host', remoteCandidateType: 'host', protocol: 'udp',
     currentRoundTripTimeMs: 8, sampleAgeMs: 250, availableOutgoingBitrate: 12000000,

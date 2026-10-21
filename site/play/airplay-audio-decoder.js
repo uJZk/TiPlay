@@ -23,6 +23,16 @@ function rawAacPacket(payload) {
   }
   return payload;
 }
+function mirrorNoData(record, config) {
+  if (record.mode !== 'airplay-mirror' || !['aac-lc', 'aac-eld'].includes(config.codec) || record.payload.byteLength !== 4) return false;
+  const bytes = new Uint8Array(record.payload);
+  return bytes[0] === 0 && bytes[1] === 0x68 && bytes[2] === 0x34 && bytes[3] === 0;
+}
+function mirrorAacFrames(mode, config) {
+  if (mode !== 'airplay-mirror') return 0;
+  return (config.codec === 'aac-eld' ? [480, 512] : config.codec === 'aac-lc' ? [960, 1024] : [])
+    .includes(config.samplesPerFrame) ? config.samplesPerFrame : 0;
+}
 
 export function decodePcmPacket(payload, { bitDepth, channels, littleEndian = false }) {
   const bytes = new Uint8Array(payload), width = bitDepth / 8;
@@ -42,15 +52,19 @@ export function decodePcmPacket(payload, { bitDepth, channels, littleEndian = fa
 /** Independent AAC/Opus/ALAC/PCM stream decoders share the browser output clock and retain their own epochs. */
 export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
   AudioDecoder = globalThis.AudioDecoder, EncodedAudioChunk = globalThis.EncodedAudioChunk, probeTimeout = 1000,
-  softwareEldFactory = createSoftwareEldDecoder } = {}) {
+  softwareEldFactory = createSoftwareEldDecoder, drainTimeout = 2000 } = {}) {
   const sessions = new Map();
   let disposed = false, diagnostics = null;
-  function publish(record) {
+  function publish(record, noDataFrames = 0) {
     if (diagnostics && record.pcm.byteLength) {
       measurePcm(diagnostics, record.pcm, record.channels);
       const stream = diagnostics['stream' + record.type] ??= pcmStats();
       Object.assign(stream, { epoch: record.epoch, rate: record.rate, channels: record.channels });
       measurePcm(stream, record.pcm, record.channels);
+      if (noDataFrames) for (const stats of [diagnostics, stream]) {
+        stats.noDataPackets = (stats.noDataPackets ?? 0) + 1;
+        stats.noDataFrames = (stats.noDataFrames ?? 0) + noDataFrames;
+      }
     }
     onPcm(record);
   }
@@ -60,9 +74,28 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
   }
   const live = session => !disposed && sessions.get(session.type) === session && !session.closed;
   const notify = session => { for (const resolve of session.waiters) resolve(); session.waiters.clear(); };
+  // Retiring an epoch must settle queued callers even if software output stalls.
+  function pending(session, task) {
+    if (!live(session)) return Promise.resolve(false);
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (failed, value) => {
+        if (settled) return;
+        settled = true; session.pending.delete(cancel);
+        if (failed) reject(value); else resolve(value);
+      };
+      const cancel = () => finish(false, false);
+      session.pending.add(cancel);
+      Promise.resolve(task).then(value => finish(false, value), cause => finish(true, cause));
+    });
+  }
   function close(session) {
     if (!session || session.closed) return;
-    session.closed = true; if (session.decoder && session.decoder.state !== 'closed') session.decoder.close();
+    session.closed = true;
+    clearTimeout(session.outputTimer); session.outputTimer = null;
+    session.sourceSpans.length = 0; session.sourceQueuedFrames = 0; session.silentSpans = 0;
+    for (const cancel of session.pending) cancel(); session.pending.clear();
+    if (session.decoder && session.decoder.state !== 'closed') session.decoder.close();
     session.software?.close(); session.software = null;
     session.decoder = null; session.anchors.length = 0; notify(session);
   }
@@ -80,16 +113,65 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       semanticType: session.semanticType,
       flags: session.flags & ~2, rate: session.config.sampleRate, channels: session.config.channels, ...fields };
   }
+  function sourceWait(session) {
+    if (!session.silentSpans) { clearTimeout(session.outputTimer); session.outputTimer = null; }
+    // Match the software ELD packet-failure bound; this is not a playback watermark.
+    else if (session.outputTimer === null) session.outputTimer = setTimeout(() => {
+      session.outputTimer = null; failure(session, new Error('AirPlay audio decoder output timed out.'));
+    }, drainTimeout);
+  }
+  function sourceSilence(session) {
+    while (live(session) && session.sourceSpans[0]?.silent) {
+      const span = session.sourceSpans.shift();
+      session.silentSpans--; session.sourceQueuedFrames -= span.frames;
+      publish(recordFor(session, { pcm: new Int16Array(span.frames * session.config.channels).buffer,
+        presentationMs: span.presentationMs, decodeTimestampUs: span.timestamp,
+        flags: span.flags & ~2, sequence: session.outputSequence++ >>> 0 }), span.frames);
+      notify(session);
+    }
+    sourceWait(session);
+  }
+  function sourceSpan(session, record, silent) {
+    // Bound source metadata by the fault wait plus the existing 32-chunk input queue.
+    const frames = session.sourceFrames, limit = session.config.sampleRate * drainTimeout / 1000 + 32 * frames;
+    if (session.sourceQueuedFrames + frames > limit) throw new Error('AirPlay audio decoder output backlog exceeds the memory limit.');
+    session.sourceSpans.push({ timestamp: record.decodeTimestampUs, presentationMs: record.presentationMs,
+      flags: record.flags, frames, used: 0, silent });
+    session.sourceQueuedFrames += frames;
+    if (silent) { session.silentSpans++; sourceSilence(session); }
+  }
+  function sourceOutput(session, pcm, rate) {
+    const channels = session.config.channels, frames = pcm.length / channels, frameUs = 1e6 / rate;
+    for (let offset = 0; offset < frames;) {
+      sourceSilence(session);
+      const span = session.sourceSpans[0];
+      if (!span || span.silent) throw new Error('AirPlay decoded audio exceeds its submitted source samples.');
+      const count = Math.min(frames - offset, span.frames - span.used);
+      // Some native codecs clamp a negative initial timestamp and then count only
+      // decoded frames, ignoring input gaps. RTP source spans remain authoritative.
+      const decodeTimestampUs = span.timestamp + span.used * frameUs;
+      const presentationMs = Number.isFinite(span.presentationMs) ? span.presentationMs + (decodeTimestampUs - span.timestamp) / 1000 : NaN;
+      const buffer = offset === 0 && count === frames ? pcm.buffer : pcm.slice(offset * channels, (offset + count) * channels).buffer;
+      span.used += count; session.sourceQueuedFrames -= count;
+      if (span.used === span.frames) session.sourceSpans.shift();
+      publish(recordFor(session, { pcm: buffer, rate, presentationMs, decodeTimestampUs,
+        flags: span.flags & ~2, sequence: session.outputSequence++ >>> 0 }));
+      offset += count;
+    }
+    sourceSilence(session); notify(session);
+  }
   function output(session, data) {
     try {
       if (!live(session)) return;
       const frames = data.numberOfFrames, channels = data.numberOfChannels, rate = data.sampleRate;
-      if (!Number.isInteger(frames) || frames < 1 || frames > rate || frames * channels * 2 > 64 * 1024 || channels !== session.config.channels || rate < 8000 || rate > 96000) throw new Error('Invalid decoded AirPlay audio.');
+      if (!Number.isInteger(frames) || frames < 1 || frames > rate || frames * channels * 2 > 64 * 1024 || channels !== session.config.channels || rate < 8000 || rate > 96000
+        || (session.sourceFrames && rate !== session.config.sampleRate)) throw new Error('Invalid decoded AirPlay audio.');
       const pcm = new Int16Array(frames * channels), plane = new Float32Array(frames);
       for (let channel = 0; channel < channels; channel++) {
         data.copyTo(plane, { planeIndex: channel, format: 'f32-planar' });
         for (let sample = 0; sample < frames; sample++) pcm[sample * channels + channel] = Math.max(-32768, Math.min(32767, Math.round(plane[sample] * 32768)));
       }
+      if (session.sourceFrames) { sourceOutput(session, pcm, rate); return; }
       let anchor = session.anchors[0];
       for (const candidate of session.anchors) { if (candidate.timestamp > data.timestamp) break; anchor = candidate; }
       const presentationMs = Number.isFinite(anchor?.presentationMs) ? anchor.presentationMs + (data.timestamp - anchor.timestamp) / 1000 : NaN;
@@ -110,7 +192,8 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
     const config = record.config;
     const session = { closed: false, decoder: null, software: null, config,
       type: record.type, semanticType, mode: record.mode, epoch: record.epoch, sequence: record.sequence, flags: record.flags,
-      anchors: [], waiters: new Set(), outputSequence: 0 };
+      anchors: [], waiters: new Set(), outputSequence: 0, pending: new Set(), decodeTail: Promise.resolve(),
+      sourceFrames: config ? mirrorAacFrames(record.mode, config) : 0, sourceSpans: [], sourceQueuedFrames: 0, silentSpans: 0, outputTimer: null };
     sessions.set(record.type, session);
     try {
       if (!config || !['pcm', ...Object.keys(CODECS)].includes(config.codec) || !Number.isInteger(config.sampleRate)
@@ -153,9 +236,8 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       return live(session);
     } catch (cause) { failure(session, cause); return false; }
   }
-  async function decode(record) {
-    const session = sessions.get(record.type);
-    if (!session || !live(session) || record.type !== session.type || record.epoch !== session.epoch) return false;
+  async function decodeRecord(session, record) {
+    if (!live(session)) return false;
     if (record.rate !== session.config.sampleRate || record.channels !== session.config.channels) { failure(session, new Error('AirPlay audio format changed without a configuration.')); return false; }
     try {
       session.sequence = record.sequence; session.flags = record.flags;
@@ -166,6 +248,18 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       }
       if (!Number.isFinite(record.decodeTimestampUs) || Math.abs(record.decodeTimestampUs) > Number.MAX_SAFE_INTEGER || !record.payload.byteLength) throw new Error('Invalid AirPlay audio timestamp or packet.');
       const timestamp = Math.round(record.decodeTimestampUs);
+      if (mirrorNoData(record, session.config)) {
+        const frames = session.sourceFrames;
+        if (!frames) throw new Error('Invalid AirPlay no-data frame length.');
+        // A native codec may retain old PCM until a later real packet arrives.
+        // Queue source silence without blocking that next submission or flushing
+        // the codec's overlap state. Software calls are already awaited in order.
+        if (session.decoder) { sourceSpan(session, record, true); return true; }
+        publish(recordFor(session, { pcm: new Int16Array(frames * session.config.channels).buffer,
+          presentationMs: record.presentationMs, decodeTimestampUs: record.decodeTimestampUs,
+          flags: record.flags & ~2, sequence: session.outputSequence++ >>> 0 }), frames); notify(session);
+        return true;
+      }
       if (session.software) {
         const pcm = await session.software.decode(rawAacPacket(record.payload));
         if (!live(session)) return false;
@@ -173,13 +267,25 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
           flags: record.flags & ~2, sequence: session.outputSequence++ >>> 0 })); notify(session);
         return true;
       }
-      session.anchors.push({ timestamp, presentationMs: record.presentationMs, flags: record.flags });
-      if (session.anchors.length > 128) session.anchors.shift();
+      if (session.sourceFrames) sourceSpan(session, record, false);
+      else {
+        session.anchors.push({ timestamp, presentationMs: record.presentationMs, flags: record.flags });
+        if (session.anchors.length > 128) session.anchors.shift();
+      }
       session.decoder.decode(new EncodedAudioChunk({ type: 'key', timestamp,
         data: session.config.codec.startsWith('aac') ? rawAacPacket(record.payload) : record.payload }));
       while (live(session) && session.decoder.decodeQueueSize > 32) await new Promise(resolve => session.waiters.add(resolve));
       return live(session);
     } catch (cause) { failure(session, cause); return false; }
+  }
+  function decode(record) {
+    const session = sessions.get(record.type);
+    if (!session || !live(session) || record.type !== session.type || record.epoch !== session.epoch) return Promise.resolve(false);
+    // The transport awaits each call, while per-session ordering also protects
+    // concurrent callers and lets unrelated decoder epochs progress independently.
+    const task = pending(session, session.decodeTail.then(() => decodeRecord(session, record)));
+    session.decodeTail = task;
+    return task;
   }
   return { configure, decode, reset,
     debug(enabled) {

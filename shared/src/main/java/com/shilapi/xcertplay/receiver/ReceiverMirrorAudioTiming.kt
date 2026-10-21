@@ -9,7 +9,6 @@ internal class ReceiverMirrorAudioTiming(
     private val sampleRate: Int,
     private val mapNtp: (BigInteger) -> Long?,
     private val now: () -> Long = System::nanoTime,
-    private val filterNoData: Boolean = true,
 ) {
     data class Packet(val payload: ByteArray, val sample: Long, val presentationNanos: Long?, val discontinuity: Boolean = false)
     private data class Pending(val payload: ByteArray, val sample: Int, val arrived: Long)
@@ -45,7 +44,7 @@ internal class ReceiverMirrorAudioTiming(
     }
 
     @Synchronized fun offer(packet: ByteArray, payload: ByteArray): List<Packet> {
-        if (!valid(packet) || payload.isEmpty() || (filterNoData && payload.contentEquals(byteArrayOf(0, 0x68, 0x34, 0)))) return emptyList()
+        if (!valid(packet) || payload.isEmpty()) return emptyList()
         val seq = ((packet[2].toInt() and 255) shl 8) or (packet[3].toInt() and 255)
         val sample = read32(packet, 4)
         val boundary = flushSample

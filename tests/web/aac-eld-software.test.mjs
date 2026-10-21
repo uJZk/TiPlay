@@ -240,3 +240,36 @@ test('the bundled ELD decoder and real worker handler produce owned nonzero PCM 
     } finally { decoder.dispose(); }
   }
 });
+
+test('real software ELD preserves its codec signal across nineteen explicit NoData frames', async () => {
+  const value = config(), units = accessUnits(44100, 2, 480); units.shift();
+  async function render(silentFrames) {
+    const outputs = [], errors = [];
+    const decoder = createAirPlayAudioDecoder({ onPcm: output => { if (output.pcm.byteLength) outputs.push(output); },
+      onError: error => errors.push(error), AudioDecoder: null, EncodedAudioChunk: null,
+      softwareEldFactory: source => createSoftwareEldDecoder(source, { Worker: BrowserRealmWorker }) });
+    try {
+      decoder.debug(true); assert.equal(await decoder.configure(configuration(value, 7)), true);
+      for (let input = 0; input < 4; input++) {
+        if (input === 2) for (let silent = 0; silent < silentFrames; silent++)
+          assert.equal(await decoder.decode(packet([0, 0x68, 0x34, 0], input + silent, 7)), true);
+        const position = input + (input >= 2 ? silentFrames : 0);
+        assert.equal(await decoder.decode(packet(units[input], position, 7)), true);
+      }
+      assert.deepEqual(errors, []);
+      return { outputs, stats: decoder.stats() };
+    } finally { decoder.dispose(); }
+  }
+  const baseline = await render(0), silent = await render(19);
+  assert.equal(silent.outputs.length, 23);
+  for (let index = 0; index < 23; index++) {
+    const output = silent.outputs[index];
+    assert.equal(output.sequence, index); assert.equal(output.epoch, 7);
+    assert.equal(output.pcm.byteLength, 480 * 2 * 2);
+    assert.equal(output.decodeTimestampUs, 1e6 + index * 480e6 / 44100);
+    if (index >= 2 && index < 21) assert.ok(new Int16Array(output.pcm).every(sample => sample === 0));
+    else assert.deepEqual(new Uint8Array(output.pcm), new Uint8Array(baseline.outputs[index < 2 ? index : index - 19].pcm));
+  }
+  assert.equal(silent.stats.noDataPackets, 19); assert.equal(silent.stats.noDataFrames, 9120);
+  assert.equal(silent.stats.stream6.backend, 'software');
+});

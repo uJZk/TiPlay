@@ -1,5 +1,5 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
-import { AudioDeviceClock } from './audio-device-clock.js';
+import { AudioDeviceClock, MAX_RATE_ERROR } from './audio-device-clock.js';
 
 export const OUTPUT_REFERENCE_MAX_AGE_MS = 750;
 export const OUTPUT_EXTRAPOLATION_MAX_MS = 1000;
@@ -20,6 +20,22 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
   const rejected = reason => { outputUnavailableCount++; outputUnavailableReason = reason;
     unavailableCounts[reason] = (unavailableCounts[reason] || 0) + 1; };
   const unavailable = reason => { diagnostics.outputState = reason; rejected(reason); return null; };
+  function comparePairs(previous, next, quantumMs) {
+    const elapsedMs = next.performanceTimeMs - previous.performanceTimeMs;
+    const innovationMs = (next.contextTimeMs - previous.contextTimeMs) / deviceClock.rate - elapsedMs;
+    const withinSpan = Math.abs(elapsedMs) <= OUTPUT_REFERENCE_MAX_AGE_MS;
+    return { innovationMs, withinSpan, coherent: withinSpan
+      && Math.abs(innovationMs) <= quantumMs / deviceClock.rate + (deviceClock.uncertaintyMs || 0)
+        + Math.abs(elapsedMs) * MAX_RATE_ERROR };
+  }
+  function compatiblePhysicalRate(previous, next, quantumMs) {
+    const elapsedMs = next.performanceTimeMs - previous.performanceTimeMs;
+    // Reacquisition cannot assume the old oscillator still applies. Use the
+    // same permitted rate range as the fit, plus the existing measurement bound.
+    return elapsedMs > 0 && elapsedMs <= OUTPUT_REFERENCE_MAX_AGE_MS
+      && Math.abs(next.contextTimeMs - previous.contextTimeMs - elapsedMs)
+        <= quantumMs + (deviceClock.uncertaintyMs || 0) * deviceClock.rate + elapsedMs * MAX_RATE_ERROR;
+  }
 
   function capture(context) {
     const startedAt = now();
@@ -77,15 +93,14 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
       let innovationMs = 0;
       if (timestamp && timestamp.performanceTime > 0 && Number.isFinite(timestamp.contextTime)
         && Number.isFinite(timestamp.performanceTime)) {
-        const nativeDeltaMs = timeOrigin() + timestamp.performanceTime - previous.performanceTimeMs;
-        innovationMs = (timestamp.contextTime * 1000 - previous.contextTimeMs) / deviceClock.rate - nativeDeltaMs;
+        const relation = comparePairs(previous, { contextTimeMs: timestamp.contextTime * 1000,
+          performanceTimeMs: timeOrigin() + timestamp.performanceTime }, quantumMs);
+        innovationMs = relation.innovationMs;
         // Continuous rendering and unchanged latency attributes do not establish
         // an unchanged speaker pipeline. A contradictory native pair may be a
         // real latency step; only a nearby pair consistent with the old mapping
         // can justify holding it, with that disagreement reserved as uncertainty.
-        const innovationLimitMs = quantumMs / deviceClock.rate + (deviceClock.uncertaintyMs || 0)
-          + Math.abs(nativeDeltaMs) * .02;
-        if (Math.abs(nativeDeltaMs) > OUTPUT_REFERENCE_MAX_AGE_MS || Math.abs(innovationMs) > innovationLimitMs) {
+        if (!relation.coherent) {
           if (candidate) pendingTimestamp = candidate;
           return refuse();
         }
@@ -96,7 +111,7 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
         // Reserve a quantum, the measured fit dispersion, and worst-case 2%
         // rate error while this old, still bounded native anchor is held.
         uncertaintyMs: quantumMs / deviceClock.rate + (deviceClock.uncertaintyMs || 0)
-          + Math.max(0, age) * 0.02 + Math.abs(innovationMs),
+          + Math.max(0, age) * MAX_RATE_ERROR + Math.abs(innovationMs),
         deviceRate: deviceClock.rate, outputLatencyMs: Math.max(0, (rendered - previous.contextTimeMs) / deviceClock.rate - age) };
     };
     if (timestamp && Number.isFinite(timestamp.contextTime) && Number.isFinite(timestamp.performanceTime)) {
@@ -111,29 +126,53 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
         && age >= -20 && age <= OUTPUT_REFERENCE_MAX_AGE_MS && performanceTimeMs >= timestampNotBefore;
       const ordered = !previousTimestamp || (contextTimeMs >= previousTimestamp.contextTimeMs
         && performanceTimeMs >= previousTimestamp.performanceTimeMs);
-      // A real pipeline increase can leave several output positions below the
-      // old cursor. Two coherent fresh pairs establish that new mapping safely.
-      const pendingDeltaMs = pendingTimestamp ? performanceTimeMs - pendingTimestamp.performanceTimeMs : 0;
-      const recovered = fresh && !ordered && pendingTimestamp && pendingDeltaMs > 0
-        && pendingDeltaMs <= OUTPUT_REFERENCE_MAX_AGE_MS && contextTimeMs > pendingTimestamp.contextTimeMs
-        && Math.abs((contextTimeMs - pendingTimestamp.contextTimeMs) / deviceClock.rate - pendingDeltaMs)
-          <= quantumMs / deviceClock.rate + (deviceClock.uncertaintyMs || 0) + pendingDeltaMs * .02;
-      if (fresh && (ordered || recovered)) {
-        if (recovered) deviceClock.reset('output-step');
-        const moved = !previousTimestamp || contextTimeMs !== previousTimestamp.contextTimeMs
-          || performanceTimeMs !== previousTimestamp.performanceTimeMs;
+      const moved = !previousTimestamp || contextTimeMs !== previousTimestamp.contextTimeMs
+        || performanceTimeMs !== previousTimestamp.performanceTimeMs;
+      const candidate = { contextTimeMs, performanceTimeMs, at, rendered,
+        baseLatency: context.baseLatency, outputLatency: context.outputLatency };
+      const previousAgeMs = previousTimestamp ? at - previousTimestamp.performanceTimeMs : Infinity;
+      const previousFresh = previousAgeMs >= -20 && previousAgeMs <= OUTPUT_REFERENCE_MAX_AGE_MS;
+      let confirmed = false, outputStep = false;
+      if (fresh && pendingTimestamp) {
+        // A contradiction needs two new advancing samples, even when both
+        // coordinates happen to be ahead of the last trusted pair. Repeated
+        // snapshots cannot confirm a route or refresh its pending evidence.
+        const pendingAgeMs = at - pendingTimestamp.performanceTimeMs;
+        confirmed = moved && pendingTimestamp.performanceTimeMs > previousTimestamp.performanceTimeMs
+          && pendingAgeMs >= -20 && pendingAgeMs <= OUTPUT_REFERENCE_MAX_AGE_MS
+          && contextTimeMs > pendingTimestamp.contextTimeMs && performanceTimeMs > pendingTimestamp.performanceTimeMs
+          && compatiblePhysicalRate(pendingTimestamp, candidate, quantumMs);
+        if (!confirmed) {
+          if (moved && performanceTimeMs > previousTimestamp.performanceTimeMs
+            && performanceTimeMs > pendingTimestamp.performanceTimeMs)
+            pendingTimestamp = candidate;
+          return unavailable('timestamp-discontinuity');
+        }
+        // A confirmed new rate must retire an incompatible old oscillator fit,
+        // including after reference expiry. Expiry alone is not a rate change.
+        const previousRelation = comparePairs(previousTimestamp, candidate, quantumMs);
+        outputStep = !comparePairs(pendingTimestamp, candidate, quantumMs).coherent
+          || previousFresh && previousRelation.withinSpan && !previousRelation.coherent;
+      } else if (fresh && ordered && moved && previousTimestamp
+        && (!previousFresh || !comparePairs(previousTimestamp, candidate, quantumMs).coherent)) {
+        pendingTimestamp = candidate;
+        return unavailable('timestamp-discontinuity');
+      }
+      // A real pipeline increase can put both new output samples below the old
+      // counter. Their own coherent advance establishes that changed mapping.
+      if (fresh && (ordered || confirmed)) {
+        if (outputStep) deviceClock.reset('output-step');
         if (!moved) return holdover();
         diagnostics.outputState = 'timestamp';
         deviceClock.observe(contextTimeMs, performanceTimeMs, at);
-        if (moved) previousTimestamp = { contextTimeMs, performanceTimeMs, at, rendered,
-          baseLatency: context.baseLatency, outputLatency: context.outputLatency };
+        previousTimestamp = candidate;
         pendingTimestamp = null;
         return { contextTimeMs, performanceTimeMs, at, outputMethod: 'timestamp', uncertaintyMs: 0,
           deviceRate: deviceClock.rate, outputLatencyMs: Math.max(0, (rendered - contextTimeMs) / deviceClock.rate) };
       }
       if (previousTimestamp) {
         return holdover(!ordered ? 'timestamp-backwards' : age > OUTPUT_REFERENCE_MAX_AGE_MS ? 'timestamp-stale' : 'timestamp-invalid',
-          fresh ? { contextTimeMs, performanceTimeMs } : null);
+          fresh && performanceTimeMs > previousTimestamp.performanceTimeMs ? { contextTimeMs, performanceTimeMs } : null);
       }
     }
     if (previousTimestamp) return holdover('timestamp-invalid');

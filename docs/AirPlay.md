@@ -98,6 +98,18 @@ preserve stream epochs. Missing synchronization is explicit arrival-playback fal
 not source synchronization. Resize scales the current mirror; new dimensions apply
 at the next SETUP. Keepalive tuning is not a recovery-time guarantee.
 
+AAC mirror NoData access units occupy the negotiated number of source samples.
+They pass through the same RTP ordering, duplicate rejection, retransmission and
+FLUSH boundaries as other audio; dropping them before ordering creates false gaps.
+The browser recognizes the exact marker only for mirrored AAC-LC/ELD and emits
+the negotiated frame length as zero PCM in source order. These are explicit silence
+samples, not evidence of network loss or a measurement of physical output.
+Native AAC output consumes a bounded queue of submitted source-sample spans;
+callbacks may split/merge samples or compact timestamps across silence. Source
+coordinates come from those spans. NoData submission does not block later encoded
+input and does not flush/reset codec overlap state. Only silence blocked by missing
+earlier output starts the 2-second failure timer; new silence does not extend it.
+
 An externally revoked display can still replace the browser decoder epoch. Ordinary
 mirroring has no confirmed sender keyframe-request implementation, so the local
 recovery callback cannot guarantee a new independently decodable frame. Continuing
@@ -152,7 +164,7 @@ one total-memory or total-GPU limit:
 | 2 seconds | Video media-time lookahead checked before another sink read; sample granularity can cross the threshold. |
 | 3 seconds | Audio media-time lookahead checked before another sink read; an admitted packet can cross the threshold. A single decoded audio packet longer than three seconds is rejected. |
 | 12 MiB | Decoded PCM queue admission threshold checked before the next audio read, not a total PCM hard limit. An admitted packet or tempo output can append in full and cross it; incoming packets, processing and scheduled Web Audio copies are separate. |
-| 16 MiB | Mediabunny's configured compressed resource cache; it does not measure decoder surfaces or all browser network storage. |
+| 16 MiB | Mediabunny raw-byte cache eviction threshold. It can retain the one entry crossing this soft threshold; it does not measure decoder surfaces or all browser network storage. |
 | 256 KiB | Ordinary serialized resource-read unit, not a complete-file size limit. Playlists and resource probes have their own bounds. |
 
 Read admission includes the retained picture and anticipates a replacement rather
@@ -199,6 +211,14 @@ queue cleanup alone does not establish that all samples or vendor surfaces were 
 Authenticated resources validate browser/playback/resource identity, preserve Range,
 stream media and rewrite bounded HLS manifests/children/keys. Current-iPhone resources
 may redirect directly, with authorized proxy fallback for failed CORS/reachability. Debug mode forces all media through Android, including nested playlists and redirects, and updates the browser directive so active playback reopens on the new route.
+Inline `data:` resources are decoded locally after playback/resource validation;
+they never enter the serialized iPhone loader. Percent escapes preserve literal `+`,
+Base64 and MIME/charset metadata are validated, and decoded content is limited to
+the existing 2 MiB playlist/metadata budget. Ordinary byte resources retain Range/416
+semantics. Malformed or oversized inline resources fail explicitly without FCUP fallback.
+This prevents embedded subtitle URLs from delaying unrelated media requests; it
+does not change HTTP/FCUP deadlines or establish that a sender/CDN is reachable.
+
 Neither makes an unreachable sender reachable. FCUP serializes exchanges with
 session/peer/URL/request-ID checks; acknowledgement is not resource completion.
 When Android HTTP fails and FCUP successfully serves the same resource, the current

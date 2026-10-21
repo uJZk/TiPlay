@@ -6,6 +6,179 @@ import { audibleTime, createAudioOutputMapping, createAudioReferenceTimeline, OU
 const feedback = (extra = {}) => ({ mode: 'carplay', type: 0, epoch: 1, generation: 1, sequence: 1,
   state: 'playing', sourceTimeMs: 400000, contextTimeMs: 10000, mediaRate: 1, filterDelayMs: 17, ...extra });
 
+function nativeOutput({ rate = 1 } = {}) {
+  const origin = 1000000;
+  let elapsed = 10000, timestamp;
+  const mapping = createAudioOutputMapping({ now: () => origin + elapsed, timeOrigin: () => origin });
+  const context = { state: 'running', currentTime: 10 * rate, sampleRate: 48000,
+    baseLatency: .012, outputLatency: .188, getOutputTimestamp: () => timestamp };
+  const sample = (at, { latencyMs = 200, contextOffsetMs = 0, pair } = {}) => {
+    elapsed = at; context.currentTime = at * rate / 1000;
+    timestamp = pair ?? { contextTime: ((at - latencyMs) * rate + contextOffsetMs) / 1000, performanceTime: at };
+    return mapping.capture(context);
+  };
+  return { mapping, context, sample, pair: () => timestamp };
+}
+
+test('an isolated ordered native pair cannot jump the mapping or train the device fit', () => {
+  for (const contextOffsetMs of [-38, 38]) {
+    const h = nativeOutput();
+    h.sample(10000);
+    const fit = h.mapping.deviceClock();
+    assert.equal(h.sample(10040, { contextOffsetMs }), null, 'both coordinates advance, but their relation contradicts the output line');
+    assert.equal(h.mapping.diagnostics().outputUnavailableReason, 'timestamp-discontinuity');
+    assert.equal(h.mapping.deviceClock().points, fit.points, 'a suspect pair cannot enter the oscillator history');
+    assert.equal(h.mapping.deviceClock().generation, fit.generation);
+    const pending = h.mapping.diagnostics();
+    for (let i = 0; i < 20; i++) { h.mapping.diagnostics(); h.mapping.deviceClock(); }
+    assert.deepEqual(h.mapping.diagnostics(), pending, 'metadata reads cannot confirm or refresh pending measurements');
+    assert.equal(h.sample(10080), null, 'one normal point cannot confirm an incompatible pending point');
+    assert.equal(h.mapping.deviceClock().points, fit.points);
+    const restored = h.sample(10120);
+    assert.equal(restored.outputMethod, 'timestamp');
+    assert.ok(Math.abs(restored.outputLatencyMs - 200) < 1e-8);
+    assert.equal(restored.uncertaintyMs, 0, 'recovery does not enlarge uncertainty to hide an offset');
+    assert.equal(h.mapping.deviceClock().generation, fit.generation, 'return to the trusted line does not reset its fit');
+  }
+});
+
+test('two coherent new native pairs establish real pipeline changes in either direction', () => {
+  for (const latencyMs of [162, 238, 460]) {
+    const h = nativeOutput();
+    h.sample(10000);
+    const generation = h.mapping.deviceClock().generation;
+    assert.equal(h.sample(10040, { latencyMs }), null);
+    const changed = h.sample(10080, { latencyMs });
+    assert.equal(changed.outputMethod, 'timestamp');
+    assert.ok(Math.abs(changed.outputLatencyMs - latencyMs) < 1e-8);
+    assert.equal(changed.uncertaintyMs, 0);
+    assert.equal(h.mapping.deviceClock().generation, generation + 1);
+    assert.equal(h.mapping.deviceClock().reason, 'output-step');
+    assert.equal(h.mapping.deviceClock().points, 1, 'the changed phase cannot mix with old oscillator observations');
+  }
+});
+
+test('old or repeated pending pairs cannot confirm a changed pipeline or replace its first new point', () => {
+  const h = nativeOutput();
+  h.sample(10000); const old = h.pair();
+  assert.equal(h.sample(10040, { latencyMs: 460 }), null); const firstNew = h.pair();
+  assert.equal(h.sample(10050, { pair: old }), null);
+  assert.equal(h.sample(10060, { pair: firstNew }), null);
+  const changed = h.sample(10080, { latencyMs: 460 });
+  assert.equal(changed.outputMethod, 'timestamp', 'the second advancing point confirms a route still below the old output counter');
+  assert.ok(Math.abs(changed.outputLatencyMs - 460) < 1e-8);
+});
+
+test('reordered historical pairs cannot erase a newer pipeline contradiction', () => {
+  const h = nativeOutput();
+  h.sample(10000);
+  const generation = h.mapping.deviceClock().generation;
+  assert.equal(h.sample(10080, { latencyMs: 460 }), null);
+  for (const performanceTime of [10040, 10060]) {
+    const pair = { contextTime: (performanceTime - 200) / 1000, performanceTime };
+    assert.equal(h.sample(10090, { pair }), null, 'two different old snapshots cannot revive the contradicted old line');
+    assert.equal(h.mapping.deviceClock().generation, generation);
+    assert.equal(h.mapping.deviceClock().points, 1);
+  }
+  const changed = h.sample(10120, { latencyMs: 460 });
+  assert.equal(changed.outputMethod, 'timestamp', 'the genuine second new point still confirms the retained first new point');
+  assert.ok(Math.abs(changed.outputLatencyMs - 460) < 1e-8);
+  assert.equal(h.mapping.deviceClock().generation, generation + 1);
+});
+
+test('two coherent historical pairs before the trusted point cannot establish a new route', () => {
+  const h = nativeOutput();
+  h.sample(10000);
+  const generation = h.mapping.deviceClock().generation;
+  assert.equal(h.sample(10040, { pair: { contextTime: 9.700, performanceTime: 9980 } }), null);
+  assert.equal(h.sample(10080, { pair: { contextTime: 9.710, performanceTime: 9990 } }), null);
+  assert.equal(h.mapping.deviceClock().generation, generation);
+  assert.equal(h.mapping.deviceClock().points, 1);
+  assert.equal(h.sample(10120).outputMethod, 'timestamp', 'historical contradictions cannot retire a still coherent trusted line');
+});
+
+test('two fresh physical pairs reacquire an oscillator switch between opposite permitted rates', () => {
+  for (const interval of [200, 500]) for (const [firstRate, nextRate] of [[.98, 1.02], [1.02, .98]]) {
+    const origin = 1000000;
+    let at = 0, timestamp;
+    const mapping = createAudioOutputMapping({ now: () => origin + at, timeOrigin: () => origin });
+    const context = { state: 'running', currentTime: 0, sampleRate: 48000,
+      getOutputTimestamp: () => timestamp };
+    const counter = time => time <= 60000 ? time * firstRate : 60000 * firstRate + (time - 60000) * nextRate;
+    const sample = time => {
+      at = time;
+      context.currentTime = counter(at) / 1000;
+      timestamp = { contextTime: counter(at - 200) / 1000, performanceTime: at };
+      return mapping.capture(context);
+    };
+    for (let time = 1000; time <= 60000; time += 200) sample(time);
+    const fitted = mapping.deviceClock();
+    assert.ok(Math.abs(fitted.rate - firstRate) < 1e-8);
+    assert.equal(sample(60000 + interval)?.outputMethod, 'timestamp', 'the native output counter follows the continuous device clock through the existing 200ms pipeline');
+    assert.equal(sample(60000 + 2 * interval), null);
+    const next = sample(60000 + 3 * interval);
+    assert.equal(next?.outputMethod, 'timestamp', 'two physical advancing pairs must not stay pending because the old rate is obsolete');
+    assert.equal(next.uncertaintyMs, 0);
+    assert.equal(mapping.deviceClock().generation, fitted.generation + 1);
+    assert.equal(mapping.deviceClock().reason, 'output-step');
+    for (let time = 60000 + 4 * interval; time <= 60000 + 14 * interval; time += interval)
+      assert.equal(sample(time)?.outputMethod, 'timestamp');
+  }
+});
+
+test('incoherent forward candidates stay unknown and cannot revive an expired trusted output line', () => {
+  const h = nativeOutput();
+  h.sample(10000);
+  for (let at = 10040, offset = -38; at <= 10880; at += 40, offset = -offset)
+    assert.equal(h.sample(at, { contextOffsetMs: offset }), null);
+  assert.equal(h.sample(10920), null);
+  const restored = h.sample(10960);
+  assert.equal(restored.outputMethod, 'timestamp');
+  assert.ok(Math.abs(restored.outputLatencyMs - 200) < 1e-8);
+});
+
+test('reference expiry and oscillator-fit expiry remain different boundaries', () => {
+  const h = nativeOutput({ rate: .988 });
+  for (let at = 1000; at <= 30000; at += 100) h.sample(at);
+  const fitted = h.mapping.deviceClock();
+  assert.ok(Math.abs(fitted.rate - .988) < 1e-8);
+  assert.equal(h.sample(30800), null, 'an expired reference cannot be restored by one new sample');
+  assert.equal(h.sample(30840).outputMethod, 'timestamp');
+  assert.equal(h.mapping.deviceClock().generation, fitted.generation, '750ms reference expiry cannot force the oscillator to nominal');
+  assert.ok(Math.abs(h.mapping.deviceClock().rate - .988) < 1e-8);
+  assert.equal(h.sample(32000), null);
+  assert.equal(h.sample(32040).outputMethod, 'timestamp');
+  assert.equal(h.mapping.deviceClock().reason, 'gap', 'a real >1000ms observation gap follows the existing fit reset');
+  assert.equal(h.mapping.deviceClock().generation, fitted.generation + 1);
+});
+
+test('suspend and replacement contexts retire pending native measurements', () => {
+  const h = nativeOutput();
+  h.sample(10000); assert.equal(h.sample(10040, { contextOffsetMs: -38 }), null);
+  h.context.state = 'suspended'; assert.equal(h.mapping.capture(h.context), null);
+  h.context.state = 'running'; assert.equal(h.sample(10080).outputMethod, 'timestamp');
+  assert.equal(h.sample(10120, { contextOffsetMs: -38 }), null);
+  const replacement = { ...h.context };
+  assert.equal(h.mapping.capture(replacement).outputMethod, 'timestamp', 'a different context does not inherit the old pending measurement');
+  assert.equal(h.mapping.deviceClock().reason, 'context');
+});
+
+test('mapping acquires bounded oscillator drift through native quantum rounding and timestamp jitter', () => {
+  for (const rate of [.988, .996, 1, 1.004, 1.019]) {
+    const h = nativeOutput({ rate }), quantum = 128 / 48;
+    let accepted = 0, unavailable = 0;
+    for (let at = 1000; at <= 45000; at += 40) {
+      const performanceTime = Math.round(at + .7 * Math.sin(at * .37));
+      const contextTime = Math.floor((at - 200) * rate / quantum) * quantum / 1000;
+      if (h.sample(at, { pair: { contextTime, performanceTime } })) accepted++; else unavailable++;
+    }
+    const fit = h.mapping.deviceClock();
+    assert.ok(accepted > 1000, `${rate}: output mapping must not remain pending (${accepted}/${unavailable})`);
+    assert.ok(Math.abs(fit.rate - rate) < .00006, `${rate}: ${fit.rate}`);
+    assert.ok(fit.confidence > .3);
+  }
+});
+
 test('device fit age uses the absolute observation clock and grows without recapturing output', () => {
   const origin = 1700000000000;
   let at = origin;

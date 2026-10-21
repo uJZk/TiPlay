@@ -29,7 +29,10 @@ export class ContinuousAudio {
     this.sourceDeadlineReason = 'no-output';
     this.sourceDeadlineRejectedFrames = 0;
   }
-  debug(enabled) { this.counters = enabled ? { capacityPackets: 0, latePackets: 0, duplicatePackets: 0, playedPackets: 0, resetPackets: 0, invalidPackets: 0, rebufferCount: 0 } : null; }
+  debug(enabled) {
+    this.counters = enabled ? { capacityPackets: 0, latePackets: 0, duplicatePackets: 0, playedPackets: 0, resetPackets: 0, invalidPackets: 0, rebufferCount: 0 } : null;
+    this.sourceClock.debug(enabled);
+  }
   retire(packet, reason) {
     this.bytes -= packet.pcm.byteLength; this.sequences.delete(packet.sequence);
     if (this.counters) this.counters[reason + 'Packets']++;
@@ -60,7 +63,7 @@ export class ContinuousAudio {
     if (this.lastPacket && !this.queue.includes(this.lastPacket)) this.lastPacket.presentationMs += offset;
     // Provisional presentation times cannot train the real source oscillator.
     // Arrival-based CarPlay guidance keeps its independent measured oscillator.
-    if (!this.sourceClock.arrival) this.sourceClock = new AudioSourceClock(this.rate);
+    if (!this.sourceClock.arrival) { this.sourceClock = new AudioSourceClock(this.rate); this.sourceClock.debug(Boolean(this.counters)); }
     // No source-age proof exists for copies of the previously untimed output.
     // Retain the live filter/sample cursor, but never blend that old tail into
     // a quantum whose source deadline is now verifiable.
@@ -68,7 +71,7 @@ export class ContinuousAudio {
     this.arrivalPlayback = false; this.synchronized = true;
     return true;
   }
-  push(data, browserRate = 1) {
+  push(data, browserRate = 1, observedContextMs = null) {
     const pcm = new Int16Array(data.pcm), frames = pcm.length / this.channels;
     if (!frames) return;
     if (!Number.isInteger(frames) || frames * 1000 / this.rate > MAX_PCM_PACKET_MS) { this.reject(pcm.byteLength, 'invalid', data.generation); return; }
@@ -105,7 +108,7 @@ export class ContinuousAudio {
     this.queue.push(packet); this.sequences.add(packet.sequence); this.bytes += pcm.byteLength;
     this.queue.sort((a, b) => a.first - b.first);
     this.lastPacket = packet;
-    if (!this.buffered) this.sourceClock.observe(first, this.sourceClock.arrival ? data.arrivalLocalTimeMs : data.presentationMs, browserRate);
+    if (!this.buffered) this.sourceClock.observe(first, this.sourceClock.arrival ? data.arrivalLocalTimeMs : data.presentationMs, browserRate, observedContextMs);
     while (this.queue.length > MAX_TIMELINE_PACKETS || this.bytes > MAX_AUDIO_AHEAD_BYTES || (this.queue.length > 1 && (this.queue.at(-1).end - this.queue[0].first) * 1000 / this.rate > this.maximumMs)) {
       this.retire(this.buffered ? this.queue.pop() : this.queue.shift(), 'capacity');
     }
@@ -278,9 +281,15 @@ export class ContinuousAudio {
       sourceRatePpm: (this.sourceClock.rate - 1) * 1e6, sourceRateConfidence: this.sourceClock.confidence };
   }
   stats() {
+    const source = this.counters ? this.sourceClock.snapshot(this.lastContextTimeMs) : null;
     return { ...this.counters, queueBytes: this.bytes, queuePackets: this.queue.length,
       headMs: this.queue.length ? this.sourceAnchorMs + this.queue[0].first * 1000 / this.rate : null,
       tailMs: this.queue.length ? this.sourceAnchorMs + this.queue.at(-1).end * 1000 / this.rate : null,
-      playbackMs: this.rawCursorMs, outputFrames: this.outputFrames, state: this.state, ...this.reference(this.lastContextTimeMs) };
+      playbackMs: this.rawCursorMs, outputFrames: this.outputFrames, state: this.state, ...this.reference(this.lastContextTimeMs),
+      ...(source ? { sourceClockFitStatus: this.buffered ? 'disabled' : source.status,
+        sourceClockFitRejectReason: this.buffered ? 'buffered-prefetch' : source.reason,
+        sourceClockPoints: source.points, sourceClockSpanMs: source.spanMs, sourceClockFitRejected: source.rejected,
+        ...(Number.isFinite(source.dispersionMs) ? { sourceClockDispersionMs: source.dispersionMs } : {}),
+        ...(Number.isFinite(source.acceptedFitAgeMs) ? { sourceClockAcceptedFitAgeMs: source.acceptedFitAgeMs } : {}) } : {}) };
   }
 }

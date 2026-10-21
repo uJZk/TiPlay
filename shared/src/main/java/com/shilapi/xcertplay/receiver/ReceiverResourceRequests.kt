@@ -11,12 +11,24 @@ internal class ReceiverResourceRequests(
     private val maximumPending: Int = 16,
     private val exchangeTimeoutNanos: Long = TimeUnit.SECONDS.toNanos(10),
     private val nowNanos: () -> Long = System::nanoTime,
+    private val onDeadline: ((DeadlineEvidence) -> Unit)? = null,
 ) {
     class Pending(val id: Long, val session: String, val peer: InetAddress, val url: String, val range: String?,
-                  val startedNanos: Long) {
+                  val startedNanos: Long, val ownerGeneration: Long? = null) {
         val future = CompletableFuture<ReceiverResource?>()
     }
     data class Acquisition(val pending: Pending, val created: Boolean)
+    enum class Phase { QUEUED, EXCHANGE }
+    enum class Deadline { OVERALL, EXCHANGE }
+    data class DeadlineEvidence(val request: Long, val ownerGeneration: Long?, val phase: Phase,
+                                val limitingDeadline: Deadline, val due: Boolean,
+                                val queueMillis: Long, val exchangeMillis: Long?, val overallMillis: Long,
+                                val overallLimitMillis: Long, val exchangeLimitMillis: Long) {
+        fun line(): String = "resource stage=FCUP_DEADLINE request=$request owner=${ownerGeneration ?: "UNKNOWN"} " +
+            "phase=$phase limitingDeadline=$limitingDeadline due=$due queueMs=$queueMillis " +
+            "exchangeMs=${exchangeMillis ?: "NONE"} overallMs=$overallMillis " +
+            "overallLimitMs=$overallLimitMillis exchangeLimitMs=$exchangeLimitMillis"
+    }
 
     private val requests = linkedMapOf<Long, Pending>()
     private val dispatched = hashMapOf<Long, Long>()
@@ -24,7 +36,8 @@ internal class ReceiverResourceRequests(
 
     init { require(timeoutNanos > 0 && maximumPending > 0 && exchangeTimeoutNanos > 0) }
 
-    @Synchronized fun acquire(session: String, peer: InetAddress, url: String, range: String? = null): Acquisition? {
+    @Synchronized fun acquire(session: String, peer: InetAddress, url: String, range: String? = null,
+                              ownerGeneration: Long? = null): Acquisition? {
         require(range == null || ReceiverResource.byteRange.matches(range))
         // Sharing applies only to concurrent in-flight loads. A completed live playlist is never a cache.
         requests.values.filter { it.future.isDone || remainingNanos(it) == 0L }.forEach {
@@ -34,7 +47,7 @@ internal class ReceiverResourceRequests(
             return Acquisition(it, false)
         }
         if (requests.size >= maximumPending) return null
-        val pending = Pending(++nextId, session, peer, url, range, nowNanos())
+        val pending = Pending(++nextId, session, peer, url, range, nowNanos(), ownerGeneration)
         requests[pending.id] = pending
         return Acquisition(pending, true)
     }
@@ -80,8 +93,23 @@ internal class ReceiverResourceRequests(
 
     @Synchronized fun expire(pending: Pending) {
         if (requests.remove(pending.id, pending)) {
-            dispatched.remove(pending.id)
+            val sent = dispatched.remove(pending.id)
+            val evidence = if (onDeadline == null) null else {
+                val now = nowNanos()
+                val overall = (now - pending.startedNanos).coerceAtLeast(0)
+                val exchange = sent?.let { (now - it).coerceAtLeast(0) }
+                val limiting = if (exchange != null && exchangeTimeoutNanos - exchange < timeoutNanos - overall)
+                    Deadline.EXCHANGE else Deadline.OVERALL
+                DeadlineEvidence(pending.id, pending.ownerGeneration,
+                    if (sent == null) Phase.QUEUED else Phase.EXCHANGE, limiting,
+                    overall >= timeoutNanos || exchange?.let { it >= exchangeTimeoutNanos } == true,
+                    ((sent ?: now) - pending.startedNanos).coerceAtLeast(0) / 1_000_000,
+                    exchange?.div(1_000_000), overall / 1_000_000,
+                    timeoutNanos / 1_000_000, exchangeTimeoutNanos / 1_000_000)
+            }
             pending.future.completeExceptionally(TimeoutException())
+            // State is already retired; a failing or reentrant logger cannot strand the queue.
+            if (evidence != null) runCatching { onDeadline?.invoke(evidence) }
         }
     }
 

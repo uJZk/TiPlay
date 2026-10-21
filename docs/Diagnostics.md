@@ -118,6 +118,35 @@ their recorded anchors. A small phase correction must not be classified as a new
 Source-supply rate inferred from realtime ingress is weaker evidence than a sender timing
 anchor, especially when network queuing changes slowly.
 
+Per-stream source-fit evidence now separates acquiring, tracking, holdover and disabled
+states, with a fixed rejection reason, point count, source span, last measured MAD and
+Debug-interval rejection count. Insufficient span/points/pairs, excessive noise and
+out-of-range rate are distinct; buffered prefetch explicitly disables arrival fitting.
+Accepted-fit age uses the render-context clock and is omitted until an acceptance has
+been observed in that domain. Missing values remain unknown. Source MAD and device-fit
+uncertainty retain six decimal places in milliseconds through browser packing and TXT;
+this is printing precision, not nanosecond measurement accuracy. Other numeric precision,
+the 16 KiB/256-field budget and reporting frequency remain unchanged. Bounded packing
+prioritizes per-stream fit identity/reason before optional detail and reports omissions.
+
+`renderQuantumFrames` and its observed minimum/maximum describe actual output blocks
+while Debug is active. They do not change the mapper's current 128-frame assumption;
+cross-browser conservatism still requires the [parameter checks](Todo.md#playback-parameter-evidence).
+Buffered music logs `stage=ANCHOR` at valid SETRATE and `stage=CLOCK` at actual clock
+delivery. The local owner and native generation are separate from browser epochs.
+Requested/selected RTP, receiver network NTP, monotonic anchor, one-time reserve,
+mapping/fallback method and relay lead support correlation without per-packet logging.
+
+Resource `HTTP_FAILURE` records CONNECT, RESPONSE_HEADERS or RESPONSE_BODY, elapsed
+time in that API-call stage, configured connect/read limits, bounded exception types
+and whether the cause chain reports a socket timeout. A configured limit does not prove
+which OS timer fired. `FCUP_DEADLINE` separates queued and dispatched requests, queue,
+exchange and overall ages, and the limiting exchange/overall deadline. Its request ID
+and acquisition-time playback owner must not be retagged to a successor. Request IDs
+and proxy load IDs are distinct scopes. Healthy reads/dispatches add no extra events;
+logger failures cannot interrupt media cleanup or queue progress. These fields contain
+no resource URLs, response bodies or arbitrary exception messages.
+
 Device/context rate is recorded separately from Android/browser and source rates, with
 its target, confidence and reset generation. Resampling and phase correction use explicit
 ppm fields so small corrections remain visible after numeric formatting. Output evidence
@@ -138,6 +167,18 @@ Audio snapshots repeat their stage in bounded lines so the metadata redactor's l
 cannot silently remove output-clock fields near the end of a full snapshot.
 Unavailable-reason counters distinguish suspended contexts, stale/backward/invalid pairs,
 missing or unbounded fallback latency, invalid feedback and excessive extrapolation.
+`timestamp-discontinuity` records a fresh native pair contradicting the trusted output
+mapping. A single ordered pair cannot establish a pipeline step: confirmation requires
+new, coherent, advancing pairs, and pending evidence leaves the output reference unknown.
+Neither repeated snapshots nor reordered historical pairs refresh that evidence.
+
+Native snapshots preserve every production recovery reason (`clock-step`, `underrun`,
+`source-deadline`, `network-buffer`, `device-clock-jump`, `clock-generation`,
+`suspended`, `sender-deadline`) and `rebufferCount`. Missing fields remain unknown;
+old TXT allowlists omitted some reasons even when the raw browser report contained them.
+Decoder `noDataPackets`/`noDataFrames`, globally and per stream, count explicitly
+synthesized mirror silence, not lost packets or measured speaker output. No new raw
+PCM collection or per-packet logging is needed for these counters.
 
 Audio output references remain active in Standard mode; Debug controls detailed
 collection only. Video records reference availability and audio/video skew while
@@ -347,7 +388,32 @@ zero decode errors/stalls do not establish a hardware-decoder failure. Capture
 timestamps mark Android worker processing, not browser transmission, and the old
 capture lacks queue-wait, raw-write and callback-duration attribution.
 
+The beta.9/v75 raw session provides a different live-audio case. An active CarPlay
+touch window overlaps a recovered phase step near +38 ms, despite a populated audio
+queue and unchanged 20 ms audio network target. Other touch windows do not show the
+same recovery. Synthetic production-worklet controls reproduce a single ordered
+output-timestamp outlier causing two clock recoveries; this establishes a software
+failure path, not that every reported click has that cause. Getter duration and
+worklet render-report age must remain separate from main-thread-stall evidence.
+
+Mirror packet reconciliation distinguishes 2,504 ordinary units and 297 NoData
+units in a continuous 2,801-unit RTP sequence. The former NoData filter discarded
+known silence before ordering: a run of 19 units created a 206.8 ms sample hole and
+unnecessary retransmission, with each unit observed in three resend responses and
+filtered again. Outbound resend requests were not captured, so response counts are
+not measured request counts. Reliable browser record sequences remained continuous;
+they did not prove AAC sample continuity. Preserve source sample coordinates and
+explicit silence counts when interpreting subsequent underruns and deadline rejects.
+
 ## AirPlay URL playback evidence
+
+MiniBili startup in the beta.9 capture reached normal CDN 206 responses; retained
+UA/Referer handling was not shown failing. A 123,248-byte embedded WebVTT resource
+was instead sent as a roughly 164k-character `data:` URL to the serial FCUP loader,
+received no response, and delayed later resources through repeated 10-second waits.
+The local inline-data route avoids that exchange and reports `INLINE_DATA` with
+existing resource status/failure categories. This evidence does not establish CDN
+risk control, an iPhone URL-size threshold, or successful playback on every resource.
 
 URL casting has its own media engine and AudioContext. CarPlay/mirror audio telemetry
 does not establish that this context is running. Compare playback ID, command revision

@@ -36,6 +36,14 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   screenshot provenance and documentation-only verification boundaries.
 - [Latest documentation sweep](docs/docs-sweep-2026-10-15/README.md).
 
+Resume CarPlay/AirPlay parameter work at the [parameter evidence checklist](docs/Todo.md#playback-parameter-evidence)
+and [roadmap evidence table](docs/WebRTC-roadmap.md#参数核验与调优边界). Read
+[Diagnostics](docs/Diagnostics.md) for fit/noise/age, render-quantum, anchor and resource-stage
+evidence, [Testing](docs/Testing.md#webrtc-integrated-acceptance) for software verification,
+and [Build](docs/Build.md#beta-release) for the actual published APK/page source. Keep
+unrun boundaries, proved behavior and vehicle tuning separate; an observed software
+timestamp does not establish speaker/panel timing.
+
 ## Checks
 
 Run the CI command from .github/workflows/android.yml before reporting a change as done:

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AudioDeviceClock } from '../../site/play/audio-device-clock.js';
+import { AudioDeviceClock, MAX_RATE_ERROR } from '../../site/play/audio-device-clock.js';
 
 function measure(clock, rate, start, end, { quantum = 128 / 48, jitter = 0 } = {}) {
   for (let ms = start; ms <= end; ms += 40) {
@@ -19,6 +19,27 @@ test('independent output clock acquires both drift signs through timestamp quant
     assert.ok(clock.confidence > 0.3);
     assert.ok(clock.points.length <= 161);
     assert.equal(clock.generation, 1, 'sample quantization does not reset the output timeline');
+  }
+});
+
+test('the permitted oscillator endpoints are inclusive and truly out-of-range rates remain rejected', () => {
+  for (const rate of [1 - MAX_RATE_ERROR, 1 + MAX_RATE_ERROR]) {
+    const clock = new AudioDeviceClock();
+    for (let ms = 0; ms <= 60000; ms += 100) clock.observe(ms * rate, 1000000 + ms, 1000000 + ms);
+    const snapshot = clock.snapshot(1060000);
+    assert.equal(snapshot.fitStatus, 'tracking');
+    assert.equal(snapshot.fitRejectReason, 'none');
+    assert.equal(snapshot.fitRejected, 0, 'subtracting one must not move an inclusive endpoint outside its own range');
+    assert.ok(Math.abs(clock.rate - rate) < 1e-12);
+  }
+  for (const rate of [1 - MAX_RATE_ERROR - .000001, 1 + MAX_RATE_ERROR + .000001]) {
+    const clock = new AudioDeviceClock();
+    for (let ms = 0; ms <= 60000; ms += 100) clock.observe(ms * rate, 1000000 + ms, 1000000 + ms);
+    const snapshot = clock.snapshot(1060000);
+    assert.equal(snapshot.fitStatus, 'acquiring');
+    assert.equal(snapshot.fitRejectReason, 'out-of-range');
+    assert.ok(snapshot.fitRejected > 0);
+    assert.equal(clock.rate, 1);
   }
 });
 

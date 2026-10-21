@@ -97,11 +97,12 @@ also captures a real AudioContext through an independent AudioWorklet while the
 main thread deliberately stalls. Both 44.1/48 kHz runs retained sample order with
 no signal errors, and rendered silence agreed with the bounded scheduling evidence.
 This capture is before the OS/device output stage and does not prove speaker output.
-The user clarified that the remaining steady-playback clicks concern CarPlay. URL
+The earlier user clarification assigned those steady-playback clicks to CarPlay. URL
 signal checks and healthy YouTube windows cannot exclude faults in that independent
-live-audio path.
+live-audio path. The later beta.9 report also includes mirror clicks and a higher
+CarPlay click frequency during touch; both require physical retesting.
 
-The current follow-up source passed 604 browser tests, 82 scoped Android tests in
+The published beta.9 source passed 604 browser tests, 82 scoped Android tests in
 seven classes and the mobile debug build. The Android cases cover resource-route
 reuse/revocation, redirects and partial manifests, bounded startup/continuity
 diagnostics, device-fit/source-anchor evidence and the audio/video diagnostic
@@ -136,6 +137,35 @@ Use a source cadence with continuous motion when measuring stutter: static pictu
 updates can have long PTS intervals without dropped frames. Compare target and actual
 cursor delay during convergence, and retain unknown source/output timing instead of
 calling every missing anchor a passed latency measurement.
+
+The beta.10/v76 source passed 643 browser tests, 158 scoped Android tests in 13 classes
+and the mobile debug build. Native cases additionally cover fixed source-fit/quantum
+fields, six-place MAD printing, one-time 400 ms SETRATE anchors, HTTP failure phases
+and FCUP deadline ownership/logger isolation. Source/quantum Debug collection and
+diagnostic observation preserve real Soxr PCM and recovery decisions. Full Android CI
+remains skipped at the user's request. The final v76 release source passed 90
+complete-page checks with the explicit desktop software decoder override and real
+AAC/ELD, shared media-clock and MP4/HLS harnesses. Shared-clock source hashes remained
+unchanged throughout the run; hardware paths were explicitly unavailable on this desktop.
+The follow-up preserves exact AAC signal continuity across 19 mirror
+NoData units in real Chromium: native AAC-LC and Worker software ELD both resume with
+zero PCM difference from their uninterrupted baseline. Source timestamps cover the
+inserted samples continuously; callback timestamps may compact gaps or clamp a
+negative initial timestamp and are not substituted for RTP sample coordinates.
+The production worklet/Soxr regression also compares a single contradictory output
+pair with a stable control: both live modes avoid false recovery and retain their
+resampler. Real two-pair pipeline changes still recover. Diagnostic-only observation
+retains byte-identical output; temporarily unknown mapping can retain a minute
+existing phase correction, tested against half an input PCM16 quantization step.
+
+Boundary probes additionally exercise default NoData 2000 ms timeout without extending
+it on new markers, source-span capacity, URL watermarks at 0.25/1/4x, 500 ms submitted
+audio, 2/3-second read admission, frame/byte limits, manifest/inline 2 MiB and browser
+15-second expiry. They distinguish fixed unit deadlines from progress watchdogs and
+retain one-sample 1x clips. Clock regressions cover exact valid oscillator endpoints,
+genuinely wider drift, expired references, historical/repeated pairs and reacquisition
+after opposite extreme device rates. None of these software limits establishes optimal
+vehicle tuning, driver/GPU memory consumption or acoustic continuity.
 
 The historical beta.6 integrated source passed 237 scoped Android regressions, 473 browser tests,
 90 full-page checks, 17 real-PeerConnection checks, seven SRP security cases with

@@ -588,7 +588,12 @@ export function flatStats(stats, limit = 2048) {
     size += entry;
   };
   const visit = (prefix, value) => {
-    if (typeof value === 'number' && Number.isFinite(value)) add(prefix, Math.round(value * 100) / 100);
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      // Preserve clock-fit threshold evidence without increasing precision for
+      // every counter. This is print resolution, not measurement accuracy.
+      const precision = /(?:^|\.)(?:sourceClockDispersionMs|deviceClockUncertaintyMs)$/.test(prefix) ? 1e6 : 100;
+      add(prefix, Math.round(value * precision) / precision);
+    }
     else if (typeof value === 'boolean') add(prefix, value ? 1 : 0);
     else if (typeof value === 'string') add(prefix, value.slice(0, 40));
     else if (value && typeof value === 'object' && !Array.isArray(value)) {

@@ -1,6 +1,7 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 const HISTORY_MS = 16000, MIN_SPAN_MS = 4000, MAX_POINTS = 161;
-const MAX_RATE_ERROR = 0.02, SLEW_PER_SECOND = 0.001;
+export const MAX_RATE_ERROR = 0.02;
+const SLEW_PER_SECOND = 0.001;
 const median = values => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
 
 /** Context samples per performance millisecond, independently of the server clock.
@@ -49,10 +50,11 @@ export class AudioDeviceClock {
     const rate = median(slopes), residuals = points.map(p => p.contextTimeMs - origin.contextTimeMs
       - (p.performanceTimeMs - origin.performanceTimeMs) * rate);
     const center = median(residuals.slice()), dispersion = median(residuals.map(value => Math.abs(value - center)));
-    if (Math.abs(rate - 1) > MAX_RATE_ERROR || dispersion > 3) {
+    const outOfRange = rate < 1 - MAX_RATE_ERROR || rate > 1 + MAX_RATE_ERROR;
+    if (outOfRange || dispersion > 3) {
       this.confidence = 0; this.fitRejected++;
       this.fitStatus = this.acceptedFitAt === null ? 'acquiring' : 'holdover';
-      this.fitRejectReason = Math.abs(rate - 1) > MAX_RATE_ERROR ? 'out-of-range' : 'noisy';
+      this.fitRejectReason = outOfRange ? 'out-of-range' : 'noisy';
       return;
     }
     this.targetRate = rate; this.uncertaintyMs = dispersion;

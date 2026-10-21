@@ -85,7 +85,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     private val reverse = ConcurrentHashMap<ReverseKey, Connection>()
     private val connectionIds = AtomicLong()
     private val diagnostics = ReceiverProtocolDiagnostics(listener::log)
-    private val resources = ReceiverResourceRequests()
+    private val resources = ReceiverResourceRequests(onDeadline = { listener.log(it.line()) })
     val port: Int get() = server.localPort
 
     val displayConfig: ReceiverConfig get() = config
@@ -212,7 +212,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 diagnostics.resource(ReceiverProtocolDiagnostics.ResourceStage.UNAVAILABLE)
                 return null
             }
-            val acquisition = resources.acquire(session, peer, url, range) ?: return null
+            val acquisition = resources.acquire(session, peer, url, range, ownerGeneration = playbackGeneration) ?: return null
             diagnostics.resource(if (acquisition.created) ReceiverProtocolDiagnostics.ResourceStage.QUEUED
                 else ReceiverProtocolDiagnostics.ResourceStage.REUSED, acquisition.pending.id)
             dispatchNextResource()
@@ -781,8 +781,9 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         val format = ReceiverMirrorAudioFormat.parse(stream)
                         val audioKey = requireNotNull(key).copyOf()
                         val iv = audioIv?.copyOf()
-                        val order = ReceiverMirrorAudioTiming(format?.sampleRate ?: 44100, requireNotNull(timing)::ntpTimeNanos,
-                            filterNoData = format?.codec == 4 || format?.codec == 8)
+                        // AAC NoData units retain RTP ordering and source coordinates; the browser
+                        // renders their silence without feeding them to the compressed decoder.
+                        val order = ReceiverMirrorAudioTiming(format?.sampleRate ?: 44100, requireNotNull(timing)::ntpTimeNanos)
                         audioOrder = order
                         val controlPort = (stream["controlPort"] as? Number)?.toInt() ?: 0
                         require(controlPort in 0..65535)
@@ -798,7 +799,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         fun retransmit() { order.retransmissionRequests().forEach { receiver.sendControl(it, controlPort) } }
                         receiver = ReceiverAudioDrain(peer, { listener.log("c=$diagnosticId $it") }, packetReceived = { packet ->
                             if (format != null && iv != null && synchronized(ownership) { owner === this }) {
-                                ReceiverMirrorAudioPacket.decrypt(packet, audioKey, iv, filterNoData = format.codec == 4 || format.codec == 8)?.let { payload ->
+                                ReceiverMirrorAudioPacket.decrypt(packet, audioKey, iv)?.let { payload ->
                                     synchronized(ownership) {
                                         if (audioOrder === order && owner === this) deliver(order.offer(packet, payload))
                                     }
@@ -808,7 +809,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         }, controlReceived = { packet ->
                             order.sync(packet)
                             order.control(packet)?.let { recovered ->
-                                if (iv != null) ReceiverMirrorAudioPacket.decrypt(recovered, audioKey, iv, filterNoData = format?.codec == 4 || format?.codec == 8)?.let { payload ->
+                                if (iv != null) ReceiverMirrorAudioPacket.decrypt(recovered, audioKey, iv)?.let { payload ->
                                     synchronized(ownership) {
                                         if (audioOrder === order && owner === this) deliver(order.offer(recovered, payload))
                                     }

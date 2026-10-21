@@ -5,6 +5,9 @@ import com.shilapi.xcertplay.diagnostics.RawTraffic
 import java.io.IOException
 import java.io.EOFException
 import java.io.OutputStream
+import java.io.InputStream
+import java.io.FilterInputStream
+import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 
@@ -12,6 +15,44 @@ import java.nio.charset.CodingErrorAction
 internal class AirPlayResourceDiagnostics(private val log: (String) -> Unit,
                                           private val debug: () -> Boolean = { RawTraffic.enabled }) {
     enum class RouteStage { CONFIRMED, REVOKED }
+    enum class HttpPhase { CONNECT, RESPONSE_HEADERS, RESPONSE_BODY }
+
+    /** API-call stage and configured bounds, not a claim about which OS timer fired. */
+    fun httpFailure(load: Long, phase: HttpPhase, elapsedMillis: Long,
+                    connectLimitMillis: Int, readLimitMillis: Int, error: IOException) {
+        emit("resource stage=HTTP_FAILURE load=$load route=ANDROID_HTTP phase=$phase " +
+            "phaseElapsedMs=${elapsedMillis.coerceAtLeast(0)} connectLimitMs=$connectLimitMillis " +
+            "readLimitMs=$readLimitMillis timeoutReported=${timeoutReported(error)} " +
+            "exception=${exceptionType(error)} causes=${DiagnosticErrorText.types(error)}")
+    }
+
+    /** One failure boundary; successful resource reads do not create additional events. */
+    fun httpBody(load: Long, input: InputStream, connectLimitMillis: Int, readLimitMillis: Int,
+                 nowNanos: () -> Long): InputStream = object : FilterInputStream(input) {
+        private var failureReported = false
+        private fun failed(started: Long, error: IOException) {
+            if (failureReported) return
+            failureReported = true
+            httpFailure(load, HttpPhase.RESPONSE_BODY, (nowNanos() - started) / 1_000_000,
+                connectLimitMillis, readLimitMillis, error)
+        }
+        override fun read(): Int {
+            val started = nowNanos()
+            try { return `in`.read() }
+            catch (error: IOException) {
+                failed(started, error)
+                throw error
+            }
+        }
+        override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+            val started = nowNanos()
+            try { return `in`.read(bytes, offset, length) }
+            catch (error: IOException) {
+                failed(started, error)
+                throw error
+            }
+        }
+    }
 
     fun iphoneRoute(load: Long, stage: RouteStage) {
         emit("resource stage=ROUTE_${stage.name} load=$load route=IPHONE_FCUP scope=item-resource")
@@ -177,6 +218,16 @@ internal class AirPlayResourceDiagnostics(private val log: (String) -> Unit,
     /** Class names only: network exception messages often contain private hosts and signed URLs. */
     private fun exceptionType(error: Throwable): String = error.javaClass.simpleName
         .takeIf { SAFE_EXCEPTION_TYPE.matches(it) } ?: "Other"
+
+    private fun timeoutReported(error: Throwable): Boolean {
+        var cause: Throwable? = error
+        repeat(4) {
+            val current = cause ?: return false
+            if (current is SocketTimeoutException) return true
+            cause = runCatching { current.cause }.getOrNull()
+        }
+        return false
+    }
 
     private fun emit(message: String) { runCatching { log(message) } }
 

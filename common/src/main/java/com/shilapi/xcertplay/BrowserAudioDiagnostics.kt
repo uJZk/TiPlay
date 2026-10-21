@@ -12,6 +12,7 @@ internal object BrowserAudioDiagnostics {
         "clockOffsetMs", "clockAgeMs", "clockRttMs", "contextBaseLatencyMs", "contextOutputLatencyMs",
         "processorErrors", "recoveries", "recoveryAttempts", "processorFailed", "renderAgeMs", "renderReportAgeMs",
         "renderFrames", "renderNonzero", "renderPeak", "processCalls", "renderTimeMs",
+        "renderQuantumFrames", "renderQuantumMinFrames", "renderQuantumMaxFrames",
         "pcmPackets", "pcmFrames", "pcmNonzero", "pcmPeak",
         "clockRatePpm", "clockGeneration", "clockUncertaintyMs", "clockRateConfidence",
         "deviceClockRatePpm", "deviceClockTargetRatePpm", "deviceClockConfidence", "deviceClockUncertaintyMs",
@@ -22,6 +23,7 @@ internal object BrowserAudioDiagnostics {
         "outputTimestampCaptureMs", "outputTimestampHoldoverAgeMs",
         "outputUnavailableCounts.context-suspended", "outputUnavailableCounts.timestamp-backwards",
         "outputUnavailableCounts.timestamp-stale", "outputUnavailableCounts.timestamp-invalid",
+        "outputUnavailableCounts.timestamp-discontinuity",
         "outputUnavailableCounts.missing-latency", "outputUnavailableCounts.latency-unbounded",
         "outputUnavailableCounts.invalid-feedback", "outputUnavailableCounts.feedback-distance",
     )
@@ -30,19 +32,25 @@ internal object BrowserAudioDiagnostics {
         "capacityPackets", "latePackets", "duplicatePackets", "playedPackets", "resetPackets", "invalidPackets",
         "capacityBytes", "lateBytes", "duplicateBytes", "playedBytes", "resetBytes", "invalidBytes", "mode", "semanticType", "anchoring",
         "state", "reason", "phaseErrorMs", "resampleRatePpm", "deviceRatePpm", "phaseCorrectionPpm", "sourceRatePpm", "sourceRateConfidence",
+        "sourceClockFitStatus", "sourceClockFitRejectReason", "sourceClockPoints", "sourceClockSpanMs",
+        "sourceClockDispersionMs", "sourceClockAcceptedFitAgeMs", "sourceClockFitRejected",
         "sourceDeadlineState", "sourceDeadlineReason", "sourceDeltaMs", "sourceDeltaUpperMs", "sourceDeadlineRejectedFrames",
         "senderTimingState", "senderRelativePolicyCeilingMs", "sourceStartupDelayMs",
-        "lastRecoveryReason", "recoveryCounts.clock-step", "recoveryCounts.underrun", "recoveryCounts.device-clock-reset",
+        "lastRecoveryReason", "rebufferCount", "recoveryCounts.clock-step", "recoveryCounts.underrun",
         "lastClockStepPhaseErrorMs", "lastClockStepDeviceRatePpm", "lastClockStepUncertaintyMs", "lastClockStepAgeMs",
-        "recoveryCounts.source-deadline",
+        "recoveryCounts.source-deadline", "recoveryCounts.clock-generation", "recoveryCounts.suspended",
+        "recoveryCounts.sender-deadline", "recoveryCounts.network-buffer", "recoveryCounts.device-clock-jump",
     )
-    private val decoderFields = setOf("packets", "frames", "nonzero", "peak", "errors")
-    private val decoderStreamFields = setOf("packets", "frames", "nonzero", "peak", "backend", "epoch", "rate", "channels", "semanticType")
+    private val decoderFields = setOf("packets", "frames", "nonzero", "peak", "errors", "noDataPackets", "noDataFrames")
+    private val decoderStreamFields = setOf("packets", "frames", "nonzero", "peak", "backend", "epoch", "rate", "channels", "semanticType", "noDataPackets", "noDataFrames")
     private val streamKey = Regex("(?:decoder\\.)?stream([0-9]{1,3})\\..+")
     private val safeText = Regex("[A-Za-z0-9._-]{1,40}")
     private val enumFields = mapOf(
         "deviceClockFitStatus" to setOf("acquiring", "tracking", "holdover"),
         "deviceClockFitRejectReason" to setOf("none", "noisy", "out-of-range"),
+        "sourceClockFitStatus" to setOf("acquiring", "tracking", "holdover", "disabled"),
+        "sourceClockFitRejectReason" to setOf("not-observed", "no-samples", "insufficient-span", "insufficient-points",
+            "insufficient-pairs", "noisy", "out-of-range", "none", "buffered-prefetch"),
         "senderTimingState" to setOf("unavailable", "arrival-anchored-unverified", "mapped-presentation"),
     )
 
@@ -52,7 +60,8 @@ internal object BrowserAudioDiagnostics {
                 val raw = stats[keyPrefix + field]
                 val choices = enumFields[field]
                 if (choices != null && (raw !is String || raw !in choices)) return@mapNotNull null
-                val value = value(raw) ?: return@mapNotNull null
+                val precision = if (field == "sourceClockDispersionMs" || field == "deviceClockUncertaintyMs") 6 else 3
+                val value = value(raw, precision) ?: return@mapNotNull null
                 "$field=$value"
             }
             val header = "Browser audio: $prefix"
@@ -76,10 +85,10 @@ internal object BrowserAudioDiagnostics {
         }
     }
 
-    private fun value(value: Any?): String? = when (value) {
+    private fun value(value: Any?, precision: Int): String? = when (value) {
         is Number -> value.toDouble().takeIf { it.isFinite() }?.let {
             if (it % 1.0 == 0.0 && kotlin.math.abs(it) < 9e15) it.toLong().toString()
-            else String.format(Locale.ROOT, "%.3f", it)
+            else String.format(Locale.ROOT, "%.${precision}f", it)
         }
         is Boolean -> value.toString()
         is String -> value.takeIf(safeText::matches)

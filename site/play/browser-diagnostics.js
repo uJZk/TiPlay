@@ -4,7 +4,7 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v75';
+export const PAGE_VERSION = 'v76';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
@@ -48,6 +48,24 @@ const SUMMARY_KEYS = [
   'video.policyVideoPlanFromMs', 'video.policyVideoPlanDurationMs', 'video.policyVideoPlanRemainingMs',
   'video.policyVideoLeadRemainingMs', 'video.policyPlanChanges',
 ];
+const AUDIO_SOURCE_CORE = ['epoch', 'state', 'lastRecoveryReason', 'sourceClockFitStatus', 'sourceClockFitRejectReason', 'sourceClockDispersionMs'];
+const AUDIO_SOURCE_DETAIL = ['mode', 'reason', 'sourceClockPoints', 'sourceClockSpanMs',
+  'sourceClockAcceptedFitAgeMs', 'sourceClockFitRejected', 'sourceDeadlineState',
+  'sourceDeadlineReason', 'sourceRatePpm', 'sourceRateConfidence', 'phaseErrorMs', 'queueBytes'];
+const AUDIO_CLOCK_KEYS = ['deviceClockFitStatus', 'deviceClockFitRejectReason', 'deviceClockUncertaintyMs',
+  'deviceClockRatePpm', 'deviceClockConfidence', 'deviceClockAcceptedFitAgeMs', 'deviceClockFitRejected', 'outputState', 'outputUnavailableReason',
+  'outputTimestampAgeMs', 'outputTimestampCaptureMs', 'outputTimestampHoldoverAgeMs', 'outputFeedbackAgeMs',
+  'renderTimeMs', 'renderNonzero', 'renderPeak'];
+
+function audioDiagnosticKeys(full) {
+  const streams = [...new Set(Object.keys(full).map(key => /^(stream[0-9]{1,3})\./.exec(key)?.[1]).filter(Boolean))];
+  const perStream = fields => fields.flatMap(field => streams.map(stream => `${stream}.${field}`));
+  // Round-robin fit identity/reason before optional packet/decoder detail, so a
+  // busy first stream cannot make a later stream's fit look silently absent.
+  return [...new Set(['contextState', 'contextRate', 'renderQuantumFrames', 'renderQuantumMinFrames', 'renderQuantumMaxFrames',
+    ...perStream(AUDIO_SOURCE_CORE), ...AUDIO_CLOCK_KEYS, ...perStream(AUDIO_SOURCE_DETAIL), ...Object.keys(full)])]
+    .filter(key => Object.hasOwn(full, key));
+}
 
 /** First faults lead immediately; identity churn shares the existing diagnostic cadence.
  * Keep the triggering scalar snapshot, so a later recovery cannot rewrite its evidence. */
@@ -91,7 +109,8 @@ export function browserDiagnosticEvents(page, themeDark, debug = false, debugSes
     const full = flatStats(audioDebug, Infinity), values = { pageVersion: PAGE_VERSION, omittedFields: 0 };
     let omitted = 0;
     if (detailBudget >= 512) {
-      for (const [key, value] of Object.entries(full)) {
+      for (const key of audioDiagnosticKeys(full)) {
+        const value = full[key];
         const candidate = { ...values, [key]: value, omittedFields: 256 };
         if (Object.keys(candidate).length > 256 || new TextEncoder().encode(JSON.stringify(candidate)).byteLength > detailBudget) omitted++;
         else values[key] = value;

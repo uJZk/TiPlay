@@ -8,6 +8,61 @@ import java.util.concurrent.TimeUnit
 class ReceiverResourceRequestsTest {
     private val peer = InetAddress.getLoopbackAddress()
 
+    @Test fun deadlineEvidenceSeparatesQueuedExchangeAndLateDispatchOverallExpiryWithoutPrivateIdentity() {
+        val second = TimeUnit.SECONDS.toNanos(1)
+        data class Scenario(val dispatchAt: Long?, val expireAt: Long, val phase: String,
+                            val deadline: String, val queueMs: Long, val exchangeMs: String)
+        for ((dispatchAt, expireAt, expectedPhase, expectedDeadline, queueMs, exchangeMs) in listOf(
+            Scenario(null, 30L, "QUEUED", "OVERALL", 30000L, "NONE"),
+            Scenario(0L, 10L, "EXCHANGE", "EXCHANGE", 0L, "10000"),
+            Scenario(25L, 30L, "EXCHANGE", "OVERALL", 25000L, "5000"),
+        )) {
+            var now = 0L; val evidence = mutableListOf<ReceiverResourceRequests.DeadlineEvidence>()
+            val requests = ReceiverResourceRequests(nowNanos = { now }, onDeadline = evidence::add)
+            val pending = requests.acquire("private-session", peer,
+                "https://private-host/resource?token=private-secret", ownerGeneration = 42)!!.pending
+            if (dispatchAt != null) {
+                now = dispatchAt * second
+                assertSame(pending, requests.nextToDispatch("private-session", peer))
+            }
+            assertTrue(evidence.isEmpty())
+            now = expireAt * second - 1
+            assertSame(pending, requests[pending.id]); assertTrue(evidence.isEmpty())
+            now++
+            assertNull(requests[pending.id]); assertTrue(pending.future.isCompletedExceptionally)
+            val event = evidence.single()
+            val line = event.line()
+            assertEquals(42L, event.ownerGeneration)
+            assertTrue(line.contains("request=${pending.id} owner=42 phase=$expectedPhase limitingDeadline=$expectedDeadline due=true"))
+            assertTrue(line.contains("queueMs=$queueMs exchangeMs=$exchangeMs overallMs=${expireAt * 1000}"))
+            assertTrue(line.contains("overallLimitMs=30000 exchangeLimitMs=10000"))
+            assertTrue(line.length < 600); assertFalse(line.contains("private")); assertFalse(line.contains("secret"))
+            requests.expire(pending); assertEquals(1, evidence.size)
+        }
+    }
+
+    @Test fun aThrowingReentrantDeadlineObserverSeesRetiredStateAndCannotStrandTheQueueOrRetagTheOwner() {
+        var now = 0L; var observed = 0
+        lateinit var requests: ReceiverResourceRequests
+        var replacement: ReceiverResourceRequests.Pending? = null
+        requests = ReceiverResourceRequests(nowNanos = { now }, onDeadline = { event ->
+            observed++
+            assertNull(requests[event.request])
+            replacement = requests.acquire("replacement", peer, "mlhls://app/new", ownerGeneration = 43)!!.pending
+            error("logger unavailable")
+        })
+        val first = requests.acquire("private-session", peer, "mlhls://app/old", ownerGeneration = 42)!!.pending
+        val shared = requests.acquire("private-session", peer, first.url, ownerGeneration = 99)!!.pending
+        assertSame(first, shared); assertEquals(42L, shared.ownerGeneration)
+        assertSame(first, requests.nextToDispatch("private-session", peer))
+        now = TimeUnit.SECONDS.toNanos(10)
+        assertNull(requests[first.id]); assertEquals(1, observed)
+        assertTrue(first.future.isCompletedExceptionally)
+        assertSame(replacement, requests.nextToDispatch("replacement", peer))
+        assertEquals(43L, replacement!!.ownerGeneration)
+        assertEquals(1, observed)
+    }
+
     @Test fun onlyTheSameByteRangeCanShareAnInflightSignedResource() {
         val requests = ReceiverResourceRequests()
         val url = "https://example.test/video.m4s?nbs=1&upsig=fake%2fSignature&uparams=nbs"
@@ -95,6 +150,123 @@ class ReceiverResourceRequestsTest {
         // A late reply for the expired request cannot complete its replacement.
         assertFalse(original.future.complete(ReceiverResource(byteArrayOf(1), 0, null)))
         assertFalse(next.pending.future.isDone)
+    }
+
+    @Test fun defaultCapacityAdmitsSixteenUniqueLoadsAndSharesAtCapacityBeforeReclaimingCompletedLoads() {
+        val requests = ReceiverResourceRequests(nowNanos = { 0L })
+        val pending = (0 until 16).map { index ->
+            val acquired = requests.acquire("session", peer, "mlhls://app/segment-$index.ts")!!
+            assertTrue(acquired.created)
+            acquired.pending
+        }
+        assertNull(requests.acquire("session", peer, "mlhls://app/segment-16.ts"))
+        val shared = requests.acquire("session", peer, pending.last().url)!!
+        assertFalse(shared.created)
+        assertSame(pending.last(), shared.pending)
+
+        assertTrue(pending.first().future.complete(ReceiverResource(byteArrayOf(1), 200, null)))
+        val admitted = requests.acquire("session", peer, "mlhls://app/segment-16.ts")!!
+        assertTrue(admitted.created)
+        assertNull(requests[pending.first().id])
+        assertSame(admitted.pending, requests[admitted.pending.id])
+        assertNull(requests.acquire("session", peer, "mlhls://app/segment-17.ts"))
+    }
+
+    @Test fun defaultExchangeDeadlineExpiresAtTenSecondsAndAdvancesTheQueueWithoutRetryExtension() {
+        var now = 0L
+        val tenSeconds = TimeUnit.SECONDS.toNanos(10)
+        val requests = ReceiverResourceRequests(nowNanos = { now })
+        val first = requests.acquire("session", peer, "mlhls://app/segment.ts")!!.pending
+        val queued = requests.acquire("session", peer, "mlhls://app/next.ts")!!.pending
+        assertSame(first, requests.nextToDispatch("session", peer))
+
+        now = tenSeconds - 1
+        val retry = requests.acquire("session", peer, first.url)!!
+        assertFalse(retry.created)
+        assertSame(first, retry.pending)
+        assertSame(first, requests[first.id])
+        assertEquals(1L, requests.remainingNanos(first))
+        assertEquals(1L, requests.waitNanos(queued))
+        assertFalse(first.future.isDone)
+        assertNull(requests.nextToDispatch("session", peer))
+
+        now = tenSeconds
+        assertSame(queued, requests.nextToDispatch("session", peer))
+        assertTrue(first.future.isCompletedExceptionally)
+        assertNull(requests[first.id])
+        assertEquals(tenSeconds, requests.remainingNanos(queued))
+        assertFalse(queued.future.isDone)
+
+        now = tenSeconds + 1
+        assertNull(requests[first.id])
+        assertFalse(first.future.complete(ReceiverResource(byteArrayOf(1), 200, null)))
+        assertEquals(tenSeconds - 1, requests.remainingNanos(queued))
+        assertFalse(queued.future.isDone)
+    }
+
+    @Test fun defaultQueuedDeadlineExpiresAtThirtySecondsWithoutDispatchOrSharingExtension() {
+        var now = 0L
+        val thirtySeconds = TimeUnit.SECONDS.toNanos(30)
+        val requests = ReceiverResourceRequests(nowNanos = { now })
+        val original = requests.acquire("session", peer, "mlhls://app/segment.ts")!!.pending
+        now = TimeUnit.SECONDS.toNanos(10)
+        assertFalse(requests.acquire("session", peer, original.url)!!.created)
+        assertEquals(TimeUnit.SECONDS.toNanos(20), requests.remainingNanos(original))
+
+        now = thirtySeconds - 1
+        val retry = requests.acquire("session", peer, original.url)!!
+        assertFalse(retry.created)
+        assertSame(original, retry.pending)
+        assertSame(original, requests[original.id])
+        assertEquals(1L, requests.remainingNanos(original))
+        assertEquals(1L, requests.waitNanos(original))
+        assertFalse(original.future.isDone)
+
+        now = thirtySeconds
+        assertNull(requests.nextToDispatch("session", peer))
+        assertTrue(original.future.isCompletedExceptionally)
+        assertNull(requests[original.id])
+
+        now = thirtySeconds + 1
+        val replacement = requests.acquire("session", peer, original.url)!!
+        assertTrue(replacement.created)
+        assertNotEquals(original.id, replacement.pending.id)
+        assertEquals(thirtySeconds, requests.remainingNanos(replacement.pending))
+        assertFalse(original.future.complete(ReceiverResource(byteArrayOf(1), 200, null)))
+        assertFalse(replacement.pending.future.isDone)
+    }
+
+    @Test fun lateDispatchKeepsTheOriginalThirtySecondDeadlineAndReleasesTheNextLoadExactlyAtExpiry() {
+        var now = 0L
+        val thirtySeconds = TimeUnit.SECONDS.toNanos(30)
+        val tenSeconds = TimeUnit.SECONDS.toNanos(10)
+        val requests = ReceiverResourceRequests(nowNanos = { now })
+        val original = requests.acquire("session", peer, "mlhls://app/segment.ts")!!.pending
+        now = TimeUnit.SECONDS.toNanos(25)
+        val queued = requests.acquire("session", peer, "mlhls://app/next.ts")!!.pending
+        assertSame(original, requests.nextToDispatch("session", peer))
+        assertEquals(TimeUnit.SECONDS.toNanos(5), requests.remainingNanos(original))
+        assertEquals(TimeUnit.SECONDS.toNanos(5), requests.waitNanos(queued))
+
+        now = thirtySeconds - 1
+        val retry = requests.acquire("session", peer, original.url)!!
+        assertFalse(retry.created)
+        assertSame(original, retry.pending)
+        assertEquals(1L, requests.remainingNanos(original))
+        assertEquals(1L, requests.waitNanos(queued))
+        assertNull(requests.nextToDispatch("session", peer))
+
+        now = thirtySeconds
+        assertSame(queued, requests.nextToDispatch("session", peer))
+        assertTrue(original.future.isCompletedExceptionally)
+        assertNull(requests[original.id])
+        assertEquals(tenSeconds, requests.remainingNanos(queued))
+        assertFalse(queued.future.isDone)
+
+        now = thirtySeconds + 1
+        assertFalse(original.future.complete(ReceiverResource(byteArrayOf(1), 200, null)))
+        assertEquals(tenSeconds - 1, requests.remainingNanos(queued))
+        assertFalse(queued.future.isDone)
     }
 
     @Test fun stalledSegmentCannotBlockPlaylistsAndLiveRefreshDoesNotReuseCompletedResource() {

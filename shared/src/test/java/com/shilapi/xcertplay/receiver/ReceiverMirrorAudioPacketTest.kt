@@ -35,12 +35,12 @@ class ReceiverMirrorAudioPacketTest {
         assertNull(ReceiverMirrorAudioPacket.decrypt(packet(bad, header), key, iv))
     }
 
-    @Test fun noDataAacMarkerIsDiscardedIncludingRtpPadding() {
-        assertNull(ReceiverMirrorAudioPacket.decrypt(packet(byteArrayOf(0, 0x68, 0x34, 0)), key, iv))
-        assertArrayEquals(byteArrayOf(0, 0x68, 0x34, 0), ReceiverMirrorAudioPacket.decrypt(
-            packet(byteArrayOf(0, 0x68, 0x34, 0)), key, iv, filterNoData = false))
+    @Test fun noDataAacUnitsRetainTheirPayloadIncludingAfterRtpPadding() {
+        val noData = byteArrayOf(0, 0x68, 0x34, 0)
+        assertArrayEquals(noData, ReceiverMirrorAudioPacket.decrypt(packet(noData), key, iv))
         val header = ByteArray(12).apply { this[0] = 0xa0.toByte(); this[1] = 0x60 }
-        assertNull(ReceiverMirrorAudioPacket.decrypt(packet(byteArrayOf(0, 0x68, 0x34, 0, 1), header), key, iv))
+        assertArrayEquals(noData, ReceiverMirrorAudioPacket.decrypt(packet(noData + byteArrayOf(1), header), key, iv))
+        assertNull(ReceiverMirrorAudioPacket.decrypt(packet(noData + byteArrayOf(0), header), key, iv))
     }
 
     @Test fun negotiatedCodecsAreNeverTreatedAsAacEld() {

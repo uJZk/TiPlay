@@ -14,14 +14,21 @@ import java.io.FilterInputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
+import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /** Session-scoped streaming proxy. The browser never supplies an upstream URL or sees app URLs. */
-class AirPlayVideoProxy(private val root: String, private val iphone: (String, String?) -> ReceiverResource?,
-                       private val iphoneHost: String? = null, log: (String) -> Unit = {}) : Closeable {
-    enum class ResourceRoute { ANDROID_HTTP, IPHONE_FCUP, BROWSER_DIRECT }
+class AirPlayVideoProxy internal constructor(private val root: String,
+                       private val iphone: (String, String?) -> ReceiverResource?,
+                       private val iphoneHost: String?, log: (String) -> Unit,
+                       private val openConnection: (URI) -> HttpURLConnection,
+                       private val nowNanos: () -> Long) : Closeable {
+    constructor(root: String, iphone: (String, String?) -> ReceiverResource?,
+                iphoneHost: String? = null, log: (String) -> Unit = {}) :
+        this(root, iphone, iphoneHost, log, { it.toURL().openConnection() as HttpURLConnection }, System::nanoTime)
+    enum class ResourceRoute { ANDROID_HTTP, IPHONE_FCUP, BROWSER_DIRECT, INLINE_DATA }
     enum class FailureReason(val wire: String) {
         UPSTREAM_FORBIDDEN("upstream-forbidden"), UPSTREAM_UNAUTHORIZED("upstream-unauthorized"),
         UPSTREAM_HTTP_ERROR("upstream-http-error"), INVALID_RANGE_RESPONSE("invalid-range-response"),
@@ -110,19 +117,19 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
 
     private fun loadResource(url: String, range: String?, route: (String) -> String, redirects: Int,
                      forceProxy: Boolean, load: Long): Resource {
-        try { requirePlayable(url) } catch (_: IOException) { fail(load, FailureReason.UNSUPPORTED_RESOURCE) }
+        val uri = try { requirePlayable(url) } catch (_: IOException) { fail(load, FailureReason.UNSUPPORTED_RESOURCE) }
         if (closed.get() || Thread.currentThread().isInterrupted) throw IOException("Playback ended")
+        if (uri.scheme.equals("data", true)) return inlineResource(uri, range, route, forceProxy, load)
         directUrl(url)?.takeIf { !forceProxy }?.let { direct ->
             return Resource(307, "application/octet-stream", listOf("Location" to direct), ByteArrayInputStream(ByteArray(0)))
                 .at(load, ResourceRoute.BROWSER_DIRECT)
         }
-        val uri = URI(url)
         val direct = uri.scheme.lowercase() in listOf("http", "https")
         var brokerResponseMillis: Long? = null
         fun iphoneResource(requestRange: String? = range): ReceiverResource? {
             if (closed.get() || Thread.currentThread().isInterrupted) throw IOException("Playback ended")
             diagnostics.request(load, ResourceRoute.IPHONE_FCUP, requestRange, redirects)
-            val started = System.nanoTime()
+            val started = nowNanos()
             val response = try { iphone(url, requestRange) } catch (error: IOException) {
                 val failure = Failure(FailureReason.RESOURCE_IO, route = ResourceRoute.IPHONE_FCUP, load = load)
                 failure.initCause(error)
@@ -219,7 +226,7 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
         var broker = if (!retryAndroid && (!direct || uri.host == iphoneHost || uri.path.orEmpty().endsWith(".m3u8", true))) iphoneResource() else null
         if (broker == null && direct) {
             diagnostics.request(load, ResourceRoute.ANDROID_HTTP, range, redirects)
-            val connection = uri.toURL().openConnection() as HttpURLConnection
+            val connection = openConnection(uri)
             connection.connectTimeout = 5000; connection.readTimeout = 10000
             connection.instanceFollowRedirects = false
             connection.setRequestProperty("Accept-Encoding", "identity")
@@ -229,8 +236,13 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
             connections += connection
             if (closed.get()) { connections -= connection; connection.disconnect(); throw IOException("Playback ended") }
             var followingRedirect = false
+            var phase = AirPlayResourceDiagnostics.HttpPhase.CONNECT
+            var phaseStarted = nowNanos()
             try {
-                val started = System.nanoTime()
+                val started = phaseStarted
+                connection.connect()
+                phase = AirPlayResourceDiagnostics.HttpPhase.RESPONSE_HEADERS
+                phaseStarted = nowNanos()
                 val status = connection.responseCode
                 val headersMillis = elapsedMillis(started)
                 val responseHeaders = ReceiverResource.headers(connection.headerFields.entries.mapNotNull { entry ->
@@ -240,6 +252,8 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
                     headersMillis = headersMillis, responseMillis = headersMillis)
                 if (RawTraffic.enabled) RawTraffic.record("iphone/resource/$url/response-headers",
                     "status=$status headers=${connection.headerFields}".toByteArray())
+                phase = AirPlayResourceDiagnostics.HttpPhase.RESPONSE_BODY
+                phaseStarted = nowNanos()
                 if (status !in 200..399 && RawTraffic.enabled) connection.errorStream?.use { body ->
                     val buffer = ByteArray(8192)
                     var remaining = MAX_ERROR_CAPTURE
@@ -278,7 +292,8 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
                     val headers = listOf("Content-Length", "Content-Range", "Accept-Ranges").mapNotNull { name ->
                         connection.getHeaderField(name)?.takeIf { it.all { c -> c in ' '..'~' } }?.let { name to it }
                     }
-                    return Resource(status, contentType(url, connection.contentType), headers, input) {
+                    val body = diagnostics.httpBody(load, input, connection.connectTimeout, connection.readTimeout, nowNanos)
+                    return Resource(status, contentType(url, connection.contentType), headers, body) {
                         try { connection.disconnect() } finally { connections -= connection }
                     }.at(load, ResourceRoute.ANDROID_HTTP, headersMillis, headersMillis)
                 }
@@ -295,6 +310,8 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
                 if (closed.get() || Thread.currentThread().isInterrupted) throw IOException("Playback ended", error)
                 // A destination's failure belongs to that destination; do not retry the old origin.
                 if (followingRedirect) throw error
+                if (error !is Failure) diagnostics.httpFailure(load, phase, elapsedMillis(phaseStarted),
+                    connection.connectTimeout, connection.readTimeout, error)
                 if (error !is Failure) diagnostics.failure(load, Failure(FailureReason.RESOURCE_IO, route = ResourceRoute.ANDROID_HTTP), error)
                 broker = iphoneResource() ?: throw (error as? Failure
                     ?: Failure(FailureReason.RESOURCE_IO, route = ResourceRoute.ANDROID_HTTP, load = load))
@@ -304,11 +321,33 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
         return iphoneResult(broker ?: fail(load, FailureReason.RESOURCE_UNAVAILABLE, route = ResourceRoute.IPHONE_FCUP))
     }
 
+    /** Inline captions already contain their bytes; FCUP would serialize them behind phone I/O. */
+    private fun inlineResource(uri: URI, range: String?, route: (String) -> String,
+                               forceProxy: Boolean, load: Long): Resource {
+        diagnostics.request(load, ResourceRoute.INLINE_DATA, range, 0)
+        val started = nowNanos()
+        val (type, bytes) = try { inlineData(uri) }
+        catch (error: Failure) { fail(load, error.reason, route = ResourceRoute.INLINE_DATA) }
+        val playlist = isPlaylist(BufferedInputStream(ByteArrayInputStream(bytes)))
+        val body = if (playlist) try { rewritePlaylist(uri.toString(), bytes, forceProxy, route) }
+            catch (_: IOException) { fail(load, FailureReason.UNSUPPORTED_RESOURCE, route = ResourceRoute.INLINE_DATA) }
+            catch (_: IllegalArgumentException) { fail(load, FailureReason.UNSUPPORTED_RESOURCE, route = ResourceRoute.INLINE_DATA) }
+            else bytes
+        val resource = if (playlist) Resource(200, "application/vnd.apple.mpegurl", emptyList(), ByteArrayInputStream(body))
+            else byteResource(body, range, type)
+        val responseMillis = elapsedMillis(started)
+        diagnostics.response(load, ResourceRoute.INLINE_DATA, resource.status,
+            if (playlist) body.size else resource.headers.firstOrNull { it.first == "Content-Length" }
+                ?.second?.toIntOrNull() ?: 0,
+            ReceiverResource.headers(resource.headers.toMap()), responseMillis = responseMillis)
+        return resource.at(load, ResourceRoute.INLINE_DATA, responseMillis = responseMillis, rewrittenPlaylist = playlist)
+    }
+
     private fun Resource.at(load: Long, route: ResourceRoute, headersMillis: Long? = null,
                             responseMillis: Long? = null, rewrittenPlaylist: Boolean = false) = also {
         reference = Reference(load, route, headersMillis, responseMillis, rewrittenPlaylist)
     }
-    private fun elapsedMillis(started: Long) = ((System.nanoTime() - started) / 1_000_000).coerceAtLeast(0)
+    private fun elapsedMillis(started: Long) = ((nowNanos() - started) / 1_000_000).coerceAtLeast(0)
 
     private fun fail(load: Long, reason: FailureReason, status: Int? = null, route: ResourceRoute? = null): Nothing {
         val error = Failure(reason, status, route, load)
@@ -348,12 +387,72 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
     companion object {
         private const val MAX_RESOURCES = 4096
         private const val MAX_PLAYLIST = 2 * 1024 * 1024
+        // Inline URLs are metadata/captions, not an unbounded second media transport.
+        private const val MAX_INLINE_BYTES = MAX_PLAYLIST
+        private const val MAX_INLINE_METADATA = 1024
         private const val MAX_BROKER_BYTES = 32 * 1024 * 1024
         private const val MAX_ERROR_CAPTURE = 64 * 1024
         private val URI_ATTRIBUTE = Regex("URI=\"([^\"]*)\"")
         private val UNSATISFIED_RANGE = Regex("bytes \\*/[0-9]{1,18}")
         private val CONTENT_RANGE = Regex("bytes ([0-9]{1,18})-([0-9]{1,18})/([0-9]{1,18}|\\*)")
         private val CONTENT_TYPE = Regex("[a-z0-9.+-]+/[a-z0-9.+-]+")
+        private val INLINE_CHARSET = Regex("[A-Za-z0-9._-]{1,64}")
+        private fun inlineFailure(reason: FailureReason = FailureReason.UNSUPPORTED_RESOURCE): Nothing =
+            throw Failure(reason, route = ResourceRoute.INLINE_DATA)
+
+        /** RFC 2397 percent escapes are not HTML form encoding: a literal '+' stays '+'. */
+        private fun inlinePercent(value: String, limit: Int, start: Int = 0): ByteArray {
+            if (value.length - start > limit * 3) inlineFailure(FailureReason.RESOURCE_TOO_LARGE)
+            val output = ByteArray(minOf(value.length - start, limit))
+            var input = start; var count = 0
+            while (input < value.length) {
+                val char = value[input++]
+                val byte = if (char == '%') {
+                    if (input + 1 >= value.length) inlineFailure()
+                    val high = value[input++].digitToIntOrNull(16) ?: inlineFailure()
+                    val low = value[input++].digitToIntOrNull(16) ?: inlineFailure()
+                    (high shl 4) or low
+                } else {
+                    // URL data uses ASCII literals or percent-encoded UTF-8 octets.
+                    if (char.code > 127) inlineFailure()
+                    char.code
+                }
+                if (count == limit) inlineFailure(FailureReason.RESOURCE_TOO_LARGE)
+                output[count++] = byte.toByte()
+            }
+            return if (count == output.size) output else output.copyOf(count)
+        }
+
+        private fun inlineData(uri: URI): Pair<String, ByteArray> {
+            val value = uri.rawSchemeSpecificPart ?: inlineFailure()
+            val comma = value.indexOf(',')
+            if (comma < 0) inlineFailure()
+            if (comma > MAX_INLINE_METADATA) inlineFailure(FailureReason.RESOURCE_TOO_LARGE)
+            val metadata = value.substring(0, comma).split(';')
+            val type = metadata.first().ifEmpty { "text/plain" }.lowercase()
+            if (!CONTENT_TYPE.matches(type)) inlineFailure()
+            var encoded = false; var charset: String? = null
+            metadata.drop(1).forEachIndexed { index, parameter ->
+                if (parameter.equals("base64", true)) {
+                    if (encoded || index != metadata.size - 2) inlineFailure()
+                    encoded = true
+                } else {
+                    if (encoded || charset != null || !parameter.substringBefore('=').equals("charset", true) || '=' !in parameter)
+                        inlineFailure()
+                    val name = inlinePercent(parameter.substringAfter('='), MAX_INLINE_METADATA)
+                        .toString(Charsets.US_ASCII)
+                    if (!INLINE_CHARSET.matches(name)) inlineFailure()
+                    charset = name
+                }
+            }
+            val limit = if (encoded) ((MAX_INLINE_BYTES + 2) / 3) * 4 else MAX_INLINE_BYTES
+            val payload = inlinePercent(value, limit, comma + 1)
+            val bytes = if (encoded) try { Base64.getDecoder().decode(payload) }
+                catch (_: IllegalArgumentException) { inlineFailure() } else payload
+            if (bytes.size > MAX_INLINE_BYTES) inlineFailure(FailureReason.RESOURCE_TOO_LARGE)
+            val selectedCharset = charset ?: "US-ASCII".takeIf { metadata.first().isEmpty() }
+            return (type + (selectedCharset?.let { ";charset=$it" } ?: "")) to bytes
+        }
         fun query(value: String): String = URLEncoder.encode(value, "UTF-8")
         private fun statusReason(status: Int) = when (status) {
             403 -> FailureReason.UPSTREAM_FORBIDDEN
@@ -382,9 +481,11 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
             val values = CONTENT_RANGE.matchEntire(headers["Content-Range"].orEmpty())?.groupValues ?: return false
             return values[1].toLong() == 0L && values[3].toLongOrNull()?.let { it == values[2].toLong() + 1 } == true
         }
-        private fun requirePlayable(url: String) {
-            if (!VideoInCar.isPlayableUrl(url, iphoneLoadsAppSchemes = true) || URI(url).userInfo != null)
+        private fun requirePlayable(url: String): URI {
+            val uri = try { URI(url) } catch (_: java.net.URISyntaxException) { throw IOException("Unsupported media resource") }
+            if (!VideoInCar.isPlayableUrl(url, iphoneLoadsAppSchemes = true) || uri.userInfo != null)
                 throw IOException("Unsupported media resource")
+            return uri
         }
         private fun isPlaylist(input: BufferedInputStream): Boolean {
             input.mark(10)
@@ -413,14 +514,17 @@ class AirPlayVideoProxy(private val root: String, private val iphone: (String, S
             }
         }
         private fun byteResource(url: String, bytes: ByteArray, range: String?, suppliedType: String? = null): Resource {
+            return byteResource(bytes, range, contentType(url, suppliedType))
+        }
+        private fun byteResource(bytes: ByteArray, range: String?, type: String): Resource {
             val headers = listOf("Accept-Ranges" to "bytes")
-            if (range == null) return Resource(200, contentType(url, suppliedType), headers + ("Content-Length" to bytes.size.toString()), ByteArrayInputStream(bytes))
+            if (range == null) return Resource(200, type, headers + ("Content-Length" to bytes.size.toString()), ByteArrayInputStream(bytes))
             val parts = range.removePrefix("bytes=").split('-')
             val start = if (parts[0].isEmpty()) (bytes.size.toLong() - parts[1].toLong()).coerceAtLeast(0) else parts[0].toLong()
             val end = if (parts[0].isEmpty() || parts[1].isEmpty()) bytes.size.toLong() - 1 else parts[1].toLong().coerceAtMost(bytes.size.toLong() - 1)
             if (start > end || start >= bytes.size) return Resource(416, "application/octet-stream", listOf("Content-Range" to "bytes */${bytes.size}"), ByteArrayInputStream(ByteArray(0)))
             val length = (end - start + 1).toInt()
-            return Resource(206, contentType(url, suppliedType), headers + listOf("Content-Length" to length.toString(), "Content-Range" to "bytes $start-$end/${bytes.size}"), ByteArrayInputStream(bytes, start.toInt(), length))
+            return Resource(206, type, headers + listOf("Content-Length" to length.toString(), "Content-Range" to "bytes $start-$end/${bytes.size}"), ByteArrayInputStream(bytes, start.toInt(), length))
         }
     }
 }

@@ -17,6 +17,38 @@ class AirPlayResourceDiagnosticsTest {
                          owner: () -> AirPlayResourceDiagnostics.TransferOwner = active) =
         diagnostics.transfer(resource, output, ByteArray(0), 7, 2, 3, 4, owner) { 1_000_000 }
 
+    @Test fun httpReadEvidenceDoesNotLogHealthyRangesOrChangePayloadAndCleanup() {
+        val messages = mutableListOf<String>(); var closes = 0; var now = 0L
+        val source = object : ByteArrayInputStream(byteArrayOf(1, 2, 3)) {
+            override fun close() { closes++; super.close() }
+        }
+        val stream = AirPlayResourceDiagnostics(messages::add) { false }.httpBody(9, source, 5000, 10000) {
+            now += 1_000_000; now
+        }
+        stream.use { assertArrayEquals(byteArrayOf(1, 2, 3), it.readBytes()) }
+        assertEquals(1, closes); assertTrue(messages.isEmpty())
+    }
+
+    @Test fun httpPhaseEvidenceIsBoundedAndDistinguishesReportedTimeoutFromOtherIoFailure() {
+        val messages = mutableListOf<String>(); val diagnostics = AirPlayResourceDiagnostics(messages::add) { false }
+        diagnostics.httpFailure(4, AirPlayResourceDiagnostics.HttpPhase.RESPONSE_HEADERS, 75, 5000, 10000,
+            IOException("https://private-host?secret=token"))
+        diagnostics.httpFailure(5, AirPlayResourceDiagnostics.HttpPhase.CONNECT, -1, 5000, 10000,
+            SocketTimeoutException("private-host secret=token"))
+        diagnostics.httpFailure(6, AirPlayResourceDiagnostics.HttpPhase.RESPONSE_BODY, 10000, 5000, 10000,
+            IOException("private wrapper", SocketTimeoutException("private nested timeout")))
+        assertTrue(messages[0].contains("phase=RESPONSE_HEADERS phaseElapsedMs=75 connectLimitMs=5000 readLimitMs=10000 timeoutReported=false"))
+        assertTrue(messages[1].contains("phase=CONNECT phaseElapsedMs=0 connectLimitMs=5000 readLimitMs=10000 timeoutReported=true"))
+        assertTrue(messages[2].contains("phase=RESPONSE_BODY phaseElapsedMs=10000 connectLimitMs=5000 readLimitMs=10000 timeoutReported=true"))
+        assertTrue(messages[2].contains("causes=IOException<-SocketTimeoutException"))
+        assertTrue(messages.all { it.length < 600 && !it.contains("private") && !it.contains("secret") && !it.contains("token") })
+        val stream = AirPlayResourceDiagnostics({ error("logger unavailable") }) { false }
+            .httpBody(6, object : InputStream() {
+                override fun read(): Int = throw SocketTimeoutException("private")
+            }, 5000, 10000) { 0 }
+        assertTrue(runCatching { stream.read() }.exceptionOrNull() is SocketTimeoutException)
+    }
+
     @Test fun timingSeparatesOpenFromTransferAndWholeHandlerWithoutClaimingFcupHeaderTiming() {
         val messages = mutableListOf<String>(); var now = 10_000_000L
         val input = object : ByteArrayInputStream(byteArrayOf(1, 2, 3)) {

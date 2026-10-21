@@ -139,7 +139,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
           const previous = timeline.lastPacket;
           data.presentationMs = previous ? timeline.sourceAnchorMs + previous.end * 1000 / timeline.rate : this.targetTime(timeline, currentTime * 1000) ?? 0;
         }
-        timeline.push(data, timeline.arrivalPlayback ? 1 : this.clock?.rate || 1); return;
+        timeline.push(data, timeline.arrivalPlayback ? 1 : this.clock?.rate || 1, currentTime * 1000); return;
       }
       if (Number.isFinite(data.sourceTime)) {
         let timeline = this.timelines.get(data.type);
@@ -365,6 +365,9 @@ class TiPlayAudio extends AudioWorkletProcessor {
     }
     if (this.diagnostics) {
       this.diagnostics.processCalls++; this.diagnostics.renderFrames += output[0].length;
+      this.diagnostics.renderQuantumFrames = blockFrames;
+      this.diagnostics.renderQuantumMinFrames = Math.min(this.diagnostics.renderQuantumMinFrames ?? blockFrames, blockFrames);
+      this.diagnostics.renderQuantumMaxFrames = Math.max(this.diagnostics.renderQuantumMaxFrames ?? blockFrames, blockFrames);
       if (currentTime - this.lastReportTime >= 0.5) { this.lastReportTime = currentTime; this.report(); }
     }
     if (continuous.length && (contextMs - this.lastFeedbackMs >= 40 || continuous.some(([, timeline]) => timeline.feedbackState !== timeline.state))) {

@@ -5,6 +5,7 @@ import { createBrowserAudio } from '../../site/play/audio.js';
 import { createAirPlayAudioDecoder } from '../../site/play/airplay-audio-decoder.js';
 import { PcmTimeline } from '../../site/play/pcm-timeline.js';
 import { constantDelay } from '../../site/play/delay-plan.js';
+import { SoxrRuntime } from '../../site/play/streaming-resampler.js';
 import { BUFFERED_AUDIO_WINDOW_MS, BUFFERED_FEED_LEAD_MS, BUFFERED_START_LATENCY_MS, AUDIO_CLOCK_MARGIN_MS, MAX_AUDIO_AHEAD_BYTES } from '../../site/play/audio-buffer-policy.js';
 
 let Processor;
@@ -126,6 +127,50 @@ test('worklet scalar telemetry is opt-in, rate-limited and stops immediately whe
   globalThis.currentTime = 1; processor.process([], [output]);
   assert.equal(processor.messages.filter(value => value.diagnostics).length, 2);
   assert.equal(processor.diagnostics, null);
+});
+
+test('render quantum evidence measures actual block lengths and resets with Debug without changing output', () => {
+  const processor = new Processor();
+  globalThis.currentTime = 0;
+  const render = frames => {
+    const output = [new Float32Array(frames), new Float32Array(frames)];
+    processor.process([], [output]);
+    assert.ok(output.every(channel => channel.every(value => value === 0)));
+  };
+  render(256); assert.equal(processor.diagnostics, null);
+  processor.port.onmessage({ data: { debug: true, diagnosticRevision: 1 } });
+  for (const frames of [128, 256, 64, 128]) render(frames);
+  processor.report();
+  const stats = processor.messages.filter(value => value.diagnostics).at(-1).diagnostics;
+  assert.equal(stats.processCalls, 4); assert.equal(stats.renderFrames, 576);
+  assert.equal(stats.renderQuantumFrames, 128); assert.equal(stats.renderQuantumMinFrames, 64); assert.equal(stats.renderQuantumMaxFrames, 256);
+  processor.port.onmessage({ data: { debug: false } }); render(512);
+  processor.port.onmessage({ data: { debug: true, diagnosticRevision: 2 } }); render(128); processor.report();
+  const fresh = processor.messages.filter(value => value.diagnostics).at(-1).diagnostics;
+  assert.equal(fresh.processCalls, 1); assert.equal(fresh.renderQuantumMinFrames, 128); assert.equal(fresh.renderQuantumMaxFrames, 128);
+});
+
+test('worklet source-fit evidence uses render-context ages and a replacement epoch cannot retain the previous fit', () => {
+  const processor = new Processor(), post = data => processor.port.onmessage({ data });
+  post({ calibration: { rate: 48000, outputRate: 48000, delayMs: new SoxrRuntime().filterDelay(48000, 48000) } });
+  post({ debug: true, diagnosticRevision: 1 });
+  const packet = (epoch, ms) => ({ type: 6, mode: 'airplay-mirror', epoch, generation: 1, rate: 48000, channels: 1,
+    flags: 0, sequence: ms / 1000, presentationMs: 1000000 + ms, decodeTimestampUs: ms * 1000, pcm: new Int16Array(960).buffer });
+  try {
+    for (let ms = 0; ms <= 31000; ms += 1000) { globalThis.currentTime = ms / 1000; post(packet(1, ms)); }
+    globalThis.currentTime = 31.1;
+    processor.process([], [[new Float32Array(128), new Float32Array(128)]]); processor.report();
+    const fitted = processor.messages.filter(value => value.diagnostics).at(-1).diagnostics.stream6;
+    assert.equal(fitted.sourceClockFitStatus, 'tracking'); assert.equal(fitted.sourceClockFitRejectReason, 'none');
+    assert.equal(fitted.sourceClockPoints, 32); assert.equal(fitted.sourceClockSpanMs, 31000);
+    assert.ok(Math.abs(fitted.sourceClockAcceptedFitAgeMs - (100 + 128 / 48)) < 1e-6);
+    globalThis.currentTime = 32; post(packet(2, 32000)); post(packet(1, 33000)); processor.report();
+    const replaced = processor.messages.filter(value => value.diagnostics).at(-1).diagnostics.stream6;
+    assert.equal(replaced.epoch, 2); assert.equal(replaced.sourceClockFitStatus, 'acquiring');
+    assert.equal(replaced.sourceClockFitRejectReason, 'insufficient-span'); assert.equal(replaced.sourceClockPoints, 1);
+    assert.equal(Object.hasOwn(replaced, 'sourceClockAcceptedFitAgeMs'), false);
+    post({ debug: false }); assert.equal(processor.timelines.get(6).sourceClock.snapshot(32000), null);
+  } finally { post({ dispose: true }); }
 });
 
 test('decoder diagnostics count actual signed PCM samples only while enabled', async () => {

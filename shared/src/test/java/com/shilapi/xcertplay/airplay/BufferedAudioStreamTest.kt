@@ -26,6 +26,60 @@ class BufferedAudioStreamTest {
     private val key = ByteArray(32) { (it + 1).toByte() }
     private val format = AudioFormat(AudioCodecKind.AAC_LC, 48_000, 2, BufferedAudioStream.STREAM_TYPE, "media")
 
+    @Test fun anchorDiagnosticsKeepTheExactNetworkReserveAndNativeOutputScope() {
+        val logs = mutableListOf<String>()
+        val mapped = mutableListOf<BigInteger>()
+        val now = BigInteger.valueOf(2_208_988_900L).shiftLeft(32)
+        val stream = BufferedAudioStream(key, format, RecordingSink(), log = logs::add,
+            nanoTime = { 5_000_000_000L }, mapNtp = { mapped += it; 9_000_000_000L })
+        try {
+            val anchor = stream.setRate(2024L, 1, now)!!
+            val expected = now + BufferedAudioStream.millisToNtp(400)
+            assertEquals(listOf(expected), mapped)
+            assertEquals(BufferedAudioStream.anchorPlist(2024L, expected, 1), anchor)
+            val started = logs.single()
+            assertTrue(started.startsWith("Buffered audio: stage=ANCHOR owner="))
+            assertTrue(started.contains("generation=1 type=103 sampleRate=48000 rate=1"))
+            assertTrue(started.contains("requestedRtp=2024 anchorRtp=2024"))
+            assertTrue(started.contains("networkNowNtp=$now anchorNtp=$expected"))
+            assertTrue(started.contains("reserveMs=400 clock=network-mapped anchorMonotonicNs=9000000000"))
+            assertTrue(started.length <= 600)
+            repeat(100) { assertEquals(anchor, stream.anchor()) }
+            assertEquals("GETANCHOR must not create a new evidence event", 1, logs.size)
+
+            val paused = stream.setRate(null, 0, now)!!
+            assertEquals(0, paused["rate"])
+            assertEquals("Pause must not map or add another 400ms reserve", listOf(expected), mapped)
+            val pause = logs.last()
+            assertTrue(pause.contains("generation=2 type=103 sampleRate=48000 rate=0"))
+            assertTrue(pause.contains("networkNowNtp=$now anchorNtp=$now"))
+            assertTrue(pause.contains("reserveMs=0 clock=unavailable anchorMonotonicNs=unknown"))
+            assertTrue(pause.length <= 600)
+            val owner = Regex(" owner=([0-9]+) ").find(started)!!.groupValues[1]
+            assertTrue(pause.contains("owner=$owner generation=2"))
+            stream.close()
+            assertNull(stream.setRate(2024L, 1, now))
+            assertEquals("Retired controls must not produce a new anchor event", 2, logs.size)
+        } finally { stream.close() }
+    }
+
+    @Test fun fallbackAnchorDiagnosticsCannotChangeMediaEvenWhenTheLoggerFails() {
+        val now = BigInteger.ONE.shiftLeft(32)
+        val quiet = BufferedAudioStream(key, format, RecordingSink(), nanoTime = { 5_000_000_000L })
+        val noisy = BufferedAudioStream(key, format, RecordingSink(), log = { throw IllegalStateException("diagnostic failure") },
+            nanoTime = { 5_000_000_000L })
+        val logs = mutableListOf<String>()
+        val observed = BufferedAudioStream(key, format, RecordingSink(), log = logs::add,
+            nanoTime = { 5_000_000_000L }, mapNtp = { null })
+        try {
+            val expected = quiet.setRate(2024L, 1, now)
+            assertEquals(expected, noisy.setRate(2024L, 1, now))
+            assertEquals(expected, observed.setRate(2024L, 1, now))
+            assertTrue(logs.single().contains("reserveMs=400 clock=local-fallback anchorMonotonicNs=5400000000"))
+            assertEquals(quiet.setRate(null, 0, now), noisy.setRate(null, 0, now))
+        } finally { quiet.close(); noisy.close(); observed.close() }
+    }
+
     @Test fun browserRelayDoesNotRetainTheNativeTwoMinutePreload() {
         val sink = object : MediaSink, BrowserBufferedAudioPolicy {}
         val stream = BufferedAudioStream(key, format, sink)
@@ -406,7 +460,8 @@ class BufferedAudioStreamTest {
     fun setRateStartsPlaybackFromItsTimeAndPausesAndFlushesStopTheOutput() {
         val sink = RecordingSink()
         var mappedAnchor: BigInteger? = null
-        val stream = BufferedAudioStream(key, format, sink, mapNtp = {
+        val logs = CopyOnWriteArrayList<String>()
+        val stream = BufferedAudioStream(key, format, sink, log = logs::add, mapNtp = {
             mappedAnchor = it
             9_000_000_000L
         })
@@ -435,6 +490,14 @@ class BufferedAudioStreamTest {
                 assertEquals(listOf(2_024L, 3_048L, 4_072L), sink.rtp.map { it.toLong() and 0xffff_ffffL })
                 assertEquals(1, sink.started.size)
                 assertEquals(listOf(2024 to 9_000_000_000L), sink.clocks.toList())
+                val clock = logs.single { it.startsWith("Buffered audio: stage=CLOCK ") }
+                val anchorLog = logs.single { it.startsWith("Buffered audio: stage=ANCHOR ") }
+                val owner = Regex(" owner=([0-9]+) ").find(anchorLog)!!.groupValues[1]
+                assertTrue(clock.contains("owner=$owner generation=1 type=103 sampleRate=48000"))
+                assertTrue(clock.contains("firstRtp=2024 anchorRtp=2024 anchorMonotonicNs=9000000000"))
+                assertTrue(clock.contains("feedStartedNs="))
+                assertTrue(clock.contains("relayLeadMs=1000"))
+                assertTrue(clock.length <= 600)
                 assertEquals(anchor["networkTimeFrac"], mappedAnchor!!.and(BigInteger.ONE.shiftLeft(32).subtract(BigInteger.ONE)).shiftLeft(32))
 
                 val paused = stream.setRate(rtpTime = null, newRate = 0, nowNtp = now)!!

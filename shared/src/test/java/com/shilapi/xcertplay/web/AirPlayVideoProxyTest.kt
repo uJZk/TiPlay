@@ -4,15 +4,366 @@ import com.shilapi.xcertplay.receiver.ReceiverResource
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.IOException
+import java.io.ByteArrayInputStream
+import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.ServerSocket
 import java.net.ProxySelector
 import java.net.Proxy
 import java.net.URI
 import java.net.InetSocketAddress
+import java.util.Base64
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 class AirPlayVideoProxyTest {
+    /** Synthetic API calls advance monotonic time; no OS timeout or private media is replayed. */
+    private class TimedHttp(url: java.net.URL, val connectCall: () -> Unit = {},
+                            val headersCall: () -> Unit = {}, val content: InputStream) : HttpURLConnection(url) {
+        var disconnects = 0
+        override fun connect() { connectCall(); connected = true }
+        override fun getResponseCode(): Int { headersCall(); return 200 }
+        override fun getInputStream(): InputStream = content
+        override fun getHeaderFields(): Map<String, List<String>> = mapOf("Content-Type" to listOf("video/mp4"))
+        override fun getHeaderField(name: String?): String? = if (name.equals("Content-Type", true)) "video/mp4" else null
+        override fun disconnect() { disconnects++ }
+        override fun usingProxy(): Boolean = false
+    }
+
+    @Test fun httpCallFailuresKeepTheirPhaseBudgetAndElapsedTimeThroughSuccessfulPhoneFallback() {
+        val url = "https://media.invalid/video.mp4?token=private-secret"
+        for (phase in AirPlayResourceDiagnostics.HttpPhase.entries) {
+            var now = 0L; var phoneCalls = 0
+            val messages = mutableListOf<String>()
+            val timeout = SocketTimeoutException("https://private-host/?secret=private-secret")
+            val body = object : InputStream() {
+                override fun read(): Int { now += 10_000_000_000; throw timeout }
+                override fun read(bytes: ByteArray, offset: Int, length: Int): Int = read()
+            }
+            val http = TimedHttp(java.net.URL(url), connectCall = {
+                if (phase == AirPlayResourceDiagnostics.HttpPhase.CONNECT) { now += 5_000_000_000; throw timeout }
+                now += 10_000_000
+            }, headersCall = {
+                if (phase == AirPlayResourceDiagnostics.HttpPhase.RESPONSE_HEADERS) { now += 10_000_000_000; throw timeout }
+                now += 20_000_000
+            }, content = body)
+            val proxy = AirPlayVideoProxy(url, { _, _ -> phoneCalls++; ReceiverResource(byteArrayOf(1, 2, 3), 200, null) },
+                null, messages::add, { http }, { now })
+            try {
+                proxy.open(proxy.rootId, null) { it }!!.use {
+                    assertEquals(AirPlayVideoProxy.ResourceRoute.IPHONE_FCUP, it.reference!!.route)
+                    assertArrayEquals(byteArrayOf(1, 2, 3), it.body.readBytes())
+                }
+                val event = messages.single { it.contains("stage=HTTP_FAILURE ") }
+                assertTrue(event.contains("load=1 route=ANDROID_HTTP phase=$phase"))
+                assertTrue(event.contains("phaseElapsedMs=${if (phase == AirPlayResourceDiagnostics.HttpPhase.CONNECT) 5000 else 10000}"))
+                assertTrue(event.contains("connectLimitMs=5000 readLimitMs=10000 timeoutReported=true"))
+                assertTrue(event.contains("exception=SocketTimeoutException"))
+                assertEquals(5000, http.connectTimeout); assertEquals(10000, http.readTimeout)
+                assertEquals(1, phoneCalls); assertTrue(http.disconnects > 0)
+                assertTrue(messages.all { it.length < 600 && !it.contains("private") && !it.contains("secret") })
+            } finally { proxy.close() }
+        }
+    }
+
+    @Test fun streamedHttpFailureKeepsTheReturnedLoadAndMeasuresOnlyTheFailedReadCall() {
+        var now = 0L; var reads = 0
+        val messages = mutableListOf<String>()
+        val timeout = SocketTimeoutException("private-host token=private-secret")
+        val body = object : InputStream() {
+            override fun read(): Int = throw UnsupportedOperationException()
+            override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                if (reads++ == 0) { repeat(10) { bytes[offset + it] = 42 }; return 10 }
+                now += 10_000_000_000; throw timeout
+            }
+        }
+        val http = TimedHttp(java.net.URL("https://media.invalid/video.mp4"), content = body)
+        val proxy = AirPlayVideoProxy(http.url.toString(), { _, _ -> error("Successful HTTP must not use FCUP") },
+            null, messages::add, { http }, { now })
+        try {
+            proxy.open(proxy.rootId, null) { it }!!.use { resource ->
+                assertEquals(AirPlayVideoProxy.ResourceRoute.ANDROID_HTTP, resource.reference!!.route)
+                assertTrue(messages.none { it.contains("stage=HTTP_FAILURE ") })
+                assertArrayEquals(ByteArray(10) { 42 }, resource.body.readNBytes(10))
+                assertSame(timeout, runCatching { resource.body.read() }.exceptionOrNull())
+                assertSame(timeout, runCatching { resource.body.read() }.exceptionOrNull())
+            }
+            val event = messages.single { it.contains("stage=HTTP_FAILURE ") }
+            assertTrue(event.contains("load=1 route=ANDROID_HTTP phase=RESPONSE_BODY phaseElapsedMs=10000"))
+            assertTrue(event.contains("readLimitMs=10000 timeoutReported=true"))
+            assertFalse(event.contains("private")); assertFalse(event.contains("secret"))
+            assertTrue(http.disconnects > 0)
+        } finally { proxy.close() }
+    }
+
+    @Test fun inlineCaptionMetadataNeverEntersTheSerialPhoneResourceExchange() {
+        val prefix = "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n"
+        val caption = (prefix + "x".repeat(123248 - prefix.length - 2) + "\n\n").toByteArray()
+        assertEquals(123248, caption.size)
+        val inline = "data:text/vtt;charset=UTF-8;base64," + Base64.getEncoder().encodeToString(caption)
+        val root = "minibili://app/master.m3u8"
+        val subtitles = "minibili://app/subtitles.m3u8"
+        val video = "minibili://app/video.m3u8"
+        val master = "#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"cc\",NAME=\"English\",URI=\"$subtitles\"\n" +
+            "#EXT-X-STREAM-INF:BANDWIDTH=100000,SUBTITLES=\"cc\"\n$video\n"
+        val subtitlePlaylist = "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\n$inline\n#EXT-X-ENDLIST\n"
+        for (force in listOf(false, true)) {
+            val phoneCalls = mutableListOf<String>()
+            val routed = mutableListOf<String>()
+            val proxy = AirPlayVideoProxy(root, { url, _ ->
+                phoneCalls += url
+                val body = when (url) {
+                    root -> master
+                    subtitles -> subtitlePlaylist
+                    video -> "#EXTM3U\n#EXTINF:1,\nminibili://app/segment.m4s\n#EXT-X-ENDLIST\n"
+                    else -> error("Inline data must not be sent to the phone")
+                }
+                ReceiverResource(body.toByteArray(), 0, null)
+            })
+            val route: (String) -> String = { id -> routed += id; "/resource?r=$id" }
+            try {
+                proxy.open(proxy.rootId, "bytes=0-65535", force, route)!!.use {
+                    assertEquals(200, it.status)
+                    assertFalse(it.body.readBytes().toString(Charsets.UTF_8).contains("minibili:"))
+                }
+                val subtitleId = routed[0]; val videoId = routed[1]
+                proxy.open(subtitleId, null, force, route)!!.use {
+                    val playlist = it.body.readBytes().toString(Charsets.UTF_8)
+                    assertFalse(playlist.contains("data:"))
+                    assertTrue(playlist.contains("/resource?r="))
+                }
+                val inlineId = routed.last()
+                proxy.open(inlineId, null, force, route)!!.use {
+                    assertEquals(200, it.status)
+                    assertEquals("text/vtt;charset=UTF-8", it.type)
+                    assertEquals(AirPlayVideoProxy.ResourceRoute.INLINE_DATA, it.reference!!.route)
+                    assertNull(it.reference!!.headersMillis)
+                    assertTrue(it.reference!!.responseMillis!! >= 0)
+                    assertArrayEquals(caption, it.body.readBytes())
+                }
+                assertEquals(listOf(root, subtitles), phoneCalls)
+                proxy.open(videoId, null, force, route)!!.use { assertEquals(200, it.status) }
+                assertEquals(listOf(root, subtitles, video), phoneCalls)
+            } finally { proxy.close() }
+        }
+    }
+
+    @Test fun inlineDataPreservesPercentBytesLiteralPlusAndValidatedMimeCharset() {
+        val cases = listOf(
+            Triple("data:,a+b%2Bc%20%F0%9F%98%80", "a+b+c 😀".toByteArray(), "text/plain;charset=US-ASCII"),
+            Triple("data:;charset=US-ASCII,ABC", "ABC".toByteArray(), "text/plain;charset=US-ASCII"),
+            Triple("DATA:TEXT/VTT;CHARSET=UTF-8;BASE64,V0VCVlRUCg==", "WEBVTT\n".toByteArray(), "text/vtt;charset=UTF-8"),
+            Triple("data:application/octet-stream;base64,%2Bw%3D%3D", byteArrayOf(251.toByte()), "application/octet-stream"),
+            Triple("data:application/octet-stream;base64,+w==", byteArrayOf(251.toByte()), "application/octet-stream"),
+            Triple("data:text/plain;charset=ISO-8859-1,%E9", byteArrayOf(233.toByte()), "text/plain;charset=ISO-8859-1"),
+            Triple("data:application/octet-stream,a%00b", byteArrayOf(97, 0, 98), "application/octet-stream"),
+        )
+        for ((url, expected, type) in cases) {
+            val proxy = AirPlayVideoProxy(url, { _, _ -> error("Inline data must stay local") })
+            try { proxy.open(proxy.rootId, null) { it }!!.use {
+                assertEquals(type, it.type)
+                assertArrayEquals(expected, it.body.readBytes())
+            } } finally { proxy.close() }
+        }
+    }
+
+    @Test fun inlineDataRangesUseAbsoluteOffsetsAndKeepTheEofLength() {
+        val proxy = AirPlayVideoProxy("data:application/octet-stream,0123456789", { _, _ -> error("Unexpected FCUP") })
+        try {
+            for ((range, expected, contentRange) in listOf(
+                Triple("bytes=0-3", "0123", "bytes 0-3/10"),
+                Triple("bytes=5-", "56789", "bytes 5-9/10"),
+                Triple("bytes=-3", "789", "bytes 7-9/10"),
+                Triple("bytes=3-99", "3456789", "bytes 3-9/10"),
+            )) proxy.open(proxy.rootId, range) { it }!!.use {
+                assertEquals(206, it.status)
+                assertEquals(contentRange, it.headers.toMap()["Content-Range"])
+                assertEquals(expected.length.toString(), it.headers.toMap()["Content-Length"])
+                assertEquals(expected, it.body.readBytes().toString(Charsets.US_ASCII))
+            }
+            for (range in listOf("bytes=10-", "bytes=4-2", "bytes=-0")) proxy.open(proxy.rootId, range) { it }!!.use {
+                assertEquals(416, it.status)
+                assertEquals("bytes */10", it.headers.toMap()["Content-Range"])
+                assertEquals(0, it.body.readBytes().size)
+            }
+        } finally { proxy.close() }
+    }
+
+    @Test fun emptyInlineDataHasNoPhantomBytesAndClosedOwnersCannotReadIt() {
+        val proxy = AirPlayVideoProxy("data:,", { _, _ -> error("Unexpected FCUP") })
+        try {
+            proxy.open(proxy.rootId, null) { it }!!.use {
+                assertEquals(200, it.status)
+                assertEquals("0", it.headers.toMap()["Content-Length"])
+                assertEquals(-1, it.body.read())
+            }
+        } finally { proxy.close() }
+        assertNull(proxy.open(proxy.rootId, null) { it })
+        val range = AirPlayVideoProxy("data:,", { _, _ -> error("Unexpected FCUP") })
+        try { range.open(range.rootId, "bytes=0-") { it }!!.use {
+            assertEquals(416, it.status)
+            assertEquals("bytes */0", it.headers.toMap()["Content-Range"])
+            assertEquals(0, it.body.readBytes().size)
+        } } finally { range.close() }
+    }
+
+    private fun assertInlineFailure(url: String, reason: AirPlayVideoProxy.FailureReason) {
+        val lines = mutableListOf<String>()
+        val proxy = AirPlayVideoProxy(url, { _, _ -> error("Invalid inline data must not fall back to FCUP") }, log = lines::add)
+        try {
+            val failure = assertThrows(AirPlayVideoProxy.Failure::class.java) { proxy.open(proxy.rootId, null) { it } }
+            assertEquals(reason, failure.reason)
+            assertEquals(AirPlayVideoProxy.ResourceRoute.INLINE_DATA, failure.route)
+            assertEquals(1L, failure.load)
+            assertTrue(lines.any { it.contains("route=INLINE_DATA") && it.contains("reason=${reason.wire}") })
+            assertFalse(lines.any { it.contains("data:") || it.contains("IPHONE_FCUP") || it.contains("ANDROID_HTTP") })
+        } finally { proxy.close() }
+    }
+
+    @Test fun malformedInlineEncodingAndMimeNeverBecomePhoneRequestsOrUnsafeHeaders() {
+        for (url in listOf(
+            "data:text/vtt;base64", "data:text%2Fvtt;base64,QQ==", "data:text/vtt%0D%0AX-Test:bad,hello",
+            "data:text/vtt;unknown=value,hello", "data:text/vtt;charset=UTF-8;charset=ASCII,hello",
+            "data:text/vtt;charset=UTF-8%0D%0AX-Test,hello", "data:text/vtt;BASE64;charset=UTF-8,QQ==",
+            "data:text/vtt;base64;base64,QQ==", "data:text/vtt;base64,Q===", "data:text/vtt;base64,%25",
+            "data:text/vtt;base64,AA%20A", "data:text/plain,字幕",
+        )) assertInlineFailure(url, AirPlayVideoProxy.FailureReason.UNSUPPORTED_RESOURCE)
+        for (url in listOf("data:,bad%2", "data:,bad%GG")) {
+            val failure = assertThrows(IOException::class.java) { AirPlayVideoProxy(url, { _, _ -> error("Unexpected FCUP") }) }
+            assertEquals("Unsupported media resource", failure.message)
+        }
+    }
+
+    @Test fun inlineMetadataAndDecodedBytesHaveSeparateEarlyLimits() {
+        val limit = 2 * 1024 * 1024
+        val exact = AirPlayVideoProxy("data:application/octet-stream;base64," + Base64.getEncoder().encodeToString(ByteArray(limit)),
+            { _, _ -> error("Unexpected FCUP") })
+        try { exact.open(exact.rootId, null) { it }!!.use { assertEquals(limit, it.body.readBytes().size) } }
+        finally { exact.close() }
+        assertInlineFailure("data:text/plain," + "a".repeat(limit + 1), AirPlayVideoProxy.FailureReason.RESOURCE_TOO_LARGE)
+        assertInlineFailure("data:text/plain," + "%41".repeat(limit + 1), AirPlayVideoProxy.FailureReason.RESOURCE_TOO_LARGE)
+        assertInlineFailure("data:application/octet-stream;base64," + Base64.getEncoder().encodeToString(ByteArray(limit + 1)),
+            AirPlayVideoProxy.FailureReason.RESOURCE_TOO_LARGE)
+        assertInlineFailure("data:text/plain;charset=" + "a".repeat(1025) + ",x", AirPlayVideoProxy.FailureReason.RESOURCE_TOO_LARGE)
+    }
+
+    @Test fun inlineTextIsOpaqueAndInlinePlaylistsCannotOpenLocalOrRelativeResources() {
+        val literal = "file:///synthetic-secret http://example.test/never-requested"
+        val proxy = AirPlayVideoProxy("data:text/plain," + literal.replace(" ", "%20"), { _, _ -> error("Unexpected FCUP") })
+        try { proxy.open(proxy.rootId, null) { it }!!.use { assertEquals(literal, it.body.readBytes().toString(Charsets.UTF_8)) } }
+        finally { proxy.close() }
+        for (child in listOf("file:///synthetic-secret", "content://synthetic/1", "relative.ts", "http://example.test/%GG")) {
+            val bytes = "#EXTM3U\n#EXTINF:1,\n$child\n".toByteArray()
+            assertInlineFailure("data:application/vnd.apple.mpegurl;base64," + Base64.getEncoder().encodeToString(bytes),
+                AirPlayVideoProxy.FailureReason.UNSUPPORTED_RESOURCE)
+        }
+    }
+
+    @Test fun brokerWholeResourceLimitIsCheckedBeforeServingALocalByteRange() {
+        val limit = 32 * 1024 * 1024
+        for (size in listOf(limit - 1, limit, limit + 1)) {
+            val bytes = ByteArray(size).apply { this[lastIndex] = 90 }
+            val range = "bytes=${size - 1}-${size - 1}"
+            var requests = 0
+            val proxy = AirPlayVideoProxy("minibili://synthetic/binary.mp4", { _, requested ->
+                assertEquals(range, requested); requests++
+                ReceiverResource(bytes, 200, null)
+            })
+            try {
+                if (size <= limit) proxy.open(proxy.rootId, range) { it }!!.use {
+                    assertEquals(206, it.status)
+                    assertEquals("bytes ${size - 1}-${size - 1}/$size", it.headers.toMap()["Content-Range"])
+                    assertEquals("1", it.headers.toMap()["Content-Length"])
+                    assertEquals(AirPlayVideoProxy.ResourceRoute.IPHONE_FCUP, it.reference!!.route)
+                    assertEquals(90, it.body.read()); assertEquals(-1, it.body.read())
+                } else {
+                    val failure = assertThrows(AirPlayVideoProxy.Failure::class.java) { proxy.open(proxy.rootId, range) { it } }
+                    assertEquals(AirPlayVideoProxy.FailureReason.RESOURCE_TOO_LARGE, failure.reason)
+                    assertEquals(AirPlayVideoProxy.ResourceRoute.IPHONE_FCUP, failure.route)
+                    assertEquals(1L, failure.load)
+                }
+                assertEquals(1, requests)
+            } finally { proxy.close() }
+        }
+    }
+
+    /** Large legal comments exercise byte limits without synthetic media or thousands of resources. */
+    private fun playlistOfSize(size: Int, child: String? = null): ByteArray {
+        val prefix = "#EXTM3U\n#padding=".toByteArray()
+        val suffix = (if (child == null) "\n#EXT-X-ENDLIST\n" else "\n#EXTINF:1,\n$child\n#EXT-X-ENDLIST\n").toByteArray()
+        require(size >= prefix.size + suffix.size)
+        return ByteArray(size) { 120 }.also { bytes ->
+            prefix.copyInto(bytes); suffix.copyInto(bytes, size - suffix.size)
+        }
+    }
+
+    @Test fun brokerManifestInputAcceptsTwoMebibytesExactlyAndRejectsTheNextByte() {
+        val limit = 2 * 1024 * 1024
+        for (size in listOf(limit - 1, limit, limit + 1)) {
+            val bytes = playlistOfSize(size)
+            var requests = 0
+            val proxy = AirPlayVideoProxy("minibili://synthetic/master.m3u8", { _, _ ->
+                requests++; ReceiverResource(bytes, 200, null)
+            })
+            try {
+                if (size <= limit) proxy.open(proxy.rootId, "bytes=0-65535") { error("Comment-only playlist has no child resources") }!!.use {
+                    assertEquals(200, it.status)
+                    assertTrue(it.reference!!.rewrittenPlaylist)
+                    assertFalse(it.headers.any { header -> header.first.equals("Content-Range", true) })
+                    assertArrayEquals(bytes, it.body.readBytes())
+                } else {
+                    val failure = assertThrows(IOException::class.java) {
+                        proxy.open(proxy.rootId, "bytes=0-65535") { error("Oversized playlist must not be rewritten") }
+                    }
+                    assertEquals("Playlist too large", failure.cause?.message ?: failure.message)
+                }
+                assertEquals(1, requests)
+            } finally { proxy.close() }
+        }
+    }
+
+    @Test fun androidManifestStreamingReadHasTheSameExactInputLimitWithoutPublishingAPrefix() {
+        val limit = 2 * 1024 * 1024
+        for (size in listOf(limit - 1, limit, limit + 1)) {
+            val bytes = playlistOfSize(size)
+            withOrigin(200, mapOf("Content-Type" to "application/vnd.apple.mpegurl"), bytes) { origin, _ ->
+                var fallbackRequests = 0
+                val proxy = AirPlayVideoProxy("$origin/playlist", { _, _ -> fallbackRequests++; null })
+                try {
+                    if (size <= limit) proxy.open(proxy.rootId, null) { error("Comment-only playlist has no child resources") }!!.use {
+                        assertEquals(200, it.status)
+                        assertEquals(AirPlayVideoProxy.ResourceRoute.ANDROID_HTTP, it.reference!!.route)
+                        assertTrue(it.reference!!.rewrittenPlaylist)
+                        assertArrayEquals(bytes, it.body.readBytes())
+                    } else assertThrows(IOException::class.java) {
+                        proxy.open(proxy.rootId, null) { error("Oversized playlist must not publish a rewritten prefix") }
+                    }
+                    assertEquals(if (size <= limit) 0 else 1, fallbackRequests)
+                } finally { proxy.close() }
+            }
+        }
+    }
+
+    @Test fun theNativeManifestInputLimitDoesNotClaimToLimitItsRewrittenOutput() {
+        val limit = 2 * 1024 * 1024
+        val input = playlistOfSize(limit, "s.ts")
+        val replacement = "/resource?r=1&synthetic=" + "p".repeat(64)
+        var rewrites = 0
+        val proxy = AirPlayVideoProxy("minibili://synthetic/master.m3u8", { _, _ -> ReceiverResource(input, 200, null) })
+        try {
+            proxy.open(proxy.rootId, null) { id -> assertEquals("1", id); rewrites++; replacement }!!.use {
+                assertEquals(200, it.status)
+                val output = it.body.readBytes()
+                assertEquals(limit + replacement.length - "s.ts".length, output.size)
+                assertTrue(output.size > limit)
+                assertTrue(output.toString(Charsets.UTF_8).endsWith("\n$replacement\n#EXT-X-ENDLIST\n"))
+                assertTrue(it.reference!!.rewrittenPlaylist)
+            }
+            assertEquals(1, rewrites)
+        } finally { proxy.close() }
+    }
+
     @Test fun aFailedBrokerOpenStillReportsItsNumericLoadAndOriginalCause() {
         val original = java.net.SocketTimeoutException("https://private.test/media?token=secret")
         val proxy = AirPlayVideoProxy("mlhls://app/video", { _, _ -> throw original })
