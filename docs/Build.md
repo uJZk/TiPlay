@@ -7,15 +7,14 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The working release
-candidate is **0.2.20-beta.11** (code **53**); the latest published prerelease remains
-**0.2.20-beta.10** (code **52**) until the checks below are completed. Run
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
+prerelease is **0.2.20-beta.11** (code **53**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the candidate page uses **v77** with WebRTC DataChannel as the formal live-media path.
-The published beta.10 APK and deployed v76 page remain pinned to their verified build
-commit below; candidate playback, loading-indicator and screen-loan fixes are not yet
-distributed. Software checks are in [Testing](Testing.md#webrtc-integrated-acceptance).
+the deployed page uses **v77** with WebRTC DataChannel as the formal live-media path.
+The signed beta.11 APK and deployed v77 page use the same verified build commit below;
+subsequent documentation commits do not change the artifacts or tag. Software checks
+are in [Testing](Testing.md#webrtc-integrated-acceptance).
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
 independent `/webrtc/` subsite without an alias or redirect; the APK defaults to the
 root. The beta record below distinguishes the signed APK's build commit from the
@@ -119,14 +118,13 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta release
 
-The release candidate is **TiPlay 0.2.20-beta.11**, code **53**, paired with webpage
-**v77**. Signed-artifact verification, publication and root deployment are pending.
-Until those complete, the distributed version remains
-[beta.10](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.10), code52/page v76.
+Published [TiPlay 0.2.20-beta.11](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.11),
+code **53**, is paired with deployed webpage **v77**. Release **419756669** was
+published at **2026-10-21 15:56:45 UTC** after independent artifact and deployment checks.
 Download entries retain the version-independent
 [GitHub Releases index](https://github.com/uJZk/TiPlay/releases).
 
-The candidate preserves an applied device-rate correction when new output-timestamp
+This release preserves an applied device-rate correction when new output-timestamp
 pairs confirm a changed pipeline delay without disproving that rate. It retains
 recovery for genuine large changes and stops idle guidance from manufacturing
 source-deadline recovery counts. Normal worklet feedback carries actual render-block
@@ -142,20 +140,47 @@ See [Diagnostics](Diagnostics.md), [AirPlay](AirPlay.md) and the
 
 ### Source validation and remaining scope
 
-| Check | Evidence for this candidate |
+| Check | Evidence for this release |
 | --- | --- |
 | Browser unit suite | **688 passed** on Node 22.23.3, including real Soxr clock/rate recovery, exact parameter boundaries, 1024-frame output, delay-plan bursts and loading ownership. |
 | Scoped Android/JVM tests | **116 passed** across 10 actual classes, covering screen-loan reconciliation/ownership, independent audio, returned keyframes, diagnostic fields/capture and real JVM HTTP read expiry. |
-| Phone debug APK | Functional source assembly passed before the beta.11/code53 metadata increment; candidate package/version/provenance checks belong to the signed artifact verification. |
+| Phone debug APK | Functional source assembly passed before the metadata increment; published beta.11/code53 package, non-debug state and provenance were independently checked in the signed APK. |
 | Version/site preflight | After beta.11/code53/v77 metadata generation: 9 release-draft and 2 root-site checks, 28 browser diagnostic cases and 33 native diagnostic cases passed; public-tree/diff checks passed. These supplement the functional suites above. |
 | Complete browser page / real media | **90 checks passed** with the explicit desktop software decoder override; real Chromium shared clocks and MP4/HLS passed. The three renderer/source cases verify visible loading before resource headers or player import. Final shared-clock runtime hashes were unchanged during its run. |
 | Complete Android CI | Skipped at the user's explicit request; scoped checks do not replace it. |
-| Signed release / root deployment | Pending; requires successful release lint/build, independent attachment/package/signing/runtime/source checks and deployed-file/public-download verification. |
+| Signed release / root deployment | Release lint/build and independent attachment/package/signing/runtime/source checks passed. All 186 root-site URL checks matched; all 5 unauthenticated release/download checks passed. |
+
+### Artifact and deployment evidence
+
+The signed APK, byte-identical `git archive` source ZIP and deployed page came from
+`f139a0e05f987caaa8a4ebe017cba41ce6c778fd`, tagged `v0.2.20-beta.11`.
+The [signed workflow](https://github.com/uJZk/TiPlay/actions/runs/39628681069) and
+[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39628675181) both succeeded.
+Publication preserved the three independently downloaded assets:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.11.apk` | 101,044,521 | `a8044db2b79177ace12f156e1cbb0bb8b5dfb29cd812682958b39277aeb89e95` |
+| `TiPlay-0.2.20-beta.11-source.zip` | 20,826,402 | `4bec88ec0a65078f5584e1ca7abb09de8b798c973c14e5a4c5d83177b0cc7380` |
+| `SHA256SUMS.txt` | 191 | `763985ef55858b64e49285226d9d11aec79c06206da1abddeb7e2e79275d6a25` |
+
+The APK uses `com.ujzk.tiplay` and the beta.10 signing certificate below. Both runtime
+identity files match the pinned DiPlay 0.2.18 inputs; source contains no runtime identity,
+signing credentials or field captures. All four RTC ABIs, 18 supported 64-bit ELF
+libraries' 16 KiB LOAD alignment, APK zip alignment and unchanged legacy JNA libraries
+passed. DEX contains the new screen-loan event, typed close reason and attempted-MAD
+implementation markers.
+
+The [root website](https://ujzk.github.io/TiPlay/) matched 137 assembled files across
+186 URL checks, including the 105-entry cache manifest. All eight language download
+entries open the Releases index; all ten checks of removed independent WebRTC paths
+returned 404. Public APK/source downloads returned their verified lengths, and the
+public checksum file matched the independent download exactly.
 
 ### Remaining scope
 
 CarPlay touch/non-touch and mirror clicks, occasional stutter and MiniBili startup
-still need phone/vehicle retesting; this candidate does not establish complete physical
+still need phone/vehicle retesting; this release does not establish complete physical
 resolution. Desktop software decoding cannot identify the vehicle hardware decoder,
 speaker/panel latency or acoustic quality. Software boundary checks do not calibrate
 the profile defaults for a vehicle. Android socket expiry, timestamp plausibility
@@ -190,7 +215,7 @@ Both runtime identity files match the pinned DiPlay 0.2.18 inputs. The four RTC 
 18 supported 64-bit ELF libraries' 16 KiB LOAD alignment and APK zip alignment passed;
 three retained legacy JNA libraries were byte-identical to beta.9. The source ZIP
 contained no runtime identity or signing credentials. These historical checks do not
-validate the candidate; earlier detailed release records remain in Git.
+validate the beta.11 build; earlier detailed release records remain in Git.
 
 ## Updating an installed app
 

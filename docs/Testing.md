@@ -138,7 +138,7 @@ updates can have long PTS intervals without dropped frames. Compare target and a
 cursor delay during convergence, and retain unknown source/output timing instead of
 calling every missing anchor a passed latency measurement.
 
-The beta.11/v77 playback candidate passed **688 browser tests**, **116 scoped Android
+The beta.11/v77 playback source passed **688 browser tests**, **116 scoped Android
 tests across 10 classes**, and the mobile debug build. It adds an independent
 hardware-clock/real-Soxr oracle: repeated 10 ms output-pipeline changes no longer
 discard a coherent applied device rate, while a real 38 ms change still recovers.

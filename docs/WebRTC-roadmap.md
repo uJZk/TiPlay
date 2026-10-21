@@ -14,8 +14,8 @@ HTTP 只保留 SRP 配对、公开发现和随机 bearer 资源读取/退出；�
 用户确认的真实 CarPlay 播放，beta.3/v71 已记录电脑 host↔host UDP；这些旧版
 观察仍不代表当前整合版已通过设备验收。正式页面覆盖
 <https://ujzk.github.io/TiPlay/>，删除独立 `/webrtc/` 子站，不留别名或重定向；
-APK 默认使用正式根页。已发布版本为 0.2.20-beta.10/code52，正式根页已部署 v76；
-beta.11/code53 与 v77 候选正在收尾，APK 与网页构建来源和实际发布状态见
+APK 默认使用正式根页。已发布版本为 0.2.20-beta.11/code53，正式根页已部署 v77；
+APK 与网页构建来源和独立核验见
 [构建记录](Build.md#beta-release)。v74 修复了控制排队阻塞媒体、
 诊断上报放大，以及 URL 音频裁剪、分段调度和重采样接缝；现场证据与验证边界见
 [诊断](Diagnostics.md#airplay-url-playback-evidence)和[测试](Testing.md#webrtc-integrated-acceptance)。
@@ -76,8 +76,8 @@ MAD 3／0.5／1.5 ms 精确拒绝门槛、125 ms 计划历史长链、source 一
 真实 JVM 套接字已分开验证 10 s 响应头、初始响应体和流式读取到期。剩余范围包括
 Android 实际连接／读取到期、native 400 ms buffered anchor 与浏览器播放的现场关联，
 不同车辆的实际 render quantum，以及无 worklet／原生块大小提示的 URL context。
-当前工作区还修复了输出延迟变化时错误重置已应用设备速率、初始加载指示空白和
-借屏命令写入中的重入丢失；这些改动尚未发布，不与上面的 beta.10/v76 现场观察混为一谈。
+beta.11 修复了输出延迟变化时错误重置已应用设备速率、初始加载指示空白和
+借屏命令写入中的重入丢失；beta.10/v76 现场观察与这些后续修复分别记录。
 原生 fake-clock 回归已补证 400 ms 余量仅加算一次，涵盖映射／fallback、暂停与退休；
 这不能替代实际扬声器启动时间测量。
 
