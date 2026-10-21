@@ -8,10 +8,12 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The current prerelease
-is **0.2.20-beta.8** (code **50**), following beta.7/code49. Run
+is **0.2.20-beta.9** (code **51**), following beta.8/code50. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the paired page uses **v74** with WebRTC DataChannel as the formal live-media path.
+the page uses **v75** with WebRTC DataChannel as the formal live-media path.
+Beta.9 signing/publication and root deployment are being verified; the previous
+beta.8 record below remains pinned to its original v74 assets until that completes.
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
 independent `/webrtc/` subsite without an alias or redirect; the APK defaults to the
 root. The beta record below distinguishes the signed APK's build commit from the

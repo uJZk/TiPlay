@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { browserDiagnosticEvents, PAGE_VERSION } from '../../site/play/browser-diagnostics.js';
 import { createVideoDiagnosticTracker, safeSenderDiagnostics, videoDiagnosticValues, packVideoDiagnosticValues,
-  VIDEO_DIAGNOSTIC_FIELDS, VIDEO_DIAGNOSTIC_BYTES, DROP_FIELDS } from '../../site/play/video-diagnostics.js';
+  VIDEO_DIAGNOSTIC_FIELDS, VIDEO_DIAGNOSTIC_BYTES, DROP_FIELDS, decoderStatsMatch, decoderStatsSnapshot } from '../../site/play/video-diagnostics.js';
 import { performanceStats } from '../../site/play/fps-window.js';
 
 const fixture = JSON.parse(readFileSync(new URL('../../shared/src/test/resources/Browser-video-diagnostics-v1.json', import.meta.url)));
@@ -12,6 +12,35 @@ const video = extra => performanceStats({ streamGeneration: 3, epoch: 7, mode: '
   decodeDroppedFrames: 1, scheduledDroppedFrames: 2, transferDroppedFrames: 3, renderDroppedFrames: 4, pacingDroppedFrames: 5,
   timingRecords: 99999, ...extra });
 const detail = events => events.find(event => event.k === 'video-diag');
+
+test('decoder snapshot age includes worker delivery and grows without refreshing an old sample', () => {
+  const sample = { streamGeneration: 7, epoch: 4, decoderStatsSampledAtMs: 10000, decoded: 30,
+    decoderStatsAgeMs: 0, frameIntervalMaxMs: 190 };
+  assert.equal(decoderStatsMatch(sample, 7, 4), true);
+  assert.equal(decoderStatsSnapshot(sample, 10250).decoderStatsAgeMs, 250);
+  assert.equal(decoderStatsSnapshot(sample, 11000).decoderStatsAgeMs, 1000);
+  assert.equal(Object.hasOwn(decoderStatsSnapshot(sample, 11000), 'decoderStatsSampledAtMs'), false);
+  assert.equal(Object.hasOwn(decoderStatsSnapshot(sample, 9999), 'decoderStatsAgeMs'), false);
+  assert.equal(Object.hasOwn(decoderStatsSnapshot({ decoderStatsAgeMs: 0 }, 11000), 'decoderStatsAgeMs'), false);
+  assert.equal(decoderStatsMatch(sample, 8, 4), false, 'old worker cannot refresh a replacement source');
+  assert.equal(decoderStatsMatch(sample, 7, 5), false, 'old epoch cannot refresh a replacement codec');
+  assert.equal(decoderStatsMatch(sample, 7, null), false, 'idle cannot acquire an old epoch sample');
+  assert.equal(decoderStatsMatch({ streamGeneration: 7, epoch: null }, 7, undefined), true);
+  assert.equal(decoderStatsMatch(undefined, undefined, undefined), false);
+});
+
+test('bounded st and Debug detail retain sample age, rare read gap and current decoder blockage', () => {
+  const extra = { decoderStatsAgeMs: 250, readFrameIntervalMsMax: 190, decodeOldestInFlightMs: 284 };
+  const entries = browserDiagnosticEvents({ video: video(extra) }, false, true, 'capture');
+  for (const [key, value] of Object.entries(extra)) {
+    assert.equal(entries[0].v[`video.${key}`], value);
+    assert.equal(detail(entries).v[`raw.${key}`], value);
+  }
+  assert.equal(Object.hasOwn(detail(entries).v, 'raw.decoderStatsSampledAtMs'), false);
+  const invalid = videoDiagnosticValues({ video: video({ decoderStatsAgeMs: -1,
+    readFrameIntervalMsMax: -1, decodeOldestInFlightMs: -1 }) }, 'capture', createVideoDiagnosticTracker());
+  for (const key of Object.keys(extra)) assert.equal(Object.hasOwn(invalid, `raw.${key}`), false);
+});
 
 test('ordinary telemetry always retains epoch and all five disjoint drop components ahead of optional counters', () => {
   const page = { video: video(Object.fromEntries(Array.from({ length: 300 }, (_, i) => [`counter${i}`, i]))),
@@ -85,14 +114,16 @@ test('live policy fixture keeps exact cross-language fields while packing priori
   assert.deepEqual(current.schemaFields.sort(), [...VIDEO_DIAGNOSTIC_FIELDS].sort());
   const packed = packVideoDiagnosticValues(current.inputValues, PAGE_VERSION);
   assert.deepEqual(current.debug.v, packed);
-  assert.equal(Object.keys(packed).length, 256); assert.equal(packed.omittedFields, 2);
+  assert.equal(Object.keys(packed).length, 256); assert.equal(packed.omittedFields, 5);
   assert.ok(Buffer.byteLength(JSON.stringify(packed)) <= VIDEO_DIAGNOSTIC_BYTES);
   for (const key of ['streamGeneration', 'epoch', ...DROP_FIELDS.map(key => `raw.${key}`),
     'raw.playbackProfile', 'raw.policyVideoTargetMs', 'raw.policyVideoReadinessMs', 'raw.policyVideoMarginMs',
     'raw.policyInteractionStarts', 'raw.policyInteractionReleases', 'raw.policyProfileSwitches',
     'raw.policyVideoPlanDurationMs', 'raw.policyVideoPlanRemainingMs', 'raw.policyVideoLeadRemainingMs',
     'raw.sourceClockState', 'raw.sourceClockAgeMs', 'raw.clockEstimatorState', 'raw.clockEstimatorObservationAgeMs',
-    'raw.clockEstimatorSelectedAgeMs']) assert.equal(packed[key], current.inputValues[key], key);
+    'raw.clockEstimatorSelectedAgeMs', 'raw.decoderStatsAgeMs', 'raw.readFrameIntervalMsMax', 'raw.decodeOldestInFlightMs',
+    'raw.decodeQueueSize', 'raw.decodedQueueFrames', 'raw.decodedQueueBytes', 'raw.decodeInFlightFrames', 'raw.decodeInFlightBytes',
+    'raw.acceleration', 'raw.decoderImplementation']) assert.equal(packed[key], current.inputValues[key], key);
   const invalid = videoDiagnosticValues({ video: video({ policyVideoTargetMs: -1, policyInteractionStarts: .5,
     policyInteractionActive: 1, sourceClockAgeMs: -1, sourceClockState: 'private-url',
     clockEstimatorState: 'secret', clockEstimatorObservationAgeMs: -1 }) }, 'capture', createVideoDiagnosticTracker());

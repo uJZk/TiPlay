@@ -104,7 +104,19 @@
       "audioLateStartMaxMs": 0,
       "audioPcmPeak": 0.73,
       "audioPcmOverFullScaleSamples": 0,
-      "audioNonFiniteSamples": 0
+      "audioNonFiniteSamples": 0,
+      "audioScheduleUnderruns": 0,
+      "audioScheduleUnderrunMs": 0,
+      "audioScheduleUnderrunMaxMs": 0,
+      "audioRebufferStops": 0,
+      "startupPhase": "first-samples",
+      "openElapsedMs": 5000,
+      "phaseElapsedMs": 1000,
+      "audioBaseLatencyMs": 10,
+      "audioOutputLatencyMs": 20,
+      "audioOutputTimestampAgeMs": 2,
+      "audioOutputContextLagMs": 30,
+      "audioSubmitUncertaintyMaxMs": 0
     }
   },
   "event": {
@@ -114,6 +126,7 @@
     "event": "engine-state",
     "dragging": false,
     "engine": {
+      "startupPhase": "first-samples",
       "waitReason": "audio-context-resume",
       "contextState": "suspended",
       "clockSource": "audio",
@@ -136,6 +149,8 @@
       "audioReadPending": true,
       "userActivationHasBeenActive": false,
       "gestureRequired": true,
+      "openElapsedMs": 5000,
+      "phaseElapsedMs": 1000,
       "generation": 4,
       "clockTime": 0,
       "clockPosition": 12.5,
@@ -203,7 +218,16 @@
       "audioLateStartMaxMs": 0,
       "audioPcmPeak": 0.73,
       "audioPcmOverFullScaleSamples": 0,
-      "audioNonFiniteSamples": 0
+      "audioNonFiniteSamples": 0,
+      "audioScheduleUnderruns": 0,
+      "audioScheduleUnderrunMs": 0,
+      "audioScheduleUnderrunMaxMs": 0,
+      "audioRebufferStops": 0,
+      "audioBaseLatencyMs": 10,
+      "audioOutputLatencyMs": 20,
+      "audioOutputTimestampAgeMs": 2,
+      "audioOutputContextLagMs": 30,
+      "audioSubmitUncertaintyMaxMs": 0
     },
     "position": 12.5,
     "duration": 120,
@@ -319,7 +343,19 @@
       "audioLateStartMaxMs": 9007199254740991,
       "audioPcmPeak": 9007199254740991,
       "audioPcmOverFullScaleSamples": 9007199254740991,
-      "audioNonFiniteSamples": 9007199254740991
+      "audioNonFiniteSamples": 9007199254740991,
+      "audioScheduleUnderruns": 9007199254740991,
+      "audioScheduleUnderrunMs": 9007199254740991,
+      "audioScheduleUnderrunMaxMs": 9007199254740991,
+      "audioRebufferStops": 9007199254740991,
+      "startupPhase": "first-samples",
+      "openElapsedMs": 9007199254740991,
+      "phaseElapsedMs": 9007199254740991,
+      "audioBaseLatencyMs": 9007199254740991,
+      "audioOutputLatencyMs": 9007199254740991,
+      "audioOutputTimestampAgeMs": 9007199254740991,
+      "audioOutputContextLagMs": 9007199254740991,
+      "audioSubmitUncertaintyMaxMs": 9007199254740991
     }
   },
   "maximumEvent": {
@@ -329,6 +365,7 @@
     "event": "engine-state",
     "dragging": false,
     "engine": {
+      "startupPhase": "first-samples",
       "waitReason": "audio-context-suspended",
       "contextState": "interrupted",
       "clockSource": "audio",
@@ -351,6 +388,8 @@
       "audioReadPending": true,
       "userActivationHasBeenActive": false,
       "gestureRequired": true,
+      "openElapsedMs": 9007199254740991,
+      "phaseElapsedMs": 9007199254740991,
       "generation": 9007199254740991,
       "clockTime": 9007199254740991,
       "clockPosition": 9007199254740991,
@@ -418,7 +457,16 @@
       "audioLateStartMaxMs": 9007199254740991,
       "audioPcmPeak": 9007199254740991,
       "audioPcmOverFullScaleSamples": 9007199254740991,
-      "audioNonFiniteSamples": 9007199254740991
+      "audioNonFiniteSamples": 9007199254740991,
+      "audioScheduleUnderruns": 9007199254740991,
+      "audioScheduleUnderrunMs": 9007199254740991,
+      "audioScheduleUnderrunMaxMs": 9007199254740991,
+      "audioRebufferStops": 9007199254740991,
+      "audioBaseLatencyMs": 9007199254740991,
+      "audioOutputLatencyMs": 9007199254740991,
+      "audioOutputTimestampAgeMs": 9007199254740991,
+      "audioOutputContextLagMs": 9007199254740991,
+      "audioSubmitUncertaintyMaxMs": 9007199254740991
     },
     "position": 12.5,
     "duration": 120,
@@ -429,8 +477,8 @@
     "readyState": 3,
     "networkState": 2
   },
-  "normalBytes": 2407,
-  "maximumBytes": 3267,
+  "normalBytes": 2731,
+  "maximumBytes": 3747,
   "failureInput": {
     "state": {
       "id": 7,
@@ -541,7 +589,19 @@
       "audioLateStartMaxMs": 0.023,
       "audioPcmPeak": 0.73,
       "audioPcmOverFullScaleSamples": 0,
-      "audioNonFiniteSamples": 0
+      "audioNonFiniteSamples": 0,
+      "audioScheduleUnderruns": 0,
+      "audioScheduleUnderrunMs": 0,
+      "audioScheduleUnderrunMaxMs": 0,
+      "audioRebufferStops": 0,
+      "startupPhase": "playing",
+      "openElapsedMs": 5000,
+      "phaseElapsedMs": 0,
+      "audioBaseLatencyMs": 10,
+      "audioOutputLatencyMs": 20,
+      "audioOutputTimestampAgeMs": 2,
+      "audioOutputContextLagMs": 30,
+      "audioSubmitUncertaintyMaxMs": 0
     },
     "after": {
       "generation": 4,
@@ -617,7 +677,19 @@
       "resourceBackwardRestarts": 0,
       "resourceRangeIgnored": 1,
       "audioRequestedContextRate": 44100,
-      "audioContextRate": 44100
+      "audioContextRate": 44100,
+      "audioScheduleUnderruns": 0,
+      "audioScheduleUnderrunMs": 0,
+      "audioScheduleUnderrunMaxMs": 0,
+      "audioRebufferStops": 0,
+      "startupPhase": "playing",
+      "openElapsedMs": 5000,
+      "phaseElapsedMs": 0,
+      "audioBaseLatencyMs": 10,
+      "audioOutputLatencyMs": 20,
+      "audioOutputTimestampAgeMs": 2,
+      "audioOutputContextLagMs": 30,
+      "audioSubmitUncertaintyMaxMs": 0
     }
   },
   "failureEvent": {
@@ -627,6 +699,7 @@
     "event": "error",
     "dragging": false,
     "engine": {
+      "startupPhase": "playing",
       "waitReason": "error",
       "contextState": "running",
       "clockSource": "audio",
@@ -649,6 +722,8 @@
       "audioReadPending": true,
       "userActivationHasBeenActive": false,
       "gestureRequired": false,
+      "openElapsedMs": 5000,
+      "phaseElapsedMs": 0,
       "generation": 4,
       "clockTime": 0,
       "clockPosition": 12.5,
@@ -716,7 +791,16 @@
       "audioLateStartMaxMs": 0.023,
       "audioPcmPeak": 0.73,
       "audioPcmOverFullScaleSamples": 0,
-      "audioNonFiniteSamples": 0
+      "audioNonFiniteSamples": 0,
+      "audioScheduleUnderruns": 0,
+      "audioScheduleUnderrunMs": 0,
+      "audioScheduleUnderrunMaxMs": 0,
+      "audioRebufferStops": 0,
+      "audioBaseLatencyMs": 10,
+      "audioOutputLatencyMs": 20,
+      "audioOutputTimestampAgeMs": 2,
+      "audioOutputContextLagMs": 30,
+      "audioSubmitUncertaintyMaxMs": 0
     },
     "position": 12.5,
     "duration": 120,
@@ -737,6 +821,7 @@
     "event": "engine-state",
     "dragging": false,
     "engine": {
+      "startupPhase": "playing",
       "waitReason": "error",
       "contextState": "running",
       "clockSource": "audio",
@@ -758,6 +843,8 @@
       "audioReadPending": true,
       "userActivationHasBeenActive": false,
       "gestureRequired": false,
+      "openElapsedMs": 5000,
+      "phaseElapsedMs": 0,
       "generation": 4,
       "clockTime": 0,
       "clockPosition": 12.5,
@@ -805,7 +892,16 @@
       "videoHeldGeneration": 4,
       "readProgressFallbacks": 0,
       "audioRequestedContextRate": 44100,
-      "audioContextRate": 44100
+      "audioContextRate": 44100,
+      "audioScheduleUnderruns": 0,
+      "audioScheduleUnderrunMs": 0,
+      "audioScheduleUnderrunMaxMs": 0,
+      "audioRebufferStops": 0,
+      "audioBaseLatencyMs": 10,
+      "audioOutputLatencyMs": 20,
+      "audioOutputTimestampAgeMs": 2,
+      "audioOutputContextLagMs": 30,
+      "audioSubmitUncertaintyMaxMs": 0
     },
     "position": 12.5,
     "duration": 120,
@@ -924,7 +1020,19 @@
       "audioLateStartMaxMs": 0,
       "audioPcmPeak": 0.73,
       "audioPcmOverFullScaleSamples": 0,
-      "audioNonFiniteSamples": 0
+      "audioNonFiniteSamples": 0,
+      "audioScheduleUnderruns": 1,
+      "audioScheduleUnderrunMs": 5.034,
+      "audioScheduleUnderrunMaxMs": 5.034,
+      "audioRebufferStops": 1,
+      "startupPhase": "playing",
+      "openElapsedMs": 5000,
+      "phaseElapsedMs": 0,
+      "audioBaseLatencyMs": 10,
+      "audioOutputLatencyMs": 20,
+      "audioOutputTimestampAgeMs": 2,
+      "audioOutputContextLagMs": 30,
+      "audioSubmitUncertaintyMaxMs": 0
     }
   },
   "continuityEvent": {
@@ -934,6 +1042,7 @@
     "event": "engine-state",
     "dragging": false,
     "engine": {
+      "startupPhase": "playing",
       "waitReason": "none",
       "contextState": "running",
       "clockSource": "audio",
@@ -956,6 +1065,8 @@
       "audioReadPending": true,
       "userActivationHasBeenActive": false,
       "gestureRequired": true,
+      "openElapsedMs": 5000,
+      "phaseElapsedMs": 0,
       "generation": 4,
       "clockTime": 0,
       "clockPosition": 12.5,
@@ -1023,7 +1134,16 @@
       "audioLateStartMaxMs": 0,
       "audioPcmPeak": 0.73,
       "audioPcmOverFullScaleSamples": 0,
-      "audioNonFiniteSamples": 0
+      "audioNonFiniteSamples": 0,
+      "audioScheduleUnderruns": 1,
+      "audioScheduleUnderrunMs": 5.034,
+      "audioScheduleUnderrunMaxMs": 5.034,
+      "audioRebufferStops": 1,
+      "audioBaseLatencyMs": 10,
+      "audioOutputLatencyMs": 20,
+      "audioOutputTimestampAgeMs": 2,
+      "audioOutputContextLagMs": 30,
+      "audioSubmitUncertaintyMaxMs": 0
     },
     "position": 12.5,
     "duration": 120,

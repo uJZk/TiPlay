@@ -16,6 +16,7 @@ internal object BrowserAudioDiagnostics {
         "clockRatePpm", "clockGeneration", "clockUncertaintyMs", "clockRateConfidence",
         "deviceClockRatePpm", "deviceClockTargetRatePpm", "deviceClockConfidence", "deviceClockUncertaintyMs",
         "deviceClockGeneration", "deviceClockReason", "outputState", "outputUnavailableCount", "outputUnavailableReason",
+        "deviceClockAcceptedFitAgeMs", "deviceClockFitRejected", "deviceClockFitStatus", "deviceClockFitRejectReason",
         "outputTimestampContextMs", "outputTimestampPerformanceMs", "outputTimestampAgeMs", "outputRenderedContextMs", "outputFeedbackDeltaMs",
         "outputFeedbackContextMs", "outputFeedbackAgeMs",
         "outputTimestampCaptureMs", "outputTimestampHoldoverAgeMs",
@@ -30,18 +31,28 @@ internal object BrowserAudioDiagnostics {
         "capacityBytes", "lateBytes", "duplicateBytes", "playedBytes", "resetBytes", "invalidBytes", "mode", "semanticType", "anchoring",
         "state", "reason", "phaseErrorMs", "resampleRatePpm", "deviceRatePpm", "phaseCorrectionPpm", "sourceRatePpm", "sourceRateConfidence",
         "sourceDeadlineState", "sourceDeadlineReason", "sourceDeltaMs", "sourceDeltaUpperMs", "sourceDeadlineRejectedFrames",
+        "senderTimingState", "senderRelativePolicyCeilingMs", "sourceStartupDelayMs",
         "lastRecoveryReason", "recoveryCounts.clock-step", "recoveryCounts.underrun", "recoveryCounts.device-clock-reset",
+        "lastClockStepPhaseErrorMs", "lastClockStepDeviceRatePpm", "lastClockStepUncertaintyMs", "lastClockStepAgeMs",
         "recoveryCounts.source-deadline",
     )
     private val decoderFields = setOf("packets", "frames", "nonzero", "peak", "errors")
     private val decoderStreamFields = setOf("packets", "frames", "nonzero", "peak", "backend", "epoch", "rate", "channels", "semanticType")
     private val streamKey = Regex("(?:decoder\\.)?stream([0-9]{1,3})\\..+")
     private val safeText = Regex("[A-Za-z0-9._-]{1,40}")
+    private val enumFields = mapOf(
+        "deviceClockFitStatus" to setOf("acquiring", "tracking", "holdover"),
+        "deviceClockFitRejectReason" to setOf("none", "noisy", "out-of-range"),
+        "senderTimingState" to setOf("unavailable", "arrival-anchored-unverified", "mapped-presentation"),
+    )
 
     fun lines(stats: Map<String, Any?>): List<String> = buildList {
         fun line(prefix: String, fields: Set<String>, keyPrefix: String = "") {
             val entries = fields.mapNotNull { field ->
-                val value = value(stats[keyPrefix + field]) ?: return@mapNotNull null
+                val raw = stats[keyPrefix + field]
+                val choices = enumFields[field]
+                if (choices != null && (raw !is String || raw !in choices)) return@mapNotNull null
+                val value = value(raw) ?: return@mapNotNull null
                 "$field=$value"
             }
             val header = "Browser audio: $prefix"

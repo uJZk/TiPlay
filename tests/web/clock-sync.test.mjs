@@ -241,21 +241,43 @@ test('read-only diagnostics distinguish missing observations, stale observations
   assert.deepEqual(estimator.diagnostics(5501), { clockEstimatorState: 'unavailable' });
 });
 
-test('continuous valid probes can leave an older low-RTT selected fit stale without resetting the clock', () => {
+test('a higher symmetric RTT floor keeps real selected anchors fresh without changing the established clock', () => {
+  const estimator = createClockEstimator();
+  const clock = simulation({ rate: 1.00012 });
+  const before = train(estimator, clock, { until: 300000 });
+  const observedAt = new Set([before.at]);
+  for (let elapsed = 301000; elapsed <= 420000; elapsed += 1000) {
+    observedAt.add(clock.local(elapsed) + 10);
+    const current = clock.probe(estimator, elapsed, { outbound: 10, inbound: 10 });
+    assert.ok(current, `continuous consistent observations must keep mapping available at ${elapsed}`);
+    assert.equal(current.generation, before.generation);
+    assert.ok(observedAt.has(current.at), 'selected timestamps must belong to real observations');
+    assert.ok(clock.local(elapsed) + 10 - current.at <= 15000, 'the selected timestamp belongs to a real fresh observation');
+    assert.ok(Math.abs(mapClockTime(clock.server(elapsed), current) - clock.local(elapsed)) < 0.1);
+    assert.ok(Math.abs(current.rate - before.rate) * 1e6 < 1);
+    if (current.at > before.at) assert.ok(current.uncertaintyMs >= 10, 'fresh 20 ms probes cannot inherit old low-RTT precision');
+  }
+});
+
+test('fresh observations that disagree with the existing mapping can leave an older selected fit stale', () => {
   const estimator = createClockEstimator();
   for (let second = 0; second < 50; second++) {
     estimator.observe(second * 1000, second * 1000 + 499, second * 1000 + 501);
   }
   const before = estimator.snapshot(49501);
   for (let second = 50; second < 70; second++) {
-    // Every 20 ms round trip has the same midpoint/offset; these are valid new
-    // observations, but the existing low-delay fit still selects older 2 ms probes.
-    estimator.observe(second * 1000, second * 1000 + 490, second * 1000 + 510);
+    // Replies are RTT-valid, but a persistently asymmetric path changes their
+    // midpoint beyond the existing mapping's software error estimate.
+    estimator.observe(second * 1000, second * 1000 + 499, second * 1000 + 519);
   }
   const expected = JSON.parse(readFileSync(new URL('./fixtures/clock-estimator-diagnostics.json', import.meta.url)));
-  assert.deepEqual(estimator.diagnostics(69510), expected);
-  assert.equal(estimator.snapshot(69510), null, 'diagnostics must not weaken the live freshness guard');
-  assert.deepEqual(estimator.diagnostics(69510), expected, 'repeated reads must not advance selected or observation timestamps');
+  assert.deepEqual(estimator.diagnostics(69519), {
+    ...expected, clockEstimatorSelectedAgeMs: expected.clockEstimatorSelectedAgeMs + 9,
+  });
+  assert.equal(estimator.snapshot(69519), null, 'diagnostics must not weaken the live freshness guard');
+  assert.deepEqual(estimator.diagnostics(69519), {
+    ...expected, clockEstimatorSelectedAgeMs: expected.clockEstimatorSelectedAgeMs + 9,
+  }, 'repeated reads must not advance selected or observation timestamps');
   const recovered = estimator.observe(70000, 70499, 70501);
   assert.equal(recovered.generation, before.generation, 'diagnostic reads must not turn RTT selection into a reset');
   assert.deepEqual(estimator.diagnostics(70501), {

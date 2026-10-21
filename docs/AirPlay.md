@@ -114,6 +114,16 @@ on the same control connection; waiting for browser readiness there can block th
 resource needed to become ready. Loading, readiness and failure remain asynchronous
 through playback information and events.
 
+Startup diagnostics separate dependency loading, video/audio selection, audio-menu
+discovery, metadata and first decoded samples from readiness and actual `playing`.
+The browser's source-engine elapsed time freezes at the first actual playback;
+later seeks do not restart that measurement. It excludes the preceding resource
+type probe. Initial zero-position directives reuse already prepared frames;
+nonzero initial positions and later explicit seeks still rebuild at their target.
+Audio-menu discovery currently checks alternative renditions before selected-track
+decoding starts. A slow unused rendition can therefore still delay preparation;
+moving those reads into playback requires scheduling that cannot starve active media.
+
 TiPlay owns one audio-leading clock, bounded queues, buffering, seek and rate;
 silent video uses monotonic time. The shared URL-casting profile favors smoothness:
 750 ms startup / 1500 ms recovery are target playback-time watermarks, not guaranteed
@@ -191,6 +201,14 @@ stream media and rewrite bounded HLS manifests/children/keys. Current-iPhone res
 may redirect directly, with authorized proxy fallback for failed CORS/reachability. Debug mode forces all media through Android, including nested playlists and redirects, and updates the browser directive so active playback reopens on the new route.
 Neither makes an unreachable sender reachable. FCUP serializes exchanges with
 session/peer/URL/request-ID checks; acknowledgement is not resource completion.
+When Android HTTP fails and FCUP successfully serves the same resource, the current
+playback item remembers that exact resource's fallback route across subsequent
+byte ranges. This avoids paying the same failed HTTP attempt for every read unit.
+It stores a route preference, not media bytes, and does not disable an entire origin.
+Changed resource URLs and replacement playback items probe their own routes; the
+first failing route can still add its connection/error wait before fallback succeeds.
+Debug's forced proxy path and synchronous raw-capture writes can also change loading
+costs, so captured admission times do not establish ordinary direct-path startup time.
 Browser media and caption discovery serialize actual network reads. Range-capable media
 uses bounded byte-range units. When Range is ignored, a sequential body is reused per
 resource identity: URL, headers excluding Range and fetch credentials/mode/redirect.

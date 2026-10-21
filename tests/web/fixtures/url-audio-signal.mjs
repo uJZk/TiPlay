@@ -12,11 +12,14 @@ export function urlAudioSample(frame, channel, sampleRate) {
 export function renderScheduledUrlAudio(nodes, sampleRate, seconds) {
   const frames = Math.round(seconds * sampleRate), channels = [new Float32Array(frames), new Float32Array(frames)];
   const coverage = new Uint16Array(frames);
-  const anchorTime = nodes.find(node => Number.isFinite(node.time))?.time || 0;
+  const anchor = nodes.find(node => Number.isFinite(node.time));
+  const anchorTime = anchor?.renderTime ?? anchor?.time ?? 0;
   for (const node of nodes) {
     if (!node.buffer || !Number.isFinite(node.time)) continue;
     if (node.buffer.sampleRate !== sampleRate) throw new Error('Plan oracle requires equal input/output rates; use real OfflineAudioContext for resampling.');
-    const first = Math.round((node.time - anchorTime) * sampleRate);
+    // Simulated start() records its effective edge when the device clock was
+    // advanced inside the call. Native actual edges require the worklet capture.
+    const first = Math.round(((node.renderTime ?? node.time) - anchorTime) * sampleRate);
     const stop = Number.isFinite(node.stopTime) ? Math.round((node.stopTime - anchorTime) * sampleRate) : Infinity;
     for (let index = 0; index < node.buffer.length; index++) {
       const at = first + index;
@@ -62,4 +65,130 @@ export function inspectUrlAudioSignal(rendered, fromSeconds, toSeconds) {
   return { frames: last - first, gaps, overlaps, frameIdentityErrors, duplicateFrames, skippedFrames, maximumGapRun,
     maximumError, maximumStepResidual, clickResidualFrames, maximumPhaseErrorRadians,
     relativeErrorDb: errorEnergy ? 10 * Math.log10(errorEnergy / referenceEnergy) : -Infinity };
+}
+
+/** Source identities remain consecutive even when an unavoidable wall-clock underrun inserts silence. */
+export function inspectScheduledUrlAudioSequence(nodes) {
+  let previous = null, skippedFrames = 0, repeatedFrames = 0, submittedFrames = 0;
+  for (const node of nodes) {
+    if (!node.buffer || !Number.isFinite(node.time)) continue;
+    const count = Math.min(node.buffer.length, Number.isFinite(node.stopTime)
+      ? Math.max(0, Math.round((node.stopTime - (node.renderTime ?? node.time)) * node.buffer.sampleRate)) : node.buffer.length);
+    if (!count) continue;
+    const identities = node.buffer.getChannelData(1);
+    const first = Math.round(identities[0] * INDEX_SCALE) - 1;
+    const last = Math.round(identities[count - 1] * INDEX_SCALE) - 1;
+    if (previous !== null) {
+      skippedFrames += Math.max(0, first - previous - 1);
+      repeatedFrames += Math.max(0, previous - first + 1);
+    }
+    submittedFrames += count; previous = last;
+  }
+  return { skippedFrames, repeatedFrames, submittedFrames };
+}
+
+/**
+ * Synthetic decoded media drives the real engine; the fake device clock advances
+ * independently of rAF in 128-frame quanta. This checks the submitted graph, not
+ * real device rendering deadlines. No production scheduling logic is copied.
+ */
+export function createUrlAudioSchedulingFixture(createMediaEngine, {
+  sampleRate = 48000, duration = 4, video = false, videoFps = 30, videoSurfacePool = 6,
+  videoDeferAt = Infinity, videoReadGate = null,
+  AudioContext: ContextConstructor = null, now = null, requestFrame = null, cancelFrame = null,
+  beforeSourceStart = null, afterSourceStart = null,
+} = {}) {
+  const packetFrames = 1024, callbacks = new Map(), nodes = [], samples = [], surfaceWaiters = new Set();
+  let wall = 0, nextCallback = 0, context, held;
+  const flush = async () => { for (let i = 0; i < 150; i++) await Promise.resolve(); };
+  const wakeSurfaces = () => { for (const wake of surfaceWaiters) wake(); surfaceWaiters.clear(); };
+  const closeHeld = () => { held?.close(); held = null; };
+  const audioTrack = { canDecode: async () => true, isLive: async () => false };
+  const videoTrack = { canDecode: async () => true, isLive: async () => false,
+    getPrimaryPairableAudioTrack: async () => audioTrack,
+    getDecoderConfig: async () => null, getDisplayWidth: async () => 16, getDisplayHeight: async () => 9 };
+  class Input {
+    getPrimaryVideoTrack() { return Promise.resolve(video ? videoTrack : null); }
+    getPrimaryAudioTrack() { return Promise.resolve(audioTrack); }
+    getFirstTimestamp() { return Promise.resolve(0); }
+    getDurationFromMetadata() { return Promise.resolve(duration); }
+    dispose() {}
+  }
+  class AudioBufferSink {
+    buffers(start) {
+      let index = Math.max(0, Math.floor(start * sampleRate / packetFrames + 1e-6)), closed = false;
+      return { [Symbol.asyncIterator]() { return this; },
+        async return() { closed = true; return { done: true }; },
+        async next() {
+          if (closed || index * packetFrames >= duration * sampleRate) return { done: true };
+          const first = index++ * packetFrames;
+          return { done: false, value: { timestamp: first / sampleRate, duration: packetFrames / sampleRate,
+            buffer: { sampleRate, numberOfChannels: 2, length: packetFrames, duration: packetFrames / sampleRate,
+              getChannelData: channel => Float32Array.from({ length: packetFrames }, (_, frame) => urlAudioSample(first + frame, channel, sampleRate)) } } };
+        } };
+    }
+  }
+  class VideoSampleSink {
+    samples(start) {
+      let index = Math.floor(start * videoFps + 1e-6), closed = false;
+      return { [Symbol.asyncIterator]() { return this; },
+        async return() { closed = true; wakeSurfaces(); return { done: true }; },
+        async next() {
+          if (closed || index / videoFps >= duration) return { done: true };
+          if (index === videoDeferAt && videoReadGate) await videoReadGate;
+          while (!closed && samples.filter(sample => !sample.closed).length >= videoSurfacePool)
+            await new Promise(resolve => surfaceWaiters.add(resolve));
+          if (closed) return { done: true };
+          const timestamp = index++ / videoFps;
+          const sample = { timestamp, duration: 1 / videoFps, displayWidth: 16, displayHeight: 9,
+            codedWidth: 16, codedHeight: 9, closed: false, close() { this.closed = true; wakeSurfaces(); } };
+          samples.push(sample); return { done: false, value: sample };
+        } };
+    }
+  }
+  class SimulatedAudioContext {
+    constructor(options) { this.sampleRate = options.sampleRate; this.currentTime = this.elapsed = 0; this.state = 'suspended'; }
+    createGain() { return { gain: { value: 1 }, connect() {}, disconnect() {} }; }
+    createBuffer(channels, length, rate) {
+      const planes = Array.from({ length: channels }, () => new Float32Array(length));
+      return { length, sampleRate: rate, duration: length / rate,
+        copyToChannel(data, channel) { planes[channel].set(data); }, getChannelData: channel => planes[channel] };
+    }
+    createBufferSource() {
+      const owner = this;
+      return { connect() {}, disconnect() {}, start(time) { this.renderTime = Math.max(time, owner.currentTime); }, stop() {} };
+    }
+    async resume() { this.state = 'running'; }
+    async close() { this.state = 'closed'; }
+  }
+  class ObservedAudioContext extends (ContextConstructor || SimulatedAudioContext) {
+    constructor(options) { super(options); context = this; }
+    createBufferSource() {
+      const node = super.createBufferSource(), start = node.start.bind(node), stop = node.stop.bind(node), owner = this;
+      node.start = time => {
+        node.time = time; node.scheduledAt = owner.currentTime;
+        beforeSourceStart?.({ node, context: owner, time }); start(time); afterSourceStart?.({ node, context: owner, time });
+      };
+      node.stop = (...args) => { node.stopTime = args[0] ?? owner.currentTime; stop(...args); };
+      nodes.push(node); return node;
+    }
+  }
+  const media = createMediaEngine(null, { library: { Input, AudioBufferSink, VideoSampleSink, UrlSource: class {}, ALL_FORMATS: [] }, AudioContext: ObservedAudioContext,
+    presenter: { present(sample) { closeHeld(); held = sample; }, clear: closeHeld, dispose: closeHeld },
+    now: now || (() => wall), requestFrame: requestFrame || (callback => { callbacks.set(++nextCallback, callback); return nextCallback; }),
+    cancelFrame: cancelFrame || (id => callbacks.delete(id)) });
+  const advance = seconds => {
+    wall += seconds;
+    if (context?.state === 'running') {
+      context.elapsed += seconds;
+      context.currentTime = Math.floor(context.elapsed * context.sampleRate / 128) * 128 / context.sampleRate;
+    }
+  };
+  return { media, nodes, samples, flush, advance, context: () => context,
+    async tick(seconds = 0) {
+      advance(seconds);
+      const pending = callbacks.entries().next().value;
+      if (!pending) throw new Error('URL engine has no pending animation callback');
+      callbacks.delete(pending[0]); pending[1](); await flush();
+    } };
 }

@@ -58,6 +58,43 @@ test('decoder clock diagnostics share the presentation freshness boundary and sn
   assert.equal(stats.sourceClockState, 'unavailable'); assert.equal(stats.sourceClockAgeMs, null);
 });
 
+test('decoder evidence exposes a rare supply gap and an outstanding output without claiming hardware execution time', async t => {
+  let at = 100;
+  t.mock.method(performance, 'now', () => at);
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  FakeDecoder.instances = []; FakeDecoder.gate = null;
+  globalThis.VideoDecoder = FakeDecoder;
+  globalThis.EncodedVideoChunk = class { constructor(init) { Object.assign(this, init); } };
+  t.after(() => { delete globalThis.VideoDecoder; delete globalThis.EncodedVideoChunk; });
+  const pipeline = createDecoderPipeline({ post() {}, present(frame) { frame.close(); } });
+  t.after(() => pipeline.stop());
+  let controller;
+  pipeline.read(4, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(2)); controller.enqueue(keyFrame(2)); await settle();
+  for (let sequence = 1; sequence <= 21; sequence++) {
+    at += sequence === 21 ? 190 : 16;
+    controller.enqueue(encodeRecord({ kind: RECORD.FRAME, codec: 1, epoch: 2, sequence,
+      timestampUs: sequence * 1000, payload: Uint8Array.of(0, 0, 0, 1, 0x41) }));
+    await settle();
+  }
+  const stats = pipeline.stats(), decoder = FakeDecoder.instances.at(-1);
+  assert.equal(stats.readFrameIntervalMsP95, 16);
+  assert.equal(stats.readFrameIntervalMsMax, 190);
+  assert.equal(stats.decoderStatsSampledAtMs, performance.timeOrigin + at);
+  assert.equal(stats.decodeOldestInFlightMs, 510);
+  assert.equal(stats.decodeMsP95, null, 'a stuck output cannot manufacture completed decode samples');
+  at += 50;
+  assert.equal(pipeline.stats().decodeOldestInFlightMs, 560);
+  decoder.output(videoFrame(0));
+  assert.equal(pipeline.stats().decodeOldestInFlightMs, 544, 'oldest outstanding advances to the next submitted frame');
+  assert.equal(pipeline.stats().decodeMsP95, 560, 'submit-to-output is total residence, not pure decoder execution');
+  assert.equal(pipeline.stats().decoderImplementation, 'unknown');
+  controller.enqueue(encodeRecord({ kind: RECORD.IDLE, codec: 1, epoch: 2 })); await settle();
+  assert.equal(pipeline.stats().decodeOldestInFlightMs, null);
+  assert.equal(pipeline.stats().decodeInFlightFrames, 0);
+  assert.equal(pipeline.stats().readFrameIntervalMsMax, 190, 'rolling samples retain their documented cross-epoch scope');
+});
+
 function recordingPresenter(t, messages, presented) {
   const canvas = { width: 800, height: 480, removeEventListener() {},
     getContext: type => type === '2d' ? { fillRect() {}, drawImage() {} } : null };

@@ -7,6 +7,8 @@ const ERROR_NAMES = new Set(['NotAllowedError', 'AbortError', 'NotSupportedError
   'SecurityError', 'TypeError', 'RangeError', 'NetworkError', 'EncodingError', 'TimeoutError']);
 const MEDIA_EVENTS = ['loadedmetadata', 'play', 'pause', 'waiting', 'playing', 'seeking', 'seeked', 'ratechange', 'ended', 'error'];
 const ENGINE_ENUMS = Object.freeze({
+  startupPhase: new Set(['none', 'dependencies', 'video-selection', 'audio-selection', 'audio-menu',
+    'metadata', 'first-samples', 'ready', 'playing']),
   waitReason: new Set(['none', 'no-source', 'paused', 'seeking', 'preparing', 'ended', 'error',
     'video-starved', 'audio-starved', 'timeline-gap', 'startup-watermark', 'resume-watermark',
     'audio-context-suspended', 'audio-context-resume', 'audio-context-closed', 'clock-stalled',
@@ -23,7 +25,7 @@ const ENGINE_ENUMS = Object.freeze({
 });
 const ENGINE_FLAGS = ['running', 'intentPlaying', 'resumePending', 'hasPlayed', 'videoBudgetBlocked',
   'videoDone', 'audioDone', 'videoReadPending', 'audioReadPending', 'userActivationHasBeenActive', 'gestureRequired'];
-const ENGINE_NUMBERS = ['generation', 'clockTime', 'clockPosition', 'scheduledEnd', 'position', 'playableEnd',
+const ENGINE_NUMBERS = ['openElapsedMs', 'phaseElapsedMs', 'generation', 'clockTime', 'clockPosition', 'scheduledEnd', 'position', 'playableEnd',
   'videoEnd', 'audioEnd', 'targetMs', 'videoFrames', 'videoBytes', 'audioChunks', 'audioBytes', 'stallElapsedMs', 'stallCount',
   'videoCapacityFrames', 'videoCapacityBytes', 'videoCapacityAheadMs', 'audioCapacityBytes', 'audioCapacityAheadMs',
   'codedWidth', 'codedHeight', 'displayWidth', 'displayHeight', 'observedSampleCadenceMs', 'observedSampleDurationMs',
@@ -36,7 +38,10 @@ const ENGINE_NUMBERS = ['generation', 'clockTime', 'clockPosition', 'scheduledEn
   'audioSourceRate', 'audioRequestedContextRate', 'audioContextRate', 'audioSourceChannels',
   'audioDecodedFrames', 'audioSeekTrimmedFrames', 'audioOverlapTrimmedFrames', 'audioAlignedPackets',
   'audioAlignmentMaxUs', 'audioSilenceFrames', 'audioScheduledFrames', 'audioScheduleGapUs', 'audioScheduleOverlapUs',
-  'audioLateStarts', 'audioLateStartMaxMs', 'audioPcmPeak', 'audioPcmOverFullScaleSamples', 'audioNonFiniteSamples'];
+  'audioLateStarts', 'audioLateStartMaxMs', 'audioPcmPeak', 'audioPcmOverFullScaleSamples', 'audioNonFiniteSamples',
+  'audioScheduleUnderruns', 'audioScheduleUnderrunMs', 'audioScheduleUnderrunMaxMs', 'audioRebufferStops',
+  'audioBaseLatencyMs', 'audioOutputLatencyMs', 'audioOutputTimestampAgeMs', 'audioOutputContextLagMs',
+  'audioSubmitUncertaintyMaxMs'];
 const ENGINE_WHOLE = new Set(['generation', 'videoFrames', 'videoBytes', 'audioChunks', 'audioBytes', 'stallCount',
   'videoCapacityFrames', 'videoCapacityBytes', 'audioCapacityBytes', 'codedWidth', 'codedHeight', 'displayWidth', 'displayHeight',
   'videoHeldFrames', 'videoHeldBytes', 'videoPendingFrames', 'videoPendingBytes', 'videoOwnedFrames', 'videoOwnedBytes',
@@ -45,13 +50,15 @@ const ENGINE_WHOLE = new Set(['generation', 'videoFrames', 'videoBytes', 'audioC
   'videoHeldGeneration', 'readProgressFallbacks',
   'audioSourceRate', 'audioRequestedContextRate', 'audioContextRate', 'audioSourceChannels',
   'audioDecodedFrames', 'audioSeekTrimmedFrames', 'audioOverlapTrimmedFrames', 'audioAlignedPackets',
-  'audioSilenceFrames', 'audioScheduledFrames', 'audioLateStarts', 'audioPcmOverFullScaleSamples', 'audioNonFiniteSamples']);
+  'audioSilenceFrames', 'audioScheduledFrames', 'audioLateStarts', 'audioPcmOverFullScaleSamples', 'audioNonFiniteSamples',
+  'audioScheduleUnderruns', 'audioRebufferStops']);
 const ENGINE_DIMENSIONS = new Set(['codedWidth', 'codedHeight', 'displayWidth', 'displayHeight']);
 const CODEC = /^(?:avc|h264|hevc|h265|vp8|vp9|av1|avc1|avc3|hvc1|hev1|vp09|av01|mp4v)(?:\.[a-z0-9]{1,16}){0,9}$/i;
-const ENGINE_SIGNATURE = ['generation', 'running', 'intentPlaying', 'waitReason', 'contextState', 'resumePending',
+const ENGINE_SIGNATURE = ['generation', 'startupPhase', 'running', 'intentPlaying', 'waitReason', 'contextState', 'resumePending',
   'clockSource', 'limitingTrack', 'videoBudgetBlocked', 'videoDone', 'audioDone', 'gestureRequired', 'startReason', 'stallCount'];
 const AUDIO_CONTINUITY_COUNTERS = ['audioOverlapTrimmedFrames', 'audioSilenceFrames', 'audioScheduleGapUs',
-  'audioScheduleOverlapUs', 'audioLateStarts', 'audioPcmOverFullScaleSamples', 'audioNonFiniteSamples'];
+  'audioScheduleOverlapUs', 'audioLateStarts', 'audioPcmOverFullScaleSamples', 'audioNonFiniteSamples',
+  'audioScheduleUnderruns', 'audioRebufferStops'];
 
 /** A fixed scalar schema: never forward a media object, resource location or decoder configuration. */
 export function playbackDiagnostics(media) {

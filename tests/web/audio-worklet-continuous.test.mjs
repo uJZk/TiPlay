@@ -94,6 +94,68 @@ test('epoch/format replacement and mirror shutdown preserve independent CarPlay 
   assert.ok(h.processor.messages.filter(value => value.consumed).every(value => value.generation === 3));
 });
 
+test('mirror PCM can acquire its first source anchor without resetting sample progress or independent CarPlay', () => {
+  const h = harness(); h.feed();
+  const packet = (first, sequence, presentationMs = NaN, decodeTimestampUs = first / 48 * 1000) => h.post({
+    type: 6, mode: 'airplay-mirror', epoch: 1, rate: 48000, channels: 1, flags: 0, sequence, generation: 3,
+    presentationMs, decodeTimestampUs, pcm: new Int16Array(960).fill(8000).buffer,
+  });
+  for (let sequence = 0; sequence < 20; sequence++) packet(sequence * 960, sequence);
+  for (let quantum = 0; quantum < 30; quantum++) { h.feed(); h.render(); }
+  const mirror = h.processor.timelines.get(6), carplay = h.processor.timelines.get(0);
+  const carplayBackend = carplay.backend, mirrorBackend = mirror.backend;
+  const sourceFrame = mirror.sourceFrame, inputFrame = mirror.inputFrame, sourceAnchor = mirror.sourceAnchorMs;
+  assert.equal(mirror.synchronized, false); assert.ok(sourceFrame > 0);
+  packet(19200, 20, h.base + 400);
+  assert.equal(h.processor.timelines.get(6), mirror); assert.equal(mirror.synchronized, true);
+  assert.equal(mirror.backend, mirrorBackend); assert.equal(mirror.sourceFrame, sourceFrame); assert.equal(mirror.inputFrame, inputFrame);
+  assert.equal(mirror.queue.at(-1).first, 19200, 'the decoded sample coordinate survives the first NTP anchor');
+  assert.ok(Math.abs(mirror.sourceAnchorMs - h.base) < 1e-6); assert.notEqual(mirror.sourceAnchorMs, sourceAnchor);
+  let previous = sourceFrame, audible = 0;
+  for (let quantum = 0; quantum < 150; quantum++) {
+    h.feed();
+    if (quantum % 7 === 0) {
+      const sequence = 21 + Math.floor(quantum / 7), first = sequence * 960;
+      packet(first, sequence, h.base + first / 48 + (sequence % 2 ? .2 : 0));
+    }
+    h.render(); assert.ok(mirror.sourceFrame >= previous, 'source-anchor acquisition cannot replay emitted PCM'); previous = mirror.sourceFrame;
+    if (mirror.state === 'playing') audible++;
+    assert.equal(carplay.backend, carplayBackend);
+  }
+  assert.ok(audible > 50); assert.equal(mirror.sourceDeadlineState, 'within-bound');
+  assert.equal(mirror.reference(0).senderTimingState, 'mapped-presentation');
+  assert.ok((mirror.recoveryCounts['clock-step'] || 0) <= 1, 'later NTP packet refinements do not become source seeks');
+  h.post({ dispose: true });
+});
+
+test('mirror source-anchor acquisition keeps unknown sample origins unverified and rejects expired PCM', () => {
+  for (const sampleOriginKnown of [false, true]) {
+    const h = harness();
+    const packet = (first, sequence, presentationMs) => h.post({ type: 6, mode: 'airplay-mirror', epoch: 1,
+      rate: 48000, channels: 1, flags: 0, sequence, generation: 3, presentationMs,
+      decodeTimestampUs: sampleOriginKnown ? first / 48 * 1000 : NaN, pcm: new Int16Array(960).fill(8000).buffer });
+    for (let sequence = 0; sequence < 20; sequence++) packet(sequence * 960, sequence, NaN);
+    for (let quantum = 0; quantum < 10; quantum++) h.render();
+    const mirror = h.processor.timelines.get(6);
+    packet(19200, 20, h.base - 600);
+    if (!sampleOriginKnown) {
+      assert.equal(mirror.synchronized, false, 'record sequence alone cannot prove an unknown source sample origin');
+      h.post({ type: 6, mode: 'airplay-mirror', epoch: 1, rate: 48000, channels: 1, flags: 0,
+        sequence: 21, generation: 3, presentationMs: h.base + 420, decodeTimestampUs: 420000,
+        pcm: new Int16Array(960).fill(8000).buffer });
+      assert.equal(mirror.synchronized, false, 'a later isolated decode timestamp cannot certify the earlier queued sample origin');
+    } else {
+      assert.equal(mirror.synchronized, true);
+      // The old queued samples now have genuine source times more than300ms behind output.
+      const output = h.render();
+      assert.equal(mirror.sourceDeadlineState, 'violated'); assert.ok(mirror.sourceDeadlineRejectedFrames >= 128);
+      assert.ok(output.every(channel => channel.every(value => value === 0)), 'expired PCM and pre-anchor fade copies stay silent');
+      assert.ok(mirror.last.every(value => value === 0));
+    }
+    h.post({ dispose: true });
+  }
+});
+
 test('suspend/resume and device sample-counter jumps recover through fades without replay', () => {
   const h = harness(); h.feed();
   for (let i = 0; i < 20; i++) h.render();

@@ -53,3 +53,38 @@ test('isolated timestamp disturbance never trains a false long-lived output rate
   assert.ok(Math.abs(clock.rate - 1) < 0.00001);
   assert.ok(clock.confidence > 0.5);
 });
+
+test('rejected fits identify retained device-rate holdover without refreshing accepted evidence', () => {
+  const clock = new AudioDeviceClock(), origin = 1700000000000;
+  assert.equal(clock.snapshot(origin).acceptedFitAgeMs, undefined);
+  for (let ms = 0; ms <= 9000; ms += 100) clock.observe(ms * .988, origin + ms, origin + ms + 5);
+  const tracked = clock.snapshot(origin + 9005);
+  assert.equal(tracked.fitStatus, 'tracking'); assert.equal(tracked.fitRejectReason, 'none');
+  assert.equal(tracked.acceptedFitAgeMs, 0); assert.equal(tracked.fitRejected, 0);
+  assert.ok(Math.abs(tracked.targetRatePpm + 12000) < .001);
+  for (let ms = 9100; ms <= 30000; ms += 100) {
+    const noise = (((ms / 100 * 37) % 101) / 100 - .5) * 24;
+    clock.observe(ms * .988 + noise, origin + ms, origin + ms + 5);
+  }
+  const held = clock.snapshot(origin + 30005), later = clock.snapshot(origin + 32005);
+  assert.equal(held.fitStatus, 'holdover'); assert.equal(held.fitRejectReason, 'noisy');
+  assert.equal(held.confidence, 0); assert.ok(held.fitRejected > 0);
+  assert.ok(held.acceptedFitAgeMs > 10000, 'rejected observations cannot renew the accepted fit');
+  assert.ok(Math.abs(held.targetRatePpm + 12000) < .001);
+  assert.ok(Math.abs(held.ratePpm + 12000) < .001, 'the existing correction remains active during holdover');
+  assert.equal(later.acceptedFitAgeMs, held.acceptedFitAgeMs + 2000);
+  assert.deepEqual({ ...later, acceptedFitAgeMs: held.acceptedFitAgeMs }, held, 'a read cannot advance the rate or refresh its evidence');
+  assert.equal(clock.generation, tracked.generation);
+  clock.reset('suspended');
+  const reset = clock.snapshot(origin + 33005);
+  assert.equal(reset.acceptedFitAgeMs, undefined); assert.equal(reset.fitRejected, 0);
+  assert.equal(reset.fitStatus, 'acquiring'); assert.equal(reset.fitRejectReason, 'none'); assert.equal(reset.ratePpm, 0);
+});
+
+test('an out-of-range fit remains unaccepted and has an explicit bounded rejection reason', () => {
+  const clock = new AudioDeviceClock(); measure(clock, 1.04, 0, 30000);
+  const snapshot = clock.snapshot(1700000030005);
+  assert.equal(snapshot.fitStatus, 'acquiring'); assert.equal(snapshot.fitRejectReason, 'out-of-range');
+  assert.ok(snapshot.fitRejected > 0); assert.equal(snapshot.acceptedFitAgeMs, undefined);
+  assert.equal(snapshot.ratePpm, 0); assert.equal(snapshot.targetRatePpm, 0);
+});

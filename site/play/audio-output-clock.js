@@ -151,7 +151,7 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
 
   return {
     capture,
-    deviceClock: () => deviceClock.snapshot(),
+    deviceClock: () => deviceClock.snapshot(now()),
     diagnostics: () => ({ ...diagnostics, outputFeedbackAgeMs: feedbackAt === null ? null : Math.max(0, now() - feedbackAt),
       outputUnavailableCount, outputUnavailableReason, outputUnavailableCounts: { ...unavailableCounts } }),
     reference(feedback, context) {

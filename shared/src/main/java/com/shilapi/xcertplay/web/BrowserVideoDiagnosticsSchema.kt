@@ -10,6 +10,7 @@ object BrowserVideoDiagnosticsSchema {
     private val values = words("currentFps currentDelta lastDrawAgeMs frameIntervalP95Ms frameIntervalMaxMs decodedFps bytesPerSec width height decodeQueueSize decodedQueueSize clockRttMs readFrameIntervalMsP95 sourceForwardPtsIntervalMsP95 decodeMsP50 decodeMsP95 recordReadToDecodeSubmitMsP95 androidHubQueueMsP95 androidTransportSubmitToRecordReadMsP95 stageClockUncertaintyMs decodedToSchedulerMsP95 decodedToDrawMsP95 drawMsP95 presentationOffset90 presentationOffsetHigh5 presentationOffsetSamples senderRelativePolicyCeilingMs videoCursorSpeed videoCursorDeltaMs decodedFrontierDeltaMs touchCatchUpActive decodeBackpressureMs decodedQueueFrames decodedQueueBytes decodeInFlightFrames decodeInFlightBytes policyVideoReadinessMs policyVideoMarginMs policyVideoTargetMs policyVideoPlanFromMs policyVideoPlanDurationMs policyVideoPlanRemainingMs policyVideoLeadRemainingMs policyInteractionActive policyHoldRemainingMs policyInteractionStarts policyInteractionReleases policyProfileSwitches policyPlanChanges policyMaxDelayMs policyMaxVideoFrames policyMaxVideoBytes policySubmitMarginMs sourceClockAgeMs sourceClockGeneration sourceClockMaxAgeMs")
     private val wholePolicy = words("policyInteractionStarts policyInteractionReleases policyProfileSwitches policyPlanChanges policyMaxVideoFrames policyMaxVideoBytes sourceClockGeneration sourceClockMaxAgeMs").toSet()
     private val estimatorValues = words("clockEstimatorObservationAgeMs clockEstimatorSelectedAgeMs")
+    private val observationValues = words("decoderStatsAgeMs readFrameIntervalMsMax decodeOldestInFlightMs")
     private val receiver = words("retainedBytes consumedBytes queuedRecords partialBytes receivedRecords receivedFragments peakRetainedBytes reassemblyMsMean reassemblyMsMax consumerWaitMsMean consumerWaitMsMax")
     private val ice = words("currentRoundTripTimeMs availableOutgoingBitrate requestsSent requestsReceived responsesSent responsesReceived bytesSent bytesReceived sampleAgeMs errors")
     private val control = words("seq inFlight inFlightCount pending posts failures overflows rttMsP50 rttMsP95")
@@ -48,7 +49,7 @@ object BrowserVideoDiagnosticsSchema {
     }
     val booleanFields = setOf("raw.touchCatchUpActive", "raw.policyInteractionActive", "control.inFlight", "sender.authenticated", "sender.ready", "sender.closed")
     val fields: Set<String> = linkedSetOf("schema", "pageVersion", "omittedFields", "sample", "streamGeneration", "epoch", "interval.durationMs").apply {
-        addAll(counters.map { "interval.$it" }); addAll((counters + values + estimatorValues).map { "raw.$it" })
+        addAll(counters.map { "interval.$it" }); addAll((counters + values + estimatorValues + observationValues).map { "raw.$it" })
         addAll(receiver.map { "transport.video.$it" }); addAll(ice.map { "transport.ice.$it" })
         addAll(control.map { "control.$it" }); addAll(senderRoot.map { "sender.$it" })
         for (kind in listOf("video", "audio")) addAll(senderMedia.map { "sender.$kind.$it" })
@@ -91,7 +92,7 @@ object BrowserVideoDiagnosticsSchema {
                     val number = (item as? Number)?.toDouble() ?: return null
                     if (!number.isFinite() || kotlin.math.abs(number) > MAX_NUMBER) return null
                     val field = name.removePrefix("raw.")
-                    if ((field.startsWith("policy") || field.startsWith("sourceClock") || field.startsWith("clockEstimator")) && number < 0) return null
+                    if ((field.startsWith("policy") || field.startsWith("sourceClock") || field.startsWith("clockEstimator") || field in observationValues) && number < 0) return null
                     if (field in wholePolicy && number % 1.0 != 0.0) return null
                     if (name in setOf("schema", "sample", "streamGeneration", "epoch", "omittedFields") && (number < 0 || number % 1.0 != 0.0)) return null
                 }

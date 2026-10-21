@@ -11,6 +11,12 @@ import java.nio.charset.CodingErrorAction
 /** Standard errors use a bounded vocabulary; Debug adds resource metadata without URL credentials. */
 internal class AirPlayResourceDiagnostics(private val log: (String) -> Unit,
                                           private val debug: () -> Boolean = { RawTraffic.enabled }) {
+    enum class RouteStage { CONFIRMED, REVOKED }
+
+    fun iphoneRoute(load: Long, stage: RouteStage) {
+        emit("resource stage=ROUTE_${stage.name} load=$load route=IPHONE_FCUP scope=item-resource")
+    }
+
     fun request(load: Long, route: AirPlayVideoProxy.ResourceRoute, range: String?, redirects: Int) {
         if (debug()) emit("resource stage=LOAD load=$load route=$route range=${range ?: "NONE"} redirects=$redirects detail=DEBUG")
     }

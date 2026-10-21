@@ -4,6 +4,46 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BrowserAudioDiagnosticsTest {
+    @Test fun clockStepKeepsSignedPreRecoveryEvidenceAndOmittedUnknownsStayUnknown() {
+        val lines = BrowserAudioDiagnostics.lines(mapOf("stream0.epoch" to 56,
+            "stream0.lastClockStepPhaseErrorMs" to -37.25, "stream0.phaseErrorMs" to 0.5,
+            "stream0.lastClockStepDeviceRatePpm" to -12_500, "stream0.lastClockStepUncertaintyMs" to 8.17,
+            "stream0.lastClockStepAgeMs" to 5000, "stream0.recoveryCounts.clock-step" to 26))
+        val text = lines.joinToString(" ")
+        assertTrue(text.contains("lastClockStepPhaseErrorMs=-37.250"))
+        assertTrue(text.contains("phaseErrorMs=0.500"))
+        assertTrue(text.contains("lastClockStepDeviceRatePpm=-12500"))
+        assertTrue(text.contains("lastClockStepUncertaintyMs=8.170"))
+        assertTrue(text.contains("lastClockStepAgeMs=5000"))
+        assertTrue(lines.all { it.length <= 600 })
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf("stream0.lastClockStepPhaseErrorMs" to Double.NaN,
+            "stream0.lastClockStepAgeMs" to null)).isEmpty())
+    }
+    @Test fun aRecoveredMirrorSourceAnchorAndItsDeadlineBudgetRemainVisible() {
+        for (state in listOf("unavailable", "mapped-presentation", "arrival-anchored-unverified")) {
+            val line = BrowserAudioDiagnostics.lines(mapOf("stream6.senderTimingState" to state,
+                "stream6.senderRelativePolicyCeilingMs" to 300, "stream6.sourceStartupDelayMs" to 436.5)).single()
+            assertTrue(line.contains("senderTimingState=$state"))
+            assertTrue(line.contains("senderRelativePolicyCeilingMs=300"))
+            assertTrue(line.contains("sourceStartupDelayMs=436.500"))
+            assertTrue(line.length <= 600)
+        }
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf("stream6.senderTimingState" to "invented-state")).isEmpty())
+    }
+    @Test fun deviceFitHoldoverRetainsOnlyFixedEvidenceAndRejectsInventedStatusText() {
+        val lines = BrowserAudioDiagnostics.lines(mapOf(
+            "deviceClockAcceptedFitAgeMs" to 16_000.5, "deviceClockFitRejected" to 27,
+            "deviceClockFitStatus" to "holdover", "deviceClockFitRejectReason" to "noisy",
+        ))
+        assertTrue(lines.single().contains("deviceClockAcceptedFitAgeMs=16000.500"))
+        assertTrue(lines.single().contains("deviceClockFitRejected=27"))
+        assertTrue(lines.single().contains("deviceClockFitStatus=holdover"))
+        assertTrue(lines.single().contains("deviceClockFitRejectReason=noisy"))
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf(
+            "deviceClockFitStatus" to "unbounded-status", "deviceClockFitRejectReason" to "secret",
+            "deviceClockAcceptedFitAgeMs" to Double.NaN,
+        )).isEmpty())
+    }
     @Test fun independentSourceDeadlineAndUnavailableClockReasonRemainVisible() {
         val lines = BrowserAudioDiagnostics.lines(mapOf("stream0.sourceDeadlineState" to "unknown",
             "stream0.sourceDeadlineReason" to "source-anchor-unavailable", "stream0.sourceDeltaUpperMs" to 305,
@@ -85,17 +125,20 @@ class BrowserAudioDiagnosticsTest {
             "renderTimeMs", "pcmPackets", "pcmFrames", "pcmNonzero", "pcmPeak", "clockRatePpm", "clockGeneration",
             "clockUncertaintyMs", "clockRateConfidence", "deviceClockRatePpm", "deviceClockTargetRatePpm",
             "deviceClockConfidence", "deviceClockUncertaintyMs", "deviceClockGeneration", "outputUnavailableCount",
+            "deviceClockAcceptedFitAgeMs", "deviceClockFitRejected",
             "outputTimestampContextMs", "outputTimestampPerformanceMs", "outputTimestampAgeMs", "outputRenderedContextMs",
             "outputFeedbackDeltaMs", "outputFeedbackContextMs", "outputFeedbackAgeMs",
             "outputUnavailableCounts.timestamp-backwards", "outputUnavailableCounts.timestamp-invalid",
         )
-        val lines = BrowserAudioDiagnostics.lines(fields.associateWith { 1_792_120_000_000.125 })
+        val lines = BrowserAudioDiagnostics.lines(fields.associateWith { 1_792_120_000_000.125 } + mapOf(
+            "deviceClockFitStatus" to "holdover", "deviceClockFitRejectReason" to "noisy",
+        ))
         assertTrue("A full snapshot must be split before the metadata cap", lines.size > 1)
         for (line in lines) {
             val timestamped = "2026-10-19 11:54:40.607 +0800  $line"
             assertEquals("Metadata must retain every scalar", timestamped, DiagnosticRedactor.redact(timestamped))
         }
-        for (field in fields) {
+        for (field in fields + listOf("deviceClockFitStatus", "deviceClockFitRejectReason")) {
             val occurrences = lines.sumOf { Regex("(?:^| )${Regex.escape(field)}=").findAll(it).count() }
             assertEquals("Exactly one complete value for $field", 1, occurrences)
         }

@@ -107,13 +107,13 @@ export function createClockEstimator(options = {}) {
     };
   }
 
-  function calibrate() {
+  function calibrationPoints(samples) {
     // Low-delay observations across the whole bounded window, rather than only
     // the latest burst, separate network buffering noise from oscillator drift.
-    const rtts = history.map(sample => sample.rtt).sort((a, b) => a - b);
+    const rtts = samples.map(sample => sample.rtt).sort((a, b) => a - b);
     const minRtt = rtts[0];
     const rttLimit = rtts[Math.floor((rtts.length - 1) * 0.35)] + Math.max(2, minRtt * 0.5);
-    let selected = history.filter(sample => sample.rtt <= rttLimit);
+    const selected = samples.filter(sample => sample.rtt <= rttLimit);
     const origin = selected[0];
     let points = selected.map(sample => {
       const x = sample.serverMs - origin.serverMs;
@@ -136,7 +136,23 @@ export function createClockEstimator(options = {}) {
     const residualLimit = Math.max(2, 4 * 1.4826 * deviation);
     points = points.filter((point, i) => Math.abs(residuals[i]) <= residualLimit);
     // The median pilot always leaves at least one inlier.
-    selected = points;
+    return { origin, points, minRtt };
+  }
+
+  function calibrate() {
+    let { origin, points, minRtt } = calibrationPoints(history);
+    if (mapping && lastObservation.at - points.at(-1).at > CLOCK_STALE_AFTER_MS) {
+      // A higher RTT floor can keep all recent observations out of the old
+      // low-delay fit. Admit real fresh observations only when their midpoint
+      // agrees with its existing software error estimate. This estimate is not
+      // a statistical confidence interval and is not expanded to force recovery.
+      // Ambiguous asymmetric delays retain the freshness guard and need another
+      // trustworthy observation; they must not renew the old anchor's timestamp.
+      const fresh = history.filter(point => lastObservation.at - point.at <= CLOCK_STALE_AFTER_MS &&
+        Math.abs(point.localMs - mapClockTime(point.serverMs, mapping)) <= mapping.uncertaintyMs);
+      if (!fresh.length) return;
+      ({ origin, points, minRtt } = calibrationPoints(fresh));
+    }
 
     const count = points.length;
     const xMean = points.reduce((sum, point) => sum + point.x, 0) / count;
@@ -158,7 +174,7 @@ export function createClockEstimator(options = {}) {
     const slope = rate - 1;
     // Estimate the offset at the newest origin with the accepted rate. All
     // products/accumulators use small deltas, never epoch-sized clock values.
-    const newest = selected.at(-1);
+    const newest = points.at(-1);
     const offsetPoints = rateReady ? points : points.filter(point => newest.at - point.at <= 10000);
     const offsets = offsetPoints.map(point => point.delta - (point.x - newest.x) * slope);
     const offsetAtOrigin = median(offsets);

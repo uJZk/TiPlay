@@ -189,6 +189,8 @@ test('status.debug toggles PCM/context/render diagnostics without reconnecting o
     const stats = h.audio.stats().debug;
     assert.equal(stats.pcmFrames, 3); assert.equal(stats.pcmNonzero, 2); assert.equal(stats.pcmPeak, 1);
     assert.equal(stats.contextState, 'running'); assert.equal(stats.contextRate, 48000);
+    assert.equal(stats.deviceClockFitStatus, 'acquiring'); assert.equal(stats.deviceClockFitRejectReason, 'none');
+    assert.equal(stats.deviceClockFitRejected, 0); assert.equal(Object.hasOwn(stats, 'deviceClockAcceptedFitAgeMs'), false);
     assert.equal(stats.renderFrames, 128); assert.ok(Number.isFinite(stats.clockBase));
     h.audio.status({ debug: false }); assert.equal(h.audio.stats().debug, undefined);
     assert.deepEqual(h.nodes[0].messages.at(-1), { debug: false, diagnosticRevision: 2 });

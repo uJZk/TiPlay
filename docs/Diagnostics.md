@@ -196,6 +196,30 @@ It requires neither WebAssembly nor JavaScript evaluation permissions. Worklet m
 loading and processor failures surface as audio errors; check processor errors,
 recovery counts and actual nonzero render samples when diagnosing silence.
 
+Device-clock rate, browser/Android clock rate and source sampling rate describe
+different mappings. A rejected device fit can leave the last accepted rate as
+holdover with zero current confidence; zero confidence does not imply nominal rate.
+`deviceClockAcceptedFitAgeMs`, `deviceClockFitRejected`, `deviceClockFitStatus` and
+`deviceClockFitRejectReason` distinguish acquisition, accepted tracking and rejected
+noisy/out-of-range fits while retaining the true accepted age. Missing accepted age
+stays unknown. These are output-timestamp fit estimates, not an oscillator measurement
+at the physical speaker. They do not justify enlarging the phase-correction bound.
+For CarPlay clock-step recovery, `lastClockStepPhaseErrorMs`,
+`lastClockStepDeviceRatePpm` and `lastClockStepUncertaintyMs` retain the signed phase,
+device-rate estimate and known uncertainty immediately before the last recovery.
+Compare them with the stream identity and cumulative clock-step count: current phase
+can already look healthy after recovery. `lastClockStepAgeMs` uses that AudioContext's
+clock, so suspension does not advance it. Unknown values stay absent; a new timeline
+clears the slot. This adds no per-step reports or PCM collection and does not change
+rate control. A recorded recovery is evidence of a software discontinuity, not proof
+that every audible click has that cause. Healthy URL playback is independent evidence
+and cannot exclude a CarPlay live-audio fault.
+Per-stream `senderTimingState` distinguishes `unavailable`, `mapped-presentation` and
+`arrival-anchored-unverified`; compare its source deadline, policy ceiling and startup
+delay. A mirror stream that initially lacks an anchor can upgrade only from a proven
+decode/sample correspondence, preserving its consumed sample progress. That upgrade
+does not authorize replay of old PCM or bypass the source deadline.
+
 For uneven dragging with high FPS and unchanged drops, compare `video.frameIntervalP95Ms`,
 `video.frameIntervalMaxMs`, `video.lastDrawAgeMs`, `video.decodeMsP95`, `video.drawMsP95`
 and `control.rttMsP95`. These fields distinguish irregular picture delivery/submission
@@ -203,6 +227,26 @@ from slow serial input requests. `pacingDroppedFrames` counts superseded pending
 pictures; it does not count source/network loss or prove actual panel presentation.
 The bounded status summary prioritizes these fields; per-stream audio retains its own
 separate diagnostic budget.
+
+The video stages have distinct observable boundaries:
+
+| Evidence | What it measures |
+| --- | --- |
+| Captured Android AU/PTS, `readFrameIntervalMsP95` / `readFrameIntervalMsMax` | Source picture cadence and browser read cadence; the maximum retains a sparse pause hidden by P95. Debug capture timestamps describe the recorded Android input, not exact radio/kernel arrival. |
+| `recordReadToDecodeSubmitMsP95` | Application admission wait before decoder submission. |
+| `decodeMsP95`, `decodeOldestInFlightMs` | Submit-to-output-callback residence and the oldest currently outstanding submission. Residence includes opaque decoder queueing, reordering, execution and callback scheduling. Idle oldest age stays unknown. |
+| `decoderStatsAgeMs` | Age of the actual decoder snapshot, including Worker-to-main message delay. Old stream/epoch snapshots cannot refresh it; internal clock timestamps are not logged. |
+| Output-to-draw, draw intervals, cursor/target convergence | Application presentation wait, drawing cadence and whether actual buffering has reached the requested target. Canvas submission does not prove GPU/panel presentation. |
+
+Browser samples and uploads remain bounded snapshots and rolling aggregates, not an
+exact replay of every frame at each visible pause. `stageSampleScope` explicitly
+retains the rolling-window scope, which may span epochs. Transport-submit to browser
+read also includes transport, reassembly and consumer scheduling, not pure network
+time. WebCodecs exposes neither separate internal queue/execution timings nor the
+actual hardware implementation. A `prefer-hardware` request or support query is not
+proof of hardware decode; Android phone MediaCodec evidence cannot establish the
+car browser's path. Those questions require performance evidence from the device
+running that browser. Unknown measurements must remain unknown.
 
 For a video-stutter reproduction, enable Debug before starting the browser session,
 keep one viewport size, include a short static interval followed by continuous
@@ -255,6 +299,14 @@ Continuing clock replies can coexist with an old selected anchor. `selected-stal
 is a derived state, not proof of one particular RTT-filter rejection or a stopped
 main thread. Compare estimator evidence with the decoder's mapping rather than
 renaming an old mapping timestamp as a gap in clock probes.
+When the historical low-RTT fit selects an anchor older than 15 seconds, the
+estimator can select real observations from the last 15 seconds whose midpoints
+agree with the existing mapping's software error estimate. It recomputes the
+selected anchor and uncertainty from those observations, preserving the learned
+rate when their span cannot support a new rate fit. This estimate is not a
+statistical confidence interval and does not grow with anchor age to force
+recovery. Inconsistent or missing observations still leave mapping unavailable;
+pending clock jumps, suspension and stream generations retain their guards.
 
 Standard `Browser transport: stage=POLICY` preserves observed profile/interaction
 counter changes, capacity-drop increases and clock-validity boundaries, and can
@@ -325,19 +377,50 @@ not silently discard the later fields:
 | `ENGINE_PIPELINE` | Queue counts/bytes, frame/byte capacities, pending sink reads, budget blocking and end-of-stream flags. |
 | `ENGINE_CODEC` | Validated complete short codec/profile token, coded/display dimensions, observed sample cadence/duration, support probe and requested hardware/latency hints. |
 | `ENGINE_OWNERSHIP` | Retained sample generation, held/pending/total application-owned samples and estimated bytes; received/closed samples, pending video-read age and last sample age. |
-| `ENGINE_AUDIO` | Resume requested/completed/failed counts, known user-activation state, required gesture and requested context latency hint. |
+| `ENGINE_AUDIO` | Resume counts, activation/gesture state, context latency hint and available URL-context base/output latency and output-clock estimates. |
 | `ENGINE_NETWORK` | Serialized resource-reader activity/queue, byte progress and its age, timeouts/cancellations, backward restarts, ignored ranges and safe last status/result. |
 | `ENGINE_PCM` | Decoded source rate/channels, requested and actual context rates, decoded frames and separate seek/overlap trims. |
 | `ENGINE_CONTINUITY` | Subsample timestamp alignment count/max correction, inserted silence, source PCM peak, over-full-scale and non-finite sample counts. |
-| `ENGINE_SCHEDULE` | Submitted frames, accumulated node-time gaps/overlaps and late-start count/max delay. |
+| `ENGINE_STARTUP` | Fixed preparation phase and browser monotonic elapsed milliseconds; total preparation time freezes at first actual playing. |
+| `ENGINE_SCHEDULE` | Submitted frames, node-time gaps/overlaps, late starts, uncovered graph intervals/count/total/max duration and rebuffer stops. |
+
+`startupPhase` distinguishes dependencies, video/audio selection, alternate audio-menu
+discovery, metadata, first samples and ready/playing. `openElapsedMs` starts at the
+engine's source preparation, after the controls' initial resource probe; it includes
+pause/activation waits, but not that probe or the outer player import. `phaseElapsedMs` describes the current
+phase, not a retained history of every completed phase. Source replacement starts a
+new measurement; later seeks cannot reset a completed startup. Compare `probe-start`,
+`probe-ready`, `loadedmetadata`, `seeked`, `playing` and `play-resolved` to identify
+the remaining boundaries. Android receipt times include control transport and capture
+admission; they are not browser event timestamps or the sender's original send time.
+
+`audioScheduleUnderruns`, `audioScheduleUnderrunMs` and
+`audioScheduleUnderrunMaxMs` describe observed gaps between submitted audio nodes,
+including recovery after rebuffering. `audioRebufferStops` counts playback-policy
+interruptions while an audio clock is needed; user pause/seek does not increment it.
+These counters cover gaps previously hidden by clearing the node tail on freeze.
+They do not measure the device audio renderer or prove an audible click. In particular,
+zero counters cannot exclude an output-device discontinuity. `audioBaseLatencyMs`,
+`audioOutputLatencyMs`, `audioOutputTimestampAgeMs` and `audioOutputContextLagMs`
+refer to the current URL AudioContext only. Optional/invalid API results stay absent;
+do not substitute another live-audio context's values. They are Web Audio estimates,
+not physical speaker measurements. A late scheduler uses one corrected clock mapping
+for subsequent nodes and video, preserving source sample order without starting
+overdue slices together; already elapsed silence cannot be recovered. The scheduler
+also checks the context clock after submitting a node and reserves its conservative
+tail for the next node. `audioSubmitUncertaintyMaxMs` bounds the observed interval
+between the requested start and that later clock read; it is not a renderer receipt.
+Submission uncertainty can leave conservative space after a stall. Node-time counters
+describe requested starts and gaps, rather than measured physical output; JavaScript
+cannot reconstruct the precise render-thread start within a stalled submission.
 
 Semantic media/command edges remain visible. Engine-state changes are sampled from
 progress/timeupdate events with a 250 ms minimum interval; an unchanged snapshot with
 play intent but no running clock repeats at most every five seconds, and healthy state
 at most every ten seconds. Android applies a further unchanged-state deduplication.
-Standard, the default mode, retains semantic media/command edges, failures and explicit
-`stalled=true` evidence. Changes to overlap trimming, inserted silence, scheduling
-gaps/overlaps, late starts or invalid/over-full-scale PCM also admit a bounded
+Standard, the default mode, retains semantic media/command edges, preparation-phase
+boundaries, failures and explicit `stalled=true` evidence. Changes to overlap trimming,
+inserted silence, scheduling gaps/overlaps, underruns, rebuffer stops, late starts or invalid/over-full-scale PCM also admit a bounded
 continuity snapshot at most every five seconds. Silence can be a legitimate track
 offset; it is not an error label. Normal decoded/scheduled growth, seek trimming
 and subsample alignment alone do not trigger extra Standard reports. One recovery

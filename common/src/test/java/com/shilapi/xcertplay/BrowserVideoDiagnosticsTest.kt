@@ -16,10 +16,17 @@ class BrowserVideoDiagnosticsTest {
                 field == "streamGeneration" -> 2
                 field in BrowserVideoDiagnosticsSchema.enums -> BrowserVideoDiagnosticsSchema.enums.getValue(field).first()
                 field in BrowserVideoDiagnosticsSchema.booleanFields -> false
-                else -> 1_792_120_000_000.125
+                else -> 9_007_199_254_740_991L
             }
         }
-        val lines = BrowserVideoDiagnostics.lines(values)
+        // The allowlist is larger than one legal wire event. Exercise all values
+        // across bounded events, rather than submitting an impossible >256-field map.
+        val identityFields = setOf("schema", "pageVersion", "sample", "epoch", "streamGeneration")
+        val snapshots = values.keys.filter { it !in identityFields }
+            .chunked(BrowserVideoDiagnosticsSchema.MAX_FIELDS - identityFields.size).map { fields ->
+                values.filterKeys { it in identityFields || it in fields }
+            }
+        val lines = snapshots.flatMap(BrowserVideoDiagnostics::lines)
         assertTrue(lines.size > 7)
         assertEquals(BrowserVideoDiagnosticsSchema.groups.keys, lines.map { it.substringAfter("stage=").substringBefore(' ') }.toSet())
         for (line in lines) {
@@ -30,8 +37,19 @@ class BrowserVideoDiagnosticsTest {
         }
         for (field in BrowserVideoDiagnosticsSchema.groups.values.flatten()) {
             assertEquals("Exactly one complete value for $field", 1,
-                lines.sumOf { Regex("(?:^| )${Regex.escape(field)}=").findAll(it).count() })
+                lines.sumOf { Regex("(?:^| )${Regex.escape(field)}=(?!missing(?: |$))").findAll(it).count() })
         }
+    }
+
+    @Test fun decoderObservationFieldsReachSavedMetadataWithoutExposingInternalSamplingTimestamps() {
+        val lines = BrowserVideoDiagnostics.lines(mapOf("schema" to 1, "pageVersion" to "v75", "sample" to 1,
+            "streamGeneration" to 4, "epoch" to 2, "raw.decoderStatsAgeMs" to 250.5,
+            "raw.readFrameIntervalMsMax" to 190, "raw.decodeOldestInFlightMs" to 284))
+        assertTrue(lines.any { it.contains("raw.decoderStatsAgeMs=250.500") })
+        assertTrue(lines.any { it.contains("raw.readFrameIntervalMsMax=190") })
+        assertTrue(lines.any { it.contains("raw.decodeOldestInFlightMs=284") })
+        assertTrue(lines.none { it.contains("decoderStatsSampledAtMs") })
+        assertTrue(lines.all { it.length <= 600 && DiagnosticRedactor.redact(it) == it })
     }
 
     @Test fun absentMetricsRemainMissingAndDoNotBecomeZeroOrClaimSourceEvidence() {

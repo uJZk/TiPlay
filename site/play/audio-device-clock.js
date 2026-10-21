@@ -12,6 +12,7 @@ export class AudioDeviceClock {
   reset(reason) {
     this.points = []; this.last = null; this.lastFit = -Infinity; this.lastAdvance = null;
     this.rate = this.targetRate = 1; this.confidence = 0; this.uncertaintyMs = null;
+    this.acceptedFitAt = null; this.fitRejected = 0; this.fitStatus = 'acquiring'; this.fitRejectReason = 'none';
     this.generation++; this.reason = reason;
   }
   advance(at) {
@@ -48,13 +49,22 @@ export class AudioDeviceClock {
     const rate = median(slopes), residuals = points.map(p => p.contextTimeMs - origin.contextTimeMs
       - (p.performanceTimeMs - origin.performanceTimeMs) * rate);
     const center = median(residuals.slice()), dispersion = median(residuals.map(value => Math.abs(value - center)));
-    if (Math.abs(rate - 1) > MAX_RATE_ERROR || dispersion > 3) { this.confidence = 0; return; }
+    if (Math.abs(rate - 1) > MAX_RATE_ERROR || dispersion > 3) {
+      this.confidence = 0; this.fitRejected++;
+      this.fitStatus = this.acceptedFitAt === null ? 'acquiring' : 'holdover';
+      this.fitRejectReason = Math.abs(rate - 1) > MAX_RATE_ERROR ? 'out-of-range' : 'noisy';
+      return;
+    }
     this.targetRate = rate; this.uncertaintyMs = dispersion;
     this.confidence = Math.min(1, span / 8000) / (1 + dispersion);
+    this.acceptedFitAt = at; this.fitStatus = 'tracking'; this.fitRejectReason = 'none';
   }
-  snapshot() {
+  snapshot(at = this.lastAdvance) {
     return { rate: this.rate, ratePpm: (this.rate - 1) * 1e6, targetRatePpm: (this.targetRate - 1) * 1e6,
       confidence: this.confidence, uncertaintyMs: this.uncertaintyMs, generation: this.generation,
-      reason: this.reason, points: this.points.length };
+      reason: this.reason, points: this.points.length,
+      ...(this.acceptedFitAt !== null && Number.isFinite(at) && at >= this.acceptedFitAt
+        ? { acceptedFitAgeMs: at - this.acceptedFitAt } : {}),
+      fitRejected: this.fitRejected, fitStatus: this.fitStatus, fitRejectReason: this.fitRejectReason };
   }
 }

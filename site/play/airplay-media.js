@@ -20,8 +20,8 @@ const FRAME_EPSILON = 0.002;
 const abortError = () => new DOMException('Media playback was interrupted.', 'AbortError');
 const frameEpsilon = (time, other, sampleRate) =>
   Math.min(0.25, 8 * Number.EPSILON * Math.max(1, Math.abs(time), Math.abs(other)) * sampleRate);
-const frameCeil = (time, origin, sampleRate) =>
-  Math.ceil((time - origin) * sampleRate - frameEpsilon(time, origin, sampleRate));
+const frameCeil = (time, start, sampleRate, timestampOrigin = 0) =>
+  Math.ceil((time - start) * sampleRate - frameEpsilon(timestampOrigin + time, timestampOrigin + start, sampleRate));
 
 /** Canvas/Web Audio playback with one clock and cancellable, bounded decoded queues. */
 export function createMediaEngine(surface, options = {}) {
@@ -118,28 +118,56 @@ export function createMediaEngine(surface, options = {}) {
   // A seek beyond the audio track, or an empty track, can still have playable video.
   // Keep a running audio clock through an ordinary tail, but do not require one
   // when this generation never produced any remaining PCM.
-  function audioClockNeeded(item) { return item?.audioTrack && !(item.audioDone && item.audioEnd <= item.start); }
+  function audioClockNeeded(item) { return item?.audioTrack && !(item.audioDone && audioPlaybackEnd(item) <= item.start); }
+  // Video may tolerate a fraction of a frame; PCM progress may not discard a
+  // source sample. Include the original timestamp magnitude in the ULP budget
+  // because metadata and packet timestamps were both normalised by that origin.
+  function playbackEpsilon(item, time, other = time) {
+    if (!item?.audioTrack || !item.audioSourceRate) return FRAME_EPSILON;
+    const mediaSampleRate = item.audioSourceRate / rate;
+    return frameEpsilon(origin + time, origin + other, mediaSampleRate) / mediaSampleRate;
+  }
+  function audioPlaybackEnd(item) {
+    return Math.min(item.audioEnd, Number.isFinite(duration) ? duration : Infinity);
+  }
+  function audioEndedAt(item, at) {
+    const end = audioPlaybackEnd(item);
+    return item.audioDone && at >= end - playbackEpsilon(item, at, end);
+  }
+  function audioTailPlayed(item, end) {
+    const last = Math.min(audioPlaybackEnd(item), end), epsilon = playbackEpsilon(item, last, item.start);
+    if (!audioClockNeeded(item) || last <= item.start + epsilon) return true;
+    if (!context || item.scheduledEnd < last - epsilon) return false;
+    // Exhausted decoding and submitted nodes are not playback completion. The
+    // same conservative audio mapping used for video must have reached the tail.
+    return context.currentTime >= clockTime + (last - clockPosition) / rate - epsilon / rate;
+  }
   function currentClock() { return audioClockNeeded(generation) && context ? context.currentTime : now(); }
   function readPosition() {
     if (!running) return position;
     const candidate = clockPosition + Math.max(0, currentClock() - clockTime) * rate;
     const item = generation;
-    const audioLimit = item?.audioTrack && !(item.audioDone && position >= item.audioEnd - FRAME_EPSILON)
+    const audioLimit = item?.audioTrack && !audioEndedAt(item, position)
       ? item.scheduledEnd : Infinity;
     return Math.min(candidate, playableEnd(item), audioLimit, Number.isFinite(duration) ? duration : Infinity);
   }
   function updatePosition() { position = readPosition(); }
-  function stopNodes(item) {
+  function stopNodes(item, preserveContinuity = false) {
     if (!item) return;
     for (const node of item.nodes) { node.onended = null; try { node.stop(); } catch (_) {} node.disconnect(); }
     item.nodes.clear(); item.scheduledEnd = position;
-    item.lastAudioNodeEnd = null;
+    // A rebuffer interrupts the graph even when all source PCM is still queued.
+    // Keep its requested stop edge so recovery can report the uncovered graph interval.
+    item.lastRequestedAudioEnd = preserveContinuity && item.lastRequestedAudioEnd !== null && context
+      ? Math.min(item.lastRequestedAudioEnd, context.currentTime) : null;
+    item.audioSubmitEnd = preserveContinuity && item.audioSubmitEnd !== null && context
+      ? Math.min(item.audioSubmitEnd, context.currentTime) : null;
     for (const chunk of item.audio) chunk.scheduledFrames = Math.max(0, Math.min(chunk.channels[0].length,
-      frameCeil(position, chunk.start, chunk.sampleRate / rate)));
+      frameCeil(position, chunk.start, chunk.sampleRate / rate, origin)));
   }
-  function freeze() {
+  function freeze(preserveAudioContinuity = false) {
     updatePosition(); running = false;
-    stopNodes(generation);
+    stopNodes(generation, preserveAudioContinuity);
   }
   function closeGeneration() {
     if (animation !== null) cancel(animation); animation = null;
@@ -221,8 +249,9 @@ export function createMediaEngine(surface, options = {}) {
       audioSourceRate: null, audioSourceChannels: null, audioDecodedFrames: 0, audioSeekTrimmedFrames: 0,
       audioOverlapTrimmedFrames: 0, audioAlignedPackets: 0, audioAlignmentMaxUs: 0, audioSilenceFrames: 0,
       audioScheduledFrames: 0, audioScheduleGapUs: 0, audioScheduleOverlapUs: 0,
+      audioScheduleUnderruns: 0, audioScheduleUnderrunMs: 0, audioScheduleUnderrunMaxMs: 0, audioRebufferStops: 0,
       audioLateStarts: 0, audioLateStartMaxMs: 0, audioPcmPeak: 0, audioPcmOverFullScaleSamples: 0,
-      audioNonFiniteSamples: 0, lastAudioNodeEnd: null,
+      audioNonFiniteSamples: 0, audioSubmitUncertaintyMaxMs: 0, lastRequestedAudioEnd: null, audioSubmitEnd: null,
       openStartedAt: now(), stallStarted: null, stallCount: 0, startReason: 'none', readProgressFallbacks: 0,
       ready, readyResolve, readyReject, readySettled: false, hasPlayed: false, waiters: new Set() };
     generation = item;
@@ -233,10 +262,35 @@ export function createMediaEngine(surface, options = {}) {
     libraryPromise ||= options.library ? Promise.resolve(options.library) : import('./vendor/mediabunny/mediabunny.min.js');
     library = await libraryPromise; return library;
   }
+  function setStartupPhase(session, phase) {
+    const startup = session?.startup;
+    if (disposed || source !== session || !startup || startup.completedAt !== null || startup.phase === phase) return;
+    startup.phase = phase; startup.phaseStartedAt = now(); event('progress');
+  }
+  function beginStartup(session) {
+    if (session.startup) { setStartupPhase(session, 'dependencies'); return; }
+    const at = now();
+    session.startup = { startedAt: at, phaseStartedAt: at, completedAt: null, phase: 'dependencies' };
+    media.addEventListener('loadeddata', () => setStartupPhase(session, 'ready'), { signal: session.controller.signal });
+    media.addEventListener('playing', () => {
+      if (disposed || source !== session || session.startup.completedAt !== null) return;
+      session.startup.completedAt = now(); session.startup.phase = 'playing'; event('progress');
+    }, { once: true, signal: session.controller.signal });
+    event('progress');
+  }
+  function startupDiagnostics() {
+    const startup = source?.startup;
+    if (!startup) return { startupPhase: 'none' };
+    const end = startup.completedAt ?? now();
+    return { startupPhase: startup.phase, openElapsedMs: Math.max(0, (end - startup.startedAt) * 1000),
+      phaseElapsedMs: startup.completedAt === null ? Math.max(0, (end - startup.phaseStartedAt) * 1000) : 0 };
+  }
   async function open(item) {
+    const session = source;
+    if (!active(item) || !session) return;
+    beginStartup(session);
     const lib = await dependencies();
     if (!active(item)) return;
-    const session = source;
     const input = session.input || new lib.Input({ source: new lib.UrlSource(session.src, {
       maxCacheSize: 16 * 1024 * 1024, parallelism: 1,
       requestInit: { referrerPolicy: 'no-referrer' },
@@ -261,10 +315,13 @@ export function createMediaEngine(surface, options = {}) {
     item.input = input;
     session.tracksPromise ||= (async () => {
       const selection = { signal: session.controller.signal };
+      setStartupPhase(session, 'video-selection');
       const video = await selectPlayableTrack(query => input.getPrimaryVideoTrack(query), { ...selection, video: true });
       // An HLS master can expose mutually exclusive variants; pair the selected video with its audio.
+      setStartupPhase(session, 'audio-selection');
       const audio = await selectPlayableTrack(query => video ? video.getPrimaryPairableAudioTrack(query)
         : input.getPrimaryAudioTrack(query), selection);
+      setStartupPhase(session, 'audio-menu');
       const candidates = video?.getPairableAudioTracks ? await video.getPairableAudioTracks()
         : input.getAudioTracks ? await input.getAudioTracks() : audio ? [audio] : [];
       const alternatives = [];
@@ -282,6 +339,7 @@ export function createMediaEngine(surface, options = {}) {
     })();
     const tracks = await session.tracksPromise;
     if (!active(item)) return;
+    setStartupPhase(session, 'metadata');
     [item.videoTrack, item.audioTrack] = tracks;
     await requireSdrTrack(item.videoTrack);
     if (!active(item)) return;
@@ -309,6 +367,7 @@ export function createMediaEngine(surface, options = {}) {
     item.videoReady = !item.videoTrack; item.audioReady = !item.audioTrack; item.metadataReady = true;
     readyState = 1; event('loadedmetadata');
     try { options.onTimeline?.({ origin, live: duration === Infinity, videoTrack: item.videoTrack, input }); } catch (_) {}
+    setStartupPhase(session, 'first-samples');
     if (item.videoTrack && lib.EncodedPacketSink && options.onCaptionPacket) {
       void pumpCaptions(item, lib).catch(() => {});
     }
@@ -495,6 +554,10 @@ export function createMediaEngine(surface, options = {}) {
     const iterator = new lib.AudioBufferSink(item.audioTrack).buffers(origin + item.start)[Symbol.asyncIterator]();
     item.iterators.push(iterator);
     let sampleRate = null, decodedEnd = item.start, hasDecoded = false;
+    const complete = () => {
+      if (item.tempo) appendStretched(item, item.tempo.finish(), sampleRate);
+      item.audioDone = true; item.audioReady = true; notify(item);
+    };
     while (active(item)) {
       while (active(item) && (item.audioEnd - readPosition() >= MAX_AUDIO_AHEAD
         || item.audio.reduce((bytes, chunk) => bytes + chunk.channels.length * chunk.channels[0].byteLength, 0) >= MAX_AUDIO_BYTES)) {
@@ -507,8 +570,7 @@ export function createMediaEngine(surface, options = {}) {
       finally { item.audioReadPending = false; item.audioReadStarted = null; }
       if (!active(item)) break;
       if (next.done) {
-        if (item.tempo) appendStretched(item, item.tempo.finish(), sampleRate);
-        item.audioDone = true; item.audioReady = true; notify(item); break;
+        complete(); break;
       }
       const wrapped = next.value, buffer = wrapped.buffer;
       let start = wrapped.timestamp - origin;
@@ -538,12 +600,17 @@ export function createMediaEngine(surface, options = {}) {
         }
         start = aligned;
       }
-      const offset = Math.max(0, frameCeil(Math.max(item.start, decodedEnd), start, sampleRate));
+      const offset = Math.max(0, frameCeil(Math.max(item.start, decodedEnd), start, sampleRate, origin));
       if (hasDecoded) item.audioOverlapTrimmedFrames += Math.min(offset, buffer.length);
       else item.audioSeekTrimmedFrames += Math.min(offset, buffer.length);
       if (offset >= buffer.length) continue;
       const channels = planes.map(plane => plane.subarray(offset));
       const actualStart = start + offset / sampleRate;
+      if (Number.isFinite(duration) && actualStart >= duration - playbackEpsilon(item, actualStart, duration)) {
+        // A fractional seek can exclude the only sample that began before the
+        // container end. No post-seek PCM remains; retain a silent media tail.
+        complete(); void iterator.return?.().catch(() => {}); break;
+      }
       const gap = actualStart - decodedEnd;
       if (!Number.isFinite(gap)) throw new Error('The audio timeline has an invalid timestamp.');
       // A fractional initial seek offset is not a missing source frame. All
@@ -575,7 +642,13 @@ export function createMediaEngine(surface, options = {}) {
         const stereo = downmixStereo(channels);
         appendStretched(item, item.tempo.push(stereo[0], stereo[1]), sampleRate);
       }
-      decodedEnd = actualStart + channels[0].length / sampleRate; hasDecoded = true; notify(item);
+      decodedEnd = actualStart + channels[0].length / sampleRate; hasDecoded = true;
+      if (Number.isFinite(duration) && decodedEnd >= duration - playbackEpsilon(item, decodedEnd, duration)) {
+        // A finite container can exclude a decoder's padding. It must not wait
+        // for out-of-container packets (or their three-second queue) to reach EOF.
+        complete(); void iterator.return?.().catch(() => {}); break;
+      }
+      notify(item);
     }
   }
   function trackRanges(item) {
@@ -600,7 +673,7 @@ export function createMediaEngine(surface, options = {}) {
     const ranges = trackRanges(item);
     let end = item.videoTrack ? mediaRangeEnd(ranges.video, position) : Infinity;
     // Once a shorter audio track really ended, the remaining video uses a silent advancing clock.
-    if (item.audioTrack && !(item.audioDone && position >= item.audioEnd - FRAME_EPSILON)) {
+    if (item.audioTrack && !audioEndedAt(item, position)) {
       end = Math.min(end, mediaRangeEnd(ranges.audio, position));
     }
     if (!Number.isFinite(end)) end = Number.isFinite(duration) ? duration : position;
@@ -610,7 +683,7 @@ export function createMediaEngine(surface, options = {}) {
     const target = (item.hasPlayed ? CAST_PROFILE.resumeBufferMs : CAST_PROFILE.startupBufferMs) / 1000 * rate;
     if (end - position >= target - FRAME_EPSILON) return { ready: true, reason: 'watermark' };
     const ranges = trackRanges(item);
-    const videoEnd = mediaRangeEnd(ranges.video, position), audioEnd = mediaRangeEnd(ranges.audio, position);
+    const videoEnd = mediaRangeEnd(ranges.video, position), audioEnd = Math.min(mediaRangeEnd(ranges.audio, position), audioPlaybackEnd(item));
     // A short file or a limiting decoder/surface budget must not deadlock the
     // startup watermark. Decode no extra surfaces merely to satisfy a target.
     const videoSaturated = item.videoTrack && videoEnd <= end + FRAME_EPSILON
@@ -628,10 +701,33 @@ export function createMediaEngine(surface, options = {}) {
       && now() - item.videoReadStarted >= budget;
     const waitingAudio = item.audioTrack && audioEnd <= end + FRAME_EPSILON && item.audioReadPending
       && now() - item.audioReadStarted >= budget;
-    if (end > position + FRAME_EPSILON && (waitingVideo || waitingAudio)) return { ready: true, reason: 'read-progress-fallback' };
+    if (end > position + playbackEpsilon(item, end, position) && (waitingVideo || waitingAudio)) return { ready: true, reason: 'read-progress-fallback' };
     return { ready: false, reason: item.hasPlayed ? 'resume-watermark' : 'startup-watermark' };
   }
   function bufferedForPlayback(item, end) { return bufferDecision(item, end).ready; }
+  function audioOutputDiagnostics(item) {
+    if (!context || context.state === 'closed' || context.sampleRate !== item?.audioSourceRate) return {};
+    const result = {};
+    try {
+      for (const [key, value] of [['audioBaseLatencyMs', context.baseLatency],
+        ['audioOutputLatencyMs', context.outputLatency]]) {
+        if (Number.isFinite(value) && value >= 0) result[key] = value * 1000;
+      }
+    } catch (_) { /* Optional latency properties may be unavailable. */ }
+    // These are this graph's Web Audio estimates, not a measurement at the
+    // physical speaker. Unsupported, stale-format and invalid APIs stay absent.
+    try {
+      const stamp = context.getOutputTimestamp?.(), at = performance.now();
+      if (stamp && Number.isFinite(stamp.contextTime) && stamp.contextTime >= 0
+        && Number.isFinite(stamp.performanceTime) && stamp.performanceTime > 0
+        && Number.isFinite(context.currentTime) && context.currentTime >= stamp.contextTime
+        && Number.isFinite(at) && at >= stamp.performanceTime) {
+        result.audioOutputTimestampAgeMs = at - stamp.performanceTime;
+        result.audioOutputContextLagMs = (context.currentTime - stamp.contextTime) * 1000;
+      }
+    } catch (_) { /* Optional output-clock diagnostics cannot interrupt playback. */ }
+    return result;
+  }
   function playbackDiagnostics() {
     const item = generation, at = readPosition(), ranges = trackRanges(item);
     const videoEnd = item?.videoTrack ? mediaRangeEnd(ranges.video, at) : at;
@@ -641,7 +737,7 @@ export function createMediaEngine(surface, options = {}) {
     const videoBytes = item?.video.reduce((bytes, frame) => bytes + frame.bytes, 0) || 0;
     const audioChunks = item?.audio.length || 0;
     const audioBytes = item?.audio.reduce((bytes, chunk) => bytes + chunk.channels.reduce((sum, channel) => sum + channel.byteLength, 0), 0) || 0;
-    const audioActive = item?.audioTrack && !(item.audioDone && at >= item.audioEnd - FRAME_EPSILON);
+    const audioActive = item?.audioTrack && !audioEndedAt(item, at);
     let limitingTrack = item?.videoTrack ? 'video' : audioActive ? 'audio' : 'none';
     if (item?.videoTrack && audioActive) limitingTrack = Math.abs(videoEnd - audioEnd) <= FRAME_EPSILON ? 'both'
       : videoEnd < audioEnd ? 'video' : 'audio';
@@ -657,9 +753,11 @@ export function createMediaEngine(surface, options = {}) {
     else if (audioClockNeeded(item) && context?.state !== 'running') {
       waitReason = resumeRequests ? 'audio-context-resume'
         : context?.state === 'closed' ? 'audio-context-closed' : 'audio-context-suspended';
-    } else if (end <= at + FRAME_EPSILON) {
-      const videoGap = item.videoTrack && item.video.some(frame => frame.start > at + 0.025);
-      const audioGap = audioActive && item.audio.some(chunk => chunk.start > at + 0.025);
+    } else if (end <= at + playbackEpsilon(item, end, at)) {
+      const videoGap = item.videoTrack && videoEnd <= at + playbackEpsilon(item, videoEnd, at)
+        && item.video.some(frame => frame.start > at + 0.025);
+      const audioGap = audioActive && audioEnd <= at + playbackEpsilon(item, audioEnd, at)
+        && item.audio.some(chunk => chunk.start > at + 0.025);
       waitReason = videoGap || audioGap ? 'timeline-gap' : limitingTrack === 'audio' ? 'audio-starved' : 'video-starved';
     } else if (!running) {
       waitReason = bufferedForPlayback(item, end) ? 'clock-stalled'
@@ -696,6 +794,9 @@ export function createMediaEngine(surface, options = {}) {
       audioAlignmentMaxUs: item?.audioAlignmentMaxUs, audioSilenceFrames: item?.audioSilenceFrames,
       audioScheduledFrames: item?.audioScheduledFrames, audioScheduleGapUs: item?.audioScheduleGapUs,
       audioScheduleOverlapUs: item?.audioScheduleOverlapUs, audioLateStarts: item?.audioLateStarts,
+      audioScheduleUnderruns: item?.audioScheduleUnderruns, audioScheduleUnderrunMs: item?.audioScheduleUnderrunMs,
+      audioScheduleUnderrunMaxMs: item?.audioScheduleUnderrunMaxMs, audioRebufferStops: item?.audioRebufferStops,
+      audioSubmitUncertaintyMaxMs: item?.audioSubmitUncertaintyMaxMs,
       audioLateStartMaxMs: item?.audioLateStartMaxMs, audioPcmPeak: item?.audioPcmPeak,
       audioPcmOverFullScaleSamples: item?.audioPcmOverFullScaleSamples, audioNonFiniteSamples: item?.audioNonFiniteSamples,
       userActivationHasBeenActive: globalThis.navigator?.userActivation?.hasBeenActive,
@@ -707,6 +808,8 @@ export function createMediaEngine(surface, options = {}) {
       stallElapsedMs: item?.stallStarted !== null && item?.stallStarted !== undefined && !paused && !running
         ? Math.max(0, (now() - item.stallStarted) * 1000) : 0,
       stallCount: item?.stallCount || 0,
+      ...audioOutputDiagnostics(item),
+      ...startupDiagnostics(),
       ...fetchResource.getDiagnostics?.(),
     };
   }
@@ -737,21 +840,25 @@ export function createMediaEngine(surface, options = {}) {
   function notifyRoom(item) { for (const resolve of item.waiters) resolve(); item.waiters.clear(); }
   function scheduleAudio(item, mediaEnd) {
     if (!item.audioTrack || !context || context.state !== 'running' || context.sampleRate !== item.audioSourceRate) return;
-    const target = Math.min(mediaEnd, position + MAX_AUDIO_SCHEDULE * rate);
+    const target = Math.min(mediaEnd, position + MAX_AUDIO_SCHEDULE * rate, Number.isFinite(duration) ? duration : Infinity);
     let cursor = Math.max(position, item.scheduledEnd);
     for (const chunk of item.audio) {
-      if (chunk.end <= cursor + 0.000001) continue;
+      if (chunk.end <= cursor) continue;
       if (chunk.start > cursor + 0.025 || cursor >= target) break;
       // A just-decoded chunk can arrive behind the playback cursor. Clip that
       // first submission once, then advance only by samples actually submitted.
       const offset = Math.max(chunk.scheduledFrames,
-        Math.min(chunk.channels[0].length, Math.max(0, frameCeil(cursor, chunk.start, chunk.sampleRate / rate))));
-      const limit = Math.floor((target - chunk.start) / rate * chunk.sampleRate
-        + frameEpsilon(target, chunk.start, chunk.sampleRate / rate));
+        Math.min(chunk.channels[0].length, Math.max(0, frameCeil(cursor, chunk.start, chunk.sampleRate / rate, origin))));
+      const atContainerEnd = Number.isFinite(duration) && Math.abs(target - duration) <= playbackEpsilon(item, target, duration);
+      const limit = atContainerEnd ? frameCeil(target, chunk.start, chunk.sampleRate / rate, origin)
+        : Math.floor((target - chunk.start) / rate * chunk.sampleRate
+          + frameEpsilon(origin + target, origin + chunk.start, chunk.sampleRate / rate));
       const length = Math.min(chunk.channels[0].length - offset, limit - offset);
       if (length < 1) continue;
       const start = chunk.start + offset / chunk.sampleRate * rate;
-      const end = chunk.start + (offset + length) / chunk.sampleRate * rate;
+      const end = Math.min(chunk.start + (offset + length) / chunk.sampleRate * rate,
+        Number.isFinite(duration) ? duration : Infinity);
+      const nodeDuration = (end - start) / rate;
       const buffer = context.createBuffer(chunk.channels.length, length, chunk.sampleRate);
       chunk.channels.forEach((channel, index) => buffer.copyToChannel(channel.subarray(offset, offset + length), index));
       const node = context.createBufferSource(); node.buffer = buffer; node.connect(gain);
@@ -759,17 +866,36 @@ export function createMediaEngine(surface, options = {}) {
       node.onended = () => { item.nodes.delete(node); node.disconnect(); };
       // Every node uses the same anchor as currentTime and the video presenter.
       const expected = clockTime + (start - clockPosition) / rate;
-      const when = Math.max(context.currentTime, expected);
+      const when = Math.max(context.currentTime, expected, item.audioSubmitEnd ?? 0);
       if (when > expected + 0.5 / chunk.sampleRate) {
         item.audioLateStarts++; item.audioLateStartMaxMs = Math.max(item.audioLateStartMaxMs, (when - expected) * 1000);
       }
-      if (item.lastAudioNodeEnd !== null) {
-        const delta = when - item.lastAudioNodeEnd;
-        if (delta > 0.5 / chunk.sampleRate) item.audioScheduleGapUs += delta * 1e6;
+      if (item.lastRequestedAudioEnd !== null) {
+        const delta = when - item.lastRequestedAudioEnd;
+        if (delta > 0.5 / chunk.sampleRate) {
+          item.audioScheduleGapUs += delta * 1e6; item.audioScheduleUnderruns++;
+          item.audioScheduleUnderrunMs += delta * 1000;
+          item.audioScheduleUnderrunMaxMs = Math.max(item.audioScheduleUnderrunMaxMs, delta * 1000);
+        }
         if (delta < -0.5 / chunk.sampleRate) item.audioScheduleOverlapUs -= delta * 1e6;
       }
-      node.start(when);
-      item.lastAudioNodeEnd = when + length / chunk.sampleRate;
+      // Native source nodes emit the sample whose start precedes a fractional
+      // container end. Bound its duration rather than dropping that last sample.
+      node.start(when, 0, nodeDuration);
+      // JS can pause between its last clock read and the native start call.
+      // This post-call clock bounds the possible submission time; it is not a
+      // renderer acknowledgement. Keep the following node beyond that bound,
+      // while request-gap counters retain their original requested-time basis.
+      const submitted = Math.max(when, context.currentTime);
+      item.audioSubmitUncertaintyMaxMs = Math.max(item.audioSubmitUncertaintyMaxMs, (submitted - when) * 1000);
+      if (submitted > expected) {
+        // Shift the shared mapping without treating the submitted future tail
+        // as already played. Even a one-ulp tail correction must preserve the
+        // current media cursor rather than advancing it to this node's start.
+        clockTime += submitted - expected; updatePosition();
+      }
+      item.lastRequestedAudioEnd = when + nodeDuration;
+      item.audioSubmitEnd = submitted + nodeDuration;
       chunk.scheduledFrames = offset + length; item.audioScheduledFrames += length;
       cursor = end; item.scheduledEnd = end;
     }
@@ -803,18 +929,15 @@ export function createMediaEngine(surface, options = {}) {
     const item = generation;
     if (!item) return;
     updatePosition(); presentDue(item, position); publishClock();
-    if (running && item.audioTrack && item.scheduledEnd > clockPosition + FRAME_EPSILON
-      && !(item.audioDone && position >= item.audioEnd - FRAME_EPSILON)
-      && currentClock() > clockTime + (item.scheduledEnd - clockPosition) / rate + 0.01) freeze();
     while (item.audio.length && item.audio[0].end <= position - FRAME_EPSILON) item.audio.shift();
     notifyRoom(item);
     if (item.metadataReady && item.videoDone && item.audioDone) {
       const lastEnd = Math.max(held?.end || 0, item.video[item.video.length - 1]?.end || 0, item.audioEnd);
       const finalEnd = Number.isFinite(duration) ? duration : lastEnd;
-      if (position >= finalEnd - FRAME_EPSILON) { finish(); return; }
+      if (position >= finalEnd - playbackEpsilon(item, finalEnd, position) && audioTailPlayed(item, finalEnd)) { finish(); return; }
     }
     const end = playableEnd(item);
-    const canRun = !paused && !seeking && item.readySettled && end > position + FRAME_EPSILON
+    const canRun = !paused && !seeking && item.readySettled && end > position + playbackEpsilon(item, end, position)
       && (running || bufferedForPlayback(item, end))
       && (!audioClockNeeded(item) || context?.state === 'running' && context.sampleRate === item.audioSourceRate);
     if (canRun) {
@@ -825,7 +948,10 @@ export function createMediaEngine(surface, options = {}) {
         scheduleAudio(item, end); item.waiting = false; event('playing'); settlePlay();
       } else scheduleAudio(item, end);
     } else {
-      if (running) freeze();
+      if (running) {
+        if (item.audioTrack && !audioEndedAt(item, position)) item.audioRebufferStops++;
+        freeze(true);
+      }
       if (!paused) eventWaiting(item);
     }
     if (item.readySettled) readyState = playableEnd(item) - position > 0.1 ? 3 : 2;

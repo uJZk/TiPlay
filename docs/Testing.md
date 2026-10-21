@@ -88,6 +88,55 @@ Both constructor-requested and actual graph rates were observed. This offline
 conversion checks signal continuity; it does not measure the physical device
 driver, speaker output or vehicle latency. Full Android CI remains skipped.
 
+The current URL scheduler also has deterministic tests for a callback arriving after
+the submitted audio tail, a task around native `start()`, both source rates and a
+finite video-surface pool. They verify source identity, absence of overlapping
+submissions, a consistent media clock and bounded recovery rather than accepting a
+full resume watermark after every late callback. The Chromium signal harness now
+also captures a real AudioContext through an independent AudioWorklet while the
+main thread deliberately stalls. Both 44.1/48 kHz runs retained sample order with
+no signal errors, and rendered silence agreed with the bounded scheduling evidence.
+This capture is before the OS/device output stage and does not prove speaker output.
+The user clarified that the remaining steady-playback clicks concern CarPlay. URL
+signal checks and healthy YouTube windows cannot exclude faults in that independent
+live-audio path.
+
+The current follow-up source passed 604 browser tests, 82 scoped Android tests in
+seven classes and the mobile debug build. The Android cases cover resource-route
+reuse/revocation, redirects and partial manifests, bounded startup/continuity
+diagnostics, device-fit/source-anchor evidence and the audio/video diagnostic
+allowlists. The full Android CI remains skipped. Mirror worklet regressions
+preserve sample progress when the first valid source anchor follows untimed PCM,
+reject expired output, retain unknown origins and isolate the concurrent CarPlay
+stream. CarPlay recovery tests retain the pre-recovery phase/rate/uncertainty and
+context-clock age without changing real Soxr samples or recovery decisions.
+Video tests retain actual snapshot age, maximum read interval and oldest outstanding
+decode age, reject old stream/epoch snapshots and preserve bounded diagnostic budgets.
+
+The native [`airplay-short-audio.mjs`](../tests/web-e2e/airplay-short-audio.mjs)
+oracle passed ten Chromium cases across 44.1/48 kHz, comparing every rendered sample
+with a native whole-buffer source limited to the same metadata duration. One-sample,
+fractional-sample and large decoder-padding cases had zero difference, resolved
+play before ended and emitted ended once. Audio EOF now waits for the effective
+submitted tail on the audio clock, independently of the video tolerance. Unit
+regressions also cover final-sample seeks, suspended clocks and mixed audio/video
+tails. These signal claims are at 1x; tempo conversion retains its existing rounded
+output-sample count and is not lossless at every playback rate.
+The URL signal, MP4/HLS controls and shared media-clock harnesses were rerun on
+this source. The complete v75 page also passed 90 checks with the explicit desktop
+software decoder override, covering all four main/Worker paths, reconnection,
+takeover and offline cache. The shared clock run recorded no runtime source changes;
+its default hardware probes remained explicitly unavailable on this desktop browser.
+These checks do not establish the vehicle decoder implementation or physical output.
+
+Parameter verification covers actual formulas, reachable watermarks, memory-accounting
+domains and field samples; [the parameter table](WebRTC-roadmap.md#参数核验与调优边界)
+distinguishes proved software bounds from defaults still needing vehicle calibration.
+Use a source cadence with continuous motion when measuring stutter: static picture
+updates can have long PTS intervals without dropped frames. Compare target and actual
+cursor delay during convergence, and retain unknown source/output timing instead of
+calling every missing anchor a passed latency measurement.
+
 The historical beta.6 integrated source passed 237 scoped Android regressions, 473 browser tests,
 90 full-page checks, 17 real-PeerConnection checks, seven SRP security cases with
 Bouncy Castle vectors and 24 JVM compatibility checks. Media-clock and AirPlay

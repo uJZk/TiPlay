@@ -68,6 +68,16 @@ try {
     window.actualVideo = () => document.querySelector('tiplay-media')?.engine;
     window.mediaResource = mode === 'hls' ? 'hls' : '0';
     window.playerLanguage = mode === 'hls' ? 'zh' : 'en';
+    window.airplayReportTicks = [];
+    const nativeInterval = window.setInterval.bind(window);
+    window.setInterval = (callback, delay, ...args) => {
+      if (delay !== 400 || callback?.name !== 'report') return nativeInterval(callback, delay, ...args);
+      return nativeInterval(() => {
+        const before = window.events.filter(event => event.k === 'ap-diag').length;
+        callback(...args);
+        window.airplayReportTicks.push(window.events.filter(event => event.k === 'ap-diag').length - before);
+      }, delay);
+    };
     const original = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = function(type, options) {
       if (mode === '2d' && type.startsWith('webgl')) return null;
@@ -130,8 +140,10 @@ try {
   if (resourceRequests[0]?.range !== 'bytes=0-65535') throw new Error('Initial media probe was not bounded');
   const openingDiagnostics = await page.evaluate(()=>events.filter(event=>event.k==='ap-diag'));
   checkDiagnostics(openingDiagnostics);
-  for (const expected of ['open', 'probe-start', 'probe-ready', 'loadedmetadata', 'directive-seek', 'directive-play', 'play', 'playing', 'play-resolved'])
+  for (const expected of ['open', 'probe-start', 'probe-ready', 'loadedmetadata', 'directive-play', 'play', 'playing', 'play-resolved'])
     if (!openingDiagnostics.some(entry=>entry.event===expected)) throw new Error(`Missing initial AirPlay diagnostic: ${expected}`);
+  if (openingDiagnostics.some(entry => entry.event === 'directive-seek'))
+    throw new Error('The initial zero-position directive restarted prepared media');
   await page.waitForFunction(()=>new Set(pictures.filter(p=>p.colored).map(p=>p.hash)).size>=2);
   const picture = await page.evaluate(() => ({ ...pictures.at(-1), nativeVideos: document.querySelectorAll('video').length,
     canvases: document.querySelectorAll('.airplay-canvas').length, intrinsicWidth: actualVideo().videoWidth }));
@@ -215,10 +227,14 @@ try {
   const pausedFrames = await page.evaluate(()=>pictures.length);
   await page.waitForTimeout(150);
   if(await page.evaluate(()=>pictures.length)!==pausedFrames) throw new Error('Paused video keeps drawing');
-  const pausedDiagnostics = await page.evaluate(()=>events.filter(event=>event.k==='ap-diag').length);
-  await page.waitForTimeout(500);
-  if(await page.evaluate(()=>events.filter(event=>event.k==='ap-diag').length)!==pausedDiagnostics)
-    throw new Error('Periodic AirPlay reports emitted extra diagnostics');
+  // Decoder progress may legitimately supplement the last paused/seeked edge.
+  // Measure each actual report task so those asynchronous edges cannot be
+  // mistaken for diagnostics caused by an ordinary periodic state report.
+  await page.evaluate(() => { airplayReportTicks.length = 0; });
+  await page.waitForFunction(() => airplayReportTicks.length >= 2);
+  const reportDiagnostics = await page.evaluate(() => airplayReportTicks.slice());
+  if(reportDiagnostics.some(count => count !== 0))
+    throw new Error(`Periodic AirPlay reports emitted extra diagnostics: ${JSON.stringify(reportDiagnostics)}`);
   await page.evaluate(()=>document.getElementById('stage').style.height='800px');
   await page.waitForFunction(()=>{ const expected=Math.min(800,actualVideo().videoWidth); return pictures.at(-1).width===expected && pictures.at(-1).height===expected; });
   if(mode==='webgl') {

@@ -323,6 +323,7 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
     stats: () => {
       const at = performance.timeOrigin + performance.now(), sourceClockState = presentationClockState(clock, at);
       return {
+      decoderStatsSampledAtMs: at,
       codec: config?.codec ?? null, epoch: config?.epoch ?? null, mode: config?.mode ?? null, streamGeneration: streamId,
       codecSupported,
       clockRttMs: sourceClockState === 'fresh' ? clock.rtt : null,
@@ -340,9 +341,12 @@ export function createDecoderPipeline({ post: send, present, decodeWaitMs = DECO
       decodeQueueSize: decoder?.decodeQueueSize ?? 0,
       decodeInFlightFrames: decodeStarts.size,
       decodeInFlightBytes: decodeBytes,
+      decodeOldestInFlightMs: decoder?.state === 'configured' && decodeStarts.size
+        ? Math.max(0, at - Math.min(...[...decodeStarts.values()].map(item => item.decodeSubmitAtMs))) : null,
       decoderErrorName, decoderErrorMessage,
       ...rates,
-      readFrameIntervalMsP95: readFrameIntervals.percentile(95), sourceForwardPtsIntervalMsP95: sourceForwardPtsIntervals.percentile(95),
+      readFrameIntervalMsP95: readFrameIntervals.percentile(95), readFrameIntervalMsMax: readFrameIntervals.percentile(100),
+      sourceForwardPtsIntervalMsP95: sourceForwardPtsIntervals.percentile(95),
       recordReadToDecodeSubmitMsP95: decodeAdmissionMs.percentile(95),
       androidHubQueueMsP95: androidQueueMs.percentile(95),
       androidTransportSubmitToRecordReadMsP95: transportSubmitToRecordReadMs.percentile(95),

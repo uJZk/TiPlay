@@ -20,7 +20,7 @@ import { pumpChunkStream } from './transport.js';
 import { createRtcMediaTransport, RTC_TRANSPORT } from './webrtc-transport.js';
 import { authenticateRtcOffer } from './rtc-pairing.js';
 import { rtcFailureSummary } from './rtc-diagnostics.js';
-import { createVideoDiagnosticTracker, safeSenderDiagnostics } from './video-diagnostics.js';
+import { createVideoDiagnosticTracker, safeSenderDiagnostics, decoderStatsMatch, decoderStatsSnapshot } from './video-diagnostics.js';
 import { formatPerformanceMonitor, performanceStats } from './fps-window.js';
 import { createClockEstimator } from './clock-sync.js';
 import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from './media-timing.js';
@@ -712,10 +712,13 @@ function onVideoMessage(message) {
     keepScreenOn();
   } else if (message.type === 'keyframe') outbox?.push({ k: 'kf' }, 'latest');
   else if (message.type === 'end' && message.id === streamId) {
-    if (message.stats) videoStats = performanceStats({ ...videoStats, ...message.stats });
+    if (decoderStatsMatch(message.stats, streamId, config?.epoch)) videoStats = performanceStats({ ...videoStats, ...message.stats });
     streamEnded(message.reason);
   }
-  else if (message.type === 'stats') videoStats = performanceStats(message.stats);
+  else if (message.type === 'stats') {
+    if (!decoderStatsMatch(message.stats, streamId, config?.epoch)) return;
+    videoStats = performanceStats(message.stats);
+  }
   render();
 }
 
@@ -834,7 +837,7 @@ function pageStats() {
     themeDark: appearance.matches,
     link: { path: videoPath.path, fallback: videoPath.reason, codecs: probedCodecs, phase, attempt, reconnects, live, unsupported, errorReason: lastError?.reason ?? lastError?.rtcReason ?? null, connection: rtcProgress, failure: lastError ? rtcFailureSummary(lastError) : null },
     transport: rtcMedia?.stats() ?? null,
-    video: { ...videoStats, clockEstimatorState: estimator?.clockEstimatorState,
+    video: { ...decoderStatsSnapshot(videoStats), clockEstimatorState: estimator?.clockEstimatorState,
       clockEstimatorObservationAgeMs: estimator?.clockEstimatorObservationAgeMs,
       clockEstimatorSelectedAgeMs: estimator?.clockEstimatorSelectedAgeMs },
     sender: safeSenderDiagnostics(status?.phone?.rtc),

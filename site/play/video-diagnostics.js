@@ -10,7 +10,8 @@ export const VIDEO_COUNTER_FIELDS = ['readFrames', 'readFrameBytes', 'decoded', 
   'decodeStalls', 'decodeBackpressureWaits', 'decoderAbortedFrames', 'decodeOnlyFrames', 'decodedResourceDroppedFrames', 'untimedScheduledFrames'];
 export const VIDEO_VALUE_FIELDS = ['currentFps', 'currentDelta', 'lastDrawAgeMs', 'frameIntervalP95Ms', 'frameIntervalMaxMs',
   'decodedFps', 'bytesPerSec', 'width', 'height', 'decodeQueueSize', 'decodedQueueSize', 'clockRttMs',
-  'readFrameIntervalMsP95', 'sourceForwardPtsIntervalMsP95', 'decodeMsP50', 'decodeMsP95', 'recordReadToDecodeSubmitMsP95',
+  'readFrameIntervalMsP95', 'readFrameIntervalMsMax', 'decoderStatsAgeMs', 'decodeOldestInFlightMs',
+  'sourceForwardPtsIntervalMsP95', 'decodeMsP50', 'decodeMsP95', 'recordReadToDecodeSubmitMsP95',
   'androidHubQueueMsP95', 'androidTransportSubmitToRecordReadMsP95', 'stageClockUncertaintyMs',
   'decodedToSchedulerMsP95', 'decodedToDrawMsP95', 'drawMsP95', 'presentationOffset90', 'presentationOffsetHigh5',
   'presentationOffsetSamples', 'senderRelativePolicyCeilingMs', 'videoCursorSpeed', 'videoCursorDeltaMs', 'decodedFrontierDeltaMs', 'touchCatchUpActive',
@@ -56,7 +57,21 @@ const BOOLEAN_FIELDS = new Set(['raw.touchCatchUpActive', 'raw.policyInteraction
 const finiteNumber = value => Number.isFinite(value) && Math.abs(value) <= 9e15;
 const WHOLE_POLICY_FIELDS = new Set(['policyInteractionStarts', 'policyInteractionReleases', 'policyProfileSwitches',
   'policyPlanChanges', 'policyMaxVideoFrames', 'policyMaxVideoBytes', 'sourceClockGeneration', 'sourceClockMaxAgeMs']);
-const nonnegativePolicyField = key => key.startsWith('policy') || key.startsWith('sourceClock') || key.startsWith('clockEstimator');
+const nonnegativePolicyField = key => key.startsWith('policy') || key.startsWith('sourceClock') || key.startsWith('clockEstimator')
+  || ['readFrameIntervalMsMax', 'decoderStatsAgeMs', 'decodeOldestInFlightMs'].includes(key);
+
+/** Identity fences precede storing an asynchronous worker snapshot. Missing epochs describe idle only. */
+export function decoderStatsMatch(stats, generation, epoch) {
+  return Boolean(stats && Number.isSafeInteger(generation) && generation >= 0 &&
+    stats.streamGeneration === generation && (stats.epoch ?? null) === (epoch ?? null));
+}
+
+/** The private decoder sample timestamp never crosses the diagnostic boundary. */
+export function decoderStatsSnapshot(stats = {}, at = performance.timeOrigin + performance.now()) {
+  const { decoderStatsSampledAtMs, decoderStatsAgeMs, ...values } = stats;
+  return { ...values, ...(Number.isFinite(decoderStatsSampledAtMs) && Number.isFinite(at) && at >= decoderStatsSampledAtMs
+    ? { decoderStatsAgeMs: at - decoderStatsSampledAtMs } : {}) };
+}
 
 function scalars(output, prefix, source, fields) {
   for (const key of fields) {
@@ -170,6 +185,9 @@ export function packVideoDiagnosticValues(source, pageVersion, byteLimit = VIDEO
       'policySubmitMarginMs', 'sourceClockState', 'sourceClockAgeMs', 'sourceClockGeneration', 'sourceClockMaxAgeMs',
       'clockEstimatorState', 'clockEstimatorObservationAgeMs', 'clockEstimatorSelectedAgeMs',
       'stageClockUncertaintyMs'].map(key => `raw.${key}`)];
+  priority.push(...['decoderStatsAgeMs', 'readFrameIntervalMsMax', 'decodeOldestInFlightMs',
+    'decodeQueueSize', 'decodedQueueFrames', 'decodedQueueBytes', 'decodeInFlightFrames', 'decodeInFlightBytes',
+    'codec', 'acceleration', 'decoderImplementation'].map(key => `raw.${key}`));
   for (const key of [...new Set([...priority, ...Object.keys(source)])]) {
     if (!(key in source)) continue;
     const original = source[key];

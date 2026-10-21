@@ -101,6 +101,9 @@
     "raw.decodedQueueSize",
     "raw.clockRttMs",
     "raw.readFrameIntervalMsP95",
+    "raw.readFrameIntervalMsMax",
+    "raw.decoderStatsAgeMs",
+    "raw.decodeOldestInFlightMs",
     "raw.sourceForwardPtsIntervalMsP95",
     "raw.decodeMsP50",
     "raw.decodeMsP95",
@@ -362,7 +365,10 @@
         "stageClockUncertaintyMs": 3.1,
         "clockEstimatorState": "selected-stale",
         "clockEstimatorObservationAgeMs": 10,
-        "clockEstimatorSelectedAgeMs": 18358
+        "clockEstimatorSelectedAgeMs": 18358,
+        "decoderStatsAgeMs": 250,
+        "readFrameIntervalMsMax": 190,
+        "decodeOldestInFlightMs": 284
       },
       "control": {
         "rttMsP95": 32,
@@ -384,7 +390,7 @@
   "standard": {
     "k": "st",
     "v": {
-      "page.version": "v74",
+      "page.version": "v75",
       "video.streamGeneration": 3,
       "video.epoch": 7,
       "video.droppedFrames": 102,
@@ -444,9 +450,9 @@
       "video.decodeStalls": 1,
       "control.rttMsP95": 32,
       "control.pending": 1,
+      "video.decoderStatsAgeMs": 250,
+      "video.readFrameIntervalMsMax": 190,
       "audio.sound": 1,
-      "audio.queuedBytes": 1024,
-      "transport.ice.state": "selected",
       "themeDark": false
     }
   },
@@ -708,14 +714,17 @@
     "raw.sourceClockMaxAgeMs": 15000,
     "raw.clockEstimatorState": "selected-stale",
     "raw.clockEstimatorObservationAgeMs": 10,
-    "raw.clockEstimatorSelectedAgeMs": 18358
+    "raw.clockEstimatorSelectedAgeMs": 18358,
+    "raw.decoderStatsAgeMs": 250,
+    "raw.readFrameIntervalMsMax": 190,
+    "raw.decodeOldestInFlightMs": 284
   },
   "debug": {
     "k": "video-diag",
     "d": "fixture-capture-v1",
     "v": {
-      "pageVersion": "v74",
-      "omittedFields": 2,
+      "pageVersion": "v75",
+      "omittedFields": 5,
       "schema": 1,
       "sample": 2,
       "streamGeneration": 3,
@@ -765,6 +774,17 @@
       "raw.clockEstimatorObservationAgeMs": 10,
       "raw.clockEstimatorSelectedAgeMs": 18358,
       "raw.stageClockUncertaintyMs": 3.1,
+      "raw.decoderStatsAgeMs": 250,
+      "raw.readFrameIntervalMsMax": 190,
+      "raw.decodeOldestInFlightMs": 284,
+      "raw.decodeQueueSize": 2,
+      "raw.decodedQueueFrames": 1,
+      "raw.decodedQueueBytes": 13762560,
+      "raw.decodeInFlightFrames": 2,
+      "raw.decodeInFlightBytes": 2,
+      "raw.codec": "avc1",
+      "raw.acceleration": "prefer-hardware",
+      "raw.decoderImplementation": "unknown",
       "interval.readFrames": 2,
       "interval.readFrameBytes": 2,
       "interval.decoded": 2,
@@ -829,7 +849,6 @@
       "raw.bytesPerSec": 2,
       "raw.width": 2,
       "raw.height": 2,
-      "raw.decodeQueueSize": 2,
       "raw.decodedQueueSize": 2,
       "raw.clockRttMs": 2,
       "raw.readFrameIntervalMsP95": 2,
@@ -941,9 +960,6 @@
       "sender.control.recordsSent": 2,
       "sender.control.bytesSent": 2,
       "sender.control.pendingReceiveTasks": 2,
-      "raw.codec": "avc1",
-      "raw.acceleration": "prefer-hardware",
-      "raw.decoderImplementation": "unknown",
       "raw.presentationTimingState": "mapped-presentation",
       "raw.pacingMode": "display-refresh",
       "transport.ice.state": "selected",
@@ -962,14 +978,7 @@
       "raw.decoderAbortedFrames": 4,
       "interval.decoderAbortedFrames": 2,
       "raw.decodeOnlyFrames": 4,
-      "interval.decodeOnlyFrames": 2,
-      "raw.decodedResourceDroppedFrames": 4,
-      "interval.decodedResourceDroppedFrames": 2,
-      "raw.untimedScheduledFrames": 4,
-      "interval.untimedScheduledFrames": 2,
-      "raw.decodeBackpressureMs": 2,
-      "raw.decodedQueueFrames": 1,
-      "raw.decodedQueueBytes": 13762560
+      "interval.decodeOnlyFrames": 2
     }
   }
 }

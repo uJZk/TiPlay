@@ -122,16 +122,9 @@ class TiPlayAudio extends AudioWorkletProcessor {
         }
         const legacy = this.streams.get(data.type);
         if (legacy) { for (const pcm of legacy.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', data.type); this.streams.delete(data.type); }
-        if (timeline.arrivalPlayback && Number.isFinite(data.presentationMs)) {
-          // A real source anchor can arrive after an untimed utterance has begun.
-          // Translate its existing sample coordinate instead of replaying or skipping its start.
-          const offset = data.presentationMs - (timeline.sourceAnchorMs + (timeline.lastPacket?.end ?? 0) * 1000 / timeline.rate);
-          timeline.sourceAnchorMs += offset;
-          if (Number.isFinite(timeline.rawCursorMs)) timeline.rawCursorMs += offset;
-          for (const packet of timeline.queue) packet.presentationMs += offset;
-          if (timeline.lastPacket && !timeline.queue.includes(timeline.lastPacket)) timeline.lastPacket.presentationMs += offset;
-          timeline.arrivalPlayback = false; timeline.synchronized = true;
-        }
+        // A first real anchor can arrive after either untimed mirror PCM or
+        // arrival-based guidance. Preserve the existing sample progress.
+        if (!timeline.synchronized && Number.isFinite(data.presentationMs)) timeline.synchronize(data);
         if (timeline.arrivalPlayback) {
           // Untimed guidance has no lip-sync relationship with the screen. Its sender may
           // supply no lead at all, so a device-delay target can never catch its tail.

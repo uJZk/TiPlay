@@ -25,7 +25,7 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 let browser;
 try {
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM || '/usr/bin/chromium',
-    headless: true, args: ['--no-sandbox', '--no-proxy-server'] });
+    headless: true, args: ['--no-sandbox', '--no-proxy-server', '--autoplay-policy=no-user-gesture-required'] });
   const page = await browser.newPage(), errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.address().port}/harness`);
@@ -52,7 +52,7 @@ try {
         createBuffer(...args) { return offline.createBuffer(...args); }
         createBufferSource() {
           const node = offline.createBufferSource(), start = node.start.bind(node);
-          node.start = time => { sources.push({ time, node }); start(time); };
+          node.start = (time, ...args) => { sources.push({ time, node }); start(time, ...args); };
           return node;
         }
         resume() { this.state = 'running'; return Promise.resolve(); }
@@ -132,5 +132,133 @@ try {
   }
   assert.deepEqual(errors, []);
   assert.ok(results.every(result => result.signalPreserved), 'Production URL AudioBufferSource graph differs from native whole-buffer reference');
+  // Unlike the preceding Offline cases, the render clock and worklet keep
+  // advancing while a real rAF callback is deliberately held on the main thread.
+  // The capture observes native graph PCM before the OS/device output stage; it
+  // cannot establish what a physical speaker emitted or diagnose device xruns.
+  for (const sourceRate of [44100, 48000]) {
+    const result = await page.evaluate(async sourceRate => {
+      const { createMediaEngine } = await import('/airplay-media.js');
+      const { createUrlAudioSchedulingFixture, urlAudioSample } = await import('/signal-fixture.mjs');
+      const chunks = [];
+      let h, fault = null, capture, capturedSignalFrames = 0;
+      const moduleUrl = URL.createObjectURL(new Blob([`
+        class Capture extends AudioWorkletProcessor {
+          constructor() { super(); this.offset = 0; this.left = new Float32Array(2048); this.right = new Float32Array(2048); }
+          process(inputs, outputs) {
+            const input = inputs[0], output = outputs[0], frames = output[0].length;
+            if (!this.offset) this.firstFrame = currentFrame;
+            for (let channel = 0; channel < 2; channel++) {
+              const data = input[channel], target = channel ? this.right : this.left;
+              if (data) { target.set(data, this.offset); output[channel].set(data); }
+              else target.fill(0, this.offset, this.offset + frames);
+            }
+            this.offset += frames;
+            if (this.offset === this.left.length) {
+              this.port.postMessage({ firstFrame: this.firstFrame, left: this.left, right: this.right }, [this.left.buffer, this.right.buffer]);
+              this.offset = 0; this.left = new Float32Array(2048); this.right = new Float32Array(2048);
+            }
+            return true;
+          }
+        }
+        registerProcessor('url-audio-capture', Capture);
+      `], { type: 'text/javascript' }));
+      // Install the monitor before the production graph exists. With autoplay
+      // enabled Chrome may create a running context and never call resume().
+      const nativeContext = new AudioContext({ sampleRate: sourceRate, latencyHint: 'interactive' });
+      await nativeContext.audioWorklet.addModule(moduleUrl);
+      capture = new AudioWorkletNode(nativeContext, 'url-audio-capture', { numberOfInputs: 1, numberOfOutputs: 1,
+        channelCount: 2, channelCountMode: 'explicit', outputChannelCount: [2] });
+      capture.port.onmessage = event => {
+        chunks.push(event.data);
+        for (const value of event.data.right) if (value > 0) capturedSignalFrames++;
+      };
+      capture.connect(nativeContext.destination);
+      class CapturingContext {
+        constructor(options) {
+          if (options.sampleRate !== nativeContext.sampleRate) throw new Error('Prepared capture has a different audio format');
+        }
+        get sampleRate() { return nativeContext.sampleRate; }
+        get currentTime() { return nativeContext.currentTime; }
+        get state() { return nativeContext.state; }
+        get destination() { return capture; }
+        get baseLatency() { return nativeContext.baseLatency; }
+        get outputLatency() { return nativeContext.outputLatency; }
+        getOutputTimestamp() { return nativeContext.getOutputTimestamp(); }
+        addEventListener(...args) { return nativeContext.addEventListener(...args); }
+        createGain() { return nativeContext.createGain(); }
+        createBuffer(...args) { return nativeContext.createBuffer(...args); }
+        createBufferSource() { return nativeContext.createBufferSource(); }
+        resume() { return nativeContext.resume(); }
+        close() { return nativeContext.close(); }
+      }
+      const waitFor = async condition => {
+        const deadline = performance.now() + 7000;
+        while (!condition()) {
+          if (performance.now() > deadline) throw new Error('Realtime URL audio capture timed out');
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+      };
+      h = createUrlAudioSchedulingFixture(createMediaEngine, { sampleRate: sourceRate, duration: 4, AudioContext: CapturingContext,
+        now: () => performance.now() / 1000,
+        requestFrame: callback => requestAnimationFrame(timestamp => {
+          if (!fault && capturedSignalFrames >= 2048 && h.media.currentTime >= 0.5 && h.nodes.length) {
+            const context = h.context(), tail = Math.max(...h.nodes.map(node => node.time + node.buffer.duration));
+            const target = Math.ceil((tail + 0.005) * sourceRate / 128) * 128 / sourceRate;
+            const deadline = performance.now() + 1200;
+            // The worklet renders independently during this deliberately bounded
+            // main-thread task. Native clock granularity and OS scheduling need
+            // not reproduce Node's exact 5–10ms grace-window fault. Cache the
+            // final clock observation rather than making an additional read.
+            let observedClock = context.currentTime;
+            while (observedClock < target && performance.now() < deadline) observedClock = context.currentTime;
+            fault = { tail, lateMs: (observedClock - tail) * 1000 };
+          }
+          callback(timestamp);
+        }), cancelFrame: id => cancelAnimationFrame(id) });
+      try {
+        await h.media.load('https://fixture.test/realtime-url-audio.mp4');
+        const playing = h.media.play(); void playing.catch(() => {});
+        await waitFor(() => fault && capturedSignalFrames > sourceRate + 2048 && h.media.currentTime >= 1.15);
+        await playing;
+        await new Promise(resolve => setTimeout(resolve, 80));
+        const state = h.media.getPlaybackDiagnostics();
+        let previous = null, skippedFrames = 0, repeatedFrames = 0, signalErrors = 0, measuredFrames = 0;
+        let silenceRun = 0, totalSilenceFrames = 0, maximumSilenceFrames = 0, started = false;
+        for (const chunk of chunks.sort((a, b) => a.firstFrame - b.firstFrame)) for (let index = 0; index < chunk.right.length; index++) {
+          const identity = Math.round(chunk.right[index] * 2 ** 20) - 1;
+          if (identity < 0) { if (started) silenceRun++; continue; }
+          started = true; maximumSilenceFrames = Math.max(maximumSilenceFrames, silenceRun);
+          totalSilenceFrames += silenceRun; silenceRun = 0;
+          if (previous !== null) {
+            skippedFrames += Math.max(0, identity - previous - 1);
+            repeatedFrames += Math.max(0, previous - identity + 1);
+          }
+          if (Math.abs(chunk.left[index] - Math.fround(urlAudioSample(identity, 0, sourceRate))) > 1e-5) signalErrors++;
+          previous = identity; measuredFrames++;
+        }
+        return { oracle: 'realtime AudioContext graph PCM captured on its independent AudioWorklet render thread',
+          physicalOutputObserved: false, sourceRate, contextRate: h.context().sampleRate, lateMs: fault.lateMs,
+          measuredFrames, skippedFrames, repeatedFrames, signalErrors, maximumSilenceMs: maximumSilenceFrames / sourceRate * 1000,
+          renderedSilenceMs: totalSilenceFrames / sourceRate * 1000,
+          audioScheduleUnderruns: state.audioScheduleUnderruns, audioScheduleUnderrunMs: state.audioScheduleUnderrunMs,
+          stallCount: state.stallCount };
+      } finally {
+        h.media.dispose(); capture?.disconnect();
+        if (nativeContext.state !== 'closed') await nativeContext.close();
+        URL.revokeObjectURL(moduleUrl);
+      }
+    }, sourceRate);
+    console.log(JSON.stringify(result));
+    assert.equal(result.contextRate, sourceRate);
+    assert.ok(result.lateMs > 0, 'the injected task must exhaust the submitted graph');
+    assert.ok(result.measuredFrames > sourceRate, 'capture must include stable playback before and after the task');
+    assert.equal(result.skippedFrames, 0); assert.equal(result.repeatedFrames, 0); assert.equal(result.signalErrors, 0);
+    assert.ok(result.maximumSilenceMs > 0, 'the task must exhaust the submitted graph');
+    assert.ok(result.audioScheduleUnderruns >= 1, 'native graph underrun must have diagnostic evidence');
+    assert.ok(Math.abs(result.renderedSilenceMs - result.audioScheduleUnderrunMs) < 2 * 128 / sourceRate * 1000,
+      'rendered silence and planned underrun must agree within two render quanta');
+  }
+  assert.deepEqual(errors, []);
   console.log(JSON.stringify({ browser: await browser.version(), result: 'URL audio signal checks passed' }));
 } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }

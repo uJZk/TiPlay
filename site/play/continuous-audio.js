@@ -11,7 +11,8 @@ export class ContinuousAudio {
     this.runtime = runtime; this.rate = rate; this.channels = channels; this.outputRate = outputRate;
     this.consumed = consumed; this.maximumMs = maximumMs; this.buffered = buffered; this.mode = mode; this.type = type; this.semanticType = semanticType;
     this.queue = []; this.sequences = new Set(); this.bytes = 0; this.counters = null;
-    this.sourceAnchorMs = null; this.sampleAnchorUs = null; this.sourceFrame = 0; this.inputFrame = 0; this.outputFrames = 0;
+    this.sourceAnchorMs = null; this.sampleAnchorUs = null; this.sampleOriginKnown = false;
+    this.sourceFrame = 0; this.inputFrame = 0; this.outputFrames = 0;
     this.lastContextTimeMs = null;
     this.state = 'priming'; this.reason = 'startup'; this.clockGeneration = null;
     this.rawCursorMs = null; this.phaseErrorMs = 0; this.gain = 0; this.last = new Float32Array(channels);
@@ -23,6 +24,7 @@ export class ContinuousAudio {
     this.sourceClock = new AudioSourceClock(rate, { arrival: mode === 'carplay' && !buffered });
     this.backend = null; this.slewRatio = rate / outputRate; this.lastPacket = null; this.missingSince = null;
     this.lastRecoveryReason = null; this.recoveryCounts = {};
+    this.lastClockStep = null;
     this.sourceDeadlineState = 'unknown'; this.sourceDeltaMs = null; this.sourceDeltaUpperMs = null;
     this.sourceDeadlineReason = 'no-output';
     this.sourceDeadlineRejectedFrames = 0;
@@ -38,14 +40,43 @@ export class ContinuousAudio {
     for (const packet of this.queue) this.retire(packet, 'reset');
     this.queue = []; this.backend?.dispose(); this.backend = null; this.state = 'ended'; this.lastContextTimeMs = null;
   }
+  synchronize(data) {
+    if (this.synchronized || !Number.isFinite(data.presentationMs) || this.sourceAnchorMs === null
+      || this.sequences.has(data.sequence)) return false;
+    const frames = data.pcm.byteLength / 2 / this.channels;
+    if (!Number.isInteger(frames) || frames <= 0 || frames * 1000 / this.rate > MAX_PCM_PACKET_MS) return false;
+    let frame;
+    if (this.mode === 'airplay-mirror') {
+      // A record sequence is not a source sample clock: it may hide missing RTP.
+      // Translate only a decode coordinate known from this PCM epoch's start.
+      if (!this.sampleOriginKnown || !Number.isFinite(data.decodeTimestampUs)) return false;
+      frame = Math.round((data.decodeTimestampUs - this.sampleAnchorUs) * this.rate / 1000000);
+    } else if (this.arrivalPlayback) frame = this.lastPacket?.end ?? 0;
+    else return false;
+    const offset = data.presentationMs - (this.sourceAnchorMs + frame * 1000 / this.rate);
+    this.sourceAnchorMs += offset;
+    if (Number.isFinite(this.rawCursorMs)) this.rawCursorMs += offset;
+    for (const packet of this.queue) packet.presentationMs += offset;
+    if (this.lastPacket && !this.queue.includes(this.lastPacket)) this.lastPacket.presentationMs += offset;
+    // Provisional presentation times cannot train the real source oscillator.
+    // Arrival-based CarPlay guidance keeps its independent measured oscillator.
+    if (!this.sourceClock.arrival) this.sourceClock = new AudioSourceClock(this.rate);
+    // No source-age proof exists for copies of the previously untimed output.
+    // Retain the live filter/sample cursor, but never blend that old tail into
+    // a quantum whose source deadline is now verifiable.
+    this.last.fill(0); this.recoveryTail.fill(0); this.recoveryRemaining = this.tailRemaining = 0;
+    this.arrivalPlayback = false; this.synchronized = true;
+    return true;
+  }
   push(data, browserRate = 1) {
     const pcm = new Int16Array(data.pcm), frames = pcm.length / this.channels;
     if (!frames) return;
     if (!Number.isInteger(frames) || frames * 1000 / this.rate > MAX_PCM_PACKET_MS) { this.reject(pcm.byteLength, 'invalid', data.generation); return; }
     if (this.sequences.has(data.sequence)) { this.reject(pcm.byteLength, 'duplicate', data.generation); return; }
+    const sampleTimeUs = this.mode === 'airplay-mirror' && Number.isFinite(data.decodeTimestampUs) ? data.decodeTimestampUs : null;
+    if (this.sourceAnchorMs === null) this.sampleOriginKnown = sampleTimeUs !== null;
     this.sourceAnchorMs ??= data.presentationMs;
     let nominalFrame = Math.round((data.presentationMs - this.sourceAnchorMs) * this.rate / 1000);
-    const sampleTimeUs = this.mode === 'airplay-mirror' && Number.isFinite(data.decodeTimestampUs) ? data.decodeTimestampUs : null;
     if (sampleTimeUs !== null) {
       this.sampleAnchorUs ??= sampleTimeUs - nominalFrame * 1000000 / this.rate;
       nominalFrame = Math.round((sampleTimeUs - this.sampleAnchorUs) * this.rate / 1000000);
@@ -131,7 +162,18 @@ export class ContinuousAudio {
     if (this.backend && clock && clock.generation !== this.clockGeneration && clock.state !== 'stale') this.recover('clock-generation');
     if (this.backend && Number.isFinite(targetMs)) {
       this.phaseErrorMs = targetMs - this.rawCursorMs;
-      if (Math.abs(this.phaseErrorMs) > AUDIO_RECOVERY_ERROR_MS) this.recover('clock-step');
+      if (Math.abs(this.phaseErrorMs) > AUDIO_RECOVERY_ERROR_MS) {
+        // Preserve the triggering quantum before recovery replaces its DSP
+        // state; periodic feedback may otherwise show only a healthy phase.
+        const deviceRatePpm = (deviceRate - 1) * 1e6;
+        this.lastClockStep = {
+          phaseErrorMs: Number.isFinite(this.phaseErrorMs) ? this.phaseErrorMs : null,
+          deviceRatePpm: Number.isFinite(deviceRate) && deviceRate > 0 && Number.isFinite(deviceRatePpm) ? deviceRatePpm : null,
+          uncertaintyMs: Number.isFinite(deadline?.uncertaintyMs) && deadline.uncertaintyMs >= 0 ? deadline.uncertaintyMs : null,
+          contextMs: Number.isFinite(contextMs) && contextMs >= 0 ? contextMs : null,
+        };
+        this.recover('clock-step');
+      }
     }
     if (!this.backend && Number.isFinite(targetMs)) this.start(targetMs, clock?.generation);
     if (!this.backend) {
@@ -211,6 +253,7 @@ export class ContinuousAudio {
     }
   }
   reference(contextTimeMs) {
+    const step = this.lastClockStep;
     return { type: this.type, semanticType: this.semanticType, mode: this.mode, epoch: this.epoch, generation: this.generation,
       anchoring: this.arrivalPlayback ? 'arrival' : 'presentation',
       senderTimingState: this.arrivalPlayback ? 'arrival-anchored-unverified' : this.synchronized ? 'mapped-presentation' : 'unavailable',
@@ -227,6 +270,11 @@ export class ContinuousAudio {
       sourceDeadlineReason: this.sourceDeadlineReason,
       sourceDeadlineRejectedFrames: this.sourceDeadlineRejectedFrames,
       lastRecoveryReason: this.lastRecoveryReason, recoveryCounts: { ...this.recoveryCounts },
+      ...(Number.isFinite(step?.phaseErrorMs) ? { lastClockStepPhaseErrorMs: step.phaseErrorMs } : {}),
+      ...(Number.isFinite(step?.deviceRatePpm) ? { lastClockStepDeviceRatePpm: step.deviceRatePpm } : {}),
+      ...(Number.isFinite(step?.uncertaintyMs) ? { lastClockStepUncertaintyMs: step.uncertaintyMs } : {}),
+      ...(Number.isFinite(step?.contextMs) && Number.isFinite(contextTimeMs) && contextTimeMs >= step.contextMs
+        ? { lastClockStepAgeMs: contextTimeMs - step.contextMs } : {}),
       sourceRatePpm: (this.sourceClock.rate - 1) * 1e6, sourceRateConfidence: this.sourceClock.confidence };
   }
   stats() {

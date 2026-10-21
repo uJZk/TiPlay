@@ -16,6 +16,14 @@ export function playbackBuffering(media, waiting = false) {
 export function applyDirectiveRate(media, directive) {
   if (Number.isFinite(directive.rate)) media.playbackRate = directive.rate;
 }
+/** Source preparation already owns the first frame at zero; later seek commands still apply. */
+export function directiveSeekTarget(media, directive, initial = false) {
+  const duration = media.duration;
+  const seconds = directive.fraction ? directive.target * duration : directive.target;
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  const target = Number.isFinite(duration) ? Math.min(seconds, duration) : seconds;
+  return initial && target === 0 && media.currentTime === 0 && !media.seeking ? null : target;
+}
 /** TiPlay owns playback; Video.js controls and iPhone directives share its measured clock. */
 export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, credentials, host } = {}) {
   const layer = document.createElement('div');
@@ -70,11 +78,10 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     // Seek is applied only for a new iPhone command; status polling never moves the local media clock.
     const seekRevision = directive.seekRevision ?? directive.revision;
     if (seekRevision !== appliedSeekRevision) {
-      const duration = player.media.duration;
-      const seconds = directive.fraction ? directive.target * duration : directive.target;
-      if (Number.isFinite(seconds) && seconds >= 0) {
+      const target = directiveSeekTarget(player.media, directive, appliedSeekRevision === -1);
+      if (target !== null) {
         observation?.event('directive-seek', undefined, command);
-        player.media.currentTime = Number.isFinite(duration) ? Math.min(seconds, duration) : seconds;
+        player.media.currentTime = target;
       }
       appliedSeekRevision = seekRevision;
     }

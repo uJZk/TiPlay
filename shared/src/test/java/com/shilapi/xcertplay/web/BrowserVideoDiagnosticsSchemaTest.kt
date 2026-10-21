@@ -6,6 +6,15 @@ import org.junit.Test
 class BrowserVideoDiagnosticsSchemaTest {
     private fun sample() = linkedMapOf<String, Any?>("schema" to 1, "pageVersion" to "v71", "sample" to 1, "streamGeneration" to 2, "epoch" to 3)
 
+    @Test fun decoderSampleAgeRareSupplyGapAndOutstandingOutputHaveNonnegativeBounds() {
+        val input = sample() + mapOf("raw.decoderStatsAgeMs" to 250.5,
+            "raw.readFrameIntervalMsMax" to 190, "raw.decodeOldestInFlightMs" to 284)
+        assertEquals(input, BrowserVideoDiagnosticsSchema.parse(input))
+        for (key in listOf("raw.decoderStatsAgeMs", "raw.readFrameIntervalMsMax", "raw.decodeOldestInFlightMs"))
+            assertNull(key, BrowserVideoDiagnosticsSchema.parse(sample() + (key to -1)))
+        assertNull(BrowserVideoDiagnosticsSchema.parse(sample() + ("raw.decoderStatsSampledAtMs" to 10000)))
+    }
+
     @Test fun decoderResourceAndIntentionalDecodeOnlyEvidenceRemainDistinctFromDropTotals() {
         val input = sample() + mapOf("raw.decodeStalls" to 2, "interval.decodeStalls" to 1,
             "raw.decodeBackpressureWaits" to 3, "interval.decodeBackpressureWaits" to 2,
@@ -38,11 +47,12 @@ class BrowserVideoDiagnosticsSchemaTest {
         val input = debug["v"] as Map<*, *>
         val valid = requireNotNull(BrowserVideoDiagnosticsSchema.parse(input))
         assertEquals(BrowserVideoDiagnosticsSchema.fields, (event["schemaFields"] as List<*>).toSet())
-        assertEquals(256, valid.size); assertEquals(2.0, (valid["omittedFields"] as Number).toDouble(), 0.0)
+        assertEquals(256, valid.size); assertEquals(5.0, (valid["omittedFields"] as Number).toDouble(), 0.0)
         assertEquals(input, valid)
         for (key in listOf("raw.policyVideoTargetMs", "raw.policyVideoReadinessMs", "raw.policyVideoMarginMs",
             "raw.policyInteractionStarts", "raw.policyProfileSwitches", "raw.policyVideoPlanDurationMs",
-            "raw.sourceClockState", "raw.sourceClockAgeMs", "raw.clockEstimatorState", "raw.clockEstimatorSelectedAgeMs"))
+            "raw.sourceClockState", "raw.sourceClockAgeMs", "raw.clockEstimatorState", "raw.clockEstimatorSelectedAgeMs",
+            "raw.decoderStatsAgeMs", "raw.readFrameIntervalMsMax", "raw.decodeOldestInFlightMs"))
             assertTrue(key, valid.containsKey(key))
         assertTrue(WebJson.write(valid).toByteArray(Charsets.UTF_8).size <= BrowserVideoDiagnosticsSchema.MAX_BYTES)
         for (bad in listOf("raw.policyVideoTargetMs" to -1, "raw.policyInteractionStarts" to 1.5,

@@ -84,27 +84,32 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     onError: cause => { releaseEncoded(); audioError = cause.message || String(cause); notify(); },
   });
   const now = () => performance.timeOrigin + performance.now();
-  const debugSnapshot = () => ({
-    processorErrors, recoveries, processorFailed, recoveryAttempts,
-    contextState: context?.state ?? 'unavailable', contextTimeMs: context ? context.currentTime * 1000 : null,
-    contextRate: context?.sampleRate ?? null, contextBaseLatencyMs: context?.baseLatency * 1000,
-    contextOutputLatencyMs: context?.outputLatency * 1000, clockBase,
-    clockOffsetMs: clock?.offset ?? null, clockAgeMs: clock ? now() - clock.at : null, clockRttMs: clock?.rtt ?? null,
-    clockRatePpm: clock?.rate === undefined ? null : (clock.rate - 1) * 1e6,
-    clockGeneration: clock?.generation ?? null, clockUncertaintyMs: clock?.uncertaintyMs ?? null,
-    clockRateConfidence: clock?.rateConfidence ?? null,
-    deviceClockRatePpm: outputClock.deviceClock().ratePpm, deviceClockTargetRatePpm: outputClock.deviceClock().targetRatePpm,
-    deviceClockConfidence: outputClock.deviceClock().confidence, deviceClockUncertaintyMs: outputClock.deviceClock().uncertaintyMs,
-    deviceClockGeneration: outputClock.deviceClock().generation, deviceClockReason: outputClock.deviceClock().reason,
-    ...outputClock.diagnostics(),
-    pcmPackets: pcmMetrics?.packets ?? 0, pcmFrames: pcmMetrics?.frames ?? 0,
-    pcmNonzero: pcmMetrics?.nonzero ?? 0, pcmPeak: pcmMetrics?.peak ?? 0,
-    ...workletMetrics,
-    renderReportAgeMs: reportAt === null ? null : now() - reportAt,
-    renderAgeMs: context && workletMetrics ? Math.max(0,
-      (context.currentTime * 1000 - workletMetrics.renderTimeMs) / outputClock.deviceClock().rate) : null,
-    decoder: packetDecoder.stats(),
-  });
+  const debugSnapshot = () => {
+    const device = outputClock.deviceClock();
+    return {
+      processorErrors, recoveries, processorFailed, recoveryAttempts,
+      contextState: context?.state ?? 'unavailable', contextTimeMs: context ? context.currentTime * 1000 : null,
+      contextRate: context?.sampleRate ?? null, contextBaseLatencyMs: context?.baseLatency * 1000,
+      contextOutputLatencyMs: context?.outputLatency * 1000, clockBase,
+      clockOffsetMs: clock?.offset ?? null, clockAgeMs: clock ? now() - clock.at : null, clockRttMs: clock?.rtt ?? null,
+      clockRatePpm: clock?.rate === undefined ? null : (clock.rate - 1) * 1e6,
+      clockGeneration: clock?.generation ?? null, clockUncertaintyMs: clock?.uncertaintyMs ?? null,
+      clockRateConfidence: clock?.rateConfidence ?? null,
+      deviceClockRatePpm: device.ratePpm, deviceClockTargetRatePpm: device.targetRatePpm,
+      deviceClockConfidence: device.confidence, deviceClockUncertaintyMs: device.uncertaintyMs,
+      deviceClockGeneration: device.generation, deviceClockReason: device.reason,
+      ...(device.acceptedFitAgeMs === undefined ? {} : { deviceClockAcceptedFitAgeMs: device.acceptedFitAgeMs }),
+      deviceClockFitRejected: device.fitRejected, deviceClockFitStatus: device.fitStatus, deviceClockFitRejectReason: device.fitRejectReason,
+      ...outputClock.diagnostics(),
+      pcmPackets: pcmMetrics?.packets ?? 0, pcmFrames: pcmMetrics?.frames ?? 0,
+      pcmNonzero: pcmMetrics?.nonzero ?? 0, pcmPeak: pcmMetrics?.peak ?? 0,
+      ...workletMetrics,
+      renderReportAgeMs: reportAt === null ? null : now() - reportAt,
+      renderAgeMs: context && workletMetrics ? Math.max(0,
+        (context.currentTime * 1000 - workletMetrics.renderTimeMs) / device.rate) : null,
+      decoder: packetDecoder.stats(),
+    };
+  };
   const snapshot = () => ({ supported: support, enabled, sound: context?.state === 'running',
     bluetooth: voiceState, browserMuted: false, error: voiceError ?? audioError,
     timedPackets, fallbackPackets, arrivalAnchoredPackets, queuedBytes, processorErrors, recoveries, processorFailed,

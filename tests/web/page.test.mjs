@@ -6,6 +6,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { APP_VERSION } from '../../site/play/app-version.js';
 import { DEFAULT_HOST, abortable, isCode, normalizeHost } from '../../site/play/link.js';
 import { browserDiagnosticEvents } from '../../site/play/browser-diagnostics.js';
+import { decoderStatsMatch } from '../../site/play/video-diagnostics.js';
 
 const play = new URL('../../site/play/', import.meta.url);
 const read = name => readFileSync(new URL(name, play), 'utf8');
@@ -50,16 +51,30 @@ test('a media terminal records its current reason before cleanup and cannot retr
 
 test('the terminal decoder snapshot reaches page diagnostics before stream retirement', () => {
   const source = /function onVideoMessage\([^\n]*\) \{[\s\S]*?\n\}/.exec(read('app.js'))[0];
-  const run = new Function(`
-    const active = true, streamId = 3; let videoStats = { codec: 'old', decodeInFlightFrames: 0 };
+  const run = new Function('decoderStatsMatch', `
+    const active = true, streamId = 3, config = { epoch: 8 }; let videoStats = { codec: 'old', decodeInFlightFrames: 0 };
     const performanceStats = value => value, render = () => {};
     let terminal;
     const streamEnded = reason => { terminal = { reason, stats: { ...videoStats } }; };
     ${source}
-    onVideoMessage({ type: 'end', id: 3, reason: 'decode-stalled', stats: { codec: 'hvc1.1.6.L93.B0', epoch: 8, decodeInFlightFrames: 48 } });
+    onVideoMessage({ type: 'end', id: 3, reason: 'decode-stalled', stats: { streamGeneration: 3, codec: 'hvc1.1.6.L93.B0', epoch: 8, decodeInFlightFrames: 48 } });
     return terminal;
   `);
-  assert.deepEqual(run(), { reason: 'decode-stalled', stats: { codec: 'hvc1.1.6.L93.B0', epoch: 8, decodeInFlightFrames: 48 } });
+  assert.deepEqual(run(decoderStatsMatch), { reason: 'decode-stalled', stats: { streamGeneration: 3, codec: 'hvc1.1.6.L93.B0', epoch: 8, decodeInFlightFrames: 48 } });
+});
+
+test('a queued old worker or codec snapshot cannot refresh the current decoder sample age', () => {
+  const source = /function onVideoMessage\([^\n]*\) \{[\s\S]*?\n\}/.exec(read('app.js'))[0];
+  const run = new Function('decoderStatsMatch', `
+    const active = true, streamId = 3, config = { epoch: 8 }; let videoStats = {};
+    const performanceStats = value => value, render = () => {};
+    ${source}
+    onVideoMessage({ type: 'stats', id: 3, stats: { streamGeneration: 3, epoch: 8, decoderStatsSampledAtMs: 100 } });
+    onVideoMessage({ type: 'stats', id: 2, stats: { streamGeneration: 2, epoch: 8, decoderStatsSampledAtMs: 300 } });
+    onVideoMessage({ type: 'stats', id: 3, stats: { streamGeneration: 3, epoch: 7, decoderStatsSampledAtMs: 500 } });
+    return videoStats;
+  `);
+  assert.deepEqual(run(decoderStatsMatch), { streamGeneration: 3, epoch: 8, decoderStatsSampledAtMs: 100 });
 });
 
 test('decoder setup precedes pairing and the first authenticated clock reaches video and audio before media opens', async () => {

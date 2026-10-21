@@ -172,9 +172,9 @@ test('the cross-language engine fixture is actual bounded browser output', () =>
   }), fixture.maximumEvent);
   assert.equal(Buffer.byteLength(JSON.stringify(fixture.event)), fixture.normalBytes);
   assert.equal(Buffer.byteLength(JSON.stringify(fixture.maximumEvent)), fixture.maximumBytes);
-  assert.equal(Object.keys(fixture.event.engine).length, 90);
-  assert.ok(fixture.normalBytes <= 2700);
-  assert.ok(fixture.maximumBytes <= 3700);
+  assert.equal(Object.keys(fixture.event.engine).length, 102);
+  assert.ok(fixture.normalBytes <= 2800);
+  assert.ok(fixture.maximumBytes <= 3800);
   assert.deepEqual(airplayDiagnostic('engine-state', fixture.continuityInput.state, {
     media: { ...fixture.continuityInput.media, getPlaybackDiagnostics: () => fixture.continuityInput.engine },
   }), fixture.continuityEvent);
@@ -382,4 +382,33 @@ test('PCM continuity uses bounded scalar evidence and changed anomalies use the 
     audioPcmPeak: Infinity, audioScheduleGapUs: -1, samples: new Float32Array([0.5]), url: 'private' }) });
   for (const key of ['audioSourceRate', 'audioContextRate', 'audioSourceChannels', 'audioDecodedFrames',
     'audioPcmPeak', 'audioScheduleGapUs', 'samples', 'url']) assert.equal(Object.hasOwn(invalid, key), false);
+});
+
+test('startup phases retain browser elapsed time and rebuffer gaps survive the bounded anomaly cadence', () => {
+  const events = []; let time = 0;
+  const engine = { generation: 1, startupPhase: 'audio-menu', openElapsedMs: 5000, phaseElapsedMs: 4000,
+    running: false, intentPlaying: false, waitReason: 'paused', audioScheduleUnderruns: 0, audioRebufferStops: 0 };
+  const media = Object.assign(new EventTarget(), { getPlaybackDiagnostics: () => engine });
+  const diagnostics = createAirPlayDiagnostics(entry => events.push(entry), {
+    state: () => ({ id: 1, revision: 0 }), media: () => media, now: () => time,
+  });
+  diagnostics.monitor(media, new EventTarget());
+  media.dispatchEvent(new Event('progress'));
+  time = 250; engine.startupPhase = 'metadata'; engine.phaseElapsedMs = 0; engine.openElapsedMs = 5250;
+  media.dispatchEvent(new Event('progress'));
+  assert.deepEqual(events.map(entry => entry.engine.startupPhase), ['audio-menu', 'metadata']);
+  engine.startupPhase = 'playing'; engine.running = true; engine.intentPlaying = true; engine.waitReason = 'none';
+  time = 500; media.dispatchEvent(new Event('progress'));
+  time = 5500; Object.assign(engine, { audioScheduleUnderruns: 1, audioScheduleUnderrunMs: 5.034,
+    audioScheduleUnderrunMaxMs: 5.034, audioRebufferStops: 1 });
+  media.dispatchEvent(new Event('progress'));
+  assert.equal(events.at(-1).engine.audioScheduleUnderruns, 1);
+  assert.equal(events.at(-1).engine.audioRebufferStops, 1);
+  time = 5750; engine.audioScheduleUnderruns++; media.dispatchEvent(new Event('progress'));
+  assert.equal(events.length, 4, 'repeated anomalies cannot create per-frame logging');
+  diagnostics.dispose();
+  const invalid = playbackDiagnostics({ getPlaybackDiagnostics: () => ({ startupPhase: 'https://private.test/',
+    openElapsedMs: -1, phaseElapsedMs: Infinity, audioScheduleUnderruns: 1.5, audioScheduleUnderrunMs: NaN,
+    audioScheduleUnderrunMaxMs: -1, audioRebufferStops: 1.5 }) });
+  assert.equal(invalid, null);
 });

@@ -6,6 +6,23 @@ import { audibleTime, createAudioOutputMapping, createAudioReferenceTimeline, OU
 const feedback = (extra = {}) => ({ mode: 'carplay', type: 0, epoch: 1, generation: 1, sequence: 1,
   state: 'playing', sourceTimeMs: 400000, contextTimeMs: 10000, mediaRate: 1, filterDelayMs: 17, ...extra });
 
+test('device fit age uses the absolute observation clock and grows without recapturing output', () => {
+  const origin = 1700000000000;
+  let at = origin;
+  const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => origin });
+  const context = { state: 'running', currentTime: .2, sampleRate: 48000,
+    getOutputTimestamp: () => ({ contextTime: (at - origin) * .988 / 1000, performanceTime: at - origin }) };
+  assert.equal(mapping.deviceClock().acceptedFitAgeMs, undefined);
+  for (let ms = 100; ms <= 9000; ms += 100) {
+    at = origin + ms; context.currentTime = ms * .988 / 1000 + .2; mapping.capture(context);
+  }
+  const fitted = mapping.deviceClock(); assert.equal(fitted.acceptedFitAgeMs, 400, 'new observations between fit intervals do not renew an accepted fit');
+  at += 2300;
+  const later = mapping.deviceClock();
+  assert.equal(later.acceptedFitAgeMs, fitted.acceptedFitAgeMs + 2300);
+  assert.deepEqual({ ...later, acceptedFitAgeMs: fitted.acceptedFitAgeMs }, fitted, 'the getter cannot advance the rate or fit');
+});
+
 test('output timestamps account for device delay and content filter delay exactly once', () => {
   const mapping = createAudioOutputMapping({ now: () => 1010000, timeOrigin: () => 1000000 });
   const context = { state: 'running', currentTime: 10, baseLatency: 0.025, outputLatency: 0.18,
