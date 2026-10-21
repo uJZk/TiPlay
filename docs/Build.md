@@ -7,14 +7,13 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The working candidate
-is **0.2.20-beta.10** (code **52**); the latest published prerelease remains
-**0.2.20-beta.9** (code **51**) until the release checks below are completed. Run
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
+prerelease is **0.2.20-beta.10** (code **52**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the working page uses **v76** with WebRTC DataChannel as the formal live-media path.
-The signed beta.9 APK and its paired v75 root deployment remain pinned to the
-published source verified below; the current working changes are not yet released.
+the deployed page uses **v76** with WebRTC DataChannel as the formal live-media path.
+The signed beta.10 APK and its paired v76 root deployment use the same build commit
+verified below; subsequent documentation commits do not change those artifacts.
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
 independent `/webrtc/` subsite without an alias or redirect; the APK defaults to the
 root. The beta record below distinguishes the signed APK's build commit from the
@@ -118,14 +117,13 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta release
 
-The working candidate is **TiPlay 0.2.20-beta.10**, code **52**, paired with webpage
-**v76**. Its signed release and root deployment are pending the final verification
-below. Until publication, the latest distributed APK remains
-[beta.9](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.9), code51/page v75.
+Published [TiPlay 0.2.20-beta.10](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.10),
+code **52**, is paired with deployed webpage **v76**. Release **419248548** was
+published at **2026-10-21 07:09:41 UTC** after independent artifact and deployment checks.
 Download entries retain the version-independent
 [GitHub Releases index](https://github.com/uJZk/TiPlay/releases).
 
-The candidate prevents an isolated contradictory output timestamp from manufacturing
+This release prevents an isolated contradictory output timestamp from manufacturing
 live-audio clock recoveries, preserves mirror AAC NoData source samples through RTP
 ordering and browser output, and decodes bounded inline subtitles locally instead of
 blocking the serialized iPhone loader. Source/device oscillator endpoint comparisons
@@ -137,7 +135,7 @@ See [Diagnostics](Diagnostics.md), [AirPlay](AirPlay.md) and the
 
 ### Source validation and remaining scope
 
-| Check | Evidence for this candidate |
+| Check | Evidence for this release |
 | --- | --- |
 | Browser unit suite | **643 passed** on Node 22.23.3. |
 | Scoped Android/JVM tests | **158 passed** across 13 actual classes, including resource size/deadline boundaries, RTP silence ordering, diagnostic budgets and native anchor timing. |
@@ -145,10 +143,37 @@ See [Diagnostics](Diagnostics.md), [AirPlay](AirPlay.md) and the
 | Version/site preflight | **9** release-draft and **2** site tests plus public-tree/diff checks passed. |
 | Complete browser page / real media | **90 checks passed** with the explicit desktop software decoder override. Native AAC/software ELD continuity, shared clocks and MP4/HLS passed on the final release source; shared-clock runtime hashes were unchanged. |
 | Complete Android CI | Skipped at the user's explicit request; scoped checks do not replace it. |
-| Signed release / root deployment | Pending; publication requires independent APK/source/attachment and deployed-file checks. |
+| Signed release / root deployment | Release lint/build passed; independent APK/source/attachment checks and 5 unauthenticated public release/download checks passed. Root deployment matched all 186 checked URLs, including the 105-entry cache manifest. |
+
+### Artifact and deployment evidence
+
+The signed APK, exact `git archive` source ZIP and deployed page were built from
+`9eaac6e476b37c3f13fd910a6c31f6e46b90e54d`, tagged `v0.2.20-beta.10`.
+The [signed workflow](https://github.com/uJZk/TiPlay/actions/runs/39558628003) and
+[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39558627713) both completed
+successfully. Publication preserved the three independently downloaded assets:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.10.apk` | 101,044,517 | `246786b5178a06725825b9d6c1b7292bf34ffed60120a4cd86051e763e813e90` |
+| `TiPlay-0.2.20-beta.10-source.zip` | 20,796,659 | `0c968634482ef5b27487942f2b5513d1c420236468cf486e6b6b5e2c81e81e87` |
+| `SHA256SUMS.txt` | 191 | `181be5a4f3bc220d37162ec9ff2a900a5391561a29a16940b81f982103c79877` |
+
+The non-debug APK uses `com.ujzk.tiplay` and the beta.9 signing certificate below.
+Both runtime identity files are byte-identical to the pinned DiPlay 0.2.18 inputs;
+the source ZIP contains no runtime identity or signing credentials. All four RTC
+ABIs, 18 supported 64-bit ELF libraries' 16 KiB LOAD alignment and APK zip alignment
+passed; three retained legacy JNA libraries are unchanged from beta.9.
+
+The root [website](https://ujzk.github.io/TiPlay/) matched 137 assembled files across
+186 URL checks. All eight language download entries open the Releases index, and
+all ten checks of removed independent WebRTC paths returned 404. APK/source public
+downloads returned their verified lengths; the public checksum file matched exactly.
+
+### Remaining scope
 
 CarPlay touch/non-touch and mirror clicks, occasional stutter and MiniBili startup
-still need phone/vehicle retesting; this candidate does not establish complete physical
+still need phone/vehicle retesting; this release does not establish complete physical
 resolution. Desktop software decoding cannot identify the vehicle hardware decoder,
 speaker/panel latency or acoustic quality. Exact noise-gate/history/socket-expiry
 validation and empirical parameter calibration remain in Todo. New fields cannot
@@ -163,10 +188,10 @@ page **v75**, was published at **2026-10-21 02:11:40 UTC** from
 `35eb9976a8c95f234b9524458cd64b4783ace505`. Its actual published APK SHA-256 is
 `67df3f7b97699c2572e7475eef0d937b96731521c517303b5cdeb29f595bbabc`
 (101,028,133 bytes); it supplies the independent signing/runtime compatibility
-reference for this candidate. The verified signing certificate SHA-256 is
+reference for beta.10. The verified signing certificate SHA-256 is
 `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`.
 Runtime identity provenance remains the hash-pinned upstream APK described above.
-Earlier detailed release records remain in Git and do not validate this candidate.
+Earlier detailed release records remain in Git and do not validate this release.
 
 ## Updating an installed app
 

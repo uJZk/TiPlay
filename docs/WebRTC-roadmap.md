@@ -14,8 +14,8 @@ HTTP 只保留 SRP 配对、公开发现和随机 bearer 资源读取/退出；�
 用户确认的真实 CarPlay 播放，beta.3/v71 已记录电脑 host↔host UDP；这些旧版
 观察仍不代表当前整合版已通过设备验收。正式页面覆盖
 <https://ujzk.github.io/TiPlay/>，删除独立 `/webrtc/` 子站，不留别名或重定向；
-APK 默认使用正式根页。已发布版本为 0.2.20-beta.9/code51、网页 v75；工作树网页
-v76 尚未发布，发布状态以[构建记录](Build.md#beta-release)为准。v74 修复了控制排队阻塞媒体、
+APK 默认使用正式根页。已发布版本为 0.2.20-beta.10/code52，正式根页已部署 v76；
+APK 与网页构建来源和独立核验见[构建记录](Build.md#beta-release)。v74 修复了控制排队阻塞媒体、
 诊断上报放大，以及 URL 音频裁剪、分段调度和重采样接缝；现场证据与验证边界见
 [诊断](Diagnostics.md#airplay-url-playback-evidence)和[测试](Testing.md#webrtc-integrated-acceptance)。
 
