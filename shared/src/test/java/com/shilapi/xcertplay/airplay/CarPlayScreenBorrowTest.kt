@@ -148,6 +148,66 @@ class CarPlayScreenBorrowTest {
         assertEquals(CarPlayScreenBorrowState(), borrow.setDesired(true))
     }
 
+    @Test fun aReentrantStopDuringBorrowWriteStillReturnsTheScreen() {
+        val transfers = mutableListOf<Int>()
+        lateinit var borrow: CarPlayScreenBorrow
+        borrow = CarPlayScreenBorrow { command ->
+            val params = command["params"] as Map<*, *>
+            val resource = (params["resources"] as List<*>).single() as Map<*, *>
+            transfers += resource["transferType"] as Int
+            if (transfers.size == 1) borrow.setDesired(false)
+            true
+        }
+        borrow.setEventReady(true)
+        val returned = borrow.setDesired(true)
+        assertEquals(listOf(3, 4), transfers)
+        assertFalse(returned.desired)
+        assertEquals(false, returned.sent)
+        assertTrue(returned.pending)
+        assertFalse(returned.carPlayHasScreen)
+        assertTrue(borrow.onModesChanged(modes(1)).carPlayHasScreen)
+    }
+
+    @Test fun aReentrantNewLoanDuringReturnWriteCannotBeStranded() {
+        val transfers = mutableListOf<Int>()
+        lateinit var borrow: CarPlayScreenBorrow
+        borrow = CarPlayScreenBorrow { command ->
+            val params = command["params"] as Map<*, *>
+            val resource = (params["resources"] as List<*>).single() as Map<*, *>
+            val transfer = resource["transferType"] as Int
+            transfers += transfer
+            if (transfer == 4) borrow.setDesired(true)
+            true
+        }
+        borrow.setEventReady(true)
+        borrow.setDesired(true)
+        assertTrue(borrow.onModesChanged(modes(2)).confirmedBorrow)
+        val requestedAgain = borrow.setDesired(false)
+        assertEquals(listOf(3, 4, 3), transfers)
+        assertTrue(requestedAgain.desired)
+        assertEquals(true, requestedAgain.sent)
+        assertTrue(requestedAgain.pending)
+        assertFalse(requestedAgain.confirmedBorrow)
+        assertTrue(borrow.onModesChanged(modes(2)).confirmedBorrow)
+    }
+
+    @Test fun ownershipDeliveredDuringTheWriteConfirmsWithoutAnExtraNotification() {
+        val transfers = mutableListOf<Int>()
+        lateinit var borrow: CarPlayScreenBorrow
+        borrow = CarPlayScreenBorrow { command ->
+            val params = command["params"] as Map<*, *>
+            val resource = (params["resources"] as List<*>).single() as Map<*, *>
+            val transfer = resource["transferType"] as Int
+            transfers += transfer
+            borrow.onModesChanged(modes(if (transfer == 3) 2 else 1))
+            true
+        }
+        borrow.setEventReady(true)
+        assertTrue(borrow.setDesired(true).confirmedBorrow)
+        assertTrue(borrow.setDesired(false).carPlayHasScreen)
+        assertEquals(listOf(3, 4), transfers)
+    }
+
     private fun modes(entity: Any) = mapOf("resources" to listOf(
         mapOf("resourceID" to 1L, "entity" to entity)))
 }

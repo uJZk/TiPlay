@@ -6,18 +6,54 @@ import org.junit.Test
 class BrowserAudioDiagnosticsTest {
     @Test fun noiseDispersionRetainsItsSideOfTheGateWithoutChangingOrdinaryScalarPrecision() {
         val lines = BrowserAudioDiagnostics.lines(mapOf(
-            "deviceClockUncertaintyMs" to 3.000001,
+            "deviceClockUncertaintyMs" to 2.999999, "deviceClockFitDispersionMs" to 3.000001,
             "stream0.sourceClockDispersionMs" to 0.500001,
             "stream6.sourceClockDispersionMs" to 1.500001,
             "stream0.phaseErrorMs" to 0.123456,
         ))
         val text = lines.joinToString(" ")
-        assertTrue(text.contains("deviceClockUncertaintyMs=3.000001"))
+        assertTrue(text.contains("deviceClockUncertaintyMs=2.999999"))
+        assertTrue(text.contains("deviceClockFitDispersionMs=3.000001"))
         assertTrue(text.contains("sourceClockDispersionMs=0.500001"))
         assertTrue(text.contains("sourceClockDispersionMs=1.500001"))
         assertTrue(text.contains("phaseErrorMs=0.123"))
         assertFalse(text.contains("phaseErrorMs=0.123456"))
         assertTrue(lines.all { it.length <= 600 })
+    }
+
+    @Test fun currentDeviceFitNoiseRemainsSeparateFromAcceptedUncertaintyAndUnknownNoiseStaysAbsent() {
+        val evidence = mapOf<String, Any?>(
+            "deviceClockUncertaintyMs" to 0.125123, "deviceClockFitDispersionMs" to 3.000001,
+            "deviceClockRatePpm" to -12_000, "deviceClockTargetRatePpm" to -12_000,
+            "deviceClockConfidence" to 0, "deviceClockAcceptedFitAgeMs" to 16_000.5,
+            "deviceClockFitRejected" to 27, "deviceClockFitStatus" to "holdover",
+            "deviceClockFitRejectReason" to "noisy",
+        )
+        val lines = BrowserAudioDiagnostics.lines(evidence)
+        val text = lines.joinToString(" ")
+        assertTrue(text.contains("deviceClockUncertaintyMs=0.125123"))
+        assertTrue(text.contains("deviceClockFitDispersionMs=3.000001"))
+        assertTrue(text.contains("deviceClockRatePpm=-12000"))
+        assertTrue(text.contains("deviceClockTargetRatePpm=-12000"))
+        assertTrue(text.contains("deviceClockConfidence=0"))
+        assertTrue(text.contains("deviceClockAcceptedFitAgeMs=16000.500"))
+        assertTrue(text.contains("deviceClockFitRejected=27"))
+        assertTrue(text.contains("deviceClockFitStatus=holdover"))
+        assertTrue(text.contains("deviceClockFitRejectReason=noisy"))
+        assertTrue(lines.all { it.length <= 600 })
+        for (line in lines) assertEquals(line, DiagnosticRedactor.redact(line))
+        for (unknown in listOf(null, Double.NaN, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY)) {
+            val withoutNoise = BrowserAudioDiagnostics.lines(evidence + ("deviceClockFitDispersionMs" to unknown))
+                .joinToString(" ")
+            assertFalse(withoutNoise.contains("deviceClockFitDispersionMs="))
+            assertTrue(withoutNoise.contains("deviceClockUncertaintyMs=0.125123"))
+            assertTrue(withoutNoise.contains("deviceClockFitRejectReason=noisy"))
+            assertTrue(BrowserAudioDiagnostics.lines(mapOf("deviceClockFitDispersionMs" to unknown)).isEmpty())
+        }
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf(
+            "stream0.deviceClockFitDispersionMs" to 3.000001,
+            "deviceClockFitPrivateNoise" to 3.000001,
+        )).isEmpty())
     }
 
     @Test fun sourceFitEvidenceExplainsZeroConfidenceWithoutInventingUnknownHistory() {
@@ -322,7 +358,7 @@ class BrowserAudioDiagnosticsTest {
             "renderTimeMs", "pcmPackets", "pcmFrames", "pcmNonzero", "pcmPeak", "clockRatePpm", "clockGeneration",
             "clockUncertaintyMs", "clockRateConfidence", "deviceClockRatePpm", "deviceClockTargetRatePpm",
             "deviceClockConfidence", "deviceClockUncertaintyMs", "deviceClockGeneration", "outputUnavailableCount",
-            "deviceClockAcceptedFitAgeMs", "deviceClockFitRejected",
+            "deviceClockAcceptedFitAgeMs", "deviceClockFitRejected", "deviceClockFitDispersionMs",
             "outputTimestampContextMs", "outputTimestampPerformanceMs", "outputTimestampAgeMs", "outputRenderedContextMs",
             "outputFeedbackDeltaMs", "outputFeedbackContextMs", "outputFeedbackAgeMs",
             "outputUnavailableCounts.timestamp-backwards", "outputUnavailableCounts.timestamp-invalid",
@@ -332,6 +368,7 @@ class BrowserAudioDiagnosticsTest {
         ))
         assertTrue("A full snapshot must be split before the metadata cap", lines.size > 1)
         for (line in lines) {
+            assertTrue(line.length <= 600)
             val timestamped = "2026-10-19 11:54:40.607 +0800  $line"
             assertEquals("Metadata must retain every scalar", timestamped, DiagnosticRedactor.redact(timestamped))
         }

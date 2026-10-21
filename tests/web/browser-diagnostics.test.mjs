@@ -163,7 +163,8 @@ test('dense audio evidence protects every source fit and actual quantum without 
   for (const controlMessageLimitBytes of [16 * 1024, 64 * 1024]) {
     const debug = { ...Object.fromEntries(Array.from({ length: 700 }, (_, i) => [`optional${i}`, i])),
       contextState: 'running', contextRate: 48000, renderQuantumFrames: 128, renderQuantumMinFrames: 64, renderQuantumMaxFrames: 256,
-      deviceClockFitStatus: 'holdover', deviceClockFitRejectReason: 'noisy', deviceClockUncertaintyMs: 3.000001,
+      deviceClockFitStatus: 'holdover', deviceClockFitRejectReason: 'noisy', deviceClockFitDispersionMs: 3.000001,
+      deviceClockUncertaintyMs: 2.999999,
       deviceClockRatePpm: -1801.73, deviceClockConfidence: 0 };
     for (let stream = 0; stream < 8; stream++) debug[`stream${stream}`] = {
       ...Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`optional${i}`, i])),
@@ -186,7 +187,7 @@ test('dense audio evidence protects every source fit and actual quantum without 
       assert.equal(detail.v[`stream${stream}.sourceClockDispersionMs`], .500001);
     }
     assert.equal(detail.v.renderQuantumFrames, 128); assert.equal(detail.v.renderQuantumMinFrames, 64); assert.equal(detail.v.renderQuantumMaxFrames, 256);
-    assert.equal(detail.v.deviceClockUncertaintyMs, 3.000001);
+    assert.equal(detail.v.deviceClockUncertaintyMs, 2.999999); assert.equal(detail.v.deviceClockFitDispersionMs, 3.000001);
     assert.equal(detail.v.deviceClockFitStatus, 'holdover'); assert.equal(detail.v.deviceClockFitRejectReason, 'noisy');
     assert.equal(detail.v.deviceClockRatePpm, -1801.73); assert.equal(detail.v.deviceClockConfidence, 0);
     assert.equal(browserDiagnosticEvents({ audio: { debug } }, false, false).length, 1);
@@ -194,16 +195,28 @@ test('dense audio evidence protects every source fit and actual quantum without 
 });
 
 test('clock dispersion retains six print decimals while ordinary audio numbers retain their existing rounding', () => {
-  const [, detail] = browserDiagnosticEvents({ audio: { debug: { deviceClockUncertaintyMs: 3.0000014,
+  const [, detail] = browserDiagnosticEvents({ audio: { debug: { deviceClockUncertaintyMs: 2.9999994, deviceClockFitDispersionMs: 3.0000014,
     deviceClockRatePpm: 1.234567, stream6: { sourceClockDispersionMs: .5000014, sourceClockSpanMs: 30000.123456,
       sourceClockFitRejectReason: 'noisy', sourceClockAcceptedFitAgeMs: null },
     stream0: { sourceClockFitStatus: 'disabled', sourceClockFitRejectReason: 'buffered-prefetch' } } } }, false, true);
-  assert.equal(detail.v.deviceClockUncertaintyMs, 3.000001);
+  assert.equal(detail.v.deviceClockUncertaintyMs, 2.999999); assert.equal(detail.v.deviceClockFitDispersionMs, 3.000001);
   assert.equal(detail.v['stream6.sourceClockDispersionMs'], .500001);
   assert.equal(detail.v.deviceClockRatePpm, 1.23);
   assert.equal(detail.v['stream6.sourceClockSpanMs'], 30000.12);
   assert.equal(Object.hasOwn(detail.v, 'stream6.sourceClockAcceptedFitAgeMs'), false);
   assert.equal(detail.v['stream0.sourceClockFitRejectReason'], 'buffered-prefetch');
+});
+
+test('unknown current device fit noise stays absent from Debug and ordinary summaries', () => {
+  for (const unknown of [undefined, null, NaN, Infinity, -Infinity]) {
+    const page = { audio: { debug: { deviceClockFitDispersionMs: unknown,
+      deviceClockUncertaintyMs: .125123, deviceClockFitStatus: 'holdover', deviceClockFitRejectReason: 'noisy' } } };
+    const [summary, detail] = browserDiagnosticEvents(page, false, true);
+    assert.equal(Object.hasOwn(detail.v, 'deviceClockFitDispersionMs'), false);
+    assert.equal(detail.v.deviceClockUncertaintyMs, .125123);
+    assert.equal(Object.keys(summary.v).some(key => key.includes('deviceClockFitDispersionMs')), false);
+    assert.equal(browserDiagnosticEvents(page, false, false).length, 1);
+  }
 });
 
 test('selected ICE path and counters survive a crowded ordinary diagnostic summary', () => {

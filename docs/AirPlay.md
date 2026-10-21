@@ -65,6 +65,11 @@ Transfer 4 returns it; CarPlay display/input resumes only after controller owner
 is confirmed, then requests a keyframe. Screen data EOF during a requested/granted loan
 and auxiliary-screen EOF do not close the main control/audio session. Retired streams
 cannot deliver into or tear down a successor, including across control sessions. See [Apple's resource-management explanation](https://developer.apple.com/videos/play/wwdc2016/723/).
+Command delivery reconciles a synchronous stop or replacement request after the
+current write completes; a reentrant callback cannot strand the required return or
+new borrow. A fresh ownership notification remains necessary for output authority.
+Sparse Debug semantic loan/close events are described in [Diagnostics](Diagnostics.md);
+encrypted control bytes and a rolling TXT window cannot always reconstruct ownership.
 
 Pending loans retain CarPlay picture/input and release existing touches. Mirror SETUP
 waits boundedly before supplying data ports so the initial keyframe is not lost.
@@ -125,6 +130,10 @@ Senders may wait for this reply before completing FCUP resources through `/actio
 on the same control connection; waiting for browser readiness there can block the
 resource needed to become ready. Loading, readiness and failure remain asynchronous
 through playback information and events.
+The browser shows an accessible preparation indicator immediately, before its
+resource probe, player import or source decoding. It hands off on actual playback,
+ready paused controls or an autoplay gesture prompt. Errors, stop and replacement
+retire the previous indicator; a pending CarPlay loan still hides AirPlay output.
 
 Startup diagnostics separate dependency loading, video/audio selection, audio-menu
 discovery, metadata and first decoded samples from readiness and actual `playing`.

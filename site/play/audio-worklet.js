@@ -19,6 +19,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.diagnostics = null; this.lastReportTime = -Infinity; this.diagnosticRevision = null;
     this.runtime = new SoxrRuntime({ allowCalibration: false }); this.clock = null; this.contextAnchor = null; this.localTimeOriginMs = 0;
     this.renderedFrames = 0; this.feedbackSequence = 0; this.lastFeedbackMs = -Infinity; this.suspended = false;
+    this.renderQuantumMaxFrames = 0;
     this.nextContextFrame = null; this.outputUncertaintyMs = 0;
     this.deviceClock = { rate: 1 }; this.arrivalAnchor = null;
     this.retiring = [];
@@ -270,10 +271,12 @@ class TiPlayAudio extends AudioWorkletProcessor {
     // Origins are centered once on the main thread. PCM never receives a freshly remapped epoch timestamp.
     return clock.serverOriginMs + (localMs - delay - clock.localOriginMs) / (clock.rate || 1);
   }
-  feedback(contextMs) {
+  feedback(contextMs, renderQuantumFrames) {
     for (const timeline of this.timelines.values()) if (timeline instanceof ContinuousAudio) {
       const reference = timeline.reference(contextMs);
       reference.outputUncertaintyMs = this.outputUncertaintyMs;
+      reference.renderQuantumFrames = renderQuantumFrames;
+      reference.renderQuantumMaxFrames = this.renderQuantumMaxFrames;
       if ((!timeline.synchronized || timeline.sourceDeadlineState === 'unknown') && !timeline.arrivalPlayback && reference.state === 'playing') reference.state = 'untimed';
       reference.sequence = ++this.feedbackSequence;
       this.port.postMessage({ playout: reference });
@@ -283,6 +286,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
     const output = outputs[0];
     if (this.disposed) { for (const channel of output) channel.fill(0); return false; }
     const blockFrames = output[0].length;
+    this.renderQuantumMaxFrames = Math.max(this.renderQuantumMaxFrames, blockFrames);
     const hardwareFrame = typeof currentFrame === 'number' ? currentFrame : Math.round(currentTime * sampleRate);
     if (this.nextContextFrame === null) this.nextContextFrame = hardwareFrame;
     if (Math.abs(hardwareFrame - this.nextContextFrame) > blockFrames) {
@@ -317,7 +321,8 @@ class TiPlayAudio extends AudioWorkletProcessor {
     }
     const continuous = [];
     for (const [type, timeline] of this.timelines) if (timeline instanceof ContinuousAudio) {
-      timeline.block ??= new Float32Array(512 * timeline.channels);
+      if (!timeline.block || timeline.block.length < blockFrames * timeline.channels)
+        timeline.block = new Float32Array(Math.max(512, blockFrames) * timeline.channels);
       const outputAt = this.contextAnchor && this.contextAnchor.localTimeMs
         + (contextMs - this.contextAnchor.contextTimeMs) / this.deviceClock.rate;
       const unknownReason = timeline.arrivalPlayback ? 'arrival-anchored' : !timeline.synchronized ? 'source-anchor-unavailable'
@@ -371,7 +376,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
       if (currentTime - this.lastReportTime >= 0.5) { this.lastReportTime = currentTime; this.report(); }
     }
     if (continuous.length && (contextMs - this.lastFeedbackMs >= 40 || continuous.some(([, timeline]) => timeline.feedbackState !== timeline.state))) {
-      this.feedback(contextMs + blockFrames * 1000 / sampleRate); this.lastFeedbackMs = contextMs;
+      this.feedback(contextMs + blockFrames * 1000 / sampleRate, blockFrames); this.lastFeedbackMs = contextMs;
       for (const [, timeline] of continuous) timeline.feedbackState = timeline.state;
     }
     return true;

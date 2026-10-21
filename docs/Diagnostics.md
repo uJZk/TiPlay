@@ -245,6 +245,14 @@ holdover with zero current confidence; zero confidence does not imply nominal ra
 noisy/out-of-range fits while retaining the true accepted age. Missing accepted age
 stays unknown. These are output-timestamp fit estimates, not an oscillator measurement
 at the physical speaker. They do not justify enlarging the phase-correction bound.
+Debug `deviceClockFitDispersionMs` is the current attempted fit's MAD;
+`deviceClockUncertaintyMs` retains the last accepted fit's MAD after rejection.
+Both print six decimal places in milliseconds, without implying that measurement
+accuracy. A new Debug interval or reset leaves unobserved attempt noise unknown.
+A confirmed output-pipeline step clears fit evidence but preserves the already
+applied rate only when the new confirming pair remains coherent with it. It does
+not retain an unachieved target. Incompatible rate changes and actual context resets
+still reset normally; short noisy pairs cannot identify every real device change.
 For CarPlay clock-step recovery, `lastClockStepPhaseErrorMs`,
 `lastClockStepDeviceRatePpm` and `lastClockStepUncertaintyMs` retain the signed phase,
 device-rate estimate and known uncertainty immediately before the last recovery.
@@ -255,6 +263,19 @@ clears the slot. This adds no per-step reports or PCM collection and does not ch
 rate control. A recorded recovery is evidence of a software discontinuity, not proof
 that every audible click has that cause. Healthy URL playback is independent evidence
 and cannot exclude a CarPlay live-audio fault.
+The beta.10/v76 capture contains 30,583 CarPlay media records across 35 epochs with
+continuous source sample coordinates. It nevertheless shows at least 114 media
+clock-step recoveries and 327 device-fit generation increases; its actual render
+blocks were 128 frames. This localizes a problem after the recorded source boundary,
+but periodic snapshots cannot replay every native timestamp or identify each audible
+click. An independent physical-clock/Soxr fixture exposed extra recoveries caused by
+resetting an applied slow-device rate to nominal after small pipeline steps. Keeping
+the coherent applied rate removed those extra recoveries while a real 38 ms step
+still recovered. Vehicle retesting and startup convergence remain necessary.
+Older guidance counters can also grow once per idle quantum after its last source
+cursor expires; those increments are not distinct audible faults. No-output idle
+quanta now keep deadline state unknown. Actual emitted samples, including explicit
+zero PCM, and recovery tails retain their source-deadline checks.
 Per-stream `senderTimingState` distinguishes `unavailable`, `mapped-presentation` and
 `arrival-anchored-unverified`; compare its source deadline, policy ceiling and startup
 delay. A mirror stream that initially lacks an anchor can upgrade only from a proven
@@ -299,6 +320,15 @@ separately from an interrupted RTC connection.
 Service diagnostics distinguish missing permission from foreground eligibility; a granted
 microphone permission alone does not establish permission to start microphone capture
 in the background.
+
+Debug raw `iphone/carplay-screen-loan/events` retains sparse fixed-schema `STATE`
+transitions and one `CLOSE` boundary per local `connectionId`. Compare desired/sent,
+actual owner, pending, `confirmedBorrow` and `carPlayHasScreen`; a sent request is not
+a grant. Close reasons distinguish known control/event EOF and failures; `UNSPECIFIED`
+does not assert a peer failure. The channel contains no sender identity or plist.
+Capture-session checks prevent clear/enable races from mixing events. This avoids
+depending on encrypted wire bytes or a rolled-off TXT window; it cannot reconstruct
+the missing beta.10 loan sequence. Full field capture still applies disk backpressure.
 
 ## Live video policy evidence
 
@@ -406,6 +436,13 @@ they did not prove AAC sample continuity. Preserve source sample coordinates and
 explicit silence counts when interpreting subsequent underruns and deadline rejects.
 
 ## AirPlay URL playback evidence
+
+In beta.10/v76, MiniBili reached actual playing 10.411 seconds after browser open;
+another URL source took 16.779 seconds. Buffering was first reported only after
+8.903/12.490 seconds because source preparation was still paused. The immediate
+preparation indicator now covers that preceding resource/import/decode interval.
+These startup times and the `video-budget` start reason do not validate the
+750 ms watermark as an end-to-end startup guarantee.
 
 MiniBili startup in the beta.9 capture reached normal CDN 206 responses; retained
 UA/Referer handling was not shown failing. A 123,248-byte embedded WebVTT resource

@@ -103,9 +103,124 @@ test('rejected fits identify retained device-rate holdover without refreshing ac
 });
 
 test('an out-of-range fit remains unaccepted and has an explicit bounded rejection reason', () => {
-  const clock = new AudioDeviceClock(); measure(clock, 1.04, 0, 30000);
+  const clock = new AudioDeviceClock(); clock.debug(true); measure(clock, 1.04, 0, 30000);
   const snapshot = clock.snapshot(1700000030005);
   assert.equal(snapshot.fitStatus, 'acquiring'); assert.equal(snapshot.fitRejectReason, 'out-of-range');
   assert.ok(snapshot.fitRejected > 0); assert.equal(snapshot.acceptedFitAgeMs, undefined);
   assert.equal(snapshot.ratePpm, 0); assert.equal(snapshot.targetRatePpm, 0);
+  assert.ok(Number.isFinite(snapshot.fitDispersionMs)); assert.equal(snapshot.uncertaintyMs, null);
+});
+
+test('the device MAD gate accepts 3 ms inclusively and rejects just above it', () => {
+  // Binary fractions keep the fixture's rate and residuals exactly representable.
+  // This balanced noise has median=0, fitted slope=rate and MAD=dispersion.
+  const rate = 1 + 1 / 256, pattern = [-1, -1, 0, 1, 1], epsilonMs = 1 / 4096;
+  for (const dispersion of [3 - epsilonMs, 3, 3 + epsilonMs]) {
+    const clock = new AudioDeviceClock(); clock.debug(true);
+    for (let i = 0; i <= 40; i++) {
+      const at = i * 200;
+      clock.observe(100 + at * rate + pattern[i % pattern.length] * dispersion, at, at);
+    }
+    const snapshot = clock.snapshot(8500);
+    assert.equal(snapshot.generation, 1, 'noise cannot turn this fit-gate fixture into a timeline reset');
+    assert.equal(snapshot.points, 41);
+    assert.equal(snapshot.fitDispersionMs, dispersion, 'the current attempt is logged even when rejected');
+    if (dispersion <= 3) {
+      assert.equal(snapshot.fitStatus, 'tracking'); assert.equal(snapshot.fitRejectReason, 'none');
+      assert.equal(snapshot.fitRejected, 0); assert.equal(snapshot.uncertaintyMs, dispersion);
+      assert.equal(clock.targetRate, rate); assert.ok(snapshot.confidence > 0);
+      assert.equal(snapshot.acceptedFitAgeMs, 700);
+    } else {
+      assert.equal(snapshot.fitStatus, 'acquiring'); assert.equal(snapshot.fitRejectReason, 'noisy');
+      assert.ok(snapshot.fitRejected > 0); assert.equal(snapshot.confidence, 0);
+      assert.equal(snapshot.uncertaintyMs, null); assert.equal(snapshot.acceptedFitAgeMs, undefined);
+      assert.equal(clock.targetRate, 1);
+    }
+  }
+});
+
+test('a just-over-limit device MAD cannot replace an accepted correction or renew its age', () => {
+  const clock = new AudioDeviceClock(), rate = 1 + 1 / 256;
+  clock.debug(true);
+  for (let at = 0; at <= 9000; at += 100) clock.observe(100 + at * rate, at, at);
+  const accepted = clock.snapshot(9000);
+  assert.equal(clock.rate, rate); assert.equal(clock.targetRate, rate);
+  assert.equal(accepted.uncertaintyMs, 0); assert.equal(accepted.acceptedFitAgeMs, 0);
+  assert.equal(accepted.fitDispersionMs, 0);
+
+  // Replace only the fit window, isolating this exact rejection from gradual
+  // mixtures of the old clean window and new noise. The final point still enters
+  // through observe(), including timestamp ordering, reset and fit scheduling.
+  const pattern = [-1, -1, 0, 1, 1], dispersion = 3 + 1 / 4096;
+  const point = i => ({ performanceTimeMs: 10000 + i * 200,
+    contextTimeMs: 100 + (10000 + i * 200) * rate + pattern[i % pattern.length] * dispersion });
+  clock.points = Array.from({ length: 40 }, (_, i) => point(i));
+  clock.last = clock.points.at(-1); clock.lastFit = -Infinity;
+  const last = point(40); clock.observe(last.contextTimeMs, last.performanceTimeMs, 18000);
+  const held = clock.snapshot(18500), later = clock.snapshot(20500);
+  assert.equal(held.generation, accepted.generation); assert.equal(held.fitStatus, 'holdover');
+  assert.equal(held.fitRejectReason, 'noisy'); assert.equal(held.fitRejected, 1);
+  assert.equal(held.confidence, 0); assert.equal(held.uncertaintyMs, accepted.uncertaintyMs);
+  assert.equal(held.fitDispersionMs, dispersion, 'a noisy attempt cannot masquerade as the retained zero uncertainty');
+  assert.equal(held.ratePpm, accepted.ratePpm); assert.equal(held.targetRatePpm, accepted.targetRatePpm);
+  assert.equal(held.acceptedFitAgeMs, 9500); assert.equal(later.acceptedFitAgeMs, 11500);
+  assert.deepEqual({ ...later, acceptedFitAgeMs: held.acceptedFitAgeMs }, held);
+});
+
+test('device fit MAD starts unknown for each Debug interval and clears on a timeline reset', () => {
+  const clock = new AudioDeviceClock(), rate = 1 + 1 / 256;
+  for (let at = 0; at <= 9000; at += 100) clock.observe(100 + at * rate, at, at);
+  assert.equal(clock.snapshot().fitDispersionMs, undefined);
+  clock.debug(true);
+  assert.equal(clock.snapshot().fitDispersionMs, undefined, 'an earlier fit outside this capture remains unknown');
+  clock.observe(100 + 9100 * rate, 9100);
+  assert.equal(clock.snapshot().fitDispersionMs, undefined, 'a sample without a new fit cannot invent a MAD');
+  clock.observe(100 + 9500 * rate, 9500);
+  assert.equal(clock.snapshot().fitDispersionMs, 0);
+  clock.debug(false); clock.observe(100 + 10000 * rate, 10000);
+  assert.equal(clock.fitDispersionMs, null); assert.equal(clock.snapshot().fitDispersionMs, undefined);
+  clock.debug(true); assert.equal(clock.snapshot().fitDispersionMs, undefined);
+  clock.reset('context');
+  for (let at = 0; at < 4000; at += 100) clock.observe(100 + at * rate, at, at);
+  assert.equal(clock.snapshot().fitDispersionMs, undefined, 'an immature replacement timeline has no fitted noise yet');
+  clock.observe(100 + 4000 * rate, 4000);
+  assert.equal(clock.snapshot().fitDispersionMs, 0);
+});
+
+test('collecting or reading current device-fit MAD cannot change the oscillator or its accepted evidence', () => {
+  const control = new AudioDeviceClock(), observed = new AudioDeviceClock();
+  for (let i = 0; i <= 250; i++) {
+    if (i === 50 || i === 100) observed.debug(true);
+    if (i === 75 || i === 175) observed.debug(false);
+    const at = i * 100, noise = [-2, -1, 0, 1, 2][i % 5];
+    for (const clock of [control, observed]) clock.observe(100 + at * (1 + 1 / 256) + noise, at, at);
+    const { fitDispersionMs, ...evidence } = observed.snapshot(at);
+    assert.deepEqual(evidence, control.snapshot(at));
+    assert.deepEqual(observed.points, control.points);
+    assert.equal(observed.rate, control.rate); assert.equal(observed.targetRate, control.targetRate);
+    assert.equal(observed.lastFit, control.lastFit); assert.equal(observed.lastAdvance, control.lastAdvance);
+    assert.deepEqual(observed.snapshot(at), { ...evidence, ...(fitDispersionMs === undefined ? {} : { fitDispersionMs }) });
+  }
+});
+
+test('device-fit pairs include exactly 2 seconds and exclude just-shorter pairs', () => {
+  // Asymmetric timestamp noise bounded by 1ms makes the extra near-2s pairs
+  // change the median. Both sides keep 25 points, >4s span and MAD well below 3ms.
+  const offsets = [-.75, -.5, -.25, -.25, .875, .125, -.375, .125, .625, -.875,
+    0, -.375, .5, -.25, -.125, .125, -.5, .25, .75, -.25, -.125, 1, -.25, -1, -.5];
+  for (const interval of [200 - 1 / 4096, 200, 200 + 1 / 4096]) {
+    const clock = new AudioDeviceClock();
+    for (let i = 0; i < offsets.length; i++) {
+      const at = i * interval; clock.observe(100 + at + offsets[i], at, at);
+    }
+    // The shorter-pair exclusion chooses the 0→16 slope (0.25ms/16 intervals).
+    // At and above the boundary, admitting the 10-interval pairs moves the
+    // median to the 6→19 slope (0.125ms/13 intervals).
+    const expected = interval < 200 ? 1 + .25 / (16 * interval) : 1 + .125 / (13 * interval);
+    const snapshot = clock.snapshot();
+    assert.equal(snapshot.fitStatus, 'tracking'); assert.equal(snapshot.fitRejectReason, 'none');
+    assert.equal(snapshot.fitRejected, 0); assert.equal(snapshot.points, 25);
+    assert.equal(snapshot.acceptedFitAgeMs, 0); assert.ok(snapshot.uncertaintyMs < 1);
+    assert.equal(clock.targetRate, expected); assert.equal(snapshot.generation, 1);
+  }
 });

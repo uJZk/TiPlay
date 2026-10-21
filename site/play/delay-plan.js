@@ -53,10 +53,15 @@ export function planDelay(previous, target, now, { leadMs = DELAY_PLAN_LEAD_MS,
   increaseRate = 0.02, decreaseRate = 0.005, smooth = false } = {}) {
   const at = now + leadMs, from = delayAt(previous, at);
   const rate = target > from ? increaseRate : decreaseRate;
+  // A new activation supersedes old plans that had not begun before it. They
+  // cannot affect any earlier lookup, and retaining them grows the linked
+  // history during same-clock bursts or immediate touch catch-up.
+  let retained = previous;
+  while (retained.previous && retained.at >= at) retained = retained.previous;
   // Quintic smoothstep's maximum derivative is 1.875. Scale its duration
   // so the requested source-clock speed limit is respected throughout.
   return { from, to: target, at, duration: Math.abs(target - from) / rate * (smooth ? 1.875 : 1),
-    ...(smooth ? { smooth: true } : {}), previous: remainingPlan(previous, now - PLAN_HISTORY_MS) };
+    ...(smooth ? { smooth: true } : {}), previous: remainingPlan(retained, now - PLAN_HISTORY_MS) };
 }
 
 /** Invert the strictly increasing source clock, including changes not yet active. */

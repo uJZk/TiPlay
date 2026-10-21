@@ -138,7 +138,42 @@ updates can have long PTS intervals without dropped frames. Compare target and a
 cursor delay during convergence, and retain unknown source/output timing instead of
 calling every missing anchor a passed latency measurement.
 
-The beta.10/v76 source passed 643 browser tests, 158 scoped Android tests in 13 classes
+The beta.11/v77 playback candidate passed **688 browser tests**, **116 scoped Android
+tests across 10 classes**, and the mobile debug build. It adds an independent
+hardware-clock/real-Soxr oracle: repeated 10 ms output-pipeline changes no longer
+discard a coherent applied device rate, while a real 38 ms change still recovers.
+The fixture covers an actual oscillator change, source progress, nonzero PCM and
+the unchanged 30/300 ms recovery/deadline policy. An idle stream emits no samples
+and cannot fabricate a deadline-recovery count; actual tails and zero-valued source
+PCM still receive deadline checks.
+
+Parameter cases cover exact MAD 3/0.5/1.5 ms, one-second source buckets/fastest arrival,
+inclusive source/device 10/2-second pairs, 125 ms plan-history continuity and
+64/128/256-frame render blocks. A 10,000-update same-clock burst remains cloneable
+and bounded after superseded activations are removed. Three parallel real JVM socket
+fixtures expired at approximately 10 seconds in response-header, initial-body and
+returned-body reads, retaining production limits and FCUP behavior. These do not
+validate Android's network stack or the 5-second connect expiry.
+An additional real-Soxr case reproduces non-finite output beyond the old 512-frame
+mixing buffer, then verifies 1024-frame expansion, smaller-block reuse, nonzero output
+in both halves and identical PCM with Debug toggled. No per-quantum allocation is
+added when the existing buffer is sufficient.
+
+Real Chromium checks passed shared CarPlay/mirror clocks, MP4/HLS playback and 90
+complete-page checks with the explicit software decoder override. The initial URL
+probe is held by the fixture: the accessible loading indicator must already be
+visible before headers or player import, and retire on actual playing. Stop,
+replacement, paused/gesture handoff and permission revocation also have regressions.
+
+Screen-loan regressions reproduce both reentrant borrow/return write failures before
+the fix and pass after reconciliation. They also cover ownership-confirmation gates,
+CarPlay audio continuity, returned configuration/keyframe requests, stale owners,
+mirror picture/audio isolation and sparse semantic capture/close boundaries. The
+actual beta.10 capture cannot prove its entire loan sequence: its early TXT state
+rolled off and its control bytes were encrypted. Physical grant/return and sound
+remain in Todo; the published APK/page sources remain those in [Build](Build.md#beta-release).
+
+The published beta.10/v76 source passed 643 browser tests, 158 scoped Android tests in 13 classes
 and the mobile debug build. Native cases additionally cover fixed source-fit/quantum
 fields, six-place MAD printing, one-time 400 ms SETRATE anchors, HTTP failure phases
 and FCUP deadline ownership/logger isolation. Source/quantum Debug collection and

@@ -18,6 +18,7 @@ internal object BrowserAudioDiagnostics {
         "deviceClockRatePpm", "deviceClockTargetRatePpm", "deviceClockConfidence", "deviceClockUncertaintyMs",
         "deviceClockGeneration", "deviceClockReason", "outputState", "outputUnavailableCount", "outputUnavailableReason",
         "deviceClockAcceptedFitAgeMs", "deviceClockFitRejected", "deviceClockFitStatus", "deviceClockFitRejectReason",
+        "deviceClockFitDispersionMs",
         "outputTimestampContextMs", "outputTimestampPerformanceMs", "outputTimestampAgeMs", "outputRenderedContextMs", "outputFeedbackDeltaMs",
         "outputFeedbackContextMs", "outputFeedbackAgeMs",
         "outputTimestampCaptureMs", "outputTimestampHoldoverAgeMs",
@@ -60,7 +61,8 @@ internal object BrowserAudioDiagnostics {
                 val raw = stats[keyPrefix + field]
                 val choices = enumFields[field]
                 if (choices != null && (raw !is String || raw !in choices)) return@mapNotNull null
-                val precision = if (field == "sourceClockDispersionMs" || field == "deviceClockUncertaintyMs") 6 else 3
+                val precision = if (field == "sourceClockDispersionMs" || field == "deviceClockUncertaintyMs" ||
+                    field == "deviceClockFitDispersionMs") 6 else 3
                 val value = value(raw, precision) ?: return@mapNotNull null
                 "$field=$value"
             }

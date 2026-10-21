@@ -6,8 +6,11 @@ import org.junit.Test
 import java.io.IOException
 import java.io.ByteArrayInputStream
 import java.io.InputStream
+import java.io.Closeable
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.SocketTimeoutException
+import java.net.Socket
 import java.net.ServerSocket
 import java.net.ProxySelector
 import java.net.Proxy
@@ -15,7 +18,10 @@ import java.net.URI
 import java.net.InetSocketAddress
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 class AirPlayVideoProxyTest {
     /** Synthetic API calls advance monotonic time; no OS timeout or private media is replayed. */
@@ -95,6 +101,122 @@ class AirPlayVideoProxyTest {
             assertFalse(event.contains("private")); assertFalse(event.contains("secret"))
             assertTrue(http.disconnects > 0)
         } finally { proxy.close() }
+    }
+
+    /** Real JVM sockets hold an HTTP stage open; no synthetic time or shortened production timer. */
+    private class ReadTimeoutOrigin(private val response: ByteArray?) : Closeable {
+        private val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        private val release = CountDownLatch(1)
+        private val closed = AtomicBoolean()
+        private val completed = CompletableFuture<Throwable?>()
+        @Volatile private var accepted: Socket? = null
+        val url = "http://127.0.0.1:${server.localPort}/movie.mp4"
+        private val worker = Thread {
+            try {
+                server.accept().use { socket ->
+                    accepted = socket
+                    if (closed.get()) return@use
+                    socket.soTimeout = 5000
+                    val input = socket.getInputStream()
+                    var end = 0; var bytes = 0
+                    while (end != 0x0d0a0d0a) {
+                        val value = input.read()
+                        if (value < 0) throw IOException("Incomplete timeout-fixture request")
+                        check(++bytes <= 16384)
+                        end = (end shl 8) or value
+                    }
+                    response?.let { socket.getOutputStream().apply { write(it); flush() } }
+                    release.await(25, TimeUnit.SECONDS)
+                }
+                completed.complete(null)
+            } catch (error: Throwable) {
+                completed.complete(if (closed.get()) null else error)
+            }
+        }.apply { isDaemon = true; name = "AirPlay HTTP read-timeout origin"; start() }
+
+        override fun close() {
+            if (!closed.compareAndSet(false, true)) return
+            release.countDown()
+            runCatching { server.close() }
+            runCatching { accepted?.close() }
+        }
+
+        fun join() {
+            worker.join(1000)
+            assertFalse("Timeout-fixture origin must not leave a worker running", worker.isAlive)
+            completed.get(1, TimeUnit.SECONDS)?.let { throw AssertionError("Timeout-fixture origin failed", it) }
+        }
+    }
+
+    @Test fun actualJvmHttpReadTimeoutCoversHeadersInitialBodyAndReturnedBodyWithProductionLimits() {
+        val header = ("HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nContent-Length: 64\r\n" +
+            "Connection: close\r\n\r\n").toByteArray(Charsets.ISO_8859_1)
+        val prefix = ByteArray(32) { 42 }
+        val origins = mutableListOf<ReadTimeoutOrigin>()
+        val pool = Executors.newFixedThreadPool(3)
+        val futures = mutableListOf<java.util.concurrent.Future<*>>()
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(25)
+        try {
+            listOf(null, header, header + prefix).forEach { origins += ReadTimeoutOrigin(it) }
+            origins.forEachIndexed { index, origin ->
+                futures += pool.submit {
+                    val messages = mutableListOf<String>()
+                    val openedConnections = mutableListOf<HttpURLConnection>()
+                    var phoneCalls = 0
+                    val proxy = AirPlayVideoProxy(origin.url, { _, _ ->
+                        phoneCalls++
+                        check(index != 2) { "A returned streaming body must not restart through FCUP" }
+                        ReceiverResource(byteArrayOf(1, 2, 3), 200, null)
+                    }, null, messages::add, { uri ->
+                        // Only the local fixture bypasses JVM proxy selection; no remote request is made.
+                        (uri.toURL().openConnection(Proxy.NO_PROXY) as HttpURLConnection).also { openedConnections += it }
+                    }, System::nanoTime)
+                    var resource: AirPlayVideoProxy.Resource? = null
+                    try {
+                        var started = System.nanoTime()
+                        val opened = proxy.open(proxy.rootId, null) { it }!!
+                        resource = opened
+                        if (index == 2) {
+                            assertEquals(AirPlayVideoProxy.ResourceRoute.ANDROID_HTTP, opened.reference!!.route)
+                            assertTrue(messages.none { it.contains("stage=HTTP_FAILURE ") })
+                            assertArrayEquals(prefix, opened.body.readNBytes(prefix.size))
+                            started = System.nanoTime()
+                            assertThrows(SocketTimeoutException::class.java) { opened.body.read() }
+                        } else {
+                            assertEquals(AirPlayVideoProxy.ResourceRoute.IPHONE_FCUP, opened.reference!!.route)
+                            assertArrayEquals(byteArrayOf(1, 2, 3), opened.body.readBytes())
+                        }
+                        val elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+                        assertTrue("Real read must expire near its unchanged 10-second limit: $elapsedMillis ms",
+                            elapsedMillis in 9000L..20000L)
+                        val failure = messages.single { it.contains("stage=HTTP_FAILURE ") }
+                        val phase = if (index == 0) "RESPONSE_HEADERS" else "RESPONSE_BODY"
+                        assertTrue(failure.contains("load=1 route=ANDROID_HTTP phase=$phase"))
+                        assertTrue(failure.contains("connectLimitMs=5000 readLimitMs=10000 timeoutReported=true"))
+                        assertTrue(failure.contains("exception=SocketTimeoutException"))
+                        val phaseMillis = Regex("phaseElapsedMs=(\\d+)").find(failure)!!.groupValues[1].toLong()
+                        assertTrue("Stage clock must measure the blocked real read: $phaseMillis ms",
+                            phaseMillis in 9000L..20000L)
+                        assertEquals(1, openedConnections.size)
+                        assertEquals(5000, openedConnections.single().connectTimeout)
+                        assertEquals(10000, openedConnections.single().readTimeout)
+                        assertEquals(if (index == 2) 0 else 1, phoneCalls)
+                        println("Real JVM HTTP read expiry case=$index phase=$phase elapsedMs=$elapsedMillis phaseElapsedMs=$phaseMillis")
+                    } finally {
+                        // Release the peer before body cleanup, which may otherwise try to drain it.
+                        origin.close()
+                        try { resource?.close() } finally { proxy.close() }
+                    }
+                }
+            }
+            for (future in futures) future.get((deadline - System.nanoTime()).coerceAtLeast(1), TimeUnit.NANOSECONDS)
+        } finally {
+            origins.forEach(ReadTimeoutOrigin::close)
+            futures.forEach { it.cancel(true) }
+            pool.shutdownNow()
+            assertTrue("Timeout-fixture clients must finish after socket cleanup", pool.awaitTermination(3, TimeUnit.SECONDS))
+            origins.forEach(ReadTimeoutOrigin::join)
+        }
     }
 
     @Test fun inlineCaptionMetadataNeverEntersTheSerialPhoneResourceExchange() {

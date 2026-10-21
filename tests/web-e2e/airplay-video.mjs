@@ -118,7 +118,17 @@ try {
   page.on('console', message => { if (message.type() === 'error') console.log('console:',message.text()); });
 
   await page.goto(url+'/harness');
-  const result = await page.evaluate(async () => {
+  // Hold the real first resource request: cold source preparation must display
+  // loading before resource headers, Video.js or a decoder is available.
+  let releaseProbe, reachedProbe;
+  const probeReleased = new Promise(resolve => { releaseProbe = resolve; });
+  const probeReached = new Promise(resolve => { reachedProbe = resolve; });
+  let heldProbe = false;
+  await page.route('**/airplay-resource?**', async route => {
+    if (!heldProbe) { heldProbe = true; reachedProbe(); await probeReleased; }
+    await route.continue();
+  });
+  const opening = page.evaluate(async () => {
     const {createAirPlayControls} = await import('/airplay-controls.js');
     window.events=[];
     window.controls=createAirPlayControls(document.getElementById('stage'),event=>events.push(event),playerLanguage, {
@@ -133,10 +143,30 @@ try {
       volume:document.querySelectorAll('media-volume-slider,media-mute-button').length,
       fill:document.querySelector('media-container')?.clientHeight === 480};
   });
+  try {
+    await Promise.race([probeReached, opening.then(() => { throw new Error('Source opened without the held probe'); })]);
+    await page.locator('.airplay-preparation').waitFor({ state: 'visible' });
+    const preparation = await page.evaluate(() => {
+      const layer = document.querySelector('.airplay-player');
+      const indicator = document.querySelector('.airplay-preparation');
+      const spinner = document.querySelector('.airplay-preparation-spinner');
+      const bounds = spinner.getBoundingClientRect();
+      return { busy: layer.getAttribute('aria-busy'), role: indicator.getAttribute('role'),
+        label: indicator.getAttribute('aria-label'), width: bounds.width, height: bounds.height,
+        animation: getComputedStyle(spinner).animationName, player: Boolean(document.querySelector('video-player')) };
+    });
+    if (preparation.busy !== 'true' || preparation.role !== 'status' || !preparation.label ||
+      preparation.width <= 0 || preparation.height <= 0 || preparation.animation !== 'airplay-preparation-spin' || preparation.player)
+      throw new Error('Initial resource preparation has no visible accessible loading indicator: ' + JSON.stringify(preparation));
+    console.log(`${mode}: loading is visible before the first resource response or player import`);
+  } finally { releaseProbe(); }
+  const result = await opening;
   console.log(JSON.stringify({result,errors}));
   if(result.version !== '10.1.0' || errors.length || result.fullscreen!==0 || result.volume!==0 || result.stop!==1 || result.spinner!==1 || !result.fill) throw new Error('Player integration failed');
   await page.waitForFunction(()=>events.some(event=>event.k==='ap-state' && event.ready && event.duration>0));
   await page.waitForFunction(()=>events.some(event=>event.k==='ap-diag' && event.event==='play-resolved'));
+  await page.waitForFunction(()=>events.some(event=>event.k==='ap-diag' && event.event==='playing') &&
+    !document.querySelector('.airplay-preparation') && !document.querySelector('.airplay-player').hasAttribute('aria-busy'));
   if (resourceRequests[0]?.range !== 'bytes=0-65535') throw new Error('Initial media probe was not bounded');
   const openingDiagnostics = await page.evaluate(()=>events.filter(event=>event.k==='ap-diag'));
   checkDiagnostics(openingDiagnostics);

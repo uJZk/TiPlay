@@ -591,7 +591,7 @@ export function flatStats(stats, limit = 2048) {
     if (typeof value === 'number' && Number.isFinite(value)) {
       // Preserve clock-fit threshold evidence without increasing precision for
       // every counter. This is print resolution, not measurement accuracy.
-      const precision = /(?:^|\.)(?:sourceClockDispersionMs|deviceClockUncertaintyMs)$/.test(prefix) ? 1e6 : 100;
+      const precision = /(?:^|\.)(?:sourceClockDispersionMs|deviceClockFitDispersionMs|deviceClockUncertaintyMs)$/.test(prefix) ? 1e6 : 100;
       add(prefix, Math.round(value * precision) / precision);
     }
     else if (typeof value === 'boolean') add(prefix, value ? 1 : 0);

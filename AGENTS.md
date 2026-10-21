@@ -38,8 +38,10 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 
 Resume CarPlay/AirPlay parameter work at the [parameter evidence checklist](docs/Todo.md#playback-parameter-evidence)
 and [roadmap evidence table](docs/WebRTC-roadmap.md#参数核验与调优边界). Read
-[Diagnostics](docs/Diagnostics.md) for fit/noise/age, render-quantum, anchor and resource-stage
-evidence, [Testing](docs/Testing.md#webrtc-integrated-acceptance) for software verification,
+[Diagnostics](docs/Diagnostics.md) for attempted-versus-accepted fit noise, render-quantum,
+anchor, resource-stage and sparse screen-loan state/close evidence. The
+[AirPlay coexistence contract](docs/AirPlay.md#carplay-coexistence) covers ownership
+confirmation and reentrant borrow/return; [Testing](docs/Testing.md#webrtc-integrated-acceptance) records software verification,
 and [Build](docs/Build.md#beta-release) for the actual published APK/page source. Keep
 unrun boundaries, proved behavior and vehicle tuning separate; an observed software
 timestamp does not establish speaker/panel timing.

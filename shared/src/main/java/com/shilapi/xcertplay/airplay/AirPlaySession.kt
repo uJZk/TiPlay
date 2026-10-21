@@ -110,6 +110,7 @@ class AirPlaySession(
     private val eventWriteLock = Any()
     private val eventThreads = CopyOnWriteArrayList<Thread>()
     private val screenBorrow = CarPlayScreenBorrow(send = ::sendCommand)
+    private val screenBorrowDiagnostics = CarPlayScreenBorrowDiagnostics()
     private val screenBorrowNotificationLock = Any()
     private var lastScreenBorrowNotification = CarPlayScreenBorrowState()
 
@@ -153,11 +154,16 @@ class AirPlaySession(
         prepareClose()?.invoke()
     }
 
-    /** Claim retirement under a media ownership lock; perform blocking teardown after releasing it. */
-    internal fun prepareClose(): (() -> Unit)? =
-        if (closed.compareAndSet(false, true)) ::finishClose else null
+    private fun close(reason: CarPlayConnectionCloseReason) {
+        prepareClose(reason)?.invoke()
+    }
 
-    private fun finishClose() {
+    /** Claim retirement under a media ownership lock; perform blocking teardown after releasing it. */
+    internal fun prepareClose(reason: CarPlayConnectionCloseReason = CarPlayConnectionCloseReason.UNSPECIFIED): (() -> Unit)? =
+        if (closed.compareAndSet(false, true)) ({ finishClose(reason) }) else null
+
+    private fun finishClose(reason: CarPlayConnectionCloseReason) {
+        screenBorrowDiagnostics.closed(reason, screenBorrowState)
         screenBorrow.close()
         notifyScreenBorrowChanged()
         mainScreenToken = null
@@ -329,6 +335,7 @@ class AirPlaySession(
             val next = screenBorrowState
             if (next == lastScreenBorrowNotification) return
             lastScreenBorrowNotification = next
+            screenBorrowDiagnostics.changed(next)
             next
         }
         debugLog("CarPlay screen desired=${state.desired} sent=${state.sent} owner=${state.owner} pending=${state.pending}")
@@ -371,7 +378,7 @@ class AirPlaySession(
             true
         } catch (error: Exception) {
             Log.w(TAG, "airplay event command failed type=${command["type"]}", error)
-            close()
+            close(CarPlayConnectionCloseReason.EVENT_SEND_FAILED)
             false
         }
     }
@@ -485,11 +492,13 @@ class AirPlaySession(
         var accumulated = ByteArray(0)
         val buffer = ByteArray(READ_CHUNK_BYTES)
         var closeReason = "session closed"
+        var closeBoundary = CarPlayConnectionCloseReason.CONTROL_STOPPED
         try {
             while (!closed.get()) {
                 val count = input.read(buffer)
                 if (count < 0) {
                     closeReason = "peer EOF"
+                    closeBoundary = CarPlayConnectionCloseReason.PEER_EOF
                     break
                 }
                 var plaintext = buffer.copyOf(count)
@@ -500,6 +509,7 @@ class AirPlaySession(
                         activeCipher.decrypt(encBuf)
                     } catch (error: Exception) {
                         closeReason = "control decrypt failed: ${error.message ?: error.javaClass.simpleName}"
+                        closeBoundary = CarPlayConnectionCloseReason.CONTROL_DECRYPT_FAILED
                         Log.e(TAG, "airplay $closeReason encrypted=${encBuf.size}", error)
                         break
                     }
@@ -559,10 +569,11 @@ class AirPlaySession(
             }
         } catch (error: Exception) {
             closeReason = "control I/O failed: ${error.message ?: error.javaClass.simpleName}"
+            closeBoundary = CarPlayConnectionCloseReason.CONTROL_IO_FAILED
             if (!closed.get()) Log.e(TAG, "airplay $closeReason", error)
         } finally {
             debugLog("airplay control closing reason=$closeReason activeStreams=$activeStreams")
-            close()
+            close(closeBoundary)
         }
     }
 
@@ -912,7 +923,7 @@ class AirPlaySession(
             if (shared == null) {
                 Log.e(TAG, "airplay event rejected: pair-verify shared secret unavailable")
                 safeClose(socket)
-                close()
+                close(CarPlayConnectionCloseReason.EVENT_AUTH_UNAVAILABLE)
                 return
             }
             val writeKey = AirPlayCrypto.hkdfSha512(
@@ -940,12 +951,13 @@ class AirPlaySession(
         } catch (error: Exception) {
             if (!closed.get()) {
                 Log.e(TAG, "airplay event accept failed", error)
-                close()
+                close(CarPlayConnectionCloseReason.EVENT_ACCEPT_FAILED)
             }
         }
     }
 
     private fun runEventRead(socket: Socket) {
+        var closeBoundary = CarPlayConnectionCloseReason.EVENT_STOPPED
         try {
             val input = BufferedInputStream(RawTraffic.input("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()))
             val output = BufferedOutputStream(RawTraffic.output("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/out", socket.getOutputStream()))
@@ -954,12 +966,20 @@ class AirPlaySession(
             val buffer = ByteArray(READ_CHUNK_BYTES)
             while (!closed.get()) {
                 val count = input.read(buffer)
-                if (count < 0) break
-                val cipher = eventCipher ?: break
+                if (count < 0) {
+                    closeBoundary = CarPlayConnectionCloseReason.EVENT_EOF
+                    break
+                }
+                val cipher = eventCipher
+                if (cipher == null) {
+                    closeBoundary = CarPlayConnectionCloseReason.EVENT_CIPHER_UNAVAILABLE
+                    break
+                }
                 encrypted += buffer.copyOf(count)
                 val decrypted = try {
                     cipher.decrypt(encrypted)
                 } catch (error: Exception) {
+                    closeBoundary = CarPlayConnectionCloseReason.EVENT_DECRYPT_FAILED
                     Log.e(TAG, "airplay event decrypt failed encrypted=${encrypted.size}", error)
                     break
                 }
@@ -993,6 +1013,7 @@ class AirPlaySession(
                 }
             }
         } catch (error: Exception) {
+            closeBoundary = CarPlayConnectionCloseReason.EVENT_IO_FAILED
             if (!closed.get()) Log.e(TAG, "airplay event read failed", error)
         } finally {
             debugLog("airplay event connection closed")
@@ -1002,7 +1023,7 @@ class AirPlaySession(
             if (eventSocket === socket) eventSocket = null
             eventCipher = null
             safeClose(socket)
-            if (!closed.get()) close()
+            if (!closed.get()) close(closeBoundary)
         }
     }
 

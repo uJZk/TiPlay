@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserAudio } from '../../site/play/audio.js';
+import { browserDiagnosticEvents } from '../../site/play/browser-diagnostics.js';
 import { createAirPlayAudioDecoder } from '../../site/play/airplay-audio-decoder.js';
 import { PcmTimeline } from '../../site/play/pcm-timeline.js';
 import { constantDelay } from '../../site/play/delay-plan.js';
@@ -236,6 +237,7 @@ test('status.debug toggles PCM/context/render diagnostics without reconnecting o
     assert.equal(stats.contextState, 'running'); assert.equal(stats.contextRate, 48000);
     assert.equal(stats.deviceClockFitStatus, 'acquiring'); assert.equal(stats.deviceClockFitRejectReason, 'none');
     assert.equal(stats.deviceClockFitRejected, 0); assert.equal(Object.hasOwn(stats, 'deviceClockAcceptedFitAgeMs'), false);
+    assert.equal(Object.hasOwn(stats, 'deviceClockFitDispersionMs'), false, 'no immature MAD is substituted for a fit');
     assert.equal(stats.renderFrames, 128); assert.ok(Number.isFinite(stats.clockBase));
     h.audio.status({ debug: false }); assert.equal(h.audio.stats().debug, undefined);
     assert.deepEqual(h.nodes[0].messages.at(-1), { debug: false, diagnosticRevision: 2 });
@@ -246,6 +248,38 @@ test('status.debug toggles PCM/context/render diagnostics without reconnecting o
     assert.equal(h.audio.stats().debug.renderFrames, undefined, 'a delayed report from the retired capture stays retired');
     assert.equal(h.audio.stats().debug.pcmFrames, 0);
   } finally { h.done(); }
+});
+
+test('browser device MAD reaches Debug telemetry only after a fit in that capture interval', async () => {
+  const previousPerformance = Object.getOwnPropertyDescriptor(globalThis, 'performance');
+  let at = 0;
+  Object.defineProperty(globalThis, 'performance', { configurable: true, value: { now: () => at, timeOrigin: 0 } });
+  const h = browserHarness();
+  try {
+    await h.audio.activate(); await tick();
+    const context = h.contexts[0];
+    context.getOutputTimestamp = () => ({ contextTime: (at - 200) / 1000, performanceTime: at });
+    const sample = value => { at = value; context.currentTime = at / 1000; h.audio.clock(null); };
+    h.audio.debug(true);
+    for (let value = 1000; value <= 10000; value += 100) sample(value);
+    const fitted = h.audio.stats();
+    assert.equal(fitted.debug.deviceClockFitStatus, 'tracking');
+    assert.equal(fitted.debug.deviceClockUncertaintyMs, 0); assert.equal(fitted.debug.deviceClockFitDispersionMs, 0);
+    const detail = browserDiagnosticEvents({ audio: fitted }, false, true).find(event => event.k === 'audio-diag');
+    assert.equal(detail.v.deviceClockFitDispersionMs, 0);
+    h.audio.debug(false); assert.equal(h.audio.stats().debug, undefined);
+    h.audio.debug(true);
+    assert.equal(Object.hasOwn(h.audio.stats().debug, 'deviceClockFitDispersionMs'), false,
+      'enabling Debug cannot label an older fit as newly observed noise');
+    sample(10100);
+    assert.equal(Object.hasOwn(h.audio.stats().debug, 'deviceClockFitDispersionMs'), false);
+    sample(10500); assert.equal(h.audio.stats().debug.deviceClockFitDispersionMs, 0);
+    h.audio.reset();
+    assert.equal(Object.hasOwn(h.audio.stats().debug, 'deviceClockFitDispersionMs'), false,
+      'a retired timeline cannot lend its last fit noise to its replacement');
+  } finally {
+    h.done(); Object.defineProperty(globalThis, 'performance', previousPerformance);
+  }
 });
 
 test('processor failures recreate the node and stream with fresh credit, reject retired callbacks and stop after two retries', async () => {

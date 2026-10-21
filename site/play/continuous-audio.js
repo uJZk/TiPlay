@@ -180,8 +180,11 @@ export class ContinuousAudio {
     }
     if (!this.backend && Number.isFinite(targetMs)) this.start(targetMs, clock?.generation);
     if (!this.backend) {
+      const hadTail = this.tailRemaining > 0;
       this.fadeTail(output, 0, frames); this.recoveryTail.set(this.last); this.recoveryRemaining = this.tailRemaining;
-      this.checkDeadline(deadline, clock, this.rawCursorMs, frames * 1000 / this.outputRate / deviceRate, 0, output, frames);
+      // An inactive cursor is not newly emitted content. Still validate an
+      // actual fade tail, including explicitly silent PCM, before it can play.
+      if (hadTail) this.checkDeadline(deadline, clock, this.rawCursorMs, frames * 1000 / this.outputRate / deviceRate, 0, output, frames);
       return 0;
     }
     const correction = Math.max(-PHASE_CORRECTION_LIMIT, Math.min(PHASE_CORRECTION_LIMIT, this.phaseErrorMs / 10000));

@@ -69,3 +69,87 @@ test('source clock rejection evidence identifies drift versus noise and diagnost
     assert.equal(snapshot.rejected > 0, input !== 'stable');
   }
 });
+
+for (const arrival of [false, true]) test(`source ${arrival ? 'arrival' : 'mapped'} MAD gate accepts equality and holds its previous fit immediately above ${arrival ? 1.5 : .5} ms`, () => {
+  const limit = arrival ? 1.5 : .5, epsilon = 2 ** -20;
+  for (const delta of [-epsilon, 0, epsilon]) {
+    const clock = new AudioSourceClock(1000, { arrival }); clock.debug(true);
+    // Isolate the fit gate with an already accepted nonnominal oscillator and
+    // a controlled, mature history; admission/bucket rules are exercised below.
+    clock.points = Array.from({ length: 31 }, (_, i) => ({ frameMs: i * 1000,
+      timeMs: 1000 + i * 1000 * .9995, browserRate: 1 }));
+    clock.fit(1000); clock.advance(1000); clock.advance(2000);
+    const previous = { targetRate: clock.targetRate, rate: clock.rate };
+    assert.ok(previous.targetRate > 1.0005); assert.ok(previous.rate > 1);
+    const dispersion = limit + delta;
+    // Balanced four-point noise leaves the robust slope at one and has an
+    // exactly representable MAD. It cannot accidentally hit the rate gate.
+    clock.points = Array.from({ length: 31 }, (_, i) => ({ frameMs: i * 1000,
+      timeMs: 1000 + i * 1000 + [-1, 0, 1, 0][i % 4] * dispersion, browserRate: 1 }));
+    clock.fit(3000);
+    const evidence = clock.snapshot(4000);
+    assert.equal(evidence.dispersionMs, dispersion);
+    assert.equal(evidence.reason, delta > 0 ? 'noisy' : 'none');
+    assert.equal(evidence.status, delta > 0 ? 'holdover' : 'tracking');
+    assert.equal(evidence.rejected, delta > 0 ? 1 : 0);
+    assert.equal(evidence.acceptedFitAgeMs, delta > 0 ? 3000 : 1000);
+    assert.equal(clock.confidence, delta > 0 ? 0 : arrival ? .5 : 1);
+    assert.equal(clock.targetRate, delta > 0 ? previous.targetRate : 1);
+    assert.equal(clock.rate, previous.rate, 'a fit decision cannot step the running sample rate');
+    const later = clock.snapshot(6000);
+    assert.deepEqual({ ...later, acceptedFitAgeMs: evidence.acceptedFitAgeMs }, evidence);
+    assert.equal(later.acceptedFitAgeMs, evidence.acceptedFitAgeMs + 2000,
+      'reads and rejected fits cannot refresh the last accepted context coordinate');
+  }
+});
+
+test('source-second admission splits at the source bucket edge rather than elapsed arrival time', () => {
+  const epsilon = 2 ** -10;
+  for (const frameMs of [1000 - epsilon, 1000, 1000 + epsilon]) {
+    const clock = new AudioSourceClock(1000); clock.debug(true);
+    clock.observe(0, 1000);
+    clock.observe(frameMs, 1000 + frameMs);
+    assert.equal(clock.points.length, frameMs < 1000 ? 1 : 2);
+    assert.equal(clock.snapshot().spanMs, frameMs < 1000 ? 0 : frameMs);
+  }
+  const clock = new AudioSourceClock(1000);
+  clock.observe(1000 - epsilon, 2000 - epsilon);
+  clock.observe(1000, 2000);
+  assert.equal(clock.points.length, 2, 'crossing the bucket admits a new point even less than a millisecond after its predecessor');
+});
+
+test('one source bucket preserves its fastest queue offset and an equal-speed arrival cannot replace it', () => {
+  for (const browserRate of [1, 1 + 1 / 1024]) {
+    const clock = new AudioSourceClock(1000, { arrival: browserRate !== 1 });
+    const observe = (frameMs, queueOffset) => clock.observe(frameMs, frameMs * browserRate + queueOffset, browserRate);
+    observe(0, 1000); const first = clock.points[0];
+    observe(250, 1000);
+    assert.equal(clock.points[0], first, 'an equal queue offset keeps the original representative');
+    observe(500, 900); const fastest = clock.points[0];
+    assert.equal(fastest.frameMs, 500);
+    observe(750, 1050); observe(999.5, 900);
+    assert.equal(clock.points[0], fastest, 'later queued or equal-speed points cannot overwrite the minimum offset');
+    observe(1000, 900);
+    assert.equal(clock.points.length, 2); assert.equal(clock.points[1].frameMs, 1000);
+    assert.equal(clock.points[0], fastest, 'starting the next bucket leaves the completed bucket unchanged');
+  }
+});
+
+test('source fit includes pairs exactly ten seconds apart and excludes the side just below it', () => {
+  const epsilon = 2 ** -10;
+  for (const delta of [-epsilon, 0, epsilon]) {
+    const clock = new AudioSourceClock(1000); clock.debug(true);
+    // Moving point 10 brackets the 0→10 and 10→20 pairs around ten seconds.
+    // Both enter at equality; otherwise only one enters. This small periodic
+    // timing error makes their effect observable in the fitted median rate.
+    for (let i = 0; i < 31; i++) {
+      const frameMs = 500 + i * 1000 + (i === 10 ? delta : 0);
+      clock.observe(frameMs, frameMs + (i % 7) * .01, 1, frameMs + 5000);
+    }
+    assert.equal(clock.points.length, 31); assert.equal(clock.snapshot(35500).spanMs, 30000);
+    assert.equal(clock.snapshot(35500).reason, 'none');
+    const expectedRate = delta === 0 ? 1 / (1 + .01 / 22000) : 1;
+    assert.ok(Math.abs(clock.targetRate - expectedRate) < 1e-12, `${delta}: ten-second pair eligibility changes the robust result`);
+    assert.equal(clock.snapshot(35500).acceptedFitAgeMs, 0);
+  }
+});

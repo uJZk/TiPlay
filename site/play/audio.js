@@ -97,6 +97,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       clockRateConfidence: clock?.rateConfidence ?? null,
       deviceClockRatePpm: device.ratePpm, deviceClockTargetRatePpm: device.targetRatePpm,
       deviceClockConfidence: device.confidence, deviceClockUncertaintyMs: device.uncertaintyMs,
+      ...(device.fitDispersionMs === undefined ? {} : { deviceClockFitDispersionMs: device.fitDispersionMs }),
       deviceClockGeneration: device.generation, deviceClockReason: device.reason,
       ...(device.acceptedFitAgeMs === undefined ? {} : { deviceClockAcceptedFitAgeMs: device.acceptedFitAgeMs }),
       deviceClockFitRejected: device.fitRejected, deviceClockFitStatus: device.fitStatus, deviceClockFitRejectReason: device.fitRejectReason,
@@ -150,7 +151,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     const next = value === true;
     if (next === debugEnabled) return;
     debugEnabled = next; diagnosticRevision++; pcmMetrics = next ? pcmStats() : null; workletMetrics = null; reportAt = null;
-    packetDecoder.debug(next); node?.port.postMessage({ debug: next, diagnosticRevision }); notify();
+    outputClock.debug(next); packetDecoder.debug(next); node?.port.postMessage({ debug: next, diagnosticRevision }); notify();
   }
   function retireNode() {
     nodeConnected = false;

@@ -25,7 +25,8 @@ export function directiveSeekTarget(media, directive, initial = false) {
   return initial && target === 0 && media.currentTime === 0 && !media.seeking ? null : target;
 }
 /** TiPlay owns playback; Video.js controls and iPhone directives share its measured clock. */
-export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, credentials, host } = {}) {
+export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, credentials, host,
+  loadPlayer = () => import('./videojs-player.js') } = {}) {
   const layer = document.createElement('div');
   layer.className = 'airplay-player'; layer.hidden = true;
   const photoStop = document.createElement('button');
@@ -33,7 +34,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   photoStop.hidden = true; stage.append(layer, photoStop);
   let state = null, player = null, loading = null, key = null, appliedRevision = -1, appliedSeekRevision = -1, appliedTrackRevision = -1, metadata = false, timer = null;
   let directive = null, disposed = false, waiting = false, sourceReady = false;
-  let diagnostics = null, photo = null;
+  let diagnostics = null, photo = null, preparation = null;
   const stop = () => {
     if (!state) return;
     diagnostics?.event('explicit-stop');
@@ -47,9 +48,44 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     loading?.abort(); loading = null;
     clearInterval(timer); timer = null;
     const retiring = player; player = null; retiring?.dispose(); layer.replaceChildren();
+    preparation = null; layer.removeAttribute('aria-busy'); layer.removeAttribute('data-preparing');
     photo?.dispose(); photo = null;
     key = null; metadata = sourceReady = false; waiting = false; appliedRevision = appliedSeekRevision = appliedTrackRevision = -1;
     layer.hidden = photoStop.hidden = true;
+  }
+  function beginPreparation() {
+    const indicator = document.createElement('div');
+    indicator.className = 'airplay-preparation media-skin'; indicator.dataset.theme = 'default';
+    indicator.setAttribute('role', 'status');
+    indicator.setAttribute('aria-label', lang === 'zh' ? 'AirPlay 正在缓冲…' : 'AirPlay is buffering…');
+    const spinner = document.createElement('span');
+    spinner.className = 'airplay-preparation-spinner'; spinner.setAttribute('aria-hidden', 'true');
+    indicator.append(spinner); layer.append(indicator); preparation = indicator;
+    layer.setAttribute('aria-busy', 'true'); layer.setAttribute('data-preparing', '');
+    syncVideoStop();
+  }
+  function syncVideoStop() {
+    photoStop.hidden = Boolean(player) || !state?.resource || state?.outputAllowed === false;
+  }
+  function finishPreparation() {
+    preparation?.remove(); preparation = null;
+    layer.removeAttribute('aria-busy'); layer.removeAttribute('data-preparing');
+  }
+  function syncPreparation() {
+    if (!preparation || !player) return;
+    const media = player.media;
+    if (player.error() || sourceReady && (media.ended || media.gestureRequired
+      || media.paused && media.readyState >= 2)) finishPreparation();
+  }
+  const failureText = error => /HDR|SDR/.test(error?.message || '')
+    ? (lang === 'zh' ? '此视频需要 HDR，TiPlay 仅支持 SDR 视频' : 'This video requires HDR. TiPlay supports SDR video.')
+    : (lang === 'zh' ? '无法播放视频' : 'Unable to play video');
+  function showFailure(error) {
+    finishPreparation();
+    if (player) { player.fail(failureText(error)); return; }
+    const message = document.createElement('p'); message.className = 'airplay-error'; message.role = 'alert';
+    message.textContent = failureText(error); layer.append(message);
+    syncVideoStop();
   }
   function report() {
     if (!player || !state) return;
@@ -138,16 +174,19 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       ? { time: player.media.currentTime, rate: player.media.playbackRate } : null;
     clear(); key = currentKey;
     layer.hidden = next.outputAllowed === false;
+    beginPreparation();
     const abort = loading = new AbortController();
+    const owns = () => loading === abort && !abort.signal.aborted && !disposed;
     const observation = diagnostics = createAirPlayDiagnostics(send, {
       state: () => state, media: () => player?.media,
       active: () => diagnostics === observation && key === currentKey && !abort.signal.aborted && !disposed,
     });
     observation.event('open', undefined, next);
     let forceProxy = forced || next.proxyOnly === true;
-    let route = resourceRoute(next, forceProxy);
+    let route;
     const fetchExternal = (url, init) => fetch(url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
     try {
+      route = resourceRoute(next, forceProxy);
       observation.event('probe-start', undefined, next);
       let response;
       try {
@@ -165,7 +204,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       await response.body?.cancel();
       if (abort.signal.aborted || key !== currentKey || disposed) return;
       observation.event('probe-ready');
-      const { createVideoPlayer } = await import('./videojs-player.js');
+      const { createVideoPlayer } = await loadPlayer();
       if (abort.signal.aborted || key !== currentKey || disposed) return;
       player = createVideoPlayer(layer, { lang, stop, stopText: photoStop.textContent, signal: abort.signal,
         onCanvasError: error => observation.event('canvas-error', error),
@@ -177,10 +216,12 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
           return fetchExternal(url, init);
         },
       });
+      syncVideoStop();
       const opened = player;
       const media = player.media;
       observation.monitor(media, player.surface);
       media.addEventListener('loadedmetadata', () => { if (player !== opened) return; metadata = true; applyDirective(); report(); });
+      media.addEventListener('progress', () => { if (player === opened) syncPreparation(); });
       for (const event of ['play', 'pause', 'waiting', 'playing', 'seeking', 'seeked', 'ratechange', 'ended', 'error'])
         media.addEventListener(event, () => {
           if (player !== opened) return;
@@ -188,14 +229,14 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
           if (event === 'waiting' || event === 'seeking') waiting = true;
           else if (['pause', 'playing', 'seeked', 'ended', 'error'].includes(event)) waiting = false;
           if (event === 'error' && !forceProxy && media.error?.name !== 'NotSupportedError') { observation.event('proxy-fallback'); void open(state, true); return; }
-          if (event === 'error') player?.fail(/HDR|SDR/.test(media.error?.message || '')
-            ? (lang === 'zh' ? '此视频需要 HDR，TiPlay 仅支持 SDR 视频' : 'This video requires HDR. TiPlay supports SDR video.')
-            : (lang === 'zh' ? '无法播放视频' : 'Unable to play video'));
+          if (event === 'playing') finishPreparation();
+          else if (event === 'error') showFailure(media.error);
+          else syncPreparation();
           report();
         });
       await player.source(next.directUrl && !forceProxy ? next.directUrl : `http://${host()}${route}`, type);
       if (abort.signal.aborted || player !== opened) return;
-      sourceReady = true; applyDirective();
+      sourceReady = true; applyDirective(); syncPreparation();
       // A command received during source preparation takes precedence over the old player's snapshot.
       if (resume && Number.isFinite(resume.time) && state?.id === next.id && state.revision === next.revision
         && (state.seekRevision ?? state.revision) === (next.seekRevision ?? next.revision)) {
@@ -204,8 +245,9 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       report();
       timer = setInterval(report, 400);
     } catch (error) {
-      if (!abort.signal.aborted && state?.id === next.id) {
+      if (owns()) {
         observation.event('open-error', error);
+        showFailure(error);
         appliedRevision = state.revision;
         send({ k: 'ap-state', id: state.id, revision: state.revision, duration: 0, position: 0,
           playing: false, ready: false, buffering: false, seekable: false, failed: true });
@@ -229,6 +271,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       const nextKey = `${next.id}:${host()}:${next.resource}:${next.proxyOnly === true}`;
       if (key !== nextKey) open(next);
       else applyDirective();
+      syncVideoStop();
     },
     videoActive: () => state?.kind === 'audio' || (Boolean(state?.resource) && state?.outputAllowed !== false),
     dispose() { disposed = true; clear(); layer.remove(); photoStop.remove(); },

@@ -106,21 +106,25 @@ internal class CarPlayScreenBorrow(private val send: (Map<String, Any?>) -> Bool
 
     private fun flush() {
         synchronized(deliveryLock) {
-            val delivery = synchronized(stateLock) {
-                if (closed || !eventReady || sent == desired || (!desired && !returnNeeded)) return
-                awaitingOwner = true
-                Delivery(desired, generation, ownershipRevision)
-            }
-            // Socket writes may close the session synchronously. Never hold the state monitor here.
-            val delivered = send(command(delivery.borrowed))
-            synchronized(stateLock) {
-                if (!delivered || closed || generation != delivery.generation) return
-                sent = delivery.borrowed
-                if (delivery.borrowed) returnNeeded = true
-                val confirmedDuringWrite = ownershipRevision > delivery.ownerRevision &&
-                    owner != CarPlayScreenOwner.Unknown
-                awaitingOwner = desired != delivery.borrowed || !confirmedDuringWrite
-                if (!delivery.borrowed && confirmedDuringWrite) returnNeeded = false
+            while (true) {
+                val delivery = synchronized(stateLock) {
+                    if (closed || !eventReady || sent == desired || (!desired && !returnNeeded)) return
+                    awaitingOwner = true
+                    Delivery(desired, generation, ownershipRevision)
+                }
+                // Socket writes may close or change the desired loan synchronously.
+                // Never hold the state monitor here; reconcile again after committing
+                // this delivery so a reentrant stop/start cannot strand its successor.
+                val delivered = send(command(delivery.borrowed))
+                synchronized(stateLock) {
+                    if (!delivered || closed || generation != delivery.generation) return
+                    sent = delivery.borrowed
+                    if (delivery.borrowed) returnNeeded = true
+                    val confirmedDuringWrite = ownershipRevision > delivery.ownerRevision &&
+                        owner != CarPlayScreenOwner.Unknown
+                    awaitingOwner = desired != delivery.borrowed || !confirmedDuringWrite
+                    if (!delivery.borrowed && confirmedDuringWrite) returnNeeded = false
+                }
             }
         }
     }

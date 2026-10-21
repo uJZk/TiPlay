@@ -34,10 +34,10 @@ function harness() {
     }
     cursors.set(key, cursor);
   }
-  function render() {
+  function render(blockFrames = 128) {
     globalThis.currentFrame = frame; globalThis.currentTime = frame / 48000;
-    const output = [new Float32Array(128), new Float32Array(128)];
-    processor.process([], [output]); frame += 128; return output;
+    const output = [new Float32Array(blockFrames), new Float32Array(blockFrames)];
+    processor.process([], [output]); frame += blockFrames; return output;
   }
   return { processor, post, feed, render, base, get frame() { return frame; }, jump(frames) { frame += frames; } };
 }
@@ -47,6 +47,7 @@ test('production worklet emits sample-count-driven audible content references wi
   for (let i = 0; i < 100; i++) { h.feed(); const output = h.render(); if (i > 5) assert.ok(output[0].some(value => Math.abs(value) > 0.1)); }
   const refs = h.processor.messages.filter(value => value.playout).map(value => value.playout);
   assert.ok(refs.length >= 6); assert.ok(refs.every(value => value.state === 'playing'));
+  assert.ok(refs.every(value => value.renderQuantumFrames === 128));
   assert.equal(h.processor.diagnostics, null);
   assert.equal(h.processor.renderedFrames, 12800);
   for (const reference of refs) {
@@ -61,6 +62,73 @@ test('production worklet emits sample-count-driven audible content references wi
   const stream = h.processor.messages.filter(value => value.diagnostics).at(-1).diagnostics.stream0;
   assert.ok(stream.resampleRatio > 0.99 && stream.resampleRatio < 1.01, 'diagnostics preserve the actual input/output ratio');
   assert.equal(stream.networkDelayMs, 60); assert.equal(stream.delayMs, 60, 'legacy delay telemetry reads the continuous queue target');
+});
+
+test('variable real render blocks report their quantum without Debug or changing the Soxr signal', () => {
+  const ordinary = harness(), diagnostic = harness();
+  const blocks = [...Array(80).fill(64), ...Array(40).fill(128), ...Array(20).fill(256), ...Array(80).fill(64)];
+  let renderedFrames = 0;
+  for (let index = 0; index < blocks.length; index++) {
+    const frames = blocks[index];
+    ordinary.feed(); diagnostic.feed();
+    if (index % 17 === 0) diagnostic.post({ debug: index % 34 === 0 });
+    const output = ordinary.render(frames), compared = diagnostic.render(frames);
+    assert.deepEqual(output, compared, 'actual output samples are independent of diagnostics at every block size');
+    renderedFrames += frames;
+  }
+  assert.equal(ordinary.processor.diagnostics, null);
+  assert.equal(ordinary.processor.renderedFrames, renderedFrames);
+  const refs = ordinary.processor.messages.filter(value => value.playout).map(value => value.playout);
+  assert.deepEqual([...new Set(refs.map(value => value.renderQuantumFrames))].sort((a, b) => a - b), [64, 128, 256]);
+  assert.ok(refs.every(value => value.state === 'playing'));
+  assert.deepEqual(ordinary.processor.timelines.get(0).recoveryCounts, diagnostic.processor.timelines.get(0).recoveryCounts);
+});
+
+test('normal feedback retains a larger render block that occurs between feedback intervals and Debug resets', () => {
+  const h = harness(); h.feed(); h.render(64);
+  h.render(256);
+  h.post({ debug: true }); h.post({ debug: false });
+  for (let index = 0; index < 40; index++) { h.feed(); h.render(64); }
+  const refs = h.processor.messages.filter(value => value.playout).map(value => value.playout);
+  assert.ok(refs.length >= 2);
+  assert.equal(refs[0].renderQuantumFrames, 64);
+  assert.equal(refs[0].renderQuantumMaxFrames, 64);
+  assert.equal(refs[1].renderQuantumFrames, 64);
+  assert.equal(refs[1].renderQuantumMaxFrames, 256,
+    'the context bound must include a larger block even when no feedback was sent for that block');
+  assert.equal(h.processor.diagnostics, null);
+});
+
+test('1024-frame real render blocks stay finite and continuous while retaining their enlarged mix buffer', () => {
+  const ordinary = harness(), diagnostic = harness();
+  for (let index = 0; index < 40; index++) {
+    ordinary.feed(); diagnostic.feed();
+    assert.deepEqual(ordinary.render(), diagnostic.render());
+  }
+  const timeline = ordinary.processor.timelines.get(0), backend = timeline.backend;
+  const initialBlock = timeline.block, initialRecoveries = { ...timeline.recoveryCounts };
+  assert.equal(initialBlock.length, 512 * timeline.channels);
+  let enlargedBlock;
+  for (const [index, frames] of [1024, 1024, 64, 256, 512, 1024, 128, 1024].entries()) {
+    ordinary.feed(); diagnostic.feed();
+    diagnostic.post({ debug: index % 2 === 0 });
+    const output = ordinary.render(frames), compared = diagnostic.render(frames);
+    for (const channel of output) {
+      assert.ok(channel.every(Number.isFinite), `${frames}-frame output must not read past its mix buffer`);
+      if (frames === 1024) {
+        assert.ok(channel.subarray(0, 512).some(value => Math.abs(value) > .1));
+        assert.ok(channel.subarray(512).some(value => Math.abs(value) > .1), 'Soxr emits the second half of the actual block');
+      }
+    }
+    assert.deepEqual(output, compared, 'Debug toggles preserve every PCM sample in larger blocks');
+    if (!enlargedBlock) {
+      enlargedBlock = timeline.block;
+      assert.notEqual(enlargedBlock, initialBlock);
+      assert.equal(enlargedBlock.length, 1024 * timeline.channels);
+    } else assert.equal(timeline.block, enlargedBlock, 'unchanged or smaller blocks reuse the existing allocation');
+    assert.equal(timeline.backend, backend, 'changing a render block size must preserve the Soxr backend');
+    assert.deepEqual(timeline.recoveryCounts, initialRecoveries, 'valid block growth must not manufacture a recovery');
+  }
 });
 
 test('buffer target steps rebuffer once, keep their stable anchor, and never replay emitted media', () => {
@@ -146,11 +214,18 @@ test('mirror source-anchor acquisition keeps unknown sample origins unverified a
       assert.equal(mirror.synchronized, false, 'a later isolated decode timestamp cannot certify the earlier queued sample origin');
     } else {
       assert.equal(mirror.synchronized, true);
-      // The old queued samples now have genuine source times more than300ms behind output.
+      // The old queued samples now have genuine source times more than300ms
+      // behind output. They cannot start a backend at the current target.
       const output = h.render();
-      assert.equal(mirror.sourceDeadlineState, 'violated'); assert.ok(mirror.sourceDeadlineRejectedFrames >= 128);
+      assert.equal(mirror.backend, null);
+      assert.equal(mirror.sourceDeadlineState, 'unknown'); assert.equal(mirror.sourceDeadlineReason, 'no-output');
+      assert.equal(mirror.sourceDeadlineRejectedFrames, 0, 'unemitted old samples are not rejected output quanta');
       assert.ok(output.every(channel => channel.every(value => value === 0)), 'expired PCM and pre-anchor fade copies stay silent');
       assert.ok(mirror.last.every(value => value === 0));
+      const sourceFrame = mirror.sourceFrame;
+      for (let quantum = 0; quantum < 20; quantum++) h.render();
+      assert.equal(mirror.sourceFrame, sourceFrame, 'queued expired samples cannot replay while idle');
+      assert.equal(mirror.sourceDeadlineRejectedFrames, 0);
     }
     h.post({ dispose: true });
   }

@@ -12,6 +12,7 @@ const MAX_OUTPUT_LATENCY_MS = 1000;
 export function createAudioOutputMapping({ now = () => performance.timeOrigin + performance.now(),
   timeOrigin = () => performance.timeOrigin } = {}) {
   let previousContext = null, previousTimestamp = null, pendingTimestamp = null, previousRendered = null, timestampNotBefore = -Infinity;
+  let renderQuanta = new WeakMap();
   const deviceClock = new AudioDeviceClock();
   let diagnostics = { outputState: 'startup' };
   let feedbackAt = null;
@@ -20,6 +21,12 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
   const rejected = reason => { outputUnavailableCount++; outputUnavailableReason = reason;
     unavailableCounts[reason] = (unavailableCounts[reason] || 0) + 1; };
   const unavailable = reason => { diagnostics.outputState = reason; rejected(reason); return null; };
+  function observeRenderQuantum(context, frames) {
+    if (!context || typeof context !== 'object' || !Number.isSafeInteger(frames) || frames <= 0) return;
+    // The render block can change. Keep the largest observation in this context
+    // so a smaller later block cannot understate quantization/holdover error.
+    renderQuanta.set(context, Math.max(renderQuanta.get(context) || 0, frames));
+  }
   function comparePairs(previous, next, quantumMs) {
     const elapsedMs = next.performanceTimeMs - previous.performanceTimeMs;
     const innovationMs = (next.contextTimeMs - previous.contextTimeMs) / deviceClock.rate - elapsedMs;
@@ -52,7 +59,11 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
     // sampled after that call, rather than misclassifying its result as future.
     const rendered = context.currentTime * 1000, at = now();
     deviceClock.advance(at);
-    const quantumMs = 128000 / (Number.isFinite(context.sampleRate) && context.sampleRate > 0 ? context.sampleRate : 48000);
+    observeRenderQuantum(context, context.renderQuantumSize);
+    // Preserve the established 128-frame measurement allowance on smaller
+    // blocks; larger observed blocks must expand it rather than be underbound.
+    const quantumMs = Math.max(128, renderQuanta.get(context) || 0) * 1000
+      / (Number.isFinite(context.sampleRate) && context.sampleRate > 0 ? context.sampleRate : 48000);
     Object.assign(diagnostics, { outputTimestampContextMs: null, outputTimestampPerformanceMs: null,
       outputTimestampAgeMs: null, outputRenderedContextMs: rendered,
       outputTimestampCaptureMs: Math.max(0, at - startedAt), outputTimestampHoldoverAgeMs: null });
@@ -132,7 +143,7 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
         baseLatency: context.baseLatency, outputLatency: context.outputLatency };
       const previousAgeMs = previousTimestamp ? at - previousTimestamp.performanceTimeMs : Infinity;
       const previousFresh = previousAgeMs >= -20 && previousAgeMs <= OUTPUT_REFERENCE_MAX_AGE_MS;
-      let confirmed = false, outputStep = false;
+      let confirmed = false, outputStep = false, preserveDeviceRate = false;
       if (fresh && pendingTimestamp) {
         // A contradiction needs two new advancing samples, even when both
         // coordinates happen to be ahead of the last trusted pair. Repeated
@@ -151,7 +162,8 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
         // A confirmed new rate must retire an incompatible old oscillator fit,
         // including after reference expiry. Expiry alone is not a rate change.
         const previousRelation = comparePairs(previousTimestamp, candidate, quantumMs);
-        outputStep = !comparePairs(pendingTimestamp, candidate, quantumMs).coherent
+        preserveDeviceRate = comparePairs(pendingTimestamp, candidate, quantumMs).coherent;
+        outputStep = !preserveDeviceRate
           || previousFresh && previousRelation.withinSpan && !previousRelation.coherent;
       } else if (fresh && ordered && moved && previousTimestamp
         && (!previousFresh || !comparePairs(previousTimestamp, candidate, quantumMs).coherent)) {
@@ -161,7 +173,7 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
       // A real pipeline increase can put both new output samples below the old
       // counter. Their own coherent advance establishes that changed mapping.
       if (fresh && (ordered || confirmed)) {
-        if (outputStep) deviceClock.reset('output-step');
+        if (outputStep) deviceClock.reset('output-step', { preserveRate: preserveDeviceRate });
         if (!moved) return holdover();
         diagnostics.outputState = 'timestamp';
         deviceClock.observe(contextTimeMs, performanceTimeMs, at);
@@ -190,11 +202,15 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
 
   return {
     capture,
+    observeRenderQuantum,
+    debug: enabled => deviceClock.debug(enabled),
     deviceClock: () => deviceClock.snapshot(now()),
     diagnostics: () => ({ ...diagnostics, outputFeedbackAgeMs: feedbackAt === null ? null : Math.max(0, now() - feedbackAt),
       outputUnavailableCount, outputUnavailableReason, outputUnavailableCounts: { ...unavailableCounts } }),
     reference(feedback, context) {
       if (!feedback || typeof feedback !== 'object') return null;
+      observeRenderQuantum(context, feedback.renderQuantumFrames);
+      observeRenderQuantum(context, feedback.renderQuantumMaxFrames);
       const at = now(), unavailable = reason => ({ ...feedback, at, audibleTimeMs: null,
         playoutState: feedback.state, state: reason, outputMethod: null, uncertaintyMs: null });
       feedbackAt = at;
@@ -217,7 +233,8 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
         outputMethod: mapping.outputMethod, uncertaintyMs: mapping.uncertaintyMs + Math.max(0, feedback.filterUncertaintyMs || 0),
         outputLatencyMs: mapping.outputLatencyMs };
     },
-    reset() { previousContext = previousTimestamp = pendingTimestamp = previousRendered = null; timestampNotBefore = now(); deviceClock.reset('reset');
+    reset() { previousContext = previousTimestamp = pendingTimestamp = previousRendered = null; renderQuanta = new WeakMap();
+      timestampNotBefore = now(); deviceClock.reset('reset');
       diagnostics = { outputState: 'reset' }; feedbackAt = null; },
   };
 }

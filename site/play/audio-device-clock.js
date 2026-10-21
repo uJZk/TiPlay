@@ -9,11 +9,17 @@ const median = values => values.sort((a, b) => a - b)[Math.floor(values.length /
  * are not oscillator measurements. A bounded robust fit tolerates device jitter.
  */
 export class AudioDeviceClock {
-  constructor() { this.generation = 0; this.reset('startup'); }
-  reset(reason) {
+  constructor() { this.generation = 0; this.fitDiagnosticsEnabled = false; this.reset('startup'); }
+  debug(enabled) { this.fitDiagnosticsEnabled = enabled === true; this.fitDispersionMs = null; }
+  reset(reason, { preserveRate = false } = {}) {
+    const appliedRate = preserveRate && Number.isFinite(this.rate)
+      && this.rate >= 1 - MAX_RATE_ERROR && this.rate <= 1 + MAX_RATE_ERROR ? this.rate : 1;
     this.points = []; this.last = null; this.lastFit = -Infinity; this.lastAdvance = null;
-    this.rate = this.targetRate = 1; this.confidence = 0; this.uncertaintyMs = null;
-    this.acceptedFitAt = null; this.fitRejected = 0; this.fitStatus = 'acquiring'; this.fitRejectReason = 'none';
+    // A changed output-pipeline delay invalidates timestamp-fit evidence, not
+    // the ongoing sample oscillator. Hold only the already applied correction;
+    // an unachieved old target cannot keep steering a newly acquiring fit.
+    this.rate = this.targetRate = appliedRate; this.confidence = 0; this.uncertaintyMs = null;
+    this.acceptedFitAt = null; this.fitRejected = 0; this.fitStatus = 'acquiring'; this.fitRejectReason = 'none'; this.fitDispersionMs = null;
     this.generation++; this.reason = reason;
   }
   advance(at) {
@@ -39,6 +45,7 @@ export class AudioDeviceClock {
     while (this.points.length > MAX_POINTS || performanceTimeMs - this.points[0].performanceTimeMs > HISTORY_MS) this.points.shift();
     if (performanceTimeMs - this.lastFit < 500) return;
     this.lastFit = performanceTimeMs;
+    this.fitDispersionMs = null;
     const points = this.points, origin = points[0], span = performanceTimeMs - origin.performanceTimeMs;
     if (span < MIN_SPAN_MS || points.length < 20) return;
     const slopes = [];
@@ -50,6 +57,9 @@ export class AudioDeviceClock {
     const rate = median(slopes), residuals = points.map(p => p.contextTimeMs - origin.contextTimeMs
       - (p.performanceTimeMs - origin.performanceTimeMs) * rate);
     const center = median(residuals.slice()), dispersion = median(residuals.map(value => Math.abs(value - center)));
+    // The rejected attempt's noise is distinct from the accepted fit uncertainty
+    // used by playout. Debug starts without inventing a previous capture's MAD.
+    if (this.fitDiagnosticsEnabled) this.fitDispersionMs = dispersion;
     const outOfRange = rate < 1 - MAX_RATE_ERROR || rate > 1 + MAX_RATE_ERROR;
     if (outOfRange || dispersion > 3) {
       this.confidence = 0; this.fitRejected++;
@@ -67,6 +77,7 @@ export class AudioDeviceClock {
       reason: this.reason, points: this.points.length,
       ...(this.acceptedFitAt !== null && Number.isFinite(at) && at >= this.acceptedFitAt
         ? { acceptedFitAgeMs: at - this.acceptedFitAt } : {}),
+      ...(Number.isFinite(this.fitDispersionMs) ? { fitDispersionMs: this.fitDispersionMs } : {}),
       fitRejected: this.fitRejected, fitStatus: this.fitStatus, fitRejectReason: this.fitRejectReason };
   }
 }
