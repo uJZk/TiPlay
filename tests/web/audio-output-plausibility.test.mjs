@@ -7,16 +7,26 @@ import { createAudioOutputMapping } from '../../site/play/audio-output-clock.js'
 // introduced by converting a 10-second context cursor to/from seconds.
 const EPSILON_MS = 2 ** -20;
 function fixture() {
-  let at = 10000, timestamp = { contextTime: 9.8, performanceTime: 10000 };
-  const context = { state: 'running', sampleRate: 48000, currentTime: 10,
+  let at = 9900, timestamp = null;
+  const domain = { generation: 0, startFrame: 9900 * 48 };
+  const context = { state: 'running', sampleRate: 48000, currentTime: 9.9,
     baseLatency: .01, outputLatency: .19, getOutputTimestamp: () => timestamp };
   const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 0 });
+  const capture = () => {
+    const output = mapping.capture(context), token = mapping.takeRenderProbe();
+    if (token !== null) mapping.acknowledgeRenderProbe({ token, generation: domain.generation,
+      startFrame: domain.startFrame, endFrame: Math.ceil(context.currentTime * context.sampleRate) + 128 }, context);
+    return output;
+  };
+  // Learn the frame domain without accepting an earlier native phase anchor.
+  capture(); at = 10000; context.currentTime = 10; timestamp = { contextTime: 9.8, performanceTime: 10000 };
   return { mapping, context,
-    sample(time, rendered, pair) {
+    sample(time, rendered, pair, { sampleDomainJump = false } = {}) {
       at = time; context.currentTime = rendered / 1000; timestamp = pair;
-      return mapping.capture(context);
+      if (sampleDomainJump) { domain.generation++; domain.startFrame = Math.floor(rendered * 48); }
+      return capture();
     },
-    capture: () => mapping.capture(context),
+    capture,
   };
 }
 
@@ -61,7 +71,7 @@ test('render holdover accepts exactly ±40ms of continuity disagreement without 
     const before = h.mapping.deviceClock();
     const nativeGeneration = h.mapping.diagnostics().outputTimestampFitGeneration;
     // 100ms of wall time keeps the render cursor monotonic on both sides.
-    const output = h.sample(10100, 10100 + direction * magnitudeMs, null);
+    const output = h.sample(10100, 10100 + direction * magnitudeMs, null, { sampleDomainJump: true });
     if (magnitudeMs <= 40) {
       assert.equal(output?.outputMethod, 'timestamp-holdover');
       assert.equal(output.performanceTimeMs, 10000, 'holdover cannot refresh the trusted sample age');
@@ -70,11 +80,12 @@ test('render holdover accepts exactly ±40ms of continuity disagreement without 
       assert.equal(h.mapping.diagnostics().outputTimestampHoldoverAgeMs, 100);
     } else assert.equal(output, null, 'render continuity outside the bound cannot justify an old output mapping');
     assert.equal(h.mapping.deviceClock().generation, before.generation + 1, 'an out-of-rate render-coordinate step retires its own rate evidence');
-    assert.equal(h.mapping.deviceClock().points, 1);
+    assert.equal(h.mapping.deviceClock().points, 0, 'the cross-domain candidate cannot train the new rate fit');
     assert.equal(h.mapping.diagnostics().outputTimestampFitGeneration, nativeGeneration, 'render continuity cannot replace the native anchor or its fit');
     const restored = h.sample(10200, 10200 + direction * magnitudeMs,
       { contextTime: 10, performanceTime: 10200 });
     assert.equal(restored?.outputMethod, 'timestamp', 'a fresh coherent native sample restores measurement after holdover/rejection');
+    assert.equal(h.mapping.deviceClock().points, 1, 'a later same-domain worklet proof admits the new render point');
     assert.equal(h.mapping.diagnostics().outputTimestampFitGeneration, nativeGeneration);
   }
 });

@@ -49,6 +49,10 @@ timestamp does not establish speaker/panel timing.
 Resume device-clock, buffered-flush and voice-preparation/recovery fixes with independent waveform checks at
 [continuous-audio acceptance](docs/Testing.md#media-clock-and-continuous-audio-acceptance);
 [Todo](docs/Todo.md#browser-and-carplay-audio) retains physical clicks and separate URL-audio follow-up.
+The next requested audio experiment is the [Cloudflare Workers comparison](docs/Todo.md#cloudflare-workers-audio-comparison):
+current wasm2js versus genuine WASM, with direct bounded result uploads for Tesla.
+It has not started. Preserve the browser playback architecture; native WebRTC audio
+tracks remain a separate non-URL alternative, not an authorized migration in this task.
 
 ## Checks
 

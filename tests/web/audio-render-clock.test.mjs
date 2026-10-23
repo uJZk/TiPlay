@@ -3,9 +3,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAudioOutputMapping } from '../../site/play/audio-output-clock.js';
 
+function confirmRender(mapping, context, domain) {
+  const frame = Math.round(context.currentTime * context.sampleRate);
+  domain.startFrame ??= frame;
+  const token = mapping.takeRenderProbe();
+  if (token !== null) mapping.acknowledgeRenderProbe({ token, generation: domain.generation,
+    startFrame: domain.startFrame, endFrame: frame + (context.renderQuantumSize || 128) }, context);
+}
+
 function renderer({ rate = .986, quantumFrames = 128, pipeline = () => 200 } = {}) {
   const origin = 1700000000000;
-  let elapsed = 10000, native;
+  let elapsed = 10000, native, renderOffset = 0;
+  const domain = { generation: 0, startFrame: null };
   const mapping = createAudioOutputMapping({ now: () => origin + elapsed, timeOrigin: () => origin });
   const context = { state: 'running', sampleRate: 48000, renderQuantumSize: typeof quantumFrames === 'function' ? 128 : quantumFrames,
     currentTime: 0, baseLatency: .012, outputLatency: .188, getOutputTimestamp: () => native };
@@ -21,9 +30,18 @@ function renderer({ rate = .986, quantumFrames = 128, pipeline = () => 200 } = {
       context.currentTime = (Math.floor(counter(elapsed) / quantumMs) * quantumMs + renderStepMs) / 1000;
       return native;
     };
-    return mapping.capture(context);
+    const output = mapping.capture(context);
+    // The independently simulated hardware counter is continuous through rate
+    // changes and scheduling stalls. Only an actual coordinate offset changes
+    // the sample domain, just as the worklet's per-block frame guard does.
+    if (renderStepMs !== renderOffset) {
+      domain.generation++; domain.startFrame = Math.round(context.currentTime * context.sampleRate);
+      renderOffset = renderStepMs;
+    }
+    confirmRender(mapping, context, domain);
+    return output;
   }
-  return { mapping, context, sample, counter };
+  return { mapping, context, sample, counter, domain };
 }
 
 test('small recurring native pipeline steps cannot starve independently advancing render-rate evidence', () => {
@@ -92,13 +110,15 @@ test('a forward render-coordinate jump discards its fit without training the jum
   const h = renderer({ rate: .996 });
   for (let at = 10000; at <= 35000; at += 40) h.sample(at);
   const before = h.mapping.deviceClock();
-  h.sample(35040, { renderStepMs: 20 });
+  // Leave a full candidate interval so this sample is followed by the worklet
+  // barrier; a getter value alone cannot confirm a new sample domain.
+  h.sample(35120, { renderStepMs: 20 });
   const jumped = h.mapping.deviceClock();
-  assert.equal(jumped.reason, 'step');
+  assert.equal(jumped.reason, 'sample-domain');
   assert.equal(jumped.generation, before.generation + 1);
   assert.equal(jumped.rate, before.rate, 'a coordinate step does not prove a changed oscillator');
   assert.equal(jumped.source, 'native', 'independent current native evidence survives a render-coordinate jump');
-  for (let at = 35080; at <= 55000; at += 40) h.sample(at, { renderStepMs: 20 });
+  for (let at = 35160; at <= 55000; at += 40) h.sample(at, { renderStepMs: 20 });
   assert.ok(Math.abs(h.mapping.deviceClock().rate - .996) < .00006);
 });
 
@@ -136,7 +156,7 @@ test('a running render stall and catch-up cannot become long-lived oscillator ev
   }
   const fit = h.mapping.deviceClock();
   assert.equal(fit.fitStatus, 'tracking');
-  assert.ok(fit.generation > 2, 'the discontinuous render segment retires its own rate evidence');
+  assert.equal(h.domain.generation, 0, 'pausing and continuously catching up does not jump the sample counter');
 });
 
 test('native residual uncertainty converts from context milliseconds to performance milliseconds once', () => {
@@ -144,12 +164,14 @@ test('native residual uncertainty converts from context milliseconds to performa
     const rate = .988, origin = 1700000000000, pattern = [-1, -1, 0, 1, 1];
     let elapsed, pair;
     const mapping = createAudioOutputMapping({ now: () => origin + elapsed, timeOrigin: () => origin });
+    const domain = { generation: 0, startFrame: null };
     const context = { state: 'running', sampleRate: 48000, currentTime: 0,
       getOutputTimestamp: () => pair };
     for (let i = 0; i <= 400; i++) {
       elapsed = 10000 + i * 100; context.currentTime = elapsed * rate / 1000;
       pair = { contextTime: ((elapsed - 200) * rate + pattern[i % pattern.length]) / 1000, performanceTime: elapsed };
       mapping.capture(context);
+      confirmRender(mapping, context, domain);
     }
     const nativeU = mapping.diagnostics().outputTimestampFitUncertaintyMs;
     const applied = mapping.deviceClock().rate, previous = pair;
@@ -173,6 +195,7 @@ test('a truthful native clock owns the target while render-ahead progress change
     const origin = 1700000000000;
     let elapsed = 1000, pair;
     const mapping = createAudioOutputMapping({ now: () => origin + elapsed, timeOrigin: () => origin });
+    const domain = { generation: 0, startFrame: null };
     const context = { state: 'running', sampleRate: 48000, currentTime: 0,
       getOutputTimestamp: () => pair };
     for (elapsed = 1000; elapsed <= 39960; elapsed += 40) {
@@ -180,6 +203,7 @@ test('a truthful native clock owns the target while render-ahead progress change
       context.currentTime = (1000 + elapsed * .986) / 1000;
       pair = { contextTime: (elapsed + offset) / 1000, performanceTime: elapsed };
       mapping.capture(context);
+      confirmRender(mapping, context, domain);
     }
     elapsed -= 40;
     const fit = mapping.deviceClock(), offset = stepped ? Math.floor(elapsed / 1000) % 2 ? 5 : -5 : 0;

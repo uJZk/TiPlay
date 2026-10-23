@@ -23,6 +23,8 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.renderedFrames = 0; this.feedbackSequence = 0; this.lastFeedbackMs = -Infinity; this.suspended = false;
     this.renderQuantumMaxFrames = 0;
     this.nextContextFrame = null; this.outputUncertaintyMs = 0;
+    this.renderDomainGeneration = 0; this.renderDomainStartFrame = null; this.renderDomainNextFrame = null;
+    this.renderProbeToken = 0; this.pendingRenderProbe = null;
     this.deviceClock = { rate: 1 }; this.arrivalAnchor = null;
     this.retiring = [];
     this.retiredDeadlineReports = new Map();
@@ -37,6 +39,9 @@ class TiPlayAudio extends AudioWorkletProcessor {
         for (const [type, stream] of this.streams) for (const pcm of stream.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', type);
         this.streams.clear(); this.epochs.clear(); this.retiring = []; this.retiredDeadlineReports.clear(); this.runtime = null; this.disposed = true;
         return;
+      }
+      if (Number.isSafeInteger(data.renderProbe) && data.renderProbe > this.renderProbeToken) {
+        this.renderProbeToken = data.renderProbe; this.pendingRenderProbe = data.renderProbe;
       }
       if (data.calibration) {
         const { rate, outputRate, delayMs } = data.calibration;
@@ -335,8 +340,31 @@ class TiPlayAudio extends AudioWorkletProcessor {
     const blockFrames = output[0].length;
     this.renderQuantumMaxFrames = Math.max(this.renderQuantumMaxFrames, blockFrames);
     const hardwareFrame = typeof currentFrame === 'number' ? currentFrame : Math.round(currentTime * sampleRate);
-    if (this.nextContextFrame === null) this.nextContextFrame = hardwareFrame;
-    if (Math.abs(hardwareFrame - this.nextContextFrame) > blockFrames) {
+    const verifiedFrame = Number.isSafeInteger(blockFrames) && blockFrames > 0
+      && typeof currentFrame === 'number' && Number.isSafeInteger(currentFrame) && currentFrame >= 0
+      && Number.isSafeInteger(currentFrame + blockFrames);
+    if (verifiedFrame) {
+      if (this.renderDomainNextFrame !== null && hardwareFrame !== this.renderDomainNextFrame) {
+        this.renderDomainGeneration++; this.renderDomainStartFrame = hardwareFrame;
+      }
+      this.renderDomainStartFrame ??= hardwareFrame;
+      this.renderDomainNextFrame = hardwareFrame + blockFrames;
+    } else {
+      // An unavailable/unsafe counter cannot join two verified sample runs or
+      // certify a probe. Continue the audio cursor without inventing evidence.
+      if (this.renderDomainNextFrame !== null) this.renderDomainGeneration++;
+      this.renderDomainStartFrame = this.renderDomainNextFrame = null;
+    }
+    // The strict measurement fence above does not change the established DSP
+    // recovery allowance or restart a live filter for a one-block discrepancy.
+    const audioFrame = Number.isSafeInteger(hardwareFrame) && hardwareFrame >= 0
+      && Number.isSafeInteger(hardwareFrame + blockFrames);
+    if (this.nextContextFrame === null) {
+      const fallbackFrame = Math.round(currentTime * sampleRate);
+      this.nextContextFrame = audioFrame ? hardwareFrame
+        : Number.isSafeInteger(fallbackFrame) && fallbackFrame >= 0 ? fallbackFrame : 0;
+    }
+    if (audioFrame && Math.abs(hardwareFrame - this.nextContextFrame) > blockFrames) {
       for (const timeline of this.timelines.values()) if (timeline instanceof ContinuousAudio) timeline.recover('device-clock-jump');
       this.nextContextFrame = hardwareFrame;
     }
@@ -424,6 +452,11 @@ class TiPlayAudio extends AudioWorkletProcessor {
     if (continuous.length && (contextMs - this.lastFeedbackMs >= 40 || continuous.some(([, timeline]) => timeline.feedbackState !== timeline.state))) {
       this.feedback(contextMs + blockFrames * 1000 / sampleRate, blockFrames); this.lastFeedbackMs = contextMs;
       for (const [, timeline] of continuous) timeline.feedbackState = timeline.state;
+    }
+    if (verifiedFrame && this.pendingRenderProbe !== null) {
+      this.port.postMessage({ renderProbe: { token: this.pendingRenderProbe, generation: this.renderDomainGeneration,
+        startFrame: this.renderDomainStartFrame, endFrame: this.renderDomainNextFrame } });
+      this.pendingRenderProbe = null;
     }
     return true;
   }

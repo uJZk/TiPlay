@@ -13,6 +13,8 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
   timeOrigin = () => performance.timeOrigin } = {}) {
   let previousContext = null, previousTimestamp = null, pendingTimestamp = null, previousRendered = null, timestampNotBefore = -Infinity;
   let renderQuanta = new WeakMap();
+  let renderCaptureAt = null, renderCandidateAt = -Infinity, renderProbeSequence = 0, renderProbe = null, renderDomain = null;
+  let debugEnabled = false, renderProbeAccepted = 0, renderProbeRejected = 0, renderDomainChanges = 0, renderProbeReason = null;
   // One controller owns the applied slew. Fits may choose its target without
   // switching two already-applied rates or steering from an unachieved old fit.
   const deviceClock = new AudioDeviceClock();
@@ -30,8 +32,13 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
   const rejected = reason => { outputUnavailableCount++; outputUnavailableReason = reason;
     unavailableCounts[reason] = (unavailableCounts[reason] || 0) + 1; };
   const unavailable = reason => { diagnostics.outputState = reason; rejected(reason); return null; };
+  function clearRenderProbes() {
+    renderProbe = null; renderDomain = null; renderCandidateAt = -Infinity; renderCaptureAt = null;
+    // Tokens are never reused, including across reset in the same live node.
+  }
   function resetClocks(reason) {
     deviceClock.reset(reason); renderClock.reset(reason); timestampClock.reset(reason);
+    clearRenderProbes();
     selectedClock = renderClock; rateSource = 'holdover';
   }
   function selectRate(at) {
@@ -58,6 +65,67 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
     // so a smaller later block cannot understate quantization/holdover error.
     renderQuanta.set(context, Math.max(renderQuanta.get(context) || 0, frames));
   }
+  function probeRejected(reason) {
+    if (debugEnabled) { renderProbeRejected++; renderProbeReason = reason; }
+  }
+  function stageRenderObservation(context, rendered, at, quantumMs) {
+    if (renderCaptureAt !== null && (at < renderCaptureAt || at - renderCaptureAt > 1000)) {
+      const reason = at < renderCaptureAt ? 'backwards' : 'gap';
+      renderClock.reset(reason); deviceClock.reset(reason); clearRenderProbes();
+      selectedClock = renderClock; rateSource = 'holdover';
+    }
+    renderCaptureAt = at;
+    if (renderProbe && at - renderProbe.at > OUTPUT_REFERENCE_MAX_AGE_MS) {
+      renderProbe = null; probeRejected('expired');
+    }
+    // Keep one candidate at the existing fit-point cadence. A render block is
+    // not the resolution of the asynchronously published main-thread getter.
+    if (!renderProbe && at - renderCandidateAt >= 100 && Number.isFinite(context.sampleRate) && context.sampleRate > 0) {
+      renderCandidateAt = at;
+      renderProbe = { token: ++renderProbeSequence, context, contextTimeMs: rendered, at, quantumMs,
+        sampleRate: context.sampleRate, domain: renderDomain, sent: false };
+    }
+  }
+  function takeRenderProbe() {
+    if (!renderProbe || renderProbe.sent) return null;
+    renderProbe.sent = true;
+    return renderProbe.token;
+  }
+  function acknowledgeRenderProbe(proof, context) {
+    const candidate = renderProbe, at = now();
+    if (!candidate || !proof || proof.token !== candidate.token || !candidate.sent) return;
+    renderProbe = null;
+    if (context !== candidate.context || context !== previousContext || context?.state !== 'running'
+      || at < candidate.at || at - candidate.at > OUTPUT_REFERENCE_MAX_AGE_MS
+      || ![proof.generation, proof.startFrame, proof.endFrame].every(Number.isSafeInteger)
+      || proof.generation < 0 || proof.startFrame < 0 || proof.endFrame <= proof.startFrame) {
+      probeRejected('invalid-proof'); return;
+    }
+    if (renderDomain !== null && proof.generation < renderDomain) { probeRejected('old-domain'); return; }
+    if (proof.generation !== renderDomain) {
+      if (renderDomain !== null) {
+        renderClock.reset('sample-domain', { preserveRate: true });
+        // Retiring render evidence cannot leave its unachieved target steering
+        // the controller until another capture. Current native evidence may
+        // independently supply a target below.
+        if (rateSource === 'render') deviceClock.targetRate = deviceClock.rate;
+        if (debugEnabled) renderDomainChanges++;
+      }
+      renderDomain = proof.generation;
+      probeRejected('domain-acquiring'); selectRate(at); return;
+    }
+    const frame = candidate.contextTimeMs * candidate.sampleRate / 1000;
+    // Only representational roundoff is allowed at the run endpoints. A later
+    // frontier alone cannot grant an old candidate a different sample domain.
+    const tolerance = Number.EPSILON * Math.abs(frame) + Number.EPSILON * proof.endFrame;
+    if (candidate.domain !== proof.generation || frame < proof.startFrame - tolerance || frame > proof.endFrame + tolerance) {
+      probeRejected('outside-run'); return;
+    }
+    renderClock.observeRender(candidate.contextTimeMs, candidate.at, candidate.at, candidate.quantumMs, proof.generation);
+    if (debugEnabled) { renderProbeAccepted++; renderProbeReason = 'accepted'; }
+    // The original observation time determines freshness, never port arrival.
+    selectRate(at);
+  }
   function comparePairs(previous, next, quantumMs) {
     const elapsedMs = next.performanceTimeMs - previous.performanceTimeMs;
     const innovationMs = (next.contextTimeMs - previous.contextTimeMs) / deviceClock.rate - elapsedMs;
@@ -78,7 +146,7 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
   function capture(context) {
     const startedAt = now();
     if (!context || context.state !== 'running' || !Number.isFinite(context.currentTime)) {
-      if (previousTimestamp || renderClock.points.length) resetClocks('suspended');
+      if (previousTimestamp || renderClock.points.length || renderProbe || renderDomain !== null) resetClocks('suspended');
       previousTimestamp = pendingTimestamp = previousRendered = null;
       timestampNotBefore = startedAt;
       return unavailable('context-suspended');
@@ -110,15 +178,9 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
       resetClocks('context-backwards');
     }
     previousRendered = rendered;
-    // Sample after the native getter: its blocking time is not audio drift.
-    // This is an effective render rate, not a claim about a physical oscillator.
-    const renderGeneration = renderClock.generation;
-    renderClock.observe(rendered, at, at, quantumMs);
-    if (renderClock.generation !== renderGeneration && renderClock.reason === 'gap') {
-      // Preserve the established sampling-gap boundary. No observation proves
-      // that the old oscillator continued through an unobserved interval.
-      deviceClock.reset('gap'); selectedClock = renderClock; rateSource = 'holdover';
-    }
+    // A later process acknowledgement proves that the candidate stayed inside
+    // one continuous worklet frame domain. Port arrival is not a clock sample.
+    stageRenderObservation(context, rendered, at, quantumMs);
     selectRate(at);
     const holdover = (reason = null, candidate = null) => {
       if (reason) rejected(reason);
@@ -226,6 +288,7 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
           // A reference outage may hide a real rate change. Keep the baseline
           // gap reset; only native phase/offset steps retain render-rate evidence.
           deviceClock.reset('gap'); renderClock.reset('gap');
+          clearRenderProbes();
           selectedClock = renderClock; rateSource = 'holdover';
         }
         selectRate(at);
@@ -255,11 +318,22 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
   return {
     capture,
     observeRenderQuantum,
-    debug: enabled => { renderClock.debug(enabled); timestampClock.debug(enabled); },
+    takeRenderProbe,
+    acknowledgeRenderProbe,
+    debug: enabled => {
+      debugEnabled = enabled === true;
+      renderProbeAccepted = renderProbeRejected = renderDomainChanges = 0; renderProbeReason = null;
+      renderClock.debug(enabled); timestampClock.debug(enabled);
+    },
     deviceClock: () => rateSnapshot(now()),
     diagnostics: () => ({ ...diagnostics, outputFeedbackAgeMs: feedbackAt === null ? null : Math.max(0, now() - feedbackAt),
       outputTimestampFitUncertaintyMs: timestampClock.uncertaintyMs,
       outputTimestampFitStatus: timestampClock.fitStatus, outputTimestampFitGeneration: timestampClock.generation,
+      renderClockDomainGeneration: renderDomain,
+      renderClockProbeState: renderProbe ? renderProbe.sent ? 'waiting-ack' : 'pending' : 'idle',
+      ...(renderProbe ? { renderClockProbeAgeMs: Math.max(0, now() - renderProbe.at) } : {}),
+      renderClockProbeAccepted: renderProbeAccepted, renderClockProbeRejected: renderProbeRejected,
+      renderClockProbeReason: renderProbeReason, renderClockDomainChanges: renderDomainChanges,
       outputUnavailableCount, outputUnavailableReason, outputUnavailableCounts: { ...unavailableCounts } }),
     reference(feedback, context) {
       if (!feedback || typeof feedback !== 'object') return null;

@@ -3,6 +3,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAudioOutputMapping } from '../../site/play/audio-output-clock.js';
 
+function confirmRender(mapping, context, domain, blockFrames = 128) {
+  const frame = context.currentTime * context.sampleRate;
+  domain.startFrame ??= Math.floor(frame);
+  const token = mapping.takeRenderProbe();
+  if (token !== null) mapping.acknowledgeRenderProbe({ token, generation: domain.generation,
+    startFrame: domain.startFrame, endFrame: Math.ceil(frame) + blockFrames }, context);
+}
+
 function fallback() {
   const origin = 1000000;
   const mapping = createAudioOutputMapping({ now: () => origin + 10000, timeOrigin: () => origin });
@@ -69,6 +77,7 @@ test('actual quantum bounds prevent false native timestamp discontinuities and p
     const mapping = createAudioOutputMapping({ now: () => origin + at, timeOrigin: () => origin });
     const context = { state: 'running', sampleRate: 48000, currentTime: 10,
       getOutputTimestamp: () => pair };
+    const domain = { generation: 0, startFrame: null };
     mapping.observeRenderQuantum(context, frames);
     let accepted = 0, unavailable = 0;
     for (; at < 55000; at += 8) {
@@ -76,6 +85,7 @@ test('actual quantum bounds prevent false native timestamp discontinuities and p
       pair = { contextTime: Math.floor((at - 200) * rate / quantumMs) * quantumMs / 1000,
         performanceTime: at + .7 * Math.sin(at * .37) };
       if (mapping.capture(context)) accepted++; else unavailable++;
+      confirmRender(mapping, context, domain, frames);
     }
     const fit = mapping.deviceClock();
     assert.ok(accepted > .95 * (accepted + unavailable), `${frames} frames: spurious unavailable pairs ${unavailable}`);
@@ -86,14 +96,19 @@ test('actual quantum bounds prevent false native timestamp discontinuities and p
 
 test('larger observed quanta still reject a real contradictory native timestamp', () => {
   const origin = 1000000;
-  let at = 10000, offset = 0;
+  let at = 9900, offset = 0;
   const mapping = createAudioOutputMapping({ now: () => origin + at, timeOrigin: () => origin });
-  const context = { state: 'running', sampleRate: 48000, currentTime: 10,
-    getOutputTimestamp: () => ({ contextTime: (at - 200 + offset) / 1000, performanceTime: at }) };
+  const context = { state: 'running', sampleRate: 48000, currentTime: 9.9, getOutputTimestamp: () => null };
+  const domain = { generation: 0, startFrame: null };
   mapping.observeRenderQuantum(context, 256);
+  mapping.capture(context); confirmRender(mapping, context, domain, 256);
+  at = 10000; context.currentTime = 10;
+  context.getOutputTimestamp = () => ({ contextTime: (at - 200 + offset) / 1000, performanceTime: at });
   assert.equal(mapping.capture(context).outputMethod, 'timestamp');
+  confirmRender(mapping, context, domain, 256);
   at += 40; context.currentTime = at / 1000; offset = -38;
   assert.equal(mapping.capture(context), null);
+  confirmRender(mapping, context, domain, 256);
   assert.equal(mapping.diagnostics().outputUnavailableReason, 'timestamp-discontinuity');
   assert.equal(mapping.deviceClock().points, 1, 'a real phase contradiction still cannot train the fit');
 });

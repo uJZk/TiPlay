@@ -31,6 +31,7 @@ export class AudioDeviceClock {
     const appliedRate = preserveRate && Number.isFinite(this.rate)
       && this.rate >= 1 - MAX_RATE_ERROR && this.rate <= 1 + MAX_RATE_ERROR ? this.rate : 1;
     this.points = []; this.last = null; this.lastFit = -Infinity; this.lastAdvance = null;
+    this.renderDomainGeneration = null;
     // A changed output-pipeline delay invalidates timestamp-fit evidence, not
     // the ongoing sample oscillator. Hold only the already applied correction;
     // an unachieved old target cannot keep steering a newly acquiring fit.
@@ -45,15 +46,33 @@ export class AudioDeviceClock {
     }
     this.lastAdvance = at;
   }
+  /** Rate-only render observations, admitted after the worklet has confirmed
+   * their sample-domain generation. Main-thread currentTime getters can expose
+   * several continuously rendered blocks together, so one render block cannot
+   * bound the phase difference of two getter calls. The caller owns raw capture
+   * gaps/backwards checks; admission delay is not a new sampling gap.
+   */
+  observeRender(contextTimeMs, performanceTimeMs, at, quantizationMs, domainGeneration) {
+    if (![contextTimeMs, performanceTimeMs, at, quantizationMs].every(Number.isFinite)
+      || quantizationMs <= 0 || !Number.isSafeInteger(domainGeneration) || domainGeneration < 0) return;
+    if (this.renderDomainGeneration !== null) {
+      if (domainGeneration < this.renderDomainGeneration) return;
+      if (domainGeneration > this.renderDomainGeneration) this.reset('sample-domain', { preserveRate: true });
+    }
+    this.renderDomainGeneration = domainGeneration;
+    if (this.last && (contextTimeMs <= this.last.contextTimeMs || performanceTimeMs <= this.last.performanceTimeMs
+      || at < this.lastAdvance)) return;
+    this.record(contextTimeMs, performanceTimeMs, at, quantizationMs);
+  }
   observe(contextTimeMs, performanceTimeMs, at = performanceTimeMs, quantizationMs = 0) {
     if (![contextTimeMs, performanceTimeMs, at, quantizationMs].every(Number.isFinite) || quantizationMs < 0) return;
     const previous = this.last;
     const contextElapsed = previous && contextTimeMs - previous.contextTimeMs;
     const performanceElapsed = previous && performanceTimeMs - previous.performanceTimeMs;
     const quantized = quantizationMs > 0 || previous?.quantizationMs > 0;
-    // A render-cursor observation denotes an interval one known block wide.
-    // Progress outside both that interval and the permitted rate range is a
-    // coordinate jump, not an oscillator observation to train into the fit.
+    // Phase-bounded pairs use their explicit measurement interval. Main-thread
+    // render getters instead enter observeRender after the sample-domain fence;
+    // their batching cannot establish this short-pair phase bound.
     const stepped = previous && (quantized
       ? contextElapsed < performanceElapsed * (1 - MAX_RATE_ERROR) - quantizationMs
         || contextElapsed > performanceElapsed * (1 + MAX_RATE_ERROR) + (previous.quantizationMs || 0)
@@ -61,6 +80,9 @@ export class AudioDeviceClock {
     if (previous && (contextTimeMs < previous.contextTimeMs || performanceTimeMs < previous.performanceTimeMs)) this.reset('backwards');
     else if (previous && performanceElapsed > 1000) this.reset('gap');
     else if (stepped) this.reset('step', { preserveRate: quantized });
+    this.record(contextTimeMs, performanceTimeMs, at, quantizationMs);
+  }
+  record(contextTimeMs, performanceTimeMs, at, quantizationMs) {
     this.advance(at);
     if (this.last && (contextTimeMs <= this.last.contextTimeMs || performanceTimeMs <= this.last.performanceTimeMs)) return;
     this.last = { contextTimeMs, performanceTimeMs, ...(quantizationMs > 0 ? { quantizationMs } : {}) };

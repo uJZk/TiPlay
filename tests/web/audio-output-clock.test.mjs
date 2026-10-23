@@ -6,16 +6,33 @@ import { audibleTime, createAudioOutputMapping, createAudioReferenceTimeline, OU
 const feedback = (extra = {}) => ({ mode: 'carplay', type: 0, epoch: 1, generation: 1, sequence: 1,
   state: 'playing', sourceTimeMs: 400000, contextTimeMs: 10000, mediaRate: 1, filterDelayMs: 17, ...extra });
 
+function confirmRender(mapping, context, domain) {
+  const frame = context.currentTime * context.sampleRate;
+  domain.startFrame ??= Math.floor(frame);
+  const token = mapping.takeRenderProbe();
+  if (token !== null) mapping.acknowledgeRenderProbe({ token, generation: domain.generation,
+    startFrame: domain.startFrame, endFrame: Math.ceil(frame) + 128 }, context);
+}
+
 function nativeOutput({ rate = 1 } = {}) {
   const origin = 1000000;
-  let elapsed = 10000, timestamp;
+  let elapsed = 10000, timestamp, primed = false;
+  const domain = { generation: 0, startFrame: null };
   const mapping = createAudioOutputMapping({ now: () => origin + elapsed, timeOrigin: () => origin });
   const context = { state: 'running', currentTime: 10 * rate, sampleRate: 48000,
     baseLatency: .012, outputLatency: .188, getOutputTimestamp: () => timestamp };
   const sample = (at, { latencyMs = 200, contextOffsetMs = 0, pair } = {}) => {
+    if (!primed) {
+      // Establish only the worklet domain before the first native timestamp.
+      // Its first acknowledgement cannot itself train a render-rate point.
+      elapsed = at - 100; context.currentTime = elapsed * rate / 1000;
+      mapping.capture(context); confirmRender(mapping, context, domain); primed = true;
+    }
     elapsed = at; context.currentTime = at * rate / 1000;
     timestamp = pair ?? { contextTime: ((at - latencyMs) * rate + contextOffsetMs) / 1000, performanceTime: at };
-    return mapping.capture(context);
+    const output = mapping.capture(context);
+    confirmRender(mapping, context, domain);
+    return output;
   };
   return { mapping, context, sample, pair: () => timestamp };
 }
@@ -104,12 +121,15 @@ test('two fresh physical pairs reacquire an oscillator switch between opposite p
     const mapping = createAudioOutputMapping({ now: () => origin + at, timeOrigin: () => origin });
     const context = { state: 'running', currentTime: 0, sampleRate: 48000,
       getOutputTimestamp: () => timestamp };
+    const domain = { generation: 0, startFrame: null };
     const counter = time => time <= 60000 ? time * firstRate : 60000 * firstRate + (time - 60000) * nextRate;
     const sample = time => {
       at = time;
       context.currentTime = counter(at) / 1000;
       timestamp = { contextTime: counter(at - 200) / 1000, performanceTime: at };
-      return mapping.capture(context);
+      const output = mapping.capture(context);
+      confirmRender(mapping, context, domain);
+      return output;
     };
     for (let time = 1000; time <= 60000; time += 200) sample(time);
     const fitted = mapping.deviceClock();

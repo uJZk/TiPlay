@@ -4,7 +4,7 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v80';
+export const PAGE_VERSION = 'v81';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
@@ -60,6 +60,8 @@ const AUDIO_SOURCE_DETAIL = ['mode', 'reason', 'sourceClockPoints', 'sourceClock
   'sourceDeadlineReason', 'sourceRatePpm', 'sourceRateConfidence', 'phaseErrorMs', 'queueBytes'];
 const AUDIO_CLOCK_KEYS = ['deviceClockFitStatus', 'deviceClockFitRejectReason', 'deviceClockFitDispersionMs', 'deviceClockUncertaintyMs',
   'deviceClockSource',
+  'renderClockDomainGeneration', 'renderClockDomainChanges', 'renderClockProbeState', 'renderClockProbeAgeMs',
+  'renderClockProbeAccepted', 'renderClockProbeRejected', 'renderClockProbeReason',
   'outputTimestampFitUncertaintyMs', 'outputTimestampFitStatus', 'outputTimestampFitGeneration',
   'deviceClockRatePpm', 'deviceClockConfidence', 'deviceClockAcceptedFitAgeMs', 'deviceClockFitRejected', 'outputState', 'outputUnavailableReason',
   'outputTimestampAgeMs', 'outputTimestampCaptureMs', 'outputTimestampHoldoverAgeMs', 'outputFeedbackAgeMs',

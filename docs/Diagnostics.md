@@ -261,11 +261,8 @@ It requires neither WebAssembly nor JavaScript evaluation permissions. Worklet m
 loading and processor failures surface as audio errors; check processor errors,
 recovery counts and actual nonzero render samples when diagnosing silence.
 
-Current source repairs double-faded recovery tails and instantaneous media gain
-changes between 1 and 0.2. Shared mixing uses the existing 5 ms fade, including voice
-tails. Production-worklet/real-Soxr comparisons establish waveform defects, not their
-share of field clicks; recovery counts cannot identify either edge. URL audio uses a
-separate graph. See [verification](Testing.md#media-clock-and-continuous-audio-acceptance).
+Shared mixing repairs double-faded tails and abrupt ducking with the existing 5 ms
+fade. URL audio has a separate graph; see [waveform verification](Testing.md#media-clock-and-continuous-audio-acceptance).
 
 Device, browser/Android and source rates describe different mappings.
 `deviceClockSource` selects fresh accepted `native` output, then fresh accepted
@@ -287,6 +284,12 @@ uncertainty over the actual distance. Context replacement/suspend/backward movem
 resets the sample domain; confirmed observation gaps retain nominal-reset/reacquisition
 behavior. Native phase reacquisition still requires two
 advancing pairs and retains its freshness/holdover limits.
+Debug `renderClockDomainGeneration`/`renderClockDomainChanges` identify worklet-confirmed
+sample continuity. `renderClockProbeState`/`renderClockProbeAgeMs` show pending
+confirmation; `renderClockProbeAccepted`, `renderClockProbeRejected` and
+`renderClockProbeReason` distinguish admission, expiry, invalid/run-external proof
+and domain acquisition. Initial acquisition normally discards a candidate. Counters
+restart with Debug; unknown age stays absent. No per-quantum logging is added.
 Debug `contextObservedStateChanges`/`contextObservedNonRunningMs` retain observed
 transitions/non-running time between snapshots. Delayed/coalesced events may hide
 transitions; these counters cannot certify uninterrupted output.
@@ -318,11 +321,9 @@ Retired tails use the same deadline guard. Debug retains
 The bounded scalar slot identifies the old epoch; Debug/reset clears it and missing
 timing remains unknown. Rejection prevents expired sound, not a proven steady-click cause.
 
-The beta.12/v78 capture covers 255.671 seconds; exclude its retained 0.914-second
-beta.11 session and historical TXT lines. Same-identity sampled CarPlay media
-clock-step deltas are 188 over 730.046 seconds in beta.11 versus two over 55.019
-seconds here, excluding first-snapshot accumulated counts. Different source, touch,
-load and lifetimes prevent a controlled acoustic-improvement claim.
+Beta.12/v78 excludes retained beta.11 records and first-snapshot totals. Its two
+sampled CarPlay clock-step recoveries/55.019 seconds versus beta.11's 188/730.046
+seconds do not establish controlled acoustic improvement; sources and load differ.
 Mirror's application underrun counter rises 116→618; this counts render-quanta
 entering/reentering recovery, not 502 distinct pops. Its source sample coordinates
 remain continuous, but a same-source incoming gap is 260 ms and the corresponding

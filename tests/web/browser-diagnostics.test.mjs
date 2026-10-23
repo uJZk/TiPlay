@@ -243,6 +243,35 @@ test('unknown native phase noise is absent while its fit identity stays separate
   }
 });
 
+test('render proof evidence keeps its identity and bounded Debug budget', () => {
+  const proof = { renderClockDomainGeneration: 4, renderClockDomainChanges: 2,
+    renderClockProbeState: 'waiting-ack', renderClockProbeAgeMs: 123.4567894,
+    renderClockProbeAccepted: 55, renderClockProbeRejected: 3, renderClockProbeReason: 'expired' };
+  for (const controlMessageLimitBytes of [16 * 1024, 64 * 1024]) {
+    const debug = { ...Object.fromEntries(Array.from({ length: 700 }, (_, i) => [`optional${i}`, i])),
+      contextState: 'running', ...proof, deviceClockSource: 'native', outputTimestampFitGeneration: 5,
+      stream0: { epoch: 2, state: 'playing', lastRecoveryReason: 'clock-step' },
+      stream1: { epoch: 4, state: 'playing', lastRecoveryReason: 'none' } };
+    const page = { transport: { controlMessageLimitBytes }, audio: { debug } };
+    const [summary, detail] = browserDiagnosticEvents(page, false, true);
+    assert.ok(detail.v.omittedFields > 0);
+    assert.ok(Object.keys(detail.v).length <= 256);
+    const budget = Math.min(16 * 1024, Math.floor((controlMessageLimitBytes - (2048 - 24) * 3 - 4096) / 2));
+    assert.ok(Buffer.byteLength(JSON.stringify(detail.v)) <= budget);
+    for (const [key, value] of Object.entries(proof)) {
+      assert.equal(detail.v[key], typeof value === 'number' ? Math.round(value * 100) / 100 : value);
+      assert.equal(Object.hasOwn(summary.v, `audio.debug.${key}`), false);
+    }
+    assert.equal(detail.v.deviceClockSource, 'native');
+    assert.equal(detail.v.outputTimestampFitGeneration, 5);
+    assert.equal(browserDiagnosticEvents(page, false, false).length, 1);
+  }
+  for (const unknown of [null, undefined, NaN, Infinity, -Infinity]) {
+    const [, detail] = browserDiagnosticEvents({ audio: { debug: { renderClockProbeAgeMs: unknown } } }, false, true);
+    assert.equal(Object.hasOwn(detail.v, 'renderClockProbeAgeMs'), false);
+  }
+});
+
 test('retained source-deadline triggers precede optional fields fairly within the unchanged diagnostic budgets', () => {
   const fields = { lastSourceDeadlineDeltaUpperMs: 300.000001, lastSourceDeadlineUncertaintyMs: 8.164241,
     lastSourceDeadlineAgeMs: 12345.123457, lastSourceDeadlineLimitMs: 300 };

@@ -247,3 +247,69 @@ test('device-fit pairs include exactly 2 seconds and exclude just-shorter pairs'
     assert.equal(clock.targetRate, expected); assert.equal(snapshot.generation, 1);
   }
 });
+
+test('verified render observations acquire rate through repeated and irregularly batched getter updates', () => {
+  const origin = 1780000000000, quantum = 128 / 48;
+  for (const rate of [.98, .986, 1, 1.014, 1.02]) for (const batch of [1, 4, 8]) {
+    const clock = new AudioDeviceClock();
+    // Every internal render block still has 128 frames. Visibility of that
+    // counter on the main thread is independent of the internal block size.
+    for (let i = 0; i <= 6000; i++) {
+      const elapsed = i * 4 + (i % 11 === 0 ? 2 : 0);
+      const context = Math.floor((elapsed * rate + .5) / (batch * quantum)) * batch * quantum;
+      clock.observeRender(context, origin + elapsed, origin + elapsed, quantum, 0);
+    }
+    const fit = clock.snapshot(origin + 24000);
+    assert.equal(fit.generation, 1, `${rate}/${batch}: getter batching is not a domain step`);
+    assert.ok(clock.acceptedFitAt !== null, `${rate}/${batch}: a four-second window must become usable`);
+    assert.ok(Math.abs(clock.targetRate - rate) < .0005, `${rate}/${batch}: ${clock.targetRate}`);
+    assert.ok(fit.points <= 161);
+  }
+});
+
+test('a verified render-domain change retires offset evidence and preserves only the applied correction', () => {
+  const clock = new AudioDeviceClock(), origin = 1780000000000, quantum = 128 / 48;
+  for (let elapsed = 0; elapsed <= 12000; elapsed += 100)
+    clock.observeRender(elapsed * .986, origin + elapsed, origin + elapsed, quantum, 0);
+  const before = clock.snapshot(origin + 12000);
+  assert.equal(before.fitStatus, 'tracking'); assert.ok(clock.targetRate < clock.rate);
+  // The worklet independently detected a real 20ms currentFrame jump. It is a
+  // new sample domain, rather than an offset to train into the old rate fit.
+  clock.observeRender(12040 * .986 + 20, origin + 12040, origin + 12040, quantum, 1);
+  const reset = clock.snapshot(origin + 12040);
+  assert.equal(reset.generation, before.generation + 1); assert.equal(reset.reason, 'sample-domain');
+  assert.equal(reset.points, 1); assert.equal(reset.confidence, 0);
+  assert.equal(reset.acceptedFitAgeMs, undefined);
+  assert.equal(reset.rate, before.rate); assert.equal(clock.targetRate, before.rate);
+  const evidence = { ...reset };
+  clock.observeRender(100, origin + 12050, origin + 12050, quantum, 0);
+  assert.deepEqual(clock.snapshot(origin + 12040), evidence, 'a delayed old-domain acknowledgement cannot reinstate its fit');
+  for (let elapsed = 12140; elapsed <= 35040; elapsed += 100)
+    clock.observeRender(elapsed * .986 + 20, origin + elapsed, origin + elapsed, quantum, 1);
+  assert.ok(Math.abs(clock.targetRate - .986) < 1e-9);
+});
+
+test('render admission does not refresh held cursors or turn verification delay into a capture gap', () => {
+  const clock = new AudioDeviceClock(), origin = 1780000000000, quantum = 128 / 48;
+  for (let elapsed = 0; elapsed <= 6000; elapsed += 100)
+    clock.observeRender(elapsed, origin + elapsed, origin + elapsed, quantum, 2);
+  const before = clock.snapshot(origin + 6000), lastAdvance = clock.lastAdvance;
+  for (let elapsed = 6100; elapsed <= 7500; elapsed += 100)
+    clock.observeRender(6000, origin + elapsed, origin + elapsed, quantum, 2);
+  assert.equal(clock.generation, before.generation); assert.equal(clock.lastAdvance, lastAdvance);
+  assert.equal(clock.snapshot(origin + 7500).acceptedFitAgeMs, 1500, 'repeated getters do not renew accepted rate evidence');
+  clock.observeRender(7600, origin + 7600, origin + 7600, quantum, 2);
+  assert.equal(clock.generation, before.generation, 'the caller checks raw capture gaps independently of admission');
+  const current = clock.snapshot(origin + 7600);
+  clock.observeRender(7500, origin + 7500, origin + 7500, quantum, 2);
+  assert.deepEqual(clock.snapshot(origin + 7600), current, 'out-of-order acknowledgement cannot move slew or fit time backwards');
+  clock.reset('gap');
+  assert.equal(clock.rate, 1); assert.equal(clock.renderDomainGeneration, null);
+});
+
+test('verified render progress rounded at an epoch-sized performance coordinate is not a domain step', () => {
+  const clock = new AudioDeviceClock(), origin = 1780000000000, quantum = 128 / 48;
+  clock.observeRender(256 / 48000 * 1000, origin + 8 - .00001, origin + 8, quantum, 0);
+  const generation = clock.generation;
+  assert.equal(clock.generation, generation, 'a repeated performance coordinate cannot retire the confirmed sample domain');
+});

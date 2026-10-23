@@ -69,6 +69,9 @@ test('real PCM keeps a slow oscillator through small route steps, while real lar
         : { contextTime: 0, performanceTime: 0 };
     } };
   const processor = new Processor(), post = data => processor.port.onmessage({ data });
+  processor.port.postMessage = data => {
+    if (data.renderProbe) mapper.acknowledgeRenderProbe(data.renderProbe, context);
+  };
   const calibration = new SoxrRuntime().filterDelay(hz, hz);
   post({ calibration: { rate: hz, outputRate: hz, delayMs: calibration } });
   const clock = { version: 2, generation: 0, serverOriginMs: sourceBase, localOriginMs: 0,
@@ -92,7 +95,7 @@ test('real PCM keeps a slow oscillator through small route steps, while real lar
       }
       if (wall >= nextControl) {
         const mapping = mapper.capture(context), device = mapper.deviceClock();
-        post({ clock, deviceClock: device,
+        post({ clock, deviceClock: device, renderProbe: mapper.takeRenderProbe(),
           contextAnchor: mapping ? { contextTimeMs: mapping.contextTimeMs, localTimeMs: mapping.performanceTimeMs } : null,
           outputUncertaintyMs: mapping?.uncertaintyMs ?? null,
           plans: { audio: constantDelay(networkDelay), video: constantDelay(0) } });

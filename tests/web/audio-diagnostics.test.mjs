@@ -413,6 +413,56 @@ test('browser device MAD reaches Debug telemetry only after a fit in that captur
   }
 });
 
+test('Debug reports render proof state independently of a selected native fit', async () => {
+  const previousPerformance = Object.getOwnPropertyDescriptor(globalThis, 'performance');
+  let at = 0;
+  Object.defineProperty(globalThis, 'performance', { configurable: true, value: { now: () => at, timeOrigin: 0 } });
+  const h = browserHarness();
+  try {
+    await h.audio.activate(); await tick();
+    const context = h.contexts[0], installed = h.nodes[0];
+    context.getOutputTimestamp = () => ({ contextTime: (at - 200) / 1000, performanceTime: at });
+    h.audio.debug(true);
+    const sample = (value, generation = 0, offset = 0) => {
+      at = value; context.currentTime = (at + offset) / 1000; h.audio.clock(null);
+      const message = installed.messages.at(-1);
+      if (message.renderProbe) installed.port.onmessage({ data: { renderProbe: {
+        token: message.renderProbe, generation, startFrame: generation ? 10120 * 48 : 0,
+        endFrame: Math.round((at + offset) * 48) + 128,
+      } } });
+    };
+    for (let value = 1000; value <= 10000; value += 100) sample(value);
+    const before = h.audio.stats().debug;
+    assert.equal(before.deviceClockSource, 'native');
+    assert.equal(before.renderClockDomainGeneration, 0);
+    assert.ok(before.renderClockProbeAccepted > 20);
+    sample(10100, 1, 20);
+    const changed = h.audio.stats().debug;
+    assert.equal(changed.deviceClockSource, 'native');
+    assert.equal(changed.outputTimestampFitGeneration, before.outputTimestampFitGeneration);
+    assert.equal(changed.deviceClockGeneration, before.deviceClockGeneration + 1);
+    assert.equal(changed.deviceClockReason, 'sample-domain');
+    assert.equal(changed.renderClockDomainGeneration, 1);
+    assert.equal(changed.renderClockDomainChanges, 1);
+    assert.equal(changed.renderClockProbeReason, 'domain-acquiring');
+    sample(10200, 1, 20);
+    const retained = h.audio.stats();
+    assert.equal(retained.debug.renderClockProbeState, 'idle');
+    assert.equal(Object.hasOwn(retained.debug, 'renderClockProbeAgeMs'), false);
+    const [summary, detail] = browserDiagnosticEvents({ audio: retained }, false, true);
+    assert.equal(detail.v.renderClockDomainGeneration, 1);
+    assert.equal(detail.v.renderClockProbeReason, 'accepted');
+    assert.equal(Object.keys(summary.v).some(key => key.includes('renderClockProbe')), false);
+    h.audio.debug(false); h.audio.debug(true);
+    assert.equal(h.audio.stats().debug.renderClockProbeAccepted, 0);
+    assert.equal(h.audio.stats().debug.renderClockProbeRejected, 0);
+    h.audio.reset();
+    assert.equal(h.audio.stats().debug.renderClockDomainGeneration, null);
+  } finally {
+    h.done(); Object.defineProperty(globalThis, 'performance', previousPerformance);
+  }
+});
+
 test('processor failures recreate the node and stream with fresh credit, reject retired callbacks and stop after two retries', async () => {
   const h = browserHarness();
   try {

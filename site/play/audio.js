@@ -148,7 +148,9 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     if (!force && at - lastControlAt < 20) return;
     lastControlAt = at;
     const output = outputClock.capture(context);
+    const renderProbe = outputClock.takeRenderProbe();
     node.port.postMessage({ clock: relativeClock(),
+      ...(renderProbe === null ? {} : { renderProbe }),
       deviceClock: outputClock.deviceClock(),
       contextAnchor: output ? { contextTimeMs: output.contextTimeMs, localTimeMs: output.performanceTimeMs - performance.timeOrigin } : null,
       outputLatencyMs: output?.outputLatencyMs ?? null, outputUncertaintyMs: output?.uncertaintyMs ?? null,
@@ -219,6 +221,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       if (disposed || node !== installed) return;
       if (data.prepared === id) resolve();
       if (data.prepareError === id) reject(new Error(data.error || 'Audio processor preparation failed.'));
+      if (data.renderProbe) outputClock.acknowledgeRenderProbe(data.renderProbe, context);
       if (data.consumed && data.generation === playbackGeneration) {
         queuedBytes = Math.max(0, queuedBytes - data.consumed); capacity?.(); capacity = null;
       }

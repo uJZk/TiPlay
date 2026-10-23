@@ -481,6 +481,122 @@ byte-identical after normalizing only the three version-bearing JavaScript files
 the three shared diagnostic fixtures also use v80. Chromium checks pass again on
 the versioned source with all 61 runtime hashes unchanged.
 
+The next field capture binds beta.14/code56/v80 and covers only CarPlay, as
+confirmed by the user. Excluding old-session residue and first-snapshot totals,
+the new pure-media window has four clock-step recoveries over 55.007 seconds
+(4.36/minute), versus 38 over 129.983 seconds (17.54/minute) in beta.13. These are
+software recovery rates, not measured acoustic pop counts or a controlled trial:
+content, duration and effective context progress differ. No new renderer underrun,
+source-deadline rejection or clock-generation recovery occurs in that new window.
+Across the continuous 80.011-second context segment, rendered progress is 293.67 ms
+shorter than journal time; all observed state-change/non-running counters remain
+zero. API counters exclude observed pauses, not unreported internal scheduling.
+The render fit nevertheless resets 1,632 times, while native phase-fit resets
+increase by 13; none of the 17 snapshots selects the render fallback. Five-second
+snapshots cannot identify each reset's micro-sample trigger. Reference decoding
+of all configured media/voice payloads yields 4,216,896 finite source frames with
+continuous per-frame coordinates and no systematic packet-boundary edge. A
+cross-transport relay gap belongs to reconnect, not steady pure-media playback.
+This sample does not establish mirror/URL acoustic improvement.
+
+The actual worklet counter advances 3,826,176 frames/29,892 callbacks in the same
+80.011-second interval, or 79.712 seconds at 48 kHz. Its cursor advances identically;
+the main getter differs by only 5.33 ms of endpoint lag. Correcting known report
+receipt age still leaves about 276–283 ms, so main getter lag alone cannot explain
+the whole deficit. Unknown send/queue delays and process scheduling remain;
+these counters do not establish a physical DAC rate.
+
+An independent Chromium 151 experiment reproduces continuously processed 128-frame
+blocks while the main getter frequently advances by four blocks. The old short-pair
+gate resets 2,313 times; skipping repeated readings still resets 322 times and
+never forms a fit. The rate-only path therefore keeps the original long-window
+range/MAD gates and requires a worklet token acknowledgement before admitting a
+candidate. The process checks exact actual-frame continuity, including variable
+block sizes, before acknowledging its generation and run endpoints. Candidates
+retain their original capture time, must match the known generation/run, and use
+one bounded pending slot at the existing 100 ms fit-point cadence. Expired proofs
+retain the 750 ms freshness limit. Reset never reuses tokens; node/context identity
+retires old acknowledgements. A new domain discards its crossing candidate and
+immediately freezes an unachieved render target; independent fresh native evidence
+can still win. Raw capture gaps retain their existing reset boundary. The fence
+does not establish getter phase freshness or turn port arrival into a clock sample;
+native phase gates, latency-estimate uncertainty and the 300 ms source limit remain.
+The correction initially passed 841 browser tests; the final v81 source passes all
+847 tests and a separately run production-CSP Chromium 151 harness, with all 61
+runtime inputs unchanged during that run. The v81 site layout, public-tree scan
+and document word limits also pass. One simultaneous full-Node/browser
+attempt lost a valid timed reference; the separate quiet run passes. Load-dependent
+reference acquisition remains an acceptance item, without assigning that failure
+to a particular scheduling cause. Full Android CI remains skipped by user request;
+these JavaScript-only checks do not measure vehicle speaker output.
+
+The independent [ChatGPT clock test](https://ujzk.github.io/TiPlay/chatgpt/) runs
+90 seconds of baseline, bounded main-thread load and recovery. It records getter
+batching, actual worklet frame progress, causal probe intervals, state/visibility,
+timer precision and optional output statistics. Users can mark audible events and
+export local JSON; nothing is uploaded automatically. Paused/background intervals
+are segmented, and unknown timer precision or capped history downgrades conclusions.
+It imports no TiPlay playback runtime. Its synthetic tone/main-thread load cannot
+exclude codec, Soxr or video/GPU effects when a problem is absent. The published
+page-only v2 source is `957b67f5`, with 33 scoped checks, a 15-second browser
+workflow and independently decoded actual-screen QR verification. The unchanged
+tone generator retains the earlier complete 90-second runs. A large result card
+supports photographing the screen; bounded fragment-only QR summaries can be
+opened/saved on a phone without copying or downloading on Tesla. Summary export
+preserves selected spans, nulls, caps and omitted-mark counts; it excludes raw
+samples and does not upload a report. This page does not deploy the pending
+production-clock correction or identify a physical DAC rate. Use the same
+vehicle/output path for a field comparison.
+
+In the user's Tesla 48 kHz, 90-second standalone run, all three process-progress
+intervals include zero: baseline −49.47…23.43 ms, main-thread load −43.50…30.90 ms,
+and recovery −5.13…35.57 ms. Getter differences are −27.20/+4.97/−5.73 ms over
+approximately 30 seconds each; probe RTT P95 is 40.60/43.40/42.00 ms. The user
+heard no clicks, despite four baseline and two recovery frame-coordinate
+discontinuities. This does not reproduce a sustained deficit in the lightweight
+graph or establish those discontinuities as audible events. Frequent repeated
+readings and multi-block updates confirm the getter observation boundary on the
+vehicle. Production codec/Soxr/video workload is absent, so production-load
+scheduling and remaining reported clicks stay open. Tesla cannot reliably copy
+or export the raw file; the user transcribed the visible results.
+
+A subsequent 44.1 kHz standalone run includes three or four user-heard light
+clicks during main-thread load. Its baseline/load/recovery process intervals are
+34.28…40.28/−46.62…−16.52/−45.91…−8.01 ms; getter differences are
+48.71/6.18/−0.02 ms and frame-discontinuity counts 5/2/0. Unlike the previous
+48 kHz run, this reports a light sound in the independent browser/system output
+path. The user subsequently clarified that it is very slight and might differ
+from the original CarPlay clicks. Treat it as a separate unconfirmed symptom;
+it neither reproduces the original defect nor excludes TiPlay's codec/Soxr path.
+One run per rate does not establish a rate-specific cause. Scheduling, buffering
+and browser-internal rate conversion remain comparison hypotheses; these intervals
+describe recorded throughput with unknown timer-coarsening error, not DAC timing.
+
+The requested next [Cloudflare Workers audio comparison](Todo.md#cloudflare-workers-audio-comparison)
+has not started: no WASM comparison page, upload endpoint or vehicle comparison is
+implemented or deployed by this work. Current live CarPlay/mirror output already
+uses a persistent AudioWorklet, bounded PCM timelines, stateful wasm2js Soxr and
+explicit underrun recovery. Its sample continuity and clock observations still
+need physical acceptance. URL casting remains a separate BufferSource-node engine;
+page-side demux/PCM processing, tempo changes and rAF-driven scheduling depend on
+the main thread, while WebCodecs decoding is asynchronous browser work. Its 500 ms
+audio submission horizon is also limited by common A/V coverage. The present
+live-clock correction does not move that URL pipeline into a Worker or Worklet.
+
+The planned experiment must isolate the DSP backend rather than compare different
+playback designs. Use the same pinned algorithm and PCM, verify output accounting
+and quality, then cross or randomize backend order on the same device/route/rate
+and buffers through normal, interaction/load and recovery phases. Report audible
+marks separately from queue underruns, recovery actions and optional renderer/output
+statistics. Check WASM support, CSP and successful preinitialization; record the
+actual backend, including unsupported cases. Direct bounded uploads must expose
+success/failure and retain failed results for retry, without requiring Tesla JSON
+export. This isolates live Soxr DSP, not the separate URL BufferSource graph.
+No acoustic benefit or physical clock cause is established in advance;
+worker isolation, preallocation and WASM cannot guarantee OS scheduling deadlines.
+Native WebRTC audio for non-URL streams remains an alternative, not this round's
+implementation. The detailed pending protocol and collection limits stay in Todo.
+
 Immediate buffered flush has a separate captured before/fix regression: a new
 track anchor previously forwarded an old-origin packet first. Protocol reference
 checks establish the 23-bit sequence ring, excluded marker and first-retained
