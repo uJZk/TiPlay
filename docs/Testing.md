@@ -371,7 +371,7 @@ Turn it on again and verify normal system-controlled rotation.
 
 ## Media clock and continuous audio acceptance
 
-The current unpublished live-audio source corrects recovery-tail double fading and
+The beta.13/v79 live-audio source corrects recovery-tail double fading and
 instantaneous voice/media gain changes, independently reproduced with production
 code and real Soxr. Recovery resumes the already-faded amplitude; the shared mixer
 uses the existing 5 ms envelope across continuous, timestamped and compatibility
@@ -400,7 +400,7 @@ All 61 browser runtime hashes stayed unchanged through actual AudioWorklet,
 CarPlay/mirror output, suspend/resume and worker/main Canvas checks. Independent
 review accepted the corrected short-tail bounds; the earlier 771-test intermediate
 run is superseded. Full Android CI remains waived by the user. These changes are
-unpublished; [Build](Build.md#beta-release) still identifies the deployed release.
+published as beta.13/v79; [Build](Build.md#beta-release) identifies the verified artifacts and deployment.
 The beta.13/code55/v79 metadata preflight additionally passed 9 release-draft,
 2 root-site, 35 browser-diagnostic and 40 scoped native diagnostic/protocol cases
 across four classes. All 239 checked inputs remained byte-identical after version
