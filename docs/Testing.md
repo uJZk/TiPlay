@@ -177,7 +177,7 @@ The beta.11 capture confirms resource grants and peer control EOF; its missing s
 data boundaries prevent uniquely attributing the long return gap. Physical picture
 recovery and sound remain in Todo; published sources remain those in [Build](Build.md#beta-release).
 
-The field-follow-up source passed **737 browser tests**, **172 scoped Android tests
+The beta.12/v78 source passed **737 browser tests**, **172 scoped Android tests
 in 12 classes**, and the mobile debug build, including capture lock-wait/failed-append timing, retained deadline
 evidence, playback-generation rejection and fixed diagnostic schemas. Browser cases
 add exact 20/10/40 ms timestamp, 8/30 ms recovery and URL watermarks/lookahead/submission
