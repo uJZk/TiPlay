@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; media-src 'self' blob:; img-src 'self' data:; style-src 'self'; script-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>TiPlay · ChatGPT 音频时钟测试</title>
+<link rel="stylesheet" href="style.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<main>
+<p class="eyebrow">TiPlay / ChatGPT 测试页 · clock-lab-v1</p>
+<h1>音频时间，究竟慢在哪里？</h1>
+<p class="intro">用独立音频图对照浏览器读数、工作线程帧进度与主线程负载。不需要连接手机，也不使用 TiPlay 的播放或时钟代码。</p>
+<section class="card" aria-labelledby="setup-title">
+<h2 id="setup-title">开始一次对照</h2>
+<p>推荐保持页面在前台，完成 90 秒：正常 30 秒 → 主线程负载 30 秒 → 恢复 30 秒。测试音音量较低，可随时关闭。</p>
+<div class="settings">
+<label>时长<select id="duration"><option value="90">90 秒 · 推荐</option><option value="15">15 秒 · 快速检查</option></select></label>
+<label>上下文采样率<select id="rate"><option value="0">浏览器默认</option><option value="48000">请求 48 kHz</option><option value="44100">请求 44.1 kHz</option></select></label>
+<label class="check"><input id="tone" type="checkbox" checked> 低音量测试音</label>
+</div>
+<div class="actions"><button id="start" class="primary">开始测试</button><button id="stop" disabled>提前停止</button><button id="mark" disabled>刚才有爆音</button><button id="export" disabled>导出 JSON</button></div>
+<p id="status" role="status" aria-live="polite">等待开始。数据仅留在此页面，导出由你手动操作。</p>
+<progress id="progress" max="90" value="0" aria-label="测试进度"></progress>
+<div class="metrics"><div><span>当前阶段</span><strong id="phase">—</strong></div><div><span>已运行</span><strong id="elapsed">0.0 秒</strong></div><div><span>实际采样率</span><strong id="actual-rate">—</strong></div><div><span>工作线程量子</span><strong id="quantum">—</strong></div></div>
+</section>
+<section class="card" aria-labelledby="result-title"><h2 id="result-title">结果与证据边界</h2><div id="results"><p>完成后显示分阶段结果。每次开始会替换上一次结果；先导出需要保留的数据。</p></div></section>
+<details class="card"><summary>具体测什么？</summary>
+<ul>
+<li>每 4 ms 请求读取主线程 <code>currentTime</code>，同时记录实际间隔，核对批量推进与重复读数。</li>
+<li>工作线程累计真实处理帧数，并检查每次 <code>currentFrame</code> 是否连续。低频往返探针给处理时刻建立「发出—收到」区间，不把消息到达时刻当成音频处理时刻。</li>
+<li>中间阶段每个动画帧执行约 6 ms 主线程计算，记录实际开销。它用于主线程负载对照，不能代表所有视频、GPU 或系统负载。</li>
+<li>顺带核对 <code>performance</code> 与系统日期计时、epoch 浮点舍入、上下文状态、原生输出时间戳、报告的延迟及可用的 underrun 计数。后台和暂停区间分别标记。</li>
+</ul>
+<p>本页能测浏览器音频图的有效进度，不能单独确认物理晶振、扬声器速度或声学爆音原因。采样率选项是上下文请求，不是物理 DAC 采样率证明。短测试和过大的探针延迟会降低结论强度。</p>
+<p>没有网络上传、麦克风录音或私人媒体读取。导出包含浏览器版本、计时和测试记录。</p>
+</details>
+<footer><a href="../">返回 TiPlay</a><a href="https://github.com/uJZk/TiPlay/releases">下载</a></footer>
+</main>
+</body>
+</html>
