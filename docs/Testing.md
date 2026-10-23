@@ -544,8 +544,9 @@ tone generator retains the earlier complete 90-second runs. A large result card
 supports photographing the screen; bounded fragment-only QR summaries can be
 opened/saved on a phone without copying or downloading on Tesla. Summary export
 preserves selected spans, nulls, caps and omitted-mark counts; it excludes raw
-samples and does not upload a report. This page does not deploy the pending
-production-clock correction or identify a physical DAC rate. Use the same
+samples and does not upload a report. That page-only publication did not include
+the production-clock correction, deployed separately as v81; neither establishes
+a physical DAC rate. Use the same
 vehicle/output path for a field comparison.
 
 In the user's Tesla 48 kHz, 90-second standalone run, all three process-progress

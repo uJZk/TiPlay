@@ -11,9 +11,9 @@ The Android/browser product version comes from `tiplayVersionName` and
 prerelease is **0.2.20-beta.14** (code **56**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v80** with WebRTC DataChannel as the formal live-media path.
-The signed beta.14 APK and deployed v80 page use the same verified build commit below;
-subsequent documentation commits do not change the artifacts or tag. Software checks
+the deployed page uses **v81** with WebRTC DataChannel as the formal live-media path.
+The signed beta.14 APK retains its original build commit and release artifacts;
+the newer browser-only deployment is recorded below. Software checks
 are in [Testing](Testing.md#webrtc-integrated-acceptance).
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
 independent `/webrtc/` subsite without an alias or redirect; the APK defaults to the
@@ -106,11 +106,41 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
+## Current browser deployment
+
+The formal root webpage **v81** comes from
+`eeb6e90785c0826bc477970d2dc134524f818723`. Its
+[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39988197842)
+completed successfully. This browser-only update preserves APK
+**0.2.20-beta.14/code56**, its tag and all release assets.
+
+The live-audio correction prevents batched main-thread audio-clock readings from
+resetting rate history. Render-fit candidates require a Worklet-confirmed sample
+domain and retain their original observation time. Native phase checks, DSP
+recovery thresholds, buffering and the 300 ms source deadline remain unchanged.
+All **847** browser tests and the independently run production-CSP Chromium 151
+check pass; all **61** runtime inputs remain unchanged during that run. Site
+assembly, two layout tests and the public-tree scan pass. Full Android CI remains
+skipped by user instruction; no Android implementation or APK rebuild is included.
+
+Independent public verification completed at **2026-10-23 16:39:51 UTC**:
+all **149** files match the committed build, **106** cache entries exist,
+**11** ChatGPT v2 files retain their prior bytes, all **8** language download
+pages use the Releases index, and **10** removed-path checks return direct 404.
+The verification covers **169** URLs; the Pages job completed at **16:36:57 UTC**.
+
+The independent ChatGPT diagnostic page remains v2. The requested
+[Cloudflare Workers WASM comparison](Todo.md#cloudflare-workers-audio-comparison)
+with bounded result uploads has not started and is the next-session task.
+Remaining audible clicks and effective render-progress deficits still require
+vehicle evidence; this deployment does not establish their resolution.
+
 ## Beta release
 
 Published [TiPlay 0.2.20-beta.14](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.14),
-code **56**, is paired with webpage **v80**. Independent artifact and deployment
-checks passed. Every language's download entry opens the
+code **56**, was originally published with webpage **v80**. The latest browser-only
+deployment is recorded above. Independent artifact and original deployment checks
+passed. Every language's download entry opens the
 version-independent [GitHub Releases index](https://github.com/uJZk/TiPlay/releases).
 
 This release preserves independent render-rate fitting when native output-phase

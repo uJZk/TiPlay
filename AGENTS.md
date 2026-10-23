@@ -43,7 +43,7 @@ browser-render underruns, retained deadline triggers, capture overhead, resource
 and sparse screen-loan ownership/data/close evidence. The
 [AirPlay coexistence contract](docs/AirPlay.md#carplay-coexistence) covers ownership
 confirmation and reentrant borrow/return; [Testing](docs/Testing.md#webrtc-integrated-acceptance) records software verification,
-and [Build](docs/Build.md#beta-release) for the actual published APK/page source. Keep
+and [Build](docs/Build.md#current-browser-deployment) for the current webpage source and APK record. Keep
 unrun boundaries, proved behavior and vehicle tuning separate; an observed software
 timestamp does not establish speaker/panel timing.
 Resume device-clock, buffered-flush and voice-preparation/recovery fixes with independent waveform checks at
