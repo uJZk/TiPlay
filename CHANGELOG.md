@@ -4,6 +4,22 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.14
+
+Version code 56 and browser cache/diagnostic revision v80. Publication evidence is
+recorded in [Build](docs/Build.md#beta-release).
+
+- Keep independent render-rate evidence through native output-phase resets and apply one bounded rate controller. Preserve native phase validation, full projection uncertainty and actual source deadlines.
+- Recover voice playback from real contiguous PCM with retained Soxr preparation. Fix permanent waiting after clock/deadline changes, short utterances on large render blocks, conflicting delay plans and first presentation-anchor promotion; reuse source conversion, phase checks and mixing.
+- Order immediate buffered AirPlay flushes by the protocol's 23-bit sequence, retain the boundary packet and isolate old anchors. Preserve future-track prefetch; explicitly reject unsupported deferred range flushes without changing playback.
+- Record bounded native/render fit selection, observed AudioContext pauses and voice preparation state/readiness. These software checks do not establish the cause of the captured 1.8-second clock-progress difference or prove all vehicle clicks are eliminated.
+
+Verification: 814 browser tests, 69 scoped Android tests, mobile debug assembly,
+production-CSP Chromium media-clock checks, 76 independent voice waveform scenarios,
+26 lifecycle/short-utterance scenarios and seven media oracles. Full Android CI
+remains skipped at the user's request; signed release and deployment checks follow
+the existing delivery workflow.
+
 ## 0.2.20-beta.8
 
 Version code 50 and browser cache/diagnostic revision v74. Signed artifacts and

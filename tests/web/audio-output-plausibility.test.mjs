@@ -34,7 +34,8 @@ test('native performance timestamps accept exactly 20ms of future lead and rejec
       assert.equal(h.mapping.deviceClock().points, 1);
     } else {
       assert.equal(output, null);
-      assert.equal(h.mapping.deviceClock().points, 0, 'an implausible pair cannot train the oscillator');
+      assert.equal(h.mapping.deviceClock().points, 1, 'a separately valid render cursor remains observable');
+      assert.equal(h.mapping.deviceClock().source, 'holdover', 'the rejected native pair cannot establish a selected rate');
     }
   }
 });
@@ -48,7 +49,8 @@ test('native context timestamps accept exactly 10ms ahead of the rendered cursor
       assert.ok(Math.abs(output.contextTimeMs - 10000 - leadMs) < 1e-9);
     } else {
       assert.equal(output, null);
-      assert.equal(h.mapping.deviceClock().points, 0);
+      assert.equal(h.mapping.deviceClock().points, 1, 'native phase rejection does not discard a valid render observation');
+      assert.equal(h.mapping.deviceClock().source, 'holdover');
     }
   }
 });
@@ -57,6 +59,7 @@ test('render holdover accepts exactly ±40ms of continuity disagreement without 
   for (const direction of [-1, 1]) for (const magnitudeMs of [40 - EPSILON_MS, 40, 40 + EPSILON_MS]) {
     const h = fixture(); assert.equal(h.capture()?.outputMethod, 'timestamp');
     const before = h.mapping.deviceClock();
+    const nativeGeneration = h.mapping.diagnostics().outputTimestampFitGeneration;
     // 100ms of wall time keeps the render cursor monotonic on both sides.
     const output = h.sample(10100, 10100 + direction * magnitudeMs, null);
     if (magnitudeMs <= 40) {
@@ -66,12 +69,13 @@ test('render holdover accepts exactly ±40ms of continuity disagreement without 
       assert.ok(output.uncertaintyMs > 0);
       assert.equal(h.mapping.diagnostics().outputTimestampHoldoverAgeMs, 100);
     } else assert.equal(output, null, 'render continuity outside the bound cannot justify an old output mapping');
-    assert.equal(h.mapping.deviceClock().generation, before.generation);
-    assert.equal(h.mapping.deviceClock().points, before.points, 'render continuity alone is not an oscillator observation');
+    assert.equal(h.mapping.deviceClock().generation, before.generation + 1, 'an out-of-rate render-coordinate step retires its own rate evidence');
+    assert.equal(h.mapping.deviceClock().points, 1);
+    assert.equal(h.mapping.diagnostics().outputTimestampFitGeneration, nativeGeneration, 'render continuity cannot replace the native anchor or its fit');
     const restored = h.sample(10200, 10200 + direction * magnitudeMs,
       { contextTime: 10, performanceTime: 10200 });
     assert.equal(restored?.outputMethod, 'timestamp', 'a fresh coherent native sample restores measurement after holdover/rejection');
-    assert.equal(h.mapping.deviceClock().generation, before.generation);
+    assert.equal(h.mapping.diagnostics().outputTimestampFitGeneration, nativeGeneration);
   }
 });
 

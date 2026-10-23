@@ -1,21 +1,33 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 import { MAX_AUDIO_AHEAD_BYTES, MAX_PCM_PACKET_MS, MAX_TIMELINE_PACKETS } from './audio-buffer-policy.js';
 import { AudioSourceClock } from './audio-source-clock.js';
+import { rateProjectionUncertainty } from './audio-device-clock.js';
 
 export const AUDIO_RECOVERY_ERROR_MS = 30;
 export const AUDIO_FADE_MS = 5;
 const PHASE_CORRECTION_LIMIT = 0.001;
 
+/** Add rate uncertainty only over the actual PCM/tail contribution. A block's
+ * zero padding is neither emitted source content nor a longer output interval.
+ */
+export function sourceDeadlineUncertainty(deadline, localSpan = 0) {
+  if (!Number.isFinite(deadline?.projectionContextMs) || !Number.isFinite(deadline?.projectionRate)) return deadline?.uncertaintyMs;
+  const start = deadline.projectionContextMs, end = start + localSpan * deadline.projectionRate;
+  return deadline.uncertaintyMs + rateProjectionUncertainty(Math.max(Math.abs(start), Math.abs(end)), deadline.projectionRate);
+}
+
 /** Shared source-age calculation for current output and scalar retired tails. */
 export function sourceDeadlineAt(deadline, clock, firstSourceMs, localSpan, sourceSpan, result) {
   result.sourceDeadlineState = 'unknown'; result.sourceDeltaMs = result.sourceDeltaUpperMs = null;
+  result.sourceDeadlineUncertaintyMs = null;
   result.sourceDeadlineReason = deadline?.unknownReason || 'no-output';
   if (deadline && clock && Number.isFinite(firstSourceMs) && Number.isFinite(deadline.outputAt)
     && Number.isFinite(clock.localOriginMs) && Number.isFinite(clock.serverOriginMs)
     && Number.isFinite(clock.rate) && clock.rate > 0) {
     const mappedSource = clock.localOriginMs + (firstSourceMs - clock.serverOriginMs) * clock.rate;
     result.sourceDeltaMs = deadline.outputAt - mappedSource;
-    result.sourceDeltaUpperMs = result.sourceDeltaMs + Math.max(0, localSpan - sourceSpan) + deadline.uncertaintyMs;
+    result.sourceDeadlineUncertaintyMs = sourceDeadlineUncertainty(deadline, localSpan);
+    result.sourceDeltaUpperMs = result.sourceDeltaMs + Math.max(0, localSpan - sourceSpan) + result.sourceDeadlineUncertaintyMs;
     result.sourceDeadlineState = result.sourceDeltaUpperMs <= deadline.limitMs ? 'within-bound' : 'violated';
     result.sourceDeadlineReason = result.sourceDeadlineState === 'violated' ? 'source-deadline' : null;
   }
@@ -45,8 +57,12 @@ export class ContinuousAudio {
     this.lastRecoveryReason = null; this.recoveryCounts = {};
     this.lastClockStep = null; this.lastSourceDeadline = null;
     this.sourceDeadlineState = 'unknown'; this.sourceDeltaMs = null; this.sourceDeltaUpperMs = null;
+    this.sourceDeadlineUncertaintyMs = null;
     this.sourceDeadlineReason = 'no-output';
     this.sourceDeadlineRejectedFrames = 0;
+    this.hasEmitted = false; this.voicePreparation = null;
+    this.voicePreparationState = 'idle'; this.voicePreparedFrames = this.voiceRequiredFrames = this.voiceWaitMs = 0;
+    this.voicePreparationResult = { targetMs: null, waiting: true, state: 'idle' };
   }
   debug(enabled) {
     this.counters = enabled ? { capacityPackets: 0, latePackets: 0, duplicatePackets: 0, playedPackets: 0, resetPackets: 0, invalidPackets: 0, rebufferCount: 0 } : null;
@@ -63,6 +79,7 @@ export class ContinuousAudio {
     for (const packet of this.queue) this.retire(packet, 'reset');
     this.queue = []; this.backend?.dispose(); this.backend = null; this.state = 'ended'; this.lastContextTimeMs = null;
     this.lastSourceMs = this.recoverySourceMs = this.deadlineSourceMs = null;
+    this.voicePreparation = null; this.voicePreparationState = 'idle';
   }
   synchronize(data) {
     if (this.synchronized || !Number.isFinite(data.presentationMs) || this.sourceAnchorMs === null
@@ -151,11 +168,17 @@ export class ContinuousAudio {
     return copied;
   }
   recover(reason) {
+    if (!this.voicePreparation || this.voicePreparation.admitted) {
+      this.voiceWaitStartedAt = undefined; this.voiceWaitLastContextMs = undefined; this.voiceWaitElapsedMs = 0;
+      this.voiceCandidateFloorFrame = undefined;
+      this.voiceFreshnessFrames = 0;
+    }
     if (this.backend) {
       this.recoveryTail.set(this.last); this.recoveryRemaining = this.fadeFrames;
       this.recoverySourceMs = this.lastSourceMs;
     }
     this.backend?.dispose(); this.backend = null; this.state = 'rebuffering'; this.reason = reason;
+    this.voicePreparation = null; this.voicePreparedFrames = 0;
     this.lastRecoveryReason = reason; this.recoveryCounts[reason] = (this.recoveryCounts[reason] || 0) + 1;
     this.gain = Math.min(1, this.gain); this.missingSince = null;
     if (this.counters) this.counters.rebufferCount++;
@@ -164,46 +187,302 @@ export class ContinuousAudio {
     if (!this.queue.length) return false;
     if (Number.isFinite(this.rawCursorMs) && targetMs < this.rawCursorMs) return false;
     const first = this.queue[0], tail = this.queue.at(-1);
-    const sourceRate = this.sourceClock.rate;
-    let frame = Number.isFinite(this.rawCursorMs)
-      ? Math.ceil(this.sourceFrame + (targetMs + this.filterDelayMs - this.rawCursorMs) * this.rate / 1000 * sourceRate)
-      : Math.ceil((targetMs + this.filterDelayMs - this.sourceAnchorMs) * this.rate / 1000);
+    let frame = this.frameAtRaw(targetMs);
     if (frame < first.first) return false;
     frame = Math.max(frame, first.first);
     if (frame >= tail.end || !this.read(frame, Math.ceil(this.outputRate * 0.01 * this.rate / this.outputRate))) return false;
     this.backend = this.runtime.create(this.rate, this.outputRate, this.channels);
     this.slewRatio = this.rate / this.outputRate; this.backend.setRatio(this.slewRatio, 0);
-    const rawStart = Number.isFinite(this.rawCursorMs)
-      ? this.rawCursorMs + (frame - this.sourceFrame) * 1000 / this.rate / sourceRate - this.filterDelayMs
-      : this.sourceAnchorMs + frame * 1000 / this.rate - this.filterDelayMs;
+    const rawStart = this.rawAtFrame(frame);
     this.inputFrame = frame; this.sourceFrame = frame; this.rawCursorMs = rawStart;
     this.clockGeneration = clockGeneration; this.state = 'playing'; this.reason = null; this.gain = 0;
     return true;
+  }
+  /** The raw media coordinate of an integer input frame in the current signal.
+   * Keep this inverse beside start(): a recovery must never replay its cursor.
+   */
+  rawAtFrame(frame) {
+    return Number.isFinite(this.rawCursorMs)
+      ? this.rawCursorMs + (frame - this.sourceFrame) * 1000 / this.rate / this.sourceClock.rate - this.filterDelayMs
+      : this.sourceAnchorMs + frame * 1000 / this.rate - this.filterDelayMs;
+  }
+  frameAtRaw(rawMs) {
+    return Number.isFinite(this.rawCursorMs)
+      ? Math.ceil(this.sourceFrame + (rawMs + this.filterDelayMs - this.rawCursorMs) * this.rate / 1000 * this.sourceClock.rate)
+      : Math.ceil((rawMs + this.filterDelayMs - this.sourceAnchorMs) * this.rate / 1000);
+  }
+  checkPhase(targetMs, contextMs, deviceRate, deadline) {
+    if (!Number.isFinite(targetMs) || !Number.isFinite(this.rawCursorMs)) return;
+    this.phaseErrorMs = targetMs - this.rawCursorMs;
+    if (Math.abs(this.phaseErrorMs) <= AUDIO_RECOVERY_ERROR_MS) return;
+    const deviceRatePpm = (deviceRate - 1) * 1e6, uncertaintyMs = sourceDeadlineUncertainty(deadline);
+    this.lastClockStep = {
+      phaseErrorMs: Number.isFinite(this.phaseErrorMs) ? this.phaseErrorMs : null,
+      deviceRatePpm: Number.isFinite(deviceRate) && deviceRate > 0 && Number.isFinite(deviceRatePpm) ? deviceRatePpm : null,
+      uncertaintyMs: Number.isFinite(uncertaintyMs) && uncertaintyMs >= 0 ? uncertaintyMs : null,
+      contextMs: Number.isFinite(contextMs) && contextMs >= 0 ? contextMs : null,
+    };
+    this.recover('clock-step');
+  }
+  voiceResult(targetMs) {
+    const result = this.voicePreparationResult;
+    result.targetMs = targetMs; result.waiting = !Number.isFinite(targetMs); result.state = this.voicePreparationState;
+    return result;
+  }
+  voicePlanDelay(minimumDelayMs, reserveMs, deadline, frames, deviceRate, clockRate) {
+    if (!Number.isFinite(deadline?.uncertaintyMs) || !Number.isFinite(deadline.limitMs)) return minimumDelayMs;
+    const span = frames * 1000 / this.outputRate / deviceRate;
+    const ratio = this.rate / this.outputRate * this.sourceClock.rate / clockRate / deviceRate;
+    const sourceSpan = frames * Math.min(this.rate / this.outputRate, ratio) * 1000 / this.rate / this.sourceClock.rate * clockRate;
+    return Math.min(minimumDelayMs, deadline.limitMs - reserveMs - sourceDeadlineUncertainty(deadline, span)
+      - Math.max(0, span - sourceSpan));
+  }
+  /** Prepare a voice signal transactionally. Input/filter progress may run
+   * ahead, but its audible source cursor commits only when render emits PCM.
+   * A finite callback budget is retained across quanta, including low-rate
+   * Soxr priming which needs more than sixteen calls for its first output.
+   */
+  prepareVoice({ contextMs, frames, clock, deviceRate = 1, deadline, outputAt = deadline?.outputAt,
+    minimumDelayMs, admissionReserveMs = 0, waitMs = 20 }) {
+    const validClock = clock && Number.isFinite(clock.localOriginMs) && Number.isFinite(clock.serverOriginMs)
+      && Number.isFinite(clock.rate) && clock.rate > 0;
+    const localMs = outputAt;
+    if (!validClock || !Number.isFinite(localMs) || !(frames > 0) || !(deviceRate > 0)) {
+      this.voicePreparationState = 'waiting-clock'; return this.voiceResult(null);
+    }
+    this.sourceClock.advance(contextMs);
+    // Arrival-anchored guidance may acquire a real presentation mapping while
+    // its filter is live. Adopt that same audible cursor without re-priming it.
+    if (this.backend && !this.voicePreparation && !Number.isFinite(this.networkDelayMs) && Number.isFinite(this.rawCursorMs)) {
+      this.networkDelayMs = localMs - (clock.localOriginMs + (this.rawCursorMs - clock.serverOriginMs) * clock.rate);
+      this.networkPlanTargetMs = minimumDelayMs;
+      if (this.clockGeneration === undefined) this.clockGeneration = clock.generation;
+    }
+    if (this.backend && clock.generation !== this.clockGeneration && clock.state !== 'stale') this.recover('clock-generation');
+    if (this.backend && Number.isFinite(this.networkPlanTargetMs)
+      && Math.abs(minimumDelayMs - this.networkPlanTargetMs) >= 8
+      && (!Number.isFinite(this.networkDelayMs) || Math.abs(this.voicePlanDelay(minimumDelayMs,
+        admissionReserveMs, deadline, frames, deviceRate, clock.rate) - this.networkDelayMs) >= 8)) this.recover('network-buffer');
+    if (this.backend && (!this.voicePreparation || this.voicePreparation.admitted)) {
+      const target = clock.serverOriginMs + (localMs - this.networkDelayMs - clock.localOriginMs) / clock.rate;
+      this.checkPhase(target, contextMs, deviceRate, deadline);
+      if (this.backend) { this.voicePreparationState = 'playing'; return this.voiceResult(target); }
+    }
+    const mapped = raw => clock.localOriginMs + (raw - clock.serverOriginMs) * clock.rate;
+    const rawTarget = delay => clock.serverOriginMs + (localMs - delay - clock.localOriginMs) / clock.rate;
+    this.networkPlanTargetMs = minimumDelayMs;
+    if (this.voiceWaitStartedAt === undefined && this.queue.length) {
+      this.voiceWaitStartedAt = contextMs; this.voiceWaitLastContextMs = contextMs; this.voiceWaitElapsedMs = 0;
+    }
+    if (Number.isFinite(this.voiceWaitLastContextMs)) {
+      this.voiceWaitElapsedMs += Math.max(0, contextMs - this.voiceWaitLastContextMs) / deviceRate;
+      this.voiceWaitLastContextMs = contextMs;
+    }
+    this.voiceWaitMs = this.voiceWaitElapsedMs || 0;
+    const sourceRate = this.sourceClock.rate;
+    const ratio = this.rate / this.outputRate * sourceRate / clock.rate / deviceRate;
+    const acceptable = (raw, contributionFrames) => {
+      const probe = {};
+      const span = contributionFrames * 1000 / this.outputRate / deviceRate;
+      sourceDeadlineAt(deadline && { ...deadline, limitMs: deadline.limitMs - admissionReserveMs }, clock, raw,
+        span, contributionFrames * Math.min(this.rate / this.outputRate, ratio) * 1000 / this.rate / sourceRate * clock.rate, probe);
+      return probe.sourceDeadlineState !== 'violated';
+    };
+    let preparation = this.voicePreparation;
+    if (preparation && (!acceptable(preparation.rawMs, Math.min(frames, preparation.prepared)) || preparation.generation !== clock.generation)) {
+      // Discard unpublished samples without advancing the audible frontier.
+      this.backend?.dispose(); this.backend = null; this.voicePreparation = preparation = null;
+      this.voicePreparedFrames = 0;
+    }
+    if (!preparation) {
+      let earliestRaw = Number.isFinite(this.rawCursorMs) ? this.rawCursorMs : -Infinity;
+      const contributionFrames = this.voiceFreshnessFrames || 0;
+      // The network plan is a preferred delay, bounded by the track's actual
+      // admission budget just as the ordinary renderer bounds its soft plan.
+      const latestRaw = rawTarget(this.voicePlanDelay(minimumDelayMs, admissionReserveMs,
+        deadline, contributionFrames, deviceRate, clock.rate));
+      const latestFrame = this.frameAtRaw(latestRaw);
+      const span = contributionFrames * 1000 / this.outputRate / deviceRate;
+      if (Number.isFinite(deadline?.uncertaintyMs) && Number.isFinite(deadline.limitMs)) {
+        const uncertainty = sourceDeadlineUncertainty(deadline, span);
+        const extra = Math.max(0, span - contributionFrames * Math.min(this.rate / this.outputRate, ratio) * 1000 / this.rate / sourceRate * clock.rate);
+        earliestRaw = Math.max(earliestRaw, clock.serverOriginMs
+          + (localMs + uncertainty + extra - deadline.limitMs + admissionReserveMs - clock.localOriginMs) / clock.rate);
+      }
+      let startFrame = null, runEnd = null, hasFreshCandidate = false;
+      for (let index = 0; index < this.queue.length;) {
+        const first = this.queue[index].first; let end = this.queue[index++].end;
+        while (index < this.queue.length && this.queue[index].first <= end) end = Math.max(end, this.queue[index++].end);
+        const frame = Math.max(first, this.voiceCandidateFloorFrame ?? first,
+          Number.isFinite(earliestRaw) ? this.frameAtRaw(earliestRaw) : first);
+        if (frame < end && acceptable(this.rawAtFrame(frame), contributionFrames)) hasFreshCandidate = true;
+        if (frame < end && frame <= latestFrame && acceptable(this.rawAtFrame(frame), contributionFrames)) {
+          startFrame = frame; runEnd = end; break;
+        }
+      }
+      if (startFrame === null) {
+        const expired = this.queue.length && !hasFreshCandidate;
+        this.voicePreparationState = expired ? 'waiting-deadline' : 'waiting-data';
+        this.state = expired ? 'infeasible' : 'priming'; this.reason = expired ? 'sender-deadline' : 'startup';
+        if (expired) this.senderCeilingViolations = (this.senderCeilingViolations || 0) + 1;
+        return this.voiceResult(null);
+      }
+      const rawMs = this.rawAtFrame(startFrame);
+      this.backend = this.runtime.create(this.rate, this.outputRate, this.channels);
+      this.backend.setRatio(this.rate / this.outputRate, 0);
+      preparation = this.voicePreparation = { generation: clock.generation, frame: startFrame, rawMs,
+        nextFrame: startFrame, nextRawMs: rawMs, ratio: this.rate / this.outputRate,
+        inputFrame: startFrame, runEnd, segments: [], prepared: 0, needInput: false, admitted: false };
+      this.clockGeneration = clock.generation;
+    }
+    this.voiceRequiredFrames = Math.max(frames, Math.ceil(waitMs * this.outputRate * deviceRate / 1000));
+    // Stage raw filter output, never a gain envelope or saved recovery tail.
+    // At most sixteen actual native calls belong to one worklet callback.
+    this.fillVoicePreparation(preparation, this.voiceRequiredFrames, ratio, sourceRate, contextMs);
+    this.voicePreparedFrames = preparation.prepared;
+    this.voiceFreshnessFrames = Math.min(frames, preparation.prepared);
+    if (!acceptable(preparation.rawMs, this.voiceFreshnessFrames)) {
+      this.backend.dispose(); this.backend = null; this.voicePreparation = null;
+      this.voicePreparedFrames = 0; this.voicePreparationState = 'waiting-deadline';
+      return this.voiceResult(null);
+    }
+    if (!preparation.prepared && preparation.stalled
+      && this.queue.some(packet => packet.first > preparation.inputFrame)) {
+      // A known source hole ends this contiguous signal. A later queued run
+      // must not remain blocked behind an unprimeable unpublished prefix.
+      this.voiceCandidateFloorFrame = preparation.runEnd;
+      this.backend.dispose(); this.backend = null; this.voicePreparation = null;
+      this.voicePreparationState = 'waiting-data'; return this.voiceResult(null);
+    }
+    // A finite short utterance cannot satisfy an arbitrary full-quantum PCM
+    // threshold. After the same wall-clock wait, real partial output may play;
+    // its unused block remainder follows the ordinary fade/underrun path.
+    if (this.voiceWaitMs < waitMs || preparation.prepared === 0) {
+      this.voicePreparationState = preparation.prepared < frames ? 'priming' : 'waiting-reserve';
+      this.state = 'priming'; this.reason = 'startup'; return this.voiceResult(null);
+    }
+    preparation.admitted = true;
+    this.voicePreparationState = 'ready';
+    this.sourceStartupDelayMs = this.networkDelayMs = localMs - mapped(preparation.rawMs);
+    this.sourceFrame = preparation.frame; this.rawCursorMs = preparation.rawMs;
+    this.inputFrame = preparation.inputFrame; this.slewRatio = preparation.segments[0]?.firstRatio ?? preparation.ratio;
+    this.gain = 0; this.phaseErrorMs = 0; this.state = 'playing'; this.reason = null;
+    return this.voiceResult(preparation.rawMs);
+  }
+  fillVoicePreparation(preparation, required, nextRatio, sourceRate, contextMs) {
+    preparation.stalled = false;
+    if (preparation.budgetContextMs !== contextMs) { preparation.budgetContextMs = contextMs; preparation.calls = 0; }
+    while (preparation.calls < 16 && preparation.prepared < required) {
+      preparation.calls++;
+      const count = Math.min(512, required - preparation.prepared);
+      this.backend.setRatio(nextRatio, count);
+      const available = preparation.needInput
+        ? this.read(preparation.inputFrame, Math.min(4096, Math.ceil(count * nextRatio) + Math.ceil(this.rate * 0.006))) : 0;
+      const converted = this.backend.process(this.input, available, this.output, count);
+      preparation.inputFrame += converted.consumed;
+      const finalRatio = preparation.ratio + (nextRatio - preparation.ratio) * converted.produced / count;
+      if (converted.produced) {
+        const advanced = converted.produced * (preparation.ratio + finalRatio) / 2;
+        preparation.segments.push({ pcm: this.output.slice(0, converted.produced * this.channels), offset: 0,
+          count: converted.produced, frame: preparation.nextFrame, rawMs: preparation.nextRawMs,
+          firstRatio: preparation.ratio, finalRatio, sourceRate });
+        preparation.nextFrame += advanced;
+        preparation.nextRawMs += advanced * 1000 / this.rate / sourceRate;
+        preparation.prepared += converted.produced;
+      }
+      preparation.ratio = finalRatio;
+      if (!converted.consumed && !converted.produced && preparation.needInput) { preparation.stalled = true; break; }
+      preparation.needInput = true;
+    }
+  }
+  renderVoicePreparation(contextMs, clock, frames, output, deviceRate, deadline, sourceRate) {
+    const preparation = this.voicePreparation;
+    if (!preparation.admitted) {
+      const tailFrames = Math.min(frames, this.tailRemaining), sourceMs = this.lastSourceMs;
+      this.fadeTail(output, 0, frames); this.recoveryTail.set(this.last); this.recoveryRemaining = this.tailRemaining;
+      this.recoverySourceMs = this.lastSourceMs;
+      if (tailFrames) this.checkDeadline(deadline, clock, sourceMs, tailFrames * 1000 / this.outputRate / deviceRate,
+        0, output, frames, contextMs);
+      return 0;
+    }
+    const correction = Math.max(-PHASE_CORRECTION_LIMIT, Math.min(PHASE_CORRECTION_LIMIT, this.phaseErrorMs / 10000));
+    this.deviceRate = deviceRate; this.phaseCorrectionPpm = correction * 1e6;
+    const nextRatio = this.rate / this.outputRate * sourceRate / (clock?.rate || 1) / deviceRate * (1 + correction);
+    this.fillVoicePreparation(preparation, frames, nextRatio, sourceRate, contextMs);
+    const recoverySourceMs = this.recoverySourceMs, recoveryFrames = this.recoveryRemaining;
+    let produced = 0;
+    while (produced < frames && preparation.segments.length) {
+      const segment = preparation.segments[0], take = Math.min(frames - produced, segment.count - segment.offset);
+      const rawAt = offset => {
+        const ratioAt = segment.firstRatio + (segment.finalRatio - segment.firstRatio) * offset / segment.count;
+        return segment.rawMs + offset * (segment.firstRatio + ratioAt) / 2 * 1000 / this.rate / segment.sourceRate;
+      };
+      const firstRaw = rawAt(segment.offset), firstRatio = segment.firstRatio
+        + (segment.finalRatio - segment.firstRatio) * segment.offset / segment.count;
+      const lastRatio = segment.firstRatio + (segment.finalRatio - segment.firstRatio) * (segment.offset + take) / segment.count;
+      const offsetMs = produced * 1000 / this.outputRate / deviceRate;
+      const segmentDeadline = deadline && { ...deadline,
+        outputAt: Number.isFinite(deadline.outputAt) ? deadline.outputAt + offsetMs : deadline.outputAt,
+        projectionContextMs: Number.isFinite(deadline.projectionContextMs)
+          ? deadline.projectionContextMs + produced * 1000 / this.outputRate : deadline.projectionContextMs };
+      this.boundDeadline(segmentDeadline, clock, firstRaw, take * 1000 / this.outputRate / deviceRate,
+        take * Math.min(firstRatio, lastRatio) * 1000 / this.rate / segment.sourceRate * (clock?.rate || 1));
+      for (let i = 0; i < take; i++) {
+        this.mixFreshSample(segment.pcm, segment.offset + i, output, produced + i, rawAt(segment.offset + i));
+      }
+      segment.offset += take; produced += take; preparation.prepared -= take;
+      this.rawCursorMs = rawAt(segment.offset);
+      this.sourceFrame = segment.frame + segment.offset * (segment.firstRatio + lastRatio) / 2;
+      this.slewRatio = lastRatio;
+      if (segment.offset === segment.count) preparation.segments.shift();
+    }
+    this.inputFrame = preparation.inputFrame;
+    this.voicePreparedFrames = preparation.prepared;
+    if (recoveryFrames > 1 && produced) this.boundDeadline(deadline, clock, recoverySourceMs,
+      Math.min(recoveryFrames - 1, produced) * 1000 / this.outputRate / deviceRate, 0);
+    if (produced < frames) {
+      const tailFrames = Math.min(frames - produced, this.tailRemaining), heldSourceMs = this.lastSourceMs;
+      this.fadeTail(output, produced, frames);
+      if (tailFrames) this.boundDeadline(deadline, clock, heldSourceMs,
+        (produced + tailFrames) * 1000 / this.outputRate / deviceRate, 0);
+      this.recover('underrun');
+    }
+    this.deadlineSourceMs = this.lastSourceMs;
+    if (!this.checkDeadline(deadline, clock, null, 0, 0, output, frames, contextMs)) return 0;
+    if (produced > 0) { this.hasEmitted = true; this.voiceWaitStartedAt = undefined; }
+    // Preparation is a finite transition. Once its exact prefix is drained,
+    // continue through the ordinary renderer with the same live filter state;
+    // steady voice playback does not allocate per-quantum staging objects.
+    if (this.voicePreparation === preparation && preparation.prepared === 0) this.voicePreparation = null;
+    return produced;
+  }
+  mixFreshSample(input, inputFrame, output, outputFrame, freshSourceMs) {
+    this.gain = Math.min(1, this.gain + 1 / this.fadeFrames);
+    // Continue the current saved-tail amplitude; it may already have faded
+    // during preparation, so applying its original envelope again would jump.
+    const envelope = this.recoveryRemaining > 0 ? (this.recoveryRemaining - 1) / this.recoveryRemaining : 0;
+    const sampleSourceMs = envelope > 0 && Number.isFinite(this.recoverySourceMs)
+      ? Math.min(freshSourceMs, this.recoverySourceMs) : freshSourceMs;
+    for (let c = 0; c < this.channels; c++) {
+      this.recoveryTail[c] *= envelope;
+      const value = input[inputFrame * this.channels + c] * this.gain + this.recoveryTail[c];
+      output[outputFrame * this.channels + c] = value; this.last[c] = value;
+    }
+    this.lastSourceMs = sampleSourceMs;
+    this.recoveryRemaining = Math.max(0, this.recoveryRemaining - 1); this.tailRemaining = this.fadeFrames;
   }
   /** targetMs is the raw Android-media position due at the speaker for this quantum. */
   render(targetMs, contextMs, clock, frames, output, deviceRate = 1, deadline = null) {
     output.fill(0); this.outputFrames += frames;
     this.sourceDeadlineState = 'unknown'; this.sourceDeltaMs = this.sourceDeltaUpperMs = null;
+    this.sourceDeadlineUncertaintyMs = null;
     this.sourceDeadlineReason = deadline?.unknownReason || 'no-output';
     this.deadlineSourceMs = null;
     this.lastContextTimeMs = Number.isFinite(contextMs) ? contextMs + frames * 1000 / this.outputRate : null;
     const sourceRate = this.sourceClock.advance(contextMs), clockRate = clock?.rate || 1;
+    if (this.voicePreparation) return this.renderVoicePreparation(contextMs, clock, frames, output, deviceRate, deadline, sourceRate);
     if (this.backend && clock && clock.generation !== this.clockGeneration && clock.state !== 'stale') this.recover('clock-generation');
-    if (this.backend && Number.isFinite(targetMs)) {
-      this.phaseErrorMs = targetMs - this.rawCursorMs;
-      if (Math.abs(this.phaseErrorMs) > AUDIO_RECOVERY_ERROR_MS) {
-        // Preserve the triggering quantum before recovery replaces its DSP
-        // state; periodic feedback may otherwise show only a healthy phase.
-        const deviceRatePpm = (deviceRate - 1) * 1e6;
-        this.lastClockStep = {
-          phaseErrorMs: Number.isFinite(this.phaseErrorMs) ? this.phaseErrorMs : null,
-          deviceRatePpm: Number.isFinite(deviceRate) && deviceRate > 0 && Number.isFinite(deviceRatePpm) ? deviceRatePpm : null,
-          uncertaintyMs: Number.isFinite(deadline?.uncertaintyMs) && deadline.uncertaintyMs >= 0 ? deadline.uncertaintyMs : null,
-          contextMs: Number.isFinite(contextMs) && contextMs >= 0 ? contextMs : null,
-        };
-        this.recover('clock-step');
-      }
-    }
+    if (this.backend && Number.isFinite(targetMs)) this.checkPhase(targetMs, contextMs, deviceRate, deadline);
     if (!this.backend && Number.isFinite(targetMs)) this.start(targetMs, clock?.generation);
     if (!this.backend) {
       const hadTail = this.tailRemaining > 0;
@@ -234,23 +513,8 @@ export class ContinuousAudio {
       const result = this.backend.process(this.input, available, this.output, frames - produced);
       this.inputFrame += result.consumed;
       for (let i = 0; i < result.produced; i++) {
-        this.gain = Math.min(1, this.gain + 1 / this.fadeFrames);
-        // The saved tail is its current amplitude, including any samples already
-        // faded while no output reference/backend was available. Continue that
-        // same linear envelope instead of multiplying the elapsed fade twice.
-        const envelope = this.recoveryRemaining > 0 ? (this.recoveryRemaining - 1) / this.recoveryRemaining : 0;
         const freshSourceMs = firstSourceMs + (produced + i) * sourceMsPerFrame;
-        const sampleSourceMs = envelope > 0 && Number.isFinite(this.recoverySourceMs)
-          ? Math.min(freshSourceMs, this.recoverySourceMs) : freshSourceMs;
-        for (let c = 0; c < this.channels; c++) {
-          this.recoveryTail[c] *= envelope;
-          const value = this.output[i * this.channels + c] * this.gain + this.recoveryTail[c];
-          output[(produced + i) * this.channels + c] = value; this.last[c] = value;
-        }
-        // A mixed old tail keeps its older source identity until its coefficient is zero.
-        this.lastSourceMs = sampleSourceMs;
-        this.recoveryRemaining = Math.max(0, this.recoveryRemaining - 1);
-        this.tailRemaining = this.fadeFrames;
+        this.mixFreshSample(this.output, i, output, produced + i, freshSourceMs);
       }
       produced += result.produced;
       if (!result.consumed && !result.produced && needInput) break;
@@ -277,6 +541,7 @@ export class ContinuousAudio {
     if (heldFrames > 0) this.boundDeadline(deadline, clock, heldSourceMs,
       (produced + heldFrames) * 1000 / this.outputRate / deviceRate, 0);
     if (!this.checkDeadline(deadline, clock, produced > 0 ? firstSourceMs : null, localSpan, sourceSpan, output, frames, contextMs)) return 0;
+    if (produced > 0) this.hasEmitted = true;
     return produced;
   }
   boundDeadline(deadline, clock, firstSourceMs, localSpan, sourceSpan) {
@@ -286,6 +551,7 @@ export class ContinuousAudio {
       || candidate.sourceDeltaUpperMs > this.sourceDeltaUpperMs)) {
       this.sourceDeadlineState = candidate.sourceDeadlineState;
       this.sourceDeltaMs = candidate.sourceDeltaMs; this.sourceDeltaUpperMs = candidate.sourceDeltaUpperMs;
+      this.sourceDeadlineUncertaintyMs = candidate.sourceDeadlineUncertaintyMs;
       this.sourceDeadlineReason = candidate.sourceDeadlineReason;
     }
   }
@@ -298,7 +564,8 @@ export class ContinuousAudio {
       // rejection. Preserve its bounded Debug evidence before retiring DSP.
       if (this.counters) this.lastSourceDeadline = {
         upperMs: Number.isFinite(this.sourceDeltaUpperMs) ? this.sourceDeltaUpperMs : null,
-        uncertaintyMs: Number.isFinite(deadline.uncertaintyMs) && deadline.uncertaintyMs >= 0 ? deadline.uncertaintyMs : null,
+        uncertaintyMs: Number.isFinite(this.sourceDeadlineUncertaintyMs) && this.sourceDeadlineUncertaintyMs >= 0
+          ? this.sourceDeadlineUncertaintyMs : null,
         limitMs: Number.isFinite(deadline.limitMs) && deadline.limitMs >= 0 ? deadline.limitMs : null,
         contextMs: Number.isFinite(contextMs) && contextMs >= 0 ? contextMs : null,
       };
@@ -331,6 +598,9 @@ export class ContinuousAudio {
       senderRelativePolicyCeilingMs: this.mode === 'carplay' && this.synchronized && !this.arrivalPlayback ? 300 : null,
       senderCeilingViolations: this.senderCeilingViolations || 0,
       sourceStartupDelayMs: this.sourceStartupDelayMs ?? null,
+      ...(this.mode === 'carplay' && this.semanticType >= 1 && this.semanticType <= 4 ? {
+        voicePreparationState: this.voicePreparationState, voicePreparedFrames: this.voicePreparedFrames,
+        voiceRequiredFrames: this.voiceRequiredFrames, voiceWaitMs: this.voiceWaitMs } : {}),
       contextTimeMs, sourceTimeMs: this.rawCursorMs, mediaRate: this.slewRatio * this.outputRate / this.rate / this.sourceClock.rate,
       resampleRatio: this.slewRatio, networkDelayMs: this.networkDelayMs,
       resampleRatePpm: (this.slewRatio * this.outputRate / this.rate - 1) * 1e6,

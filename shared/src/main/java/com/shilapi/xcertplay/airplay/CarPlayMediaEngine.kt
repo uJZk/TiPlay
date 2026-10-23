@@ -406,7 +406,12 @@ class CarPlayMediaEngine(
             }
             "GETANCHOR" -> buffered.anchor()
             "FLUSHBUFFERED" -> {
-                (body["flushUntilTS"] as? Number)?.toLong()?.let { buffered.flush(it) }
+                // The RTSP endpoint rejects deferred ranges explicitly. Keep this
+                // direct handler from silently converting one into an immediate stop.
+                if (body.containsKey("flushFromSeq") || body.containsKey("flushFromTS")) return null
+                val untilTimestamp = (body["flushUntilTS"] as? Number)?.toLong()
+                val untilSequence = (body["flushUntilSeq"] as? Number)?.toLong()
+                if (untilTimestamp != null || untilSequence != null) buffered.flush(untilTimestamp, untilSequence)
                 null
             }
             else -> null

@@ -619,6 +619,14 @@ class AirPlaySession(
                 runCatching { asMap(BplistCodec.decode(request.body)) }.getOrNull()
                     ?: return RtspMessage.Response(status = 400)
             }
+            if (request.method == "FLUSHBUFFERED" &&
+                (body.containsKey("flushFromSeq") || body.containsKey("flushFromTS"))) {
+                // A deferred range must preserve playback before its future boundary,
+                // including audio already relayed to the browser. Do not treat it as
+                // an immediate flush until that timed protocol is implemented.
+                debugLog("airplay FLUSHBUFFERED rejected reason=deferred-range-unsupported")
+                return RtspMessage.Response(status = 501, statusText = "Not Implemented")
+            }
             val response = media.onBufferedAudioControl(this, request.method, body)
             if (request.method != "GETANCHOR") debugLog("airplay ${request.method} $body -> ${response ?: "ok"}")
             return if (response == null) RtspMessage.Response(status = 200) else RtspMessage.Response(

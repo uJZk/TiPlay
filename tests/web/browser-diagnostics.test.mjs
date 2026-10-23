@@ -165,7 +165,8 @@ test('dense audio evidence protects every source fit and actual quantum without 
       contextState: 'running', contextRate: 48000, renderQuantumFrames: 128, renderQuantumMinFrames: 64, renderQuantumMaxFrames: 256,
       renderStatsState: 'available', renderUnderrunEvents: 7, renderUnderrunDurationMs: .123456, renderTotalDurationMs: 123750,
       deviceClockFitStatus: 'holdover', deviceClockFitRejectReason: 'noisy', deviceClockFitDispersionMs: 3.000001,
-      deviceClockUncertaintyMs: 2.999999,
+      deviceClockUncertaintyMs: 2.999999, deviceClockSource: 'render',
+      outputTimestampFitUncertaintyMs: .125123, outputTimestampFitStatus: 'tracking', outputTimestampFitGeneration: 9,
       deviceClockRatePpm: -1801.73, deviceClockConfidence: 0 };
     for (let stream = 0; stream < 8; stream++) debug[`stream${stream}`] = {
       ...Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`optional${i}`, i])),
@@ -191,18 +192,23 @@ test('dense audio evidence protects every source fit and actual quantum without 
     assert.equal(detail.v.renderStatsState, 'available'); assert.equal(detail.v.renderUnderrunEvents, 7);
     assert.equal(detail.v.renderUnderrunDurationMs, .123456); assert.equal(detail.v.renderTotalDurationMs, 123750);
     assert.equal(detail.v.deviceClockUncertaintyMs, 2.999999); assert.equal(detail.v.deviceClockFitDispersionMs, 3.000001);
+    assert.equal(detail.v.deviceClockSource, 'render');
     assert.equal(detail.v.deviceClockFitStatus, 'holdover'); assert.equal(detail.v.deviceClockFitRejectReason, 'noisy');
     assert.equal(detail.v.deviceClockRatePpm, -1801.73); assert.equal(detail.v.deviceClockConfidence, 0);
+    assert.equal(detail.v.outputTimestampFitUncertaintyMs, .125123);
+    assert.equal(detail.v.outputTimestampFitStatus, 'tracking'); assert.equal(detail.v.outputTimestampFitGeneration, 9);
     assert.equal(browserDiagnosticEvents({ audio: { debug } }, false, false).length, 1);
   }
 });
 
 test('clock dispersion retains six print decimals while ordinary audio numbers retain their existing rounding', () => {
   const [, detail] = browserDiagnosticEvents({ audio: { debug: { deviceClockUncertaintyMs: 2.9999994, deviceClockFitDispersionMs: 3.0000014,
+    outputTimestampFitUncertaintyMs: .1251234,
     deviceClockRatePpm: 1.234567, stream6: { sourceClockDispersionMs: .5000014, sourceClockSpanMs: 30000.123456,
       sourceClockFitRejectReason: 'noisy', sourceClockAcceptedFitAgeMs: null },
     stream0: { sourceClockFitStatus: 'disabled', sourceClockFitRejectReason: 'buffered-prefetch' } } } }, false, true);
   assert.equal(detail.v.deviceClockUncertaintyMs, 2.999999); assert.equal(detail.v.deviceClockFitDispersionMs, 3.000001);
+  assert.equal(detail.v.outputTimestampFitUncertaintyMs, .125123);
   assert.equal(detail.v['stream6.sourceClockDispersionMs'], .500001);
   assert.equal(detail.v.deviceClockRatePpm, 1.23);
   assert.equal(detail.v['stream6.sourceClockSpanMs'], 30000.12);
@@ -218,6 +224,21 @@ test('unknown current device fit noise stays absent from Debug and ordinary summ
     assert.equal(Object.hasOwn(detail.v, 'deviceClockFitDispersionMs'), false);
     assert.equal(detail.v.deviceClockUncertaintyMs, .125123);
     assert.equal(Object.keys(summary.v).some(key => key.includes('deviceClockFitDispersionMs')), false);
+    assert.equal(browserDiagnosticEvents(page, false, false).length, 1);
+  }
+});
+
+test('unknown native phase noise is absent while its fit identity stays separate from render-rate evidence', () => {
+  for (const unknown of [undefined, null, NaN, Infinity, -Infinity]) {
+    const page = { audio: { debug: { outputTimestampFitUncertaintyMs: unknown, outputTimestampFitStatus: 'acquiring',
+      outputTimestampFitGeneration: 27, deviceClockUncertaintyMs: 1.3333334, deviceClockFitStatus: 'tracking' } } };
+    const [summary, detail] = browserDiagnosticEvents(page, false, true);
+    assert.equal(Object.hasOwn(detail.v, 'outputTimestampFitUncertaintyMs'), false);
+    assert.equal(detail.v.outputTimestampFitGeneration, 27);
+    assert.equal(detail.v.outputTimestampFitStatus, 'acquiring');
+    assert.equal(detail.v.deviceClockFitStatus, 'tracking');
+    assert.equal(detail.v.deviceClockUncertaintyMs, 1.333333);
+    assert.equal(Object.keys(summary.v).some(key => key.includes('outputTimestampFit')), false);
     assert.equal(browserDiagnosticEvents(page, false, false).length, 1);
   }
 });
@@ -309,6 +330,28 @@ test('selected ICE path and counters survive a crowded ordinary diagnostic summa
     video: Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`counter${i}`, i])) }, false);
   for (const [key, value] of Object.entries(ice)) assert.equal(event.v[`transport.ice.${key}`], value);
   assert.ok(JSON.stringify(event.v).length <= 2048);
+});
+
+test('voice preparation evidence survives bounded Debug packing without entering Standard telemetry', () => {
+  for (const controlMessageLimitBytes of [16 * 1024, 64 * 1024]) {
+    const debug = Object.fromEntries(Array.from({ length: 700 }, (_, i) => [`optional${i}`, i]));
+    for (const stream of [1, 2, 255]) debug[`stream${stream}`] = { epoch: 4, state: 'rebuffering',
+      voicePreparationState: 'waiting-data', voicePreparedFrames: 64, voiceRequiredFrames: 128, voiceWaitMs: 12.3456 };
+    const page = { transport: { controlMessageLimitBytes }, audio: { debug } };
+    const [standard, detail] = browserDiagnosticEvents(page, false, true, 'capture');
+    assert.ok(detail.v.omittedFields > 0);
+    assert.ok(Object.keys(detail.v).length <= 256);
+    assert.ok(Buffer.byteLength(JSON.stringify(detail.v)) <= Math.min(16 * 1024,
+      Math.floor((controlMessageLimitBytes - (2048 - 24) * 3 - 4096) / 2)));
+    for (const stream of [1, 2, 255]) {
+      assert.equal(detail.v[`stream${stream}.voicePreparationState`], 'waiting-data');
+      assert.equal(detail.v[`stream${stream}.voicePreparedFrames`], 64);
+      assert.equal(detail.v[`stream${stream}.voiceRequiredFrames`], 128);
+      assert.equal(detail.v[`stream${stream}.voiceWaitMs`], 12.35);
+    }
+    assert.equal(Object.keys(standard.v).some(key => key.includes('voicePreparation') || key.includes('voiceWait')), false);
+    assert.equal(browserDiagnosticEvents(page, false).length, 1);
+  }
 });
 
 

@@ -1,5 +1,5 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
-import { AudioDeviceClock, MAX_RATE_ERROR } from './audio-device-clock.js';
+import { AudioDeviceClock, MAX_RATE_ERROR, rateProjectionUncertainty } from './audio-device-clock.js';
 
 export const OUTPUT_REFERENCE_MAX_AGE_MS = 750;
 export const OUTPUT_EXTRAPOLATION_MAX_MS = 1000;
@@ -13,7 +13,16 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
   timeOrigin = () => performance.timeOrigin } = {}) {
   let previousContext = null, previousTimestamp = null, pendingTimestamp = null, previousRendered = null, timestampNotBefore = -Infinity;
   let renderQuanta = new WeakMap();
+  // One controller owns the applied slew. Fits may choose its target without
+  // switching two already-applied rates or steering from an unachieved old fit.
   const deviceClock = new AudioDeviceClock();
+  const renderClock = new AudioDeviceClock();
+  // A native pair locates an output sample at the speaker; a render pair tracks
+  // effective progress of the context sample domain. Native pipeline offsets
+  // must not repeatedly erase the latter's independently advancing evidence.
+  // Keep native noise separate so render quantization cannot widen phase gates.
+  const timestampClock = new AudioDeviceClock();
+  let selectedClock = renderClock, rateSource = 'holdover';
   let diagnostics = { outputState: 'startup' };
   let feedbackAt = null;
   let outputUnavailableCount = 0, outputUnavailableReason = null;
@@ -21,6 +30,28 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
   const rejected = reason => { outputUnavailableCount++; outputUnavailableReason = reason;
     unavailableCounts[reason] = (unavailableCounts[reason] || 0) + 1; };
   const unavailable = reason => { diagnostics.outputState = reason; rejected(reason); return null; };
+  function resetClocks(reason) {
+    deviceClock.reset(reason); renderClock.reset(reason); timestampClock.reset(reason);
+    selectedClock = renderClock; rateSource = 'holdover';
+  }
+  function selectRate(at) {
+    const fresh = clock => clock.fitStatus === 'tracking' && clock.acceptedFitAt !== null
+      && at >= clock.acceptedFitAt && at - clock.acceptedFitAt <= OUTPUT_REFERENCE_MAX_AGE_MS;
+    const selected = fresh(timestampClock) ? timestampClock : fresh(renderClock) ? renderClock : null;
+    if (deviceClock.lastAdvance !== null && at - deviceClock.lastAdvance > 1000)
+      deviceClock.targetRate = deviceClock.rate;
+    deviceClock.advance(at);
+    if (selected) {
+      selectedClock = selected; rateSource = selected === timestampClock ? 'native' : 'render';
+      deviceClock.targetRate = selected.targetRate;
+    } else { rateSource = 'holdover'; deviceClock.targetRate = deviceClock.rate; }
+  }
+  function rateSnapshot(at) {
+    const evidence = selectedClock.snapshot(at);
+    return { ...evidence, source: rateSource, rate: deviceClock.rate, ratePpm: (deviceClock.rate - 1) * 1e6,
+      targetRatePpm: (deviceClock.targetRate - 1) * 1e6, generation: renderClock.generation, reason: renderClock.reason,
+      ...(rateSource === 'holdover' ? { confidence: 0, fitStatus: selectedClock.acceptedFitAt === null ? 'acquiring' : 'holdover' } : {}) };
+  }
   function observeRenderQuantum(context, frames) {
     if (!context || typeof context !== 'object' || !Number.isSafeInteger(frames) || frames <= 0) return;
     // The render block can change. Keep the largest observation in this context
@@ -32,7 +63,7 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
     const innovationMs = (next.contextTimeMs - previous.contextTimeMs) / deviceClock.rate - elapsedMs;
     const withinSpan = Math.abs(elapsedMs) <= OUTPUT_REFERENCE_MAX_AGE_MS;
     return { innovationMs, withinSpan, coherent: withinSpan
-      && Math.abs(innovationMs) <= quantumMs / deviceClock.rate + (deviceClock.uncertaintyMs || 0)
+      && Math.abs(innovationMs) <= (quantumMs + (timestampClock.uncertaintyMs || 0)) / deviceClock.rate
         + Math.abs(elapsedMs) * MAX_RATE_ERROR };
   }
   function compatiblePhysicalRate(previous, next, quantumMs) {
@@ -41,24 +72,24 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
     // same permitted rate range as the fit, plus the existing measurement bound.
     return elapsedMs > 0 && elapsedMs <= OUTPUT_REFERENCE_MAX_AGE_MS
       && Math.abs(next.contextTimeMs - previous.contextTimeMs - elapsedMs)
-        <= quantumMs + (deviceClock.uncertaintyMs || 0) * deviceClock.rate + elapsedMs * MAX_RATE_ERROR;
+        <= quantumMs + (timestampClock.uncertaintyMs || 0) + elapsedMs * MAX_RATE_ERROR;
   }
 
   function capture(context) {
     const startedAt = now();
     if (!context || context.state !== 'running' || !Number.isFinite(context.currentTime)) {
-      if (previousTimestamp || deviceClock.points.length) deviceClock.reset('suspended');
+      if (previousTimestamp || renderClock.points.length) resetClocks('suspended');
       previousTimestamp = pendingTimestamp = previousRendered = null;
       timestampNotBefore = startedAt;
       return unavailable('context-suspended');
     }
-    if (context !== previousContext) { previousContext = context; previousTimestamp = pendingTimestamp = previousRendered = null; deviceClock.reset('context'); }
+    if (context !== previousContext) { previousContext = context; previousTimestamp = pendingTimestamp = previousRendered = null;
+      resetClocks('context'); }
     let timestamp;
     try { timestamp = context.getOutputTimestamp?.(); } catch (_) { /* Older implementations may throw. */ }
     // Native getters can block or yield a newer snapshot. Validate against clocks
     // sampled after that call, rather than misclassifying its result as future.
     const rendered = context.currentTime * 1000, at = now();
-    deviceClock.advance(at);
     observeRenderQuantum(context, context.renderQuantumSize);
     // Preserve the established 128-frame measurement allowance on smaller
     // blocks; larger observed blocks must expand it rather than be underbound.
@@ -68,15 +99,27 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
       outputTimestampAgeMs: null, outputRenderedContextMs: rendered,
       outputTimestampCaptureMs: Math.max(0, at - startedAt), outputTimestampHoldoverAgeMs: null });
     if (context.state !== 'running' || !Number.isFinite(rendered)) {
-      previousTimestamp = pendingTimestamp = previousRendered = null; timestampNotBefore = at; deviceClock.reset('suspended');
+      previousTimestamp = pendingTimestamp = previousRendered = null; timestampNotBefore = at;
+      resetClocks('suspended');
       return unavailable('context-suspended');
     }
     if (previousRendered !== null && rendered < previousRendered) {
       // Unlike a backward output measurement, a backward render cursor really
       // retires the old sample domain. The worklet observes its own counter too.
-      previousTimestamp = pendingTimestamp = null; timestampNotBefore = at; deviceClock.reset('context-backwards');
+      previousTimestamp = pendingTimestamp = null; timestampNotBefore = at;
+      resetClocks('context-backwards');
     }
     previousRendered = rendered;
+    // Sample after the native getter: its blocking time is not audio drift.
+    // This is an effective render rate, not a claim about a physical oscillator.
+    const renderGeneration = renderClock.generation;
+    renderClock.observe(rendered, at, at, quantumMs);
+    if (renderClock.generation !== renderGeneration && renderClock.reason === 'gap') {
+      // Preserve the established sampling-gap boundary. No observation proves
+      // that the old oscillator continued through an unobserved interval.
+      deviceClock.reset('gap'); selectedClock = renderClock; rateSource = 'holdover';
+    }
+    selectRate(at);
     const holdover = (reason = null, candidate = null) => {
       if (reason) rejected(reason);
       diagnostics.outputState = reason || 'timestamp-holdover';
@@ -119,10 +162,11 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
       diagnostics.outputState = 'timestamp-holdover'; diagnostics.outputTimestampHoldoverAgeMs = Math.max(0, age);
       return { contextTimeMs: previous.contextTimeMs, performanceTimeMs: previous.performanceTimeMs, at,
         outputMethod: 'timestamp-holdover',
-        // Reserve a quantum, the measured fit dispersion, and worst-case 2%
-        // rate error while this old, still bounded native anchor is held.
-        uncertaintyMs: quantumMs / deviceClock.rate + (deviceClock.uncertaintyMs || 0)
-          + Math.max(0, age) * MAX_RATE_ERROR + Math.abs(innovationMs),
+        // This is static native measurement uncertainty. Rate uncertainty over
+        // the held anchor's actual projection distance is added by each caller;
+        // adding age*rate here too would count the same interval twice.
+        uncertaintyMs: (quantumMs + (timestampClock.uncertaintyMs || 0)) / deviceClock.rate
+          + Math.abs(innovationMs),
         deviceRate: deviceClock.rate, outputLatencyMs: Math.max(0, (rendered - previous.contextTimeMs) / deviceClock.rate - age) };
     };
     if (timestamp && Number.isFinite(timestamp.contextTime) && Number.isFinite(timestamp.performanceTime)) {
@@ -173,10 +217,18 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
       // A real pipeline increase can put both new output samples below the old
       // counter. Their own coherent advance establishes that changed mapping.
       if (fresh && (ordered || confirmed)) {
-        if (outputStep) deviceClock.reset('output-step', { preserveRate: preserveDeviceRate });
+        if (outputStep) timestampClock.reset('output-step', { preserveRate: preserveDeviceRate });
         if (!moved) return holdover();
         diagnostics.outputState = 'timestamp';
-        deviceClock.observe(contextTimeMs, performanceTimeMs, at);
+        const timestampGeneration = timestampClock.generation;
+        timestampClock.observe(contextTimeMs, performanceTimeMs, at);
+        if (timestampClock.generation !== timestampGeneration && timestampClock.reason === 'gap') {
+          // A reference outage may hide a real rate change. Keep the baseline
+          // gap reset; only native phase/offset steps retain render-rate evidence.
+          deviceClock.reset('gap'); renderClock.reset('gap');
+          selectedClock = renderClock; rateSource = 'holdover';
+        }
+        selectRate(at);
         previousTimestamp = candidate;
         pendingTimestamp = null;
         return { contextTimeMs, performanceTimeMs, at, outputMethod: 'timestamp', uncertaintyMs: 0,
@@ -203,9 +255,11 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
   return {
     capture,
     observeRenderQuantum,
-    debug: enabled => deviceClock.debug(enabled),
-    deviceClock: () => deviceClock.snapshot(now()),
+    debug: enabled => { renderClock.debug(enabled); timestampClock.debug(enabled); },
+    deviceClock: () => rateSnapshot(now()),
     diagnostics: () => ({ ...diagnostics, outputFeedbackAgeMs: feedbackAt === null ? null : Math.max(0, now() - feedbackAt),
+      outputTimestampFitUncertaintyMs: timestampClock.uncertaintyMs,
+      outputTimestampFitStatus: timestampClock.fitStatus, outputTimestampFitGeneration: timestampClock.generation,
       outputUnavailableCount, outputUnavailableReason, outputUnavailableCounts: { ...unavailableCounts } }),
     reference(feedback, context) {
       if (!feedback || typeof feedback !== 'object') return null;
@@ -230,11 +284,13 @@ export function createAudioOutputMapping({ now = () => performance.timeOrigin + 
       const renderAgeMs = Math.max(0, (context.currentTime * 1000 - feedback.contextTimeMs) / mapping.deviceRate);
       return { ...feedback, at: mapping.at - renderAgeMs, audibleTimeMs: mapping.performanceTimeMs + (feedback.contextTimeMs - mapping.contextTimeMs) / mapping.deviceRate,
         mediaRate: feedback.mediaRate * mapping.deviceRate, deviceRatePpm: (mapping.deviceRate - 1) * 1e6,
-        outputMethod: mapping.outputMethod, uncertaintyMs: mapping.uncertaintyMs + Math.max(0, feedback.filterUncertaintyMs || 0),
+        outputMethod: mapping.outputMethod, uncertaintyMs: mapping.uncertaintyMs
+          + rateProjectionUncertainty(feedback.contextTimeMs - mapping.contextTimeMs, mapping.deviceRate)
+          + Math.max(0, feedback.filterUncertaintyMs || 0),
         outputLatencyMs: mapping.outputLatencyMs };
     },
     reset() { previousContext = previousTimestamp = pendingTimestamp = previousRendered = null; renderQuanta = new WeakMap();
-      timestampNotBefore = now(); deviceClock.reset('reset');
+      timestampNotBefore = now(); resetClocks('reset');
       diagnostics = { outputState: 'reset' }; feedbackAt = null; },
   };
 }

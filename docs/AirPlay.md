@@ -128,6 +128,18 @@ preserve stream epochs. Missing synchronization is explicit arrival-playback fal
 not source synchronization. Resize scales the current mirror; new dimensions apply
 at the next SETUP. Keepalive tuning is not a recovery-time guarantee.
 
+CarPlay buffered audio orders immediate `FLUSHBUFFERED` prefixes by its 23-bit
+packet sequence, excluding the header marker; `until` is the first retained
+packet. The same fence covers queued, forwarded and in-flight intake frames,
+independently of unrelated track RTP origins. Immediate flush stops output,
+clears the old anchor and waits for SETRATE. See the independently reviewed
+[Shairport buffered reader](https://github.com/mikebrady/shairport-sync/blob/b991d91350e537c1f50dac98d9a3c836eceddcfc/ap2_buffered_audio_processor.c#L283)
+and [immediate/deferred handling](https://github.com/mikebrady/shairport-sync/blob/b991d91350e537c1f50dac98d9a3c836eceddcfc/rtsp.c#L1430).
+These are implementation references, not an Apple specification. Deferred
+`[from, until)` range cancellation is explicitly unsupported: RTSP 501 leaves
+current playback unchanged. Sender fallback and timestamp-only flushes across
+unrelated origins remain [acceptance limits](Todo.md#browser-and-carplay-audio).
+
 AAC mirror NoData access units occupy the negotiated number of source samples.
 They pass through the same RTP ordering, duplicate rejection, retransmission and
 FLUSH boundaries as other audio; dropping them before ordering creates false gaps.

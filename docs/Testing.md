@@ -279,8 +279,8 @@ the historical 0.2.16 release/download URL is no longer available.
 
 Preserve remote diagnostic coverage when running the integrated suite: bounded
 independent video snapshots, capture-session/stream/epoch interval baselines,
-legacy 233-field and current 258-field-allowlist production-shaped fixture validation
-(the current wire payload remains limited to 256 fields), anonymous ICE/native metrics,
+legacy and current production-shaped diagnostic fixture validation
+(the wire payload remains limited to 256 fields), anonymous ICE/native metrics,
 missing/budget-omitted fields, held journal-lock races and complete-frame source
 PTS/arrival windows. Source cadence excludes configuration/keepalive records and
 retains missing, repeated, backward and cross-window PTS/arrival gaps. These tests
@@ -416,6 +416,84 @@ counters cover the complete replay, while waveform comparisons use a fixed centr
 input from available instantaneous samples without claiming Soxr history/lookahead
 is sufficient. CarPlay packet-coordinate replay finds no gaps/overlaps in 4,582
 packets / 4,678,720 frames; no source-coordinate change was justified.
+
+The subsequent beta.13 capture binds the current code55/v79 recording and excludes
+the short beta.12 residue. In a 130-second pure-media window without active speech
+mixing, 38 clock-step recoveries accumulate while renderer-underrun totals stay
+unchanged. Both native-output and rendered-context long-baseline slopes are about
+1.4% slower than the performance clock; this is effective sample-clock progress,
+not proof of a physical oscillator fault. Frequent output-step fit resets leave the
+applied correction behind that progress. All 6,336 AAC packets in that window decode
+with continuous sample coordinates, finite PCM and no systematic packet-boundary
+edge. Batched arrivals must not be classified as speech DTX or lost samples.
+An independent 20-second production-Soxr oracle with actual context rate 0.9857 and
+applied rate 0.998 produces seven phase recoveries and source-cursor jumps; matching
+the rate produces none. This establishes a reproducible clock-compensation defect,
+without assigning every reported click or speech onset/ending to that defect.
+
+Rate estimation separates native output pairs from running render-cursor pairs.
+A fresh accepted native fit takes priority; render progress supplies a fallback,
+and missing fresh evidence freezes the one applied-rate controller. Confirmed
+sampling/native gaps retain nominal-reset/reacquisition behavior; holding the old
+rate across a true rate change increased missing output in an independent oracle
+and was rejected. Output phase steps do not clear the independent render fit. Existing 4/16-second fit spans,
+2-second slope pairs, ±2% accepted estimate range and 1000 ppm/second slew remain.
+Render fits reserve the largest observed block's half-width in their measurement
+uncertainty and retain actual raw MAD; this does not make a short coarse-block fit
+precise. Its noise gate allows that known resolution in addition to 3 ms excess
+noise. Native noise remains independent and cannot inherit this enlarged allowance.
+Projection uncertainty uses the reciprocal extrema of the existing rate range over
+the actual anchor distance, including the emitted quantum. Reusing a held anchor
+does not add the same rate-age interval twice. Actual source deadlines retain the
+300 ms ceiling with complete uncertainty. Debug-only observed state-transition
+counts/non-running duration preserve brief observed pauses between snapshots;
+delayed/coalesced browser events remain a limitation. The capture reports a reduced
+Chromium 148/Linux user agent, not a specific browser build. All 221 live snapshots
+are running, but no raw lifecycle event or cumulative pause counter establishes
+uninterrupted context progress between them.
+Voice preparation separates first admission from recovery after actual accepted
+PCM output, including silent PCM. First admission retains the 30 ms phase reserve;
+recovery uses the actual 300 ms ceiling with complete uncertainty. The 20 ms wait
+is paid once per startup/recovery, not repeatedly added to a stopped source cursor.
+Preferred delay plans remain soft targets, clamped to the current admission budget;
+a reachable 280 ms plan cannot contradict first-admission headroom and block startup.
+Candidates use the renderer's shared integer-frame/raw-source mapping and contiguous
+input runs; expired candidates are reconsidered as fresh PCM or clock evidence
+arrives. Real Soxr input/output preparation survives callbacks under the existing
+16-call budget. Its staged prefix retains source/rate metadata, then hands the same
+live filter back to the ordinary renderer and shared mixer. A finite short utterance
+may emit actual partial output after the wait; zero padding cannot widen its source
+age. Source holes, unknown clocks and source/output deadlines remain explicit.
+Tests cover actual delivery gaps, same-origin clock generations, uncertainty changes,
+expired-to-fresh recovery, short/silent utterances, large quanta and low-rate priming.
+Arrival guidance acquiring its first presentation anchor preserves its live filter;
+later real generation changes still recover. This separate recovery defect does not
+establish the cause of the no-navigation pure-media field window.
+
+The beta.14 candidate's functional corrections pass all 814 browser tests, 69 scoped Android cases,
+the mobile debug build and the production-CSP media-clock harness in Chromium 151.
+The browser runs bind unchanged runtime/test inputs. Full Android CI remains
+skipped at the user's request; these checks do not measure vehicle speaker output.
+Beta.14/code56/v80 metadata preflight also passes 9 release-draft tests, 2 root-site
+tests, 62 browser checks and 51 native cases across four classes. Those scoped
+counts overlap the functional suites. All 138 checked functional inputs remain
+byte-identical after normalizing only the three version-bearing JavaScript files;
+the three shared diagnostic fixtures also use v80. Chromium checks pass again on
+the versioned source with all 61 runtime hashes unchanged.
+
+Immediate buffered flush has a separate captured before/fix regression: a new
+track anchor previously forwarded an old-origin packet first. Protocol reference
+checks establish the 23-bit sequence ring, excluded marker and first-retained
+`until`. Scoped tests cover equality/wrap, queued/forwarded frames, capacity-wait
+races, old-prefix draining without media pacing, empty-marker fence retirement,
+new-sender isolation and pause/anchor reset without a preceding pause command.
+Deferred range requests return explicit RTSP 501 without changing playback or
+calling the media handler. All **44 scoped native cases** across buffered stream,
+session and RTP timeline pass; sender fallback and physical track changes remain
+unverified. This boundary defect does not explain the uninterrupted pure-media
+window's clock recoveries. A separate before/fix regression retains prefetched
+future-track origins: sequence filtering can scan the queue, while timestamp
+trimming only removes its leading prefix.
 
 Run the browser clock, continuous-audio, AudioWorklet, frame-pacing and main-thread integration tests
 with the repository's Node test command. Their deterministic virtual-time cases vary

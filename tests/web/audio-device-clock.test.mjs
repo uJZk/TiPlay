@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AudioDeviceClock, MAX_RATE_ERROR } from '../../site/play/audio-device-clock.js';
+import { AudioDeviceClock, MAX_RATE_ERROR, rateProjectionUncertainty } from '../../site/play/audio-device-clock.js';
 
 function measure(clock, rate, start, end, { quantum = 128 / 48, jitter = 0 } = {}) {
   for (let ms = start; ms <= end; ms += 40) {
@@ -11,6 +11,29 @@ function measure(clock, rate, start, end, { quantum = 128 / 48, jitter = 0 } = {
     clock.observe(contextMs, performanceMs, performanceMs + 5);
   }
 }
+
+test('context projection uncertainty covers independent physical rates including opposite range endpoints', () => {
+  for (const applied of [.98, .986, 1, 1.014, 1.02]) for (const physical of [.98, .994, 1, 1.006, 1.02]) {
+    for (const span of [-1000, -200, 0, 200, 1000]) {
+      const projectedWall = span / applied, actualWall = span / physical;
+      assert.ok(Math.abs(projectedWall - actualWall) <= rateProjectionUncertainty(span, applied) + 1e-12);
+    }
+  }
+  assert.ok(rateProjectionUncertainty(1000, .98) > 40, '2% times span cannot cover a switch between opposite endpoints');
+});
+
+test('an even two-bin quantized history uses centered MAD without inventing a full block of noise', () => {
+  const clock = new AudioDeviceClock(), quantumMs = 1024 / 48;
+  clock.debug(true);
+  for (let i = 0; i < 40; i++) {
+    const at = 10000 + i * 200;
+    clock.observe(at + (i % 2 ? quantumMs : 0), at, at, quantumMs);
+  }
+  const fit = clock.snapshot();
+  assert.equal(fit.fitStatus, 'tracking');
+  assert.ok(fit.fitDispersionMs <= quantumMs / 2 + 1e-9);
+  assert.ok(fit.uncertaintyMs >= quantumMs / 2);
+});
 
 test('independent output clock acquires both drift signs through timestamp quantization and jitter', () => {
   for (const rate of [0.996, 1.004, 1]) {

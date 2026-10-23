@@ -390,7 +390,7 @@
   "standard": {
     "k": "st",
     "v": {
-      "page.version": "v79",
+      "page.version": "v80",
       "video.streamGeneration": 3,
       "video.epoch": 7,
       "video.droppedFrames": 102,
@@ -723,7 +723,7 @@
     "k": "video-diag",
     "d": "fixture-capture-v1",
     "v": {
-      "pageVersion": "v79",
+      "pageVersion": "v80",
       "omittedFields": 5,
       "schema": 1,
       "sample": 2,

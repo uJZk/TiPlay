@@ -39,7 +39,7 @@
     "k": "audio-diag",
     "d": "source-deadline-fixture",
     "v": {
-      "pageVersion": "v79",
+      "pageVersion": "v80",
       "omittedFields": 0,
       "contextState": "running",
       "contextRate": 48000,

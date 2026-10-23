@@ -7,8 +7,10 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is **0.2.20-beta.13** (code **55**). Run
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). The current release
+candidate is **0.2.20-beta.14** (code **56**), with diagnostic/cache revision **v80**.
+The latest published prerelease remains beta.13/code55/v79 until the signed workflow
+and independent publication checks finish. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
 the deployed page uses **v79** with WebRTC DataChannel as the formal live-media path.

@@ -142,6 +142,49 @@ class BrowserAudioDiagnosticsTest {
         )).isEmpty())
     }
 
+    @Test fun nativePhaseFitEvidenceKeepsItsOwnNoiseAndGenerationWithinTheExistingLogBudget() {
+        val fields = mapOf<String, Any?>(
+            "deviceClockUncertaintyMs" to 1.333333, "deviceClockFitStatus" to "tracking",
+            "deviceClockGeneration" to 2, "deviceClockSource" to "native", "outputTimestampFitUncertaintyMs" to 0.125123,
+            "outputTimestampFitStatus" to "holdover", "outputTimestampFitGeneration" to 97,
+        )
+        val lines = BrowserAudioDiagnostics.lines(fields)
+        val text = lines.joinToString(" ")
+        assertTrue(text.contains("deviceClockUncertaintyMs=1.333333"))
+        assertTrue(text.contains("deviceClockFitStatus=tracking"))
+        assertTrue(text.contains("deviceClockSource=native"))
+        assertTrue(text.contains("outputTimestampFitUncertaintyMs=0.125123"))
+        assertTrue(text.contains("outputTimestampFitStatus=holdover"))
+        assertTrue(text.contains("outputTimestampFitGeneration=97"))
+        assertTrue(lines.all { it.length <= 600 })
+        for (line in lines) assertEquals(line, DiagnosticRedactor.redact(line))
+        for (unknown in listOf(null, Double.NaN, Double.POSITIVE_INFINITY, -0.1, 3.000001, "0.1")) {
+            val kept = BrowserAudioDiagnostics.lines(fields + ("outputTimestampFitUncertaintyMs" to unknown)).joinToString(" ")
+            assertFalse(kept.contains("outputTimestampFitUncertaintyMs="))
+            assertTrue(kept.contains("outputTimestampFitGeneration=97"))
+        }
+        for (invalid in listOf(-1, 0.5, Double.NaN, 9_007_199_254_740_992.0, "97"))
+            assertTrue(BrowserAudioDiagnostics.lines(mapOf("outputTimestampFitGeneration" to invalid)).isEmpty())
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf("outputTimestampFitStatus" to "private-data")).isEmpty())
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf("deviceClockSource" to "private-data")).isEmpty())
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf("stream0.outputTimestampFitGeneration" to 97)).isEmpty())
+    }
+
+    @Test fun observedContextStateCountersRetainShortPausesWithoutAcceptingInvalidOrPrivateValues() {
+        val line = BrowserAudioDiagnostics.lines(mapOf(
+            "contextObservedStateChanges" to 2, "contextObservedNonRunningMs" to 600.125,
+            "contextObservedPrivateState" to "private-data",
+        )).single()
+        assertTrue(line.contains("contextObservedStateChanges=2"))
+        assertTrue(line.contains("contextObservedNonRunningMs=600.125"))
+        assertFalse(line.contains("private"))
+        for (key in listOf("contextObservedStateChanges", "contextObservedNonRunningMs")) {
+            for (invalid in listOf(null, -1, Double.NaN, Double.POSITIVE_INFINITY, "1", 9_007_199_254_740_992.0))
+                assertTrue(BrowserAudioDiagnostics.lines(mapOf(key to invalid)).isEmpty())
+        }
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf("contextObservedStateChanges" to 0.5)).isEmpty())
+    }
+
     @Test fun sourceFitEvidenceExplainsZeroConfidenceWithoutInventingUnknownHistory() {
         val cases = listOf(
             "acquiring" to "not-observed", "acquiring" to "no-samples",
@@ -392,6 +435,27 @@ class BrowserAudioDiagnosticsTest {
         assertTrue(lines[2].contains("capacityPackets=117"))
         assertTrue(lines[2].contains("playedPackets=0"))
         assertTrue(lines[3].contains("backend=webcodecs"))
+    }
+
+    @Test fun voicePreparationKeepsOutputFrameUnitsAndRejectsInvalidValues() {
+        val line = BrowserAudioDiagnostics.lines(mapOf(
+            "stream1.voicePreparationState" to "waiting-data", "stream1.voicePreparedFrames" to 64,
+            "stream1.voiceRequiredFrames" to 128, "stream1.voiceWaitMs" to 12.3456,
+        )).single()
+        assertTrue(line.contains("voicePreparationState=waiting-data"))
+        assertTrue(line.contains("voicePreparedFrames=64"))
+        assertTrue(line.contains("voiceRequiredFrames=128"))
+        assertTrue(line.contains("voiceWaitMs=12.346"))
+        for (invalid in listOf(null, -1, Double.NaN, Double.POSITIVE_INFINITY, 9_007_199_254_740_992.0, "128")) {
+            assertTrue(BrowserAudioDiagnostics.lines(mapOf(
+                "stream1.voicePreparedFrames" to invalid, "stream1.voiceRequiredFrames" to invalid,
+                "stream1.voiceWaitMs" to invalid,
+            )).isEmpty())
+        }
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf(
+            "stream1.voicePreparedFrames" to 0.5, "stream1.voiceRequiredFrames" to 128.5,
+        )).isEmpty())
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf("stream1.voicePreparationState" to "private-state")).isEmpty())
     }
 
     @Test fun unknownFieldsAndUnsafeTextCannotInjectCredentialsOrExtraLogLines() {

@@ -9,6 +9,7 @@ internal object BrowserAudioDiagnostics {
     private const val LINE_BUDGET = 600
     private val globalFields = setOf(
         "pageVersion", "omittedFields", "contextState", "contextTimeMs", "contextRate", "clockBase",
+        "contextObservedStateChanges", "contextObservedNonRunningMs",
         "clockOffsetMs", "clockAgeMs", "clockRttMs", "contextBaseLatencyMs", "contextOutputLatencyMs",
         "processorErrors", "recoveries", "recoveryAttempts", "processorFailed", "renderAgeMs", "renderReportAgeMs",
         "renderFrames", "renderNonzero", "renderPeak", "processCalls", "renderTimeMs",
@@ -17,9 +18,10 @@ internal object BrowserAudioDiagnostics {
         "pcmPackets", "pcmFrames", "pcmNonzero", "pcmPeak",
         "clockRatePpm", "clockGeneration", "clockUncertaintyMs", "clockRateConfidence",
         "deviceClockRatePpm", "deviceClockTargetRatePpm", "deviceClockConfidence", "deviceClockUncertaintyMs",
-        "deviceClockGeneration", "deviceClockReason", "outputState", "outputUnavailableCount", "outputUnavailableReason",
+        "deviceClockGeneration", "deviceClockReason", "deviceClockSource", "outputState", "outputUnavailableCount", "outputUnavailableReason",
         "deviceClockAcceptedFitAgeMs", "deviceClockFitRejected", "deviceClockFitStatus", "deviceClockFitRejectReason",
         "deviceClockFitDispersionMs",
+        "outputTimestampFitUncertaintyMs", "outputTimestampFitStatus", "outputTimestampFitGeneration",
         "outputTimestampContextMs", "outputTimestampPerformanceMs", "outputTimestampAgeMs", "outputRenderedContextMs", "outputFeedbackDeltaMs",
         "outputFeedbackContextMs", "outputFeedbackAgeMs",
         "outputTimestampCaptureMs", "outputTimestampHoldoverAgeMs",
@@ -40,6 +42,7 @@ internal object BrowserAudioDiagnostics {
         "lastRetiredSourceDeadlineEpoch", "lastRetiredSourceDeadlineGeneration", "retiredSourceDeadlineRejectedFrames",
     )
     private val renderDurationFields = setOf("renderUnderrunDurationMs", "renderTotalDurationMs")
+    private val voicePreparationFrameFields = setOf("voicePreparedFrames", "voiceRequiredFrames")
     private val streamFields = setOf(
         "epoch", "rate", "channels", "headMs", "tailMs", "playbackMs", "contextTimeMs", "delayMs", "queueBytes", "queuePackets",
         "capacityPackets", "latePackets", "duplicatePackets", "playedPackets", "resetPackets", "invalidPackets",
@@ -49,6 +52,7 @@ internal object BrowserAudioDiagnostics {
         "sourceClockDispersionMs", "sourceClockAcceptedFitAgeMs", "sourceClockFitRejected",
         "sourceDeadlineState", "sourceDeadlineReason", "sourceDeltaMs", "sourceDeltaUpperMs", "sourceDeadlineRejectedFrames",
         "senderTimingState", "senderRelativePolicyCeilingMs", "sourceStartupDelayMs",
+        "voicePreparationState", "voicePreparedFrames", "voiceRequiredFrames", "voiceWaitMs",
         "lastRecoveryReason", "rebufferCount", "recoveryCounts.clock-step", "recoveryCounts.underrun",
         "lastClockStepPhaseErrorMs", "lastClockStepDeviceRatePpm", "lastClockStepUncertaintyMs", "lastClockStepAgeMs",
         "recoveryCounts.source-deadline", "recoveryCounts.clock-generation", "recoveryCounts.suspended",
@@ -61,11 +65,15 @@ internal object BrowserAudioDiagnostics {
     private val enumFields = mapOf(
         "renderStatsState" to setOf("available", "unavailable", "invalid", "failed"),
         "deviceClockFitStatus" to setOf("acquiring", "tracking", "holdover"),
+        "deviceClockSource" to setOf("native", "render", "holdover"),
+        "outputTimestampFitStatus" to setOf("acquiring", "tracking", "holdover"),
         "deviceClockFitRejectReason" to setOf("none", "noisy", "out-of-range"),
         "sourceClockFitStatus" to setOf("acquiring", "tracking", "holdover", "disabled"),
         "sourceClockFitRejectReason" to setOf("not-observed", "no-samples", "insufficient-span", "insufficient-points",
             "insufficient-pairs", "noisy", "out-of-range", "none", "buffered-prefetch"),
         "senderTimingState" to setOf("unavailable", "arrival-anchored-unverified", "mapped-presentation"),
+        "voicePreparationState" to setOf("idle", "waiting-clock", "waiting-data", "waiting-deadline",
+            "priming", "waiting-reserve", "ready", "playing"),
     )
 
     fun lines(stats: Map<String, Any?>): List<String> = buildList {
@@ -83,10 +91,23 @@ internal object BrowserAudioDiagnostics {
                 if (field == "renderUnderrunEvents" && (raw !is Number || !raw.toDouble().isFinite() ||
                     raw.toDouble() < 0 || raw.toDouble() > 9_007_199_254_740_991.0 || raw.toDouble() % 1.0 != 0.0))
                     return@mapNotNull null
+                if (field == "outputTimestampFitGeneration" && (raw !is Number || !raw.toDouble().isFinite() ||
+                    raw.toDouble() < 0 || raw.toDouble() > 9_007_199_254_740_991.0 || raw.toDouble() % 1.0 != 0.0))
+                    return@mapNotNull null
+                if (field == "outputTimestampFitUncertaintyMs" && (raw !is Number || !raw.toDouble().isFinite() ||
+                    raw.toDouble() < 0 || raw.toDouble() > 3)) return@mapNotNull null
+                if ((field in voicePreparationFrameFields || field == "voiceWaitMs") &&
+                    (raw !is Number || !raw.toDouble().isFinite() || raw.toDouble() < 0 ||
+                        raw.toDouble() > 9_007_199_254_740_991.0 ||
+                        field in voicePreparationFrameFields && raw.toDouble() % 1.0 != 0.0)) return@mapNotNull null
+                if ((field == "contextObservedStateChanges" || field == "contextObservedNonRunningMs") &&
+                    (raw !is Number || !raw.toDouble().isFinite() || raw.toDouble() < 0 ||
+                        raw.toDouble() > 9_007_199_254_740_991.0 ||
+                        field == "contextObservedStateChanges" && raw.toDouble() % 1.0 != 0.0)) return@mapNotNull null
                 val choices = enumFields[field]
                 if (choices != null && (raw !is String || raw !in choices)) return@mapNotNull null
                 val precision = if (field == "sourceClockDispersionMs" || field == "deviceClockUncertaintyMs" ||
-                    field == "deviceClockFitDispersionMs" || field in sourceDeadlineEvidenceFields ||
+                    field == "deviceClockFitDispersionMs" || field == "outputTimestampFitUncertaintyMs" || field in sourceDeadlineEvidenceFields ||
                     field in retiredDeadlineEvidenceFields || field in renderDurationFields) 6 else 3
                 val value = value(raw, precision) ?: return@mapNotNull null
                 "$field=$value"

@@ -86,6 +86,82 @@ class BufferedAudioSessionTest {
     }
 
     @Test
+    fun immediateFlushKeepsItsSequenceFenceWhenNewRateChangesTheRtpOrigin() {
+        val samples = CopyOnWriteArrayList<Int>()
+        val starts = CopyOnWriteArrayList<Int>()
+        val engine = CarPlayMediaEngine(object : MediaSink {
+            override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) { starts += firstSample }
+            override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) { samples += sample }
+        })
+        val session = session(media = engine)
+        try {
+            val setup = engine.onBufferedAudio(session, validSetup())!!
+            Socket("127.0.0.1", setup["dataPort"] as Int).use { socket ->
+                // The flush marker belongs to the old RTP origin; the next track chooses
+                // a new timestamp origin. Late old TCP preload still precedes the fence.
+                val until = 12_877_777
+                val newOrigin = 2_081_286_512
+                engine.onBufferedAudioControl(session, "FLUSHBUFFERED", mapOf(
+                    "flushUntilSeq" to until, "flushUntilTS" to 2_282_760_205L))
+                engine.onBufferedAudioControl(session, "SETRATE", mapOf("rate" to 1, "rtpTime" to newOrigin))
+                sendFrame(socket, 12_874_521, 2_279_426_061L.toInt())
+                sendFrame(socket, until, 2_076_021_907, payload = byteArrayOf())
+                sendFrame(socket, until + 1, newOrigin)
+                sendFrame(socket, until + 2, newOrigin + 1024)
+                waitFor { samples.contains(newOrigin + 1024) }
+                assertEquals(listOf(newOrigin, newOrigin + 1024), samples.toList())
+                assertEquals(listOf(newOrigin), starts.toList())
+            }
+        } finally { session.close() }
+    }
+
+    @Test
+    fun deferredFlushIsRejectedBeforeItCanMutateMedia() {
+        var controls = 0
+        val session = session(media = object : AirPlayMediaHandler {
+            override fun onBufferedAudioControl(session: AirPlaySession, method: String, body: Map<String, Any?>): Map<String, Any?>? {
+                controls++
+                return null
+            }
+        })
+        try {
+            for (from in listOf(mapOf("flushFromSeq" to 10), mapOf("flushFromTS" to 1024))) {
+                val request = RtspMessage.Request("FLUSHBUFFERED", "rtsp://test", "RTSP/1.0", emptyMap(),
+                    BplistCodec.encode(from + mapOf("flushUntilSeq" to 20, "flushUntilTS" to 2048)))
+                val response = AirPlaySession::class.java.getDeclaredMethod("handle", RtspMessage.Request::class.java)
+                    .apply { isAccessible = true }.invoke(session, request) as RtspMessage.Response
+                assertEquals(501, response.status)
+                assertTrue(String(RtspMessage.buildResponse(request, response), Charsets.US_ASCII)
+                    .startsWith("RTSP/1.0 501 Not Implemented\r\n"))
+            }
+            assertEquals(0, controls)
+            assertEquals(200, handle(session, "FLUSHBUFFERED", BplistCodec.encode(mapOf("flushUntilSeq" to 20, "flushUntilTS" to 2048))).status)
+            assertEquals(1, controls)
+        } finally { session.close() }
+    }
+
+    @Test
+    fun replacingABufferedSenderDoesNotInheritItsPendingSequenceFence() {
+        val samples = CopyOnWriteArrayList<Int>()
+        val engine = CarPlayMediaEngine(object : MediaSink {
+            override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) { samples += sample }
+        })
+        val old = session(media = engine)
+        val replacement = session(media = engine)
+        try {
+            engine.onBufferedAudio(old, validSetup())!!
+            engine.onBufferedAudioControl(old, "FLUSHBUFFERED", mapOf("flushUntilSeq" to 5000, "flushUntilTS" to 9000))
+            val setup = engine.onBufferedAudio(replacement, validSetup())!!
+            Socket("127.0.0.1", setup["dataPort"] as Int).use { socket ->
+                engine.onBufferedAudioControl(replacement, "SETRATE", mapOf("rate" to 1, "rtpTime" to 1000))
+                sendFrame(socket, 0, 1000)
+                waitFor { samples.contains(1000) }
+                assertEquals(listOf(1000), samples.toList())
+            }
+        } finally { old.close(); replacement.close() }
+    }
+
+    @Test
     fun replacingTheSessionClosesOldPreloadAndLateOldCleanupCannotStopTheNewOutput() {
         val events = CopyOnWriteArrayList<String>()
         val sink = object : MediaSink {
@@ -256,13 +332,14 @@ class BufferedAudioSessionTest {
         } finally { old.close(); replacement.close() }
     }
 
-    private fun sendFrame(socket: Socket, sequence: Int, timestamp: Int) {
+    private fun sendFrame(socket: Socket, sequence: Int, timestamp: Int, payload: ByteArray = byteArrayOf(0x21)) {
         val header = java.nio.ByteBuffer.allocate(12).apply {
-            put(0x80.toByte()); put(0x60.toByte()); putShort(sequence.toShort()); putInt(timestamp); putInt(0)
+            put(0x80.toByte()); put((0x80 or ((sequence ushr 16) and 0x7f)).toByte())
+            putShort(sequence.toShort()); putInt(timestamp); putInt(0)
         }.array()
         val tail = java.nio.ByteBuffer.allocate(8).putLong(sequence.toLong()).array()
         val nonce = ByteArray(12).also { tail.copyInto(it, 4) }
-        val encrypted = AirPlayCrypto.chachaSeal(ByteArray(32), nonce, byteArrayOf(0x21), header.copyOfRange(4, 12))
+        val encrypted = AirPlayCrypto.chachaSeal(ByteArray(32), nonce, payload, header.copyOfRange(4, 12))
         val body = header + encrypted + tail
         DataOutputStream(socket.getOutputStream()).apply { writeShort(body.size + 2); write(body); flush() }
     }

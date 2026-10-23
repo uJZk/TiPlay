@@ -52,9 +52,9 @@ test('two coherent new native pairs establish real pipeline changes in either di
     assert.equal(changed.outputMethod, 'timestamp');
     assert.ok(Math.abs(changed.outputLatencyMs - latencyMs) < 1e-8);
     assert.equal(changed.uncertaintyMs, 0);
-    assert.equal(h.mapping.deviceClock().generation, generation + 1);
-    assert.equal(h.mapping.deviceClock().reason, 'output-step');
-    assert.equal(h.mapping.deviceClock().points, 1, 'the changed phase cannot mix with old oscillator observations');
+    assert.equal(h.mapping.deviceClock().generation, generation);
+    assert.equal(h.mapping.deviceClock().reason, 'context');
+    assert.equal(h.mapping.deviceClock().points, 1, 'native phase changes do not erase independently continuous render observations');
   }
 });
 
@@ -83,7 +83,7 @@ test('reordered historical pairs cannot erase a newer pipeline contradiction', (
   const changed = h.sample(10120, { latencyMs: 460 });
   assert.equal(changed.outputMethod, 'timestamp', 'the genuine second new point still confirms the retained first new point');
   assert.ok(Math.abs(changed.outputLatencyMs - 460) < 1e-8);
-  assert.equal(h.mapping.deviceClock().generation, generation + 1);
+  assert.equal(h.mapping.deviceClock().generation, generation);
 });
 
 test('two coherent historical pairs before the trusted point cannot establish a new route', () => {
@@ -119,10 +119,16 @@ test('two fresh physical pairs reacquire an oscillator switch between opposite p
     const next = sample(60000 + 3 * interval);
     assert.equal(next?.outputMethod, 'timestamp', 'two physical advancing pairs must not stay pending because the old rate is obsolete');
     assert.equal(next.uncertaintyMs, 0);
-    assert.equal(mapping.deviceClock().generation, fitted.generation + 1);
-    assert.equal(mapping.deviceClock().reason, 'output-step');
+    assert.equal(mapping.deviceClock().generation, fitted.generation, 'a continuous sample domain can change rate without resetting its phase fit');
+    assert.equal(mapping.deviceClock().reason, 'context');
+    let confirmed = 0;
     for (let time = 60000 + 4 * interval; time <= 60000 + 14 * interval; time += interval)
-      assert.equal(sample(time)?.outputMethod, 'timestamp');
+      if (sample(time)?.outputMethod === 'timestamp') confirmed++;
+    assert.ok(confirmed >= 5, 'an as-yet obsolete applied rate may conservatively reacquire phase, but cannot leave it permanently pending');
+    for (let time = 60000 + 15 * interval; time <= 130000; time += interval) sample(time);
+    assert.ok(Math.abs(mapping.deviceClock().rate - nextRate) < 1e-8);
+    for (let time = 130000 + interval; time <= 130000 + 5 * interval; time += interval)
+      assert.equal(sample(time)?.outputMethod, 'timestamp', 'phase remains continuously available after the new render rate is established');
   }
 });
 
@@ -149,7 +155,8 @@ test('reference expiry and oscillator-fit expiry remain different boundaries', (
   assert.equal(h.sample(32000), null);
   assert.equal(h.sample(32040).outputMethod, 'timestamp');
   assert.equal(h.mapping.deviceClock().reason, 'gap', 'a real >1000ms observation gap follows the existing fit reset');
-  assert.equal(h.mapping.deviceClock().generation, fitted.generation + 1);
+  assert.ok(h.mapping.deviceClock().generation > fitted.generation, 'the confirmed sampling gap retires the old rate evidence');
+  assert.equal(h.mapping.deviceClock().rate, 1, 'the baseline gap policy reacquires from nominal');
 });
 
 test('suspend and replacement contexts retire pending native measurements', () => {
@@ -351,8 +358,11 @@ test('a noisy timestamp uses a bounded, explicitly uncertain holdover without ac
   assert.ok(held.uncertaintyMs > 0);
   assert.equal(mapping.diagnostics().outputTimestampHoldoverAgeMs, 40);
   assert.equal(mapping.diagnostics().outputUnavailableCounts['timestamp-backwards'], 1);
+  const firstReference = mapping.reference(feedback({ contextTimeMs: context.currentTime * 1000 }), context);
   at += 40; context.currentTime += 0.04;
-  assert.ok(mapping.capture(context).uncertaintyMs > held.uncertaintyMs);
+  assert.equal(mapping.capture(context).uncertaintyMs, held.uncertaintyMs, 'static native measurement noise does not double-count rate age');
+  const olderReference = mapping.reference(feedback({ contextTimeMs: context.currentTime * 1000 }), context);
+  assert.ok(olderReference.uncertaintyMs > firstReference.uncertaintyMs, 'actual anchor projection reserves the growing rate uncertainty');
   at += 671; context.currentTime += 0.671;
   assert.equal(mapping.capture(context), null, 'a rejected stream cannot refresh the good anchor beyond 750ms');
   mapping.reset(); at += 1; output = { contextTime: context.currentTime - 0.2, performanceTime: at - 1000000 };

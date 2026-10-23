@@ -339,6 +339,40 @@ test('worklet diagnostic envelopes follow reset and packet generations independe
   } finally { post({ dispose: true }); }
 });
 
+test('short observed context suspensions survive sparse snapshots and Debug reset without affecting the audio state', async () => {
+  const previousPerformance = Object.getOwnPropertyDescriptor(globalThis, 'performance');
+  let at = 0;
+  Object.defineProperty(globalThis, 'performance', { configurable: true, value: { now: () => at, timeOrigin: 0 } });
+  const h = browserHarness();
+  try {
+    await h.audio.activate(); await tick();
+    const context = h.contexts[0];
+    h.audio.debug(true);
+    const before = h.audio.stats().debug.contextObservedStateChanges;
+    at = 1000; context.state = 'suspended'; context.onstatechange();
+    at = 1300;
+    assert.equal(h.audio.stats().debug.contextObservedNonRunningMs, 300);
+    at = 1600; context.state = 'running'; context.onstatechange();
+    at = 5000;
+    const debug = h.audio.stats().debug;
+    assert.equal(debug.contextObservedStateChanges, before + 2);
+    assert.equal(debug.contextObservedNonRunningMs, 600, 'a pause wholly between ordinary snapshots is retained');
+    assert.equal(h.audio.stats().debug.contextObservedNonRunningMs, 600, 'reads cannot count an interval twice');
+    const [summary, detail] = browserDiagnosticEvents({ audio: h.audio.stats() }, false, true);
+    assert.equal(detail.v.contextObservedNonRunningMs, 600);
+    assert.equal(Object.keys(summary.v).some(key => key.includes('contextObserved')), false);
+    h.audio.debug(false);
+    at = 6000; context.state = 'suspended'; context.onstatechange();
+    at = 6500; context.state = 'running'; context.onstatechange();
+    h.audio.debug(true);
+    assert.equal(h.audio.stats().debug.contextObservedStateChanges, 0);
+    assert.equal(h.audio.stats().debug.contextObservedNonRunningMs, 0);
+    assert.equal(context.state, 'running');
+  } finally {
+    h.done(); Object.defineProperty(globalThis, 'performance', previousPerformance);
+  }
+});
+
 test('browser device MAD reaches Debug telemetry only after a fit in that capture interval', async () => {
   const previousPerformance = Object.getOwnPropertyDescriptor(globalThis, 'performance');
   let at = 0;
@@ -353,9 +387,17 @@ test('browser device MAD reaches Debug telemetry only after a fit in that captur
     for (let value = 1000; value <= 10000; value += 100) sample(value);
     const fitted = h.audio.stats();
     assert.equal(fitted.debug.deviceClockFitStatus, 'tracking');
-    assert.equal(fitted.debug.deviceClockUncertaintyMs, 0); assert.equal(fitted.debug.deviceClockFitDispersionMs, 0);
+    assert.equal(fitted.debug.deviceClockSource, 'native', 'a fresh native fit takes priority over render progress');
+    assert.equal(fitted.debug.deviceClockUncertaintyMs, 0);
+    assert.equal(fitted.debug.deviceClockFitDispersionMs, 0);
+    assert.equal(fitted.debug.outputTimestampFitUncertaintyMs, 0, 'native phase noise stays separate from render quantization');
+    assert.equal(fitted.debug.outputTimestampFitStatus, 'tracking');
+    assert.ok(Number.isSafeInteger(fitted.debug.outputTimestampFitGeneration));
     const detail = browserDiagnosticEvents({ audio: fitted }, false, true).find(event => event.k === 'audio-diag');
     assert.equal(detail.v.deviceClockFitDispersionMs, 0);
+    assert.equal(detail.v.outputTimestampFitUncertaintyMs, 0);
+    assert.equal(detail.v.outputTimestampFitStatus, 'tracking');
+    assert.equal(detail.v.outputTimestampFitGeneration, fitted.debug.outputTimestampFitGeneration);
     h.audio.debug(false); assert.equal(h.audio.stats().debug, undefined);
     h.audio.debug(true);
     assert.equal(Object.hasOwn(h.audio.stats().debug, 'deviceClockFitDispersionMs'), false,

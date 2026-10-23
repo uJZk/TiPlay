@@ -299,6 +299,157 @@ class BufferedAudioStreamTest {
         }
     }
 
+    @Test fun bufferedSequenceUsesTwentyThreeBitsAndExcludesTheMarker() {
+        for (sequence in listOf(0, 7, 0x12_abcd, 0x7f_ffff)) {
+            for (marker in listOf(false, true)) {
+                val frame = BufferedAudioStream.open(key, seal(sequence, 1000, byteArrayOf(0x21), marker))!!
+                assertEquals(sequence, frame.sequence)
+                assertEquals(if (marker) 0x80 else 0, frame.rtp[1].toInt() and 0x80)
+            }
+        }
+        assertTrue(BufferedAudioStream.beforeSequence(0x7f_ffff, 0))
+        assertFalse(BufferedAudioStream.beforeSequence(0, 0x7f_ffff))
+        assertFalse(BufferedAudioStream.beforeSequence(0, 0))
+    }
+
+    @Test fun immediateSequenceFenceRetainsItsUntilAudioPacketAcrossTheWrap() {
+        for (until in listOf(0, 0x7f_ffff)) {
+            val sink = RecordingSink()
+            val stream = BufferedAudioStream(key, format, sink)
+            try {
+                stream.start()
+                Socket(InetAddress.getLoopbackAddress(), stream.port).use { socket ->
+                    val out = DataOutputStream(socket.getOutputStream())
+                    stream.flush(4_000_000_000L, until.toLong())
+                    stream.setRate(1000, 1, BigInteger.ZERO)
+                    for ((sequence, timestamp) in listOf(
+                        ((until - 1) and 0x7f_ffff) to 2_000_000_000L,
+                        until to 1000L, ((until + 1) and 0x7f_ffff) to 2024L)) {
+                        val body = seal(sequence, timestamp, byteArrayOf(0x21), marker = false)
+                        out.writeShort(body.size + 2); out.write(body)
+                    }
+                    out.flush()
+                    waitFor { sink.rtp.size >= 2 }
+                    assertEquals(listOf(1000, 2024), sink.rtp.toList())
+                    assertEquals(listOf(1000), sink.started.toList())
+                }
+            } finally { stream.close() }
+        }
+    }
+
+    @Test fun immediateFlushStopsTheOldClockBeforeNewInputArrives() {
+        val sink = RecordingSink()
+        val stream = BufferedAudioStream(key, format, sink, nanoTime = { 0L })
+        try {
+            stream.start()
+            Socket(InetAddress.getLoopbackAddress(), stream.port).use { socket ->
+                val out = DataOutputStream(socket.getOutputStream())
+                fun send(sequence: Int, timestamp: Long) {
+                    val body = seal(sequence, timestamp, byteArrayOf(0x21))
+                    out.writeShort(body.size + 2); out.write(body); out.flush()
+                }
+                stream.setRate(1000, 1, BigInteger.ZERO)
+                send(0, 1000); send(1, 2024)
+                waitFor { sink.rtp.size == 2 }
+                stream.flush(9000, 3)
+                assertNull(stream.anchor())
+                assertFalse(stream.feedback(BigInteger.ZERO, 0).containsKey("sampleTime"))
+                assertEquals(1, sink.stopped)
+                send(3, 5000)
+                waitFor { queuedFrames(stream) == 1 }
+                Thread.sleep(50)
+                assertEquals("A new origin must wait for its SETRATE anchor", 2, sink.rtp.size)
+                stream.setRate(5000, 1, BigInteger.ZERO)
+                waitFor { sink.rtp.size == 3 }
+                assertEquals(listOf(1000, 2024, 5000), sink.rtp.toList())
+                assertEquals(listOf(1000, 5000), sink.started.toList())
+            }
+        } finally { stream.close() }
+    }
+
+    @Test fun sequenceFlushRejectsAnOldPacketBlockedOnRelayCapacity() {
+        val existingThreads = Thread.getAllStackTraces().keys.toSet()
+        val sink = object : MediaSink, BrowserBufferedAudioPolicy {
+            val played = CopyOnWriteArrayList<Int>()
+            override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) { played += sample }
+        }
+        val stream = BufferedAudioStream(key, format, sink)
+        try {
+            stream.start()
+            val reader = Thread.getAllStackTraces().keys.single { it !in existingThreads && it.name == "airplay-buffered-rx" }
+            Socket(InetAddress.getLoopbackAddress(), stream.port).use { socket ->
+                val out = DataOutputStream(socket.getOutputStream())
+                repeat(130) { sequence ->
+                    val body = seal(sequence, 2_000_000_000L + sequence * 1024, byteArrayOf(0x21))
+                    out.writeShort(body.size + 2); out.write(body)
+                }
+                out.flush()
+                waitFor { queuedFrames(stream) == 117 && reader.state == Thread.State.WAITING }
+                stream.flush(2_100_000_000L, 130)
+                stream.setRate(1000, 1, BigInteger.ZERO)
+                val body = seal(130, 1000, byteArrayOf(0x21))
+                out.writeShort(body.size + 2); out.write(body); out.flush()
+                waitFor { sink.played.contains(1000) }
+                assertEquals(listOf(1000), sink.played.toList())
+            }
+        } finally { stream.close() }
+    }
+
+    @Test fun untilMarkerRetiresTheSequenceFenceAndTimestampFallbackCannotUndoIt() {
+        val sink = RecordingSink()
+        val stream = BufferedAudioStream(key, format, sink)
+        try {
+            stream.start()
+            Socket(InetAddress.getLoopbackAddress(), stream.port).use { socket ->
+                stream.flush(null, 20)
+                stream.flush(9000) // No sequence must not revive the earlier stale prefix.
+                stream.setRate(1000, 1, BigInteger.ZERO)
+                val out = DataOutputStream(socket.getOutputStream())
+                for ((sequence, timestamp, payload) in listOf(
+                    Triple(19, 2_000_000_000L, byteArrayOf(0x21)),
+                    Triple(20, 777L, byteArrayOf()), Triple(21, 1000L, byteArrayOf(0x21)))) {
+                    val body = seal(sequence, timestamp, payload)
+                    out.writeShort(body.size + 2); out.write(body)
+                }
+                out.flush()
+                waitFor { sink.rtp.contains(1000) }
+                assertEquals(listOf(1000), sink.rtp.toList())
+                val lock = BufferedAudioStream::class.java.getDeclaredField("lock").apply { isAccessible = true }.get(stream)!!
+                synchronized(lock) {
+                    assertNull("The prefix fence must not survive half a sequence turn",
+                        BufferedAudioStream::class.java.getDeclaredField("flushUntilSequence")
+                            .apply { isAccessible = true }.get(stream))
+                }
+            }
+        } finally { stream.close() }
+    }
+
+    @Test fun rateTimestampTrimPreservesLaterPreloadWithAnIndependentRtpOrigin() {
+        val stream = BufferedAudioStream(key, format, RecordingSink())
+        try {
+            stream.start()
+            Socket(InetAddress.getLoopbackAddress(), stream.port).use { socket ->
+                val out = DataOutputStream(socket.getOutputStream())
+                for ((sequence, timestamp) in listOf(10 to 10_000L, 11 to 1_000L)) {
+                    val body = seal(sequence, timestamp, byteArrayOf(0x21))
+                    out.writeShort(body.size + 2); out.write(body)
+                }
+                out.flush()
+                waitFor { queuedFrames(stream) == 2 }
+                val lock = BufferedAudioStream::class.java.getDeclaredField("lock").apply { isAccessible = true }.get(stream)!!
+                synchronized(lock) {
+                    // Hold the feed worker while inspecting accepted TCP preload.
+                    // An RTP timestamp orders this playhead's prefix, not future tracks.
+                    stream.setRate(10_000, 1, BigInteger.ZERO)
+                    val queue = BufferedAudioStream::class.java.getDeclaredField("queue")
+                        .apply { isAccessible = true }.get(stream) as java.util.ArrayDeque<*>
+                    assertEquals(listOf(10, 11), queue.map { (it as BufferedAudioStream.Frame).sequence })
+                    assertEquals(26L, queuedBytes(stream))
+                }
+            }
+        } finally { stream.close() }
+    }
+
     @Test
     fun malformedLengthClosesTheTcpStreamWithoutReadingANewPrefix() {
         val stream = BufferedAudioStream(key, format, RecordingSink())
@@ -516,10 +667,10 @@ class BufferedAudioStreamTest {
         }
     }
 
-    private fun seal(sequence: Int, timestamp: Long, payload: ByteArray): ByteArray {
+    private fun seal(sequence: Int, timestamp: Long, payload: ByteArray, marker: Boolean = true): ByteArray {
         val header = ByteArray(12)
         header[0] = 0x80.toByte()
-        header[1] = 0x60
+        header[1] = ((if (marker) 0x80 else 0) or ((sequence ushr 16) and 0x7f)).toByte()
         header[2] = (sequence shr 8).toByte(); header[3] = sequence.toByte()
         for (i in 0 until 4) header[4 + i] = (timestamp shr (24 - 8 * i)).toByte()
         val nonceTail = ByteArray(8) { (sequence + it).toByte() }

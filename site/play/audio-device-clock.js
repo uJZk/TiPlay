@@ -3,10 +3,26 @@ const HISTORY_MS = 16000, MIN_SPAN_MS = 4000, MAX_POINTS = 161;
 export const MAX_RATE_ERROR = 0.02;
 const SLEW_PER_SECOND = 0.001;
 const median = values => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
+const centeredMedian = values => {
+  values.sort((a, b) => a - b);
+  return (values[Math.floor((values.length - 1) / 2)] + values[Math.floor(values.length / 2)]) / 2;
+};
+
+/** Performance-time uncertainty when a context span is projected with a
+ * gradually applied control rate, while the actual rate may occupy either
+ * endpoint of the existing permitted range. The reciprocal matters at a switch
+ * between opposite endpoints: 2% times distance would understate that case.
+ */
+export function rateProjectionUncertainty(contextSpanMs, appliedRate) {
+  if (!Number.isFinite(contextSpanMs) || !Number.isFinite(appliedRate)
+    || appliedRate < 1 - MAX_RATE_ERROR || appliedRate > 1 + MAX_RATE_ERROR) return Infinity;
+  return Math.abs(contextSpanMs) * Math.max(Math.abs(1 / appliedRate - 1 / (1 - MAX_RATE_ERROR)),
+    Math.abs(1 / appliedRate - 1 / (1 + MAX_RATE_ERROR)));
+}
 
 /** Context samples per performance millisecond, independently of the server clock.
- * Only output timestamp pairs enter this fit: queue depth and latency estimates
- * are not oscillator measurements. A bounded robust fit tolerates device jitter.
+ * A fit owns one measurement domain: output timestamps or running render-cursor
+ * pairs. Queue depth and latency estimates are never rate measurements.
  */
 export class AudioDeviceClock {
   constructor() { this.generation = 0; this.fitDiagnosticsEnabled = false; this.reset('startup'); }
@@ -29,16 +45,25 @@ export class AudioDeviceClock {
     }
     this.lastAdvance = at;
   }
-  observe(contextTimeMs, performanceTimeMs, at = performanceTimeMs) {
-    if (![contextTimeMs, performanceTimeMs, at].every(Number.isFinite)) return;
+  observe(contextTimeMs, performanceTimeMs, at = performanceTimeMs, quantizationMs = 0) {
+    if (![contextTimeMs, performanceTimeMs, at, quantizationMs].every(Number.isFinite) || quantizationMs < 0) return;
     const previous = this.last;
+    const contextElapsed = previous && contextTimeMs - previous.contextTimeMs;
+    const performanceElapsed = previous && performanceTimeMs - previous.performanceTimeMs;
+    const quantized = quantizationMs > 0 || previous?.quantizationMs > 0;
+    // A render-cursor observation denotes an interval one known block wide.
+    // Progress outside both that interval and the permitted rate range is a
+    // coordinate jump, not an oscillator observation to train into the fit.
+    const stepped = previous && (quantized
+      ? contextElapsed < performanceElapsed * (1 - MAX_RATE_ERROR) - quantizationMs
+        || contextElapsed > performanceElapsed * (1 + MAX_RATE_ERROR) + (previous.quantizationMs || 0)
+      : Math.abs(contextElapsed - performanceElapsed * this.targetRate) > 40);
     if (previous && (contextTimeMs < previous.contextTimeMs || performanceTimeMs < previous.performanceTimeMs)) this.reset('backwards');
-    else if (previous && performanceTimeMs - previous.performanceTimeMs > 1000) this.reset('gap');
-    else if (previous && Math.abs(contextTimeMs - previous.contextTimeMs
-      - (performanceTimeMs - previous.performanceTimeMs) * this.targetRate) > 40) this.reset('step');
+    else if (previous && performanceElapsed > 1000) this.reset('gap');
+    else if (stepped) this.reset('step', { preserveRate: quantized });
     this.advance(at);
     if (this.last && (contextTimeMs <= this.last.contextTimeMs || performanceTimeMs <= this.last.performanceTimeMs)) return;
-    this.last = { contextTimeMs, performanceTimeMs };
+    this.last = { contextTimeMs, performanceTimeMs, ...(quantizationMs > 0 ? { quantizationMs } : {}) };
     const lastPoint = this.points.at(-1);
     if (lastPoint && performanceTimeMs - lastPoint.performanceTimeMs < 100) return;
     this.points.push(this.last);
@@ -56,19 +81,24 @@ export class AudioDeviceClock {
     if (!slopes.length) return;
     const rate = median(slopes), residuals = points.map(p => p.contextTimeMs - origin.contextTimeMs
       - (p.performanceTimeMs - origin.performanceTimeMs) * rate);
-    const center = median(residuals.slice()), dispersion = median(residuals.map(value => Math.abs(value - center)));
+    const halfQuantum = Math.max(...points.map(point => point.quantizationMs || 0)) / 2;
+    // Use the usual midpoint convention for even quantized histories; an upper
+    // median would make a balanced two-bin distribution invent a whole block of
+    // MAD. Half a block reserves known measurement resolution, not rate accuracy.
+    const residualMedian = halfQuantum > 0 ? centeredMedian : median;
+    const center = residualMedian(residuals.slice()), dispersion = residualMedian(residuals.map(value => Math.abs(value - center)));
     // The rejected attempt's noise is distinct from the accepted fit uncertainty
     // used by playout. Debug starts without inventing a previous capture's MAD.
     if (this.fitDiagnosticsEnabled) this.fitDispersionMs = dispersion;
     const outOfRange = rate < 1 - MAX_RATE_ERROR || rate > 1 + MAX_RATE_ERROR;
-    if (outOfRange || dispersion > 3) {
+    if (outOfRange || dispersion > 3 + halfQuantum) {
       this.confidence = 0; this.fitRejected++;
       this.fitStatus = this.acceptedFitAt === null ? 'acquiring' : 'holdover';
       this.fitRejectReason = outOfRange ? 'out-of-range' : 'noisy';
       return;
     }
-    this.targetRate = rate; this.uncertaintyMs = dispersion;
-    this.confidence = Math.min(1, span / 8000) / (1 + dispersion);
+    this.targetRate = rate; this.uncertaintyMs = dispersion + halfQuantum;
+    this.confidence = Math.min(1, span / 8000) / (1 + this.uncertaintyMs);
     this.acceptedFitAt = at; this.fitStatus = 'tracking'; this.fitRejectReason = 'none';
   }
   snapshot(at = this.lastAdvance) {

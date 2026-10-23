@@ -36,6 +36,14 @@ function harness() {
   }
   function render(blockFrames = 128) {
     globalThis.currentFrame = frame; globalThis.currentTime = frame / 48000;
+    // Controls keep observing a running device; a once-at-start anchor would
+    // correctly accumulate unbounded projection uncertainty in these long runs.
+    const anchor = processor.contextAnchor, rate = processor.deviceClock.rate;
+    if (anchor && frame / 48 > 200 * rate) {
+      const contextTimeMs = frame / 48 - 200 * rate;
+      post({ contextAnchor: { contextTimeMs,
+        localTimeMs: anchor.localTimeMs + (contextTimeMs - anchor.contextTimeMs) / rate } });
+    }
     const output = [new Float32Array(blockFrames), new Float32Array(blockFrames)];
     processor.process([], [output]); frame += blockFrames; return output;
   }
@@ -53,7 +61,8 @@ test('production worklet emits sample-count-driven audible content references wi
   for (const reference of refs) {
     assert.ok(Math.abs(reference.sourceTimeMs - (h.base + reference.contextTimeMs + 140)) < 0.1,
       '200ms device path is scheduled early using the audible context mapping, with filter delay inside source content');
-    assert.equal(reference.outputUncertaintyMs, 1);
+    assert.ok(reference.outputUncertaintyMs >= 1 && reference.outputUncertaintyMs < 5.2,
+      'feedback reserves the actual native-anchor projection distance');
     assert.ok(reference.filterUncertaintyMs <= 1);
     assert.ok(reference.resampleRatio > 0.99 && reference.resampleRatio < 1.01);
     assert.equal(reference.networkDelayMs, 60);
@@ -429,12 +438,14 @@ test('independent audio deadline reserves uncertainty and video-only touch plans
   h.post({ plans: { video: constantDelay(180), audio: constantDelay(280) } });
   for (let quantum = 0; quantum < 100; quantum++) { h.feed(); h.render(); }
   const player = h.processor.timelines.get(0), backend = player.backend, recoveries = { ...player.recoveryCounts };
-  assert.equal(player.networkDelayMs, 268, '300ms includes the 30ms phase budget plus 1ms output and 1ms filter uncertainty');
+  const admittedDelay = 300 - 30 - 1 - 1 - 128 / 48 * (1 / .98 - 1);
+  assert.ok(Math.abs(player.networkDelayMs - admittedDelay) < 1e-12,
+    'startup reserves the recovery window, measured output/filter uncertainty and a full render-block projection');
   assert.equal(player.sourceDeadlineState, 'within-bound'); assert.ok(player.sourceDeltaUpperMs <= 300);
   h.post({ plans: { video: constantDelay(0), audio: constantDelay(280) } });
   for (let quantum = 0; quantum < 100; quantum++) { h.feed(); h.render(); }
   assert.equal(player.backend, backend); assert.deepEqual(player.recoveryCounts, recoveries);
-  assert.equal(player.networkDelayMs, 268); assert.equal(player.sourceDeadlineRejectedFrames, 0);
+  assert.equal(player.networkDelayMs, admittedDelay); assert.equal(player.sourceDeadlineRejectedFrames, 0);
   h.post({ clock: { version: 2, generation: 1, serverOriginMs: h.base, localOriginMs: 0, rate: 1, state: 'locked' } });
   for (let quantum = 0; quantum < 20; quantum++) { h.feed(); h.render(); }
   assert.equal(player.sourceDeadlineState, 'unknown');
@@ -448,7 +459,7 @@ test('actual worklet reports the rejected source-deadline trigger after healthy 
     h.post({ debug: true, plans: { video: constantDelay(40), audio: constantDelay(280) } });
     for (let quantum = 0; quantum < 100; quantum++) { h.feed(6, 'airplay-mirror'); h.render(); }
     const player = h.processor.timelines.get(6);
-    assert.equal(player.networkDelayMs, 268);
+    assert.ok(player.networkDelayMs < 268 && player.networkDelayMs > 267.9);
     assert.equal(player.sourceDeadlineState, 'within-bound');
     // A sub-recovery phase refinement followed by less than the network-buffer
     // update threshold can exhaust the separately checked source-age reserve.
@@ -456,13 +467,15 @@ test('actual worklet reports the rejected source-deadline trigger after healthy 
     h.feed(6, 'airplay-mirror'); h.render();
     assert.equal(player.recoveryCounts['source-deadline'], 1);
     const triggerUpper = player.sourceDeltaUpperMs;
-    assert.ok(triggerUpper > 300 && triggerUpper < 305);
+    assert.ok(triggerUpper > 300 && triggerUpper < 310,
+      'the source bound includes the additional native-anchor projection reserve');
     for (let quantum = 0; quantum < 20; quantum++) { h.feed(6, 'airplay-mirror'); h.render(); }
     assert.equal(player.sourceDeadlineState, 'within-bound');
     h.processor.report();
     const report = h.processor.messages.filter(value => value.diagnostics).at(-1).diagnostics.stream6;
     assert.equal(report.lastSourceDeadlineDeltaUpperMs, triggerUpper);
-    assert.equal(report.lastSourceDeadlineUncertaintyMs, 9);
+    assert.ok(report.lastSourceDeadlineUncertaintyMs > 9 && report.lastSourceDeadlineUncertaintyMs < 15,
+      'the rejected trigger includes measured uncertainty and the actual native-anchor projection');
     assert.equal(report.lastSourceDeadlineLimitMs, 300);
     assert.ok(report.lastSourceDeadlineAgeMs > 50 && report.lastSourceDeadlineAgeMs < 60);
     assert.equal(report.mode, 'airplay-mirror'); assert.equal(report.epoch, 1); assert.equal(report.generation, 3);
@@ -470,4 +483,248 @@ test('actual worklet reports the rejected source-deadline trigger after healthy 
       !Object.keys(value.playout).some(key => key.startsWith('lastSourceDeadline'))),
     'the added Debug evidence does not expand normal playout feedback');
   } finally { h.post({ dispose: true }); }
+});
+
+function voiceSignalScenario({ deliveryStep = 0, strict = false, plan = 60,
+  expireAt = null, generationAt = null, repeatedGeneration = false,
+  oldClockThenFresh = false, unknownThenKnown = false, onePacket = false, sourceGap = false,
+  durationQuanta = 600, blockFrames = 128, latePlan = null, highUncertaintyFromMs = Infinity } = {}) {
+  const h = harness(), p = h.processor;
+  let sourceFrame = 0, sequence = 0, oldCursor = null, previousPilot = null, planChanged = false;
+  let observed = null, previousUnderruns = 0, expiredBounds = [];
+  const allUnderrunQuanta = [], cursors = [], sourceReads = [];
+  let nonfinite = 0, backwards = 0, pilotReplay = 0, expiredLeak = 0, unknownClaimedBound = 0;
+  let firstOutputMs = null, outputAfterOneSecond = 0, firstOutputAfterClockRestoreMs = null;
+  let firstSourceOffsetMs = null;
+  h.post({ plans: { audio: constantDelay(plan), video: constantDelay(0) } });
+  function supply(wall, quantum) {
+    if (deliveryStep && quantum >= 40 && quantum < 60) return;
+    const edge = wall - (deliveryStep && quantum >= 60 ? deliveryStep : 0);
+    while ((!onePacket || !sequence) && (strict ? (sourceFrame + 960) / 48 <= edge : sourceFrame / 48 < edge + 20)) {
+      if (sourceGap && sourceFrame === 4800) { sourceFrame += 960; continue; }
+      const first = sourceFrame, pcm = new Int16Array(1920);
+      for (let i = 0; i < 960; i++) {
+        pcm[i * 2] = Math.round(32767 * (.35 + .05 * Math.sin((first + i) * 2 * Math.PI * 73 / 48000)));
+        // One PCM code per source ms. Once its gain is flat, the tag identifies
+        // sample progress to within quantization/filter error without rawCursor.
+        pcm[i * 2 + 1] = 6000 + Math.round((first + i) / 48);
+      }
+      sourceReads.push({ first, end: first + 960 });
+      h.post({ type: 1, semanticType: 1, mode: 'carplay', epoch: 1, rate: 48000,
+        channels: 2, flags: 0, sequence: sequence++, generation: 3,
+        presentationMs: h.base + first / 48, arrivalLocalTimeMs: wall, pcm: pcm.buffer });
+      sourceFrame += 960;
+    }
+  }
+  function bind(timeline) {
+    const bound = timeline.boundDeadline, read = timeline.read;
+    timeline.boundDeadline = function(deadline, clock, sourceMs, localSpan, sourceSpan) {
+      if (deadline && !deadline.unknownReason && clock && Number.isFinite(sourceMs)) {
+        const projection = Math.max(Math.abs(deadline.projectionContextMs ?? 0),
+          Math.abs((deadline.projectionContextMs ?? 0) + localSpan * (deadline.projectionRate ?? 1)));
+        const applied = deadline.projectionRate ?? 1;
+        const projectionU = projection * Math.max(Math.abs(1 / applied - 1 / .98), Math.abs(1 / applied - 1 / 1.02));
+        const mapped = clock.localOriginMs + (sourceMs - clock.serverOriginMs) * clock.rate;
+        expiredBounds.push({ upper: deadline.outputAt - mapped + Math.max(0, localSpan - sourceSpan)
+          + deadline.uncertaintyMs + projectionU, sourceMs });
+      }
+      return bound.call(this, deadline, clock, sourceMs, localSpan, sourceSpan);
+    };
+    timeline.read = function(frame, count) {
+      const copied = read.call(this, frame, count);
+      let covered = frame;
+      for (const source of sourceReads) {
+        if (source.end <= covered) continue;
+        if (source.first > covered) break;
+        covered = Math.min(frame + copied, source.end);
+        if (covered >= frame + copied) break;
+      }
+      assert.ok(!copied || covered >= frame + copied, 'Soxr may read only PCM actually delivered to this epoch');
+      return copied;
+    };
+  }
+  try {
+    for (let quantum = 0; quantum < durationQuanta; quantum++) {
+      const wall = h.frame / 48;
+      supply(wall, quantum);
+      if (latePlan !== null && wall >= 500 && !planChanged) {
+        h.post({ plans: { audio: constantDelay(latePlan), video: constantDelay(0) } });
+        planChanged = true;
+      }
+      const timeline = p.timelines.get(1);
+      if (timeline && timeline !== observed) { bind(timeline); observed = timeline; }
+      const generation = repeatedGeneration ? 1 + (wall >= 500 ? 1 : 0) + (wall >= 700 ? 1 : 0)
+        : generationAt !== null && quantum >= generationAt ? 2 : 1;
+      const origin = oldClockThenFresh && wall >= 500 && wall < 700 ? -400 : 0;
+      const unknown = unknownThenKnown && wall >= 500 && wall < 700;
+      h.post({ clock: { version: 2, generation, serverOriginMs: h.base, localOriginMs: origin,
+        rate: 1, state: 'locked', uncertaintyMs: 0 },
+        contextAnchor: unknown ? null : { contextTimeMs: wall - 200, localTimeMs: wall },
+        outputUncertaintyMs: unknown ? null : quantum === expireAt || wall >= highUncertaintyFromMs ? 80 : 1 });
+      expiredBounds = [];
+      const output = h.render(blockFrames), current = p.timelines.get(1), nonzero = output.some(c => c.some(x => x !== 0));
+      if (nonzero && firstOutputMs === null) {
+        firstOutputMs = wall;
+        firstSourceOffsetMs = expiredBounds.length ? Math.min(...expiredBounds.map(x => x.sourceMs)) - h.base : null;
+      }
+      if (wall >= 1000 && nonzero) outputAfterOneSecond++;
+      if (wall >= 700 && nonzero) firstOutputAfterClockRestoreMs ??= wall;
+      for (const channel of output) for (const value of channel) if (!Number.isFinite(value)) nonfinite++;
+      if (expiredBounds.some(x => x.upper > 300 + 1e-7) && nonzero) expiredLeak++;
+      if (unknown && nonzero && current?.sourceDeadlineState !== 'unknown') unknownClaimedBound++;
+      if (current && Number.isFinite(current.rawCursorMs)) {
+        if (oldCursor !== null && current.rawCursorMs < oldCursor - 1e-7) backwards++;
+        oldCursor = current.rawCursorMs; cursors.push(current.rawCursorMs);
+      }
+      // Detect a flat-gain pilot directly from samples, rather than assuming a
+      // particular implementation of retained priming or a private gain field.
+      const right = output[1]; let pilotStep = 0;
+      for (let i = 1; i < right.length; i++) pilotStep = Math.max(pilotStep, Math.abs(right[i] - right[i - 1]));
+      if (right.every(x => x > .1) && pilotStep < 4 / 32768) {
+        const pilot = right.reduce((sum, x) => sum + x, 0) / right.length;
+        if (previousPilot !== null && pilot < previousPilot - 2 / 32768) pilotReplay++;
+        previousPilot = pilot;
+      }
+      const underruns = current?.recoveryCounts.underrun ?? 0;
+      // This counter locates a perturbation in a separate control run only.
+      // Passing conditions below use actual PCM, deadlines and source progress.
+      if (underruns > previousUnderruns) allUnderrunQuanta.push(quantum);
+      previousUnderruns = underruns;
+    }
+    const current = p.timelines.get(1);
+    return { nonfinite, backwards, pilotReplay, expiredLeak, unknownClaimedBound,
+      firstOutputMs, firstSourceOffsetMs, outputAfterOneSecond, firstOutputAfterClockRestoreMs,
+      allUnderrunQuanta, state: current?.state, reason: current?.reason, cursors };
+  } finally { h.post({ dispose: true }); }
+}
+
+function assertVoiceSignalIntegrity(result) {
+  assert.equal(result.nonfinite, 0);
+  assert.equal(result.backwards, 0, 'an emitted source cursor cannot replay');
+  assert.equal(result.pilotReplay, 0, 'the independently tagged source waveform cannot replay after a fade');
+  assert.equal(result.expiredLeak, 0, 'external source-age bounds reject expired PCM and held tails');
+  assert.equal(result.unknownClaimedBound, 0, 'unknown output mapping must not claim a verified source deadline');
+}
+
+test('voice recovery preserves the historical 50ms delivery contract and rejects a permanent 160ms sender delay', () => {
+  for (const deliveryStep of [50, 160]) {
+    const result = voiceSignalScenario({ deliveryStep });
+    assertVoiceSignalIntegrity(result);
+    if (deliveryStep === 50) {
+      assert.equal(result.state, 'playing');
+      assert.ok(result.outputAfterOneSecond > 200, 'new available source PCM must resume actual speech output');
+    } else {
+      assert.equal(result.state, 'infeasible');
+      assert.equal(result.outputAfterOneSecond, 0, '200ms output lead plus 160ms source delay cannot meet the 300ms bound');
+    }
+  }
+});
+
+test('voice can re-prime from complete newly delivered packets after a genuine 50ms delivery step', () => {
+  const result = voiceSignalScenario({ deliveryStep: 50, strict: true });
+  assertVoiceSignalIntegrity(result);
+  assert.equal(result.state, 'playing');
+  assert.ok(result.outputAfterOneSecond > 200, 'this producer never supplies a packet before its source end');
+});
+
+test('source-fit generation changes and a deadline rejection on the final underflow cannot latch voice recovery', () => {
+  const control = voiceSignalScenario({ deliveryStep: 50 });
+  const quantum = control.allUnderrunQuanta.at(-1);
+  assert.ok(Number.isInteger(quantum), 'fixture must exercise a genuine interrupted source stream');
+  const combined = voiceSignalScenario({ deliveryStep: 50, expireAt: quantum, generationAt: quantum });
+  const refits = voiceSignalScenario({ repeatedGeneration: true, strict: true });
+  for (const result of [combined, refits]) {
+    assertVoiceSignalIntegrity(result);
+    assert.equal(result.state, 'playing');
+    assert.ok(result.outputAfterOneSecond > 200, 'source-fit metadata must not prevent fresh PCM from playing');
+  }
+});
+
+test('expired voice source mapping can become feasible again when the clock and fresh packets recover', () => {
+  const result = voiceSignalScenario({ oldClockThenFresh: true, strict: true });
+  assertVoiceSignalIntegrity(result);
+  assert.equal(result.state, 'playing');
+  assert.ok(result.firstOutputAfterClockRestoreMs !== null && result.firstOutputAfterClockRestoreMs <= 1000,
+    'a restored feasible source interval must resume within the existing 300ms audio window');
+  assert.ok(result.outputAfterOneSecond > 200);
+});
+
+test('unknown voice output mapping remains unverified and recovers with the real output anchor', () => {
+  const result = voiceSignalScenario({ unknownThenKnown: true, strict: true });
+  assertVoiceSignalIntegrity(result);
+  assert.equal(result.state, 'playing');
+  assert.ok(result.outputAfterOneSecond > 200);
+});
+
+test('one complete 20ms first utterance can start without awaiting an unavailable second packet', () => {
+  const result = voiceSignalScenario({ onePacket: true, strict: true, durationQuanta: 200 });
+  assertVoiceSignalIntegrity(result);
+  assert.ok(result.firstOutputMs !== null && result.firstOutputMs <= 20 + 20 + 2 * 128 / 48,
+    'one complete packet plus the existing wall-clock startup gate is sufficient');
+  assert.ok(result.firstSourceOffsetMs !== null && result.firstSourceOffsetMs < 2 * 128 / 48,
+    'starting a short utterance must preserve its first source samples to render-quantum precision');
+});
+
+test('voice recovery selects a later contiguous source run after a genuine PCM hole', () => {
+  const result = voiceSignalScenario({ sourceGap: true, strict: true });
+  assertVoiceSignalIntegrity(result);
+  assert.equal(result.state, 'playing');
+  assert.ok(result.outputAfterOneSecond > 200, 'an unfillable earlier source hole must not block later delivered speech');
+});
+
+test('a finite voice packet can emit real partial PCM in a larger render quantum', () => {
+  const result = voiceSignalScenario({ onePacket: true, strict: true, blockFrames: 1024, durationQuanta: 15 });
+  assertVoiceSignalIntegrity(result);
+  assert.ok(result.firstOutputMs !== null && result.firstOutputMs <= 20 + 20 + 2 * 1024 / 48,
+    'the hardware quantum must not silence a short utterance with real available Soxr output');
+  assert.ok(result.firstSourceOffsetMs !== null && result.firstSourceOffsetMs < 2 * 128 / 48,
+    'a partial first quantum still preserves the beginning of the utterance');
+});
+
+test('the first real guidance anchor preserves an already audible arrival-based filter', () => {
+  const h = harness();
+  h.post({ contextAnchor: { contextTimeMs: 0, localTimeMs: 188 } });
+  const packet = (sequence, presentationMs) => ({ type: 255, semanticType: 1, mode: 'carplay', epoch: 1,
+    rate: 48000, channels: 1, flags: 0, sequence, generation: 3,
+    ...(presentationMs === undefined ? {} : { presentationMs }), arrivalLocalTimeMs: h.frame / 48,
+    pcm: Int16Array.from({ length: 960 }, (_, i) => Math.round(10000 * Math.sin((sequence * 960 + i) * 2 * Math.PI * 997 / 48000))).buffer });
+  for (let sequence = 0; sequence < 20; sequence++) h.post(packet(sequence));
+  for (let quantum = 0; quantum < 50; quantum++) h.render();
+  const timeline = h.processor.timelines.get(255), backend = timeline.backend;
+  assert.ok(backend && timeline.arrivalPlayback && timeline.hasEmitted);
+  const recoveries = { ...timeline.recoveryCounts };
+  h.post(packet(20, h.base + 400));
+  const cursor = timeline.rawCursorMs;
+  for (let quantum = 0; quantum < 20; quantum++) {
+    const output = h.render();
+    assert.ok(timeline.backend === backend, 'learning a real anchor preserves the same live Soxr signal');
+    assert.ok(output[0].some(value => Math.abs(value) > .1));
+    assert.ok(timeline.rawCursorMs >= cursor);
+  }
+  assert.equal(timeline.arrivalPlayback, false); assert.equal(timeline.synchronized, true);
+  assert.deepEqual(timeline.recoveryCounts, recoveries);
+  assert.equal(timeline.sourceDeadlineState, 'within-bound');
+  h.post({ dispose: true });
+});
+
+test('the reachable 280ms audio plan remains a soft target during first voice admission', () => {
+  const result = voiceSignalScenario({ plan: 280 });
+  assertVoiceSignalIntegrity(result);
+  assert.ok(result.firstOutputMs !== null, 'the media readiness ceiling must not contradict the first voice admission window');
+  assert.ok(result.outputAfterOneSecond > 200);
+  assert.equal(result.state, 'playing');
+});
+
+test('a higher audio plan can recover already audible voice within its actual source budget', () => {
+  const result = voiceSignalScenario({ latePlan: 280, repeatedGeneration: true });
+  assertVoiceSignalIntegrity(result);
+  assert.ok(result.outputAfterOneSecond > 200);
+  assert.equal(result.state, 'playing');
+});
+
+test('a soft audio target cannot prevent legal voice recovery under higher output uncertainty', () => {
+  const result = voiceSignalScenario({ latePlan: 280, highUncertaintyFromMs: 500 });
+  assertVoiceSignalIntegrity(result);
+  assert.ok(result.outputAfterOneSecond > 200, 'complete fresh packets remain playable inside the full 300ms uncertainty bound');
+  assert.equal(result.state, 'playing');
 });

@@ -3,7 +3,8 @@ import { PcmTimeline } from './pcm-timeline.js';
 import { initialPlaybackPlans, audioDelayAt, audioLimit } from './playback-window.js';
 import { BUFFERED_AUDIO_WINDOW_MS } from './audio-buffer-policy.js';
 import { SoxrRuntime } from './streaming-resampler.js';
-import { ContinuousAudio, AUDIO_FADE_MS, AUDIO_RECOVERY_ERROR_MS, sourceDeadlineAt } from './continuous-audio.js';
+import { ContinuousAudio, AUDIO_FADE_MS, AUDIO_RECOVERY_ERROR_MS, sourceDeadlineAt, sourceDeadlineUncertainty } from './continuous-audio.js';
+import { rateProjectionUncertainty } from './audio-device-clock.js';
 
 const purpose = (type, stream) => stream.semanticType ?? type;
 const isVoice = (type, stream) => purpose(type, stream) >= 1 && purpose(type, stream) <= 4;
@@ -228,6 +229,11 @@ class TiPlayAudio extends AudioWorkletProcessor {
   arrivalTime(contextMs) {
     return this.arrivalAnchor ? this.arrivalAnchor.timeMs + (contextMs - this.arrivalAnchor.contextTimeMs) / this.deviceClock.rate : contextMs;
   }
+  outputUncertainty(contextMs, frames = 0) {
+    if (!this.contextAnchor || !Number.isFinite(this.outputUncertaintyMs)) return this.outputUncertaintyMs;
+    const start = contextMs - this.contextAnchor.contextTimeMs, end = start + frames * 1000 / sampleRate;
+    return this.outputUncertaintyMs + rateProjectionUncertainty(Math.max(Math.abs(start), Math.abs(end)), this.deviceClock.rate);
+  }
   deadline(timeline, contextMs) {
     const outputAt = this.contextAnchor && this.contextAnchor.localTimeMs
       + (contextMs - this.contextAnchor.contextTimeMs) / this.deviceClock.rate;
@@ -238,6 +244,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
     return unknownReason ? { unknownReason } : {
       outputAt, limitMs: audioLimit(timeline.mode),
       uncertaintyMs: Math.max(0, this.outputUncertaintyMs) + Math.max(0, this.clock.uncertaintyMs) + timeline.filterUncertaintyMs,
+      projectionContextMs: contextMs - this.contextAnchor.contextTimeMs, projectionRate: this.deviceClock.rate,
     };
   }
   checkRetiredDeadline(tail, contextMs, blockFrames) {
@@ -252,7 +259,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
         ...(Number.isSafeInteger(tail.generation) ? { lastRetiredSourceDeadlineGeneration: tail.generation } : {}),
         lastRetiredSourceDeadlineDeltaUpperMs: tail.sourceDeltaUpperMs,
         lastRetiredSourceDeadlineLimitMs: deadline.limitMs,
-        lastRetiredSourceDeadlineUncertaintyMs: deadline.uncertaintyMs,
+        lastRetiredSourceDeadlineUncertaintyMs: sourceDeadlineUncertainty(deadline, frames * 1000 / sampleRate / this.deviceClock.rate),
         contextMs,
       });
     }
@@ -260,7 +267,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
     // keeping the object cannot make that content younger at the next quantum.
     tail.remaining = 0;
   }
-  targetTime(timeline, contextMs) {
+  targetTime(timeline, contextMs, frames = 0) {
     if (this.suspended) return null;
     if (timeline.arrivalPlayback) {
       const renderMs = this.arrivalTime(contextMs), target = renderMs - (timeline.arrivalDelayMs || 0), tail = timeline.queue.at(-1);
@@ -280,37 +287,28 @@ class TiPlayAudio extends AudioWorkletProcessor {
     const plans = this.plansByMode[timeline.mode] ?? this.delayPlans;
     // Reserve the resampler's phase-recovery window inside this track's own
     // deadline. Its actual emitted source cursor is checked separately below.
-    const uncertainty = Math.max(0, this.outputUncertaintyMs || 0) + timeline.filterUncertaintyMs
+    const uncertainty = Math.max(0, this.outputUncertainty(contextMs, frames) || 0) + timeline.filterUncertaintyMs
       + Math.max(0, this.clock?.uncertaintyMs || 0);
     const latest = audioLimit(timeline.mode) - uncertainty - AUDIO_RECOVERY_ERROR_MS;
-    let desired = plans.audio.to;
+    const desired = plans.audio.to;
     if (timeline.mode === 'carplay' && isVoice(timeline.type, timeline) && timeline.synchronized) {
-      const clock = this.clock;
-      if (!clock || ![clock.localOriginMs, clock.serverOriginMs].every(Number.isFinite)) return null;
-      const recoveries = Object.entries(timeline.recoveryCounts).reduce((total, [reason, count]) => total + (reason === 'network-buffer' ? 0 : count), 0);
-      const tailSource = timeline.queue.length ? timeline.sourceAnchorMs + timeline.queue.at(-1).end * 1000 / timeline.rate : -Infinity;
-      const recoveredInput = !timeline.backend && Number.isFinite(timeline.rawCursorMs)
-        && recoveries > (timeline.startupRecoveryCount || 0) && tailSource > timeline.rawCursorMs + 10;
-      if (timeline.sourceStartupDelayMs === undefined || recoveredInput) {
-        timeline.startupRecoveryCount = recoveries;
-        const source = timeline.rawCursorMs ?? timeline.sourceAnchorMs;
-        const mapped = clock.localOriginMs + (source - clock.serverOriginMs) * (clock.rate || 1);
-        // Preserve the utterance's first available sample. This one startup reserve
-        // accounts for actual output lead, never video Delta or touch activity.
-        timeline.sourceStartupDelayMs = Math.max(0, localMs - mapped) + SPEECH_START_BUFFER_MS;
-      }
-      if (timeline.sourceStartupDelayMs > latest) {
-        if (timeline.backend) timeline.recover('sender-deadline');
-        timeline.state = 'infeasible'; timeline.reason = 'sender-deadline';
-        timeline.senderCeilingViolations = (timeline.senderCeilingViolations || 0) + 1;
-        return null;
-      }
-      desired = Math.max(desired, timeline.sourceStartupDelayMs);
+      const preparation = timeline.prepareVoice({ contextMs, frames, outputAt: localMs, clock: this.clock,
+        deviceRate: this.deviceClock.rate, deadline: this.deadline(timeline, contextMs),
+        minimumDelayMs: desired,
+        admissionReserveMs: timeline.hasEmitted ? 0 : AUDIO_RECOVERY_ERROR_MS,
+        waitMs: SPEECH_START_BUFFER_MS });
+      return preparation.targetMs;
     }
     const proposed = Math.min(desired, latest);
-    if (timeline.networkDelayMs === undefined) timeline.networkDelayMs = proposed;
-    else if (Math.abs(proposed - timeline.networkDelayMs) >= 8) {
+    if (timeline.networkDelayMs === undefined) {
+      timeline.networkDelayMs = proposed; timeline.networkPlanTargetMs = desired;
+    } else if (Math.abs(proposed - timeline.networkDelayMs) >= 8
+      && (!timeline.backend || Math.abs(desired - timeline.networkPlanTargetMs) >= 8)) {
+      // A changing uncertainty reserve is not a new network plan and must not
+      // discard a coherent live filter. Its actual emitted samples still pass
+      // the full per-quantum source-age check below, including that uncertainty.
       timeline.networkDelayMs = proposed;
+      timeline.networkPlanTargetMs = desired;
       if (timeline.backend) timeline.recover('network-buffer');
     }
     const delay = timeline.networkDelayMs;
@@ -323,7 +321,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
   feedback(contextMs, renderQuantumFrames) {
     for (const timeline of this.timelines.values()) if (timeline instanceof ContinuousAudio) {
       const reference = timeline.reference(contextMs);
-      reference.outputUncertaintyMs = this.outputUncertaintyMs;
+      reference.outputUncertaintyMs = this.outputUncertainty(contextMs);
       reference.renderQuantumFrames = renderQuantumFrames;
       reference.renderQuantumMaxFrames = this.renderQuantumMaxFrames;
       if ((!timeline.synchronized || timeline.sourceDeadlineState === 'unknown') && !timeline.arrivalPlayback && reference.state === 'playing') reference.state = 'untimed';
@@ -350,7 +348,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
     for (const [type, timeline] of this.timelines) if (timeline instanceof ContinuousAudio) {
       if (!timeline.block || timeline.block.length < blockFrames * timeline.channels)
         timeline.block = new Float32Array(Math.max(512, blockFrames) * timeline.channels);
-      const produced = timeline.render(this.targetTime(timeline, contextMs), contextMs, timeline.arrivalPlayback ? null : this.clock,
+      const produced = timeline.render(this.targetTime(timeline, contextMs, blockFrames), contextMs, timeline.arrivalPlayback ? null : this.clock,
         blockFrames, timeline.block, this.deviceClock.rate, this.deadline(timeline, contextMs));
       continuous.push([type, timeline, produced]);
     }

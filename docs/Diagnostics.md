@@ -267,32 +267,43 @@ tails. Production-worklet/real-Soxr comparisons establish waveform defects, not 
 share of field clicks; recovery counts cannot identify either edge. URL audio uses a
 separate graph. See [verification](Testing.md#media-clock-and-continuous-audio-acceptance).
 
-Device-clock rate, browser/Android clock rate and source sampling rate describe
-different mappings. A rejected device fit can leave the last accepted rate as
-holdover with zero current confidence; zero confidence does not imply nominal rate.
-`deviceClockAcceptedFitAgeMs`, `deviceClockFitRejected`, `deviceClockFitStatus` and
-`deviceClockFitRejectReason` distinguish acquisition, accepted tracking and rejected
-noisy/out-of-range fits while retaining the true accepted age. Missing accepted age
-stays unknown. These are output-timestamp fit estimates, not an oscillator measurement
-at the physical speaker. They do not justify enlarging the phase-correction bound.
-Debug `deviceClockFitDispersionMs` is the current attempted fit's MAD;
-`deviceClockUncertaintyMs` retains the last accepted fit's MAD after rejection.
-Both print six decimal places in milliseconds, without implying that measurement
-accuracy. A new Debug interval or reset leaves unobserved attempt noise unknown.
-A confirmed output-pipeline step clears fit evidence but preserves the already
-applied rate only when the new confirming pair remains coherent with it. It does
-not retain an unachieved target. Incompatible rate changes and actual context resets
-still reset normally; short noisy pairs cannot identify every real device change.
+Device, browser/Android and source rates describe different mappings.
+`deviceClockSource` selects fresh accepted `native` output, then fresh accepted
+`render` progress, then frozen `holdover`. Both fits share bounded estimation and
+one applied-rate controller. Native phase changes preserve independent render
+evidence. Render progress can reflect scheduling/queue changes; neither API proves
+a physical oscillator rate. `deviceClockAcceptedFitAgeMs`, `deviceClockFitRejected`,
+`deviceClockFitStatus` and `deviceClockFitRejectReason` describe selected evidence;
+unknown age stays absent. Holdover need not mean nominal rate.
+Debug `deviceClockFitDispersionMs` is attempted raw MAD; accepted
+`deviceClockUncertaintyMs` includes selected render quantization. Unknown attempt
+noise stays absent after Debug activation/reset. Six decimals preserve evidence,
+not accuracy. See [fit bounds](Testing.md#media-clock-and-continuous-audio-acceptance).
+`outputTimestampFitUncertaintyMs`, `outputTimestampFitStatus` and
+`outputTimestampFitGeneration` separately retain native phase-fit evidence. Its MAD
+uses context milliseconds, converted before performance-clock comparisons; render
+MAD cannot widen native phase gates. Reference/worklet extrapolation reserves rate
+uncertainty over the actual distance. Context replacement/suspend/backward movement
+resets the sample domain; confirmed observation gaps retain nominal-reset/reacquisition
+behavior. Native phase reacquisition still requires two
+advancing pairs and retains its freshness/holdover limits.
+Debug `contextObservedStateChanges`/`contextObservedNonRunningMs` retain observed
+transitions/non-running time between snapshots. Delayed/coalesced events may hide
+transitions; these counters cannot certify uninterrupted output.
+Voice Debug `voicePreparationState` distinguishes `idle`, `waiting-clock`,
+`waiting-data`, `waiting-deadline`, `priming`, `waiting-reserve`, `ready` and `playing`.
+`voicePreparedFrames`/`voiceRequiredFrames` count output PCM frames; `voiceWaitMs`
+measures elapsed projected output-clock time, not acoustic delay. Read these with
+existing stream/source identity and state/reason. These bounded scalars add no PCM
+capture and do not enter Standard summaries.
 For CarPlay clock-step recovery, `lastClockStepPhaseErrorMs`,
 `lastClockStepDeviceRatePpm` and `lastClockStepUncertaintyMs` retain the signed phase,
-device-rate estimate and known uncertainty immediately before the last recovery.
-Compare them with the stream identity and cumulative clock-step count: current phase
-can already look healthy after recovery. `lastClockStepAgeMs` uses that AudioContext's
-clock, so suspension does not advance it. Unknown values stay absent; a new timeline
-clears the slot. This adds no per-step reports or PCM collection and does not change
-rate control. A recorded recovery is evidence of a software discontinuity, not proof
-that every audible click has that cause. Healthy URL playback is independent evidence
-and cannot exclude a CarPlay live-audio fault.
+device-rate estimate and uncertainty before recovery. Compare stream identity and
+cumulative count: current phase may already look healthy. `lastClockStepAgeMs` uses
+the AudioContext clock, excluding suspension. Unknown values stay absent; a new
+timeline clears the slot. No per-step reports or PCM collection are added.
+A recovery establishes a software discontinuity, not every click's cause. Healthy
+URL playback cannot exclude a CarPlay live-audio fault.
 Debug `lastSourceDeadlineDeltaUpperMs`, `lastSourceDeadlineUncertaintyMs`,
 `lastSourceDeadlineLimitMs` and `lastSourceDeadlineAgeMs` retain the actual rejection
 before recovery; healthy current output cannot erase it. A new Debug interval/timeline

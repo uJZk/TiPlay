@@ -4,7 +4,7 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v79';
+export const PAGE_VERSION = 'v80';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
@@ -54,10 +54,13 @@ const AUDIO_RETIRED_DEADLINE = ['lastRetiredSourceDeadlineEpoch', 'lastRetiredSo
   'lastRetiredSourceDeadlineDeltaUpperMs', 'lastRetiredSourceDeadlineUncertaintyMs', 'lastRetiredSourceDeadlineAgeMs',
   'lastRetiredSourceDeadlineLimitMs', 'retiredSourceDeadlineRejectedFrames'];
 const AUDIO_SOURCE_FIT = ['sourceClockFitStatus', 'sourceClockFitRejectReason', 'sourceClockDispersionMs'];
+const AUDIO_VOICE_PREPARATION = ['voicePreparationState', 'voicePreparedFrames', 'voiceRequiredFrames', 'voiceWaitMs'];
 const AUDIO_SOURCE_DETAIL = ['mode', 'reason', 'sourceClockPoints', 'sourceClockSpanMs',
   'sourceClockAcceptedFitAgeMs', 'sourceClockFitRejected', 'sourceDeadlineState',
   'sourceDeadlineReason', 'sourceRatePpm', 'sourceRateConfidence', 'phaseErrorMs', 'queueBytes'];
 const AUDIO_CLOCK_KEYS = ['deviceClockFitStatus', 'deviceClockFitRejectReason', 'deviceClockFitDispersionMs', 'deviceClockUncertaintyMs',
+  'deviceClockSource',
+  'outputTimestampFitUncertaintyMs', 'outputTimestampFitStatus', 'outputTimestampFitGeneration',
   'deviceClockRatePpm', 'deviceClockConfidence', 'deviceClockAcceptedFitAgeMs', 'deviceClockFitRejected', 'outputState', 'outputUnavailableReason',
   'outputTimestampAgeMs', 'outputTimestampCaptureMs', 'outputTimestampHoldoverAgeMs', 'outputFeedbackAgeMs',
   'renderTimeMs', 'renderNonzero', 'renderPeak'];
@@ -68,8 +71,10 @@ function audioDiagnosticKeys(full) {
   const perStream = fields => fields.flatMap(field => streams.map(stream => `${stream}.${field}`));
   // Round-robin identity and retained deadline triggers before fit/packet detail,
   // so a busy first stream cannot hide a later stream's actual rejection boundary.
-  return [...new Set(['contextState', 'contextRate', 'renderQuantumFrames', 'renderQuantumMinFrames', 'renderQuantumMaxFrames',
-    ...AUDIO_RENDER_KEYS, ...perStream(AUDIO_SOURCE_IDENTITY), ...perStream(AUDIO_SOURCE_DEADLINE), ...perStream(AUDIO_RETIRED_DEADLINE), ...perStream(AUDIO_SOURCE_FIT),
+  return [...new Set(['contextState', 'contextRate', 'contextObservedStateChanges', 'contextObservedNonRunningMs',
+    'renderQuantumFrames', 'renderQuantumMinFrames', 'renderQuantumMaxFrames',
+    ...AUDIO_RENDER_KEYS, ...perStream(AUDIO_SOURCE_IDENTITY), ...perStream(AUDIO_SOURCE_DEADLINE), ...perStream(AUDIO_RETIRED_DEADLINE),
+    ...perStream(AUDIO_VOICE_PREPARATION), ...perStream(AUDIO_SOURCE_FIT),
     ...AUDIO_CLOCK_KEYS, ...perStream(AUDIO_SOURCE_DETAIL), ...Object.keys(full)])]
     .filter(key => Object.hasOwn(full, key));
 }

@@ -156,6 +156,7 @@ for (const action of ['end', 'epoch', 'reset']) for (const mapping of ['output',
   test(`${action}: a ${mapping} clock step cannot leak expired retired PCM`, () => {
     const h = warmRetirement({ action });
     try {
+      const contextSpanMs = h.frame / 48 + 128 / 48;
       if (mapping === 'output') h.post({ contextAnchor: { contextTimeMs: 0, localTimeMs: 1200 } });
       else h.post({ clock: { version: 2, generation: 2, serverOriginMs: h.base + 1000, localOriginMs: 0,
         rate: 1, state: 'locked', uncertaintyMs: 0 } });
@@ -167,7 +168,8 @@ for (const action of ['end', 'epoch', 'reset']) for (const mapping of ['output',
       assert.equal(report.lastRetiredSourceDeadlineGeneration, 3, 'reset cannot relabel the tail as the new playback generation');
       assert.equal(report.retiredSourceDeadlineRejectedFrames, 240);
       assert.equal(report.lastRetiredSourceDeadlineLimitMs, 300);
-      assert.equal(report.lastRetiredSourceDeadlineUncertaintyMs, 2);
+      assert.ok(Math.abs(report.lastRetiredSourceDeadlineUncertaintyMs - (2 + contextSpanMs * (1 / .98 - 1))) < 1e-12,
+        'the rejected tail includes measured/filter uncertainty and its actual native-anchor projection');
       assert.ok(report.lastRetiredSourceDeadlineDeltaUpperMs > 1000);
       assert.equal(report.lastRetiredSourceDeadlineAgeMs, 0);
       assert.equal(report.sourceDeadlineRejectedFrames, undefined, 'retired rejections do not masquerade as current timeline output');
@@ -196,8 +198,9 @@ test('retired output uses its own mode limit and checks both sides of the deadli
       const tail = h.processor.retiring[0], contextMs = h.frame / 48;
       // The tail holds one source sample; output age grows over its 240 frames.
       const mappedSource = tail.sourceTimeMs - h.base;
+      const tailProjectionMs = 5 * (1 / .98 - 1);
       h.post({ contextAnchor: { contextTimeMs: contextMs,
-        localTimeMs: mappedSource + audioLimit(mode) - 2 - 5 + offset } });
+        localTimeMs: mappedSource + audioLimit(mode) - 2 - 5 - tailProjectionMs + offset } });
       const output = h.render(1024)[0];
       assert.equal(output.some(value => value !== 0), offset < 0, `${mode} boundary ${offset}`);
       assert.equal(h.processor.retiredDeadlineReports.size, offset > 0 ? 1 : 0);

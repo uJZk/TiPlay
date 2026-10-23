@@ -69,6 +69,10 @@ internal class BufferedAudioStream(
     // Playback state, guarded by [lock].
     private var rate = 0
     private var flushUntil: Long? = null
+    // An immediate flush fences the ordered TCP input by its 23-bit sequence,
+    // independently of the next track's randomly selected RTP timestamp origin.
+    // Retire this fence when the reader reaches it, before half a sequence turn.
+    private var flushUntilSequence: Int? = null
     private var anchorRtp: Long? = null
     private var anchorNtp: BigInteger? = null
     private var anchorMonotonic: Long? = null
@@ -121,10 +125,11 @@ internal class BufferedAudioStream(
                     receivedBytes = 0
                     windowStart = now
                 }
-                if (frame.rtp.size <= RTP_HEADER) continue
                 var pacing = false
+                var enqueued = false
                 synchronized(lock) {
                     while (!closed.get() &&
+                        !beforeFlushSequenceLocked(frame) && frame.rtp.size > RTP_HEADER &&
                         flushUntil?.let { before(frame.timestamp, it) } != true &&
                         (queuedBytes + frame.rtp.size > audioBufferBytes || queue.size + fed.size >= maxBufferedFrames)) {
                         // TCP backpressure preserves music rather than dropping an arbitrary part
@@ -132,9 +137,15 @@ internal class BufferedAudioStream(
                         lock.wait()
                     }
                     if (closed.get()) return
+                    if (beforeFlushSequenceLocked(frame)) return@synchronized
+                    // The until packet is the first retained packet, not the last
+                    // discarded one. Even an empty marker crosses the TCP fence.
+                    flushUntilSequence = null
+                    if (frame.rtp.size <= RTP_HEADER) return@synchronized
                     if (flushUntil?.let { before(frame.timestamp, it) } == true) return@synchronized
                     queue.addLast(frame)
                     queuedBytes += frame.rtp.size
+                    enqueued = true
                     lock.notifyAll()
                     // Past the floor, hold the intake near FILL_RATE_MULTIPLE times real time.
                     // Reading the remaining two minutes as fast as TCP allows is a multi-megabit
@@ -144,6 +155,9 @@ internal class BufferedAudioStream(
                     // or by a flush falls back below the floor and refills at full speed.
                     pacing = queue.size + fed.size >= pacedFillFloorFrames
                 }
+                // A discarded prefix is not future media to pace. Drain stale
+                // preload promptly so the next anchor is not delayed by its fill rate.
+                if (!enqueued) continue
                 if (browserPolicy != null) {
                     // At most four times playback speed, including the initial refill. Never race
                     // TCP on the video channel. The bounded relay applies additional backpressure.
@@ -282,12 +296,29 @@ internal class BufferedAudioStream(
     /** GETANCHOR: the current anchor, or null before the first SETRATE. */
     fun anchor(): Map<String, Any?>? = synchronized(lock) { anchorLocked() }
 
-    /** FLUSHBUFFERED: drop what was sent before [untilTimestamp] and restart the output there. */
-    fun flush(untilTimestamp: Long?) = synchronized(lock) {
+    /** Immediate FLUSHBUFFERED; the until sequence is the first retained input packet. */
+    fun flush(untilTimestamp: Long?, untilSequence: Long? = null) = synchronized(lock) {
         if (closed.get()) return@synchronized
         restoreFedLocked()
-        if (untilTimestamp != null) dropBeforeLocked(untilTimestamp)
+        if (untilSequence != null) {
+            flushUntilSequence = (untilSequence and SEQUENCE_MASK.toLong()).toInt()
+            // The flush timestamp belongs to the retired origin. A later SETRATE
+            // supplies a new playhead floor after this sequence prefix is gone.
+            flushUntil = null
+            discardQueuedLocked(::beforeFlushSequenceLocked)
+        } else if (untilTimestamp != null) {
+            // A timestamp-only request does not undo a previous sequence prefix
+            // still pending on this same ordered TCP sender.
+            dropBeforeLocked(untilTimestamp)
+        }
+        rate = 0
+        anchorRtp = null; anchorNtp = null; anchorMonotonic = null
+        anchorClockMethod = "unavailable"
         restartOutputLocked()
+        diagnostic("stage=FLUSH owner=$diagnosticOwner generation=$outputGeneration " +
+            "type=${format.payloadType} sequenceFence=${flushUntilSequence ?: "unknown"} " +
+            "timestampFallback=${if (untilSequence == null) untilTimestamp ?: "unknown" else "none"} " +
+            "rate=0 clock=unavailable")
         lock.notifyAll()
     }
 
@@ -322,10 +353,27 @@ internal class BufferedAudioStream(
 
     private fun dropBeforeLocked(timestamp: Long) {
         flushUntil = timestamp
+        discardQueuedLocked(::beforeFlushSequenceLocked)
+        // A playhead trims only this origin's leading prefix. Later prefetched
+        // tracks may choose unrelated RTP origins and must not be globally sorted.
         while (queue.peekFirst()?.let { before(it.timestamp, timestamp) } == true) {
-            queuedBytes -= queue.pollFirst()!!.rtp.size
+            queuedBytes -= queue.removeFirst().rtp.size
         }
         lock.notifyAll()
+    }
+
+    private fun beforeFlushSequenceLocked(frame: Frame): Boolean =
+        flushUntilSequence?.let { beforeSequence(frame.sequence, it) } == true
+
+    private fun discardQueuedLocked(discard: (Frame) -> Boolean) {
+        val iterator = queue.iterator()
+        while (iterator.hasNext()) {
+            val frame = iterator.next()
+            if (discard(frame)) {
+                queuedBytes -= frame.rtp.size
+                iterator.remove()
+            }
+        }
     }
 
     private fun retireFedLocked() {
@@ -346,10 +394,12 @@ internal class BufferedAudioStream(
     /** Stops what the sink still holds, so a pause or a track change is heard at once. */
     private fun restartOutputLocked() {
         outputGeneration++
-        if (feedStartTimestamp != null) runCatching { sink.onAudioStopped(id) }
-            .onFailure { log("Buffered audio: output cleanup failed (${it.javaClass.simpleName})") }
+        val wasStarted = feedStartTimestamp != null
+        // Retire before the callback; a reentrant close/pause cannot stop it twice.
         feedStartTimestamp = null
         fedSamples = 0
+        if (wasStarted) runCatching { sink.onAudioStopped(id) }
+            .onFailure { log("Buffered audio: output cleanup failed (${it.javaClass.simpleName})") }
     }
 
     override fun close() {
@@ -397,6 +447,8 @@ internal class BufferedAudioStream(
         private const val NONCE_BYTES = 8
         private const val TAG_BYTES = 16
         private const val U32 = 0xffff_ffffL
+        private const val SEQUENCE_MASK = 0x7f_ffff
+        private const val SEQUENCE_HALF = 0x40_0000
         /** Seconds between NTP's 1900 epoch and the 1970 epoch the anchor's networkTimeSecs uses. */
         private const val NTP_UNIX_OFFSET = 2_208_988_800L
 
@@ -414,7 +466,10 @@ internal class BufferedAudioStream(
             val payload = runCatching {
                 AirPlayCrypto.chachaOpen(key, nonce, body.copyOfRange(RTP_HEADER, sealedEnd), body.copyOfRange(4, RTP_HEADER))
             }.getOrNull() ?: return null
-            val sequence = ((body[2].toInt() and 0xff) shl 8) or (body[3].toInt() and 0xff)
+            // Buffered AirPlay uses the seven low bits of byte 1 and bytes 2..3
+            // as a 23-bit sequence; byte 1's high bit is the RTP marker.
+            val sequence = ((body[1].toInt() and 0x7f) shl 16) or
+                ((body[2].toInt() and 0xff) shl 8) or (body[3].toInt() and 0xff)
             return Frame(sequence, u32(body, 4), body.copyOf(RTP_HEADER) + payload)
         }
 
@@ -434,6 +489,9 @@ internal class BufferedAudioStream(
 
         /** Whether RTP timestamp [a] comes before [b], across the 32-bit wrap. */
         internal fun before(a: Long, b: Long): Boolean = ((a - b) and U32) >= 0x8000_0000L
+
+        /** Strict sequence ordering within half of a 23-bit turn. Equality is retained. */
+        internal fun beforeSequence(a: Int, b: Int): Boolean = ((a - b) and SEQUENCE_MASK) >= SEQUENCE_HALF
 
         private fun u32(bytes: ByteArray, offset: Int): Long =
             ((bytes[offset].toLong() and 0xff) shl 24) or ((bytes[offset + 1].toLong() and 0xff) shl 16) or

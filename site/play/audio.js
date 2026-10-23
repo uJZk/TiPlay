@@ -20,6 +20,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let clockBase = null, playbackGeneration = 0;
   let debugEnabled = false, pcmMetrics = null, workletMetrics = null, reportAt = null;
   let diagnosticRevision = 0;
+  let contextObservation = null;
   let processorErrors = 0, recoveries = 0, processorFailed = false, recoveryAttempts = 0, recoveryTimer = null;
   let lastControlAt = -Infinity;
   let preparingNode = null, preparationSequence = 0, pendingPublish = null, pendingPcmBytes = 0, nodeConnected = false;
@@ -85,11 +86,24 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     onError: cause => { releaseEncoded(); audioError = cause.message || String(cause); notify(); },
   });
   const now = () => performance.timeOrigin + performance.now();
+  function observeContextState() {
+    if (!debugEnabled) return;
+    const at = now(), state = context?.state ?? null;
+    if (!contextObservation) contextObservation = { at, state, changes: 0, nonRunningMs: 0 };
+    else {
+      if (contextObservation.state !== null && contextObservation.state !== 'running')
+        contextObservation.nonRunningMs += Math.max(0, at - contextObservation.at);
+      if (contextObservation.state !== null && state !== null && state !== contextObservation.state) contextObservation.changes++;
+      contextObservation.at = at; contextObservation.state = state;
+    }
+  }
   const debugSnapshot = () => {
+    observeContextState();
     const device = outputClock.deviceClock();
     return {
       processorErrors, recoveries, processorFailed, recoveryAttempts,
       contextState: context?.state ?? 'unavailable', contextTimeMs: context ? context.currentTime * 1000 : null,
+      contextObservedStateChanges: contextObservation.changes, contextObservedNonRunningMs: contextObservation.nonRunningMs,
       contextRate: context?.sampleRate ?? null, contextBaseLatencyMs: context?.baseLatency * 1000,
       contextOutputLatencyMs: context?.outputLatency * 1000, clockBase,
       clockOffsetMs: clock?.offset ?? null, clockAgeMs: clock ? now() - clock.at : null, clockRttMs: clock?.rtt ?? null,
@@ -97,6 +111,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       clockGeneration: clock?.generation ?? null, clockUncertaintyMs: clock?.uncertaintyMs ?? null,
       clockRateConfidence: clock?.rateConfidence ?? null,
       deviceClockRatePpm: device.ratePpm, deviceClockTargetRatePpm: device.targetRatePpm,
+      deviceClockSource: device.source,
       deviceClockConfidence: device.confidence, deviceClockUncertaintyMs: device.uncertaintyMs,
       ...(device.fitDispersionMs === undefined ? {} : { deviceClockFitDispersionMs: device.fitDispersionMs }),
       deviceClockGeneration: device.generation, deviceClockReason: device.reason,
@@ -152,7 +167,9 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   function debug(value) {
     const next = value === true;
     if (next === debugEnabled) return;
-    debugEnabled = next; diagnosticRevision++; pcmMetrics = next ? pcmStats() : null; workletMetrics = null; reportAt = null;
+    debugEnabled = next; diagnosticRevision++; contextObservation = null;
+    pcmMetrics = next ? pcmStats() : null; workletMetrics = null; reportAt = null;
+    observeContextState();
     outputClock.debug(next); packetDecoder.debug(next); node?.port.postMessage({ debug: next, diagnosticRevision, generation: playbackGeneration }); notify();
   }
   function retireNode() {
@@ -387,8 +404,10 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       // Creating/resuming the context happens before awaiting, preserving user activation.
       if (!context) {
         context = new AudioContext({ latencyHint: 'interactive' });
+        observeContextState();
         context.onstatechange = () => {
           if (disposed || !context) return;
+          observeContextState();
           if (context.state !== 'running') {
             invalidateOutput('suspended');
             controls(true);
