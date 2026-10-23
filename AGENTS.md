@@ -46,6 +46,9 @@ confirmation and reentrant borrow/return; [Testing](docs/Testing.md#webrtc-integ
 and [Build](docs/Build.md#beta-release) for the actual published APK/page source. Keep
 unrun boundaries, proved behavior and vehicle tuning separate; an observed software
 timestamp does not establish speaker/panel timing.
+Resume the current recovery-tail/mixer fixes and their independent waveform checks at
+[continuous-audio acceptance](docs/Testing.md#media-clock-and-continuous-audio-acceptance);
+[Todo](docs/Todo.md#browser-and-carplay-audio) retains physical clicks and separate URL-audio follow-up.
 
 ## Checks
 

@@ -19,6 +19,13 @@
             "epoch": 9,
             "state": "priming",
             "lastRecoveryReason": "startup",
+            "lastRetiredSourceDeadlineEpoch": 8,
+            "lastRetiredSourceDeadlineGeneration": 5,
+            "lastRetiredSourceDeadlineDeltaUpperMs": 300.0000014,
+            "lastRetiredSourceDeadlineUncertaintyMs": 8.1642414,
+            "lastRetiredSourceDeadlineAgeMs": 2.6666667,
+            "lastRetiredSourceDeadlineLimitMs": 300,
+            "retiredSourceDeadlineRejectedFrames": 128,
             "lastSourceDeadlineDeltaUpperMs": null,
             "lastSourceDeadlineUncertaintyMs": null,
             "lastSourceDeadlineAgeMs": null,
@@ -32,7 +39,7 @@
     "k": "audio-diag",
     "d": "source-deadline-fixture",
     "v": {
-      "pageVersion": "v78",
+      "pageVersion": "v79",
       "omittedFields": 0,
       "contextState": "running",
       "contextRate": 48000,
@@ -46,7 +53,14 @@
       "stream0.lastSourceDeadlineUncertaintyMs": 8.164241,
       "stream0.lastSourceDeadlineAgeMs": 2.666667,
       "stream0.lastSourceDeadlineLimitMs": 300,
-      "stream0.sourceDeltaUpperMs": 20
+      "stream0.sourceDeltaUpperMs": 20,
+      "stream6.lastRetiredSourceDeadlineEpoch": 8,
+      "stream6.lastRetiredSourceDeadlineGeneration": 5,
+      "stream6.lastRetiredSourceDeadlineDeltaUpperMs": 300.000001,
+      "stream6.lastRetiredSourceDeadlineUncertaintyMs": 8.164241,
+      "stream6.lastRetiredSourceDeadlineAgeMs": 2.666667,
+      "stream6.lastRetiredSourceDeadlineLimitMs": 300,
+      "stream6.retiredSourceDeadlineRejectedFrames": 128
     }
   }
 }

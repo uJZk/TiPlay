@@ -3,7 +3,24 @@ import { MAX_AUDIO_AHEAD_BYTES, MAX_PCM_PACKET_MS, MAX_TIMELINE_PACKETS } from '
 import { AudioSourceClock } from './audio-source-clock.js';
 
 export const AUDIO_RECOVERY_ERROR_MS = 30;
-const FADE_MS = 5, PHASE_CORRECTION_LIMIT = 0.001;
+export const AUDIO_FADE_MS = 5;
+const PHASE_CORRECTION_LIMIT = 0.001;
+
+/** Shared source-age calculation for current output and scalar retired tails. */
+export function sourceDeadlineAt(deadline, clock, firstSourceMs, localSpan, sourceSpan, result) {
+  result.sourceDeadlineState = 'unknown'; result.sourceDeltaMs = result.sourceDeltaUpperMs = null;
+  result.sourceDeadlineReason = deadline?.unknownReason || 'no-output';
+  if (deadline && clock && Number.isFinite(firstSourceMs) && Number.isFinite(deadline.outputAt)
+    && Number.isFinite(clock.localOriginMs) && Number.isFinite(clock.serverOriginMs)
+    && Number.isFinite(clock.rate) && clock.rate > 0) {
+    const mappedSource = clock.localOriginMs + (firstSourceMs - clock.serverOriginMs) * clock.rate;
+    result.sourceDeltaMs = deadline.outputAt - mappedSource;
+    result.sourceDeltaUpperMs = result.sourceDeltaMs + Math.max(0, localSpan - sourceSpan) + deadline.uncertaintyMs;
+    result.sourceDeadlineState = result.sourceDeltaUpperMs <= deadline.limitMs ? 'within-bound' : 'violated';
+    result.sourceDeadlineReason = result.sourceDeadlineState === 'violated' ? 'source-deadline' : null;
+  }
+  return result.sourceDeadlineState !== 'violated';
+}
 
 /** Stable source/sample anchors; only an interruption starts a new resampler signal. */
 export class ContinuousAudio {
@@ -16,7 +33,9 @@ export class ContinuousAudio {
     this.lastContextTimeMs = null;
     this.state = 'priming'; this.reason = 'startup'; this.clockGeneration = null;
     this.rawCursorMs = null; this.phaseErrorMs = 0; this.gain = 0; this.last = new Float32Array(channels);
-    this.fadeFrames = Math.max(1, Math.round(FADE_MS * outputRate / 1000));
+    this.lastSourceMs = this.recoverySourceMs = this.deadlineSourceMs = null;
+    this.deadlineScratch = {};
+    this.fadeFrames = Math.max(1, Math.round(AUDIO_FADE_MS * outputRate / 1000));
     this.tailRemaining = 0;
     this.recoveryTail = new Float32Array(channels); this.recoveryRemaining = 0;
     this.input = new Float32Array(4096 * channels); this.output = new Float32Array(512 * channels);
@@ -43,6 +62,7 @@ export class ContinuousAudio {
   clear() {
     for (const packet of this.queue) this.retire(packet, 'reset');
     this.queue = []; this.backend?.dispose(); this.backend = null; this.state = 'ended'; this.lastContextTimeMs = null;
+    this.lastSourceMs = this.recoverySourceMs = this.deadlineSourceMs = null;
   }
   synchronize(data) {
     if (this.synchronized || !Number.isFinite(data.presentationMs) || this.sourceAnchorMs === null
@@ -69,6 +89,7 @@ export class ContinuousAudio {
     // Retain the live filter/sample cursor, but never blend that old tail into
     // a quantum whose source deadline is now verifiable.
     this.last.fill(0); this.recoveryTail.fill(0); this.recoveryRemaining = this.tailRemaining = 0;
+    this.lastSourceMs = this.recoverySourceMs = this.deadlineSourceMs = null;
     this.arrivalPlayback = false; this.synchronized = true;
     return true;
   }
@@ -130,7 +151,10 @@ export class ContinuousAudio {
     return copied;
   }
   recover(reason) {
-    if (this.backend) { this.recoveryTail.set(this.last); this.recoveryRemaining = this.fadeFrames; }
+    if (this.backend) {
+      this.recoveryTail.set(this.last); this.recoveryRemaining = this.fadeFrames;
+      this.recoverySourceMs = this.lastSourceMs;
+    }
     this.backend?.dispose(); this.backend = null; this.state = 'rebuffering'; this.reason = reason;
     this.lastRecoveryReason = reason; this.recoveryCounts[reason] = (this.recoveryCounts[reason] || 0) + 1;
     this.gain = Math.min(1, this.gain); this.missingSince = null;
@@ -161,6 +185,7 @@ export class ContinuousAudio {
     output.fill(0); this.outputFrames += frames;
     this.sourceDeadlineState = 'unknown'; this.sourceDeltaMs = this.sourceDeltaUpperMs = null;
     this.sourceDeadlineReason = deadline?.unknownReason || 'no-output';
+    this.deadlineSourceMs = null;
     this.lastContextTimeMs = Number.isFinite(contextMs) ? contextMs + frames * 1000 / this.outputRate : null;
     const sourceRate = this.sourceClock.advance(contextMs), clockRate = clock?.rate || 1;
     if (this.backend && clock && clock.generation !== this.clockGeneration && clock.state !== 'stale') this.recover('clock-generation');
@@ -182,10 +207,13 @@ export class ContinuousAudio {
     if (!this.backend && Number.isFinite(targetMs)) this.start(targetMs, clock?.generation);
     if (!this.backend) {
       const hadTail = this.tailRemaining > 0;
+      const tailFrames = Math.min(frames, this.tailRemaining);
+      if (hadTail) this.deadlineSourceMs = this.lastSourceMs;
       this.fadeTail(output, 0, frames); this.recoveryTail.set(this.last); this.recoveryRemaining = this.tailRemaining;
+      this.recoverySourceMs = this.lastSourceMs;
       // An inactive cursor is not newly emitted content. Still validate an
       // actual fade tail, including explicitly silent PCM, before it can play.
-      if (hadTail) this.checkDeadline(deadline, clock, this.rawCursorMs, frames * 1000 / this.outputRate / deviceRate, 0, output, frames, contextMs);
+      if (hadTail) this.checkDeadline(deadline, clock, this.deadlineSourceMs, tailFrames * 1000 / this.outputRate / deviceRate, 0, output, frames, contextMs);
       return 0;
     }
     const correction = Math.max(-PHASE_CORRECTION_LIMIT, Math.min(PHASE_CORRECTION_LIMIT, this.phaseErrorMs / 10000));
@@ -193,6 +221,11 @@ export class ContinuousAudio {
     const nextRatio = this.rate / this.outputRate * sourceRate / clockRate / deviceRate * (1 + correction);
     this.backend.setRatio(nextRatio, frames);
     const firstRatio = this.slewRatio, firstSourceMs = this.rawCursorMs;
+    // Reuse the deadline's slowest-ratio bound for individual emitted samples.
+    // A retired last sample must not inherit a whole render block's extra age.
+    const sourceMsPerFrame = Math.min(firstRatio, nextRatio) * 1000 / this.rate / sourceRate;
+    const recoverySourceMs = this.recoverySourceMs, recoveryFrames = this.recoveryRemaining;
+    let heldSourceMs = null, heldFrames = 0;
     let produced = 0, needInput = false;
     for (let call = 0; call < 16 && produced < frames; call++) {
       // Keep filter state across network packet boundaries; never flush at a temporary shortage.
@@ -202,11 +235,20 @@ export class ContinuousAudio {
       this.inputFrame += result.consumed;
       for (let i = 0; i < result.produced; i++) {
         this.gain = Math.min(1, this.gain + 1 / this.fadeFrames);
+        // The saved tail is its current amplitude, including any samples already
+        // faded while no output reference/backend was available. Continue that
+        // same linear envelope instead of multiplying the elapsed fade twice.
+        const envelope = this.recoveryRemaining > 0 ? (this.recoveryRemaining - 1) / this.recoveryRemaining : 0;
+        const freshSourceMs = firstSourceMs + (produced + i) * sourceMsPerFrame;
+        const sampleSourceMs = envelope > 0 && Number.isFinite(this.recoverySourceMs)
+          ? Math.min(freshSourceMs, this.recoverySourceMs) : freshSourceMs;
         for (let c = 0; c < this.channels; c++) {
-          const value = this.output[i * this.channels + c] * this.gain
-            + this.recoveryTail[c] * this.recoveryRemaining / this.fadeFrames;
+          this.recoveryTail[c] *= envelope;
+          const value = this.output[i * this.channels + c] * this.gain + this.recoveryTail[c];
           output[(produced + i) * this.channels + c] = value; this.last[c] = value;
         }
+        // A mixed old tail keeps its older source identity until its coefficient is zero.
+        this.lastSourceMs = sampleSourceMs;
         this.recoveryRemaining = Math.max(0, this.recoveryRemaining - 1);
         this.tailRemaining = this.fadeFrames;
       }
@@ -220,43 +262,57 @@ export class ContinuousAudio {
     this.sourceFrame += advanced;
     this.rawCursorMs += advanced * 1000 / this.rate / sourceRate;
     this.slewRatio = finalRatio;
-    if (produced < frames) { this.fadeTail(output, produced, frames); this.recover('underrun'); }
-    const localSpan = frames * 1000 / this.outputRate / deviceRate;
+    if (produced < frames) {
+      heldSourceMs = this.lastSourceMs; heldFrames = Math.min(frames - produced, this.tailRemaining);
+      this.fadeTail(output, produced, frames); this.recover('underrun');
+    }
+    this.deadlineSourceMs = this.lastSourceMs;
+    const localSpan = produced * 1000 / this.outputRate / deviceRate;
     const sourceSpan = produced * Math.min(firstRatio, finalRatio) * 1000 / this.rate / sourceRate * (clock?.rate || 1);
-    if (!this.checkDeadline(deadline, clock, firstSourceMs, localSpan, sourceSpan, output, frames, contextMs)) return 0;
+    // Bound every fresh sample and held tail over its actual output interval.
+    // A partial render must not inherit the zero-filled remainder of a larger
+    // block as extra source age; a full render keeps the original quantum bound.
+    if (recoveryFrames > 1 && produced > 0) this.boundDeadline(deadline, clock, recoverySourceMs,
+      Math.min(recoveryFrames - 1, produced) * 1000 / this.outputRate / deviceRate, 0);
+    if (heldFrames > 0) this.boundDeadline(deadline, clock, heldSourceMs,
+      (produced + heldFrames) * 1000 / this.outputRate / deviceRate, 0);
+    if (!this.checkDeadline(deadline, clock, produced > 0 ? firstSourceMs : null, localSpan, sourceSpan, output, frames, contextMs)) return 0;
     return produced;
   }
+  boundDeadline(deadline, clock, firstSourceMs, localSpan, sourceSpan) {
+    const candidate = this.deadlineScratch;
+    sourceDeadlineAt(deadline, clock, firstSourceMs, localSpan, sourceSpan, candidate);
+    if (candidate.sourceDeadlineState !== 'unknown' && (this.sourceDeadlineState === 'unknown'
+      || candidate.sourceDeltaUpperMs > this.sourceDeltaUpperMs)) {
+      this.sourceDeadlineState = candidate.sourceDeadlineState;
+      this.sourceDeltaMs = candidate.sourceDeltaMs; this.sourceDeltaUpperMs = candidate.sourceDeltaUpperMs;
+      this.sourceDeadlineReason = candidate.sourceDeadlineReason;
+    }
+  }
   checkDeadline(deadline, clock, firstSourceMs, localSpan, sourceSpan, output, frames, contextMs) {
-    if (deadline && clock && Number.isFinite(firstSourceMs) && Number.isFinite(deadline.outputAt)
-      && Number.isFinite(clock.localOriginMs) && Number.isFinite(clock.serverOriginMs)
-      && Number.isFinite(clock.rate) && clock.rate > 0) {
-      const mappedSource = clock.localOriginMs + (firstSourceMs - clock.serverOriginMs) * clock.rate;
-      this.sourceDeltaMs = deadline.outputAt - mappedSource;
-      // A conservative bound across the complete quantum includes the slowest
-      // slew ratio, device oscillator, filter and both clock uncertainties.
-      this.sourceDeltaUpperMs = this.sourceDeltaMs + Math.max(0, localSpan - sourceSpan) + deadline.uncertaintyMs;
-      this.sourceDeadlineState = this.sourceDeltaUpperMs <= deadline.limitMs ? 'within-bound' : 'violated';
-      this.sourceDeadlineReason = this.sourceDeadlineState === 'violated' ? 'source-deadline' : null;
-      if (this.sourceDeadlineState === 'violated') {
-        // A periodic snapshot can already show healthy output after this
-        // rejection. Preserve its bounded Debug evidence before retiring DSP.
-        if (this.counters) this.lastSourceDeadline = {
-          upperMs: Number.isFinite(this.sourceDeltaUpperMs) ? this.sourceDeltaUpperMs : null,
-          uncertaintyMs: Number.isFinite(deadline.uncertaintyMs) && deadline.uncertaintyMs >= 0 ? deadline.uncertaintyMs : null,
-          limitMs: Number.isFinite(deadline.limitMs) && deadline.limitMs >= 0 ? deadline.limitMs : null,
-          contextMs: Number.isFinite(contextMs) && contextMs >= 0 ? contextMs : null,
-        };
-        // The whole quantum is still application-owned. Never emit expired
-        // content or crossfade an expired recovery tail into fresh output.
-        output.fill(0); this.sourceDeadlineRejectedFrames += frames;
-        const infeasibleReason = this.state === 'infeasible' ? this.reason : null;
-        this.recover('source-deadline');
-        // Preserve a stronger startup feasibility failure while retiring its expired DSP tail.
-        if (infeasibleReason) { this.state = 'infeasible'; this.reason = infeasibleReason; }
-        this.last.fill(0); this.recoveryTail.fill(0);
-        this.recoveryRemaining = this.tailRemaining = 0;
-        return false;
-      }
+    // Bound actual PCM and tail contributions within the quantum with the same
+    // calculation used after a timeline has been reduced to a retired scalar tail.
+    this.boundDeadline(deadline, clock, firstSourceMs, localSpan, sourceSpan);
+    if (this.sourceDeadlineState === 'violated') {
+      // A periodic snapshot can already show healthy output after this
+      // rejection. Preserve its bounded Debug evidence before retiring DSP.
+      if (this.counters) this.lastSourceDeadline = {
+        upperMs: Number.isFinite(this.sourceDeltaUpperMs) ? this.sourceDeltaUpperMs : null,
+        uncertaintyMs: Number.isFinite(deadline.uncertaintyMs) && deadline.uncertaintyMs >= 0 ? deadline.uncertaintyMs : null,
+        limitMs: Number.isFinite(deadline.limitMs) && deadline.limitMs >= 0 ? deadline.limitMs : null,
+        contextMs: Number.isFinite(contextMs) && contextMs >= 0 ? contextMs : null,
+      };
+      // The whole quantum is still application-owned. Never emit expired
+      // content or crossfade an expired recovery tail into fresh output.
+      output.fill(0); this.sourceDeadlineRejectedFrames += frames;
+      const infeasibleReason = this.state === 'infeasible' ? this.reason : null;
+      this.recover('source-deadline');
+      // Preserve a stronger startup feasibility failure while retiring its expired DSP tail.
+      if (infeasibleReason) { this.state = 'infeasible'; this.reason = infeasibleReason; }
+      this.last.fill(0); this.recoveryTail.fill(0);
+      this.recoveryRemaining = this.tailRemaining = 0;
+      this.lastSourceMs = this.recoverySourceMs = this.deadlineSourceMs = null;
+      return false;
     }
     return true;
   }

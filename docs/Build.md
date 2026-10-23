@@ -15,6 +15,12 @@ the deployed page uses **v78** with WebRTC DataChannel as the formal live-media 
 The signed beta.12 APK and deployed v78 page use the same verified build commit below;
 subsequent documentation commits do not change the artifacts or tag. Software checks
 are in [Testing](Testing.md#webrtc-integrated-acceptance).
+The current candidate is **0.2.20-beta.13**, code **55**, with page **v79**.
+Its live recovery/mixer fixes, bounded retired-tail diagnostics and 256 MiB URL
+video budget passed the source checks in
+[continuous-audio acceptance](Testing.md#media-clock-and-continuous-audio-acceptance).
+Signed artifact and deployment verification are pending; the beta record below
+still identifies the published build rather than this candidate.
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
 independent `/webrtc/` subsite without an alias or redirect; the APK defaults to the
 root. The beta record below distinguishes the signed APK's build commit from the

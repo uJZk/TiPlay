@@ -279,7 +279,11 @@ test('status.debug toggles PCM/context/render diagnostics without reconnecting o
 test('reset clears retained worklet evidence and rejects delayed reports from the retired playback generation', async () => {
   const h = browserHarness();
   const deadline = { lastSourceDeadlineDeltaUpperMs: 300.000001, lastSourceDeadlineUncertaintyMs: 8.164241,
-    lastSourceDeadlineAgeMs: 2.666667, lastSourceDeadlineLimitMs: 300 };
+    lastSourceDeadlineAgeMs: 2.666667, lastSourceDeadlineLimitMs: 300,
+    lastRetiredSourceDeadlineEpoch: 6, lastRetiredSourceDeadlineGeneration: 3,
+    lastRetiredSourceDeadlineDeltaUpperMs: 301.000001, lastRetiredSourceDeadlineUncertaintyMs: 8.164241,
+    lastRetiredSourceDeadlineAgeMs: 2.666667, lastRetiredSourceDeadlineLimitMs: 300,
+    retiredSourceDeadlineRejectedFrames: 240 };
   try {
     await h.audio.activate(); h.audio.attach(new AbortController().signal, { audio: true }); await tick();
     h.audio.debug(true);

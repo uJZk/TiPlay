@@ -46,6 +46,13 @@ class BrowserAudioDiagnosticsTest {
         val mirror = lines.filter { it.startsWith("Browser audio: stage=STREAM stream=6 ") }.joinToString(" ")
         assertTrue(mirror.contains("epoch=9"))
         assertFalse(mirror.contains("lastSourceDeadline"))
+        assertTrue(mirror.contains("lastRetiredSourceDeadlineEpoch=8"))
+        assertTrue(mirror.contains("lastRetiredSourceDeadlineGeneration=5"))
+        assertTrue(mirror.contains("lastRetiredSourceDeadlineDeltaUpperMs=300.000001"))
+        assertTrue(mirror.contains("lastRetiredSourceDeadlineUncertaintyMs=8.164241"))
+        assertTrue(mirror.contains("lastRetiredSourceDeadlineAgeMs=2.666667"))
+        assertTrue(mirror.contains("lastRetiredSourceDeadlineLimitMs=300"))
+        assertTrue(mirror.contains("retiredSourceDeadlineRejectedFrames=128"))
         for (line in lines) {
             assertTrue(line.length <= 600)
             assertEquals(line, DiagnosticRedactor.redact(line))
@@ -64,6 +71,23 @@ class BrowserAudioDiagnosticsTest {
             assertTrue(BrowserAudioDiagnostics.lines(fields.associate { "$prefix$it" to 300.000001 }).isEmpty())
         }
         assertTrue(BrowserAudioDiagnostics.lines(mapOf("stream0.lastSourceDeadlinePrivateUrl" to "private-data")).isEmpty())
+    }
+
+    @Test fun retiredDeadlineEvidenceKeepsItsOwnIdentityAndRejectsUnknownOrWrongScopeValues() {
+        val timings = listOf("lastRetiredSourceDeadlineDeltaUpperMs", "lastRetiredSourceDeadlineUncertaintyMs",
+            "lastRetiredSourceDeadlineAgeMs", "lastRetiredSourceDeadlineLimitMs")
+        val identities = listOf("lastRetiredSourceDeadlineEpoch", "lastRetiredSourceDeadlineGeneration",
+            "retiredSourceDeadlineRejectedFrames")
+        val fields = timings + identities
+        val zero = BrowserAudioDiagnostics.lines(fields.associate { "stream255.$it" to 0 }).joinToString(" ")
+        for (field in fields) assertTrue(zero.contains("$field=0"))
+        for (invalid in listOf(null, "1", true, Double.NaN, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY))
+            assertTrue(BrowserAudioDiagnostics.lines(fields.associate { "stream0.$it" to invalid }).isEmpty())
+        for (invalid in listOf(-1, .5, 9_007_199_254_740_992.0))
+            assertTrue(BrowserAudioDiagnostics.lines(identities.associate { "stream0.$it" to invalid }).isEmpty())
+        for (prefix in listOf("", "stream256.", "decoder.", "decoder.stream0."))
+            assertTrue(BrowserAudioDiagnostics.lines(fields.associate { "$prefix$it" to 1 }).isEmpty())
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf("stream0.lastRetiredSourceDeadlinePrivateUrl" to "private-data")).isEmpty())
     }
 
     @Test fun noiseDispersionRetainsItsSideOfTheGateWithoutChangingOrdinaryScalarPrecision() {

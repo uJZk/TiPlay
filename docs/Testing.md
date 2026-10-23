@@ -173,9 +173,12 @@ or in-flight SETUP. Tests cover 1999/2000 ms, settings spanning the wait, new lo
 browser loss/re-authentication,
 atomic retirement and first-frame viewport reconciliation. Control/audio continuity,
 keyframe requests, stale owners and mirror isolation retain their earlier checks.
-The beta.11 capture confirms resource grants and peer control EOF; its missing screen
-data boundaries prevent uniquely attributing the long return gap. Physical picture
-recovery and sound remain in Todo; published sources remain those in [Build](Build.md#beta-release).
+The beta.12 field capture confirms a mirror loan retaining control, ownership return
+without old-session SETUP, fallback after 2.007 seconds and actual browser draw after
+5.119 seconds. Both URL loans are confirmed before peer TEARDOWN/control EOF after
+322/131 ms; subsequent CarPlay drawing uses new sessions. This proves one recovery
+path, not seamless return or iPhone internal intent. Broader picture/sound acceptance
+remains in Todo; published sources remain those in [Build](Build.md#beta-release).
 
 The beta.12/v78 source passed **737 browser tests**, **172 scoped Android tests
 in 12 classes**, and the mobile debug build, including capture lock-wait/failed-append timing, retained deadline
@@ -199,6 +202,34 @@ metadata preflight additionally passed 9 draft, 2 root-site, 23 browser diagnost
 and 34 native diagnostic cases; functional source hashes match the preceding runs
 after normalizing version fields. Signed artifacts and publication remain recorded
 separately in [Build](Build.md#beta-release).
+
+The subsequent beta.12/v78 read-only field review binds sid2, 255.671 seconds and
+63,290 records; its 208 ZIP entries pass CRC/path/length and sequence/offset checks.
+The 0.914-second beta.11 residue and historical TXT are excluded. Reference decoding
+of 6,088 packets / 5,401,600 frames reports no decode/non-finite/over-full-scale errors.
+Live renderer growth is confined to the early window; mirror samples remain continuous
+despite 260/265 ms incoming/send-attempt gaps. The user's 4K attempt was not continuous
+playback; its 26 scheduled-audio gaps totalling 3.055517 seconds cannot establish
+steady-click cause. Two 360p windows have zero recorded scheduling/renderer faults,
+not acoustic proof. These observations add no new feature-test or physical pass claim.
+
+Pre-budget-change read-only oracles use the beta.12 URL engine and 96 MiB
+budget: one 180 ms main-thread pause produces a 115.420 ms gap at 4K, zero at 360p;
+continuous 30-fps PTS supplied at about ten decoded frames/second produces 42 gaps
+in 12 seconds, with no skipped/repeated submitted source samples and no audio clock
+beyond actual decoded video coverage. This measures scheduling behavior, not actual
+codec throughput or sound. An audio-master alternative was not adopted because slow
+video could fall unboundedly behind. A 30-second bounded-separation/last-presented-PTS
+regression remains a design requirement, not an executed pass. These are historical
+96 MiB baselines, not verification of the requested current 256 MiB URL budget.
+The isolated 256 MiB change passed all 737 browser tests and the real Chromium MP4/HLS
+Video.js harness. After refining the existing 4K fixture to 30 fps so it still
+exercises `video-budget` startup, all 106 targeted cases passed again; production
+source was unchanged after the full run. The replacement-surface rejection now
+uses an 8192×8192 sample to preserve the same admission failure boundary. CarPlay/mirror 64 MiB,
+32 queued URL frames, URL DSP, watermarks, 500 ms audio scheduling and synchronization
+remain unchanged; subsequent live-audio fixes are described below. The reference-based CarPlay
+changes are deferred, and full Android CI was not rerun for this capture review.
 
 The published beta.10/v76 source passed 643 browser tests, 158 scoped Android tests in 13 classes
 and the mobile debug build. Native cases additionally cover fixed source-fit/quantum
@@ -339,6 +370,52 @@ host, settings, permission checklist and icon cropper honor the user's orientati
 Turn it on again and verify normal system-controlled rotation.
 
 ## Media clock and continuous audio acceptance
+
+The current unpublished live-audio source corrects recovery-tail double fading and
+instantaneous voice/media gain changes, independently reproduced with production
+code and real Soxr. Recovery resumes the already-faded amplitude; the shared mixer
+uses the existing 5 ms envelope across continuous, timestamped and compatibility
+streams, retaining media attenuation during voice tails. DC isolates gain edges from
+real speech: the former 0.4000205 single-sample jump becomes about 0.0016670; a 50 Hz
+control distinguishes natural waveform slope. CarPlay 48 kHz and mirror 44.1→48 kHz
+recovery comparisons cover partial underruns, unavailable/reacquired references and
+64/128/256/1024-frame blocks. Compare independent old-tail envelopes and fresh Soxr
+output, including source sample progress; counters alone are insufficient.
+
+Active/recovery/retired tails share the source-deadline calculation. Keep the old
+sample's provenance across crossfades and epoch/reset retirement; reject expired
+tails while preserving legal tails and unknown references. Debug retains a bounded
+retired-tail rejection with its own epoch/generation, separate from successor
+metrics; the browser/native selector fixture checks the diagnostic path and print
+precision. Large-quantum cases separately bound fresh PCM, crossfaded old samples
+and partial-underrun tails over their actual contribution intervals: a 5 ms tail
+inside a 1024-frame block must not inherit the whole block or its zero padding as
+extra source age. Both sides of the deadline remain checked, without a larger limit.
+These software checks do not establish that every vehicle click or the
+separate URL-audio graph is fixed.
+
+This final source passed **777/777 browser tests**, **22 scoped Android audio
+diagnostic tests** and the real Chromium 151 production-CSP media-clock harness.
+All 61 browser runtime hashes stayed unchanged through actual AudioWorklet,
+CarPlay/mirror output, suspend/resume and worker/main Canvas checks. Independent
+review accepted the corrected short-tail bounds; the earlier 771-test intermediate
+run is superseded. Full Android CI remains waived by the user. These changes are
+unpublished; [Build](Build.md#beta-release) still identifies the deployed release.
+The beta.13/code55/v79 metadata preflight additionally passed 9 release-draft,
+2 root-site, 35 browser-diagnostic and 40 scoped native diagnostic/protocol cases
+across four classes. All 239 checked inputs remained byte-identical after version
+normalization; download entries still open the version-independent Releases index.
+
+Frozen beta.12 capture replay also compares identical decoded mirror PCM delivered
+at nominal and recorded send-attempt times through the production worklet/Soxr.
+Recorded delivery can starve output despite continuous source samples. An ignored
+full-10-ms-read admission variant lowers recovery counts but increases emitted
+silence by 21.271/29.542 ms in the same central windows; it was rejected. Playback
+counters cover the complete replay, while waveform comparisons use a fixed central
+14.891-second window. Independent source-availability masks distinguish missing
+input from available instantaneous samples without claiming Soxr history/lookahead
+is sufficient. CarPlay packet-coordinate replay finds no gaps/overlaps in 4,582
+packets / 4,678,720 frames; no source-coordinate change was justified.
 
 Run the browser clock, continuous-audio, AudioWorklet, frame-pacing and main-thread integration tests
 with the repository's Node test command. Their deterministic virtual-time cases vary

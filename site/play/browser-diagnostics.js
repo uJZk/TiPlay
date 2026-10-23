@@ -4,7 +4,7 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v78';
+export const PAGE_VERSION = 'v79';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
@@ -50,6 +50,9 @@ const SUMMARY_KEYS = [
 ];
 const AUDIO_SOURCE_IDENTITY = ['epoch', 'state', 'lastRecoveryReason'];
 const AUDIO_SOURCE_DEADLINE = ['lastSourceDeadlineDeltaUpperMs', 'lastSourceDeadlineUncertaintyMs', 'lastSourceDeadlineAgeMs', 'lastSourceDeadlineLimitMs'];
+const AUDIO_RETIRED_DEADLINE = ['lastRetiredSourceDeadlineEpoch', 'lastRetiredSourceDeadlineGeneration',
+  'lastRetiredSourceDeadlineDeltaUpperMs', 'lastRetiredSourceDeadlineUncertaintyMs', 'lastRetiredSourceDeadlineAgeMs',
+  'lastRetiredSourceDeadlineLimitMs', 'retiredSourceDeadlineRejectedFrames'];
 const AUDIO_SOURCE_FIT = ['sourceClockFitStatus', 'sourceClockFitRejectReason', 'sourceClockDispersionMs'];
 const AUDIO_SOURCE_DETAIL = ['mode', 'reason', 'sourceClockPoints', 'sourceClockSpanMs',
   'sourceClockAcceptedFitAgeMs', 'sourceClockFitRejected', 'sourceDeadlineState',
@@ -66,7 +69,7 @@ function audioDiagnosticKeys(full) {
   // Round-robin identity and retained deadline triggers before fit/packet detail,
   // so a busy first stream cannot hide a later stream's actual rejection boundary.
   return [...new Set(['contextState', 'contextRate', 'renderQuantumFrames', 'renderQuantumMinFrames', 'renderQuantumMaxFrames',
-    ...AUDIO_RENDER_KEYS, ...perStream(AUDIO_SOURCE_IDENTITY), ...perStream(AUDIO_SOURCE_DEADLINE), ...perStream(AUDIO_SOURCE_FIT),
+    ...AUDIO_RENDER_KEYS, ...perStream(AUDIO_SOURCE_IDENTITY), ...perStream(AUDIO_SOURCE_DEADLINE), ...perStream(AUDIO_RETIRED_DEADLINE), ...perStream(AUDIO_SOURCE_FIT),
     ...AUDIO_CLOCK_KEYS, ...perStream(AUDIO_SOURCE_DETAIL), ...Object.keys(full)])]
     .filter(key => Object.hasOwn(full, key));
 }

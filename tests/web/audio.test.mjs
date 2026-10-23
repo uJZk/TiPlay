@@ -353,7 +353,9 @@ test('worklet mixes separate streams and bounds an unpaced music producer', asyn
   publish(0, 128, 8192); publish(1, 128, 8192);
   const left = new Float32Array(128), right = new Float32Array(128);
   processor.process([], [[left, right]]);
-  assert.ok(left.every(value => Math.abs(value - 0.3) < 0.00001), 'guidance ducks music'); assert.deepEqual(left, right);
+  assert.ok(left[0] > .49 && left.at(-1) > .39 && left.at(-1) < .4,
+    'guidance ducks music through the shared 5ms envelope instead of a one-sample gain step');
+  assert.deepEqual(left, right);
   const mixed = new Processor();
   const mix = (type, count, value, flags = 0) => mixed.port.onmessage({ data: {
     type, epoch: 1, rate: 48000, channels: 1, flags, pcm: new Int16Array(count).fill(value).buffer,
@@ -390,7 +392,8 @@ test('worklet mixes separate streams and bounds an unpaced music producer', asyn
   } });
   publishTimed(0, 1, 1000); publishTimed(1, 1, 1000);
   timed.process([], [[left, right]]);
-  assert.ok(left.every(value => Math.abs(value - 0.3) < 0.00001), 'timestamped guidance ducks timestamped music at the shared deadline');
+  assert.ok(left[0] > .49 && left.at(-1) > .39 && left.at(-1) < .4,
+    'timestamped guidance shares the same smooth media envelope');
   publishTimed(1, 2, 1010);
   assert.equal(timed.timelines.get(0).epoch, 1, 'guidance epoch does not reset music');
   publishTimed(1, 1, 1000);

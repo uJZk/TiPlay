@@ -77,10 +77,16 @@ in-flight SETUP wins; a new loan cancels the old wait. Settings and browser abse
 defer recovery until menu close or a fresh authenticated viewport. The conditional retirement
 claim checks stream and ownership together, and cleanup runs outside ownership locks.
 This interval is bounded software recovery, not an iPhone or vehicle timing guarantee.
-The beta.11 capture confirms resource returns followed by prolonged missing browser
-picture progress, but lacks the later-added screen EOF/teardown events needed to
-prove which data-stream boundary caused that particular gap. Its final confirmed
-loan ends in peer control EOF; the later CarPlay picture belongs to a new session.
+The beta.12 capture confirms a mirror loan with the original control connection
+preserved. Ownership returns, but that session receives no new main-screen SETUP;
+the fallback starts after 2.007 seconds and actual browser drawing resumes after
+5.119 seconds using a replacement projection/control session and retained wireless
+transport. This validates recovery in one observed case, not seamless old-stream
+return or optimal timing. Both URL takeovers also receive a confirmed loan, followed
+by peer TEARDOWN/control EOF after 322/131 ms; stopping playback recovers CarPlay
+through new sessions. Mirror, URL and photos share the same screen-loan request path;
+no URL-specific local full-CarPlay-close branch was found. The iPhone icon is an
+auxiliary user observation, not ownership/data proof or an explanation of iOS intent.
 
 Pending loans retain CarPlay picture/input and release existing touches. Mirror SETUP
 waits boundedly before supplying data ports so the initial keyframe is not lost.
@@ -103,6 +109,14 @@ authenticated control traffic and retains one pending availability response; rel
 resumes that response without another iPhone notification. The post-authentication
 startup deadline excludes this wait. Authentication remains bounded, and ownership
 changes reported by an already established CarPlay session remain authoritative.
+
+For implementation comparison, GPL-3.0 [LIVI](https://github.com/f-io/LIVI/blob/f999f55735278acd76f0fa207218cac00a739047/native/livi-helperd/crates/livi-cp/src/video_playback.rs#L55-L82)
+builds borrow/return for integrated CarPlay `videoPlayback`; its checked mode handler
+only handles app states, not resource-owner confirmation. This does not establish
+ordinary AirPlay URL coexistence. [Catplay](https://github.com/catplay-labs/catplay/blob/bc6edae49554f2d0160b18ed18fc7b7376353115/carplay/catplay_carplay/src/carplay_rx/sink/session_handle.rs#L146-L180)
+separates borrow/unborrow, command results and ModesChanged; no license was found at
+that revision, so no code is copied. These comparisons do not explain this iPhone's
+peer EOF or replace fresh ownership and actual-picture evidence.
 
 HEVC sample-entry parsing accepts the sender's bounded terminal zero padding after complete
 validated boxes. Truncated boxes and HDR/Dolby metadata remain rejected; padding cannot
@@ -180,7 +194,7 @@ one total-memory or total-GPU limit:
 | Limit | Scope |
 | --- | --- |
 | 32 frames | Application queue of decoded video samples waiting for presentation; the retained canvas picture is separate. |
-| 96 MiB | Admission estimate for the current video queue plus retained picture, reserving the estimated next sample. It uses coded width × coded height × four bytes, not measured GPU allocation. An already decoded sample awaiting admission is reported separately. |
+| 256 MiB | Current URL video admission estimate for queue plus retained picture, reserving the next sample; changed from beta.12's 96 MiB at the user's request. Coded width × coded height × four bytes estimates ownership, not GPU allocation. Already decoded samples awaiting admission are separate. |
 | 2 seconds | Video media-time lookahead checked before another sink read; sample granularity can cross the threshold. |
 | 3 seconds | Audio media-time lookahead checked before another sink read; an admitted packet can cross the threshold. A single decoded audio packet longer than three seconds is rejected. |
 | 12 MiB | Decoded PCM queue admission threshold checked before the next audio read, not a total PCM hard limit. An admitted packet or tempo output can append in full and cross it; incoming packets, processing and scheduled Web Audio copies are separate. |
@@ -189,8 +203,9 @@ one total-memory or total-GPU limit:
 
 Read admission includes the retained picture and anticipates a replacement rather
 than requiring one more decoded frame to discover capacity pressure. Both pictures
-must fit the estimate, so a single sample above 48 MiB is rejected. A finite-surface
-regression demonstrates the failure this prevents: at 1080p/30, a pool holding thirteen
+must fit the estimate, so a single sample above 128 MiB is rejected with the current
+256 MiB budget. Under the earlier 96 MiB setting, a finite-surface regression showed
+this failure: at 1080p/30, a pool holding thirteen
 application samples could stop at about 433 ms before the former next-frame budget
 check, while fourteen allowed startup. This is a controlled code-level failure model;
 the browser's actual hardware pool capacity was not measured in field evidence.
@@ -205,8 +220,24 @@ canvas retains one sample, and an incoming sample or orientation/render resource
 coexist with it. Application sample receipt/close counters cannot measure vendor
 decoder output or physical surface release. Likewise, a supported codec and requested
 hardware/latency hint do not establish the decoder's actual hardware implementation.
-See [URL playback evidence](Diagnostics.md#airplay-url-playback-evidence) for the
-observed stages and their limits.
+The beta.12 field/oracle evidence used 96 MiB, about three 4K/30 pictures or
+67–100 ms. The requested current 256 MiB estimate holds about eight, roughly 267 ms;
+actual coverage can be smaller. The separate 32-frame queue cap remains; the held
+picture counts toward bytes but not those 32 queued frames. At 1080p/30 the joint
+limits cover roughly one second, not several seconds. These remain estimates, not
+vehicle calibration or private decoder-pool capacity. Audio submission is bounded by
+the common continuous A/V coverage
+and existing 500 ms horizon, so ready PCM cannot compensate for missing video or a
+blocked shared animation-frame tick. The beta.12 user's 4K playback was itself
+non-continuous; it cannot establish the cause of steady-playback clicks. The
+controlled scheduling baseline does not identify actual vehicle decoder throughput.
+An audio-master change was not adopted because sustained slow decoding could leave
+video unboundedly behind. Worker isolation, a source-provided lower-cost representation
+and measured hardware throughput remain options requiring explicit ownership,
+synchronization and slow-progress acceptance. Only the URL video byte budget changes
+this round; CarPlay/mirror remain at 64 MiB, while DSP, watermarks, the 500 ms audio
+horizon and synchronization stay unchanged. No acoustic improvement is established. See
+[URL playback evidence](Diagnostics.md#airplay-url-playback-evidence).
 
 Readiness and play intent are distinct from an advancing clock. With audio, a suspended
 AudioContext or pending resume can leave decoded media ready without actual playback;

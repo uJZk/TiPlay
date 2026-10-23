@@ -508,12 +508,13 @@ test('casting waits for useful startup coverage instead of playing every short n
 });
 
 test('casting starts within its decoded-surface budget when a high-resolution queue cannot reach the time watermark', async () => {
-  const h = fixture({ frameWidth: 3840, frameHeight: 2160 });
+  const h = fixture({ frameWidth: 3840, frameHeight: 2160, videoFps: 30 });
   await h.media.load('https://example.test/movie.mp4'); await flush();
   const applicationBytes = h.samples.filter(sample => !sample.closed)
     .reduce((bytes, sample) => bytes + sample.codedWidth * sample.codedHeight * 4, 0);
-  assert.ok(applicationBytes <= 96 * 1024 * 1024, 'displayed, queued and pending application surfaces share the declared byte budget');
+  assert.ok(applicationBytes <= 256 * 1024 * 1024, 'displayed, queued and pending application surfaces share the declared byte budget');
   const playing = h.media.play(); await flush(); await h.tick(); await playing;
+  assert.equal(h.media.getPlaybackDiagnostics().startReason, 'video-budget');
   assert.ok(h.events.includes('playing'), 'bounded GPU memory cannot deadlock startup');
   h.media.dispose(); await flush(); assert.ok(h.samples.every(value => value.closed === 1));
 });
@@ -799,7 +800,7 @@ test('cast regression: an interrupted audio context is not mistaken for a stalle
 });
 
 test('cast regression: a frame that cannot coexist with its replacement fails explicitly before over-allocation', async () => {
-  const h = fixture({ frameWidth: 4096, frameHeight: 4096 });
+  const h = fixture({ frameWidth: 8192, frameHeight: 8192 });
   try {
     await assert.rejects(h.media.load('https://fixture.test/oversized.mp4'), { name: 'NotSupportedError' });
     assert.ok(h.samples.every(sample => sample.closed === 1));

@@ -32,6 +32,13 @@ internal object BrowserAudioDiagnostics {
     private val sourceDeadlineEvidenceFields = setOf(
         "lastSourceDeadlineDeltaUpperMs", "lastSourceDeadlineUncertaintyMs", "lastSourceDeadlineAgeMs", "lastSourceDeadlineLimitMs",
     )
+    private val retiredDeadlineEvidenceFields = setOf(
+        "lastRetiredSourceDeadlineDeltaUpperMs", "lastRetiredSourceDeadlineUncertaintyMs",
+        "lastRetiredSourceDeadlineAgeMs", "lastRetiredSourceDeadlineLimitMs",
+    )
+    private val retiredDeadlineIdentityFields = setOf(
+        "lastRetiredSourceDeadlineEpoch", "lastRetiredSourceDeadlineGeneration", "retiredSourceDeadlineRejectedFrames",
+    )
     private val renderDurationFields = setOf("renderUnderrunDurationMs", "renderTotalDurationMs")
     private val streamFields = setOf(
         "epoch", "rate", "channels", "headMs", "tailMs", "playbackMs", "contextTimeMs", "delayMs", "queueBytes", "queuePackets",
@@ -46,7 +53,7 @@ internal object BrowserAudioDiagnostics {
         "lastClockStepPhaseErrorMs", "lastClockStepDeviceRatePpm", "lastClockStepUncertaintyMs", "lastClockStepAgeMs",
         "recoveryCounts.source-deadline", "recoveryCounts.clock-generation", "recoveryCounts.suspended",
         "recoveryCounts.sender-deadline", "recoveryCounts.network-buffer", "recoveryCounts.device-clock-jump",
-    ) + sourceDeadlineEvidenceFields
+    ) + sourceDeadlineEvidenceFields + retiredDeadlineEvidenceFields + retiredDeadlineIdentityFields
     private val decoderFields = setOf("packets", "frames", "nonzero", "peak", "errors", "noDataPackets", "noDataFrames")
     private val decoderStreamFields = setOf("packets", "frames", "nonzero", "peak", "backend", "epoch", "rate", "channels", "semanticType", "noDataPackets", "noDataFrames")
     private val streamKey = Regex("(?:decoder\\.)?stream([0-9]{1,3})\\..+")
@@ -65,7 +72,11 @@ internal object BrowserAudioDiagnostics {
         fun line(prefix: String, fields: Set<String>, keyPrefix: String = "") {
             val entries = fields.mapNotNull { field ->
                 val raw = stats[keyPrefix + field]
-                if (field in sourceDeadlineEvidenceFields && raw !is Number) return@mapNotNull null
+                if ((field in sourceDeadlineEvidenceFields || field in retiredDeadlineEvidenceFields) && raw !is Number)
+                    return@mapNotNull null
+                if (field in retiredDeadlineIdentityFields && (raw !is Number || !raw.toDouble().isFinite() ||
+                    raw.toDouble() < 0 || raw.toDouble() > 9_007_199_254_740_991.0 || raw.toDouble() % 1.0 != 0.0))
+                    return@mapNotNull null
                 if (field in renderDurationFields && (raw !is Number || !raw.toDouble().isFinite() ||
                     raw.toDouble() < 0 || raw.toDouble() > 9_007_199_254_740_991.0))
                     return@mapNotNull null
@@ -75,7 +86,8 @@ internal object BrowserAudioDiagnostics {
                 val choices = enumFields[field]
                 if (choices != null && (raw !is String || raw !in choices)) return@mapNotNull null
                 val precision = if (field == "sourceClockDispersionMs" || field == "deviceClockUncertaintyMs" ||
-                    field == "deviceClockFitDispersionMs" || field in sourceDeadlineEvidenceFields || field in renderDurationFields) 6 else 3
+                    field == "deviceClockFitDispersionMs" || field in sourceDeadlineEvidenceFields ||
+                    field in retiredDeadlineEvidenceFields || field in renderDurationFields) 6 else 3
                 val value = value(raw, precision) ?: return@mapNotNull null
                 "$field=$value"
             }

@@ -270,6 +270,37 @@ test('the source-deadline selector fixture binds preserved trigger values to the
     'the latest healthy sample cannot rewrite the retained triggering value');
 });
 
+test('retired deadline triggers retain their separate identity and precision within the existing Debug budget', () => {
+  const retired = { lastRetiredSourceDeadlineEpoch: 8, lastRetiredSourceDeadlineGeneration: 5,
+    lastRetiredSourceDeadlineDeltaUpperMs: 300.0000014, lastRetiredSourceDeadlineUncertaintyMs: 8.1642414,
+    lastRetiredSourceDeadlineAgeMs: 12345.1234567, lastRetiredSourceDeadlineLimitMs: 300,
+    retiredSourceDeadlineRejectedFrames: 240 };
+  for (const controlMessageLimitBytes of [16 * 1024, 64 * 1024]) {
+    const debug = { ...Object.fromEntries(Array.from({ length: 700 }, (_, i) => [`optional${i}`, i])) };
+    for (const stream of [0, 6, 255]) debug[`stream${stream}`] = { epoch: 9, state: 'playing', ...retired };
+    const page = { transport: { controlMessageLimitBytes }, audio: { debug } };
+    const [summary, detail] = browserDiagnosticEvents(page, false, true, 'capture');
+    assert.ok(detail.v.omittedFields > 0);
+    assert.ok(Object.keys(detail.v).length <= 256);
+    const budget = Math.min(16 * 1024, Math.floor((controlMessageLimitBytes - (2048 - 24) * 3 - 4096) / 2));
+    assert.ok(Buffer.byteLength(JSON.stringify(detail.v)) <= budget);
+    for (const stream of [0, 6, 255]) {
+      assert.equal(detail.v[`stream${stream}.epoch`], 9);
+      for (const [field, value] of Object.entries(retired))
+        assert.equal(detail.v[`stream${stream}.${field}`], Math.round(value * 1e6) / 1e6);
+    }
+    assert.equal(Object.keys(summary.v).some(key => key.includes('RetiredSourceDeadline') || key.includes('retiredSourceDeadline')), false);
+    assert.equal(browserDiagnosticEvents(page, false).length, 1, 'no retired Debug evidence is collected into ordinary summaries');
+  }
+  for (const unknown of [undefined, null, NaN, Infinity, -Infinity]) {
+    const page = { audio: { debug: { stream6: { epoch: 9,
+      ...Object.fromEntries(Object.keys(retired).map(field => [field, unknown])) } } } };
+    const [, detail] = browserDiagnosticEvents(page, false, true);
+    assert.equal(detail.v['stream6.epoch'], 9);
+    for (const field of Object.keys(retired)) assert.equal(Object.hasOwn(detail.v, `stream6.${field}`), false);
+  }
+});
+
 test('selected ICE path and counters survive a crowded ordinary diagnostic summary', () => {
   const ice = { state: 'selected', localCandidateType: 'host', remoteCandidateType: 'host', protocol: 'udp',
     currentRoundTripTimeMs: 8, sampleAgeMs: 250, availableOutgoingBitrate: 12000000,

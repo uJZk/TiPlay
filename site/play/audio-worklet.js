@@ -3,12 +3,13 @@ import { PcmTimeline } from './pcm-timeline.js';
 import { initialPlaybackPlans, audioDelayAt, audioLimit } from './playback-window.js';
 import { BUFFERED_AUDIO_WINDOW_MS } from './audio-buffer-policy.js';
 import { SoxrRuntime } from './streaming-resampler.js';
-import { ContinuousAudio, AUDIO_RECOVERY_ERROR_MS } from './continuous-audio.js';
+import { ContinuousAudio, AUDIO_FADE_MS, AUDIO_RECOVERY_ERROR_MS, sourceDeadlineAt } from './continuous-audio.js';
 
 const purpose = (type, stream) => stream.semanticType ?? type;
 const isVoice = (type, stream) => purpose(type, stream) >= 1 && purpose(type, stream) <= 4;
 const isMedia = (type, stream) => purpose(type, stream) === 0 || purpose(type, stream) === 6;
 const SPEECH_START_BUFFER_MS = 20;
+const MEDIA_DUCK_GAIN = 0.2;
 
 class TiPlayAudio extends AudioWorkletProcessor {
   constructor() {
@@ -23,6 +24,9 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.nextContextFrame = null; this.outputUncertaintyMs = 0;
     this.deviceClock = { rate: 1 }; this.arrivalAnchor = null;
     this.retiring = [];
+    this.retiredDeadlineReports = new Map();
+    this.mediaGain = 1;
+    this.mediaGainStep = (1 - MEDIA_DUCK_GAIN) / Math.max(1, Math.round(AUDIO_FADE_MS * sampleRate / 1000));
     this.disposed = false;
     this.port.onmessage = ({ data }) => {
       if (this.disposed) return;
@@ -30,7 +34,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
         for (const timeline of this.timelines.values()) timeline.clear();
         this.timelines.clear();
         for (const [type, stream] of this.streams) for (const pcm of stream.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', type);
-        this.streams.clear(); this.epochs.clear(); this.retiring = []; this.runtime = null; this.disposed = true;
+        this.streams.clear(); this.epochs.clear(); this.retiring = []; this.retiredDeadlineReports.clear(); this.runtime = null; this.disposed = true;
         return;
       }
       if (data.calibration) {
@@ -77,6 +81,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
         this.diagnosticRevision = data.diagnosticRevision;
         this.playbackGeneration = Number.isSafeInteger(data.generation) ? data.generation : null;
         this.lastReportTime = -Infinity;
+        this.retiredDeadlineReports.clear();
         for (const timeline of this.timelines.values()) timeline.debug(data.debug);
       }
       if (data.plans) this.delayPlans = data.plans;
@@ -84,6 +89,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
       if (data.clockBase !== undefined) this.clockBase = data.clockBase;
       if (data.reset) {
         this.playbackGeneration = Number.isSafeInteger(data.generation) ? data.generation : null;
+        this.retiredDeadlineReports.clear();
         for (const [type, stream] of this.streams) for (const pcm of stream.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', type);
         this.streams.clear();
         for (const timeline of this.timelines.values()) this.retireTimeline(timeline);
@@ -194,7 +200,12 @@ class TiPlayAudio extends AudioWorkletProcessor {
   retireTimeline(timeline) {
     if (!timeline) return;
     if (timeline instanceof ContinuousAudio && timeline.last.some(value => value !== 0)) {
-      this.retiring.push({ samples: timeline.last.slice(), remaining: timeline.fadeFrames, total: timeline.fadeFrames, type: timeline.type, semanticType: timeline.semanticType });
+      // Keep only the bounded last sample and its conservative source identity.
+      // A retired tail must obey its own mode's deadline after epoch replacement.
+      this.retiring.push({ samples: timeline.last.slice(), remaining: timeline.fadeFrames, total: timeline.fadeFrames,
+        type: timeline.type, semanticType: timeline.semanticType, mode: timeline.mode, epoch: timeline.epoch, generation: timeline.generation,
+        sourceTimeMs: timeline.deadlineSourceMs, synchronized: timeline.synchronized, arrivalPlayback: timeline.arrivalPlayback,
+        filterUncertaintyMs: timeline.filterUncertaintyMs });
       if (this.retiring.length > 16) this.retiring.shift();
     }
     timeline.clear();
@@ -203,17 +214,51 @@ class TiPlayAudio extends AudioWorkletProcessor {
     const metrics = this.diagnostics;
     if (!metrics) return;
     const { streams, ...scalars } = metrics, details = {};
-    for (const type of new Set([...Object.keys(streams).map(Number), ...this.timelines.keys(), ...this.streams.keys()])) {
+    for (const type of new Set([...Object.keys(streams).map(Number), ...this.timelines.keys(), ...this.streams.keys(), ...this.retiredDeadlineReports.keys()])) {
       const timeline = this.timelines.get(type), legacy = this.streams.get(type);
       const fields = timeline ? { ...timeline.stats(), mode: timeline.mode, rate: timeline.rate, channels: timeline.channels, delayMs: timeline.delayMs ?? timeline.networkDelayMs }
         : { queueBytes: legacy?.queue.reduce((bytes, pcm) => bytes + pcm.byteLength, 0) ?? 0, queuePackets: legacy?.queue.length ?? 0, rate: legacy?.rate, channels: legacy?.channels };
-      details['stream' + type] = { ...fields, epoch: this.epochs.get(type), ...streams[type] };
+      const { contextMs, ...retired } = this.retiredDeadlineReports.get(type) ?? {};
+      details['stream' + type] = { ...fields, epoch: this.epochs.get(type), ...streams[type], ...retired,
+        ...(Number.isFinite(contextMs) ? { lastRetiredSourceDeadlineAgeMs: Math.max(0, currentTime * 1000 - contextMs) } : {}) };
     }
     this.port.postMessage({ diagnosticRevision: this.diagnosticRevision, playbackGeneration: this.playbackGeneration,
       diagnostics: { ...scalars, ...details, renderTimeMs: currentTime * 1000 } });
   }
   arrivalTime(contextMs) {
     return this.arrivalAnchor ? this.arrivalAnchor.timeMs + (contextMs - this.arrivalAnchor.contextTimeMs) / this.deviceClock.rate : contextMs;
+  }
+  deadline(timeline, contextMs) {
+    const outputAt = this.contextAnchor && this.contextAnchor.localTimeMs
+      + (contextMs - this.contextAnchor.contextTimeMs) / this.deviceClock.rate;
+    const unknownReason = timeline.arrivalPlayback ? 'arrival-anchored' : !timeline.synchronized ? 'source-anchor-unavailable'
+      : !this.contextAnchor || !Number.isFinite(this.outputUncertaintyMs) ? 'output-clock-unavailable'
+      : !this.clock || this.clock.state === 'stale' ? 'source-clock-unavailable'
+      : !Number.isFinite(this.clock.uncertaintyMs) ? 'clock-uncertainty-unavailable' : null;
+    return unknownReason ? { unknownReason } : {
+      outputAt, limitMs: audioLimit(timeline.mode),
+      uncertaintyMs: Math.max(0, this.outputUncertaintyMs) + Math.max(0, this.clock.uncertaintyMs) + timeline.filterUncertaintyMs,
+    };
+  }
+  checkRetiredDeadline(tail, contextMs, blockFrames) {
+    const frames = Math.min(tail.remaining, blockFrames), deadline = this.deadline(tail, contextMs);
+    if (sourceDeadlineAt(deadline, tail.arrivalPlayback ? null : this.clock, tail.sourceTimeMs,
+      frames * 1000 / sampleRate / this.deviceClock.rate, 0, tail)) return;
+    if (this.diagnostics && Number.isInteger(tail.type) && tail.type >= 0 && tail.type <= 255) {
+      const previous = this.retiredDeadlineReports.get(tail.type);
+      this.retiredDeadlineReports.set(tail.type, {
+        retiredSourceDeadlineRejectedFrames: (previous?.retiredSourceDeadlineRejectedFrames || 0) + tail.remaining,
+        ...(Number.isSafeInteger(tail.epoch) ? { lastRetiredSourceDeadlineEpoch: tail.epoch } : {}),
+        ...(Number.isSafeInteger(tail.generation) ? { lastRetiredSourceDeadlineGeneration: tail.generation } : {}),
+        lastRetiredSourceDeadlineDeltaUpperMs: tail.sourceDeltaUpperMs,
+        lastRetiredSourceDeadlineLimitMs: deadline.limitMs,
+        lastRetiredSourceDeadlineUncertaintyMs: deadline.uncertaintyMs,
+        contextMs,
+      });
+    }
+    // All remaining samples hold the same old value. Discard its whole tail;
+    // keeping the object cannot make that content younger at the next quantum.
+    tail.remaining = 0;
   }
   targetTime(timeline, contextMs) {
     if (this.suspended) return null;
@@ -301,70 +346,69 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.nextContextFrame += blockFrames;
     this.renderedFrames += blockFrames;
     for (const channel of output) channel.fill(0);
-    let voiceActive = false;
-    for (const [type, stream] of this.streams) if (isVoice(type, stream) && stream.queue.length > 0) { voiceActive = true; break; }
-    for (const [type, stream] of this.streams) {
-      const gain = isMedia(type, stream) && voiceActive ? 0.2 : 1;
-      const step = stream.rate / sampleRate;
-      for (let i = 0; i < output[0].length; i++) {
+    const continuous = [];
+    for (const [type, timeline] of this.timelines) if (timeline instanceof ContinuousAudio) {
+      if (!timeline.block || timeline.block.length < blockFrames * timeline.channels)
+        timeline.block = new Float32Array(Math.max(512, blockFrames) * timeline.channels);
+      const produced = timeline.render(this.targetTime(timeline, contextMs), contextMs, timeline.arrivalPlayback ? null : this.clock,
+        blockFrames, timeline.block, this.deviceClock.rate, this.deadline(timeline, contextMs));
+      continuous.push([type, timeline, produced]);
+    }
+    for (const tail of this.retiring) if (tail.remaining > 0) this.checkRetiredDeadline(tail, contextMs, blockFrames);
+    for (let i = 0; i < blockFrames; i++) {
+      let voice = false;
+      for (const [type, stream] of this.streams) {
         while (stream.queue.length && stream.position >= stream.queue[0].length / stream.channels) {
           const done = stream.queue.shift(), frames = done.length / stream.channels;
           stream.position -= frames; stream.frames -= frames;
           this.credit(done.byteLength, done.generation, 'played', type);
         }
+        if (!stream.queue.length) stream.position = 0;
+        else if (isVoice(type, stream)) voice = true;
+      }
+      for (const [type, timeline, produced] of continuous) if (isVoice(type, timeline)) {
+        if (timeline.state === 'playing' || i < produced) voice = true;
+        // render() may finish the quantum rebuffering while its output still
+        // contains a voice fade. Keep media ducked for those actual samples.
+        else for (let c = 0; c < timeline.channels; c++) if (timeline.block[i * timeline.channels + c]) voice = true;
+      }
+      for (const tail of this.retiring) if (tail.remaining > 0 && isVoice(tail.type, tail)) voice = true;
+      if (this.clockBase !== null) {
+        const wallTime = this.clockBase + (currentTime + i / sampleRate) * 1000;
+        for (const [type, timeline] of this.timelines) if (!(timeline instanceof ContinuousAudio)) {
+          timeline.delayMs = audioDelayAt(this.plansByMode[timeline.mode] ?? this.delayPlans, wallTime);
+          timeline.playbackTime = wallTime - timeline.delayMs;
+          if (isVoice(type, timeline) && timeline.active(timeline.playbackTime)) voice = true;
+        }
+      }
+      // Advance one shared envelope per emitted frame, independent of stream
+      // count, channels and quantum size. A voice state edge must not multiply
+      // a nonzero media waveform by 1 <-> 0.2 in a single sample.
+      const targetGain = voice ? MEDIA_DUCK_GAIN : 1;
+      this.mediaGain += Math.sign(targetGain - this.mediaGain) * Math.min(this.mediaGainStep, Math.abs(targetGain - this.mediaGain));
+      for (const [type, stream] of this.streams) {
         const pcm = stream.queue[0];
-        if (!pcm) { stream.position = 0; break; }
+        if (!pcm) continue;
         const frame = Math.floor(stream.position), fraction = stream.position - frame;
         for (let c = 0; c < output.length; c++) {
           const index = frame * stream.channels + Math.min(c, stream.channels - 1);
           const next = Math.min(index + stream.channels, pcm.length - stream.channels + Math.min(c, stream.channels - 1));
-          output[c][i] += gain * (pcm[index] + (pcm[next] - pcm[index]) * fraction) / 32768;
+          output[c][i] += (pcm[index] + (pcm[next] - pcm[index]) * fraction) / 32768 * (isMedia(type, stream) ? this.mediaGain : 1);
         }
-        stream.position += step;
+        stream.position += stream.rate / sampleRate;
       }
-    }
-    const continuous = [];
-    for (const [type, timeline] of this.timelines) if (timeline instanceof ContinuousAudio) {
-      if (!timeline.block || timeline.block.length < blockFrames * timeline.channels)
-        timeline.block = new Float32Array(Math.max(512, blockFrames) * timeline.channels);
-      const outputAt = this.contextAnchor && this.contextAnchor.localTimeMs
-        + (contextMs - this.contextAnchor.contextTimeMs) / this.deviceClock.rate;
-      const unknownReason = timeline.arrivalPlayback ? 'arrival-anchored' : !timeline.synchronized ? 'source-anchor-unavailable'
-        : !this.contextAnchor || !Number.isFinite(this.outputUncertaintyMs) ? 'output-clock-unavailable'
-        : !this.clock || this.clock.state === 'stale' ? 'source-clock-unavailable'
-        : !Number.isFinite(this.clock.uncertaintyMs) ? 'clock-uncertainty-unavailable' : null;
-      const deadline = unknownReason ? { unknownReason } : {
-          outputAt, limitMs: audioLimit(timeline.mode),
-          uncertaintyMs: Math.max(0, this.outputUncertaintyMs) + Math.max(0, this.clock.uncertaintyMs) + timeline.filterUncertaintyMs,
-        };
-      timeline.render(this.targetTime(timeline, contextMs), contextMs, timeline.arrivalPlayback ? null : this.clock,
-        blockFrames, timeline.block, this.deviceClock.rate, deadline);
-      continuous.push([type, timeline]);
-    }
-    for (let i = 0; i < blockFrames; i++) {
-      let voice = voiceActive;
-      for (const [type, timeline] of continuous) if (isVoice(type, timeline) && timeline.state === 'playing') voice = true;
       for (const [type, timeline] of continuous) for (let c = 0; c < output.length; c++) {
-        output[c][i] += timeline.block[i * timeline.channels + Math.min(c, timeline.channels - 1)] * (isMedia(type, timeline) && voice ? 0.2 : 1);
+        output[c][i] += timeline.block[i * timeline.channels + Math.min(c, timeline.channels - 1)] * (isMedia(type, timeline) ? this.mediaGain : 1);
       }
       for (const tail of this.retiring) if (tail.remaining > 0) {
         for (let c = 0; c < output.length; c++) output[c][i] += tail.samples[Math.min(c, tail.samples.length - 1)]
-          * (tail.remaining - 1) / tail.total * (isMedia(tail.type, tail) && voice ? 0.2 : 1);
+          * (tail.remaining - 1) / tail.total * (isMedia(tail.type, tail) ? this.mediaGain : 1);
         tail.remaining--;
       }
+      if (this.clockBase !== null) for (const [type, timeline] of this.timelines) if (!(timeline instanceof ContinuousAudio))
+        for (let c = 0; c < output.length; c++) output[c][i] += timeline.sample(timeline.playbackTime, c) * (isMedia(type, timeline) ? this.mediaGain : 1);
     }
     this.retiring = this.retiring.filter(tail => tail.remaining > 0);
-    if (this.clockBase !== null) for (let i = 0; i < output[0].length; i++) {
-      const wallTime = this.clockBase + (currentTime + i / sampleRate) * 1000;
-      let voice = voiceActive;
-      for (const [type, timeline] of this.timelines) {
-        if (timeline instanceof ContinuousAudio) continue;
-        timeline.delayMs = audioDelayAt(this.plansByMode[timeline.mode] ?? this.delayPlans, wallTime);
-        timeline.playbackTime = wallTime - timeline.delayMs;
-        if (isVoice(type, timeline) && timeline.active(timeline.playbackTime)) voice = true;
-      }
-      for (const [type, timeline] of this.timelines) if (!(timeline instanceof ContinuousAudio)) for (let c = 0; c < output.length; c++) output[c][i] += timeline.sample(timeline.playbackTime, c) * (isMedia(type, timeline) && voice ? 0.2 : 1);
-    }
     for (const channel of output) for (let i = 0; i < channel.length; i++) {
       channel[i] = Math.max(-1, Math.min(1, channel[i]));
       if (this.diagnostics) {

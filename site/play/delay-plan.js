@@ -17,7 +17,7 @@ export const PLAYBACK_PROFILES = Object.freeze({
   'airplay-cast': Object.freeze({ name: 'airplay-cast', maxDelayMs: 3000, initialDelayMs: 750,
     jitterMarginMs: 100, readinessDecay: 0.005, videoDecreaseRate: 0.005,
     startupBufferMs: 750, resumeBufferMs: 1500, maxVideoAheadMs: 2000, maxAudioAheadMs: 3000,
-    maxVideoFrames: 32, maxVideoBytes: 96 * 1024 * 1024 }),
+    maxVideoFrames: 32, maxVideoBytes: 256 * 1024 * 1024 }),
   default: Object.freeze({ name: 'default', maxDelayMs: MAX_MEDIA_DELAY, initialDelayMs: INITIAL_MEDIA_DELAY,
     jitterMarginMs: 20, readinessDecay: 0.005, videoDecreaseRate: 0.005,
     maxVideoFrames: 24, maxVideoBytes: 64 * 1024 * 1024 }),
