@@ -116,7 +116,12 @@
       "audioOutputLatencyMs": 20,
       "audioOutputTimestampAgeMs": 2,
       "audioOutputContextLagMs": 30,
-      "audioSubmitUncertaintyMaxMs": 0
+      "audioSubmitUncertaintyMaxMs": 0,
+      "audioOutputTimestampState": "valid",
+      "renderStatsState": "available",
+      "renderUnderrunEvents": 1,
+      "renderUnderrunDurationMs": 4.125,
+      "renderTotalDurationMs": 12500.5
     }
   },
   "event": {
@@ -128,6 +133,8 @@
     "engine": {
       "startupPhase": "first-samples",
       "waitReason": "audio-context-resume",
+      "renderStatsState": "available",
+      "audioOutputTimestampState": "valid",
       "contextState": "suspended",
       "clockSource": "audio",
       "limitingTrack": "audio",
@@ -227,7 +234,10 @@
       "audioOutputLatencyMs": 20,
       "audioOutputTimestampAgeMs": 2,
       "audioOutputContextLagMs": 30,
-      "audioSubmitUncertaintyMaxMs": 0
+      "audioSubmitUncertaintyMaxMs": 0,
+      "renderUnderrunEvents": 1,
+      "renderUnderrunDurationMs": 4.125,
+      "renderTotalDurationMs": 12500.5
     },
     "position": 12.5,
     "duration": 120,
@@ -353,9 +363,14 @@
       "phaseElapsedMs": 9007199254740991,
       "audioBaseLatencyMs": 9007199254740991,
       "audioOutputLatencyMs": 9007199254740991,
-      "audioOutputTimestampAgeMs": 9007199254740991,
-      "audioOutputContextLagMs": 9007199254740991,
-      "audioSubmitUncertaintyMaxMs": 9007199254740991
+      "audioOutputTimestampAgeMs": -9007199254740991,
+      "audioOutputContextLagMs": -9007199254740991,
+      "audioSubmitUncertaintyMaxMs": 9007199254740991,
+      "audioOutputTimestampState": "format-mismatch",
+      "renderStatsState": "available",
+      "renderUnderrunEvents": 9007199254740991,
+      "renderUnderrunDurationMs": 9007199254740991,
+      "renderTotalDurationMs": 9007199254740991
     }
   },
   "maximumEvent": {
@@ -367,6 +382,8 @@
     "engine": {
       "startupPhase": "first-samples",
       "waitReason": "audio-context-suspended",
+      "renderStatsState": "available",
+      "audioOutputTimestampState": "format-mismatch",
       "contextState": "interrupted",
       "clockSource": "audio",
       "limitingTrack": "audio",
@@ -464,9 +481,12 @@
       "audioRebufferStops": 9007199254740991,
       "audioBaseLatencyMs": 9007199254740991,
       "audioOutputLatencyMs": 9007199254740991,
-      "audioOutputTimestampAgeMs": 9007199254740991,
-      "audioOutputContextLagMs": 9007199254740991,
-      "audioSubmitUncertaintyMaxMs": 9007199254740991
+      "audioOutputTimestampAgeMs": -9007199254740991,
+      "audioOutputContextLagMs": -9007199254740991,
+      "audioSubmitUncertaintyMaxMs": 9007199254740991,
+      "renderUnderrunEvents": 9007199254740991,
+      "renderUnderrunDurationMs": 9007199254740991,
+      "renderTotalDurationMs": 9007199254740991
     },
     "position": 12.5,
     "duration": 120,
@@ -477,8 +497,8 @@
     "readyState": 3,
     "networkState": 2
   },
-  "normalBytes": 2731,
-  "maximumBytes": 3747,
+  "normalBytes": 2888,
+  "maximumBytes": 3951,
   "failureInput": {
     "state": {
       "id": 7,
@@ -601,7 +621,12 @@
       "audioOutputLatencyMs": 20,
       "audioOutputTimestampAgeMs": 2,
       "audioOutputContextLagMs": 30,
-      "audioSubmitUncertaintyMaxMs": 0
+      "audioSubmitUncertaintyMaxMs": 0,
+      "audioOutputTimestampState": "valid",
+      "renderStatsState": "available",
+      "renderUnderrunEvents": 1,
+      "renderUnderrunDurationMs": 4.125,
+      "renderTotalDurationMs": 12500.5
     },
     "after": {
       "generation": 4,
@@ -689,7 +714,9 @@
       "audioOutputLatencyMs": 20,
       "audioOutputTimestampAgeMs": 2,
       "audioOutputContextLagMs": 30,
-      "audioSubmitUncertaintyMaxMs": 0
+      "audioSubmitUncertaintyMaxMs": 0,
+      "audioOutputTimestampState": "valid",
+      "renderStatsState": "unavailable"
     }
   },
   "failureEvent": {
@@ -701,6 +728,8 @@
     "engine": {
       "startupPhase": "playing",
       "waitReason": "error",
+      "renderStatsState": "available",
+      "audioOutputTimestampState": "valid",
       "contextState": "running",
       "clockSource": "audio",
       "limitingTrack": "audio",
@@ -800,7 +829,10 @@
       "audioOutputLatencyMs": 20,
       "audioOutputTimestampAgeMs": 2,
       "audioOutputContextLagMs": 30,
-      "audioSubmitUncertaintyMaxMs": 0
+      "audioSubmitUncertaintyMaxMs": 0,
+      "renderUnderrunEvents": 1,
+      "renderUnderrunDurationMs": 4.125,
+      "renderTotalDurationMs": 12500.5
     },
     "position": 12.5,
     "duration": 120,
@@ -823,6 +855,8 @@
     "engine": {
       "startupPhase": "playing",
       "waitReason": "error",
+      "renderStatsState": "unavailable",
+      "audioOutputTimestampState": "valid",
       "contextState": "running",
       "clockSource": "audio",
       "limitingTrack": "audio",
@@ -1030,9 +1064,14 @@
       "phaseElapsedMs": 0,
       "audioBaseLatencyMs": 10,
       "audioOutputLatencyMs": 20,
-      "audioOutputTimestampAgeMs": 2,
-      "audioOutputContextLagMs": 30,
-      "audioSubmitUncertaintyMaxMs": 0
+      "audioOutputTimestampAgeMs": -20.125,
+      "audioOutputContextLagMs": -10.5,
+      "audioSubmitUncertaintyMaxMs": 0,
+      "audioOutputTimestampState": "future",
+      "renderStatsState": "available",
+      "renderUnderrunEvents": 1,
+      "renderUnderrunDurationMs": 4.125,
+      "renderTotalDurationMs": 12500.5
     }
   },
   "continuityEvent": {
@@ -1044,6 +1083,8 @@
     "engine": {
       "startupPhase": "playing",
       "waitReason": "none",
+      "renderStatsState": "available",
+      "audioOutputTimestampState": "future",
       "contextState": "running",
       "clockSource": "audio",
       "limitingTrack": "audio",
@@ -1141,9 +1182,12 @@
       "audioRebufferStops": 1,
       "audioBaseLatencyMs": 10,
       "audioOutputLatencyMs": 20,
-      "audioOutputTimestampAgeMs": 2,
-      "audioOutputContextLagMs": 30,
-      "audioSubmitUncertaintyMaxMs": 0
+      "audioOutputTimestampAgeMs": -20.125,
+      "audioOutputContextLagMs": -10.5,
+      "audioSubmitUncertaintyMaxMs": 0,
+      "renderUnderrunEvents": 1,
+      "renderUnderrunDurationMs": 4.125,
+      "renderTotalDurationMs": 12500.5
     },
     "position": 12.5,
     "duration": 120,

@@ -11,6 +11,44 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class RawTrafficTest {
+    @Test fun timingIsSessionScopedCoversSessionWritesAndSurvivesExportWithoutPayloads() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-timing").toFile()
+        val file = File(directory, "capture.tsv")
+        fun timing() = RawTraffic.integrity().getValue("timing") as Map<*, *>
+        try {
+            RawTraffic.configure(file, true)
+            val capture = requireNotNull(RawTraffic.activeSessionId())
+            assertEquals(1L, timing()["completedCalls"])
+            RawTraffic.record("iphone/private-peer/in", byteArrayOf(1, 2))
+            assertTrue(RawTraffic.recordForSession(capture, "browser/private-peer/out", byteArrayOf(3)))
+            assertFalse(RawTraffic.recordForSession("stale", "browser/out", byteArrayOf(4)))
+            RawTraffic.record("empty", byteArrayOf())
+            assertEquals(3L, timing()["completedCalls"])
+            assertTrue((timing()["appendTotalMs"] as Double) > 0)
+            RawTraffic.configure(file, false)
+            assertEquals(4L, timing()["completedCalls"])
+            RawTraffic.record("ignored", byteArrayOf(5))
+            assertEquals(4L, timing()["completedCalls"])
+            val archive = ByteArrayOutputStream()
+            RawTraffic.writeArchive(archive, "report.txt", "summary", directory)
+            java.util.zip.ZipInputStream(archive.toByteArray().inputStream()).use { zip ->
+                var status: String? = null
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    val bytes = zip.readBytes()
+                    if (entry.name == "capture.txt") status = bytes.toString(Charsets.UTF_8)
+                }
+                assertTrue(requireNotNull(status).contains("RAW_CAPTURE_TIMING scope=current-or-last-capture-session completedCalls=4"))
+                assertFalse(requireNotNull(status).contains("private-peer"))
+            }
+            RawTraffic.configure(file, true)
+            assertEquals(1L, timing()["completedCalls"])
+            RawTraffic.record("iphone/in", byteArrayOf(6))
+            RawTraffic.clear()
+            assertEquals(1L, timing()["completedCalls"])
+        } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
+    }
+
     @Test fun archiveReopensEvictedChannelsWithoutLosingOrReorderingTheirBytes() {
         val directory = java.nio.file.Files.createTempDirectory("traffic-many-channels").toFile()
         val file = File(directory, "capture.tsv")
@@ -43,7 +81,12 @@ class RawTrafficTest {
         val file = File(blocker, "capture.tsv")
         try {
             RawTraffic.configure(file, true, "version=failure-recovery")
+            val initialTiming = RawTraffic.integrity()["timing"] as Map<*, *>
+            assertEquals("The failed initial append is still a completed capture call", 1L, initialTiming["completedCalls"])
             RawTraffic.record("iphone/private-host/in", byteArrayOf(1, 2, 3))
+            val failedTiming = RawTraffic.integrity()["timing"] as Map<*, *>
+            assertTrue((failedTiming["completedCalls"] as Long) > (initialTiming["completedCalls"] as Long))
+            assertTrue((failedTiming["appendTotalMs"] as Double) > 0)
             assertTrue(blocker.delete())
             assertTrue(blocker.mkdir())
             RawTraffic.record("iphone/in", byteArrayOf(9, 8))
@@ -334,6 +377,46 @@ class RawTrafficTest {
             workers.awaitTermination(1, TimeUnit.SECONDS)
             RawTraffic.configure(file, false)
             directory.deleteRecursively()
+        }
+    }
+
+    @Test fun aSessionWriteIncludesTheOuterJournalMonitorWaitInItsTiming() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-timing-wait").toFile()
+        val file = File(directory, "capture.tsv")
+        val worker = Executors.newSingleThreadExecutor()
+        val started = CountDownLatch(1)
+        val writerThread = java.util.concurrent.atomic.AtomicReference<Thread>()
+        try {
+            RawTraffic.configure(file, true)
+            val capture = requireNotNull(RawTraffic.activeSessionId())
+            val before = RawTraffic.integrity()["timing"] as Map<*, *>
+            val monitor = requireNotNull(RawTraffic::class.java.getDeclaredField("lock").apply { isAccessible = true }.get(RawTraffic))
+            var blockedAt = 0L
+            var releaseAt = 0L
+            val write = synchronized(monitor) {
+                val pending = worker.submit<Boolean> {
+                    writerThread.set(Thread.currentThread())
+                    started.countDown()
+                    RawTraffic.recordForSession(capture, "browser/peer/out", byteArrayOf(1))
+                }
+                assertTrue(started.await(1, TimeUnit.SECONDS))
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+                while (writerThread.get()?.state != Thread.State.BLOCKED && System.nanoTime() < deadline) Thread.yield()
+                assertEquals(Thread.State.BLOCKED, writerThread.get()?.state)
+                blockedAt = System.nanoTime()
+                // This status read must not wait for the writer or publish an unfinished append.
+                assertEquals(before["completedCalls"], (RawTraffic.integrity()["timing"] as Map<*, *>)["completedCalls"])
+                releaseAt = System.nanoTime()
+                pending
+            }
+            assertTrue(write.get(1, TimeUnit.SECONDS))
+            val after = RawTraffic.integrity()["timing"] as Map<*, *>
+            val measuredWait = ((after["lockWaitTotalMs"] as Double) - (before["lockWaitTotalMs"] as Double)) * 1e6
+            assertTrue("The completed call must include the observed blocked interval", measuredWait + 1 >= releaseAt - blockedAt)
+            assertEquals((before["completedCalls"] as Long) + 1, after["completedCalls"])
+        } finally {
+            worker.shutdownNow(); worker.awaitTermination(1, TimeUnit.SECONDS)
+            RawTraffic.configure(file, false); directory.deleteRecursively()
         }
     }
 

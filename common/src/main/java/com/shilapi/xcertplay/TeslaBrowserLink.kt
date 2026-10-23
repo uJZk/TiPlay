@@ -75,6 +75,7 @@ internal object TeslaBrowserLink {
         fun onBrowserViewport(viewport: BrowserViewport) {}
         fun onBrowserTheme(night: Boolean) {}
         fun onAirPlayEnded() {}
+        fun onAirPlayStarted() {}
         fun onBrowserGone() {}
     }
 
@@ -170,6 +171,7 @@ internal object TeslaBrowserLink {
             if (available != null) displayAvailability = available
             starting
         }
+        if (releaseTouches) main.post { host.get()?.onAirPlayStarted() }
         // Keep network writes off the receiver and main threads.
         worker.execute {
             if (releaseTouches) CarPlayBackgroundSession.snapshot()?.controller?.sendTouch(emptyList())

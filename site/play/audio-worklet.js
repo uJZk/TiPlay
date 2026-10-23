@@ -16,7 +16,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.streams = new Map();
     this.timelines = new Map(); this.epochs = new Map(); this.delayPlans = initialPlaybackPlans(); this.clockBase = null;
     this.plansByMode = {};
-    this.diagnostics = null; this.lastReportTime = -Infinity; this.diagnosticRevision = null;
+    this.diagnostics = null; this.lastReportTime = -Infinity; this.diagnosticRevision = null; this.playbackGeneration = null;
     this.runtime = new SoxrRuntime({ allowCalibration: false }); this.clock = null; this.contextAnchor = null; this.localTimeOriginMs = 0;
     this.renderedFrames = 0; this.feedbackSequence = 0; this.lastFeedbackMs = -Infinity; this.suspended = false;
     this.renderQuantumMaxFrames = 0;
@@ -75,6 +75,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
       if (typeof data.debug === 'boolean') {
         this.diagnostics = data.debug ? { processCalls: 0, renderFrames: 0, renderNonzero: 0, renderPeak: 0, streams: {} } : null;
         this.diagnosticRevision = data.diagnosticRevision;
+        this.playbackGeneration = Number.isSafeInteger(data.generation) ? data.generation : null;
         this.lastReportTime = -Infinity;
         for (const timeline of this.timelines.values()) timeline.debug(data.debug);
       }
@@ -82,6 +83,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
       if (data.plansByMode) this.plansByMode = data.plansByMode;
       if (data.clockBase !== undefined) this.clockBase = data.clockBase;
       if (data.reset) {
+        this.playbackGeneration = Number.isSafeInteger(data.generation) ? data.generation : null;
         for (const [type, stream] of this.streams) for (const pcm of stream.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', type);
         this.streams.clear();
         for (const timeline of this.timelines.values()) this.retireTimeline(timeline);
@@ -89,6 +91,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
         this.epochs.clear();
       }
       if (!data.pcm) return;
+      this.playbackGeneration = Number.isSafeInteger(data.generation) ? data.generation : null;
       const previousEpoch = this.epochs.get(data.type);
       const previousTimeline = this.timelines.get(data.type);
       if (previousEpoch !== undefined && ((data.epoch - previousEpoch) | 0) < 0) { this.credit(data.pcm.byteLength, data.generation, 'late', data.type); return; }
@@ -206,7 +209,8 @@ class TiPlayAudio extends AudioWorkletProcessor {
         : { queueBytes: legacy?.queue.reduce((bytes, pcm) => bytes + pcm.byteLength, 0) ?? 0, queuePackets: legacy?.queue.length ?? 0, rate: legacy?.rate, channels: legacy?.channels };
       details['stream' + type] = { ...fields, epoch: this.epochs.get(type), ...streams[type] };
     }
-    this.port.postMessage({ diagnosticRevision: this.diagnosticRevision, diagnostics: { ...scalars, ...details, renderTimeMs: currentTime * 1000 } });
+    this.port.postMessage({ diagnosticRevision: this.diagnosticRevision, playbackGeneration: this.playbackGeneration,
+      diagnostics: { ...scalars, ...details, renderTimeMs: currentTime * 1000 } });
   }
   arrivalTime(contextMs) {
     return this.arrivalAnchor ? this.arrivalAnchor.timeMs + (contextMs - this.arrivalAnchor.contextTimeMs) / this.deviceClock.rate : contextMs;

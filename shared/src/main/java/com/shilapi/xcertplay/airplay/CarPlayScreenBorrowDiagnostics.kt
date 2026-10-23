@@ -8,7 +8,10 @@ internal enum class CarPlayConnectionCloseReason {
     UNSPECIFIED, CONTROL_STOPPED, PEER_EOF, CONTROL_DECRYPT_FAILED, CONTROL_IO_FAILED,
     EVENT_STOPPED, EVENT_EOF, EVENT_CIPHER_UNAVAILABLE, EVENT_DECRYPT_FAILED, EVENT_IO_FAILED,
     EVENT_AUTH_UNAVAILABLE, EVENT_ACCEPT_FAILED, EVENT_SEND_FAILED,
+    SCREEN_RETURN_WITHOUT_STREAM,
 }
+
+internal enum class CarPlayScreenDataBoundary { SETUP, DATA_EOF, DATA_FAILED, TEARDOWN }
 
 /** Sparse semantic evidence beside encrypted wire bytes, with no peer or authentication identity. */
 internal class CarPlayScreenBorrowDiagnostics(
@@ -22,6 +25,11 @@ internal class CarPlayScreenBorrowDiagnostics(
         if (!closed) append("STATE", "NONE", state)
     }
 
+    /** Resource ownership and a live data stream are independent facts. */
+    @Synchronized fun screen(boundary: CarPlayScreenDataBoundary, available: Boolean, state: CarPlayScreenBorrowState) {
+        if (!closed) append("SCREEN", boundary.name, state, " screenAvailable=$available")
+    }
+
     /** Record retirement even if the loan state never differed from its default. */
     @Synchronized fun closed(reason: CarPlayConnectionCloseReason, state: CarPlayScreenBorrowState) {
         if (closed) return
@@ -29,7 +37,7 @@ internal class CarPlayScreenBorrowDiagnostics(
         append("CLOSE", reason.name, state)
     }
 
-    private fun append(event: String, reason: String, state: CarPlayScreenBorrowState) {
+    private fun append(event: String, reason: String, state: CarPlayScreenBorrowState, extra: String = "") {
         // Capture failures and clear/disable races cannot interrupt control or listener delivery.
         // No payload or string supplied by the sender enters this fixed schema.
         runCatching {
@@ -37,7 +45,7 @@ internal class CarPlayScreenBorrowDiagnostics(
             val line = "schema=1 connectionId=$connectionId event=$event reason=$reason " +
                 "desired=${state.desired} sent=${state.sent} owner=${state.owner} " +
                 "pending=${state.pending} confirmedBorrow=${state.confirmedBorrow} " +
-                "carPlayHasScreen=${state.carPlayHasScreen}\n"
+                "carPlayHasScreen=${state.carPlayHasScreen}$extra\n"
             record(capture, CHANNEL, line.toByteArray(Charsets.UTF_8))
         }
     }

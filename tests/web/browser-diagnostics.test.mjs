@@ -163,6 +163,7 @@ test('dense audio evidence protects every source fit and actual quantum without 
   for (const controlMessageLimitBytes of [16 * 1024, 64 * 1024]) {
     const debug = { ...Object.fromEntries(Array.from({ length: 700 }, (_, i) => [`optional${i}`, i])),
       contextState: 'running', contextRate: 48000, renderQuantumFrames: 128, renderQuantumMinFrames: 64, renderQuantumMaxFrames: 256,
+      renderStatsState: 'available', renderUnderrunEvents: 7, renderUnderrunDurationMs: .123456, renderTotalDurationMs: 123750,
       deviceClockFitStatus: 'holdover', deviceClockFitRejectReason: 'noisy', deviceClockFitDispersionMs: 3.000001,
       deviceClockUncertaintyMs: 2.999999,
       deviceClockRatePpm: -1801.73, deviceClockConfidence: 0 };
@@ -187,6 +188,8 @@ test('dense audio evidence protects every source fit and actual quantum without 
       assert.equal(detail.v[`stream${stream}.sourceClockDispersionMs`], .500001);
     }
     assert.equal(detail.v.renderQuantumFrames, 128); assert.equal(detail.v.renderQuantumMinFrames, 64); assert.equal(detail.v.renderQuantumMaxFrames, 256);
+    assert.equal(detail.v.renderStatsState, 'available'); assert.equal(detail.v.renderUnderrunEvents, 7);
+    assert.equal(detail.v.renderUnderrunDurationMs, .123456); assert.equal(detail.v.renderTotalDurationMs, 123750);
     assert.equal(detail.v.deviceClockUncertaintyMs, 2.999999); assert.equal(detail.v.deviceClockFitDispersionMs, 3.000001);
     assert.equal(detail.v.deviceClockFitStatus, 'holdover'); assert.equal(detail.v.deviceClockFitRejectReason, 'noisy');
     assert.equal(detail.v.deviceClockRatePpm, -1801.73); assert.equal(detail.v.deviceClockConfidence, 0);
@@ -217,6 +220,54 @@ test('unknown current device fit noise stays absent from Debug and ordinary summ
     assert.equal(Object.keys(summary.v).some(key => key.includes('deviceClockFitDispersionMs')), false);
     assert.equal(browserDiagnosticEvents(page, false, false).length, 1);
   }
+});
+
+test('retained source-deadline triggers precede optional fields fairly within the unchanged diagnostic budgets', () => {
+  const fields = { lastSourceDeadlineDeltaUpperMs: 300.000001, lastSourceDeadlineUncertaintyMs: 8.164241,
+    lastSourceDeadlineAgeMs: 12345.123457, lastSourceDeadlineLimitMs: 300 };
+  for (const controlMessageLimitBytes of [16 * 1024, 64 * 1024]) {
+    const debug = { ...Object.fromEntries(Array.from({ length: 700 }, (_, i) => [`optional${i}`, i])),
+      contextState: 'running', contextRate: 48000, renderQuantumFrames: 128 };
+    for (let stream = 0; stream < 8; stream++) debug[`stream${stream}`] = {
+      ...Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`optional${i}`, i])),
+      epoch: 10 + stream, state: 'rebuffering', lastRecoveryReason: 'source-deadline', ...fields,
+      sourceClockFitStatus: 'holdover', sourceClockFitRejectReason: 'noisy', sourceClockDispersionMs: .500001,
+    };
+    const [summary, detail] = browserDiagnosticEvents({ transport: { controlMessageLimitBytes }, audio: { debug } }, false, true, 'capture');
+    assert.ok(detail.v.omittedFields > 0);
+    assert.ok(Object.keys(detail.v).length <= 256);
+    const budget = Math.min(16 * 1024, Math.floor((controlMessageLimitBytes - (2048 - 24) * 3 - 4096) / 2));
+    assert.ok(Buffer.byteLength(JSON.stringify(detail.v)) <= budget);
+    for (let stream = 0; stream < 8; stream++) {
+      assert.equal(detail.v[`stream${stream}.epoch`], 10 + stream);
+      assert.equal(detail.v[`stream${stream}.state`], 'rebuffering');
+      assert.equal(detail.v[`stream${stream}.lastRecoveryReason`], 'source-deadline');
+      for (const [key, value] of Object.entries(fields)) assert.equal(detail.v[`stream${stream}.${key}`], value);
+    }
+    assert.equal(Object.keys(summary.v).some(key => key.includes('lastSourceDeadline')), false);
+    assert.equal(browserDiagnosticEvents({ audio: { debug } }, false).length, 1);
+  }
+});
+
+test('source-deadline trigger values preserve threshold sides and omit unknown history', () => {
+  const fields = ['lastSourceDeadlineDeltaUpperMs', 'lastSourceDeadlineUncertaintyMs', 'lastSourceDeadlineAgeMs', 'lastSourceDeadlineLimitMs'];
+  const [, precise] = browserDiagnosticEvents({ audio: { debug: { stream0: Object.fromEntries(fields.map((key, i) => [key, 300 + i + .0000014])) } } }, false, true);
+  for (let i = 0; i < fields.length; i++) assert.equal(precise.v[`stream0.${fields[i]}`], 300 + i + .000001);
+  for (const unknown of [undefined, null, NaN, Infinity, -Infinity]) {
+    const page = { audio: { debug: { stream6: { epoch: 9, ...Object.fromEntries(fields.map(key => [key, unknown])) } } } };
+    const [, detail] = browserDiagnosticEvents(page, false, true);
+    assert.equal(detail.v['stream6.epoch'], 9);
+    for (const key of fields) assert.equal(Object.hasOwn(detail.v, `stream6.${key}`), false);
+  }
+});
+
+test('the source-deadline selector fixture binds preserved trigger values to the native scalar schema', () => {
+  const fixture = JSON.parse(readFileSync(new URL('../../shared/src/test/resources/Browser-source-deadline-diagnostics-v1.json', import.meta.url), 'utf8'));
+  const [, actual] = browserDiagnosticEvents(fixture.input.page, false, true, fixture.detail.d);
+  assert.deepEqual(actual, fixture.detail);
+  assert.equal(actual.v['stream0.sourceDeltaUpperMs'], 20);
+  assert.equal(actual.v['stream0.lastSourceDeadlineDeltaUpperMs'], 300.000001,
+    'the latest healthy sample cannot rewrite the retained triggering value');
 });
 
 test('selected ICE path and counters survive a crowded ordinary diagnostic summary', () => {

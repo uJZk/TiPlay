@@ -170,20 +170,79 @@ test('URL diagnostics: native output timing is finite, supported and owned by th
   try {
     const context = h.context();
     assert.equal(h.media.getPlaybackDiagnostics().audioOutputTimestampAgeMs, undefined);
+    assert.equal(h.media.getPlaybackDiagnostics().audioOutputTimestampState, 'unavailable');
     context.baseLatency = 0.02; context.outputLatency = 0.03;
     context.getOutputTimestamp = () => ({ contextTime: context.currentTime - 0.01, performanceTime: performance.now() - 4 });
     const valid = h.media.getPlaybackDiagnostics();
+    assert.equal(valid.audioOutputTimestampState, 'valid');
     assert.equal(valid.audioBaseLatencyMs, 20); assert.equal(valid.audioOutputLatencyMs, 30);
     assert.ok(valid.audioOutputTimestampAgeMs >= 4 && valid.audioOutputTimestampAgeMs < 100);
     assert.ok(Math.abs(valid.audioOutputContextLagMs - 10) < 1e-6);
     context.getOutputTimestamp = () => { throw new Error('device timestamp unavailable'); };
     assert.equal(h.media.getPlaybackDiagnostics().audioOutputTimestampAgeMs, undefined);
+    assert.equal(h.media.getPlaybackDiagnostics().audioOutputTimestampState, 'failed');
     context.getOutputTimestamp = () => ({ contextTime: context.currentTime + 1, performanceTime: performance.now() + 1000 });
     context.baseLatency = NaN; context.outputLatency = -1;
-    const invalid = h.media.getPlaybackDiagnostics();
-    for (const key of ['audioBaseLatencyMs', 'audioOutputLatencyMs', 'audioOutputTimestampAgeMs', 'audioOutputContextLagMs'])
-      assert.equal(invalid[key], undefined, `${key} must not invent an output timing observation`);
+    const future = h.media.getPlaybackDiagnostics();
+    assert.equal(future.audioBaseLatencyMs, undefined); assert.equal(future.audioOutputLatencyMs, undefined);
+    assert.equal(future.audioOutputTimestampState, 'future');
+    assert.ok(future.audioOutputTimestampAgeMs < -900 && future.audioOutputTimestampAgeMs >= -1000);
+    assert.ok(Math.abs(future.audioOutputContextLagMs + 1000) < 1e-6, 'a contradictory context estimate survives independently of future performance time');
+    context.getOutputTimestamp = () => ({ contextTime: context.currentTime + 0.01, performanceTime: performance.now() - 4 });
+    const ahead = h.media.getPlaybackDiagnostics();
+    assert.equal(ahead.audioOutputTimestampState, 'context-ahead');
+    assert.ok(Math.abs(ahead.audioOutputContextLagMs + 10) < 1e-6);
     context.baseLatency = 0.02; context.outputLatency = 0.03; context.sampleRate = 44100;
     assert.equal(h.media.getPlaybackDiagnostics().audioBaseLatencyMs, undefined, 'a retired format must not describe the new track');
+    assert.equal(h.media.getPlaybackDiagnostics().audioOutputTimestampState, 'format-mismatch');
+    context.sampleRate = 48000; context.state = 'closed';
+    assert.equal(h.media.getPlaybackDiagnostics().audioOutputTimestampState, 'closed');
+  } finally { h.media.dispose(); }
+});
+
+
+for (const [name, stamp, expected] of [
+  ['startup pair', { contextTime: 0, performanceTime: 0 }, 'startup'],
+  ['absent pair', undefined, 'invalid'],
+  ['non-finite context', { contextTime: NaN, performanceTime: 1 }, 'invalid'],
+  ['negative context', { contextTime: -1, performanceTime: 1 }, 'invalid'],
+  ['negative performance', { contextTime: 0, performanceTime: -1 }, 'invalid'],
+  ['zero performance after startup', { contextTime: 1, performanceTime: 0 }, 'invalid'],
+]) test(`URL output diagnostics: ${name} is explicit without inventing timing or changing submission`, async () => {
+  const h = await startSchedulingFixture();
+  try {
+    const before = h.media.getPlaybackDiagnostics();
+    h.context().getOutputTimestamp = () => stamp;
+    const after = h.media.getPlaybackDiagnostics();
+    assert.equal(after.audioOutputTimestampState, expected);
+    assert.equal(after.audioOutputTimestampAgeMs, undefined); assert.equal(after.audioOutputContextLagMs, undefined);
+    for (const key of ['position', 'clockTime', 'clockPosition', 'scheduledEnd', 'audioScheduledFrames', 'audioRebufferStops'])
+      assert.equal(after[key], before[key], `diagnostic API failures cannot change ${key}`);
+  } finally { h.media.dispose(); }
+});
+
+test('URL renderer counters belong to the current context and do not alter PCM scheduling', async () => {
+  const h = await startSchedulingFixture();
+  try {
+    const context = h.context(), before = h.media.getPlaybackDiagnostics();
+    assert.equal(before.renderStatsState, 'unavailable');
+    for (const key of ['renderUnderrunEvents', 'renderUnderrunDurationMs', 'renderTotalDurationMs']) assert.equal(before[key], undefined);
+    let resets = 0;
+    context.playbackStats = { underrunEvents: 2, underrunDuration: 0.00525, totalDuration: 12.5,
+      resetLatency() { resets++; } };
+    const observed = h.media.getPlaybackDiagnostics();
+    assert.equal(observed.renderStatsState, 'available');
+    assert.equal(observed.renderUnderrunEvents, 2); assert.equal(observed.renderUnderrunDurationMs, 5.25);
+    assert.equal(observed.renderTotalDurationMs, 12500); assert.equal(resets, 0);
+    for (const key of ['position', 'clockTime', 'clockPosition', 'scheduledEnd', 'audioScheduledFrames', 'audioRebufferStops'])
+      assert.equal(observed[key], before[key], `renderer observations cannot change ${key}`);
+    context.sampleRate = 44100;
+    const stale = h.media.getPlaybackDiagnostics();
+    assert.equal(stale.renderStatsState, 'unavailable');
+    assert.equal(stale.renderUnderrunEvents, undefined, 'a retained old-format context cannot describe replacement audio');
+    context.sampleRate = 48000;
+    Object.defineProperty(context, 'playbackStats', { get() { throw new Error('unavailable renderer'); } });
+    const failed = h.media.getPlaybackDiagnostics();
+    assert.equal(failed.renderStatsState, 'failed'); assert.equal(failed.renderUnderrunEvents, undefined);
   } finally { h.media.dispose(); }
 });

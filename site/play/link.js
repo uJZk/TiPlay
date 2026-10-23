@@ -589,9 +589,9 @@ export function flatStats(stats, limit = 2048) {
   };
   const visit = (prefix, value) => {
     if (typeof value === 'number' && Number.isFinite(value)) {
-      // Preserve clock-fit threshold evidence without increasing precision for
+      // Preserve clock-fit and source-deadline threshold evidence without increasing precision for
       // every counter. This is print resolution, not measurement accuracy.
-      const precision = /(?:^|\.)(?:sourceClockDispersionMs|deviceClockFitDispersionMs|deviceClockUncertaintyMs)$/.test(prefix) ? 1e6 : 100;
+      const precision = /(?:^|\.)(?:sourceClockDispersionMs|deviceClockFitDispersionMs|deviceClockUncertaintyMs|lastSourceDeadline(?:DeltaUpper|Uncertainty|Age|Limit)Ms|render(?:Underrun|Total)DurationMs)$/.test(prefix) ? 1e6 : 100;
       add(prefix, Math.round(value * precision) / precision);
     }
     else if (typeof value === 'boolean') add(prefix, value ? 1 : 0);

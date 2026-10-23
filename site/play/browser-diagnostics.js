@@ -4,7 +4,7 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v77';
+export const PAGE_VERSION = 'v78';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
@@ -48,7 +48,9 @@ const SUMMARY_KEYS = [
   'video.policyVideoPlanFromMs', 'video.policyVideoPlanDurationMs', 'video.policyVideoPlanRemainingMs',
   'video.policyVideoLeadRemainingMs', 'video.policyPlanChanges',
 ];
-const AUDIO_SOURCE_CORE = ['epoch', 'state', 'lastRecoveryReason', 'sourceClockFitStatus', 'sourceClockFitRejectReason', 'sourceClockDispersionMs'];
+const AUDIO_SOURCE_IDENTITY = ['epoch', 'state', 'lastRecoveryReason'];
+const AUDIO_SOURCE_DEADLINE = ['lastSourceDeadlineDeltaUpperMs', 'lastSourceDeadlineUncertaintyMs', 'lastSourceDeadlineAgeMs', 'lastSourceDeadlineLimitMs'];
+const AUDIO_SOURCE_FIT = ['sourceClockFitStatus', 'sourceClockFitRejectReason', 'sourceClockDispersionMs'];
 const AUDIO_SOURCE_DETAIL = ['mode', 'reason', 'sourceClockPoints', 'sourceClockSpanMs',
   'sourceClockAcceptedFitAgeMs', 'sourceClockFitRejected', 'sourceDeadlineState',
   'sourceDeadlineReason', 'sourceRatePpm', 'sourceRateConfidence', 'phaseErrorMs', 'queueBytes'];
@@ -56,14 +58,16 @@ const AUDIO_CLOCK_KEYS = ['deviceClockFitStatus', 'deviceClockFitRejectReason', 
   'deviceClockRatePpm', 'deviceClockConfidence', 'deviceClockAcceptedFitAgeMs', 'deviceClockFitRejected', 'outputState', 'outputUnavailableReason',
   'outputTimestampAgeMs', 'outputTimestampCaptureMs', 'outputTimestampHoldoverAgeMs', 'outputFeedbackAgeMs',
   'renderTimeMs', 'renderNonzero', 'renderPeak'];
+const AUDIO_RENDER_KEYS = ['renderStatsState', 'renderUnderrunEvents', 'renderUnderrunDurationMs', 'renderTotalDurationMs'];
 
 function audioDiagnosticKeys(full) {
   const streams = [...new Set(Object.keys(full).map(key => /^(stream[0-9]{1,3})\./.exec(key)?.[1]).filter(Boolean))];
   const perStream = fields => fields.flatMap(field => streams.map(stream => `${stream}.${field}`));
-  // Round-robin fit identity/reason before optional packet/decoder detail, so a
-  // busy first stream cannot make a later stream's fit look silently absent.
+  // Round-robin identity and retained deadline triggers before fit/packet detail,
+  // so a busy first stream cannot hide a later stream's actual rejection boundary.
   return [...new Set(['contextState', 'contextRate', 'renderQuantumFrames', 'renderQuantumMinFrames', 'renderQuantumMaxFrames',
-    ...perStream(AUDIO_SOURCE_CORE), ...AUDIO_CLOCK_KEYS, ...perStream(AUDIO_SOURCE_DETAIL), ...Object.keys(full)])]
+    ...AUDIO_RENDER_KEYS, ...perStream(AUDIO_SOURCE_IDENTITY), ...perStream(AUDIO_SOURCE_DEADLINE), ...perStream(AUDIO_SOURCE_FIT),
+    ...AUDIO_CLOCK_KEYS, ...perStream(AUDIO_SOURCE_DETAIL), ...Object.keys(full)])]
     .filter(key => Object.hasOwn(full, key));
 }
 

@@ -13,6 +13,7 @@ internal object BrowserAudioDiagnostics {
         "processorErrors", "recoveries", "recoveryAttempts", "processorFailed", "renderAgeMs", "renderReportAgeMs",
         "renderFrames", "renderNonzero", "renderPeak", "processCalls", "renderTimeMs",
         "renderQuantumFrames", "renderQuantumMinFrames", "renderQuantumMaxFrames",
+        "renderStatsState", "renderUnderrunEvents", "renderUnderrunDurationMs", "renderTotalDurationMs",
         "pcmPackets", "pcmFrames", "pcmNonzero", "pcmPeak",
         "clockRatePpm", "clockGeneration", "clockUncertaintyMs", "clockRateConfidence",
         "deviceClockRatePpm", "deviceClockTargetRatePpm", "deviceClockConfidence", "deviceClockUncertaintyMs",
@@ -28,6 +29,10 @@ internal object BrowserAudioDiagnostics {
         "outputUnavailableCounts.missing-latency", "outputUnavailableCounts.latency-unbounded",
         "outputUnavailableCounts.invalid-feedback", "outputUnavailableCounts.feedback-distance",
     )
+    private val sourceDeadlineEvidenceFields = setOf(
+        "lastSourceDeadlineDeltaUpperMs", "lastSourceDeadlineUncertaintyMs", "lastSourceDeadlineAgeMs", "lastSourceDeadlineLimitMs",
+    )
+    private val renderDurationFields = setOf("renderUnderrunDurationMs", "renderTotalDurationMs")
     private val streamFields = setOf(
         "epoch", "rate", "channels", "headMs", "tailMs", "playbackMs", "contextTimeMs", "delayMs", "queueBytes", "queuePackets",
         "capacityPackets", "latePackets", "duplicatePackets", "playedPackets", "resetPackets", "invalidPackets",
@@ -41,12 +46,13 @@ internal object BrowserAudioDiagnostics {
         "lastClockStepPhaseErrorMs", "lastClockStepDeviceRatePpm", "lastClockStepUncertaintyMs", "lastClockStepAgeMs",
         "recoveryCounts.source-deadline", "recoveryCounts.clock-generation", "recoveryCounts.suspended",
         "recoveryCounts.sender-deadline", "recoveryCounts.network-buffer", "recoveryCounts.device-clock-jump",
-    )
+    ) + sourceDeadlineEvidenceFields
     private val decoderFields = setOf("packets", "frames", "nonzero", "peak", "errors", "noDataPackets", "noDataFrames")
     private val decoderStreamFields = setOf("packets", "frames", "nonzero", "peak", "backend", "epoch", "rate", "channels", "semanticType", "noDataPackets", "noDataFrames")
     private val streamKey = Regex("(?:decoder\\.)?stream([0-9]{1,3})\\..+")
     private val safeText = Regex("[A-Za-z0-9._-]{1,40}")
     private val enumFields = mapOf(
+        "renderStatsState" to setOf("available", "unavailable", "invalid", "failed"),
         "deviceClockFitStatus" to setOf("acquiring", "tracking", "holdover"),
         "deviceClockFitRejectReason" to setOf("none", "noisy", "out-of-range"),
         "sourceClockFitStatus" to setOf("acquiring", "tracking", "holdover", "disabled"),
@@ -59,10 +65,17 @@ internal object BrowserAudioDiagnostics {
         fun line(prefix: String, fields: Set<String>, keyPrefix: String = "") {
             val entries = fields.mapNotNull { field ->
                 val raw = stats[keyPrefix + field]
+                if (field in sourceDeadlineEvidenceFields && raw !is Number) return@mapNotNull null
+                if (field in renderDurationFields && (raw !is Number || !raw.toDouble().isFinite() ||
+                    raw.toDouble() < 0 || raw.toDouble() > 9_007_199_254_740_991.0))
+                    return@mapNotNull null
+                if (field == "renderUnderrunEvents" && (raw !is Number || !raw.toDouble().isFinite() ||
+                    raw.toDouble() < 0 || raw.toDouble() > 9_007_199_254_740_991.0 || raw.toDouble() % 1.0 != 0.0))
+                    return@mapNotNull null
                 val choices = enumFields[field]
                 if (choices != null && (raw !is String || raw !in choices)) return@mapNotNull null
                 val precision = if (field == "sourceClockDispersionMs" || field == "deviceClockUncertaintyMs" ||
-                    field == "deviceClockFitDispersionMs") 6 else 3
+                    field == "deviceClockFitDispersionMs" || field in sourceDeadlineEvidenceFields || field in renderDurationFields) 6 else 3
                 val value = value(raw, precision) ?: return@mapNotNull null
                 "$field=$value"
             }

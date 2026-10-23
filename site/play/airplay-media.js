@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import { readAudioPlaybackStats } from './audio-playback-stats.js';
 import { createFrameCanvas } from './airplay-canvas.js';
 import { createTempoProcessor, downmixStereo } from './airplay-tempo.js';
 import { audioTrackLabel, createAudioTrackList, preferredAudioTrack } from './airplay-audio-tracks.js';
@@ -706,8 +707,10 @@ export function createMediaEngine(surface, options = {}) {
   }
   function bufferedForPlayback(item, end) { return bufferDecision(item, end).ready; }
   function audioOutputDiagnostics(item) {
-    if (!context || context.state === 'closed' || context.sampleRate !== item?.audioSourceRate) return {};
-    const result = {};
+    if (!context) return { audioOutputTimestampState: 'unavailable' };
+    if (context.state === 'closed') return { audioOutputTimestampState: 'closed' };
+    if (context.sampleRate !== item?.audioSourceRate) return { audioOutputTimestampState: 'format-mismatch' };
+    const result = { audioOutputTimestampState: 'unavailable' };
     try {
       for (const [key, value] of [['audioBaseLatencyMs', context.baseLatency],
         ['audioOutputLatencyMs', context.outputLatency]]) {
@@ -715,17 +718,26 @@ export function createMediaEngine(surface, options = {}) {
       }
     } catch (_) { /* Optional latency properties may be unavailable. */ }
     // These are this graph's Web Audio estimates, not a measurement at the
-    // physical speaker. Unsupported, stale-format and invalid APIs stay absent.
+    // physical speaker. Signed age/lag preserve contradictory native estimates;
+    // they never enter the scheduler or make an invalid clock usable.
     try {
-      const stamp = context.getOutputTimestamp?.(), at = performance.now();
-      if (stamp && Number.isFinite(stamp.contextTime) && stamp.contextTime >= 0
-        && Number.isFinite(stamp.performanceTime) && stamp.performanceTime > 0
-        && Number.isFinite(context.currentTime) && context.currentTime >= stamp.contextTime
-        && Number.isFinite(at) && at >= stamp.performanceTime) {
-        result.audioOutputTimestampAgeMs = at - stamp.performanceTime;
-        result.audioOutputContextLagMs = (context.currentTime - stamp.contextTime) * 1000;
+      if (typeof context.getOutputTimestamp !== 'function') return result;
+      const stamp = context.getOutputTimestamp(), at = performance.now(), current = context.currentTime;
+      if (!stamp || !Number.isFinite(stamp.contextTime) || stamp.contextTime < 0
+        || !Number.isFinite(stamp.performanceTime) || stamp.performanceTime < 0
+        || !Number.isFinite(current) || current < 0 || !Number.isFinite(at)) {
+        result.audioOutputTimestampState = 'invalid';
+      } else if (stamp.contextTime === 0 && stamp.performanceTime === 0) {
+        result.audioOutputTimestampState = 'startup';
+      } else if (stamp.performanceTime === 0) {
+        result.audioOutputTimestampState = 'invalid';
+      } else {
+        const age = at - stamp.performanceTime, lag = (current - stamp.contextTime) * 1000;
+        result.audioOutputTimestampAgeMs = age;
+        result.audioOutputContextLagMs = lag;
+        result.audioOutputTimestampState = age < 0 ? 'future' : lag < 0 ? 'context-ahead' : 'valid';
       }
-    } catch (_) { /* Optional output-clock diagnostics cannot interrupt playback. */ }
+    } catch (_) { result.audioOutputTimestampState = 'failed'; }
     return result;
   }
   function playbackDiagnostics() {
@@ -809,6 +821,7 @@ export function createMediaEngine(surface, options = {}) {
         ? Math.max(0, (now() - item.stallStarted) * 1000) : 0,
       stallCount: item?.stallCount || 0,
       ...audioOutputDiagnostics(item),
+      ...readAudioPlaybackStats(context?.sampleRate === item?.audioSourceRate ? context : null),
       ...startupDiagnostics(),
       ...fetchResource.getDiagnostics?.(),
     };

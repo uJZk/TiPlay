@@ -62,6 +62,14 @@ try {
   const identity = { before, after, changed, servedAssets, csp };
   if (process.env.MEDIA_CLOCK_RESULT) await writeFile(process.env.MEDIA_CLOCK_RESULT, JSON.stringify({ result, identity }, null, 2) + '\n');
   assert.equal(result.ok, true, JSON.stringify(result, null, 2));
+  const rendering = result.summary.audioRenderer;
+  assert.ok(['available', 'unavailable', 'invalid', 'failed'].includes(rendering?.renderStatsState),
+    'The actual live graph exposes an explicit optional renderer-statistics state');
+  if (rendering.renderStatsState === 'available') {
+    assert.ok(Number.isSafeInteger(rendering.renderUnderrunEvents) && rendering.renderUnderrunEvents >= 0);
+    for (const key of ['renderUnderrunDurationMs', 'renderTotalDurationMs'])
+      assert.ok(Number.isFinite(rendering[key]) && rendering[key] >= 0 && rendering[key] <= Number.MAX_SAFE_INTEGER);
+  } else assert.deepEqual(Object.keys(rendering), ['renderStatsState'], 'Unavailable renderer evidence cannot fabricate zero counters');
   assert.deepEqual(pageErrors, [], 'No browser/worker JavaScript errors');
   assert.deepEqual(externalRequests, [], 'Every media/asset request remains loopback');
   assert.equal(await page.evaluate(() => typeof WebAssembly), 'undefined');

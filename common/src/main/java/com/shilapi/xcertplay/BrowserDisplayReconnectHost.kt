@@ -42,6 +42,20 @@ internal class BrowserDisplayReconnectHost(
         return true
     }
 
+    /** No resize or new timeout: recover only the returned session's absent primary stream. */
+    fun recoverAfterScreenLoan(controller: CarPlayController, source: AirPlaySession?): Boolean {
+        if (source == null) return false
+        if (owner != null) return owner === controller && retiring === source
+        if (!controller.recoverBrowserDisplayAfterScreenLoan(source)) return false
+        owner = controller
+        retiring = source
+        replacement = null
+        // A viewport change during casting still needs the normal fit pass once
+        // the replacement, rather than a late old-session frame, is usable.
+        retryAfterFrame = true
+        return true
+    }
+
     fun expectedEnd(controller: CarPlayController?, session: AirPlaySession): Boolean =
         owner === controller && owner != null &&
             (retiring === session || (retiring == null && replacement !== session))

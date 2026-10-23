@@ -208,6 +208,50 @@ class CarPlayScreenBorrowTest {
         assertEquals(listOf(3, 4), transfers)
     }
 
+    @Test fun aNewLoanBeforeReturnedScreenRetirementKeepsTheSessionAlive() {
+        val borrow = CarPlayScreenBorrow { true }
+        borrow.onModesChanged(modes(1))
+        borrow.setDesired(true)
+        var claimed = false
+        assertFalse(borrow.claimReturnedScreen { claimed = true; true })
+        assertFalse(claimed)
+        assertTrue(borrow.snapshot().desired)
+    }
+
+    @Test fun returnedScreenRetirementAndANewLoanHaveOneAtomicOwner() {
+        val commands = mutableListOf<Map<String, Any?>>()
+        val borrow = CarPlayScreenBorrow { commands += it; true }
+        borrow.setEventReady(true)
+        val returned = borrow.onModesChanged(modes(1))
+        val claiming = CountDownLatch(1)
+        val finish = CountDownLatch(1)
+        val startedLoan = CountDownLatch(1)
+        val claim = Thread {
+            assertTrue(borrow.claimReturnedScreen {
+                claiming.countDown()
+                assertTrue(finish.await(2, TimeUnit.SECONDS))
+                true
+            })
+        }.apply { start() }
+        assertTrue(claiming.await(2, TimeUnit.SECONDS))
+        val loan = Thread { startedLoan.countDown(); borrow.setDesired(true) }.apply { start() }
+        try {
+            assertTrue(startedLoan.await(2, TimeUnit.SECONDS))
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+            while (loan.state != Thread.State.BLOCKED && loan.isAlive && System.nanoTime() < deadline) Thread.yield()
+            assertEquals(Thread.State.BLOCKED, loan.state)
+        } finally {
+            finish.countDown()
+            claim.join(2_000)
+            loan.join(2_000)
+        }
+        assertFalse(claim.isAlive)
+        assertFalse(loan.isAlive)
+        assertTrue(commands.isEmpty())
+        assertEquals("Keep the last owner for the close diagnostic", returned, borrow.snapshot())
+        assertEquals(CarPlayScreenBorrowState(), borrow.close())
+    }
+
     private fun modes(entity: Any) = mapOf("resources" to listOf(
         mapOf("resourceID" to 1L, "entity" to entity)))
 }

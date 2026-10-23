@@ -165,13 +165,40 @@ probe is held by the fixture: the accessible loading indicator must already be
 visible before headers or player import, and retire on actual playing. Stop,
 replacement, paused/gesture handoff and permission revocation also have regressions.
 
-Screen-loan regressions reproduce both reentrant borrow/return write failures before
-the fix and pass after reconciliation. They also cover ownership-confirmation gates,
-CarPlay audio continuity, returned configuration/keyframe requests, stale owners,
-mirror picture/audio isolation and sparse semantic capture/close boundaries. The
-actual beta.10 capture cannot prove its entire loan sequence: its early TXT state
-rolled off and its control bytes were encrypted. Physical grant/return and sound
-remain in Todo; the published APK/page sources remain those in [Build](Build.md#beta-release).
+Screen-loan regressions reproduce reentrant borrow/return write failures and the
+old host's failure to recover a returned resource without a primary data stream.
+The latter fails before the fix with `WantedButNotInvoked`. Recovery now waits the
+existing two-second interval, rechecks the same owner/session and preserves timely
+or in-flight SETUP. Tests cover 1999/2000 ms, settings spanning the wait, new loans,
+browser loss/re-authentication,
+atomic retirement and first-frame viewport reconciliation. Control/audio continuity,
+keyframe requests, stale owners and mirror isolation retain their earlier checks.
+The beta.11 capture confirms resource grants and peer control EOF; its missing screen
+data boundaries prevent uniquely attributing the long return gap. Physical picture
+recovery and sound remain in Todo; published sources remain those in [Build](Build.md#beta-release).
+
+The field-follow-up source passed **737 browser tests**, **172 scoped Android tests
+in 12 classes**, and the mobile debug build, including capture lock-wait/failed-append timing, retained deadline
+evidence, playback-generation rejection and fixed diagnostic schemas. Browser cases
+add exact 20/10/40 ms timestamp, 8/30 ms recovery and URL watermarks/lookahead/submission
+boundaries; 17 deliberate parameter/comparison mutations are caught. These checks
+prove software boundaries, not optimal vehicle settings. Source-deadline evidence is
+Debug-only, and stale-generation reports cannot repopulate cleared metrics.
+
+Live and URL diagnostics share the optional `AudioContext.playbackStats` reader.
+Tests cover unavailable/throwing/invalid getters, real zeroes, seconds-to-milliseconds,
+safe bounds and no reset or Debug-off live reads. Its four scalar fields preserve the
+16/64 KiB live budgets; the worst URL control envelope is 4009 bytes within the
+existing 4096-byte reservation, with every native group at most 600 characters.
+The production-CSP shared-clock harness verifies the actual live graph's renderer
+state/counters, nonzero PCM and independent CarPlay/mirror references, with all 61
+runtime source hashes unchanged. Chromium 151 exposes the API without experimental flags. Slow or visibility-
+gated updates and unavailable counters remain unknown; this is not speaker capture.
+Full Android CI remains skipped at the user's request. The beta.12/code54/v78
+metadata preflight additionally passed 9 draft, 2 root-site, 23 browser diagnostic
+and 34 native diagnostic cases; functional source hashes match the preceding runs
+after normalizing version fields. Signed artifacts and publication remain recorded
+separately in [Build](Build.md#beta-release).
 
 The published beta.10/v76 source passed 643 browser tests, 158 scoped Android tests in 13 classes
 and the mobile debug build. Native cases additionally cover fixed source-fit/quantum

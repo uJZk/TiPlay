@@ -172,9 +172,13 @@ test('the cross-language engine fixture is actual bounded browser output', () =>
   }), fixture.maximumEvent);
   assert.equal(Buffer.byteLength(JSON.stringify(fixture.event)), fixture.normalBytes);
   assert.equal(Buffer.byteLength(JSON.stringify(fixture.maximumEvent)), fixture.maximumBytes);
-  assert.equal(Object.keys(fixture.event.engine).length, 102);
-  assert.ok(fixture.normalBytes <= 2800);
-  assert.ok(fixture.maximumBytes <= 3800);
+  assert.equal(Object.keys(fixture.event.engine).length, 107);
+  assert.ok(fixture.normalBytes < fixture.maximumBytes);
+  // Browser diagnostic packing already reserves 4096 bytes for ordinary control.
+  // Include the enclosing control fields rather than expanding a production quota.
+  const maximumControl = { id: Number.MAX_SAFE_INTEGER, type: 'control', q: Number.MAX_SAFE_INTEGER,
+    e: [fixture.maximumEvent] };
+  assert.ok(Buffer.byteLength(JSON.stringify(maximumControl)) <= 4096);
   assert.deepEqual(airplayDiagnostic('engine-state', fixture.continuityInput.state, {
     media: { ...fixture.continuityInput.media, getPlaybackDiagnostics: () => fixture.continuityInput.engine },
   }), fixture.continuityEvent);
@@ -411,4 +415,64 @@ test('startup phases retain browser elapsed time and rebuffer gaps survive the b
     openElapsedMs: -1, phaseElapsedMs: Infinity, audioScheduleUnderruns: 1.5, audioScheduleUnderrunMs: NaN,
     audioScheduleUnderrunMaxMs: -1, audioRebufferStops: 1.5 }) });
   assert.equal(invalid, null);
+});
+
+
+test('URL output diagnostics preserve signed native contradictions in a fixed schema', () => {
+  const engine = { audioOutputTimestampState: 'future', audioOutputTimestampAgeMs: -20.125,
+    audioOutputContextLagMs: -10.5, audioBaseLatencyMs: -1, audioScheduleGapUs: -1 };
+  const event = airplayDiagnostic('engine-state', { id: 1, revision: 0 }, {
+    media: { getPlaybackDiagnostics: () => engine },
+  });
+  assert.deepEqual(event.engine, { audioOutputTimestampState: 'future', audioOutputTimestampAgeMs: -20.125,
+    audioOutputContextLagMs: -10.5 });
+  const hostile = playbackDiagnostics({ getPlaybackDiagnostics: () => ({
+    ...engine, audioOutputTimestampState: 'https://private.invalid/?token=secret',
+    audioOutputTimestampAgeMs: -Infinity, audioOutputContextLagMs: -Number.MAX_SAFE_INTEGER - 1,
+  }) });
+  assert.equal(hostile, null);
+});
+
+test('native output timestamp states follow the existing healthy snapshot cadence', () => {
+  const media = new EventTarget(), surface = new EventTarget(), entries = [];
+  let time = 0, timestampState = 'valid';
+  media.getPlaybackDiagnostics = () => ({ generation: 1, startupPhase: 'playing', running: true,
+    intentPlaying: true, waitReason: 'none', contextState: 'running', audioOutputTimestampState: timestampState });
+  const diagnostics = createAirPlayDiagnostics(event => entries.push(event), {
+    state: () => ({ id: 1, revision: 1 }), media: () => media, now: () => time,
+  });
+  try {
+    diagnostics.monitor(media, surface); media.dispatchEvent(new Event('progress'));
+    for (const state of ['future', 'valid', 'context-ahead', 'failed', 'unavailable', 'startup', 'invalid', 'format-mismatch', 'closed']) {
+      time += 1000; timestampState = state; media.dispatchEvent(new Event('progress'));
+    }
+    assert.equal(entries.length, 1, 'native-estimate jitter must not emit snapshots every time its classification changes');
+    time = 10_000; media.dispatchEvent(new Event('progress'));
+    assert.equal(entries.length, 2); assert.equal(entries[1].engine.audioOutputTimestampState, 'closed');
+  } finally { diagnostics.dispose(); }
+});
+
+test('renderer statistics use bounded scalar metadata and the existing healthy cadence', () => {
+  const media = new EventTarget(), surface = new EventTarget(), entries = [];
+  let time = 0, counter = 0, renderState = 'available';
+  media.getPlaybackDiagnostics = () => ({ generation: 1, startupPhase: 'playing', running: true,
+    intentPlaying: true, waitReason: 'none', contextState: 'running', renderStatsState: renderState,
+    renderUnderrunEvents: counter, renderUnderrunDurationMs: counter * 2.5, renderTotalDurationMs: time });
+  const diagnostics = createAirPlayDiagnostics(event => entries.push(event), {
+    state: () => ({ id: 1, revision: 1 }), media: () => media, now: () => time,
+  });
+  try {
+    diagnostics.monitor(media, surface); media.dispatchEvent(new Event('progress'));
+    for (const state of ['unavailable', 'invalid', 'failed', 'available']) {
+      time += 2000; counter++; renderState = state; media.dispatchEvent(new Event('progress'));
+    }
+    assert.equal(entries.length, 1, 'renderer counters must not create an extra snapshot trigger');
+    time = 10_000; media.dispatchEvent(new Event('progress'));
+    assert.equal(entries.length, 2); assert.equal(entries[1].engine.renderStatsState, 'available');
+    assert.equal(entries[1].engine.renderUnderrunEvents, 4); assert.equal(entries[1].engine.renderUnderrunDurationMs, 10);
+    assert.equal(entries[1].engine.renderTotalDurationMs, 10000);
+    const hostile = playbackDiagnostics({ getPlaybackDiagnostics: () => ({ renderStatsState: 'secret',
+      renderUnderrunEvents: 1.5, renderUnderrunDurationMs: -1, renderTotalDurationMs: Infinity }) });
+    assert.equal(hostile, null);
+  } finally { diagnostics.dispose(); }
 });

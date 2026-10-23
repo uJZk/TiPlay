@@ -7,6 +7,7 @@ import { MAX_AUDIO_AHEAD_BYTES, MAX_DECODED_PACKET_BYTES } from './audio-buffer-
 import { pcmStats, measurePcm } from './audio-pcm-stats.js';
 import { createAudioOutputMapping } from './audio-output-clock.js';
 import { createAudioCalibration } from './audio-calibration.js';
+import { readAudioPlaybackStats } from './audio-playback-stats.js';
 
 /** Playback only. Android owns demand-driven car Bluetooth capture and speech playback. */
 export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {},
@@ -105,6 +106,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       pcmPackets: pcmMetrics?.packets ?? 0, pcmFrames: pcmMetrics?.frames ?? 0,
       pcmNonzero: pcmMetrics?.nonzero ?? 0, pcmPeak: pcmMetrics?.peak ?? 0,
       ...workletMetrics,
+      ...readAudioPlaybackStats(context),
       renderReportAgeMs: reportAt === null ? null : now() - reportAt,
       renderAgeMs: context && workletMetrics ? Math.max(0,
         (context.currentTime * 1000 - workletMetrics.renderTimeMs) / device.rate) : null,
@@ -151,7 +153,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     const next = value === true;
     if (next === debugEnabled) return;
     debugEnabled = next; diagnosticRevision++; pcmMetrics = next ? pcmStats() : null; workletMetrics = null; reportAt = null;
-    outputClock.debug(next); packetDecoder.debug(next); node?.port.postMessage({ debug: next, diagnosticRevision }); notify();
+    outputClock.debug(next); packetDecoder.debug(next); node?.port.postMessage({ debug: next, diagnosticRevision, generation: playbackGeneration }); notify();
   }
   function retireNode() {
     nodeConnected = false;
@@ -203,7 +205,8 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       if (data.consumed && data.generation === playbackGeneration) {
         queuedBytes = Math.max(0, queuedBytes - data.consumed); capacity?.(); capacity = null;
       }
-      if (debugEnabled && data.diagnosticRevision === diagnosticRevision && data.diagnostics) { workletMetrics = data.diagnostics; reportAt = now(); }
+      if (debugEnabled && data.diagnosticRevision === diagnosticRevision && data.playbackGeneration === playbackGeneration
+        && data.diagnostics) { workletMetrics = data.diagnostics; reportAt = now(); }
       if (data.playout && data.playout.generation === playbackGeneration) {
         const reference = outputClock.reference(data.playout, context);
         if (reference) {
@@ -229,7 +232,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       if (node === installed) retireNode();
       throw error;
     } finally { clearTimeout(timeout); if (preparingNode?.installed === installed) preparingNode = null; }
-    installed.port.postMessage({ debug: debugEnabled, diagnosticRevision });
+    installed.port.postMessage({ debug: debugEnabled, diagnosticRevision, generation: playbackGeneration });
     lastControlAt = -Infinity; controls(true);
   }
   // Android separates speech from music; Bluetooth state never resets or mutes browser playback.
@@ -249,9 +252,13 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     pendingPublish = null; pendingPcmBytes = 0;
     clearTimeout(retryTimer); retryTimer = null;
     request?.abort(); request = null;
-    node?.port.postMessage({ reset: true });
+    resetNode();
     queuedBytes = 0; capacity?.(); capacity = null;
     invalidateOutput(state, clearReferences);
+  }
+  function resetNode() {
+    workletMetrics = null; reportAt = null;
+    node?.port.postMessage({ reset: true, generation: playbackGeneration });
   }
   function publishPcm(record) {
     if (pcmMetrics) measurePcm(pcmMetrics, record.pcm, record.channels);
@@ -367,7 +374,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
         packetDecoder.reset();
         releaseEncoded();
         playbackGeneration++; pendingPublish = null; pendingPcmBytes = 0; calibrations.cancel();
-        request = null; node?.port.postMessage({ reset: true }); queuedBytes = 0;
+        request = null; resetNode(); queuedBytes = 0;
         invalidateOutput('output-unavailable');
         if (!abort.signal.aborted && connection === signal && enabled) retryTimer = setTimeout(() => stream(signal), 1000);
       }
@@ -418,7 +425,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     },
     reset() { packetDecoder.reset(); releaseEncoded(); playbackGeneration++; clockBase = null; queuedBytes = 0;
       if (pendingPcmBytes) calibrations.cancel();
-      pendingPublish = null; pendingPcmBytes = 0; node?.port.postMessage({ reset: true }); capacity?.(); capacity = null; invalidateOutput('reset', true); },
+      pendingPublish = null; pendingPcmBytes = 0; resetNode(); capacity?.(); capacity = null; invalidateOutput('reset', true); },
     start() { activate(); },
     gesture() { if (!disposed && (!node || context?.state !== 'running' || processorFailed)) { recoveryAttempts = 0; activate(); } },
     attach(signal, hello, openMedia = null) {

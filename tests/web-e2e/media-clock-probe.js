@@ -152,6 +152,9 @@ globalThis.startAudioProbe = async () => {
     audio.clock(clock());
     await sleep(1800);
     const state = audio.stats();
+    const audioRenderer = Object.fromEntries(['renderStatsState', 'renderUnderrunEvents',
+      'renderUnderrunDurationMs', 'renderTotalDurationMs'].filter(key => state.debug?.[key] !== undefined)
+      .map(key => [key, state.debug[key]]));
     diagnosticPeak = Math.max(diagnosticPeak, state.debug?.renderPeak || 0);
     diagnosticNonzero = Math.max(diagnosticNonzero, state.debug?.renderNonzero || 0);
     const primary = reports.filter(value => value.mode === 'carplay');
@@ -181,7 +184,7 @@ globalThis.startAudioProbe = async () => {
     globalThis.__audioProbeResult = { done: true, ok: true, browser: navigator.userAgent,
       secureContext: isSecureContext, resamplerCsp: 'production policy, no bypass', outputBeforeSuspend,
       summary: { carplayReferences: primary.length, mixedMirrorReferences: reports.length - primary.length, referencesWithoutDebug,
-        peak: diagnosticPeak, nonzero: diagnosticNonzero, draws: draws.length,
+        peak: diagnosticPeak, nonzero: diagnosticNonzero, draws: draws.length, audioRenderer,
         carplayDraws: carplayDraws.length, mirrorDraws: mirrorDraws.length,
         carplayMaxSourceDelayMs: Math.max(...carplayDraws.map(value => value.sourceDelay)),
         mirrorMaxSourceDelayMs: Math.max(...mirrorDraws.map(value => value.sourceDelay)),

@@ -183,6 +183,7 @@ class CarPlayVpnService : VpnService() {
         owner: AirPlayListenerIdentity,
         display: AirPlayDisplayConfig,
         expectedSession: AirPlaySession,
+        afterScreenLoan: Boolean = false,
     ): (() -> Unit)? {
         val current = attachment ?: return null
         if (!active.get() || current.listenerIdentity !== owner || expectedSession.isClosed) return null
@@ -190,8 +191,12 @@ class CarPlayVpnService : VpnService() {
         val local = expectedSession.localAddress ?: return null
         if (isInternalAirPlayPeer(peer, local)) return null
         if (!synchronized(sessionsLock) { expectedSession in sessions }) return null
+        // Claim retirement before handing cleanup to the bootstrap thread. A new main-screen
+        // SETUP that already began wins over this old missing-display observation.
+        val closeDisplay = if (afterScreenLoan) expectedSession.prepareCloseAfterScreenLoan() ?: return null
+            else { { expectedSession.close() } }
         attachment = current.copy(config = current.config.copy(main = display))
-        return { expectedSession.close() }
+        return closeDisplay
     }
 
     /** A resize burst can update the offer until the replacement external TCP session accepts it. */

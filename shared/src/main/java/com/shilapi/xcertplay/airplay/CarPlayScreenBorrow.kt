@@ -34,6 +34,15 @@ internal class CarPlayScreenBorrow(private val send: (Map<String, Any?>) -> Bool
 
     fun snapshot(): CarPlayScreenBorrowState = synchronized(stateLock) { snapshotLocked() }
 
+    /** Claim retirement without allowing a new loan between the ownership check and session CAS. */
+    fun claimReturnedScreen(tryClaim: () -> Boolean): Boolean = synchronized(stateLock) {
+        if (closed || !snapshotLocked().carPlayHasScreen || !tryClaim()) return false
+        // Preserve this last owner snapshot for CLOSE; block new commands until blocking cleanup
+        // calls close() outside both ownership monitors.
+        closed = true
+        true
+    }
+
     fun setDesired(borrowed: Boolean): CarPlayScreenBorrowState {
         synchronized(stateLock) {
             if (closed) return snapshotLocked()

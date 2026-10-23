@@ -27,6 +27,7 @@ object RawTraffic {
     private var failedByteAttempts = 0L
     private var lastFailureChannel = "none"
     private var writer: BufferedWriter? = null
+    @Volatile private var timing = RawCaptureTiming()
     private val channelOffsets = mutableMapOf<String, Long>()
     @Volatile private var referenceIntegrity = true
     private val videoReferenceLock = Any()
@@ -58,7 +59,7 @@ object RawTraffic {
         return mapOf("enabled" to enabled, "failures" to count, "lastFailure" to lastFailure,
             "complete" to (count == 0L), "referenceIntegrity" to referenceIntegrity,
             "coverage" to if (count == 0L) "no-observed-write-failure" else "partial",
-            "durability" to "application-flush-no-fsync")
+            "durability" to "application-flush-no-fsync", "timing" to timing.snapshot())
     }
 
     private var configuration = ""
@@ -81,6 +82,7 @@ object RawTraffic {
     }
 
     private fun startSession() {
+        timing = RawCaptureTiming()
         val session = java.util.UUID.randomUUID().toString()
         sessionId = session
         channelOffsets.clear()
@@ -101,6 +103,7 @@ object RawTraffic {
         failures = 0; lastFailure = "none"
         lastFailureText = ""; firstFailureEpochMillis = 0; lastFailureEpochMillis = 0
         failedByteAttempts = 0; lastFailureChannel = "none"; needsBoundaryCheck = true
+        timing = RawCaptureTiming()
         if (enabled) startSession()
     }
 
@@ -109,19 +112,26 @@ object RawTraffic {
     }
 
     /** Session validation and append share the clear/enable monitor: delayed reports cannot enter a new capture. */
-    fun recordForSession(expectedSession: String, channel: String, bytes: ByteArray): Boolean = synchronized(lock) {
-        if (!enabled || sessionId != expectedSession || bytes.isEmpty()) return@synchronized false
-        val previousSequence = sequence
-        val previousFailures = failures
-        recordReferenced(channel, bytes, 0, bytes.size)
-        // A previous loss may disable exact byte references while later records still append successfully.
-        sequence != previousSequence && failures == previousFailures
+    fun recordForSession(expectedSession: String, channel: String, bytes: ByteArray): Boolean {
+        if (!enabled || bytes.isEmpty()) return false
+        val requestedAt = System.nanoTime()
+        return synchronized(lock) {
+            if (!enabled || sessionId != expectedSession) return@synchronized false
+            val previousSequence = sequence
+            val previousFailures = failures
+            recordReferenced(channel, bytes, 0, bytes.size, requestedAt)
+            // A previous loss may disable exact byte references while later records still append successfully.
+            sequence != previousSequence && failures == previousFailures
+        }
     }
 
-    private fun recordReferenced(channel: String, bytes: ByteArray, offset: Int, length: Int): Reference? {
+    private fun recordReferenced(channel: String, bytes: ByteArray, offset: Int, length: Int,
+                                 requestedAtNanos: Long = 0L): Reference? {
         if (!enabled || length <= 0) return null
+        val requestedAt = if (requestedAtNanos == 0L) System.nanoTime() else requestedAtNanos
         synchronized(lock) {
             if (!enabled) return null
+            val acquiredAt = System.nanoTime()
             if (channel != "capture/start") {
                 pendingSessionHeader?.let { record("capture/start", it) }
                 if (pendingSessionHeader != null) {
@@ -132,6 +142,7 @@ object RawTraffic {
             // Session recovery may have appended its header; references start at this payload only.
             val firstSequence = sequence + 1
             val channelOffset = channelOffsets.getOrDefault(channel, 0L)
+            val appendAt = System.nanoTime()
             try {
                 val target = file ?: return null
                 target.parentFile?.let {
@@ -172,6 +183,10 @@ object RawTraffic {
                 closeWriter()
                 failure(error, channel, length.toLong())
                 return null
+            } finally {
+                // Includes encoding, filesystem work and flush, including failed appends.
+                // The separately measured wait also covers recordForSession's outer monitor.
+                timing.completed(channel, acquiredAt - requestedAt, System.nanoTime() - appendAt)
             }
         }
     }
@@ -190,7 +205,7 @@ object RawTraffic {
         lastFailure = error.javaClass.simpleName.filter { it.isLetterOrDigit() || it == '_' }.take(64).ifEmpty { "OTHER" }
         lastFailureText = DiagnosticErrorText.sanitize(runCatching { error.message }.getOrNull())
         // Retain the source category, never a URL, peer address or arbitrary channel suffix.
-        lastFailureChannel = channel.substringBefore('/').takeIf { it in SOURCE_CATEGORIES } ?: "other"
+        lastFailureChannel = RawCaptureTiming.sourceCategory(channel)
         failedByteAttempts += bytes
         // A partial append makes subsequent channel offsets uncertain. Keep capturing, but
         // stop claiming exact byte references until the next explicit capture session.
@@ -273,11 +288,11 @@ object RawTraffic {
                 "RAW_CAPTURE_INTEGRITY coverage=${if (failures == 0L) "no-observed-write-failure" else "partial"} " +
                 "firstFailureEpochMillis=$firstFailureEpochMillis lastFailureEpochMillis=$lastFailureEpochMillis " +
                 "failedByteAttempts=$failedByteAttempts lastFailureSource=$lastFailureChannel " +
-                "lastFailureText=$lastFailureText referenceIntegrity=$referenceIntegrity durability=application-flush\n")
+                "lastFailureText=$lastFailureText referenceIntegrity=$referenceIntegrity durability=application-flush\n" +
+                "RAW_CAPTURE_TIMING " + timing.snapshot().entries.joinToString(" ") { "${it.key}=${it.value}" } + "\n")
     }
 
     fun writeArchive(output: OutputStream, logName: String, report: String, temporaryRoot: File) =
         snapshot().use { RawTrafficArchive.write(output, logName, report, it, temporaryRoot) }
 
-    private val SOURCE_CATEGORIES = setOf("capture", "iphone", "browser", "usb", "android-audio", "car-bluetooth")
 }

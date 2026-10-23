@@ -526,9 +526,17 @@ class CarPlayController(
     fun cancelBrowserDisplayReconnect() = browserDisplayReconnect.cancelPending()
 
     /** Reopens browser projection while retaining the Wi-Fi listener, hotspot, discovery and MFi. */
-    fun reconnectBrowserDisplay(display: AirPlayDisplayConfig): Boolean = synchronized(lifecycleLock) {
-        synchronized(wirelessResourceLock) {
+    fun reconnectBrowserDisplay(display: AirPlayDisplayConfig): Boolean = reconnectBrowserDisplay(display, null)
+
+    /** Restore a missing data stream only for the same session that returned the screen. */
+    fun recoverBrowserDisplayAfterScreenLoan(session: AirPlaySession): Boolean =
+        reconnectBrowserDisplay(effectiveMainDisplay, session)
+
+    private fun reconnectBrowserDisplay(display: AirPlayDisplayConfig, returnedSession: AirPlaySession?): Boolean {
+        val launch: () -> Boolean = synchronized(lifecycleLock) { synchronized(wirelessResourceLock) {
             if (closed || config.transport != CarPlayTransport.WIRELESS || config.headUnitIntegrations) return false
+            if (returnedSession != null && (activeSession !== returnedSession || returnedSession.isClosed ||
+                    returnedSession.mainScreenSessionToken() != null || !returnedSession.screenBorrowState.carPlayHasScreen)) return false
             val service = vpnService ?: return false
             val owner = firstTcpWatchdog?.listener ?: return false
             browserDisplayReconnect.retiringSession?.let { retiring ->
@@ -546,7 +554,8 @@ class CarPlayController(
             val bootstrapIdentification = config.identification.forWirelessLink(
                 Iap2WirelessLinkRole.BLUETOOTH_BOOTSTRAP, wireless)
             if (!browserDisplayReconnect.begin(session, tunnel)) return false
-            val closeDisplay = service.prepareWirelessDisplayReconnect(owner, display, session)
+            val closeDisplay = service.prepareWirelessDisplayReconnect(owner, display, session,
+                afterScreenLoan = returnedSession != null)
             if (closeDisplay == null) {
                 browserDisplayReconnect.cancel(tunnel)
                 return false
@@ -555,7 +564,7 @@ class CarPlayController(
             val bootstrap = RetainedBluetoothBootstrap()
             browserBluetoothBootstrap?.close()
             browserBluetoothBootstrap = bootstrap
-            try {
+            val launchBootstrap: () -> Boolean = { try {
                 Thread({
                     debugLog("browser display reconnect retaining wireless transport at ${display.widthPixels}x${display.heightPixels}")
                     try {
@@ -579,9 +588,16 @@ class CarPlayController(
             } catch (_: Exception) {
                 bootstrap.close()
                 browserDisplayReconnect.cancel(tunnel)
+                // The conditional screen-return path already claimed session retirement.
+                // Complete it even if no thread could start, after releasing resource locks.
+                if (returnedSession != null) closeDisplay()
                 false
-            }
-        }
+            } }
+            launchBootstrap
+        } }
+        // Thread construction/start and its failure cleanup may invoke session listeners.
+        // Neither runs while holding lifecycleLock or wirelessResourceLock.
+        return launch()
     }
 
     fun start() {

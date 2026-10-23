@@ -102,11 +102,19 @@ Standard mode saves a single `TiPlay-yyyyMMdd-HHmmss-SSS.txt` containing the dia
 - `events.tsv`: UTC Unix milliseconds, process-local sequence, stream path, byte offset and byte length for each record. File order is capture order; capture/start markers identify process changes when sequence numbers restart.
 - `streams.tsv`: stream paths, original channel names encoded as Base64 UTF-8 and total byte counts. Labels preserve PCM rate/configuration and output attempt/written distinctions.
 - `sessions.tsv`: session IDs, start times and Base64 UTF-8 capture/start metadata containing application version, capture configuration and process UUID.
-- `capture.txt`: snapshot time, byte count, capture failures, `RAW_CAPTURE_INTEGRITY` boundary and format instructions. `no-observed-write-failure` records the instrumented writer's observations; `partial` identifies a known integrity failure.
+- `capture.txt`: snapshot time, byte count, capture failures, `RAW_CAPTURE_INTEGRITY`, `RAW_CAPTURE_TIMING` and format instructions. `no-observed-write-failure` is the writer's observation; `partial` identifies a known integrity failure.
 
 Saving prepares one immutable-length snapshot off the UI thread and spools stream data to temporary app-cache files, keeping payloads and the event index out of memory. Storage fallbacks and private share copies reuse the same finished ZIP; newly captured data belongs to a later export. Temporary export files are removed on success or handled failure. A process killed during export can leave cache files; the next process initialization removes these abandoned export artifacts. Malformed/interrupted records are preserved in `unparsed.tsv`; `capture.txt` reports their count and explicitly marks reconstruction as incomplete. Valid records still export. New appends repair an incomplete line boundary without discarding the fragment. Storage/read failures still fail export instead of returning a partial success. Sharing uses `text/plain` or `application/zip` consistently with the saved artifact; the result dialog has no clipboard action.
 
 The ZIP includes retained raw history, including earlier sessions. Disabling Debug stops capture but does not delete it; re-enable Debug to export it again. Saving does not erase the original capture. The saved-ZIP dialog offers **Clear captured data**. This deletes raw history and resets capture failure counters, preserving saved artifacts, settings and metadata logs. If capture is still active, clearing immediately begins a fresh session with the same configuration. Clearing uses the capture lock; an export already holding a snapshot can finish from its open file handle. Automatic storage-pressure stopping is not implemented. Standard TXT excludes raw history, but diagnostic messages previously recorded in Debug remain unredacted. Captures can contain credentials, pairing codes, personal data and media; keep them out of Git.
+
+`captureIntegrity.timing` and `RAW_CAPTURE_TIMING` aggregate completed append calls,
+lock-wait/append totals and maxima for the current or last capture session, including
+failed appends. Append time includes encoding, filesystem work and flush, not just
+storage latency. Maxima retain only a fixed source category. Status reads do not take
+the journal lock; concurrent values are approximate. New sessions/clear reset them.
+No per-packet timing records or payload copies are added. Older captures cannot
+retroactively quantify capture overhead; intact bytes do not prove negligible interference.
 
 ## Browser audio evidence
 
@@ -263,19 +271,34 @@ clears the slot. This adds no per-step reports or PCM collection and does not ch
 rate control. A recorded recovery is evidence of a software discontinuity, not proof
 that every audible click has that cause. Healthy URL playback is independent evidence
 and cannot exclude a CarPlay live-audio fault.
-The beta.10/v76 capture contains 30,583 CarPlay media records across 35 epochs with
-continuous source sample coordinates. It nevertheless shows at least 114 media
-clock-step recoveries and 327 device-fit generation increases; its actual render
-blocks were 128 frames. This localizes a problem after the recorded source boundary,
-but periodic snapshots cannot replay every native timestamp or identify each audible
-click. An independent physical-clock/Soxr fixture exposed extra recoveries caused by
-resetting an applied slow-device rate to nominal after small pipeline steps. Keeping
-the coherent applied rate removed those extra recoveries while a real 38 ms step
-still recovered. Vehicle retesting and startup convergence remain necessary.
-Older guidance counters can also grow once per idle quantum after its last source
-cursor expires; those increments are not distinct audible faults. No-output idle
-quanta now keep deadline state unknown. Actual emitted samples, including explicit
-zero PCM, and recovery tails retain their source-deadline checks.
+Debug `lastSourceDeadlineDeltaUpperMs`, `lastSourceDeadlineUncertaintyMs`,
+`lastSourceDeadlineLimitMs` and `lastSourceDeadlineAgeMs` retain the actual rejection
+before recovery; healthy current output cannot erase it. A new Debug interval/timeline
+clears the slot. Worklet reports require the current playback generation and Debug
+revision; reset immediately clears cached metrics. Pure idle emits no samples and
+cannot fabricate deadline faults; actual tails and zero-valued PCM remain checked.
+
+The beta.11/v77 field capture still records at least 193 CarPlay media clock-step
+recoveries and two render-clock jumps; guidance adds 25 clock-steps/35 underruns.
+Mirror adds five clock-steps, six network-buffer recoveries, five deadline rejects
+and six underruns. These are software events, not audible-click counts. Of 219
+snapshots, 90 show native time more than 20 ms ahead (maximum 116.9 ms), without
+direct acceptance of those invalid pairs. Current fit MAD reaches 11.133 ms;
+accepted-fit holdover reaches 26.74 seconds. All observed render blocks are 128.
+Reference decoding of 47,634 recorded packets has exact sample counts and no decode,
+non-finite or full-scale errors within continuous segments. The RTC reconnect near
+579–581 seconds separately has a 1578.667 ms source gap. This is neither vehicle
+decoder output nor acoustic capture. The earlier small-pipeline-step/Soxr fix remains
+valid for its fixture; it did not eliminate this field failure. Sparse snapshots
+cannot reconstruct every native anchor adoption or identify every click's cause.
+The shared `AudioContext.playbackStats` reader supplies `renderStatsState`,
+`renderUnderrunEvents`, `renderUnderrunDurationMs` and `renderTotalDurationMs` for
+live Debug and URL `ENGINE_RENDER`. Unavailable/invalid/failed states retain unknown
+counts, never fabricated zeros. Available means readable, not fresh: the
+[API](https://webaudio.github.io/web-audio-api/#AudioPlaybackStats) updates about once
+per second subject to visibility/activity rules. Context-lifetime deltas distinguish
+browser rendering underruns from application scheduling gaps; they do not measure
+speakers. No permission, experimental flag, reset or extra sampling timer is used.
 Per-stream `senderTimingState` distinguishes `unavailable`, `mapped-presentation` and
 `arrival-anchored-unverified`; compare its source deadline, policy ceiling and startup
 delay. A mirror stream that initially lacks an anchor can upgrade only from a proven
@@ -321,14 +344,18 @@ Service diagnostics distinguish missing permission from foreground eligibility; 
 microphone permission alone does not establish permission to start microphone capture
 in the background.
 
-Debug raw `iphone/carplay-screen-loan/events` retains sparse fixed-schema `STATE`
-transitions and one `CLOSE` boundary per local `connectionId`. Compare desired/sent,
+Debug raw `iphone/carplay-screen-loan/events` retains sparse fixed-schema `STATE`,
+screen-data boundaries and one `CLOSE` per local `connectionId`. Compare desired/sent,
 actual owner, pending, `confirmedBorrow` and `carPlayHasScreen`; a sent request is not
 a grant. Close reasons distinguish known control/event EOF and failures; `UNSPECIFIED`
 does not assert a peer failure. The channel contains no sender identity or plist.
-Capture-session checks prevent clear/enable races from mixing events. This avoids
-depending on encrypted wire bytes or a rolled-off TXT window; it cannot reconstruct
-the missing beta.10 loan sequence. Full field capture still applies disk backpressure.
+Capture-session checks reject stale events. Screen availability distinguishes resource
+ownership from installed/ended data streams. In beta.11, Controller confirmed return
+near 503.031 seconds but the browser remained connected without picture progress.
+Near 1072.365 seconds, borrow was confirmed in 10 ms, then control received peer EOF
+203 ms later. Successful borrowing and preserved control are separate conclusions;
+the log cannot identify the iPhone's internal reason for closing. Older captures
+cannot gain the new screen boundaries retroactively. Full capture applies disk backpressure.
 
 ## Live video policy evidence
 
@@ -387,24 +414,13 @@ The ordinary bounded status prioritizes core policy evidence; complete plan fiel
 can require Debug. An allowlist entry does not guarantee that a budgeted payload
 contains it; check omission counts and keep absent fields unknown.
 
-A captured reproduction contains three valid intervals per live mode after each
-initial baseline. Mirroring added 859 read frames and 863 draws with no increase in
-any of the five additive drop categories. CarPlay added 322 reads, 325 decodes and
-223 draws, with 95 capacity evictions and six pacing replacements. Already queued
-pictures can make interval draws exceed reads; these counters have different stage
-boundaries. CarPlay also had sparse source presentation/read cadence, so low draw
-rate cannot all be attributed to browser drops. Its coded picture size made the
-64 MiB byte budget admit four queued pictures before the 24-frame limit; aggregate
-counts do not reconstruct each eviction's instantaneous cursor or target.
-
-The same CarPlay evidence includes a mapping age above 18 seconds and 37 newly
-untimed scheduled pictures, while control exchanges continued. It does not identify
-the exact anchor-selection cause or certify those pictures' latency. A later raw
-CarPlay return has no simultaneous browser-quality snapshot. No forwarded `t` touch
-event or active touch-profile window was captured, so the 750 ms hold and 1.25x
-convergence remain unvalidated on that device. These observations establish neither
-universal smoothness nor absence of live playback, and do not tune the profile
-constants or measure physical panel/acoustic output.
+Earlier valid intervals added 859 mirror reads/863 draws without additive drops;
+CarPlay added 322 reads/325 decodes/223 draws, 95 capacity evictions and six pacing
+replacements. Stage counters differ; queued pictures can make draws exceed reads.
+The 64 MiB budget admitted four coded pictures before the 24-frame limit. Sparse
+source cadence, an over-18-second mapping and 37 untimed pictures prevent attributing
+all stutter to drops or certifying latency. No touch window was captured there;
+750 ms hold/1.25x convergence remained physically unvalidated.
 
 The later beta.7/v73 capture reports a return to the waiting/connecting page, not
 an observed browser-process crash. At 19:17:42–46 UTC+8, both media ACK streams
@@ -484,6 +500,7 @@ not silently discard the later fields:
 | `ENGINE_NETWORK` | Serialized resource-reader activity/queue, byte progress and its age, timeouts/cancellations, backward restarts, ignored ranges and safe last status/result. |
 | `ENGINE_PCM` | Decoded source rate/channels, requested and actual context rates, decoded frames and separate seek/overlap trims. |
 | `ENGINE_CONTINUITY` | Subsample timestamp alignment count/max correction, inserted silence, source PCM peak, over-full-scale and non-finite sample counts. |
+| `ENGINE_RENDER` | Shared feature-detected browser-render underrun count/duration and observed context duration; unsupported remains unknown. |
 | `ENGINE_STARTUP` | Fixed preparation phase and browser monotonic elapsed milliseconds; total preparation time freezes at first actual playing. |
 | `ENGINE_SCHEDULE` | Submitted frames, node-time gaps/overlaps, late starts, uncovered graph intervals/count/total/max duration and rebuffer stops. |
 
@@ -505,9 +522,11 @@ These counters cover gaps previously hidden by clearing the node tail on freeze.
 They do not measure the device audio renderer or prove an audible click. In particular,
 zero counters cannot exclude an output-device discontinuity. `audioBaseLatencyMs`,
 `audioOutputLatencyMs`, `audioOutputTimestampAgeMs` and `audioOutputContextLagMs`
-refer to the current URL AudioContext only. Optional/invalid API results stay absent;
-do not substitute another live-audio context's values. They are Web Audio estimates,
-not physical speaker measurements. A late scheduler uses one corrected clock mapping
+refer to the current URL AudioContext only. `audioOutputTimestampState` distinguishes
+unavailable/closed/format-mismatch/startup/invalid/future/context-ahead/valid/failed;
+finite age/lag remain signed even for future or context-ahead results. Unsupported
+coordinates stay absent. These diagnostics do not drive scheduling or measure the
+speaker; do not substitute another context's values. A late scheduler uses one mapping
 for subsequent nodes and video, preserving source sample order without starting
 overdue slices together; already elapsed silence cannot be recovered. The scheduler
 also checks the context clock after submitting a node and reserves its conservative

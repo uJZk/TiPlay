@@ -166,7 +166,7 @@ class CarPlayMediaEngine(
                                 // slip between the EOF decision and blocking session teardown.
                                 closeSession = session.prepareClose()
                             }
-                            session.screenDataEnded(type)
+                            session.screenDataEnded(type, failed = cause != null)
                             retireOutputLocked(streamKey)
                         }
                     } finally {

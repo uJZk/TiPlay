@@ -224,6 +224,30 @@ function browserHarness() {
   return { audio, nodes, contexts, requests, pcm, done() { audio.dispose(); Object.assign(globalThis, previous); } };
 }
 
+test('live render statistics are read only for Debug and preserve optional API failure without changing playback', async () => {
+  const h = browserHarness(); let reads = 0;
+  try {
+    await h.audio.activate();
+    const context = h.contexts[0];
+    Object.defineProperty(context, 'playbackStats', { configurable: true, get() {
+      reads++; return { underrunEvents: 3, underrunDuration: .012345678, totalDuration: 10.25 };
+    } });
+    h.audio.stats(); assert.equal(reads, 0);
+    h.audio.status({ debug: true });
+    const debug = h.audio.stats().debug;
+    assert.equal(debug.renderStatsState, 'available'); assert.equal(debug.renderUnderrunEvents, 3);
+    assert.ok(Math.abs(debug.renderUnderrunDurationMs - 12.345678) < 1e-12); assert.equal(debug.renderTotalDurationMs, 10250);
+    const [, detail] = browserDiagnosticEvents({ audio: h.audio.stats() }, false, true);
+    assert.equal(detail.v.renderUnderrunDurationMs, 12.345678);
+    assert.equal(detail.v.renderUnderrunEvents, 3);
+    Object.defineProperty(context, 'playbackStats', { get() { throw new Error('private device error'); } });
+    assert.equal(h.audio.stats().debug.renderStatsState, 'failed');
+    assert.equal(Object.hasOwn(h.audio.stats().debug, 'renderUnderrunEvents'), false);
+    assert.equal(context.state, 'running');
+    h.audio.status({ debug: false }); const before = reads; h.audio.stats(); assert.equal(reads, before);
+  } finally { h.done(); }
+});
+
 test('status.debug toggles PCM/context/render diagnostics without reconnecting or retaining old measurements', async () => {
   const h = browserHarness();
   try {
@@ -231,7 +255,9 @@ test('status.debug toggles PCM/context/render diagnostics without reconnecting o
     assert.equal(h.audio.stats().debug, undefined);
     const request = h.requests.at(-1);
     h.audio.status({ debug: true }); h.pcm([0, -32768, 16384]); await tick();
-    h.nodes[0].port.onmessage({ data: { diagnosticRevision: 1, diagnostics: { renderFrames: 128, renderNonzero: 64, renderPeak: 0.5, renderTimeMs: 0 } } });
+    const generation = h.nodes[0].messages.findLast(message => message.debug === true).generation;
+    h.nodes[0].port.onmessage({ data: { diagnosticRevision: 1, playbackGeneration: generation,
+      diagnostics: { renderFrames: 128, renderNonzero: 64, renderPeak: 0.5, renderTimeMs: 0 } } });
     const stats = h.audio.stats().debug;
     assert.equal(stats.pcmFrames, 3); assert.equal(stats.pcmNonzero, 2); assert.equal(stats.pcmPeak, 1);
     assert.equal(stats.contextState, 'running'); assert.equal(stats.contextRate, 48000);
@@ -240,14 +266,73 @@ test('status.debug toggles PCM/context/render diagnostics without reconnecting o
     assert.equal(Object.hasOwn(stats, 'deviceClockFitDispersionMs'), false, 'no immature MAD is substituted for a fit');
     assert.equal(stats.renderFrames, 128); assert.ok(Number.isFinite(stats.clockBase));
     h.audio.status({ debug: false }); assert.equal(h.audio.stats().debug, undefined);
-    assert.deepEqual(h.nodes[0].messages.at(-1), { debug: false, diagnosticRevision: 2 });
+    assert.deepEqual(h.nodes[0].messages.at(-1), { debug: false, diagnosticRevision: 2, generation });
     assert.equal(h.requests.at(-1), request, 'a debug switch must not renegotiate the audio stream');
     h.nodes[0].port.onmessage({ data: { diagnostics: { renderFrames: 999 } } });
     h.audio.status({ debug: true }); assert.equal(h.audio.stats().debug.renderFrames, undefined);
-    h.nodes[0].port.onmessage({ data: { diagnosticRevision: 1, diagnostics: { renderFrames: 999 } } });
+    h.nodes[0].port.onmessage({ data: { diagnosticRevision: 1, playbackGeneration: generation, diagnostics: { renderFrames: 999 } } });
     assert.equal(h.audio.stats().debug.renderFrames, undefined, 'a delayed report from the retired capture stays retired');
     assert.equal(h.audio.stats().debug.pcmFrames, 0);
   } finally { h.done(); }
+});
+
+test('reset clears retained worklet evidence and rejects delayed reports from the retired playback generation', async () => {
+  const h = browserHarness();
+  const deadline = { lastSourceDeadlineDeltaUpperMs: 300.000001, lastSourceDeadlineUncertaintyMs: 8.164241,
+    lastSourceDeadlineAgeMs: 2.666667, lastSourceDeadlineLimitMs: 300 };
+  try {
+    await h.audio.activate(); h.audio.attach(new AbortController().signal, { audio: true }); await tick();
+    h.audio.debug(true);
+    const node = h.nodes[0], debug = node.messages.findLast(message => message.debug === true);
+    const report = (generation, stream) => node.port.onmessage({ data: { diagnosticRevision: debug.diagnosticRevision,
+      playbackGeneration: generation, diagnostics: { renderFrames: 128, stream0: stream } } });
+    report(debug.generation, { generation: debug.generation, epoch: 7, ...deadline });
+    assert.deepEqual(h.audio.stats().debug.stream0, { generation: debug.generation, epoch: 7, ...deadline });
+    const [, event] = browserDiagnosticEvents({ audio: h.audio.stats() }, false, true, 'capture');
+    for (const [key, value] of Object.entries(deadline)) assert.equal(event.v[`stream0.${key}`], value);
+    assert.equal(Object.keys(browserDiagnosticEvents({ audio: h.audio.stats() }, false)[0].v)
+      .some(key => key.includes('lastSourceDeadline')), false);
+    h.audio.reset();
+    const reset = node.messages.findLast(message => message.reset);
+    assert.notEqual(reset.generation, debug.generation);
+    assert.equal(h.audio.stats().debug.stream0, undefined);
+    assert.equal(h.audio.stats().debug.renderReportAgeMs, null);
+    report(debug.generation, { generation: debug.generation, epoch: 7, ...deadline });
+    assert.equal(h.audio.stats().debug.stream0, undefined, 'same Debug revision cannot revive the retired generation');
+    node.port.onmessage({ data: { diagnosticRevision: debug.diagnosticRevision, diagnostics: { renderFrames: 999 } } });
+    assert.equal(h.audio.stats().debug.renderFrames, undefined, 'a report with unknown playback generation stays unknown');
+    report(reset.generation, { generation: reset.generation, epoch: 8, state: 'priming' });
+    assert.equal(h.audio.stats().debug.stream0.epoch, 8);
+    assert.equal(Object.hasOwn(h.audio.stats().debug.stream0, 'lastSourceDeadlineDeltaUpperMs'), false);
+    report(reset.generation, { generation: reset.generation, epoch: 9, ...deadline });
+    assert.equal(h.audio.stats().debug.stream0.epoch, 9);
+    report(reset.generation, { generation: reset.generation, epoch: 10, state: 'priming' });
+    assert.equal(h.audio.stats().debug.stream0.epoch, 10);
+    assert.equal(Object.hasOwn(h.audio.stats().debug.stream0, 'lastSourceDeadlineAgeMs'), false,
+      'a replacement epoch report cannot merge the preceding epoch\'s retained trigger');
+    h.audio.debug(false); report(reset.generation, { epoch: 10, ...deadline });
+    assert.equal(h.audio.stats().debug, undefined);
+    h.audio.debug(true);
+    assert.equal(h.audio.stats().debug.stream0, undefined);
+  } finally { h.done(); }
+});
+
+test('worklet diagnostic envelopes follow reset and packet generations independently of Debug revision', () => {
+  const processor = new Processor(), post = data => processor.port.onmessage({ data });
+  try {
+    post({ debug: true, diagnosticRevision: 4, generation: 7 }); processor.report();
+    let report = processor.messages.findLast(message => message.diagnostics);
+    assert.equal(report.diagnosticRevision, 4); assert.equal(report.playbackGeneration, 7);
+    post({ reset: true, generation: 8 }); processor.report();
+    report = processor.messages.findLast(message => message.diagnostics);
+    assert.equal(report.diagnosticRevision, 4); assert.equal(report.playbackGeneration, 8);
+    post({ type: 0, mode: 'carplay', epoch: 10, generation: 9, rate: 48000, channels: 1,
+      flags: 0, sequence: 1, sourceTime: 0, pcm: new Int16Array(128).buffer }); processor.report();
+    assert.equal(processor.messages.findLast(message => message.diagnostics).playbackGeneration, 9);
+    post({ debug: false, diagnosticRevision: 5, generation: 9 });
+    const count = processor.messages.filter(message => message.diagnostics).length;
+    processor.report(); assert.equal(processor.messages.filter(message => message.diagnostics).length, count);
+  } finally { post({ dispose: true }); }
 });
 
 test('browser device MAD reaches Debug telemetry only after a fit in that capture interval', async () => {

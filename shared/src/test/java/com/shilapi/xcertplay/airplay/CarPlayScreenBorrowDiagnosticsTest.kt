@@ -142,6 +142,24 @@ class CarPlayScreenBorrowDiagnosticsTest {
         } finally { session.close() }
     }
 
+    @Test fun screenDataBoundariesCannotBeMistakenForOwnershipOrAControlDisconnect() = capture { file ->
+        val diagnostics = CarPlayScreenBorrowDiagnostics()
+        val borrowed = CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Accessory)
+        diagnostics.screen(CarPlayScreenDataBoundary.SETUP, true, borrowed)
+        diagnostics.screen(CarPlayScreenDataBoundary.DATA_EOF, false, borrowed)
+        diagnostics.changed(CarPlayScreenBorrowState(false, false, CarPlayScreenOwner.Controller))
+        diagnostics.closed(CarPlayConnectionCloseReason.SCREEN_RETURN_WITHOUT_STREAM,
+            CarPlayScreenBorrowState(false, false, CarPlayScreenOwner.Controller))
+        diagnostics.screen(CarPlayScreenDataBoundary.DATA_FAILED, false, borrowed)
+        val rows = semanticRows(file)
+        assertEquals(listOf("SCREEN", "SCREEN", "STATE", "CLOSE"), rows.map { it["event"] })
+        assertEquals(listOf("SETUP", "DATA_EOF", "NONE", "SCREEN_RETURN_WITHOUT_STREAM"), rows.map { it["reason"] })
+        assertEquals(listOf("true", "false"), rows.take(2).map { it["screenAvailable"] })
+        assertEquals("true", rows[1]["confirmedBorrow"])
+        assertEquals("true", rows[2]["carPlayHasScreen"])
+        assertTrue(rows.all { it["connectionId"] == rows.first()["connectionId"] })
+    }
+
     private fun capture(block: (File) -> Unit) {
         val directory = java.nio.file.Files.createTempDirectory("screen-semantic-capture").toFile()
         val file = File(directory, "capture.tsv")

@@ -4,6 +4,68 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BrowserAudioDiagnosticsTest {
+    @Test fun optionalRenderStatisticsKeepKnownZeroAndBoundedNumericEvidence() {
+        val lines = BrowserAudioDiagnostics.lines(mapOf("renderStatsState" to "available", "renderUnderrunEvents" to 0,
+            "renderUnderrunDurationMs" to 0, "renderTotalDurationMs" to 123.000001))
+        val text = lines.joinToString(" ")
+        assertTrue(text.contains("renderStatsState=available")); assertTrue(text.contains("renderUnderrunEvents=0"))
+        assertTrue(text.contains("renderUnderrunDurationMs=0")); assertTrue(text.contains("renderTotalDurationMs=123.000001"))
+        assertTrue(lines.all { it.length <= 600 && DiagnosticRedactor.redact(it) == it })
+        for (state in listOf("unavailable", "invalid", "failed"))
+            assertTrue(BrowserAudioDiagnostics.lines(mapOf("renderStatsState" to state)).single().contains("renderStatsState=$state"))
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf("renderStatsState" to "private-value")).isEmpty())
+    }
+
+    @Test fun optionalRenderStatisticsRejectUnknownInvalidAndWrongScopeNumbers() {
+        for (field in listOf("renderUnderrunEvents", "renderUnderrunDurationMs", "renderTotalDurationMs")) {
+            for (invalid in listOf(null, "1", true, -1, 1e100, 9_007_199_254_740_992.0, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY))
+                assertTrue(BrowserAudioDiagnostics.lines(mapOf(field to invalid)).isEmpty())
+            for (prefix in listOf("stream0.", "decoder.", "decoder.stream0."))
+                assertTrue(BrowserAudioDiagnostics.lines(mapOf("$prefix$field" to 1)).isEmpty())
+        }
+        for (invalid in listOf(.5, 9_007_199_254_740_992.0))
+            assertTrue(BrowserAudioDiagnostics.lines(mapOf("renderUnderrunEvents" to invalid)).isEmpty())
+    }
+
+    @Test fun sourceDeadlineFixtureRetainsTheTriggerInsteadOfSubstitutingTheLatestHealthySample() {
+        val path = "shared/src/test/resources/Browser-source-deadline-diagnostics-v1.json"
+        val file = listOf(java.io.File(path), java.io.File("../$path")).first { it.isFile }
+        val parser = Class.forName("com.shilapi.xcertplay.web.WebJson")
+        val fixture = parser.getMethod("parse", String::class.java)
+            .invoke(parser.getField("INSTANCE").get(null), file.readText()) as Map<*, *>
+        val detail = fixture["detail"] as Map<*, *>
+        assertEquals("audio-diag", detail["k"])
+        val values = (detail["v"] as Map<*, *>).entries.associate { (key, value) -> key as String to value }
+        val lines = BrowserAudioDiagnostics.lines(values)
+        val media = lines.filter { it.startsWith("Browser audio: stage=STREAM stream=0 ") }.joinToString(" ")
+        assertTrue(media.contains("sourceDeltaUpperMs=20"))
+        assertTrue(media.contains("lastSourceDeadlineDeltaUpperMs=300.000001"))
+        assertTrue(media.contains("lastSourceDeadlineUncertaintyMs=8.164241"))
+        assertTrue(media.contains("lastSourceDeadlineAgeMs=2.666667"))
+        assertTrue(media.contains("lastSourceDeadlineLimitMs=300"))
+        val mirror = lines.filter { it.startsWith("Browser audio: stage=STREAM stream=6 ") }.joinToString(" ")
+        assertTrue(mirror.contains("epoch=9"))
+        assertFalse(mirror.contains("lastSourceDeadline"))
+        for (line in lines) {
+            assertTrue(line.length <= 600)
+            assertEquals(line, DiagnosticRedactor.redact(line))
+        }
+    }
+
+    @Test fun sourceDeadlineEvidenceAcceptsOnlyFiniteStreamNumbersAndRetainsKnownZero() {
+        val fields = listOf("lastSourceDeadlineDeltaUpperMs", "lastSourceDeadlineUncertaintyMs",
+            "lastSourceDeadlineAgeMs", "lastSourceDeadlineLimitMs")
+        val known = BrowserAudioDiagnostics.lines(fields.associate { "stream255.$it" to 0 }).single()
+        for (field in fields) assertTrue(known.contains("$field=0"))
+        for (unknown in listOf(null, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, "private-data", true)) {
+            assertTrue(BrowserAudioDiagnostics.lines(fields.associate { "stream0.$it" to unknown }).isEmpty())
+        }
+        for (prefix in listOf("", "stream256.", "decoder.stream0.")) {
+            assertTrue(BrowserAudioDiagnostics.lines(fields.associate { "$prefix$it" to 300.000001 }).isEmpty())
+        }
+        assertTrue(BrowserAudioDiagnostics.lines(mapOf("stream0.lastSourceDeadlinePrivateUrl" to "private-data")).isEmpty())
+    }
+
     @Test fun noiseDispersionRetainsItsSideOfTheGateWithoutChangingOrdinaryScalarPrecision() {
         val lines = BrowserAudioDiagnostics.lines(mapOf(
             "deviceClockUncertaintyMs" to 2.999999, "deviceClockFitDispersionMs" to 3.000001,
@@ -209,6 +271,8 @@ class BrowserAudioDiagnosticsTest {
             "queueBytes" to 192_000, "queuePackets" to 60, "state" to "rebuffering",
             "lastRecoveryReason" to "sender-deadline", "rebufferCount" to 1_000_000_001L,
             "lastClockStepPhaseErrorMs" to -37.25, "lastClockStepAgeMs" to 16000,
+            "lastSourceDeadlineDeltaUpperMs" to 300.000001, "lastSourceDeadlineUncertaintyMs" to 8.164241,
+            "lastSourceDeadlineAgeMs" to 2.666667, "lastSourceDeadlineLimitMs" to 300,
             "recoveryCounts.clock-step" to 1, "recoveryCounts.underrun" to 1,
             "recoveryCounts.source-deadline" to 1_000_000_002L,
             "recoveryCounts.clock-generation" to 1_000_000_003L,

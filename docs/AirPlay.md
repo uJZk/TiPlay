@@ -70,6 +70,17 @@ current write completes; a reentrant callback cannot strand the required return 
 new borrow. A fresh ownership notification remains necessary for output authority.
 Sparse Debug semantic loan/close events are described in [Diagnostics](Diagnostics.md);
 encrypted control bytes and a rolling TXT window cannot always reconstruct ownership.
+Controller ownership without a usable main-screen stream does not complete display
+recovery. After return, the host reuses its two-second reconnect interval before
+recovering the missing stream with the retained wireless transport. A timely or
+in-flight SETUP wins; a new loan cancels the old wait. Settings and browser absence
+defer recovery until menu close or a fresh authenticated viewport. The conditional retirement
+claim checks stream and ownership together, and cleanup runs outside ownership locks.
+This interval is bounded software recovery, not an iPhone or vehicle timing guarantee.
+The beta.11 capture confirms resource returns followed by prolonged missing browser
+picture progress, but lacks the later-added screen EOF/teardown events needed to
+prove which data-stream boundary caused that particular gap. Its final confirmed
+loan ends in peer control EOF; the later CarPlay picture belongs to a new session.
 
 Pending loans retain CarPlay picture/input and release existing touches. Mirror SETUP
 waits boundedly before supplying data ports so the initial keyframe is not lost.

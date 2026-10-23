@@ -13,6 +13,8 @@ const ENGINE_ENUMS = Object.freeze({
     'video-starved', 'audio-starved', 'timeline-gap', 'startup-watermark', 'resume-watermark',
     'audio-context-suspended', 'audio-context-resume', 'audio-context-closed', 'clock-stalled',
     'video-budget', 'audio-budget', 'unknown']),
+  renderStatsState: new Set(['available', 'unavailable', 'invalid', 'failed']),
+  audioOutputTimestampState: new Set(['unavailable', 'closed', 'format-mismatch', 'startup', 'invalid', 'future', 'context-ahead', 'valid', 'failed']),
   contextState: new Set(['running', 'suspended', 'interrupted', 'closed', 'unavailable', 'unknown']),
   clockSource: new Set(['audio', 'performance', 'unknown']),
   limitingTrack: new Set(['video', 'audio', 'both', 'none', 'unknown']),
@@ -41,7 +43,7 @@ const ENGINE_NUMBERS = ['openElapsedMs', 'phaseElapsedMs', 'generation', 'clockT
   'audioLateStarts', 'audioLateStartMaxMs', 'audioPcmPeak', 'audioPcmOverFullScaleSamples', 'audioNonFiniteSamples',
   'audioScheduleUnderruns', 'audioScheduleUnderrunMs', 'audioScheduleUnderrunMaxMs', 'audioRebufferStops',
   'audioBaseLatencyMs', 'audioOutputLatencyMs', 'audioOutputTimestampAgeMs', 'audioOutputContextLagMs',
-  'audioSubmitUncertaintyMaxMs'];
+  'audioSubmitUncertaintyMaxMs', 'renderUnderrunEvents', 'renderUnderrunDurationMs', 'renderTotalDurationMs'];
 const ENGINE_WHOLE = new Set(['generation', 'videoFrames', 'videoBytes', 'audioChunks', 'audioBytes', 'stallCount',
   'videoCapacityFrames', 'videoCapacityBytes', 'audioCapacityBytes', 'codedWidth', 'codedHeight', 'displayWidth', 'displayHeight',
   'videoHeldFrames', 'videoHeldBytes', 'videoPendingFrames', 'videoPendingBytes', 'videoOwnedFrames', 'videoOwnedBytes',
@@ -51,7 +53,8 @@ const ENGINE_WHOLE = new Set(['generation', 'videoFrames', 'videoBytes', 'audioC
   'audioSourceRate', 'audioRequestedContextRate', 'audioContextRate', 'audioSourceChannels',
   'audioDecodedFrames', 'audioSeekTrimmedFrames', 'audioOverlapTrimmedFrames', 'audioAlignedPackets',
   'audioSilenceFrames', 'audioScheduledFrames', 'audioLateStarts', 'audioPcmOverFullScaleSamples', 'audioNonFiniteSamples',
-  'audioScheduleUnderruns', 'audioRebufferStops']);
+  'audioScheduleUnderruns', 'audioRebufferStops', 'renderUnderrunEvents']);
+const ENGINE_SIGNED = new Set(['audioOutputTimestampAgeMs', 'audioOutputContextLagMs']);
 const ENGINE_DIMENSIONS = new Set(['codedWidth', 'codedHeight', 'displayWidth', 'displayHeight']);
 const CODEC = /^(?:avc|h264|hevc|h265|vp8|vp9|av1|avc1|avc3|hvc1|hev1|vp09|av01|mp4v)(?:\.[a-z0-9]{1,16}){0,9}$/i;
 const ENGINE_SIGNATURE = ['generation', 'startupPhase', 'running', 'intentPlaying', 'waitReason', 'contextState', 'resumePending',
@@ -76,12 +79,12 @@ export function sanitizePlaybackDiagnostics(source) {
     for (const key of ENGINE_FLAGS) if (typeof source[key] === 'boolean') result[key] = source[key];
     for (const key of ENGINE_NUMBERS) {
       const value = source[key];
-      if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER &&
+      if (typeof value === 'number' && Number.isFinite(value) && (value >= 0 || ENGINE_SIGNED.has(key)) && Math.abs(value) <= Number.MAX_SAFE_INTEGER &&
           (!ENGINE_WHOLE.has(key) || Number.isSafeInteger(value)) && (!ENGINE_DIMENSIONS.has(key) || value <= 32768) &&
           (!['audioSourceRate', 'audioRequestedContextRate', 'audioContextRate'].includes(key) || value >= 3000 && value <= 384000) &&
           (key !== 'audioSourceChannels' || value >= 1 && value <= 8) &&
           (key !== 'resourceLastStatus' || value === 0 || value >= 100 && value <= 599))
-        result[key] = value < 1e12 ? Math.round(value * 1000) / 1000 : value;
+        result[key] = Math.abs(value) < 1e12 ? Math.round(value * 1000) / 1000 : value;
     }
     return Object.keys(result).length ? result : null;
   } catch (_) { return null; }

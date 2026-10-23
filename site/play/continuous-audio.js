@@ -24,13 +24,14 @@ export class ContinuousAudio {
     this.sourceClock = new AudioSourceClock(rate, { arrival: mode === 'carplay' && !buffered });
     this.backend = null; this.slewRatio = rate / outputRate; this.lastPacket = null; this.missingSince = null;
     this.lastRecoveryReason = null; this.recoveryCounts = {};
-    this.lastClockStep = null;
+    this.lastClockStep = null; this.lastSourceDeadline = null;
     this.sourceDeadlineState = 'unknown'; this.sourceDeltaMs = null; this.sourceDeltaUpperMs = null;
     this.sourceDeadlineReason = 'no-output';
     this.sourceDeadlineRejectedFrames = 0;
   }
   debug(enabled) {
     this.counters = enabled ? { capacityPackets: 0, latePackets: 0, duplicatePackets: 0, playedPackets: 0, resetPackets: 0, invalidPackets: 0, rebufferCount: 0 } : null;
+    this.lastSourceDeadline = null;
     this.sourceClock.debug(enabled);
   }
   retire(packet, reason) {
@@ -184,7 +185,7 @@ export class ContinuousAudio {
       this.fadeTail(output, 0, frames); this.recoveryTail.set(this.last); this.recoveryRemaining = this.tailRemaining;
       // An inactive cursor is not newly emitted content. Still validate an
       // actual fade tail, including explicitly silent PCM, before it can play.
-      if (hadTail) this.checkDeadline(deadline, clock, this.rawCursorMs, frames * 1000 / this.outputRate / deviceRate, 0, output, frames);
+      if (hadTail) this.checkDeadline(deadline, clock, this.rawCursorMs, frames * 1000 / this.outputRate / deviceRate, 0, output, frames, contextMs);
       return 0;
     }
     const correction = Math.max(-PHASE_CORRECTION_LIMIT, Math.min(PHASE_CORRECTION_LIMIT, this.phaseErrorMs / 10000));
@@ -222,10 +223,10 @@ export class ContinuousAudio {
     if (produced < frames) { this.fadeTail(output, produced, frames); this.recover('underrun'); }
     const localSpan = frames * 1000 / this.outputRate / deviceRate;
     const sourceSpan = produced * Math.min(firstRatio, finalRatio) * 1000 / this.rate / sourceRate * (clock?.rate || 1);
-    if (!this.checkDeadline(deadline, clock, firstSourceMs, localSpan, sourceSpan, output, frames)) return 0;
+    if (!this.checkDeadline(deadline, clock, firstSourceMs, localSpan, sourceSpan, output, frames, contextMs)) return 0;
     return produced;
   }
-  checkDeadline(deadline, clock, firstSourceMs, localSpan, sourceSpan, output, frames) {
+  checkDeadline(deadline, clock, firstSourceMs, localSpan, sourceSpan, output, frames, contextMs) {
     if (deadline && clock && Number.isFinite(firstSourceMs) && Number.isFinite(deadline.outputAt)
       && Number.isFinite(clock.localOriginMs) && Number.isFinite(clock.serverOriginMs)
       && Number.isFinite(clock.rate) && clock.rate > 0) {
@@ -237,6 +238,14 @@ export class ContinuousAudio {
       this.sourceDeadlineState = this.sourceDeltaUpperMs <= deadline.limitMs ? 'within-bound' : 'violated';
       this.sourceDeadlineReason = this.sourceDeadlineState === 'violated' ? 'source-deadline' : null;
       if (this.sourceDeadlineState === 'violated') {
+        // A periodic snapshot can already show healthy output after this
+        // rejection. Preserve its bounded Debug evidence before retiring DSP.
+        if (this.counters) this.lastSourceDeadline = {
+          upperMs: Number.isFinite(this.sourceDeltaUpperMs) ? this.sourceDeltaUpperMs : null,
+          uncertaintyMs: Number.isFinite(deadline.uncertaintyMs) && deadline.uncertaintyMs >= 0 ? deadline.uncertaintyMs : null,
+          limitMs: Number.isFinite(deadline.limitMs) && deadline.limitMs >= 0 ? deadline.limitMs : null,
+          contextMs: Number.isFinite(contextMs) && contextMs >= 0 ? contextMs : null,
+        };
         // The whole quantum is still application-owned. Never emit expired
         // content or crossfade an expired recovery tail into fresh output.
         output.fill(0); this.sourceDeadlineRejectedFrames += frames;
@@ -285,10 +294,16 @@ export class ContinuousAudio {
   }
   stats() {
     const source = this.counters ? this.sourceClock.snapshot(this.lastContextTimeMs) : null;
+    const deadline = this.counters ? this.lastSourceDeadline : null;
     return { ...this.counters, queueBytes: this.bytes, queuePackets: this.queue.length,
       headMs: this.queue.length ? this.sourceAnchorMs + this.queue[0].first * 1000 / this.rate : null,
       tailMs: this.queue.length ? this.sourceAnchorMs + this.queue.at(-1).end * 1000 / this.rate : null,
       playbackMs: this.rawCursorMs, outputFrames: this.outputFrames, state: this.state, ...this.reference(this.lastContextTimeMs),
+      ...(Number.isFinite(deadline?.upperMs) ? { lastSourceDeadlineDeltaUpperMs: deadline.upperMs } : {}),
+      ...(Number.isFinite(deadline?.uncertaintyMs) ? { lastSourceDeadlineUncertaintyMs: deadline.uncertaintyMs } : {}),
+      ...(Number.isFinite(deadline?.limitMs) ? { lastSourceDeadlineLimitMs: deadline.limitMs } : {}),
+      ...(Number.isFinite(deadline?.contextMs) && Number.isFinite(this.lastContextTimeMs) && this.lastContextTimeMs >= deadline.contextMs
+        ? { lastSourceDeadlineAgeMs: this.lastContextTimeMs - deadline.contextMs } : {}),
       ...(source ? { sourceClockFitStatus: this.buffered ? 'disabled' : source.status,
         sourceClockFitRejectReason: this.buffered ? 'buffered-prefetch' : source.reason,
         sourceClockPoints: source.points, sourceClockSpanMs: source.spanMs, sourceClockFitRejected: source.rejected,

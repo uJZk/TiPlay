@@ -249,6 +249,9 @@ class CarPlayHostActivity : ComponentActivity() {
         override fun onAirPlayEnded() {
             if (!resumeCarPlayRecoveryAfterAirPlay(castingEnded = true)) onBrowserFit()
         }
+        override fun onAirPlayStarted() {
+            cancelScreenReturnRecovery()
+        }
         override fun onBrowserGone() { updateDebugOverlays() }
         override fun onBrowserViewport(viewport: com.shilapi.xcertplay.web.BrowserViewport) {
             // TeslaBrowserLink already delivers this callback on the main thread.
@@ -262,7 +265,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     if (browserConnectionRequested && !BrowserCarPlaySettings.disabled(this@CarPlayHostActivity))
                         requestStartupPrerequisites()
                     else checkBrowserCarPlay()
-                } else onBrowserFit()
+                } else if (!resumeCarPlayRecoveryAfterAirPlay()) onBrowserFit()
                 updateDebugOverlays()
             }
         }
@@ -2011,6 +2014,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        cancelScreenReturnRecovery()
         browserCarPlayWatch?.close()
         browserCarPlayWatch = null
         browserSettingsChanges?.close()
@@ -6182,10 +6186,71 @@ class CarPlayHostActivity : ComponentActivity() {
         return true
     }
 
+    private var screenReturnRecoveryTask: Runnable? = null
+
+    private fun cancelScreenReturnRecovery() {
+        screenReturnRecoveryTask?.let(mainHandler::removeCallbacks)
+        screenReturnRecoveryTask = null
+    }
+
+    private fun awaitReturnedCarPlayScreen(current: CarPlayController, source: AirPlaySession?): Boolean {
+        if (source == null) return false
+        if (screenReturnRecoveryTask != null) return true
+        lateinit var task: Runnable
+        task = Runnable {
+            if (screenReturnRecoveryTask !== task) return@Runnable
+            screenReturnRecoveryTask = null
+            if (controller !== current || activeAirPlaySession !== source || TeslaBrowserLink.airPlayActive ||
+                isDestroyed || isFinishing || shuttingDown.get() || handshakeResetInProgress ||
+                BrowserCarPlaySettings.disabled(this) || !CarPlayBackgroundSession.isOwner(this)) return@Runnable
+            if (current.activeAirPlaySessionToken() != null) {
+                appendLog("CarPlay screen returned before display recovery was needed")
+                return@Runnable
+            }
+            if (current.screenBorrowState?.carPlayHasScreen != true) return@Runnable
+            if (menuOpen || !browserReadyForCarPlay()) {
+                recoveryPendingAfterAirPlay = true
+                return@Runnable
+            }
+            if (browserDisplayReconnectHost.recoverAfterScreenLoan(current, source))
+                appendLog("CarPlay ownership returned without a data stream; recovering display with retained wireless transport")
+            else appendLog("CarPlay returned-screen recovery unavailable or superseded; keeping the current control session")
+        }
+        screenReturnRecoveryTask = task
+        // A resource grant can precede the next SETUP on the same socket. Reuse the normal
+        // recovery delay, then recheck the owner and data stream; never retire on the grant itself.
+        mainHandler.postDelayed(task, RECONNECT_DELAY_MILLIS)
+        appendLog("CarPlay ownership returned; waiting for its data stream before display recovery")
+        return true
+    }
+
     private fun resumeCarPlayRecoveryAfterAirPlay(castingEnded: Boolean = false): Boolean {
-        if ((!recoveryPendingAfterAirPlay && !(castingEnded && reconnectScheduled)) || TeslaBrowserLink.airPlayActive ||
-            isDestroyed || isFinishing || shuttingDown.get() || menuOpen || handshakeResetInProgress ||
+        if (TeslaBrowserLink.airPlayActive ||
+            isDestroyed || isFinishing || shuttingDown.get() || handshakeResetInProgress ||
             BrowserCarPlaySettings.disabled(this) || !CarPlayBackgroundSession.isOwner(this)) return false
+        val current = controller
+        val returnedWithoutScreen = (castingEnded || recoveryPendingAfterAirPlay) && activeAirPlaySession != null &&
+            current?.screenBorrowState?.carPlayHasScreen == true &&
+            current.activeAirPlaySessionToken() == null
+        if (menuOpen) {
+            // Settings pause this recovery without requiring a healthy controller to restart.
+            if (returnedWithoutScreen || (castingEnded && reconnectScheduled)) recoveryPendingAfterAirPlay = true
+            return false
+        }
+        if (returnedWithoutScreen && !carPlayRebuildPendingAfterAirPlay) {
+            reconnectTask?.let(mainHandler::removeCallbacks)
+            reconnectTask = null
+            reconnectScheduled = false
+            if (!browserReadyForCarPlay()) {
+                recoveryPendingAfterAirPlay = true
+                return true
+            }
+            if (awaitReturnedCarPlayScreen(current!!, activeAirPlaySession)) {
+                recoveryPendingAfterAirPlay = false
+                return true
+            }
+        }
+        if (!recoveryPendingAfterAirPlay && !(castingEnded && reconnectScheduled)) return false
         recoveryPendingAfterAirPlay = false
         val rebuildRequired = carPlayRebuildPendingAfterAirPlay
         carPlayRebuildPendingAfterAirPlay = false
@@ -6490,8 +6555,8 @@ class CarPlayHostActivity : ComponentActivity() {
         } else {
             maybeStartCarPlay()
         }
-        // A browser resize can settle while this menu temporarily blocks restarts.
-        if (!headUnitIntegrations()) browserLinkHost.onBrowserFit()
+        // A returned screen or browser resize can settle while settings block recovery.
+        if (!headUnitIntegrations() && !resumeCarPlayRecoveryAfterAirPlay()) browserLinkHost.onBrowserFit()
     }
 
     private fun exitApplication() {

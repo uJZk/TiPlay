@@ -93,6 +93,8 @@ class AirPlaySession(
         private set
     private var clusterStreamSetups = 0
     @Volatile private var mainScreenToken: Any? = null
+    private val mainScreenLock = Any()
+    private var mainScreenSetups = 0 // guarded by mainScreenLock
 
     private val closed = AtomicBoolean(false)
     internal val isClosed: Boolean get() = closed.get()
@@ -166,7 +168,7 @@ class AirPlaySession(
         screenBorrowDiagnostics.closed(reason, screenBorrowState)
         screenBorrow.close()
         notifyScreenBorrowChanged()
-        mainScreenToken = null
+        synchronized(mainScreenLock) { mainScreenToken = null }
         clearClusterContent()
         safeClose(socket)
         try {
@@ -182,8 +184,22 @@ class AirPlaySession(
     /** Stable identity of the usable primary screen; replaced on SETUP, absent after teardown/close. */
     internal fun mainScreenSessionToken(): Any? = if (closed.get()) null else mainScreenToken
 
-    internal fun screenDataEnded(type: Int) {
-        if (type == STREAM_TYPE_MAIN_SCREEN) mainScreenToken = null
+    /** A returned resource without a data stream cannot be kept indefinitely as a usable display. */
+    internal fun prepareCloseAfterScreenLoan(): (() -> Unit)? = synchronized(mainScreenLock) {
+        if (mainScreenToken != null || mainScreenSetups != 0) return null
+        var cleanup: (() -> Unit)? = null
+        screenBorrow.claimReturnedScreen {
+            cleanup = prepareClose(CarPlayConnectionCloseReason.SCREEN_RETURN_WITHOUT_STREAM)
+            cleanup != null
+        }
+        cleanup
+    }
+
+    internal fun screenDataEnded(type: Int, failed: Boolean = false) {
+        if (type != STREAM_TYPE_MAIN_SCREEN) return
+        synchronized(mainScreenLock) { mainScreenToken = null }
+        screenBorrowDiagnostics.screen(if (failed) CarPlayScreenDataBoundary.DATA_FAILED else CarPlayScreenDataBoundary.DATA_EOF,
+            false, screenBorrowState)
     }
 
     /**
@@ -747,7 +763,22 @@ class AirPlaySession(
             debugLog("airplay SETUP stream type=$type payload=$stream")
             when (type) {
                 STREAM_TYPE_MAIN_SCREEN, STREAM_TYPE_ALT_SCREEN -> {
-                    val port = media.onScreen(this, type, stream)
+                    val primary = type == STREAM_TYPE_MAIN_SCREEN
+                    val install = !primary || synchronized(mainScreenLock) {
+                        if (closed.get()) false else { mainScreenSetups++; true }
+                    }
+                    if (!install) continue
+                    val port = try {
+                        media.onScreen(this, type, stream).also { accepted ->
+                            if (primary && accepted != null) synchronized(mainScreenLock) {
+                                if (!closed.get()) mainScreenToken = Any()
+                            }
+                        }
+                    } finally {
+                        if (primary) synchronized(mainScreenLock) { mainScreenSetups-- }
+                    }
+                    if (primary && port != null && !closed.get())
+                        screenBorrowDiagnostics.screen(CarPlayScreenDataBoundary.SETUP, true, screenBorrowState)
                     debugLog("airplay screen stream type=$type dataPort=${port ?: "rejected"}")
                     if (port != null) {
                         if (type == STREAM_TYPE_MAIN_SCREEN && config.main.useIphoneCornerMask) {
@@ -755,7 +786,6 @@ class AirPlaySession(
                         }
                         activeStreams.add(type)
                         if (type == STREAM_TYPE_ALT_SCREEN) beginClusterContent()
-                        else mainScreenToken = Any()
                         result.add(linkedMapOf("type" to type, "dataPort" to port))
                     }
                 }
@@ -839,7 +869,10 @@ class AirPlaySession(
         trace("airplay TEARDOWN raw${request.body.size}Hex=${request.body.toHex()}")
 
         // Restore wheel input before releasing media resources, which may take time to close.
-        if (types == null || STREAM_TYPE_MAIN_SCREEN in types) mainScreenToken = null
+        if (types == null || STREAM_TYPE_MAIN_SCREEN in types) {
+            synchronized(mainScreenLock) { mainScreenToken = null }
+            screenBorrowDiagnostics.screen(CarPlayScreenDataBoundary.TEARDOWN, false, screenBorrowState)
+        }
         if (types == null || STREAM_TYPE_ALT_SCREEN in types) clearClusterContent()
         if (types == null) {
             activeStreams.toList().forEach { media.onTeardown(this, it) }

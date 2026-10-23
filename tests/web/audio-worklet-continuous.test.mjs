@@ -441,3 +441,33 @@ test('independent audio deadline reserves uncertainty and video-only touch plans
   assert.equal(player.sourceDeadlineReason, 'clock-uncertainty-unavailable');
   assert.equal(h.processor.messages.filter(value => value.playout).at(-1).playout.state, 'untimed');
 });
+
+test('actual worklet reports the rejected source-deadline trigger after healthy output resumes', () => {
+  const h = harness();
+  try {
+    h.post({ debug: true, plans: { video: constantDelay(40), audio: constantDelay(280) } });
+    for (let quantum = 0; quantum < 100; quantum++) { h.feed(6, 'airplay-mirror'); h.render(); }
+    const player = h.processor.timelines.get(6);
+    assert.equal(player.networkDelayMs, 268);
+    assert.equal(player.sourceDeadlineState, 'within-bound');
+    // A sub-recovery phase refinement followed by less than the network-buffer
+    // update threshold can exhaust the separately checked source-age reserve.
+    h.post({ contextAnchor: { contextTimeMs: 0, localTimeMs: 226 }, outputUncertaintyMs: 8 });
+    h.feed(6, 'airplay-mirror'); h.render();
+    assert.equal(player.recoveryCounts['source-deadline'], 1);
+    const triggerUpper = player.sourceDeltaUpperMs;
+    assert.ok(triggerUpper > 300 && triggerUpper < 305);
+    for (let quantum = 0; quantum < 20; quantum++) { h.feed(6, 'airplay-mirror'); h.render(); }
+    assert.equal(player.sourceDeadlineState, 'within-bound');
+    h.processor.report();
+    const report = h.processor.messages.filter(value => value.diagnostics).at(-1).diagnostics.stream6;
+    assert.equal(report.lastSourceDeadlineDeltaUpperMs, triggerUpper);
+    assert.equal(report.lastSourceDeadlineUncertaintyMs, 9);
+    assert.equal(report.lastSourceDeadlineLimitMs, 300);
+    assert.ok(report.lastSourceDeadlineAgeMs > 50 && report.lastSourceDeadlineAgeMs < 60);
+    assert.equal(report.mode, 'airplay-mirror'); assert.equal(report.epoch, 1); assert.equal(report.generation, 3);
+    assert.ok(h.processor.messages.filter(value => value.playout).every(value =>
+      !Object.keys(value.playout).some(key => key.startsWith('lastSourceDeadline'))),
+    'the added Debug evidence does not expand normal playout feedback');
+  } finally { h.post({ dispose: true }); }
+});

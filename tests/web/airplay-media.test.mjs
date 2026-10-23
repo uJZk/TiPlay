@@ -831,3 +831,88 @@ test('cast regression: close observations reconcile lifetime counts and held own
     assert.ok(h.samples.every(sample => sample.closed === 1));
   } finally { h.media.dispose(); await flush(); }
 });
+
+// The URL targets are playback policies with a 2 ms media-range tolerance. These
+// controls hold the next read pending without reaching EOS or a capacity fallback.
+for (const coverageMs of [747, 748, 749]) test(`URL policy boundary: ${coverageMs}ms startup coverage isolates the 750ms target and range tolerance`, async () => {
+  let release; const pending = new Promise(resolve => { release = resolve; });
+  const h = fixture({ video: false, timestampOrigin: 0, audioSamplesPerPacket: coverageMs * 48,
+    audioSampleRate: 48000, deferAudio: pending, deferAudioAt: 2 });
+  try {
+    await h.media.load('https://fixture.test/startup-boundary.m4a'); await flush();
+    const playing = h.media.play(); void playing.catch(() => {}); await flush(); await h.tick();
+    const state = h.media.getPlaybackDiagnostics();
+    assert.equal(state.audioEnd, coverageMs / 1000);
+    assert.equal(state.running, coverageMs >= 748);
+    assert.equal(state.startReason, coverageMs >= 748 ? 'watermark' : 'none');
+    assert.equal(state.readProgressFallbacks, 0);
+    assert.equal(h.nodes.length > 0, coverageMs >= 748);
+  } finally { h.media.dispose(); release(); await flush(); }
+});
+
+for (const consumedMs of [1, 2, 3]) test(`URL policy boundary: ${1500 - consumedMs}ms recovery coverage isolates the 1500ms target`, async () => {
+  let release; const pending = new Promise(resolve => { release = resolve; });
+  const h = fixture({ video: false, timestampOrigin: 0, audioSamplesPerPacket: 72000,
+    audioSampleRate: 48000, deferAudio: pending, deferAudioAt: 2 });
+  try {
+    await h.media.load('https://fixture.test/recovery-boundary.m4a'); await flush();
+    const playing = h.media.play(); await flush(); await h.tick(); await playing;
+    h.advanceClock(consumedMs / 1000); h.context().state = 'interrupted'; await h.tick();
+    const stopped = h.media.getPlaybackDiagnostics();
+    assert.equal(stopped.running, false); assert.equal(stopped.position, consumedMs / 1000);
+    h.context().state = 'running'; await h.tick();
+    const resumed = h.media.getPlaybackDiagnostics();
+    assert.equal(resumed.targetMs, 1500);
+    assert.equal(resumed.running, consumedMs <= 2);
+    assert.equal(resumed.startReason, 'watermark');
+    assert.equal(resumed.readProgressFallbacks, 0);
+  } finally { h.media.dispose(); release(); await flush(); }
+});
+
+for (const sampleRate of [44100, 48000]) test(`URL policy boundary: 500ms submission at ${sampleRate}Hz admits exactly the available PCM frames`, async () => {
+  const h = fixture({ video: false, timestampOrigin: 0, audioSampleRate: sampleRate,
+    audioSamplesPerPacket: 1024, audioSignal: urlAudioSample });
+  try {
+    await h.media.load('https://fixture.test/submission-boundary.m4a'); await flush();
+    const playing = h.media.play(); await flush(); await h.tick(); await playing;
+    const before = h.media.getPlaybackDiagnostics();
+    assert.equal(before.audioScheduledFrames, sampleRate / 2);
+    assert.equal(Math.round(before.scheduledEnd * sampleRate), sampleRate / 2);
+    assert.equal(h.nodes.reduce((sum, node) => sum + node.buffer.length, 0), sampleRate / 2);
+    await h.tick();
+    assert.equal(h.media.getPlaybackDiagnostics().audioScheduledFrames, sampleRate / 2, 'a repeated clock value must not schedule beyond the target');
+    await h.tick(1 / sampleRate);
+    const after = h.media.getPlaybackDiagnostics();
+    assert.equal(after.audioScheduledFrames, sampleRate / 2 + 1, 'one played frame admits exactly one replacement frame');
+    assert.equal(after.audioScheduleGapUs, 0); assert.equal(after.audioScheduleOverlapUs, 0);
+  } finally { h.media.dispose(); await flush(); }
+});
+
+for (const secondDurationMs of [1899, 1900, 1901]) test(`URL policy boundary: video admission around 2s with a ${secondDurationMs}ms sample`, async () => {
+  const h = fixture({ audio: false, timestampOrigin: 0, duration: 60,
+    videoCadence: { timescale: 1000, durationTicks: [100, secondDurationMs, 100] } });
+  try {
+    await h.media.load('https://fixture.test/video-lookahead.mp4'); await flush();
+    assert.equal(h.reads.video, secondDurationMs < 1900 ? 3 : 2,
+      'a read below 2s may cross the target; equality and greater coverage block the next read');
+    const state = h.media.getPlaybackDiagnostics();
+    assert.equal(state.videoReadPending, false); assert.equal(state.videoBudgetBlocked, true);
+    assert.equal(state.videoEnd, (100 + secondDurationMs + (secondDurationMs < 1900 ? 100 : 0)) / 1000);
+  } finally { h.media.dispose(); await flush(); }
+});
+
+for (const durationMs of [1499, 1500, 1501]) test(`URL policy boundary: audio admission around 3s with ${durationMs}ms packets`, async () => {
+  const frames = durationMs * 48;
+  const h = fixture({ video: false, timestampOrigin: 0, audioSampleRate: 48000,
+    audioSamplesPerPacket: frames });
+  try {
+    await h.media.load('https://fixture.test/audio-lookahead.m4a'); await flush();
+    const reads = durationMs < 1500 ? 3 : 2;
+    assert.equal(h.reads.audio, reads,
+      'a read below 3s may append a full packet; equality and greater coverage block the next read');
+    const state = h.media.getPlaybackDiagnostics();
+    assert.equal(state.audioReadPending, false);
+    assert.equal(state.audioEnd, durationMs * reads / 1000);
+    assert.equal(state.audioDecodedFrames, frames * reads);
+  } finally { h.media.dispose(); await flush(); }
+});

@@ -1,0 +1,52 @@
+{
+  "input": {
+    "page": {
+      "audio": {
+        "debug": {
+          "contextState": "running",
+          "contextRate": 48000,
+          "stream0": {
+            "epoch": 7,
+            "state": "playing",
+            "lastRecoveryReason": "source-deadline",
+            "sourceDeltaUpperMs": 20,
+            "lastSourceDeadlineDeltaUpperMs": 300.0000014,
+            "lastSourceDeadlineUncertaintyMs": 8.1642414,
+            "lastSourceDeadlineAgeMs": 2.6666667,
+            "lastSourceDeadlineLimitMs": 300
+          },
+          "stream6": {
+            "epoch": 9,
+            "state": "priming",
+            "lastRecoveryReason": "startup",
+            "lastSourceDeadlineDeltaUpperMs": null,
+            "lastSourceDeadlineUncertaintyMs": null,
+            "lastSourceDeadlineAgeMs": null,
+            "lastSourceDeadlineLimitMs": null
+          }
+        }
+      }
+    }
+  },
+  "detail": {
+    "k": "audio-diag",
+    "d": "source-deadline-fixture",
+    "v": {
+      "pageVersion": "v78",
+      "omittedFields": 0,
+      "contextState": "running",
+      "contextRate": 48000,
+      "stream0.epoch": 7,
+      "stream6.epoch": 9,
+      "stream0.state": "playing",
+      "stream6.state": "priming",
+      "stream0.lastRecoveryReason": "source-deadline",
+      "stream6.lastRecoveryReason": "startup",
+      "stream0.lastSourceDeadlineDeltaUpperMs": 300.000001,
+      "stream0.lastSourceDeadlineUncertaintyMs": 8.164241,
+      "stream0.lastSourceDeadlineAgeMs": 2.666667,
+      "stream0.lastSourceDeadlineLimitMs": 300,
+      "stream0.sourceDeltaUpperMs": 20
+    }
+  }
+}

@@ -8,6 +8,7 @@ import com.shilapi.xcertplay.airplay.AirPlayMediaHandler
 import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
 import com.shilapi.xcertplay.airplay.PairingStore
+import com.shilapi.xcertplay.airplay.CarPlayScreenBorrow
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -66,6 +67,33 @@ class BrowserDisplayReconnectTest {
         sessions(service).add(session("192.0.2.2"))
         assertFalse(service.updatePendingWirelessDisplay(owner, config.main.copy(widthPixels = 1600), source))
         assertEquals(latest, attachmentConfig(service).main)
+    }
+
+    @Test fun missingReturnedScreenRetiresOnlyItsExternalSessionAndKeepsTheTransport() = withService { service, owner ->
+        val source = session("192.0.2.2")
+        val probe = session("127.0.0.1")
+        sessions(service).addAll(listOf(source, probe))
+        val borrow = ReflectionHelpers.getField<CarPlayScreenBorrow>(source, "screenBorrow")
+        borrow.onModesChanged(mapOf("resources" to listOf(mapOf("resourceID" to 1, "entity" to 1))))
+        val port = service.boundPort()
+        val cleanup = service.prepareWirelessDisplayReconnect(owner, config.main, source, afterScreenLoan = true)
+        assertNotNull(cleanup)
+        assertTrue("Recovery claims the missing old stream before asynchronous cleanup", source.isClosed)
+        cleanup!!()
+        assertFalse(probe.isClosed)
+        assertTrue(service.isAttached())
+        assertEquals(port, service.boundPort())
+    }
+
+    @Test fun aNewMainScreenCannotBeRetiredByTheOldReturnRecovery() = withService { service, owner ->
+        val source = session("192.0.2.2")
+        sessions(service).add(source)
+        val borrow = ReflectionHelpers.getField<CarPlayScreenBorrow>(source, "screenBorrow")
+        borrow.onModesChanged(mapOf("resources" to listOf(mapOf("resourceID" to 1, "entity" to 1))))
+        ReflectionHelpers.setField(source, "mainScreenToken", Any())
+        assertNull(service.prepareWirelessDisplayReconnect(owner, config.main, source, afterScreenLoan = true))
+        assertFalse(source.isClosed)
+        assertNotNull(source.mainScreenSessionToken())
     }
 
     private fun withService(test: (CarPlayVpnService, AirPlayListenerIdentity) -> Unit) {
