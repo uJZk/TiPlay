@@ -3,7 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { phaseSummary, summarize } from '../../site/play/chatgpt/analysis.js';
+import { phaseSummary, summarize, VERSION } from '../../site/play/chatgpt/analysis.js';
+import { buildReport, createReportUrl, readReportFragment, summaryJson } from '../../site/play/chatgpt/report-share.js';
 
 function result() {
   return { rate: 1000, samples: [0, 500, 1100].map(p => ({ p, c: p * .98, phase: 0, visible: true, state: 'running', epochErrorMs: 0 })),
@@ -12,6 +13,55 @@ function result() {
       .map(row => ({ ...row, phase: 0, phaseAtReceive: 0, visible: true, running: true })),
     reports: [], events: [], load: [], caps: {} };
 }
+
+function completedResult() {
+  const value = result();
+  Object.assign(value, { rate:48000, version:VERSION, requestedRate:0, durationSeconds:15, elapsedMs:15000,
+    completion:'已完成', userAgent:'Chrome/148.0.0.0 Linux', expiredProbes:0, nativeReadErrors:0,
+    eventAttempts:{state:0,visibility:0,pop:0}, reports:[{phase:0,receive:5,visible:true,quantum:128,minQuantum:64,maxQuantum:1024}] });
+  value.samples[0].epochErrorMs = .000122;
+  value.summary = summarize(value); return value;
+}
+
+test('portable summary preserves actual frames, outward intervals, tiny epoch evidence and null availability', async () => {
+  const source = completedResult(), report = buildReport(source);
+  assert.equal(report.phases[0].actualFrameDelta,980);
+  assert.equal(report.quantumMinFrames,64); assert.equal(report.quantumMaxFrames,1024);
+  assert.equal(report.epochRoundingErrorMaxMs,.000122);
+  assert.equal(report.phases[0].nativeSpanMs,null);
+  assert.ok(report.phases[0].frameDifferenceLowerMs <= source.summary.phases[0].frames.differenceRangeMs[0]);
+  assert.ok(report.phases[0].frameDifferenceUpperMs >= source.summary.phases[0].frames.differenceRangeMs[1]);
+  const transfer = await createReportUrl(report,'https://ujzk.github.io/TiPlay/chatgpt/');
+  assert.ok(transfer.url.length <= 1900);
+  const received = await readReportFragment(new URL(transfer.url).hash);
+  assert.equal(summaryJson(received),summaryJson(report));
+  assert.equal(received.rawIncluded,false); assert.equal(received.timerQuantizationUncertaintyBounded,false);
+  assert.equal(Object.hasOwn(JSON.parse(summaryJson(received)),'_wire'),false);
+});
+
+test('portable marks distinguish stored events, total attempts, summary omission and original event loss', () => {
+  const source = completedResult();
+  source.events = Array.from({length:1000},(_,i) => ({kind:'pop',p:i}));
+  source.eventAttempts.pop = 1001; source.caps.events = 1; source.summary = summarize(source);
+  const report = buildReport(source);
+  assert.deepEqual(report.marks,{recordedTotal:1000,attemptedTotal:1001,omittedRecorded:992,timesMs:[0,1,2,3,996,997,998,999]});
+  assert.equal(report.caps.events,1);
+  assert.equal(report.phases[0].getterSpanMs,null); assert.equal(report.phases[0].processedMs,null);
+});
+
+test('malformed, oversized and decompression-bomb report fragments fail without losing safety bounds', async () => {
+  const source = buildReport(completedResult());
+  await assert.rejects(readReportFragment('#clock-report=2.j.' + 'A'.repeat(1900)),/过长/);
+  const malformed = structuredClone(source._wire); malformed[17][0].pop();
+  const fragment = '#clock-report=2.j.' + Buffer.from(JSON.stringify(malformed)).toString('base64url');
+  await assert.rejects(readReportFragment(fragment),/无效/);
+  await assert.rejects(createReportUrl({_wire:['x'.repeat(9000)]},'https://ujzk.github.io/TiPlay/chatgpt/'),/上限/);
+  if (typeof CompressionStream === 'function' && typeof DecompressionStream === 'function') {
+    const input = new Blob(['x'.repeat(9000)]).stream().pipeThrough(new CompressionStream('gzip'));
+    const bytes = Buffer.from(await new Response(input).arrayBuffer());
+    await assert.rejects(readReportFragment('#clock-report=2.g.' + bytes.toString('base64url')),/安全上限/);
+  }
+});
 
 test('clock lab uses process-event send/receive bounds rather than treating receipt as audio time', () => {
   const summary = phaseSummary(result(), 0);

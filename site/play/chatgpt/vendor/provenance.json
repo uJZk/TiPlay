@@ -1,0 +1,15 @@
+{
+  "package": "qrcode-generator",
+  "version": "1.4.4",
+  "license": "MIT",
+  "source": "https://registry.npmjs.org/qrcode-generator/-/qrcode-generator-1.4.4.tgz",
+  "sourceArchiveSha256": "ab6ed47d378877441deae95972e07b2716c26545a735a23aa6b9d442b33026ed",
+  "upstreamFileSha256": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
+  "bundledFileSha256": "c7561b0b08ae8571c59d1c5e379502ccc2b821926191cc101f002f2807a91b93",
+  "licenseSource": "https://raw.githubusercontent.com/kazuhikoarase/qrcode-generator/master/LICENSE",
+  "licenseSha256": "3a850fa5f08101db6f40676c2786e10bd2cd5fff7b12ffdf1e0c434d4e49d90c",
+  "modifications": [
+    "Replace only the AMD/CommonJS footer with export default qrcode; retain the complete upstream QR implementation and copyright header."
+  ],
+  "runtimeNetworkRequests": false
+}

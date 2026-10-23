@@ -1,5 +1,5 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
-export const VERSION = 'clock-lab-v1';
+export const VERSION = 'clock-lab-v2';
 export const PHASES = ['正常', '主线程负载', '恢复'];
 export const percentile = (values, fraction) => {
   if (!values.length) return null;
@@ -48,7 +48,7 @@ export function phaseSummary(result, phase) {
     const noBoundary = !result.events.some(event => event.p >= first.send && event.p <= last.receive && interrupts(event));
     if (minimumSpanMs > 0 && noBoundary) {
       const processedMs = (last.totalFrames - first.totalFrames) * 1000 / result.rate;
-      frames = { processedMs, minimumSpanMs, maximumSpanMs,
+      frames = { actualFrameDelta: last.totalFrames - first.totalFrames, processedMs, minimumSpanMs, maximumSpanMs,
         differenceRangeMs: [processedMs - maximumSpanMs, processedMs - minimumSpanMs],
         effectiveRatePpmRange: [(processedMs / maximumSpanMs - 1) * 1e6, (processedMs / minimumSpanMs - 1) * 1e6],
         frameCoordinateProgressMs: (last.frame - first.frame) * 1000 / result.rate,
@@ -60,7 +60,22 @@ export function phaseSummary(result, phase) {
   const dateCompared = dates.length > 1 ? { spanMs: dates.at(-1).p - dates[0].p,
     dateMinusPerformanceMs: dates.at(-1).date - dates[0].date - (dates.at(-1).p - dates[0].p) } : null;
   const lifecycleComplete = !(result.caps.events > 0);
+  const range = key => { const values = rows.map(row => row[key]).filter(finite); return values.length ? [Math.min(...values),Math.max(...values)] : [null,null]; };
+  const nativeRows = rows.filter(row => row.nativeFresh && row.nativeP >= rows[0].p && row.nativeP <= rows.at(-1).p);
+  const reports = result.reports.filter(row => row.phase === phase && row.visible
+    && row.receive >= (rows[0]?.p ?? Infinity) && row.receive <= (rows.at(-1)?.p ?? -Infinity));
+  const rendererRows = rows.filter(row => row.renderer), available = rendererRows.filter(row => row.renderer.state === 'available');
+  let renderer = { state: rendererRows.at(-1)?.renderer.state || 'unavailable', samples: available.length,
+    underrunEventsDelta: null, underrunDurationDeltaMs: null, totalDurationDeltaMs: null, regressed: false };
+  if (available.length >= 2) {
+    const first = available[0].renderer, last = available.at(-1).renderer;
+    renderer = { ...renderer, underrunEventsDelta: last.underrunEvents - first.underrunEvents,
+      underrunDurationDeltaMs: last.underrunDurationMs - first.underrunDurationMs,
+      totalDurationDeltaMs: last.totalDurationMs - first.totalDurationMs,
+      regressed: last.underrunEvents < first.underrunEvents || last.underrunDurationMs < first.underrunDurationMs || last.totalDurationMs < first.totalDurationMs };
+  }
   return { phase, name: PHASES[phase], samples: rows.length, excludedSamples: all.length - rows.length,
+    segmentStartMs: rows[0]?.p ?? null, segmentEndMs: rows.at(-1)?.p ?? null,
     lifecycleComplete,
     foregroundSegments: segments.length, endpointSelection: 'longest uninterrupted visible/running segment',
     requestedIntervalMs: 4, actualIntervalP50Ms: percentile(pairs.map(pair => pair.dp), .5),
@@ -68,9 +83,13 @@ export function phaseSummary(result, phase) {
     multi128FramePairs: q === null ? null : pairs.filter(pair => pair.dc > q * 1.5).length,
     backwardsContextPairs: pairs.filter(pair => pair.dc < 0).length,
     backwardsPerformancePairs: pairs.filter(pair => pair.dp < 0).length,
-    getter: lifecycleComplete ? endpoints(rows, 'c') : null, nativeTimestamp: lifecycleComplete ? endpoints(rows.filter(row => row.nativeFresh
-      && row.nativeP >= rows[0].p && row.nativeP <= rows.at(-1).p), 'nativeC', 'nativeP') : null,
-    probes: probes.length, probeRoundTripP95Ms: percentile(probes.map(row => row.receive - row.send), .95), frames: lifecycleComplete ? frames : null, dateCompared,
+    getter: lifecycleComplete ? endpoints(rows, 'c') : null, nativeTimestamp: lifecycleComplete ? endpoints(nativeRows, 'nativeC', 'nativeP') : null,
+    nativeValidSamples: nativeRows.length, dateSamples: dates.length,
+    probes: probes.length, probeRoundTripP95Ms: percentile(probes.map(row => row.receive - row.send), .95),
+    probeRoundTripMaxMs: probes.length ? Math.max(...probes.map(row => row.receive - row.send)) : null,
+    frames: lifecycleComplete ? frames : null, dateCompared, renderer,
+    reportCount: reports.length, reportReceiptIntervalP95Ms: percentile(reports.slice(1).map((row, index) => row.receive - reports[index].receive), .95),
+    contextBaseLatencyRangeMs: range('baseLatencyMs'), contextOutputLatencyRangeMs: range('outputLatencyMs'),
     loadTasks: result.load.filter(row => row.phase === phase).length,
     loadDurationP95Ms: percentile(result.load.filter(row => row.phase === phase).map(row => row.durationMs), .95) };
 }

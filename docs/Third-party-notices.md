@@ -126,3 +126,11 @@ Apache-2.0 label, retained and disclosed in the vendor provenance. The identity/
 adapter matches the existing Bouncy Castle 1.79 padded proof convention. See
 [vendored license](../site/play/vendor/tssrp6a/LICENSE) and
 [provenance](../site/play/vendor/tssrp6a/README.md).
+
+## Diagnostic summary QR codes
+
+The independent ChatGPT audio-clock test page uses qrcode-generator 1.4.4 by
+Kazuhiko Arase under the MIT license. The QR implementation is self-hosted; only
+its module export wrapper is adapted. See the retained
+[license](../site/play/chatgpt/vendor/QR-LICENSE.txt) and pinned
+[source provenance](../site/play/chatgpt/vendor/provenance.json).

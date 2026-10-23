@@ -7,15 +7,15 @@
 <meta name="robots" content="noindex">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; media-src 'self' blob:; img-src 'self' data:; style-src 'self'; script-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>TiPlay · ChatGPT 音频时钟测试</title>
-<link rel="stylesheet" href="style.css">
-<script type="module" src="app.js"></script>
+<link rel="stylesheet" href="style.css?v=2">
+<script type="module" src="app.js?v=2"></script>
 </head>
 <body>
 <main>
-<p class="eyebrow">TiPlay / ChatGPT 测试页 · clock-lab-v1</p>
+<p class="eyebrow">TiPlay / ChatGPT 测试页 · clock-lab-v2</p>
 <h1>音频时间，究竟慢在哪里？</h1>
 <p class="intro">用独立音频图对照浏览器读数、工作线程帧进度与主线程负载。不需要连接手机，也不使用 TiPlay 的播放或时钟代码。</p>
-<section class="card" aria-labelledby="setup-title">
+<section class="card" id="setup" aria-labelledby="setup-title">
 <h2 id="setup-title">开始一次对照</h2>
 <p>推荐保持页面在前台，完成 90 秒：正常 30 秒 → 主线程负载 30 秒 → 恢复 30 秒。测试音音量较低，可随时关闭。</p>
 <div class="settings">
@@ -28,7 +28,11 @@
 <progress id="progress" max="90" value="0" aria-label="测试进度"></progress>
 <div class="metrics"><div><span>当前阶段</span><strong id="phase">—</strong></div><div><span>已运行</span><strong id="elapsed">0.0 秒</strong></div><div><span>实际采样率</span><strong id="actual-rate">—</strong></div><div><span>工作线程量子</span><strong id="quantum">—</strong></div></div>
 </section>
-<section class="card" aria-labelledby="result-title"><h2 id="result-title">结果与证据边界</h2><div id="results"><p>完成后显示分阶段结果。每次开始会替换上一次结果；先导出需要保留的数据。</p></div></section>
+<section class="card" id="local-results" aria-labelledby="result-title"><h2 id="result-title">结果与证据边界</h2><div id="results"><p>完成后显示分阶段结果。车机不能下载时，打开大字卡拍照，或让手机扫描摘要二维码。</p></div>
+<div class="actions"><button id="show-card" disabled>大字结果卡 · 拍照</button><button id="show-qr" disabled>手机扫码取摘要</button></div><p id="share-status" role="status"></p></section>
+<section class="card" id="received" hidden aria-labelledby="received-title"><h2 id="received-title">收到的报告 · 摘要</h2>
+<p id="received-status" role="status">正在读取摘要…</p><div id="received-content"></div>
+<div class="actions"><button id="received-download" disabled>手机保存摘要 JSON</button><button id="received-card" disabled>查看大字卡</button><button id="received-back">返回测试，不自动开始</button></div></section>
 <details class="card"><summary>具体测什么？</summary>
 <ul>
 <li>每 4 ms 请求读取主线程 <code>currentTime</code>，同时记录实际间隔，核对批量推进与重复读数。</li>
@@ -41,5 +45,7 @@
 </details>
 <footer><a href="../">返回 TiPlay</a><a href="https://github.com/uJZk/TiPlay/releases">下载</a></footer>
 </main>
+<dialog id="photo-dialog" class="photo-dialog"><div id="photo-content"></div><button id="photo-close">关闭结果卡</button></dialog>
+<dialog id="qr-dialog" class="qr-dialog"><h2>手机扫码取摘要</h2><p id="qr-status" role="status"></p><canvas id="qr-canvas" hidden aria-label="诊断摘要二维码"></canvas><button id="qr-close">关闭二维码</button></dialog>
 </body>
 </html>

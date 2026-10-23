@@ -1,9 +1,11 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
-import { VERSION, PHASES, summarize } from './analysis.js';
+import { VERSION, PHASES, summarize } from './analysis.js?v=2';
+import { buildReport, createReportUrl, readReportFragment, summaryJson } from './report-share.js?v=2';
+import { renderQr } from './qr.js?v=2';
 
 const el = id => document.getElementById(id);
 const limits = Object.freeze({ samples: 30000, reports: 4000, probes: 1000, events: 1000, load: 6000 });
-let run = null, exported = null, sequence = 0;
+let run = null, exported = null, sequence = 0, shareReport = null, receivedReport = null, receiveRevision = 0;
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const bounded = (result, key, row) => {
   if (result[key].length < limits[key]) result[key].push(row);
@@ -23,6 +25,7 @@ function renderer(context) {
 }
 function event(kind, fields = {}) {
   if (!run) return;
+  if (Object.hasOwn(run.result.eventAttempts,kind)) run.result.eventAttempts[kind]++;
   bounded(run.result, 'events', { p: relative(run), kind, ...fields });
 }
 function setBusy(busy) {
@@ -30,6 +33,58 @@ function setBusy(busy) {
   el('rate').disabled = busy; el('duration').disabled = busy;
 }
 function format(value, decimals = 2) { return finite(value) ? value.toFixed(decimals) : '不可用'; }
+function element(tag, text, className) {
+  const node = document.createElement(tag); if (text !== undefined) node.textContent = text;
+  if (className) node.className = className; return node;
+}
+function reportCard(report) {
+  const card = element('div', undefined, 'photo-card');
+  card.append(element('h2', 'TiPlay 音频时钟 · 结果摘要'));
+  card.append(element('p', `${report.labVersion} · 上下文 ${report.actualRate} Hz · ${report.completion} · ${format(report.elapsedMs / 1000,1)} 秒`, 'card-meta'));
+  const phases = element('div', undefined, 'photo-phases');
+  for (const phase of report.phases) {
+    const section = element('section'); section.append(element('h3',phase.name));
+    const span = phase.segmentStartMs === null ? null : (phase.segmentEndMs - phase.segmentStartMs) / 1000;
+    section.append(element('p', `选段 ${format(span,1)} 秒 · 排除 ${phase.excludedSamples} 样本${phase.lifecycleComplete ? '' : ' · 边界不完整'}`, 'card-meta'));
+    section.append(element('span','读数 − 计时','card-label'));
+    section.append(element('strong', phase.getterDifferenceMs === null ? '不可比较' : `${format(phase.getterDifferenceMs,1)} ms`, 'card-number'));
+    section.append(element('span','处理帧 − 记录时基区间','card-label'));
+    section.append(element('strong', phase.frameDifferenceLowerMs === null ? '不可比较'
+      : `[${(Math.floor(phase.frameDifferenceLowerMs * 10) / 10).toFixed(1)}, ${(Math.ceil(phase.frameDifferenceUpperMs * 10) / 10).toFixed(1)}] ms`, 'card-range'));
+    section.append(element('p', `断续 ${phase.discontinuities ?? '未知'} · 探针 P95 ${format(phase.probeRttP95Ms,1)} ms`, 'card-meta'));
+    section.append(element('p', `处理 ${phase.actualFrameDelta ?? '未知'} 帧 · ${phase.segments} 个前台段`, 'card-meta'));
+    phases.append(section);
+  }
+  card.append(phases);
+  const warnings = [];
+  if (Object.values(report.caps).some(value => value > 0)) warnings.push('记录达到上限：' + Object.entries(report.caps).filter(([,n]) => n).map(([key,n]) => `${key} ${n}`).join(' / '));
+  if (report.source.recordedHiddenEvents || report.source.recordedNonRunningEvents) warnings.push(`已记录后台 ${report.source.recordedHiddenEvents} / 非运行 ${report.source.recordedNonRunningEvents} 次，选段已隔开`);
+  const marks = report.marks;
+  warnings.push(`爆音标记：已记录 ${marks.recordedTotal} 次${marks.attemptedTotal === null ? '（源记录不完整，总数未知）' : ` / 点击 ${marks.attemptedTotal} 次`}${marks.omittedRecorded ? `；摘要省略 ${marks.omittedRecorded} 条` : ''}`);
+  if (marks.timesMs.length) warnings.push('标记时刻：' + marks.timesMs.map(value => `${format(value / 1000,1)}s`).join('、'));
+  if (report.error) warnings.push(report.error);
+  for (const warning of warnings) card.append(element('p',warning,'card-warning'));
+  card.append(element('p','仅摘要；计时粗化误差未知，不能据此确认物理时钟或爆音原因。', 'card-meta'));
+  return card;
+}
+function openCard(report) {
+  el('photo-content').replaceChildren(reportCard(report)); el('photo-dialog').showModal();
+}
+async function openQr() {
+  if (!shareReport) return;
+  el('qr-status').textContent = '正在生成摘要二维码…'; el('qr-canvas').hidden = true; el('qr-dialog').showModal();
+  try {
+    const transfer = await createReportUrl(shareReport,location.href);
+    const maxPixels = Math.floor(Math.min(640,innerWidth - 48,innerHeight - 230));
+    renderQr(el('qr-canvas'),transfer.url,{maxPixels}); el('qr-canvas').hidden = false;
+    el('qr-status').textContent = '手机扫一扫，只传诊断摘要。完整原始数据仍留在车机，不上传服务器。';
+    window.__clockLabShareUrl = transfer.url;
+  } catch (error) { el('qr-status').textContent = describeError(error); }
+}
+function downloadJson(value, name) {
+  const blob = new Blob([value], { type:'application/json' }), url = URL.createObjectURL(blob), link = document.createElement('a');
+  link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url),1000);
+}
 function renderSummary(result) {
   const summary = result.summary, target = el('results'); target.replaceChildren();
   const wrap = document.createElement('div'); wrap.className = 'table-wrap';
@@ -121,12 +176,16 @@ async function finish(value, completion, error = null) {
   if (run !== value) return;
   run = null; value.result.summary = summarize(value.result); exported = value.result;
   renderSummary(exported); setBusy(false); el('export').disabled = false;
+  try {
+    shareReport = buildReport(exported); el('show-card').disabled = false; el('show-qr').disabled = false;
+  } catch (cause) { el('share-status').textContent = `摘要未能生成：${describeError(cause)}。原始结果仍在上表，可拍照。`; }
   el('status').textContent = error ? `${completion}：${describeError(error)}` : `${completion}，可导出 JSON。`;
   window.__clockLabResult = exported;
 }
 async function start() {
   if (run) return;
-  exported = null; el('export').disabled = true; el('status').textContent = '正在启动音频…'; setBusy(true);
+  exported = null; shareReport = null; el('export').disabled = true; el('show-card').disabled = true; el('show-qr').disabled = true;
+  el('share-status').textContent = ''; el('status').textContent = '正在启动音频…'; setBusy(true);
   if (!window.isSecureContext || !window.AudioContext || !window.AudioWorkletNode) {
     el('status').textContent = '此浏览器不支持安全上下文中的 AudioWorklet。请使用本页 HTTPS 地址。'; setBusy(false); return;
   }
@@ -139,7 +198,7 @@ async function start() {
       timer: null, raf: null, pending: new Map(), lastProbe: -Infinity, lastSlowRead: -Infinity, lastUi: -Infinity,
       work: 1, stopping: false, result: { version: VERSION, durationSeconds, requestedRate, rate: context.sampleRate,
         timeOrigin: performance.timeOrigin, userAgent: navigator.userAgent, samples: [], reports: [], probes: [], events: [], load: [],
-        caps: {}, nativeReadErrors: 0, expiredProbes: 0, physicalOutputMeasured: false,
+        caps: {}, eventAttempts: { state:0, visibility:0, pop:0, tone:0, pagehide:0 }, nativeReadErrors: 0, expiredProbes: 0, physicalOutputMeasured: false,
         protocol: { requestedSampleIntervalMs: 4, workletReportIntervalMs: 40, probeIntervalMs: 250,
           loadPerAnimationFrameMs: 6, phaseNames: PHASES, limits } } };
     run = value; window.__clockLabResult = null;
@@ -147,7 +206,7 @@ async function start() {
     event('state', { state: context.state }); event('visibility', { visible: document.visibilityState === 'visible' });
     // Resume while the user's click is still active; load the external CSP-safe module in parallel.
     const resumed = context.resume();
-    await context.audioWorklet.addModule(new URL('./probe-worklet.js', import.meta.url));
+    await context.audioWorklet.addModule(new URL('./probe-worklet.js?v=2', import.meta.url));
     if (run !== value || value.stopping) return;
     const node = new AudioWorkletNode(context, 'clock-probe', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
     value.node = node;
@@ -184,10 +243,41 @@ el('tone').addEventListener('change', () => { if (run?.node) { event('tone', { e
 el('mark').addEventListener('click', () => { event('pop', { contextMs: run?.context.currentTime * 1000 }); el('status').textContent = '已记录这个时刻，测试继续。'; });
 el('export').addEventListener('click', () => {
   if (!exported) return;
-  const blob = new Blob([JSON.stringify(exported, null, 2) + '\n'], { type: 'application/json' });
-  const url = URL.createObjectURL(blob), link = document.createElement('a');
-  link.href = url; link.download = `TiPlay-ChatGPT-clock-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-  link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadJson(JSON.stringify(exported,null,2) + '\n',`TiPlay-ChatGPT-clock-${new Date().toISOString().replace(/[:.]/g,'-')}.json`);
 });
+el('show-card').addEventListener('click', () => { if (shareReport) openCard(shareReport); });
+el('show-qr').addEventListener('click', openQr);
+el('photo-close').addEventListener('click', () => el('photo-dialog').close());
+el('qr-close').addEventListener('click', () => el('qr-dialog').close());
+el('received-card').addEventListener('click', () => { if (receivedReport) openCard(receivedReport); });
+el('received-download').addEventListener('click', () => { if (receivedReport) downloadJson(summaryJson(receivedReport),'TiPlay-clock-summary.json'); });
+el('received-back').addEventListener('click', () => {
+  receiveRevision++;
+  history.replaceState(null,'',location.pathname + location.search); receivedReport = null;
+  el('received').hidden = true; el('setup').hidden = false; el('local-results').hidden = false;
+});
+async function receiveFragment() {
+  if (!location.hash.startsWith('#clock-report=')) {
+    receiveRevision++; receivedReport = null; window.__clockLabReceivedReport = null;
+    el('received').hidden = true; el('setup').hidden = false; el('local-results').hidden = false; return;
+  }
+  const revision = ++receiveRevision, fragment = location.hash;
+  if (run) await finish(run,'页面已离开');
+  receivedReport = null; window.__clockLabReceivedReport = null;
+  el('received-content').replaceChildren(); el('received-download').disabled = true; el('received-card').disabled = true;
+  el('received-status').textContent = '正在读取摘要…';
+  el('setup').hidden = true; el('local-results').hidden = true; el('received').hidden = false;
+  try {
+    const report = await readReportFragment(fragment);
+    if (revision !== receiveRevision) return;
+    receivedReport = report;
+    el('received-content').replaceChildren(reportCard(receivedReport));
+    el('received-status').textContent = '这是从车机收到的诊断摘要，不含完整原始采样。没有自动启动音频，也没有上传。';
+    el('received-download').disabled = false; el('received-card').disabled = false;
+    window.__clockLabReceivedReport = receivedReport;
+  } catch (error) { if (revision === receiveRevision) el('received-status').textContent = `无法读取摘要：${describeError(error)}`; }
+}
+receiveFragment();
+window.addEventListener('hashchange',receiveFragment);
 document.addEventListener('visibilitychange', () => event('visibility', { visible: document.visibilityState === 'visible' }));
 window.addEventListener('pagehide', () => { if (run) { event('pagehide'); finish(run, '页面已离开'); } });
