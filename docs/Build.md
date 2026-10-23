@@ -7,14 +7,12 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The current release
-candidate is **0.2.20-beta.14** (code **56**), with diagnostic/cache revision **v80**.
-The latest published prerelease remains beta.13/code55/v79 until the signed workflow
-and independent publication checks finish. Run
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
+prerelease is **0.2.20-beta.14** (code **56**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v79** with WebRTC DataChannel as the formal live-media path.
-The signed beta.13 APK and deployed v79 page use the same verified build commit below;
+the deployed page uses **v80** with WebRTC DataChannel as the formal live-media path.
+The signed beta.14 APK and deployed v80 page use the same verified build commit below;
 subsequent documentation commits do not change the artifacts or tag. Software checks
 are in [Testing](Testing.md#webrtc-integrated-acceptance).
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
@@ -110,108 +108,107 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta release
 
-Published [TiPlay 0.2.20-beta.13](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.13),
-code **55**, is paired with deployed webpage **v79**. Prerelease **421554656** was
-published at **2026-10-23 07:34:49 UTC** after independent artifact and deployment checks.
-Every language's download entry opens the version-independent
-[GitHub Releases index](https://github.com/uJZk/TiPlay/releases).
+Published [TiPlay 0.2.20-beta.14](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.14),
+code **56**, is paired with webpage **v80**. Independent artifact and deployment
+checks passed. Every language's download entry opens the
+version-independent [GitHub Releases index](https://github.com/uJZk/TiPlay/releases).
 
-This release fixes two independently reproduced live-audio waveform defects:
-resuming an already faded tail applied its envelope twice, and voice transitions
-instantly switched media gain between 1 and 0.2. CarPlay/mirror shared mixing now
-continues the recovery envelope and uses the existing 5 ms fade for media ducking,
-including voice tails. Actual fresh PCM, recovery tails and retired samples share
-one source-deadline calculation; zero padding cannot age a short tail across a
-larger render block. Debug retains rejected retired-tail epoch/generation and
-source-age evidence separately from successor streams.
+This release preserves independent render-rate fitting when native output-phase
+measurements reset, using one bounded applied-rate controller. Native phase checks
+retain their own evidence; rate projection and actual PCM/tails retain full source
+uncertainty and deadlines. Voice recovery uses actual contiguous PCM and retained
+Soxr preparation, pays the 20 ms wait once and reuses source conversion, phase checks
+and mixing. It fixes permanent recovery waits, finite short utterances on large
+render blocks, conflicting 280 ms plans and first presentation-anchor promotion.
 
-AirPlay URL video budgeting is **256 MiB**, as requested, retaining 32 queued
-pictures and counting the held picture in byte ownership. CarPlay/mirror remain at
-64 MiB. This capacity change is separate from live-audio repairs and cannot fix
-sustained insufficient decoding throughput. The LIVI-based CarPlay borrowing and
-session-practice work is explicitly deferred in [Todo](Todo.md#engineering-follow-up).
-See [waveform verification](Testing.md#media-clock-and-continuous-audio-acceptance),
+Immediate buffered AirPlay flushes use the protocol's 23-bit sequence, retain the
+boundary packet, clear old anchors and isolate already-prefetched track origins.
+Unsupported deferred ranges return explicit RTSP 501 without playback mutation.
+Debug records fit selection, observed context pauses and voice readiness as bounded
+scalars. See [verification](Testing.md#media-clock-and-continuous-audio-acceptance),
 [Diagnostics](Diagnostics.md) and [AirPlay](AirPlay.md).
 
 ### Source validation and remaining scope
 
 | Check | Evidence for this release |
 | --- | --- |
-| Browser unit suite | **777 passed** on the functional source; independent real-Soxr signal oracles cover recovery, ducking, source progress and legal/expired short tails through 64/128/256/1024-frame blocks. |
-| Scoped Android/JVM tests | **22 audio-diagnostic tests passed** before the metadata update; the subsequent 40-case protocol/schema preflight includes those cases rather than adding 40 independent cases. |
-| Version/site preflight | **9** release-draft, **2** root-site, **35** browser-diagnostic and **40** native cases across four classes passed. All **239** checked inputs were byte-identical after version normalization. |
-| Real browser | Chromium 151 production-CSP media-clock checks passed through actual AudioWorklet output, independent CarPlay/mirror references, suspend/resume and worker/main Canvas; all **61** runtime source hashes remained stable during the run. |
-| Signed release | Release lint/build and independent APK/source/checksum, package, signer, runtime and native-library checks passed. |
-| Complete Android CI | Skipped at the user's explicit request; focused tests and release lint/build do not replace it. |
-| Root deployment/public downloads | **188** URL checks accepted after the targeted recheck below; **10** removed paths returned direct 404 and **5** unauthenticated release/download checks passed. |
+| Functional browser suite | **814 passed** before version-only changes; all **138** checked inputs remain byte-identical after normalizing three version-bearing JavaScript files. |
+| Functional native suite | **69 scoped cases passed**, with mobile debug assembly; metadata preflight repeats some of these cases. |
+| Independent signals | **76** voice waveform cases, **26** lifecycle/short-utterance cases and **7** media oracles pass on the final functional source, including actual PCM/source progress and legal/expired output. |
+| Version/site preflight | **62** browser, **51** native cases across four classes, **9** release-draft and **2** root-site tests passed; these scopes overlap the functional suites. |
+| Real browser | Chromium 151 production-CSP media-clock checks pass again on beta.14/v80; all **61** runtime hashes remain unchanged during execution. |
+| Signed release | Release lint/build and independent package, signer, runtime, ABI, DEX, source-archive and checksum verification passed. |
+| Complete Android CI | Skipped at the user's explicit request; scoped tests and release lint/build do not replace it. |
+| Root deployment | **138** files and **188** URL checks match; **106** cache entries exist, eight download pages use the Releases index, and **10** removed-path checks return direct 404. |
 
 ### Artifact and deployment evidence
 
-The signed APK, byte-identical `git archive` source ZIP and deployed page came from
-`70a86088e8ec57c1adb24045d28c1f06f9300f0f`, tagged `v0.2.20-beta.13`.
-The [signed workflow](https://github.com/uJZk/TiPlay/actions/runs/39917075886) and
-[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39917163410) both succeeded.
-Publication preserved the three independently downloaded assets:
+Prerelease **421892511** was published at **2026-10-23 13:50:47 UTC**. The signed APK,
+byte-identical `git archive` source ZIP and deployed page came from
+`59efe314ae8e1a4b21b86c0feb451c624ff13e4b`, tagged `v0.2.20-beta.14`.
+The [signed workflow](https://github.com/uJZk/TiPlay/actions/runs/39962490704) and
+[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39962485128) succeeded.
+Publication preserved the three independently downloaded and checked assets:
 
 | Asset | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `TiPlay-0.2.20-beta.13.apk` | 101,060,905 | `2b4161736d7bdcc0a0762af40d720468e72cdae7367042ca0fc3edf407235765` |
-| `TiPlay-0.2.20-beta.13-source.zip` | 20,873,583 | `46c91e8dbdb7b58e6eab6315c70b31f09bf7d00fdf391465b4163a351b24d6d0` |
-| `SHA256SUMS.txt` | 191 | `19e7ba65d3f4fdafa1fafcde908c6fc257e07071b8d471533fe1461e7536d286` |
+| `TiPlay-0.2.20-beta.14.apk` | 101,060,901 | `d8c5e1aaa1ee239fbcfe27d05178270da07a86136cd9154f93f58183932418c4` |
+| `TiPlay-0.2.20-beta.14-source.zip` | 20,900,562 | `44bf8fe6eacfeb5232057b8e80d03cacddba722599c4ab2b0c22caf44e948eac` |
+| `SHA256SUMS.txt` | 191 | `af669ebe2e00c2f5eb986f883d594a8d1207a524516b587a5a91579b1234bb2a` |
 
-The non-debug APK uses `com.ujzk.tiplay` and matches published beta.12's signing
-certificate, SHA-256
+All **18** supported 64-bit ELF libraries meet 16 KiB LOAD alignment, and
+`zipalign -P 16` passes. All **7** packaged JNA libraries match beta.13, including
+three inherited legacy ABI files. DEX inspection finds all **8** new class/method
+contracts in the actual release APK; the beta.13 negative control contains none.
+The signed workflow was dispatched from `main` with the exact build SHA; the
+published lightweight tag independently resolves to that same SHA.
+
+The APK uses non-debug package `com.ujzk.tiplay`, code56, and the same signing
+certificate as published beta.13, SHA-256
 `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`.
-Both runtime identity files match the hash-pinned DiPlay 0.2.18 inputs and beta.12
-byte for byte. Source excludes runtime identity, signing credentials and field
-captures; the APK contains only the two intended runtime identity files. RTC
-libraries cover `arm64-v8a`, `armeabi-v7a`, `x86` and `x86_64`. All **18** supported
-64-bit ELF libraries passed 16 KiB LOAD alignment, and `zipalign -P 16` passed.
-All **7** packaged JNA libraries match beta.12, including three inherited legacy ABI
-files. DEX inspection confirms the seven retired-tail diagnostic fields and logger
-class are present; marker presence does not establish physical playback quality.
+Both runtime identity files match the pinned DiPlay 0.2.18 inputs and beta.13;
+source archives exclude credentials and private captures. The APK contains only
+the two intended runtime files. Native/DEX inspection checks packaged code and
+source identity, not actual vehicle sound. RTC libraries cover `arm64-v8a`,
+`armeabi-v7a`, `x86` and `x86_64`.
 
-The [root website](https://ujzk.github.io/TiPlay/) matches **138** assembled files,
-including the **106**-entry cache manifest and eight Releases-index download pages.
-The initial check matched 187/188 URLs; the unchanged `airplay-captions.js` returned
-one HTTP 503. After the user's repair/retry instruction, its ordinary and exact
-build-query URLs both returned HTTP 200 and the expected 1,510-byte SHA-256. The
-original failure remains recorded; its upstream/intermediary origin is unknown.
-No source change or second deployment was needed. The combined result accepts all
-188 original checks, with two additional targeted requests. Removed independent
-WebRTC paths return direct 404 without redirects. Public release/index/checksum
-GETs and APK/source HEADs all passed with matching checksum bytes and lengths.
+The [root website](https://ujzk.github.io/TiPlay/) matches the exact build's assembled
+site, canonical SHA-256
+`e5eaa6a73b68abb7ccabdb0fa129452fec962b311da7a822e6f8b4635cd77f0a`.
+All 188 ordinary/build-query URL checks passed without automatic retries, old bytes
+or HTTP 503; the 10 removed `webrtc`/`WebRTC`/legacy-transport checks returned direct
+404 without redirects. Unauthenticated release/index/checksum GETs and APK/source
+HEADs also pass, with matching checksum bytes and content lengths.
 
 ### Remaining scope
 
-CarPlay touch/non-touch, mirror and separate URL-audio clicks still require actual
-phone/vehicle retesting. These waveform fixes do not establish that all audible
-clicks are eliminated. Beta.12 capture replay also identifies bursty mirror supply;
-a full-10-ms-read startup guard was rejected because lower recovery counts came
-with more emitted silence. Occasional stutter, sustained slow URL decoding,
-MiniBili startup and screen borrowing/return remain in [Todo](Todo.md).
+The captured approximately 1.8-second cumulative audio/performance-clock progress
+difference has no confirmed underlying cause. Old snapshots cannot distinguish
+brief context pauses, internal scheduling and output-clock behavior. The separate
+clock-compensation/recovery defects are reproduced and repaired; this does not
+establish that every CarPlay, mirror or separate URL-audio click is eliminated.
+Actual phone/vehicle playback, physical latency and parameter tuning remain in
+[Todo](Todo.md#browser-and-carplay-audio).
 
-Software output timestamps, desktop decoding and optional renderer statistics do
-not measure vehicle speakers, panel timing or optimal profile settings. Renderer
-statistics can update slowly or pause while hidden. Android socket expiry and
-empirical parameter calibration remain open. Old captures cannot gain new
-diagnostic fields retroactively; Debug raw capture retains synchronous disk
-backpressure. Non-1x tempo output retains rounded sample counts; sample-preserving
-short-source claims remain at 1x. Reference-based screen-loan changes were skipped.
+URL video budgeting remains **256 MiB**, with 32 queued pictures and the held
+picture included in byte ownership; CarPlay/mirror remain at 64 MiB. This does not
+repair sustained insufficient decoding throughput. LIVI-based CarPlay borrowing
+and session-practice work remains explicitly deferred. Very short isolated PCM
+still requires real filter lookahead; temporary shortages are not signal EOF.
+Debug raw capture retains disk backpressure, and renderer statistics alone do not
+measure vehicle speakers or panels.
 
 ### Previous release provenance
 
-[Beta.12](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.12), code **54** /
-page **v78**, was published at **2026-10-23 01:12:19 UTC** as release **421352301**.
-Its signed APK, exact source ZIP and deployed page came from
-`9e21deb16faaf483deb16d66cfe9bf6a09c6567b`, tagged `v0.2.20-beta.12`.
-The [signed workflow](https://github.com/uJZk/TiPlay/actions/runs/39881628977) and
-[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39881632648) succeeded.
+[Beta.13](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.13), code55 / v79,
+was published at **2026-10-23 07:34:49 UTC** as prerelease **421554656**. Its signed
+APK and deployed page came from `70a86088e8ec57c1adb24045d28c1f06f9300f0f`;
+[signed workflow](https://github.com/uJZk/TiPlay/actions/runs/39917075886) and
+[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39917163410) succeeded.
 Its published APK SHA-256 is
-`fb50f29bb81a6d7d438de8ce4de4faf19844fde2e8b9a1e80a62cf092c86a836`.
-Beta.13's signer, both runtime files and all seven JNA libraries were independently
-compared with that actual published APK. Historical validation remains evidence
-for its own build; earlier detailed release records remain in Git.
+`2b4161736d7bdcc0a0762af40d720468e72cdae7367042ca0fc3edf407235765`.
+Beta.14's signer, runtime files and native libraries are compared with that actual
+published APK; earlier detailed release records remain in Git.
 
 ## Updating an installed app
 

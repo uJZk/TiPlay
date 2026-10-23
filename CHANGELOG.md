@@ -17,8 +17,9 @@ recorded in [Build](docs/Build.md#beta-release).
 Verification: 814 browser tests, 69 scoped Android tests, mobile debug assembly,
 production-CSP Chromium media-clock checks, 76 independent voice waveform scenarios,
 26 lifecycle/short-utterance scenarios and seven media oracles. Full Android CI
-remains skipped at the user's request; signed release and deployment checks follow
-the existing delivery workflow.
+remains skipped at the user's request. Signed release lint/build, independent
+APK/source/checksum inspection and root deployment verification passed; exact
+provenance and remaining device checks are recorded in Build.
 
 ## 0.2.20-beta.8
 

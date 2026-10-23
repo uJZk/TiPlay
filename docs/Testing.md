@@ -470,7 +470,7 @@ Arrival guidance acquiring its first presentation anchor preserves its live filt
 later real generation changes still recover. This separate recovery defect does not
 establish the cause of the no-navigation pure-media field window.
 
-The beta.14 candidate's functional corrections pass all 814 browser tests, 69 scoped Android cases,
+The beta.14 functional corrections pass all 814 browser tests, 69 scoped Android cases,
 the mobile debug build and the production-CSP media-clock harness in Chromium 151.
 The browser runs bind unchanged runtime/test inputs. Full Android CI remains
 skipped at the user's request; these checks do not measure vehicle speaker output.
