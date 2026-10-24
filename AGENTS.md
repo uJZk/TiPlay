@@ -56,10 +56,10 @@ and measured slower-case exceptions. Rebuild and byte-verify the binaries using
 record frame-based live timing, causal output probes and natural URL completion;
 [Testing](docs/Testing.md#browser-wasm-verification) records browser and Android
 verification, including faulty-currentTime Chromium runs.
-The current release candidate is beta.16/code58 with webpage v84. Its CarPlay
+The current published prerelease is beta.16/code58 with webpage v84. Its CarPlay
 session/resource and single-initial-SETUP boundaries are documented in
 [AirPlay](docs/AirPlay.md#carplay-coexistence); [Build](docs/Build.md#beta-release)
-retains the verified published release and signer/runtime/source provenance.
+records its exact build commit, published artifacts, verification and signer/runtime/source provenance.
 The independent
 [Cloudflare Workers comparison](docs/Todo.md#cloudflare-workers-audio-comparison)
 and vehicle uploads remain separate unfinished work; native WebRTC audio tracks
