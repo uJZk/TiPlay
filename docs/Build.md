@@ -11,7 +11,7 @@ The Android/browser product version comes from `tiplayVersionName` and
 prerelease is **0.2.20-beta.14** (code **56**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v81** with WebRTC DataChannel as the formal live-media path.
+the deployed page uses **v82** with WebRTC DataChannel as the formal live-media path.
 The signed beta.14 APK retains its original build commit and release artifacts;
 the newer browser-only deployment is recorded below. Software checks
 are in [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -148,32 +148,39 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Current browser deployment
 
-The formal root webpage **v81** comes from
-`eeb6e90785c0826bc477970d2dc134524f818723`. Its
-[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39988197842)
-completed successfully. This browser-only update preserves APK
-**0.2.20-beta.14/code56**, its tag and all release assets.
+The formal root webpage **v82** comes from
+`d2c2609a6ef43eb0c443ef73413374cd1f36165f`. Its
+[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/40051166173)
+completed successfully. The published **0.2.20-beta.14/code56** APK, tag and release
+assets retain their original bytes. Android raw-capture and diagnostic changes
+in this source are verified by debug builds; they are not included in that
+previously published signed APK.
 
-The live-audio correction prevents batched main-thread audio-clock readings from
-resetting rate history. Render-fit candidates require a Worklet-confirmed sample
-domain and retain their original observation time. Native phase checks, DSP
-recovery thresholds, buffering and the 300 ms source deadline remain unchanged.
-All **847** browser tests and the independently run production-CSP Chromium 151
-check pass; all **61** runtime inputs remain unchanged during that run. Site
-assembly, two layout tests and the public-tree scan pass. Full Android CI remains
-skipped by user instruction; no Android implementation or APK rebuild is included.
+The page uses genuine libsoxr, FDK AAC, bulk audio kernels and SIMD SoundTouch
+WASM with the [documented browser/performance exceptions](Browser-wasm.md).
+Live timing uses actual render frames and causal output observations;
+URL audio completion follows native node completion. All **893** browser tests
+and **4,131** Android unit tests pass, together with three debug lint/build
+targets and native libsoxr checks. Five shipped WASM binaries reproduce
+byte-for-byte. Independent [GitHub Android checks](https://github.com/uJZk/TiPlay/actions/runs/40051166231)
+also pass both the complete Android job and the five-binary WASM reproduction job.
+Production-CSP Chromium checks include four faulty `currentTime`
+getters and a normal run, each retaining all **85** runtime hashes. See
+[Testing](Testing.md#browser-wasm-verification) for the detailed scope.
 
-Independent public verification completed at **2026-10-23 16:39:51 UTC**:
-all **149** files match the committed build, **106** cache entries exist,
-**11** ChatGPT v2 files retain their prior bytes, all **8** language download
-pages use the Releases index, and **10** removed-path checks return direct 404.
-The verification covers **169** URLs; the Pages job completed at **16:36:57 UTC**.
+Independent public verification completed at **2026-10-24 09:47:25 UTC+08:00**:
+all **182** files (**11,866,515 bytes**) match the committed build, all **86**
+Service Worker entries are available, and all **5** WASM binaries use
+`application/wasm`. The **11** ChatGPT v2 files retain their previous bytes,
+all **8** language download pages use the Releases index, and the **10** checked
+removed paths return direct 404, including the former libsoxr asm.js engine and
+wrapper generator. All **193** URL checks pass without redirects or retries.
 
-The independent ChatGPT diagnostic page remains v2. The requested
-[Cloudflare Workers WASM comparison](Todo.md#cloudflare-workers-audio-comparison)
-with bounded result uploads has not started and is the next-session task.
-Remaining audible clicks and effective render-progress deficits still require
-vehicle evidence; this deployment does not establish their resolution.
+The independent ChatGPT diagnostic page remains v2. The separate
+[Cloudflare Workers comparison and result uploads](Todo.md#cloudflare-workers-audio-comparison)
+remain unimplemented. Remaining audible clicks, vehicle performance and actual
+speaker/panel timing require physical evidence; software clock checks do not
+establish their resolution.
 
 ## Beta release
 

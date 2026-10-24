@@ -55,7 +55,11 @@ remain independent of clock correction.
 The main thread compiles live-audio modules before creating the AudioWorkletNode
 and passes compiled `WebAssembly.Module` values in `processorOptions`. Each node
 instantiates private memories before playback. Calibration runs in its own worker.
-The render callback neither downloads nor compiles code and never grows memory.
+The render callback initiates no downloads or explicit compilation and never
+grows memory. `WebAssembly.compile()` performs initial browser compilation before
+node creation; the browser may still lazily compile functions or optimize machine
+code in the background. This does not guarantee that playback is free of internal
+JIT activity.
 The live resampler has a fixed 16 MiB heap; the audio core uses fixed scratch space.
 Stream queues and network consumption credits keep their existing byte limits.
 No SharedArrayBuffer, cross-origin isolation or WASM threads are required.

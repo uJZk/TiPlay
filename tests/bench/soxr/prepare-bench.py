@@ -42,7 +42,8 @@ def main():
  metadata={'revision':revision,'wasmSha256':WASM_SHA,'wrapperSha256':WRAPPER_SHA,'baselineJsSha256':BASELINE_JS_SHA,'binaryen':'132.0.0','scope':'Historical references for benchmarks only; never a production fallback'}
  (output/'references.json').write_text(json.dumps(metadata,indent=2)+'\n')
  print('Prepared verified benchmark references:',output)
- print('Run:', 'node --disallow-code-generation-from-strings', output/'Benchmark.mjs', repo/'site/play/vendor/soxr/soxr.asm.js', '4000 500')
+ print('Restore the preceding shipped candidate as described in tests/bench/soxr/README.md:', repo/'work/soxr-before.mjs')
+ print('Run:', 'node --disallow-code-generation-from-strings', output/'Benchmark.mjs', repo/'work/soxr-before.mjs', '4000 500')
 
 HEADER='// SPDX-License-Identifier: GPL-3.0-only\n// libsoxr LGPL-2.1-or-later; generated wasm2js (asm.js-like; not validated asm.js).\nexport default function createSoxr() {\n'
 FOOTER="\nconst wasi_snapshot_preview1 = {\n environ_get: () => 0,\n environ_sizes_get: (count, size) => { const heap = new Int32Array(bufferView.buffer); heap[count >> 2] = 0; heap[size >> 2] = 0; return 0; },\n clock_time_get: (_clock, _low, _high, pointer) => { new Uint8Array(bufferView.buffer, pointer, 8).fill(0); return 0; },\n proc_exit: code => { throw new Error(`libsoxr exited (${code})`); }\n};\nconst api = asmFunc({ wasi_snapshot_preview1 });\napi._initialize();\nconst module = { exports: api };\nfor (const name of ['tiplay_create', 'tiplay_process', 'tiplay_ratio', 'tiplay_input_done', 'tiplay_output_done', 'tiplay_delete', 'malloc', 'free']) module['_' + name] = api[name];\nObject.defineProperties(module, { HEAPU8: { get: () => new Uint8Array(api.memory.buffer) }, HEAPF32: { get: () => new Float32Array(api.memory.buffer) } });\nreturn module;\n}\n"
