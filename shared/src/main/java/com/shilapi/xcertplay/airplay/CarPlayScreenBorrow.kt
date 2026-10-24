@@ -22,6 +22,7 @@ data class CarPlayScreenBorrowState(
 internal class CarPlayScreenBorrow(private val send: (Map<String, Any?>) -> Boolean) {
     private val stateLock = Any()
     private val deliveryLock = Any()
+    private var delivering = false // guarded by deliveryLock, including synchronous send callbacks
     private var desired = false
     private var sent: Boolean? = null
     private var owner = CarPlayScreenOwner.Unknown
@@ -115,25 +116,39 @@ internal class CarPlayScreenBorrow(private val send: (Map<String, Any?>) -> Bool
 
     private fun flush() {
         synchronized(deliveryLock) {
-            while (true) {
-                val delivery = synchronized(stateLock) {
-                    if (closed || !eventReady || sent == desired || (!desired && !returnNeeded)) return
-                    awaitingOwner = true
-                    Delivery(desired, generation, ownershipRevision)
+            // JVM monitors are reentrant. A send callback may repeat the same desired value
+            // before its write is committed; only this outer pump may deliver commands.
+            if (delivering) return
+            delivering = true
+            try {
+                while (true) {
+                    val delivery = synchronized(stateLock) {
+                        if (closed || !eventReady || sent == desired || (!desired && !returnNeeded)) return
+                        awaitingOwner = true
+                        Delivery(desired, generation, ownershipRevision)
+                    }
+                    // Never hold the state monitor across socket writes or callbacks. Reconcile
+                    // desired again after committing so stop/start cannot strand its successor.
+                    val delivered = send(command(delivery.borrowed))
+                    synchronized(stateLock) {
+                        if (closed) return
+                        // Even a retired channel may have delivered its borrow before being
+                        // replaced. Cancellation still owes a return on the current channel.
+                        if (delivered && delivery.borrowed) returnNeeded = true
+                        if (generation == delivery.generation) {
+                            if (!delivered) return
+                            sent = delivery.borrowed
+                            val confirmedDuringWrite = ownershipRevision > delivery.ownerRevision &&
+                                owner != CarPlayScreenOwner.Unknown
+                            awaitingOwner = desired != delivery.borrowed || !confirmedDuringWrite
+                            if (!delivery.borrowed && confirmedDuringWrite) returnNeeded = false
+                        }
+                        // A callback can replace the event channel too. Its queued desired
+                        // state must be pumped without committing the retired channel's write.
+                    }
                 }
-                // Socket writes may close or change the desired loan synchronously.
-                // Never hold the state monitor here; reconcile again after committing
-                // this delivery so a reentrant stop/start cannot strand its successor.
-                val delivered = send(command(delivery.borrowed))
-                synchronized(stateLock) {
-                    if (!delivered || closed || generation != delivery.generation) return
-                    sent = delivery.borrowed
-                    if (delivery.borrowed) returnNeeded = true
-                    val confirmedDuringWrite = ownershipRevision > delivery.ownerRevision &&
-                        owner != CarPlayScreenOwner.Unknown
-                    awaitingOwner = desired != delivery.borrowed || !confirmedDuringWrite
-                    if (!delivery.borrowed && confirmedDuringWrite) returnNeeded = false
-                }
+            } finally {
+                delivering = false
             }
         }
     }

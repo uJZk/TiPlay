@@ -1,17 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createReceiverNoticeTracker } from '../../site/play/receiver-presentation.js';
 
 const source = readFileSync(new URL('../../site/play/app.js', import.meta.url), 'utf8');
-const functions = ['showPortal', 'resumeCarPlay', 'applyStatus'].map(name => {
+const functions = ['showPortal', 'resumeCarPlay', 'applyStatus', 'updateReceiverNotice'].map(name => {
   const start = source.indexOf(`function ${name}(`);
   const end = source.indexOf('\n}', start) + 2;
   return source.slice(start, end);
 }).join('\n');
 
 function page() {
-  return new Function(`
-    let active = true, portalRevision = null, status = null, fitRequestedAt = 0;
+  return new Function('createReceiverNoticeTracker', `
+    let active = true, portalRevision = null, status = null, fitRequestedAt = 0, config = null;
+    let receiverFailure = false;
+    const receiverNotices = createReceiverNoticeTracker(), browserNotice = { reset() {}, update() {} }, t = key => key;
     let releases = 0, resizes = 0, viewportCancellations = 0;
     const stage = { hidden: false }, panel = { hidden: true };
     const $ = () => panel;
@@ -28,7 +31,7 @@ function page() {
     return { applyStatus, resumeCarPlay, stage, panel,
       trustUpdates, trustPrompt: () => trustPrompt,
       state: () => ({ active, releases, resizes, viewportCancellations }) };
-  `)();
+  `)(createReceiverNoticeTracker);
 }
 
 test('TiPlay icon returns to the portal once and keeps the session available to resume', () => {

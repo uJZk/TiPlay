@@ -1,10 +1,18 @@
 # Diagnostics
 
-Reproduce once, note the time and symptom, then use Android Advanced settings to **Save diagnostic report**. Enable **Debug mode** beforehand for detailed timing. Reports go to `Downloads/TiPlay`, falling back to an app-owned shareable copy. Review exported snapshots before posting with phone/APK versions and connection mode; keep credentials and captures out of Git.
+Reproduce, note the symptom/time, then **Save diagnostic report** in Android Advanced
+settings. Enable **Debug mode** beforehand for timing detail. Reports use
+`Downloads/TiPlay`, with an app-owned shareable fallback. Review before sharing;
+include phone/APK versions and connection mode. Keep credentials/captures outside Git.
 
 ## Monitor and log detail
 
-The browser **Performance monitor** is independent of Android Debug mode. Its overlay must not change the canvas, negotiated viewport or touch coordinates, and enables no extra tracing. Its fields are:
+Open the browser's default-collapsed **Diagnostics** section for connection-stage,
+candidate/channel detail and the **Performance monitor** switch. Healthy playback
+shows no success message; waiting/recovery and actionable problems stay concise.
+These controls are independent of Android Debug
+mode and enable no extra capture. The monitor overlay must not change the canvas,
+negotiated viewport or touch coordinates. Its fields are:
 
 | Field | Meaning |
 | --- | --- |
@@ -13,9 +21,26 @@ The browser **Performance monitor** is independent of Android Debug mode. Its ov
 | Delta | Latest synchronized canvas submission time minus iPhone scheduled presentation time; unavailable without a new synchronized draw within one second. This is not capture-to-display latency. |
 | Drops | Explicit browser input, scheduler, transfer-replacement and presentation discards in the current video configuration. It cannot count decoder-internal, network or phone loss. Replacement streams reset it; repeating a configuration does not. |
 
-Debug defaults off (Standard) at process start; persisted settings cannot re-enable it. Activities and services share the process-local switch. Enabling creates a session ID, start time, app version and capture configuration, immediately without reconnecting. Main settings shows its performance impact. Standard retains filtered connection, negotiation, failures and final summaries. Debug preserves unredacted messages and raw capture without sampling, queue drops, truncation or expiry.
+Debug starts off (Standard), regardless of persisted settings. Activities/services
+share its process-local switch. Enabling immediately creates session ID, start time,
+app version and capture configuration without reconnecting. Main settings warns of
+performance impact. Standard retains filtered connection/negotiation/failure/final
+summaries; Debug preserves unredacted messages and raw capture without sampling,
+queue drops, truncation or expiry.
 
-Raw capture covers incoming iPhone TCP control, encrypted protocol bytes, video, audio, timing, events and iAP tunnel data; RFCOMM traffic; browser HTTP headers/query/body before parsing (including rejected requests read by the server); USB discovery, attach/detach and permission events, device descriptors, open/reopen, configuration and interface claims/releases, request initialization/queue/wait/cancel/close, USB control setup/results, USBMUX, NCM and CH341 transfers, interrupt notifications, partial writes and failed transfer results; and PCM accepted by Android AudioTrack and the verified Bluetooth SCO output. USB lifecycle events and transfers carry connection/request identifiers; asynchronous input is captured once at completion before framing or parsing, including bytes drained after a timeout, with requested/completed lengths and failures. While Debug mode is enabled, AirPlay URL resources are forced through Android and their response bodies are captured too. Disabling the switch restores normal direct-resource eligibility; active browser playback reopens when the policy changes. Android owns A2DP/HFP encoding and USB host-controller signalling: an ordinary app cannot capture Bluetooth air packets, USB bus signalling, unread kernel buffers or packets lost before delivery. AudioTrack acceptance establishes submission, not audible car playback; the `android-audio/track` channel can include non-Bluetooth routes.
+Raw capture covers iPhone TCP control/encrypted protocol, video, audio, timing, events
+and iAP; RFCOMM; browser HTTP headers/query/body before parsing, including rejected
+requests; Android AudioTrack and verified SCO PCM; and USB discovery/permissions,
+descriptors, open/configuration/interface lifecycle, request queue/wait/cancel/close,
+control transfers, USBMUX/NCM/CH341, interrupts, partial writes and failures. USB records
+carry connection/request IDs and requested/completed lengths. Asynchronous input is
+captured once at completion before parsing, including bytes drained after timeout.
+Debug forces AirPlay URL resources through Android and captures response bodies;
+disabling restores direct eligibility, reopening active playback on policy changes.
+Android owns A2DP/HFP encoding and USB host-controller signalling. Capture cannot
+observe Bluetooth air packets, USB bus signalling, unread kernel buffers or packets
+lost before application delivery. AudioTrack acceptance proves submission, not sound;
+`android-audio/track` may include non-Bluetooth routes.
 
 The integrated WebRTC path retains bounded stage metrics: Android hub queue,
 transport submission to browser record read (including sender queue/network/reassembly),
@@ -65,47 +90,38 @@ status throttling does not suppress these dedicated snapshots. The event contain
 scalar telemetry, not authentication, touch coordinates, location, SDP, addresses,
 media bytes or native peer session identifiers. It does not change playback policy.
 
-`Video source:` is a separate receive-thread window summary. It counts only complete
-video-frame messages, excluding configuration and keepalives, and reports a local
-stream/window identity, cumulative frame numbers, actual window FPS, adjacent source
-PTS steps/missing/repeats/backward steps and adjacent complete-frame arrival gaps.
-Source PTS and monotonic arrival timestamps are compared only within their own
-domains. Window-boundary gaps remain visible, while new streams have separate
-identity and state. Missing PTS is not replaced with arrival time. Neither a sparse
-source cadence nor a PTS step alone proves network loss or source malfunction.
-The companion `Video source gap:` line preserves the frame pair for each window's
-largest PTS and arrival gaps, together with both measurements for that same pair.
-These maxima may come from different pairs. Source stream IDs are independent of
-browser video generations and epochs; associate them using timestamps and input
-references rather than equating their numbers.
+Receive-thread `Video source:` windows count complete frames, excluding configuration/
+keepalives. They retain stream/window identity, cumulative frames, actual FPS,
+adjacent PTS steps/missing/repeats/backward steps and complete-frame arrival gaps,
+including window boundaries. New streams reset identity/state. Compare source PTS
+and monotonic arrival within their own domains; missing PTS stays unknown. Sparse
+cadence/PTS steps alone cannot prove loss or malfunction.
+`Video source gap:` retains the frame pair and both measurements for each window's
+largest PTS/arrival gaps, which may be different pairs. Associate source IDs with
+browser generations/epochs through timestamps/input references, never numeric equality.
 
-The original video stream is captured once on the iPhone-to-Android input. Forwarding the
-video to the browser does not save another copy of that media payload. RTC reference
-records contain capture session, original channel, journal sequence and byte ranges,
-plus the decrypt/Annex-B transformation and downstream epoch/sequence. File append
-is not fsync durability. `captureIntegrity` exposes write failures; after an uncertain
-partial write, new exact-range references are suppressed until the next capture session.
+Video is captured once at iPhone-to-Android input; forwarding adds no payload copy.
+RTC references retain capture session, channel, journal sequence/ranges,
+decrypt/Annex-B transformation and downstream epoch/sequence. `captureIntegrity`
+exposes write failures; uncertain partial writes suppress new exact-range references
+until the next capture session. Append does not establish fsync durability.
 
-Debug capture cannot recover earlier traffic or observe before application I/O.
-Successful export/zero failures do not prove uninstrumented coverage. The ZIP stores
-encoded media, not uncompressed video or browser worklet PCM. Check `sessions.tsv`,
-time ranges, channel bytes and integrity counters, not ZIP size; retained versions
-can have different coverage.
+Capture cannot recover earlier traffic or prove uninstrumented coverage. The ZIP
+stores encoded media, not uncompressed video or browser worklet PCM. Check
+`sessions.tsv`, time ranges, channel bytes and integrity counters; ZIP size and
+zero failures cannot establish coverage across retained versions.
 
-App-private `logs/raw-traffic.tsv` records tab-separated `epochMillis`, process-local
-sequence, channel, byte count and Base64 bytes; capture/start identifies the process.
-Consecutive chunks of at most 48 KiB preserve every byte; concatenate by channel.
-`/attempt` and `/written` distinguish attempted/accepted output. A reused synchronous
-buffered byte writer applies disk backpressure and flushes each record, without
-`fsync`/power-loss guarantees. The JDK bulk Base64 encoder reads an exact byte-buffer
-range directly; capture avoids copying source slices or constructing payload-sized
-Strings and then encoding them back to UTF-8. Journal and exported formats remain
-compatible with retained captures. The [encoding benchmark](../tests/bench/raw-capture/README.md)
-measures host encoding time and allocation separately from storage and Android
-device behavior. `RAW_CAPTURE failures` retains count, first/last failure times, source,
-safe cause and failed-byte-attempt upper bound. Sessions survive mode changes and
-process restarts until explicit capture/app-data clear; disabling Debug stops appends
-without erasing history. Video can consume substantial storage.
+App-private `logs/raw-traffic.tsv` stores tab-separated `epochMillis`, process-local
+sequence, channel, byte count and Base64 bytes; capture/start identifies processes.
+Concatenate ≤48 KiB chunks by channel. `/attempt` and `/written` distinguish
+attempted/accepted output. The reused synchronous writer propagates disk backpressure and
+flushes each record without `fsync`/power-loss guarantees. Bulk Base64 encodes exact
+source ranges without slice or payload-string copies; journal/export formats remain
+compatible. The [benchmark](../tests/bench/raw-capture/README.md) measures host
+encoding/allocation, not Android storage behavior. `RAW_CAPTURE failures` retains
+count, first/last times, source, safe cause and failed-byte-attempt upper bound.
+Sessions survive mode changes/restarts until capture/app-data clear. Debug disable
+stops appends without deleting history. Video needs substantial storage.
 
 Standard mode saves a single `TiPlay-yyyyMMdd-HHmmss-SSS.txt` containing the diagnostic report, without raw traffic. Debug mode uses the same naming pattern with `.zip`. The ZIP contains:
 
@@ -125,7 +141,15 @@ counts them and marks reconstruction incomplete while valid records still export
 Appends repair incomplete line boundaries without discarding fragments. Storage/read
 errors fail export. Sharing uses matching `text/plain`/`application/zip`; no clipboard action.
 
-The ZIP includes retained raw history, including earlier sessions. Disabling Debug stops capture but does not delete it; re-enable Debug to export it again. Saving does not erase the original capture. The saved-ZIP dialog offers **Clear captured data**. This deletes raw history and resets capture failure counters, preserving saved artifacts, settings and metadata logs. If capture is still active, clearing immediately begins a fresh session with the same configuration. Clearing uses the capture lock; an export already holding a snapshot can finish from its open file handle. Automatic storage-pressure stopping is not implemented. Standard TXT excludes raw history, but diagnostic messages previously recorded in Debug remain unredacted. Captures can contain credentials, pairing codes, personal data and media; keep them out of Git.
+The ZIP includes earlier sessions. Disabling Debug stops appends without deletion;
+re-enable it to export retained history. Saving preserves the capture. **Clear
+captured data** in the saved-ZIP dialog deletes raw history and resets failure
+counters, preserving saved artifacts, settings and metadata logs. Active capture
+starts a fresh session with unchanged configuration. Clearing takes the capture
+lock; an existing export snapshot can finish through its open handle. Storage
+pressure does not automatically stop capture. Standard TXT excludes raw history
+but retains previously recorded unredacted Debug messages. Captures may contain
+credentials, pairing codes, personal data and media; keep them out of Git.
 
 `captureIntegrity.timing` and `RAW_CAPTURE_TIMING` aggregate completed append calls,
 lock-wait/append totals and maxima for the current or last capture session, including
@@ -158,9 +182,11 @@ this is printing precision, not nanosecond measurement accuracy. Other numeric p
 the 16 KiB/256-field budget and reporting frequency remain unchanged. Bounded packing
 prioritizes per-stream fit identity/reason before optional detail and reports omissions.
 
-`renderQuantumFrames` and its observed minimum/maximum describe actual output blocks
-while Debug is active. They do not change the mapper's current 128-frame assumption;
-cross-browser conservatism still requires the [parameter checks](Todo.md#playback-parameter-evidence).
+Normal worklet feedback carries the current and observed maximum output-block sizes;
+Debug additionally retains `renderQuantumFrames` and its observed minimum/maximum.
+Output mapping uses a conservative 128-frame floor and expands for larger observed
+blocks. Cross-browser calibration still requires the
+[parameter checks](Todo.md#playback-parameter-evidence).
 Buffered music logs `stage=ANCHOR` at valid SETRATE and `stage=CLOCK` at actual clock
 delivery. The local owner and native generation are separate from browser epochs.
 Requested/selected RTP, receiver network NTP, monotonic anchor, one-time reserve,
@@ -292,10 +318,12 @@ behavior. Native phase reacquisition still requires two
 advancing pairs and retains its freshness/holdover limits.
 Debug `renderClockDomainGeneration`/`renderClockDomainChanges` identify worklet-confirmed
 sample continuity. `renderClockProbeState`/`renderClockProbeAgeMs` show pending
-confirmation; `renderClockProbeAccepted`, `renderClockProbeRejected` and
-`renderClockProbeReason` distinguish admission, expiry, invalid/run-external proof
-and domain acquisition. Initial acquisition normally discards a candidate. Counters
-restart with Debug; unknown age stays absent. No per-quantum logging is added.
+request/ACK probes; `renderClockProbeAccepted`, `renderClockProbeRejected` and
+`renderClockProbeReason` distinguish admission, expiry and invalid/run-external proof.
+Validated generation/frame frontiers enter the history on initial acquisition too;
+their causal interval spans request to ACK plus the reported render block, rather
+than treating ACK receipt as an exact sample time. Counters restart with Debug;
+unknown age stays absent. No per-quantum logging is added.
 Debug `contextObservedStateChanges`/`contextObservedNonRunningMs` retain observed
 transitions/non-running time between snapshots. Delayed/coalesced events may hide
 transitions; these counters cannot certify uninterrupted output.
@@ -328,21 +356,17 @@ The bounded scalar slot identifies the old epoch; Debug/reset clears it and miss
 timing remains unknown. Rejection prevents expired sound, not a proven steady-click cause.
 
 Beta.12/v78 excludes retained beta.11 records and first-snapshot totals. Its two
-sampled CarPlay clock-step recoveries/55.019 seconds versus beta.11's 188/730.046
-seconds do not establish controlled acoustic improvement; sources and load differ.
-Mirror's application underrun counter rises 116→618; this counts render-quanta
-entering/reentering recovery, not 502 distinct pops. Its source sample coordinates
-remain continuous, but a same-source incoming gap is 260 ms and the corresponding
-send-attempt gap 265 ms; all nine NoData units precede the later underrun window. The gap
-already exists before browser decoding; iPhone/network, receive scheduling and
-capture interference remain unseparated.
-Live renderer counters rise to 28/1194.648 ms during seconds 28.850–33.856, then stay
-unchanged through 253.856 while observed context duration advances. Seven of fifty
-snapshots show native time over 20 ms ahead, up to 98.2 ms; this does not prove direct
-acceptance. All observed render blocks are 128. Reference decoding of 6,088 packets /
-5,401,600 frames has no decode, non-finite or over-full-scale errors. No source-deadline
-rejection was observed, so absent retained trigger fields are expected.
-These observations neither capture physical output nor establish one cause for all clicks.
+CarPlay clock-step recoveries/55.019 s versus beta.11's 188/730.046 s have different
+sources/load and cannot establish acoustic improvement. Mirror underruns rise
+116→618 render-quanta, not 502 pops. Continuous source coordinates coexist with
+260 ms incoming/265 ms send-attempt gaps; all nine NoData units precede that window.
+iPhone/network, receive scheduling and capture interference remain unseparated.
+Renderer counters reach 28/1194.648 ms at 28.850–33.856 s, remaining unchanged through
+253.856 s despite context progress. Seven of fifty native timestamps are over
+20 ms ahead (maximum 98.2 ms), without proving direct acceptance. Observed blocks
+are 128 frames. Reference decoding of 6,088 packets/5,401,600 frames finds no decode,
+non-finite or over-full-scale errors. No observed source-deadline rejection explains
+absent trigger fields. None of this measures physical output or one universal click cause.
 The shared `AudioContext.playbackStats` reader supplies `renderStatsState`,
 `renderUnderrunEvents`, `renderUnderrunDurationMs` and `renderTotalDurationMs` for
 live Debug and URL `ENGINE_RENDER`. Unavailable/invalid/failed states retain unknown
@@ -397,7 +421,14 @@ microphone permission alone does not establish permission to start microphone ca
 in the background.
 
 Debug raw `iphone/carplay-screen-loan/events` retains sparse fixed-schema `STATE`,
-screen-data boundaries and one `CLOSE` per local `connectionId`. Compare desired/sent,
+screen-data boundaries, screen-command `COMMAND` events and one `CLOSE` per local
+`connectionId`. Command evidence records event generation/CSeq, borrow/return,
+elapsed time, RTSP status and plist command status separately. REQUEST, WRITTEN,
+RESPONSE, TIMEOUT, CAPACITY, CANCELLED and WRITE_FAILED are local boundaries;
+ACCEPTED/REJECTED/UNKNOWN describe command results, never a resource grant.
+The five-second deadline and 16 pending-record cap bound the response tracker; idle event
+read timeouts do not close the control/audio session or discard partial ciphertext.
+These details do not enter product status text. Compare desired/sent,
 actual owner, pending, `confirmedBorrow` and `carPlayHasScreen`; a sent request is not
 a grant. Close reasons distinguish known control/event EOF and failures; `UNSPECIFIED`
 does not assert a peer failure. The channel contains no sender identity or plist.
@@ -469,66 +500,57 @@ The ordinary bounded status prioritizes core policy evidence; complete plan fiel
 can require Debug. An allowlist entry does not guarantee that a budgeted payload
 contains it; check omission counts and keep absent fields unknown.
 
-Earlier mirror reads/draws advanced without additive drops; CarPlay also recorded
-capacity/pacing replacements. Queued pictures explain differing stage counts.
-The 64 MiB budget admitted four coded pictures before the frame limit. Sparse PTS,
-stale mapping and untimed pictures prevented stutter/latency attribution; that
-capture did not validate touch hold or catch-up.
+Earlier captures show mirror reads/draws advancing without additive drops and
+CarPlay capacity/pacing replacements. A 64 MiB budget admits four coded pictures;
+queued pictures explain differing stage counts. Sparse PTS, stale mapping and
+untimed pictures prevent latency attribution or validation of touch hold/catch-up.
 
-The beta.7/v73 waiting/connecting return was not an observed browser-process crash.
-Media ACKs stopped while control RPCs and 12–17 detailed status reports/second
-continued; `timeout` and `control-overload` exposed shared-executor interference.
-Normal media ACKs occupied 95.1% of its processed messages. Zero decode errors do
-not identify decoder failure; worker capture times do not establish browser
-transmission or separate queue, raw-write and callback cost. Control-queue isolation
-and bounded diagnostics address this demonstrated code path.
+Beta.7/v73 returned to waiting without an observed browser-process crash. Media
+ACKs stopped amid control RPCs and 12–17 detailed reports/second; `timeout` and
+`control-overload` exposed shared-executor interference. ACKs were 95.1% of processed
+messages. Control-queue isolation and bounded diagnostics address that path;
+zero decode errors and Worker capture times cannot identify decoder failure,
+prove browser transmission or separate queue/raw-write/callback costs.
 
-The beta.9/v75 raw session provides a different live-audio case. An active CarPlay
-touch window overlaps a recovered phase step near +38 ms, despite a populated audio
-queue and unchanged 20 ms audio network target. Other touch windows do not show the
-same recovery. Synthetic production-worklet controls reproduce a single ordered
-output-timestamp outlier causing two clock recoveries; this establishes a software
-failure path, not that every reported click has that cause. Getter duration and
-worklet render-report age must remain separate from main-thread-stall evidence.
+Beta.9/v75 has one touch window overlapping a +38 ms phase recovery despite queued
+audio and an unchanged 20 ms target; other touch windows do not. Synthetic Worklet
+controls reproduce one ordered output-timestamp outlier causing two recoveries,
+proving a software failure path rather than every click's cause. Getter duration,
+render-report age and main-thread-stall evidence remain separate.
 
-Historical mirror reconciliation found 2,504 ordinary/297 NoData units in 2,801
-continuous RTP units. The former pre-order NoData filter turned 19 known-silence
-units into a 206.8 ms sample hole and repeated filtering of resend responses.
-Response counts did not measure uncaptured outbound requests. Continuous browser
-records did not prove AAC sample continuity; retain source coordinates and explicit
-silence when interpreting underruns/deadlines.
+Historical mirror reconciliation finds 2,504 ordinary/297 NoData units in 2,801
+continuous RTP units. Pre-order filtering created a 206.8 ms hole from 19 silence
+units and refiltered resends. Response counts cannot measure uncaptured requests;
+continuous records cannot prove AAC sample continuity. Interpret underruns/deadlines
+with source coordinates and explicit silence.
 
 ## AirPlay URL playback evidence
 
-Beta.12 has one 3840×2160 AV1 attempt and two 640×360 attempts. The user confirms
-4K could not play continuously: its 26 scheduling underruns / 3.055517 seconds of
-gaps do not establish the cause of steady-playback clicks. The two 360p windows have zero recorded
-scheduling or renderer underruns, not proof of clean physical sound.
-In that beta.12 capture, 96 MiB holds one retained plus two queued 4K pictures;
-`video-budget` startup has about 92 ms of video despite roughly three seconds of
-ready PCM. The current shared animation-frame tick submits audio only through the
-common continuous A/V frontier and the 500 ms horizon. Pending video reads do not
-separate codec work, resource/demux waiting or main-thread load; requested
-`no-preference` and an unsupported hardware probe leave actual decoding unknown.
-A pre-budget-change 96 MiB synthetic 180 ms main-thread pause produces a 115.420 ms audio
-gap at 4K but none at 360p. A 12-second slow-video baseline produces 42 gaps while
-remaining within actual decoded video coverage. These reproduce scheduling limits,
-not vehicle codec speed or audible pops. An audio-master alternative was not adopted:
-continuously slower video can fall unboundedly behind; a 15-second single-read
-watchdog does not detect steady slow progress. Current URL video budgeting changes
-to 256 MiB at the user's request; the above field/oracle evidence remains the 96 MiB
-baseline. Synchronization/horizon stay unchanged; see [follow-up](Todo.md#ordinary-airplay).
+Beta.12 contains one 3840×2160 AV1 attempt and two 640×360 attempts. The user confirms
+non-continuous 4K playback: 26 underruns/3.055517 s of gaps cannot explain steady-playback
+clicks. Zero scheduling/renderer underruns at 360p do not prove clean sound. Its
+96 MiB budget holds one retained/two queued 4K pictures; `video-budget` starts with
+about 92 ms video despite three seconds of PCM. Shared-rAF audio submission remains
+bounded by common continuous A/V coverage and 500 ms. Pending reads cannot separate
+codec, resource/demux and main-thread costs; `no-preference`/unsupported probes leave
+actual decoding unknown.
+With that historical 96 MiB budget, a synthetic 180 ms main-thread pause creates
+a 115.420 ms 4K audio gap (none at 360p); slow video creates 42 gaps in 12 s within
+decoded coverage. These measure scheduling, not codec speed or sound. Audio-master
+was rejected because video can fall unboundedly behind; a 15 s single-read watchdog
+cannot detect continuous slow progress. Current budgeting is 256 MiB; these baselines
+do not validate it. Synchronization/horizon remain unchanged; see
+[follow-up](Todo.md#ordinary-airplay).
 
-Beta.10 MiniBili/another URL reached playing after 10.411/16.779 seconds, with
-buffering first reported at 8.903/12.490 seconds while preparation was paused.
-The immediate preparation indicator covers that resource/import/decode interval;
-startup time and `video-budget` do not certify a 750 ms end-to-end guarantee.
+Beta.10 MiniBili/another URL reached playing after 10.411/16.779 s; buffering appeared
+at 8.903/12.490 s during paused preparation. The immediate indicator covers
+resource/import/decode preparation; neither startup nor `video-budget` guarantees
+750 ms end-to-end readiness.
 
 Beta.9 MiniBili reached CDN 206 without a demonstrated UA/Referer failure. A
-123,248-byte WebVTT became a roughly 164k-character `data:` URL, blocking serial FCUP
-through unanswered 10-second waits. Local inline handling avoids that exchange and
-reports `INLINE_DATA`. This proves neither CDN risk control, iPhone size limits nor
-successful playback of every resource.
+123,248-byte WebVTT became a ~164k-character `data:` URL and blocked serial FCUP
+on unanswered 10 s waits. Local `INLINE_DATA` handling avoids that exchange without
+proving CDN risk control, iPhone size limits or universal playback.
 
 URL casting has its own media engine and AudioContext. CarPlay/mirror audio telemetry
 does not establish that this context is running. Compare playback ID, command revision

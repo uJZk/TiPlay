@@ -2,9 +2,17 @@
 
 TiPlay supports an Android phone plus car browser. Follow [installation](Install.md) and [build](Build.md) instructions; use a parked car for physical acceptance.
 
+The current receiver/session source passes **908 browser tests** and **4,189 Android
+unit tests** (2,366 shared, 1,817 common and six home), all three required debug lint
+targets and all three debug APK builds. The real Chromium presentation component
+suite passes Chinese/English at 320/800 pixels. Its structured events do not establish
+media transport or physical playback; the full media-page harness is blocked by
+this environment's managed ICE policy. Published artifacts remain recorded in
+[Build](Build.md#beta-release).
+
 ## Browser WASM verification
 
-The current source passes **893 browser tests** and the complete required Android
+The beta.15 WASM build passed **893 browser tests** and the complete required Android
 command: **4,131 unit tests**, all three debug lint targets and all three debug APK
 assemblies. The native libsoxr JNI/signal/concurrency checks pass. All five shipped
 WASM binaries rebuild byte-for-byte from their pinned complete source inputs.
@@ -94,18 +102,12 @@ Protocol checks cover TDR1 fragmentation, record credit, independent audio
 subscription barriers, control limits, cancellation, decoder admission and
 explicit overload/stall recovery. No HTTP media/control fallback may bypass SRP.
 
-The beta.7/v73 source passed 528 browser tests and 121 distinct scoped native
-regressions across targeted rounds, including the final 31-test run and mobile
-debug build. Captured Minibili and ordinary MP4/HLS browser replay passed before
-the final diagnostic-only changes. Live policy and clock evidence is described
-in [Diagnostics](Diagnostics.md#live-video-policy-evidence); these tests do not
-establish optimal vehicle thresholds or a unique field failure cause. Full Android
-CI remains skipped at the user's request; signed build and deployment evidence
-is tracked in [Build](Build.md#beta-release).
+Historical Minibili and ordinary MP4/HLS replay evidence does not establish
+optimal vehicle thresholds or a unique field failure cause. See
+[live policy evidence](Diagnostics.md#live-video-policy-evidence) and
+[published artifacts](Build.md#beta-release).
 
-The beta.8/v74 control/audio correction passed all 561 browser tests on
-Node 22.23.3, 52 scoped Android tests across seven actual classes, and the mobile
-debug build. Native queue regressions hold an application RPC while 300 ordinary
+Native queue regressions hold an application RPC while 300 ordinary
 ACKs drain, preserve canonical capture ordering and verify authentication,
 audio-lease FIFO, malformed credit, owner retirement and bounded overload evidence.
 Real Chromium DataChannel integration passed 17 checks, and ordinary 44.1 kHz AAC
@@ -127,7 +129,7 @@ continuous 48 kHz device-equivalent conversion had no zero frames, maximum step
 residual 1.49e-8 and relative error -169.54 dB over the measured 1.7-second window.
 Both constructor-requested and actual graph rates were observed. This offline
 conversion checks signal continuity; it does not measure the physical device
-driver, speaker output or vehicle latency. Full Android CI remains skipped.
+driver, speaker output or vehicle latency.
 
 The current URL scheduler also has deterministic tests for a callback arriving after
 the submitted audio tail, a task around native `start()`, both source rates and a
@@ -143,11 +145,10 @@ signal checks and healthy YouTube windows cannot exclude faults in that independ
 live-audio path. The later beta.9 report also includes mirror clicks and a higher
 CarPlay click frequency during touch; both require physical retesting.
 
-The published beta.9 source passed 604 browser tests, 82 scoped Android tests in
-seven classes and the mobile debug build. The Android cases cover resource-route
+Android cases cover resource-route
 reuse/revocation, redirects and partial manifests, bounded startup/continuity
 diagnostics, device-fit/source-anchor evidence and the audio/video diagnostic
-allowlists. The full Android CI remains skipped. Mirror worklet regressions
+allowlists. Mirror worklet regressions
 preserve sample progress when the first valid source anchor follows untimed PCM,
 reject expired output, retain unknown origins and isolate the concurrent CarPlay
 stream. CarPlay recovery tests retain the pre-recovery phase/rate/uncertainty and
@@ -179,9 +180,8 @@ updates can have long PTS intervals without dropped frames. Compare target and a
 cursor delay during convergence, and retain unknown source/output timing instead of
 calling every missing anchor a passed latency measurement.
 
-The beta.11/v77 playback source passed **688 browser tests**, **116 scoped Android
-tests across 10 classes**, and the mobile debug build. It adds an independent
-hardware-clock/real-Soxr oracle: repeated 10 ms output-pipeline changes no longer
+An independent hardware-clock/real-Soxr oracle verifies that repeated 10 ms
+output-pipeline changes no longer
 discard a coherent applied device rate, while a real 38 ms change still recovers.
 The fixture covers an actual oscillator change, source progress, nonzero PCM and
 the unchanged 30/300 ms recovery/deadline policy. An idle stream emits no samples
@@ -214,6 +214,19 @@ or in-flight SETUP. Tests cover 1999/2000 ms, settings spanning the wait, new lo
 browser loss/re-authentication,
 atomic retirement and first-frame viewport reconciliation. Control/audio continuity,
 keyframe requests, stale owners and mirror isolation retain their earlier checks.
+`CarPlayCommandResultsTest` and `CarPlayEventChannelTest` add independent coverage
+for bounded command results, monotonic expiry, late/duplicate replies, encrypted
+response fragments across idle read timeouts and retired readers. A synchronized
+race fixture prevents old modesChanged from overwriting a successor in low-level
+reader fixtures. Responses never authorize ownership.
+Socket lifecycle fixtures exercise real TCP/UDP and encrypted RTSP SETUP rather
+than only installing internal fields. Exact initial-SETUP retries preserve the
+original ports/cipher; other initial transactions receive 455. Stream SETUP remains
+valid. One cipher per verification epoch rejects nonce-zero replay, and fresh
+PairVerify cannot decrypt a prior epoch's ciphertext. Resource cases check port
+reuse, worker retirement, late accepts, blocked writes and close during publication.
+Delivery-pump fixtures reproduce same-value recursion and transport/state-lock
+inversion, and verify stop/return across a channel change during the first borrow.
 The beta.12 field capture confirms a mirror loan retaining control, ownership return
 without old-session SETUP, fallback after 2.007 seconds and actual browser draw after
 5.119 seconds. Both URL loans are confirmed before peer TEARDOWN/control EOF after
@@ -221,8 +234,7 @@ without old-session SETUP, fallback after 2.007 seconds and actual browser draw 
 path, not seamless return or iPhone internal intent. Broader picture/sound acceptance
 remains in Todo; published sources remain those in [Build](Build.md#beta-release).
 
-The beta.12/v78 source passed **737 browser tests**, **172 scoped Android tests
-in 12 classes**, and the mobile debug build, including capture lock-wait/failed-append timing, retained deadline
+Capture regressions cover lock-wait/failed-append timing, retained deadline
 evidence, playback-generation rejection and fixed diagnostic schemas. Browser cases
 add exact 20/10/40 ms timestamp, 8/30 ms recovery and URL watermarks/lookahead/submission
 boundaries; 17 deliberate parameter/comparison mutations are caught. These checks
@@ -238,11 +250,8 @@ The production-CSP shared-clock harness verifies the actual live graph's rendere
 state/counters, nonzero PCM and independent CarPlay/mirror references, with all 61
 runtime source hashes unchanged. Chromium 151 exposes the API without experimental flags. Slow or visibility-
 gated updates and unavailable counters remain unknown; this is not speaker capture.
-Full Android CI remains skipped at the user's request. The beta.12/code54/v78
-metadata preflight additionally passed 9 draft, 2 root-site, 23 browser diagnostic
-and 34 native diagnostic cases; functional source hashes match the preceding runs
-after normalizing version fields. Signed artifacts and publication remain recorded
-separately in [Build](Build.md#beta-release).
+Signed artifacts and publication are recorded separately in
+[Build](Build.md#beta-release); historical scoped runs do not replace current CI.
 
 The subsequent beta.12/v78 read-only field review binds sid2, 255.671 seconds and
 63,290 records; its 208 ZIP entries pass CRC/path/length and sequence/offset checks.
@@ -269,15 +278,14 @@ exercises `video-budget` startup, all 106 targeted cases passed again; productio
 source was unchanged after the full run. The replacement-surface rejection now
 uses an 8192×8192 sample to preserve the same admission failure boundary. CarPlay/mirror 64 MiB,
 32 queued URL frames, URL DSP, watermarks, 500 ms audio scheduling and synchronization
-remain unchanged; subsequent live-audio fixes are described below. The reference-based CarPlay
-changes are deferred, and full Android CI was not rerun for this capture review.
+were unchanged by that budget adjustment; subsequent live-audio fixes are described
+below. The reference-based CarPlay changes were outside that capture review, and
+full Android CI was not rerun for that review.
 
-The published beta.10/v76 source passed 643 browser tests, 158 scoped Android tests in 13 classes
-and the mobile debug build. Native cases additionally cover fixed source-fit/quantum
+Native cases additionally cover fixed source-fit/quantum
 fields, six-place MAD printing, one-time 400 ms SETRATE anchors, HTTP failure phases
 and FCUP deadline ownership/logger isolation. Source/quantum Debug collection and
-diagnostic observation preserve real Soxr PCM and recovery decisions. Full Android CI
-remains skipped at the user's request. The final v76 release source passed 90
+diagnostic observation preserve real Soxr PCM and recovery decisions. The v76 source passed 90
 complete-page checks with the explicit desktop software decoder override and real
 AAC/ELD, shared media-clock and MP4/HLS harnesses. Shared-clock source hashes remained
 unchanged throughout the run; hardware paths were explicitly unavailable on this desktop.
@@ -301,18 +309,7 @@ genuinely wider drift, expired references, historical/repeated pairs and reacqui
 after opposite extreme device rates. None of these software limits establishes optimal
 vehicle tuning, driver/GPU memory consumption or acoustic continuity.
 
-The historical beta.6 integrated source passed 237 scoped Android regressions, 473 browser tests,
-90 full-page checks, 17 real-PeerConnection checks, seven SRP security cases with
-Bouncy Castle vectors and 24 JVM compatibility checks. Media-clock and AirPlay
-photo/audio/MP4/HLS E2E passed. Full-page Chromium playback used an explicit
-software-only test override, with strict desktop hardware-unavailable rejection
-checked separately. The full Android CI run is skipped at the user’s explicit request. Signed hashes,
-root deployment and publication are tracked in [Build](Build.md#beta-release).
-
-Remote 0.2.21-beta.3/v71 historically passed 2,203 shared, 1,748 common and six home
-unit tests, 450 browser tests, eight isolated-site checks and nine release-draft
-checks. Those counts belong to the old experimental source and do not validate
-the current beta. The former isolated-site assembler is no longer the production deployment:
+The former experimental isolated-site assembler is no longer the production deployment:
 `https://ujzk.github.io/TiPlay/` is replaced directly, the independent `/webrtc/`
 site is removed without alias/redirect. All language download pages link to the
 GitHub Releases index without a version-specific URL;
@@ -354,11 +351,29 @@ unknown and `within-bound` is not a physical latency certificate.
 
 Regression checks distinguish receiver preparation, waiting, handshake, readiness,
 recovery and failure, and verify that actual display ownership selects CarPlay or
-AirPlay waiting copy. Main settings retain short `CarPlay status | AirPlay status`
-titles with a consolidated automatic-hint area below. Duplicate causes and routine stage prose are hidden; explicit operation results stay below their source control. All existing copy
-is preserved and the 15 additional Android entries are present in all 8 locales.
+AirPlay waiting copy. AirPlay preparation/playback and pending screen return
+suspend the CarPlay presentation, preserving its raw phase for release. Regression
+checks retain independent permission/AirPlay failures and restore real CarPlay
+failure after release. Main settings prioritize AirPlay during casting; all eight
+locales include the waiting title. Automatic hints stay below the short status,
+and explicit operation results stay below their source control.
 Browser codec/protocol/takeover errors use persistent closable cards, dismissed
 errors stay hidden on rerender, and code/address feedback stays beside Connect.
+The browser omits connection/playback success text and hides empty status rows.
+Technical details and the monitor switch stay inside collapsed Diagnostics; web
+cases cover expansion, actionable waits/errors and retry advice.
+`receiver-ui.mjs` runs the production presentation functions against real Chromium
+DOM/CSS/CSP in Chinese and English at 320/800 pixels. Its structured event sequences
+cover pending borrow, first-frame epochs, return, URL pause/buffering, old codec
+errors and repeatable failure notices. It proves presentation behavior, not media
+decoding, pairing or DataChannel delivery. A managed browser policy that produces
+no ICE candidates still blocks the full media-page harness.
+
+Host regressions bind ownership to controller, control session and resource state,
+rechecking after external callbacks. They reject queued old Active/Frame and
+Start/End notifications, preserve independent audio and exercise missing-stream
+recovery. AirPlay receiver state/revision is one atomic snapshot; a later revision
+distinguishes a new same-label failure from an old polled value.
 
 Physical phone/vehicle checks of status timing during permissions, USB enumeration,
 reconnection, AirPlay pause/buffering and browser notification dismissal remain
@@ -435,12 +450,12 @@ extra source age. Both sides of the deadline remain checked, without a larger li
 These software checks do not establish that every vehicle click or the
 separate URL-audio graph is fixed.
 
-This final source passed **777/777 browser tests**, **22 scoped Android audio
+The beta.13 source passed **777/777 browser tests**, **22 scoped Android audio
 diagnostic tests** and the real Chromium 151 production-CSP media-clock harness.
 All 61 browser runtime hashes stayed unchanged through actual AudioWorklet,
 CarPlay/mirror output, suspend/resume and worker/main Canvas checks. Independent
 review accepted the corrected short-tail bounds; the earlier 771-test intermediate
-run is superseded. Full Android CI remains waived by the user. These changes are
+run is superseded. That historical scoped run did not include full Android CI. These changes are
 published as beta.13/v79; [Build](Build.md#beta-release) identifies the verified artifacts and deployment.
 The beta.13/code55/v79 metadata preflight additionally passed 9 release-draft,
 2 root-site, 35 browser-diagnostic and 40 scoped native diagnostic/protocol cases
@@ -511,10 +526,10 @@ Arrival guidance acquiring its first presentation anchor preserves its live filt
 later real generation changes still recover. This separate recovery defect does not
 establish the cause of the no-navigation pure-media field window.
 
-The beta.14 functional corrections pass all 814 browser tests, 69 scoped Android cases,
+The beta.14 functional corrections passed all 814 browser tests, 69 scoped Android cases,
 the mobile debug build and the production-CSP media-clock harness in Chromium 151.
-The browser runs bind unchanged runtime/test inputs. Full Android CI remains
-skipped at the user's request; these checks do not measure vehicle speaker output.
+The browser runs bind unchanged runtime/test inputs. That historical scoped run
+omitted full Android CI; these checks do not measure vehicle speaker output.
 Beta.14/code56/v80 metadata preflight also passes 9 release-draft tests, 2 root-site
 tests, 62 browser checks and 51 native cases across four classes. Those scoped
 counts overlap the functional suites. All 138 checked functional inputs remain
@@ -547,29 +562,15 @@ receipt age still leaves about 276–283 ms, so main getter lag alone cannot exp
 the whole deficit. Unknown send/queue delays and process scheduling remain;
 these counters do not establish a physical DAC rate.
 
-An independent Chromium 151 experiment reproduces continuously processed 128-frame
-blocks while the main getter frequently advances by four blocks. The old short-pair
-gate resets 2,313 times; skipping repeated readings still resets 322 times and
-never forms a fit. The rate-only path therefore keeps the original long-window
-range/MAD gates and requires a worklet token acknowledgement before admitting a
-candidate. The process checks exact actual-frame continuity, including variable
-block sizes, before acknowledging its generation and run endpoints. Candidates
-retain their original capture time, must match the known generation/run, and use
-one bounded pending slot at the existing 100 ms fit-point cadence. Expired proofs
-retain the 750 ms freshness limit. Reset never reuses tokens; node/context identity
-retires old acknowledgements. A new domain discards its crossing candidate and
-immediately freezes an unachieved render target; independent fresh native evidence
-can still win. Raw capture gaps retain their existing reset boundary. The fence
-does not establish getter phase freshness or turn port arrival into a clock sample;
-native phase gates, latency-estimate uncertainty and the 300 ms source limit remain.
-The correction initially passed 841 browser tests; the final v81 source passes all
-847 tests and a separately run production-CSP Chromium 151 harness, with all 61
-runtime inputs unchanged during that run. The v81 site layout, public-tree scan
-and document word limits also pass. One simultaneous full-Node/browser
-attempt lost a valid timed reference; the separate quiet run passes. Load-dependent
-reference acquisition remains an acceptance item, without assigning that failure
-to a particular scheduling cause. Full Android CI remains skipped by user request;
-these JavaScript-only checks do not measure vehicle speaker output.
+A historical Chromium 151 experiment reproduced continuous 128-frame Worklet
+progress while the main getter advanced in four-block batches: the old short-pair
+gate reset 2,313 times, and skipping repeated readings still reset it 322 times.
+The v81 token fence was an intermediate correction. Current live timing instead
+uses actual frame counters and causal request/ACK intervals; a valid first
+frontier is retained. See [current clock roles](Browser-wasm.md#audio-clock-roles)
+and [WASM verification](#browser-wasm-verification). Load-dependent reference
+acquisition remains a field acceptance item; none of these observations measures
+vehicle speaker output or a physical DAC rate.
 
 The independent [ChatGPT clock test](https://ujzk.github.io/TiPlay/chatgpt/) runs
 90 seconds of baseline, bounded main-thread load and recovery. It records getter

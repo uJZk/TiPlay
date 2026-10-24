@@ -14,6 +14,7 @@
     <string name="settings_carplay_connecting_status">CarPlay connecting</string>
     <string name="settings_carplay_recovering_status">CarPlay reconnecting</string>
     <string name="settings_carplay_failed_status">CarPlay failed</string>
+    <string name="settings_carplay_waiting_airplay_status">CarPlay waiting for AirPlay</string>
     <string name="settings_carplay_stopping_status">CarPlay disconnecting</string>
     <string name="settings_airplay_starting_status">AirPlay starting</string>
     <string name="settings_airplay_mirroring_status">AirPlay mirroring</string>

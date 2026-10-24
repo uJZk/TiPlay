@@ -7,6 +7,7 @@ import com.shilapi.xcertplay.transport.BlockingDuplexByteStream
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.Closeable
+import java.io.IOException
 import java.math.BigInteger
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -14,6 +15,8 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
+import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -100,9 +103,14 @@ class AirPlaySession(
     internal val isClosed: Boolean get() = closed.get()
     private val notified = AtomicBoolean(false)
     private var eventServer: ServerSocket? = null
-    private var eventSocket: Socket? = null
-    private var eventCipher: ControlCipher? = null
+    @Volatile private var eventSocket: Socket? = null
+    @Volatile private var eventCipher: ControlCipher? = null
     private var eventCseq = 0
+    private var eventGeneration = 0L
+    @Volatile private var eventCipherInstalled = false
+    private val initialSetupLock = Any()
+    private var initialSetup: InitialSetupTransaction? = null
+    private val commandResults = CarPlayCommandResults()
     private var pendingNightMode: Boolean? = null
     private val firstTouchSendLogged = AtomicBoolean(false)
     private val touchSendFailureLogged = AtomicBoolean(false)
@@ -110,6 +118,12 @@ class AirPlaySession(
     private var keepAliveSocket: DatagramSocket? = null
     private var keepAliveThread: Thread? = null
     private val eventWriteLock = Any()
+    // Dispatch may call listeners that send commands, so never hold eventWriteLock around it.
+    // Activation takes these locks in the same order to reject retired ownership notifications.
+    private val eventReadLock = Any()
+    private val eventResourcesLock = Any()
+    private val pendingEventSockets = linkedMapOf<ServerSocket, Socket>()
+    private val activeEventSockets = linkedSetOf<Socket>()
     private val eventThreads = CopyOnWriteArrayList<Thread>()
     private val screenBorrow = CarPlayScreenBorrow(send = ::sendCommand)
     private val screenBorrowDiagnostics = CarPlayScreenBorrowDiagnostics()
@@ -165,6 +179,11 @@ class AirPlaySession(
         if (closed.compareAndSet(false, true)) ({ finishClose(reason) }) else null
 
     private fun finishClose(reason: CarPlayConnectionCloseReason) {
+        val cancelled = commandResults.retire()
+        // Native writes hold eventWriteLock and can wait indefinitely for a slow peer. Closing
+        // their owned sockets must precede any listener or teardown that might need that lock.
+        closeEventResources()
+        recordCommandResults(cancelled)
         screenBorrowDiagnostics.closed(reason, screenBorrowState)
         screenBorrow.close()
         notifyScreenBorrowChanged()
@@ -377,25 +396,47 @@ class AirPlaySession(
         videoPlaybackAvailability.setDesired(allowed)
 
     private fun sendCommandLocked(command: Map<String, Any?>, extraHeaders: String = ""): Boolean {
+        if (closed.get()) return false
         val socket = eventSocket ?: return false
         val cipher = eventCipher ?: return false
         eventCseq++
+        val cseq = eventCseq
+        val generation = eventGeneration
+        val screenRequest = if (command["type"] == "changeModes") {
+            ((command["params"] as? Map<*, *>)?.get("resources") as? List<*>)
+                ?.filterIsInstance<Map<*, *>>()?.firstOrNull { (it["resourceID"] as? Number)?.toInt() == 1 }
+                ?.get("transferType") as? Number
+        } else null
+        val borrowed = when (screenRequest?.toInt()) { 3 -> true; 4 -> false; else -> null }
         val body = BplistCodec.encode(command)
         val head = "POST /command RTSP/1.0\r\n" + extraHeaders +
             "Content-Type: $PLIST_CONTENT_TYPE\r\n" +
             "Content-Length: ${body.size}\r\n" +
-            "CSeq: $eventCseq\r\n\r\n"
+            "CSeq: $cseq\r\n\r\n"
         trace("airplay event tx headers=$head bodyHex=${body.toHex()}")
+        if (borrowed != null) recordCommandResults(commandResults.request(generation, cseq, borrowed))
         return try {
             val bytes = cipher.encrypt(head.toByteArray(Charsets.US_ASCII) + body)
             val output = RawTraffic.output("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/out", socket.getOutputStream())
             output.write(bytes)
             output.flush()
+            if (borrowed != null) recordCommandResults(commandResults.written(generation, cseq))
             true
         } catch (error: Exception) {
+            if (borrowed != null) recordCommandResults(commandResults.failed(generation, cseq))
             Log.w(TAG, "airplay event command failed type=${command["type"]}", error)
             close(CarPlayConnectionCloseReason.EVENT_SEND_FAILED)
             false
+        }
+    }
+
+    private fun recordCommandResults(events: List<CarPlayCommandResults.Event>) {
+        for (event in events) {
+            screenBorrowDiagnostics.command(event, screenBorrowState)
+            debugLog("CarPlay screen command ${event.boundary} generation=${event.generation} " +
+                "cseq=${event.cseq} borrowed=${event.borrowed} result=${event.result} " +
+                "rtspStatus=${event.rtspStatus ?: "unknown"} commandStatus=${event.commandStatus ?: "unknown"}",
+                uiVisible = false)
         }
     }
 
@@ -734,6 +775,26 @@ class AirPlaySession(
             return RtspMessage.Response(headers = mapOf("Content-Type" to PLIST_CONTENT_TYPE), body = body)
         }
 
+        synchronized(initialSetupLock) {
+            if (closed.get()) return invalidSetupState()
+            val cseq = request.headers["cseq"]?.takeIf { it.isNotEmpty() }
+                ?: return RtspMessage.Response(status = 400)
+            val digest = MessageDigest.getInstance("SHA-256").digest(request.body)
+            initialSetup?.let { previous ->
+                return if (previous.cseq == cseq && previous.path == request.path &&
+                    previous.protocol == request.protocol && previous.bodyDigest.contentEquals(digest)) {
+                    previous.response.copy(headers = previous.response.headers.toMap(), body = previous.response.body.copyOf())
+                } else invalidSetupState()
+            }
+            if (eventCipherInstalled) return invalidSetupState()
+            val response = initializeSessionSetup(dict)
+            initialSetup = InitialSetupTransaction(cseq, request.path, request.protocol, digest,
+                response.copy(headers = response.headers.toMap(), body = response.body.copyOf()))
+            return response
+        }
+    }
+
+    private fun initializeSessionSetup(dict: Map<String, Any?>): RtspMessage.Response {
         val name = string(dict["name"])
         val deviceId = string(dict["deviceID"])
         val wifiMac = string(dict["macAddress"]).lowercase()
@@ -903,34 +964,79 @@ class AirPlaySession(
         return port
     }
 
-    private fun openKeepAlive(): Int {
+    internal fun openKeepAlive(): Int {
         val socket = DatagramSocket(null)
-        socket.reuseAddress = true
-        socket.bind(InetSocketAddress(InetAddress.getByName("::"), 0))
-        keepAliveSocket = socket
-        keepAliveThread = Thread({ runKeepAlive(socket) }, "airplay-keepalive").apply {
-            isDaemon = true
-            start()
+        try {
+            socket.reuseAddress = true
+            socket.bind(InetSocketAddress(InetAddress.getByName("::"), 0))
+            val port = socket.localPort
+            val previous = synchronized(eventResourcesLock) {
+                if (closed.get()) throw IOException("CarPlay session is closed")
+                val previous = keepAliveSocket to keepAliveThread
+                keepAliveSocket = socket
+                keepAliveThread = Thread({ runKeepAlive(socket) }, "airplay-keepalive").apply {
+                    isDaemon = true
+                    start()
+                }
+                previous
+            }
+            safeClose(previous.first)
+            previous.second?.interrupt()
+            return port
+        } catch (error: Exception) {
+            safeClose(socket)
+            throw error
         }
-        return socket.localPort
     }
 
     private fun runKeepAlive(socket: DatagramSocket) {
         val buffer = ByteArray(512)
-        while (!closed.get()) {
-            try {
+        try {
+            while (!closed.get() && !socket.isClosed) {
                 RawTraffic.receive(socket, DatagramPacket(buffer, buffer.size))
-            } catch (_: Exception) {
-                if (closed.get()) return
+            }
+        } catch (_: Exception) {
+            // Closing/replacing this UDP socket is terminal for its worker. Retrying a closed
+            // socket would spin while an otherwise healthy CarPlay control session stays alive.
+        } finally {
+            safeClose(socket)
+            synchronized(eventResourcesLock) {
+                if (keepAliveSocket === socket) {
+                    keepAliveSocket = null
+                    keepAliveThread = null
+                }
             }
         }
     }
 
-    private fun openEvent(): Int {
+    internal fun openEvent(): Int {
         val server = ServerSocket(0, 50, InetAddress.getByName("::"))
-        eventServer = server
-        spawnEvent("airplay-event-accept") { acceptEvent(server) }
-        return server.localPort
+        val port = server.localPort
+        try {
+            synchronized(eventReadLock) {
+                // Events HKDF uses the pair-verify secret and fixed labels. Resetting a second
+                // cipher to nonce zero in this control session would reuse the AEAD key/nonce.
+                if (eventCipherInstalled) throw IOException("Event recovery requires a new CarPlay control session")
+                val previous = synchronized(eventResourcesLock) {
+                    if (closed.get()) throw IOException("CarPlay session is closed")
+                    (eventServer to pendingEventSockets.values.toList()).also {
+                        eventServer = server
+                        pendingEventSockets.clear()
+                    }
+                }
+                // A new SETUP retires the unused old listener without touching its active
+                // event socket; that socket lives until the replacement actually connects.
+                safeClose(previous.first)
+                previous.second.forEach(::safeClose)
+                if (!spawnEvent("airplay-event-accept") { acceptEvent(server) }) {
+                    throw IOException("CarPlay session is closed")
+                }
+            }
+            return port
+        } catch (error: Exception) {
+            safeClose(server)
+            throw error
+        }
     }
 
     private fun teardown() {
@@ -938,33 +1044,53 @@ class AirPlaySession(
         videoPlaybackAvailability.setEventReady(false)
         videoPlaybackAvailability.setFeatureEnabled(false)
         ntp.close()
-        safeClose(keepAliveSocket)
-        keepAliveSocket = null
-        keepAliveThread?.interrupt()
-        keepAliveThread = null
-        safeClose(eventServer)
-        eventServer = null
-        safeClose(eventSocket)
+    }
+
+    private fun closeEventResources() {
+        val resources = synchronized(eventResourcesLock) {
+            EventResources(eventServer, keepAliveSocket, keepAliveThread, eventThreads.toList(),
+                pendingEventSockets.values.toList() + activeEventSockets).also {
+                eventServer = null
+                keepAliveSocket = null
+                keepAliveThread = null
+                eventThreads.clear()
+                pendingEventSockets.clear()
+                activeEventSockets.clear()
+            }
+        }
+        val socket = eventSocket
         eventSocket = null
         eventCipher = null
-        eventThreads.forEach { it.interrupt() }
-        eventThreads.clear()
+        safeClose(resources.keepAlive)
+        resources.keepAliveThread?.interrupt()
+        safeClose(resources.server)
+        resources.pending.forEach(::safeClose)
+        safeClose(socket)
+        resources.workers.forEach { it.interrupt() }
     }
 
     private fun acceptEvent(server: ServerSocket) {
+        var accepted: Socket? = null
         try {
             val socket = server.accept()
+            accepted = socket
+            val candidate = synchronized(eventResourcesLock) {
+                if (closed.get() || eventServer !== server) false
+                else { pendingEventSockets[server] = socket; true }
+            }
+            if (!candidate) return
+            // The advertised port accepts exactly one encrypted event connection.
+            safeClose(server)
             socket.setSoLinger(true, 0)
             // Avoid Nagle coalescing on this interactive event connection: small HID/event writes
             // need not wait for earlier unacknowledged data.
             socket.tcpNoDelay = true
             debugLog("airplay event connection accepted from ${socket.remoteSocketAddress} noDelay=${socket.tcpNoDelay}")
-            eventSocket = socket
             val shared = pairVerify.shared
             if (shared == null) {
                 Log.e(TAG, "airplay event rejected: pair-verify shared secret unavailable")
                 safeClose(socket)
-                close(CarPlayConnectionCloseReason.EVENT_AUTH_UNAVAILABLE)
+                closeForEventAcceptFailure(server, CarPlayConnectionCloseReason.EVENT_AUTH_UNAVAILABLE)
                 return
             }
             val writeKey = AirPlayCrypto.hkdfSha512(
@@ -979,25 +1105,70 @@ class AirPlaySession(
                 "Events-Read-Encryption-Key".asciiBytes(),
                 32,
             )
-            eventCipher = ControlCipher(readKey, writeKey)
-            synchronized(eventWriteLock) {
-                sendPendingNightModeLocked()
+            val cipher: ControlCipher
+            val generation: Long
+            val previous: Socket?
+            synchronized(eventReadLock) {
+                val current = synchronized(eventResourcesLock) { eventServer === server && !closed.get() }
+                if (!current) return
+                // Reset outside eventWriteLock: availability delivery can itself write commands.
+                videoPlaybackAvailability.setEventReady(false)
+                screenBorrow.setEventReady(false)
+                synchronized(eventWriteLock) {
+                    if (closed.get()) { safeClose(socket); return }
+                    if (eventCipherInstalled) return
+                    eventCipherInstalled = true
+                    cipher = ControlCipher(readKey, writeKey)
+                    previous = eventSocket
+                    val opened = commandResults.open()
+                    generation = opened.first
+                    recordCommandResults(opened.second)
+                    eventGeneration = generation
+                    eventSocket = socket
+                    eventCipher = cipher
+                    synchronized(eventResourcesLock) {
+                        pendingEventSockets.remove(server)
+                        activeEventSockets += socket
+                    }
+                    sendPendingNightModeLocked()
+                }
+                safeClose(previous)
+                val videoDelivery = videoPlaybackAvailability.setEventReady(true)
+                debugLog("airplay video event ready availability=$videoDelivery")
+                screenBorrow.setEventReady(true)
+                notifyScreenBorrowChanged()
+                reapplyClusterContent()
             }
-            val videoDelivery = videoPlaybackAvailability.setEventReady(true)
-            debugLog("airplay video event ready availability=$videoDelivery")
-            screenBorrow.setEventReady(true)
-            notifyScreenBorrowChanged()
-            reapplyClusterContent()
-            runEventRead(socket)
+            runEventRead(socket, cipher, generation)
         } catch (error: Exception) {
             if (!closed.get()) {
                 Log.e(TAG, "airplay event accept failed", error)
-                close(CarPlayConnectionCloseReason.EVENT_ACCEPT_FAILED)
+                closeForEventAcceptFailure(server, CarPlayConnectionCloseReason.EVENT_ACCEPT_FAILED)
+            }
+        } finally {
+            safeClose(server)
+            safeClose(accepted)
+            synchronized(eventResourcesLock) {
+                pendingEventSockets.remove(server)
+                activeEventSockets.remove(accepted)
+                if (eventServer === server) eventServer = null
             }
         }
     }
 
-    private fun runEventRead(socket: Socket) {
+    private fun closeForEventAcceptFailure(server: ServerSocket, reason: CarPlayConnectionCloseReason) {
+        val cleanup = synchronized(eventReadLock) {
+            val current = synchronized(eventResourcesLock) { eventServer === server }
+            synchronized(eventWriteLock) {
+                // A retired listener (or a failed replacement of an already working event
+                // connection) must not close the established controller and independent audio.
+                if (current && eventSocket == null) prepareClose(reason) else null
+            }
+        }
+        cleanup?.invoke()
+    }
+
+    private fun runEventRead(socket: Socket, cipher: ControlCipher, generation: Long) {
         var closeBoundary = CarPlayConnectionCloseReason.EVENT_STOPPED
         try {
             val input = BufferedInputStream(RawTraffic.input("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()))
@@ -1005,17 +1176,16 @@ class AirPlaySession(
             var encrypted = ByteArray(0)
             var plaintext = ByteArray(0)
             val buffer = ByteArray(READ_CHUNK_BYTES)
+            // Poll only to retire bounded command records; an idle event channel is healthy.
+            socket.soTimeout = 1_000
             while (!closed.get()) {
-                val count = input.read(buffer)
+                recordCommandResults(commandResults.expire(generation))
+                val count = try { input.read(buffer) } catch (_: SocketTimeoutException) { continue }
                 if (count < 0) {
                     closeBoundary = CarPlayConnectionCloseReason.EVENT_EOF
                     break
                 }
-                val cipher = eventCipher
-                if (cipher == null) {
-                    closeBoundary = CarPlayConnectionCloseReason.EVENT_CIPHER_UNAVAILABLE
-                    break
-                }
+                if (!isCurrentEvent(socket, generation)) break
                 encrypted += buffer.copyOf(count)
                 val decrypted = try {
                     cipher.decrypt(encrypted)
@@ -1029,27 +1199,34 @@ class AirPlaySession(
                 val parsed = RtspMessage.parseMessages(plaintext)
                 plaintext = parsed.rest
                 for (message in parsed.messages) {
-                    if (message.method.startsWith("RTSP/") || message.method.startsWith("HTTP/")) continue
-                    debugLog(
-                        "airplay event rx ${message.method} ${message.path} cseq=${message.headers["cseq"] ?: "-"} body=${message.body.size}",
-                    )
-                    val reply = try {
-                        if (message.method == "POST" && message.path.lowercase().endsWith("/command")) {
-                            handleCommand(message)
-                        } else RtspMessage.Response(status = 200)
-                    } catch (error: Exception) {
-                        Log.e(TAG, "airplay event command failed", error)
-                        RtspMessage.Response(status = 500)
-                    }
-                    val response = RtspMessage.buildResponse(message, reply)
-                    trace(
-                        "airplay event rx headers=${message.headers} " +
-                            "bodyHex=${message.body.toHex()}",
-                    )
-                    trace("airplay event tx wireHex=${response.toHex()}")
-                    synchronized(eventWriteLock) {
-                        output.write(cipher.encrypt(response))
-                        output.flush()
+                    if (!isCurrentEvent(socket, generation)) break
+                    synchronized(eventReadLock) {
+                        if (!isCurrentEvent(socket, generation)) return@synchronized
+                        if (message.method.startsWith("RTSP/") || message.method.startsWith("HTTP/")) {
+                            recordCommandResults(commandResults.response(generation, message))
+                            return@synchronized
+                        }
+                        debugLog(
+                            "airplay event rx ${message.method} ${message.path} cseq=${message.headers["cseq"] ?: "-"} body=${message.body.size}",
+                        )
+                        val reply = try {
+                            if (message.method == "POST" && message.path.lowercase().endsWith("/command")) {
+                                handleCommand(message)
+                            } else RtspMessage.Response(status = 200)
+                        } catch (error: Exception) {
+                            Log.e(TAG, "airplay event command failed", error)
+                            RtspMessage.Response(status = 500)
+                        }
+                        val response = RtspMessage.buildResponse(message, reply)
+                        trace(
+                            "airplay event rx headers=${message.headers} " +
+                                "bodyHex=${message.body.toHex()}",
+                        )
+                        trace("airplay event tx wireHex=${response.toHex()}")
+                        synchronized(eventWriteLock) {
+                            output.write(cipher.encrypt(response))
+                            output.flush()
+                        }
                     }
                 }
             }
@@ -1058,21 +1235,47 @@ class AirPlaySession(
             if (!closed.get()) Log.e(TAG, "airplay event read failed", error)
         } finally {
             debugLog("airplay event connection closed")
-            screenBorrow.setEventReady(false)
-            notifyScreenBorrowChanged()
-            videoPlaybackAvailability.setEventReady(false)
-            if (eventSocket === socket) eventSocket = null
-            eventCipher = null
+            // The old reader may finish after a replacement SETUP installs another event socket.
+            // Claim closure while checking identity; it must never retire its successor.
+            val cleanup = synchronized(eventWriteLock) {
+                recordCommandResults(commandResults.close(generation))
+                if (eventSocket === socket && eventGeneration == generation) {
+                    eventSocket = null
+                    eventCipher = null
+                    prepareClose(closeBoundary)
+                } else null
+            }
             safeClose(socket)
-            if (!closed.get()) close(closeBoundary)
+            cleanup?.invoke()
         }
     }
 
-    private fun spawnEvent(name: String, body: () -> Unit) {
-        val thread = Thread(body, name).apply { isDaemon = true }
-        eventThreads.add(thread)
-        thread.start()
+    private fun isCurrentEvent(socket: Socket, generation: Long): Boolean = synchronized(eventWriteLock) {
+        !closed.get() && eventSocket === socket && eventGeneration == generation
     }
+
+    private fun spawnEvent(name: String, body: () -> Unit): Boolean {
+        val thread = Thread({
+            try { body() } finally {
+                synchronized(eventResourcesLock) { eventThreads.remove(Thread.currentThread()) }
+            }
+        }, name).apply { isDaemon = true }
+        synchronized(eventResourcesLock) {
+            if (closed.get()) return false
+            eventThreads.add(thread)
+            thread.start()
+        }
+        return true
+    }
+
+    private data class EventResources(val server: ServerSocket?, val keepAlive: DatagramSocket?,
+        val keepAliveThread: Thread?, val workers: List<Thread>, val pending: List<Socket>)
+
+    private data class InitialSetupTransaction(val cseq: String, val path: String, val protocol: String,
+        val bodyDigest: ByteArray, val response: RtspMessage.Response)
+
+    private fun invalidSetupState() = RtspMessage.Response(status = 455,
+        statusText = "Method Not Valid in This State")
 
     private companion object {
         const val TAG = "xcertplay-usb"

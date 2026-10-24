@@ -79,7 +79,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   }
   const failureText = error => /HDR|SDR/.test(error?.message || '')
     ? (lang === 'zh' ? '此视频需要 HDR，TiPlay 仅支持 SDR 视频' : 'This video requires HDR. TiPlay supports SDR video.')
-    : (lang === 'zh' ? '无法播放视频' : 'Unable to play video');
+    : (lang === 'zh' ? '无法播放视频，请结束投屏后从 iPhone 重试。' : 'Unable to play video. Stop casting, then try again from your iPhone.');
   function showFailure(error) {
     finishPreparation();
     if (player) { player.fail(failureText(error)); return; }
@@ -163,7 +163,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     } catch (error) {
       if (!abort.signal.aborted && key === currentKey && !disposed) {
         const message = document.createElement('p'); message.className = 'airplay-error'; message.role = 'alert';
-        message.textContent = lang === 'zh' ? '无法显示照片' : 'Unable to display photo'; layer.append(message);
+        message.textContent = lang === 'zh' ? '无法显示照片，请结束投屏后从 iPhone 重试。' : 'Unable to display photo. Stop casting, then try again from your iPhone.'; layer.append(message);
       }
     }
   }

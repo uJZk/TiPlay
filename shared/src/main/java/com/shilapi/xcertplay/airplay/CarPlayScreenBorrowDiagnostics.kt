@@ -30,6 +30,13 @@ internal class CarPlayScreenBorrowDiagnostics(
         if (!closed) append("SCREEN", boundary.name, state, " screenAvailable=$available")
     }
 
+    @Synchronized fun command(event: CarPlayCommandResults.Event, state: CarPlayScreenBorrowState) {
+        if (!closed) append("COMMAND", event.boundary.name, state,
+            " eventGeneration=${event.generation} cseq=${event.cseq} borrowed=${event.borrowed}" +
+                " elapsedUs=${event.elapsedNanos / 1_000} rtspStatus=${event.rtspStatus ?: "UNKNOWN"}" +
+                " commandStatus=${event.commandStatus ?: "UNKNOWN"} result=${event.result}")
+    }
+
     /** Record retirement even if the loan state never differed from its default. */
     @Synchronized fun closed(reason: CarPlayConnectionCloseReason, state: CarPlayScreenBorrowState) {
         if (closed) return

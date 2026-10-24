@@ -8,7 +8,7 @@ button:where(:not(.media-skin *)){min-height:48px;padding:12px 22px;border:1px s
 button:where(:not(.media-skin *)):active{transform:scale(.98);background:rgba(255,255,255,.18)}
 button:where(:not(.media-skin *)):disabled{opacity:.55;cursor:default;transform:none}
 button:where(:not(.media-skin *))[aria-pressed=true]{background:rgba(195,220,255,.2);border-color:var(--accent)}
-button:where(:not(.media-skin *)):focus-visible,input:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+button:where(:not(.media-skin *)):focus-visible,input:focus-visible,a:focus-visible,summary:focus-visible,pre:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
 .primary{background:linear-gradient(150deg,#d7e9ff,#adcfff);color:#102b4f;border-color:transparent;box-shadow:0 4px 18px rgba(0,0,0,.14)}
 .primary:active{background:#b5d5ff}
 main{height:100%;min-height:0;position:relative}
@@ -31,6 +31,9 @@ input:disabled{opacity:.65}
 #message:empty{display:none}
 #portal-controls{margin-top:20px}
 #status{margin:0;font-size:13px;color:var(--muted);text-align:center;white-space:normal}
+#diagnostics{margin-top:16px;border-top:1px solid var(--rim);padding-top:8px}
+#diagnostics summary{min-height:48px;padding:12px 4px;cursor:pointer;font-size:14px;color:var(--muted)}
+#connection-details{margin:12px 0 0;max-height:180px;overflow:auto;padding:12px;border:1px solid var(--rim);border-radius:12px;background:rgba(8,17,32,.24);color:var(--muted);font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
 nav{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px}
 #portal-controls nav button{flex:1;font-size:13px}
 .window-help{text-align:center;margin-top:18px}

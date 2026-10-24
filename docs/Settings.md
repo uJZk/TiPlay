@@ -15,7 +15,11 @@ waiting, connection, recovery and failure are distinct CarPlay phases; USB mode 
 an idle controller alone cannot claim readiness. Only an actual wireless listener
 reports CarPlay ready. AirPlay ready requires the receiver's `listening` state;
 startup, mirroring, media playback, photos, permission failure and stopped/error
-states have separate titles. Receiver events refresh the title without waiting for
+states have separate titles. During AirPlay preparation/playback and the screen-return
+wait, its status comes first and CarPlay is shown as waiting for AirPlay. A background
+CarPlay failure is retained internally without a misleading failure hint; after
+release its actual state is shown again. Independent permission requirements and
+AirPlay errors remain visible. Receiver events refresh the title without waiting for
 a CarPlay event. All automatic instructions, current requirements and problems appear together immediately below the title. Independent causes remain visible, each once, with browser permission/service blockers before connection requirements and network uncertainty. Normal stage logs and success confirmations stay out of this area. A button-triggered result appears below that button or the control that needs correction; field validation stays at the edited field after typing settles or focus leaves. Explicit operation feedback survives a card rebuild, but a newer click or superseding background fact invalidates an older asynchronous result.
 
 Wi-Fi observations distinguish no Wi-Fi, unreadable SSID and a readable mismatch; missing permission or a redacted SSID never becomes “wrong network”. A missing hotspot address never proves that its switch is off. Source tokens prevent rebuilt cards from accepting stale probe results. Browser readiness clears speculative address-reachability hints, while independent permission/service failures remain. Actual host transport and permission differences determine session requirements: All using USB must not be blocked by a wireless draft; a controller object alone is not a connected session. Unknown failures use neutral diagnostic guidance, without guessing their cause from text or promising a retry that is not scheduled.

@@ -306,7 +306,7 @@ async function main() {
     check(await page.evaluate(() => location.hash === ''), 'the link fragment was removed from the address');
     check(await page.evaluate(port => location.search === `?t=127.0.0.1:${port}`, phone.port), 'the address bar keeps ?t= so a bookmark reopens this phone');
     check(await page.evaluate(code => JSON.parse(localStorage.getItem('tiplay.link')).code === code, CODE), 'the link was stored');
-    check(/VP8 · \d+ fps/.test(await page.textContent('#status')), `status line reads "${await page.textContent('#status')}"`);
+    check(await page.textContent('#status') === '' && await page.locator('#status').isHidden(), 'an available picture has no success message or empty status row');
 
     const rect = await page.evaluate(() => JSON.parse(JSON.stringify(document.getElementById('touch').getBoundingClientRect())));
     const viewport = await waitFor('a viewport event', () => eventsOf(phone, 'vp').at(-1)?.event);
@@ -321,8 +321,11 @@ async function main() {
     phone.requestPortal();
     await page.waitForSelector('#panel:not([hidden])');
     check(await page.textContent('#connect') === 'Return to CarPlay', 'TiPlay icon returns to the portal');
+    check(await page.locator('#stats-toggle').isHidden(), 'technical controls are collapsed by default');
+    await page.click('#diagnostics > summary');
+    check(await page.isVisible('#connection-details'), 'connection details are available on demand');
     await page.click('#stats-toggle');
-    check(await page.getAttribute('#stats-toggle', 'aria-checked') === 'true', 'Debug is a persistent switch');
+    check(await page.getAttribute('#stats-toggle', 'aria-checked') === 'true', 'Performance monitor is a persistent switch');
     await page.click('#connect');
     await page.waitForSelector('#stage:not([hidden])');
     await waitFor('Debug presentation samples', async () => (await stats(page)).page.video.presentationOffsetSamples > 5);

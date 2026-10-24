@@ -329,15 +329,20 @@ internal class BrowserMainSettingsMenu(
             activity.getString(R.string.settings_carplay_disabled)
             else carPlayStage)
     }
-    private fun receiverStatus(carPlay: String) = carPlay + " | " + activity.getString(
-        BrowserReceiverPresentation.airPlayTitle(AirPlayReceiverService.state, AirPlayReceiverSettings.isDisabled(activity)))
+    private fun receiverStatus(carPlay: String): String {
+        val airPlay = activity.getString(BrowserReceiverPresentation.airPlayTitle(
+            AirPlayReceiverService.state, AirPlayReceiverSettings.isDisabled(activity)))
+        return if (TeslaBrowserLink.airPlayActive && !BrowserCarPlaySettings.disabled(activity))
+            airPlay + " | " + activity.getString(R.string.settings_carplay_waiting_airplay_status)
+        else carPlay + " | " + airPlay
+    }
     private fun updateActions() {
         updateReceiverStatus()
         putHint("debug", if (DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG)
             activity.getString(R.string.settings_hint_debug_enabled) else null)
         val disabled = BrowserCarPlaySettings.disabled(activity)
         val currentProblem = problem?.takeIf {
-            !disabled && !active && (browserReady || it != BrowserConnectionProblem.FAILED)
+            !disabled && !active && (it != BrowserConnectionProblem.FAILED || (browserReady && !TeslaBrowserLink.airPlayActive))
         }
         putHint("session", currentProblem?.message?.let(activity::getString))
         putHint("browser-open", if (!browserReady) activity.getString(R.string.settings_hint_browser_open, activity.getString(R.string.settings_tesla_browser)) else null)

@@ -36,3 +36,14 @@ test('starting an explicit new connection resets dismissed errors', () => {
   f.notice.update(problem);
   assert.equal(f.root.hidden, false);
 });
+
+test('a new casting attempt can retire its old fault without clearing a different important error', () => {
+  const f = fixture();
+  f.notice.update({ id: 'airplay:1:playback-failed', text: 'Try casting again.' });
+  f.notice.reset('airplay:1:playback-failed');
+  assert.equal(f.root.hidden, true);
+  f.notice.update({ id: 'protocol', text: 'Update the app.' });
+  f.notice.reset('airplay:1:playback-failed');
+  assert.equal(f.root.hidden, false);
+  assert.equal(f.nodes.message.textContent, 'Update the app.');
+});

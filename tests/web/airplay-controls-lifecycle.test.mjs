@@ -161,7 +161,7 @@ test('a current probe failure replaces loading with the existing error message a
   assert.equal(h.indicator(), undefined);
   assert.equal(h.layer.getAttribute('aria-busy'), null);
   const message = h.layer.children.find(element => element.className === 'airplay-error');
-  assert.equal(message.role, 'alert'); assert.equal(message.textContent, 'Unable to play video');
+  assert.equal(message.role, 'alert'); assert.equal(message.textContent, 'Unable to play video. Stop casting, then try again from your iPhone.');
   assert.equal(h.stop.hidden, false);
   h.stop.dispatchEvent(new Event('click'));
   assert.deepEqual(h.sent.filter(event => event.k === 'ap').at(-1), { k: 'ap', id: 1, a: 'stop' });
@@ -190,7 +190,7 @@ test('a source preparation failure retires its indicator and uses the player err
   h.controls.update(h.directive()); await h.probeReady(0);
   h.players[0].gate.reject(new DOMException('Unsupported video', 'NotSupportedError')); await flush();
   assert.equal(h.indicator(), undefined);
-  assert.equal(h.players[0].failure.message, 'Unable to play video');
+  assert.equal(h.players[0].failure.message, 'Unable to play video. Stop casting, then try again from your iPhone.');
   assert.equal(h.sent.filter(event => event.k === 'ap-state').at(-1).failed, true);
 });
 
@@ -199,7 +199,7 @@ test('a player import failure replaces loading with the current error surface', 
   h.controls.update(h.directive()); await h.probeReady(0);
   gate.reject(new TypeError('Player module unavailable')); await flush();
   assert.equal(h.indicator(), undefined); assert.equal(h.players.length, 0);
-  assert.equal(h.layer.children.find(element => element.className === 'airplay-error').textContent, 'Unable to play video');
+  assert.equal(h.layer.children.find(element => element.className === 'airplay-error').textContent, 'Unable to play video. Stop casting, then try again from your iPhone.');
   assert.equal(h.sent.filter(event => event.k === 'ap-state').at(-1).failed, true);
 });
 

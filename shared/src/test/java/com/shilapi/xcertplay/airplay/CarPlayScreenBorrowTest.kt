@@ -168,6 +168,97 @@ class CarPlayScreenBorrowTest {
         assertTrue(borrow.onModesChanged(modes(1)).carPlayHasScreen)
     }
 
+    @Test fun repeatingTheBorrowFromItsWriteCallbackDoesNotSendItTwice() {
+        var writes = 0
+        lateinit var borrow: CarPlayScreenBorrow
+        borrow = CarPlayScreenBorrow {
+            if (++writes == 1) borrow.setDesired(true)
+            true
+        }
+        borrow.setEventReady(true)
+        val requested = borrow.setDesired(true)
+        assertEquals(1, writes)
+        assertTrue(requested.pending)
+        assertFalse(requested.confirmedBorrow)
+        assertTrue(borrow.onModesChanged(modes(2)).confirmedBorrow)
+    }
+
+    @Test fun repeatingTheReturnFromItsWriteCallbackDoesNotSendItTwice() {
+        val transfers = mutableListOf<Int>()
+        lateinit var borrow: CarPlayScreenBorrow
+        borrow = CarPlayScreenBorrow { command ->
+            val resource = ((command["params"] as Map<*, *>)["resources"] as List<*>).single() as Map<*, *>
+            transfers += resource["transferType"] as Int
+            if (transfers == listOf(3, 4)) borrow.setDesired(false)
+            true
+        }
+        borrow.setEventReady(true)
+        borrow.setDesired(true)
+        borrow.onModesChanged(modes(2))
+        val returned = borrow.setDesired(false)
+        assertEquals(listOf(3, 4), transfers)
+        assertTrue(returned.pending)
+        assertFalse(returned.carPlayHasScreen)
+        assertTrue(borrow.onModesChanged(modes(1)).carPlayHasScreen)
+    }
+
+    @Test fun aChannelReplacedFromTheWriteCallbackPumpsTheNewGeneration() {
+        var writes = 0
+        lateinit var borrow: CarPlayScreenBorrow
+        borrow = CarPlayScreenBorrow {
+            if (++writes == 1) {
+                borrow.onModesChanged(modes(2))
+                borrow.setEventReady(false)
+                borrow.setEventReady(true)
+            }
+            true
+        }
+        borrow.setEventReady(true)
+        val requested = borrow.setDesired(true)
+        assertEquals(2, writes)
+        assertTrue(requested.pending)
+        assertFalse("The retired channel's notification cannot authorize its replacement", requested.confirmedBorrow)
+        assertTrue(borrow.onModesChanged(modes(2)).confirmedBorrow)
+    }
+
+    @Test fun cancellingDuringChannelReplacementStillReturnsTheDeliveredBorrow() {
+        val transfers = mutableListOf<Int>()
+        lateinit var borrow: CarPlayScreenBorrow
+        borrow = CarPlayScreenBorrow { command ->
+            val resource = ((command["params"] as Map<*, *>)["resources"] as List<*>).single() as Map<*, *>
+            transfers += resource["transferType"] as Int
+            if (transfers.size == 1) {
+                borrow.setEventReady(false)
+                borrow.setDesired(false)
+                borrow.setEventReady(true)
+            }
+            true
+        }
+        borrow.setEventReady(true)
+        val returned = borrow.setDesired(true)
+        assertEquals(listOf(3, 4), transfers)
+        assertFalse(returned.desired)
+        assertEquals(false, returned.sent)
+        assertTrue(returned.pending)
+        assertFalse(returned.carPlayHasScreen)
+        assertTrue(borrow.onModesChanged(modes(1)).carPlayHasScreen)
+    }
+
+    @Test fun aThrowingWriteDoesNotStrandTheDeliveryPump() {
+        var writes = 0
+        val borrow = CarPlayScreenBorrow {
+            if (++writes == 1) throw IllegalStateException("transport failed")
+            true
+        }
+        borrow.setEventReady(true)
+        assertTrue(runCatching { borrow.setDesired(true) }.exceptionOrNull() is IllegalStateException)
+        val retried = borrow.setDesired(true)
+        assertEquals(2, writes)
+        assertTrue(retried.pending)
+        assertFalse(retried.confirmedBorrow)
+        assertTrue(borrow.onModesChanged(modes(2)).confirmedBorrow)
+    }
+
     @Test fun aReentrantNewLoanDuringReturnWriteCannotBeStranded() {
         val transfers = mutableListOf<Int>()
         lateinit var borrow: CarPlayScreenBorrow

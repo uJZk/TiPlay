@@ -57,7 +57,7 @@ class BrowserMainPageTest {
             @Suppress("DEPRECATION")
             activity.resources.displayMetrics.scaledDensity = activity.resources.displayMetrics.density * 1.5f
         }
-        AirPlayReceiverService::class.java.getDeclaredField("state").apply { isAccessible = true }.set(null, "stopped")
+        AirPlayReceiverService.publish("stopped")
         page = BrowserMainSettingsMenu(activity, BrowserConnectionDraft.load(activity), {}, {}, {}, { settingsChanges++ })
         activity.setContentView(page.view)
     }
@@ -71,6 +71,36 @@ class BrowserMainPageTest {
         page.refresh()
         assertEquals(activity.getString(R.string.settings_hint_car_bluetooth_disconnected),
             page.view.findViewWithTag<TextView>("connection_hint:car-bluetooth").text.toString())
+    }
+
+    @Test fun castingPrioritizesAirPlayAndDefersOnlyTheBackgroundCarPlayFailure() {
+        TeslaBrowserLink.resetForTest()
+        try {
+            page.update("CarPlay failed", false, problem = BrowserConnectionProblem.FAILED)
+            assertEquals("CarPlay failed | AirPlay stopped", page.status.text.toString())
+            assertNotNull(page.view.findViewWithTag<View>("connection_hint:session"))
+
+            TeslaBrowserLink.pauseCarPlayDisplay()
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            for ((state, expected) in listOf(
+                "loading" to "AirPlay loading", "mirror" to "AirPlay mirroring",
+                "playing" to "AirPlay playing", "paused" to "AirPlay paused",
+                "playback-failed" to "AirPlay failed",
+            )) {
+                AirPlayReceiverService.publish(state)
+                page.refresh()
+                assertEquals("$expected | CarPlay waiting for AirPlay", page.status.text.toString())
+                assertNull(page.view.findViewWithTag<View>("connection_hint:session"))
+            }
+            page.update("CarPlay failed", false, problem = BrowserConnectionProblem.USB_VPN)
+            assertNotNull("Independent requirements stay actionable", page.view.findViewWithTag<View>("connection_hint:session"))
+
+            TeslaBrowserLink.resumeCarPlayDisplay()
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            page.update("CarPlay failed", false, problem = BrowserConnectionProblem.FAILED)
+            assertEquals("CarPlay failed | AirPlay failed", page.status.text.toString())
+            assertNotNull(page.view.findViewWithTag<View>("connection_hint:session"))
+        } finally { TeslaBrowserLink.resetForTest() }
     }
 
     @Test fun missingPermissionsPointToChecklistAndRespectAudioOptOut() {
@@ -126,8 +156,7 @@ class BrowserMainPageTest {
     @Test fun browserWaitReplacesReceiverTitleUntilTheCurrentPageIsReady() {
         page.update("CarPlay preparing", false, browserReady = false)
         assertEquals("Waiting for browser connection", page.status.text.toString())
-        AirPlayReceiverService::class.java.getDeclaredField("state").apply { isAccessible = true }
-            .set(null, "listening")
+        AirPlayReceiverService.publish("listening")
         page.refresh()
         assertEquals("Waiting for browser connection", page.status.text.toString())
         page.update("CarPlay preparing", false, browserReady = true)

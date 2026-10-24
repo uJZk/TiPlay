@@ -27,6 +27,7 @@ class NtpClock(private val wireTimeline: NtpWireTimeline? = null, log: (String) 
     private var socket: DatagramSocket? = null
     private var receiver: Thread? = null
     private var sender: Thread? = null
+    private var closed = false // guarded by socketLock; one clock belongs to one control session
     @Volatile private var peer: InetSocketAddress? = null
     @Volatile private var peerAddress: InetAddress? = null
 
@@ -41,21 +42,35 @@ class NtpClock(private val wireTimeline: NtpWireTimeline? = null, log: (String) 
     private var synced = false
     private var lastSyncNanos = 0L
 
-    fun listen(): Int {
-        check(!running.getAndSet(true)) { "NtpClock is already running" }
+    fun listen(): Int = synchronized(socketLock) {
+        check(!closed) { "NtpClock is closed" }
+        socket?.let { return@synchronized it.localPort }
         val bound = DatagramSocket(null)
-        bound.reuseAddress = true
-        bound.bind(InetSocketAddress(InetAddress.getByName("::"), 0))
-        synchronized(socketLock) { socket = bound }
-        receiver = Thread(::runReceiver, "airplay-ntp-rx").apply { isDaemon = true; start() }
-        return bound.localPort
+        try {
+            bound.reuseAddress = true
+            bound.bind(InetSocketAddress(InetAddress.getByName("::"), 0))
+            socket = bound
+            running.set(true)
+            receiver = Thread(::runReceiver, "airplay-ntp-rx").apply { isDaemon = true; start() }
+            bound.localPort
+        } catch (error: Exception) {
+            bound.close()
+            socket = null
+            running.set(false)
+            throw error
+        }
     }
 
     fun start(peerAddress: InetAddress, port: Int) {
         require(port in 0..65535) { "timing port must be valid" }
-        this.peerAddress = peerAddress
-        peer = if (port > 0) InetSocketAddress(peerAddress, port) else null
-        sender = Thread(::runSender, "airplay-ntp-tx").apply { isDaemon = true; start() }
+        synchronized(socketLock) {
+            check(!closed && running.get()) { "NtpClock must be listening before start" }
+            this.peerAddress = peerAddress
+            peer = if (port > 0) InetSocketAddress(peerAddress, port) else null
+            if (sender?.isAlive != true) {
+                sender = Thread(::runSender, "airplay-ntp-tx").apply { isDaemon = true; start() }
+            }
+        }
     }
 
     /** Now in the phone's synchronized clock domain, as an unsigned NTP64 value. */
@@ -98,13 +113,19 @@ class NtpClock(private val wireTimeline: NtpWireTimeline? = null, log: (String) 
     }
 
     override fun close() {
-        running.set(false)
-        synchronized(socketLock) {
-            socket?.close()
+        val retired = synchronized(socketLock) {
+            if (closed) return
+            closed = true
+            running.set(false)
+            val retired = Triple(socket, sender, receiver)
             socket = null
+            sender = null
+            receiver = null
+            retired
         }
+        retired.first?.close()
         // Join outside both locks so native I/O can finish releasing the timing port.
-        retireNtpClockWorkers(sender, receiver)
+        retireNtpClockWorkers(retired.second, retired.third)
         val syncState = synchronized(clockLock) { synced to lastSyncNanos }
         diagnostics.ended(System.nanoTime(), syncState.first, syncState.second)
     }

@@ -14,6 +14,7 @@
     <string name="settings_carplay_connecting_status">CarPlay 連線中</string>
     <string name="settings_carplay_recovering_status">CarPlay 重新連線中</string>
     <string name="settings_carplay_failed_status">CarPlay 連線失敗</string>
+    <string name="settings_carplay_waiting_airplay_status">CarPlay 等待投放結束</string>
     <string name="settings_carplay_stopping_status">CarPlay 中斷中</string>
     <string name="settings_airplay_starting_status">AirPlay 啟動中</string>
     <string name="settings_airplay_mirroring_status">AirPlay 鏡像中</string>

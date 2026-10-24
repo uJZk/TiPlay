@@ -39,10 +39,15 @@
 </form>
 <div id="portal-controls">
 <p id="status" role="status" aria-live="polite"></p>
+<details id="diagnostics">
+<summary data-i18n="diagnostics"></summary>
+<p class="hint" data-i18n="diagnosticsHelp"></p>
+<pre id="connection-details" tabindex="0"></pre>
 <button id="stats-toggle" type="button" role="switch" aria-checked="false">
 <span data-i18n="stats"></span>
 <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
 </button>
+</details>
 <nav>
 <button id="fit" class="primary" type="button" data-i18n="fit" hidden></button>
 </nav>

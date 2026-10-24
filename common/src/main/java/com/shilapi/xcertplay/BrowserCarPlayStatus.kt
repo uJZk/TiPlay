@@ -19,6 +19,13 @@ internal object BrowserCarPlayStatus {
         else -> "preparing"
     }
 
+    /** Casting owns the foreground while CarPlay recovery waits; keep its raw phase for later. */
+    fun presentationPhase(phase: String, airPlayActive: Boolean): String = when {
+        phase == "disabled" || phase == "stopping" -> phase
+        airPlayActive -> "suspended"
+        else -> phase
+    }
+
     fun title(phase: String): Int = when (phase) {
         "disabled" -> R.string.settings_carplay_disabled
         "connected" -> R.string.carplay_connected
@@ -28,6 +35,7 @@ internal object BrowserCarPlayStatus {
         "connecting" -> R.string.settings_carplay_connecting_status
         "failed" -> R.string.settings_carplay_failed_status
         "recovering" -> R.string.settings_carplay_recovering_status
+        "suspended" -> R.string.settings_carplay_waiting_airplay_status
         "stopping" -> R.string.settings_carplay_stopping_status
         else -> R.string.settings_carplay_preparing_status
     }

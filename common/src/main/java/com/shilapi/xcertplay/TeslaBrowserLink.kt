@@ -154,8 +154,10 @@ internal object TeslaBrowserLink {
     @Volatile private var airPlayRequested = false
     private var resourceController: CarPlayController? = null // worker only
     private var resourceSubscription: java.io.Closeable? = null // worker only
+    private var resourceReconcileRetry: ScheduledFuture<*>? = null // worker only
     private var displayAvailability: ((Boolean) -> Unit)? = null // guarded by tapLock
     private var pendingAirPlayEnd = false // guarded by tapLock
+    private var airPlayNotificationGeneration = 0L // guarded by tapLock
     @Volatile var airPlayDisplayReady = false
         private set
 
@@ -164,14 +166,18 @@ internal object TeslaBrowserLink {
 
     /** Begin a resource loan. A write is not a grant; rendering waits for modesChanged. */
     fun pauseCarPlayDisplay(available: ((Boolean) -> Unit)? = null) {
-        val releaseTouches = synchronized(tapLock) {
+        val (releaseTouches, notificationGeneration) = synchronized(tapLock) {
             val starting = !airPlayRequested
             airPlayRequested = true
             pendingAirPlayEnd = false
             if (available != null) displayAvailability = available
-            starting
+            if (starting) airPlayNotificationGeneration++
+            starting to airPlayNotificationGeneration
         }
-        if (releaseTouches) main.post { host.get()?.onAirPlayStarted() }
+        if (releaseTouches) main.post {
+            if (synchronized(tapLock) { airPlayNotificationGeneration == notificationGeneration && airPlayRequested })
+                host.get()?.onAirPlayStarted()
+        }
         // Keep network writes off the receiver and main threads.
         worker.execute {
             if (releaseTouches) CarPlayBackgroundSession.snapshot()?.controller?.sendTouch(emptyList())
@@ -185,6 +191,7 @@ internal object TeslaBrowserLink {
             if (hub.hasAirPlayDisplay() || com.shilapi.xcertplay.web.AirPlayBrowserPlayback.snapshot()?.get("resource") != null) return
             val wasActive = airPlayRequested
             airPlayRequested = false
+            if (wasActive) airPlayNotificationGeneration++
             displayAvailability = null
             pendingAirPlayEnd = pendingAirPlayEnd || wasActive
         }
@@ -204,6 +211,15 @@ internal object TeslaBrowserLink {
         updateResourceOutputs()
     }
 
+    /** Coalesce an unstable owner snapshot without recursively polling or growing the worker queue. */
+    private fun retryCarPlayResources() {
+        if (resourceReconcileRetry != null) return
+        resourceReconcileRetry = worker.schedule({
+            resourceReconcileRetry = null
+            reconcileCarPlayResources()
+        }, 16, TimeUnit.MILLISECONDS)
+    }
+
     private fun CarPlayScreenBorrowState?.pauseCarPlayResource(previous: Boolean): Boolean = when {
         this == null -> false
         pending -> previous // A request cannot change the actual output owner.
@@ -215,17 +231,35 @@ internal object TeslaBrowserLink {
 
     private fun updateResourceOutputs() {
         val snapshot = CarPlayBackgroundSession.snapshot()
-        val screen = snapshot?.controller?.screenBorrowState
-        var ended = false
+        val controller = snapshot?.controller?.takeUnless { it.isClosed() }
+        val ownership = controller?.screenBorrowSnapshot()
+        val screen = ownership?.state
+        fun currentOwner(): Boolean {
+            val current = CarPlayBackgroundSession.snapshot()?.controller?.takeUnless { it.isClosed() }
+            return current === controller && (if (ownership != null)
+                controller?.isCurrentScreenBorrowSnapshot(ownership) == true
+            else controller?.screenBorrowState == null)
+        }
+        if (resourceController !== controller || !currentOwner()) {
+            retryCarPlayResources()
+            return
+        }
+        var endedGeneration: Long? = null
         var releaseTouches = false
-        val (ready, availability) = synchronized(tapLock) {
+        val (ready, availability, requestGeneration) = synchronized(tapLock) {
             val ready = airPlayRequested && (screen == null || screen.confirmedBorrow)
-            ready to displayAvailability
+            Triple(ready, displayAvailability, airPlayNotificationGeneration)
         }
         // Release the AirPlay producer before asking the hub to begin CarPlay again.
         // Its priority otherwise rejects CarPlay and leaves the unpaused sink without a stream.
         if (!ready) availability?.invoke(false)
-        synchronized(tapLock) {
+        // Revoking a producer is an external callback and may replace the controller or its session.
+        if (!currentOwner()) {
+            retryCarPlayResources()
+            return
+        }
+        val applied = synchronized(tapLock) {
+            if (airPlayNotificationGeneration != requestGeneration) return@synchronized false
             val pauseScreen = screen.pauseCarPlayResource(carPlayDisplayPaused) || ready
             if (carPlayDisplayPaused != pauseScreen) {
                 carPlayDisplayPaused = pauseScreen
@@ -235,13 +269,30 @@ internal object TeslaBrowserLink {
             }
             airPlayDisplayReady = ready
             if (!airPlayRequested && !carPlayDisplayPaused && pendingAirPlayEnd) {
-                pendingAirPlayEnd = false
-                ended = true
+                endedGeneration = airPlayNotificationGeneration
             }
+            true
+        }
+        if (!applied || !currentOwner()) {
+            retryCarPlayResources()
+            return
         }
         if (releaseTouches && screen != null) snapshot?.controller?.sendTouch(emptyList())
+        if (!currentOwner() || synchronized(tapLock) { airPlayNotificationGeneration != requestGeneration }) {
+            retryCarPlayResources()
+            return
+        }
         if (ready) availability?.invoke(true)
-        if (ended) main.post { if (!airPlayActive) host.get()?.onAirPlayEnded() }
+        endedGeneration?.let { generation ->
+            val ended = synchronized(tapLock) {
+                if (airPlayNotificationGeneration != generation || airPlayActive || !pendingAirPlayEnd) false
+                else { pendingAirPlayEnd = false; true }
+            }
+            if (ended) main.post {
+                if (synchronized(tapLock) { airPlayNotificationGeneration == generation && !airPlayActive })
+                    host.get()?.onAirPlayEnded()
+            }
+        }
     }
     private val statsLock = Any()
 
@@ -486,6 +537,7 @@ internal object TeslaBrowserLink {
             else -> BrowserLinkStatus.State.IDLE
         }
         val app = app
+        val airPlay = AirPlayReceiverService.stateSnapshot()
         return BrowserLinkStatus(
             state = state,
             codec = info?.codec,
@@ -496,9 +548,10 @@ internal object TeslaBrowserLink {
             phone = linkedMapOf("localNetworkPermission" to (app?.let { LocalNetworkPermission.state(it).wire })),
             receivers = mapOf(
                 "carplay" to if (app?.let(BrowserCarPlaySettings::disabled) == true)
-                    mapOf("state" to "disabled") else carPlayReceiver,
+                    mapOf("state" to "disabled") else carPlayReceiver + ("state" to
+                        BrowserCarPlayStatus.presentationPhase(carPlayReceiver["state"] as? String ?: "preparing", airPlayActive)),
                 "airplay" to mapOf("state" to if (app?.let(AirPlayReceiverSettings::isDisabled) == true)
-                    "disabled" else AirPlayReceiverService.state),
+                    "disabled" else airPlay.state, "revision" to airPlay.revision),
             ),
             videoSource = info?.source?.name?.lowercase(Locale.ROOT),
         )
@@ -769,11 +822,13 @@ internal object TeslaBrowserLink {
             airPlayDisplayReady = false
             displayAvailability = null
             pendingAirPlayEnd = false
+            airPlayNotificationGeneration++
             previous
         }
         retired.first.forEach { it.close() }
         retired.second.forEach { it.close() }
         resourceSubscription?.close(); resourceSubscription = null; resourceController = null
+        resourceReconcileRetry?.cancel(false); resourceReconcileRetry = null
         audioHub.enabled = true
         audioHub.carPlayEnabled = true
         app = null

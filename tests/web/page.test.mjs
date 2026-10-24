@@ -5,8 +5,10 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { APP_VERSION } from '../../site/play/app-version.js';
 import { DEFAULT_HOST, abortable, isCode, normalizeHost } from '../../site/play/link.js';
-import { browserDiagnosticEvents } from '../../site/play/browser-diagnostics.js';
+import { browserDiagnosticEvents, PAGE_VERSION } from '../../site/play/browser-diagnostics.js';
 import { decoderStatsMatch } from '../../site/play/video-diagnostics.js';
+import { rtcFailureSummary } from '../../site/play/rtc-diagnostics.js';
+import { airPlayContext, airPlayFailed, createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor } from '../../site/play/receiver-presentation.js';
 
 const play = new URL('../../site/play/', import.meta.url);
 const read = name => readFileSync(new URL(name, play), 'utf8');
@@ -107,7 +109,7 @@ test('decoder setup precedes pairing and the first authenticated clock reaches v
     const browserAudio = { attach(_signal, value) { events.push(['audio-attach', value]); }, clock: value => events.push(['audio-clock', value]) };
     const mediaTimings = new Map([['carplay', { reset: () => events.push(['timing-reset']), mode() {} }]]);
     const timingFor = mode => mediaTimings.get(mode);
-    const render = () => {}, reportAppearance = () => events.push(['appearance']), scheduleViewport = () => events.push(['viewport']);
+    const render = () => {}, resetReceiverPresentation = () => {}, reportAppearance = () => events.push(['appearance']), scheduleViewport = () => events.push(['viewport']);
     const setInterval = () => 0, clearInterval = () => {};
     const stop = reason => { throw new Error(reason); }, scheduleRetry = () => { throw new Error('Unexpected retry'); };
     const createClockEstimator = () => ({ observe: (...sample) => { events.push(['clock-sample', ...sample]); return clock; } });
@@ -149,14 +151,16 @@ function retryPage(lastError) {
   const setTimer = (callback, delay, repeat) => {
     const id = ++nextId; timers.set(id, { callback, at: now + delay, repeat }); return id;
   };
-  const page = new Function('$', 'Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'renderReconnect', 'lastError', `
+  const page = new Function('$', 'Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'renderReconnect', 'lastError', 'rtcFailureSummary', 'PAGE_VERSION', 'airPlayContext', 'airPlayFailed', 'createReceiverNoticeTracker', 'videoProblemFor', 'videoReadyFor', 'videoSourceFor', `
     let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort, rtcMedia, rtcProgress, resourceToken, controlClock;
     const controlWaiters = new Set(), codecsReady = new Promise(() => {}), abortable = value => value;
     let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null, config = null;
+    let receiverFailure = false;
+    const receiverNotices = createReceiverNoticeTracker();
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
     const browserLocation = { stop() {} };
     let problem = null;
-    const browserNotice = { update(value) { if (value) problem = value; } };
+    const browserNotice = { update(value) { if (value) problem = value; }, reset(id) { if (!id || problem?.id === id) problem = null; } };
     const codecName = value => value;
     const videoStats = {};
     const statsVisible = false, link = { code: '1234' }, stage = {}, session = 'session';
@@ -169,17 +173,21 @@ function retryPage(lastError) {
     const t = (key, ...args) => args.length ? key + ':' + args.join(',') : key;
     const phoneFetch = () => new Promise(() => {});
     const createClockEstimator = () => ({ observe: () => null, snapshot: () => null });
-    ${['statusText', 'render', 'scheduleRetry', 'stop', 'connectVideo'].map(extract).join('\n')}
+    ${['statusText', 'retryStatusText', 'connectionDetailsText', 'rtcStageText', 'rtcCandidateText', 'rtcRetryText', 'render', 'scheduleRetry', 'stop', 'connectVideo'].map(extract).join('\n')}
     return { scheduleRetry, stop, connectVideo, reconnects: () => reconnects,
       present(value) {
         phase = 'waiting'; status = value.status ?? null; config = value.config ?? null;
         live = value.live ?? false; unsupported = value.unsupported ?? null;
+        receiverFailure = receiverNotices.observe(status, config).failure;
         render(); return $('status').textContent;
       },
-      problem: () => problem, inlineMessage: () => $('message').textContent,
+      connecting(progress) { phase = 'connecting'; rtcProgress = progress; render(); return $('status').textContent; },
+      details() { $('diagnostics').open = true; render(); return $('connection-details').textContent; },
+      problem: () => problem, inlineMessage: () => $('message').textContent, statusHidden: () => $('status').hidden,
       trustState: () => ({ visible: trustVisible, clears: trustClears }) };
   `)($, { now: () => now }, (callback, delay) => setTimer(callback, delay, 0), id => timers.delete(id),
-    (callback, delay) => setTimer(callback, delay, delay), id => timers.delete(id), value => overlays.push(value.text), lastError);
+    (callback, delay) => setTimer(callback, delay, delay), id => timers.delete(id), value => overlays.push(value.text), lastError, rtcFailureSummary, PAGE_VERSION,
+    airPlayContext, airPlayFailed, createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor);
   return {
     ...page, overlays, text: () => $('status').textContent,
     intervals: () => [...timers.values()].filter(timer => timer.repeat).length,
@@ -212,17 +220,118 @@ test('waiting messages follow receiver phase and actual video source rather than
   assert.equal(page.present({ status: { videoSource: 'airplay' } }), 'waitingVideo');
   assert.equal(page.present({ config: { mode: 'carplay' } }), 'waitingFrame');
   assert.equal(page.present({ config: { mode: 'airplay-mirror' } }), 'waitingVideo');
-  assert.equal(page.present({ status: { airplay: { kind: 'audio' } } }), 'airPlayAudio');
-  assert.equal(page.present({ status: { airplay: { kind: 'photo', resource: 'photo' } } }), 'airPlayPhoto');
+  assert.equal(page.present({ status: { airplay: { kind: 'audio' } } }), '');
+  assert.equal(page.statusHidden(), true);
+  assert.equal(page.present({ status: { airplay: { kind: 'photo', resource: 'photo' } } }), '');
   assert.equal(page.present({ status: { airplay: { kind: 'video', resource: 'movie', ready: false } } }), 'waitingVideo');
   assert.equal(page.present({ status: { airplay: { kind: 'video', resource: 'movie', ready: true, playing: false } } }), 'airPlayPaused');
-  assert.equal(page.present({ status: { airplay: { kind: 'video', resource: 'movie', ready: true, playing: true } } }), 'airPlayPlaying');
-  assert.equal(page.present({ live: true, config: { codec: 'avc1' }, status: { state: 'idle' } }), 'streaming:avc1,0');
+  assert.equal(page.present({ status: { airplay: { kind: 'video', resource: 'movie', ready: true, playing: true } } }), '');
+  assert.equal(page.present({ live: true, config: { codec: 'avc1', mode: 'carplay' }, status: { state: 'idle' } }), '');
+  assert.equal(page.statusHidden(), true);
+  assert.equal(page.present({ live: true, config: { codec: 'avc1', mode: 'airplay-mirror' } }), '');
+});
+
+test('AirPlay handoff and its local-network permission take precedence over a retired CarPlay picture and failure', () => {
+  const page = retryPage(null);
+  const receivers = { carplay: { state: 'suspended' }, airplay: { state: 'listening' } };
+  assert.equal(page.present({ config: { mode: 'carplay' }, status: { receivers } }), 'carPlaySuspended');
+  assert.equal(page.present({ status: { receivers: { ...receivers, airplay: { state: 'permission' } } } }), 'airPlayPermission');
+  for (const state of ['mirror', 'video', 'loading', 'photo']) {
+    assert.equal(page.present({ config: { mode: 'carplay' },
+      status: { receivers: { ...receivers, airplay: { state } } } }), 'waitingVideo');
+  }
+  assert.equal(page.present({ status: { receivers, videoSource: 'airplay' } }), 'waitingVideo');
+  for (const state of ['failed', 'suspended']) {
+    assert.equal(page.present({ status: { receivers: { carplay: { state } },
+      airplay: { kind: 'video', resource: 'movie', ready: true, playing: true } } }), '');
+    assert.equal(page.present({ status: { receivers: { carplay: { state } },
+      airplay: { kind: 'photo', resource: 'photo', outputAllowed: true } } }), '');
+  }
+  assert.equal(page.present({ status: { receivers: { carplay: { state: 'failed' } } } }), 'carPlayFailed');
+});
+
+test('an inactive AirPlay receiver permission failure cannot replace the current CarPlay phase', () => {
+  const page = retryPage(null);
+  const airplay = { state: 'permission' };
+  for (const [state, expected] of [['failed', 'carPlayFailed'], ['connecting', 'phoneConnecting'], ['ready', 'waitingPhone']]) {
+    assert.equal(page.present({ status: { receivers: { carplay: { state }, airplay } } }), expected);
+  }
+  assert.equal(page.present({ status: { receivers: { carplay: { state: 'suspended' }, airplay } } }), 'airPlayPermission');
+  assert.equal(page.present({ status: { videoSource: 'airplay', receivers: { carplay: { state: 'failed' }, airplay } } }), 'airPlayPermission');
+  assert.equal(page.present({ config: { mode: 'airplay-mirror' },
+    status: { receivers: { carplay: { state: 'failed' }, airplay } } }), 'airPlayPermission');
+});
+
+test('producer changes and explicit return snapshots supersede old decoded frames and configs', () => {
+  const page = retryPage(null);
+  assert.equal(page.present({ live: true, config: { mode: 'carplay' }, status: { videoSource: 'carplay' } }), '');
+  assert.equal(page.present({ live: true, config: { mode: 'carplay' }, status: { videoSource: 'carplay',
+    receivers: { carplay: { state: 'suspended' }, airplay: { state: 'loading' } } } }), '');
+  assert.equal(page.present({ live: true, config: { mode: 'carplay' }, status: { videoSource: null,
+    receivers: { carplay: { state: 'suspended' }, airplay: { state: 'loading' } } } }), 'waitingVideo');
+  assert.equal(page.present({ live: true, config: { mode: 'airplay-mirror' }, status: { videoSource: 'carplay',
+    receivers: { carplay: { state: 'connected' }, airplay: { state: 'listening' } } } }), 'waitingFrame');
+  assert.equal(page.present({ live: true, config: { mode: 'airplay-mirror' }, status: { videoSource: null,
+    receivers: { carplay: { state: 'failed' }, airplay: { state: 'listening' } } } }), 'carPlayFailed');
+  for (const kind of ['video', 'photo', 'audio']) {
+    assert.equal(page.present({ unsupported: 'hvc1', config: { mode: 'carplay' }, status: { videoSource: null,
+      airplay: { id: 7, kind, resource: 'new', ready: true, playing: true, outputAllowed: true } } }), '');
+    assert.equal(page.statusHidden(), true);
+  }
+});
+
+test('only foreground AirPlay faults replace the current phase and active output has no success row', () => {
+  for (const state of ['failed', 'discovery-failed', 'audio-failed', 'playback-failed']) {
+    const page = retryPage(null);
+    assert.equal(page.present({ live: true, config: { mode: 'carplay' }, status: { videoSource: 'carplay',
+      receivers: { carplay: { state: 'connected' }, airplay: { state } } } }), '');
+    page.present({ status: { videoSource: null, receivers: { carplay: { state: 'suspended' }, airplay: { state: 'loading' } } } });
+    assert.equal(page.present({ config: { mode: 'carplay' }, status: { videoSource: null,
+      receivers: { carplay: { state: 'suspended' }, airplay: { state } } } }), 'airPlayFailed');
+  }
+  const page = retryPage(null);
+  assert.equal(page.present({ status: { airplay: { id: 8, kind: 'video', resource: 'movie', ready: true, playing: false } } }), 'airPlayPaused');
+  assert.equal(page.statusHidden(), false);
+  assert.equal(page.present({ status: { airplay: { id: 8, kind: 'video', resource: 'movie', ready: true, playing: true } } }), '');
+  assert.equal(page.statusHidden(), true);
+});
+
+test('a new producer epoch waits for its own decoded event while an identical config preserves readiness', () => {
+  const source = /function onVideoMessage\([^\n]*\) \{[\s\S]*?\n\}/.exec(read('app.js'))[0];
+  const fixture = new Function(`
+    const active = true, streamId = 1; let config = { epoch: 7, mode: 'carplay' }, live = true;
+    let videoStats = { decodedFps: 30 }, unsupported = null, mediaTiming;
+    const sink = { delay() {} }, timingFor = () => ({ plans() {}, started() {} });
+    const outbox = { push() {} }, keepScreenOn = () => {}, render = () => {}, updateReceiverNotice = () => {};
+    ${source}
+    return { receive(value) { onVideoMessage({ id: 1, ...value }); return { live, config, videoStats }; } };
+  `)();
+  assert.equal(fixture.receive({ type: 'config', config: { epoch: 7, mode: 'carplay' } }).live, true);
+  assert.equal(fixture.receive({ type: 'config', config: { epoch: 8, mode: 'airplay-mirror' } }).live, false);
+  assert.equal(fixture.receive({ type: 'decoded', epoch: 7 }).live, false);
+  assert.equal(fixture.receive({ type: 'decoded', epoch: 8 }).live, true);
+  assert.equal(fixture.receive({ type: 'config', config: { epoch: 9, mode: 'carplay' } }).live, false);
+});
+
+test('default connection and retry messages keep technical state in the optional diagnostics', () => {
+  const diagnostic = { stage: 'remote-ice', localCandidates: 2, remoteCandidates: 0, iceState: 'checking', connectionState: 'connecting' };
+  const page = retryPage({ rtcReason: 'timeout', rtcDiagnostic: diagnostic, message: 'secret pairing-code' });
+  assert.equal(page.connecting(diagnostic), 'connecting');
+  assert.match(page.details(), new RegExp(PAGE_VERSION));
+  assert.match(page.details(), /rtcCandidates:2,0/);
+  page.scheduleRetry(3000);
+  assert.equal(page.text(), 'retryConnection:3');
+  assert.equal(page.overlays.at(-1), 'retryConnection:3');
+  assert.match(page.details(), /rtcRemoteTimeout/);
+  assert.doesNotMatch(page.details(), /secret|pairing-code/);
+  page.advance(1000);
+  assert.equal(page.text(), 'retryConnection:2');
+  assert.doesNotMatch(page.text(), /ICE|Peer|DC|Candidates|v\d+/);
 });
 
 test('codec and protocol errors use persistent notices while pairing errors stay beside Connect', () => {
   const page = retryPage(null);
-  assert.equal(page.present({ unsupported: 'hvc1' }), 'pictureUnavailable');
+  assert.equal(page.present({ unsupported: 'hvc1', config: { mode: 'carplay' } }), 'pictureUnavailable');
   assert.equal(page.problem().text, 'unsupportedHevc:hvc1');
   assert.equal(page.inlineMessage(), '');
   page.stop('protocol');
@@ -238,7 +347,7 @@ test('codec and protocol errors use persistent notices while pairing errors stay
 });
 
 test('retry messages count down every second without receiving a phone heartbeat', () => {
-  for (const [error, key] of [[null, 'lost'], [{ status: 503 }, 'unreachable'], [{ status: 429 }, 'throttled']]) {
+  for (const [error, key] of [[null, 'lost'], [{ status: 500 }, 'unreachable'], [{ status: 503 }, 'retryAndroid'], [{ status: 429 }, 'throttled']]) {
     const page = retryPage(error);
     page.scheduleRetry(3000);
     assert.equal(page.text(), `${key}:3`);

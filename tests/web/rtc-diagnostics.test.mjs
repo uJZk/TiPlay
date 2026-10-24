@@ -25,16 +25,16 @@ test('failure summaries exclude exception details, SDP, passwords and session id
 function pageText(language) {
   const source = readFileSync(new URL('../../site/play/app.js', import.meta.url), 'utf8');
   const strings = new Function(`return ${/const STRINGS = (\{[\s\S]*?\n\});/.exec(source)[1]}`)();
-  const functions = ['rtcStageText', 'rtcCandidateText', 'rtcRetryText'].map(name =>
+  const functions = ['rtcStageText', 'rtcCandidateText', 'rtcRetryText', 'retryStatusText'].map(name =>
     new RegExp(`function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`).exec(source)[0]).join('\n');
   return new Function('STRINGS', 'lang', 'rtcFailureSummary', `
     const t = (key, ...args) => (STRINGS[lang][key] ?? STRINGS.en[key]).replace(/\\{(\\d)\\}/g, (_, index) => args[index]);
     ${functions}
-    return { rtcRetryText, rtcStageText };
+    return { rtcRetryText, rtcStageText, retryStatusText };
   `)(strings, language, rtcFailureSummary);
 }
 
-test('the page displays distinct HTTP, PAKE and answered-but-not-connected failures in English and Chinese', () => {
+test('optional diagnostics retain distinct HTTP, PAKE and answered-but-not-connected failures in English and Chinese', () => {
   for (const language of ['en', 'zh']) {
     const page = pageText(language);
     const diagnostic = { stage: 'remote-ice', localCandidates: 1, localLinkLocalCandidates: 1,
@@ -64,7 +64,7 @@ test('CGNAT, private IPv4, IPv6 and mDNS remain distinct without retaining addre
   assert.doesNotMatch(JSON.stringify(counts), /100\.111|169\.254|fd12|hidden|5555|candidate/);
 });
 
-test('connection hints show nonzero classes and independent ICE, peer and three channel states', () => {
+test('optional diagnostics show nonzero classes and independent ICE, peer and three channel states', () => {
   const diagnostic = { stage: 'remote-ice', localCandidates: 2, remoteCandidates: 1,
     localUdpCandidates: 2, remoteUdpCandidates: 1, localCgnatIpv4Candidates: 1, localMdnsCandidates: 1,
     remotePrivateIpv4Candidates: 1, localLinkLocalCandidates: 0, remoteLinkLocalCandidates: 0,
@@ -76,5 +76,27 @@ test('connection hints show nonzero classes and independent ICE, peer and three 
     assert.match(text, /ICE connected/); assert.match(text, language === 'zh' ? /Peer connecting/ : /peer connecting/);
     assert.match(text, /connecting\/connecting\/open/);
     assert.doesNotMatch(text, /169\.254|link-local|链路本地|contains no ICE|没有 ICE 候选/);
+  }
+});
+
+test('normal retry status offers an action and countdown without protocol internals in either language', () => {
+  for (const language of ['en', 'zh']) {
+    const page = pageText(language);
+    const cases = [
+      [{ rtcReason: 'fetch' }, language === 'zh' ? /检查地址.*本地网络访问/ : /Check its address.*local-network access/],
+      [{ status: 404 }, language === 'zh' ? /更新安卓端 TiPlay/ : /Update TiPlay on Android/],
+      [{ status: 503 }, language === 'zh' ? /在手机上打开 TiPlay/ : /Open TiPlay on the phone/],
+      [{ rtcReason: 'pairing' }, language === 'zh' ? /当前显示的配对码/ : /current code in TiPlay/],
+      [{ rtcReason: 'timeout', rtcDiagnostic: { stage: 'remote-ice', localCandidates: 2, remoteCandidates: 0 } },
+        language === 'zh' ? /连接同一网络/ : /same network/],
+      [{ reason: 'no-local-candidates' }, language === 'zh' ? /连接同一网络/ : /same network/],
+      [{ reason: 'no-remote-udp-candidates' }, language === 'zh' ? /连接同一网络/ : /same network/],
+    ];
+    for (const [error, action] of cases) {
+      const text = page.retryStatusText({ ...error, message: 'secret 9876' }, 8);
+      assert.match(text, action);
+      assert.match(text, /8/);
+      assert.doesNotMatch(text, /ICE|WebRTC|HTTP|candidate|候选|Peer|DC|secret|9876|v\d+/);
+    }
   }
 });

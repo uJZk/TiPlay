@@ -35,6 +35,7 @@ import com.shilapi.xcertplay.airplay.AirPlayMediaHandler
 import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
 import com.shilapi.xcertplay.airplay.CarPlayScreenBorrowState
+import com.shilapi.xcertplay.airplay.CarPlayScreenBorrowSnapshot
 import com.shilapi.xcertplay.airplay.PairingStore
 import com.shilapi.xcertplay.airplay.VideoInCar
 import com.shilapi.xcertplay.airplay.VideoPlaybackDelivery
@@ -242,6 +243,8 @@ class CarPlayController(
     @Volatile private var activeSession: AirPlaySession? = null
     @Volatile private var screenBorrowed = false
     private val screenBorrowListeners = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
+    private val glancePublishLock = Any()
+    private var glancePublishOwner: Any? = null
     private val browserDisplayReconnect = BrowserDisplayReconnect()
     @Volatile private var browserBluetoothBootstrap: RetainedBluetoothBootstrap? = null
     @Volatile private var wirelessBluetoothTarget: BluetoothDevice? = null
@@ -353,23 +356,28 @@ class CarPlayController(
             uiListener?.onCornerMask(session, png, displayWidth)
         }
         override fun onSessionActive(session: AirPlaySession) {
-            if (currentCornerMask?.session !== session) currentCornerMask = null
-            val replacement = activeSession !== session
+            val replacement = synchronized(wirelessResourceLock) {
+                if (closed || session.isClosed) return
+                if (currentCornerMask?.session !== session) currentCornerMask = null
+                (activeSession !== session).also { activeSession = session }
+            }
             if (replacement) {
                 if (config.headUnitIntegrations) {
                     BydNavigationOutputs.start(appContext)
                     BydNavigationOutputs.carPlaySessionStarted()
                 }
-                com.shilapi.xcertplay.glance.CarPlayGlance.setConnected(true)
+                publishGlanceConnection()
+                if (!isCurrentSession(session)) return
                 // The gear may have changed since /info.
                 if (videoListener != null) {
                     val delivery = session.setVideoPlaybackAllowed(VideoInCar.allowed)
                     debugLog("video in car session allowed=${VideoInCar.allowed} delivery=$delivery")
                 }
             }
-            activeSession = session
+            if (!isCurrentSession(session)) return
             session.setScreenBorrowed(screenBorrowed)
             screenBorrowListeners.forEach { it() }
+            if (!isCurrentSession(session)) return
             val btPrefs = appContext.getSharedPreferences("xcertplay_airplay", android.content.Context.MODE_PRIVATE)
             if (config.headUnitIntegrations && btPrefs.getBoolean("bt_suspend_during_carplay", false)) {
                 // close() marks [closed], and a closing session marks itself before onSessionEnded
@@ -379,31 +387,41 @@ class CarPlayController(
                     !closed && activeSession === session && !session.isClosed
                 }
             }
+            if (!isCurrentSession(session)) return
             if (replacement) restoreDashboardContent(session)
+            if (!isCurrentSession(session)) return
             debugLog(
                 "AirPlay session active controller=${session.controllerId ?: "unknown"} " +
                     "peer=${session.host}",
             )
+            if (!isCurrentSession(session)) return
             uiListener?.onSessionActive(session)
         }
 
         override fun onSessionEnded(session: AirPlaySession) {
-            if (currentCornerMask?.session === session) currentCornerMask = null
-            if (activeSession === session) {
-                activeSession = null
+            val endedCurrent = synchronized(wirelessResourceLock) {
+                if (currentCornerMask?.session === session) currentCornerMask = null
+                if (activeSession === session) {
+                    activeSession = null
+                    synchronized(albumReplayLock) { initialArtworkReplay = null }
+                    true
+                } else false
+            }
+            if (endedCurrent) {
                 screenBorrowListeners.forEach { it() }
-                synchronized(albumReplayLock) { initialArtworkReplay = null }
-                if (config.headUnitIntegrations) BydNavigationOutputs.endNow(preserveTurnOverlay = !closed && config.transport == CarPlayTransport.WIRELESS)
-                if (config.headUnitIntegrations) BydBluetoothSuspend.resume(appContext, this@CarPlayController) { debugLog(it) }
+                if (config.headUnitIntegrations && activeSession == null) BydNavigationOutputs.endNow(preserveTurnOverlay = !closed && config.transport == CarPlayTransport.WIRELESS)
+                if (config.headUnitIntegrations && activeSession == null) BydBluetoothSuspend.resume(appContext, this@CarPlayController) { debugLog(it) }
 
-                com.shilapi.xcertplay.glance.CarPlayGlance.setConnected(false)
-                videoListener?.onVideoSessionEnded()
-                synchronized(playbackStatus) {
-                    val wasPlaying = playbackStatus.playing
-                    playbackStatus.clearAll()?.let { it to wasPlaying }
+                publishGlanceConnection()
+                if (activeSession == null) videoListener?.onVideoSessionEnded()
+                synchronized(wirelessResourceLock) {
+                    if (activeSession != null) null else synchronized(playbackStatus) {
+                        val wasPlaying = playbackStatus.playing
+                        playbackStatus.clearAll()?.let { it to wasPlaying }
+                    }
                 }?.let { (cleared, wasPlaying) ->
-                    nowPlayingListener?.invoke(cleared)
-                    if (wasPlaying) playbackListener?.invoke(false)
+                    if (activeSession == null) nowPlayingListener?.invoke(cleared)
+                    if (wasPlaying && activeSession == null) playbackListener?.invoke(false)
                 }
             }
             debugLog("AirPlay session ended peer=${session.host}")
@@ -427,6 +445,7 @@ class CarPlayController(
         // The session keeps running in the background, so returning to DiPlay resumes CarPlay.
         // On a phone the car's browser shows CarPlay, so the phone's home screen stays where it is.
         override fun onHostUiRequested(session: AirPlaySession) {
+            if (!isCurrentSession(session)) return
             if (config.headUnitIntegrations) {
                 debugLog("CarPlay requested the car UI; opening the head-unit home screen")
                 runCatching {
@@ -503,6 +522,53 @@ class CarPlayController(
 
     val screenBorrowState: CarPlayScreenBorrowState?
         get() = activeSession?.takeUnless { closed || it.isClosed }?.screenBorrowState
+
+    /** Capture one session's ownership, then revalidate immediately before applying it. */
+    fun screenBorrowSnapshot(): CarPlayScreenBorrowSnapshot? {
+        val session = activeSession ?: return null
+        if (!isCurrentSession(session)) return null
+        val state = session.screenBorrowState
+        return if (isCurrentSession(session)) CarPlayScreenBorrowSnapshot(session, state) else null
+    }
+
+    fun isCurrentScreenBorrowSnapshot(snapshot: CarPlayScreenBorrowSnapshot): Boolean =
+        isCurrentSession(snapshot.session) && snapshot.session.screenBorrowState == snapshot.state &&
+            isCurrentSession(snapshot.session)
+
+    /** Current control ownership does not require an installed primary video stream. */
+    fun isCurrentControlSession(session: AirPlaySession): Boolean = isCurrentSession(session)
+
+    private fun isCurrentSession(session: AirPlaySession): Boolean =
+        !closed && !session.isClosed && activeSession === session
+
+    /** Listener calls may close or replace a session; coalesce them without holding a state lock. */
+    private fun publishGlanceConnection() {
+        val owner = Any()
+        synchronized(glancePublishLock) {
+            if (glancePublishOwner != null) return
+            glancePublishOwner = owner
+        }
+        try {
+            while (true) {
+                val connected = !closed && activeSession?.isClosed == false
+                try {
+                    com.shilapi.xcertplay.glance.CarPlayGlance.setConnected(connected)
+                } catch (error: Exception) {
+                    // Glance commits before notifying observers. An observer may close this
+                    // controller and then throw; still drain its queued disconnected state.
+                    Log.w(IphoneCarPlayConfiguration.TAG, "CarPlay glance observer failed", error)
+                }
+                synchronized(glancePublishLock) {
+                    if (connected == (!closed && activeSession?.isClosed == false)) {
+                        glancePublishOwner = null
+                        return
+                    }
+                }
+            }
+        } finally {
+            synchronized(glancePublishLock) { if (glancePublishOwner === owner) glancePublishOwner = null }
+        }
+    }
 
     fun listenScreenBorrow(listener: () -> Unit): java.io.Closeable {
         screenBorrowListeners += listener
@@ -814,7 +880,7 @@ class CarPlayController(
         connectionDiagnostic("teardown begin transport=${config.transport}")
         videoGate?.close()
         if (config.headUnitIntegrations) BydNavigationOutputs.endNow()
-        com.shilapi.xcertplay.glance.CarPlayGlance.setConnected(false)
+        publishGlanceConnection()
         if (config.headUnitIntegrations) BydNavigationOutputs.clearClusterStreamControl(::applyClusterUi)
         closeReceivers()
         availabilityPollGeneration.incrementAndGet()

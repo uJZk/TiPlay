@@ -20,6 +20,13 @@ root. The beta record below identifies both build and deployment provenance. Eve
 language's download entry opens the GitHub Releases index without a version-specific
 URL. Debug APK metadata retains its diagnostic suffix.
 
+The working release candidate is **0.2.20-beta.16/code58**, with browser cache
+**v84** for the simplified Diagnostics UI and receiver handoff status. Its
+session/resource and single-initial-SETUP changes pass 908 browser tests and
+4,189 Android unit tests, all required debug lint/build targets and four Chromium
+presentation cases. The verified public deployment below remains v83 until the
+candidate is published; the beta.15 provenance remains unchanged.
+
 ### Check the source build
 
 Run the checks defined in the [Android workflow](../.github/workflows/android.yml): browser tests, public-tree scan, release-draft tests, Android unit tests, lint and debug builds. Retained `home`/`maphost` checks protect upstream compatibility. Optional Chromium checks are in [Testing](Testing.md).

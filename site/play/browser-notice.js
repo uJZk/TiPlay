@@ -16,6 +16,6 @@ export function createBrowserNotice(root, language = 'en') {
       message.textContent = problem.text;
       root.hidden = false;
     },
-    reset() { lastId = null; root.hidden = true; },
+    reset(id) { if (id && id !== lastId) return; lastId = null; root.hidden = true; },
   };
 }

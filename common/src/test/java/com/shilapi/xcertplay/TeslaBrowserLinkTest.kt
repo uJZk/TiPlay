@@ -5,6 +5,7 @@ import android.view.Surface
 import com.shilapi.xcertplay.airplay.AirPlayContact
 import com.shilapi.xcertplay.airplay.AirPlayKnobState
 import com.shilapi.xcertplay.airplay.CarPlayScreenBorrowState
+import com.shilapi.xcertplay.airplay.CarPlayScreenBorrowSnapshot
 import com.shilapi.xcertplay.airplay.CarPlayScreenOwner
 import com.shilapi.xcertplay.airplay.MediaSink
 import com.shilapi.xcertplay.airplay.VideoCodec
@@ -419,8 +420,140 @@ class TeslaBrowserLinkTest {
         TeslaBrowserLink.releaseTap(retained.sink)
     }
 
+    @Test
+    @org.robolectric.annotation.LooperMode(org.robolectric.annotation.LooperMode.Mode.PAUSED)
+    fun obsoleteAirPlayNotificationsCannotCrossAStopRestartCycle() {
+        started()
+        val notifications = mutableListOf<String>()
+        TeslaBrowserLink.attachHost(object : TeslaBrowserLink.Host {
+            override fun log(message: String) {}
+            override fun onBrowserFit() {}
+            override fun onAirPlayStarted() { notifications += "started" }
+            override fun onAirPlayEnded() { notifications += "ended" }
+        })
+        TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("Only the current loan can cancel returned-screen recovery", listOf("started"), notifications)
+
+        TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        TeslaBrowserLink.pauseCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("Only the last completed loan can resume recovery", listOf("started", "ended"), notifications)
+    }
+
+    @Test fun replacingTheControllerDuringAnOwnerReadCannotReuseItsOldGrant() {
+        started()
+        val old = storeSession(phoneBrowser = true)
+        val reading = CountDownLatch(1)
+        val continueRead = CountDownLatch(1)
+        val availability = CopyOnWriteArrayList<Boolean>()
+        val rebound = AtomicInteger()
+        `when`(old.screenBorrowState).thenAnswer {
+            reading.countDown()
+            check(continueRead.await(5, TimeUnit.SECONDS))
+            CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Accessory, false)
+        }
+        try {
+            TeslaBrowserLink.pauseCarPlayDisplay { availability += it }
+            assertTrue(reading.await(5, TimeUnit.SECONDS))
+            val replacement = storeSession(phoneBrowser = true)
+            `when`(replacement.screenBorrowState).thenReturn(
+                CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Controller, true))
+            org.mockito.Mockito.doAnswer { rebound.incrementAndGet(); null }.`when`(replacement).setScreenBorrowed(true)
+            continueRead.countDown()
+            eventually("The replacement must receive its own loan request") { rebound.get() > 0 && availability.contains(false) }
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            assertFalse("The previous controller's grant cannot release this producer", availability.contains(true))
+            assertFalse(TeslaBrowserLink.airPlayDisplayReady)
+        } finally { continueRead.countDown() }
+    }
+
+    @Test fun revokingAProducerCannotResumeAControllerReplacedByThatCallback() {
+        started()
+        val old = storeSession(phoneBrowser = true)
+        val retained = CarPlayBackgroundSession.snapshot()!!
+        val carPlay = TeslaBrowserLink.tee(retained.sink, true, 1920, 1080, 60)
+        carPlay.onScreenStreamActive(110, true)
+        val state = AtomicReference(CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Accessory, false))
+        val changed = AtomicReference<(() -> Unit)?>(null)
+        val rebound = AtomicInteger()
+        var replaceOnRevocation = false
+        `when`(old.screenBorrowState).thenAnswer { state.get() }
+        org.mockito.Mockito.doAnswer { call ->
+            changed.set(call.getArgument(0))
+            java.io.Closeable { changed.set(null) }
+        }.`when`(old).listenScreenBorrow(org.mockito.ArgumentMatchers.any<() -> Unit>() ?: {})
+        try {
+            TeslaBrowserLink.pauseCarPlayDisplay { available ->
+                if (!available && replaceOnRevocation) {
+                    replaceOnRevocation = false
+                    val replacement = storeSession(phoneBrowser = true)
+                    `when`(replacement.screenBorrowState).thenReturn(
+                        CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Controller, true))
+                    org.mockito.Mockito.doAnswer { rebound.incrementAndGet(); null }.`when`(replacement).setScreenBorrowed(true)
+                }
+            }
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            assertTrue(TeslaBrowserLink.airPlayDisplayReady)
+            assertNull(TeslaBrowserLink.hub.info())
+
+            replaceOnRevocation = true
+            state.set(CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Controller, false))
+            changed.get()!!.invoke()
+            eventually("The callback's replacement must be reconciled") { rebound.get() > 0 }
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            assertNull("Revocation cannot resurrect the previous controller's picture", TeslaBrowserLink.hub.info())
+            assertFalse(TeslaBrowserLink.airPlayDisplayReady)
+        } finally { TeslaBrowserLink.releaseTap(retained.sink) }
+    }
+
+    @Test fun replacingTheSessionDuringTouchReleaseCannotReuseItsOldGrant() =
+        assertTouchReleaseCannotReuseOwnership(replaceSession = true)
+
+    @Test fun aFreshOwnerRevocationDuringTouchReleaseInvalidatesTheCapturedGrant() =
+        assertTouchReleaseCannotReuseOwnership(replaceSession = false)
+
+    private fun assertTouchReleaseCannotReuseOwnership(replaceSession: Boolean) {
+        started()
+        val controller = storeSession(phoneBrowser = true)
+        val original = ownershipSnapshot(CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Accessory, false))
+        val replacement = ownershipSnapshot(CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Controller, replaceSession))
+        val current = AtomicReference(original)
+        val touches = AtomicInteger()
+        val availability = CopyOnWriteArrayList<Boolean>()
+        org.mockito.Mockito.doAnswer { current.get() }.`when`(controller).screenBorrowSnapshot()
+        `when`(controller.screenBorrowState).thenAnswer { current.get().state }
+        org.mockito.Mockito.doAnswer { call ->
+            val captured = call.getArgument<CarPlayScreenBorrowSnapshot>(0)
+            if (replaceSession) captured === current.get() else captured.state == current.get().state
+        }.`when`(controller).isCurrentScreenBorrowSnapshot(
+            org.mockito.ArgumentMatchers.any(CarPlayScreenBorrowSnapshot::class.java) ?: original)
+        org.mockito.Mockito.doAnswer {
+            if (touches.incrementAndGet() == 2) current.set(replacement)
+            true
+        }.`when`(controller).sendTouch(emptyList())
+
+        TeslaBrowserLink.pauseCarPlayDisplay { availability += it }
+        eventually("The changed owner must be reconciled after the old touch release") {
+            current.get() === replacement && availability.contains(false)
+        }
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertFalse("Only current ownership can release the producer", availability.contains(true))
+        assertFalse(TeslaBrowserLink.airPlayDisplayReady)
+    }
+
     @Test fun screenLoanWaitsForOwnershipAndReturnsWithoutPausingCarPlayAudio() {
         started()
+        TeslaBrowserLink.carPlayReceiver = mapOf("state" to "connected")
         val controller = storeSession(phoneBrowser = true)
         val retained = CarPlayBackgroundSession.snapshot()!!
         val carPlay = TeslaBrowserLink.tee(retained.sink, true, 1920, 1080, 60)
@@ -428,7 +561,17 @@ class TeslaBrowserLinkTest {
         carPlay.onVideoCodec(110, VideoCodec.H264)
         carPlay.onVideoConfig(110, byteArrayOf(1, 0x64, 0, 0x28, -1, -31, 0, 4, 0x67, 0x64, 0, 0x28, 1, 0, 2, 0x68, -18))
         val audio = audioTapsAtRest().single().second
+        assertTrue(TeslaBrowserLink.audioHub.voiceRoute(audio, "idle", false))
         val reader = TeslaBrowserLink.audioHub.subscribe()
+        // A new subscription receives the current microphone route before any PCM. Consume
+        // that exact id-5 control once; a later stop/reset must still fail the continuity check.
+        val route = requireNotNull(reader.take(100))
+        assertEquals(28, route.size)
+        assertEquals(2, route[4].toInt())
+        assertEquals(5, route[5].toInt())
+        assertEquals(0, route[7].toInt())
+        assertEquals(TeslaBrowserLink.audioHub.voiceStatus()["revision"], java.nio.ByteBuffer.wrap(route).getInt(16))
+        assertNull(reader.take(0))
         val screen = AtomicReference(CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Controller, true))
         val changed = AtomicReference<(() -> Unit)?>(null)
         `when`(controller.screenBorrowState).thenAnswer { screen.get() }
@@ -445,9 +588,20 @@ class TeslaBrowserLinkTest {
         val availability = CopyOnWriteArrayList<Boolean>()
         val mirror = com.shilapi.xcertplay.web.WebMediaSink(TeslaBrowserLink.hub, 720, 1280, 60,
             com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY)
+        var pcmMarker = 42
+        var pcmEpoch: Int? = null
         fun assertCarPlayAudioContinues() {
-            TeslaBrowserLink.audioHub.publish(audio, 0, 48000, 1, byteArrayOf(42, 0))
-            assertEquals(42, reader.take(100)!![28].toInt())
+            val sample = byteArrayOf((pcmMarker++).toByte(), 0)
+            TeslaBrowserLink.audioHub.publish(audio, 0, 48000, 1, sample)
+            val packet = requireNotNull(reader.take(100))
+            assertEquals("The next record must contain PCM, without an intervening stop", 30, packet.size)
+            assertEquals(2, packet[4].toInt())
+            assertEquals(0, packet[5].toInt())
+            assertEquals("Screen loans must not reset CarPlay audio", 0, packet[7].toInt() and 2)
+            val epoch = java.nio.ByteBuffer.wrap(packet).getInt(16)
+            val expectedEpoch = pcmEpoch
+            if (expectedEpoch == null) pcmEpoch = epoch else assertEquals(expectedEpoch.toLong(), epoch.toLong())
+            org.junit.Assert.assertArrayEquals(sample, packet.copyOfRange(28, packet.size))
         }
         try {
             TeslaBrowserLink.pauseCarPlayDisplay { ready ->
@@ -460,7 +614,11 @@ class TeslaBrowserLinkTest {
             assertEquals(listOf(false), availability)
             assertEquals("A pending request retains the actual CarPlay owner", 1920, TeslaBrowserLink.hub.info()?.width)
             assertFalse(TeslaBrowserLink.airPlayDisplayReady)
+            assertEquals("suspended", (TeslaBrowserLink.status().receivers["carplay"] as? Map<*, *>)?.get("state"))
             assertCarPlayAudioContinues()
+
+            // iOS may end the retained CarPlay control channel while ordinary casting continues.
+            TeslaBrowserLink.carPlayReceiver = mapOf("state" to "failed")
 
             screen.set(CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Accessory, false))
             changed.get()!!.invoke()
@@ -468,6 +626,8 @@ class TeslaBrowserLinkTest {
             assertEquals(listOf(false, true), availability)
             assertEquals(720, TeslaBrowserLink.hub.info()?.width)
             assertTrue(TeslaBrowserLink.airPlayDisplayReady)
+            assertEquals("suspended", (TeslaBrowserLink.status().receivers["carplay"] as? Map<*, *>)?.get("state"))
+            assertEquals("failed", TeslaBrowserLink.carPlayReceiver["state"])
             assertCarPlayAudioContinues()
 
             screen.set(CarPlayScreenBorrowState(true, true, CarPlayScreenOwner.Controller, false))
@@ -496,6 +656,7 @@ class TeslaBrowserLinkTest {
             assertNull("Returning the screen waits for modesChanged", TeslaBrowserLink.hub.info())
             assertTrue(TeslaBrowserLink.airPlayActive)
             assertEquals(0, ended.get())
+            assertEquals("suspended", (TeslaBrowserLink.status().receivers["carplay"] as? Map<*, *>)?.get("state"))
             assertCarPlayAudioContinues()
 
             screen.set(CarPlayScreenBorrowState(false, false, CarPlayScreenOwner.Controller, false))
@@ -506,6 +667,7 @@ class TeslaBrowserLinkTest {
             assertEquals("avc1.640028", TeslaBrowserLink.hub.info()?.codec)
             assertFalse(TeslaBrowserLink.airPlayActive)
             assertEquals(1, ended.get())
+            assertEquals("failed", (TeslaBrowserLink.status().receivers["carplay"] as? Map<*, *>)?.get("state"))
             assertCarPlayAudioContinues()
         } finally {
             mirror.close()
@@ -874,9 +1036,23 @@ class TeslaBrowserLinkTest {
         assertNotEquals("", code)
     }
 
+    private fun ownershipSnapshot(state: CarPlayScreenBorrowState): CarPlayScreenBorrowSnapshot =
+        mock(CarPlayScreenBorrowSnapshot::class.java, org.mockito.Mockito.withSettings().defaultAnswer { call ->
+            if (call.method.name == "getState") state else org.mockito.Answers.RETURNS_DEFAULTS.answer(call)
+        })
+
     private fun storeSession(phoneBrowser: Boolean, width: Int = 800, height: Int = 480): CarPlayController =
         mock(CarPlayController::class.java).also { session ->
+            val fallbackSnapshot = ownershipSnapshot(CarPlayScreenBorrowState())
             `when`(session.phoneBrowserMode()).thenReturn(phoneBrowser)
+            `when`(session.screenBorrowSnapshot()).thenAnswer {
+                session.screenBorrowState?.let(::ownershipSnapshot)
+            }
+            org.mockito.Mockito.doAnswer { call ->
+                call.getArgument<CarPlayScreenBorrowSnapshot>(0).state == session.screenBorrowState
+            }.`when`(session).isCurrentScreenBorrowSnapshot(
+                org.mockito.ArgumentMatchers.any(CarPlayScreenBorrowSnapshot::class.java)
+                    ?: fallbackSnapshot)
             CarPlayBackgroundSession.store(session, mock(AndroidMediaSink::class.java), width, height, Any(),
                 CarPlaySessionDisplay(width, height, Surface.ROTATION_0, false, false, width, height)) { }
             CarPlayBackgroundSession.active = true

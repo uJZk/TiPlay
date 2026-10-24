@@ -248,9 +248,11 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         override fun onAirPlayEnded() {
             if (!resumeCarPlayRecoveryAfterAirPlay(castingEnded = true)) onBrowserFit()
+            updateDebugOverlays()
         }
         override fun onAirPlayStarted() {
             cancelScreenReturnRecovery()
+            updateDebugOverlays()
         }
         override fun onBrowserGone() { updateDebugOverlays() }
         override fun onBrowserViewport(viewport: com.shilapi.xcertplay.web.BrowserViewport) {
@@ -285,6 +287,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     mainDisplayDisableSafeArea = true)
                 if (browserDisplayReconnectHost.request(current, activeAirPlaySession, display)) {
                     appendLog("Browser display reconnect retaining wireless transport")
+                    updateDebugOverlays()
                 } else appendLog("Browser display reconnect retaining wireless transport is unavailable; keeping the current session")
             }
         }
@@ -5423,8 +5426,9 @@ class CarPlayHostActivity : ComponentActivity() {
 
             override fun onSessionActive(session: AirPlaySession) {
                 runOnUiThread {
-                    if (controllerGeneration != restartGeneration || isDestroyed ||
-                        !CarPlayBackgroundSession.isOwner(this@CarPlayHostActivity)) {
+                    if (controllerGeneration != restartGeneration || shuttingDown.get() || isDestroyed ||
+                        !CarPlayBackgroundSession.isOwner(this@CarPlayHostActivity) ||
+                        controller?.isCurrentControlSession(session) != true) {
                         return@runOnUiThread
                     }
                     activeAirPlaySession = session
@@ -5435,6 +5439,8 @@ class CarPlayHostActivity : ComponentActivity() {
                     } else clearIphoneCornerMask()
 
                     CarPlayBackgroundSession.active = true
+                    browserCarPlayPhase = "connected"
+                    browserConnectionProblem = null
                     browserCarPlayRetry.sessionConnected()
                     showConnectionHelp(null)
                     callPopupSessionReady = true
@@ -5443,6 +5449,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     logThemeState(ThemeModeDiagnostics.Source.SESSION_ACTIVE, resources.configuration)
                     syncAirPlayDarkMode(ThemeModeDiagnostics.Source.SESSION_ACTIVE)
                     applyClusterTurnOverlay()
+                    updateDebugOverlays()
                     if (AirPlayPersistence.loadClusterSmallWindowMode(this@CarPlayHostActivity) == CLUSTER_SMALL_WINDOW_AUTO &&
                         requestedSmallWindowForStream != null &&
                         requestedSmallWindowForStream != smallWindowActive()) {
@@ -5456,7 +5463,8 @@ class CarPlayHostActivity : ComponentActivity() {
             override fun onVideoFrameRendered(session: AirPlaySession) {
                 runOnUiThread {
                     if (controllerGeneration != restartGeneration || shuttingDown.get() || isDestroyed ||
-                        !CarPlayBackgroundSession.isOwner(this@CarPlayHostActivity)) return@runOnUiThread
+                        !CarPlayBackgroundSession.isOwner(this@CarPlayHostActivity) ||
+                        controller?.isCurrentControlSession(session) != true) return@runOnUiThread
                     // attachUi does not replay onSessionActive when a host adopts between replacement
                     // activation and its first frame. The controller clears pending only for that replacement.
                     if (activeAirPlaySession == null && browserDisplayReconnectHost.pending &&
@@ -5466,9 +5474,11 @@ class CarPlayHostActivity : ComponentActivity() {
                         CarPlayBackgroundSession.active = true
                     }
                     if (activeAirPlaySession !== session) return@runOnUiThread
+                    val displayWasPending = browserDisplayReconnectHost.pending
                     if (browserDisplayReconnectHost.firstFrame(controller, session)) {
                         mainHandler.post { if (!shuttingDown.get()) browserLinkHost.onBrowserFit() }
                     }
+                    if (displayWasPending && !browserDisplayReconnectHost.pending) updateDebugOverlays()
                     if (!startupRetryBudget.firstFrame(session, android.os.SystemClock.elapsedRealtime())) return@runOnUiThread
                     mainHandler.postDelayed({
                         if (controllerGeneration == restartGeneration && activeAirPlaySession === session &&
@@ -5566,10 +5576,13 @@ class CarPlayHostActivity : ComponentActivity() {
     ): (CarPlayStatus) -> Unit = report@{ status ->
         if (controllerGeneration != restartGeneration) return@report
         if (status is CarPlayStatus.Failed || status is CarPlayStatus.ControlEnded) {
+            cancelScreenReturnRecovery()
+            browserDisplayReconnectHost.cancel()
             callPopupSessionReady = false
             updateCallPopupGuard()
             if (!headUnitIntegrations()) carPlayRebuildPendingAfterAirPlay = true
-            if (status is CarPlayStatus.ControlEnded) deferCarPlayRecoveryForAirPlay()
+            if (status is CarPlayStatus.ControlEnded || (status is CarPlayStatus.Failed && !status.wifiResetRequired))
+                deferCarPlayRecoveryForAirPlay()
         }
         if (menuOpen) {
             if (status is CarPlayStatus.Failed) failurePendingAfterMenu = status
@@ -6200,21 +6213,25 @@ class CarPlayHostActivity : ComponentActivity() {
         task = Runnable {
             if (screenReturnRecoveryTask !== task) return@Runnable
             screenReturnRecoveryTask = null
-            if (controller !== current || activeAirPlaySession !== source || TeslaBrowserLink.airPlayActive ||
-                isDestroyed || isFinishing || shuttingDown.get() || handshakeResetInProgress ||
-                BrowserCarPlaySettings.disabled(this) || !CarPlayBackgroundSession.isOwner(this)) return@Runnable
-            if (current.activeAirPlaySessionToken() != null) {
-                appendLog("CarPlay screen returned before display recovery was needed")
-                return@Runnable
+            try {
+                if (controller !== current || activeAirPlaySession !== source || TeslaBrowserLink.airPlayActive ||
+                    isDestroyed || isFinishing || shuttingDown.get() || handshakeResetInProgress ||
+                    BrowserCarPlaySettings.disabled(this) || !CarPlayBackgroundSession.isOwner(this)) return@Runnable
+                if (current.activeAirPlaySessionToken() != null) {
+                    appendLog("CarPlay screen returned before display recovery was needed")
+                    return@Runnable
+                }
+                if (current.screenBorrowState?.carPlayHasScreen != true) return@Runnable
+                if (menuOpen || !browserReadyForCarPlay()) {
+                    recoveryPendingAfterAirPlay = true
+                    return@Runnable
+                }
+                if (browserDisplayReconnectHost.recoverAfterScreenLoan(current, source))
+                    appendLog("CarPlay ownership returned without a data stream; recovering display with retained wireless transport")
+                else appendLog("CarPlay returned-screen recovery unavailable or superseded; keeping the current control session")
+            } finally {
+                if (!isDestroyed && CarPlayBackgroundSession.isOwner(this)) updateDebugOverlays()
             }
-            if (current.screenBorrowState?.carPlayHasScreen != true) return@Runnable
-            if (menuOpen || !browserReadyForCarPlay()) {
-                recoveryPendingAfterAirPlay = true
-                return@Runnable
-            }
-            if (browserDisplayReconnectHost.recoverAfterScreenLoan(current, source))
-                appendLog("CarPlay ownership returned without a data stream; recovering display with retained wireless transport")
-            else appendLog("CarPlay returned-screen recovery unavailable or superseded; keeping the current control session")
         }
         screenReturnRecoveryTask = task
         // A resource grant can precede the next SETUP on the same socket. Reuse the normal
@@ -6943,13 +6960,15 @@ class CarPlayHostActivity : ComponentActivity() {
         val phase = when {
             BrowserCarPlaySettings.disabled(this) -> "disabled"
             shuttingDown.get() -> "stopping"
-            CarPlayBackgroundSession.active || activeScreenStreamTypes.isNotEmpty() -> "connected"
+            screenReturnRecoveryTask != null || browserDisplayReconnectHost.pending -> "recovering"
             handshakeResetInProgress || reconnectScheduled -> "recovering"
             startupRetryStopped || browserCarPlayPhase == "failed" -> "failed"
+            CarPlayBackgroundSession.active || activeScreenStreamTypes.isNotEmpty() -> "connected"
             requirement != null -> "blocked"
             else -> browserCarPlayPhase
         }
-        val title = getString(BrowserCarPlayStatus.title(phase))
+        val displayPhase = BrowserCarPlayStatus.presentationPhase(phase, !headUnitIntegrations() && TeslaBrowserLink.airPlayActive)
+        val title = getString(BrowserCarPlayStatus.title(displayPhase))
         if (phase == "connected") browserConnectionProblem = null
         val problem = when (requirement) {
             R.string.settings_hint_location -> BrowserConnectionProblem.LOCATION

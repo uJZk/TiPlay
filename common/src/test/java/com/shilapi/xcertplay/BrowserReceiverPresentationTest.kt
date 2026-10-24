@@ -38,4 +38,15 @@ class BrowserReceiverPresentationTest {
             assertEquals(R.string.settings_airplay_disabled_status, title(state, true))
         }
     }
+
+    @Test fun castingDefersCarPlayPresentationWithoutChangingItsUnderlyingResult() {
+        val failure = BrowserCarPlayStatus.phase(CarPlayStatus.Failed("Control channel ended"))
+        assertEquals("suspended", BrowserCarPlayStatus.presentationPhase(failure, true))
+        assertEquals("failed", BrowserCarPlayStatus.presentationPhase(failure, false))
+        assertEquals("suspended", BrowserCarPlayStatus.presentationPhase("connected", true))
+        assertEquals("suspended", BrowserCarPlayStatus.presentationPhase("recovering", true))
+        assertEquals(R.string.settings_carplay_waiting_airplay_status, BrowserCarPlayStatus.title("suspended"))
+        assertEquals("disabled", BrowserCarPlayStatus.presentationPhase("disabled", true))
+        assertEquals("stopping", BrowserCarPlayStatus.presentationPhase("stopping", true))
+    }
 }

@@ -90,7 +90,7 @@
   },
   "k": "st",
   "v": {
-    "page.version": "v83",
+    "page.version": "v84",
     "video.streamGeneration": 3,
     "video.epoch": 7,
     "link.path": "worker-stream",

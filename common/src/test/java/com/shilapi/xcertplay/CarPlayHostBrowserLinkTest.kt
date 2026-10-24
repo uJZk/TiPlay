@@ -367,9 +367,11 @@ class CarPlayHostBrowserLinkTest {
         org.mockito.Mockito.`when`(current.screenBorrowState).thenReturn(
             CarPlayScreenBorrowState(false, false, CarPlayScreenOwner.Controller, false))
         org.mockito.Mockito.`when`(current.recoverBrowserDisplayAfterScreenLoan(source)).thenReturn(true)
+        CarPlayBackgroundSession.active = true
 
         (get("browserLinkHost") as TeslaBrowserLink.Host).onAirPlayEnded()
         (get("browserLinkHost") as TeslaBrowserLink.Host).onAirPlayEnded()
+        assertEquals("A control session without its returned picture is recovering", "recovering", TeslaBrowserLink.carPlayReceiver["state"])
 
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_999))
         org.mockito.Mockito.verify(current, org.mockito.Mockito.never()).recoverBrowserDisplayAfterScreenLoan(source)
@@ -381,6 +383,15 @@ class CarPlayHostBrowserLinkTest {
         assertEquals(0, get("restartGeneration"))
         assertFalse(get("recoveryPendingAfterAirPlay") as Boolean)
         assertFalse(get("reconnectScheduled") as Boolean)
+        assertEquals("A retained-transport replacement still waits for its first picture", "recovering", TeslaBrowserLink.carPlayReceiver["state"])
+
+        val replacement = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        org.mockito.Mockito.`when`(current.isCurrentControlSession(replacement)).thenReturn(true)
+        val listener = activity.javaClass.getDeclaredMethod("createSessionListener", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, get("restartGeneration")) as com.shilapi.xcertplay.airplay.AirPlaySessionListener
+        listener.onSessionActive(replacement)
+        listener.onVideoFrameRendered(replacement)
+        assertEquals("The replacement's first frame completes recovery", "connected", TeslaBrowserLink.carPlayReceiver["state"])
     }
 
     @Test fun aNewMainScreenThatArrivesBeforeTheReturnCallbackKeepsItsSession() {
@@ -399,19 +410,58 @@ class CarPlayHostBrowserLinkTest {
         assertEquals(0, get("restartGeneration"))
     }
 
+    @Test fun aRealControlFailureCancelsTheReturnedScreenWaitAndStaysVisible() {
+        val current = queueRecoveryBeforeAirPlay()
+        val source = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        set("activeAirPlaySession", source)
+        org.mockito.Mockito.`when`(current.screenBorrowState).thenReturn(
+            CarPlayScreenBorrowState(false, false, CarPlayScreenOwner.Controller, false))
+        CarPlayBackgroundSession.active = true
+        (get("browserLinkHost") as TeslaBrowserLink.Host).onAirPlayEnded()
+        assertEquals("recovering", TeslaBrowserLink.carPlayReceiver["state"])
+
+        reportStatus(com.shilapi.xcertplay.orchestration.CarPlayStatus.Failed("Wi-Fi needs a reset", wifiResetRequired = true))
+        assertNull(get("screenReturnRecoveryTask"))
+        assertEquals("Old media activity cannot conceal a current control failure", "failed", TeslaBrowserLink.carPlayReceiver["state"])
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        org.mockito.Mockito.verify(current, org.mockito.Mockito.never()).recoverBrowserDisplayAfterScreenLoan(source)
+        assertEquals("A required reset is not an automatic retry", 0, get("restartGeneration"))
+    }
+
+    @Test fun aRealFailureCancelsTheRetainedDisplayReconnectInsteadOfHidingBehindIt() {
+        val current = queueRecoveryBeforeAirPlay()
+        val source = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        set("activeAirPlaySession", source)
+        org.mockito.Mockito.`when`(current.screenBorrowState).thenReturn(
+            CarPlayScreenBorrowState(false, false, CarPlayScreenOwner.Controller, false))
+        org.mockito.Mockito.`when`(current.recoverBrowserDisplayAfterScreenLoan(source)).thenReturn(true)
+        CarPlayBackgroundSession.active = true
+        (get("browserLinkHost") as TeslaBrowserLink.Host).onAirPlayEnded()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        assertEquals("recovering", TeslaBrowserLink.carPlayReceiver["state"])
+
+        reportStatus(com.shilapi.xcertplay.orchestration.CarPlayStatus.Failed("Wi-Fi needs a reset", wifiResetRequired = true))
+        org.mockito.Mockito.verify(current).cancelBrowserDisplayReconnect()
+        assertEquals("failed", TeslaBrowserLink.carPlayReceiver["state"])
+        assertEquals(0, get("restartGeneration"))
+    }
+
     @Test fun aMainScreenArrivingDuringTheReturnWaitKeepsItsControlAndAudioSession() {
         val current = queueRecoveryBeforeAirPlay()
         val source = org.mockito.Mockito.mock(AirPlaySession::class.java)
         set("activeAirPlaySession", source)
         org.mockito.Mockito.`when`(current.screenBorrowState).thenReturn(
             CarPlayScreenBorrowState(false, false, CarPlayScreenOwner.Controller, false))
+        CarPlayBackgroundSession.active = true
         (get("browserLinkHost") as TeslaBrowserLink.Host).onAirPlayEnded()
+        assertEquals("recovering", TeslaBrowserLink.carPlayReceiver["state"])
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_999))
         org.mockito.Mockito.`when`(current.activeAirPlaySessionToken()).thenReturn(Any())
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1))
         org.mockito.Mockito.verify(current, org.mockito.Mockito.never()).recoverBrowserDisplayAfterScreenLoan(source)
         org.mockito.Mockito.verify(current, org.mockito.Mockito.never()).close()
         assertSame(current, get("controller"))
+        assertEquals("connected", TeslaBrowserLink.carPlayReceiver["state"])
     }
 
     @Test fun aNewLoanCancelsTheOldReturnedScreenWait() {
@@ -819,9 +869,57 @@ class CarPlayHostBrowserLinkTest {
         assertEquals(0, get("restartGeneration"))
     }
 
+    @Test fun aQueuedActiveCallbackCannotOverwriteTheSameControllersNewControlSession() {
+        val current = org.mockito.Mockito.mock(CarPlayController::class.java)
+        val old = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        val replacement = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        val owner = java.util.concurrent.atomic.AtomicReference(old)
+        org.mockito.Mockito.`when`(current.phoneBrowserMode()).thenReturn(true)
+        org.mockito.Mockito.doAnswer { call ->
+            call.getArgument<AirPlaySession>(0) === owner.get()
+        }.`when`(current).isCurrentControlSession(org.mockito.ArgumentMatchers.any(AirPlaySession::class.java) ?: old)
+        set("controller", current)
+        val listener = activity.javaClass.getDeclaredMethod("createSessionListener", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, 0) as com.shilapi.xcertplay.airplay.AirPlaySessionListener
+        val queueOld = Thread { listener.onSessionActive(old) }
+        queueOld.start(); queueOld.join(5_000)
+        assertFalse(queueOld.isAlive)
+        assertNull(get("activeAirPlaySession"))
+
+        owner.set(replacement)
+        listener.onSessionActive(replacement)
+        assertSame(replacement, get("activeAirPlaySession"))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertSame("The queued old callback is obsolete when it reaches the UI", replacement, get("activeAirPlaySession"))
+        assertTrue(CarPlayBackgroundSession.active)
+    }
+
+    @Test fun aControlSessionClosedBeforeItsQueuedActiveCallbackCannotBecomeConnected() {
+        val current = org.mockito.Mockito.mock(CarPlayController::class.java)
+        val closing = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        val currentSessionOpen = AtomicBoolean(true)
+        org.mockito.Mockito.`when`(current.phoneBrowserMode()).thenReturn(true)
+        org.mockito.Mockito.`when`(current.isCurrentControlSession(closing)).thenAnswer { currentSessionOpen.get() }
+        set("controller", current)
+        set("browserCarPlayPhase", "failed")
+        CarPlayBackgroundSession.active = false
+        val listener = activity.javaClass.getDeclaredMethod("createSessionListener", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, 0) as com.shilapi.xcertplay.airplay.AirPlaySessionListener
+        val queueActive = Thread { listener.onSessionActive(closing) }
+        queueActive.start(); queueActive.join(5_000)
+        assertFalse(queueActive.isAlive)
+        currentSessionOpen.set(false)
+
+        shadowOf(Looper.getMainLooper()).idle()
+        assertNull(get("activeAirPlaySession"))
+        assertFalse(CarPlayBackgroundSession.active)
+        assertEquals("failed", get("browserCarPlayPhase"))
+    }
+
     @Test fun anAdoptedReplacementFirstFrameCompletesWithoutAReplayedActiveCallback() {
         val current = org.mockito.Mockito.mock(CarPlayController::class.java)
         val replacement = org.mockito.Mockito.mock(AirPlaySession::class.java)
+        org.mockito.Mockito.`when`(current.isCurrentControlSession(replacement)).thenReturn(true)
         set("controller", current)
         val host = activity.javaClass.getDeclaredMethod("getBrowserDisplayReconnectHost")
             .apply { isAccessible = true }.invoke(activity) as BrowserDisplayReconnectHost

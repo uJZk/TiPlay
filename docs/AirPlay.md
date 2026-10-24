@@ -68,6 +68,41 @@ cannot deliver into or tear down a successor, including across control sessions.
 Command delivery reconciles a synchronous stop or replacement request after the
 current write completes; a reentrant callback cannot strand the required return or
 new borrow. A fresh ownership notification remains necessary for output authority.
+Low-frequency screen commands register their CSeq before writing and correlate
+responses within the current event-channel generation. At most 16 requests are
+retained; a five-second monotonic deadline retires diagnostic records, not the
+control connection or resource owner. RTSP status and the response plist's
+`status` remain distinct. Missing/malformed command status stays unknown; no
+reply or timeout grants ownership or triggers automatic retransmission. Retiring
+an event channel cancels its pending records. Old readers cannot apply ownership
+notifications, clear the new cipher or close a successor connection; command
+dispatch and replacement share an ordering boundary without holding the write
+lock across application callbacks.
+
+Session-level SETUP initializes one verified control session only once. An exact
+retry with the same CSeq, path/protocol and body digest reuses the cached plaintext
+response, encrypted with the control channel's next counter. Other repeated initial
+SETUP requests return RTSP 455 without changing valid control/audio resources.
+Stream-level SETUP remains independent. One verification epoch installs at most
+one event cipher: counters must not restart under the same derived key. Event
+recovery requires a new control session and fresh PairVerify, rather than guessing
+cross-connection counters or changing the key derivation.
+The single-initialization boundary matches
+[WirelessCarPlay's existing-control-setup guard](https://github.com/45clouds/WirelessCarPlay/blob/51145ef55f8dd9f1cbadd58353cacb5e0ca215e9/source/Sources/AirPlayReceiverSession.c#L1761).
+
+Unused event listeners retire if superseded before establishment. Accepted sockets,
+UDP keepalive sockets and worker registrations have explicit retirement, including
+close-during-accept and blocked writes. The timing port and sender are reused by
+their clock owner; the clock cannot restart after session close.
+Borrow/return delivery coalesces reentrant changes without holding state locks
+across transport writes. A successful borrow still owes its return if readiness
+changes during the write; a new readiness generation needs fresh ownership proof.
+
+Browser output uses a controller/session/state ownership snapshot and rechecks it
+after external callbacks. Retired grants cannot authorize a successor. Late
+Active/Frame and casting Start/End notifications are rejected by identity or
+generation; a missing primary stream remains recovery, even with retained control.
+
 Sparse Debug semantic loan/close events are described in [Diagnostics](Diagnostics.md);
 encrypted control bytes and a rolling TXT window cannot always reconstruct ownership.
 Controller ownership without a usable main-screen stream does not complete display
@@ -115,8 +150,15 @@ builds borrow/return for integrated CarPlay `videoPlayback`; its checked mode ha
 only handles app states, not resource-owner confirmation. This does not establish
 ordinary AirPlay URL coexistence. [Catplay](https://github.com/catplay-labs/catplay/blob/bc6edae49554f2d0160b18ed18fc7b7376353115/carplay/catplay_carplay/src/carplay_rx/sink/session_handle.rs#L146-L180)
 separates borrow/unborrow, command results and ModesChanged; no license was found at
-that revision, so no code is copied. These comparisons do not explain this iPhone's
-peer EOF or replace fresh ownership and actual-picture evidence.
+that revision, so no code is copied. The separately reviewed
+[WirelessCarPlay command completion](https://github.com/45clouds/WirelessCarPlay/blob/51145ef55f8dd9f1cbadd58353cacb5e0ca215e9/source/Sources/AirPlayReceiverSession.h#L330-L342)
+and [response status handling](https://github.com/45clouds/WirelessCarPlay/blob/51145ef55f8dd9f1cbadd58353cacb5e0ca215e9/source/Sources/AirPlayReceiverSession.c#L840-L870)
+also distinguish command results from its
+[ModesChanged callback](https://github.com/45clouds/WirelessCarPlay/blob/51145ef55f8dd9f1cbadd58353cacb5e0ca215e9/source/Sources/AirPlayReceiverSession.h#L155-L159).
+That pinned revision is this review's reference: the earlier review did not retain
+a WirelessCarPlay commit. Its root MIT license does not remove the SDK files'
+MFi restrictions; no SDK implementation is copied. These comparisons do not
+explain this iPhone's peer EOF or replace fresh ownership and actual-picture evidence.
 
 HEVC sample-entry parsing accepts the sender's bounded terminal zero padding after complete
 validated boxes. Truncated boxes and HDR/Dolby metadata remain rejected; padding cannot
@@ -246,9 +288,10 @@ controlled scheduling baseline does not identify actual vehicle decoder throughp
 An audio-master change was not adopted because sustained slow decoding could leave
 video unboundedly behind. Worker isolation, a source-provided lower-cost representation
 and measured hardware throughput remain options requiring explicit ownership,
-synchronization and slow-progress acceptance. Only the URL video byte budget changes
-this round; CarPlay/mirror remain at 64 MiB, while DSP, watermarks, the 500 ms audio
-horizon and synchronization stay unchanged. No acoustic improvement is established. See
+synchronization and slow-progress acceptance. The 96-to-256 MiB URL budget adjustment
+left CarPlay/mirror at 64 MiB and did not change DSP, watermarks, the 500 ms audio
+horizon or synchronization. Subsequent DSP changes are described in
+[Browser WASM](Browser-wasm.md). No acoustic improvement is established. See
 [URL playback evidence](Diagnostics.md#airplay-url-playback-evidence).
 
 Readiness and play intent are distinct from an advancing clock. With audio, a suspended

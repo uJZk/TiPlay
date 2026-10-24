@@ -358,15 +358,18 @@ class AirPlayReceiverService : Service() {
 
     companion object {
         private const val CHANNEL = "tiplay_airplay_receiver"
-        @Volatile var state: String = "stopped"
-            private set
+        internal data class StateSnapshot(val state: String, val revision: Long)
+        private val publishedState = java.util.concurrent.atomic.AtomicReference(StateSnapshot("stopped", 0))
+        val state: String get() = publishedState.get().state
+        internal fun stateSnapshot(): StateSnapshot = publishedState.get()
         private val stateListeners = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
         internal fun listenState(listener: () -> Unit): AutoCloseable {
             stateListeners.add(listener)
             return AutoCloseable { stateListeners.remove(listener) }
         }
-        private fun publish(value: String) {
-            state = value
+        internal fun publish(value: String) {
+            // Repeated labels are distinct events: a later failure can belong to a new cast.
+            publishedState.updateAndGet { StateSnapshot(value, it.revision + 1) }
             stateListeners.forEach { it() }
         }
     }

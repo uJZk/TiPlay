@@ -14,44 +14,79 @@ internal enum class VideoPlaybackDelivery { SENT, QUEUED, UNCHANGED }
 internal class VideoPlaybackAvailability(
     private val send: (Boolean) -> Boolean,
 ) {
+    private val stateLock = Any()
     private var desired: Boolean? = null
     private var featureEnabled = false
     private var eventReady = false
     private var lastSent: Boolean? = null
+    private var generation = 0L
+    private var deliveryOwner: Any? = null
 
-    @Synchronized
+    private data class Delivery(val allowed: Boolean, val generation: Long)
+
     fun setDesired(allowed: Boolean): VideoPlaybackDelivery {
-        desired = allowed
+        synchronized(stateLock) { desired = allowed }
         return flush()
     }
 
-    @Synchronized
     fun setFeatureEnabled(enabled: Boolean): VideoPlaybackDelivery {
-        if (featureEnabled != enabled) {
-            featureEnabled = enabled
-            if (!enabled) lastSent = null
+        synchronized(stateLock) {
+            if (featureEnabled != enabled) {
+                featureEnabled = enabled
+                generation++
+                lastSent = null
+            }
         }
         return flush()
     }
 
-    @Synchronized
     fun setEventReady(ready: Boolean): VideoPlaybackDelivery {
-        if (eventReady != ready) {
-            eventReady = ready
-            if (!ready) lastSent = null
+        synchronized(stateLock) {
+            if (eventReady != ready) {
+                eventReady = ready
+                generation++
+                lastSent = null
+            }
         }
         return flush()
     }
 
     private fun flush(): VideoPlaybackDelivery {
-        val next = desired ?: return VideoPlaybackDelivery.QUEUED
-        if (!featureEnabled || !eventReady) return VideoPlaybackDelivery.QUEUED
-        if (lastSent == next) return VideoPlaybackDelivery.UNCHANGED
-        return if (send(next)) {
-            lastSent = next
-            VideoPlaybackDelivery.SENT
-        } else {
-            VideoPlaybackDelivery.QUEUED
+        val owner = Any()
+        var delivery = synchronized(stateLock) {
+            val next = desired ?: return VideoPlaybackDelivery.QUEUED
+            if (!featureEnabled || !eventReady || deliveryOwner != null) return VideoPlaybackDelivery.QUEUED
+            if (lastSent == next) return VideoPlaybackDelivery.UNCHANGED
+            deliveryOwner = owner
+            Delivery(next, generation)
+        }
+        try {
+            while (true) {
+                // A failed socket write can synchronously retire the channel. Neither a state
+                // monitor nor a delivery monitor may be held while invoking that transport.
+                val delivered = send(delivery.allowed)
+                delivery = synchronized(stateLock) {
+                    val current = desired
+                    val sameGeneration = generation == delivery.generation
+                    if (delivered && sameGeneration && featureEnabled && eventReady) lastSent = delivery.allowed
+                    when {
+                        current == null || !featureEnabled || !eventReady || (!delivered && sameGeneration) -> {
+                            deliveryOwner = null
+                            return VideoPlaybackDelivery.QUEUED
+                        }
+                        lastSent == current -> {
+                            deliveryOwner = null
+                            return VideoPlaybackDelivery.SENT
+                        }
+                        // Reentrant or concurrent changes coalesce here. In particular, an old
+                        // channel's success or failure cannot suppress delivery on its successor.
+                        else -> Delivery(current, generation)
+                    }
+                }
+            }
+        } finally {
+            // A throwing transport must not strand the pump or clear a newer caller's owner.
+            synchronized(stateLock) { if (deliveryOwner === owner) deliveryOwner = null }
         }
     }
 }

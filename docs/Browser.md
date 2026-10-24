@@ -25,16 +25,27 @@ the video producer are reported separately: waiting for a CarPlay frame must not
 say AirPlay is connecting, and a missing session alone does not prove that TiPlay
 is waiting for an iPhone. Older apps without receiver phases use a neutral waiting
 message. AirPlay URL video, photos and audio have their own playback states.
+Successful connections and healthy playback show no status text. Waiting,
+recovery, pause, buffering and actionable faults remain visible when relevant.
+The current producer, including an explicit absence, takes precedence over an old
+decoder configuration. A pending screen request keeps the still-authorized picture;
+a replacement video epoch waits for its own first frame.
+AirPlay preparation and screen-return waits suspend the foreground CarPlay status;
+a background CarPlay disconnect must not appear as a failed casting attempt.
+When AirPlay ends and ownership returns, the page resumes the actual CarPlay phase.
 Browser capability/codec failures, protocol mismatches and browser takeover use
 the existing notification-card style with a Close button. These explanations have
 no timeout, and rerenders cannot reopen a dismissed error; explicitly starting a
 new connection resets dismissal. Location guidance keeps its separate persistent
 card. Receiver fault details stay on Android, below its short status title.
 
-During setup, the page distinguishes local candidate gathering, contacting Android,
-SRP authentication and direct-channel readiness. Failure reports preserve the stage
-and bounded anonymous candidate/state counters without SDP, addresses or pairing
-secrets. The retry countdown describes the next attempt, not Android response time.
+Normal setup shows a short connecting message; retries keep an actionable reason
+and countdown. The default-collapsed **Diagnostics** section contains candidate
+gathering, Android contact, authentication and channel-readiness detail, the cache
+revision and the Performance monitor switch. Opening it does not enable Android
+Debug capture. Failure reports preserve the stage and bounded anonymous
+candidate/state counters without SDP, addresses or pairing secrets. The retry
+countdown describes the next attempt, not Android response time.
 The complete gathered SDP snapshot is covered by the authenticated transcript;
 no fictitious candidate or end-of-candidates marker is invented.
 

@@ -9,6 +9,7 @@ const apply = source.slice(start, source.indexOf('\n}', start) + 2);
 test('legacy endpoint status cannot change the browser address or reconnect it', () => {
   let link = { host: '169.254.111.111:8080', code: '1234' };
   let status, portalRevision = null, fitRequestedAt = 0;
+  const updateReceiverNotice = () => {};
   const effects = [];
   const browserLocation = { update() {} };
     const browserAudio = { status() {} }, airplayControls = { update() {} };

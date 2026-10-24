@@ -14,6 +14,7 @@
     <string name="settings_carplay_connecting_status">CarPlay: подключение</string>
     <string name="settings_carplay_recovering_status">CarPlay: переподключение</string>
     <string name="settings_carplay_failed_status">CarPlay: сбой</string>
+    <string name="settings_carplay_waiting_airplay_status">CarPlay ожидает завершения AirPlay</string>
     <string name="settings_carplay_stopping_status">CarPlay: отключение</string>
     <string name="settings_airplay_starting_status">AirPlay: запуск</string>
     <string name="settings_airplay_mirroring_status">AirPlay: повтор экрана</string>

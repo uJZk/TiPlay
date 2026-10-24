@@ -38,7 +38,7 @@ class BrowserMainHostTest {
 
     @Before fun setUp() {
         RuntimeEnvironment.getApplication().getSharedPreferences("tiplay_carplay", 0).edit().clear().commit()
-        AirPlayReceiverService::class.java.getDeclaredField("state").apply { isAccessible = true }.set(null, "stopped")
+        AirPlayReceiverService.publish("stopped")
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
         reportReadyBrowser()
         controllers = mockConstruction(CarPlayController::class.java) { mock, _ ->

@@ -28,6 +28,7 @@ import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
 import { createAirPlayTrustNotification } from './airplay-trust.js';
 import { createBrowserNotice } from './browser-notice.js';
+import { createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor } from './receiver-presentation.js';
 import { browserDiagnosticEvents, createFaultDiagnosticReporter, PAGE_VERSION } from './browser-diagnostics.js';
 
 const STRINGS = {
@@ -46,7 +47,7 @@ const STRINGS = {
     rtcStates: 'ICE {0}, peer {1}; DC video/audio/control {2}/{3}/{4}.',
     rtcAndroidNoCandidates: 'Android’s answer contains no ICE candidates; no Android candidate is available for the direct connection.',
     rtcFetch: 'Cannot reach the Android HTTP service. Check the address and local-network permission.',
-    rtcMissingInterface: 'Android has no WebRTC pairing interface. Check that the matching test APK is installed.',
+    rtcMissingInterface: 'Android has no WebRTC pairing interface. Check that TiPlay is up to date.',
     rtcAndroidSignaling: 'Android could not prepare the WebRTC connection. Check its diagnostic report.',
     rtcPairingFailed: 'The phone’s pairing verification failed. Re-enter the current pairing code.',
     rtcBadResponse: 'Android returned an invalid pairing response.',
@@ -68,6 +69,14 @@ const STRINGS = {
     connect: 'Connect',
     disconnect: 'Disconnect',
     settings: 'Setting',
+    diagnostics: 'Diagnostics',
+    diagnosticsHelp: 'Connection details for troubleshooting. These do not change playback or enable Android Debug mode.',
+    diagnosticsEmpty: 'No connection details yet.',
+    retryNetwork: 'Cannot reach Android. Check its address and allow local-network access. Retrying in {0} s…',
+    retryUpdate: 'Update TiPlay on Android and reload this page. Retrying in {0} s…',
+    retryAndroid: 'Android is not ready. Open TiPlay on the phone. Retrying in {0} s…',
+    retryPairing: 'Pairing could not be verified. Check the current code in TiPlay. Retrying in {0} s…',
+    retryConnection: 'Cannot connect. Keep both devices on the same network. Retrying in {0} s…',
     stats: 'Performance monitor',
     statsLabel: 'Performance monitor: codec, current FPS, current Delta, dropped frames',
     fit: 'Apply and reconnect',
@@ -91,13 +100,13 @@ const STRINGS = {
     carPlayRecovering: 'CarPlay is reconnecting…',
     carPlayStopping: 'CarPlay is disconnecting…',
     carPlayBlocked: 'CarPlay is waiting for setup or permission.',
+    carPlaySuspended: 'CarPlay is waiting for AirPlay to finish.',
+    airPlayPermission: 'Allow local-network access for TiPlay on the Android device.',
+    airPlayFailed: 'AirPlay could not continue.',
+    airPlayFailureHelp: 'AirPlay stopped unexpectedly. Check that AirPlay is enabled in TiPlay on Android, then try casting again from your iPhone.',
     pictureUnavailable: 'Picture unavailable.',
-    airPlayAudio: 'AirPlay audio.',
-    airPlayPhoto: 'AirPlay photo.',
-    airPlayPlaying: 'AirPlay is playing.',
     airPlayPaused: 'AirPlay is paused.',
     airPlayBuffering: 'AirPlay is buffering…',
-    streaming: '{0} · {1} fps',
     badCode: 'The pairing code is wrong. Check it in TiPlay on the Android device.',
     replaced: 'Another browser took over the display. Connect again to take it back.',
     protocol: 'TiPlay on the Android device does not match this page. Update the app.',
@@ -125,7 +134,7 @@ const STRINGS = {
     rtcStates: 'ICE {0}，Peer {1}；DC 视频/音频/控制 {2}/{3}/{4}。',
     rtcAndroidNoCandidates: '安卓端响应中没有 ICE 候选，当前没有可用于直连的安卓候选。',
     rtcFetch: '无法访问安卓端 HTTP 服务，请检查地址和本地网络访问权限。',
-    rtcMissingInterface: '安卓端缺少 WebRTC 配对接口，请确认安装了配套测试 APK。',
+    rtcMissingInterface: '安卓端缺少 WebRTC 配对接口，请确认 TiPlay 已更新。',
     rtcAndroidSignaling: '安卓端未能准备 WebRTC 连接，请查看安卓端诊断报告。',
     rtcPairingFailed: '安卓端的配对校验未通过，请重新输入当前配对码。',
     rtcBadResponse: '安卓端返回了无效的配对响应。',
@@ -147,6 +156,14 @@ const STRINGS = {
     connect: '连接',
     disconnect: '断开',
     settings: '设置',
+    diagnostics: '诊断',
+    diagnosticsHelp: '排查问题时查看连接详情。此处不会改变播放或开启安卓端 Debug 模式。',
+    diagnosticsEmpty: '暂无连接诊断。',
+    retryNetwork: '无法访问安卓端，请检查地址并允许本地网络访问。{0} 秒后重试…',
+    retryUpdate: '请更新安卓端 TiPlay 并重新加载本页。{0} 秒后重试…',
+    retryAndroid: '安卓端尚未就绪，请在手机上打开 TiPlay。{0} 秒后重试…',
+    retryPairing: '配对验证未通过，请检查 TiPlay 当前显示的配对码。{0} 秒后重试…',
+    retryConnection: '暂时无法连接，请确认两台设备连接同一网络。{0} 秒后重试…',
     stats: '性能监视器',
     statsLabel: '性能监视器：编码、当前 FPS、当前 Delta、丢帧计数',
     fit: '应用并重新连接',
@@ -170,13 +187,13 @@ const STRINGS = {
     carPlayRecovering: 'CarPlay 正在重新连接…',
     carPlayStopping: 'CarPlay 正在断开连接…',
     carPlayBlocked: 'CarPlay 等待设置或授权。',
+    carPlaySuspended: 'CarPlay 等待投屏结束。',
+    airPlayPermission: '请在安卓端授予 TiPlay 本地网络访问权限。',
+    airPlayFailed: 'AirPlay 暂时无法继续。',
+    airPlayFailureHelp: 'AirPlay 意外中断。请确认安卓端 TiPlay 已开启 AirPlay，然后从 iPhone 重新投屏。',
     pictureUnavailable: '画面暂不可用。',
-    airPlayAudio: 'AirPlay 音频。',
-    airPlayPhoto: 'AirPlay 照片。',
-    airPlayPlaying: 'AirPlay 正在播放。',
     airPlayPaused: 'AirPlay 已暂停。',
     airPlayBuffering: 'AirPlay 正在缓冲…',
-    streaming: '{0} · {1} fps',
     badCode: '配对码不正确，请在安卓端上的 TiPlay 中核对。',
     replaced: '另一个浏览器接管了画面。再次连接即可收回。',
     protocol: '安卓端上的 TiPlay 与本页不匹配，请更新应用。',
@@ -196,6 +213,7 @@ const CODEC_NAMES = { avc1: 'H.264', avc3: 'H.264', hvc1: 'HEVC', hev1: 'HEVC', 
 const LINK_KEY = 'tiplay.link', STATS_KEY = 'tiplay.stats';
 const $ = id => document.getElementById(id);
 const browserNotice = createBrowserNotice($('browser-notice'), lang);
+const receiverNotices = createReceiverNoticeTracker();
 const stage = $('stage'), touch = $('touch');
 const codecName = codec => CODEC_NAMES[String(codec).split('.')[0]] ?? codec;
 const renderReconnect = createReconnectOverlay({
@@ -238,6 +256,7 @@ let retryCountdownTimer = null, rtcMedia = null, rtcProgress = null, resourceTok
 let controlClock = null;
 const controlWaiters = new Set(), videoDiagnosticTracker = createVideoDiagnosticTracker();
 let config = null, live = false, status = null, unsupported = null, videoStats = {};
+let receiverFailure = false;
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 let terminalDiagnosticId = null;
 const faultDiagnostics = createFaultDiagnosticReporter({ emit: event => outbox?.push(event, 'fault') });
@@ -467,6 +486,7 @@ function resumeCarPlay() {
 function start() {
   if (active || videoPath.path === 'none') return;
   browserNotice.reset();
+  resetReceiverPresentation();
   cancelViewport();
   portalRevision = null;
   // A fresh session id per start lets "Connect" take the display back after another browser replaced this one.
@@ -575,6 +595,7 @@ async function connectVideo() {
     clearTimeout(timer);
     if (id !== streamId || abort.signal.aborted) { media.close(); return; }
     opened = true;
+    resetReceiverPresentation();
     lastError = null;
     resourceToken = media.resourceToken();
     const sample = media.clockSample();
@@ -672,8 +693,21 @@ function applyStatus(next) {
     portalRevision = next.portalRevision;
   }
   status = next;
+  updateReceiverNotice();
   if (!next.fit || Date.now() - fitRequestedAt > 15000) fitRequestedAt = 0;
   render();
+}
+
+function updateReceiverNotice() {
+  const next = receiverNotices.observe(status, config);
+  receiverFailure = next.failure;
+  if (next.resetId) browserNotice.reset(next.resetId);
+  if (next.noticeId) browserNotice.update({ id: next.noticeId, text: t('airPlayFailureHelp') });
+}
+
+function resetReceiverPresentation() {
+  receiverNotices.reset();
+  receiverFailure = false;
 }
 
 function controlFailed(error) {
@@ -693,9 +727,10 @@ function onVideoMessage(message) {
     sink?.delay?.(mediaTiming.plans());
     // Audio has its own ordered per-type reset/epoch. Its channel may deliver
     // the new producer's PCM before this config, so video cannot clear that audio.
-    if (config?.epoch !== message.config.epoch) videoStats = {};
+    if (config?.epoch !== message.config.epoch || config?.mode !== message.config.mode) { videoStats = {}; live = false; }
     config = message.config;
     unsupported = null;
+    updateReceiverNotice();
   } else if (message.type === 'idle') {
     config = null;
     live = false;
@@ -732,22 +767,26 @@ function render() {
   const inlineNotice = !active && ['badCode', 'invalidCode', 'invalidHost'].includes(notice?.key);
   let problem = !active && notice && notice.key !== 'stopped' && !inlineNotice
     ? { id: notice.key, text: t(notice.key, ...notice.args) } : null;
-  if (active && unsupported) {
-    const key = unsupported === 'hdr' ? 'unsupportedHdr' : /^(hvc1|hev1)\b/.test(unsupported) ? 'unsupportedHevc' : 'unsupported';
-    problem = { id: `codec:${unsupported}`, text: t(key, codecName(unsupported)) };
+  const videoProblem = active ? videoProblemFor(status, config, unsupported) : null;
+  if (active && unsupported && !videoProblem) browserNotice.reset(`codec:${unsupported}`);
+  if (videoProblem) {
+    const key = videoProblem === 'hdr' ? 'unsupportedHdr' : /^(hvc1|hev1)\b/.test(videoProblem) ? 'unsupportedHevc' : 'unsupported';
+    problem = { id: `codec:${videoProblem}`, text: t(key, codecName(videoProblem)) };
   }
   browserNotice.update(problem);
   $('message').textContent = inlineNotice ? t(notice.key, ...notice.args) : '';
   $('status').textContent = text;
-  $('status').hidden = Boolean($('message').textContent);
-  renderReconnect({ active, live: live || airplayControls.videoActive(), phase: airplayControls.videoActive() ? 'waiting' : phase, pending: !airplayControls.videoActive() && fitRequestedAt > 0, text });
+  $('status').hidden = !text || Boolean($('message').textContent);
+  const videoReady = videoReadyFor(status, config, live);
+  renderReconnect({ active, live: videoReady || airplayControls.videoActive(), phase: airplayControls.videoActive() ? 'waiting' : phase, pending: !airplayControls.videoActive() && fitRequestedAt > 0, text });
   $('connect').textContent = t(active ? 'resume' : 'connect');
   $('code').disabled = active;
   $('host').disabled = active;
-  $('stats').hidden = !(active && live && statsVisible && !stage.hidden);
+  $('stats').hidden = !(active && videoReady && statsVisible && !stage.hidden);
   if (active && statsVisible) {
     renderStats();
   }
+  if ($('diagnostics').open) $('connection-details').textContent = connectionDetailsText();
 }
 
 function renderStats() {
@@ -787,36 +826,52 @@ function rtcRetryText(error, seconds) {
   return candidates ? `${detail} ${candidates}` : detail;
 }
 
+function retryStatusText(error, seconds) {
+  if (error?.status === 429) return t('throttled', seconds);
+  if (/^no-(local|remote)-(udp-)?candidates$/.test(error?.reason ?? '')) return t('retryConnection', seconds);
+  const key = { fetch: 'retryNetwork', 'missing-interface': 'retryUpdate', 'bad-response': 'retryUpdate',
+    'android-signaling': 'retryAndroid', pairing: 'retryPairing', ice: 'retryConnection', timeout: 'retryConnection' }[rtcFailureSummary(error).reason];
+  return t(key ?? (error ? 'unreachable' : 'lost'), seconds);
+}
+
+function connectionDetailsText() {
+  if (phase === 'retry' && lastError) {
+    return `${PAGE_VERSION}\n${rtcRetryText(lastError, Math.max(1, Math.ceil((retryAt - Date.now()) / 1000)))}`;
+  }
+  if (!rtcProgress) return `${PAGE_VERSION}\n${t('diagnosticsEmpty')}`;
+  const candidates = rtcCandidateText(rtcProgress);
+  return `${PAGE_VERSION}\n${rtcStageText(rtcProgress.stage)}${candidates ? `\n${candidates}` : ''}`;
+}
+
 function statusText() {
   if (!active) {
     if (notice?.key === 'noVideo') return t('pictureUnavailable');
     if (notice && !['badCode', 'invalidCode', 'invalidHost'].includes(notice.key)) return t('stopped');
     return t(link.code ? 'ready' : 'enterCode');
   }
-  if (unsupported) return t('pictureUnavailable');
-  if (phase === 'connecting') {
-    if (!rtcProgress) return t('connecting');
-    const candidates = rtcCandidateText(rtcProgress), text = rtcStageText(rtcProgress.stage);
-    return `${PAGE_VERSION} · ${candidates ? `${text} ${candidates}` : text}`;
-  }
+  if (phase === 'connecting') return t('connecting');
   if (phase === 'retry') {
     const seconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
-    if (lastError?.status !== 429 && (lastError?.rtcReason || lastError?.rtcDiagnostic)) return `${PAGE_VERSION} · ${rtcRetryText(lastError, seconds)}`;
-    return t(lastError?.status === 429 ? 'throttled' : lastError ? 'unreachable' : 'lost', seconds);
+    return retryStatusText(lastError, seconds);
   }
   const playback = status?.airplay;
-  if (playback?.kind === 'audio') return t('airPlayAudio');
+  const receiver = status?.receivers?.carplay;
+  const source = videoSourceFor(status, config);
+  if (receiverFailure) return t('airPlayFailed');
+  if (status?.receivers?.airplay?.state === 'permission' && (receiver?.state === 'suspended' || source === 'airplay')) return t('airPlayPermission');
+  if (playback?.kind === 'audio') return '';
   if (playback?.resource && playback.outputAllowed !== false) {
-    if (playback.kind === 'photo') return t('airPlayPhoto');
+    if (playback.kind === 'photo') return '';
     if (playback.buffering) return t('airPlayBuffering');
-    if (playback.ready) return t(playback.playing ? 'airPlayPlaying' : 'airPlayPaused');
+    if (playback.ready) return playback.playing ? '' : t('airPlayPaused');
     return t('waitingVideo');
   }
-  if (live) return t('streaming', codecName(config?.codec), Math.round(videoStats.decodedFps ?? 0));
-  const source = config?.mode?.startsWith('airplay') ? 'airplay' : status?.videoSource;
+  if (videoProblemFor(status, config, unsupported)) return t('pictureUnavailable');
+  if (videoReadyFor(status, config, live)) return '';
+  if (['mirror', 'video', 'loading', 'photo'].includes(status?.receivers?.airplay?.state)) return t('waitingVideo');
+  if (receiver?.state === 'suspended' && source !== 'airplay') return t('carPlaySuspended');
   if (source === 'airplay') return t('waitingVideo');
-  if (source === 'carplay' || config?.mode === 'carplay') return t('waitingFrame');
-  const receiver = status?.receivers?.carplay;
+  if (source === 'carplay') return t('waitingFrame');
   const key = {
     ready: 'waitingPhone', waiting: 'waitingPhone', searching: 'waitingPhone',
     preparing: 'carPlayPreparing', connecting: 'phoneConnecting', connected: 'waitingFrame',
@@ -1013,6 +1068,7 @@ $('stats-toggle').addEventListener('click', () => {
   try { localStorage.setItem(STATS_KEY, statsVisible ? '1' : '0'); } catch (_) {}
   render();
 });
+$('diagnostics').addEventListener('toggle', render);
 
 window.addEventListener('pagehide', event => {
   resumeOnShow = active;

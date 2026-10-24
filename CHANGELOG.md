@@ -4,6 +4,22 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.16
+
+Version code 58 and browser cache/diagnostic revision v84. Release artifacts and
+publication evidence are recorded in [Build](docs/Build.md#beta-release).
+
+- Improve CarPlay/AirPlay screen borrowing, return and recovery. Match control replies to the current command and session, reject stale results and release retired session resources without interrupting unrelated audio or control channels.
+- Keep initial RTSP setup idempotent within one verified session. Reject a different repeated initialization without resetting event encryption or valid control/audio resources.
+- Stop reporting a CarPlay connection failure when AirPlay takes over. Keep actual screen ownership authoritative, preserve the CarPlay picture while a screen request is pending, and wait for each replacement video's own first frame.
+- Simplify the car browser: healthy connections and playback show no status text. Keep setup, recovery and actionable errors visible; move technical connection detail and the Performance monitor into collapsed Diagnostics.
+- Keep AirPlay errors specific to the active casting attempt, with instructions to retry from the iPhone. Dismissed errors stay closed during polling; a new resource or connection can show a new fault. Distinguish current faults from old receiver snapshots and local-network permission failures.
+
+Software regression covers session cleanup, command/response correlation, screen
+ownership and the production browser UI. Physical iPhone/Android/vehicle switching,
+sound and latency still require device acceptance; these changes do not establish
+that all remaining clicks or vehicle-specific compatibility issues are resolved.
+
 ## 0.2.20-beta.15
 
 Version code 57 and browser cache/diagnostic revision v83. Release artifacts and
