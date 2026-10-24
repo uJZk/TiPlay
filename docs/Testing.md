@@ -33,9 +33,15 @@ four injected main-getter faults: frozen, 0.98× progress, ±5-second jumps and
 exceptions. Every run produces real nonzero Worklet PCM, preserves independent
 source deadlines and suspend/resume behavior, and retains all 85 runtime hashes.
 
-These are software/source-build results, not vehicle acoustic, panel-latency or
-signed-release acceptance. See [WASM boundaries](Browser-wasm.md) and the
-[browser harnesses](../tests/web-e2e/README.md).
+Beta.15/code57 and v83 repeat the complete Android CI, all 893 browser tests,
+normal Chromium media-clock output and real offline loading. All 150 browser
+inputs remain identical after normalizing three version declarations. Signed
+release lint/build and independent signer/runtime/native-library/DEX/source/checksum
+verification pass; exact artifacts are in [Build](Build.md#beta-release).
+
+These are software/source-build and signed-artifact results; vehicle acoustic,
+panel-latency and physical acceptance remain unverified. See
+[WASM boundaries](Browser-wasm.md) and the [browser harnesses](../tests/web-e2e/README.md).
 
 ## Automated checks
 

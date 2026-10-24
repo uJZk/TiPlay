@@ -55,7 +55,10 @@ and measured slower-case exceptions. Rebuild and byte-verify the binaries using
 [Build](docs/Build.md#browser-wasm-build). Its [audio clock roles](docs/Browser-wasm.md#audio-clock-roles)
 record frame-based live timing, causal output probes and natural URL completion;
 [Testing](docs/Testing.md#browser-wasm-verification) records the 893 browser and
-4,131 Android test results, including faulty-currentTime Chromium runs. The independent
+4,131 Android test results, including faulty-currentTime Chromium runs.
+The [beta.15/code57 release record](docs/Build.md#beta-release) binds the APK and
+v83 webpage to one build commit and records signer/runtime/source verification.
+The independent
 [Cloudflare Workers comparison](docs/Todo.md#cloudflare-workers-audio-comparison)
 and vehicle uploads remain separate unfinished work; native WebRTC audio tracks
 remain a separate non-URL alternative.

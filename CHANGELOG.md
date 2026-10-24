@@ -17,8 +17,9 @@ publication evidence are recorded in [Build](docs/Build.md#beta-release).
 Functional verification: 893 browser tests, 4,131 Android unit tests, all three
 required debug lint/build targets, native libsoxr checks and reproducible builds
 of all five WASM binaries. Production-CSP Chromium checks cover actual output,
-faulty getters, AAC PCM, URL playback and offline loading. Signed artifact and
-version-only validation results are recorded in Build after verification.
+faulty getters, AAC PCM, URL playback and offline loading. Signed release lint/build,
+independent APK/runtime/native/DEX/source/checksum verification and v83 public-site
+checks pass; exact artifacts and version preflight are recorded in Build.
 Actual phone/vehicle sound, physical latency and remaining clicks require device
 acceptance; source checks do not establish them.
 

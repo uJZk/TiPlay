@@ -8,17 +8,15 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is **0.2.20-beta.14** (code **56**). Run
+prerelease is **0.2.20-beta.15** (code **57**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v82** with WebRTC DataChannel as the formal live-media path.
-The signed beta.14 APK retains its original build commit and release artifacts;
-the newer browser-only deployment is recorded below. Software checks
-are in [Testing](Testing.md#webrtc-integrated-acceptance).
+the deployed page uses **v83** with WebRTC DataChannel as the formal live-media path.
+The signed beta.15 APK and webpage v83 share the verified build commit recorded
+below. Software checks are in [Testing](Testing.md#webrtc-integrated-acceptance).
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
 independent `/webrtc/` subsite without an alias or redirect; the APK defaults to the
-root. The beta record below distinguishes the signed APK's build commit from the
-webpage commit and records deployment verification separately. Every
+root. The beta record below identifies both build and deployment provenance. Every
 language's download entry opens the GitHub Releases index without a version-specific
 URL. Debug APK metadata retains its diagnostic suffix.
 
@@ -63,14 +61,14 @@ packages are defined by the Android workflow.
 
 ## Browser WASM build
 
-The verified browser revision is **v82**. Its source uses genuine WASM for
+The verified browser revision is **v83**. Its source uses genuine WASM for
 libsoxr, AAC-ELD and bulk live-audio DSP, and SIMD SoundTouch for URL tempo.
 It also removes live timing's dependence on the public `currentTime` getter;
 the [clock roles](Browser-wasm.md#audio-clock-roles) distinguish render frames,
 performance time, native output observations and URL graph coordinates.
 The [verification record](Testing.md#browser-wasm-verification) covers source
-builds and browser behavior. Public deployment provenance is recorded below;
-the signed beta.14 release remains unchanged.
+builds and browser behavior. Public deployment and signed beta.15 package
+verification are recorded below.
 See [execution boundaries](Browser-wasm.md), including measured cases that retain
 native browser APIs or JavaScript.
 
@@ -148,144 +146,110 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Current browser deployment
 
-The formal root webpage **v82** comes from
-`d2c2609a6ef43eb0c443ef73413374cd1f36165f`. Its
-[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/40051166173)
-completed successfully. The published **0.2.20-beta.14/code56** APK, tag and release
-assets retain their original bytes. Android raw-capture and diagnostic changes
-in this source are verified by debug builds; they are not included in that
-previously published signed APK.
+The formal root webpage **v83** and signed **0.2.20-beta.15/code57** APK come
+from `4cd5806257b35523ccc6b7224e17acce85d51873`. The
+[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/40053151725)
+completed successfully. Every language's download entry opens the
+version-independent [GitHub Releases index](https://github.com/uJZk/TiPlay/releases).
 
-The page uses genuine libsoxr, FDK AAC, bulk audio kernels and SIMD SoundTouch
-WASM with the [documented browser/performance exceptions](Browser-wasm.md).
-Live timing uses actual render frames and causal output observations;
-URL audio completion follows native node completion. All **893** browser tests
-and **4,131** Android unit tests pass, together with three debug lint/build
-targets and native libsoxr checks. Five shipped WASM binaries reproduce
-byte-for-byte. Independent [GitHub Android checks](https://github.com/uJZk/TiPlay/actions/runs/40051166231)
-also pass both the complete Android job and the five-binary WASM reproduction job.
-Production-CSP Chromium checks include four faulty `currentTime`
-getters and a normal run, each retaining all **85** runtime hashes. See
-[Testing](Testing.md#browser-wasm-verification) for the detailed scope.
+The browser uses genuine libsoxr, FDK AAC, bulk audio kernels and SIMD SoundTouch
+WASM, with the [documented execution exceptions](Browser-wasm.md). Live timing
+uses actual render frames and causal output observations; URL audio completion
+follows native node completion. The five WASM binaries are unchanged from v82
+and reproduce byte-for-byte. All **150** checked browser inputs remain identical
+after normalizing the three version-bearing JavaScript files.
 
-Independent public verification completed at **2026-10-24 09:47:25 UTC+08:00**:
-all **182** files (**11,866,515 bytes**) match the committed build, all **86**
+Independent public verification completed at **2026-10-24 10:12:57 UTC+08:00**:
+all **182** files (**11,866,515 bytes**) match the committed assembly, all **86**
 Service Worker entries are available, and all **5** WASM binaries use
-`application/wasm`. The **11** ChatGPT v2 files retain their previous bytes,
-all **8** language download pages use the Releases index, and the **10** checked
-removed paths return direct 404, including the former libsoxr asm.js engine and
-wrapper generator. All **193** URL checks pass without redirects or retries.
-
-The independent ChatGPT diagnostic page remains v2. The separate
-[Cloudflare Workers comparison and result uploads](Todo.md#cloudflare-workers-audio-comparison)
-remain unimplemented. Remaining audible clicks, vehicle performance and actual
-speaker/panel timing require physical evidence; software clock checks do not
-establish their resolution.
+`application/wasm`. The **11** ChatGPT v2 files retain their prior bytes, all
+**8** download languages use the Releases index, and the **10** checked removed
+paths return direct 404, including the old libsoxr asm.js engine and wrapper
+generator. All **193** URL checks pass without redirects or retries.
 
 ## Beta release
 
-Published [TiPlay 0.2.20-beta.14](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.14),
-code **56**, was originally published with webpage **v80**. The latest browser-only
-deployment is recorded above. Independent artifact and original deployment checks
-passed. Every language's download entry opens the
-version-independent [GitHub Releases index](https://github.com/uJZk/TiPlay/releases).
-
-This release preserves independent render-rate fitting when native output-phase
-measurements reset, using one bounded applied-rate controller. Native phase checks
-retain their own evidence; rate projection and actual PCM/tails retain full source
-uncertainty and deadlines. Voice recovery uses actual contiguous PCM and retained
-Soxr preparation, pays the 20 ms wait once and reuses source conversion, phase checks
-and mixing. It fixes permanent recovery waits, finite short utterances on large
-render blocks, conflicting 280 ms plans and first presentation-anchor promotion.
-
-Immediate buffered AirPlay flushes use the protocol's 23-bit sequence, retain the
-boundary packet, clear old anchors and isolate already-prefetched track origins.
-Unsupported deferred ranges return explicit RTSP 501 without playback mutation.
-Debug records fit selection, observed context pauses and voice readiness as bounded
-scalars. See [verification](Testing.md#media-clock-and-continuous-audio-acceptance),
-[Diagnostics](Diagnostics.md) and [AirPlay](AirPlay.md).
-
-### Source validation and remaining scope
-
-| Check | Evidence for this release |
-| --- | --- |
-| Functional browser suite | **814 passed** before version-only changes; all **138** checked inputs remain byte-identical after normalizing three version-bearing JavaScript files. |
-| Functional native suite | **69 scoped cases passed**, with mobile debug assembly; metadata preflight repeats some of these cases. |
-| Independent signals | **76** voice waveform cases, **26** lifecycle/short-utterance cases and **7** media oracles pass on the final functional source, including actual PCM/source progress and legal/expired output. |
-| Version/site preflight | **62** browser, **51** native cases across four classes, **9** release-draft and **2** root-site tests passed; these scopes overlap the functional suites. |
-| Real browser | Chromium 151 production-CSP media-clock checks pass again on beta.14/v80; all **61** runtime hashes remain unchanged during execution. |
-| Signed release | Release lint/build and independent package, signer, runtime, ABI, DEX, source-archive and checksum verification passed. |
-| Complete Android CI | Skipped at the user's explicit request; scoped tests and release lint/build do not replace it. |
-| Root deployment | **138** files and **188** URL checks match; **106** cache entries exist, eight download pages use the Releases index, and **10** removed-path checks return direct 404. |
-
-### Artifact and deployment evidence
-
-Prerelease **421892511** was published at **2026-10-23 13:50:47 UTC**. The signed APK,
-byte-identical `git archive` source ZIP and deployed page came from
-`59efe314ae8e1a4b21b86c0feb451c624ff13e4b`, tagged `v0.2.20-beta.14`.
-The [signed workflow](https://github.com/uJZk/TiPlay/actions/runs/39962490704) and
-[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39962485128) succeeded.
-Publication preserved the three independently downloaded and checked assets:
+Published [TiPlay 0.2.20-beta.15](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.15),
+code **57**, is prerelease **422463974**, published at **2026-10-24 10:32:06 UTC+08:00**.
+The APK, matching committed source ZIP and webpage v83 share build commit
+`4cd5806257b35523ccc6b7224e17acce85d51873`. The
+[signed workflow](https://github.com/uJZk/TiPlay/actions/runs/40053153040)
+passed release lint/build and uploaded the three independently verified assets:
 
 | Asset | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `TiPlay-0.2.20-beta.14.apk` | 101,060,901 | `d8c5e1aaa1ee239fbcfe27d05178270da07a86136cd9154f93f58183932418c4` |
-| `TiPlay-0.2.20-beta.14-source.zip` | 20,900,562 | `44bf8fe6eacfeb5232057b8e80d03cacddba722599c4ab2b0c22caf44e948eac` |
-| `SHA256SUMS.txt` | 191 | `af669ebe2e00c2f5eb986f883d594a8d1207a524516b587a5a91579b1234bb2a` |
+| `TiPlay-0.2.20-beta.15.apk` | 101,060,905 | `6919f19b7f7e458fa20074df16fcf98b01883bef3ec90739917646176eb5e78a` |
+| `TiPlay-0.2.20-beta.15-source.zip` | 20,854,178 | `34ac836c798be3c94f7f9c33bce8a6098d109620fd2b6b32da271b1098be87cc` |
+| `SHA256SUMS.txt` | 191 | `d11171e9ca79717220bccd02773f32b25a06e5c485d4dd22b2e61504d918fd42` |
 
-All **18** supported 64-bit ELF libraries meet 16 KiB LOAD alignment, and
-`zipalign -P 16` passes. All **7** packaged JNA libraries match beta.13, including
-three inherited legacy ABI files. DEX inspection finds all **8** new class/method
-contracts in the actual release APK; the beta.13 negative control contains none.
-The signed workflow was dispatched from `main` with the exact build SHA; the
-published lightweight tag independently resolves to that same SHA.
+Publication preserves all three verified asset IDs, lengths and digests. Anonymous
+release/index/checksum GETs and APK/source HEADs pass at **2026-10-24 10:33:56 UTC+08:00**:
+checksum bytes and final content lengths match, the release is a public prerelease,
+and its lightweight tag points to the exact build commit.
 
-The APK uses non-debug package `com.ujzk.tiplay`, code56, and the same signing
-certificate as published beta.13, SHA-256
+This release includes the genuine browser WASM migration, actual-frame clock
+validation, native URL-completion handling, reduced Android raw-capture encoding
+allocation and bounded tempo-backend diagnostics. Dynamic rate compensation
+retains one bounded controller; unknown output timing does not become a verified
+source deadline. See [clock roles](Browser-wasm.md#audio-clock-roles) and
+[diagnostics](Diagnostics.md).
+
+### Verification
+
+The functional source passed **893 browser tests**, **4,131 Android unit tests**,
+all three required debug lint/build targets and native libsoxr checks. The
+versioned build repeats all **893** browser tests, production-CSP Chromium 151
+media-clock output and v83 offline-cache checks. The normal browser run retains
+all **85** runtime hashes; offline reload verifies **86** cache entries and
+executes all five WASM binaries. Earlier faulty-`currentTime` runs cover frozen,
+slow, jumping and throwing getters on the same functional code. The versioned
+[Android CI run](https://github.com/uJZk/TiPlay/actions/runs/40053151756)
+passes all required Android checks and WASM reproduction; detailed software scope is in
+[Testing](Testing.md#browser-wasm-verification).
+
+The APK is non-debug `com.ujzk.tiplay`, minimum SDK **28**, target SDK **37**.
+Its signing certificate matches published beta.14, SHA-256
 `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`.
-Both runtime identity files match the pinned DiPlay 0.2.18 inputs and beta.13;
-source archives exclude credentials and private captures. The APK contains only
-the two intended runtime files. Native/DEX inspection checks packaged code and
-source identity, not actual vehicle sound. RTC libraries cover `arm64-v8a`,
-`armeabi-v7a`, `x86` and `x86_64`.
+Exactly two runtime identity files match beta.14 and the pinned DiPlay 0.2.18
+inputs byte-for-byte. The source ZIP matches `git archive` and excludes runtime
+credentials; see the existing [experimental identity notice](Third-party-notices.md#experimental-authentication-data).
 
-The [root website](https://ujzk.github.io/TiPlay/) matches the exact build's assembled
-site, canonical SHA-256
-`e5eaa6a73b68abb7ccabdb0fa129452fec962b311da7a822e6f8b4635cd77f0a`.
-All 188 ordinary/build-query URL checks passed without automatic retries, old bytes
-or HTTP 503; the 10 removed `webrtc`/`WebRTC`/legacy-transport checks returned direct
-404 without redirects. Unauthenticated release/index/checksum GETs and APK/source
-HEADs also pass, with matching checksum bytes and content lengths.
+All four supported ABIs (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`) contain nine
+native libraries each. All **18** supported 64-bit ELF libraries meet 16 KiB LOAD
+alignment; `zipalign -P 16` passes. All **7** packaged JNA libraries match beta.14,
+including three inherited ABI files. Inspection of all **5** DEX files confirms
+the new ByteBuffer Base64/buffered capture path and tempo-backend enum/report
+field; the actual beta.14 APK is the negative control for both changes.
 
 ### Remaining scope
 
-The captured approximately 1.8-second cumulative audio/performance-clock progress
-difference has no confirmed underlying cause. Old snapshots cannot distinguish
-brief context pauses, internal scheduling and output-clock behavior. The separate
-clock-compensation/recovery defects are reproduced and repaired; this does not
-establish that every CarPlay, mirror or separate URL-audio click is eliminated.
-Actual phone/vehicle playback, physical latency and parameter tuning remain in
-[Todo](Todo.md#browser-and-carplay-audio).
-
-URL video budgeting remains **256 MiB**, with 32 queued pictures and the held
-picture included in byte ownership; CarPlay/mirror remain at 64 MiB. This does not
-repair sustained insufficient decoding throughput. LIVI-based CarPlay borrowing
-and session-practice work remains explicitly deferred. Very short isolated PCM
-still requires real filter lookahead; temporary shortages are not signal EOF.
-Debug raw capture retains disk backpressure, and renderer statistics alone do not
-measure vehicle speakers or panels.
+Real-car CarPlay, complete Bluetooth audio and iPhone AirPlay acceptance remain
+pending. Software checks do not establish speaker/panel latency or elimination
+of every audible click. The older approximately 1.8-second clock-progress
+difference still has no confirmed cause. Debug capture retains disk backpressure.
+Physical playback and parameter work remain in [Todo](Todo.md#browser-and-carplay-audio);
+the independent [Cloudflare comparison and uploads](Todo.md#cloudflare-workers-audio-comparison)
+remain unimplemented. The ChatGPT diagnostic page remains independent v2.
 
 ### Previous release provenance
 
-[Beta.13](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.13), code55 / v79,
-was published at **2026-10-23 07:34:49 UTC** as prerelease **421554656**. Its signed
-APK and deployed page came from `70a86088e8ec57c1adb24045d28c1f06f9300f0f`;
-[signed workflow](https://github.com/uJZk/TiPlay/actions/runs/39917075886) and
-[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39917163410) succeeded.
-Its published APK SHA-256 is
-`2b4161736d7bdcc0a0762af40d720468e72cdae7367042ca0fc3edf407235765`.
-Beta.14's signer, runtime files and native libraries are compared with that actual
-published APK; earlier detailed release records remain in Git.
+- [Beta.14](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.14), code56/v80,
+  prerelease **421892511**, was published **2026-10-23 13:50:47 UTC** from
+  `59efe314ae8e1a4b21b86c0feb451c624ff13e4b`.
+  [Signed workflow](https://github.com/uJZk/TiPlay/actions/runs/39962490704) and
+  [original Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39962485128)
+  succeeded. Its **101,060,901-byte** APK SHA-256 remains
+  `d8c5e1aaa1ee239fbcfe27d05178270da07a86136cd9154f93f58183932418c4`.
+- [Beta.13](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.13), code55/v79,
+  prerelease **421554656**, was published **2026-10-23 07:34:49 UTC** from
+  `70a86088e8ec57c1adb24045d28c1f06f9300f0f`.
+  [Signed workflow](https://github.com/uJZk/TiPlay/actions/runs/39917075886) and
+  [Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39917163410)
+  succeeded. Its APK SHA-256 remains
+  `2b4161736d7bdcc0a0762af40d720468e72cdae7367042ca0fc3edf407235765`.
+
+These published artifacts retain their original bytes. Earlier detailed evidence,
+including beta.14 source/checksum digests and its original test scope, remains in Git.
 
 ## Updating an installed app
 
