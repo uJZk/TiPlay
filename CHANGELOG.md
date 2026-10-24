@@ -4,6 +4,24 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.15
+
+Version code 57 and browser cache/diagnostic revision v83. Release artifacts and
+publication evidence are recorded in [Build](docs/Build.md#beta-release).
+
+- Run bulk browser audio in genuine libsoxr, FDK AAC, fixed-memory mixing and SIMD SoundTouch WASM. Retain native browser APIs and measured faster JavaScript cases, with complete corresponding source and notices.
+- Base live timing on actual render frames and causal request/receipt bounds. Keep one bounded drift-compensation controller, preserve original measurement age and leave source deadlines unknown without valid native output timestamps.
+- Complete URL audio on natural native-node completion, preventing inaccurate getter estimates from cutting off live sources or blocking EOF.
+- Reduce Android raw-capture allocation and media transport copies; report the actual URL tempo backend in bounded diagnostics.
+
+Functional verification: 893 browser tests, 4,131 Android unit tests, all three
+required debug lint/build targets, native libsoxr checks and reproducible builds
+of all five WASM binaries. Production-CSP Chromium checks cover actual output,
+faulty getters, AAC PCM, URL playback and offline loading. Signed artifact and
+version-only validation results are recorded in Build after verification.
+Actual phone/vehicle sound, physical latency and remaining clicks require device
+acceptance; source checks do not establish them.
+
 ## 0.2.20-beta.14
 
 Version code 56 and browser cache/diagnostic revision v80. Publication evidence is

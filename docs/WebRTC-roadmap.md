@@ -21,16 +21,19 @@ APK 与网页构建来源和独立核验见
 [诊断](Diagnostics.md#airplay-url-playback-evidence)和[测试](Testing.md#webrtc-integrated-acceptance)。
 
 浏览器音频方案继续保留。CarPlay／镜像已经使用持续 AudioWorklet 输出、有界
-PCM 队列、跨包 Soxr 状态和欠载恢复，并非尚未实现这些机制；当前 DSP 是
-wasm2js 生成的 JavaScript，不是运行时 WASM。主线程 `currentTime` 分批刷新是
-已确认的观测边界，不能据此认定整个音频时钟或物理 DAC 错误。
+PCM 队列、跨包 Soxr 状态和欠载恢复，并非尚未实现这些机制；当前 DSP 使用
+真正的 libsoxr／FDK AAC／混音 WASM，URL 调速采用 SIMD SoundTouch；
+原生浏览器 API 和实测较快的 JavaScript 保留，边界见 [WASM 设计](Browser-wasm.md)。
+实时控制依据 Worklet 实际帧和因果探针，主线程 `currentTime` 只作诊断；
+原生输出时间缺失时不认证源时延达标，软件映射仍不能证明物理 DAC／扬声器时间。
 URL 投屏仍是独立的 Canvas／Web Audio 引擎，以 `AudioBufferSourceNode`
 分段输出，由页面 rAF 补充最多 500 ms、且受共同音画覆盖限制的排程；它没有
 复用直播 Worklet。WebCodecs 的实际解码由浏览器异步实现，不能将页面上的
 解复用、PCM 处理及排程概括成全部解码算法都在主线程。
 
-下一步先在 Cloudflare Workers 部署当前 wasm2js 与真正 WASM 的同源 PCM
-对照页，并直接上传有界结果；此项尚未开始，本轮不实现测试页或迁移音轨。
+独立 Cloudflare Workers 对照页仍未开始；它将比较 Git 恢复的先前 wasm2js
+基线与真正 WASM 的同源 PCM，并上传有界结果。生产 WASM 迁移已完成，
+此独立车辆对照实验与音轨迁移仍另行处理。
 独立设计分析建议让实时输出持续消费样本，将网络／重计算与实时回调分离，
 避免播放热路径分配及阻塞；这些原则不是已完成的优化或消除爆音的证明。
 原生 WebRTC 音轨保留为 CarPlay／镜像等非 URL 场景的备选，须另行核验安卓
