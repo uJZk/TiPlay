@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PcmTimeline } from '../../site/play/pcm-timeline.js';
@@ -104,7 +105,7 @@ test('interpolation never bridges a real timestamp gap or overlapping audio', ()
 });
 
 test('worklet epoch and format changes retire the previous interpolation neighbor', async () => {
-  const previous = Object.fromEntries(['AudioWorkletProcessor', 'registerProcessor', 'sampleRate', 'currentTime'].map(key => [key, globalThis[key]]));
+  const previous = Object.fromEntries(['AudioWorkletProcessor', 'registerProcessor', 'sampleRate', 'currentTime', 'currentFrame'].map(key => [key, globalThis[key]]));
   let Processor;
   globalThis.AudioWorkletProcessor = class { constructor() { this.messages = []; this.port = { postMessage: value => this.messages.push(value) }; } };
   globalThis.registerProcessor = (_, value) => { Processor = value; };
@@ -121,6 +122,7 @@ test('worklet epoch and format changes retire the previous interpolation neighbo
       post({ ...next, sourceTime: base + frames * 1000 / 48000, pcm: waveform(frames, next.rate, next.channels).buffer });
       assert.deepEqual(processor.messages.filter(value => value.consumed), [{ consumed: frames * 2 * 2, generation: 1 }]);
       globalThis.currentTime = (frames - 0.5) / 48000;
+      globalThis.currentFrame = frames - 1;
       const output = [new Float32Array(128), new Float32Array(128)];
       processor.process([], [output]);
       assert.equal(output[0][0], 0); assert.equal(output[1][0], 0, 'retired PCM cannot interpolate into the replacement stream');

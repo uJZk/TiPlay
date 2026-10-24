@@ -319,11 +319,13 @@ test('disconnect is a separate full-width row immediately below connect', () => 
   assert.match(read('style.css'), /#disconnect\{margin-top:8px\}/);
 });
 
-test('the service worker precaches every playback file and leaves the independent clock lab on the network', () => {
+test('the service worker precaches every runtime file and leaves sources and the independent clock lab on the network', () => {
   const assets = JSON.parse(/const ASSETS = (\[[^\]]*\]);/.exec(read('sw.js'))[1].replaceAll("'", '"'));
   const files = readdirSync(play, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile() && entry.name !== 'sw.js').map(entry => (entry.parentPath.slice(new URL(play).pathname.replace(/\/$/, '').length) + '/' + entry.name).replaceAll('\\', '/').replace(/^\/+/, ''));
-  assert.deepEqual([...assets].filter(name => name !== './').sort(), files.filter(name => !name.startsWith('chatgpt/')).sort());
+  assert.deepEqual([...assets].filter(name => name !== './').sort(), files.filter(name => !name.startsWith('chatgpt/')
+    && !name.split('/').includes('source') && /\.(js|wasm|css|html|svg|png)$/.test(name)).sort());
   assert.equal(assets.some(name => name.startsWith('chatgpt/')), false);
+  assert.equal(assets.some(name => /\.(zip|gz)$/.test(name)), false);
 });
 
 test('the service worker answers only its own files, so the download pages in its scope reach the network', () => {

@@ -1,0 +1,461 @@
+{
+  "node": "v24.19.0",
+  "v8": "13.6.233.17-node.51",
+  "wasmSha256": "a0efdc6ef789ceb0c2057b575a066c8d4a933b2f89290aadd04769adec4e276f",
+  "wasmBytes": 162531,
+  "wasm2jsBytes": 364339,
+  "compileMs": 0.6813679999999991,
+  "parity": [
+    {
+      "rate": 8000,
+      "outputRate": 44100,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.011337852333348391
+    },
+    {
+      "rate": 8000,
+      "outputRate": 44100,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.011337852333348391
+    },
+    {
+      "rate": 8000,
+      "outputRate": 48000,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.010416657650068828
+    },
+    {
+      "rate": 8000,
+      "outputRate": 48000,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.010416657650068828
+    },
+    {
+      "rate": 16000,
+      "outputRate": 44100,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.011337906441010799
+    },
+    {
+      "rate": 16000,
+      "outputRate": 44100,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.011337906441010799
+    },
+    {
+      "rate": 16000,
+      "outputRate": 48000,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.010416669664330414
+    },
+    {
+      "rate": 16000,
+      "outputRate": 48000,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.010416669664330414
+    },
+    {
+      "rate": 24000,
+      "outputRate": 44100,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.0009211880173795702
+    },
+    {
+      "rate": 24000,
+      "outputRate": 44100,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.0009211880173795702
+    },
+    {
+      "rate": 24000,
+      "outputRate": 48000,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": -4.944939272869912e-10
+    },
+    {
+      "rate": 24000,
+      "outputRate": 48000,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": -4.944939272869912e-10
+    },
+    {
+      "rate": 32000,
+      "outputRate": 44100,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.003525373346983986
+    },
+    {
+      "rate": 32000,
+      "outputRate": 44100,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.003525373346983986
+    },
+    {
+      "rate": 32000,
+      "outputRate": 48000,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.0026041871124912555
+    },
+    {
+      "rate": 32000,
+      "outputRate": 48000,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.0026041871124912555
+    },
+    {
+      "rate": 44100,
+      "outputRate": 44100,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": 0.1643912260920049
+    },
+    {
+      "rate": 44100,
+      "outputRate": 44100,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": 0.1643912260920049
+    },
+    {
+      "rate": 44100,
+      "outputRate": 48000,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.004747724048456803
+    },
+    {
+      "rate": 44100,
+      "outputRate": 48000,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": -0.004747724048456803
+    },
+    {
+      "rate": 48000,
+      "outputRate": 44100,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": 0.15655942861563577
+    },
+    {
+      "rate": 48000,
+      "outputRate": 44100,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": 0.15655942861563577
+    },
+    {
+      "rate": 48000,
+      "outputRate": 48000,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": 0.1510344389720295
+    },
+    {
+      "rate": 48000,
+      "outputRate": 48000,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": 0.1510344389720295
+    },
+    {
+      "rate": 96000,
+      "outputRate": 44100,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": 0.1518446913609928
+    },
+    {
+      "rate": 96000,
+      "outputRate": 44100,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": 0.1518446913609928
+    },
+    {
+      "rate": 96000,
+      "outputRate": 48000,
+      "channels": 1,
+      "exactStaticAndSlew": true,
+      "delayMs": 0.08073065811586311
+    },
+    {
+      "rate": 96000,
+      "outputRate": 48000,
+      "channels": 2,
+      "exactStaticAndSlew": true,
+      "delayMs": 0.08073065811586311
+    }
+  ],
+  "timing": [
+    {
+      "repeat": 0,
+      "backend": "wasm",
+      "rate": 8000,
+      "channels": 1,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 2.321325,
+      "meanBlockMs": 0.0044154658000016755,
+      "p95Ms": 0.003474999999980355,
+      "p99Ms": 0.00475800000003801,
+      "maxMs": 7.940766999999823,
+      "deadlineMisses": 1
+    },
+    {
+      "repeat": 0,
+      "backend": "wasm",
+      "rate": 44100,
+      "channels": 2,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 7.395,
+      "meanBlockMs": 0.018197459599997773,
+      "p95Ms": 0.017916999999897598,
+      "p99Ms": 0.038979000000153974,
+      "maxMs": 0.48070499999994354,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 0,
+      "backend": "wasm",
+      "rate": 48000,
+      "channels": 2,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 5.95245,
+      "meanBlockMs": 0.01440841779999978,
+      "p95Ms": 0.02032099999996717,
+      "p99Ms": 0.03188799999998082,
+      "maxMs": 1.4997439999999642,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 0,
+      "backend": "wasm2js",
+      "rate": 8000,
+      "channels": 1,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 14.880674999999998,
+      "meanBlockMs": 0.03150974560000009,
+      "p95Ms": 0.13274000000001251,
+      "p99Ms": 0.16850399999998444,
+      "maxMs": 1.555657999999994,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 0,
+      "backend": "wasm2js",
+      "rate": 44100,
+      "channels": 2,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 31.8249,
+      "meanBlockMs": 0.0843575875999983,
+      "p95Ms": 0.09403199999997014,
+      "p99Ms": 0.1212430000000495,
+      "maxMs": 3.1345329999999194,
+      "deadlineMisses": 1
+    },
+    {
+      "repeat": 0,
+      "backend": "wasm2js",
+      "rate": 48000,
+      "channels": 2,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 34.121775,
+      "meanBlockMs": 0.08475482140000022,
+      "p95Ms": 0.27398400000038237,
+      "p99Ms": 0.35017900000002555,
+      "maxMs": 6.531960999999683,
+      "deadlineMisses": 1
+    },
+    {
+      "repeat": 1,
+      "backend": "wasm2js",
+      "rate": 8000,
+      "channels": 1,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 11.104424999999999,
+      "meanBlockMs": 0.0237986977999989,
+      "p95Ms": 0.055072999999993044,
+      "p99Ms": 0.10424699999975928,
+      "maxMs": 0.24488000000019383,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 1,
+      "backend": "wasm2js",
+      "rate": 44100,
+      "channels": 2,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 31.112099999999998,
+      "meanBlockMs": 0.08247272959999964,
+      "p95Ms": 0.09270999999989726,
+      "p99Ms": 0.09674599999971178,
+      "maxMs": 0.5677569999998013,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 1,
+      "backend": "wasm2js",
+      "rate": 48000,
+      "channels": 2,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 25.512075,
+      "meanBlockMs": 0.06808465340000366,
+      "p95Ms": 0.10538900000028661,
+      "p99Ms": 0.10932499999989886,
+      "maxMs": 0.40117600000030507,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 1,
+      "backend": "wasm",
+      "rate": 8000,
+      "channels": 1,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 0.9587249999999999,
+      "meanBlockMs": 0.0024920052000041324,
+      "p95Ms": 0.0025139999997918494,
+      "p99Ms": 0.0027039999999942665,
+      "maxMs": 0.20422800000005736,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 1,
+      "backend": "wasm",
+      "rate": 44100,
+      "channels": 2,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 6.5550749999999995,
+      "meanBlockMs": 0.01742918339999842,
+      "p95Ms": 0.01769700000022567,
+      "p99Ms": 0.02941400000008798,
+      "maxMs": 0.09086699999988923,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 1,
+      "backend": "wasm",
+      "rate": 48000,
+      "channels": 2,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 5.170125,
+      "meanBlockMs": 0.01367869639999999,
+      "p95Ms": 0.02018099999986589,
+      "p99Ms": 0.03145700000004581,
+      "maxMs": 0.0605319999999665,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 2,
+      "backend": "wasm",
+      "rate": 8000,
+      "channels": 1,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 1.5107999999999997,
+      "meanBlockMs": 0.002631564200003504,
+      "p95Ms": 0.0025439999999434804,
+      "p99Ms": 0.002763999999842781,
+      "maxMs": 0.8825029999998151,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 2,
+      "backend": "wasm",
+      "rate": 44100,
+      "channels": 2,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 6.5625,
+      "meanBlockMs": 0.017445626800003538,
+      "p95Ms": 0.018057000000226253,
+      "p99Ms": 0.029765000000224973,
+      "maxMs": 0.03531300000031479,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 2,
+      "backend": "wasm",
+      "rate": 48000,
+      "channels": 2,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 5.2299750000000005,
+      "meanBlockMs": 0.013892774399996506,
+      "p95Ms": 0.02043099999991682,
+      "p99Ms": 0.03123699999969176,
+      "maxMs": 0.07630500000004758,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 2,
+      "backend": "wasm2js",
+      "rate": 8000,
+      "channels": 1,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 4.796025,
+      "meanBlockMs": 0.012548441599999115,
+      "p95Ms": 0.01272900000003574,
+      "p99Ms": 0.02555900000015754,
+      "maxMs": 0.10508900000013455,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 2,
+      "backend": "wasm2js",
+      "rate": 44100,
+      "channels": 2,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 30.89295,
+      "meanBlockMs": 0.08245197259999595,
+      "p95Ms": 0.0929310000001351,
+      "p99Ms": 0.09640499999932217,
+      "maxMs": 0.44531300000016927,
+      "deadlineMisses": 0
+    },
+    {
+      "repeat": 2,
+      "backend": "wasm2js",
+      "rate": 48000,
+      "channels": 2,
+      "blocks": 5000,
+      "warmup": 500,
+      "cpuMsPerAudioSecond": 26.355524999999997,
+      "meanBlockMs": 0.07023130660000734,
+      "p95Ms": 0.1078430000006847,
+      "p99Ms": 0.13287100000070495,
+      "maxMs": 2.3266739999999118,
+      "deadlineMisses": 0
+    }
+  ],
+  "limits": "Shared-host desktop CPU/wall observations include wrapper and timing overhead; they do not establish vehicle performance or hard deadlines."
+}

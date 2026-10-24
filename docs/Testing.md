@@ -2,6 +2,41 @@
 
 TiPlay supports an Android phone plus car browser. Follow [installation](Install.md) and [build](Build.md) instructions; use a parked car for physical acceptance.
 
+## Browser WASM verification
+
+The current source passes **893 browser tests** and the complete required Android
+command: **4,131 unit tests**, all three debug lint targets and all three debug APK
+assemblies. The native libsoxr JNI/signal/concurrency checks pass. All five shipped
+WASM binaries rebuild byte-for-byte from their pinned complete source inputs.
+
+Chromium 151 checks use production CSP: live AudioWorklet output, independent
+timelines and suspend/resume pass with 85 runtime hashes unchanged; the actual
+AAC module worker matches 96 golden PCM frames across eight profiles and passes
+load-failure/retry/disposal checks. URL playback passes WebGL and 2D with actual
+SoundTouch SIMD loading and backend reporting. SRP pairing and tamper checks pass
+with native BigInt; the slower WASM candidate stays outside production.
+The real Service Worker also passes a nested-path offline reload: all 86 runtime
+cache entries retain their hashes, all five WASM binaries execute offline, and
+direct/Worker AAC output matches golden PCM. Uncached requests fail and source
+archives stay outside the cache.
+
+Clock-safety regressions independently vary the public getter and actual frame
+counter: frozen, biased, slow/fast, jumping and throwing getters cannot train
+rate compensation or change Worklet PCM. Causal probes preserve request-time
+freshness across delayed ACKs; delayed native samples retain their original
+event age. Native outage reacquisition and six-hour output projection pass.
+Latency-estimate fallback continues rendering without claiming a source deadline
+was verified. URL EOF follows natural node completion even when the getter
+crosses the tail early or stays frozen.
+The production-CSP Chromium 151 media-clock harness passes normally and with
+four injected main-getter faults: frozen, 0.98× progress, ±5-second jumps and
+exceptions. Every run produces real nonzero Worklet PCM, preserves independent
+source deadlines and suspend/resume behavior, and retains all 85 runtime hashes.
+
+These are software/source-build results, not vehicle acoustic, panel-latency or
+signed-release acceptance. See [WASM boundaries](Browser-wasm.md) and the
+[browser harnesses](../tests/web-e2e/README.md).
+
 ## Automated checks
 
 The [Android workflow](../.github/workflows/android.yml) defines required tool versions and commands: browser unit tests, public-source credential checks, release-draft tests, Android unit tests, lint and debug builds. Its retained upstream sample checks do not establish a second supported product.
@@ -576,7 +611,7 @@ describe recorded throughput with unknown timer-coarsening error, not DAC timing
 The requested next [Cloudflare Workers audio comparison](Todo.md#cloudflare-workers-audio-comparison)
 has not started: no WASM comparison page, upload endpoint or vehicle comparison is
 implemented or deployed by this work. Current live CarPlay/mirror output already
-uses a persistent AudioWorklet, bounded PCM timelines, stateful wasm2js Soxr and
+uses a persistent AudioWorklet, bounded PCM timelines, stateful WASM Soxr and
 explicit underrun recovery. Its sample continuity and clock observations still
 need physical acceptance. URL casting remains a separate BufferSource-node engine;
 page-side demux/PCM processing, tempo changes and rAF-driven scheduling depend on
@@ -640,10 +675,10 @@ including lagging platform latency attributes; passing the mapper's own timing c
 alone cannot establish correct skew.
 The [libsoxr report](../scripts/soxr/REPORT.md) retains independent DSP/runtime reviews,
 format/anti-alias/120-second drift results and raw repeated performance measurements.
-These establish the supplied pure JavaScript engine’s tested behavior, not a
+These establish the tested engine's signal and runtime behavior, not a
 whole-worklet hardware deadline or universal CPU improvement.
 
-Use the [browser E2E harness](../tests/web-e2e/README.md) for actual CSP, pure JavaScript loading,
+Use the [browser E2E harness](../tests/web-e2e/README.md) for actual CSP, WASM loading,
 AudioWorklet output, output timestamps, worker/main Canvas paths and context suspend/resume.
 Run timing-sensitive browser checks separately from Gradle builds and other browser harnesses;
 resource contention can starve actual rendering. Keep timing assertions unchanged when isolating a failure.

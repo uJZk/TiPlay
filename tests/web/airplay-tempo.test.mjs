@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTempoProcessor, downmixStereo } from '../../site/play/airplay-tempo.js';
+import { soundTouch } from './soundtouch-fixture.mjs';
+import { readFile } from 'node:fs/promises';
+import { loadSoundTouch } from '../../site/play/vendor/soundtouch/soundtouch.js';
 import { SoundTouchCore } from '../../site/play/vendor/mediabunny/mediabunny.min.js';
 
 test('speaker downmix preserves 5.1 dialogue and surround, omits LFE, and rejects undefined layouts', () => {
@@ -21,7 +24,7 @@ test('speaker downmix preserves 5.1 dialogue and surround, omits LFE, and reject
 test('continuous WSOLA changes duration while preserving a 440 Hz tone at half and double speed', () => {
   const sampleRate = 44100, frames = sampleRate * 2;
   for (const rate of [0.5, 2]) {
-    const processor = createTempoProcessor(SoundTouchCore, sampleRate, rate), blocks = [];
+    const processor = createTempoProcessor(soundTouch, sampleRate, rate), blocks = [];
     for (let offset = 0; offset < frames; offset += 1024) {
       const signal = Float32Array.from({ length: Math.min(1024, frames - offset) }, (_, i) => Math.sin(2 * Math.PI * 440 * (offset + i) / sampleRate));
       const block = processor.push(signal); if (block) blocks.push(block);
@@ -37,4 +40,76 @@ test('continuous WSOLA changes duration while preserving a 440 Hz tone at half a
     const frequency = crossings / ((end - begin) / sampleRate);
     assert.ok(Math.abs(frequency - 440) < 12, `tempo ${rate} retains pitch, observed ${frequency} Hz`);
   }
+});
+
+test('the established JS fallback retains pitch and exact tail duration without a SIMD capability', () => {
+  const processor = createTempoProcessor(SoundTouchCore, 48000, 2), signal = Float32Array.from({ length: 48000 }, (_, i) => Math.sin(2 * Math.PI * 440 * i / 48000));
+  assert.equal(processor.backend, 'soundtouchjs');
+  const blocks = [processor.push(signal), processor.finish()].filter(Boolean);
+  assert.equal(blocks.reduce((count, block) => count + block.length / 2, 0), 24000);
+  assert.ok(blocks.some(block => block.some(sample => Math.abs(sample) > 0.1)));
+});
+
+test('portable and SIMD engines flush short streams exactly and isolate independent stereo processors', async () => {
+  const sampleRate = 48000;
+  for (const filename of ['soundtouch.wasm', 'soundtouch.simd.wasm']) {
+    const core = await loadSoundTouch({ bytes: await readFile(new URL(`../../site/play/vendor/soundtouch/${filename}`, import.meta.url)), simd: filename.includes('.simd.'), cache: false });
+    for (const rate of [0.25, 0.5, 1.25, 2, 4]) {
+      const processor = createTempoProcessor(core, sampleRate, rate);
+      const frames = 4800, blocks = [];
+      for (let offset = 0; offset < frames; offset += 127) {
+        const left = Float32Array.from({ length: Math.min(127, frames - offset) }, (_, i) =>
+          Math.sin(2 * Math.PI * 440 * (offset + i) / sampleRate));
+        const samples = processor.push(left, new Float32Array(left.length));
+        if (samples) blocks.push(samples);
+      }
+      const tail = processor.finish(); if (tail) blocks.push(tail);
+      assert.equal(blocks.reduce((count, block) => count + block.length / 2, 0), Math.round(frames / rate));
+      let energy = 0;
+      for (const block of blocks) for (let i = 0; i < block.length; i += 2) {
+        assert.ok(Number.isFinite(block[i])); energy += block[i] * block[i];
+        assert.equal(block[i + 1], 0, 'the silent channel must remain silent');
+      }
+      assert.ok(energy > 1, `${filename} at ${rate}x must retain audible source samples`);
+      assert.equal(processor.finish(), null);
+      processor.dispose();
+      assert.throws(() => processor.push(new Float32Array(1)), /closed/);
+    }
+    const a = createTempoProcessor(core, sampleRate, 0.5), b = createTempoProcessor(core, sampleRate, 2);
+    const signal = new Float32Array(4800).fill(0.5);
+    a.push(signal); b.push(new Float32Array(signal.length));
+    const aTail = a.finish(), bTail = b.finish();
+    assert.ok(aTail.some(value => value > 0.1));
+    assert.ok(bTail.every(value => value === 0));
+  }
+});
+
+test('native original-plane submission preserves Web Audio quad/5.1 speaker mapping and float headroom', () => {
+  const render = (channels, planar) => {
+    const processor = createTempoProcessor(soundTouch, 48000, 1.25);
+    const stereo = planar ? null : downmixStereo(channels);
+    const blocks = [planar ? processor.pushChannels(channels) : processor.push(stereo[0], stereo[1]), processor.finish()].filter(Boolean);
+    const samples = new Float32Array(blocks.reduce((length, block) => length + block.length, 0));
+    let offset = 0;
+    for (const block of blocks) { samples.set(block, offset); offset += block.length; }
+    return samples;
+  };
+  for (const count of [4, 6]) for (let active = 0; active <= count; active++) {
+    // Isolate every speaker, including 5.1 LFE, then exercise unclipped headroom.
+    const channels = Array.from({ length: count }, (_, channel) => new Float32Array(8357).fill(active === count ? 2 : channel === active ? 0.5 : 0));
+    const actual = render(channels, true), expected = render(channels, false);
+    assert.equal(actual.length, expected.length);
+    let peak = 0;
+    for (let i = 0; i < actual.length; i++) {
+      assert.ok(Number.isFinite(actual[i]));
+      assert.ok(Math.abs(actual[i] - expected[i]) < 0.00001, `${count} channel speaker ${active}, output ${i}`);
+      peak = Math.max(peak, Math.abs(actual[i]));
+    }
+    if (count === 6 && active === 3) assert.equal(peak, 0, 'LFE is omitted by the speaker mapping');
+    if (active === count) assert.ok(peak > 1, 'native downmix retains floating-point headroom');
+  }
+  const processor = createTempoProcessor(soundTouch, 48000, 2);
+  assert.throws(() => processor.pushChannels(Array.from({ length: 3 }, () => new Float32Array(4))), { name: 'NotSupportedError' });
+  assert.throws(() => processor.pushChannels([new Float32Array(2), new Float32Array(3)]), TypeError);
+  processor.dispose();
 });

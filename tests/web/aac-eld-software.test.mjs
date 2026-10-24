@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { createHash, webcrypto } from 'node:crypto';
+import { createEldDecoder } from '../../site/play/vendor/aac-eld/aac-eld.js';
 import { softwareEldOptions, createSoftwareEldDecoder } from '../../site/play/aac-eld-software.js';
 import { createAirPlayAudioDecoder } from '../../site/play/airplay-audio-decoder.js';
 
@@ -172,10 +175,12 @@ test('reset retires pending software initialization and old PCM without affectin
   } finally { decoder.dispose(); }
 });
 
-// Execute the unmodified third-party decoder through its actual browser-worker environment branch.
-// Module workers expose importScripts but cannot call it; the embedded initializer needs no fetch.
+// Execute the real WASM decoder and worker handler, with the shipped binary served locally.
 const vendor = readFileSync(new URL('../../site/play/vendor/aac-eld/aac-eld.js', import.meta.url), 'utf8')
-  .replace('export function createEldDecoder', 'function createEldDecoder');
+  .replace('export async function createEldDecoder', 'async function createEldDecoder')
+  .replace('import.meta.url', "'https://example.test/play/vendor/aac-eld/aac-eld.js'");
+const wasm = readFileSync(new URL('../../site/play/vendor/aac-eld/aac-eld.wasm', import.meta.url));
+const oracle = JSON.parse(readFileSync(new URL('./fixtures/aac-eld/pcm-sha256.json', import.meta.url), 'utf8'));
 const workerSource = readFileSync(new URL('../../site/play/aac-eld-worker.js', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/m, '');
 class BrowserRealmWorker {
@@ -186,7 +191,12 @@ class BrowserRealmWorker {
       queueMicrotask(() => { if (!owner.terminated) owner.onmessage({ data: message }); });
     } };
     this.realm = vm.createContext({ self, importScripts() { throw new Error('Module workers cannot call importScripts'); },
-      setTimeout, clearTimeout, atob, console });
+      setTimeout, clearTimeout, console, URL, WebAssembly, crypto: webcrypto,
+      async fetch(url) {
+        assert.equal(url.href, 'https://example.test/play/vendor/aac-eld/aac-eld.wasm');
+        return new Response(wasm, { headers: { 'Content-Type': 'application/wasm' } });
+      },
+    });
     vm.runInContext(vendor, this.realm); vm.runInContext(workerSource, this.realm);
   }
   postMessage(data, transfer = []) {
@@ -230,6 +240,9 @@ test('the bundled ELD decoder and real worker handler produce owned nonzero PCM 
       const pcm = outputs.filter(output => output.pcm.byteLength);
       assert.equal(pcm.length, 12); assert.equal(new Set(pcm.map(output => output.pcm)).size, 12);
       assert.ok(pcm.some(output => new Int16Array(output.pcm).some(sample => sample !== 0)));
+      const hash = createHash('sha256');
+      pcm.forEach(output => hash.update(new Uint8Array(output.pcm)));
+      assert.equal(hash.digest('hex'), oracle[`${rate}-${channels}-${frame}`], 'PCM matches the independent pre-migration engine');
       pcm.forEach((output, index) => {
         assert.equal(output.pcm.byteLength, frame * channels * 2); assert.equal(output.rate, rate);
         assert.equal(output.channels, channels); assert.equal(output.type, 6); assert.equal(output.epoch, 7);
@@ -272,4 +285,32 @@ test('real software ELD preserves its codec signal across nineteen explicit NoDa
   }
   assert.equal(silent.stats.noDataPackets, 19); assert.equal(silent.stats.noDataFrames, 9120);
   assert.equal(silent.stats.stream6.backend, 'software');
+});
+
+test('WASM ELD isolates streams, owns copied output, resets history and rejects invalid input', async () => {
+  assert.deepEqual([...wasm.subarray(0, 8)], [0, 97, 115, 109, 1, 0, 0, 0]);
+  const module = await WebAssembly.compile(wasm);
+  const first = await createEldDecoder({ module }), second = await createEldDecoder({ module });
+  const units = accessUnits(44100, 2, 480); units.shift();
+  try {
+    const borrowed = first.decode(units[0]), owned = first.decode(units[1], true), retained = owned.slice();
+    assert.equal(first.backend, 'wasm'); assert.equal(borrowed.buffer.byteLength, 16 * 1024 * 1024);
+    assert.equal(owned.buffer.byteLength, 480 * 2 * 2);
+    assert.notEqual(borrowed.buffer, second.decode(units[0]).buffer, 'streams own distinct WASM memories');
+    const destination = new Int16Array(960);
+    assert.equal(first.decodeInto(units[2], destination), 960);
+    assert.ok(destination.some(sample => sample !== 0));
+    first.reset(); second.reset();
+    assert.deepEqual(first.decode(units[0], true), second.decode(units[0], true));
+    assert.deepEqual(first.decode(units[1], true), second.decode(units[1], true));
+    assert.deepEqual(owned, retained, 'owned PCM survives decode and reset');
+    assert.throws(() => first.decode(new Uint8Array()), /1\.\.8192/);
+    assert.throws(() => first.decode(new Uint8Array(8193)), /1\.\.8192/);
+    assert.throws(() => first.decode('packet'), TypeError);
+    assert.throws(() => first.decodeInto(units[0], new Int16Array(1)), /Destination/);
+    first.close(); first.close(); assert.throws(() => first.decode(units[0]), /closed/);
+    assert.doesNotThrow(() => second.decode(units[2]), 'closing one instance leaves another live');
+    await assert.rejects(createEldDecoder({ module, sampleRate: 96000 }), RangeError);
+    await assert.rejects(createEldDecoder({ module, sbr: true }), RangeError);
+  } finally { first.close(); second.close(); }
 });

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { createSoftwareEldDecoder } from './aac-eld-software.js';
 import { pcmStats, measurePcm } from './audio-pcm-stats.js';
+import { audioSignalKernel, loadAudioCore } from './wasm/audio-core.js';
 const CODECS = { 'aac-lc': 'mp4a.40.2', 'aac-eld': 'mp4a.40.39', alac: 'alac', opus: 'opus' };
 const unsupported = codec => new DOMException(`This browser cannot decode AirPlay ${codec.toUpperCase()} audio.`, 'NotSupportedError');
 const byteArray = values => {
   if (!Array.isArray(values) || values.length < 1 || values.length > 256 || values.some(value => !Number.isInteger(value) || value < 0 || value > 255)) return null;
   return Uint8Array.from(values);
 };
+const nativeLittleEndian = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 /** Capability reports and actual playback must test the same WebCodecs configuration. */
 export function airPlayAudioDecoderConfig(config) {
   const description = config.codec === 'alac' ? byteArray(config.cookie)
@@ -37,6 +39,10 @@ function mirrorAacFrames(mode, config) {
 export function decodePcmPacket(payload, { bitDepth, channels, littleEndian = false }) {
   const bytes = new Uint8Array(payload), width = bitDepth / 8;
   if (![16, 24].includes(bitDepth) || ![1, 2].includes(channels) || bytes.length % (width * channels)) throw new Error('Invalid AirPlay PCM packet.');
+  // The common little-endian PCM16 packet already has the destination layout.
+  if (width === 2 && littleEndian === nativeLittleEndian) return bytes.buffer;
+  if (bytes.length / width >= 512) return audioSignalKernel().unpack(bytes, width, littleEndian);
+  // Very small packets cost more to copy across a WASM boundary than to unpack.
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), output = new Int16Array(bytes.length / width);
   for (let sample = 0, offset = 0; sample < output.length; sample++, offset += width) {
     if (width === 2) output[sample] = view.getInt16(offset, littleEndian);
@@ -49,6 +55,25 @@ export function decodePcmPacket(payload, { bitDepth, channels, littleEndian = fa
   return output.buffer;
 }
 
+function copyDecodedPcm(session, data, pcm) {
+  if (!session.unsupportedPcmCopies?.has(data.format)) {
+    try { data.copyTo(pcm, { planeIndex: 0, format: 's16' }); return; }
+    catch (cause) {
+      // Only f32-planar conversion is required by WebCodecs. Keep failures such
+      // as invalid output or allocation errors visible rather than masking them.
+      if (cause.name !== 'NotSupportedError') throw cause;
+      (session.unsupportedPcmCopies ??= new Set()).add(data.format);
+    }
+  }
+  if (pcm.length >= 512) { audioSignalKernel().quantize(data, pcm); return; }
+  const plane = new Float32Array(data.numberOfFrames);
+  for (let channel = 0; channel < data.numberOfChannels; channel++) {
+    data.copyTo(plane, { planeIndex: channel, format: 'f32-planar' });
+    for (let sample = 0; sample < data.numberOfFrames; sample++)
+      pcm[sample * data.numberOfChannels + channel] = Math.max(-32768, Math.min(32767, Math.round(plane[sample] * 32768)));
+  }
+}
+
 /** Independent AAC/Opus/ALAC/PCM stream decoders share the browser output clock and retain their own epochs. */
 export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
   AudioDecoder = globalThis.AudioDecoder, EncodedAudioChunk = globalThis.EncodedAudioChunk, probeTimeout = 1000,
@@ -57,10 +82,9 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
   let disposed = false, diagnostics = null;
   function publish(record, noDataFrames = 0) {
     if (diagnostics && record.pcm.byteLength) {
-      measurePcm(diagnostics, record.pcm, record.channels);
       const stream = diagnostics['stream' + record.type] ??= pcmStats();
       Object.assign(stream, { epoch: record.epoch, rate: record.rate, channels: record.channels });
-      measurePcm(stream, record.pcm, record.channels);
+      measurePcm(diagnostics, record.pcm, record.channels, stream);
       if (noDataFrames) for (const stats of [diagnostics, stream]) {
         stats.noDataPackets = (stats.noDataPackets ?? 0) + 1;
         stats.noDataFrames = (stats.noDataFrames ?? 0) + noDataFrames;
@@ -166,11 +190,8 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       const frames = data.numberOfFrames, channels = data.numberOfChannels, rate = data.sampleRate;
       if (!Number.isInteger(frames) || frames < 1 || frames > rate || frames * channels * 2 > 64 * 1024 || channels !== session.config.channels || rate < 8000 || rate > 96000
         || (session.sourceFrames && rate !== session.config.sampleRate)) throw new Error('Invalid decoded AirPlay audio.');
-      const pcm = new Int16Array(frames * channels), plane = new Float32Array(frames);
-      for (let channel = 0; channel < channels; channel++) {
-        data.copyTo(plane, { planeIndex: channel, format: 'f32-planar' });
-        for (let sample = 0; sample < frames; sample++) pcm[sample * channels + channel] = Math.max(-32768, Math.min(32767, Math.round(plane[sample] * 32768)));
-      }
+      const pcm = new Int16Array(frames * channels);
+      copyDecodedPcm(session, data, pcm);
       if (session.sourceFrames) { sourceOutput(session, pcm, rate); return; }
       let anchor = session.anchors[0];
       for (const candidate of session.anchors) { if (candidate.timestamp > data.timestamp) break; anchor = candidate; }
@@ -201,6 +222,8 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
         || config.sampleRate !== record.rate || config.channels !== record.channels) throw new Error('Invalid AirPlay audio configuration.');
       if ((config.semanticType !== undefined && (!Number.isInteger(config.semanticType) || config.semanticType < 0 || config.semanticType > 4 || record.mode !== 'carplay'))
         || (record.type >= 7 && config.semanticType === undefined)) throw new Error('Invalid CarPlay audio stream purpose.');
+      await loadAudioCore();
+      if (!live(session)) return false;
       publish(recordFor(session, { ended: false, flags: record.flags | 2, pcm: new ArrayBuffer(0), presentationMs: NaN }));
       if (config.codec === 'pcm') {
         if (![16, 24].includes(config.bitDepth)) throw unsupported('pcm');

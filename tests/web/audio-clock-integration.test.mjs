@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserAudio } from '../../site/play/audio.js';
@@ -25,7 +26,7 @@ function pcmRecord(first, frames, presentationMs, sequence, epoch = 7) {
 
 async function harness({ devicePpm = 90, outputDelayMs = 80 } = {}) {
   const names = ['performance', 'AudioContext', 'AudioWorkletNode', 'AudioWorkletProcessor',
-    'registerProcessor', 'sampleRate', 'currentTime', 'setTimeout', 'clearTimeout'];
+    'registerProcessor', 'sampleRate', 'currentTime', 'currentFrame', 'setTimeout', 'clearTimeout'];
   const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   const epoch = 1_800_000_000_000, sourceOrigin = 600_000_000;
   let localMs = 10000, context, timerId = 0, inputFrame = 0, sequence = 0;
@@ -37,6 +38,7 @@ async function harness({ devicePpm = 90, outputDelayMs = 80 } = {}) {
   define('clearTimeout', id => timers.delete(id));
   define('sampleRate', 48000);
   Object.defineProperty(globalThis, 'currentTime', { configurable: true, get: () => context?.currentTime ?? 10 });
+  Object.defineProperty(globalThis, 'currentFrame', { configurable: true, get: () => context?.frames ?? 480000 });
   define('AudioWorkletProcessor', class { constructor() { this.port = constructingPort; } });
   define('registerProcessor', (name, implementation) => { assert.equal(name, 'tiplay-audio'); Processor = implementation; });
   if (!Processor) await import('../../site/play/audio-worklet.js?clock-integration');
@@ -125,7 +127,12 @@ async function harness({ devicePpm = 90, outputDelayMs = 80 } = {}) {
     context.frames += 128; localMs += 128000 / (48000 * (1 + devicePpm / 1e6));
     if (deliver) { drain(); runTimers(); } return output[0];
   }
-  async function playing() { await feed(48000); for (let i = 0; i < 30; i++) quantum(); }
+  async function playing() {
+    await feed(48000);
+    // A native output sample must first enter the Worklet's proved run. Warm
+    // beyond the 80ms device pipeline and the following control/feedback turn.
+    for (let i = 0; i < 60; i++) quantum();
+  }
   return { audio, nodes, requests, postedPcm, feedback, references, audioReferences, calibration,
     get context() { return context; }, get now() { return epoch + localMs; }, get localMs() { return localMs; },
     sourceOrigin, outputDelayMs, feed, quantum, playing, settle, drain,
@@ -175,7 +182,7 @@ test('real DSP stays continuous through transient native timestamp faults, slow 
       } });
       observe(h.quantum());
     }
-    assert.equal(player.backend, backend, 'rejected measurements and fit generations preserve the actual Soxr filter');
+    assert.equal(player.backend === backend, true, 'rejected measurements and fit generations preserve the actual Soxr filter');
     assert.deepEqual(player.recoveryCounts, {});
     assert.ok(reads > 100);
     assert.ok(minimumEnergy > 3, `dynamic audio keeps every block audible: ${minimumEnergy}`);
@@ -239,9 +246,13 @@ test('production audio transport and real soxr retain raw anchors through clock 
     assert.ok(h.postedPcm.every(packet => packet.sourceTime === undefined), 'v2 calibration never rewrites raw packets into epoch-valued sourceTime');
     for (const packet of h.postedPcm) assert.equal(packet.presentationMs, h.sourceOrigin + h.outputDelayMs + packet.sequence * 20);
     assert.equal(reference.clockGeneration, 3);
-    assert.ok(Math.abs(reference.outputLatencyMs - h.outputDelayMs) < 1e-6);
-    assert.ok(Math.abs(reference.audibleTimeMs - reference.at - h.outputDelayMs) < 0.001,
-      'getOutputTimestamp includes device delay once; base/output/filter latency cannot be added again');
+    const physicalRate = 1 + 90 / 1e6;
+    const quantumBoundMs = reference.renderQuantumMaxFrames / 48 / .98;
+    assert.ok(Math.abs(reference.outputLatencyMs - h.outputDelayMs / physicalRate) <= quantumBoundMs,
+      'render-derived latency retains the actual callback interval instead of claiming an exact getter pair');
+    const audibleTruth = h.now + (reference.contextTimeMs - h.context.frames / 48 + h.outputDelayMs) / physicalRate;
+    assert.ok(Math.abs(reference.audibleTimeMs - audibleTruth) <= reference.uncertaintyMs,
+      'the independent sample/performance oracle includes device delay once, without base/output/filter additions');
   } finally { await h.close(); }
 });
 

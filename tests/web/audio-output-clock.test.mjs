@@ -6,12 +6,18 @@ import { audibleTime, createAudioOutputMapping, createAudioReferenceTimeline, OU
 const feedback = (extra = {}) => ({ mode: 'carplay', type: 0, epoch: 1, generation: 1, sequence: 1,
   state: 'playing', sourceTimeMs: 400000, contextTimeMs: 10000, mediaRate: 1, filterDelayMs: 17, ...extra });
 
-function confirmRender(mapping, context, domain) {
-  const frame = context.currentTime * context.sampleRate;
-  domain.startFrame ??= Math.floor(frame);
+function confirmRender(mapping, context, domain, contextMs) {
+  const frame = contextMs * context.sampleRate / 1000;
+  domain.startFrame ??= 0;
   const token = mapping.takeRenderProbe();
   if (token !== null) mapping.acknowledgeRenderProbe({ token, generation: domain.generation,
-    startFrame: domain.startFrame, endFrame: Math.ceil(frame) + 128 }, context);
+    startFrame: domain.startFrame, endFrame: Math.max(128, Math.ceil(frame)), renderQuantumFrames: 128 }, context);
+}
+
+function proveRender(mapping, context, contextMs, generation = 0) {
+  context.sampleRate ??= 48000;
+  mapping.capture(context);
+  confirmRender(mapping, context, { generation, startFrame: 0 }, contextMs);
 }
 
 function nativeOutput({ rate = 1 } = {}) {
@@ -26,12 +32,12 @@ function nativeOutput({ rate = 1 } = {}) {
       // Establish only the worklet domain before the first native timestamp.
       // Its first acknowledgement cannot itself train a render-rate point.
       elapsed = at - 100; context.currentTime = elapsed * rate / 1000;
-      mapping.capture(context); confirmRender(mapping, context, domain); primed = true;
+      mapping.capture(context); confirmRender(mapping, context, domain, elapsed * rate); primed = true;
     }
     elapsed = at; context.currentTime = at * rate / 1000;
     timestamp = pair ?? { contextTime: ((at - latencyMs) * rate + contextOffsetMs) / 1000, performanceTime: at };
     const output = mapping.capture(context);
-    confirmRender(mapping, context, domain);
+    confirmRender(mapping, context, domain, at * rate);
     return output;
   };
   return { mapping, context, sample, pair: () => timestamp };
@@ -53,7 +59,7 @@ test('an isolated ordered native pair cannot jump the mapping or train the devic
     assert.equal(h.mapping.deviceClock().points, fit.points);
     const restored = h.sample(10120);
     assert.equal(restored.outputMethod, 'timestamp');
-    assert.ok(Math.abs(restored.outputLatencyMs - 200) < 1e-8);
+    assert.ok(Math.abs(restored.outputLatencyMs - 200) <= 128 / 48);
     assert.equal(restored.uncertaintyMs, 0, 'recovery does not enlarge uncertainty to hide an offset');
     assert.equal(h.mapping.deviceClock().generation, fit.generation, 'return to the trusted line does not reset its fit');
   }
@@ -67,11 +73,12 @@ test('two coherent new native pairs establish real pipeline changes in either di
     assert.equal(h.sample(10040, { latencyMs }), null);
     const changed = h.sample(10080, { latencyMs });
     assert.equal(changed.outputMethod, 'timestamp');
-    assert.ok(Math.abs(changed.outputLatencyMs - latencyMs) < 1e-8);
+    assert.ok(Math.abs(changed.outputLatencyMs - latencyMs) <= 128 / 48);
     assert.equal(changed.uncertaintyMs, 0);
     assert.equal(h.mapping.deviceClock().generation, generation);
     assert.equal(h.mapping.deviceClock().reason, 'context');
-    assert.equal(h.mapping.deviceClock().points, 1, 'native phase changes do not erase independently continuous render observations');
+    assert.equal(h.mapping.diagnostics().outputTimestampFitPoints, 1,
+      'the new native phase starts its own fit while actual render observations remain independent');
   }
 });
 
@@ -83,7 +90,7 @@ test('old or repeated pending pairs cannot confirm a changed pipeline or replace
   assert.equal(h.sample(10060, { pair: firstNew }), null);
   const changed = h.sample(10080, { latencyMs: 460 });
   assert.equal(changed.outputMethod, 'timestamp', 'the second advancing point confirms a route still below the old output counter');
-  assert.ok(Math.abs(changed.outputLatencyMs - 460) < 1e-8);
+  assert.ok(Math.abs(changed.outputLatencyMs - 460) <= 128 / 48);
 });
 
 test('reordered historical pairs cannot erase a newer pipeline contradiction', () => {
@@ -95,11 +102,11 @@ test('reordered historical pairs cannot erase a newer pipeline contradiction', (
     const pair = { contextTime: (performanceTime - 200) / 1000, performanceTime };
     assert.equal(h.sample(10090, { pair }), null, 'two different old snapshots cannot revive the contradicted old line');
     assert.equal(h.mapping.deviceClock().generation, generation);
-    assert.equal(h.mapping.deviceClock().points, 1);
+    assert.equal(h.mapping.diagnostics().outputTimestampFitPoints, 1, 'historical candidates cannot enter the native fit');
   }
   const changed = h.sample(10120, { latencyMs: 460 });
   assert.equal(changed.outputMethod, 'timestamp', 'the genuine second new point still confirms the retained first new point');
-  assert.ok(Math.abs(changed.outputLatencyMs - 460) < 1e-8);
+  assert.ok(Math.abs(changed.outputLatencyMs - 460) <= 128 / 48);
   assert.equal(h.mapping.deviceClock().generation, generation);
 });
 
@@ -110,7 +117,7 @@ test('two coherent historical pairs before the trusted point cannot establish a 
   assert.equal(h.sample(10040, { pair: { contextTime: 9.700, performanceTime: 9980 } }), null);
   assert.equal(h.sample(10080, { pair: { contextTime: 9.710, performanceTime: 9990 } }), null);
   assert.equal(h.mapping.deviceClock().generation, generation);
-  assert.equal(h.mapping.deviceClock().points, 1);
+  assert.equal(h.mapping.diagnostics().outputTimestampFitPoints, 1, 'unconfirmed historical pairs cannot enter the native fit');
   assert.equal(h.sample(10120).outputMethod, 'timestamp', 'historical contradictions cannot retire a still coherent trusted line');
 });
 
@@ -128,7 +135,7 @@ test('two fresh physical pairs reacquire an oscillator switch between opposite p
       context.currentTime = counter(at) / 1000;
       timestamp = { contextTime: counter(at - 200) / 1000, performanceTime: at };
       const output = mapping.capture(context);
-      confirmRender(mapping, context, domain);
+      confirmRender(mapping, context, domain, counter(at));
       return output;
     };
     for (let time = 1000; time <= 60000; time += 200) sample(time);
@@ -160,7 +167,7 @@ test('incoherent forward candidates stay unknown and cannot revive an expired tr
   assert.equal(h.sample(10920), null);
   const restored = h.sample(10960);
   assert.equal(restored.outputMethod, 'timestamp');
-  assert.ok(Math.abs(restored.outputLatencyMs - 200) < 1e-8);
+  assert.ok(Math.abs(restored.outputLatencyMs - 200) <= 128 / 48);
 });
 
 test('reference expiry and oscillator-fit expiry remain different boundaries', () => {
@@ -169,11 +176,13 @@ test('reference expiry and oscillator-fit expiry remain different boundaries', (
   const fitted = h.mapping.deviceClock();
   assert.ok(Math.abs(fitted.rate - .988) < 1e-8);
   assert.equal(h.sample(30800), null, 'an expired reference cannot be restored by one new sample');
-  assert.equal(h.sample(30840).outputMethod, 'timestamp');
+  assert.equal(h.sample(30840), null, 'the first pair after the new process proof still needs confirmation');
+  assert.equal(h.sample(30880).outputMethod, 'timestamp');
   assert.equal(h.mapping.deviceClock().generation, fitted.generation, '750ms reference expiry cannot force the oscillator to nominal');
   assert.ok(Math.abs(h.mapping.deviceClock().rate - .988) < 1e-8);
   assert.equal(h.sample(32000), null);
-  assert.equal(h.sample(32040).outputMethod, 'timestamp');
+  assert.equal(h.sample(32040), null);
+  assert.equal(h.sample(32080).outputMethod, 'timestamp');
   assert.equal(h.mapping.deviceClock().reason, 'gap', 'a real >1000ms observation gap follows the existing fit reset');
   assert.ok(h.mapping.deviceClock().generation > fitted.generation, 'the confirmed sampling gap retires the old rate evidence');
   assert.equal(h.mapping.deviceClock().rate, 1, 'the baseline gap policy reacquires from nominal');
@@ -183,9 +192,11 @@ test('suspend and replacement contexts retire pending native measurements', () =
   const h = nativeOutput();
   h.sample(10000); assert.equal(h.sample(10040, { contextOffsetMs: -38 }), null);
   h.context.state = 'suspended'; assert.equal(h.mapping.capture(h.context), null);
-  h.context.state = 'running'; assert.equal(h.sample(10080).outputMethod, 'timestamp');
+  h.context.state = 'running'; h.sample(10080);
+  assert.equal(h.sample(10100).outputMethod, 'timestamp');
   assert.equal(h.sample(10120, { contextOffsetMs: -38 }), null);
   const replacement = { ...h.context };
+  proveRender(h.mapping, replacement, 10120);
   assert.equal(h.mapping.capture(replacement).outputMethod, 'timestamp', 'a different context does not inherit the old pending measurement');
   assert.equal(h.mapping.deviceClock().reason, 'context');
 });
@@ -214,7 +225,8 @@ test('device fit age uses the absolute observation clock and grows without recap
     getOutputTimestamp: () => ({ contextTime: (at - origin) * .988 / 1000, performanceTime: at - origin }) };
   assert.equal(mapping.deviceClock().acceptedFitAgeMs, undefined);
   for (let ms = 100; ms <= 9000; ms += 100) {
-    at = origin + ms; context.currentTime = ms * .988 / 1000 + .2; mapping.capture(context);
+    at = origin + ms; context.currentTime = ms * .988 / 1000 + .2;
+    proveRender(mapping, context, ms * .988 + 200); mapping.capture(context);
   }
   const fitted = mapping.deviceClock(); assert.equal(fitted.acceptedFitAgeMs, 400, 'new observations between fit intervals do not renew an accepted fit');
   at += 2300;
@@ -227,14 +239,16 @@ test('output timestamps account for device delay and content filter delay exactl
   const mapping = createAudioOutputMapping({ now: () => 1010000, timeOrigin: () => 1000000 });
   const context = { state: 'running', currentTime: 10, baseLatency: 0.025, outputLatency: 0.18,
     getOutputTimestamp: () => ({ contextTime: 9.8, performanceTime: 10000 }) };
+  proveRender(mapping, context, 10000);
   const snapshot = mapping.capture(context), reference = mapping.reference(feedback(), context);
   assert.equal(snapshot.outputMethod, 'timestamp');
-  assert.equal(snapshot.outputLatencyMs, 200);
+  assert.ok(Math.abs(snapshot.outputLatencyMs - 200) <= 128 / 48);
   assert.equal(reference.audibleTimeMs, 1010200, 'timestamp pair includes output delay; adding base/output/filter would double count it');
   assert.equal(audibleTime(400125, reference, 1010000), 1010325);
   assert.equal(reference.filterDelayMs, 17, 'filter delay is diagnostic because feedback already identifies emitted content');
   const delayed = mapping.reference(feedback({ contextTimeMs: 9500 }), context);
-  assert.equal(delayed.at, 1009500, 'delayed message delivery does not make an old render report fresh again');
+  assert.ok(delayed.at <= 1009500 && delayed.at > 1009480,
+    'freshness follows the earliest actual sample event allowed by the frame proof, independently of getter delivery');
   assert.equal(audibleTime(400000, delayed, 1010300), null);
 });
 
@@ -242,11 +256,12 @@ test('bounded fallback sums the two distinct latency stages once and marks its u
   let at = 1010000;
   const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
   const context = { state: 'running', currentTime: 10, sampleRate: 48000, baseLatency: 0.012, outputLatency: 0.08 };
+  proveRender(mapping, context, 10000);
   const reference = mapping.reference(feedback(), context);
   assert.equal(reference.outputMethod, 'latency-estimate');
-  assert.equal(reference.audibleTimeMs, at + 92);
-  assert.equal(reference.uncertaintyMs, 128 / 48);
-  assert.equal(audibleTime(400000, reference, at + OUTPUT_REFERENCE_MAX_AGE_MS), at + 92);
+  assert.ok(Math.abs(reference.audibleTimeMs - (at + 92)) <= reference.uncertaintyMs);
+  assert.ok(reference.uncertaintyMs >= 128 / 48 / 2, 'one complete causal render interval is reserved');
+  assert.equal(audibleTime(400000, reference, at + OUTPUT_REFERENCE_MAX_AGE_MS), reference.audibleTimeMs);
   assert.equal(audibleTime(400000, reference, at + OUTPUT_REFERENCE_MAX_AGE_MS + 0.001), null);
   assert.equal(audibleTime(401001, reference, at), null, 'no unbounded extrapolation through missing reports');
   assert.equal(audibleTime(400000, reference, at - 1), null);
@@ -261,6 +276,7 @@ test('suspend, stale output timestamps, backwards timestamps and unavailable sta
   let at = 1010000, output = { contextTime: 9.8, performanceTime: 10000 };
   const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
   const context = { state: 'running', currentTime: 10, baseLatency: 0.01, outputLatency: 0.05, getOutputTimestamp: () => output };
+  proveRender(mapping, context, 10000);
   assert.equal(mapping.reference(feedback(), context).state, 'playing');
   at += 751;
   assert.equal(mapping.reference(feedback(), context).state, 'output-unavailable', 'a held output timestamp cannot silently become a latency estimate');
@@ -270,9 +286,11 @@ test('suspend, stale output timestamps, backwards timestamps and unavailable sta
   assert.equal(mapping.reference(feedback(), context).state, 'output-unavailable');
   context.state = 'running'; context.currentTime = 10.8;
   output = { contextTime: 10.6, performanceTime: 10751 };
+  proveRender(mapping, context, 10800);
   assert.equal(mapping.reference(feedback({ contextTimeMs: 10800 }), context).audibleTimeMs, at + 200);
   mapping.reset();
   context.getOutputTimestamp = () => ({ contextTime: 0, performanceTime: 0 });
+  proveRender(mapping, context, 10800);
   assert.equal(mapping.capture(context).outputMethod, 'latency-estimate');
   context.getOutputTimestamp = () => { throw new Error('unsupported'); };
   assert.equal(mapping.capture(context).outputMethod, 'latency-estimate');
@@ -283,11 +301,13 @@ test('a short suspend cannot reuse a pre-suspend timestamp that remains inside t
   const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
   let output = { contextTime: 9.8, performanceTime: 10000 };
   const context = { state: 'running', currentTime: 10, getOutputTimestamp: () => output };
+  proveRender(mapping, context, 10000);
   assert.equal(mapping.capture(context).outputMethod, 'timestamp');
   at += 50; context.state = 'suspended';
   assert.equal(mapping.capture(context), null);
   at += 50; context.state = 'running';
   assert.equal(mapping.capture(context), null, 'even a 100ms-old pair predates the resume boundary');
+  proveRender(mapping, context, 10100);
   output = { contextTime: 9.9, performanceTime: 10100 };
   assert.equal(mapping.capture(context).outputMethod, 'timestamp');
 });
@@ -327,6 +347,7 @@ test('control clock captures preserve the last feedback evidence until reset', (
   const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
   const context = { state: 'running', currentTime: 10,
     getOutputTimestamp: () => ({ contextTime: (at - 1000000 - 200) / 1000, performanceTime: at - 1000000 }) };
+  proveRender(mapping, context, 10000);
   mapping.reference(feedback(), context);
   assert.equal(mapping.diagnostics().outputFeedbackDeltaMs, 200);
   at += 25; context.currentTime += .025;
@@ -352,15 +373,17 @@ test('output timestamp validation samples current clocks after a slow native tim
     at += callDelayMs; this.currentTime += callDelayMs / 1000;
     return { contextTime: this.currentTime - 0.2, performanceTime: at - 1000000 };
   } };
+  proveRender(mapping, context, 10000);
   assert.equal(mapping.capture(context).outputMethod, 'timestamp');
   at += 40; context.currentTime += 0.04; callDelayMs = 40;
   const output = mapping.capture(context);
   assert.equal(output?.outputMethod, 'timestamp', 'time spent obtaining a pair cannot make that pair appear to come from the future');
-  assert.ok(Math.abs(output.outputLatencyMs - 200) < 1e-8);
+  assert.ok(Math.abs(output.outputLatencyMs - 200) <= 128 / 48);
   assert.equal(mapping.diagnostics().outputTimestampCaptureMs, 40);
   const receivedAt = at;
   const reference = mapping.reference(feedback({ contextTimeMs: context.currentTime * 1000 }), context);
-  assert.ok(Math.abs(reference.at - receivedAt) < 1e-8, 'native sampling time cannot be subtracted twice from the feedback render boundary');
+  assert.ok(reference.at <= receivedAt && receivedAt - reference.at < 128 / 48,
+    'getter execution cannot refresh a frame event beyond its causal sample interval');
 });
 
 test('a noisy timestamp uses a bounded, explicitly uncertain holdover without accepting the bad pair', () => {
@@ -368,6 +391,7 @@ test('a noisy timestamp uses a bounded, explicitly uncertain holdover without ac
   const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
   const context = { state: 'running', currentTime: 10, sampleRate: 48000,
     baseLatency: 0.012, outputLatency: 0.188, getOutputTimestamp: () => output };
+  proveRender(mapping, context, 10000);
   mapping.capture(context);
   at += 40; context.currentTime += 0.04;
   output = { contextTime: 9.79, performanceTime: 9990 };
@@ -386,6 +410,7 @@ test('a noisy timestamp uses a bounded, explicitly uncertain holdover without ac
   at += 671; context.currentTime += 0.671;
   assert.equal(mapping.capture(context), null, 'a rejected stream cannot refresh the good anchor beyond 750ms');
   mapping.reset(); at += 1; output = { contextTime: context.currentTime - 0.2, performanceTime: at - 1000000 };
+  proveRender(mapping, context, 10751);
   mapping.capture(context); at += 40; context.currentTime += 0.04; context.outputLatency = 0.288;
   output = { contextTime: context.currentTime - 0.2, performanceTime: at - 1000000 + 40 };
   assert.equal(mapping.capture(context), null, 'a changed reported output path cannot reuse an old route anchor');
@@ -395,12 +420,16 @@ test('a real context-counter reversal abandons the old native output anchor', ()
   let at = 1010000, output = { contextTime: 9.8, performanceTime: 10000 };
   const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
   const context = { state: 'running', currentTime: 10, getOutputTimestamp: () => output };
+  proveRender(mapping, context, 10000);
   mapping.capture(context);
   at += 40; context.currentTime = 9; output = { contextTime: 8.8, performanceTime: 10040 };
+  assert.equal(mapping.capture(context), null, 'a changed sample coordinate stays unknown until the next process proof');
+  at += 80; context.currentTime = 9.08; output = { contextTime: 8.88, performanceTime: 10120 };
+  proveRender(mapping, context, 9080, 1);
   const fresh = mapping.capture(context);
-  assert.equal(fresh?.contextTimeMs, 8800, 'a real render reversal cannot remain tied to the old higher sample counter');
+  assert.equal(fresh?.contextTimeMs, 8880, 'a real render reversal cannot remain tied to the old higher sample counter');
   assert.equal(fresh.outputMethod, 'timestamp');
-  assert.equal(mapping.deviceClock().reason, 'context-backwards');
+  assert.equal(mapping.deviceClock().reason, 'sample-domain');
 });
 
 test('a repeated native pair cannot refresh its route history or hide an output latency change', () => {
@@ -408,6 +437,7 @@ test('a repeated native pair cannot refresh its route history or hide an output 
   const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 1000000 });
   const context = { state: 'running', currentTime: 10, baseLatency: .012, outputLatency: .188,
     getOutputTimestamp: () => output };
+  proveRender(mapping, context, 10000);
   mapping.capture(context);
   at += 40; context.currentTime += .04; context.outputLatency = .288;
   assert.equal(mapping.capture(context), null, 'a changed output path needs an advancing native timestamp');
@@ -422,6 +452,7 @@ test('a native pipeline step invalidates holdover even if reported latency attri
     const context = { state: 'running', currentTime: 10, sampleRate: 48000, baseLatency: .01, outputLatency: .02,
       getOutputTimestamp: () => cachedPair || ({ contextTime: (at - 1000000 - latencyMs) / 1000, performanceTime: at - 1000000 }) };
     const originalPair = context.getOutputTimestamp();
+    proveRender(mapping, context, 10000);
     mapping.capture(context);
     at += 100; context.currentTime += .1; latencyMs = nextLatencyMs;
     assert.equal(mapping.capture(context), null, 'a backward pair contradicting the old mapping is not harmless measurement noise');
@@ -441,15 +472,15 @@ test('output mapping and content extrapolation share physical time with a slow d
   for (let ms = 40; ms <= 30000; ms += 40) {
     at = 1700000000000 + ms; timestamp = { contextTime: ms * deviceRate / 1000, performanceTime: ms };
     context.currentTime = (ms * deviceRate + 188 * deviceRate) / 1000;
-    mapping.capture(context);
+    proveRender(mapping, context, ms * deviceRate + 188 * deviceRate); mapping.capture(context);
   }
   assert.ok(Math.abs(mapping.deviceClock().rate - deviceRate) < 1e-8);
   const reference = mapping.reference(feedback({ contextTimeMs: timestamp.contextTime * 1000 + 100 * deviceRate,
     mediaRate: 1 / deviceRate }), context);
   assert.ok(Math.abs(reference.audibleTimeMs - at - 100) < 1e-6);
   assert.ok(Math.abs(reference.mediaRate - 1) < 1e-8, 'source/context feedback is converted to source/performance');
-  assert.ok(Math.abs(reference.outputLatencyMs - 188) < 1e-6);
-  assert.ok(Math.abs(reference.at - (at - 88)) < 1e-6);
+  assert.ok(Math.abs(reference.outputLatencyMs - 188) <= 128 / 48);
+  assert.ok(reference.at <= at && at - reference.at <= 100, 'freshness reserves actual frame-event age and permitted rate uncertainty');
   assert.ok(Math.abs(audibleTime(400500, reference, at) - at - 600) < 1e-6);
   mapping.reference(feedback({ contextTimeMs: 0 }), context);
   assert.equal(mapping.diagnostics().outputUnavailableReason, 'feedback-distance');

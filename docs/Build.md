@@ -61,6 +61,46 @@ these paths, SDK locations, proxy settings and caches outside committed build
 configuration. Set `ANDROID_HOME` to the locally installed SDK; the required
 packages are defined by the Android workflow.
 
+## Browser WASM build
+
+The verified browser revision is **v82**. Its source uses genuine WASM for
+libsoxr, AAC-ELD and bulk live-audio DSP, and SIMD SoundTouch for URL tempo.
+It also removes live timing's dependence on the public `currentTime` getter;
+the [clock roles](Browser-wasm.md#audio-clock-roles) distinguish render frames,
+performance time, native output observations and URL graph coordinates.
+The [verification record](Testing.md#browser-wasm-verification) covers source
+builds and browser behavior. Public deployment provenance is recorded below;
+the signed beta.14 release remains unchanged.
+See [execution boundaries](Browser-wasm.md), including measured cases that retain
+native browser APIs or JavaScript.
+
+The shipped binaries build from complete corresponding sources with WASI SDK 34
+(Clang 23.1.0), Binaryen 132, CMake 4.1.2 and Ninja 1.13.0. Python 3.12+, `patch`
+and the pinned tools are required. On Linux x86_64:
+
+```sh
+python3 -m pip install cmake==4.1.2 ninja==1.13.0
+python3 scripts/soxr/prepare-toolchain.py work/wasm-toolchain
+python3 scripts/build_wasm.py --check \
+  --sdk work/wasm-toolchain/wasi-sdk-34.0-x86_64-linux \
+  --binaryen work/wasm-toolchain/package
+```
+
+The downloader verifies toolchain archive hashes before extraction. `--check`
+builds into a temporary directory and compares every shipped WASM byte, without
+changing production files. Omit it to replace the artifacts intentionally;
+individual build entry points are in `scripts/soxr/`, `scripts/aac-eld/`,
+`scripts/soundtouch/` and `scripts/build_audio_core.py`. CI reproduces all modules
+independently of Android compilation.
+
+After changing runtime assets, run `python3 scripts/update_browser_cache.py` and
+bump `PAGE_VERSION`/the Service Worker revision together. CI checks the generated
+manifest, which precaches runtime files rather than source archives. GitHub Pages
+serves `.wasm` as `application/wasm`; loaders also accept a correct module served
+as an ordinary binary. Production CSP requires `'wasm-unsafe-eval'`; JavaScript
+evaluation remains disabled. Run the browser suite, site assembly/public-tree
+checks and the production-CSP media-clock/AAC worker checks before delivery.
+
 ## Runtime identity
 
 Keep runtime inputs outside Git in this layout:

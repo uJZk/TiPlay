@@ -156,7 +156,10 @@ export function createUrlAudioSchedulingFixture(createMediaEngine, {
     }
     createBufferSource() {
       const owner = this;
-      return { connect() {}, disconnect() {}, start(time) { this.renderTime = Math.max(time, owner.currentTime); }, stop() {} };
+      return { connect() {}, disconnect() {}, start(time, offset = 0, duration = this.buffer.duration - offset) {
+        this.renderTime = Math.max(time, owner.currentTime);
+        this.renderDuration = Math.min(duration, this.buffer.duration - offset);
+      }, stop() { this.cancelled = true; queueMicrotask(() => this.onended?.()); } };
     }
     async resume() { this.state = 'running'; }
     async close() { this.state = 'closed'; }
@@ -165,9 +168,9 @@ export function createUrlAudioSchedulingFixture(createMediaEngine, {
     constructor(options) { super(options); context = this; }
     createBufferSource() {
       const node = super.createBufferSource(), start = node.start.bind(node), stop = node.stop.bind(node), owner = this;
-      node.start = time => {
+      node.start = (time, ...args) => {
         node.time = time; node.scheduledAt = owner.currentTime;
-        beforeSourceStart?.({ node, context: owner, time }); start(time); afterSourceStart?.({ node, context: owner, time });
+        beforeSourceStart?.({ node, context: owner, time }); start(time, ...args); afterSourceStart?.({ node, context: owner, time });
       };
       node.stop = (...args) => { node.stopTime = args[0] ?? owner.currentTime; stop(...args); };
       nodes.push(node); return node;
@@ -182,11 +185,16 @@ export function createUrlAudioSchedulingFixture(createMediaEngine, {
     if (context?.state === 'running') {
       context.elapsed += seconds;
       context.currentTime = Math.floor(context.elapsed * context.sampleRate / 128) * 128 / context.sampleRate;
+      if (!ContextConstructor) for (const node of nodes) if (!node.cancelled && !node.naturallyEnded &&
+        context.elapsed >= node.renderTime + node.renderDuration) {
+        node.naturallyEnded = true; queueMicrotask(() => node.onended?.());
+      }
     }
   };
   return { media, nodes, samples, flush, advance, context: () => context,
     async tick(seconds = 0) {
       advance(seconds);
+      await flush();
       const pending = callbacks.entries().next().value;
       if (!pending) throw new Error('URL engine has no pending animation callback');
       callbacks.delete(pending[0]); pending[1](); await flush();

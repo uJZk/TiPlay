@@ -15,6 +15,7 @@ Start with the [English README](../README.md) or [简体中文](../README.zh-CN.
 ## Development
 
 - [Build](Build.md) and [Windows containers](Wlsc.md): toolchain, runtime identity, signing and updates.
+- [Browser WASM](Browser-wasm.md): execution boundaries, module ownership, complete upstream libraries and performance verification.
 - [Settings](Settings.md): drafts, immediate apply and connection recovery.
 - [Geolocation](geolocation.md): browser coordinate evidence, Android conversion and detection and iPhone forwarding.
 - [Testing](Testing.md) and [Todo](Todo.md): automated checks and pending physical acceptance.

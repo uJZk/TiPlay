@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { constantDelay } from '../../site/play/delay-plan.js';
@@ -71,6 +72,37 @@ test('production worklet emits sample-count-driven audible content references wi
   const stream = h.processor.messages.filter(value => value.diagnostics).at(-1).diagnostics.stream0;
   assert.ok(stream.resampleRatio > 0.99 && stream.resampleRatio < 1.01, 'diagnostics preserve the actual input/output ratio');
   assert.equal(stream.networkDelayMs, 60); assert.equal(stream.delayMs, 60, 'legacy delay telemetry reads the continuous queue target');
+});
+
+test('estimated output latency keeps real media and voice playing without certifying physical source-age bounds', () => {
+  for (const [type, semanticType] of [[0, 0], [255, 1]]) {
+    const h = harness();
+    try {
+      h.post({ outputMethod: 'latency-estimate' });
+      for (let quantum = 0; quantum < 100; quantum++) {
+        h.feed(type, 'carplay', 1, undefined, 0, semanticType);
+        const output = h.render(), player = h.processor.timelines.get(type);
+        if (quantum > 15) assert.ok(output[0].some(sample => Math.abs(sample) > .05),
+          'a finite fallback anchor still supports startup and continuous ASRC');
+        assert.equal(player.sourceDeadlineState, 'unknown');
+        assert.equal(player.sourceDeadlineRejectedFrames, 0);
+      }
+      const player = h.processor.timelines.get(type), backend = player.backend;
+      assert.ok(backend); assert.equal(player.sourceDeadlineReason, 'output-clock-unavailable');
+      assert.deepEqual(player.recoveryCounts, {});
+      assert.equal(h.processor.messages.filter(message => message.playout).at(-1).playout.state, 'untimed');
+      assert.ok(h.processor.messages.filter(message => message.playout).every(message =>
+        message.playout.sourceDeadlineState !== 'within-bound'));
+
+      h.post({ outputMethod: 'timestamp' });
+      for (let quantum = 0; quantum < 20; quantum++) { h.feed(type, 'carplay', 1, undefined, 0, semanticType); h.render(); }
+      assert.equal(player.backend === backend, true, 'acquiring native output evidence must retain the live filter');
+      assert.equal(player.sourceDeadlineState, 'within-bound');
+      assert.ok(player.sourceDeltaUpperMs <= 300);
+      assert.equal(h.processor.messages.filter(message => message.playout).at(-1).playout.state, 'playing');
+      assert.deepEqual(player.recoveryCounts, {});
+    } finally { h.post({ dispose: true }); }
+  }
 });
 
 test('variable real render blocks report their quantum without Debug or changing the Soxr signal', () => {

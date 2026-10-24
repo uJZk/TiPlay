@@ -1,18 +1,25 @@
 # Browser audio resampler
 
-TiPlay uses libsoxr's stateful variable-rate engine as a separately replaceable,
-self-hosted JavaScript file: `soxr.asm.js`. It is Binaryen wasm2js typed JavaScript
-(asm.js-like), **not validated legacy asm.js**. Playback needs no WebAssembly,
-`eval`, Function constructor, CDN or external initializer. The production CSP
-requires only `script-src 'self'` for scripts.
+TiPlay runs the pinned upstream libsoxr in genuine WebAssembly, self-hosted as
+`soxr.wasm`. `soxr.js` compiles it once outside audio rendering, then a compiled
+`WebAssembly.Module` is passed to the AudioWorklet in `processorOptions`. Every
+runtime instantiates its own fixed 16 MiB heap before rendering begins. Playback
+uses no generated JavaScript DSP, `eval`, Function constructor, CDN or external
+initializer. The production script policy allows `'wasm-unsafe-eval'` solely for
+WebAssembly compilation; it does not allow dynamic JavaScript evaluation.
 
-The exact revision, artifact/source hashes, compiler versions and configuration
-are in [provenance.json](provenance.json). The complete pinned upstream source,
-TiPlay float32 adapter, source patch and static packaging glue are under
-[source](source/). [LICENCE](LICENCE) and [COPYING.LGPL](COPYING.LGPL) retain
-libsoxr's LGPL-2.1-or-later terms. The TiPlay wrapper/build/glue is GPL-3.0-only;
-the combined artifact is distributed under [GPL-3.0-only](LICENSE.GPL-3.0). Keep the complete source,
-notices and replacement build materials with distributions.
+[provenance.json](provenance.json) records the upstream revision, source/artifact
+hashes, compiler versions and configuration. The complete upstream archive and
+small WebAssembly ABI patch accompany the binary under [source](source/). The
+build includes the portable constant-rate float32 and float64 engines, variable
+rate engine, every upstream IO format and the complete public libsoxr C API.
+It does not apply the historical float32-only IO reduction. SIMD backends for
+other processor architectures are naturally excluded by the portable WASM target.
+
+[LICENCE](LICENCE) and [COPYING.LGPL](COPYING.LGPL) retain LGPL-2.1-or-later terms.
+The TiPlay adapter/glue is GPL-3.0-only and the combined artifact is distributed
+under [GPL-3.0-only](LICENSE.GPL-3.0). Keep the complete source, notices and
+replacement build materials with distributions.
 
 ## Rebuild and replace
 
@@ -23,54 +30,52 @@ python3 scripts/soxr/prepare-toolchain.py work/soxr-toolchain
 python3 scripts/soxr/build.py \
   --sdk work/soxr-toolchain/wasi-sdk-34.0-x86_64-linux \
   --binaryen work/soxr-toolchain/package
-sha256sum site/play/vendor/soxr/soxr.asm.js
+sha256sum site/play/vendor/soxr/soxr.wasm
 ```
 
-The bootstrap verifies toolchain archives before extraction. The build verifies
-the source archive, applies the supplied patch, and compiles with clang/LTO and
-Binaryen. WASM exists only as an intermediate offline compiler format; it is never
-shipped or loaded by TiPlay. The final wasm2js optimization flag was selected by
-measurement. A fresh build reproduced the recorded JavaScript SHA-256 exactly.
+The bootstrap verifies archives before extraction; the build verifies upstream
+source, applies `wasm.patch`, then compiles with clang/LTO and Binaryen. Its only
+source modifications provide exact indirect-call signatures required by
+WebAssembly; filter math, IO formats and phase clocks remain upstream code. A
+fresh extracted-source rebuild reproduces the recorded SHA-256 exactly. There is
+no fast-math, filter reduction, wasm2js conversion or runtime compiler dependency.
 
-The synchronous ESM default export `createSoxr()` returns `{ exports }`, already
-initialized. Its `memory.buffer`, `malloc/free` and `tiplay_*` ABI match
-[streaming-resampler.js](../../streaming-resampler.js). Do not call `_initialize`
-again. Each runtime has an isolated fixed 16 MiB heap; independent streams share
-that heap and keep separate filter state. Only the exported interleaved float32
-ABI is supported. Unreachable integer/float64 conversion and dither IO branches
-were removed; vr32 filters, half-band stages, ratio-transition crossfades and the
-64-bit phase clock remain intact. No fast-math or filter reduction is used.
+The library can be replaced independently by another compatible `soxr.wasm`.
+Preserve the TiPlay `tiplay_*`, `malloc/free`, `memory` and `_initialize` exports
+or update [streaming-resampler.js](../../streaming-resampler.js) with the replacement
+ABI. Update provenance, the browser cache revision and Service Worker manifest
+with the replacement. `source/tiplay.patch` remains solely for reproducing the
+retained native/JNI library; the browser build uses `source/wasm.patch`.
 
-A compatible modified library can replace `soxr.asm.js` without rebuilding the
-application. Update its provenance, the page cache version and complete Service
-Worker manifest together. The upstream archive and patch support rebuilding and
-replacing the LGPL library independently of the application.
+## Runtime and timing contract
 
-## Measurements
-
-The [engineering report](../../../../scripts/soxr/REPORT.md) includes two independent
-reviews, reproducibility, quality/continuity/drift tests, strict CSP AudioWorklet
-execution and five rotating performance comparisons. Raw evidence and benchmark
-preparation scripts are in [tests/bench/soxr](../../../../tests/bench/soxr/README.md).
-Historical measurement references are restored into `work/` from checksummed Git
-objects; no obsolete WASM binary or fallback is retained in production.
-
-The final JS is 364,339 bytes, 28.6% smaller than the unpruned JS baseline. Measured
-CPU gains vary by format; 44.1 kHz stereo improves, while 48 kHz stereo regresses
-slightly against that JS baseline. Pure JS costs more CPU than the previous WASM.
-Shared-host timing outliers remain in the report. These desktop measurements do
-not establish sustained car-browser audio or video performance.
-
-## Timing contract
+`loadSoxr()` fetches/compiles once, deduplicates concurrent requests and permits a
+retry after failure. `prepareSoxr(module)` installs already compiled code in a
+worker/worklet. `SoxrRuntime({ module, allowCalibration })` synchronously creates an
+isolated instance and initializes it exactly once. Never fetch, compile or measure
+filter delay in `AudioWorkletProcessor.process()`. Streams retain independent
+filter state while sharing their runtime's heap. The public C API uses the WASM32
+C ABI, including explicit return pointers for structure-valued functions.
 
 Each stream/format epoch retains its filter state across packets; ratio changes
 specify a slew in output samples. Only interruption, stream replacement or format
-change resets the filter. Zero-length non-null input drains buffered output without
-signalling EOF.
+change resets the filter. Zero-length **non-null** input drains buffered output
+without signalling EOF. Closed handles and invalid formats/buffer capacities are
+rejected at the JavaScript boundary.
 
 Upstream vr32's `vr_delay()` is incomplete. TiPlay measures impulse-energy centroid
-per format and accounts for that content offset in its playout cursor. Filter
-content delay, input lookahead, queued output and device latency are distinct;
-filter delay must not be added again to a feedback timestamp that already
-identifies emitted content. Existing playback caps and audio early/late windows
-remain unchanged.
+per format away from rendering and accounts for that content offset in its
+playout cursor. Filter content delay, input lookahead, queued output and device
+latency are distinct; do not add filter delay again to a feedback timestamp that
+already identifies emitted content.
+
+The [engineering report](../../../../scripts/soxr/REPORT.md) and
+[benchmark materials](../../../../tests/bench/soxr/README.md) describe current
+waveform equivalence, full-library ABI checks, measured CPU improvements and
+physical-device limits. Historical wasm2js evidence remains under tests/bench;
+that engine is not shipped or used as a fallback.
+
+The linked WASI libc/musl, LLVM compiler-rt and applicable C++ runtime notices
+are retained in [wasm-runtime](../wasm-runtime/README.md), with exact SDK source
+revisions and full license texts. Keep that shared notice directory with binary
+distributions.

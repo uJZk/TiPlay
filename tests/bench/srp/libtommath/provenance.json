@@ -1,0 +1,34 @@
+{
+  "library": "LibTomMath",
+  "version": "1.3.0",
+  "license": "Unlicense",
+  "usage": "benchmark-only; excluded from production site and service worker cache",
+  "source_url": "https://codeload.github.com/libtom/libtommath/tar.gz/refs/tags/v1.3.0",
+  "source_archive": "source/libtommath-v1.3.0.tar.gz",
+  "source_sha256": "6d099e93ff00fa9b18346f4bcd97dcc48c3e91286f7e16c4ac5515a7171c3149",
+  "source_modifications": "none; complete archive retained; every bn_*.c compiled; no algorithm/feature pruning",
+  "build": "tests/bench/srp/build.py",
+  "toolchain": "WASI SDK 34.0 / clang 23.1.0-wasi-sdk",
+  "flags": [
+    "-O3",
+    "-flto",
+    "-D__STDC_IEC_559__=1",
+    "-mexec-model=reactor",
+    "--export-all",
+    "--strip-all"
+  ],
+  "initial_memory_bytes": 2097152,
+  "maximum_memory_bytes": 2097152,
+  "adapter": {
+    "file": "source/srp-wrapper.c",
+    "license": "GPL-3.0-only",
+    "sha256": "e6a8093bc4e169f60060e96537f42ae2bc051769e4a599528c67a4ac49de9b1c"
+  },
+  "binary": {
+    "file": "libtommath.wasm",
+    "bytes": 264090,
+    "sha256": "69ec77ba23c87d24f7b0266f1f7d92cca7f59d7b8809634f2b8f795a0dd1383e"
+  },
+  "decision": "Keep production tssrp6a native BigInt: full-client Chromium151 median9.60ms versus candidate16.60ms; see parent results.json",
+  "security_scope": "No constant-time claim. WebCrypto randomness/hashes; exact BigInt group bounds; arena cleared after each operation; entire private heap cleared on disposal."
+}

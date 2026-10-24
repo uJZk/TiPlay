@@ -1,10 +1,11 @@
 package com.shilapi.xcertplay.diagnostics
 
-import java.io.BufferedWriter
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Base64
+import java.nio.ByteBuffer
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 
@@ -26,7 +27,8 @@ object RawTraffic {
     private var lastFailureEpochMillis = 0L
     private var failedByteAttempts = 0L
     private var lastFailureChannel = "none"
-    private var writer: BufferedWriter? = null
+    private var writer: BufferedOutputStream? = null
+    private val base64 = Base64.getEncoder()
     @Volatile private var timing = RawCaptureTiming()
     private val channelOffsets = mutableMapOf<String, Long>()
     @Volatile private var referenceIntegrity = true
@@ -163,13 +165,18 @@ object RawTraffic {
                     }
                     needsBoundaryCheck = false
                 }
-                val output = writer ?: java.io.FileOutputStream(target, true).bufferedWriter().also { writer = it }
+                val output = writer ?: java.io.FileOutputStream(target, true).buffered(64 * 1024).also { writer = it }
                 var position = offset
                 val end = offset + length
                 while (position < end) {
                     val count = minOf(48 * 1024, end - position)
-                    val encoded = Base64.getEncoder().encodeToString(bytes.copyOfRange(position, position + count))
-                    output.append("${System.currentTimeMillis()}\t${++sequence}\t$channel\t$count\t$encoded\n")
+                    output.write("${System.currentTimeMillis()}\t${++sequence}\t$channel\t$count\t".toByteArray(Charsets.UTF_8))
+                    // The JDK bulk encoder reads this exact range without a source
+                    // copy and emits ASCII directly. Avoid a payload-sized String,
+                    // interpolated line and UTF-16/UTF-8 encoding in the capture lock.
+                    val encoded = base64.encode(ByteBuffer.wrap(bytes, position, count))
+                    output.write(encoded.array(), encoded.arrayOffset() + encoded.position(), encoded.remaining())
+                    output.write(10)
                     position += count
                 }
                 // No payload queue: every call flushes before returning, applying disk backpressure.

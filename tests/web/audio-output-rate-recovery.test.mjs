@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AudioDeviceClock } from '../../site/play/audio-device-clock.js';

@@ -53,7 +53,7 @@ const server = createServer((req, res) => {
     const csp=readFileSync(root+'/index.html','utf8').match(/<meta http-equiv="Content-Security-Policy"[^>]+>/)[0];
     res.end(`${csp}<link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/vendor/videojs/skin.min.css"><link rel="stylesheet" href="/airplay-controls.css"><div id="stage" style="position:relative;width:800px;height:480px"></div>`); return;
   }
-  try { const data = readFileSync(root + path); res.setHeader('Content-Type', ({ '.js':'text/javascript', '.css':'text/css' })[extname(path)] ?? 'application/octet-stream'); res.end(data); }
+  try { const data = readFileSync(root + path); res.setHeader('Content-Type', ({ '.js':'text/javascript', '.css':'text/css', '.wasm':'application/wasm' })[extname(path)] ?? 'application/octet-stream'); res.end(data); }
   catch { res.statusCode = 404; res.end(); }
 });
 await new Promise(r => server.listen(0,'127.0.0.1',r));
@@ -314,6 +314,10 @@ try {
   await page.waitForFunction(() => actualVideo().playbackRate === 1.25 &&
     events.some(event => event.k === 'ap-state' && event.rate === 1.25));
   await page.waitForFunction(() => actualVideo().readyState >= 2 && !actualVideo().seeking);
+  const tempo = await page.evaluate(() => actualVideo().getPlaybackDiagnostics());
+  if (tempo.audioTempoBackend !== 'wasm-simd' || !requests.some(value => new URL(value).pathname === '/vendor/soundtouch/soundtouch.simd.wasm'))
+    throw new Error('Non-1x URL audio did not use the actual SIMD WASM tempo engine under production CSP: ' + JSON.stringify(tempo));
+  console.log(`${mode}: 1.25x URL audio uses ${tempo.audioTempoBackend} under production CSP`);
   await page.evaluate(() => { actualVideo().playbackRate = 1; });
   await page.waitForFunction(() => actualVideo().readyState >= 2);
 

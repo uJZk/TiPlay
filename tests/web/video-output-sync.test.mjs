@@ -28,6 +28,13 @@ const ref = (extra = {}) => ({ mode: 'carplay', type: 0, epoch: 1, generation: 1
   state: 'playing', sourceTimeMs: 5000, audibleTimeMs: 1120, mediaRate: 1, at: 1000, uncertaintyMs: 0,
   outputMethod: 'timestamp', ...extra });
 
+function certifyRender(mapping, context, domain, actualFrame, renderQuantumFrames = 128) {
+  mapping.capture(context);
+  const token = mapping.takeRenderProbe();
+  if (token !== null) mapping.acknowledgeRenderProbe({ token, generation: domain.generation,
+    startFrame: domain.startFrame, endFrame: actualFrame, renderQuantumFrames }, context);
+}
+
 test('video records audible output without changing its own presentation clock', () => {
   const clock = virtualClock(), shown = [];
   const frames = createTimedFrames((frame, config, id, timing, window) => shown.push({ frame, timing, window, at: clock.now() }), clock);
@@ -48,11 +55,16 @@ test('a repeated native output pair preserves honest uncertainty without holding
   const nativePair = { contextTime: (10000 - deviceLatency) * deviceRate / 1000, performanceTime: 10000 };
   const context = { state: 'running', sampleRate: 48000, baseLatency: .012, outputLatency: .08,
     get currentTime() { return (clock.now() - origin) * deviceRate / 1000; }, getOutputTimestamp: () => nativePair };
+  const domain = { generation: 0, startFrame: 0 };
+  certifyRender(mapping, context, domain, Math.round(10000 * deviceRate * 48));
   mapping.capture(context);
+  const unavailableBefore = mapping.diagnostics().outputUnavailableCount;
   clock.advance(clock.now() + 500);
+  const actualFrame = Math.round(10500 * deviceRate * 48);
+  certifyRender(mapping, context, domain, actualFrame);
   const producer = { at: clock.now(), sourceTimeMs: sourceAt(clock.now() + deviceLatency - audioDelay) };
   const reference = mapping.reference({ mode: 'carplay', type: 0, epoch: 1, generation: 1, sequence: 1,
-    state: 'playing', contextTimeMs: context.currentTime * 1000, sourceTimeMs: producer.sourceTimeMs,
+    state: 'playing', contextTimeMs: actualFrame / 48, sourceTimeMs: producer.sourceTimeMs,
     mediaRate: 1 / deviceRate }, context);
   let draws = 0;
   const frames = createTimedFrames((frame, config, id, timing) => {
@@ -69,7 +81,8 @@ test('a repeated native output pair preserves honest uncertainty without holding
   assert.equal(draws, 1, 'bounded drift uncertainty still permits a feasible picture');
   assert.equal(reference.outputMethod, 'timestamp-holdover');
   assert.ok(reference.uncertaintyMs >= 10);
-  assert.equal(mapping.diagnostics().outputUnavailableCount, 0, 'an ordinary repeated snapshot is not an invalid native sample');
+  assert.equal(mapping.diagnostics().outputUnavailableCount, unavailableBefore,
+    'an ordinary repeated snapshot adds no invalid native samples after initial proof acquisition');
   frames.reset();
 });
 
@@ -172,6 +185,7 @@ test('six virtual hours preserve independent deadlines while audio output eviden
   let producerBoundary = null;
   const context = { state: 'running', currentTime: 10, sampleRate: 48000, baseLatency: 0.01, outputLatency: 0.02,
     getOutputTimestamp: () => ({ contextTime: (clock.now() - origin - deviceLatency) / 1000, performanceTime: clock.now() - origin }) };
+  const domain = { generation: 0, startFrame: 0 };
   const sourceAt = time => serverOrigin + (time - origin) / clockRate;
   const frames = createTimedFrames((frame, config, id, timing, window) => {
     const skew = window.audioAt - clock.now();
@@ -192,12 +206,14 @@ test('six virtual hours preserve independent deadlines while audio output eviden
     deviceLatency = [30, 180, 55, 260][Math.floor(elapsed / 300000) % 4];
     audioDelay = [90, 120, 40, -10][Math.floor(elapsed / 300000) % 4];
     context.currentTime = (clock.now() - origin) / 1000;
+    const actualFrame = (10000 + elapsed) * 48;
+    certifyRender(mapping, context, domain, actualFrame);
     producerBoundary = { at: clock.now(), sourceTimeMs: sourceAt(clock.now() + deviceLatency - audioDelay) };
     // A longer device pipeline is offset by render-ahead, using the producer's
     // available future PCM; the total actual skew, not device latency alone, is
     // what determines whether a video frame is feasible.
     const reference = mapping.reference({ mode: 'carplay', type: 0, epoch: 1, generation: 1, clockGeneration: 1,
-      sequence: ++sequence, state: 'playing', contextTimeMs: context.currentTime * 1000,
+      sequence: ++sequence, state: 'playing', contextTimeMs: actualFrame / 48,
       sourceTimeMs: producerBoundary.sourceTimeMs, mediaRate: 1 / clockRate, filterDelayMs: 14 }, context);
     frames.audio(reference);
     const lead = 25 + ((elapsed / 100 * 17) % 31);

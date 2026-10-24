@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ContinuousAudio, sourceDeadlineAt } from '../../site/play/continuous-audio.js';

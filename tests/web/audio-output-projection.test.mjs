@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ContinuousAudio, sourceDeadlineAt, sourceDeadlineUncertainty } from '../../site/play/continuous-audio.js';
@@ -12,6 +13,8 @@ await import('../../site/play/audio-worklet.js');
 
 function projection(applied, anchorMs = 0) {
   const processor = new Processor();
+  globalThis.currentFrame = 0;
+  processor.process([], [[new Float32Array(128), new Float32Array(128)]]);
   processor.contextAnchor = { contextTimeMs: anchorMs, localTimeMs: anchorMs };
   processor.outputUncertaintyMs = 0;
   processor.deviceClock = { rate: applied };

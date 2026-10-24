@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SoxrRuntime } from '../../site/play/streaming-resampler.js';
@@ -7,12 +8,11 @@ import { AudioSourceClock } from '../../site/play/audio-source-clock.js';
 
 const runtime = new SoxrRuntime();
 
-test('production resampling runs without WebAssembly and isolates processor heaps', () => {
-  const saved = globalThis.WebAssembly;
+test('production resampling uses compiled WebAssembly and isolates processor heaps', () => {
   let converter;
   try {
-    globalThis.WebAssembly = undefined;
     const standalone = new SoxrRuntime();
+    assert.ok(standalone.exports.memory instanceof WebAssembly.Memory);
     assert.notEqual(standalone.exports.memory.buffer, runtime.exports.memory.buffer);
     assert.equal(standalone.exports.memory.buffer.byteLength, 16 * 1024 * 1024);
     converter = standalone.create(44100, 48000, 2);
@@ -25,7 +25,6 @@ test('production resampling runs without WebAssembly and isolates processor heap
     assert.ok(output.every(Number.isFinite));
   } finally {
     converter?.dispose();
-    globalThis.WebAssembly = saved;
   }
 });
 

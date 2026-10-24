@@ -112,6 +112,9 @@ no compatibility alias or redirect in this deployment.
 
 ## Audio and microphone
 
+Bulk audio computation uses [genuine WASM libraries](Browser-wasm.md); browser
+decoding, transport and display continue through native browser APIs.
+
 Idle CarPlay AAC/Opus/LPCM is decrypted on Android and decoded/output in the browser.
 Separate authenticated audio transport and semantic epochs prevent navigation/video
 resets clearing music. Live queues are bounded; buffered music applies backpressure.

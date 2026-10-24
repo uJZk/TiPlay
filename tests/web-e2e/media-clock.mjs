@@ -13,14 +13,16 @@ const pageRoot = resolve(repo, 'site/play'), fixtureRoot = resolve(repo, 'tests/
 const index = await readFile(resolve(pageRoot, 'index.html'), 'utf8');
 const csp = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(index)?.[1];
 assert.ok(csp && !csp.split(/\s+/).includes("'unsafe-eval'"), 'Use the exact production CSP without JavaScript eval');
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.mp4': 'video/mp4' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.mp4': 'video/mp4' };
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 async function sourceIdentity() {
-  const paths = (await readdir(pageRoot)).filter(path => path.endsWith('.js')).sort();
-  paths.push('index.html', 'vendor/soxr/soxr.asm.js');
+  const paths = (await readdir(pageRoot, { recursive: true })).filter(path => /\.(js|wasm)$/.test(path)).sort();
+  paths.push('index.html');
   return Object.fromEntries(await Promise.all(paths.map(async path => [path, hash(await readFile(resolve(pageRoot, path)))])));
 }
 const before = await sourceIdentity(), servedAssets = {}, pageErrors = [], externalRequests = [];
+const getterFault = process.env.MEDIA_CLOCK_GETTER_FAULT || '';
+assert.ok(['', 'frozen', 'slow', 'jumping', 'unreadable'].includes(getterFault), 'Known getter fault mode');
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, 'http://localhost');
@@ -45,12 +47,25 @@ try {
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM || '/usr/bin/chromium', headless: true,
     args: ['--no-sandbox', '--no-proxy-server', '--disable-background-networking'] });
   const context = await browser.newContext();
+  if (getterFault) await context.addInitScript(fault => {
+    const prototype = globalThis.AudioContext.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'currentTime')
+      || Object.getOwnPropertyDescriptor(globalThis.BaseAudioContext.prototype, 'currentTime');
+    globalThis.__clockGetterFaultReads = 0;
+    Object.defineProperty(prototype, 'currentTime', { configurable: true, get() {
+      globalThis.__clockGetterFaultReads++;
+      const native = descriptor.get.call(this);
+      if (fault === 'unreadable') throw new Error('Injected unusable main-thread graph getter');
+      if (fault === 'frozen') return 0;
+      if (fault === 'slow') return native * 0.98;
+      return native + [-5, 0, 5][Math.floor(performance.now() / 400) % 3];
+    } });
+  }, getterFault);
   await context.route('**/*', route => {
     const url = new URL(route.request().url());
     if (url.origin === origin) return route.continue();
     externalRequests.push(url.href); return route.abort();
   });
-  await context.addInitScript(() => { globalThis.WebAssembly = undefined; });
   const page = await context.newPage();
   page.on('pageerror', error => pageErrors.push(error.stack || error.message));
   await page.goto(origin);
@@ -72,10 +87,13 @@ try {
   } else assert.deepEqual(Object.keys(rendering), ['renderStatsState'], 'Unavailable renderer evidence cannot fabricate zero counters');
   assert.deepEqual(pageErrors, [], 'No browser/worker JavaScript errors');
   assert.deepEqual(externalRequests, [], 'Every media/asset request remains loopback');
-  assert.equal(await page.evaluate(() => typeof WebAssembly), 'undefined');
-  assert.ok(Object.keys(servedAssets).every(path => !path.endsWith('.wasm')), 'No runtime WASM asset');
+  if (getterFault) assert.ok(await page.evaluate(() => globalThis.__clockGetterFaultReads > 10), 'Faulty getter was actually observed');
+  assert.equal(await page.evaluate(() => typeof WebAssembly), 'object');
+  for (const asset of ['/play/vendor/soxr/soxr.wasm', '/play/wasm/audio-core.wasm']) {
+    assert.ok(servedAssets[asset], `Actual WASM engine loaded under production CSP: ${asset}`);
+  }
   assert.deepEqual(changed, [], 'Runtime source remained unchanged throughout the check');
-  console.log(JSON.stringify({ browser: await browser.version(), summary: result.summary,
+  console.log(JSON.stringify({ browser: await browser.version(), getterFault: getterFault || 'none', summary: result.summary,
     workers: result.workers, sourceSha256: hash(JSON.stringify(before)), sourceFiles: Object.keys(before).length,
     physicalOutputMeasured: false }, null, 2));
 } finally {

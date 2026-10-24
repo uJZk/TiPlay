@@ -40,7 +40,7 @@ function fixture({ sampleRate = 48000, frames = 48, origin = 100, packetFrames =
     }
   }
   class Context {
-    constructor(options) { this.sampleRate = options.sampleRate; this.currentTime = 0; this.state = 'suspended'; context = this; }
+    constructor(options) { this.sampleRate = options.sampleRate; this.currentTime = this.renderedTime = 0; this.state = 'suspended'; context = this; }
     createGain() { return { gain: { value: 1 }, connect() {}, disconnect() {} }; }
     createBuffer(channels, length, rate) {
       const planes = Array.from({ length: channels }, () => new Float32Array(length));
@@ -49,11 +49,11 @@ function fixture({ sampleRate = 48000, frames = 48, origin = 100, packetFrames =
     }
     createBufferSource() {
       const owner = this;
-      const node = { connect() {}, disconnect() {}, start(when, offset, duration) {
-        if (!delayed) { delayed = true; owner.currentTime += beforeFirstStart; }
-        this.startTime = Math.max(when, owner.currentTime);
-        this.duration = duration;
-      }, stop() { this.stopTime = owner.currentTime; } };
+      const node = { connect() {}, disconnect() {}, start(when, offset = 0, duration = this.buffer.duration - offset) {
+        if (!delayed) { delayed = true; owner.currentTime += beforeFirstStart; owner.renderedTime += beforeFirstStart; }
+        this.startTime = Math.max(when, owner.renderedTime);
+        this.duration = Math.min(duration, this.buffer.duration - offset);
+      }, stop() { this.stopTime = owner.renderedTime; this.cancelled = true; queueMicrotask(() => this.onended?.()); } };
       nodes.push(node); return node;
     }
     async resume() { this.state = 'running'; }
@@ -70,7 +70,7 @@ function fixture({ sampleRate = 48000, frames = 48, origin = 100, packetFrames =
     playedSamples() {
       return nodes.flatMap(node => {
         if (!Number.isFinite(node.startTime)) return [];
-        const until = Math.min(context.currentTime, node.stopTime ?? Infinity, node.startTime + node.duration);
+        const until = Math.min(context.renderedTime, node.stopTime ?? Infinity, node.startTime + node.duration);
         // Each output sample starts at its lattice point. Native Web Audio
         // emits the last sample even when stop/duration falls inside its span.
         const count = Math.max(0, Math.min(node.buffer.length, Math.ceil((until - node.startTime) * sampleRate - 1e-6)));
@@ -78,7 +78,17 @@ function fixture({ sampleRate = 48000, frames = 48, origin = 100, packetFrames =
       });
     },
     async tick(seconds = 0) {
-      wall += seconds; if (context?.state === 'running') context.currentTime += seconds;
+      wall += seconds;
+      if (context?.state === 'running') {
+        context.currentTime += seconds; context.renderedTime += seconds;
+        for (const node of nodes) if (!node.cancelled && !node.naturallyEnded &&
+          context.renderedTime >= node.startTime + node.duration) {
+          node.naturallyEnded = true; queueMicrotask(() => node.onended?.());
+        }
+      }
+      // Render completion reaches the control thread as an event, outside
+      // start()/stop() calls and before this explicitly driven animation tick.
+      await flush();
       const pending = callbacks.entries().next().value;
       if (pending) { callbacks.delete(pending[0]); pending[1](); }
       await flush();

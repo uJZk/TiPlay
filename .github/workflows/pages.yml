@@ -28,7 +28,9 @@ jobs:
       - name: Generate the product version and download pages
         run: python3 scripts/build_site.py
       - name: Verify root layout and public assets
-        run: python3 -m unittest discover -s tests -p 'test_site_deployment.py'
+        run: |
+          python3 scripts/update_browser_cache.py --check
+          python3 -m unittest discover -s tests -p 'test_site_deployment.py'
       - name: Assemble the single production site
         run: python3 scripts/assemble_site.py _site
       - uses: actions/configure-pages@v5

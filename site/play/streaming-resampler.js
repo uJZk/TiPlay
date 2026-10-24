@@ -1,13 +1,14 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
-import createSoxr from './vendor/soxr/soxr.asm.js';
+import createSoxr from './vendor/soxr/soxr.js';
+export { loadSoxr, prepareSoxr } from './vendor/soxr/soxr.js';
 
 const INPUT_FRAMES = 4096, OUTPUT_FRAMES = 512;
 
-/** A replaceable, self-hosted pure JavaScript libsoxr runtime; allocation occurs when a stream is created. */
+/** A replaceable libsoxr WASM instance; compilation happens before rendering starts. */
 export class SoxrRuntime {
-  constructor({ allowCalibration = true } = {}) {
-    this.exports = createSoxr().exports;
-    // The generated runtime has a fixed heap; reuse its view on every render quantum.
+  constructor({ allowCalibration = true, module } = {}) {
+    this.exports = createSoxr(module).exports;
+    // Fixed memory keeps boundary views valid throughout the stream lifetime.
     this.heap = new Float32Array(this.exports.memory.buffer);
     this.calibrations = new Map();
     this.allowCalibration = allowCalibration;
@@ -45,6 +46,8 @@ export class SoxrRuntime {
 
 export class StreamingResampler {
   constructor(runtime, rate, outputRate, channels) {
+    if (!Number.isInteger(rate) || rate < 8000 || rate > 96000 || !Number.isInteger(outputRate)
+      || outputRate < 8000 || outputRate > 192000 || (channels !== 1 && channels !== 2)) throw new Error('Invalid audio resampler format.');
     this.runtime = runtime; this.api = runtime.exports; this.channels = channels;
     this.ratio = rate / outputRate; this.outputRate = outputRate;
     this.handle = this.api.tiplay_create(this.ratio * 1.05, this.ratio, channels);
@@ -54,11 +57,18 @@ export class StreamingResampler {
     this.inputFrames = 0; this.outputFrames = 0;
   }
   setRatio(ratio, slewFrames = 128) {
+    if (!this.handle) throw new Error('Audio resampler was disposed.');
     if (!(ratio > 0) || ratio > this.ratio * 1.05 || ratio < this.ratio * 0.95) throw new Error('Audio resampling ratio is outside its drift range.');
+    if (!Number.isSafeInteger(slewFrames) || slewFrames < 0 || slewFrames > 0xffffffff) throw new Error('Invalid audio resampling slew.');
     if (this.api.tiplay_ratio(this.handle, ratio, slewFrames)) throw new Error('Audio resampling ratio update failed.');
   }
   /** Input is interleaved float32; a zero length requests buffered output without flushing. */
   process(input, frames, output, capacity = output.length / this.channels) {
+    if (!this.handle) throw new Error('Audio resampler was disposed.');
+    if (!Number.isSafeInteger(frames) || frames < 0 || !Number.isSafeInteger(capacity) || capacity < 0
+      || !(input instanceof Float32Array) || !(output instanceof Float32Array)
+      || input.length < Math.min(frames, INPUT_FRAMES) * this.channels
+      || output.length < Math.min(capacity, OUTPUT_FRAMES) * this.channels) throw new Error('Invalid audio resampler buffers.');
     frames = Math.min(frames, INPUT_FRAMES); capacity = Math.min(capacity, OUTPUT_FRAMES);
     const heap = this.runtime.heap;
     if (frames) heap.set(input.subarray(0, frames * this.channels), this.inputPointer / 4);

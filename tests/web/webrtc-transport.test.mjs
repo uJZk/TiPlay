@@ -88,6 +88,27 @@ test('fragmented records retain bytes and credits wait for downstream consumptio
   } finally { await reader.cancel(); reader.releaseLock(); f.media.close(); }
 });
 
+test('single-fragment records retain native storage and credit accounting survives its transfer', async () => {
+  const f = await fixture(), reader = f.media.video.getReader();
+  try {
+    const input = Uint8Array.of(4, 9, 17), message = fragment(input);
+    f.channels.video.receive(message);
+    const output = (await reader.read()).value;
+    assert.equal(output.buffer, message);
+    assert.equal(output.byteOffset, RTC_HEADER_BYTES);
+    assert.deepEqual(output, input);
+    structuredClone(output, { transfer: [output.buffer] });
+    assert.equal(message.byteLength, 0);
+    const pending = reader.read();
+    await settle();
+    assert.deepEqual(f.channels.control.sent.filter(value => value.k === 'ack'),
+      [{ k: 'ack', channel: 'video', q: 0, bytes: 3 }]);
+    assert.equal(f.media.stats().queuedBytes, 0);
+    f.channels.video.receive(fragment(Uint8Array.of(20), { q: 1 }));
+    assert.deepEqual((await pending).value, Uint8Array.of(20));
+  } finally { await reader.cancel(); reader.releaseLock(); f.media.close(); }
+});
+
 test('audio cancellation explicitly retires queued work, retains FIFO credit and starts a fresh subscription', async () => {
   const f = await fixture();
   try {

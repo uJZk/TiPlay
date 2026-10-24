@@ -1,0 +1,53 @@
+{
+  "scope": "Desktop Chromium; complete client including2MiB heap disposal. Loopback gzip fetch excludes Internet latency and vehicle timing.",
+  "runs": [
+    {
+      "browser": "151.0.7922.173",
+      "initialNativeClientMs": 13.299999999813735,
+      "initialWasmFetchCompileClientMs": 24.4000000001397,
+      "nativeClientMedianMs": 9.599999999860302,
+      "wasmClientMedianMs": 16.300000000046566,
+      "measuredTrialsPerBackend": 20,
+      "threeModularPowers": true,
+      "matchingProofs": true,
+      "nativeWebCrypto": true,
+      "fullHeapDisposalIncluded": true,
+      "productionCsp": true,
+      "binaryBytes": 264090,
+      "gzipBytes": 103420,
+      "transport": "loopback HTTP, no-store gzip; Internet latency/vehicle performance unmeasured"
+    },
+    {
+      "browser": "151.0.7922.173",
+      "initialNativeClientMs": 22.5999999998603,
+      "initialWasmFetchCompileClientMs": 31.800000000046566,
+      "nativeClientMedianMs": 9.5,
+      "wasmClientMedianMs": 16.399999999906868,
+      "measuredTrialsPerBackend": 20,
+      "threeModularPowers": true,
+      "matchingProofs": true,
+      "nativeWebCrypto": true,
+      "fullHeapDisposalIncluded": true,
+      "productionCsp": true,
+      "binaryBytes": 264090,
+      "gzipBytes": 103420,
+      "transport": "loopback HTTP, no-store gzip; Internet latency/vehicle performance unmeasured"
+    },
+    {
+      "browser": "151.0.7922.173",
+      "initialNativeClientMs": 18.800000000046566,
+      "initialWasmFetchCompileClientMs": 31.5999999998603,
+      "nativeClientMedianMs": 9.600000000093132,
+      "wasmClientMedianMs": 16.600000000093132,
+      "measuredTrialsPerBackend": 20,
+      "threeModularPowers": true,
+      "matchingProofs": true,
+      "nativeWebCrypto": true,
+      "fullHeapDisposalIncluded": true,
+      "productionCspApplied": true,
+      "binaryBytes": 264090,
+      "gzipBytes": 103420,
+      "transport": "loopback HTTP, no-store gzip; Internet latency/vehicle performance unmeasured"
+    }
+  ]
+}

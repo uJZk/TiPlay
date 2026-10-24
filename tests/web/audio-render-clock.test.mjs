@@ -3,12 +3,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAudioOutputMapping } from '../../site/play/audio-output-clock.js';
 
-function confirmRender(mapping, context, domain) {
-  const frame = Math.round(context.currentTime * context.sampleRate);
+// A 16-second proof history cannot locate a callback frontier more precisely
+// than its causal block interval. Probe cadence here is at most 120ms.
+const intervalRateBound = frames => 1.02 * (frames / 48 / .98) / (16000 - 120 - frames / 48 / .98) + 1e-6;
+
+function confirmRender(mapping, context, domain, frame) {
   domain.startFrame ??= frame;
   const token = mapping.takeRenderProbe();
   if (token !== null) mapping.acknowledgeRenderProbe({ token, generation: domain.generation,
-    startFrame: domain.startFrame, endFrame: frame + (context.renderQuantumSize || 128) }, context);
+    startFrame: domain.startFrame, endFrame: frame + (context.renderQuantumSize || 128), renderQuantumFrames: context.renderQuantumSize || 128 }, context);
 }
 
 function renderer({ rate = .986, quantumFrames = 128, pipeline = () => 200 } = {}) {
@@ -35,10 +38,10 @@ function renderer({ rate = .986, quantumFrames = 128, pipeline = () => 200 } = {
     // changes and scheduling stalls. Only an actual coordinate offset changes
     // the sample domain, just as the worklet's per-block frame guard does.
     if (renderStepMs !== renderOffset) {
-      domain.generation++; domain.startFrame = Math.round(context.currentTime * context.sampleRate);
+      domain.generation++; domain.startFrame = Math.round((counter(elapsed) + renderStepMs) * 48);
       renderOffset = renderStepMs;
     }
-    confirmRender(mapping, context, domain);
+    confirmRender(mapping, context, domain, Math.round((counter(elapsed) + renderStepMs) * 48));
     return output;
   }
   return { mapping, context, sample, counter, domain };
@@ -51,7 +54,8 @@ test('small recurring native pipeline steps cannot starve independently advancin
   const fit = h.mapping.deviceClock();
   assert.ok(pending > 20, 'the native output phase still requires reacquisition after its steps');
   assert.equal(fit.fitStatus, 'tracking');
-  assert.ok(Math.abs(fit.rate - .986) < .00006, `${fit.rate}`);
+  assert.ok(Math.abs(fit.rate - .986) < intervalRateBound(128), `${fit.rate}`);
+  assert.ok(fit.rate >= .986, 'interval evidence corrects only the rate error it can prove');
   assert.equal(fit.reason, 'context', 'native output offsets cannot retire the render sample clock');
 });
 
@@ -63,7 +67,8 @@ test('64 to 1024 frame render quantization has measured uncertainty instead of p
     const fit = h.mapping.deviceClock();
     assert.equal(fit.fitStatus, 'tracking', `${quantumFrames}: ${fit.fitRejectReason}`);
     assert.equal(fit.source, 'render');
-    assert.ok(Math.abs(fit.rate - .986) < .0002, `${quantumFrames}: ${fit.rate}`);
+    assert.ok(Math.abs(fit.rate - .986) < intervalRateBound(quantumFrames), `${quantumFrames}: ${fit.rate}`);
+    assert.ok(fit.rate >= .986, 'the unknown callback instant cannot justify overcorrecting the physical rate');
     assert.ok(fit.uncertaintyMs >= quantumFrames / 48 / 2, 'the accepted fit reserves the known quantization interval');
     assert.ok(Number.isFinite(fit.fitDispersionMs), 'raw MAD remains diagnostic evidence');
   }
@@ -73,7 +78,7 @@ test('unavailable future native timestamps cannot train phase or block valid ren
   const h = renderer();
   for (let at = 10000; at <= 55000; at += 40) h.sample(at, { nativeFutureMs: 80 });
   const fit = h.mapping.deviceClock();
-  assert.ok(Math.abs(fit.rate - .986) < .00006, `${fit.rate}`);
+  assert.ok(Math.abs(fit.rate - .986) < intervalRateBound(128), `${fit.rate}`);
   assert.equal(h.mapping.diagnostics().outputState, 'latency-estimate', 'invalid native pairs never become trusted phase anchors');
 });
 
@@ -89,8 +94,9 @@ test('getter time is paired correctly and a main-thread observation gap retains 
   assert.equal(reacquiring.source, 'holdover');
   assert.equal(reacquiring.rate, 1, 'an unobserved rate interval retains the baseline nominal reset');
   assert.equal(reacquiring.targetRatePpm, reacquiring.ratePpm, 'an old unachieved target cannot steer the new fit');
-  assert.equal(h.sample(41560, { getterMs: 7 })?.outputMethod, 'timestamp');
-  for (let at = 41600; at <= 70000; at += 40) h.sample(at, { getterMs: 7 });
+  assert.equal(h.sample(41560, { getterMs: 7 }), null, 'a first native pair after the new proof cannot confirm its own discontinuity');
+  assert.equal(h.sample(41600, { getterMs: 7 })?.outputMethod, 'timestamp');
+  for (let at = 41640; at <= 70000; at += 40) h.sample(at, { getterMs: 7 });
   assert.ok(Math.abs(h.mapping.deviceClock().rate - .988) < .00006);
 });
 
@@ -99,11 +105,11 @@ test('a real render-rate change remains measurable through recurring independent
   const counter = at => at <= switchAt ? at * .986 : switchAt * .986 + (at - switchAt) * 1.012;
   const h = renderer({ rate: counter, pipeline: at => 200 + (Math.floor(at / 1000) % 2 ? 5 : -5) });
   for (let at = 10000; at <= 35000; at += 40) h.sample(at);
-  assert.ok(Math.abs(h.mapping.deviceClock().rate - .986) < .00006);
+  assert.ok(Math.abs(h.mapping.deviceClock().rate - .986) < intervalRateBound(128));
   h.sample(35040);
   assert.ok(h.mapping.deviceClock().rate < .99, 'a new physical rate cannot cause an instantaneous resampler ratio step');
   for (let at = 35080; at <= 95000; at += 40) h.sample(at);
-  assert.ok(Math.abs(h.mapping.deviceClock().rate - 1.012) < .00006, `${h.mapping.deviceClock().rate}`);
+  assert.ok(Math.abs(h.mapping.deviceClock().rate - 1.012) < intervalRateBound(128), `${h.mapping.deviceClock().rate}`);
 });
 
 test('a forward render-coordinate jump discards its fit without training the jump as drift', () => {
@@ -117,18 +123,20 @@ test('a forward render-coordinate jump discards its fit without training the jum
   assert.equal(jumped.reason, 'sample-domain');
   assert.equal(jumped.generation, before.generation + 1);
   assert.equal(jumped.rate, before.rate, 'a coordinate step does not prove a changed oscillator');
-  assert.equal(jumped.source, 'native', 'independent current native evidence survives a render-coordinate jump');
+  assert.equal(jumped.source, 'holdover', 'old-domain native coordinates cannot certify the newly proved sample domain');
   for (let at = 35160; at <= 55000; at += 40) h.sample(at, { renderStepMs: 20 });
   assert.ok(Math.abs(h.mapping.deviceClock().rate - .996) < .00006);
 });
 
-test('a larger observed block retains its quantization reserve after blocks shrink again', () => {
+test('rate uncertainty follows the actual recent callback intervals after render blocks shrink', () => {
   const h = renderer({ quantumFrames: at => at < 30000 ? 128 : at < 45000 ? 1024 : 64 });
   for (let at = 10000; at <= 70000; at += 40) h.sample(at, { nativeFutureMs: 80 });
   const fit = h.mapping.deviceClock();
   assert.equal(fit.fitStatus, 'tracking');
-  assert.ok(Math.abs(fit.rate - .986) < .0002);
-  assert.ok(fit.uncertaintyMs >= 1024 / 48 / 2);
+  assert.ok(Math.abs(fit.rate - .986) < intervalRateBound(64));
+  assert.ok(fit.uncertaintyMs >= 64 / 48 / .98 / 2);
+  assert.ok(fit.uncertaintyMs < 1024 / 48 / 2,
+    'an old large block outside the full fit window cannot fabricate uncertainty in later small callbacks');
   assert.equal(fit.source, 'render');
 });
 
@@ -171,7 +179,7 @@ test('native residual uncertainty converts from context milliseconds to performa
       elapsed = 10000 + i * 100; context.currentTime = elapsed * rate / 1000;
       pair = { contextTime: ((elapsed - 200) * rate + pattern[i % pattern.length]) / 1000, performanceTime: elapsed };
       mapping.capture(context);
-      confirmRender(mapping, context, domain);
+      confirmRender(mapping, context, domain, Math.round(elapsed * rate * 48));
     }
     const nativeU = mapping.diagnostics().outputTimestampFitUncertaintyMs;
     const applied = mapping.deviceClock().rate, previous = pair;
@@ -203,7 +211,7 @@ test('a truthful native clock owns the target while render-ahead progress change
       context.currentTime = (1000 + elapsed * .986) / 1000;
       pair = { contextTime: (elapsed + offset) / 1000, performanceTime: elapsed };
       mapping.capture(context);
-      confirmRender(mapping, context, domain);
+      confirmRender(mapping, context, domain, Math.round((1000 + elapsed * .986) * 48));
     }
     elapsed -= 40;
     const fit = mapping.deviceClock(), offset = stepped ? Math.floor(elapsed / 1000) % 2 ? 5 : -5 : 0;

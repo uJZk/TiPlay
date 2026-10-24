@@ -6,8 +6,12 @@ export function captionTriples(data, timestamp, codec = 'avc', config) {
   if (data.length > 8 * 1024 * 1024 || !Number.isFinite(timestamp)) return [];
   const hevc = /hevc|hvc|hev/i.test(codec), units = [];
   const starts = [];
-  for (let i = 0; i + 3 < data.length; i++) if (data[i] === 0 && data[i + 1] === 0 && (data[i + 2] === 1 || data[i + 2] === 0 && data[i + 3] === 1)) {
-    const length = data[i + 2] === 1 ? 3 : 4; starts.push({ start: i, payload: i + length }); i += length - 1;
+  // Let the native typed-array search scan packet bytes. Crossing into WASM here
+  // would copy the whole compressed picture merely to return a few NAL offsets.
+  for (let end = data.indexOf(1, 2); end !== -1; end = data.indexOf(1, end + 1)) {
+    if (data[end - 1] !== 0 || data[end - 2] !== 0) continue;
+    const start = end >= 3 && data[end - 3] === 0 ? end - 3 : end - 2;
+    starts.push({ start, payload: end + 1 });
   }
   if (starts.length && starts[0].start === 0) {
     for (let i = 0; i < starts.length; i++) units.push(data.subarray(starts[i].payload, starts[i + 1]?.start ?? data.length));

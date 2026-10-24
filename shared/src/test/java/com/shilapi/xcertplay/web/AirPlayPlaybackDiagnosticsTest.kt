@@ -4,6 +4,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayPlaybackDiagnosticsTest {
+    @Test fun tempoBackendsRetainOnlyFixedValuesWithinThePcmLineBudget() {
+        val fixture = engineFixture()
+        val original = fixture["engine"] as Map<*, *>
+        val backends = listOf("none", "wasm-simd", "wasm", "soundtouchjs")
+        for (backend in backends + listOf("https://private.invalid/?token=secret", "wasm\nsecret", "", "OTHER")) {
+            val lines = mutableListOf<String>()
+            AirPlayPlaybackDiagnostics(lines::add, debug = { true }, nowMillis = { 0L }).event(7,
+                fixture + ("engine" to (original + ("audioTempoBackend" to backend))), true)
+            val expected = backend.takeIf { it in backends } ?: "unknown"
+            val pcm = lines.single { it.contains("stage=ENGINE_PCM") }
+            assertTrue(pcm, pcm.contains("audioTempoBackend=$expected "))
+            assertTrue(lines.all { it.length <= 600 && !it.contains("secret") && !it.contains('\n') })
+        }
+    }
+
     @Test fun browserRendererCountersUseTheirOwnBoundedGroupAndUnavailableDoesNotBecomeZero() {
         val fixture = engineFixture()
         val original = fixture["engine"] as Map<*, *>

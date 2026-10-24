@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { SoundTouchCore } from '../../site/play/vendor/mediabunny/mediabunny.min.js';
+import './soundtouch-fixture.mjs';
 import { createMediaEngine } from '../../site/play/airplay-media.js';
 import { airplayDiagnostic, createAirPlayDiagnostics } from '../../site/play/airplay-diagnostics.js';
 import { intersectMediaRanges, mediaTimeRanges, mergeMediaRanges, videoQueueFull } from '../../site/play/airplay-media-state.js';
@@ -14,7 +14,7 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
   deferVideoAt = 1, frameWidth = 16, frameHeight = 9, videoFps = 10, videoGapAt = Infinity, videoGap = 0,
   surfacePool = Infinity, resumeGate = null, resumeState = 'running', videoCadence = null,
   audioSampleRate = 1000, audioSamplesPerPacket = 100, audioStart = 0, audioDuration = duration, videoDuration = duration,
-  deferAudio = null, deferAudioAt = 1, videoErrorAt = Infinity, videoError = null,
+  deferAudio = null, deferAudioAt = 1, deferAudioEnd = null, videoErrorAt = Infinity, videoError = null,
   videoConfig = null, VideoDecoder = undefined, audioSignal = null, audioTimestamp = value => value,
   audioClockQuantumFrames = 0, audioContextSampleRate = audioSampleRate, honorAudioSampleRate = true,
   alternateAudioSampleRate = audioSampleRate } = {}) {
@@ -79,7 +79,11 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
       return {
         [Symbol.asyncIterator]() { return this; },
         async next() {
-          if (stopped || index * audioPeriod >= audioDuration - 0.000001) return { done: true };
+          if (stopped) return { done: true };
+          if (index * audioPeriod >= audioDuration - 0.000001) {
+            if (deferAudioEnd) await deferAudioEnd;
+            return { done: true };
+          }
           reads.audio++;
           if (deferAudio && reads.audio === deferAudioAt) await deferAudio;
           const packetIndex = index++, timestamp = audioTimestamp(timestampOrigin + audioStart + packetIndex * audioPeriod, packetIndex);
@@ -110,7 +114,10 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
     }
     createBufferSource() {
       const context = this;
-      const node = { context, connect() {}, disconnect() {}, start(time) { this.time = time; this.scheduledAt = context.currentTime; },
+      const node = { context, connect() {}, disconnect() {}, start(time, _offset = 0, duration = this.buffer.duration) {
+        this.time = time; this.scheduledAt = context.currentTime;
+        this.nativeEnd = Math.max(time, context.elapsed) + duration;
+      },
         stop() { this.stopped = true; this.stopTime = context.currentTime; } };
       nodes.push(node); return node;
     }
@@ -121,7 +128,7 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
   const closePresented = sample => { if (sample) { sample.close(); sampleCloseObserver(sample); } };
   const media = createMediaEngine(null, {
     library: { Input, UrlSource: class { constructor(src, options) { this.src = src; this.options = options; } },
-      VideoSampleSink, AudioBufferSink, ALL_FORMATS: [], SoundTouchCore },
+      VideoSampleSink, AudioBufferSink, ALL_FORMATS: [] },
     AudioContext: class extends AudioContext { constructor(...args) { super(...args); contextInstance = this; } }, VideoDecoder,
     onClock,
     now: () => wall, requestFrame: callback => { callbacks.set(++next, callback); return next; },
@@ -137,6 +144,11 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
       contextInstance.elapsed += advance;
       contextInstance.currentTime = audioClockQuantumFrames
         ? Math.floor(contextInstance.elapsed * contextInstance.sampleRate / audioClockQuantumFrames) * audioClockQuantumFrames / contextInstance.sampleRate : contextInstance.elapsed;
+      // Native source completion has its own rendered progress. Merely changing
+      // the published getter cannot make the final source finish processing.
+      for (const node of nodes) if (node.context === contextInstance && !node.stopped && !node.nativeEnded && contextInstance.elapsed >= node.nativeEnd) {
+        node.nativeEnded = true; node.onended?.();
+      }
     }
   };
   return { media, reads, inputs, samples, pictures, nodes, events, selection, decodedAudio, audioTrims, otherAudio, sinkOptions, audioContexts: () => audioContexts,
@@ -196,6 +208,82 @@ test('audio clock leads, a stall cannot skip unscheduled audio, and paused seek 
   assert.equal(h.media.currentTime, 8); assert.ok(h.events.includes('seeked'));
   assert.equal(h.inputs.length, 1, 'seek and pause retain source metadata/cache');
   h.media.dispose(); assert.ok(h.samples.every(value => value.closed === 1));
+});
+
+test('URL EOF waits for native tail completion when the published graph getter jumps ahead', async () => {
+  const h = fixture({ video: false, duration: 0.1, audioSampleRate: 48000, audioSamplesPerPacket: 4800 });
+  try {
+    await h.media.load('https://fixture.test/getter-jump.mp4'); await flush();
+    const playing = h.media.play(); await flush(); await h.tick(); await playing;
+    const tail = h.nodes.at(-1);
+    assert.ok(tail && !tail.nativeEnded);
+    Object.defineProperty(h.context(), 'currentTime', { configurable: true, get: () => 100, set() {} });
+    await h.tick(0.01);
+    assert.equal(h.media.ended, false, 'reported graph position is not native source completion');
+    assert.equal(tail.stopped, undefined, 'rebuffer cleanup must not clip the still-live native tail');
+    assert.equal(h.events.includes('ended'), false);
+    await h.tick(0.08); assert.equal(h.media.ended, false);
+    await h.tick(0.02);
+    assert.equal(tail.nativeEnded, true);
+    assert.equal(tail.stopped, undefined);
+    assert.equal(h.media.ended, true);
+    assert.equal(h.events.filter(event => event === 'ended').length, 1);
+  } finally { h.media.dispose(); }
+});
+
+test('URL native completion advances source progress and EOF when the published getter stays frozen', async () => {
+  const h = fixture({ video: false, duration: 0.1, audioSampleRate: 48000, audioSamplesPerPacket: 4800 });
+  try {
+    await h.media.load('https://fixture.test/frozen-getter.mp4'); await flush();
+    const playing = h.media.play(); await flush(); await h.tick(); await playing;
+    const tail = h.nodes.at(-1);
+    Object.defineProperty(h.context(), 'currentTime', { configurable: true, get: () => 0, set() {} });
+    await h.tick(0.11);
+    assert.equal(h.context().currentTime, 0);
+    assert.equal(tail.nativeEnded, true);
+    assert.equal(tail.stopped, undefined);
+    assert.equal(h.media.ended, true, 'sealed native source progress must outrank a held-back getter');
+    assert.ok(Math.abs(h.media.currentTime - 0.1) < 1e-9);
+  } finally { h.media.dispose(); }
+});
+
+for (const retirement of ['seek', 'rebuffer']) test(`URL EOF ignores a natural completion callback retired by ${retirement}`, async () => {
+  const h = fixture({ video: false, duration: 0.3, audioSampleRate: 48000, audioSamplesPerPacket: 4800 });
+  try {
+    await h.media.load('https://fixture.test/retired-completion.mp4'); await flush();
+    const playing = h.media.play(); await flush(); await h.tick(); await playing;
+    const retired = h.nodes.at(-1).onended;
+    if (retirement === 'seek') { h.media.currentTime = 0.1; await flush(); await h.tick(); }
+    else {
+      h.context().state = 'suspended'; await h.tick();
+      h.context().state = 'running'; await h.tick();
+    }
+    const tail = h.nodes.at(-1);
+    Object.defineProperty(h.context(), 'currentTime', { configurable: true, get: () => 100, set() {} });
+    retired();
+    await h.tick(retirement === 'seek' ? 0.11 : 0.21);
+    assert.equal(h.media.ended, false);
+    assert.equal(tail.stopped, undefined, 'an old callback cannot authorize cancellation of the new tail');
+    await h.tick(0.11);
+    assert.equal(tail.nativeEnded, true);
+    assert.equal(h.media.ended, true);
+    assert.equal(h.events.filter(event => event === 'ended').length, 1);
+  } finally { h.media.dispose(); }
+});
+
+test('URL EOF retains sealed native completion when decoder EOF arrives after the drained source', async () => {
+  let releaseEnd;
+  const endPending = new Promise(resolve => { releaseEnd = resolve; });
+  const h = fixture({ video: false, duration: 0.9, audioDuration: 0.8, audioSampleRate: 48000, audioSamplesPerPacket: 4800, deferAudioEnd: endPending });
+  try {
+    await h.media.load('https://fixture.test/delayed-eof.mp4'); await flush();
+    const playing = h.media.play(); await flush(); await h.tick(); await playing;
+    for (let tick = 0; tick < 10; tick++) await h.tick(0.1);
+    assert.equal(h.media.ended, false, 'native completion does not invent decoder EOF');
+    assert.ok(h.nodes.every(node => node.nativeEnded));
+    releaseEnd(); await flush(); await h.tick(); await h.tick(0.11);
+    assert.equal(h.media.ended, true, 'retiring the empty scheduling batch cannot erase completed source coverage');
+  } finally { releaseEnd(); h.media.dispose(); }
 });
 
 for (const scenario of [

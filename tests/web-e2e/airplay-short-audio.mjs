@@ -35,12 +35,16 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
   console.log(JSON.stringify({ browser: await browser.version(), engineSha256,
     oracle: 'native OfflineAudioContext whole-buffer duration clipping versus production URL EOF', physicalOutputMeasured: false }));
-  for (const sampleRate of [44100, 48000]) for (const [sourceFrames, metadataFrames] of [[1, 1], [32, .5], [64, 1], [64, 47.5], [200000, 48.5]]) {
-    const result = await page.evaluate(async ({ sampleRate, sourceFrames, metadataFrames }) => {
+  const cases = [44100, 48000].flatMap(sampleRate => [[1, 1], [32, .5], [64, 1], [64, 47.5], [200000, 48.5]]
+    .map(([sourceFrames, metadataFrames]) => ({ sampleRate, sourceFrames, metadataFrames, frozenGetter: false })));
+  cases.push({ sampleRate: 48000, sourceFrames: 64, metadataFrames: 47.5, frozenGetter: true });
+  for (const { sampleRate, sourceFrames, metadataFrames, frozenGetter } of cases) {
+    const result = await page.evaluate(async ({ sampleRate, sourceFrames, metadataFrames, frozenGetter }) => {
       const { createMediaEngine } = await import('/airplay-media.js');
       const value = (frame, channel) => channel ? (frame + 1) / 2 ** 20 : .15 + .07 * Math.sin(frame * .37);
       const origin = 100, packetFrames = 1024;
       let wall = 0, audioClock = 0, context, graph, next = 0, playResolved = false;
+      let nativeCompletions = 0, stopCalls = 0;
       const callbacks = new Map(), nodes = [], events = [];
       const flush = async () => { for (let i = 0; i < 80; i++) await Promise.resolve(); };
       const track = { canDecode: async () => true, isLive: async () => false };
@@ -71,13 +75,11 @@ try {
         createBuffer(...args) { return graph.createBuffer(...args); }
         createBufferSource() {
           const node = graph.createBufferSource(), nativeStart = node.start.bind(node), nativeStop = node.stop.bind(node);
+          node.addEventListener('ended', () => { nativeCompletions++; });
           node.start = (...args) => { nodes.push({ node, time: args[0], offset: args[1], duration: args[2] }); nativeStart(...args); };
           // Native Offline time is still zero while the graph is constructed.
           // Stop must use the same test clock as the production Context wrapper.
-          node.stop = time => nativeStop(time === undefined ? audioClock : time);
-          // EOF cleanup happens after our manual playback clock reaches the
-          // tail. Preserve that historical route until Offline renders it.
-          node.disconnect = () => {};
+          node.stop = time => { stopCalls++; nativeStop(time === undefined ? audioClock : time); };
           return node;
         }
         async resume() { this.state = 'running'; }
@@ -100,15 +102,25 @@ try {
         void playing.catch(() => {}); await flush();
         for (let i = 0; i < 10 && !playResolved; i++) await tick(0);
         if (!playResolved || media.ended || !nodes.length) throw new Error('Short source must actually start before ending');
-        for (let i = 0; i < 2000 && !media.ended; i++) await tick(.25 / sampleRate);
-        if (!media.ended || media.error) throw new Error('Finite short source did not finish');
-        if (audioClock > nodes[0].time + (metadataFrames + .5) / sampleRate + 1e-10)
-          throw new Error('EOF waited beyond the effective clipped source tail');
+        // The reported getter can pass the entire source while native Offline
+        // rendering has not started. It must not finish or cancel live nodes.
+        await tick(frozenGetter ? 0 : (metadataFrames + 1) / sampleRate);
+        if (media.ended || stopCalls || nativeCompletions)
+          throw new Error('The reported clock ended or cancelled a source before native rendering');
+        const anchor = nodes[0].time, actual = await graph.startRendering();
+        const completionDeadline = performance.now() + 5000;
+        while (nativeCompletions < nodes.length) {
+          if (performance.now() >= completionDeadline) throw new Error('Native short-source completion event did not arrive');
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+        await flush();
+        for (let i = 0; i < 10 && !media.ended; i++) await tick(0);
+        if (!media.ended || media.error) throw new Error('Finite short source did not finish after natural native completion');
+        if (stopCalls) throw new Error('Natural tail completion must not stop an already completed source');
         await playing;
         if (!(events.indexOf('playing') < events.indexOf('play-resolved') && events.indexOf('play-resolved') < events.indexOf('ended')))
           throw new Error('Play/ended ordering changed');
         if (events.filter(event => event === 'ended').length !== 1) throw new Error('EOF was emitted more than once');
-        const anchor = nodes[0].time, actual = await graph.startRendering();
         const referenceContext = new OfflineAudioContext(2, 4096, sampleRate);
         const referenceBuffer = referenceContext.createBuffer(2, sourceFrames, sampleRate);
         for (let channel = 0; channel < 2; channel++) referenceBuffer.copyToChannel(Float32Array.from({ length: sourceFrames }, (_, i) => value(i, channel)), channel);
@@ -123,12 +135,16 @@ try {
             maximumError = Math.max(maximumError, Math.abs(actual.getChannelData(channel)[frame] - expected.getChannelData(channel)[frame]));
         }
         return { sampleRate, sourceFrames, metadataFrames, actualNonzero, expectedNonzero, maximumError,
-          ended: media.ended, playResolved, events, signalPreserved: maximumError < 1e-7 && actualNonzero === expectedNonzero };
+          ended: media.ended, playResolved, nativeCompletions, stopCalls, getterPassedTailBeforeRendering: !frozenGetter,
+          getterFrozenAtZero: frozenGetter && audioClock === 0,
+          events, signalPreserved: maximumError < 1e-7 && actualNonzero === expectedNonzero };
       } finally { media.dispose(); }
-    }, { sampleRate, sourceFrames, metadataFrames });
+    }, { sampleRate, sourceFrames, metadataFrames, frozenGetter });
     console.log(JSON.stringify(result));
     assert.equal(result.signalPreserved, true, 'Production tail differs from the native duration reference');
     assert.equal(result.expectedNonzero, Math.min(sourceFrames, Math.ceil(metadataFrames)));
+    assert.ok(result.nativeCompletions > 0); assert.equal(result.stopCalls, 0);
+    if (frozenGetter) assert.equal(result.getterFrozenAtZero, true);
   }
   assert.deepEqual(errors, []);
   assert.equal(sha(readFileSync(enginePath)), engineSha256, 'Production source changed during native verification');

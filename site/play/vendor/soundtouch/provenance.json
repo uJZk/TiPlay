@@ -1,0 +1,37 @@
+{
+  "library": "SoundTouch",
+  "version": "2.4.0",
+  "license": "LGPL-2.1-or-later",
+  "source_url": "https://www.surina.net/soundtouch/soundtouch-2.4.0.tar.gz",
+  "source_archive": "source/soundtouch-2.4.0.tar.gz",
+  "source_sha256": "3dda3c9ab1e287f15028c010a66ab7145fa855dfa62763538f341e70b4d10abd",
+  "source_modifications": "none; browser ABI is a separate GPL-3.0-only source file",
+  "build": "scripts/soundtouch/build.py",
+  "toolchain": "WASI SDK 34.0 / clang 23",
+  "runtime": "standalone WebAssembly reactor, separate memory per processor",
+  "settings": {
+    "sample_format": "float32 stereo",
+    "quick_seek": true,
+    "rate_and_pitch": 1,
+    "rate_antialias_filter": false,
+    "sequence_ms": "round(130 - 20 * tempo), tempo 0.25 to 4",
+    "seek_window_ms": "round(25 + (0.25 - tempo) * 10 / 3.75)",
+    "initial_memory_bytes": 4194304,
+    "maximum_memory_bytes": 16777216,
+    "native_input": "quad/5.1 original planes, fused speaker mapping plus interleave; mono/stereo retain direct JavaScript layout stores by measured policy",
+    "input_scratch_bytes": 98304,
+    "downmix_arithmetic": "double expression rounded once to float32, matching the established Web Audio speaker mapping"
+  },
+  "binaries": {
+    "soundtouch.wasm": {
+      "bytes": 55870,
+      "sha256": "4c28d7da5ec6768c8bf03cbbd66d46bbea504b09b18c3ad4a213ca7a460c42b5",
+      "automatic_playback": false
+    },
+    "soundtouch.simd.wasm": {
+      "bytes": 59033,
+      "sha256": "c69f79342a6bab8af2bfce8ba66329c3f48c4632aec838ca231fb64585dc948f",
+      "automatic_playback": "non-1x playback when native WebAssembly SIMD is supported"
+    }
+  }
+}

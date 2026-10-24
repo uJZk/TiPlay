@@ -2,6 +2,7 @@
 import { MAX_AUDIO_AHEAD_BYTES, MAX_PCM_PACKET_MS, MAX_TIMELINE_PACKETS } from './audio-buffer-policy.js';
 import { AudioSourceClock } from './audio-source-clock.js';
 import { rateProjectionUncertainty } from './audio-device-clock.js';
+import { AudioKernel } from './wasm/audio-core.js';
 
 export const AUDIO_RECOVERY_ERROR_MS = 30;
 export const AUDIO_FADE_MS = 5;
@@ -38,6 +39,7 @@ export function sourceDeadlineAt(deadline, clock, firstSourceMs, localSpan, sour
 export class ContinuousAudio {
   constructor(runtime, rate, channels, outputRate, consumed, maximumMs, { buffered = false, mode = 'carplay', type = 0, semanticType = type } = {}) {
     this.runtime = runtime; this.rate = rate; this.channels = channels; this.outputRate = outputRate;
+    this.kernel = runtime.audioKernel ??= new AudioKernel();
     this.consumed = consumed; this.maximumMs = maximumMs; this.buffered = buffered; this.mode = mode; this.type = type; this.semanticType = semanticType;
     this.queue = []; this.sequences = new Set(); this.bytes = 0; this.counters = null;
     this.sourceAnchorMs = null; this.sampleAnchorUs = null; this.sampleOriginKnown = false;
@@ -162,7 +164,7 @@ export class ContinuousAudio {
       if (packet.first > position) break;
       if (packet.end <= position) continue;
       const take = Math.min(count - copied, packet.end - position), start = (position - packet.first) * this.channels;
-      for (let i = 0; i < take * this.channels; i++) this.input[copied * this.channels + i] = packet.pcm[start + i] / 32768;
+      this.kernel.pcm16(packet.pcm, start, this.input, copied * this.channels, take * this.channels);
       copied += take; if (copied === count) break;
     }
     return copied;
@@ -427,9 +429,8 @@ export class ContinuousAudio {
           ? deadline.projectionContextMs + produced * 1000 / this.outputRate : deadline.projectionContextMs };
       this.boundDeadline(segmentDeadline, clock, firstRaw, take * 1000 / this.outputRate / deviceRate,
         take * Math.min(firstRatio, lastRatio) * 1000 / this.rate / segment.sourceRate * (clock?.rate || 1));
-      for (let i = 0; i < take; i++) {
-        this.mixFreshSample(segment.pcm, segment.offset + i, output, produced + i, rawAt(segment.offset + i));
-      }
+      this.mixFreshBlock(segment.pcm, segment.offset, output, produced, take,
+        rawAt(segment.offset + take - 1));
       segment.offset += take; produced += take; preparation.prepared -= take;
       this.rawCursorMs = rawAt(segment.offset);
       this.sourceFrame = segment.frame + segment.offset * (segment.firstRatio + lastRatio) / 2;
@@ -456,20 +457,14 @@ export class ContinuousAudio {
     if (this.voicePreparation === preparation && preparation.prepared === 0) this.voicePreparation = null;
     return produced;
   }
-  mixFreshSample(input, inputFrame, output, outputFrame, freshSourceMs) {
-    this.gain = Math.min(1, this.gain + 1 / this.fadeFrames);
-    // Continue the current saved-tail amplitude; it may already have faded
-    // during preparation, so applying its original envelope again would jump.
-    const envelope = this.recoveryRemaining > 0 ? (this.recoveryRemaining - 1) / this.recoveryRemaining : 0;
-    const sampleSourceMs = envelope > 0 && Number.isFinite(this.recoverySourceMs)
-      ? Math.min(freshSourceMs, this.recoverySourceMs) : freshSourceMs;
-    for (let c = 0; c < this.channels; c++) {
-      this.recoveryTail[c] *= envelope;
-      const value = input[inputFrame * this.channels + c] * this.gain + this.recoveryTail[c];
-      output[outputFrame * this.channels + c] = value; this.last[c] = value;
-    }
-    this.lastSourceMs = sampleSourceMs;
-    this.recoveryRemaining = Math.max(0, this.recoveryRemaining - 1); this.tailRemaining = this.fadeFrames;
+  mixFreshBlock(input, inputFrame, output, outputFrame, frames, lastSourceMs) {
+    if (!frames) return;
+    // Source identity is scalar metadata. Only a still-contributing saved tail
+    // can make the final sample older than its freshly emitted source sample.
+    const remaining = this.recoveryRemaining;
+    this.kernel.fresh(input, inputFrame, output, outputFrame, frames, this);
+    this.lastSourceMs = remaining > frames && Number.isFinite(this.recoverySourceMs)
+      ? Math.min(lastSourceMs, this.recoverySourceMs) : lastSourceMs;
   }
   /** targetMs is the raw Android-media position due at the speaker for this quantum. */
   render(targetMs, contextMs, clock, frames, output, deviceRate = 1, deadline = null) {
@@ -512,10 +507,8 @@ export class ContinuousAudio {
       const available = needInput ? this.read(this.inputFrame, Math.min(4096, Math.ceil((frames - produced) * nextRatio) + Math.ceil(this.rate * 0.006))) : 0;
       const result = this.backend.process(this.input, available, this.output, frames - produced);
       this.inputFrame += result.consumed;
-      for (let i = 0; i < result.produced; i++) {
-        const freshSourceMs = firstSourceMs + (produced + i) * sourceMsPerFrame;
-        this.mixFreshSample(this.output, i, output, produced + i, freshSourceMs);
-      }
+      this.mixFreshBlock(this.output, 0, output, produced, result.produced,
+        firstSourceMs + (produced + result.produced - 1) * sourceMsPerFrame);
       produced += result.produced;
       if (!result.consumed && !result.produced && needInput) break;
       needInput = true;
@@ -584,11 +577,7 @@ export class ContinuousAudio {
     return true;
   }
   fadeTail(output, from, frames) {
-    for (let i = from; i < frames; i++) {
-      const envelope = this.tailRemaining > 0 ? (this.tailRemaining - 1) / this.tailRemaining : 0;
-      for (let c = 0; c < this.channels; c++) { this.last[c] *= envelope; output[i * this.channels + c] = this.last[c]; }
-      this.tailRemaining = Math.max(0, this.tailRemaining - 1);
-    }
+    this.kernel.tail(output, from, frames - from, this);
   }
   reference(contextTimeMs) {
     const step = this.lastClockStep;

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAudioOutputMapping } from '../../site/play/audio-output-clock.js';
@@ -7,7 +8,7 @@ import { constantDelay } from '../../site/play/delay-plan.js';
 import { SoxrRuntime } from '../../site/play/streaming-resampler.js';
 
 test('independent slow output clock keeps audio continuous while CarPlay video runs independently', async () => {
-  const globals = ['AudioWorkletProcessor', 'registerProcessor', 'sampleRate', 'currentTime'];
+  const globals = ['AudioWorkletProcessor', 'registerProcessor', 'sampleRate', 'currentTime', 'currentFrame'];
   const saved = new Map(globals.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   const origin = 1_800_000_000_000, sourceOrigin = 800000, rate = 48000, deviceRate = 0.996;
   const outputLatencyMs = 188, audioDelayMs = 60, durationMs = 45000;
@@ -19,7 +20,11 @@ test('independent slow output clock keeps audio continuous while CarPlay video r
   const define = (name, value) => Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
   define('sampleRate', rate);
   Object.defineProperty(globalThis, 'currentTime', { configurable: true, get: () => contextFrames / rate });
-  define('AudioWorkletProcessor', class { constructor() { this.port = { postMessage: data => { if (data.playout) references.push(data.playout); } }; } });
+  Object.defineProperty(globalThis, 'currentFrame', { configurable: true, get: () => contextFrames });
+  define('AudioWorkletProcessor', class { constructor() { this.port = { postMessage: data => {
+    if (data.playout) references.push(data.playout);
+    if (data.renderProbe) mapping.acknowledgeRenderProbe(data.renderProbe, context);
+  } }; } });
   define('registerProcessor', (_name, implementation) => { Processor = implementation; });
   const context = { state: 'running', sampleRate: rate,
     get currentTime() { return contextFrames / rate; },
@@ -56,8 +61,11 @@ test('independent slow output clock keeps audio continuous while CarPlay video r
       if (elapsed - lastControlsMs >= 20) {
         lastControlsMs = elapsed;
         const anchor = mapping.capture(context);
+        const renderProbe = mapping.takeRenderProbe();
         post({ clock: { version: 2, generation: 1, rate: 1, state: 'tracking', uncertaintyMs: 0, serverOriginMs: sourceOrigin, localOriginMs: 10000 },
-          deviceClock: mapping.deviceClock(), outputUncertaintyMs: anchor.uncertaintyMs, contextAnchor: { contextTimeMs: anchor.contextTimeMs, localTimeMs: anchor.performanceTimeMs - origin },
+          ...(renderProbe === null ? {} : { renderProbe }),
+          deviceClock: mapping.deviceClock(), outputUncertaintyMs: anchor?.uncertaintyMs ?? null,
+          contextAnchor: anchor ? { contextTimeMs: anchor.contextTimeMs, localTimeMs: anchor.performanceTimeMs - origin } : null,
           localTimeOriginMs: origin, plans: { video: constantDelay(0), audio: constantDelay(audioDelayMs) } });
       }
       while (inputFrame / 48 < elapsed + 2000) {

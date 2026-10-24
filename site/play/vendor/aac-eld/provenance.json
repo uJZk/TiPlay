@@ -1,0 +1,49 @@
+{
+  "component": "Third-Party Modified Version of the Fraunhofer FDK AAC Codec Library for Android",
+  "upstream": {
+    "repository": "https://github.com/mstorsjo/fdk-aac",
+    "version": "2.0.3",
+    "commit": "716f4394641d53f0d79c9ddac3fa93b03a49f278",
+    "source_url": "https://codeload.github.com/mstorsjo/fdk-aac/tar.gz/716f4394641d53f0d79c9ddac3fa93b03a49f278",
+    "upstream_archive_sha256": "63048f3c3595f161309ea967531d2b99de71c41ecb1f173d44eaccd89c8133c3",
+    "source_modified": false,
+    "pruned": false
+  },
+  "toolchain": {
+    "wasi_sdk": "34.0",
+    "clang": "23.1.0-wasi-sdk",
+    "sdk_url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz",
+    "sdk_sha256": "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4",
+    "cmake": "4.1.2",
+    "ninja": "1.13.0",
+    "optimization": "-O3 -flto -DNDEBUG -DSUPPRESS_BUILD_DATE_INFO",
+    "memory_bytes": 16777216,
+    "stack_bytes": 1048576,
+    "source_build_script": "scripts/aac-eld/build.py"
+  },
+  "artifacts": {
+    "aac-eld-source.zip": {
+      "sha256": "8237094063469f5442fbae764cf4277c311915785a1b9a7b0f9b78b0414c95bd",
+      "bytes": 3316174
+    },
+    "aac-eld.js": {
+      "sha256": "358eac072fc1f9a2bc2f9e8d10ca28240c8e4d423e2d120cc8642cec828acc7e",
+      "bytes": 4309
+    },
+    "aac-eld.wasm": {
+      "sha256": "2cfccd341de80efab47b64c09f173575fa32066e5aada602e91e9bd0e01d1f99",
+      "bytes": 973937
+    },
+    "source/decoder.cpp": {
+      "sha256": "3ac466a6aa6a5d2e3a4bed9dfa0c3c571ddb452033c351f87d455228b7dab0c6",
+      "bytes": 2328
+    }
+  },
+  "validation": {
+    "independent_rebuild_identical": true,
+    "golden_profiles": 8,
+    "golden_frames": 96,
+    "browser": "Chromium 151",
+    "physical_vehicle_validated": false
+  }
+}

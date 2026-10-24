@@ -46,11 +46,10 @@ export class AudioDeviceClock {
     }
     this.lastAdvance = at;
   }
-  /** Rate-only render observations, admitted after the worklet has confirmed
-   * their sample-domain generation. Main-thread currentTime getters can expose
-   * several continuously rendered blocks together, so one render block cannot
-   * bound the phase difference of two getter calls. The caller owns raw capture
-   * gaps/backwards checks; admission delay is not a new sampling gap.
+  /** Rate-only observations from actual worklet frame frontiers. The caller
+   * retains each causal request/receipt interval, includes its width in the
+   * measurement uncertainty and independently gates steering against feasible
+   * rates. Interval midpoints alone cannot establish oscillator drift.
    */
   observeRender(contextTimeMs, performanceTimeMs, at, quantizationMs, domainGeneration) {
     if (![contextTimeMs, performanceTimeMs, at, quantizationMs].every(Number.isFinite)

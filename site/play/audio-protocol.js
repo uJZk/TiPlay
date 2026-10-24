@@ -1,5 +1,6 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 export const MAX_AUDIO_RECORD = 256 * 1024;
+const configDecoder = new TextDecoder('utf-8', { fatal: true });
 
 /** CarPlay PCM and ordinary AirPlay codec packets share the same timestamped transport header. */
 export async function* readAudioRecords(body, signal) {
@@ -9,6 +10,18 @@ export async function* readAudioRecords(body, signal) {
   if (signal?.aborted) stop();
   let chunk = new Uint8Array(), offset = 0;
   async function read(size) {
+    // DataChannels already deliver a complete record in the common case. Keep that
+    // storage until the transferable payload is extracted instead of copying it twice.
+    while (offset === chunk.length) {
+      const next = await reader.read();
+      if (next.done) return null;
+      chunk = next.value; offset = 0;
+    }
+    if (chunk.length - offset >= size) {
+      const bytes = chunk.subarray(offset, offset + size);
+      offset += size;
+      return bytes;
+    }
     const bytes = new Uint8Array(size);
     let filled = 0;
     while (filled < size) {
@@ -30,12 +43,12 @@ export async function* readAudioRecords(body, signal) {
     for (;;) {
       const length = await read(4);
       if (!length) return;
-      const size = new DataView(length.buffer).getUint32(0);
+      const size = new DataView(length.buffer, length.byteOffset, length.byteLength).getUint32(0);
       if (!size) continue;
       if (size < 24 || size > MAX_AUDIO_RECORD) throw new Error('invalid audio size');
       const bytes = await read(size);
       if (!bytes) throw new Error('truncated audio');
-      const header = new DataView(bytes.buffer);
+      const header = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       const channels = bytes[2], rate = header.getUint32(4);
       const headerSize = 24;
       const kind = bytes[0], type = bytes[1], mode = (bytes[3] & 12) >> 2;
@@ -49,7 +62,7 @@ export async function* readAudioRecords(body, signal) {
       if (kind === 2) record.pcm = bytes.slice(headerSize).buffer;
       else if (kind === 6) {
         if (size > 16 * 1024) throw new Error('AirPlay audio configuration too large');
-        try { record.config = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(headerSize))); }
+        try { record.config = JSON.parse(configDecoder.decode(bytes.subarray(headerSize))); }
         catch (_) { throw new Error('invalid AirPlay audio configuration'); }
       } else {
         record.decodeTimestampUs = header.getFloat64(headerSize);

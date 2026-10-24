@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { constantDelay } from '../../site/play/delay-plan.js';
@@ -101,6 +102,26 @@ test('multiple media streams share one gain advance, with Debug and reads preser
   assert.ok(ordinary.slice(11000, 14000).some(value => Math.abs(value - .15) < .0001));
 });
 
+test('an 8192-frame browser quantum keeps current continuous streams on the WASM mixer', () => {
+  const h = harness({ debug: true });
+  try {
+    h.feed({ until: 960 });
+    const timeline = h.processor.timelines.get(0);
+    timeline.render = (_target, _context, _clock, frames, output) => {
+      output.fill(.25); timeline.state = 'playing'; return frames;
+    };
+    let calls = 0;
+    const mix = h.processor.kernel.mix.bind(h.processor.kernel);
+    h.processor.kernel.mix = (...args) => { calls++; return mix(...args); };
+    const output = h.render(8192);
+    assert.equal(calls, 1, 'a large quantum must not select the legacy per-sample mixer');
+    assert.ok(output[0].every(value => value === .25));
+    assert.deepEqual(output[0], output[1]);
+    assert.equal(h.processor.diagnostics.renderNonzero, 8192 * 2);
+    assert.equal(h.processor.diagnostics.renderPeak, .25);
+  } finally { h.dispose(); }
+});
+
 test('low-frequency media focus edges remain close to the natural waveform slope', () => {
   const samples = boundary({ frequency: 50 });
   assert.ok(maximumEdge(samples, 4096) < .005, '50Hz signal cannot acquire the old 0.2-0.4 single-sample mixer step');
@@ -171,7 +192,8 @@ for (const action of ['end', 'epoch', 'reset']) for (const mapping of ['output',
       assert.ok(Math.abs(report.lastRetiredSourceDeadlineUncertaintyMs - (2 + contextSpanMs * (1 / .98 - 1))) < 1e-12,
         'the rejected tail includes measured/filter uncertainty and its actual native-anchor projection');
       assert.ok(report.lastRetiredSourceDeadlineDeltaUpperMs > 1000);
-      assert.equal(report.lastRetiredSourceDeadlineAgeMs, 0);
+      assert.ok(Math.abs(report.lastRetiredSourceDeadlineAgeMs - 128 / 48) < 1e-10,
+        'the report observes the completed render block instead of an earlier time getter');
       assert.equal(report.sourceDeadlineRejectedFrames, undefined, 'retired rejections do not masquerade as current timeline output');
     } finally { h.dispose(); }
   });

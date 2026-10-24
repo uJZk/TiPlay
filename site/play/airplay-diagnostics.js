@@ -15,6 +15,7 @@ const ENGINE_ENUMS = Object.freeze({
     'video-budget', 'audio-budget', 'unknown']),
   renderStatsState: new Set(['available', 'unavailable', 'invalid', 'failed']),
   audioOutputTimestampState: new Set(['unavailable', 'closed', 'format-mismatch', 'startup', 'invalid', 'future', 'context-ahead', 'valid', 'failed']),
+  audioTempoBackend: new Set(['none', 'wasm-simd', 'wasm', 'soundtouchjs']),
   contextState: new Set(['running', 'suspended', 'interrupted', 'closed', 'unavailable', 'unknown']),
   clockSource: new Set(['audio', 'performance', 'unknown']),
   limitingTrack: new Set(['video', 'audio', 'both', 'none', 'unknown']),

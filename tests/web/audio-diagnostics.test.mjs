@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserAudio } from '../../site/play/audio.js';
@@ -13,7 +14,8 @@ let Processor;
 globalThis.AudioWorkletProcessor = class { constructor() { this.messages = []; this.port = { postMessage: value => this.messages.push(value) }; } };
 globalThis.registerProcessor = (_, value) => { Processor = value; };
 globalThis.sampleRate = 48000;
-globalThis.currentTime = 0;
+globalThis.currentTime = 0; globalThis.currentFrame = 0;
+const setRenderTime = seconds => { globalThis.currentTime = seconds; globalThis.currentFrame = Math.round(seconds * sampleRate); };
 await import('../../site/play/audio-worklet.js');
 
 function replay({ previousLimit = false, videoDelay = 0, audioDelay = 105, clockShift = 20 } = {}) {
@@ -23,7 +25,7 @@ function replay({ previousLimit = false, videoDelay = 0, audioDelay = 105, clock
   let next = 0, nonzero = 0, samples = 0;
   for (let block = 0; block < 3000; block++) {
     const wall = block * 128 / 48;
-    globalThis.currentTime = wall / 1000;
+    setRenderTime(wall / 1000);
     while (Math.max((next + 1) * frameMs - BUFFERED_FEED_LEAD_MS, next * frameMs / 4) <= wall) {
       processor.port.onmessage({ data: { type: 0, mode: 'carplay', epoch: 7, generation: 3,
         rate: 48000, channels: 2, flags: 1, sequence: next,
@@ -61,7 +63,7 @@ test('realtime CarPlay media retains its one-second sender lead across a delayed
   let next = 0, nonzero = 0, samples = 0, maximumBytes = 0;
   for (let block = 0; block < 3000; block++) {
     const wall = block * 128 / 48;
-    globalThis.currentTime = wall / 1000;
+    setRenderTime(wall / 1000);
     while (next * frameMs <= wall) {
       processor.port.onmessage({ data: { type: 0, mode: 'carplay', epoch: 9, generation: 4,
         rate: 48000, channels: 2, flags: 0, sequence: next,
@@ -114,28 +116,31 @@ test('buffered overflow protects the sample about to play and diagnostics separa
 });
 
 test('worklet scalar telemetry is opt-in, rate-limited and stops immediately when disabled', () => {
-  const processor = new Processor(); globalThis.currentTime = 0;
+  const processor = new Processor(); setRenderTime(0);
   const output = [new Float32Array(128), new Float32Array(128)];
-  processor.process([], [output]); assert.equal(processor.messages.length, 0);
+  let frame = 0;
+  const render = () => { setRenderTime(frame / 48000); processor.process([], [output]); frame += 128; };
+  render(); assert.equal(processor.messages.length, 0);
   processor.port.onmessage({ data: { debug: true } });
-  processor.process([], [output]);
+  render();
   assert.equal(processor.messages.filter(value => value.diagnostics).length, 1);
-  globalThis.currentTime = 0.1; processor.process([], [output]);
+  for (let block = 0; block < 100; block++) render();
   assert.equal(processor.messages.filter(value => value.diagnostics).length, 1);
-  globalThis.currentTime = 0.5; processor.process([], [output]);
+  for (let block = 0; block < 100; block++) render();
   assert.equal(processor.messages.filter(value => value.diagnostics).length, 2);
   processor.port.onmessage({ data: { debug: false } });
-  globalThis.currentTime = 1; processor.process([], [output]);
+  for (let block = 0; block < 200; block++) render();
   assert.equal(processor.messages.filter(value => value.diagnostics).length, 2);
   assert.equal(processor.diagnostics, null);
 });
 
 test('render quantum evidence measures actual block lengths and resets with Debug without changing output', () => {
   const processor = new Processor();
-  globalThis.currentTime = 0;
+  setRenderTime(0);
   const render = frames => {
     const output = [new Float32Array(frames), new Float32Array(frames)];
     processor.process([], [output]);
+    globalThis.currentFrame += frames;
     assert.ok(output.every(channel => channel.every(value => value === 0)));
   };
   render(256); assert.equal(processor.diagnostics, null);
@@ -158,14 +163,14 @@ test('worklet source-fit evidence uses render-context ages and a replacement epo
   const packet = (epoch, ms) => ({ type: 6, mode: 'airplay-mirror', epoch, generation: 1, rate: 48000, channels: 1,
     flags: 0, sequence: ms / 1000, presentationMs: 1000000 + ms, decodeTimestampUs: ms * 1000, pcm: new Int16Array(960).buffer });
   try {
-    for (let ms = 0; ms <= 31000; ms += 1000) { globalThis.currentTime = ms / 1000; post(packet(1, ms)); }
-    globalThis.currentTime = 31.1;
+    for (let ms = 0; ms <= 31000; ms += 1000) { setRenderTime(ms / 1000); post(packet(1, ms)); }
+    setRenderTime(31.1);
     processor.process([], [[new Float32Array(128), new Float32Array(128)]]); processor.report();
     const fitted = processor.messages.filter(value => value.diagnostics).at(-1).diagnostics.stream6;
     assert.equal(fitted.sourceClockFitStatus, 'tracking'); assert.equal(fitted.sourceClockFitRejectReason, 'none');
     assert.equal(fitted.sourceClockPoints, 32); assert.equal(fitted.sourceClockSpanMs, 31000);
     assert.ok(Math.abs(fitted.sourceClockAcceptedFitAgeMs - (100 + 128 / 48)) < 1e-6);
-    globalThis.currentTime = 32; post(packet(2, 32000)); post(packet(1, 33000)); processor.report();
+    setRenderTime(32); post(packet(2, 32000)); post(packet(1, 33000)); processor.report();
     const replaced = processor.messages.filter(value => value.diagnostics).at(-1).diagnostics.stream6;
     assert.equal(replaced.epoch, 2); assert.equal(replaced.sourceClockFitStatus, 'acquiring');
     assert.equal(replaced.sourceClockFitRejectReason, 'insufficient-span'); assert.equal(replaced.sourceClockPoints, 1);
@@ -264,7 +269,9 @@ test('status.debug toggles PCM/context/render diagnostics without reconnecting o
     assert.equal(stats.deviceClockFitStatus, 'acquiring'); assert.equal(stats.deviceClockFitRejectReason, 'none');
     assert.equal(stats.deviceClockFitRejected, 0); assert.equal(Object.hasOwn(stats, 'deviceClockAcceptedFitAgeMs'), false);
     assert.equal(Object.hasOwn(stats, 'deviceClockFitDispersionMs'), false, 'no immature MAD is substituted for a fit');
-    assert.equal(stats.renderFrames, 128); assert.ok(Number.isFinite(stats.clockBase));
+    assert.equal(stats.renderFrames, 128);
+    assert.equal(stats.clockBase, undefined, 'a getter-derived wall-clock epoch is not playback evidence');
+    assert.equal(stats.renderAgeMs, null, 'getter disagreement cannot establish render age');
     h.audio.status({ debug: false }); assert.equal(h.audio.stats().debug, undefined);
     assert.deepEqual(h.nodes[0].messages.at(-1), { debug: false, diagnosticRevision: 2, generation });
     assert.equal(h.requests.at(-1), request, 'a debug switch must not renegotiate the audio stream');
@@ -380,9 +387,16 @@ test('browser device MAD reaches Debug telemetry only after a fit in that captur
   const h = browserHarness();
   try {
     await h.audio.activate(); await tick();
-    const context = h.contexts[0];
+    const context = h.contexts[0], installed = h.nodes[0];
     context.getOutputTimestamp = () => ({ contextTime: (at - 200) / 1000, performanceTime: at });
-    const sample = value => { at = value; context.currentTime = at / 1000; h.audio.clock(null); };
+    const sample = value => {
+      at = value; context.currentTime = at / 1000; h.audio.clock(null);
+      const message = installed.messages.at(-1);
+      if (message.renderProbe) installed.port.onmessage({ data: { renderProbe: {
+        token: message.renderProbe, generation: 0, startFrame: 0,
+        endFrame: value * 48 + 128, renderQuantumFrames: 128,
+      } } });
+    };
     h.audio.debug(true);
     for (let value = 1000; value <= 10000; value += 100) sample(value);
     const fitted = h.audio.stats();
@@ -402,7 +416,7 @@ test('browser device MAD reaches Debug telemetry only after a fit in that captur
     h.audio.debug(true);
     assert.equal(Object.hasOwn(h.audio.stats().debug, 'deviceClockFitDispersionMs'), false,
       'enabling Debug cannot label an older fit as newly observed noise');
-    sample(10100);
+    sample(10050); // Before the next fit cadence; accepted native evidence starts after the first frame proof.
     assert.equal(Object.hasOwn(h.audio.stats().debug, 'deviceClockFitDispersionMs'), false);
     sample(10500); assert.equal(h.audio.stats().debug.deviceClockFitDispersionMs, 0);
     h.audio.reset();
@@ -428,7 +442,7 @@ test('Debug reports render proof state independently of a selected native fit', 
       const message = installed.messages.at(-1);
       if (message.renderProbe) installed.port.onmessage({ data: { renderProbe: {
         token: message.renderProbe, generation, startFrame: generation ? 10120 * 48 : 0,
-        endFrame: Math.round((at + offset) * 48) + 128,
+        endFrame: Math.round((at + offset) * 48) + 128, renderQuantumFrames: 128,
       } } });
     };
     for (let value = 1000; value <= 10000; value += 100) sample(value);
@@ -438,13 +452,13 @@ test('Debug reports render proof state independently of a selected native fit', 
     assert.ok(before.renderClockProbeAccepted > 20);
     sample(10100, 1, 20);
     const changed = h.audio.stats().debug;
-    assert.equal(changed.deviceClockSource, 'native');
-    assert.equal(changed.outputTimestampFitGeneration, before.outputTimestampFitGeneration);
+    assert.equal(changed.deviceClockSource, 'holdover', 'a new actual sample domain retires the old fit evidence');
+    assert.equal(changed.outputTimestampFitGeneration, before.outputTimestampFitGeneration + 1);
     assert.equal(changed.deviceClockGeneration, before.deviceClockGeneration + 1);
     assert.equal(changed.deviceClockReason, 'sample-domain');
     assert.equal(changed.renderClockDomainGeneration, 1);
     assert.equal(changed.renderClockDomainChanges, 1);
-    assert.equal(changed.renderClockProbeReason, 'domain-acquiring');
+    assert.equal(changed.renderClockProbeReason, 'accepted', 'the actual frontier is already measured in the new domain');
     sample(10200, 1, 20);
     const retained = h.audio.stats();
     assert.equal(retained.debug.renderClockProbeState, 'idle');

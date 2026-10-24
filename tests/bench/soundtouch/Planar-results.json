@@ -1,0 +1,495 @@
+{
+  "runtime": "v22.23.3",
+  "cpu": "AMD EPYC 9V45 96-Core Processor",
+  "metric": "process CPU milliseconds, complete adapters",
+  "sampleRate": 48000,
+  "sourceSeconds": 30,
+  "measuredRepetitions": 5,
+  "warmupRepetitions": 2,
+  "selectedPolicy": "direct JS stores for mono/stereo, fused native speaker mix/interleave for quad/5.1",
+  "binarySha256": "c69f79342a6bab8af2bfce8ba66329c3f48c4632aec838ca231fb64585dc948f",
+  "adapterSha256": "8c8d31f28dad8f66c79d22dcc1ec46ba973ce2822f91c233c7dbd84de5a8c803",
+  "referenceSha256": "b3c723eba7bc6df177fbbeee98bba449ab27afc64b713b3a78159eeb0c721bcf",
+  "rows": [
+    {
+      "channels": 1,
+      "chunk": 128,
+      "rate": 0.5,
+      "jsInterleaveMs": 37.225,
+      "nativePlanarMs": 31.706,
+      "allNativeMs": 31.736,
+      "speedup": 1.174067999747682,
+      "allNativeSpeedup": 1.1729581547769095
+    },
+    {
+      "channels": 1,
+      "chunk": 128,
+      "rate": 1.25,
+      "jsInterleaveMs": 15.412,
+      "nativePlanarMs": 18.179,
+      "allNativeMs": 15.417,
+      "speedup": 0.8477914076681887,
+      "allNativeSpeedup": 0.9996756826879419
+    },
+    {
+      "channels": 1,
+      "chunk": 128,
+      "rate": 2,
+      "jsInterleaveMs": 25.085,
+      "nativePlanarMs": 13.88,
+      "allNativeMs": 13.916,
+      "speedup": 1.8072766570605188,
+      "allNativeSpeedup": 1.8026013222190285
+    },
+    {
+      "channels": 1,
+      "chunk": 512,
+      "rate": 0.5,
+      "jsInterleaveMs": 20.036,
+      "nativePlanarMs": 20.66,
+      "allNativeMs": 18.643,
+      "speedup": 0.9697967086156826,
+      "allNativeSpeedup": 1.074719733948399
+    },
+    {
+      "channels": 1,
+      "chunk": 512,
+      "rate": 1.25,
+      "jsInterleaveMs": 16.465,
+      "nativePlanarMs": 16.108,
+      "allNativeMs": 13.162,
+      "speedup": 1.0221629004221504,
+      "allNativeSpeedup": 1.250949703692448
+    },
+    {
+      "channels": 1,
+      "chunk": 512,
+      "rate": 2,
+      "jsInterleaveMs": 11.368,
+      "nativePlanarMs": 11.171,
+      "allNativeMs": 10.475,
+      "speedup": 1.0176349476322621,
+      "allNativeSpeedup": 1.0852505966587114
+    },
+    {
+      "channels": 1,
+      "chunk": 1024,
+      "rate": 0.5,
+      "jsInterleaveMs": 19.046,
+      "nativePlanarMs": 24.267,
+      "allNativeMs": 18.563,
+      "speedup": 0.7848518564305436,
+      "allNativeSpeedup": 1.026019501158218
+    },
+    {
+      "channels": 1,
+      "chunk": 1024,
+      "rate": 1.25,
+      "jsInterleaveMs": 13.372,
+      "nativePlanarMs": 19.168,
+      "allNativeMs": 12.721,
+      "speedup": 0.6976210350584308,
+      "allNativeSpeedup": 1.0511752220737363
+    },
+    {
+      "channels": 1,
+      "chunk": 1024,
+      "rate": 2,
+      "jsInterleaveMs": 11.268,
+      "nativePlanarMs": 10.986,
+      "allNativeMs": 10.709,
+      "speedup": 1.0256690333151284,
+      "allNativeSpeedup": 1.0521990848818752
+    },
+    {
+      "channels": 1,
+      "chunk": 4096,
+      "rate": 0.5,
+      "jsInterleaveMs": 19.226,
+      "nativePlanarMs": 18.757,
+      "allNativeMs": 20.261,
+      "speedup": 1.025003998507224,
+      "allNativeSpeedup": 0.9489166378757218
+    },
+    {
+      "channels": 1,
+      "chunk": 4096,
+      "rate": 1.25,
+      "jsInterleaveMs": 13.282,
+      "nativePlanarMs": 13.047,
+      "allNativeMs": 12.535,
+      "speedup": 1.0180118034797272,
+      "allNativeSpeedup": 1.0595931392102114
+    },
+    {
+      "channels": 1,
+      "chunk": 4096,
+      "rate": 2,
+      "jsInterleaveMs": 11.123,
+      "nativePlanarMs": 11.232,
+      "allNativeMs": 10.543,
+      "speedup": 0.990295584045584,
+      "allNativeSpeedup": 1.0550128047045433
+    },
+    {
+      "channels": 2,
+      "chunk": 128,
+      "rate": 0.5,
+      "jsInterleaveMs": 33.751,
+      "nativePlanarMs": 34.307,
+      "allNativeMs": 25.413,
+      "speedup": 0.9837933949339783,
+      "allNativeSpeedup": 1.3280997914453232
+    },
+    {
+      "channels": 2,
+      "chunk": 128,
+      "rate": 1.25,
+      "jsInterleaveMs": 14.945,
+      "nativePlanarMs": 14.919,
+      "allNativeMs": 15.208,
+      "speedup": 1.0017427441517528,
+      "allNativeSpeedup": 0.9827064702788006
+    },
+    {
+      "channels": 2,
+      "chunk": 128,
+      "rate": 2,
+      "jsInterleaveMs": 13.423,
+      "nativePlanarMs": 13.442,
+      "allNativeMs": 14.354,
+      "speedup": 0.9985865198631156,
+      "allNativeSpeedup": 0.9351400306534764
+    },
+    {
+      "channels": 2,
+      "chunk": 512,
+      "rate": 0.5,
+      "jsInterleaveMs": 19.271,
+      "nativePlanarMs": 21.04,
+      "allNativeMs": 20.525,
+      "speedup": 0.9159220532319392,
+      "allNativeSpeedup": 0.9389037758830695
+    },
+    {
+      "channels": 2,
+      "chunk": 512,
+      "rate": 1.25,
+      "jsInterleaveMs": 13.248,
+      "nativePlanarMs": 13.374,
+      "allNativeMs": 18.115,
+      "speedup": 0.990578734858681,
+      "allNativeSpeedup": 0.7313276290367099
+    },
+    {
+      "channels": 2,
+      "chunk": 512,
+      "rate": 2,
+      "jsInterleaveMs": 11.131,
+      "nativePlanarMs": 11.579,
+      "allNativeMs": 10.858,
+      "speedup": 0.9613092667760601,
+      "allNativeSpeedup": 1.0251427518880087
+    },
+    {
+      "channels": 2,
+      "chunk": 1024,
+      "rate": 0.5,
+      "jsInterleaveMs": 19.569,
+      "nativePlanarMs": 24.754,
+      "allNativeMs": 19.224,
+      "speedup": 0.7905389028035872,
+      "allNativeSpeedup": 1.0179463171036205
+    },
+    {
+      "channels": 2,
+      "chunk": 1024,
+      "rate": 1.25,
+      "jsInterleaveMs": 17.856,
+      "nativePlanarMs": 16.152,
+      "allNativeMs": 17.534,
+      "speedup": 1.1054977711738485,
+      "allNativeSpeedup": 1.0183643207482607
+    },
+    {
+      "channels": 2,
+      "chunk": 1024,
+      "rate": 2,
+      "jsInterleaveMs": 11.318,
+      "nativePlanarMs": 12.37,
+      "allNativeMs": 13.404,
+      "speedup": 0.9149555375909458,
+      "allNativeSpeedup": 0.8443748134885108
+    },
+    {
+      "channels": 2,
+      "chunk": 4096,
+      "rate": 0.5,
+      "jsInterleaveMs": 22.053,
+      "nativePlanarMs": 17.574,
+      "allNativeMs": 18.01,
+      "speedup": 1.2548651416865824,
+      "allNativeSpeedup": 1.2244863964464185
+    },
+    {
+      "channels": 2,
+      "chunk": 4096,
+      "rate": 1.25,
+      "jsInterleaveMs": 12.432,
+      "nativePlanarMs": 12.711,
+      "allNativeMs": 11.646,
+      "speedup": 0.9780505074345055,
+      "allNativeSpeedup": 1.0674909840288511
+    },
+    {
+      "channels": 2,
+      "chunk": 4096,
+      "rate": 2,
+      "jsInterleaveMs": 10.554,
+      "nativePlanarMs": 10.404,
+      "allNativeMs": 11.63,
+      "speedup": 1.0144175317185697,
+      "allNativeSpeedup": 0.9074806534823732
+    },
+    {
+      "channels": 4,
+      "chunk": 128,
+      "rate": 0.5,
+      "jsInterleaveMs": 35.679,
+      "nativePlanarMs": 37.381,
+      "allNativeMs": 30.636,
+      "speedup": 0.954468847810385,
+      "allNativeSpeedup": 1.1646102624363495
+    },
+    {
+      "channels": 4,
+      "chunk": 128,
+      "rate": 1.25,
+      "jsInterleaveMs": 31.248,
+      "nativePlanarMs": 16.616,
+      "allNativeMs": 16.633,
+      "speedup": 1.8805970149253732,
+      "allNativeSpeedup": 1.8786749233451574
+    },
+    {
+      "channels": 4,
+      "chunk": 128,
+      "rate": 2,
+      "jsInterleaveMs": 24.046,
+      "nativePlanarMs": 15.782,
+      "allNativeMs": 14.979,
+      "speedup": 1.5236345203396273,
+      "allNativeSpeedup": 1.6053141064156486
+    },
+    {
+      "channels": 4,
+      "chunk": 512,
+      "rate": 0.5,
+      "jsInterleaveMs": 25.15,
+      "nativePlanarMs": 20.543,
+      "allNativeMs": 19.888,
+      "speedup": 1.2242613055542033,
+      "allNativeSpeedup": 1.2645816572807722
+    },
+    {
+      "channels": 4,
+      "chunk": 512,
+      "rate": 1.25,
+      "jsInterleaveMs": 21.1,
+      "nativePlanarMs": 17.144,
+      "allNativeMs": 14.591,
+      "speedup": 1.2307512832477836,
+      "allNativeSpeedup": 1.4460969090535263
+    },
+    {
+      "channels": 4,
+      "chunk": 512,
+      "rate": 2,
+      "jsInterleaveMs": 16.551,
+      "nativePlanarMs": 14.278,
+      "allNativeMs": 13.36,
+      "speedup": 1.1591959658215434,
+      "allNativeSpeedup": 1.2388473053892215
+    },
+    {
+      "channels": 4,
+      "chunk": 1024,
+      "rate": 0.5,
+      "jsInterleaveMs": 22.162,
+      "nativePlanarMs": 20.265,
+      "allNativeMs": 19.989,
+      "speedup": 1.0936096718480137,
+      "allNativeSpeedup": 1.1087097903847114
+    },
+    {
+      "channels": 4,
+      "chunk": 1024,
+      "rate": 1.25,
+      "jsInterleaveMs": 17.073,
+      "nativePlanarMs": 14.19,
+      "allNativeMs": 14.399,
+      "speedup": 1.203171247357294,
+      "allNativeSpeedup": 1.1857073407875547
+    },
+    {
+      "channels": 4,
+      "chunk": 1024,
+      "rate": 2,
+      "jsInterleaveMs": 15.768,
+      "nativePlanarMs": 12.131,
+      "allNativeMs": 12.518,
+      "speedup": 1.2998104030994972,
+      "allNativeSpeedup": 1.2596261383607605
+    },
+    {
+      "channels": 4,
+      "chunk": 4096,
+      "rate": 0.5,
+      "jsInterleaveMs": 20.43,
+      "nativePlanarMs": 19.136,
+      "allNativeMs": 18.471,
+      "speedup": 1.067621237458194,
+      "allNativeSpeedup": 1.1060581452005847
+    },
+    {
+      "channels": 4,
+      "chunk": 4096,
+      "rate": 1.25,
+      "jsInterleaveMs": 16.438,
+      "nativePlanarMs": 15.966,
+      "allNativeMs": 14.112,
+      "speedup": 1.0295628209946135,
+      "allNativeSpeedup": 1.1648242630385486
+    },
+    {
+      "channels": 4,
+      "chunk": 4096,
+      "rate": 2,
+      "jsInterleaveMs": 14.569,
+      "nativePlanarMs": 11.724,
+      "allNativeMs": 12.516,
+      "speedup": 1.2426646195837598,
+      "allNativeSpeedup": 1.16403004154682
+    },
+    {
+      "channels": 6,
+      "chunk": 128,
+      "rate": 0.5,
+      "jsInterleaveMs": 38.185,
+      "nativePlanarMs": 26.505,
+      "allNativeMs": 23.963,
+      "speedup": 1.4406715714016225,
+      "allNativeSpeedup": 1.5934983098944207
+    },
+    {
+      "channels": 6,
+      "chunk": 128,
+      "rate": 1.25,
+      "jsInterleaveMs": 31.452,
+      "nativePlanarMs": 19.552,
+      "allNativeMs": 20.203,
+      "speedup": 1.6086333878887071,
+      "allNativeSpeedup": 1.5567984952729794
+    },
+    {
+      "channels": 6,
+      "chunk": 128,
+      "rate": 2,
+      "jsInterleaveMs": 27.646,
+      "nativePlanarMs": 17.631,
+      "allNativeMs": 16.726,
+      "speedup": 1.5680335772219387,
+      "allNativeSpeedup": 1.652875762286261
+    },
+    {
+      "channels": 6,
+      "chunk": 512,
+      "rate": 0.5,
+      "jsInterleaveMs": 34.889,
+      "nativePlanarMs": 24.525,
+      "allNativeMs": 22.605,
+      "speedup": 1.4225891946992866,
+      "allNativeSpeedup": 1.543419597434196
+    },
+    {
+      "channels": 6,
+      "chunk": 512,
+      "rate": 1.25,
+      "jsInterleaveMs": 23.594,
+      "nativePlanarMs": 18.42,
+      "allNativeMs": 16.817,
+      "speedup": 1.2808903365906623,
+      "allNativeSpeedup": 1.4029850746268657
+    },
+    {
+      "channels": 6,
+      "chunk": 512,
+      "rate": 2,
+      "jsInterleaveMs": 19.129,
+      "nativePlanarMs": 14.384,
+      "allNativeMs": 15.901,
+      "speedup": 1.32988042269188,
+      "allNativeSpeedup": 1.2030061002452677
+    },
+    {
+      "channels": 6,
+      "chunk": 1024,
+      "rate": 0.5,
+      "jsInterleaveMs": 27.321,
+      "nativePlanarMs": 23.289,
+      "allNativeMs": 21.709,
+      "speedup": 1.1731289449954914,
+      "allNativeSpeedup": 1.2585102952692433
+    },
+    {
+      "channels": 6,
+      "chunk": 1024,
+      "rate": 1.25,
+      "jsInterleaveMs": 19.325,
+      "nativePlanarMs": 16.069,
+      "allNativeMs": 15.737,
+      "speedup": 1.2026261746219429,
+      "allNativeSpeedup": 1.2279977123975345
+    },
+    {
+      "channels": 6,
+      "chunk": 1024,
+      "rate": 2,
+      "jsInterleaveMs": 18.666,
+      "nativePlanarMs": 12.722,
+      "allNativeMs": 14.69,
+      "speedup": 1.4672221348844523,
+      "allNativeSpeedup": 1.2706603131381893
+    },
+    {
+      "channels": 6,
+      "chunk": 4096,
+      "rate": 0.5,
+      "jsInterleaveMs": 21.296,
+      "nativePlanarMs": 18.911,
+      "allNativeMs": 18.922,
+      "speedup": 1.1261170747184177,
+      "allNativeSpeedup": 1.125462424690836
+    },
+    {
+      "channels": 6,
+      "chunk": 4096,
+      "rate": 1.25,
+      "jsInterleaveMs": 17.127,
+      "nativePlanarMs": 16.612,
+      "allNativeMs": 15.074,
+      "speedup": 1.0310016855285336,
+      "allNativeSpeedup": 1.1361947724558843
+    },
+    {
+      "channels": 6,
+      "chunk": 4096,
+      "rate": 2,
+      "jsInterleaveMs": 14.687,
+      "nativePlanarMs": 12.231,
+      "allNativeMs": 12.478,
+      "speedup": 1.2008012427438475,
+      "allNativeSpeedup": 1.1770315755730085
+    }
+  ]
+}

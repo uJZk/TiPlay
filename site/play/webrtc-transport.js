@@ -149,11 +149,14 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
             || offset > total || size > total - offset || sequence !== nextSequence) throw transportError('fragment-bounds');
           if (!partial) {
             if (offset !== 0 || pendingBytes + total > limit.pending) throw transportError('receiver-overflow');
-            partial = { bytes: new Uint8Array(total), size: total, sequence, received: 0, startedAt: performance.now(), discard: name === 'audio' && !audioEnabled };
+            // Most audio and small video records fit in one message. The native
+            // DataChannel buffer is already ours; retain its payload view directly.
+            partial = { bytes: size === total ? new Uint8Array(data, RTC_HEADER_BYTES) : new Uint8Array(total),
+              size: total, sequence, received: 0, startedAt: performance.now(), discard: name === 'audio' && !audioEnabled };
             account(total);
           }
           if (partial.sequence !== sequence || partial.bytes.length !== total || partial.received !== offset) throw transportError('fragment-order');
-          partial.bytes.set(new Uint8Array(data, RTC_HEADER_BYTES), offset);
+          if (partial.bytes.buffer !== data) partial.bytes.set(new Uint8Array(data, RTC_HEADER_BYTES), offset);
           partial.received += size;
           stats.fragmentsReceived++; stats.bytesReceived += size; receivedFragments++;
           if (partial.received === total) {

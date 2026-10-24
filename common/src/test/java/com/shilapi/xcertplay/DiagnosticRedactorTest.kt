@@ -7,6 +7,13 @@ import org.junit.After
 import java.nio.file.Files
 
 class DiagnosticRedactorTest {
+    @Test fun fixedAudioTempoBackendNamesSurviveStandardReportRedaction() {
+        for (backend in listOf("none", "wasm-simd", "wasm", "soundtouchjs", "unknown")) {
+            val line = "browser video stage=ENGINE_PCM id=7 revision=3 generation=4 audioTempoBackend=$backend audioSourceRate=48000"
+            assertEquals(line, DiagnosticRedactor.redact(line))
+        }
+    }
+
     private var previousLevel = DiagnosticLogLevel.STANDARD
 
     @Before fun includeAllDebugEvidence() {

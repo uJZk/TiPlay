@@ -8,6 +8,8 @@ import { pcmStats, measurePcm } from './audio-pcm-stats.js';
 import { createAudioOutputMapping } from './audio-output-clock.js';
 import { createAudioCalibration } from './audio-calibration.js';
 import { readAudioPlaybackStats } from './audio-playback-stats.js';
+import { loadSoxr } from './streaming-resampler.js';
+import { loadAudioCore } from './wasm/audio-core.js';
 
 /** Playback only. Android owns demand-driven car Bluetooth capture and speech playback. */
 export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {},
@@ -17,7 +19,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let queuedBytes = 0, capacity = null, audioError = null, disposed = false;
   let retryTimer = null, mediaSource = null;
   let clock = null, delayPlans = initialPlaybackPlans(), timedPackets = 0, fallbackPackets = 0, arrivalAnchoredPackets = 0;
-  let clockBase = null, playbackGeneration = 0;
+  let playbackGeneration = 0;
   let debugEnabled = false, pcmMetrics = null, workletMetrics = null, reportAt = null;
   let diagnosticRevision = 0;
   let contextObservation = null;
@@ -100,12 +102,14 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   const debugSnapshot = () => {
     observeContextState();
     const device = outputClock.deviceClock();
+    let contextTimeMs = null;
+    try { const raw = context?.currentTime; if (Number.isFinite(raw)) contextTimeMs = raw * 1000; } catch (_) {}
     return {
       processorErrors, recoveries, processorFailed, recoveryAttempts,
-      contextState: context?.state ?? 'unavailable', contextTimeMs: context ? context.currentTime * 1000 : null,
+      contextState: context?.state ?? 'unavailable', contextTimeMs,
       contextObservedStateChanges: contextObservation.changes, contextObservedNonRunningMs: contextObservation.nonRunningMs,
       contextRate: context?.sampleRate ?? null, contextBaseLatencyMs: context?.baseLatency * 1000,
-      contextOutputLatencyMs: context?.outputLatency * 1000, clockBase,
+      contextOutputLatencyMs: context?.outputLatency * 1000,
       clockOffsetMs: clock?.offset ?? null, clockAgeMs: clock ? now() - clock.at : null, clockRttMs: clock?.rtt ?? null,
       clockRatePpm: clock?.rate === undefined ? null : (clock.rate - 1) * 1e6,
       clockGeneration: clock?.generation ?? null, clockUncertaintyMs: clock?.uncertaintyMs ?? null,
@@ -123,8 +127,9 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       ...workletMetrics,
       ...readAudioPlaybackStats(context),
       renderReportAgeMs: reportAt === null ? null : now() - reportAt,
-      renderAgeMs: context && workletMetrics ? Math.max(0,
-        (context.currentTime * 1000 - workletMetrics.renderTimeMs) / device.rate) : null,
+      // Receipt age is observable; an asynchronous main-thread getter cannot
+      // establish the age of rendered PCM or a physical output timestamp.
+      renderAgeMs: null,
       decoder: packetDecoder.stats(),
     };
   };
@@ -153,6 +158,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       ...(renderProbe === null ? {} : { renderProbe }),
       deviceClock: outputClock.deviceClock(),
       contextAnchor: output ? { contextTimeMs: output.contextTimeMs, localTimeMs: output.performanceTimeMs - performance.timeOrigin } : null,
+      outputMethod: output?.outputMethod ?? null,
       outputLatencyMs: output?.outputLatencyMs ?? null, outputUncertaintyMs: output?.uncertaintyMs ?? null,
       localTimeOriginMs: performance.timeOrigin, suspended: context.state !== 'running',
       plans: delayPlans, plansByMode });
@@ -208,9 +214,15 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     return nodeInstallation;
   }
   async function prepareNode() {
-    const calibration = await calibrations.prepare(48000, context.sampleRate || 48000);
-    if (disposed || !context) return;
-    const installed = new AudioWorkletNode(context, 'tiplay-audio', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+    const preparingContext = context;
+    const [calibration, soxrModule, audioCoreModule] = await Promise.all([
+      calibrations.prepare(48000, preparingContext.sampleRate || 48000), loadSoxr(), loadAudioCore(),
+    ]);
+    if (disposed || context !== preparingContext) return;
+    // Compile away from the render thread. Each processor owns its fixed memories;
+    // cloning compiled code does not share stream state or require cross-origin isolation.
+    const installed = new AudioWorkletNode(context, 'tiplay-audio', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
+      processorOptions: { soxrModule, audioCoreModule } });
     node = installed; nodeConnected = false;
     const id = ++preparationSequence;
     let resolve, reject, connected = false;
@@ -267,7 +279,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   function stopStream(clearReferences = false, state = 'rebuffering') {
     packetDecoder.reset();
     releaseEncoded();
-    playbackGeneration++; clockBase = null;
+    playbackGeneration++;
     if (nodeConnected || pendingPcmBytes) calibrations.cancel();
     pendingPublish = null; pendingPcmBytes = 0;
     clearTimeout(retryTimer); retryTimer = null;
@@ -336,8 +348,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       else if (Number.isFinite(sourceTime)) { timedPackets++; if (!voice) onTiming(sourceTime, record.mode); }
       else fallbackPackets++;
     }
-    clockBase ??= now() - context.currentTime * 1000;
-    node.port.postMessage({ plans: delayPlans, plansByMode, clockBase });
+    node.port.postMessage({ plans: delayPlans, plansByMode });
     controls();
     record.generation = generation;
     node.port.postMessage(record, [record.pcm]);
@@ -445,7 +456,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       node?.port.postMessage({ plans: delayPlans, plansByMode });
       controls(true);
     },
-    reset() { packetDecoder.reset(); releaseEncoded(); playbackGeneration++; clockBase = null; queuedBytes = 0;
+    reset() { packetDecoder.reset(); releaseEncoded(); playbackGeneration++; queuedBytes = 0;
       if (pendingPcmBytes) calibrations.cancel();
       pendingPublish = null; pendingPcmBytes = 0; resetNode(); capacity?.(); capacity = null; invalidateOutput('reset', true); },
     start() { activate(); },

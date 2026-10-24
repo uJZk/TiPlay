@@ -10,6 +10,7 @@ import { listen, closeServer } from './resources.mjs';
 import { installSrpFixture } from './srp-fixture.mjs';
 const { chromium } = createRequire(import.meta.url)('playwright-core');
 const root = resolve(fileURLToPath(new URL('../../site/play/', import.meta.url)));
+const csp = (await readFile(resolve(root, 'index.html'), 'utf8')).match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)[1];
 const code = '2718', requests = [];
 let phone, browser, client;
 const server = createServer(async (request, response) => {
@@ -37,7 +38,7 @@ const server = createServer(async (request, response) => {
       await phone.evaluate(mode => { globalThis.__srpFixture.mode = mode; }, mode);
       response.writeHead(204); response.end(); return;
     }
-    if (pathname === '/') return response.writeHead(200, { 'Content-Type': 'text/html' }).end('<!doctype html><title>SRP check</title>');
+    if (pathname === '/') return response.writeHead(200, { 'Content-Type': 'text/html', 'Content-Security-Policy': csp }).end('<!doctype html><title>SRP check</title>');
     const path = resolve(root, pathname.slice(1));
     if (!path.startsWith(root + sep) || !path.endsWith('.js')) return response.writeHead(404).end();
     const bytes = await readFile(path);

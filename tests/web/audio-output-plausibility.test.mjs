@@ -7,24 +7,36 @@ import { createAudioOutputMapping } from '../../site/play/audio-output-clock.js'
 // introduced by converting a 10-second context cursor to/from seconds.
 const EPSILON_MS = 2 ** -20;
 function fixture() {
-  let at = 9900, timestamp = null;
-  const domain = { generation: 0, startFrame: 9900 * 48 };
-  const context = { state: 'running', sampleRate: 48000, currentTime: 9.9,
+  let at = 10000, renderedMs = 10000, timestamp = null, getter = seconds => seconds;
+  const domain = { generation: 0, startFrame: 0 };
+  const context = { state: 'running', sampleRate: 48000, get currentTime() { return getter(renderedMs / 1000); },
     baseLatency: .01, outputLatency: .19, getOutputTimestamp: () => timestamp };
   const mapping = createAudioOutputMapping({ now: () => at, timeOrigin: () => 0 });
   const capture = () => {
     const output = mapping.capture(context), token = mapping.takeRenderProbe();
     if (token !== null) mapping.acknowledgeRenderProbe({ token, generation: domain.generation,
-      startFrame: domain.startFrame, endFrame: Math.ceil(context.currentTime * context.sampleRate) + 128 }, context);
+      startFrame: domain.startFrame, endFrame: Math.round(renderedMs * 48), renderQuantumFrames: 128 }, context);
     return output;
   };
-  // Learn the frame domain without accepting an earlier native phase anchor.
-  capture(); at = 10000; context.currentTime = 10; timestamp = { contextTime: 9.8, performanceTime: 10000 };
+  // Certify the physical sample frontier before offering a native phase pair.
+  capture(); timestamp = { contextTime: 9.8, performanceTime: 10000 };
   return { mapping, context,
+    getter(value) { getter = value; },
+    elapse(ms) { at += ms; },
     sample(time, rendered, pair, { sampleDomainJump = false } = {}) {
-      at = time; context.currentTime = rendered / 1000; timestamp = pair;
-      if (sampleDomainJump) { domain.generation++; domain.startFrame = Math.floor(rendered * 48); }
+      at = time; renderedMs = rendered; timestamp = pair;
+      if (sampleDomainJump) {
+        domain.generation++; domain.startFrame = Math.round(rendered * 48) - 128;
+        capture();
+        // A changed actual domain is learned in the ACK, then governs capture.
+        return mapping.capture(context);
+      }
       return capture();
+    },
+    reference(time, rendered, pair) {
+      at = time; renderedMs = rendered; timestamp = pair;
+      return mapping.reference({ state: 'playing', contextTimeMs: rendered,
+        sourceTimeMs: 5000, mediaRate: 1 }, context);
     },
     capture,
   };
@@ -50,11 +62,11 @@ test('native performance timestamps accept exactly 20ms of future lead and rejec
   }
 });
 
-test('native context timestamps accept exactly 10ms ahead of the rendered cursor', () => {
-  for (const leadMs of [10 - EPSILON_MS, 10, 10 + EPSILON_MS]) {
+test('native context plausibility uses a verified block interval rather than a getter lead allowance', () => {
+  for (const leadMs of [0, 2, 10, 1000]) {
     const h = fixture(); delete h.context.baseLatency; delete h.context.outputLatency;
     const output = h.sample(10000, 10000, { contextTime: (10000 + leadMs) / 1000, performanceTime: 10000 });
-    if (leadMs <= 10) {
+    if (leadMs <= 2) {
       assert.equal(output?.outputMethod, 'timestamp');
       assert.ok(Math.abs(output.contextTimeMs - 10000 - leadMs) < 1e-9);
     } else {
@@ -65,29 +77,38 @@ test('native context timestamps accept exactly 10ms ahead of the rendered cursor
   }
 });
 
-test('render holdover accepts exactly ±40ms of continuity disagreement without accepting a missing native pair', () => {
-  for (const direction of [-1, 1]) for (const magnitudeMs of [40 - EPSILON_MS, 40, 40 + EPSILON_MS]) {
+test('stalled, biased, reversed and unavailable public getters cannot change verified native holdover', () => {
+  for (const getter of [() => 0, () => NaN, () => Infinity, seconds => seconds + 5000,
+    seconds => -seconds, seconds => seconds * .98, () => { throw new Error('Unreliable getter'); }]) {
     const h = fixture(); assert.equal(h.capture()?.outputMethod, 'timestamp');
     const before = h.mapping.deviceClock();
     const nativeGeneration = h.mapping.diagnostics().outputTimestampFitGeneration;
-    // 100ms of wall time keeps the render cursor monotonic on both sides.
-    const output = h.sample(10100, 10100 + direction * magnitudeMs, null, { sampleDomainJump: true });
-    if (magnitudeMs <= 40) {
-      assert.equal(output?.outputMethod, 'timestamp-holdover');
-      assert.equal(output.performanceTimeMs, 10000, 'holdover cannot refresh the trusted sample age');
-      assert.equal(output.contextTimeMs, 9800);
-      assert.ok(output.uncertaintyMs > 0);
-      assert.equal(h.mapping.diagnostics().outputTimestampHoldoverAgeMs, 100);
-    } else assert.equal(output, null, 'render continuity outside the bound cannot justify an old output mapping');
-    assert.equal(h.mapping.deviceClock().generation, before.generation + 1, 'an out-of-rate render-coordinate step retires its own rate evidence');
-    assert.equal(h.mapping.deviceClock().points, 0, 'the cross-domain candidate cannot train the new rate fit');
-    assert.equal(h.mapping.diagnostics().outputTimestampFitGeneration, nativeGeneration, 'render continuity cannot replace the native anchor or its fit');
-    const restored = h.sample(10200, 10200 + direction * magnitudeMs,
+    h.getter(getter);
+    const output = h.sample(10100, 10100, null);
+    assert.equal(output?.outputMethod, 'timestamp-holdover');
+    assert.equal(output.performanceTimeMs, 10000, 'holdover cannot refresh the trusted sample age');
+    assert.equal(output.contextTimeMs, 9800); assert.ok(output.uncertaintyMs > 0);
+    assert.equal(h.mapping.diagnostics().outputTimestampHoldoverAgeMs, 100);
+    assert.equal(h.mapping.deviceClock().generation, before.generation, 'a public getter cannot retire actual sample evidence');
+    assert.equal(h.mapping.diagnostics().outputTimestampFitGeneration, nativeGeneration);
+    const restored = h.sample(10200, 10200,
       { contextTime: 10, performanceTime: 10200 });
     assert.equal(restored?.outputMethod, 'timestamp', 'a fresh coherent native sample restores measurement after holdover/rejection');
-    assert.equal(h.mapping.deviceClock().points, 1, 'a later same-domain worklet proof admits the new render point');
     assert.equal(h.mapping.diagnostics().outputTimestampFitGeneration, nativeGeneration);
   }
+});
+
+test('an actual sample-domain discontinuity retires old native phase and reacquires from a new native pair', () => {
+  const h = fixture(); delete h.context.baseLatency; delete h.context.outputLatency;
+  assert.equal(h.capture()?.outputMethod, 'timestamp');
+  const before = h.mapping.deviceClock(), nativeGeneration = h.mapping.diagnostics().outputTimestampFitGeneration;
+  assert.equal(h.sample(10100, 10140, null, { sampleDomainJump: true }), null,
+    'the old phase cannot be revived across a confirmed frame-domain jump');
+  assert.equal(h.mapping.deviceClock().generation, before.generation + 1);
+  assert.equal(h.mapping.diagnostics().outputTimestampFitGeneration, nativeGeneration + 1);
+  const restored = h.sample(10200, 10240, { contextTime: 10.04, performanceTime: 10200 });
+  assert.equal(restored?.outputMethod, 'timestamp'); assert.equal(restored.contextTimeMs, 10040);
+  assert.equal(restored.performanceTimeMs, 10200);
 });
 
 test('rejecting a future or render-leading pair does not poison the next physically coherent timestamp', () => {
@@ -109,12 +130,51 @@ test('rejecting a future or render-leading pair does not poison the next physica
 
 test('a render-leading native outlier may hold a coherent old anchor but never install the outlier', () => {
   const h = fixture();
-  assert.equal(h.sample(10000, 10000, { contextTime: 10.01, performanceTime: 10000 })?.outputMethod, 'timestamp');
+  assert.equal(h.sample(10000, 10000, { contextTime: 10.002, performanceTime: 10000 })?.outputMethod, 'timestamp');
   const output = h.sample(10040, 10040,
-    { contextTime: (10050 + EPSILON_MS) / 1000, performanceTime: 10040 });
+    { contextTime: 10.045, performanceTime: 10040 });
   assert.equal(output?.outputMethod, 'timestamp-holdover');
   assert.equal(output.performanceTimeMs, 10000);
-  assert.equal(output.contextTimeMs, 10010);
+  assert.equal(output.contextTimeMs, 10002);
   assert.equal(h.mapping.deviceClock().points, 1, 'bounded holdover and native acceptance are separate decisions');
-  assert.equal(h.sample(10080, 10080, { contextTime: 10.09, performanceTime: 10080 })?.outputMethod, 'timestamp');
+  assert.equal(h.sample(10080, 10080, { contextTime: 10.082, performanceTime: 10080 })?.outputMethod, 'timestamp');
+});
+
+test('native reacquisition after an outage cannot invalidate the frame proof used by the same reference call', () => {
+  const h = fixture(); assert.equal(h.capture()?.outputMethod, 'timestamp');
+  for (let at = 10100; at <= 11900; at += 100) h.sample(at, at, null);
+  assert.equal(h.sample(12000, 12000, { contextTime: 11.8, performanceTime: 12000 }), null,
+    'one new native pair cannot bypass the existing reacquisition barrier');
+  assert.doesNotThrow(() => h.reference(12100, 12100, { contextTime: 11.9, performanceTime: 12100 }),
+    'native fit gap handling cannot make reference dereference a retired render observation');
+  h.sample(12200, 12200, { contextTime: 12, performanceTime: 12200 });
+  const recovered = h.reference(12200, 12200, { contextTime: 12, performanceTime: 12200 });
+  assert.equal(recovered.state, 'playing');
+  assert.equal(recovered.audibleTimeMs, 12400, 'the independent device still has its real 200ms pipeline');
+});
+
+test('Standard playback never reads the public getter and Debug getter delays consume proof freshness', () => {
+  const standard = fixture(); let reads = 0;
+  standard.getter(() => { reads++; throw new Error('Public getter unavailable'); });
+  assert.equal(standard.sample(10100, 10100, { contextTime: 9.9, performanceTime: 10100 })?.outputMethod, 'timestamp');
+  assert.equal(reads, 0, 'a diagnostic-only getter cannot influence Standard capture latency');
+
+  const debug = fixture(); assert.equal(debug.capture()?.outputMethod, 'timestamp'); debug.mapping.debug(true);
+  debug.getter(seconds => { debug.elapse(1000); return seconds; });
+  const delayed = debug.reference(10100, 10100, { contextTime: 9.9, performanceTime: 10100 });
+  assert.equal(delayed.state, 'output-unavailable', 'a blocked diagnostic getter cannot return expired native phase');
+  assert.equal(delayed.audibleTimeMs, null);
+  assert.equal(debug.mapping.diagnostics().outputTimestampAgeMs, 1000);
+  assert.equal(debug.mapping.renderObservation(debug.context), null, 'receipt time cannot refresh a stale proof');
+});
+
+test('native rate-fit freshness belongs to the paired output event rather than its later receipt', () => {
+  const h = fixture(); assert.equal(h.capture()?.outputMethod, 'timestamp');
+  for (let at = 10100; at <= 30000; at += 100)
+    h.sample(at, at, { contextTime: (at - 700) / 1000, performanceTime: at - 500 });
+  assert.equal(h.mapping.deviceClock().source, 'native', 'fresh delayed samples can establish a real device-rate fit');
+  const expired = h.reference(30300, 30300, { contextTime: 29.3, performanceTime: 29500 });
+  assert.equal(expired.state, 'output-unavailable');
+  assert.notEqual(h.mapping.deviceClock().source, 'native',
+    'an 800ms-old native event cannot steer from a receipt-promoted 300ms-old fit');
 });

@@ -1,6 +1,6 @@
 # Diagnostics
 
-Reproduce the problem once, note its time and visible symptom, then use Android Advanced settings to **Save diagnostic report**. If detailed timing is needed, enable **Debug mode** before reproducing. Reports normally go to `Downloads/TiPlay`; when public storage fails, TiPlay saves an app-owned copy available through its share action. Exported files are independent snapshots. Review them before posting with your Android/iPhone versions, APK version and connection mode; keep credentials and device captures out of Git.
+Reproduce once, note the time and symptom, then use Android Advanced settings to **Save diagnostic report**. Enable **Debug mode** beforehand for detailed timing. Reports go to `Downloads/TiPlay`, falling back to an app-owned shareable copy. Review exported snapshots before posting with phone/APK versions and connection mode; keep credentials and captures out of Git.
 
 ## Monitor and log detail
 
@@ -13,7 +13,7 @@ The browser **Performance monitor** is independent of Android Debug mode. Its ov
 | Delta | Latest synchronized canvas submission time minus iPhone scheduled presentation time; unavailable without a new synchronized draw within one second. This is not capture-to-display latency. |
 | Drops | Explicit browser input, scheduler, transfer-replacement and presentation discards in the current video configuration. It cannot count decoder-internal, network or phone loss. Replacement streams reset it; repeating a configuration does not. |
 
-Debug mode is process-local and defaults off (Standard) on every process start; old persisted values cannot re-enable it. Opening another Activity or service in the same process preserves the current switch. Each off-to-on transition creates a new session with a unique ID, start time, application version and capture configuration. Main settings shows a performance-impact hint while Debug is on. Changes apply immediately without reconnecting. Standard retains filtered connection, negotiation, failures and final summaries. Debug preserves diagnostic messages without redaction and enables a separate raw capture with no sampling, queue drops, truncation or rolling expiry.
+Debug defaults off (Standard) at process start; persisted settings cannot re-enable it. Activities and services share the process-local switch. Enabling creates a session ID, start time, app version and capture configuration, immediately without reconnecting. Main settings shows its performance impact. Standard retains filtered connection, negotiation, failures and final summaries. Debug preserves unredacted messages and raw capture without sampling, queue drops, truncation or expiry.
 
 Raw capture covers incoming iPhone TCP control, encrypted protocol bytes, video, audio, timing, events and iAP tunnel data; RFCOMM traffic; browser HTTP headers/query/body before parsing (including rejected requests read by the server); USB discovery, attach/detach and permission events, device descriptors, open/reopen, configuration and interface claims/releases, request initialization/queue/wait/cancel/close, USB control setup/results, USBMUX, NCM and CH341 transfers, interrupt notifications, partial writes and failed transfer results; and PCM accepted by Android AudioTrack and the verified Bluetooth SCO output. USB lifecycle events and transfers carry connection/request identifiers; asynchronous input is captured once at completion before framing or parsing, including bytes drained after a timeout, with requested/completed lengths and failures. While Debug mode is enabled, AirPlay URL resources are forced through Android and their response bodies are captured too. Disabling the switch restores normal direct-resource eligibility; active browser playback reopens when the policy changes. Android owns A2DP/HFP encoding and USB host-controller signalling: an ordinary app cannot capture Bluetooth air packets, USB bus signalling, unread kernel buffers or packets lost before delivery. AudioTrack acceptance establishes submission, not audible car playback; the `android-audio/track` channel can include non-Bluetooth routes.
 
@@ -96,8 +96,13 @@ App-private `logs/raw-traffic.tsv` records tab-separated `epochMillis`, process-
 sequence, channel, byte count and Base64 bytes; capture/start identifies the process.
 Consecutive chunks of at most 48 KiB preserve every byte; concatenate by channel.
 `/attempt` and `/written` distinguish attempted/accepted output. A reused synchronous
-writer applies disk backpressure and flushes each record, without `fsync`/power-loss
-guarantees. `RAW_CAPTURE failures` retains count, first/last failure times, source,
+buffered byte writer applies disk backpressure and flushes each record, without
+`fsync`/power-loss guarantees. The JDK bulk Base64 encoder reads an exact byte-buffer
+range directly; capture avoids copying source slices or constructing payload-sized
+Strings and then encoding them back to UTF-8. Journal and exported formats remain
+compatible with retained captures. The [encoding benchmark](../tests/bench/raw-capture/README.md)
+measures host encoding time and allocation separately from storage and Android
+device behavior. `RAW_CAPTURE failures` retains count, first/last failure times, source,
 safe cause and failed-byte-attempt upper bound. Sessions survive mode changes and
 process restarts until explicit capture/app-data clear; disabling Debug stops appends
 without erasing history. Video can consume substantial storage.
@@ -256,10 +261,11 @@ The deadline estimate includes known Android/browser/output/filter uncertainty;
 upstream iPhone NTP-anchor uncertainty is not separately carried on the wire.
 `within-bound` therefore describes this software mapping, not a physical latency certificate.
 
-Browser audio uses the bundled pure JavaScript libsoxr backend inside AudioWorklet.
-It requires neither WebAssembly nor JavaScript evaluation permissions. Worklet module
-loading and processor failures surface as audio errors; check processor errors,
-recovery counts and actual nonzero render samples when diagnosing silence.
+AudioWorklet uses precompiled libsoxr/audio-core WASM with private fixed memories.
+For silence, check module/processor errors, recoveries and rendered samples.
+Raw `contextTimeMs` is diagnostic-only; `renderReportAgeMs` measures receipt age.
+Getter disagreement cannot establish `renderAgeMs`, which remains unknown.
+See [WASM and clock boundaries](Browser-wasm.md#audio-clock-roles).
 
 Shared mixing repairs double-faded tails and abrupt ducking with the existing 5 ms
 fade. URL audio has a separate graph; see [waveform verification](Testing.md#media-clock-and-continuous-audio-acceptance).
@@ -268,19 +274,19 @@ Device, browser/Android and source rates describe different mappings.
 `deviceClockSource` selects fresh accepted `native` output, then fresh accepted
 `render` progress, then frozen `holdover`. Both fits share bounded estimation and
 one applied-rate controller. Native phase changes preserve independent render
-evidence. Render progress can reflect scheduling/queue changes; neither API proves
-a physical oscillator rate. `deviceClockAcceptedFitAgeMs`, `deviceClockFitRejected`,
+evidence. Frame/probe intervals measure render progress, not physical oscillator
+rate. `deviceClockAcceptedFitAgeMs`, `deviceClockFitRejected`,
 `deviceClockFitStatus` and `deviceClockFitRejectReason` describe selected evidence;
 unknown age stays absent. Holdover need not mean nominal rate.
 Debug `deviceClockFitDispersionMs` is attempted raw MAD; accepted
-`deviceClockUncertaintyMs` includes selected render quantization. Unknown attempt
+`deviceClockUncertaintyMs` includes selected frame/probe uncertainty. Unknown attempt
 noise stays absent after Debug activation/reset. Six decimals preserve evidence,
 not accuracy. See [fit bounds](Testing.md#media-clock-and-continuous-audio-acceptance).
 `outputTimestampFitUncertaintyMs`, `outputTimestampFitStatus` and
 `outputTimestampFitGeneration` separately retain native phase-fit evidence. Its MAD
 uses context milliseconds, converted before performance-clock comparisons; render
 MAD cannot widen native phase gates. Reference/worklet extrapolation reserves rate
-uncertainty over the actual distance. Context replacement/suspend/backward movement
+uncertainty over the actual distance. Context replacement/suspend/sample-domain changes
 resets the sample domain; confirmed observation gaps retain nominal-reset/reacquisition
 behavior. Native phase reacquisition still requires two
 advancing pairs and retains its freshness/holdover limits.
@@ -581,13 +587,15 @@ finite age/lag remain signed even for future or context-ahead results. Unsupport
 coordinates stay absent. These diagnostics do not drive scheduling or measure the
 speaker; do not substitute another context's values. A late scheduler uses one mapping
 for subsequent nodes and video, preserving source sample order without starting
-overdue slices together; already elapsed silence cannot be recovered. The scheduler
-also checks the context clock after submitting a node and reserves its conservative
-tail for the next node. `audioSubmitUncertaintyMaxMs` bounds the observed interval
-between the requested start and that later clock read; it is not a renderer receipt.
-Submission uncertainty can leave conservative space after a stall. Node-time counters
-describe requested starts and gaps, rather than measured physical output; JavaScript
-cannot reconstruct the precise render-thread start within a stalled submission.
+overdue slices together; already elapsed silence cannot be recovered. The later
+context-clock reading supplies a schedule-order estimate.
+`audioSubmitUncertaintyMaxMs` reports maximum observed nonnegative request/getter
+separation; it cannot bound native start or establish getter freshness. These
+requested node times do not measure physical output. URL EOF requires natural
+completion of every current-owner source before clearing the tail. Cancelled
+callbacks cannot authorize successor completion; sealed source coverage survives
+empty rebuffer boundaries. Natural completion proves graph processing, without
+measuring speaker time.
 
 Semantic media/command edges remain visible. Engine-state changes are sampled from
 progress/timeupdate events with a 250 ms minimum interval; an unchanged snapshot with

@@ -83,9 +83,15 @@ The maneuver PNGs under `shared/src/main/assets/byd-hud-icons` were imported fro
 
 ## Browser media
 
+The C/C++ WASM libraries also link WASI libc/musl, dlmalloc and LLVM
+compiler-rt/libc++/libc++abi runtime code. Complete MIT, BSD, CC0 and
+Apache-2.0-with-LLVM-exceptions notices, contributor credits and exact source
+revisions are retained in
+[linked-runtime notices](../site/play/vendor/wasm-runtime/README.md).
+The freestanding audio core links no standard runtime archives.
+
 - libsoxr (SoX Resampler Library): LGPL-2.1-or-later, used as a separately
-  replaceable, self-hosted pure JavaScript variable-rate resampler (asm.js-like
-  typed JavaScript generated with Binaryen). Its complete source,
+  replaceable, self-hosted WebAssembly variable-rate resampler. Its complete source,
   licenses and pinned build provenance are under
   [vendor/soxr](../site/play/vendor/soxr/README.md); the source tree also includes
   the adapter and reproducible rebuild script. Android SCO playback/capture uses
@@ -93,14 +99,18 @@ The maneuver PNGs under `shared/src/main/assets/byd-hud-icons` were imported fro
   and licenses are in [native libsoxr](../shared/src/main/jni/soxr/README.md).
   No JS or WASM runtime is used by that Android library. Keep those materials with binary
   distributions so users can rebuild and replace the library.
-- AAC-ELD software fallback: a third-party modified, ELD-only asm.js build derived
-  from Fraunhofer FDK AAC Codec Library for Android. It retains the Fraunhofer
+- AAC-ELD software fallback: a WASM build of the complete Fraunhofer FDK AAC Codec
+  Library for Android, exposed through a raw ELD adapter. It retains the Fraunhofer
   license, modification notices and complete corresponding source under
   [vendor/aac-eld](../site/play/vendor/aac-eld/README.md). This component keeps its
   own license; the software license does not grant a patent license.
 - Video.js native controls, skin and media adapter helpers: Apache-2.0, self-hosted under
   `site/play/vendor/videojs/` with license texts and retained bundle notices.
-- Mediabunny and SoundTouchJS: MPL-2.0. hls.js WebVTT and CEA-608 parsing helpers: Apache-2.0 with
+- SoundTouch 2.4.0: LGPL-2.1-or-later, built from complete unmodified C++ source
+  for SIMD WASM tempo processing. Portable builds remain available for reproduction
+  and comparison. Sources, ABI adapter, license and provenance are under
+  [vendor/soundtouch](../site/play/vendor/soundtouch/README.md).
+- Mediabunny and the no-SIMD SoundTouchJS tempo backend: MPL-2.0. hls.js WebVTT and CEA-608 parsing helpers: Apache-2.0 with
   retained notices for their Mozilla-derived parser. The media bundle, full dependency
   licenses and source provenance are under `site/play/vendor/mediabunny/`; the source
   packages and their integrity are pinned in `scripts/videojs/package-lock.json`.
@@ -119,6 +129,10 @@ source URLs, AAR SHA-256 and ABI sizes are retained under
 and included in APK assets with binary distributions.
 
 ## Browser SRP pairing
+
+The benchmark-only LibTomMath 1.3.0 candidate uses the Unlicense. Its full source,
+license and WASM adapter are retained under `tests/bench/srp/`; Chromium measurements
+rejected it for production. Browser pairing retains native BigInt and WebCrypto.
 
 The browser vendors `tssrp6a` 3.0.0 for browser SRP-6a arithmetic and WebCrypto
 hashing. Its distributed LICENSE is MIT; the package metadata has an inconsistent

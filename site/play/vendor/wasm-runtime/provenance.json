@@ -1,0 +1,157 @@
+{
+  "scope": "Linked WASIp1 C/C++ runtime notices for browser libsoxr, FDK AAC and SoundTouch reactors; the freestanding audio-core has no standard-library link inputs.",
+  "toolchain": {
+    "name": "WASI SDK 34.0 x86_64 Linux",
+    "sdkTag": "wasi-sdk-34",
+    "sdkTagObject": "86e11644f8d69d78e4103c6c0abecb5e364c063f",
+    "sdkCommit": "5a0bf653a1a06e1c18867567c5937006d3394a69",
+    "archiveUrl": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz",
+    "archiveSha256": "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4",
+    "versionFile": "34.0\nwasi-libc: 2e6fb9d8ee0c\nllvm: 895aa2c896ad\nllvm-version: 23.1.0\nconfig: f992bcc08219\n"
+  },
+  "sources": {
+    "wasiLibc": {
+      "repository": "https://github.com/WebAssembly/wasi-libc",
+      "commit": "2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13",
+      "archiveUrl": "https://codeload.github.com/WebAssembly/wasi-libc/tar.gz/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13",
+      "archiveSha256": "f25ccd526235f7b351f9b49451b75fdd8e23250b9ad8fc9f8f2a19f517a4892f",
+      "muslVersion": "1.2.6",
+      "muslSource": "Vendored subtree libc-top-half/musl at the exact wasi-libc commit; no separate musl submodule is used.",
+      "allocator": "dlmalloc (SDK/default wasi-libc allocator)"
+    },
+    "llvm": {
+      "repository": "https://github.com/llvm/llvm-project",
+      "commit": "895aa2c896ada719451be2e3673c83da8ddf1141",
+      "components": [
+        "compiler-rt builtins",
+        "libc++",
+        "libc++abi"
+      ],
+      "sdkRuntimePatches": {
+        "llvm-pr-186054.patch": {
+          "url": "https://raw.githubusercontent.com/WebAssembly/wasi-sdk/5a0bf653a1a06e1c18867567c5937006d3394a69/src/llvm-pr-186054.patch",
+          "bytes": 4199,
+          "sha256": "4ed0d85e6280f37701a8a7b30c1750e61a9bec62cc7b040fd5338d90551811de"
+        },
+        "llvm-undo-part-of-194317.patch": {
+          "url": "https://raw.githubusercontent.com/WebAssembly/wasi-sdk/5a0bf653a1a06e1c18867567c5937006d3394a69/src/llvm-undo-part-of-194317.patch",
+          "bytes": 728,
+          "sha256": "bd901d86af8f1e000aa7efeb4e3d3677292fe07a106e817b09a0a67124a7ad00"
+        }
+      },
+      "licenseChangesBySdkPatches": false
+    }
+  },
+  "linkInputs": {
+    "soxr": [
+      "crt1-reactor.o",
+      "libc.a (including musl math and dlmalloc)",
+      "libclang_rt.builtins.a"
+    ],
+    "aacEldAndSoundTouch": [
+      "crt1-reactor.o",
+      "libc.a",
+      "libc++.a (noeh LTO)",
+      "libc++abi.a (noeh LTO)",
+      "libclang_rt.builtins.a"
+    ],
+    "freestandingAudioCore": []
+  },
+  "linkEvidence": "Pinned clang/clang++ driver -### with production -O3 -flto -mexec-model=reactor and -fno-exceptions C++ flags selects WASIp1 noeh/LTO libc++ and libc++abi, libc and compiler-rt builtins. No -lunwind is present; archive dead-code selection determines individual retained functions.",
+  "files": {
+    "wasi-libc/LICENSE.txt": {
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13/LICENSE",
+      "sourcePath": "LICENSE",
+      "bytes": 910,
+      "sha256": "2711a8b5a5cdfef0e639f96c1aca12ae23d7d64a02d0507f1bdf14d2b27bbc3a"
+    },
+    "wasi-libc/LICENSE-APACHE.txt": {
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13/LICENSE-APACHE",
+      "sourcePath": "LICENSE-APACHE",
+      "bytes": 10847,
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    "wasi-libc/LICENSE-APACHE-LLVM.txt": {
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13/LICENSE-APACHE-LLVM",
+      "sourcePath": "LICENSE-APACHE-LLVM",
+      "bytes": 12243,
+      "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+    },
+    "wasi-libc/LICENSE-MIT.txt": {
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13/LICENSE-MIT",
+      "sourcePath": "LICENSE-MIT",
+      "bytes": 1023,
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    "wasi-libc/MUSL-COPYRIGHT.txt": {
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13/libc-top-half/musl/COPYRIGHT",
+      "sourcePath": "libc-top-half/musl/COPYRIGHT",
+      "bytes": 6196,
+      "sha256": "b870108ec5e7790e9f9919064f1b9421d62d5f9b0e6c230c6adf7ea2da62e97b"
+    },
+    "wasi-libc/CLOUDLIBC-LICENSE.txt": {
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13/libc-bottom-half/cloudlibc/LICENSE",
+      "sourcePath": "libc-bottom-half/cloudlibc/LICENSE",
+      "bytes": 1292,
+      "sha256": "c8b789cf5a746611e6300a0cc7750dbf92b61912a709d04e639245f7290656d0"
+    },
+    "wasi-libc/MUSL-FTS-COPYING.txt": {
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13/fts/musl-fts/COPYING",
+      "sourcePath": "fts/musl-fts/COPYING",
+      "bytes": 1514,
+      "sha256": "55af87e4017668f54467a3380e7ebbac5e672d8c763bfe95e6fc882a6fdc4046"
+    },
+    "wasi-libc/MUSL-SOURCE-NOTICES.txt": {
+      "sourceArchive": "https://codeload.github.com/WebAssembly/wasi-libc/tar.gz/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13",
+      "extraction": "All /* */ comments containing copyright, SPDX-License-Identifier, permission is hereby, permission to use, or redistribution and use (case-insensitive) in libc-top-half/musl/src/**/*.c and **/*.h; exact comment blocks deduplicated, paths listed.",
+      "noticeBlocks": 44,
+      "bytes": 35742,
+      "sha256": "8cba6b326b557dfc80345ac96fffd8206a6004ab5af47c2cc558b4605271f47c"
+    },
+    "wasi-libc/DLMALLOC-NOTICE.txt": {
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13/dlmalloc/src/malloc.c",
+      "extraction": "Verbatim leading public-domain/CC0 licensing and version excerpt, ending before Quickstart.",
+      "sourceFileSha256": "9e7ce51d813331ae87ef235f6ca2d5ce2167692e30bb51a173513e3754a67f8f",
+      "bytes": 477,
+      "sha256": "c9c0f4879df94f00413079bdd2d4730a292d6dd0e0886dc0cedc6559d3a36e35"
+    },
+    "wasi-libc/CC0-1.0.txt": {
+      "url": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/text/CC0-1.0.txt",
+      "licenseVersion": "CC0-1.0",
+      "spdxTag": "v3.27.0",
+      "spdxCommit": "d46e94e2c78ceede1cfc63cfa0396472d2798d4c",
+      "bytes": 7048,
+      "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
+    },
+    "llvm/compiler-rt-LICENSE.TXT": {
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/895aa2c896ada719451be2e3673c83da8ddf1141/compiler-rt/LICENSE.TXT",
+      "bytes": 16708,
+      "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d"
+    },
+    "llvm/compiler-rt-CREDITS.TXT": {
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/895aa2c896ada719451be2e3673c83da8ddf1141/compiler-rt/CREDITS.TXT",
+      "bytes": 1049,
+      "sha256": "a9901f47a089da41e4690682d00ce4cedaa2baf41fedbe79beee366d43ac2461"
+    },
+    "llvm/libcxx-LICENSE.TXT": {
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/895aa2c896ada719451be2e3673c83da8ddf1141/libcxx/LICENSE.TXT",
+      "bytes": 16703,
+      "sha256": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b"
+    },
+    "llvm/libcxx-CREDITS.TXT": {
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/895aa2c896ada719451be2e3673c83da8ddf1141/libcxx/CREDITS.TXT",
+      "bytes": 4175,
+      "sha256": "f39081875d1c5c35aab256b676e94003b453ecb2a1cae14026dfd23804dc97b2"
+    },
+    "llvm/libcxxabi-LICENSE.TXT": {
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/895aa2c896ada719451be2e3673c83da8ddf1141/libcxxabi/LICENSE.TXT",
+      "bytes": 16706,
+      "sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c"
+    },
+    "llvm/libcxxabi-CREDITS.TXT": {
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/895aa2c896ada719451be2e3673c83da8ddf1141/libcxxabi/CREDITS.TXT",
+      "bytes": 1660,
+      "sha256": "a259fff28a51623f14917dd68f97f3af7804984087ddc1bfd8196d08ebb75b83"
+    }
+  }
+}

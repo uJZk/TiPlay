@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAudioOutputMapping } from '../../site/play/audio-output-clock.js';
@@ -38,6 +39,7 @@ function scenario(mode, type, { isolated = false, observe = false, sustained = f
       presentationMs: 800000 + first / 48, decodeTimestampUs: first / 48 * 1000, pcm: pcm.buffer });
   }
   const player = processor.timelines.get(type), backendAfterStartup = [], steps = [], samples = [], captures = [], trace = [];
+  let mailbox = 0;
   const recover = player.recover.bind(player);
   player.recover = reason => {
     if (reason === 'clock-step') steps.push({ contextMs: frame / 48, phaseErrorMs: player.phaseErrorMs });
@@ -49,16 +51,23 @@ function scenario(mode, type, { isolated = false, observe = false, sustained = f
       at = frame / 48; context.currentTime = currentTime;
       if (quantum % 15 === 0) {
         const pair = mapping.capture(context);
+        const renderProbe = mapping.takeRenderProbe();
+        if (renderProbe !== null) post({ renderProbe });
         captures.push({ at, state: mapping.diagnostics().outputState });
         post({ deviceClock: mapping.deviceClock(),
           contextAnchor: pair ? { contextTimeMs: pair.contextTimeMs, localTimeMs: pair.performanceTimeMs } : null,
+          outputMethod: pair?.outputMethod ?? null,
           outputUncertaintyMs: pair?.uncertaintyMs ?? null });
       }
       const output = [new Float32Array(128), new Float32Array(128)];
       processor.process([], [output]); samples.push(...output[0]);
+      while (mailbox < processor.messages.length) {
+        const message = processor.messages[mailbox++];
+        if (message.renderProbe) mapping.acknowledgeRenderProbe(message.renderProbe, context);
+      }
       trace.push({ at, phaseErrorMs: player.phaseErrorMs, ratio: player.slewRatio,
         rawCursorMs: player.rawCursorMs, sourceFrame: player.sourceFrame });
-      if (quantum === 1) backendAfterStartup.push(player.backend);
+      if (quantum === 30) backendAfterStartup.push(player.backend);
       if (observe) {
         mapping.deviceClock(); mapping.diagnostics();
         player.reference(at); player.stats(); player.reference(at + 1);

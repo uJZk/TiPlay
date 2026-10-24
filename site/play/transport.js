@@ -70,7 +70,9 @@ export async function pumpChunkStream(body, port, signal) {
         offset = 0;
       }
       const end = Math.min(value.byteLength, offset + MAX_CHUNK_BYTES);
-      const chunk = offset === 0 && end === value.byteLength && value.byteOffset === 0 && value.byteLength === value.buffer.byteLength
+      // Transfer complete bounded views too: an RTC record may start after its
+      // native framing header. Structured clone preserves the view's offset/length.
+      const chunk = offset === 0 && end === value.byteLength && value.buffer.byteLength <= MAX_CHUNK_BYTES
         ? value : value.slice(offset, end);
       offset = end;
       // A whole-buffer transfer detaches value, so release it before checking its length again.

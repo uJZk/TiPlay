@@ -11,6 +11,29 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class RawTrafficTest {
+    @Test fun bulkEncodingPreservesByteRangesPaddingAndUtf8ChannelNames() {
+        val directory = java.nio.file.Files.createTempDirectory("traffic-byte-ranges").toFile()
+        val file = File(directory, "capture.tsv")
+        try {
+            RawTraffic.configure(file, true)
+            val source = ByteArray(100_009) { (it * 173).toByte() }
+            for (length in listOf(1, 2, 3, 960, 4096, 49_151, 49_152, 49_153, 100_001)) {
+                val channel = "test/音频-$length"
+                RawTraffic.record(channel, source, 5, length)
+                val lines = file.readLines().map { it.split('\t') }.filter { it[2] == channel }
+                val recovered = ByteArrayOutputStream()
+                for (fields in lines) {
+                    val decoded = Base64.getDecoder().decode(fields[4])
+                    assertEquals(fields[3].toInt(), decoded.size)
+                    assertTrue(decoded.size <= 48 * 1024)
+                    recovered.write(decoded)
+                }
+                assertArrayEquals("range length=$length", source.copyOfRange(5, 5 + length), recovered.toByteArray())
+            }
+            assertEquals(0L, RawTraffic.integrity()["failures"])
+        } finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
+    }
+
     @Test fun timingIsSessionScopedCoversSessionWritesAndSurvivesExportWithoutPayloads() {
         val directory = java.nio.file.Files.createTempDirectory("traffic-timing").toFile()
         val file = File(directory, "capture.tsv")

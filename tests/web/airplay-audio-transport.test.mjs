@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readAudioRecords, MAX_AUDIO_RECORD } from '../../site/play/audio-protocol.js';
@@ -86,7 +87,7 @@ test('ended config closes encoded decoder and late AudioData is discarded before
  const{controller,messages,decoders}=await audioHarness(t,{supported:true});
  controller.enqueue(configFrame({codec:'aac-lc',sampleRate:44100,channels:2,asc:[18,16],bitDepth:16,samplesPerFrame:1024}));controller.enqueue(frame(7,new Uint8Array([1,2,3])));await until(()=>decoders[0]?.chunks.length);
  const old=decoders[0];controller.enqueue(configFrame({ended:true},{epoch:4}));await until(()=>old.state==='closed');
- const data={closed:false,timestamp:1000000,numberOfFrames:1,numberOfChannels:2,sampleRate:44100,copyTo(target){target[0]=.5;},close(){this.closed=true;}};
+ const data={closed:false,timestamp:1000000,numberOfFrames:1,numberOfChannels:2,sampleRate:44100,copyTo(target,{format}){if(format==='s16')throw new DOMException('Planar only','NotSupportedError');target[0]=.5;},close(){this.closed=true;}};
  old.callbacks.output(data);assert.equal(data.closed,true);assert.equal(messages.filter(record=>record.pcm?.byteLength).length,0);
  controller.enqueue(frame(7,new Uint8Array([4,5,6]),{epoch:3}));await new Promise(resolve=>setTimeout(resolve,5));assert.equal(messages.filter(record=>record.pcm?.byteLength).length,0);
 });
@@ -101,7 +102,7 @@ test('Bluetooth microphone demand preserves pending encoded music and its browse
  const route=frame(2,new Uint8Array(),{type:5,channels:1,flags:16,epoch:2});controller.enqueue(route);
  await new Promise(resolve=>setImmediate(resolve));
  assert.equal(decoder.state,'configured');assert.equal(decoders.length,1);
- const data={timestamp:1000000,numberOfFrames:1,numberOfChannels:2,sampleRate:44100,copyTo(target){target[0]=.5;},close(){}};
+ const data={timestamp:1000000,numberOfFrames:1,numberOfChannels:2,sampleRate:44100,copyTo(target,{format}){if(format==='s16')throw new DOMException('Planar only','NotSupportedError');target[0]=.5;},close(){}};
  decoder.callbacks.output(data);
  await until(()=>messages.some(record=>record.pcm?.byteLength));
  const music=messages.find(record=>record.pcm?.byteLength);

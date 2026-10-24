@@ -2,6 +2,7 @@
 import { readAudioPlaybackStats } from './audio-playback-stats.js';
 import { createFrameCanvas } from './airplay-canvas.js';
 import { createTempoProcessor, downmixStereo } from './airplay-tempo.js';
+import { loadSoundTouch, soundTouchSimdSupported } from './vendor/soundtouch/soundtouch.js';
 import { audioTrackLabel, createAudioTrackList, preferredAudioTrack } from './airplay-audio-tracks.js';
 import { fetchSdrMediaResource, hasHdrTransfer, requireSdrTrack, sdrError } from './airplay-sdr.js';
 import { decodableAudioTracks, selectPlayableTrack } from './airplay-track-selection.js';
@@ -139,9 +140,12 @@ export function createMediaEngine(surface, options = {}) {
     const last = Math.min(audioPlaybackEnd(item), end), epsilon = playbackEpsilon(item, last, item.start);
     if (!audioClockNeeded(item) || last <= item.start + epsilon) return true;
     if (!context || item.scheduledEnd < last - epsilon) return false;
-    // Exhausted decoding and submitted nodes are not playback completion. The
-    // same conservative audio mapping used for video must have reached the tail.
-    return context.currentTime >= clockTime + (last - clockPosition) / rate - epsilon / rate;
+    // A published graph clock can jump ahead of native processing. Only natural
+    // completion of every current-owner source proves the submitted tail drained.
+    // This is a graph-lifecycle boundary, not a physical speaker measurement.
+    const completion = item.audioCompletion;
+    return completion.pending === 0 && Number.isFinite(completion.completedEnd)
+      && completion.completedEnd >= last - epsilon;
   }
   function currentClock() { return audioClockNeeded(generation) && context ? context.currentTime : now(); }
   function readPosition() {
@@ -150,11 +154,21 @@ export function createMediaEngine(surface, options = {}) {
     const item = generation;
     const audioLimit = item?.audioTrack && !audioEndedAt(item, position)
       ? item.scheduledEnd : Infinity;
-    return Math.min(candidate, playableEnd(item), audioLimit, Number.isFinite(duration) ? duration : Infinity);
+    const limit = Number.isFinite(duration) ? duration : Infinity;
+    const estimate = Math.min(candidate, playableEnd(item), audioLimit, limit);
+    // Naturally completed source coverage is already processed, even if the
+    // getter is held back or its decoded queue entries have been released.
+    const completed = item?.audioCompletion.completedEnd;
+    return Number.isFinite(completed) ? Math.max(estimate, Math.min(completed, limit)) : estimate;
   }
   function updatePosition() { position = readPosition(); }
   function stopNodes(item, preserveContinuity = false) {
     if (!item) return;
+    // A cancelled source is not evidence that its PCM naturally reached EOF.
+    // Retire even callbacks already queued before stop/seek/rebuffer cleanup.
+    // Preserve only coverage previously sealed by a fully drained native batch.
+    const completedEnd = item.audioCompletion.completedEnd;
+    item.audioCompletion = { pending: 0, completedEnd, naturalEnd: completedEnd };
     for (const node of item.nodes) { node.onended = null; try { node.stop(); } catch (_) {} node.disconnect(); }
     item.nodes.clear(); item.scheduledEnd = position;
     // A rebuffer interrupts the graph even when all source PCM is still queued.
@@ -245,6 +259,7 @@ export function createMediaEngine(surface, options = {}) {
     const item = { serial: ++serial, closed: false, controller: new AbortController(), input: null, iterators: [],
       video: [], audio: [], videoTrack: null, audioTrack: null, videoDone: false, audioDone: false,
       videoReady: false, audioReady: false, metadataReady: false, nodes: new Set(), scheduledEnd: position,
+      audioCompletion: { pending: 0, completedEnd: null, naturalEnd: null },
       start: position, audioEnd: position, tempo: null, tempoRate: null, tempoStart: position, tempoOutput: 0,
       videoReadPending: false, audioReadPending: false, videoReadStarted: null, audioReadStarted: null,
       audioSourceRate: null, audioSourceChannels: null, audioDecodedFrames: 0, audioSeekTrimmedFrames: 0,
@@ -552,6 +567,8 @@ export function createMediaEngine(surface, options = {}) {
     appendAudio(item, [left, right], sampleRate, start);
   }
   async function pumpAudio(item, lib) {
+    const tempoCore = rate === 1 ? null : soundTouchSimdSupported() ? await loadSoundTouch() : lib.SoundTouchCore;
+    if (!active(item)) return;
     const iterator = new lib.AudioBufferSink(item.audioTrack).buffers(origin + item.start)[Symbol.asyncIterator]();
     item.iterators.push(iterator);
     let sampleRate = null, decodedEnd = item.start, hasDecoded = false;
@@ -631,7 +648,7 @@ export function createMediaEngine(surface, options = {}) {
           item.audioSilenceFrames += length;
           if (rate === 1) appendAudio(item, [silence, silence], sampleRate, cursor);
           else {
-            if (!item.tempo) { item.tempo = createTempoProcessor(lib.SoundTouchCore, sampleRate, rate); item.tempoStart = cursor; }
+            if (!item.tempo) { item.tempo = createTempoProcessor(tempoCore, sampleRate, rate); item.tempoStart = cursor; }
             appendStretched(item, item.tempo.push(silence), sampleRate);
           }
           filled += length; notify(item);
@@ -639,9 +656,12 @@ export function createMediaEngine(surface, options = {}) {
       }
       if (rate === 1) appendAudio(item, channels, sampleRate, actualStart);
       else {
-        if (!item.tempo) { item.tempo = createTempoProcessor(lib.SoundTouchCore, sampleRate, rate); item.tempoStart = actualStart; }
-        const stereo = downmixStereo(channels);
-        appendStretched(item, item.tempo.push(stereo[0], stereo[1]), sampleRate);
+        if (!item.tempo) { item.tempo = createTempoProcessor(tempoCore, sampleRate, rate); item.tempoStart = actualStart; }
+        if (item.tempo.pushChannels) appendStretched(item, item.tempo.pushChannels(channels), sampleRate);
+        else {
+          const stereo = downmixStereo(channels);
+          appendStretched(item, item.tempo.push(stereo[0], stereo[1]), sampleRate);
+        }
       }
       decodedEnd = actualStart + channels[0].length / sampleRate; hasDecoded = true;
       if (Number.isFinite(duration) && decodedEnd >= duration - playbackEpsilon(item, decodedEnd, duration)) {
@@ -800,6 +820,7 @@ export function createMediaEngine(surface, options = {}) {
       lastSampleAgeMs: Number.isFinite(item?.lastSampleAt) ? Math.max(0, (now() - item.lastSampleAt) * 1000) : undefined,
       audioResumeRequests, audioResumeCompleted, audioResumeFailed,
       audioSourceRate: item?.audioSourceRate, audioSourceChannels: item?.audioSourceChannels,
+      audioTempoBackend: item?.tempo?.backend || 'none',
       audioRequestedContextRate, audioContextRate: context?.sampleRate,
       audioDecodedFrames: item?.audioDecodedFrames, audioSeekTrimmedFrames: item?.audioSeekTrimmedFrames,
       audioOverlapTrimmedFrames: item?.audioOverlapTrimmedFrames, audioAlignedPackets: item?.audioAlignedPackets,
@@ -876,7 +897,19 @@ export function createMediaEngine(surface, options = {}) {
       chunk.channels.forEach((channel, index) => buffer.copyToChannel(channel.subarray(offset, offset + length), index));
       const node = context.createBufferSource(); node.buffer = buffer; node.connect(gain);
       item.nodes.add(node);
-      node.onended = () => { item.nodes.delete(node); node.disconnect(); };
+      const completion = item.audioCompletion;
+      let naturallyEnded = false;
+      completion.pending++;
+      node.onended = () => {
+        if (naturallyEnded || !active(item) || item.audioCompletion !== completion) return;
+        naturallyEnded = true; completion.pending--;
+        completion.naturalEnd = Math.max(completion.naturalEnd ?? end, end);
+        // Seal coverage only once every source in this submission batch ended.
+        // A later-ended source alone cannot prove an earlier cancelled one.
+        if (!completion.pending) completion.completedEnd = completion.naturalEnd;
+        item.nodes.delete(node); node.disconnect();
+        schedule();
+      };
       // Every node uses the same anchor as currentTime and the video presenter.
       const expected = clockTime + (start - clockPosition) / rate;
       const when = Math.max(context.currentTime, expected, item.audioSubmitEnd ?? 0);
@@ -895,20 +928,20 @@ export function createMediaEngine(surface, options = {}) {
       // Native source nodes emit the sample whose start precedes a fractional
       // container end. Bound its duration rather than dropping that last sample.
       node.start(when, 0, nodeDuration);
-      // JS can pause between its last clock read and the native start call.
-      // This post-call clock bounds the possible submission time; it is not a
-      // renderer acknowledgement. Keep the following node beyond that bound,
-      // while request-gap counters retain their original requested-time basis.
-      const submitted = Math.max(when, context.currentTime);
-      item.audioSubmitUncertaintyMaxMs = Math.max(item.audioSubmitUncertaintyMaxMs, (submitted - when) * 1000);
-      if (submitted > expected) {
+      // JS can pause around start(). This later published clock is a scheduling
+      // estimate, not an acknowledgement or upper bound on actual native start.
+      // Preserve the existing request-order fence without treating getter
+      // precision or freshness as proof that samples have played.
+      const observedFence = Math.max(when, context.currentTime);
+      item.audioSubmitUncertaintyMaxMs = Math.max(item.audioSubmitUncertaintyMaxMs, (observedFence - when) * 1000);
+      if (observedFence > expected) {
         // Shift the shared mapping without treating the submitted future tail
         // as already played. Even a one-ulp tail correction must preserve the
         // current media cursor rather than advancing it to this node's start.
-        clockTime += submitted - expected; updatePosition();
+        clockTime += observedFence - expected; updatePosition();
       }
       item.lastRequestedAudioEnd = when + nodeDuration;
-      item.audioSubmitEnd = submitted + nodeDuration;
+      item.audioSubmitEnd = observedFence + nodeDuration;
       chunk.scheduledFrames = offset + length; item.audioScheduledFrames += length;
       cursor = end; item.scheduledEnd = end;
     }
@@ -961,7 +994,11 @@ export function createMediaEngine(surface, options = {}) {
         scheduleAudio(item, end); item.waiting = false; event('playing'); settlePlay();
       } else scheduleAudio(item, end);
     } else {
-      if (running) {
+      // Reaching estimated media coverage cannot cancel a native source whose
+      // completion is still pending. Drain that bounded submitted tail first;
+      // explicit pause/seek/context suspension still owns immediate cancellation.
+      const drainingAudio = item.audioCompletion.pending > 0 && context?.state === 'running' && !paused && !seeking;
+      if (running && !drainingAudio) {
         if (item.audioTrack && !audioEndedAt(item, position)) item.audioRebufferStops++;
         freeze(true);
       }

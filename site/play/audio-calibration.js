@@ -58,7 +58,9 @@ export function createAudioCalibration({ Worker = globalThis.Worker, timeoutMs =
       } catch (error) { fail(error); }
     } else {
       // Compatibility only: this still runs outside AudioWorkletGlobalScope.
-      fallback ??= import('./streaming-resampler.js').then(({ SoxrRuntime }) => new SoxrRuntime());
+      fallback ??= import('./streaming-resampler.js').then(async ({ SoxrRuntime, loadSoxr }) => {
+        await loadSoxr(); return new SoxrRuntime();
+      }).catch(error => { fallback = null; throw error; });
       fallback.then(runtime => {
         if (disposed || !pending.has(key)) return;
         finish(entry, { rate, outputRate, delayMs: runtime.filterDelay(rate, outputRate) });

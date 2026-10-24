@@ -7,6 +7,26 @@ on:
 permissions:
   contents: read
 jobs:
+  wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned build tools
+        run: python3 -m pip install cmake==4.1.2 ninja==1.13.0
+      - name: Verify pinned WASI SDK and Binaryen
+        run: python3 scripts/soxr/prepare-toolchain.py work/wasm-toolchain
+      - name: Reproduce shipped WASM libraries
+        run: >-
+          python3 scripts/build_wasm.py --check
+          --sdk work/wasm-toolchain/wasi-sdk-34.0-x86_64-linux
+          --binaryen work/wasm-toolchain/package
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -17,6 +37,8 @@ jobs:
           node-version: '22'
       - name: Browser page unit tests
         run: node --test tests/web/*.test.mjs
+      - name: Browser offline runtime manifest
+        run: python3 scripts/update_browser_cache.py --check
       - name: Reject credential files in public source
         run: python3 scripts/check_public_tree.py
       - name: Release draft delivery tests

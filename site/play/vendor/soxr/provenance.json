@@ -2,15 +2,15 @@
   "upstream": "https://github.com/chirlu/soxr",
   "commit": "945b592b70470e29f917f4de89b4281fbbd540c0",
   "sourceSha256": "ae970b44833c7dd2b088d5928b27c7f1796198ff5bc5386b90393aaf33e53d51",
-  "artifact": "soxr.asm.js",
-  "artifactSha256": "0dda221ebb9979a01840c475caed3d9aee84c436f4a1e91483a868ca5df85777",
-  "bytes": 364339,
-  "classification": "Static wasm2js typed JavaScript / asm.js-like, not validated legacy asm.js",
-  "runtimeWebAssembly": false,
-  "dynamicCompilation": false,
+  "artifact": "soxr.wasm",
+  "artifactSha256": "a0efdc6ef789ceb0c2057b575a066c8d4a933b2f89290aadd04769adec4e276f",
+  "bytes": 162531,
+  "classification": "WebAssembly reactor; full portable libsoxr CR32/CR64/VR32 and public C API",
+  "runtimeWebAssembly": true,
+  "dynamicJavaScriptCompilation": false,
   "heapBytes": 16777216,
   "memoryGrowth": false,
-  "floatABI": "float32 interleaved; vr32 variable-ratio + output-frame slew; high precision phase clock",
+  "floatABI": "TiPlay interleaved float32 adapter; upstream float32/float64/int16/int32 and split IO retained",
   "toolchains": {
     "wasiSdk": "34.0-x86_64-linux",
     "wasiSha256": "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4",
@@ -18,13 +18,11 @@
     "binaryenIntegrity": "sha512-4Usg7yEvwO3FMso3Oov6qkOOHSod1IEv+boKkh77kTljM+eNBouqCTbqWswGzbG+vDNO/b/v2C4gfEh1WgB9Lg=="
   },
   "patches": [
-    "float32-only mono/stereo IO; other data formats unreachable through exported ABI",
-    "exact void indirect-call signature for vr_process"
+    "Exact WebAssembly indirect-call signatures for vr32 process and fft4g32/fft4g64 callbacks; no DSP/filter/IO pruning"
   ],
   "optimization": [
-    "clang -O3 -flto; wasm-opt -O3; wasm2js without -O3 selected by three rotating benchmark repetitions",
-    "fixed heap allows cached JS boundary views",
-    "no fast-math; full vr32 DSP retained"
+    "clang -O3 -flto; wasm-opt -O3 with stable WASM feature flags",
+    "fixed 16 MiB heap; no fast-math; upstream filter quality and high-precision phase clock retained"
   ],
   "licenses": {
     "upstream": "LGPL-2.1-or-later",
@@ -37,8 +35,9 @@
   "sourceArchive": "source/soxr-source.tar.gz",
   "sourceFiles": {
     "soxr-wrapper.c": "1fdc3a9b7f70241c2b17afbcbb4f19c4f5b951a9be1111b92711daea1fc44d35",
-    "tiplay.patch": "0ebb9d5798ad9e51a61081096208acd3f8ab891a61abba86cb2540d84bc81566",
-    "wrap.py": "069cefb056d6b8646a0961abe44099ff90b7ecd0fa50d0db8d6bfeb199543d05"
+    "wasm.patch": "76f6c5977df489aca86fc40e9f70be3dac4ab8b0e3b0a6947c51fb450da96543",
+    "tiplay.patch": "0ebb9d5798ad9e51a61081096208acd3f8ab891a61abba86cb2540d84bc81566"
   },
+  "historicalNativePatch": "source/tiplay.patch is used only by the retained native/JNI build; browser WASM uses wasm.patch.",
   "benchmarkReport": "scripts/soxr/REPORT.md"
 }

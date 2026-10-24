@@ -20,7 +20,7 @@ self.onmessage = async ({ data }) => {
     if (data?.kind !== 'decode' || !decoder || !Number.isSafeInteger(data.id)
       || !(data.packet instanceof ArrayBuffer) || data.packet.byteLength < 1 || data.packet.byteLength > 8192)
       throw new Error('Invalid decode request.');
-    // Never transfer the borrowed PCM view: its buffer is the decoder's entire asm.js heap.
+    // Never transfer the borrowed PCM view: its buffer is the decoder's entire WASM memory.
     const pcm = decoder.decode(new Uint8Array(data.packet), true);
     if (!(pcm instanceof Int16Array) || pcm.length !== decoder.frameLength * decoder.channels
       || pcm.byteOffset !== 0 || pcm.buffer.byteLength !== pcm.byteLength)

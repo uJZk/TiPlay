@@ -51,6 +51,22 @@ test('worker cancellation interrupts an outstanding network read and releases it
   assert.equal(body.locked, false);
 });
 
+test('worker transfer preserves a complete bounded RTC payload view without copying its storage', async () => {
+  const { port1, port2 } = new MessageChannel(), abort = new AbortController();
+  const backing = new Uint8Array(28).fill(255), input = backing.subarray(24);
+  input.set([4, 8, 15, 16]);
+  const body = new ReadableStream({ start(controller) { controller.enqueue(input); controller.close(); } });
+  const reader = createChunkStream(port2).getReader(), pumping = pumpChunkStream(body, port1, abort.signal);
+  const output = (await reader.read()).value;
+  assert.deepEqual(output, Uint8Array.of(4, 8, 15, 16));
+  assert.equal(output.byteOffset, 24);
+  assert.equal(output.buffer.byteLength, 28);
+  assert.equal(backing.byteLength, 0, 'ownership moves to the worker instead of copying the payload');
+  assert.equal((await reader.read()).done, true);
+  await pumping; reader.releaseLock();
+  assert.equal(body.locked, false);
+});
+
 test('page stop interrupts a sender blocked waiting for worker credit', async () => {
   const { port1, port2 } = new MessageChannel(), abort = new AbortController();
   const stream = createChunkStream(port2);

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createAirPlayAudioDecoder } from '../../site/play/airplay-audio-decoder.js';
+import { createAirPlayAudioDecoder, decodePcmPacket } from '../../site/play/airplay-audio-decoder.js';
+import { pcmStats, measurePcm } from '../../site/play/audio-pcm-stats.js';
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/airplay-aac-lc.json', import.meta.url)));
 const configRecord = (config, epoch = 1) => ({ type: 0, epoch, mode: 'airplay-mirror', flags: 2, rate: config.sampleRate, channels: config.channels, presentationMs: NaN, config });
 const packetRecord = (payload, epoch = 1, fields = {}) => ({ type: 0, epoch, mode: 'airplay-mirror', flags: 0, rate: 44100, channels: 2, presentationMs: 10000, decodeTimestampUs: 1000000, payload: Uint8Array.from(payload).buffer, ...fields });
@@ -24,7 +26,7 @@ function fakeCodecs({ supported = config => config.codec === 'mp4a.40.2' } = {})
 }
 function outputData(planes, timestamp = 1000000, sampleRate = 44100) {
   return { timestamp, sampleRate, numberOfChannels: planes.length, numberOfFrames: planes[0].length, closed: false,
-    copyTo(target, { planeIndex, format }) { assert.equal(format, 'f32-planar'); target.set(planes[planeIndex]); }, close() { this.closed = true; } };
+    copyTo(target, { planeIndex, format, frameOffset = 0, frameCount = planes[0].length }) { if (format === 's16') throw new DOMException('Planar output only.', 'NotSupportedError'); assert.equal(format, 'f32-planar'); target.set(planes[planeIndex].slice(frameOffset, frameOffset + frameCount)); }, close() { this.closed = true; } };
 }
 function harness(t, options = {}) {
   const codecs = fakeCodecs(options), outputs = [], errors = [];
@@ -65,7 +67,7 @@ test('source epoch replacement drops and closes old asynchronous AudioData', asy
   await decoder.decode(packetRecord([4,5,6],1)); assert.equal(instances[1].chunks.length,0);
 });
 
-test('PCM16 network big endian and PCM24 signed samples decode in browser JavaScript', async t => {
+test('PCM16 network big endian and PCM24 signed samples decode without a native codec', async t => {
   const { decoder, outputs, instances } = harness(t);
   await decoder.configure(configRecord({codec:'pcm',sampleRate:48000,channels:1,bitDepth:16,littleEndian:false},1));
   await decoder.decode(packetRecord([0x80,0x00,0x00,0x00,0x7f,0xff],1,{rate:48000,channels:1}));
@@ -117,6 +119,7 @@ test('a delayed codec capability probe cannot install a decoder into a replaceme
   let finishProbe;
   const { decoder, instances, errors }=harness(t,{supported:()=>new Promise(resolve=>{finishProbe=resolve;})});
   const opening=decoder.configure(configRecord(fixture.config,1));
+  await new Promise(resolve => setImmediate(resolve));
   await decoder.configure(configRecord({codec:'pcm',sampleRate:44100,channels:2,bitDepth:16,littleEndian:true},2));
   finishProbe(true);assert.equal(await opening,false);assert.equal(instances.length,0);assert.equal(errors.length,0);
 });
@@ -376,4 +379,71 @@ test('NoData diagnostics count generated source silence only while enabled and r
   assert.equal(stats.packets, 2); assert.equal(stats.frames, 960);
   h.decoder.debug(false); assert.equal(h.decoder.stats(), null);
   h.decoder.debug(true); assert.equal(Object.hasOwn(h.decoder.stats(), 'noDataFrames'), false);
+});
+
+test('native AudioData PCM16 conversion uses one browser copy and preserves its integer output', async t => {
+  const { decoder, instances, outputs, errors } = harness(t);
+  await decoder.configure({ ...configRecord(fixture.config), mode: 'airplay-audio' });
+  await decoder.decode(packetRecord([1], 1, { mode: 'airplay-audio' }));
+  const expected = [-32768, 16383, 0, -16384, 32767, 1], calls = [];
+  const data = { format: 'f32-planar', timestamp: 1000000, sampleRate: 44100, numberOfChannels: 2, numberOfFrames: 3,
+    closed: false, copyTo(target, options) { calls.push(options); assert.ok(target instanceof Int16Array); target.set(expected); },
+    close() { this.closed = true; } };
+  instances[0].callbacks.output(data);
+  assert.deepEqual([...new Int16Array(outputs.at(-1).pcm)], expected);
+  assert.deepEqual(calls, [{ planeIndex: 0, format: 's16' }]); assert.equal(data.closed, true); assert.deepEqual(errors, []);
+});
+
+test('native PCM copy failures remain visible and always close the output', async t => {
+  const { decoder, instances, outputs, errors } = harness(t);
+  await decoder.configure({ ...configRecord(fixture.config), mode: 'airplay-audio' });
+  await decoder.decode(packetRecord([1], 1, { mode: 'airplay-audio' }));
+  const data = outputData([[0], [0]]), failure = new DOMException('Output memory unavailable.', 'OperationError');
+  let copies = 0; data.copyTo = () => { copies++; throw failure; };
+  instances[0].callbacks.output(data);
+  assert.equal(copies, 1); assert.equal(data.closed, true); assert.equal(errors.length, 1);
+  assert.equal(errors[0], failure); assert.equal(outputs.filter(record => record.pcm.byteLength).length, 0);
+});
+
+test('planar-only decoders use bounded WASM conversion with exact clipping, interleave and signed rounding', async t => {
+  const { decoder, instances, outputs, errors } = harness(t);
+  await decoder.configure({ ...configRecord(fixture.config), mode: 'airplay-audio' });
+  await decoder.decode(packetRecord([1], 1, { mode: 'airplay-audio' }));
+  const values = [-Infinity, -1, -0.5, -1 / 65536, 0, 1 / 65536, 0.5, 1, Infinity, NaN];
+  const expected = [-32768, -32768, -16384, 0, 0, 1, 16384, 32767, 32767, 0];
+  const frames = 1000, planes = [0, 1].map(channel => Float32Array.from({ length: frames }, (_, i) => values[(i + channel) % values.length]));
+  let unsupported = 0;
+  for (let batch = 0; batch < 2; batch++) {
+    const data = outputData(planes), copyTo = data.copyTo;
+    data.copyTo = (target, options) => { if (options.format === 's16') unsupported++; return copyTo(target, options); };
+    instances[0].callbacks.output(data); assert.equal(data.closed, true);
+    const pcm = new Int16Array(outputs.at(-1).pcm);
+    for (let i = 0; i < frames; i++) for (let c = 0; c < 2; c++) assert.equal(pcm[i * 2 + c], expected[(i + c) % expected.length]);
+  }
+  assert.equal(unsupported, 1, 'A source format that only supports planar output is not reprobed on every packet');
+  assert.deepEqual(errors, []);
+});
+
+test('PCM endian and 24-bit conversion retain signed high bits across bounded scratch blocks', () => {
+  const expected = [-32768, -12345, -1, 0, 1, 12345, 32767], samples = 40000;
+  for (const bitDepth of [16, 24]) for (const littleEndian of [false, true]) {
+    const width = bitDepth / 8, packet = new Uint8Array(samples * width);
+    for (let i = 0; i < samples; i++) {
+      const value = bitDepth === 24 ? expected[i % expected.length] * 256 + 165 : expected[i % expected.length];
+      for (let byte = 0; byte < width; byte++) packet[i * width + byte] = value >>> ((littleEndian ? byte : width - byte - 1) * 8) & 255;
+    }
+    const decoded = decodePcmPacket(packet.buffer, { bitDepth, channels: 2, littleEndian });
+    const pcm = new Int16Array(decoded); assert.equal(pcm.length, samples);
+    for (let i = 0; i < samples; i++) assert.equal(pcm[i], expected[i % expected.length]);
+    if (bitDepth === 16 && littleEndian) assert.equal(decoded, packet.buffer, 'Native PCM16 layout transfers without a redundant copy');
+  }
+});
+
+test('one PCM measurement updates aggregate and per-stream counters without retaining or rescanning samples', () => {
+  const aggregate = pcmStats(), stream = pcmStats(), pcm = new Int16Array(40000);
+  const pattern = [-32768, -1, 0, 1, 32767]; for (let i = 0; i < pcm.length; i++) pcm[i] = pattern[i % pattern.length];
+  measurePcm(aggregate, pcm.buffer, 2, stream);
+  assert.deepEqual(aggregate, { packets: 1, frames: 20000, nonzero: 32000, peak: 1 }); assert.deepEqual(stream, aggregate);
+  pcm.fill(0); measurePcm(aggregate, pcm.buffer, 2, stream);
+  assert.deepEqual(aggregate, { packets: 2, frames: 40000, nonzero: 32000, peak: 1 }); assert.deepEqual(stream, aggregate);
 });
