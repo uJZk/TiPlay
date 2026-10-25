@@ -50,7 +50,7 @@ def analyze(source, output):
         if event.get('schema') != 1 or event.get('pcmFormat') != 'f32le':
             raise ValueError('Unsupported evidence schema')
         main = event.get('main', {})
-        identity = (name, session, main.get('processorInstance'), main.get('diagnosticRevision'), event['id'])
+        identity = (name, session, main.get('receivedAtMs'), main.get('processorInstance'), main.get('diagnosticRevision'), event['id'])
         if identity in identities:
             continue
         identities.add(identity)

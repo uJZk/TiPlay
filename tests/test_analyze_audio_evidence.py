@@ -28,6 +28,20 @@ class AudioEvidenceAnalysisTest(unittest.TestCase):
             self.assertIsNone(report['events'][0]['acousticCause'])
             self.assertEqual(base64.b64decode(event['blocks'][0]['pcm']), (output / 'event-0000-block-0.f32le').read_bytes())
 
+    def test_page_reload_reusing_local_ids_does_not_drop_new_evidence(self):
+        original = json.loads((ROOT / 'shared/src/test/resources/Browser-audio-evidence-v1.json').read_text())
+        reloaded = json.loads(json.dumps(original))
+        reloaded['main']['receivedAtMs'] += 10000
+        rows = []
+        for index, event in enumerate([original, reloaded]):
+            data = json.dumps(event).encode()
+            rows.append(f'{1000 + index}\t{5 + index}\tbrowser/audio-evidence\t{len(data)}\t{base64.b64encode(data).decode()}\n')
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / 'capture.zip'
+            with zipfile.ZipFile(source, 'w') as archive:
+                archive.writestr('captures/traffic.tsv', ''.join(rows))
+            self.assertEqual(2, module.analyze(source, Path(temp) / 'evidence')['count'])
+
     def test_missing_evidence_is_not_reported_as_no_faults(self):
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / 'old-capture.zip'
