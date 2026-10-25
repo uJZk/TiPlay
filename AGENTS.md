@@ -70,6 +70,10 @@ Resume CarPlay audio tuning from the completed beta.17/code59 and browser v85
 It covers three-second trend/soft-limit SoundTouch catch-up, 5 ms overlap tails,
 LIVI-compatible loan parameters, replay CPU limits, successful signed CI and remaining device acceptance. Preserve the distinction between checked source and published artifacts.
 
+Unreleased browser v86 adds held catch-up with contiguous PCM reserve, progress
+and braking exits; resume at [audio clock roles](docs/Browser-wasm.md#audio-clock-roles).
+The published beta.17 APK and v85 deployment remain the release evidence above.
+
 ## Checks
 
 Run the CI command from .github/workflows/android.yml before reporting a change as done:

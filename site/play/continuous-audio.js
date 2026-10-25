@@ -12,7 +12,8 @@ export const AUDIO_CATCH_UP_LIMIT = 0.2;
 export const AUDIO_CATCH_UP_SOFT_MS = 200;
 const CATCH_UP_HORIZON_MS = 1000, CATCH_UP_RESERVE_MS = 20;
 const CATCH_UP_WINDOW_MS = 3000, CATCH_UP_SAMPLE_MS = 20;
-const CATCH_UP_ADAPTIVE_LIMIT = .05, CATCH_UP_BOOST_SPAN_MS = 100;
+const CATCH_UP_ADAPTIVE_LIMIT = .05, CATCH_UP_RELEASE_PER_SECOND = .1;
+const CATCH_UP_PROGRESS_MS = 2, CATCH_UP_STALL_MS = 1000, CATCH_UP_TARGET_MARGIN_MS = 10;
 
 /** Add rate uncertainty only over the actual PCM/tail contribution. A block's
  * zero padding is neither emitted source content nor a longer output interval.
@@ -174,6 +175,7 @@ export class ContinuousAudio {
   recover(reason) {
     this.catchUpCorrection = this.catchUpTrend = 0;
     this.catchUpObservation = null; this.catchUpSamples = [];
+    this.catchUpBoost = null; this.catchUpBoostArmed = true;
     if (!this.voicePreparation || this.voicePreparation.admitted) {
       this.voiceWaitStartedAt = undefined; this.voiceWaitLastContextMs = undefined; this.voiceWaitElapsedMs = 0;
       this.voiceCandidateFloorFrame = undefined;
@@ -221,13 +223,17 @@ export class ContinuousAudio {
   }
   updateCatchUp(contextMs, frames) {
     const previous = this.catchUpObservation;
+    if (previous && contextMs === previous.contextMs) return;
     const elapsed = previous && contextMs > previous.contextMs
       ? Math.min(50, contextMs - previous.contextMs) : frames * 1000 / this.outputRate;
     // Fit a bounded three-second history rather than differentiating adjacent
     // quanta. Sample at 50Hz so the audio callback does bounded scalar work.
     const samples = this.catchUpSamples ||= [];
     if (samples.length && (contextMs < samples.at(-1).contextMs
-      || contextMs - samples.at(-1).contextMs > CATCH_UP_WINDOW_MS)) samples.length = 0;
+      || contextMs - samples.at(-1).contextMs > CATCH_UP_WINDOW_MS)) {
+      samples.length = 0; this.catchUpTrend = 0; this.catchUpBoost = null;
+      this.catchUpBoostArmed = true;
+    }
     if (Number.isFinite(contextMs) && (!samples.length || contextMs - samples.at(-1).contextMs >= CATCH_UP_SAMPLE_MS)) {
       samples.push({ contextMs, errorMs: this.phaseErrorMs });
       while (samples.length && contextMs - samples[0].contextMs > CATCH_UP_WINDOW_MS) samples.shift();
@@ -244,19 +250,47 @@ export class ContinuousAudio {
     const trend = this.catchUpTrend || 0;
     const adaptive = Math.max(0, Math.min(CATCH_UP_ADAPTIVE_LIMIT,
       this.phaseErrorMs / CATCH_UP_HORIZON_MS + trend / 1000));
-    const excess = Math.max(0, Math.min(1,
-      (this.phaseErrorMs - AUDIO_CATCH_UP_SOFT_MS) / CATCH_UP_BOOST_SPAN_MS));
-    const boost = excess * excess * (3 - 2 * excess);
-    const desired = adaptive + (AUDIO_CATCH_UP_LIMIT - adaptive) * boost;
-    // The soft limit raises the target, never bypassing the temporal slew.
-    const acceleration = .01 + Math.min(.09, Math.max(0, trend) / 1000 + boost * .09);
-    const current = this.catchUpCorrection || 0;
-    this.catchUpCorrection = current + Math.max(-.1 * elapsed / 1000,
+    let current = this.catchUpCorrection || 0;
+    const applied = Number.isFinite(this.phaseCorrectionPpm)
+      ? Math.max(0, Math.min(current, this.phaseCorrectionPpm / 1e6, AUDIO_CATCH_UP_LIMIT)) : current;
+    const brakingMs = applied * applied / (2 * CATCH_UP_RELEASE_PER_SECOND) * 1000;
+    const nearTarget = this.phaseErrorMs <= CATCH_UP_TARGET_MARGIN_MS
+      || (trend < -2 && this.phaseErrorMs <= CATCH_UP_TARGET_MARGIN_MS + brakingMs);
+    let episode = this.catchUpBoost;
+    if (!episode && this.phaseErrorMs <= AUDIO_CATCH_UP_SOFT_MS - 20) this.catchUpBoostArmed = true;
+    if (!episode && this.catchUpBoostArmed !== false && this.phaseErrorMs > AUDIO_CATCH_UP_SOFT_MS && !nearTarget) {
+      episode = this.catchUpBoost = { state: 'ramping', peakMs: this.phaseErrorMs,
+        progressMs: this.phaseErrorMs, progressAt: contextMs, startedAt: contextMs };
+      this.catchUpBoostArmed = false;
+    }
+    if (episode) {
+      episode.peakMs = Math.max(episode.peakMs, this.phaseErrorMs);
+      if (this.phaseErrorMs <= episode.progressMs - CATCH_UP_PROGRESS_MS) {
+        episode.progressMs = this.phaseErrorMs; episode.progressAt = contextMs;
+      }
+      // A sustained measured decline locks the previously applied tempo, not a
+      // larger requested rate that the contiguous PCM guard could not supply.
+      if (episode.state === 'ramping' && trend < -2 && contextMs - episode.startedAt >= 200
+        && this.phaseErrorMs <= episode.peakMs - CATCH_UP_PROGRESS_MS) {
+        episode.state = 'holding'; episode.held = Math.max(0, Math.min(current, applied, AUDIO_CATCH_UP_LIMIT));
+        current = episode.held;
+        episode.progressMs = this.phaseErrorMs; episode.progressAt = contextMs;
+      }
+      if (nearTarget || !Number.isFinite(contextMs) || (episode.state === 'holding'
+        && (episode.held <= 0 || contextMs - episode.progressAt >= CATCH_UP_STALL_MS))) {
+        this.catchUpBoost = episode = null;
+      }
+    }
+    const desired = episode ? episode.state === 'holding' ? episode.held : AUDIO_CATCH_UP_LIMIT : adaptive;
+    const acceleration = episode?.state === 'ramping' ? .1
+      : .01 + Math.min(.09, Math.max(0, trend) / 1000);
+    this.catchUpCorrection = current + Math.max(-CATCH_UP_RELEASE_PER_SECOND * elapsed / 1000,
       Math.min(acceleration * elapsed / 1000, desired - current));
     this.catchUpObservation = { contextMs, errorMs: this.phaseErrorMs };
   }
   phaseCorrection(frames, targetKnown = true) {
     if (!targetKnown) {
+      this.catchUpBoost = null; this.catchUpBoostArmed = false;
       // Hold only the previous tiny drift correction while the output mapping
       // is untrusted; never keep a backlog catch-up rate without a target.
       const previous = this.phaseCorrectionPpm / 1e6;
@@ -267,14 +301,20 @@ export class ContinuousAudio {
     const requested = Math.min(AUDIO_CATCH_UP_LIMIT, this.catchUpCorrection || 0);
     const quantumMs = frames * 1000 / this.outputRate;
     const neededMs = CATCH_UP_RESERVE_MS + requested * CATCH_UP_HORIZON_MS + quantumMs * (1 + requested);
-    let end = this.sourceFrame;
+    // Copied input remains in the live DSP even if queue capacity retires its
+    // original packets. Extend the same source frontier, never double-count it.
+    let end = this.backend ? Math.max(this.sourceFrame, this.inputFrame) : this.sourceFrame;
     for (const packet of this.queue) {
       if (packet.first > Math.ceil(end)) break;
       end = Math.max(end, packet.end);
       if ((end - this.sourceFrame) * 1000 / this.rate >= neededMs) break;
     }
     const spareMs = (end - this.sourceFrame) * 1000 / this.rate - CATCH_UP_RESERVE_MS - quantumMs;
-    return Math.max(0, Math.min(requested, spareMs / (CATCH_UP_HORIZON_MS + quantumMs)));
+    const correction = Math.max(0, Math.min(requested, spareMs / (CATCH_UP_HORIZON_MS + quantumMs)));
+    if (correction + 1e-6 < requested) {
+      this.catchUpBoost = null; this.catchUpBoostArmed = false;
+    }
+    return correction;
   }
   checkPhase(targetMs, contextMs, deviceRate, deadline, frames) {
     if (!Number.isFinite(targetMs) || !Number.isFinite(this.rawCursorMs)) return;

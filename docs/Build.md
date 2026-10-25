@@ -21,6 +21,21 @@ root. The beta record below identifies both build and deployment provenance. Eve
 language's download entry opens the GitHub Releases index without a version-specific
 URL. Debug APK metadata retains its diagnostic suffix.
 
+### Browser v86 release
+
+v86 adds held SoundTouch catch-up: above 200 ms it ramps toward 20%, locks the
+previously applied tempo when decline is confirmed, and returns to adaptive
+control when contiguous PCM reserve is insufficient, progress stalls, timing is
+unavailable or braking is needed near the target. DSP-owned input contributes to
+the same contiguous source frontier as queued PCM without double counting.
+
+The source passes **919 browser tests**, including real 250 ms SoundTouch
+catch-up, hold/exit behavior and preservation of the live filter, plus cache,
+public-tree and deployment assembly checks. Android CI is explicitly skipped at
+the user's request for this web-only release. The signed beta.17/code59 APK and
+its source/checksums retain their published bytes; v86 is a separate webpage build.
+Deployment status and public byte verification are recorded below when complete.
+
 ### Beta.17 verification
 
 The implementation uses a three-second error-history PD controller without integral

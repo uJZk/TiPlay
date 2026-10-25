@@ -188,6 +188,27 @@ test('CarPlay eases into a 45ms backlog and tapers using its measured error tren
   h.player.clear();
 });
 
+test('a real 250ms SoundTouch catch-up holds tempo while falling and brakes without resetting the filter', () => {
+  const h = harness({ buffered: true }), step = 128 / 48;
+  let backend, held = false, minimum = Infinity;
+  try {
+    for (let q = 0; q < 10000; q++) {
+      if (q % 7 === 0) h.feed(Math.ceil((q * step + 2000) * 48), q * step);
+      h.player.render(h.sourceBase + q * step + (q > 20 ? 250 : 0), q * step, h.clock, 128, h.block);
+      backend ||= h.player.backend;
+      assert.equal(h.player.backend, backend);
+      assert.ok(h.block.every(Number.isFinite));
+      if (h.player.catchUpBoost?.state === 'holding') held = true;
+      if (q > 20) minimum = Math.min(minimum, h.player.phaseErrorMs);
+    }
+    assert.ok(held, 'the real pipeline enters hold while source error is falling');
+    assert.ok(minimum > -5, `braking cannot produce a large lead: ${minimum}`);
+    assert.ok(Math.abs(h.player.phaseErrorMs) < 1);
+    assert.equal(h.player.catchUpBoost, null);
+    assert.deepEqual(h.player.recoveryCounts, {});
+  } finally { h.player.clear(); }
+});
+
 test('expired active SoundTouch output fades from the published edge and releases both engines', () => {
   const h = harness({ buffered: true }); h.feed(96000);
   try {
@@ -228,28 +249,82 @@ test('equal errors command different acceleration according to their growth tren
   } finally { growing.player.clear(); shrinking.player.clear(); }
 });
 
-test('the 200ms soft limit blends toward 20 percent without a speed step', () => {
-  const corrections = [];
-  for (const error of [199.999, 200, 200.001, 250, 300]) {
+test('crossing 200ms ramps toward 20 percent instead of jumping to it', () => {
+  for (const error of [199, 200, 200.001, 250, 300]) {
     const h = harness();
     try {
       h.player.phaseErrorMs = error;
       let previous = 0;
-      for (let q = 0; q < 4000; q++) {
+      for (let q = 0; q < 2000; q++) {
         h.player.updateCatchUp(q * 128 / 48, 128);
         const rate = h.player.catchUpCorrection;
         assert.ok(rate >= 0 && rate <= .2);
-        assert.ok(Math.abs(rate - previous) <= .1 * 128 / 48000 + 1e-12,
-          'soft-limit pressure cannot bypass the speed slew');
+        assert.ok(Math.abs(rate - previous) <= .1 * 128 / 48000 + 1e-12);
+        if (!q) assert.ok(rate < .001, 'the threshold never causes an instantaneous tempo jump');
         previous = rate;
       }
-      corrections.push(previous);
+      assert.equal(previous, error > 200 ? .2 : .05);
     } finally { h.player.clear(); }
   }
-  assert.equal(corrections[1], .05);
-  assert.ok(Math.abs(corrections[2] - corrections[1]) < 1e-9, 'crossing 200ms is continuous');
-  assert.ok(Math.abs(corrections[3] - .125) < 1e-9);
-  assert.equal(corrections[4], .2);
+});
+
+function boostTrace(h, error, start, duration) {
+  const step = 128 / 48;
+  for (let time = start; time < start + duration; time += step) {
+    h.player.phaseErrorMs = typeof error === 'function' ? error(time - start) : error;
+    h.player.updateCatchUp(time, 128);
+  }
+}
+
+test('declining delay holds the applied boost below 200ms, then releases after sustained lack of progress', () => {
+  const h = harness();
+  try {
+    boostTrace(h, 300, 0, 3500);
+    h.player.phaseCorrectionPpm = 120000; // Capacity allowed 12%, not the requested 20%.
+    boostTrace(h, t => 300 - t * .05, 3500, 2500);
+    assert.equal(h.player.catchUpBoost.state, 'holding');
+    assert.ok(Math.abs(h.player.catchUpCorrection - .12) < 1e-9);
+    assert.ok(h.player.phaseErrorMs < 200);
+    boostTrace(h, 175, 6000, 600);
+    assert.equal(h.player.catchUpBoost.state, 'holding', 'a short plateau does not release the tempo');
+    boostTrace(h, 175, 6600, 600);
+    assert.equal(h.player.catchUpBoost, null, 'a full second without meaningful decline returns to adaptive control');
+    assert.ok(h.player.catchUpCorrection < .12);
+  } finally { h.player.clear(); }
+});
+
+test('a stalled high-delay boost cannot repeatedly rearm while still above the soft limit', () => {
+  const h = harness();
+  try {
+    boostTrace(h, 350, 0, 3500);
+    h.player.phaseCorrectionPpm = 100000;
+    boostTrace(h, t => 350 - t * .04, 3500, 1500);
+    assert.equal(h.player.catchUpBoost.state, 'holding');
+    boostTrace(h, 290, 5000, 3000);
+    assert.equal(h.player.catchUpBoost, null);
+    assert.equal(h.player.catchUpBoostArmed, false);
+    assert.ok(h.player.catchUpCorrection <= .05);
+    boostTrace(h, 180, 8000, 100);
+    boostTrace(h, 210, 8100, 100);
+    assert.equal(h.player.catchUpBoost.state, 'ramping');
+  } finally { h.player.clear(); }
+});
+
+test('held tempo brakes before the target and is cancelled by unknown timing or inadequate PCM', () => {
+  for (const trigger of ['target', 'clock', 'pcm', 'reset']) {
+    const h = harness();
+    try {
+      boostTrace(h, 300, 0, 3500);
+      h.player.phaseCorrectionPpm = 100000;
+      boostTrace(h, t => 300 - t * .03, 3500, 2000);
+      assert.equal(h.player.catchUpBoost.state, 'holding');
+      if (trigger === 'target') boostTrace(h, 50, 5500, 100);
+      if (trigger === 'clock') h.player.phaseCorrection(128, false);
+      if (trigger === 'pcm') h.player.phaseCorrection(128);
+      if (trigger === 'reset') h.player.recover('clock-generation');
+      assert.equal(h.player.catchUpBoost, null, trigger);
+    } finally { h.player.clear(); }
+  }
 });
 
 test('trend history rejects quantum jitter and forgets old errors after a time gap', () => {
@@ -280,6 +355,22 @@ test('CarPlay does not accelerate into a source hole or chase an unavailable tar
   h.player.render(null, 256 / 48, h.clock, 128, h.block);
   assert.equal(h.player.phaseCorrectionPpm, 0, 'a stale phase error cannot request 20 percent acceleration');
   h.player.clear();
+});
+
+test('the catch-up reserve includes real DSP-buffered input after original packets retire', () => {
+  const h = harness({ buffered: true }); h.feed(96000);
+  try {
+    for (let q = 0; q < 200; q++) h.player.render(h.sourceBase + q * 128 / 48 + (q > 10 ? 45 : 0),
+      q * 128 / 48, h.clock, 128, h.block);
+    assert.ok(h.player.inputFrame > h.player.sourceFrame);
+    for (const packet of h.player.queue.splice(0)) h.player.retire(packet, 'capacity');
+    h.player.phaseErrorMs = 100; h.player.catchUpCorrection = .001;
+    assert.ok(h.player.phaseCorrection(128) > 0, 'retired input still owned by SoundTouch is not treated as an empty pipeline');
+    h.player.catchUpBoost = { state: 'holding', held: .2 };
+    h.player.catchUpCorrection = .2;
+    assert.ok(h.player.phaseCorrection(128) < .2, 'a small internal tail cannot sustain 20 percent catch-up');
+    assert.equal(h.player.catchUpBoost, null);
+  } finally { h.player.clear(); }
 });
 
 test('continuous output sample count survives clock refinement and dynamic packet jitter', () => {

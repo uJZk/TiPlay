@@ -41,11 +41,20 @@ Soxr already adjusts its conversion ratio continuously for source pacing, the
 Android/browser clock mapping, effective render progress and bounded residual
 phase error for mirror audio. CarPlay corrects residual phase with SoundTouch
 tempo instead: a three-second trend guides a bounded PD controller; above 200 ms
-phase error, a soft boost approaches 20% over the next 100 ms of error. Temporal
+phase error initiates boosted catch-up toward 20%. Temporal
 slew and contiguous PCM reserve constrain the applied tempo. Packet bursts and
 decoder lookahead are not clock measurements. WSOLA overlap positions carry a
 conservative 20 ms source-age allowance; they are not exact source-sample proofs. Real shortages and excessive
 source age still require the existing silence/recovery policy.
+
+v86 changes the soft-limit response: above 200 ms it ramps toward
+20%, then holds the previously applied tempo once sustained decline is confirmed.
+The hold ends when contiguous playable PCM cannot sustain that rate, timing is
+unavailable, progress is under 2 ms for one second, or the remaining error reaches
+the braking distance plus a 10 ms margin. A 20 ms rearm hysteresis prevents
+repeated boosts above the soft limit after a stall. Copied input still owned by
+SoundTouch extends the same source frontier as queued PCM; it is not double-counted.
+The beta.17 source archive's v85 retains the previous 200–300 ms boost blend.
 
 URL playback retains `currentTime` as the coordinate required by native
 `AudioBufferSourceNode.start()`. Its audio/video/media positions share that graph;
