@@ -95,8 +95,8 @@ internal class BrowserAdvancedPage(
             if (!refreshing) {
                 if (enabled && !DiagnosticLogActions.busy) {
                     AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.DEBUG)
+                    DiagnosticLogDialog.captureStartedInForeground()
                     refresh()
-                    showLogs()
                 } else if (!enabled) DiagnosticLogActions.perform(activity, DiagnosticLogAction.STOP, ::refresh)
             }
         }

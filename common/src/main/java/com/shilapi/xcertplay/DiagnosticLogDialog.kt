@@ -18,6 +18,7 @@ internal class DiagnosticLogDialog(
 ) {
     companion object {
         private var restartPromptClaimed = false
+        fun captureStartedInForeground() { restartPromptClaimed = true }
         fun claimRestartPrompt(): Boolean {
             if (restartPromptClaimed || !RawTraffic.enabled) return false
             restartPromptClaimed = true
@@ -53,27 +54,37 @@ internal class DiagnosticLogDialog(
             addView(status)
         }
         val builder = AlertDialog.Builder(activity).setTitle(R.string.settings_view_logs).setView(content)
-        if (debug) {
-            fun action(title: Int, selected: DiagnosticLogAction?) {
-                content.addView(Button(activity).apply {
-                    setText(title)
-                    isAllCaps = false
-                    minHeight = ui.dp(48)
-                    setOnClickListener {
-                        dialog?.dismiss()
-                        selected?.let(perform)
-                    }
-                }, LinearLayout.LayoutParams(-1, -2))
-            }
-            action(R.string.settings_capture_stop_export, DiagnosticLogAction.STOP_EXPORT)
-            action(R.string.settings_capture_stop_share, DiagnosticLogAction.STOP_SHARE)
-            action(R.string.settings_capture_discard, DiagnosticLogAction.STOP)
-            action(R.string.settings_logs_minimize, null)
-        } else {
-            builder.setPositiveButton(R.string.save) { _, _ -> perform(DiagnosticLogAction.SAVE) }
-                .setNeutralButton(R.string.share) { _, _ -> perform(DiagnosticLogAction.SHARE) }
-                .setNegativeButton(R.string.close, null)
+        val actions = if (debug) listOf(
+            R.string.settings_capture_stop_export to DiagnosticLogAction.STOP_EXPORT,
+            R.string.settings_capture_stop_share to DiagnosticLogAction.STOP_SHARE,
+            R.string.settings_capture_discard to DiagnosticLogAction.STOP,
+            R.string.settings_logs_minimize to null,
+        ) else listOf(
+            R.string.save to DiagnosticLogAction.SAVE,
+            R.string.share to DiagnosticLogAction.SHARE,
+            R.string.close to null,
+        )
+        val buttons = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            isBaselineAligned = false
+            setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(8))
         }
+        actions.forEach { (title, selected) ->
+            buttons.addView(Button(activity, null, android.R.attr.buttonBarButtonStyle).apply {
+                setText(title)
+                isAllCaps = false
+                isSingleLine = false
+                maxLines = Int.MAX_VALUE
+                minWidth = 0
+                minimumWidth = 0
+                minHeight = ui.dp(48)
+                setOnClickListener {
+                    dialog?.dismiss()
+                    selected?.let(perform)
+                }
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        content.addView(buttons, LinearLayout.LayoutParams(-1, -2))
         dialog = builder.create().also {
             it.setOnDismissListener { handler.removeCallbacks(update) }
             it.show()

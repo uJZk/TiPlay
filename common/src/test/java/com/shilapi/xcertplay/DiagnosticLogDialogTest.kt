@@ -1,11 +1,11 @@
 package com.shilapi.xcertplay
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.LinearLayout
 import com.shilapi.xcertplay.diagnostics.RawTraffic
 import com.shilapi.xcertplay.host.R
 import org.junit.Assert.*
@@ -20,6 +20,9 @@ import org.robolectric.shadows.ShadowAlertDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], qualifiers = "zh-rCN", manifest = Config.NONE)
 class DiagnosticLogDialogTest {
+    private fun buttons(view: View): List<Button> = if (view is Button) listOf(view)
+        else if (view is ViewGroup) (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) } else emptyList()
+
     @Test fun ordinaryDialogOffersSaveShareAndCloseWithoutStartingCapture() {
         val controller = Robolectric.buildActivity(Activity::class.java).setup()
         val activity = controller.get()
@@ -29,10 +32,9 @@ class DiagnosticLogDialogTest {
             AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.STANDARD)
             logs.show()
             val dialog = ShadowAlertDialog.getLatestAlertDialog()
-            assertEquals(activity.getString(R.string.save), dialog.getButton(AlertDialog.BUTTON_POSITIVE).text)
-            assertEquals(activity.getString(R.string.share), dialog.getButton(AlertDialog.BUTTON_NEUTRAL).text)
-            assertEquals(activity.getString(R.string.close), dialog.getButton(AlertDialog.BUTTON_NEGATIVE).text)
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+            val actionsInDialog = buttons(dialog.window!!.decorView).filter { it.visibility == View.VISIBLE }
+            assertEquals(listOf("保存", "分享", "关闭"), actionsInDialog.map { it.text.toString() })
+            actionsInDialog.single { it.text == "保存" }.performClick()
             shadowOf(Looper.getMainLooper()).idle()
             assertEquals(listOf(DiagnosticLogAction.SAVE), actions)
             assertFalse(RawTraffic.enabled)
@@ -44,8 +46,6 @@ class DiagnosticLogDialogTest {
         val activity = controller.get()
         val actions = mutableListOf<DiagnosticLogAction>()
         val logs = DiagnosticLogDialog(activity, perform = { actions.add(it) })
-        fun buttons(view: View): List<Button> = if (view is Button) listOf(view)
-            else if (view is ViewGroup) (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) } else emptyList()
         try {
             AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.DEBUG)
             logs.show()
@@ -68,4 +68,40 @@ class DiagnosticLogDialogTest {
             RawTraffic.clear(); DiagnosticLogs.resetForTest(); controller.pause().stop().destroy()
         }
     }
+    @Test fun bothModesUseTheSameBottomButtonBarAndFitNarrowLargeText() {
+        val controller = Robolectric.buildActivity(Activity::class.java).setup()
+        val activity = controller.get()
+        activity.resources.configuration.fontScale = 1.5f
+        val logs = DiagnosticLogDialog(activity, perform = {})
+        val styles = mutableListOf<List<Any>>()
+        try {
+            for (level in listOf(DiagnosticLogLevel.STANDARD, DiagnosticLogLevel.DEBUG)) {
+                AirPlayPersistence.saveDiagnosticLogLevel(activity, level)
+                logs.show()
+                val dialog = ShadowAlertDialog.getLatestAlertDialog()
+                val decor = dialog.window!!.decorView
+                decor.measure(View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(1200, View.MeasureSpec.AT_MOST))
+                decor.layout(0, 0, decor.measuredWidth, decor.measuredHeight)
+                val controls = buttons(decor).filter { it.visibility == View.VISIBLE }
+                val bar = controls.first().parent as LinearLayout
+                assertEquals(LinearLayout.HORIZONTAL, bar.orientation)
+                assertTrue(controls.all { it.parent === bar })
+                assertTrue(controls.last().right <= bar.width - bar.paddingRight)
+                controls.forEach { button ->
+                    assertEquals(1f, (button.layoutParams as LinearLayout.LayoutParams).weight)
+                    assertEquals(button.text.length, button.layout.getLineEnd(button.lineCount - 1))
+                }
+                val button = controls.first()
+                styles.add(listOf(button.textSize, button.minHeight, button.paddingLeft, button.paddingRight,
+                    button.background.javaClass, button.currentTextColor))
+                logs.close()
+            }
+            assertEquals(styles[0], styles[1])
+        } finally {
+            logs.close(); AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.STANDARD)
+            RawTraffic.clear(); DiagnosticLogs.resetForTest(); controller.pause().stop().destroy()
+        }
+    }
+
 }

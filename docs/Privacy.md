@@ -12,7 +12,8 @@ records incoming CarPlay/webpage streams and full Android/web diagnostic message
 without redaction; these may contain private media, credentials and identifiers.
 Debug is opt-in and persists while enabled. Restarting resumes capture and opens
 its log dialog. Minimize hides the dialog while recording continues. Advanced
-settings provides a Debug switch and one View logs button.
+settings provides a Debug switch and View logs button. Enabling does not open the
+dialog. Both modes share the same bottom button bar.
 
 Ordinary logs offer Save/Share/Close. Debug offers End and export/End and share/Discard/
 Minimize. Ending, Discard or turning off the switch stops capture and clears raw journals.

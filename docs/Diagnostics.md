@@ -21,9 +21,9 @@ negotiated viewport or touch coordinates. Its fields are:
 | Delta | Latest synchronized canvas submission time minus iPhone scheduled presentation time; unavailable without a new synchronized draw within one second. This is not capture-to-display latency. |
 | Drops | Explicit browser input, scheduler, transfer-replacement and presentation discards in the current video configuration. It cannot count decoder-internal, network or phone loss. Replacement streams reset it; repeating a configuration does not. |
 
-Debug defaults off on a fresh install. Advanced settings has a **Debug mode** switch
-and one **View logs** button. Enabled state persists; a new process resumes capture
-and opens the log dialog.
+Debug defaults off. Enabling starts capture silently; **View logs** opens its dialog.
+Both modes share a bottom text-button bar. Enabled state persists: a new process
+resumes capture and opens the dialog.
 
 - Debug off: **Save / Share / Close**, using redacted Android/web logs.
 - Debug on: **End and export / End and share / Discard / Minimize**.
@@ -158,11 +158,10 @@ Debug captures contain private media, credentials and identifiers; review before
 sharing and keep them out of Git. Disk pressure does not automatically stop capture.
 
 
-Capture/compression and browser audio checks passed for beta.18. Current UI verification:
-**154 tests passed**, covering dialogs, switches, spacing/translations, cleanup,
-export/share survival and failure retention. Debug APK build and resource/public-tree
-checks pass. Full CI remains skipped. Vehicle follow-up: microphone-active audio/echo,
-restart dialog, sustained CPU/storage, screen-off capture and full storage.
+Dialog/switch/spacing tests pass, including shared button styling on narrow large-text
+screens and no popup on enable. Full CI and APK assembly were skipped for this
+follow-up. Vehicle checks remain: microphone-active audio/echo, restart dialog,
+sustained CPU/storage, screen-off capture and full storage.
 
 `captureIntegrity.timing` and `RAW_CAPTURE_TIMING` aggregate completed append calls,
 lock-wait/append totals and maxima for the current or last capture session, including

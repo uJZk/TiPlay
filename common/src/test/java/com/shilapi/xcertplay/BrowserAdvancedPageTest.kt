@@ -118,14 +118,15 @@ class BrowserAdvancedPageTest {
         assertEquals(DiagnosticLogLevel.STANDARD, AirPlayPersistence.loadDiagnosticLogLevel(activity))
         toggle.performClick()
         assertEquals(DiagnosticLogLevel.DEBUG, AirPlayPersistence.loadDiagnosticLogLevel(activity))
-        assertEquals(2, progressShows)
+        assertEquals(1, progressShows)
+        assertFalse(DiagnosticLogDialog.claimRestartPrompt())
         assertEquals(0, changes)
         page = create()
         assertTrue(views(page.view).filterIsInstance<Switch>().single {
             it.text == activity.getString(R.string.settings_debug_logging)
         }.isChecked)
         button(R.string.settings_view_logs).performClick()
-        assertEquals(3, progressShows)
+        assertEquals(2, progressShows)
         assertEquals(1, views(page.view).filterIsInstance<Button>().count {
             it.text == activity.getString(R.string.settings_view_logs)
         })
