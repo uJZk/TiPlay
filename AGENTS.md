@@ -56,7 +56,7 @@ and measured slower-case exceptions. Rebuild and byte-verify the binaries using
 record frame-based live timing, causal output probes and natural URL completion;
 [Testing](docs/Testing.md#browser-wasm-verification) records browser and Android
 verification, including faulty-currentTime Chromium runs.
-The current published prerelease is beta.16/code58 with webpage v84. Its CarPlay
+The current published prerelease is beta.17/code59 with webpage v85. Its CarPlay
 session/resource and single-initial-SETUP boundaries are documented in
 [AirPlay](docs/AirPlay.md#carplay-coexistence); [Build](docs/Build.md#beta-release)
 records its exact build commit, published artifacts, verification and signer/runtime/source provenance.
@@ -65,11 +65,10 @@ The independent
 and vehicle uploads remain separate unfinished work; native WebRTC audio tracks
 remain a separate non-URL alternative.
 
-Resume the beta.17/code59 and browser v85 delivery at
-[the candidate verification record](docs/Build.md#beta17-candidate-verification).
+Resume CarPlay audio tuning from the completed beta.17/code59 and browser v85
+[verification record](docs/Build.md#beta17-verification).
 It covers three-second trend/soft-limit SoundTouch catch-up, 5 ms overlap tails,
-LIVI-compatible loan parameters, replay CPU limits and outstanding signed CI/device
-acceptance. Preserve the distinction between checked source and published artifacts.
+LIVI-compatible loan parameters, replay CPU limits, successful signed CI and remaining device acceptance. Preserve the distinction between checked source and published artifacts.
 
 ## Checks
 
