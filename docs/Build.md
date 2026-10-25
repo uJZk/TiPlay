@@ -8,7 +8,7 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is **0.2.20-beta.17** (code **59**). Run
+prerelease is **0.2.20-beta.18** (code **60**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
 the deployed page uses **v86** with WebRTC DataChannel as the formal live-media path.
@@ -214,69 +214,48 @@ The signed beta.17/code59 APK, matching source ZIP and checksums remain unchange
 built from `d8708330e6b86f33cb212a7af66651cc397efd10` with archived webpage v85.
 All five WASM binaries retain their v85 bytes and prior reproducibility evidence.
 
-## Beta.18 release preparation
-
-Version 0.2.20-beta.18/code60 contains persistent diagnostic capture, dismissible
-background progress, live Zstandard level 3 capture and matching exported logs,
-redacted Standard reports and browser navigation/Siri playback during microphone use.
-Targeted shared/common tests and the phone Debug APK passed; see
-[Diagnostics](Diagnostics.md) for checks and physical acceptance limits. Full Android
-CI is skipped by explicit user request. The signed-release workflow still performs
-release lint/build and APK/runtime verification before publication.
-
 ## Beta release
 
-Published [TiPlay 0.2.20-beta.17](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.17),
-code **59**, is prerelease **423120454**, published at **2026-10-25 11:21:23 UTC+08:00**.
-The signed APK, matching committed source ZIP and webpage v85 share build commit
-`d8708330e6b86f33cb212a7af66651cc397efd10`. The
-[signed workflow](https://github.com/uJZk/TiPlay/actions/runs/40156936762)
-passed release lint/build and uploaded the three independently verified assets:
+Published [TiPlay 0.2.20-beta.18](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.18), code **60**, at **2026-10-25 12:36:16 UTC+08:00**.
+Build commit: `8614c665616b49199e8307628fc3fd8f15324504`. The [signed workflow](https://github.com/uJZk/TiPlay/actions/runs/40161926481)
+passed Release lint/build, runtime checks and draft upload. Published APK/source/checksum
+assets match the independently verified draft attachments and checksums:
 
 | Asset | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `TiPlay-0.2.20-beta.17.apk` | 101,094,541 | `7734096f42e2dbbab49099668e7e65fae802bf84af59493d20f86730a2db253f` |
-| `TiPlay-0.2.20-beta.17-source.zip` | 20,927,265 | `d4df070d45b624c4591507669eede9d34bee479f91596eed1000b4466dd8289d` |
-| `SHA256SUMS.txt` | 191 | `ea85aa6162393af79ae7cab1354691e1421006df05c99fa434303a343401eb3e` |
+| `TiPlay-0.2.20-beta.18.apk` | 103,722,534 | `8a1c0d68eda32f8c68b844b10fdfdb9722e71c9a5172abaf9f390a22d4a3188d` |
+| `TiPlay-0.2.20-beta.18-source.zip` | 20,938,415 | `485c54dd81bab37ae4f4ffc7c29ea17f58b1a60cab110655c506b574d4223d6f` |
+| `SHA256SUMS.txt` | 191 | `b236914b96d307bc8bf4512e47ec267ab1ecaae3883b0032c14785d2dfba18bb` |
 
-Publication preserved all three verified asset IDs, sizes and digests. Anonymous
-release/index/checksum GETs and asset HEADs passed at **2026-10-25 11:22:11 UTC+08:00**.
-The checksum bytes and final content lengths match; the release is a public
-prerelease and its lightweight tag points to the exact build commit.
+### Verification and scope
 
-### Verification
+Targeted checks passed: 35 shared and 146 common tests, merged-main integration,
+compression round trips, Debug APK build, nine release-draft tests and two site tests.
+**Full Android CI was skipped by explicit user request.** Release lint/build and
+independent artifact checks remain separate from that skipped suite.
 
-The [Android CI run](https://github.com/uJZk/TiPlay/actions/runs/40156155994)
-passed **914 browser tests**, all required shared/common/home Android unit tests,
-all three debug lint/build targets, native libsoxr checks and byte-for-byte WASM
-reproduction. Real Chromium capture replay and frozen-currentTime playback passed.
-The [beta.17 verification record](#beta17-verification) describes controller,
-tail, CPU-measurement and real-device acceptance boundaries.
+The APK is non-debug `com.ujzk.tiplay`, min SDK 28, target SDK 37. Signing SHA-256
+matches beta.17: `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`. Exactly two runtime identity files are
+packaged, verified byte-for-byte against pinned DiPlay 0.2.18 inputs by the workflow;
+no extra credential containers are present. Source ZIP bytes match `git archive`
+of the exact build commit. All four Android ABIs include Zstandard JNI; the APK
+contains 43 native libraries, including 21 ELF64 libraries with at least 16 KiB LOAD
+alignment. `zipalign -P 16` and signature verification pass.
 
-The APK is non-debug `com.ujzk.tiplay`, minimum SDK **28**, target SDK **37**.
-Its signing certificate matches beta.16, SHA-256
-`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`.
-Exactly two runtime identity files match beta.16's pinned DiPlay 0.2.18 inputs
-byte-for-byte, with no extra credential containers. All **2,319 source files**
-match `git archive` of the exact build commit. See the
-[experimental identity notice](Third-party-notices.md#experimental-authentication-data).
-
-The four primary ABIs (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`) and three
-inherited JNA files preserve the previous **39-library** set. All **19** ELF64
-libraries meet 16 KiB LOAD alignment; `zipalign -P 16` passes.
-
-### Remaining scope
-
-Real-car CarPlay, complete Bluetooth audio and iPhone AirPlay acceptance remain
-pending. Software checks do not establish speaker/panel latency or elimination
-of every audible click. The older approximately 1.8-second clock-progress
-difference still has no confirmed cause. Debug capture retains disk backpressure.
-Physical playback and parameter work remain in [Todo](Todo.md#browser-and-carplay-audio);
-the independent [Cloudflare comparison and uploads](Todo.md#cloudflare-workers-audio-comparison)
-remain unimplemented. The ChatGPT diagnostic page remains independent v2.
+This release adds persistent diagnostic capture with a dismissible progress window,
+Zstandard level 3 realtime capture/export, redacted Standard reports and browser
+Siri/navigation downlink during microphone demand. The generated product version is
+beta.18; the browser playback revision remains v86. [Diagnostics](Diagnostics.md)
+records capture limits and physical follow-up. Real-car audio/echo, screen-off and
+sustained capture CPU/storage checks remain unrun; software checks do not prove
+speaker/panel timing. The [experimental runtime identity notice](Third-party-notices.md#experimental-authentication-data) still applies.
 
 ### Previous release provenance
 
+- [Beta.17](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.17), code59/v85,
+  published from `d8708330e6b86f33cb212a7af66651cc397efd10`; APK SHA-256
+  `7734096f42e2dbbab49099668e7e65fae802bf84af59493d20f86730a2db253f`.
+  Its CI/signed workflow evidence and original release assets remain unchanged.
 - [Beta.16](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.16), code58/v84,
   prerelease **422536688**, was published **2026-10-24 13:44:46 UTC+08:00** from
   `572207cc9a16c0d13d287e5cd3612ea79767eb93`.
