@@ -11,9 +11,9 @@ The Android/browser product version comes from `tiplayVersionName` and
 prerelease is **0.2.20-beta.17** (code **59**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v85** with WebRTC DataChannel as the formal live-media path.
-The published **beta.17/code59**, webpage **v85** adds overlapping 5 ms recovery
-tails and pitch-preserving SoundTouch CarPlay catch-up up to 20%.
+the deployed page uses **v86** with WebRTC DataChannel as the formal live-media path.
+The **beta.17/code59** build introduced overlapping 5 ms recovery tails and
+pitch-preserving SoundTouch CarPlay catch-up up to 20%; v86 adds held catch-up.
 The historical beta.16 APK/webpage v84 build is recorded below. Software checks are in [Testing](Testing.md#webrtc-integrated-acceptance).
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
 independent `/webrtc/` subsite without an alias or redirect; the APK defaults to the
@@ -34,7 +34,9 @@ catch-up, hold/exit behavior and preservation of the live filter, plus cache,
 public-tree and deployment assembly checks. Android CI is explicitly skipped at
 the user's request for this web-only release. The signed beta.17/code59 APK and
 its source/checksums retain their published bytes; v86 is a separate webpage build.
-Deployment status and public byte verification are recorded below when complete.
+The [Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/40159166211)
+succeeded for `d9af73b082afc8db094c11ecdae9475d53501828`; public byte verification
+is recorded in [the current deployment](#current-browser-deployment).
 
 ### Beta.17 verification
 
@@ -101,7 +103,8 @@ packages are defined by the Android workflow.
 
 ## Browser WASM build
 
-The verified browser revision is **v85**. Its source uses genuine WASM for
+Browser **v86** uses the WASM binaries reproduced for **v85**, unchanged by this
+web-only release. Its source uses genuine WASM for
 libsoxr, AAC-ELD and bulk live-audio DSP, and SoundTouch for live/URL tempo.
 It also removes live timing's dependence on the public `currentTime` getter;
 the [clock roles](Browser-wasm.md#audio-clock-roles) distinguish render frames,
@@ -186,25 +189,30 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Current browser deployment
 
-The formal root webpage **v85** and signed beta.17/code59 APK come from
-`d8708330e6b86f33cb212a7af66651cc397efd10`. The
-[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/40156155990) succeeded.
-Every language's download entry opens the version-independent
-[GitHub Releases index](https://github.com/uJZk/TiPlay/releases).
+The formal root webpage **v86** comes from
+`d9af73b082afc8db094c11ecdae9475d53501828`. The manually dispatched
+[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/40159166211) succeeded.
+The publication commits use `[skip ci]`; Android CI was explicitly skipped for
+this web-only update. The source passed 919 browser tests and deployment/cache/
+public-tree checks before publication.
 
-Independent public verification at **2026-10-25 10:54:40 UTC+08:00** compared all
-**184** files (**11,882,012 bytes**) with the committed assembly: every byte
+Independent public verification at **2026-10-25 11:42:27 UTC+08:00** compared all
+**184** files (**11,884,504 bytes**) with the committed assembly: every byte
 matches, all **88** Service Worker entries are present, all **5** WASM binaries
-use `application/wasm`, and no file redirects. Detailed artifacts and logs remain
-outside Git. These are deployment/source checks, not vehicle audio acceptance.
+use `application/wasm`, and no file redirects. Every language's download entry
+opens the version-independent [Releases index](https://github.com/uJZk/TiPlay/releases).
+Detailed artifacts and logs remain outside Git. These checks do not establish
+vehicle audio quality or physical speaker timing.
 
-v85 adds pitch-preserving SoundTouch live tempo with bounded three-second trend
-control, a 200 ms phase-error soft limit and a 20% maximum catch-up rate. It
-preserves the non-renewable 5 ms recovery edge even after fresh audio expires.
-Two updated SoundTouch binaries reproduce byte-for-byte with the pinned toolchain;
-clock conversion remains in libsoxr. The previous beta.16/v84 deployment used
-`572207cc9a16c0d13d287e5cd3612ea79767eb93`; its historical publication evidence
-remains with that release and in Git.
+v86 holds the previously applied SoundTouch tempo after delay begins declining.
+Contiguous playable PCM, including input already owned by DSP, determines whether
+that rate is sustainable. Shortage, stalled progress, unavailable clocks and
+braking near the target exit the hold. The [v86 release record](#browser-v86-release)
+and [clock roles](Browser-wasm.md#audio-clock-roles) document its boundaries.
+
+The signed beta.17/code59 APK, matching source ZIP and checksums remain unchanged,
+built from `d8708330e6b86f33cb212a7af66651cc397efd10` with archived webpage v85.
+All five WASM binaries retain their v85 bytes and prior reproducibility evidence.
 
 ## Beta release
 

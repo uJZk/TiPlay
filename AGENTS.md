@@ -56,7 +56,7 @@ and measured slower-case exceptions. Rebuild and byte-verify the binaries using
 record frame-based live timing, causal output probes and natural URL completion;
 [Testing](docs/Testing.md#browser-wasm-verification) records browser and Android
 verification, including faulty-currentTime Chromium runs.
-The current published prerelease is beta.17/code59 with webpage v85. Its CarPlay
+The current published prerelease is beta.17/code59 with webpage v86. Its CarPlay
 session/resource and single-initial-SETUP boundaries are documented in
 [AirPlay](docs/AirPlay.md#carplay-coexistence); [Build](docs/Build.md#beta-release)
 records its exact build commit, published artifacts, verification and signer/runtime/source provenance.
@@ -65,14 +65,15 @@ The independent
 and vehicle uploads remain separate unfinished work; native WebRTC audio tracks
 remain a separate non-URL alternative.
 
-Resume CarPlay audio tuning from the completed beta.17/code59 and browser v85
-[verification record](docs/Build.md#beta17-verification).
+Resume CarPlay audio tuning from the browser v86
+[release record](docs/Build.md#browser-v86-release).
 It covers three-second trend/soft-limit SoundTouch catch-up, 5 ms overlap tails,
-LIVI-compatible loan parameters, replay CPU limits, successful signed CI and remaining device acceptance. Preserve the distinction between checked source and published artifacts.
+LIVI-compatible loan parameters, replay CPU limits and remaining device acceptance. Beta.17 retains its earlier signed CI evidence. Preserve the distinction between checked source and published artifacts.
 
-Unreleased browser v86 adds held catch-up with contiguous PCM reserve, progress
-and braking exits; resume at [audio clock roles](docs/Browser-wasm.md#audio-clock-roles).
-The published beta.17 APK and v85 deployment remain the release evidence above.
+Browser v86 is deployed with held catch-up and contiguous PCM/progress/braking
+exits; [audio clock roles](docs/Browser-wasm.md#audio-clock-roles) describes them.
+Android CI was skipped explicitly for this web-only release; the beta.17 APK
+and its archived v85 source remain unchanged.
 
 ## Checks
 
