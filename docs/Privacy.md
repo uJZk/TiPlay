@@ -16,7 +16,7 @@ the dialog keeps recording in the background.
 
 Capture compresses live with Zstandard level 3. Debug ZIPs contain STORED `.zst`
 entries, including retained process journals; export does not recompress captured
-media. Exported text reports use Zstandard level 9. Saving and stopping preserve captures so failed exports can be retried.
+media. Exported text reports use Zstandard level 3. Saving and stopping preserve captures so failed exports can be retried.
 **Clear captured data** on the diagnostics page or saved-report dialog removes
 retained raw journals while preserving saved files, preferences and metadata logs.
 Active capture begins a new session after clear. Review reports before sharing;

@@ -10,19 +10,18 @@ import java.util.zip.ZipOutputStream
 
 /** Zstandard compresses during capture. ZIP is only a STORED packaging container. */
 internal object CompressedTrafficArchive {
-    private const val LOG_COMPRESSION_LEVEL = 9
     fun write(output: OutputStream, logName: String, report: String, snapshots: List<RawTraffic.Snapshot>, root: File) {
         val directory = java.nio.file.Files.createTempDirectory(root.toPath(), "traffic-export-").toFile()
         try {
             val entries = mutableListOf<Pair<String, File>>()
             fun text(name: String, value: String) {
                 val target = File(directory, "text-${entries.size}.zst")
-                ZstdOutputStreamNoFinalizer(target.outputStream(), LOG_COMPRESSION_LEVEL).use { it.write(value.toByteArray(Charsets.UTF_8)) }
+                ZstdOutputStreamNoFinalizer(target.outputStream(), RawTraffic.COMPRESSION_LEVEL).use { it.write(value.toByteArray(Charsets.UTF_8)) }
                 entries.add("$name.zst" to target)
             }
             text(logName, report)
             text("capture.txt", snapshots.firstOrNull()?.status.orEmpty() + "\n" +
-                "format=zstd-frames-tsv-base64-v1 captureCompression=zstd-level-3 logCompression=zstd-level-9\n" +
+                "format=zstd-frames-tsv-base64-v1 compression=zstd-level-${RawTraffic.COMPRESSION_LEVEL}\n" +
                 "All ZIP entries are STORED. Decompress .zst files with zstd -dc.\n" +
                 "TSV: epochMillis, process-local sequence, channel, byte count, Base64 payload.\n" +
                 "capture/start identifies a session. Each process has a separate file; read in file order.\n" +

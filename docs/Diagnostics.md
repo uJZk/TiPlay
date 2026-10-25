@@ -132,9 +132,9 @@ Standard exports a redacted `.txt` report with no raw history. Debug exports `.z
 as a **STORED-only container**; all compressed content uses Zstandard:
 
 - `<report>.txt.zst`: Android/webpage report and redacted rolling metadata,
-  compressed at Zstandard level 9.
+  compressed at Zstandard level 3.
 - `capture.txt.zst`: format instructions and current-process capture integrity,
-  compressed at Zstandard level 9.
+  compressed at Zstandard level 3.
 - `captures/raw-traffic-<process-id>.tsv.zst`: current and retained process journals,
   copied unchanged, without splitting/decompressing/recompressing media.
 

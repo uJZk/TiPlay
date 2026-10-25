@@ -76,7 +76,7 @@ Android CI was skipped explicitly for this web-only release; the beta.17 APK
 and its archived v85 source remain unchanged.
 
 Resume Android diagnostic UI/compression work from [Diagnostics](docs/Diagnostics.md):
-persisted capture, dismissible background progress, Zstandard level 3 capture/level 9 exported logs and STORED ZIP
+persisted capture, dismissible background progress, one Zstandard level 3 setting for capture and exported logs and STORED ZIP
 exports. Its targeted verification and remaining vehicle checks are recorded there.
 
 ## Checks
