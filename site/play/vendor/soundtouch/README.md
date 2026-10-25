@@ -30,6 +30,23 @@ stores because an extra planar-copy stage regressed measured cases. Exported
 samples are owned copies, and close drops the instance references as well as freeing
 native objects. Compilation is cached; instance state is never shared between streams.
 
+## Live CarPlay tempo
+
+`live-tempo.js` compiles this library before worklet startup. Each worklet owns
+one bounded runtime and each CarPlay stream owns an isolated mono/stereo native
+handle. `tempo_live_create` uses fixed 20 ms sequence, 5 ms seek and 5 ms overlap
+settings; `tempo_set` changes tempo over 0.95–1.20 without changing rate or pitch.
+The live adapter bypasses WSOLA for initial numerical phase noise below 0.01%,
+then retains overlap state through return to 1x. It does not flush during packet
+shortages. Stream recovery disposes both DSP handles and preserves the published
+5 ms output edge. The independent source/device clock ratio remains in libsoxr;
+catch-up never expands its ±5% clock-conversion range.
+
+The URL capability and benchmark policy below remains specific to URL audio.
+Live audio uses portable WASM when SIMD is absent, with an explicit load failure
+rather than a silent resampling substitute. Its CPU and latency need separate
+vehicle acceptance; URL benchmarks do not establish live worklet performance.
+
 ## Capability and performance policy
 
 `soundTouchSimdSupported()` tests native SIMD support. Supported browsers use

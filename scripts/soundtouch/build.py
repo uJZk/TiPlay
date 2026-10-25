@@ -13,7 +13,7 @@ import tarfile
 import tempfile
 
 SOURCE_SHA256 = '3dda3c9ab1e287f15028c010a66ab7145fa855dfa62763538f341e70b4d10abd'
-EXPORTS = ['tempo_create', 'tempo_delete', 'tempo_put', 'tempo_put_planar', 'tempo_available', 'tempo_receive', 'tempo_finish', 'malloc', 'free']
+EXPORTS = ['tempo_live_create', 'tempo_set', 'tempo_create', 'tempo_delete', 'tempo_put', 'tempo_put_planar', 'tempo_available', 'tempo_receive', 'tempo_finish', 'malloc', 'free']
 
 def main():
     root = pathlib.Path(__file__).resolve().parents[2]

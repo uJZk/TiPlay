@@ -137,9 +137,14 @@ for (const [mode, type] of [['carplay', 0], ['airplay-mirror', 6]]) {
     const stepped = scenario(mode, type, { sustained: true });
     assert.equal(stepped.captures.find(value => value.at === 1240).state, 'timestamp-discontinuity');
     assert.equal(stepped.captures.find(value => value.at === 1280).state, 'timestamp');
-    assert.equal(stepped.steps.length, 1, 'the real changed route remains an actual timing correction');
-    assert.ok(Math.abs(stepped.steps[0].phaseErrorMs - 38) < .1);
-    assert.equal(stepped.recoveryCounts['clock-step'], 1);
+    if (mode === 'carplay') {
+      assert.equal(stepped.steps.length, 0, 'a buffered positive route step is caught up without resetting');
+      assert.equal(stepped.recoveryCounts['clock-step'], undefined);
+    } else {
+      assert.equal(stepped.steps.length, 1);
+      assert.ok(Math.abs(stepped.steps[0].phaseErrorMs - 38) < .1);
+      assert.equal(stepped.recoveryCounts['clock-step'], 1);
+    }
     assert.equal(stepped.sourceDeadlineRejectedFrames, 0);
   });
 }

@@ -34,11 +34,12 @@ test('source-deadline evidence keeps the rejected quantum after actual PCM recov
   try {
     absent(h.player.stats()); h.render(0); h.render(quantumMs);
     assert.ok(h.block.some(x => x !== 0)); absent(h.player.stats());
+    const published = h.block.at(-1);
     h.render(10, 310, 7.25);
     const rejectedUpper = h.player.sourceDeltaUpperMs;
     assert.ok(rejectedUpper > 317 && rejectedUpper < 318);
     assert.equal(h.player.sourceDeadlineState, 'violated');
-    assert.ok(h.block.every(x => x === 0));
+    for (let i = 0; i < h.block.length; i++) assert.ok(Math.abs(h.block[i] - published * (239 - i) / 240) < 1e-7);
     assert.equal(h.player.stats().lastSourceDeadlineLimitMs, 300);
     assert.equal(h.player.stats().lastSourceDeadlineUncertaintyMs, 7.25);
     assert.equal(h.player.stats().lastSourceDeadlineDeltaUpperMs, rejectedUpper);

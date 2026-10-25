@@ -162,10 +162,11 @@ internal class CarPlayScreenBorrow(private val send: (Map<String, Any?>) -> Bool
         val resource = linkedMapOf<String, Any?>(
             "resourceID" to 1,
             "transferType" to if (borrowed) 3 else 4,
+            "borrowID" to "VideoPlayback",
         )
         if (borrowed) {
             resource["transferPriority"] = 500 // The driver selected AirPlay.
-            resource["unborrowConstraint"] = 100 // Permit iOS resource preemption.
+            resource["unborrowConstraint"] = 500 // Match the user-initiated loan priority.
         }
         return linkedMapOf("type" to "changeModes", "params" to mapOf("resources" to listOf(resource)))
     }

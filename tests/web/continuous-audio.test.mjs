@@ -102,6 +102,54 @@ test('actual impulse calibration is independent of the upstream vr_delay TODO', 
   assert.notEqual(runtime.filterDelay(48000, 48000), 100000 / 48000);
 });
 
+test('live SoundTouch catches up by 20 percent while preserving a 1kHz tone', async () => {
+  const { LiveResampler } = await import('../../site/play/live-tempo.js');
+  const converter = new LiveResampler(runtime, 48000, 48000, 1);
+  const input = Float32Array.from({ length: 96000 }, (_, i) => Math.sin(i * 2 * Math.PI * 1000 / 48000) * .3);
+  const output = new Float32Array(128), samples = [];
+  let consumed = 0;
+  try {
+    converter.setRatio(1, 0); converter.setTempo(1.2);
+    for (let call = 0; call < 10000; call++) {
+      const result = converter.process(input.subarray(consumed), Math.min(4096, input.length - consumed), output, 128);
+      consumed += result.consumed; samples.push(...output.subarray(0, result.produced));
+      if (!result.consumed && !result.produced && !result.progress && consumed === input.length) break;
+    }
+    assert.ok(samples.length > 77000 && samples.length < 81000, `accelerated duration: ${samples.length}`);
+    let crossings = 0;
+    for (let i = 2001; i < samples.length - 2000; i++) if (samples[i - 1] <= 0 && samples[i] > 0) crossings++;
+    const pitch = crossings * 48000 / (samples.length - 4000);
+    assert.ok(Math.abs(pitch - 1000) < 3, `pitch retained: ${pitch}Hz`);
+    assert.throws(() => converter.setRatio(1.2), /drift range/, 'libsoxr no longer accepts catch-up acceleration');
+    assert.throws(() => converter.setTempo(1.21), /Invalid live tempo/);
+  } finally { converter.dispose(); }
+});
+
+test('real SoundTouch source markers remain inside the conservative deadline allowance through tempo changes', async () => {
+  const { LiveResampler } = await import('../../site/play/live-tempo.js');
+  const converter = new LiveResampler(runtime, 48000, 48000, 1);
+  const input = Float32Array.from({ length: 96000 }, (_, i) => .2 + .3 * i / 96000);
+  const block = new Float32Array(128);
+  let consumed = 0, emitted = 0, virtual = 0;
+  try {
+    converter.setRatio(1, 0);
+    for (let call = 0; call < 10000; call++) {
+      const tempo = emitted < 24000 ? 1.05 : emitted < 48000 ? 1.2 : 1;
+      converter.setTempo(tempo);
+      const result = converter.process(input.subarray(consumed), Math.min(4096, input.length - consumed), block);
+      consumed += result.consumed;
+      for (let i = 0; i < result.produced; i++) if (emitted + i > 512) {
+        const marker = (block[i] - .2) * 96000 / .3;
+        assert.ok(marker >= virtual + i * tempo - converter.sourceUncertaintyMs * 48,
+          `actual source ${marker} must not precede the reported oldest source ${virtual + i * tempo - 960}`);
+      }
+      virtual += result.produced * tempo; emitted += result.produced;
+      if (!result.consumed && !result.produced && !result.progress && consumed === input.length) break;
+    }
+    assert.ok(emitted > 80000);
+  } finally { converter.dispose(); }
+});
+
 function harness({ rate = 48000, channels = 1, mode = 'carplay', buffered = false, sourceBase = 800000, clockRate = 1 } = {}) {
   const credits = [], player = new ContinuousAudio(runtime, rate, channels, 48000,
     (bytes, reason, generation) => credits.push({ bytes, reason, generation }), 6500, { buffered, mode });
@@ -118,6 +166,121 @@ function harness({ rate = 48000, channels = 1, mode = 'carplay', buffered = fals
   }
   return { player, credits, block, feed, clock, sourceBase };
 }
+
+test('CarPlay eases into a 45ms backlog and tapers using its measured error trend without a filter reset', () => {
+  const h = harness({ buffered: true }), step = 128 / 48;
+  h.feed(96000);
+  for (let q = 0; q < 20; q++) h.player.render(h.sourceBase + q * step, q * step, h.clock, 128, h.block);
+  const backend = h.player.backend;
+  const corrections = [];
+  for (let q = 20; q < 8000; q++) {
+    if (q % 7 === 0) h.feed(Math.ceil((q * step + 2000) * 48), q * step);
+    h.player.render(h.sourceBase + q * step + 45, q * step, h.clock, 128, h.block);
+    corrections.push(h.player.phaseCorrectionPpm / 1e6);
+    assert.equal(h.player.backend, backend, 'queued lateness is corrected through the live filter');
+    assert.ok(h.block.every(Number.isFinite));
+  }
+  assert.ok(corrections[0] < .001, 'a sudden 45ms error cannot jump directly to 20 percent');
+  assert.ok(Math.max(...corrections) < .1, 'this transient backlog does not warrant maximum speed');
+  assert.ok(corrections.every(rate => rate >= 0 && rate <= .2));
+  assert.ok(corrections.at(-1) < .001 && h.player.phaseErrorMs < .1, `speed returns toward normal: correction=${corrections.at(-1)}, error=${h.player.phaseErrorMs}`);
+  assert.equal(h.player.recoveryCounts['clock-step'], undefined);
+  h.player.clear();
+});
+
+test('expired active SoundTouch output fades from the published edge and releases both engines', () => {
+  const h = harness({ buffered: true }); h.feed(96000);
+  try {
+    for (let q = 0; q < 200; q++) h.player.render(h.sourceBase + q * 128 / 48 + (q > 10 ? 45 : 0),
+      q * 128 / 48, h.clock, 128, h.block);
+    const backend = h.player.backend, edge = h.block.at(-1);
+    assert.equal(backend.active, true);
+    const raw = h.player.rawCursorMs;
+    h.player.render(raw, 200 * 128 / 48, { ...h.clock, localOriginMs: 0, serverOriginMs: h.sourceBase },
+      128, h.block, 1, { outputAt: raw - h.sourceBase + 400, uncertaintyMs: 0, limitMs: 300 });
+    assert.equal(h.player.lastRecoveryReason, 'source-deadline');
+    for (let i = 0; i < 128; i++) assert.ok(Math.abs(h.block[i] - edge * (239 - i) / 240) < .25 / 32768, `frame=${i}, edge=${edge}, actual=${h.block[i]}, last=${h.player.last[0]}, tail=${h.player.tailRemaining}`);
+    assert.equal(backend.resampler.handle, 0);
+    assert.throws(() => backend.stretch.setTempo(1), /Invalid live tempo/);
+  } finally { h.player.clear(); }
+});
+
+test('equal errors command different acceleration according to their growth trend', () => {
+  const growing = harness(), shrinking = harness();
+  try {
+    for (let q = 0; q <= 375; q++) {
+      const seconds = q * 128 / 48000;
+      growing.player.phaseErrorMs = 20 + 20 * seconds;
+      shrinking.player.phaseErrorMs = 60 - 20 * seconds;
+      growing.player.updateCatchUp(seconds * 1000, 128);
+      shrinking.player.updateCatchUp(seconds * 1000, 128);
+    }
+    assert.ok(Math.abs(growing.player.phaseErrorMs - shrinking.player.phaseErrorMs) < 1e-6);
+    assert.ok(growing.player.catchUpTrend > 15 && shrinking.player.catchUpTrend < -15);
+    assert.ok(growing.player.catchUpCorrection > shrinking.player.catchUpCorrection,
+      'at the same 40ms error, continuing growth warrants stronger acceleration than recovery');
+    for (let q = 376; q < 10000; q++) {
+      growing.player.phaseErrorMs = 40 + q;
+      growing.player.updateCatchUp(q * 128 / 48, 128);
+      assert.ok(growing.player.catchUpCorrection >= 0 && growing.player.catchUpCorrection <= .2);
+    }
+    assert.equal(growing.player.catchUpCorrection, .2, 'sustained growing debt can eventually use the cap');
+  } finally { growing.player.clear(); shrinking.player.clear(); }
+});
+
+test('the 200ms soft limit blends toward 20 percent without a speed step', () => {
+  const corrections = [];
+  for (const error of [199.999, 200, 200.001, 250, 300]) {
+    const h = harness();
+    try {
+      h.player.phaseErrorMs = error;
+      let previous = 0;
+      for (let q = 0; q < 4000; q++) {
+        h.player.updateCatchUp(q * 128 / 48, 128);
+        const rate = h.player.catchUpCorrection;
+        assert.ok(rate >= 0 && rate <= .2);
+        assert.ok(Math.abs(rate - previous) <= .1 * 128 / 48000 + 1e-12,
+          'soft-limit pressure cannot bypass the speed slew');
+        previous = rate;
+      }
+      corrections.push(previous);
+    } finally { h.player.clear(); }
+  }
+  assert.equal(corrections[1], .05);
+  assert.ok(Math.abs(corrections[2] - corrections[1]) < 1e-9, 'crossing 200ms is continuous');
+  assert.ok(Math.abs(corrections[3] - .125) < 1e-9);
+  assert.equal(corrections[4], .2);
+});
+
+test('trend history rejects quantum jitter and forgets old errors after a time gap', () => {
+  const h = harness();
+  try {
+    for (let q = 0; q < 1000; q++) {
+      h.player.phaseErrorMs = 40 + (q % 2 ? 3 : -3);
+      h.player.updateCatchUp(q * 128 / 48, 128);
+    }
+    assert.ok(Math.abs(h.player.catchUpTrend) < 1, 'alternating render jitter is not sustained drift');
+    assert.ok(h.player.catchUpSamples.length <= 151);
+    h.player.phaseErrorMs = 45;
+    h.player.updateCatchUp(10000, 128);
+    assert.equal(h.player.catchUpTrend, 0, 'a new timing interval cannot inherit an old slope');
+    assert.equal(h.player.catchUpSamples.length, 1);
+  } finally { h.player.clear(); }
+});
+
+test('CarPlay does not accelerate into a source hole or chase an unavailable target', () => {
+  const h = harness({ buffered: true });
+  h.feed(960);
+  h.player.push({ pcm: pcm(4800, 960, 48000).buffer, presentationMs: h.sourceBase + 100,
+    sequence: 99, arrivalLocalTimeMs: 0, generation: 3 });
+  h.player.render(h.sourceBase, 0, h.clock, 128, h.block);
+  h.player.render(h.sourceBase + 128 / 48 + 20, 128 / 48, h.clock, 128, h.block);
+  assert.ok(h.player.phaseErrorMs > 19);
+  assert.equal(h.player.phaseCorrectionPpm, 0, 'later packets beyond the missing interval are not usable acceleration reserve');
+  h.player.render(null, 256 / 48, h.clock, 128, h.block);
+  assert.equal(h.player.phaseCorrectionPpm, 0, 'a stale phase error cannot request 20 percent acceleration');
+  h.player.clear();
+});
 
 test('continuous output sample count survives clock refinement and dynamic packet jitter', () => {
   const h = harness({ channels: 2 }), samples = [], quantumMs = 128000 / 48000;
@@ -325,7 +488,7 @@ test('stream diagnostics identify the last rendered context boundary rather than
   assert.equal(h.player.stats().contextTimeMs, null, 'retirement cannot retain an old device anchor');
 });
 
-test('real PCM marker oracle rejects a quantum beyond its independent source deadline, including recovery tails', () => {
+test('real PCM marker oracle rejects expired fresh audio while the last published edge fades', () => {
   const rate = 48000, sourceOrigin = 800000;
   const player = new ContinuousAudio(runtime, rate, 1, rate, () => {}, 1000, { mode: 'carplay' });
   // This marker is measured from the actual resampled waveform, independently
@@ -347,6 +510,7 @@ test('real PCM marker oracle rejects a quantum beyond its independent source dea
       assert.equal(player.sourceDeadlineState, 'within-bound');
     }
   }
+  const published = block.at(-1);
   const context = 20 * 128 / 48;
   clock.localOriginMs = -29; // A real accepted phase refinement, below the 30ms reset threshold.
   player.render(sourceOrigin + context + 29, context, clock, 128, block, 1,
@@ -354,7 +518,8 @@ test('real PCM marker oracle rejects a quantum beyond its independent source dea
   assert.equal(player.sourceDeadlineState, 'violated');
   assert.ok(player.sourceDeltaUpperMs > 300);
   assert.equal(player.sourceDeadlineRejectedFrames, 128);
-  assert.ok(block.every(value => value === 0), 'expired PCM and its crossfade tail never reach the destination');
+  for (let i = 0; i < block.length; i++) assert.ok(Math.abs(block[i] - published * (239 - i) / 240) < 0.25 / 32768,
+    'expired fresh PCM is replaced by the prior published sample fading over exactly 240 frames');
   assert.equal(player.lastRecoveryReason, 'source-deadline');
   player.clear();
 });

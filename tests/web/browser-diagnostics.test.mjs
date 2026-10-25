@@ -314,7 +314,7 @@ test('source-deadline trigger values preserve threshold sides and omit unknown h
 test('the source-deadline selector fixture binds preserved trigger values to the native scalar schema', () => {
   const fixture = JSON.parse(readFileSync(new URL('../../shared/src/test/resources/Browser-source-deadline-diagnostics-v1.json', import.meta.url), 'utf8'));
   const [, actual] = browserDiagnosticEvents(fixture.input.page, false, true, fixture.detail.d);
-  assert.deepEqual(actual, fixture.detail);
+  assert.deepEqual(actual, { ...fixture.detail, v: { ...fixture.detail.v, pageVersion: PAGE_VERSION } });
   assert.equal(actual.v['stream0.sourceDeltaUpperMs'], 20);
   assert.equal(actual.v['stream0.lastSourceDeadlineDeltaUpperMs'], 300.000001,
     'the latest healthy sample cannot rewrite the retained triggering value');
@@ -387,7 +387,7 @@ test('voice preparation evidence survives bounded Debug packing without entering
 test('the canonical Standard selector fixture preserves actual pairing, ICE, deadline and resource evidence across native delivery', () => {
   const fixture = JSON.parse(readFileSync(new URL('../../shared/src/test/resources/Browser-standard-diagnostics-v1.json', import.meta.url), 'utf8'));
   const [actual] = browserDiagnosticEvents(fixture.input.page, fixture.input.themeDark);
-  assert.deepEqual(actual, { k: fixture.k, v: fixture.v });
+  assert.deepEqual(actual, { k: fixture.k, v: { ...fixture.v, 'page.version': PAGE_VERSION } });
   for (const key of ['link.failure.reason', 'link.failure.stage', 'link.connection.stage',
     'link.connection.localCandidates', 'link.connection.localUdpCandidates', 'link.connection.remoteCandidates', 'link.connection.remoteUdpCandidates',
     'transport.ice.state', 'transport.ice.protocol', 'transport.ice.currentRoundTripTimeMs',
@@ -401,7 +401,7 @@ test('the canonical Standard selector fixture preserves actual pairing, ICE, dea
 test('a dense live policy summary retains owner, all drop components, actual target, capacity and both clock views', () => {
   const fixture = JSON.parse(readFileSync(new URL('../../shared/src/test/resources/Browser-live-policy-diagnostics-v1.json', import.meta.url), 'utf8'));
   const [actual] = browserDiagnosticEvents(fixture.input.page, fixture.input.themeDark);
-  assert.deepEqual(actual, fixture.standard);
+  assert.deepEqual(actual, { ...fixture.standard, v: { ...fixture.standard.v, 'page.version': PAGE_VERSION } });
   const source = fixture.input.page.video;
   for (const key of ['streamGeneration', 'epoch', 'droppedFrames', 'decodeDroppedFrames', 'scheduledDroppedFrames',
     'transferDroppedFrames', 'renderDroppedFrames', 'pacingDroppedFrames', 'playbackProfile', 'decodedQueueFrames',

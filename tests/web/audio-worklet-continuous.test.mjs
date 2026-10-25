@@ -257,12 +257,13 @@ test('mirror source-anchor acquisition keeps unknown sample origins unverified a
       assert.equal(mirror.synchronized, true);
       // The old queued samples now have genuine source times more than300ms
       // behind output. They cannot start a backend at the current target.
+      const edge = mirror.last.slice(), remaining = mirror.tailRemaining;
       const output = h.render();
       assert.equal(mirror.backend, null);
       assert.equal(mirror.sourceDeadlineState, 'unknown'); assert.equal(mirror.sourceDeadlineReason, 'no-output');
       assert.equal(mirror.sourceDeadlineRejectedFrames, 0, 'unemitted old samples are not rejected output quanta');
-      assert.ok(output.every(channel => channel.every(value => value === 0)), 'expired PCM and pre-anchor fade copies stay silent');
-      assert.ok(mirror.last.every(value => value === 0));
+      for (let i = 0; i < 128; i++) assert.ok(Math.abs(output[0][i] - edge[0] * Math.max(0, remaining - i - 1) / remaining) < .25 / 32768,
+        're-anchoring preserves only the prior published fade edge');
       const sourceFrame = mirror.sourceFrame;
       for (let quantum = 0; quantum < 20; quantum++) h.render();
       assert.equal(mirror.sourceFrame, sourceFrame, 'queued expired samples cannot replay while idle');
@@ -336,7 +337,8 @@ test('disposing a retired processor releases all per-stream filters and terminat
   const h = harness(); h.feed(); h.render();
   const backend = h.processor.timelines.get(0).backend;
   h.post({ dispose: true });
-  assert.equal(backend.handle, 0); assert.equal(h.processor.runtime, null); assert.equal(h.processor.timelines.size, 0);
+  assert.equal(backend.resampler.handle, 0);
+  assert.throws(() => backend.stretch.setTempo(1), /Invalid live tempo/); assert.equal(h.processor.runtime, null); assert.equal(h.processor.timelines.size, 0);
   const output = [new Float32Array(128).fill(1)];
   assert.equal(h.processor.process([], [output]), false); assert.ok(output[0].every(value => value === 0));
 });
@@ -594,6 +596,7 @@ function voiceSignalScenario({ deliveryStep = 0, strict = false, plan = 60,
         contextAnchor: unknown ? null : { contextTimeMs: wall - 200, localTimeMs: wall },
         outputUncertaintyMs: unknown ? null : quantum === expireAt || wall >= highUncertaintyFromMs ? 80 : 1 });
       expiredBounds = [];
+      const before = p.timelines.get(1), edge = before?.last.slice(), remaining = before?.tailRemaining || 0;
       const output = h.render(blockFrames), current = p.timelines.get(1), nonzero = output.some(c => c.some(x => x !== 0));
       if (nonzero && firstOutputMs === null) {
         firstOutputMs = wall;
@@ -602,7 +605,12 @@ function voiceSignalScenario({ deliveryStep = 0, strict = false, plan = 60,
       if (wall >= 1000 && nonzero) outputAfterOneSecond++;
       if (wall >= 700 && nonzero) firstOutputAfterClockRestoreMs ??= wall;
       for (const channel of output) for (const value of channel) if (!Number.isFinite(value)) nonfinite++;
-      if (expiredBounds.some(x => x.upper > 300 + 1e-7) && nonzero) expiredLeak++;
+      if (expiredBounds.some(x => x.upper > 300 + 1e-7) && nonzero) {
+        for (let c = 0; c < output.length; c++) for (let i = 0; i < blockFrames; i++) {
+          const allowed = remaining ? (edge?.[c] ?? 0) * Math.max(0, remaining - i - 1) / remaining : 0;
+          if (Math.abs(output[c][i] - allowed) > .25 / 32768) expiredLeak++;
+        }
+      }
       if (unknown && nonzero && current?.sourceDeadlineState !== 'unknown') unknownClaimedBound++;
       if (current && Number.isFinite(current.rawCursorMs)) {
         if (oldCursor !== null && current.rawCursorMs < oldCursor - 1e-7) backwards++;
@@ -634,7 +642,7 @@ function assertVoiceSignalIntegrity(result) {
   assert.equal(result.nonfinite, 0);
   assert.equal(result.backwards, 0, 'an emitted source cursor cannot replay');
   assert.equal(result.pilotReplay, 0, 'the independently tagged source waveform cannot replay after a fade');
-  assert.equal(result.expiredLeak, 0, 'external source-age bounds reject expired PCM and held tails');
+  assert.equal(result.expiredLeak, 0, 'external source-age bounds reject expired fresh PCM; only the exact saved 5ms edge may remain');
   assert.equal(result.unknownClaimedBound, 0, 'unknown output mapping must not claim a verified source deadline');
 }
 

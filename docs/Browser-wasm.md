@@ -11,6 +11,7 @@ and licenses ship alongside the replaceable libraries.
 | Continuous resampling | Full libsoxr C library in WASM; persistent filter state and variable ratio per source epoch. |
 | Live mixing, ducking, fades, clipping | Fixed-memory WASM audio core, one block at a time. Very small PCM conversions retain JavaScript when copying costs more than the arithmetic. |
 | AAC-ELD fallback | Full FDK AAC library compiled to WASM in its decoder worker. Native WebCodecs remains the first choice. |
+| CarPlay catch-up | SoundTouch WASM with independent tempo, preserving pitch; live mono/stereo use bounded 20/5/5 ms sequence/seek/overlap windows. |
 | URL audio tempo | Full SoundTouch C++ SIMD WASM, including fused quad/5.1 downmix and interleave. Keep direct mono/stereo layout stores where boundary copies regressed; without SIMD use the faster SoundTouchJS backend. |
 | Audio/video decode and display | Native WebCodecs, Web Audio, Canvas/WebGL, image decode and the browser compositor. |
 | Transport and binary headers | Native WebRTC/SCTP, streams, typed arrays and DataView. Keeping views avoids copying whole media packets into WASM to inspect a few fields. |
@@ -38,9 +39,12 @@ an independent measurement at the vehicle speakers.
 
 Soxr already adjusts its conversion ratio continuously for source pacing, the
 Android/browser clock mapping, effective render progress and bounded residual
-phase error. One controller owns the applied rate. No additional queue-depth
-controller or user speed switch is needed for drift compensation; packet bursts
-and decoder lookahead are not clock measurements. Real shortages and excessive
+phase error for mirror audio. CarPlay corrects residual phase with SoundTouch
+tempo instead: a three-second trend guides a bounded PD controller; above 200 ms
+phase error, a soft boost approaches 20% over the next 100 ms of error. Temporal
+slew and contiguous PCM reserve constrain the applied tempo. Packet bursts and
+decoder lookahead are not clock measurements. WSOLA overlap positions carry a
+conservative 20 ms source-age allowance; they are not exact source-sample proofs. Real shortages and excessive
 source age still require the existing silence/recovery policy.
 
 URL playback retains `currentTime` as the coordinate required by native
@@ -55,8 +59,9 @@ remain independent of clock correction.
 The main thread compiles live-audio modules before creating the AudioWorkletNode
 and passes compiled `WebAssembly.Module` values in `processorOptions`. Each node
 instantiates private memories before playback. Calibration runs in its own worker.
-The render callback initiates no downloads or explicit compilation and never
-grows memory. `WebAssembly.compile()` performs initial browser compilation before
+The render callback initiates no downloads or explicit compilation. The live
+SoundTouch runtime is shared within a worklet and bounded to 16 MiB; its handles
+are independent and their scratch blocks are limited to 512 frames. `WebAssembly.compile()` performs initial browser compilation before
 node creation; the browser may still lazily compile functions or optimize machine
 code in the background. This does not guarantee that playback is free of internal
 JIT activity.

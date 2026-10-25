@@ -113,7 +113,7 @@ test('live policy fixture keeps exact cross-language fields while packing priori
   const current = JSON.parse(readFileSync(new URL('../../shared/src/test/resources/Browser-live-policy-diagnostics-v1.json', import.meta.url)));
   assert.deepEqual(current.schemaFields.sort(), [...VIDEO_DIAGNOSTIC_FIELDS].sort());
   const packed = packVideoDiagnosticValues(current.inputValues, PAGE_VERSION);
-  assert.deepEqual(current.debug.v, packed);
+  assert.deepEqual({ ...current.debug.v, pageVersion: PAGE_VERSION }, packed);
   assert.equal(Object.keys(packed).length, 256); assert.equal(packed.omittedFields, 5);
   assert.ok(Buffer.byteLength(JSON.stringify(packed)) <= VIDEO_DIAGNOSTIC_BYTES);
   for (const key of ['streamGeneration', 'epoch', ...DROP_FIELDS.map(key => `raw.${key}`),

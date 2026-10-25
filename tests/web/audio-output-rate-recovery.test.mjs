@@ -134,14 +134,14 @@ test('real PCM keeps a slow oscillator through small route steps, while real lar
     }
     assert.equal(smallStepRecoveries, 0, 'small pipeline changes cannot discard an already applied oscillator correction');
     assert.ok(smallStepQuanta > 14000); assert.ok(largestPhysicalPhaseError < 15);
-    assert.equal(realStepRecoveries, 1, 'retaining the oscillator does not hide a genuinely large route step');
+    assert.equal(realStepRecoveries, 0, 'a positive buffered route step uses continuous catch-up');
     assert.ok(firstChangedRateFit > 4000 && firstChangedRateFit < 17000, 'changed hardware rate is re-estimated within the existing history window');
     assert.ok(largestPhysicalSourceAge < 100, 'external hardware/source oracle stays well inside the unchanged300ms limit');
     assert.ok(Math.abs(mapper.deviceClock().ratePpm - 8000) < 1);
   } finally { post({ dispose: true }); }
 });
 
-test('expired fade output is rejected once, idle quanta do not fabricate recovery events, and real PCM keeps its deadline', () => {
+test('expired edges still fade, idle quanta do not fabricate recovery events, and fresh PCM keeps its deadline', () => {
   const runtime = new SoxrRuntime(), base = 8000000;
   const audio = new ContinuousAudio(runtime, 48000, 1, 48000, () => {}, 6500, { mode: 'carplay' });
   audio.debug(true);
@@ -154,11 +154,13 @@ test('expired fade output is rejected once, idle quanta do not fabricate recover
     for (let at = 0; at < 400; at += 20) feed(at);
     audio.render(base + 200, 0, clock, 128, out, 1, deadline(230));
     assert.equal(audio.state, 'playing'); assert.ok(out.some(value => value !== 0));
+    const published = out.at(-1);
     audio.recover('underrun');
     assert.ok(audio.tailRemaining > 0);
     audio.render(null, 128 / 48, clock, 128, out, 1, deadline(1000));
-    assert.ok(out.every(value => value === 0), 'expired copies of previously emitted PCM cannot leak through the fade');
-    assert.equal(audio.recoveryCounts['source-deadline'], 1);
+    for (let i = 0; i < 128; i++) assert.ok(Math.abs(out[i] - published * (239 - i) / 240) < 1e-7);
+    assert.equal(audio.recoveryCounts['source-deadline'], undefined);
+    audio.render(null, 256 / 48, clock, 128, out, 1, deadline(1003));
     const rejected = audio.sourceDeadlineRejectedFrames, recoveries = { ...audio.recoveryCounts };
     for (let i = 0; i < 10000; i++) {
       audio.render(null, (i + 2) * 128 / 48, clock, 128, out, 1, deadline(1000 + i * 128 / 48));
@@ -169,7 +171,7 @@ test('expired fade output is rejected once, idle quanta do not fabricate recover
     assert.equal(audio.sourceDeadlineState, 'unknown'); assert.equal(audio.sourceDeadlineReason, 'no-output');
     feed(400, 0); feed(420, 0);
     audio.render(base + 400, 27000, clock, 128, out, 1, deadline(1200));
-    assert.equal(audio.recoveryCounts['source-deadline'], 2, 'new real PCM is checked even when every source sample is zero');
+    assert.equal(audio.recoveryCounts['source-deadline'], 1, 'new real PCM is checked even when every source sample is zero');
     assert.equal(audio.sourceDeadlineState, 'violated'); assert.ok(audio.sourceDeadlineRejectedFrames > rejected);
     feed(1500); feed(1520);
     audio.render(base + 1500, 27003, clock, 128, out, 1, deadline(1530));

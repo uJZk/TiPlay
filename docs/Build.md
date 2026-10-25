@@ -12,6 +12,9 @@ prerelease is **0.2.20-beta.16** (code **58**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
 the deployed page uses **v84** with WebRTC DataChannel as the formal live-media path.
+The **beta.17/code59**, webpage **v85** candidate adds overlapping 5 ms recovery
+tails and pitch-preserving SoundTouch CarPlay catch-up up to 20%; publication
+and signed artifacts remain pending until the workflows below complete.
 The signed beta.16 APK and webpage v84 share the verified build commit recorded
 below. Software checks are in [Testing](Testing.md#webrtc-integrated-acceptance).
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
@@ -19,6 +22,31 @@ independent `/webrtc/` subsite without an alias or redirect; the APK defaults to
 root. The beta record below identifies both build and deployment provenance. Every
 language's download entry opens the GitHub Releases index without a version-specific
 URL. Debug APK metadata retains its diagnostic suffix.
+
+### Beta.17 candidate verification
+
+The candidate uses a three-second error-history PD controller without integral
+accumulation. A 200 ms phase-error soft limit blends toward the 20% tempo ceiling
+over the next 100 ms of error; temporal slew and contiguous PCM reserve remain
+mandatory. SoundTouch controls tempo independently of libsoxr clock conversion.
+Every controlled audio cut retains a non-renewable 5 ms published-sample fade,
+which may overlap fresh fade-in. Screen-loan commands use LIVI-compatible
+`VideoPlayback` borrow IDs and constraint 500 while retaining owner confirmation.
+
+Local verification: 914 browser tests, 13 capture/trace Python tests, two deployment
+tests, nine release-draft tests, public-tree/cache checks, reproducible SoundTouch
+WASM binaries, real Chromium capture replay and frozen-currentTime playback.
+A desktop audio-only 30-second mixed replay recorded approximately 3.41% of one
+core for AudioWorklet and 2.16–2.18% for renderer main tasks. This excludes vehicle
+CPU, original video/rendering and acoustic output; it does not prove crackles are
+fixed. Logs remain outside the public repository. Vehicle screen return, tempo
+quality and actual speaker timing still require acceptance.
+
+Local Android builds cannot download Gradle and have no Android SDK or signing
+inputs. The existing Android CI and signed-release workflows supply those inputs;
+record their exact run, source commit and verified artifacts before publication.
+The deployment test compares cache and diagnostic versions instead of pinning a
+stale v84 constant. Published beta.16 evidence below remains historical.
 
 ### Check the source build
 

@@ -20,18 +20,29 @@
     "maximum_memory_bytes": 16777216,
     "native_input": "quad/5.1 original planes, fused speaker mapping plus interleave; mono/stereo retain direct JavaScript layout stores by measured policy",
     "input_scratch_bytes": 98304,
-    "downmix_arithmetic": "double expression rounded once to float32, matching the established Web Audio speaker mapping"
+    "downmix_arithmetic": "double expression rounded once to float32, matching the established Web Audio speaker mapping",
+    "live": {
+      "channels": "mono/stereo",
+      "tempo_range": [
+        0.95,
+        1.2
+      ],
+      "sequence_ms": 20,
+      "seek_ms": 5,
+      "overlap_ms": 5,
+      "clock_conversion": "libsoxr, independent from tempo"
+    }
   },
   "binaries": {
     "soundtouch.wasm": {
-      "bytes": 55870,
-      "sha256": "4c28d7da5ec6768c8bf03cbbd66d46bbea504b09b18c3ad4a213ca7a460c42b5",
-      "automatic_playback": false
+      "bytes": 56193,
+      "sha256": "78ad63ce238133414be5806d537dd369920120844fa782940c034ca0cf7a1fd5",
+      "automatic_playback": "live CarPlay on non-SIMD browsers"
     },
     "soundtouch.simd.wasm": {
-      "bytes": 59033,
-      "sha256": "c69f79342a6bab8af2bfce8ba66329c3f48c4632aec838ca231fb64585dc948f",
-      "automatic_playback": "non-1x playback when native WebAssembly SIMD is supported"
+      "bytes": 59356,
+      "sha256": "c402252ea779248fd13114fc1d6763be91f0b770996e8087cc7e307dc5f2bb70",
+      "automatic_playback": "live CarPlay and non-1x SIMD URL audio"
     }
   }
 }

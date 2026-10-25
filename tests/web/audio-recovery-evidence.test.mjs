@@ -9,7 +9,7 @@ const runtime = new SoxrRuntime(), quantumMs = 128000 / 48000, sourceBase = 8000
 const evidenceKeys = ['lastClockStepPhaseErrorMs', 'lastClockStepDeviceRatePpm',
   'lastClockStepUncertaintyMs', 'lastClockStepAgeMs'];
 function harness() {
-  const player = new ContinuousAudio(runtime, 48000, 1, 48000, () => {}, 6500, { buffered: true, mode: 'carplay' });
+  const player = new ContinuousAudio(runtime, 48000, 1, 48000, () => {}, 6500, { buffered: true, mode: 'airplay-mirror' });
   player.epoch = 56; player.generation = 3; player.synchronized = true;
   for (let frame = 0, sequence = 0; frame < 24000; frame += 960, sequence++) {
     const pcm = Int16Array.from({ length: 960 }, (_, index) => Math.round(10000 * Math.sin((frame + index) * 0.13)));

@@ -238,8 +238,8 @@ test('production audio transport and real soxr retain raw anchors through clock 
     assert.equal(player.sourceAnchorMs, firstPacket.presentationMs);
     assert.equal(h.nodes[0].processor.clock.localOriginMs, 10000, 'the main-thread boundary removes the large performance epoch once');
     assert.ok(h.nodes[0].processor.contextAnchor.localTimeMs < 20000);
-    assert.ok(player.backend.runtime.exports.memory.buffer instanceof ArrayBuffer);
-    assert.ok(player.backend.outputFrames > 100000, 'the production JavaScript engine processes actual samples');
+    assert.ok(player.backend.resampler.runtime.exports.memory.buffer instanceof ArrayBuffer);
+    assert.ok(player.backend.resampler.outputFrames > 100000, 'the production JavaScript engine processes actual samples');
     assert.ok(Math.abs(player.slewRatio - 1) > 0.00003, 'production clock refinements reach the variable-rate JavaScript engine');
     assert.ok(minimumEnergy > 3, `dynamic PCM minimum block energy ${minimumEnergy}: ${JSON.stringify(worstBlock)}`);
     assert.ok(maximumStep < 0.3, 'packet boundaries and ratio refinements remain continuous');
@@ -272,7 +272,7 @@ test('suspend invalidates the active producer identity and resumes through the r
     for (let i = 0; i < 30; i++) h.quantum();
     const resumed = h.references.findLast(value => value?.state === 'playing');
     assert.ok(resumed.at > before.at); assert.equal(resumed.epoch, before.epoch);
-    assert.ok(h.nodes[0].processor.timelines.get(0).backend.outputFrames > 0);
+    assert.ok(h.nodes[0].processor.timelines.get(0).backend.resampler.outputFrames > 0);
     video.close();
   } finally { await h.close(); }
 });

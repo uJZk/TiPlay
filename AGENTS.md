@@ -65,6 +65,12 @@ The independent
 and vehicle uploads remain separate unfinished work; native WebRTC audio tracks
 remain a separate non-URL alternative.
 
+Resume the beta.17/code59 and browser v85 delivery at
+[the candidate verification record](docs/Build.md#beta17-candidate-verification).
+It covers three-second trend/soft-limit SoundTouch catch-up, 5 ms overlap tails,
+LIVI-compatible loan parameters, replay CPU limits and outstanding signed CI/device
+acceptance. Preserve the distinction between checked source and published artifacts.
+
 ## Checks
 
 Run the CI command from .github/workflows/android.yml before reporting a change as done:

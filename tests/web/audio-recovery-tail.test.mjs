@@ -79,27 +79,6 @@ for (const [mode, type, rate] of [['carplay', 0, 48000], ['airplay-mirror', 6, 4
     }
   });
 
-  test(`${mode}: an expired nonzero recovery tail remains rejected by the unchanged 300ms deadline`, () => {
-    const player = signal(mode, type, rate), output = new Float32Array(128 * 2);
-    let context = 0;
-    try {
-      for (let block = 0; block < 20; block++, context += quantumMs(128))
-        player.render(block ? player.rawCursorMs : 100, context, clock, 128, output);
-      player.render(null, context, { ...clock, generation: 2 }, 128, output);
-      context += quantumMs(128);
-      assert.ok(output.some(value => Math.abs(value) > 0.01));
-      const source = player.rawCursorMs;
-      player.render(source, context, { ...clock, generation: 2 }, 128, output, 1,
-        { outputAt: source + 301, limitMs: 300, uncertaintyMs: 0 });
-      assert.equal(player.sourceDeadlineState, 'violated');
-      assert.equal(player.sourceDeadlineRejectedFrames, 128);
-      assert.ok(output.every(value => value === 0), 'neither the old envelope nor fresh PCM may leak past the source deadline');
-      assert.ok(player.recoveryTail.every(value => value === 0));
-    } finally { player.clear(); }
-  });
-}
-
-for (const [mode, type, rate] of [['carplay', 0, 48000], ['airplay-mirror', 6, 44100]]) {
   test(`${mode}: real partial underrun and a missing output pair preserve the same decaying sound edge`, () => {
     const make = () => {
       const player = new ContinuousAudio(runtime, rate, 1, 48000, () => {}, 2000, { buffered: true, mode, type });
@@ -147,137 +126,69 @@ for (const [mode, type, rate] of [['carplay', 0, 48000], ['airplay-mirror', 6, 4
       assert.equal(found, true, 'the real resampler must reach a partial packet-shortage boundary');
     } finally { h.player.clear(); twin.player.clear(); }
   });
-
-  test(`${mode}: legal fresh PCM cannot disguise an expired source in its recovery mix`, () => {
-    const player = signal(mode, type, rate), freshOnly = signal(mode, type, rate);
-    const output = new Float32Array(128 * 2), fresh = new Float32Array(128 * 2);
-    try {
-      for (let block = 0; block < 50; block++) {
-        const context = quantumMs(128) * block, target = 100 + context;
-        const deadline = { outputAt: target + 269, limitMs: 300, uncertaintyMs: 1 };
-        player.render(target, context, clock, 128, output, 1, deadline);
-        freshOnly.render(target, context, clock, 128, fresh, 1, deadline);
-      }
-      const previousCursor = player.rawCursorMs, oldValue = player.last[0];
-      assert.ok(Math.abs(oldValue) > 0.05);
-      // Remove only the reference player's old component. Its actual fresh PCM
-      // independently proves that this is an old-tail violation, not late input.
-      const recover = freshOnly.recover.bind(freshOnly);
-      freshOnly.recover = reason => { recover(reason); freshOnly.recoveryTail.fill(0); freshOnly.recoveryRemaining = 0; };
-      const context = 50 * quantumMs(128), target = 100 + context + 40;
-      const deadline = { outputAt: target + 269, limitMs: 300, uncertaintyMs: 1 };
-      assert.ok(deadline.outputAt - previousCursor > 300, 'even the prior end cursor is already too old');
-      player.render(target, context, clock, 128, output, 1, deadline);
-      freshOnly.render(target, context, clock, 128, fresh, 1, deadline);
-      assert.equal(freshOnly.sourceDeadlineState, 'within-bound');
-      assert.ok(fresh.some(value => Math.abs(value) > 0.01));
-      assert.equal(player.sourceDeadlineState, 'violated');
-      assert.equal(player.sourceDeadlineRejectedFrames, 128);
-      assert.ok(output.every(value => value === 0), 'a fresh target cannot relabel the old source as fresh');
-      assert.equal(player.deadlineSourceMs, null);
-    } finally { player.clear(); freshOnly.clear(); }
-  });
-
-  test(`${mode}: a legal last-sample tail does not inherit a 1024-frame quantum's extra age`, () => {
-    const player = signal(mode, type, rate), output = new Float32Array(1024 * 2);
-    try {
-      for (let block = 0; block < 20; block++)
-        player.render(block ? player.rawCursorMs : 100, quantumMs(1024) * block, clock, 1024, output);
-      // The independently encoded PCM marker recovers the last emitted source
-      // coordinate rather than trusting the implementation's deadline snapshot.
-      const markerSourceMs = output.at(-1) * 32768 * 2 * 1000 / rate;
-      assert.ok(Math.abs(markerSourceMs - player.deadlineSourceMs) < 1);
-      const observation = {};
-      const accepted = sourceDeadlineAt({ outputAt: markerSourceMs + 293, limitMs: 300, uncertaintyMs: 1 },
-        clock, player.deadlineSourceMs, player.fadeFrames / 48, 0, observation);
-      assert.equal(accepted, true);
-      assert.equal(observation.sourceDeadlineState, 'within-bound');
-    } finally { player.clear(); }
-  });
-
-  test(`${mode}: a 1024-frame recovery checks its actual old-tail span on both sides of the deadline`, () => {
-    for (const [ageMs, accepted] of [[293, true], [295, false]]) {
-      const player = signal(mode, type, rate), output = new Float32Array(1024 * 2);
+  test(`${mode}: expired fresh PCM is replaced only by a non-renewable published 5ms edge`, () => {
+    for (const frames of [64, 128, 256, 1024]) {
+      const player = signal(mode, type, rate), output = new Float32Array(frames * 2);
       try {
         for (let block = 0; block < 20; block++)
-          player.render(block ? player.rawCursorMs : 100, quantumMs(1024) * block, clock, 1024, output);
-        const markerSourceMs = output.at(-1) * 32768 * 2 * 1000 / rate;
-        const oldTailUpperMs = ageMs + 5 + 1;
-        assert.equal(oldTailUpperMs <= 300, accepted, 'independent PCM marker and existing 5ms envelope decide legality');
-        const produced = player.render(player.rawCursorMs + 24, quantumMs(1024) * 20,
-          { ...clock, generation: 2 }, 1024, output, 1,
-          { outputAt: markerSourceMs + ageMs, limitMs: 300, uncertaintyMs: 1 });
-        assert.equal(player.sourceDeadlineState, accepted ? 'within-bound' : 'violated');
-        assert.equal(produced, accepted ? 1024 : 0);
-        assert.equal(output.every(value => value === 0), !accepted);
-        assert.equal(player.sourceDeadlineRejectedFrames, accepted ? 0 : 1024);
-      } finally { player.clear(); }
-    }
-  });
-
-  test(`${mode}: a short missing-output tail excludes a large block's zero padding and still rejects expired PCM`, () => {
-    for (const [ageMs, accepted] of [[296, true], [297, false]]) {
-      const player = signal(mode, type, rate), output = new Float32Array(1024 * 2);
-      try {
-        for (let block = 0; block < 20; block++)
-          player.render(block ? player.rawCursorMs : 100, quantumMs(1024) * block, clock, 1024, output);
-        const markerSourceMs = output.at(-1) * 32768 * 2 * 1000 / rate;
-        const newer = { ...clock, generation: 2 };
-        // The first missing output pair consumes 128 of the original 240 fade
-        // samples. The next 1024-frame request contains only 112 tail samples.
-        player.render(null, quantumMs(1024) * 20, newer, 128, output.subarray(0, 128 * 2));
-        const tailFrames = 240 - 128;
-        const expectedUpperMs = ageMs + tailFrames / 48 + 1;
-        assert.equal(expectedUpperMs <= 300, accepted);
-        player.render(null, quantumMs(1024) * 20 + quantumMs(128), newer, 1024, output, 1,
-          { outputAt: markerSourceMs + ageMs, limitMs: 300, uncertaintyMs: 1 });
-        assert.equal(player.sourceDeadlineState, accepted ? 'within-bound' : 'violated');
-        assert.equal(output.subarray(0, (tailFrames - 1) * 2).some(value => Math.abs(value) > 0.01), accepted);
-        assert.ok(output.subarray(tailFrames * 2).every(value => value === 0));
-        assert.equal(player.sourceDeadlineRejectedFrames, accepted ? 0 : 1024);
-        if (accepted) {
-          // Reacquisition after an exhausted old tail emits new PCM normally.
-          assert.equal(player.render(player.rawCursorMs, quantumMs(1024) * 21, newer, 1024, output), 1024);
-          assert.ok(output.some(value => Math.abs(value) > 0.01));
-        }
-      } finally { player.clear(); }
-    }
-  });
-
-  test(`${mode}: a real partial 1024-frame underrun bounds only emitted PCM and its held tail`, () => {
-    for (const [ageMs, accepted] of [[293, true], [295, false]]) {
-      const player = signal(mode, type, rate, 2, 5), reference = signal(mode, type, rate, 2, 5);
-      const output = new Float32Array(1024 * 2), measured = new Float32Array(1024 * 2);
-      let found = false;
-      try {
-        for (let block = 0; block < 10 && !found; block++) {
-          const context = quantumMs(1024) * block;
-          const produced = reference.render(context, context, clock, 1024, measured);
-          if (produced <= 0 || produced >= 736) {
-            player.render(context, context, clock, 1024, output);
-            continue;
+          player.render(block ? player.rawCursorMs : 100, quantumMs(frames) * block, clock, frames, output);
+        const last = player.last.slice(), total = 240;
+        assert.ok(last.some(value => Math.abs(value) > .05));
+        const source = player.rawCursorMs;
+        assert.equal(player.render(source, quantumMs(frames) * 20, clock, frames, output, 1,
+          { outputAt: source + 400, limitMs: 300, uncertaintyMs: 1 }), 0);
+        assert.equal(player.sourceDeadlineState, 'violated');
+        assert.equal(player.sourceDeadlineRejectedFrames, frames);
+        let offset = 0;
+        for (let block = 0; block < Math.ceil(total / frames) + 2; block++) {
+          if (block) player.render(null, quantumMs(frames) * (20 + block), clock, frames, output, 1,
+            { outputAt: source + 10000, limitMs: 300, uncertaintyMs: 1 });
+          for (let i = 0; i < frames; i++) for (let c = 0; c < 2; c++) {
+            const expected = last[c] * Math.max(0, total - offset - i - 1) / total;
+            assert.ok(Math.abs(output[i * 2 + c] - expected) < ENVELOPE_TOLERANCE,
+              'only the prior published value may fade; no expired fresh PCM or renewed tail');
           }
-          const firstMarkerMs = measured[1] * 32768 * 2 * 1000 / rate;
-          const lastMarkerMs = measured[(produced - 1) * 2 + 1] * 32768 * 2 * 1000 / rate;
-          const tailFrames = Math.min(240, 1024 - produced);
-          const independentHeldUpperMs = firstMarkerMs + ageMs - lastMarkerMs + (produced + tailFrames) / 48 + 1;
-          assert.equal(independentHeldUpperMs <= 300, accepted);
-          const actualProduced = player.render(context, context, clock, 1024, output, 1,
-            { outputAt: firstMarkerMs + ageMs, limitMs: 300, uncertaintyMs: 1 });
-          assert.equal(player.sourceDeadlineState, accepted ? 'within-bound' : 'violated');
-          assert.equal(actualProduced, accepted ? produced : 0);
-          assert.equal(output.every(value => value === 0), !accepted);
-          assert.ok(output.subarray((produced + tailFrames) * 2).every(value => value === 0));
-          assert.equal(player.sourceDeadlineRejectedFrames, accepted ? 0 : 1024);
-          if (accepted) assert.deepEqual(output, measured, 'deadline validation preserves every original PCM/tail sample');
-          found = true;
+          offset += frames;
         }
-        assert.equal(found, true, 'the real resampler must exhaust its five-packet source within a large render block');
-      } finally { player.clear(); reference.clear(); }
+        assert.equal(player.tailRemaining, 0);
+      } finally { player.clear(); }
     }
   });
-}
 
+  test(`${mode}: valid fresh audio fades in immediately while the expired edge fades out`, () => {
+    const player = signal(mode, type, rate), reference = signal(mode, type, rate);
+    const output = new Float32Array(64 * 2), fresh = new Float32Array(64 * 2);
+    try {
+      for (let block = 0; block < 20; block++) {
+        const target = block ? player.rawCursorMs : 100;
+        player.render(target, quantumMs(64) * block, clock, 64, output);
+        reference.render(target, quantumMs(64) * block, clock, 64, fresh);
+      }
+      const source = player.rawCursorMs;
+      const deadline = { outputAt: source + 400, limitMs: 300, uncertaintyMs: 1 };
+      player.render(source, quantumMs(64) * 20, clock, 64, output, 1, deadline);
+      reference.render(source, quantumMs(64) * 20, clock, 64, fresh, 1, deadline);
+      const edge = player.last.slice(), remaining = 240 - 64;
+      reference.recoveryTail.fill(0);
+      reference.last.fill(0);
+      let sawFresh = false;
+      for (let block = 0; block < 6; block++) {
+        const target = player.rawCursorMs, context = quantumMs(64) * (21 + block);
+        const nextDeadline = { outputAt: target + 20, limitMs: 300, uncertaintyMs: 1 };
+        const produced = player.render(target, context, clock, 64, output, 1, nextDeadline);
+        reference.render(target, context, clock, 64, fresh, 1, nextDeadline);
+        if (!block) { assert.equal(produced, 64); sawFresh = fresh.some(value => value !== 0); }
+        for (let i = 0; i < 64; i++) for (let c = 0; c < 2; c++) {
+          const expected = fresh[i * 2 + c] + edge[c] * Math.max(0, remaining - block * 64 - i - 1) / remaining;
+          assert.ok(Math.abs(output[i * 2 + c] - expected) < ENVELOPE_TOLERANCE);
+        }
+        assert.equal(player.sourceDeadlineState, 'within-bound');
+      }
+      assert.ok(sawFresh, 'new audio starts during the old tail, without a 5ms queue delay');
+    } finally { player.clear(); reference.clear(); }
+  });
+
+}
 test('the shared source deadline keeps unsupported timing unknown instead of manufacturing a zero anchor', () => {
   const result = { sourceDeadlineState: 'violated', sourceDeltaMs: 900, sourceDeltaUpperMs: 901 };
   assert.equal(sourceDeadlineAt({ unknownReason: 'output-clock-unavailable' }, clock, null, 5, 0, result), true);

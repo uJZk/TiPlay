@@ -21,7 +21,7 @@ class CarPlayScreenBorrowTest {
         assertTrue(sent.pending)
         val params = commands.single()["params"] as Map<*, *>
         assertEquals(listOf(mapOf("resourceID" to 1, "transferType" to 3,
-            "transferPriority" to 500, "unborrowConstraint" to 100)), params["resources"])
+            "borrowID" to "VideoPlayback", "transferPriority" to 500, "unborrowConstraint" to 500)), params["resources"])
         assertTrue(borrow.onModesChanged(modes(2L)).confirmedBorrow)
     }
 
@@ -35,7 +35,8 @@ class CarPlayScreenBorrowTest {
         assertTrue(returning.pending)
         assertFalse(returning.carPlayHasScreen)
         val params = commands.last()["params"] as Map<*, *>
-        assertEquals(listOf(mapOf("resourceID" to 1, "transferType" to 4)), params["resources"])
+        assertEquals(listOf(mapOf("resourceID" to 1, "transferType" to 4,
+            "borrowID" to "VideoPlayback")), params["resources"])
         assertFalse(borrow.onModesChanged(modes(2)).carPlayHasScreen)
         assertTrue(borrow.onModesChanged(modes(1)).carPlayHasScreen)
         assertFalse(borrow.snapshot().pending)

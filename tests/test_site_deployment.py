@@ -21,7 +21,10 @@ class SiteDeploymentTest(unittest.TestCase):
                     self.assertEqual(source.read_bytes(), (out / source.relative_to(site.PAGE)).read_bytes())
             self.assertIn("'./webrtc-transport.js'", (out / 'app.js').read_text())
             self.assertIn("'./rtc-pairing.js'", (out / 'app.js').read_text())
-            self.assertIn("const VERSION = 'v84'", (out / 'sw.js').read_text())
+            cache_version = re.search(r"const VERSION = '([^']+)';", (out / 'sw.js').read_text()).group(1)
+            diagnostic_version = re.search(r"export const PAGE_VERSION = '([^']+)';",
+                                           (out / 'browser-diagnostics.js').read_text()).group(1)
+            self.assertEqual(cache_version, diagnostic_version)
             self.assertFalse((out / 'webrtc').exists())
             self.assertFalse((out / 'WebRTC').exists())
             self.assertFalse((out / 'rtc-transport.js').exists())

@@ -8,6 +8,7 @@ import { pcmStats, measurePcm } from './audio-pcm-stats.js';
 import { createAudioOutputMapping } from './audio-output-clock.js';
 import { createAudioCalibration } from './audio-calibration.js';
 import { readAudioPlaybackStats } from './audio-playback-stats.js';
+import { loadLiveTempo } from './live-tempo.js';
 import { loadSoxr } from './streaming-resampler.js';
 import { loadAudioCore } from './wasm/audio-core.js';
 
@@ -215,14 +216,14 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   }
   async function prepareNode() {
     const preparingContext = context;
-    const [calibration, soxrModule, audioCoreModule] = await Promise.all([
-      calibrations.prepare(48000, preparingContext.sampleRate || 48000), loadSoxr(), loadAudioCore(),
+    const [calibration, soxrModule, audioCoreModule, liveTempoModule] = await Promise.all([
+      calibrations.prepare(48000, preparingContext.sampleRate || 48000), loadSoxr(), loadAudioCore(), loadLiveTempo(),
     ]);
     if (disposed || context !== preparingContext) return;
     // Compile away from the render thread. Each processor owns its fixed memories;
     // cloning compiled code does not share stream state or require cross-origin isolation.
     const installed = new AudioWorkletNode(context, 'tiplay-audio', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
-      processorOptions: { soxrModule, audioCoreModule } });
+      processorOptions: { soxrModule, audioCoreModule, liveTempoModule } });
     node = installed; nodeConnected = false;
     const id = ++preparationSequence;
     let resolve, reject, connected = false;

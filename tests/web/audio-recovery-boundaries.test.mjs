@@ -10,9 +10,9 @@ const EPSILON_MS = 2 ** -20;
 const runtime = new SoxrRuntime();
 const waveform = frame => Math.round(12000 * Math.sin(frame * 2 * Math.PI * 997 / 48000));
 
-test('a real Soxr signal keeps its backend at exactly ±30ms phase error and recovers only beyond it', () => {
+test('non-catch-up Soxr playback retains the ±30ms recovery boundary', () => {
   for (const sign of [-1, 1]) for (const magnitude of [30 - EPSILON_MS, 30, 30 + EPSILON_MS]) {
-    const player = new ContinuousAudio(runtime, 48000, 1, 48000, () => {}, 6500);
+    const player = new ContinuousAudio(runtime, 48000, 1, 48000, () => {}, 6500, { mode: 'airplay-mirror' });
     const clock = { generation: 1, rate: 1, state: 'locked' }, output = new Float32Array(128);
     for (let frame = 0; frame < 48000; frame += 960) player.push({
       pcm: Int16Array.from({ length: 960 }, (_, i) => waveform(frame + i)).buffer,

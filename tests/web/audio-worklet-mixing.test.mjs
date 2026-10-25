@@ -4,7 +4,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { constantDelay } from '../../site/play/delay-plan.js';
 import { SoxrRuntime } from '../../site/play/streaming-resampler.js';
-import { audioLimit } from '../../site/play/playback-window.js';
 
 // Only the AudioWorklet host is synthetic. The production timeline and real
 // Soxr process DC/low-frequency PCM so natural waveform slopes cannot hide clicks.
@@ -174,91 +173,32 @@ function warmRetirement({ action = 'end', mode = 'carplay', type = 0, frames = 1
 }
 
 for (const action of ['end', 'epoch', 'reset']) for (const mapping of ['output', 'source']) {
-  test(`${action}: a ${mapping} clock step cannot leak expired retired PCM`, () => {
+  test(`${action}: a ${mapping} clock step preserves exactly the last published 5ms edge`, () => {
     const h = warmRetirement({ action });
     try {
-      const contextSpanMs = h.frame / 48 + 128 / 48;
+      const edge = h.processor.retiring[0].samples[0], samples = [];
       if (mapping === 'output') h.post({ contextAnchor: { contextTimeMs: 0, localTimeMs: 1200 } });
       else h.post({ clock: { version: 2, generation: 2, serverOriginMs: h.base + 1000, localOriginMs: 0,
         rate: 1, state: 'locked', uncertaintyMs: 0 } });
-      assert.ok(h.render()[0].every(value => value === 0));
+      for (let q = 0; q < 4; q++) samples.push(...h.render()[0]);
+      for (let i = 0; i < samples.length; i++)
+        assert.ok(Math.abs(samples[i] - edge * Math.max(0, 239 - i) / 240) < .25 / 32768);
       assert.equal(h.processor.retiring.length, 0);
-      h.processor.report();
-      const report = h.processor.messages.filter(value => value.diagnostics).at(-1).diagnostics.stream0;
-      assert.equal(report.lastRetiredSourceDeadlineEpoch, 1, 'the rejected tail retains its own epoch');
-      assert.equal(report.lastRetiredSourceDeadlineGeneration, 3, 'reset cannot relabel the tail as the new playback generation');
-      assert.equal(report.retiredSourceDeadlineRejectedFrames, 240);
-      assert.equal(report.lastRetiredSourceDeadlineLimitMs, 300);
-      assert.ok(Math.abs(report.lastRetiredSourceDeadlineUncertaintyMs - (2 + contextSpanMs * (1 / .98 - 1))) < 1e-12,
-        'the rejected tail includes measured/filter uncertainty and its actual native-anchor projection');
-      assert.ok(report.lastRetiredSourceDeadlineDeltaUpperMs > 1000);
-      assert.ok(Math.abs(report.lastRetiredSourceDeadlineAgeMs - 128 / 48) < 1e-10,
-        'the report observes the completed render block instead of an earlier time getter');
-      assert.equal(report.sourceDeadlineRejectedFrames, undefined, 'retired rejections do not masquerade as current timeline output');
     } finally { h.dispose(); }
   });
 }
 
-test('known legal retired tails retain their complete envelope at every real quantum size', () => {
-  for (const frames of [64, 128, 256, 1024]) {
+test('retired tails keep exactly 5ms at every quantum size, regardless of output-clock availability', () => {
+  for (const frames of [64, 128, 256, 1024]) for (const control of [null, { contextAnchor: null },
+    { clock: null }, { outputUncertaintyMs: null }, { contextAnchor: { contextTimeMs: 0, localTimeMs: 100000 } }]) {
     const h = warmRetirement({ frames });
     try {
-      const samples = [];
+      if (control) h.post(control);
+      const samples = [], edge = h.processor.retiring[0].samples[0];
       while (samples.length < 512) samples.push(...h.render(frames)[0]);
-      assert.ok(samples[0] > .49);
-      assert.ok(samples[238] > 0 && samples[239] === 0);
-      assert.ok(samples.slice(240).every(value => value === 0));
-      assert.equal(h.processor.retiredDeadlineReports.size, 0, 'valid output must not manufacture a deadline rejection');
+      for (let i = 0; i < samples.length; i++)
+        assert.ok(Math.abs(samples[i] - edge * Math.max(0, 239 - i) / 240) < .25 / 32768);
+      assert.equal(h.processor.retiring.length, 0);
     } finally { h.dispose(); }
   }
-});
-
-test('retired output uses its own mode limit and checks both sides of the deadline boundary', () => {
-  for (const [mode, type] of [['carplay', 0], ['airplay-mirror', 6]]) for (const offset of [-.001, .001]) {
-    const h = warmRetirement({ mode, type, frames: 1024 });
-    try {
-      const tail = h.processor.retiring[0], contextMs = h.frame / 48;
-      // The tail holds one source sample; output age grows over its 240 frames.
-      const mappedSource = tail.sourceTimeMs - h.base;
-      const tailProjectionMs = 5 * (1 / .98 - 1);
-      h.post({ contextAnchor: { contextTimeMs: contextMs,
-        localTimeMs: mappedSource + audioLimit(mode) - 2 - 5 - tailProjectionMs + offset } });
-      const output = h.render(1024)[0];
-      assert.equal(output.some(value => value !== 0), offset < 0, `${mode} boundary ${offset}`);
-      assert.equal(h.processor.retiredDeadlineReports.size, offset > 0 ? 1 : 0);
-    } finally { h.dispose(); }
-  }
-});
-
-test('unknown retired deadline evidence preserves the existing fade without claiming expiration', () => {
-  for (const control of [{ contextAnchor: null }, { clock: null }, { outputUncertaintyMs: null },
-    { clock: { version: 2, generation: 2, serverOriginMs: 8000000, localOriginMs: 0, rate: 1, state: 'stale', uncertaintyMs: 0 } }]) {
-    const h = warmRetirement();
-    try {
-      h.post(control);
-      assert.ok(h.render()[0].some(value => value > .2));
-      assert.equal(h.processor.retiredDeadlineReports.size, 0);
-    } finally { h.dispose(); }
-  }
-});
-
-test('retired evidence keeps its old identity beside a replacement and clears for reset or new Debug', () => {
-  const h = warmRetirement({ action: 'epoch' });
-  try {
-    h.post({ contextAnchor: { contextTimeMs: 0, localTimeMs: 1200 } });
-    h.render();
-    h.post({ contextAnchor: { contextTimeMs: 0, localTimeMs: 200 } });
-    h.feed({ epoch: 3 }); h.render(); h.processor.report();
-    const report = () => h.processor.messages.filter(value => value.diagnostics).at(-1).diagnostics.stream0;
-    assert.equal(report().epoch, 3);
-    assert.equal(report().lastRetiredSourceDeadlineEpoch, 1);
-    assert.equal(report().lastRetiredSourceDeadlineGeneration, 3);
-    assert.ok(report().lastRetiredSourceDeadlineAgeMs > 0);
-    h.post({ reset: true, generation: 4 });
-    assert.equal(h.processor.retiredDeadlineReports.size, 0);
-    h.post({ debug: false }); h.post({ debug: true, diagnosticRevision: 2, generation: 4 });
-    h.processor.report();
-    assert.equal(report()?.lastRetiredSourceDeadlineEpoch, undefined);
-    assert.equal(report()?.retiredSourceDeadlineRejectedFrames, undefined);
-  } finally { h.dispose(); }
 });

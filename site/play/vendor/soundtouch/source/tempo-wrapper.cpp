@@ -26,6 +26,21 @@ soundtouch::SoundTouch *tempo_create(unsigned sample_rate, double tempo) {
     processor->setTempo(tempo);
     return processor;
 }
+soundtouch::SoundTouch *tempo_live_create(unsigned sample_rate, unsigned channels) {
+    if (channels != 1 && channels != 2) return nullptr;
+    auto *processor = tempo_create(sample_rate, 1.0);
+    if (!processor) return nullptr;
+    processor->setChannels(channels);
+    processor->setSetting(SETTING_SEQUENCE_MS, 20);
+    processor->setSetting(SETTING_SEEKWINDOW_MS, 5);
+    processor->setSetting(SETTING_OVERLAP_MS, 5);
+    return processor;
+}
+int tempo_set(soundtouch::SoundTouch *processor, double tempo) {
+    if (!(tempo >= 0.95 && tempo <= 1.2)) return 0;
+    processor->setTempo(tempo);
+    return 1;
+}
 void tempo_delete(soundtouch::SoundTouch *processor) { delete processor; }
 void tempo_put(soundtouch::SoundTouch *processor, const float *samples, unsigned frames) {
     processor->putSamples(samples, frames);

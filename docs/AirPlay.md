@@ -145,10 +145,32 @@ resumes that response without another iPhone notification. The post-authenticati
 startup deadline excludes this wait. Authentication remains bounded, and ownership
 changes reported by an already established CarPlay session remain authoritative.
 
-For implementation comparison, GPL-3.0 [LIVI](https://github.com/f-io/LIVI/blob/f999f55735278acd76f0fa207218cac00a739047/native/livi-helperd/crates/livi-cp/src/video_playback.rs#L55-L82)
-builds borrow/return for integrated CarPlay `videoPlayback`; its checked mode handler
-only handles app states, not resource-owner confirmation. This does not establish
-ordinary AirPlay URL coexistence. [Catplay](https://github.com/catplay-labs/catplay/blob/bc6edae49554f2d0160b18ed18fc7b7376353115/carplay/catplay_carplay/src/carplay_rx/sink/session_handle.rs#L146-L180)
+For implementation comparison, GPL-3.0
+[LIVI e0e07e89](https://github.com/f-io/LIVI/blob/e0e07e89d1deba369f2bc0d10f1e65c546a45a38/native/livi-helperd/crates/livi-cp/src/video_playback.rs#L55-L87)
+builds borrow/return for integrated CarPlay `videoPlayback`. Its command parameters
+also match the previously checked `f999f557` revision:
+
+| Field | LIVI | TiPlay ordinary-AirPlay screen loan |
+| --- | --- | --- |
+| `resourceID` | 1 | 1 |
+| `transferType` | 3 borrow / 4 unborrow | 3 borrow / 4 unborrow |
+| `borrowID` | `VideoPlayback`, on both commands | `VideoPlayback`, on both commands |
+| `transferPriority` | 500 on borrow | 500 on borrow |
+| `unborrowConstraint` | 500 on borrow | 500 on borrow |
+
+LIVI's [call path](https://github.com/f-io/LIVI/blob/e0e07e89d1deba369f2bc0d10f1e65c546a45a38/native/livi-helperd/crates/livi-cp/src/stack.rs#L1537-L1669)
+borrows on `requestUI videoplayback:`, initial playback or enabling video; a video
+`stop` attempts unborrow through the current event connection. It marks its local boolean
+before writing, ignores the transport write result, and its `modesChanged` handler
+processes app states rather than screen resource ownership. TiPlay's pending/
+confirmed state therefore must not be replaced by that boolean. Screen-only
+TEARDOWN preserves other resources in both implementations; control EOF ends
+LIVI's session loop too. TiPlay aligns these command fields with LIVI while retaining
+its fresh ownership confirmation and reentrant delivery guards. Parameter alignment
+does not establish the cause of the capture's peer EOF or prove ordinary AirPlay URL
+coexistence; actual borrowing, return and retained-control behavior still need device validation.
+
+[Catplay](https://github.com/catplay-labs/catplay/blob/bc6edae49554f2d0160b18ed18fc7b7376353115/carplay/catplay_carplay/src/carplay_rx/sink/session_handle.rs#L146-L180)
 separates borrow/unborrow, command results and ModesChanged; no license was found at
 that revision, so no code is copied. The separately reviewed
 [WirelessCarPlay command completion](https://github.com/45clouds/WirelessCarPlay/blob/51145ef55f8dd9f1cbadd58353cacb5e0ca215e9/source/Sources/AirPlayReceiverSession.h#L330-L342)

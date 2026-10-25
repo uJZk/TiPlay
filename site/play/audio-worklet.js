@@ -1,10 +1,11 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
+import { LiveTempoRuntime, prepareLiveTempo } from './live-tempo.js';
 import { PcmTimeline } from './pcm-timeline.js';
 import { initialPlaybackPlans, audioDelayAt, audioLimit } from './playback-window.js';
 import { BUFFERED_AUDIO_WINDOW_MS } from './audio-buffer-policy.js';
 import { SoxrRuntime, prepareSoxr } from './streaming-resampler.js';
 import { AudioKernel, prepareAudioCore } from './wasm/audio-core.js';
-import { ContinuousAudio, AUDIO_FADE_MS, AUDIO_RECOVERY_ERROR_MS, sourceDeadlineAt, sourceDeadlineUncertainty } from './continuous-audio.js';
+import { ContinuousAudio, AUDIO_FADE_MS, AUDIO_RECOVERY_ERROR_MS } from './continuous-audio.js';
 import { rateProjectionUncertainty } from './audio-device-clock.js';
 
 const purpose = (type, stream) => stream.semanticType ?? type;
@@ -18,11 +19,13 @@ class TiPlayAudio extends AudioWorkletProcessor {
     super();
     if (options.processorOptions?.soxrModule) prepareSoxr(options.processorOptions.soxrModule);
     if (options.processorOptions?.audioCoreModule) prepareAudioCore(options.processorOptions.audioCoreModule);
+    if (options.processorOptions?.liveTempoModule) prepareLiveTempo(options.processorOptions.liveTempoModule);
     this.streams = new Map();
     this.timelines = new Map(); this.epochs = new Map(); this.delayPlans = initialPlaybackPlans(); this.clockBase = null;
     this.plansByMode = {};
     this.diagnostics = null; this.lastReportTime = -Infinity; this.diagnosticRevision = null; this.playbackGeneration = null;
     this.runtime = new SoxrRuntime({ allowCalibration: false }); this.clock = null; this.contextAnchor = null; this.localTimeOriginMs = 0;
+    this.runtime.liveTempo = new LiveTempoRuntime();
     this.kernel = this.runtime.audioKernel = new AudioKernel();
     this.renderedFrames = 0; this.feedbackSequence = 0; this.lastFeedbackMs = -Infinity; this.suspended = false;
     this.renderQuantumMaxFrames = 0;
@@ -32,7 +35,6 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.deviceClock = { rate: 1 }; this.arrivalAnchor = null;
     this.retiring = [];
     this.continuous = [];
-    this.retiredDeadlineReports = new Map();
     this.mediaGain = 1;
     this.mediaGainStep = (1 - MEDIA_DUCK_GAIN) / Math.max(1, Math.round(AUDIO_FADE_MS * sampleRate / 1000));
     this.disposed = false;
@@ -42,7 +44,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
         for (const timeline of this.timelines.values()) timeline.clear();
         this.timelines.clear();
         for (const [type, stream] of this.streams) for (const pcm of stream.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', type);
-        this.streams.clear(); this.epochs.clear(); this.retiring = []; this.retiredDeadlineReports.clear(); this.runtime = null; this.disposed = true;
+        this.streams.clear(); this.epochs.clear(); this.retiring = []; this.runtime = null; this.disposed = true;
         return;
       }
       const contextMs = this.renderContextMs();
@@ -94,7 +96,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
         this.diagnosticRevision = data.diagnosticRevision;
         this.playbackGeneration = Number.isSafeInteger(data.generation) ? data.generation : null;
         this.lastReportTime = -Infinity;
-        this.retiredDeadlineReports.clear();
+
         for (const timeline of this.timelines.values()) timeline.debug(data.debug);
       }
       if (data.plans) this.delayPlans = data.plans;
@@ -102,7 +104,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
       if (data.clockBase !== undefined) this.clockBase = data.clockBase;
       if (data.reset) {
         this.playbackGeneration = Number.isSafeInteger(data.generation) ? data.generation : null;
-        this.retiredDeadlineReports.clear();
+
         for (const [type, stream] of this.streams) for (const pcm of stream.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', type);
         this.streams.clear();
         for (const timeline of this.timelines.values()) this.retireTimeline(timeline);
@@ -213,12 +215,11 @@ class TiPlayAudio extends AudioWorkletProcessor {
   retireTimeline(timeline) {
     if (!timeline) return;
     if (timeline instanceof ContinuousAudio && timeline.last.some(value => value !== 0)) {
-      // Keep only the bounded last sample and its conservative source identity.
-      // A retired tail must obey its own mode's deadline after epoch replacement.
-      this.retiring.push({ samples: timeline.last.slice(), remaining: timeline.fadeFrames, total: timeline.fadeFrames,
-        type: timeline.type, semanticType: timeline.semanticType, mode: timeline.mode, epoch: timeline.epoch, generation: timeline.generation,
-        sourceTimeMs: timeline.deadlineSourceMs, synchronized: timeline.synchronized, arrivalPlayback: timeline.arrivalPlayback,
-        filterUncertaintyMs: timeline.filterUncertaintyMs });
+      // Preserve one non-renewable 5ms edge, even after a source deadline.
+      // A partially rendered fade keeps only its remaining duration.
+      const remaining = Math.min(timeline.tailRemaining, timeline.fadeFrames);
+      if (remaining > 0) this.retiring.push({ samples: timeline.last.slice(), remaining, total: remaining,
+        type: timeline.type, semanticType: timeline.semanticType });
       if (this.retiring.length > 16) this.retiring.shift();
     }
     timeline.clear();
@@ -228,13 +229,11 @@ class TiPlayAudio extends AudioWorkletProcessor {
     if (!metrics) return;
     const renderedMs = this.renderContextMs();
     const { streams, ...scalars } = metrics, details = {};
-    for (const type of new Set([...Object.keys(streams).map(Number), ...this.timelines.keys(), ...this.streams.keys(), ...this.retiredDeadlineReports.keys()])) {
+    for (const type of new Set([...Object.keys(streams).map(Number), ...this.timelines.keys(), ...this.streams.keys()])) {
       const timeline = this.timelines.get(type), legacy = this.streams.get(type);
       const fields = timeline ? { ...timeline.stats(), mode: timeline.mode, rate: timeline.rate, channels: timeline.channels, delayMs: timeline.delayMs ?? timeline.networkDelayMs }
         : { queueBytes: legacy?.queue.reduce((bytes, pcm) => bytes + pcm.byteLength, 0) ?? 0, queuePackets: legacy?.queue.length ?? 0, rate: legacy?.rate, channels: legacy?.channels };
-      const { contextMs, ...retired } = this.retiredDeadlineReports.get(type) ?? {};
-      details['stream' + type] = { ...fields, epoch: this.epochs.get(type), ...streams[type], ...retired,
-        ...(Number.isFinite(contextMs) ? { lastRetiredSourceDeadlineAgeMs: Math.max(0, renderedMs - contextMs) } : {}) };
+      details['stream' + type] = { ...fields, epoch: this.epochs.get(type), ...streams[type] };
     }
     this.port.postMessage({ diagnosticRevision: this.diagnosticRevision, playbackGeneration: this.playbackGeneration,
       diagnostics: { ...scalars, ...details, renderTimeMs: renderedMs } });
@@ -271,26 +270,6 @@ class TiPlayAudio extends AudioWorkletProcessor {
       uncertaintyMs: Math.max(0, this.outputUncertaintyMs) + Math.max(0, this.clock.uncertaintyMs) + timeline.filterUncertaintyMs,
       projectionContextMs: contextMs - this.contextAnchor.contextTimeMs, projectionRate: this.deviceClock.rate,
     };
-  }
-  checkRetiredDeadline(tail, contextMs, blockFrames) {
-    const frames = Math.min(tail.remaining, blockFrames), deadline = this.deadline(tail, contextMs);
-    if (sourceDeadlineAt(deadline, tail.arrivalPlayback ? null : this.clock, tail.sourceTimeMs,
-      frames * 1000 / sampleRate / this.deviceClock.rate, 0, tail)) return;
-    if (this.diagnostics && Number.isInteger(tail.type) && tail.type >= 0 && tail.type <= 255) {
-      const previous = this.retiredDeadlineReports.get(tail.type);
-      this.retiredDeadlineReports.set(tail.type, {
-        retiredSourceDeadlineRejectedFrames: (previous?.retiredSourceDeadlineRejectedFrames || 0) + tail.remaining,
-        ...(Number.isSafeInteger(tail.epoch) ? { lastRetiredSourceDeadlineEpoch: tail.epoch } : {}),
-        ...(Number.isSafeInteger(tail.generation) ? { lastRetiredSourceDeadlineGeneration: tail.generation } : {}),
-        lastRetiredSourceDeadlineDeltaUpperMs: tail.sourceDeltaUpperMs,
-        lastRetiredSourceDeadlineLimitMs: deadline.limitMs,
-        lastRetiredSourceDeadlineUncertaintyMs: sourceDeadlineUncertainty(deadline, frames * 1000 / sampleRate / this.deviceClock.rate),
-        contextMs,
-      });
-    }
-    // All remaining samples hold the same old value. Discard its whole tail;
-    // keeping the object cannot make that content younger at the next quantum.
-    tail.remaining = 0;
   }
   targetTime(timeline, contextMs, frames = 0) {
     if (this.suspended) return null;
@@ -403,7 +382,6 @@ class TiPlayAudio extends AudioWorkletProcessor {
       entry[2] = produced; continuous[continuousCount++] = entry;
     }
     continuous.length = continuousCount;
-    for (const tail of this.retiring) if (tail.remaining > 0) this.checkRetiredDeadline(tail, contextMs, blockFrames);
     const bulkMix = !this.streams.size && continuous.length === this.timelines.size
       && this.kernel.supports(blockFrames, output.length);
     if (bulkMix) this.mediaGain = this.kernel.mix(continuous, this.retiring, output,

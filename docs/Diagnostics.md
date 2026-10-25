@@ -227,13 +227,16 @@ mapping. A single ordered pair cannot establish a pipeline step: confirmation re
 new, coherent, advancing pairs, and pending evidence leaves the output reference unknown.
 Neither repeated snapshots nor reordered historical pairs refresh that evidence.
 
-Native snapshots preserve every production recovery reason (`clock-step`, `underrun`,
+Snapshots preserve recovery reasons (`clock-step`, `underrun`,
 `source-deadline`, `network-buffer`, `device-clock-jump`, `clock-generation`,
 `suspended`, `sender-deadline`) and `rebufferCount`. Missing fields remain unknown;
-old TXT allowlists omitted some reasons even when the raw browser report contained them.
-Decoder `noDataPackets`/`noDataFrames`, globally and per stream, count explicitly
-synthesized mirror silence, not lost packets or measured speaker output. No new raw
-PCM collection or per-packet logging is needed for these counters.
+Expired fresh PCM remains rejected; every controlled cut fades the last published
+sample over 5 ms, overlapping fresh fade-in. CarPlay backlog uses dynamic catch-up
+up to 20%: three-second trends guide acceleration; above 200 ms phase error,
+pressure blends toward 20% over the next 100 ms, with slew and PCM guards.
+SoundTouch preserves pitch; libsoxr only corrects sample rates and clocks.
+Decoder `noDataPackets`/`noDataFrames`, count
+synthesized mirror silence, not lost packets or measured speaker output. No additional capture is required.
 
 Audio output references remain active in Standard mode; Debug controls detailed
 collection only. Video records reference availability and audio/video skew while
@@ -265,6 +268,8 @@ sequence/bytes and `attempt`, `local-enqueue` or `failed`. Local enqueue means S
 accepted the bytes on Android, not remote consumption, decoding or sound. HTTP
 `browser/audio` fixtures retain socket-write semantics in factory-free JVM tests;
 the Android product disables that media route.
+
+For local log-driven reconstruction, see [Preparing a local CarPlay replay](../tests/web-e2e/README.md#preparing-a-local-carplay-replay). The importer preserves original audio bytes and capture order; Android capture times remain distinct from browser arrival times. JS CPU sampling excludes AudioWorklet, native codec and GPU load.
 
 `Browser transport` records stage, transport epoch, host/UDP candidate counts,
 ICE/connection state, safe candidate types, queue/credit counters and decoder
@@ -442,6 +447,35 @@ Two URL grants are followed by peer TEARDOWN/control EOF after 322/131 ms; later
 CarPlay pictures belong to new sessions. Successful borrowing and preserved control
 are separate findings. The iPhone icon is user observation; neither its absence nor
 EOF identifies iOS's internal reason. Older captures cannot gain new boundaries.
+
+### CarPlay capture replay evidence
+
+A beta.16/code58, v84 capture contains 45,604 locally enqueued audio records and
+192 audio diagnostic samples, without observed capture failure. Enqueue does not prove receipt.
+
+Sequential 30-second Chromium 151 desktop replays use original AAC/Opus bytes and
+Android send spacing, 48 kHz output and a fixed reconstructed clock. Recorded CPU
+as a percentage of one logical core:
+
+| Component | Music, Debug | Music/navigation, Debug | Same mixed clip, Standard |
+| --- | ---: | ---: | ---: |
+| Main thread | 1.74–1.76% | 2.21–2.23% | 2.15–2.16% |
+| AudioWorklet thread | 3.00% | 3.46% | 3.73% |
+| Native audio-decoder tasks | 0.14% | 0.37% | 0.39% |
+
+Trace/profiler overhead is included; single-run differences do not establish Debug
+cost. Video/UI, target network and vehicle CPU are unmeasured. The original capture
+reports zero browser-render underruns but 264 render-clock domain changes and 2,798
+output-timestamp invalidations. The mixed replay reproduces navigation queue
+underruns and repeated source-deadline recovery, without renderer underruns; this
+is a diagnostic phenotype, not acoustic proof of the reported crackle.
+
+At 08:21:16.710 +0800 the screen loan is requested, ownership is confirmed at
+16.728, and the original connection reports peer EOF at 17.074. A successor gets
+controller ownership and main-screen SETUP at 08:21:47.816/.846. No unborrow command
+appears, so this capture establishes borrowing and replacement-session recovery,
+not successful return on the original connection. The 19 isolated ownership-state
+tests pass; full Android CI remains blocked by Gradle distribution access.
 
 ## Live video policy evidence
 

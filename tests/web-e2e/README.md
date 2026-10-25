@@ -22,6 +22,154 @@ production behavior.
 
 All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LAN servers require direct access. `run.mjs` and `phone-run.mjs` print `ok -` checks and finish with `all checks passed`, or exit nonzero on failure. Other harnesses print results and exit nonzero on assertion failure.
 
+## Live CarPlay CPU sampling
+
+With an existing Chromium remote-debugging connection and CarPlay already playing:
+
+```sh
+node scripts/measure_carplay_cpu.mjs --endpoint http://127.0.0.1:9222 --seconds 30 --output /tmp/carplay-cpu
+```
+
+This requires Node 22+ and no npm dependencies. For Android Chromium, forward its
+debug socket first (`adb forward tcp:9222 localabstract:chrome_devtools_remote`);
+the socket name and availability depend on the browser. With multiple tabs, select
+the TiPlay target ID from `/json/list` using `--target`. The tool attaches without
+reloading, changing diagnostics settings or injecting playback code. It stops its
+profilers and detaches when complete. Avoid running another DevTools CPU profiler
+at the same time. A sampling interval of 1 ms adds overhead.
+
+`report.json` contains main-thread task time as a percentage of elapsed time,
+per-thread/module **self sampled wall-time** percentages, and audio/video counters
+at both boundaries. A missing CarPlay mode or no increase in timed audio packets
+produces a warning. Idle and unattributed native/program samples stay separate;
+these percentages are not OS CPU utilization, and cannot be summed across workers
+with different sampling intervals. Open each `.cpuprofile` in DevTools Performance
+for function-level analysis. Profiles retain source URLs; keep artifacts local.
+AudioWorklet, native codecs, WebRTC internals, GPU and compositor threads remain
+unmeasured. Those require a browser/system trace on the target device. A low JS
+sample count therefore does not rule out overload or establish an audible cause.
+
+Capture repeated 30-second runs for idle, music, music plus navigation, and music
+plus map interaction on the same device and configuration. Compare component time,
+GC and audio underrun/recovery counters; keep desktop synthetic results separate
+from vehicle results. A disconnected page is only a tool smoke check.
+
+## Preparing a local CarPlay replay
+
+Keep the original ZIP and generated inputs outside Git. Prepare browser audio
+records using the Python standard library:
+
+```sh
+python3 scripts/prepare_carplay_capture.py /tmp/TiPlay-debug.zip --output /tmp/carplay-replay
+```
+
+The output directory must be new. `--session ID` selects one retained capture;
+otherwise the manifest keeps sessions separate. The importer checks ZIP entry
+uniqueness, stream sizes, contiguous event ranges and browser audio record headers.
+It refuses invalid input rather than repairing or silently skipping records.
+Indexes are bounded to 64 MiB each; selected audio is bounded to 512 MiB. It writes
+only numbered browser RTC audio files and a JSON manifest, without extracting
+control, credentials, session configuration or unrelated protocol payloads.
+The manifest includes source/archive SHA-256, a stream inventory, original journal
+order, capture times, source presentation times, audio formats and capture gaps.
+It reports partial coverage, unparsed records and clock regressions explicitly.
+Unselected streams receive index/size checks, not full payload validation.
+
+`tests/web-e2e/capture-replay.mjs` provides a backpressured `ReadableStream` adapter
+for the production `readAudioRecords`/`createBrowserAudio` input boundary. Supply
+one stream's manifest events and a `readRange(offset, length)` function. Use a
+shared `startAtMs` in the local performance-clock domain for streams in the same
+session; `atMs` retains offsets from their shared capture origin. Record order and
+source timestamps remain unchanged, including clock regressions. Cancellation
+releases pending timers. Replay lateness is counted separately from capture gaps.
+
+These are preparation tools, not an automatic whole-session CarPlay emulator.
+RTC audio records include attempted sends; correlate the original `/events`
+channel's `attempt`/`local-enqueue`/`failed` outcomes before selecting delivered
+inputs. Capture times precede Android SCTP admission and are not browser arrival
+times. A session-specific browser clock mapping and buffering configuration must
+be reconstructed from the supplied diagnostics before audio playback. Video
+requires matching encoded input, transformations and keyframe/epoch boundaries;
+neither network arrival jitter nor video content can be inferred from audio alone.
+Standard TXT supports counter/timing analysis but cannot supply missing payloads.
+
+### Audio playback and thread CPU traces
+
+After correlating audio send outcomes and choosing the session clock mapping,
+the actual audio pipeline can replay a bounded clip:
+
+```sh
+NODE_PATH=/tmp/pw/node_modules CHROMIUM=/usr/bin/chromium \
+  node tests/web-e2e/capture-audio.mjs --capture /tmp/carplay-replay \
+  --clock-offset-ms ORIGINAL_BROWSER_CLOCK_OFFSET --start-ms 180000 \
+  --duration-ms 30000 --context-rate 48000 --debug true --output /tmp/carplay-audio-profile
+python3 scripts/summarize_browser_trace.py /tmp/carplay-audio-profile/trace.json \
+  --output /tmp/carplay-audio-profile/cpu-summary.json
+```
+
+The harness serves only loopback fixtures and production assets under the actual
+page CSP, preloads genuine WASM, clicks a start button, and runs
+`createBrowserAudio`, native AAC/Opus decoding, libsoxr and the audio worklet.
+It reinstalls the most recent captured configuration per logical stream when a
+clip begins mid-epoch; original payloads and source presentation times remain
+unchanged. An open clip stays open until cancellation so its end cannot manufacture
+a production EOF/reset. Playing output references are required even with Debug off.
+Non-finite protocol control/configuration timestamps are retained in the binary;
+their JSON metadata uses `null` with `presentationFinite=false`.
+
+`--clock-offset-ms` must come from the chosen session diagnostics; it is not inferred
+from an encoded packet's presentation time. The harness uses that fixed offset,
+unit rate, 6 ms RTT, 5 ms clock uncertainty and 20 ms audio delay by default
+(`--delay-ms` overrides delay). These are explicit reconstruction assumptions,
+not a replay of every target clock observation. `--stream` selects the manifest
+audio stream. Use the captured output rate with `--context-rate` (default 48000).
+
+The runner exports a main-thread `.cpuprofile`, a marked Chromium `trace.json`,
+one-second audio snapshots and the archive SHA-256. The trace summary uses `tdur`
+for actual recorded **thread CPU time**, counts enclosing tasks once, and preserves
+unknown CPU fields. Partial thread-time coverage has an approximate range bounded
+by the missing events' elapsed time. Callback CPU includes its children and is
+already part of thread totals; never sum both. Report native audio-decoder tasks,
+worklet `process` (resampling/mixing/recovery), worklet message handling and main
+callbacks separately. All percentages use one logical CPU as 100%.
+
+The runner's 100 ms completion polling, statistics collection, cold decoder/JIT
+startup and trace/profiler overhead remain in these measurements. Run clips
+sequentially and repeat before attributing a small difference to Debug. The harness
+replays audio only: source video, full page UI, original SCTP/network scheduling,
+Android capture I/O and the car's native output timestamp behavior are absent.
+An audible click and the vehicle's total/component CPU utilization cannot be
+claimed from successful desktop playback or a low measured thread average.
+
+Use `--capture-waveform true` for a separate signal observation run. It inserts a
+stereo pass-through worklet after the production output, saves interleaved native
+Float32 samples as `output.f32` (little endian on the tested Linux Chromium), and
+records original hardware-frame ranges in `output-index.json`. Missing hardware
+frames stay unknown; analysis must not stitch across them or count missing frames
+as observed silence. The tap's sample transparency and frame-gap handling are unit
+tested. State/rejection changes are retained as `referenceEvents` in the report.
+Their context times are the production worklet's logical cursor; one-quantum
+hardware counter discrepancies can affect exact boundary alignment.
+
+Signal observation disables the CPU profiler/trace and labels CPU fields unknown,
+because the extra node/capture traffic changes the measured graph. A 30-second
+mixed capture replay produced 63 source-deadline rejection transitions in one
+approximately 2.17-second interval, rejecting 8,064 frames. Earlier profiling and
+instrumented-tap runs produced 61 and 54 transitions respectively. These are
+different runs with different native clock observations, not three inconsistent
+counts of one trace. Several zeroing edges carry very low amplitude; this evidence
+does not establish 63 audible clicks or disprove clicks at other recovery boundaries.
+Count fault clusters and rejected frames beside single-sample changes, and do not
+count copied counters on an `ended` reference as new rejection events.
+
+After building the log-specific playback harness, use
+`scripts/measure_carplay_cpu.mjs` for JS main/Worker profiles, with the usage and
+measurement limits in [CPU sampling](#live-carplay-cpu-sampling).
+Profile normal playback and the reported crackle window separately; compare
+diagnostics on/off to account for collection overhead. AudioWorklet/native codec,
+WebRTC, compositor and GPU load require device browser/system traces. Desktop
+replay CPU cost does not establish vehicle CPU utilization or physical crackles.
+
 | Script | Coverage and extra requirements |
 | --- | --- |
 | `geolocation.mjs` | Actual Chromium geolocation permissions/watch, browser-local datum cache across reload, release on opt-out, and persistent guidance with an explicit close action. Uses a module fixture without vehicle/Android sensors. |

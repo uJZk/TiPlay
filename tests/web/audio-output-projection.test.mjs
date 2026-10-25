@@ -99,31 +99,26 @@ test('real delay-plan changes retain the existing cumulative 8ms seek boundary',
   assert.deepEqual(recoveries, ['network-buffer'], 'the applied plan is acknowledged once');
 });
 
-test('real Soxr held PCM uses its five milliseconds rather than 1024-frame zero padding at the source boundary', () => {
+
+test('real Soxr held PCM fades for 5ms even when output timing changes beyond the source cutoff', () => {
   const runtime = new SoxrRuntime();
-  for (const offset of [-.001, .001]) {
+  for (const offset of [-1000, 1000]) {
     const player = new ContinuousAudio(runtime, 48000, 1, 48000, () => {}, 1000, { mode: 'carplay', buffered: true });
     player.synchronized = true;
     const h = projection(1), firstOutput = new Float32Array(128), output = new Float32Array(1024);
     try {
-      // Use legal packet sizes while priming a real filter.
       for (let frame = 0, sequence = 0; frame < 19200; frame += 960) player.push({ presentationMs: frame / 48,
         sequence: sequence++, generation: 1, pcm: new Int16Array(960).fill(16384).buffer });
       player.render(0, 0, h.processor.clock, 128, firstOutput);
-      assert.ok(firstOutput.some(value => value > 0));
+      const edge = firstOutput.at(-1);
+      assert.ok(edge > 0);
       player.recover('underrun');
-      const source = player.lastSourceMs, contextMs = 128 / 48;
-      const worstPhysicalTailMs = 5 / .98;
-      h.processor.contextAnchor = { contextTimeMs: contextMs,
-        localTimeMs: source + 300 - player.filterUncertaintyMs - worstPhysicalTailMs + offset };
-      player.render(null, contextMs, h.processor.clock, 1024, output, 1, h.processor.deadline(player, contextMs));
-      assert.equal(player.sourceDeadlineState, offset < 0 ? 'within-bound' : 'violated');
-      assert.equal(output.some(value => value !== 0), offset < 0);
-      if (offset < 0) {
-        assert.ok(output[238] > 0); assert.equal(output[239], 0);
-        assert.ok(output.subarray(240).every(value => value === 0));
-        assert.equal(player.sourceDeadlineRejectedFrames, 0);
-      } else assert.equal(player.sourceDeadlineRejectedFrames, 1024);
+      h.processor.contextAnchor = { contextTimeMs: 128 / 48, localTimeMs: offset };
+      player.render(null, 128 / 48, h.processor.clock, 1024, output, 1, h.processor.deadline(player, 128 / 48));
+      for (let i = 0; i < output.length; i++)
+        assert.ok(Math.abs(output[i] - edge * Math.max(0, 239 - i) / 240) < .25 / 32768);
+      assert.equal(player.sourceDeadlineState, 'unknown');
+      assert.equal(player.sourceDeadlineRejectedFrames, 0);
     } finally { player.clear(); }
   }
 });
