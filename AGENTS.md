@@ -56,7 +56,7 @@ and measured slower-case exceptions. Rebuild and byte-verify the binaries using
 record frame-based live timing, causal output probes and natural URL completion;
 [Testing](docs/Testing.md#browser-wasm-verification) records browser and Android
 verification, including faulty-currentTime Chromium runs.
-The current published prerelease is beta.18/code60 with webpage v86. Its CarPlay
+The current published prerelease is beta.19/code61 with webpage v86. Its CarPlay
 session/resource and single-initial-SETUP boundaries are documented in
 [AirPlay](docs/AirPlay.md#carplay-coexistence); [Build](docs/Build.md#beta-release)
 records its exact build commit, published artifacts, verification and signer/runtime/source provenance.

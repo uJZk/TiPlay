@@ -8,7 +8,7 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is **0.2.20-beta.18** (code **60**). Run
+prerelease is **0.2.20-beta.19** (code **61**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
 the deployed page uses **v86** with WebRTC DataChannel as the formal live-media path.
@@ -214,59 +214,59 @@ The signed beta.17/code59 APK, matching source ZIP and checksums remain unchange
 built from `d8708330e6b86f33cb212a7af66651cc397efd10` with archived webpage v85.
 All five WASM binaries retain their v85 bytes and prior reproducibility evidence.
 
-## Beta.19 release preparation
-
-Beta.19/code61 updates the diagnostic switch and View logs dialogs: ordinary
-Save/Share/Close; Debug End and export/End and share/Discard/Minimize. Discard and
-ending clear capture; Minimize continues recording. Copy is shortened and obsolete
-capture/export/clear UI paths removed. Diagnostic/action/spacing checks and the
-phone Debug APK build passed; the final Discard dialog check passed too. Full CI
-is skipped by explicit request. Signed-release lint/build and artifact verification
-remain required before public publication.
-
 ## Beta release
 
-Published [TiPlay 0.2.20-beta.18](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.18), code **60**, at **2026-10-25 12:36:16 UTC+08:00**.
-Build commit: `8614c665616b49199e8307628fc3fd8f15324504`. The [signed workflow](https://github.com/uJZk/TiPlay/actions/runs/40161926481)
+Published [TiPlay 0.2.20-beta.19](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.19), code **61**, at **2026-10-25 13:29:26 UTC+08:00**.
+Build commit: `7234f391de5fa186443a253728681f8d105b0eec`. The [signed workflow](https://github.com/uJZk/TiPlay/actions/runs/40165134293)
 passed Release lint/build, runtime checks and draft upload. Published APK/source/checksum
 assets match the independently verified draft attachments and checksums:
 
 | Asset | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `TiPlay-0.2.20-beta.18.apk` | 103,722,534 | `8a1c0d68eda32f8c68b844b10fdfdb9722e71c9a5172abaf9f390a22d4a3188d` |
-| `TiPlay-0.2.20-beta.18-source.zip` | 20,938,415 | `485c54dd81bab37ae4f4ffc7c29ea17f58b1a60cab110655c506b574d4223d6f` |
-| `SHA256SUMS.txt` | 191 | `b236914b96d307bc8bf4512e47ec267ab1ecaae3883b0032c14785d2dfba18bb` |
+| `TiPlay-0.2.20-beta.19.apk` | 103,719,182 | `9d15a556aff3e3048ef5bb3b8ced7719b528f05adb40c129f1830e35c387cf5d` |
+| `TiPlay-0.2.20-beta.19-source.zip` | 20,938,078 | `6d850e3955f86fe74c49b37c8ab840380c43f49640e47ab7f5348326bccc77be` |
+| `SHA256SUMS.txt` | 191 | `9481eb15522ef6729bb62a303d147469fe2a5d71c5c6bcdf59fe0be2e83b7896` |
 
 ### Verification and scope
 
-Targeted checks passed: 35 shared and 146 common tests, merged-main integration,
-compression round trips, Debug APK build, nine release-draft tests and two site tests.
+154 targeted diagnostic/UI/action/spacing/translation checks passed, as did the final
+Discard dialog check, phone Debug build, nine release-draft tests and two site checks.
 **Full Android CI was skipped by explicit user request.** Release lint/build and
-independent artifact checks remain separate from that skipped suite.
+independent signature/source/native checks passed separately.
 
 The APK is non-debug `com.ujzk.tiplay`, min SDK 28, target SDK 37. Signing SHA-256
-matches beta.17: `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`. Exactly two runtime identity files are
-packaged, verified byte-for-byte against pinned DiPlay 0.2.18 inputs by the workflow;
-no extra credential containers are present. Source ZIP bytes match `git archive`
-of the exact build commit. All four Android ABIs include Zstandard JNI; the APK
-contains 43 native libraries, including 21 ELF64 libraries with at least 16 KiB LOAD
-alignment. `zipalign -P 16` and signature verification pass.
+matches beta.18: `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`. Exactly two runtime identity files are
+packaged; the workflow compares them byte-for-byte against pinned DiPlay 0.2.18 inputs.
+No additional credential containers exist. The source ZIP bytes match `git archive`
+of the exact build commit. All four Android ABIs include Zstandard JNI. There are
+43 native libraries; all 21 ELF64 libraries meet 16 KiB LOAD alignment,
+and `zipalign -P 16` passes.
 
-This release adds persistent diagnostic capture with a dismissible progress window,
-Zstandard level 3 realtime capture/export, redacted Standard reports and browser
-Siri/navigation downlink during microphone demand. The generated product version is
-beta.18; the browser playback revision remains v86. [Diagnostics](Diagnostics.md)
-records capture limits and physical follow-up. Real-car audio/echo, screen-off and
-sustained capture CPU/storage checks remain unrun; software checks do not prove
-speaker/panel timing. The [experimental runtime identity notice](Third-party-notices.md#experimental-authentication-data) still applies.
+This release adds the Debug switch and one View logs button. Ordinary mode offers
+Save/Share/Close; Debug offers End and export/End and share/Discard/Minimize. Ending
+or discarding stops and clears capture; minimizing keeps recording. Export/share
+prepares a usable file before cleanup. Failed writes retain stopped evidence.
+Obsolete capture/export/clear controls are removed and product copy is shortened.
+Realtime capture and exported logs continue to use Zstandard level 3. Browser DSP
+revision remains v86. [Diagnostics](Diagnostics.md) records physical follow-up:
+real-car audio/echo, restart, screen-off and sustained CPU/storage acceptance remain
+unrun. The [runtime identity notice](Third-party-notices.md#experimental-authentication-data) applies.
 
 ### Previous release provenance
 
-- [Beta.17](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.17), code59/v85,
+At the user's request, the 16 Release objects before beta.19 and their 48 attachments
+were deleted after beta.19 publication and public-download verification. Git tags
+and source history are retained; links below now point to source tags. Historical
+hashes remain provenance, not available old download attachments.
+
+- [Beta.18](https://github.com/uJZk/TiPlay/tree/v0.2.20-beta.18), code60/v86,
+  built from `8614c665616b49199e8307628fc3fd8f15324504`; APK SHA-256
+  `8a1c0d68eda32f8c68b844b10fdfdb9722e71c9a5172abaf9f390a22d4a3188d`.
+- [Beta.17](https://github.com/uJZk/TiPlay/tree/v0.2.20-beta.17), code59/v85,
   published from `d8708330e6b86f33cb212a7af66651cc397efd10`; APK SHA-256
   `7734096f42e2dbbab49099668e7e65fae802bf84af59493d20f86730a2db253f`.
-  Its CI/signed workflow evidence and original release assets remain unchanged.
-- [Beta.16](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.16), code58/v84,
+  Its earlier CI/signed workflow evidence remains recorded; release attachments were removed.
+- [Beta.16](https://github.com/uJZk/TiPlay/tree/v0.2.20-beta.16), code58/v84,
   prerelease **422536688**, was published **2026-10-24 13:44:46 UTC+08:00** from
   `572207cc9a16c0d13d287e5cd3612ea79767eb93`.
   [Signed workflow](https://github.com/uJZk/TiPlay/actions/runs/40065680904),
@@ -274,7 +274,7 @@ speaker/panel timing. The [experimental runtime identity notice](Third-party-not
   [Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/40065661627) succeeded.
   Its **101,094,545-byte** APK SHA-256 remains
   `76ea16a1320a191b49a91f20ae9c5d59148ac04f477e1748b0ebc6c38597d540`.
-- [Beta.15](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.15), code57/v83,
+- [Beta.15](https://github.com/uJZk/TiPlay/tree/v0.2.20-beta.15), code57/v83,
   prerelease **422463974**, was published **2026-10-24 10:32:06 UTC+08:00** from
   `4cd5806257b35523ccc6b7224e17acce85d51873`.
   [Signed workflow](https://github.com/uJZk/TiPlay/actions/runs/40053153040),
@@ -282,14 +282,14 @@ speaker/panel timing. The [experimental runtime identity notice](Third-party-not
   [Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/40053151725) succeeded.
   Its **101,060,905-byte** APK SHA-256 remains
   `6919f19b7f7e458fa20074df16fcf98b01883bef3ec90739917646176eb5e78a`.
-- [Beta.14](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.14), code56/v80,
+- [Beta.14](https://github.com/uJZk/TiPlay/tree/v0.2.20-beta.14), code56/v80,
   prerelease **421892511**, was published **2026-10-23 13:50:47 UTC** from
   `59efe314ae8e1a4b21b86c0feb451c624ff13e4b`.
   [Signed workflow](https://github.com/uJZk/TiPlay/actions/runs/39962490704) and
   [original Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/39962485128)
   succeeded. Its **101,060,901-byte** APK SHA-256 remains
   `d8c5e1aaa1ee239fbcfe27d05178270da07a86136cd9154f93f58183932418c4`.
-- [Beta.13](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.13), code55/v79,
+- [Beta.13](https://github.com/uJZk/TiPlay/tree/v0.2.20-beta.13), code55/v79,
   prerelease **421554656**, was published **2026-10-23 07:34:49 UTC** from
   `70a86088e8ec57c1adb24045d28c1f06f9300f0f`.
   [Signed workflow](https://github.com/uJZk/TiPlay/actions/runs/39917075886) and
@@ -297,7 +297,7 @@ speaker/panel timing. The [experimental runtime identity notice](Third-party-not
   succeeded. Its APK SHA-256 remains
   `2b4161736d7bdcc0a0762af40d720468e72cdae7367042ca0fc3edf407235765`.
 
-These published artifacts retain their original bytes. Earlier detailed evidence,
+Historical build/source hashes are retained for provenance; the old release attachments were removed. Earlier detailed evidence,
 including beta.14 source/checksum digests and its original test scope, remains in Git.
 
 ## Updating an installed app
