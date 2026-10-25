@@ -8,10 +8,10 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease preparation is **0.2.20-beta.20** (code **62**); beta.19 remains published until the signed build is verified. Run
+prerelease is **0.2.20-beta.20** (code **62**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the current source uses **v87** (deployment pending) with WebRTC DataChannel as the formal live-media path.
+the deployed page uses **v87** with WebRTC DataChannel as the formal live-media path.
 The **beta.17/code59** build introduced overlapping 5 ms recovery tails and
 pitch-preserving SoundTouch CarPlay catch-up up to 20%; v86 adds held catch-up.
 The historical beta.16 APK/webpage v84 build is recorded below. Software checks are in [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -189,32 +189,24 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Current browser deployment
 
-The formal root webpage **v86** comes from
-`d9af73b082afc8db094c11ecdae9475d53501828`. The manually dispatched
-[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/40159166211) succeeded.
-The publication commits use `[skip ci]`; Android CI was explicitly skipped for
-this web-only update. The source passed 919 browser tests and deployment/cache/
-public-tree checks before publication.
+The formal root webpage **v87** is deployed from
+`905f99c66d451190cb71d5ddf9be4bf30e0dcda8`. The manually dispatched
+[Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/40178657118) succeeded.
+Public verification at **2026-10-25 17:01:59 UTC+08:00** compared all **185** files
+(**11,908,440 bytes**) with the committed assembly: every byte matches,
+all **89** Service Worker entries are present, all five WASM binaries use
+`application/wasm`, and no file redirects. The new audio evidence module is in the
+runtime cache. Publication commits use `[skip ci]` at the user's request; this is
+not a full-CI acceptance claim.
 
-Independent public verification at **2026-10-25 11:42:27 UTC+08:00** compared all
-**184** files (**11,884,504 bytes**) with the committed assembly: every byte
-matches, all **88** Service Worker entries are present, all **5** WASM binaries
-use `application/wasm`, and no file redirects. Every language's download entry
-opens the version-independent [Releases index](https://github.com/uJZk/TiPlay/releases).
-Detailed artifacts and logs remain outside Git. These checks do not establish
-vehicle audio quality or physical speaker timing.
+v87 retains v86's held SoundTouch catch-up and contiguous PCM/progress/braking
+policy, adding Debug-only measurement and bounded waveform capture. Playback and
+recovery decisions are unchanged. WASM binary bytes retain their prior reproducibility
+evidence; diagnostic pre-clamp measurements are in the JavaScript wrapper.
+[Audio evidence](Audio-evidence.md) states coverage, suppression and CPU/acoustic
+attribution limits. Public delivery checks do not establish vehicle audio quality.
 
-v86 holds the previously applied SoundTouch tempo after delay begins declining.
-Contiguous playable PCM, including input already owned by DSP, determines whether
-that rate is sustainable. Shortage, stalled progress, unavailable clocks and
-braking near the target exit the hold. The [v86 release record](#browser-v86-release)
-and [clock roles](Browser-wasm.md#audio-clock-roles) document its boundaries.
-
-The signed beta.17/code59 APK, matching source ZIP and checksums remain unchanged,
-built from `d8708330e6b86f33cb212a7af66651cc397efd10` with archived webpage v85.
-All five WASM binaries retain their v85 bytes and prior reproducibility evidence.
-
-## Beta release
+## Previous beta.19 release
 
 Published [TiPlay 0.2.20-beta.19](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.19), code **61**, at **2026-10-25 13:29:26 UTC+08:00**.
 Build commit: `7234f391de5fa186443a253728681f8d105b0eec`. The [signed workflow](https://github.com/uJZk/TiPlay/actions/runs/40165134293)
@@ -307,18 +299,34 @@ Select the device with `adb -s <serial>`. Pull the installed APK using `pm path 
 If preserving the runtime identity, also compare both `offline-mfi` files byte for byte. An installed APK can supply that identity, but cannot supply the Android signing private key. Confirm the installed version/update time, launch the declared activity and check new application crashes. Installation alone does not validate iPhone or vehicle playback.
 
 
-## Beta.20 audio evidence release
+## Beta release
 
-Prepared beta.20/code62 with browser v87. The Debug-only bounded audio recorder,
-validated raw evidence channel, pre-PCM16 native float scan, pre-clamp mixed-sum
-measurement and evidence extraction tool are described in [Diagnostics](Audio-evidence.md).
-This release adds evidence; it does not claim to fix or establish the cause of the
-reported crackle. Browser speaker/backend timing and target-device CPU attribution
-remain unmeasured.
+Published [TiPlay 0.2.20-beta.20](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.20),
+code **62**, at **2026-10-25 16:57:06 UTC+08:00**, with browser **v87**.
+Build commit: `905f99c66d451190cb71d5ddf9be4bf30e0dcda8`.
+The [signed release workflow](https://github.com/uJZk/TiPlay/actions/runs/40177958232)
+passed mobile Release lint/build, pinned runtime validation, signing and draft upload.
+Independent downloaded-artifact checks verify the non-debug `com.ujzk.tiplay`
+package/version, signature continuity, exact `git archive` source, checksums, 16 KiB
+ZIP alignment, 43 native libraries and exactly the two expected runtime identity
+containers. Signing SHA-256 remains `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`.
 
-The user explicitly requested skipping full CI. Validation is limited to targeted
-browser/audio/schema/receiver tests, production-CSP Chromium media-clock output,
-Python extraction/release/layout checks,
-public-tree/cache checks and the signed release workflow. The full Android unit/lint
-matrix is not an acceptance claim for this release. Publication details and artifact
-hashes are recorded after the signed build completes.
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.20.apk` | 103,737,822 | `9afba8b130375ac7f76e7ac5f67a9af3468d41d9f44cd97036cb3b6347ba87d6` |
+| `TiPlay-0.2.20-beta.20-source.zip` | 20,963,958 | `6b1b002bd784f30781fd88cd9acfa25874cf0bc76aa077ab949bf40a7b3660c5` |
+| `SHA256SUMS.txt` | 191 | `ad4c15d03a565b19c16f0eb86371cc500fb76785c759b32b2efa1595b2e725e4` |
+
+The Debug-only recorder, validated raw evidence channel, native float/pre-clamp
+measurements and extraction tool are documented in [Audio evidence](Audio-evidence.md).
+The requested extra manual browser-trace feature was removed. This release adds
+evidence; it does not establish or fix the reported crackle's root cause.
+
+**Full CI was skipped by explicit user request.** The focused Android run passed
+65 tests (receiver/evidence schema and audio diagnostics); relevant browser audio,
+recovery, mixer, serialization and currentTime-independence tests passed. The actual
+production-CSP Chromium media-clock harness also passed with deliberately jumping
+currentTime. Three extraction tests, nine release-draft tests, two layout tests,
+public-tree/cache checks and independent artifact/public-site verification passed.
+Target-device CPU attribution, physical audio and sustained capture overhead remain
+unmeasured. Detailed artifacts stay outside Git in `/workspace/tiplay-beta20/`.

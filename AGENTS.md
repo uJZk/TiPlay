@@ -56,7 +56,7 @@ and measured slower-case exceptions. Rebuild and byte-verify the binaries using
 record frame-based live timing, causal output probes and natural URL completion;
 [Testing](docs/Testing.md#browser-wasm-verification) records browser and Android
 verification, including faulty-currentTime Chromium runs.
-The current published prerelease is beta.19/code61 with webpage v86. Its CarPlay
+The current published prerelease is beta.20/code62 with webpage v87. Its CarPlay
 session/resource and single-initial-SETUP boundaries are documented in
 [AirPlay](docs/AirPlay.md#carplay-coexistence); [Build](docs/Build.md#beta-release)
 records its exact build commit, published artifacts, verification and signer/runtime/source provenance.
@@ -70,21 +70,21 @@ Resume CarPlay audio tuning from the browser v86
 It covers three-second trend/soft-limit SoundTouch catch-up, 5 ms overlap tails,
 LIVI-compatible loan parameters, replay CPU limits and remaining device acceptance. Beta.17 retains its earlier signed CI evidence. Preserve the distinction between checked source and published artifacts.
 
-Browser v86 is deployed with held catch-up and contiguous PCM/progress/braking
-exits; [audio clock roles](docs/Browser-wasm.md#audio-clock-roles) describes them.
-Android CI was skipped explicitly for this web-only release; the beta.17 APK
-and its archived v85 source remain unchanged.
+Browser v87 retains v86's held catch-up and contiguous PCM/progress/braking exits;
+[audio clock roles](docs/Browser-wasm.md#audio-clock-roles) describes them.
+Beta.20 adds bounded Debug evidence without changing recovery policy. The user
+explicitly skipped full CI; targeted checks and signed Release lint/build passed.
 
 Resume Android diagnostic UI/compression work from [Diagnostics](docs/Diagnostics.md):
 Debug switch/View logs dialogs, end-and-clear/minimize behavior, Zstandard level 3 and STORED ZIP
 exports. Its targeted verification and remaining vehicle checks are recorded there.
 
 Resume beta.20/code62 and browser v87 audio evidence work at
-[Diagnostics](docs/Audio-evidence.md) and
-[Build](docs/Build.md#beta20-audio-evidence-release). It records capture bounds,
+[Audio evidence](docs/Audio-evidence.md) and
+[Build](docs/Build.md#beta-release). It records capture bounds,
 raw frame-jump witnesses, pre/post waveform coverage, CPU attribution limits and
-the user's explicit full-CI skip for this release. Publication is pending until
-the signed release workflow and artifact checks complete.
+the user's explicit full-CI skip for this release. The APK/source/checksums are published, and public v87 bytes are verified.
+The added manual browser-trace workflow was removed at the user's request.
 
 ## Checks
 
