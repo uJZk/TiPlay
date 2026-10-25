@@ -214,6 +214,16 @@ The signed beta.17/code59 APK, matching source ZIP and checksums remain unchange
 built from `d8708330e6b86f33cb212a7af66651cc397efd10` with archived webpage v85.
 All five WASM binaries retain their v85 bytes and prior reproducibility evidence.
 
+## Beta.18 release preparation
+
+Version 0.2.20-beta.18/code60 contains persistent diagnostic capture, dismissible
+background progress, live Zstandard level 3 capture and matching exported logs,
+redacted Standard reports and browser navigation/Siri playback during microphone use.
+Targeted shared/common tests and the phone Debug APK passed; see
+[Diagnostics](Diagnostics.md) for checks and physical acceptance limits. Full Android
+CI is skipped by explicit user request. The signed-release workflow still performs
+release lint/build and APK/runtime verification before publication.
+
 ## Beta release
 
 Published [TiPlay 0.2.20-beta.17](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.17),
