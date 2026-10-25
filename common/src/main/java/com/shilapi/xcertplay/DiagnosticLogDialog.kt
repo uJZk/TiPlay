@@ -6,7 +6,6 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.TextView
 import android.widget.LinearLayout
-import android.widget.Button
 import com.shilapi.xcertplay.diagnostics.RawTraffic
 import com.shilapi.xcertplay.host.R
 
@@ -53,7 +52,9 @@ internal class DiagnosticLogDialog(
             orientation = LinearLayout.VERTICAL
             addView(status)
         }
-        val builder = AlertDialog.Builder(activity).setTitle(R.string.settings_view_logs).setView(content)
+        if (debug) content.addView(ui.label(activity.getString(R.string.settings_debug_mode_description)).apply {
+            setPadding(ui.dp(24), 0, ui.dp(24), ui.dp(16))
+        })
         val actions = if (debug) listOf(
             R.string.settings_capture_stop_export to DiagnosticLogAction.STOP_EXPORT,
             R.string.settings_capture_stop_share to DiagnosticLogAction.STOP_SHARE,
@@ -64,31 +65,10 @@ internal class DiagnosticLogDialog(
             R.string.share to DiagnosticLogAction.SHARE,
             R.string.close to null,
         )
-        val buttons = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            isBaselineAligned = false
-            setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(8))
-        }
-        actions.forEach { (title, selected) ->
-            buttons.addView(Button(activity, null, android.R.attr.buttonBarButtonStyle).apply {
-                setText(title)
-                isAllCaps = false
-                isSingleLine = false
-                maxLines = Int.MAX_VALUE
-                minWidth = 0
-                minimumWidth = 0
-                minHeight = ui.dp(48)
-                setOnClickListener {
-                    dialog?.dismiss()
-                    selected?.let(perform)
-                }
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-        }
-        content.addView(buttons, LinearLayout.LayoutParams(-1, -2))
-        dialog = builder.create().also {
-            it.setOnDismissListener { handler.removeCallbacks(update) }
-            it.show()
-        }
+        dialog = DiagnosticDialogUi.show(activity, R.string.settings_view_logs, content,
+            actions.map { (title, selected) ->
+                DiagnosticDialogUi.Action(title) { selected?.let(perform); true }
+            }, onDismiss = { handler.removeCallbacks(update) })
         if (debug) handler.post(update)
     }
     fun close() { dialog?.dismiss(); dialog = null; handler.removeCallbacks(update) }

@@ -2,9 +2,7 @@ package com.shilapi.xcertplay
 
 import android.app.Activity
 import android.view.View
-import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import com.shilapi.xcertplay.host.R
 
 internal object BrowserAboutPage {
@@ -13,12 +11,8 @@ internal object BrowserAboutPage {
         val spacing = BrowserNativeSettingsUi(activity)
         val content = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            spacing.pagePadding(this)
         }
-        content.addView(Button(activity).apply {
-            setText(R.string.back)
-            setOnClickListener { back() }
-        }, LinearLayout.LayoutParams(-1, -2))
+        spacing.button(content, activity.getString(R.string.back), back)
         fun text(value: String, heading: Boolean = false, bold: Boolean = false) {
             content.addView(ui.label(value, heading).apply {
                 if (bold) ui.emphasize(this)
@@ -34,11 +28,6 @@ internal object BrowserAboutPage {
         text(activity.getString(R.string.made_possible_by_open_source), true)
         text(activity.getString(R.string.receiver_based_on_xcertplay_licensed_under_gpl_3_0_diplay))
         spacing.normalizeSpacing(content, recursive = true)
-        return ScrollView(activity).apply {
-            isFillViewport = true
-            setBackgroundColor(ui.background)
-            addView(content)
-            ui.protectSystemInsets(this)
-        }
+        return spacing.page(content)
     }
 }

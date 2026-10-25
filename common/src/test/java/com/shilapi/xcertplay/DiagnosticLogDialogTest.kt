@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.widget.TextView
 import android.widget.Button
 import android.widget.LinearLayout
 import com.shilapi.xcertplay.diagnostics.RawTraffic
@@ -23,6 +24,10 @@ class DiagnosticLogDialogTest {
     private fun buttons(view: View): List<Button> = if (view is Button) listOf(view)
         else if (view is ViewGroup) (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) } else emptyList()
 
+    private fun countText(view: View, text: String): Int =
+        (if (view is TextView && view.text.toString() == text) 1 else 0) +
+            (if (view is ViewGroup) (0 until view.childCount).sumOf { countText(view.getChildAt(it), text) } else 0)
+
     @Test fun ordinaryDialogOffersSaveShareAndCloseWithoutStartingCapture() {
         val controller = Robolectric.buildActivity(Activity::class.java).setup()
         val activity = controller.get()
@@ -32,6 +37,7 @@ class DiagnosticLogDialogTest {
             AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.STANDARD)
             logs.show()
             val dialog = ShadowAlertDialog.getLatestAlertDialog()
+            assertEquals(0, countText(dialog.window!!.decorView, activity.getString(R.string.settings_debug_mode_description)))
             val actionsInDialog = buttons(dialog.window!!.decorView).filter { it.visibility == View.VISIBLE }
             assertEquals(listOf("保存", "分享", "关闭"), actionsInDialog.map { it.text.toString() })
             actionsInDialog.single { it.text == "保存" }.performClick()
@@ -50,6 +56,7 @@ class DiagnosticLogDialogTest {
             AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.DEBUG)
             logs.show()
             var dialog = ShadowAlertDialog.getLatestAlertDialog()
+            assertEquals(1, countText(dialog.window!!.decorView, activity.getString(R.string.settings_debug_mode_description)))
             assertEquals(listOf("结束并导出", "结束并分享", "撤销", "最小化"),
                 buttons(dialog.window!!.decorView).filter { it.visibility == View.VISIBLE }.map { it.text.toString() })
             buttons(dialog.window!!.decorView).single { it.text == "最小化" }.performClick()

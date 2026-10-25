@@ -6,7 +6,6 @@ import android.view.View
 import android.widget.Switch
 import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import com.shilapi.xcertplay.airplay.AirPlayDisplaySettings
 import com.shilapi.xcertplay.host.R
 
@@ -21,20 +20,8 @@ internal class BrowserAdvancedPage(
     private val spacing = BrowserNativeSettingsUi(activity)
     private val content = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
-        spacing.pagePadding(this)
     }
-    val view: View = ScrollView(activity).apply {
-        isFillViewport = true
-        setBackgroundColor(ui.background)
-        addView(content)
-        ui.protectSystemInsets(this)
-    }
-    private fun button(title: String, click: () -> Unit) = Button(activity).apply {
-        text = title
-        minHeight = ui.dp(48)
-        setOnClickListener { click() }
-        content.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
-    }
+    val view: View = spacing.page(content)
     private fun heading(id: Int) {
         content.addView(ui.label(activity.getString(id), heading = true).also(spacing::section),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(16); bottomMargin = ui.dp(8) })
@@ -44,12 +31,12 @@ internal class BrowserAdvancedPage(
     private val reportButton: Button
 
     init {
-        button(activity.getString(R.string.back), returnToMain)
+        spacing.button(content, activity.getString(R.string.back), returnToMain)
         val rates = (AirPlayDisplaySettings.MIN_FPS..AirPlayDisplaySettings.MAX_FPS
             step AirPlayDisplaySettings.FPS_STEP).toList()
         lateinit var frameRate: Button
         fun rateLabel() = activity.getString(R.string.frame_rate) + " · ${AirPlayPersistence.loadFps(activity)} fps"
-        frameRate = button(rateLabel()) {
+        frameRate = spacing.button(content, rateLabel()) {
             val selected = rates.indexOf(AirPlayPersistence.loadFps(activity)).coerceAtLeast(0)
             AlertDialog.Builder(activity).setTitle(R.string.frame_rate)
                 .setSingleChoiceItems(rates.map { "$it fps" }.toTypedArray(), selected) { dialog, index ->
@@ -60,11 +47,11 @@ internal class BrowserAdvancedPage(
                 }.setNegativeButton(R.string.cancel, null).show()
         }
         heading(R.string.carplay_controls)
-        BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_carplay_disable),
+        spacing.toggle(content, activity.getString(R.string.settings_carplay_disable),
             activity.getString(R.string.settings_carplay_disable_description), BrowserCarPlaySettings.disabled(activity), true) {
             BrowserCarPlaySettings.setDisabled(activity, it)
         }
-        BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_browser_location_disable),
+        spacing.toggle(content, activity.getString(R.string.settings_browser_location_disable),
             activity.getString(R.string.settings_browser_location_disable_description),
             com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(activity), true) {
             com.shilapi.xcertplay.location.BrowserLocationSettings.setDisabled(activity, it)
@@ -72,25 +59,24 @@ internal class BrowserAdvancedPage(
         }
         BrowserCarPlayAudioSettings.addControls(activity, content,
             toggle = { parent, title, description, value, save ->
-                BrowserNativeSettingsUi(activity).toggle(parent, title, description, value, true, save)
+                spacing.toggle(parent, title, description, value, true, save)
                 Unit
             }, changed = ::configurationChanged,
         )
-        BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.right_hand_drive),
+        spacing.toggle(content, activity.getString(R.string.right_hand_drive),
             activity.getString(R.string.place_carplay_s_controls_closer_to_the_driver),
             AirPlayPersistence.loadRightHandDrive(activity), true) {
             AirPlayPersistence.saveRightHandDrive(activity, it)
             configurationChanged()
         }
         heading(R.string.settings_airplay_title)
-        BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_airplay_disable),
+        spacing.toggle(content, activity.getString(R.string.settings_airplay_disable),
             activity.getString(R.string.settings_airplay_disable_description),
             AirPlayReceiverSettings.isDisabled(activity), true) {
             AirPlayReceiverSettings.setDisabled(activity, it)
         }
         heading(R.string.diagnostics)
-        debugToggle = spacing.toggle(content, activity.getString(R.string.settings_debug_logging),
-            activity.getString(R.string.settings_debug_mode_description),
+        debugToggle = spacing.toggle(content, activity.getString(R.string.settings_debug_logging), "",
             AirPlayPersistence.loadDiagnosticLogLevel(activity) == DiagnosticLogLevel.DEBUG, true) { enabled ->
             if (!refreshing) {
                 if (enabled && !DiagnosticLogActions.busy) {
@@ -100,7 +86,7 @@ internal class BrowserAdvancedPage(
                 } else if (!enabled) DiagnosticLogActions.perform(activity, DiagnosticLogAction.STOP, ::refresh)
             }
         }
-        reportButton = button(activity.getString(R.string.settings_view_logs), showLogs)
+        reportButton = spacing.button(content, activity.getString(R.string.settings_view_logs), showLogs)
         refresh()
     }
 

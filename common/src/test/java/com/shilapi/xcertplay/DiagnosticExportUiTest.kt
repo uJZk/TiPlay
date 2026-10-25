@@ -7,6 +7,7 @@ import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import android.widget.Button
 import androidx.activity.result.ActivityResultLauncher
 import androidx.core.app.ActivityOptionsCompat
 import com.shilapi.xcertplay.host.R
@@ -25,7 +26,7 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], qualifiers = "en", shadows = [FileProviderPathTestShadow::class])
 class DiagnosticExportUiTest {
-    @Test fun missingPickerSavesAShareableReportWithoutACopyActionOrViewer() {
+    @Test fun missingPickerSavesAReportWithPathAndFolderActions() {
         val controller = Robolectric.buildActivity(DiPlayActivity::class.java,
             Intent().putExtra("page", "settings").putExtra(CarPlaySettingsNavigation.MENU, true)).setup()
         val activity = controller.get()
@@ -55,9 +56,10 @@ class DiagnosticExportUiTest {
             assertTrue(descendants(saved.window!!.decorView).filterIsInstance<TextView>()
                 .any { it.text.contains(file.absolutePath) })
             assertTrue(file.readText().contains("Android 9 / API 28"))
-            assertNotEquals(View.VISIBLE, saved.getButton(android.app.AlertDialog.BUTTON_POSITIVE).visibility)
-            assertEquals(View.VISIBLE, saved.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).visibility)
-            saved.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).performClick()
+            val actions = descendants(saved.window!!.decorView).filterIsInstance<Button>().filter { it.visibility == View.VISIBLE }.toList()
+            assertEquals(listOf(R.string.settings_report_copy_path, R.string.settings_report_open_folder, R.string.close)
+                .map(activity::getString), actions.map { it.text.toString() })
+            actions.single { it.text == activity.getString(R.string.close) }.performClick()
             shadowOf(Looper.getMainLooper()).idle()
             assertSame(saved, ShadowAlertDialog.getLatestAlertDialog())
             assertFalse(saved.isShowing)

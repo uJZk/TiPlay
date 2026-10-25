@@ -22,8 +22,8 @@ negotiated viewport or touch coordinates. Its fields are:
 | Drops | Explicit browser input, scheduler, transfer-replacement and presentation discards in the current video configuration. It cannot count decoder-internal, network or phone loss. Replacement streams reset it; repeating a configuration does not. |
 
 Debug defaults off. Enabling starts capture silently; **View logs** opens its dialog.
-Both modes share a bottom text-button bar. Enabled state persists: a new process
-resumes capture and opens the dialog.
+Log and export-result windows share a bottom text-button bar. The privacy notice
+appears only inside Debug logs. A new process restores enabled capture and its dialog.
 
 - Debug off: **Save / Share / Close**, using redacted Android/web logs.
 - Debug on: **End and export / End and share / Discard / Minimize**.
@@ -148,17 +148,15 @@ concatenating decoded Base64 payload chunks in file order, respecting capture/st
 session boundaries. The old split-stream exporter remains for compatibility tests;
 it now packages STORED entries too and performs no DEFLATE compression.
 
-Export snapshots lengths/handles under the capture lock, then copies off-thread
-with bounded memory. Storage fallbacks reuse the finished archive. Temporary files
-are cleaned, including abandoned ones on restart. Failed exports preserve captures;
-saved ZIPs are independent of later recording/clearing.
-Ending removes all retained process journals, preserving saved/share files and
-redacted rolling metadata.
+Export snapshots lengths/handles and copies off-thread; failed writes preserve capture.
+The result dialog offers **Copy path / Open folder / Close**, without Share. Copying
+keeps it open. Open folder targets the parent directory, never the report file;
+inaccessible/private locations show an error. Saved files survive raw cleanup.
 Debug captures contain private media, credentials and identifiers; review before
 sharing and keep them out of Git. Disk pressure does not automatically stop capture.
 
 
-Dialog/switch/spacing tests pass, including shared button styling on narrow large-text
+Window, page, log and export tests pass, including shared button styling on narrow large-text
 screens and no popup on enable. Full CI and APK assembly were skipped for this
 follow-up. Vehicle checks remain: microphone-active audio/echo, restart dialog,
 sustained CPU/storage, screen-off capture and full storage.

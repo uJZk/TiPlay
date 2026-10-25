@@ -19,4 +19,8 @@
     <string name="settings_capture_discard">Скасувати запис</string>
     <string name="settings_logs_minimize">Згорнути</string>
     <string name="settings_logs_action_failed">Не вдалося виконати дію. Спробуйте ще раз.</string>
+    <string name="settings_report_copy_path">Копіювати шлях</string>
+    <string name="settings_report_open_folder">Відкрити теку</string>
+    <string name="settings_report_path_copied">Шлях скопійовано.</string>
+    <string name="settings_report_open_folder_failed">Не вдалося відкрити цю теку.</string>
 </resources>

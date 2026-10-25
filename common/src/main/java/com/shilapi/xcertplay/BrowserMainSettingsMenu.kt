@@ -34,22 +34,10 @@ internal class BrowserMainSettingsMenu(
 ) {
     private val ui = TiPlayNativeUi(activity)
     private val spacing = BrowserNativeSettingsUi(activity)
-    private fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
-    private fun text(value: String, size: Float = 14f) = TextView(activity).apply {
-        text = value
-        if (size >= 18f) {
-            setTextAppearance(android.R.style.TextAppearance_Material_Large)
-            androidx.core.view.ViewCompat.setAccessibilityHeading(this, true)
-        }
-    }
-    private val content = LinearLayout(activity).apply {
-        orientation = LinearLayout.VERTICAL
-        if (!setupOnly) spacing.pagePadding(this)
-    }
-    val view: View = if (setupOnly) content else ScrollView(activity).apply {
-        isFillViewport = true; setBackgroundColor(ui.background); addView(content)
-        ui.protectSystemInsets(this)
-    }
+    private fun dp(value: Int) = ui.dp(value)
+    private fun text(value: String, size: Float = 14f) = ui.label(value, heading = size >= 18f)
+    private val content = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+    val view: View = if (setupOnly) content else spacing.page(content)
     val status = text("", 18f).also(ui::emphasize)
     private val hints = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
@@ -79,10 +67,6 @@ internal class BrowserMainSettingsMenu(
     private var networkStatus: TextView? = null
     private var refreshAddress: () -> Unit = {}
     private var refreshBrowser: () -> Unit = {}
-    private fun button(parent: LinearLayout, label: String, click: () -> Unit) = Button(activity).apply {
-        text = label; isAllCaps = false; minHeight = dp(48)
-        setOnClickListener { click() }; parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-    }
     private fun heading(id: Int, parent: LinearLayout = content) {
         parent.addView(text(activity.getString(id), 18f))
     }
@@ -95,7 +79,7 @@ internal class BrowserMainSettingsMenu(
         var selected = current
         lateinit var row: Button
         fun title() = activity.getString(label) + " · " + options.first { it.first == selected }.second
-        row = button(parent, title()) {
+        row = spacing.button(parent, title()) {
             AlertDialog.Builder(activity).setTitle(label)
                 .setSingleChoiceItems(options.map { it.second }.toTypedArray(), options.indexOfFirst { it.first == selected }) { dialog, index ->
                     selected = options[index].first; changed(selected); row.text = title(); dialog.dismiss()
@@ -131,7 +115,7 @@ internal class BrowserMainSettingsMenu(
             renderNetwork(); updateActions(); applyChanges(); settingsChanged()
         }
         session.addView(connectionMode, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-        phone = button(session, phoneLabel(), ::choosePhone).apply { isAllCaps = false }
+        phone = spacing.button(session, phoneLabel(), ::choosePhone).apply { isAllCaps = false }
         if (!setupOnly) session.addView(BrowserBootConnectionSettings.create(activity))
         val browser = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         val details = LinearLayout(activity).apply {
@@ -152,16 +136,16 @@ internal class BrowserMainSettingsMenu(
         if (!setupOnly) {
             val more = group(content)
             heading(R.string.settings_browser_more, more)
-            button(more, activity.getString(R.string.settings_advanced)) { applyChanges(); advanced() }
-            button(more, activity.getString(R.string.onboarding_help)) {
+            spacing.button(more, activity.getString(R.string.settings_advanced)) { applyChanges(); advanced() }
+            spacing.button(more, activity.getString(R.string.onboarding_help)) {
                 applyChanges()
                 activity.startActivity(Intent(activity, FirstUseActivity::class.java).putExtra(FirstUseActivity.REVIEW, true))
             }
             val stackTools = activity.resources.configuration.screenWidthDp < 400 || activity.resources.configuration.fontScale > 1.2f
             val tools = LinearLayout(activity).apply { orientation = if (stackTools) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL }
             more.addView(tools)
-            button(tools, activity.getString(R.string.language_app_language)) { AppLocale.showPicker(activity) }
-            button(tools, activity.getString(R.string.about)) { applyChanges(); about() }
+            spacing.button(tools, activity.getString(R.string.language_app_language)) { AppLocale.showPicker(activity) }
+            spacing.button(tools, activity.getString(R.string.about)) { applyChanges(); about() }
             for (i in 0 until tools.childCount) tools.getChildAt(i).layoutParams =
                 if (stackTools) LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
                 else LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = if (i < tools.childCount - 1) dp(8) else 0 }
@@ -269,12 +253,12 @@ internal class BrowserMainSettingsMenu(
         if (local) {
             val privileged = HotspotExtraAddressSettings.method(activity) == HotspotAddressMethod.ROOT
             if (privileged) LocalHotspotAutofill.attach(fields, ssid, password, controlsParent = actions, showHint = false)
-            else button(actions, activity.getString(R.string.open_car_hotspot_settings)) {
+            else spacing.button(actions, activity.getString(R.string.open_car_hotspot_settings)) {
                 activity.startActivity(Intent("android.settings.TETHER_SETTINGS"))
             }
             refreshNetwork()
         } else {
-            button(fields, activity.getString(R.string.settings_external_ap_wifi)) {
+            spacing.button(fields, activity.getString(R.string.settings_external_ap_wifi)) {
                 activity.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
             }
             refreshNetwork()

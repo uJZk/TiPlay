@@ -108,6 +108,15 @@ class BrowserAdvancedPageTest {
         assertFalse(AirPlayReceiverSettings.isDisabled(activity))
     }
 
+    @Test fun debugDescriptionIsNotRepeatedOnTheSettingsPage() {
+        val description = activity.getString(R.string.settings_debug_mode_description)
+        assertFalse(views(page.view).filterIsInstance<TextView>().any { it.text == description })
+        val toggle = views(page.view).filterIsInstance<Switch>().single {
+            it.text == activity.getString(R.string.settings_debug_logging)
+        }
+        assertEquals(1, (toggle.parent as ViewGroup).childCount)
+    }
+
     @Test fun debugSwitchAndViewLogsAreSeparateAndApplyWithoutReconnect() {
         val toggle = views(page.view).filterIsInstance<Switch>().single {
             it.text == activity.getString(R.string.settings_debug_logging)

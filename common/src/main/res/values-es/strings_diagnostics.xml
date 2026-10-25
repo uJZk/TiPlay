@@ -19,4 +19,8 @@
     <string name="settings_capture_discard">Descartar</string>
     <string name="settings_logs_minimize">Minimizar</string>
     <string name="settings_logs_action_failed">No se pudo completar. Inténtalo de nuevo.</string>
+    <string name="settings_report_copy_path">Copiar ruta</string>
+    <string name="settings_report_open_folder">Abrir carpeta</string>
+    <string name="settings_report_path_copied">Ruta copiada.</string>
+    <string name="settings_report_open_folder_failed">No se puede abrir esta carpeta.</string>
 </resources>

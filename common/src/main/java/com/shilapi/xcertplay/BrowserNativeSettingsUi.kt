@@ -7,6 +7,7 @@ import android.widget.Button
 import android.widget.EditText
 import androidx.core.view.ViewCompat
 import com.shilapi.xcertplay.host.R
+import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
@@ -22,6 +23,24 @@ internal class BrowserNativeSettingsUi(private val context: Context) {
     fun section(view: View) { view.setTag(R.id.settings_spacing_role, Spacing.SECTION) }
 
     fun pagePadding(view: View) { view.setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16)) }
+
+    fun page(content: LinearLayout): ScrollView {
+        pagePadding(content)
+        return ScrollView(context).apply {
+            isFillViewport = true
+            setBackgroundColor(ui.background)
+            addView(content)
+            ui.protectSystemInsets(this)
+        }
+    }
+
+    fun button(parent: LinearLayout, title: String, click: () -> Unit): Button = Button(context).apply {
+        text = title
+        isAllCaps = false
+        minHeight = ui.dp(48)
+        setOnClickListener { click() }
+        parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+    }
 
     fun toggle(parent: LinearLayout, title: String, description: String, value: Boolean,
         enabled: Boolean, save: (Boolean) -> Unit): Switch {

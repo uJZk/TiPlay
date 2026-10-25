@@ -15,7 +15,6 @@
     <string name="settings_permission_group">Permissions</string>
     <string name="settings_report_save_failed">Save failed!</string>
     <string name="settings_report_copy_full_text">Copy full text</string>
-    <string name="settings_report_saved_at">Report saved to:</string>
     <string name="settings_browser_hotspot_address_repair">TiPlay mode</string>
     <string name="settings_browser_hotspot_address">Hotspot address</string>
     <string name="settings_browser_hotspot_endpoint">Hotspot address: %1$s</string>

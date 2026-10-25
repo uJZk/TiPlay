@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay
 
 import android.view.View
+import android.view.WindowManager
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
@@ -38,6 +39,21 @@ class CarPlaySettingsNavigationTest {
         PendingReconnect.clear()
         context.getSharedPreferences("diplay", 0).edit().clear().commit()
         context.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
+    }
+
+    @Test fun advancedSettingsKeepSystemBarsVisibleAfterFocusWithOldFullscreenPreferences() {
+        AirPlayPersistence.saveHideTopBar(context, true)
+        AirPlayPersistence.saveHideBottomBar(context, true)
+        val screen = open(SettingsCategory.ADVANCED)
+        repeat(2) {
+            screen.window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            screen.window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            screen.onWindowFocusChanged(true)
+            assertEquals(0, screen.window.attributes.flags and WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            assertEquals(0, screen.window.decorView.systemUiVisibility and
+                (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION))
+            screen.onWindowFocusChanged(false)
+        }
     }
 
     @Test fun oldDisplayEntryNowOpensTheConsolidatedAdvancedMenu() {

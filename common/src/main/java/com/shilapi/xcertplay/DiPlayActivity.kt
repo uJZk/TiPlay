@@ -417,13 +417,17 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         com.shilapi.xcertplay.hud.BydNavigationOutputs.onAppOpened(applicationContext, headUnitIntegrations = headUnit)
         if (headUnit) WheelKeyService.restoreIfNeeded(this)
         TeslaBrowserLink.sync(this) // phone + browser mode: the car's browser can open the page before CarPlay connects
-        WindowCompat.setDecorFitsSystemWindows(window, true)
-        window.statusBarColor = BG; window.navigationBarColor = BG
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = false
-            hide(WindowInsetsCompat.Type.statusBars())
+        if (AirPlayPersistence.isPhoneBrowserMode(this)) {
+            TiPlayNativeUi(this).applyWindow(this)
+        } else {
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+            window.statusBarColor = BG; window.navigationBarColor = BG
+            WindowInsetsControllerCompat(window, window.decorView).apply {
+                isAppearanceLightStatusBars = false
+                hide(WindowInsetsCompat.Type.statusBars())
+            }
+            applyWindowAppearance()
         }
-        applyWindowAppearance()
         setupError = runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.exceptionOrNull()?.let {
             android.util.Log.e("DiPlaySetup", "CarPlay authentication could not be loaded", it)
             getString(R.string.setup_error_auth)
@@ -650,6 +654,10 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     }
 
     private fun applyFullscreenMode() {
+        if (AirPlayPersistence.isPhoneBrowserMode(this)) {
+            TiPlayNativeUi(this).applyWindow(this)
+            return
+        }
         val multiWindow = Build.VERSION.SDK_INT >= 24 && isInMultiWindowMode
         WindowInsetsControllerCompat(window, window.decorView).apply {
             isAppearanceLightStatusBars = palette.systemBarIconsAreDark
@@ -693,28 +701,6 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     private fun render() = render(appearanceOnly = false)
 
     private fun render(appearanceOnly: Boolean, preferredFocusTag: Any? = null) {
-        // The browser product has one main page; old internal home intents must not revive its predecessor.
-        if (page == "home" && AirPlayPersistence.isPhoneBrowserMode(this)) {
-            startActivity(CarPlaySettingsNavigation.mainIntent(this))
-            finish()
-            return
-        }
-        if (AirPlayPersistence.isPhoneBrowserMode(this) && (page == "about" || page == "settings" && hostSettingsPage)) {
-            val ui = TiPlayNativeUi(this)
-            val productPage = if (page == "about") BrowserAboutPage.build(this, version(), ::navigateBack) else {
-                val advanced = browserAdvancedPage ?: BrowserAdvancedPage(this,
-                    changed = ::markReconnectNeeded,
-                    returnToMain = {
-                        startActivity(CarPlaySettingsNavigation.mainIntent(this))
-                        finish()
-                    }, showLogs = ::showLogDialog).also { browserAdvancedPage = it }
-                advanced.refresh()
-                advanced.view
-            }
-            ui.applyWindow(this)
-            setContentView(productPage)
-            return
-        }
         // The browser product has one main page; old internal home intents must not revive its predecessor.
         if (page == "home" && AirPlayPersistence.isPhoneBrowserMode(this)) {
             startActivity(CarPlaySettingsNavigation.mainIntent(this))

@@ -15,7 +15,6 @@
     <string name="settings_permission_group">الأذونات</string>
     <string name="settings_report_save_failed">فشل الحفظ!</string>
     <string name="settings_report_copy_full_text">نسخ النص الكامل</string>
-    <string name="settings_report_saved_at">تم حفظ التقرير في:</string>
     <string name="settings_browser_hotspot_address_repair">وضع TiPlay</string>
     <string name="settings_browser_hotspot_address">عنوان نقطة الاتصال</string>
     <string name="settings_browser_hotspot_endpoint">عنوان نقطة الاتصال: %1$s</string>

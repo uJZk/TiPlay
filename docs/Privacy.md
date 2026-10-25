@@ -18,7 +18,8 @@ dialog. Both modes share the same bottom button bar.
 Ordinary logs offer Save/Share/Close. Debug offers End and export/End and share/Discard/
 Minimize. Ending, Discard or turning off the switch stops capture and clears raw journals.
 Export/share creates an independent file before cleanup; failed writes retain the
-stopped capture for recovery. Saved files and redacted metadata are unaffected.
+stopped capture for recovery. Saved files and redacted metadata are unaffected. Export results offer Copy path/
+Open folder/Close; sharing remains in the log dialog.
 Capture and report compression use Zstandard level 3. ZIP entries are STORED,
 without recompressing captured media. Review files before sharing; issues are public.
 

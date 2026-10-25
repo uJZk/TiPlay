@@ -18,7 +18,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 - [Browser](docs/Browser.md): pairing, receiver-aware waiting states, dismissible browser errors, resize, portal, media and shutdown.
 - [CarPlay DataChannel contract](docs/CarPlay-DataChannel.md): reliable, ordered WebRTC transport, webpage decoding, independent timing, touch, routing and one-copy capture constraints; four-digit SRP-6a authenticated SDP binding and protocol bounds.
 - [WebRTC roadmap](docs/WebRTC-roadmap.md): formal root deployment, four playback profiles, preserved beta.2/beta.3 playback and source-cadence evidence, and remaining physical acceptance.
-- [Settings](docs/Settings.md): short receiver status titles, separate details, drafts, immediate apply, reconnect and boot.
+- [Settings](docs/Settings.md): shared phone page/window chrome, visible system bars, short receiver status titles, separate details, drafts, immediate apply, reconnect and boot.
 - [Connection setup](docs/Connection-setup.md) and [hotspot address](docs/Hotspot-address.md).
 - [AirPlay](docs/AirPlay.md): receiver/media contracts, native/software audio negotiation,
   AAC-ELD fallback and asynchronous URL startup. Physical audio/video checks remain in

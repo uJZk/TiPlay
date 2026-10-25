@@ -10,6 +10,13 @@ Main settings show separate CarPlay and AirPlay status, with configuration, sele
 
 The Permission checklist, Main settings, Advanced settings and About share one spacing policy: 16 dp page edges, 24 dp between sections, 16 dp before field groups, 8 dp between ordinary rows and 4 dp between a control/label and its related text/input. Buttons and switches have at least 48 dp touch height and wrap to fit their text. Hidden rows and empty groups add no gaps; rebuilding a hotspot, browser-link or permission section reapplies the same policy. Network options and utility buttons stack in narrow windows or at large font scales. System dialogs retain Android’s standard spacing.
 
+Main, Advanced and About reuse `BrowserNativeSettingsUi.page` and its button helper.
+Both phone activity hosts use `TiPlayNativeUi.applyWindow` for visible system bars,
+including focus changes, so inherited fullscreen preferences cannot hide Advanced's
+status bar. Their scroll containers share background, padding and inset handling.
+The Debug switch has no inline description; its privacy notice appears only in the
+Debug log dialog. Log and export-result windows share `DiagnosticDialogUi`.
+
 Before a live paired browser reports its viewport and decoder capabilities, the title reads **Waiting for browser connection**. Afterwards it uses `CarPlay status | AirPlay status`. Preparation,
 waiting, connection, recovery and failure are distinct CarPlay phases; USB mode or
 an idle controller alone cannot claim readiness. Only an actual wireless listener
