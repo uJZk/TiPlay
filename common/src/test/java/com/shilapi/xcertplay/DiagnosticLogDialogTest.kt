@@ -50,7 +50,7 @@ class DiagnosticLogDialogTest {
             AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.DEBUG)
             logs.show()
             var dialog = ShadowAlertDialog.getLatestAlertDialog()
-            assertEquals(listOf("结束并导出", "结束并分享", "结束", "最小化"),
+            assertEquals(listOf("结束并导出", "结束并分享", "撤销", "最小化"),
                 buttons(dialog.window!!.decorView).filter { it.visibility == View.VISIBLE }.map { it.text.toString() })
             buttons(dialog.window!!.decorView).single { it.text == "最小化" }.performClick()
             assertFalse(dialog.isShowing)
@@ -58,7 +58,7 @@ class DiagnosticLogDialogTest {
             assertTrue(actions.isEmpty())
             assertFalse(DiagnosticLogDialog.claimRestartPrompt())
             for ((text, action) in listOf("结束并导出" to DiagnosticLogAction.STOP_EXPORT,
-                "结束并分享" to DiagnosticLogAction.STOP_SHARE, "结束" to DiagnosticLogAction.STOP)) {
+                "结束并分享" to DiagnosticLogAction.STOP_SHARE, "撤销" to DiagnosticLogAction.STOP)) {
                 logs.show(); dialog = ShadowAlertDialog.getLatestAlertDialog()
                 buttons(dialog.window!!.decorView).single { it.text == text }.performClick()
                 assertEquals(action, actions.last())

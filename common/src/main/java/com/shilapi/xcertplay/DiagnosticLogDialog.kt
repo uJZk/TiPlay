@@ -67,7 +67,7 @@ internal class DiagnosticLogDialog(
             }
             action(R.string.settings_capture_stop_export, DiagnosticLogAction.STOP_EXPORT)
             action(R.string.settings_capture_stop_share, DiagnosticLogAction.STOP_SHARE)
-            action(R.string.settings_capture_stop, DiagnosticLogAction.STOP)
+            action(R.string.settings_capture_discard, DiagnosticLogAction.STOP)
             action(R.string.settings_logs_minimize, null)
         } else {
             builder.setPositiveButton(R.string.save) { _, _ -> perform(DiagnosticLogAction.SAVE) }

@@ -16,7 +16,7 @@
     <string name="settings_capture_storage_failed">儲存寫入失敗，擷取資料可能不完整。</string>
     <string name="settings_view_logs">查看記錄</string>
     <string name="settings_capture_stop_share">結束並分享</string>
-    <string name="settings_capture_stop">結束</string>
+    <string name="settings_capture_discard">撤銷</string>
     <string name="settings_logs_minimize">最小化</string>
     <string name="settings_logs_action_failed">操作失敗，請重試。</string>
 </resources>

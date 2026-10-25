@@ -214,6 +214,16 @@ The signed beta.17/code59 APK, matching source ZIP and checksums remain unchange
 built from `d8708330e6b86f33cb212a7af66651cc397efd10` with archived webpage v85.
 All five WASM binaries retain their v85 bytes and prior reproducibility evidence.
 
+## Beta.19 release preparation
+
+Beta.19/code61 updates the diagnostic switch and View logs dialogs: ordinary
+Save/Share/Close; Debug End and export/End and share/Discard/Minimize. Discard and
+ending clear capture; Minimize continues recording. Copy is shortened and obsolete
+capture/export/clear UI paths removed. Diagnostic/action/spacing checks and the
+phone Debug APK build passed; the final Discard dialog check passed too. Full CI
+is skipped by explicit request. Signed-release lint/build and artifact verification
+remain required before public publication.
+
 ## Beta release
 
 Published [TiPlay 0.2.20-beta.18](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.18), code **60**, at **2026-10-25 12:36:16 UTC+08:00**.

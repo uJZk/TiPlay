@@ -14,8 +14,8 @@ Debug is opt-in and persists while enabled. Restarting resumes capture and opens
 its log dialog. Minimize hides the dialog while recording continues. Advanced
 settings provides a Debug switch and one View logs button.
 
-Ordinary logs offer Save/Share/Close. Debug offers End and export/End and share/End/
-Minimize. Ending or turning off the switch stops capture and clears raw journals.
+Ordinary logs offer Save/Share/Close. Debug offers End and export/End and share/Discard/
+Minimize. Ending, Discard or turning off the switch stops capture and clears raw journals.
 Export/share creates an independent file before cleanup; failed writes retain the
 stopped capture for recovery. Saved files and redacted metadata are unaffected.
 Capture and report compression use Zstandard level 3. ZIP entries are STORED,

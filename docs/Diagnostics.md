@@ -26,8 +26,8 @@ and one **View logs** button. Enabled state persists; a new process resumes capt
 and opens the log dialog.
 
 - Debug off: **Save / Share / Close**, using redacted Android/web logs.
-- Debug on: **End and export / End and share / End / Minimize**.
-- Ending disables Debug and clears raw capture history. Export/share first creates
+- Debug on: **End and export / End and share / Discard / Minimize**.
+- Ending or Discard disables Debug and clears raw capture history. Export/share first creates
   an independent usable file, then clears capture. A failed export retains evidence
   and reports failure; recording remains stopped. Turning the switch off also ends
   and clears capture.

@@ -16,7 +16,7 @@
     <string name="settings_capture_storage_failed">Помилка запису. Дані можуть бути неповними.</string>
     <string name="settings_view_logs">Журнал</string>
     <string name="settings_capture_stop_share">Завершити й поділитися</string>
-    <string name="settings_capture_stop">Завершити</string>
+    <string name="settings_capture_discard">Скасувати запис</string>
     <string name="settings_logs_minimize">Згорнути</string>
     <string name="settings_logs_action_failed">Не вдалося виконати дію. Спробуйте ще раз.</string>
 </resources>
