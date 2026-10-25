@@ -4,11 +4,19 @@
     <string name="settings_hint_car_bluetooth_disconnected">No se detecta conexión de audio Bluetooth con el coche (A2DP/HFP). Conecta Android al coche en ajustes Bluetooth.</string>
     <string name="settings_hint_car_bluetooth_unknown">No se puede confirmar la conexión Bluetooth del coche. Revisa el permiso de dispositivos cercanos y los ajustes Bluetooth.</string>
     <string name="settings_hint_car_bluetooth_verify">Hay un dispositivo de audio Bluetooth conectado. Confirma que sea el coche en ajustes.</string>
-    <string name="settings_debug_mode_description">Registra todos los datos originales del iPhone, navegador, USB y salida de audio Android sin ocultarlos. Cada activación inicia una sesión; se desactiva al reiniciar el proceso. Guarda un ZIP y permite borrar la captura en el diálogo de guardado.</string>
+    <string name="settings_debug_mode_description">Captura todos los datos entrantes de CarPlay y la web y los logs de Android y la web. Comprime en tiempo real y exporta ZIP. Incluye audio y vídeo privados y puede afectar al rendimiento. Cerrar mantiene la captura; reiniciar la reanuda y abre la ventana.</string>
     <string name="settings_hint_debug_enabled">El modo de depuración está activado. Puede afectar al rendimiento.</string>
     <string name="settings_clear_captured_data">Borrar datos capturados</string>
     <string name="settings_capture_cleared">Datos capturados borrados. Los archivos guardados no cambian.</string>
     <string name="settings_capture_clear_failed">No se pudieron borrar los datos capturados. Inténtalo de nuevo.</string>
     <string name="settings_hint_iphone_car_audio">Comprueba que el iPhone esté conectado al audio del coche por Bluetooth. TiPlay ya no recibe ni reenvía audio de CarPlay.</string>
     <string name="settings_hint_permissions_missing">Permisos o autorizaciones pendientes: %1$s. Abre «%2$s» más abajo para revisarlos y conceder acceso.</string>
+    <string name="settings_standard_log_description">Solo registra logs de Android y de la web con datos privados ocultos.</string>
+    <string name="settings_capture_progress">Grabando · %1$d:%2$02d · %3$d KiB comprimidos</string>
+    <string name="settings_capture_running">Capturando datos completos</string>
+    <string name="settings_capture_stop_export">Detener y exportar</string>
+    <string name="settings_capture_background">Continuar en segundo plano</string>
+    <string name="settings_capture_background_hint">Cerrar la ventana mantiene la captura en segundo plano.</string>
+    <string name="settings_capture_storage_failed">Error de escritura. La captura puede estar incompleta.</string>
+    <string name="settings_capture_export_retained">Exportar datos capturados</string>
 </resources>

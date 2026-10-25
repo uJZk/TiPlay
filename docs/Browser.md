@@ -206,22 +206,22 @@ estimates position, not physical speaker time. Lossless/spatial audio is not adv
 Upstream rationale: [buffering #308](https://github.com/shihabal3amri/DiPlay/pull/308)
 and [pacing #484](https://github.com/shihabal3amri/DiPlay/pull/484).
 
-On iPhone call/Siri microphone demand, Android routes speech and navigation to the
-unique car HFP/SCO route while browser music and ordinary AirPlay audio continue.
-Route transitions retire only the affected speech/guidance streams, preserving
-music queues, decoders and the audio DataChannel subscription. Both AudioRecord input
-and AudioTrack output must actually confirm Bluetooth. Busy routes and ambiguous headsets are refused; there is no handset/browser microphone fallback.
-Permission/focus/route loss stops devices and reports failure. Android's Bluetooth
-stack owns mSBC/CVSD; TiPlay supplies PCM.
+On iPhone call/Siri microphone demand, Android uses the unique verified car HFP/SCO
+route for microphone capture. Only telephony downlink switches to Bluetooth;
+navigation, default guidance and Siri downlink continue through the browser alongside
+music and ordinary AirPlay audio. Route transitions retire only telephony decoders,
+preserving guidance/music queues, epochs and the audio DataChannel subscription.
+Both AudioRecord input and telephony AudioTrack output must actually confirm Bluetooth.
+Busy routes and ambiguous headsets are refused; there is no handset/browser microphone
+fallback. Permission/focus/route loss stops devices and reports failure. Android's
+Bluetooth stack owns mSBC/CVSD; TiPlay supplies PCM.
 
-SCO retains telephone/Siri gain and fixed 0.25 navigation/default guidance gain, even
-when guidance plays alone. Media/alerts/unknown audio stay in the browser.
-Bounded 20 ms mono mixing resamples to the negotiated route. Resuming the same demand
-preserves RTP/nonce counters. Actual route release must precede fresh browser
-speech/guidance output; a release timeout keeps those streams held with an error.
-Browser music continues independently. Revisions reject delayed route state without
-replaying old speech. Route ownership survives AirPlay takeover. Car HFP owns echo cancellation;
-TiPlay adds no software AEC.
+Resuming the same microphone demand preserves RTP/nonce counters. Actual route release
+must precede fresh browser telephony output; release timeouts hold only telephony with
+an error. Other browser streams continue. Revisions reject delayed route state without
+replaying old speech. Route ownership survives AirPlay takeover. Car HFP owns microphone
+echo cancellation; TiPlay adds no software AEC. Browser-rendered Siri/guidance during
+microphone capture needs physical vehicle verification for feedback and audibility.
 
 The browser never captures microphones. Android requests RECORD_AUDIO while connecting
 in the foreground; permitted sound-enabled foreground service access supports later

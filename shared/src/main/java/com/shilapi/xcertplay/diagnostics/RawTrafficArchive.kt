@@ -80,12 +80,27 @@ internal object RawTrafficArchive {
                 override fun close() = flush()
                 override fun write(bytes: ByteArray, offset: Int, length: Int) = out.write(bytes, offset, length)
             }).use { zip ->
-                fun entry(name: String, write: () -> Unit) {
-                    zip.putNextEntry(ZipEntry(name)); write(); zip.closeEntry()
+                fun entry(name: String, write: (OutputStream) -> Unit) {
+                    val stored = File(directory, "stored-entry")
+                    stored.outputStream().buffered().use(write)
+                    val crc = java.util.zip.CRC32()
+                    stored.inputStream().buffered().use { input ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            crc.update(buffer, 0, count)
+                        }
+                    }
+                    zip.putNextEntry(ZipEntry(name).apply {
+                        method = ZipEntry.STORED; size = stored.length(); compressedSize = size; this.crc = crc.value
+                    })
+                    stored.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+                    stored.delete()
                 }
-                entry(logName) { zip.write(report.toByteArray(Charsets.UTF_8)) }
-                entry("capture.txt") {
-                    zip.write((snapshot.status + "unparsedRecords=$unparsedRecords\n" + """
+                entry(logName) { sink -> sink.write(report.toByteArray(Charsets.UTF_8)) }
+                entry("capture.txt") { sink ->
+                    sink.write((snapshot.status + "unparsedRecords=$unparsedRecords\n" + """
                         |format=raw-streams-v1
                         |events.tsv: epochMillis (UTC Unix milliseconds), process-local sequence, stream path, byte offset, byte length.
                         |streams.tsv: stream path, original channel (Base64 UTF-8), bytes. Channels identify direction and protocol/configuration.
@@ -94,27 +109,27 @@ internal object RawTrafficArchive {
                         |Each stream concatenates captured bytes in order. /attempt and /written are separate streams, not duplicate delivery.
                         |.bin is application-visible protocol/opaque data, not a playable media file or a bus packet capture.
                         |.pcm is headerless PCM16 little endian; use the rate/configuration in the decoded channel label.
-                        |Snapshots include retained sessions. Debug defaults off in each new process. Saving retains data; Clear removes raw history and starts a new session if active.
+                        |Snapshots include retained sessions. Debug resumes when enabled in persistent settings. Saving retains data; Clear removes raw history and starts a new session if active.
                         |unparsed.tsv (when present) retains malformed/interrupted source lines, normalized with LF delimiters. They are excluded from streams/indexes; unparsedRecords > 0 means incomplete reconstruction.
                         |No redaction. A successful ZIP does not establish capture or radio/bus completeness; check failures and unparsedRecords above.
                         |""".trimMargin()).toByteArray(Charsets.UTF_8))
                 }
-                entry("sessions.tsv") {
-                    zip.write("session\tstartEpochMillis\tconfigurationBase64\n".toByteArray())
+                entry("sessions.tsv") { sink ->
+                    sink.write("session\tstartEpochMillis\tconfigurationBase64\n".toByteArray())
                     sessions.forEach { (id, metadata) ->
-                        zip.write("$id\t${metadata.first}\t${metadata.second}\n".toByteArray())
+                        sink.write("$id\t${metadata.first}\t${metadata.second}\n".toByteArray())
                     }
                 }
-                if (unparsedRecords > 0) entry("unparsed.tsv") { unparsed.inputStream().use { it.copyTo(zip) } }
-                entry("events.tsv") { index.inputStream().use { it.copyTo(zip) } }
-                entry("streams.tsv") {
-                    zip.write("stream\tchannelBase64\tbytes\n".toByteArray())
+                if (unparsedRecords > 0) entry("unparsed.tsv") { sink -> unparsed.inputStream().use { it.copyTo(sink) } }
+                entry("events.tsv") { sink -> index.inputStream().use { it.copyTo(sink) } }
+                entry("streams.tsv") { sink ->
+                    sink.write("stream\tchannelBase64\tbytes\n".toByteArray())
                     streams.values.forEach { stream ->
                         val encoded = Base64.getEncoder().encodeToString(stream.channel.toByteArray(Charsets.UTF_8))
-                        zip.write("${stream.name}\t$encoded\t${stream.length}\n".toByteArray())
+                        sink.write("${stream.name}\t$encoded\t${stream.length}\n".toByteArray())
                     }
                 }
-                streams.values.forEach { stream -> entry(stream.name) { stream.file.inputStream().use { it.copyTo(zip) } } }
+                streams.values.forEach { stream -> entry(stream.name) { sink -> stream.file.inputStream().use { it.copyTo(sink) } } }
             }
         } finally {
             outputs.values.forEach { runCatching { it.close() } }

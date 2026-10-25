@@ -6,7 +6,21 @@ TiPlay uses local pairing and direct USB/Wi-Fi connections. It has no account, r
 
 Android stores preferences, paired-device selections, pairing data, bounded metadata logs and opt-in raw traffic captures in app storage. App data is excluded from Android backup. Uninstalling removes app-private data; reports exported to Downloads remain until deleted.
 
-You initiate diagnostic export. Reports contain versions, display negotiation, connection transitions, Wi-Fi state/band/channel and recovery events. Standard logging filters common identifiers and credential-bearing messages. Debug mode explicitly records raw protocol and media data, credentials and personal identifiers without redaction; the switch is off on each fresh process start, while captured sessions persist until explicitly cleared from the saved-ZIP dialog or app data is cleared. Standard mode exports a single metadata TXT without raw traffic; Debug mode exports a ZIP containing the log TXT, per-channel raw streams and timestamp/offset indexes, including retained capture history. Saving keeps the original capture. Clear captured data preserves saved ZIPs, settings and metadata logs; active Debug capture begins a new session after clearing. Previously recorded Debug messages remain unredacted in the metadata even after disabling the mode. Review reports before sharing; GitHub issues are public.
+You initiate diagnostic export. Standard records redacted Android and webpage logs,
+and reapplies redaction to retained historical messages before exporting TXT. Debug
+records incoming CarPlay/webpage streams and full Android/web diagnostic messages
+without redaction; these may contain private media, credentials and identifiers.
+Debug is opt-in on a fresh install and persists until **Stop and export**. Restarting
+the process resumes capture in a new session and opens its progress dialog. Closing
+the dialog keeps recording in the background.
+
+Capture compresses live with Zstandard level 3. Debug ZIPs contain STORED `.zst`
+entries, including retained process journals; export does not recompress captured
+media. Exported text reports use Zstandard level 9. Saving and stopping preserve captures so failed exports can be retried.
+**Clear captured data** on the diagnostics page or saved-report dialog removes
+retained raw journals while preserving saved files, preferences and metadata logs.
+Active capture begins a new session after clear. Review reports before sharing;
+GitHub issues are public.
 
 Exports normally use Downloads/TiPlay. If unavailable, TiPlay uses `Android/data/<package>/files/diagnostic-reports/`, then private app storage. The confirmation shows the TXT or ZIP path; **Share** works when file managers restrict `Android/data`. Each fallback directory retains its newest eight exports and is removed on uninstall. Sharing grants read access only to the selected report. On Android 9, apps with storage permission may read external reports. Release uses `com.ujzk.tiplay`; debug adds `.hudtest`.
 

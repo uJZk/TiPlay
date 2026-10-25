@@ -13,7 +13,7 @@ import java.nio.ByteOrder
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 
-/** Browser decodes music continuously; Android decodes eligible speech only during verified HFP/SCO demand. */
+/** Browser decodes music, navigation and Siri continuously; Android decodes telephony during verified HFP/SCO demand. */
 class BrowserAudioMediaSink(
     private val video: MediaSink,
     private val hub: WebAudioHub,
@@ -148,7 +148,7 @@ class BrowserAudioMediaSink(
     /** Retire workers and codec input/output, not just transport queues; in-flight PCM belongs to the old route. */
     private fun resetDecoders(voiceOnly: Boolean = false) {
         if (!voiceOnly) routeEpoch++
-        val previous = renderers.filterKeys { !voiceOnly || BluetoothVoicePolicy.allowed(it) }
+        val previous = renderers.filterKeys { !voiceOnly || callDownlink(it) }
         previous.forEach { (id, decoder) ->
             renderers.remove(id)
             if (voiceOnly) hub.endEncodedStream(this, decoder.transportId, decoder.publication)
@@ -177,6 +177,9 @@ class BrowserAudioMediaSink(
         transportIds.clear()
     }
 
+    // Microphone demand must not reroute guidance or Siri away from the browser.
+    private fun callDownlink(id: AudioStreamId): Boolean = id.audioType.equals("telephony", true)
+
     private inner class Decoder(val id: AudioStreamId, val format: AudioFormat, val transportId: Int,
                                 val timeline: RtpAudioTimeline = RtpAudioTimeline(format.rtpClockRate)) : Closeable {
         private val epoch = routeEpoch
@@ -188,8 +191,8 @@ class BrowserAudioMediaSink(
         private var outputChannels = format.channels
         private var nextPcmSample: Double? = null
         val publication = hub.publication(this@BrowserAudioMediaSink)
-        private val bluetoothDecode = !paused && voiceActive && microphoneId != null && BluetoothVoicePolicy.allowed(id)
-        private val browserForward = !paused && !(voiceHeld && BluetoothVoicePolicy.allowed(id))
+        private val bluetoothDecode = !paused && voiceActive && microphoneId != null && callDownlink(id)
+        private val browserForward = !paused && !(voiceHeld && callDownlink(id))
         private val thread = Thread(::run, if (browserForward) "browser-audio-transport" else "car-bluetooth-audio-decode").apply { isDaemon = true; start() }
 
         fun offer(rtp: ByteArray, sample: Int) {
@@ -307,7 +310,7 @@ class BrowserAudioMediaSink(
                 val discontinuity = expected != null && kotlin.math.abs(sample - expected) >
                     maxOf(1.0, format.rtpClockRate.toDouble() / outputRate)
                 nextPcmSample = sample + pcm.size.toDouble() / (2 * outputChannels) * format.rtpClockRate / outputRate
-                if (BluetoothVoicePolicy.allowed(id)) voice?.play(id, outputRate, outputChannels, pcm, discontinuity, deadline)
+                if (callDownlink(id)) voice?.play(id, outputRate, outputChannels, pcm, discontinuity, deadline)
             }
         }
 

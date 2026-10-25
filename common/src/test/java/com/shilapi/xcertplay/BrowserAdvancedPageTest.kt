@@ -25,6 +25,7 @@ class BrowserAdvancedPageTest {
     private var returns = 0
     private var changes = 0
     private var reportSaves = 0
+    private var progressShows = 0
 
     @Before fun setup() {
         val controller = Robolectric.buildActivity(Activity::class.java)
@@ -38,13 +39,14 @@ class BrowserAdvancedPageTest {
     }
 
     @After fun cleanup() {
-        DiagnosticLogPolicy.level = DiagnosticLogLevel.STANDARD
+        AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.STANDARD)
+        DiagnosticLogs.resetForTest()
         activity.finish()
     }
 
     private fun create() = BrowserAdvancedPage(activity,
         changed = { changes++ },
-        returnToMain = { returns++ }, saveReport = { reportSaves++ })
+        returnToMain = { returns++ }, saveReport = { reportSaves++ }, showCapture = { progressShows++ })
 
     @Test fun advancedSettingsApplyImmediatelyAndReturnNeverAppliesAgain() {
         val audio = views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_disable_carplay_audio) }
@@ -107,21 +109,19 @@ class BrowserAdvancedPageTest {
         assertFalse(AirPlayReceiverSettings.isDisabled(activity))
     }
 
-    @Test fun debugLoggingDefaultsOffAndAppliesWithoutReconnectingCarPlay() {
+    @Test fun debugCaptureStartsWithoutReconnectAndReopensProgressInsteadOfStopping() {
         assertEquals(DiagnosticLogLevel.STANDARD, AirPlayPersistence.loadDiagnosticLogLevel(activity))
-        val title = activity.getString(R.string.settings_debug_logging)
-        val toggle = views(page.view).filterIsInstance<Switch>().single { it.text == title }
-        assertFalse(toggle.isChecked)
-        toggle.performClick()
+        button(R.string.settings_debug_logging).performClick()
         assertEquals(DiagnosticLogLevel.DEBUG, AirPlayPersistence.loadDiagnosticLogLevel(activity))
-        assertEquals(DiagnosticLogLevel.DEBUG, DiagnosticLogPolicy.level)
+        assertEquals(1, progressShows)
         assertEquals(0, changes)
         page = create()
-        val recreated = views(page.view).filterIsInstance<Switch>().single { it.text == title }
-        assertTrue(recreated.isChecked)
-        recreated.performClick()
-        assertEquals(DiagnosticLogLevel.STANDARD, DiagnosticLogPolicy.level)
-        assertEquals(0, changes)
+        button(R.string.settings_capture_running).performClick()
+        assertEquals(2, progressShows)
+        assertEquals(DiagnosticLogLevel.DEBUG, DiagnosticLogPolicy.level)
+        button(R.string.save_diagnostic_report).performClick()
+        assertEquals(3, progressShows)
+        assertEquals(0, reportSaves)
     }
 
     @Test fun productAdvancedHasOnlyRequestedDescriptionsAndOneReportAction() {

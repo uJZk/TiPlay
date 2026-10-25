@@ -171,17 +171,4 @@ class WheelKeyServiceReportTest {
         assertTrue(report().first(), report().first().endsWith(" textKeysNotListed=0 bound=false"))
     }
 
-    @Test fun theDiagnosticReportCarriesTheWheelKeyLines() {
-        assertFalse(press(KeyEvent.KEYCODE_F7))
-        val activity = Robolectric.buildActivity(DiPlayActivity::class.java).get()
-        val text = activity.javaClass.getDeclaredMethod("diagnosticReportText", Context::class.java)
-            .apply { isAccessible = true }.invoke(activity, service.applicationContext) as String
-        val lines = text.lines()
-        val serviceLine = lines.indexOfFirst { it.startsWith("Wheel key service: ") }
-        assertTrue(text, serviceLine >= 0)
-        assertTrue(lines[serviceLine + 1], lines[serviceLine + 1].startsWith("Wheel keys since DiPlay started: presses=1 "))
-        assertTrue(lines[serviceLine + 2], lines[serviceLine + 2].endsWith("  wheel key service connected"))
-        assertTrue(lines[serviceLine + 3], lines[serviceLine + 3].endsWith("  key 137/0 device 7 left to the head unit"))
-        assertEquals("", lines[serviceLine + 4])
-    }
 }

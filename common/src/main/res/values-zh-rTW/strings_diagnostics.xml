@@ -4,11 +4,19 @@
     <string name="settings_hint_car_bluetooth_disconnected">未偵測到 Android 與車載音訊藍牙連線（A2DP/HFP），請在藍牙設定中將本機連接車機。</string>
     <string name="settings_hint_car_bluetooth_unknown">暫時無法確認車載藍牙連線，請檢查鄰近裝置權限及藍牙設定。</string>
     <string name="settings_hint_car_bluetooth_verify">已連接音訊藍牙裝置，請在藍牙設定中確認它是車機。</string>
-    <string name="settings_debug_mode_description">完整記錄 iPhone、網頁、USB 和 Android 音訊輸出的原始資料，不去識別化。每次開啟建立新工作階段，程序重新啟動後自動關閉。儲存為 ZIP，可在儲存完成畫面清空擷取資料。</string>
+    <string name="settings_debug_mode_description">擷取所有 CarPlay 和網頁端傳入資料，以及 Android 和網頁記錄。即時壓縮並匯出 ZIP，包含未去識別化的私人影音，可能影響效能。關閉視窗後繼續；重新啟動後恢復擷取並顯示視窗。</string>
     <string name="settings_hint_debug_enabled">偵錯模式已開啟，效能可能受到影響。</string>
     <string name="settings_clear_captured_data">清空擷取資料</string>
     <string name="settings_capture_cleared">擷取資料已清空，已儲存的檔案不受影響。</string>
     <string name="settings_capture_clear_failed">無法清空擷取資料，請重試。</string>
     <string name="settings_hint_iphone_car_audio">請確保 iPhone 已透過藍牙連接車載音訊。TiPlay 不再接收和轉送 CarPlay 音訊。</string>
     <string name="settings_hint_permissions_missing">尚未完成的權限或授權：%1$s。請開啟下方的「%2$s」檢查並授權。</string>
+    <string name="settings_standard_log_description">僅記錄 Android 和網頁端去識別化的記錄。</string>
+    <string name="settings_capture_progress">擷取中 · %1$d:%2$02d · 已壓縮 %3$d KiB</string>
+    <string name="settings_capture_running">正在擷取完整資料</string>
+    <string name="settings_capture_stop_export">停止並匯出</string>
+    <string name="settings_capture_background">背景繼續</string>
+    <string name="settings_capture_background_hint">關閉視窗後繼續背景擷取。</string>
+    <string name="settings_capture_storage_failed">儲存寫入失敗，擷取資料可能不完整。</string>
+    <string name="settings_capture_export_retained">匯出已擷取資料</string>
 </resources>

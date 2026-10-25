@@ -23,7 +23,7 @@ class DiagnosticRedactorTest {
 
     @After fun restoreLogLevel() { DiagnosticLogPolicy.level = previousLevel }
 
-    @Test fun debugReportsPreserveAirPlayEventsReverseRepliesAndDeviceNames() {
+    @Test fun debugMetadataPreservesAirPlayEventsWithoutDeviceNames() {
         val lines = listOf(
             "browser video stage=EVENT id=1 revision=0 event=play-rejected active=true position=0.0 duration=120.0 bufferedPosition=0.0 paused=true ended=false seeking=false dragging=false readyState=4 networkState=1 errorCode=0 errorType=NotAllowedError errorText=play() failed for [url]",
             "browser video stage=EVENT id=2 revision=0 event=error active=true position=0.0 duration=unknown bufferedPosition=0.0 paused=true ended=false seeking=false dragging=false readyState=0 networkState=3 errorCode=2 errorType=OTHER errorText=A network error (status 502) prevented playback of [url]",
@@ -40,11 +40,11 @@ class DiagnosticRedactorTest {
             }
             val report = file.readText()
             lines.forEach { assertTrue(it, report.contains(it)) }
-            assertTrue(report.contains("private-phone-name"))
+            assertFalse(report.contains("private-phone-name"))
         } finally { folder.deleteRecursively() }
     }
 
-    @Test fun debugReportsPreserveTroubleshootingMetadataAndPayloads() {
+    @Test fun debugMetadataPreservesTroubleshootingWithoutPayloadCopies() {
         val lines = listOf(
             "wireless startup elapsedMs=10000 authenticated=true wifiConfigs=2 startRequests=1 tcpAccepted=0 sessionActive=false waitingFor=WiFi_discovery_or_AirPlay_TCP startRequestAgeMs=9000 firstTcpAfterStartMs=none",
             "receiveCounters windowMs=10000 udpScope=device ifaceRx=sampled ifaceRxPacketsDelta=400 ifaceRxBytesDelta=8000 ifaceRxDroppedDelta=2 ifaceRxErrorsDelta=0 ifaceRxMissedErrorsDelta=1 udp4=sampled udp4InDatagramsDelta=390 udp4InErrorsDelta=2 udp4RcvbufErrorsDelta=1 udp4InCsumErrorsDelta=1 udp6=unavailable failureClass=FileNotFoundException",
@@ -71,7 +71,7 @@ class DiagnosticRedactorTest {
             }
             val report = file.readText()
             lines.forEach { assertTrue(report.contains(it)) }
-            assertTrue(report.contains("private-recording"))
+            assertFalse(report.contains("private-recording"))
         } finally { folder.deleteRecursively() }
     }
 

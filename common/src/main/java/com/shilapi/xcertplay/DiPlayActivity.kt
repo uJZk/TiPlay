@@ -188,6 +188,8 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     private var setupFromSettings = false
     private var settingsSectionFilter: Set<SettingsSection>? = null
     private var hostSettingsPage = false
+    private var captureDialog: DiagnosticCaptureDialog? = null
+    private var capturePromptShown = false
     private var browserAdvancedPage: BrowserAdvancedPage? = null
     private var clusterSafeAreaDialog: Dialog? = null
     private var clusterContentRequestVersion = 0L
@@ -558,6 +560,10 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     override fun onResume() {
         super.onResume()
         if (isFinishing) return
+        if (!capturePromptShown && DiagnosticCaptureDialog.claimRestartPrompt()) {
+            capturePromptShown = true
+            showCaptureProgress()
+        }
         refreshBrowserLocationAccess()
         HotspotExtraAddressSettings.sync(this) // phone + browser mode: keep the car browser's hotspot address
         TeslaBrowserLink.sync(this)
@@ -601,6 +607,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     }
 
     override fun onDestroy() {
+        captureDialog?.close()
         settingsSearchPopup?.dismiss()
         appearanceObserverRemoval?.invoke()
         appearanceObserverRemoval = null
@@ -700,7 +707,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                     returnToMain = {
                         startActivity(CarPlaySettingsNavigation.mainIntent(this))
                         finish()
-                    }, saveReport = { exportDiagnostics() }).also { browserAdvancedPage = it }
+                    }, saveReport = { exportDiagnostics() }, showCapture = ::showCaptureProgress).also { browserAdvancedPage = it }
                 advanced.refresh()
                 exportButton = advanced.reportButton.apply {
                     isEnabled = !exportInProgress
@@ -726,7 +733,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                     returnToMain = {
                         startActivity(CarPlaySettingsNavigation.mainIntent(this))
                         finish()
-                    }, saveReport = { exportDiagnostics() }).also { browserAdvancedPage = it }
+                    }, saveReport = { exportDiagnostics() }, showCapture = ::showCaptureProgress).also { browserAdvancedPage = it }
                 advanced.refresh()
                 exportButton = advanced.reportButton.apply {
                     isEnabled = !exportInProgress
@@ -5711,6 +5718,14 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         }, "adb-cluster-authorize").start()
     }
 
+    private fun showCaptureProgress() {
+        val progress = captureDialog ?: DiagnosticCaptureDialog(this) {
+            browserAdvancedPage?.refresh()
+            exportDiagnostics(debug = true)
+        }.also { captureDialog = it }
+        progress.show()
+    }
+
     private fun reportFileName(debug: Boolean) = "TiPlay-${SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())}.${if (debug) "zip" else "txt"}"
 
     private fun saveReportToDownloads() {
@@ -5742,7 +5757,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         val fileName = reportFileName(debug)
         Thread({
             val result = runCatching {
-                val report = diagnosticReportText(appContext)
+                val report = diagnosticReportText(appContext, debug)
                 val savedReport = DiagnosticReportContent.prepare(appContext, fileName, report, debug).use { content ->
                     if (uri != null) {
                         DiagnosticExportStore.write(appContext.contentResolver, uri, content)
@@ -5800,89 +5815,15 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     }
 
     /** The text of a diagnostic report. It reads the session logs, so call it off the main thread. */
-    private fun diagnosticReportText(appContext: Context): String = buildString {
-        appendLine("TiPlay ${version()} · private beta diagnostic report")
+    private fun diagnosticReportText(appContext: Context, debug: Boolean = false): String = buildString {
+        appendLine("TiPlay ${version()} diagnostic report")
         appendLine("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
-        appendLine("Head unit: ${Build.MANUFACTURER} ${Build.MODEL}")
         appendLine("Connection: ${if (AirPlayPersistence.loadWirelessEnabled(appContext)) "wireless" else "USB"}")
-        AirPlayPersistence.loadUsbChargingCurrent(appContext).let {
-            appendLine("USB charging offer: ${it.key} (${it.milliAmps} mA)")
-        }
-        appendLine("Authentication: local experimental beta identity; no remote fallback")
-        appendLine("CarPlay setup: ${if (setupError == null) "ready" else "authentication unavailable"}")
-        appendLine("Saved video preference (may differ from active session): ${if (AirPlayPersistence.loadHevcEnabled(appContext)) "HEVC" else "H.264"}; ${AirPlayPersistence.loadFps(appContext)} fps")
-        appendLine("Media-key audio focus: ${if (AirPlayPersistence.loadDisableMediaKeyAudioFocus(appContext)) "disabled" else "enabled"}")
-        appendLine("MTK decoder tuning preference: ${if (AirPlayPersistence.loadMtkDecoderTuning(appContext)) "enabled" else "disabled"}")
-        appendLine("CarPlay size: ${com.shilapi.xcertplay.airplay.CarPlaySize.fromWidthMillimeters(AirPlayPersistence.loadWidthPhysicalMm(appContext)).label}")
-        appendLine("Saved resolution preference (may differ from active session): ${AirPlayPersistence.loadDisplayScalePercent(appContext)}%")
-        appendLine("Saved browser car Bluetooth audio: ${CarBluetoothAudio.load(appContext)}")
-        appendLine(HotspotExtraAddressSettings.diagnosticLine(appContext))
-        TeslaBrowserLink.diagnosticLines(appContext).forEach(::appendLine)
         appendLine("Session: ${if (CarPlayBackgroundSession.active) "active" else if (CarPlayBackgroundSession.hasSession()) "connecting" else "stopped"}")
-        appendLine(PhoneWakeDiagnostics.report(appContext))
-        appendLine("Head-unit board: ${Build.BOARD}; hardware: ${Build.HARDWARE}; build: ${Build.DISPLAY}")
-        appendLine()
-        appendLine("--- Current cluster display diagnostics (even when disabled) ---")
-        appendLine(ClusterMapPresentation.diagnosticReport(appContext))
-        appendLine()
-        appendLine("--- ADB cluster activity routing ---")
-        appendLine("adbClusterActivityEnabled=${AirPlayPersistence.loadAdbClusterEnabled(appContext)}")
-        appendLine("clusterActivityMainTask=${ClusterActivityOutput.mainTaskId} surfaceValid=${ClusterActivityOutput.surface?.isValid}")
-        AdbClusterRouter.report(appContext).lineSequence().forEach { line ->
-            DiagnosticRedactor.redact(line)?.let { appendLine(it) }
-        }
-        appendLine()
-        appendLine("--- Standalone HUD compatibility ---")
-        appendLine(BydOutputSettings.standaloneHudDiagnosticReport(appContext))
-        appendLine()
-        appendLine("--- BYD vehicle-data probe ---")
-        appendLine(
-            "mode=${if (BydOutputSettings.legacyVehicleProbe(appContext)) "legacy-probe" else "default"} " +
-                "switches location=${AirPlayPersistence.loadLocationReportingEnabled(appContext)} " +
-                "battery=${BydOutputSettings.batteryToIphone(appContext)} " +
-                "wheelSpeed=${BydOutputSettings.wheelSpeedToIphone(appContext)} " +
-                "parkedVideo=${BydOutputSettings.videoWhileParked(appContext)}",
-        )
-        val bydCapabilities = BydVehicleFieldStore.load(appContext)
-        if (bydCapabilities == null) {
-            appendLine("no saved successful probe")
-        } else {
-            appendLine(
-                "catalog=${bydCapabilities.catalogAvailable} detectedAt=${bydCapabilities.detectedAtMillis} " +
-                    "savedFirmware=${bydCapabilities.firmwareKey} " +
-                    "currentFirmware=${BydVehicleFieldStore.firmwareKey()}",
-            )
-            for (field in BydVehicleField.entries) {
-                val probe = bydCapabilities.result(field)
-                appendLine("${field.name}: supported=${probe.supported} " +
-                    (probe.address?.let { "tx=${it.transaction} dev=${it.device} fid=${it.fid} source=${it.source}" }
-                        ?: "address=none"))
-            }
-        }
-        appendLine()
-        appendLine("--- Last display negotiation (timestamps distinguish it from current settings) ---")
-        appendLine(DisplayDiagnosticSnapshot.report(appContext))
-        appendLine()
-        appendLine("--- Last received boot and app-launch result ---")
-        appendLine(StartupDiagnosticSnapshot.report(appContext))
-        appendLine("Startup settings: openAfterBoot=${AirPlayPersistence.loadAutoStartOnBoot(appContext)} " +
-            "connectWhenOpened=${DiPlayPreferences.autoConnect(appContext)}")
-        appendLine("Car hotspot control: autoEnable=${CarHotspotSettings.enabled(appContext)} " +
-            "writeSettings=${CarHotspotTethering.permitted(appContext)} " +
-            "bydHeadUnit=${runCatching { CarHotspotSetup.isBydHeadUnit(appContext) }.getOrNull()} " +
-            "hotspotOn=${runCatching { com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(appContext) }.getOrNull()}")
-        appendLine(WheelKeyService.report(appContext))
-        WheelKeyLog.report(WheelKeyService.connected()).forEach { appendLine(it) }
-        appendLine()
-        appendLine(UpdateAvailability.report(appContext, System.currentTimeMillis()))
-        appendLine()
-        appendLine("--- Recent own-app process exits (Android 11+) ---")
-        appendLine(ProcessExitDiagnostics.report(appContext))
-        appendLine()
-        appendLine("--- Last crash recorded by TiPlay ---")
-        appendLine(CrashRecord.report(appContext))
-        appendLine()
-        DiagnosticLogSnapshot.appendTo(this, File(appContext.filesDir, "logs"))
+        appendLine("Saved browser car Bluetooth audio: ${CarBluetoothAudio.load(appContext)}")
+        appendLine("--- Android and browser events ---")
+        DiagnosticLogSnapshot.appendTo(this, File(appContext.filesDir, "logs"),
+            level = if (debug) DiagnosticLogLevel.DEBUG else DiagnosticLogLevel.STANDARD)
     }
 
     private fun showDiagnosticReport(report: String) {
