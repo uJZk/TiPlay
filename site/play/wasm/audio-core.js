@@ -106,9 +106,47 @@ export class AudioKernel {
       frames -= take; offset += take;
     }
   }
+  measureMix(continuous, retiring, output, gain, step, diagnostics) {
+    let peak = 0, over = 0, invalid = 0;
+    for (let i = 0; i < output[0].length; i++) {
+      let voice = false;
+      for (const [type, timeline, produced] of continuous) {
+        const semantic = timeline.semanticType ?? type;
+        if (semantic < 1 || semantic > 4) continue;
+        if (timeline.state === 'playing' || i < produced) voice = true;
+        else for (let c = 0; c < timeline.channels; c++) if (timeline.block[i * timeline.channels + c]) voice = true;
+      }
+      for (const tail of retiring) {
+        const semantic = tail.semanticType ?? tail.type;
+        if (tail.remaining > i && semantic >= 1 && semantic <= 4) voice = true;
+      }
+      const difference = (voice ? .2 : 1) - gain;
+      gain += Math.max(-step, Math.min(step, difference));
+      for (let c = 0; c < output.length; c++) {
+        let media = 0, other = 0;
+        for (const [type, timeline] of continuous) {
+          const semantic = timeline.semanticType ?? type;
+          const value = timeline.block[i * timeline.channels + Math.min(c, timeline.channels - 1)];
+          if (semantic === 0 || semantic === 6) media += value; else other += value;
+        }
+        for (const tail of retiring) if (tail.remaining > i) {
+          const semantic = tail.semanticType ?? tail.type;
+          const value = tail.samples[Math.min(c, tail.samples.length - 1)] * (tail.remaining - i - 1) / tail.total;
+          if (semantic === 0 || semantic === 6) media += value; else other += value;
+        }
+        const value = media * gain + other;
+        if (!Number.isFinite(value)) invalid++;
+        else { peak = Math.max(peak, Math.abs(value)); if (Math.abs(value) > 1) over++; }
+      }
+    }
+    diagnostics.mixPreClipPeak = Math.max(diagnostics.mixPreClipPeak || 0, peak);
+    diagnostics.mixOverFullScaleSamples = (diagnostics.mixOverFullScaleSamples || 0) + over;
+    diagnostics.mixNonFiniteSamples = (diagnostics.mixNonFiniteSamples || 0) + invalid;
+  }
   mix(continuous, retiring, output, gain, step, diagnostics) {
     const totalFrames = output[0].length;
     if (!this.supports(totalFrames, output.length)) return null;
+    if (diagnostics) this.measureMix(continuous, retiring, output, gain, step, diagnostics);
     // Browser-owned render quanta need not fit the private arena. Carry the
     // envelope, voice prefix and retired-tail state across bounded bulk calls.
     for (let offset = 0; offset < totalFrames; offset += MAX_FRAMES) {

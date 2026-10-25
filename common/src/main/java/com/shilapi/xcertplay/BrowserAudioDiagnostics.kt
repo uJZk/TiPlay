@@ -12,6 +12,13 @@ internal object BrowserAudioDiagnostics {
         "contextObservedStateChanges", "contextObservedNonRunningMs",
         "clockOffsetMs", "clockAgeMs", "clockRttMs", "contextBaseLatencyMs", "contextOutputLatencyMs",
         "processorErrors", "recoveries", "recoveryAttempts", "processorFailed", "renderAgeMs", "renderReportAgeMs",
+        "evidenceFirstJump.observedFrame", "evidenceFirstJump.expectedFrame", "evidenceFirstJump.deltaFrames", "evidenceFirstJump.blockFrames", "evidenceFirstJump.renderedFrames", "evidenceFirstJump.call",
+        "evidenceLastJump.observedFrame", "evidenceLastJump.expectedFrame", "evidenceLastJump.deltaFrames", "evidenceLastJump.blockFrames", "evidenceLastJump.renderedFrames", "evidenceLastJump.call",
+        "evidenceEndWorkMsMax", "evidenceCounts.frame-discontinuity", "evidenceCounts.frame-invalid", "evidenceCounts.callback-budget",
+        "evidenceCounts.output-edge", "evidenceCounts.output-invalid", "evidenceCounts.output-range", "evidenceCounts.packet-gap",
+        "evidenceCounts.arrival-gap", "evidenceCounts.packet-reset", "evidenceCounts.decoder-error", "evidenceCounts.decoded-range", "evidenceCounts.decoded-invalid",
+        "evidenceAttempts", "evidenceSuppressed", "evidenceCompleted", "evidenceIncomplete", "evidenceClock", "evidenceForwarded", "evidenceDropped",
+        "mixPreClipPeak", "mixOverFullScaleSamples", "mixNonFiniteSamples",
         "renderFrames", "renderNonzero", "renderPeak", "processCalls", "renderTimeMs",
         "renderQuantumFrames", "renderQuantumMinFrames", "renderQuantumMaxFrames",
         "renderStatsState", "renderUnderrunEvents", "renderUnderrunDurationMs", "renderTotalDurationMs",
@@ -58,7 +65,7 @@ internal object BrowserAudioDiagnostics {
         "recoveryCounts.source-deadline", "recoveryCounts.clock-generation", "recoveryCounts.suspended",
         "recoveryCounts.sender-deadline", "recoveryCounts.network-buffer", "recoveryCounts.device-clock-jump",
     ) + sourceDeadlineEvidenceFields + retiredDeadlineEvidenceFields + retiredDeadlineIdentityFields
-    private val decoderFields = setOf("packets", "frames", "nonzero", "peak", "errors", "noDataPackets", "noDataFrames")
+    private val decoderFields = setOf("nativeScanFrames", "nativePeak", "nativeOverFullScaleSamples", "nativeNonFiniteSamples", "nativeScanErrors", "packets", "frames", "nonzero", "peak", "errors", "noDataPackets", "noDataFrames")
     private val decoderStreamFields = setOf("packets", "frames", "nonzero", "peak", "backend", "epoch", "rate", "channels", "semanticType", "noDataPackets", "noDataFrames")
     private val streamKey = Regex("(?:decoder\\.)?stream([0-9]{1,3})\\..+")
     private val safeText = Regex("[A-Za-z0-9._-]{1,40}")

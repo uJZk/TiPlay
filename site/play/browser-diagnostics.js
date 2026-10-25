@@ -4,7 +4,7 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v86';
+export const PAGE_VERSION = 'v87';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
@@ -75,7 +75,11 @@ function audioDiagnosticKeys(full) {
   // so a busy first stream cannot hide a later stream's actual rejection boundary.
   return [...new Set(['contextState', 'contextRate', 'contextObservedStateChanges', 'contextObservedNonRunningMs',
     'renderQuantumFrames', 'renderQuantumMinFrames', 'renderQuantumMaxFrames',
-    ...AUDIO_RENDER_KEYS, ...perStream(AUDIO_SOURCE_IDENTITY), ...perStream(AUDIO_SOURCE_DEADLINE), ...perStream(AUDIO_RETIRED_DEADLINE),
+    ...AUDIO_RENDER_KEYS, ...['evidenceFirstJump', 'evidenceLastJump'].flatMap(prefix => ['observedFrame', 'expectedFrame', 'deltaFrames', 'blockFrames', 'renderedFrames', 'call'].map(key => `${prefix}.${key}`)),
+    'evidenceAttempts', 'evidenceSuppressed', 'evidenceCompleted', 'evidenceIncomplete',
+    'evidenceClock', 'evidenceEndWorkMsMax', 'evidenceForwarded', 'evidenceDropped', 'mixPreClipPeak', 'mixOverFullScaleSamples', 'mixNonFiniteSamples',
+    'decoder.nativeScanFrames', 'decoder.nativePeak', 'decoder.nativeOverFullScaleSamples', 'decoder.nativeNonFiniteSamples', 'decoder.nativeScanErrors',
+    ...perStream(AUDIO_SOURCE_IDENTITY), ...perStream(AUDIO_SOURCE_DEADLINE), ...perStream(AUDIO_RETIRED_DEADLINE),
     ...perStream(AUDIO_VOICE_PREPARATION), ...perStream(AUDIO_SOURCE_FIT),
     ...AUDIO_CLOCK_KEYS, ...perStream(AUDIO_SOURCE_DETAIL), ...Object.keys(full)])]
     .filter(key => Object.hasOwn(full, key));

@@ -237,6 +237,9 @@ mapping. A single ordered pair cannot establish a pipeline step: confirmation re
 new, coherent, advancing pairs, and pending evidence leaves the output reference unknown.
 Neither repeated snapshots nor reordered historical pairs refresh that evidence.
 
+For browser v87/beta.20 snapshots and waveform limits,
+see [Audio evidence](Audio-evidence.md).
+
 Snapshots preserve recovery reasons (`clock-step`, `underrun`,
 `source-deadline`, `network-buffer`, `device-clock-jump`, `clock-generation`,
 `suspended`, `sender-deadline`) and `rebufferCount`. Missing fields remain unknown;

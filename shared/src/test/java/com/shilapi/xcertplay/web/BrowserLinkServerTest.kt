@@ -174,6 +174,29 @@ class BrowserLinkServerTest {
         }
     }
 
+    @Test fun audioEvidenceRequiresTheCurrentCaptureAndPersistsOnlyValidatedWaveformEvents() {
+        val directory = java.nio.file.Files.createTempDirectory("audio-evidence").toFile()
+        val capture = File(directory, "raw.tsv")
+        val fixture = javaClass.getResourceAsStream("/Browser-audio-evidence-v1.json")!!.bufferedReader().use { it.readText() }
+        fun event(id: Any?, values: String = fixture) = """{"k":"audio-evidence","d":${WebJson.write(id)},"v":$values}"""
+        fun recorded() = logs.count { it.startsWith("Browser audio: stage=EVIDENCE ") }
+        try {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            control(1, event(null)); assertEquals(0, recorded())
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, true)
+            val sessionId = control(2).json["debugSession"]
+            control(3, event("stale")); assertEquals(0, recorded())
+            control(4, event(sessionId, "{}")); assertEquals(0, recorded())
+            assertEquals(401, control(5, event(sessionId), c = "0000").status)
+            control(5, event(sessionId)); assertEquals(1, recorded())
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            control(6, event(sessionId)); assertEquals(1, recorded())
+        } finally {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
+            directory.deleteRecursively()
+        }
+    }
+
     @Test fun audioDiagnosticsHaveAnIndependentBudgetAndFollowTheLiveDebugSwitch() {
         val directory = java.nio.file.Files.createTempDirectory("browser-audio-debug").toFile()
         val capture = File(directory, "raw.tsv")

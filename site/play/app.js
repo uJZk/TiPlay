@@ -284,6 +284,13 @@ function timingFor(mode) {
   return timing;
 }
 const browserAudio = createBrowserAudio({
+  onEvidence: evidence => {
+    if (!status?.debug || !status.debugSession || !outbox || outbox.stats().pending > 0) return false;
+    const event = { k: 'audio-evidence', d: status.debugSession, v: { ...evidence, pageVersion: PAGE_VERSION } };
+    const limit = Math.min(64 * 1024, pageStats().transport?.controlMessageLimitBytes || 64 * 1024);
+    if (new TextEncoder().encode(JSON.stringify(event)).byteLength > limit / 4) return false;
+    return outbox.push(event, 'latest');
+  },
   onMode: mode => {
     const timing = timingFor(mode);
     if (!config) { mediaTiming = timing; sink?.delay?.(timing.plans()); }

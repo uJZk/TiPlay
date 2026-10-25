@@ -1,4 +1,5 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
+import { AudioEvidence } from './audio-evidence.js';
 import { LiveTempoRuntime, prepareLiveTempo } from './live-tempo.js';
 import { PcmTimeline } from './pcm-timeline.js';
 import { initialPlaybackPlans, audioDelayAt, audioLimit } from './playback-window.js';
@@ -27,6 +28,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.runtime = new SoxrRuntime({ allowCalibration: false }); this.clock = null; this.contextAnchor = null; this.localTimeOriginMs = 0;
     this.runtime.liveTempo = new LiveTempoRuntime();
     this.kernel = this.runtime.audioKernel = new AudioKernel();
+    this.evidence = null;
     this.renderedFrames = 0; this.feedbackSequence = 0; this.lastFeedbackMs = -Infinity; this.suspended = false;
     this.renderQuantumMaxFrames = 0;
     this.nextContextFrame = null; this.outputUncertaintyMs = 0; this.outputMethod = null;
@@ -41,6 +43,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
     this.port.onmessage = ({ data }) => {
       if (this.disposed) return;
       if (data.dispose) {
+        this.evidence?.flush();
         for (const timeline of this.timelines.values()) timeline.clear();
         this.timelines.clear();
         for (const [type, stream] of this.streams) for (const pcm of stream.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', type);
@@ -51,6 +54,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
       if (Number.isSafeInteger(data.renderProbe) && data.renderProbe > this.renderProbeToken) {
         this.renderProbeToken = data.renderProbe; this.pendingRenderProbe = data.renderProbe;
       }
+      if (data.evidenceTrigger && this.evidence) this.evidence.trigger(data.evidenceTrigger.reason, data.evidenceTrigger.detail);
       if (data.calibration) {
         const { rate, outputRate, delayMs } = data.calibration;
         if (outputRate !== sampleRate) throw new Error('Audio calibration output rate does not match the device.');
@@ -92,12 +96,15 @@ class TiPlayAudio extends AudioWorkletProcessor {
         this.suspended = data.suspended;
       }
       if (typeof data.debug === 'boolean') {
+        this.evidence?.flush();
+        this.evidence = data.debug ? new AudioEvidence(sampleRate, evidence => this.port.postMessage({ evidence,
+          diagnosticRevision: this.diagnosticRevision, playbackGeneration: this.playbackGeneration })) : null;
         this.diagnostics = data.debug ? { processCalls: 0, renderFrames: 0, renderNonzero: 0, renderPeak: 0, streams: {} } : null;
         this.diagnosticRevision = data.diagnosticRevision;
         this.playbackGeneration = Number.isSafeInteger(data.generation) ? data.generation : null;
         this.lastReportTime = -Infinity;
 
-        for (const timeline of this.timelines.values()) timeline.debug(data.debug);
+        for (const timeline of this.timelines.values()) { timeline.debug(data.debug); this.watchTimeline(timeline); }
       }
       if (data.plans) this.delayPlans = data.plans;
       if (data.plansByMode) this.plansByMode = data.plansByMode;
@@ -112,6 +119,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
         this.epochs.clear();
       }
       if (!data.pcm) return;
+      if (this.evidence && (data.flags & 2)) this.evidence.trigger('packet-reset', { type: data.type, epoch: data.epoch, sequence: data.sequence, frames: data.pcm.byteLength / 2 / data.channels });
       this.playbackGeneration = Number.isSafeInteger(data.generation) ? data.generation : null;
       const previousEpoch = this.epochs.get(data.type);
       const previousTimeline = this.timelines.get(data.type);
@@ -141,7 +149,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
             (bytes, reason, generation) => this.credit(bytes, generation, reason, data.type),
             (data.flags & 1) || mediaWindow ? BUFFERED_AUDIO_WINDOW_MS : 1000,
             { buffered: Boolean(data.flags & 1), mode: data.mode, type: data.type, semanticType: data.semanticType ?? data.type });
-          timeline.debug(Boolean(this.diagnostics)); timeline.epoch = data.epoch; timeline.generation = data.generation;
+          timeline.debug(Boolean(this.diagnostics)); this.watchTimeline(timeline); timeline.epoch = data.epoch; timeline.generation = data.generation;
           timeline.arrivalPlayback = data.mode === 'carplay' && isVoice(data.type, data) && !Number.isFinite(data.presentationMs);
           timeline.synchronized = !timeline.arrivalPlayback && Number.isFinite(data.presentationMs); this.timelines.set(data.type, timeline);
         }
@@ -175,7 +183,7 @@ class TiPlayAudio extends AudioWorkletProcessor {
           timeline = new PcmTimeline(data.rate, data.channels,
             (consumed, reason) => this.credit(consumed, data.generation, reason, data.type),
             (data.flags & 1) || mediaWindow ? BUFFERED_AUDIO_WINDOW_MS : 1000, { buffered: Boolean(data.flags & 1) });
-          timeline.debug(Boolean(this.diagnostics));
+          timeline.debug(Boolean(this.diagnostics)); this.watchTimeline(timeline);
           timeline.epoch = data.epoch; this.timelines.set(data.type, timeline);
         }
         timeline.mode = data.mode; timeline.semanticType = data.semanticType ?? data.type;
@@ -224,6 +232,10 @@ class TiPlayAudio extends AudioWorkletProcessor {
     }
     timeline.clear();
   }
+  watchTimeline(timeline) {
+    if (timeline instanceof ContinuousAudio) timeline.onEvidence = this.evidence
+      ? (reason, detail) => this.evidence?.trigger(reason, detail) : null;
+  }
   report() {
     const metrics = this.diagnostics;
     if (!metrics) return;
@@ -236,7 +248,8 @@ class TiPlayAudio extends AudioWorkletProcessor {
       details['stream' + type] = { ...fields, epoch: this.epochs.get(type), ...streams[type] };
     }
     this.port.postMessage({ diagnosticRevision: this.diagnosticRevision, playbackGeneration: this.playbackGeneration,
-      diagnostics: { ...scalars, ...details, renderTimeMs: renderedMs } });
+      evidenceBaseline: this.evidence?.baseline(),
+      diagnostics: { ...scalars, ...details, ...this.evidence?.stats(), renderTimeMs: renderedMs } });
   }
   renderContextMs() {
     // Integrate the actual emitted frame count. The main-thread/public time
@@ -342,8 +355,12 @@ class TiPlayAudio extends AudioWorkletProcessor {
     const verifiedFrame = Number.isSafeInteger(blockFrames) && blockFrames > 0
       && typeof currentFrame === 'number' && Number.isSafeInteger(currentFrame) && currentFrame >= 0
       && Number.isSafeInteger(currentFrame + blockFrames);
+    this.evidence?.begin(hardwareFrame, this.nextContextFrame, blockFrames, output.length, this.renderDomainGeneration, this.renderedFrames, this.mediaGain);
+    if (this.evidence && !verifiedFrame) this.evidence.trigger('frame-invalid');
     if (verifiedFrame) {
       if (this.renderDomainNextFrame !== null && hardwareFrame !== this.renderDomainNextFrame) {
+        this.evidence?.trigger('frame-discontinuity', { observedFrame: hardwareFrame, previousExpectedFrame: this.renderDomainNextFrame,
+          deltaFrames: hardwareFrame - this.renderDomainNextFrame, dspExpectedFrame: this.nextContextFrame });
         this.renderDomainGeneration++; this.renderDomainStartFrame = hardwareFrame;
       }
       this.renderDomainStartFrame ??= hardwareFrame;
@@ -364,7 +381,8 @@ class TiPlayAudio extends AudioWorkletProcessor {
         : Number.isSafeInteger(fallbackFrame) && fallbackFrame >= 0 ? fallbackFrame : 0;
     }
     if (audioFrame && Math.abs(hardwareFrame - this.nextContextFrame) > blockFrames) {
-      for (const timeline of this.timelines.values()) if (timeline instanceof ContinuousAudio) timeline.recover('device-clock-jump');
+      for (const timeline of this.timelines.values()) if (timeline instanceof ContinuousAudio) timeline.recover('device-clock-jump', { observedFrame: hardwareFrame, expectedFrame: this.nextContextFrame,
+        deltaFrames: hardwareFrame - this.nextContextFrame, blockFrames, renderedFrames: this.renderedFrames });
       this.nextContextFrame = hardwareFrame;
     }
     const contextMs = this.nextContextFrame * 1000 / sampleRate;
@@ -378,12 +396,14 @@ class TiPlayAudio extends AudioWorkletProcessor {
         timeline.block = new Float32Array(Math.max(512, blockFrames) * timeline.channels);
       const produced = timeline.render(this.targetTime(timeline, contextMs, blockFrames), contextMs, timeline.arrivalPlayback ? null : this.clock,
         blockFrames, timeline.block, this.deviceClock.rate, this.deadline(timeline, contextMs));
+      this.evidence?.stage(timeline, produced, blockFrames, contextMs);
       const entry = timeline.mixerEntry ??= [type, timeline, 0];
       entry[2] = produced; continuous[continuousCount++] = entry;
     }
     continuous.length = continuousCount;
     const bulkMix = !this.streams.size && continuous.length === this.timelines.size
       && this.kernel.supports(blockFrames, output.length);
+    const previousMixOver = this.diagnostics?.mixOverFullScaleSamples || 0, previousMixInvalid = this.diagnostics?.mixNonFiniteSamples || 0;
     if (bulkMix) this.mediaGain = this.kernel.mix(continuous, this.retiring, output,
       this.mediaGain, this.mediaGainStep, this.diagnostics);
     else for (let i = 0; i < blockFrames; i++) {
@@ -441,12 +461,21 @@ class TiPlayAudio extends AudioWorkletProcessor {
     }
     this.retiring = this.retiring.filter(tail => tail.remaining > 0);
     if (!bulkMix) for (const channel of output) for (let i = 0; i < channel.length; i++) {
+      if (this.diagnostics) {
+        const value = channel[i];
+        if (!Number.isFinite(value)) this.diagnostics.mixNonFiniteSamples = (this.diagnostics.mixNonFiniteSamples || 0) + 1;
+        else { this.diagnostics.mixPreClipPeak = Math.max(this.diagnostics.mixPreClipPeak || 0, Math.abs(value));
+          if (Math.abs(value) > 1) this.diagnostics.mixOverFullScaleSamples = (this.diagnostics.mixOverFullScaleSamples || 0) + 1; }
+      }
       channel[i] = Math.max(-1, Math.min(1, channel[i]));
       if (this.diagnostics) {
         if (channel[i]) this.diagnostics.renderNonzero++;
         this.diagnostics.renderPeak = Math.max(this.diagnostics.renderPeak, Math.abs(channel[i]));
       }
     }
+    if (this.evidence && this.diagnostics.mixOverFullScaleSamples > previousMixOver) this.evidence.trigger('output-range', { mixPreClipPeak: this.diagnostics.mixPreClipPeak, overFullScale: this.diagnostics.mixOverFullScaleSamples - previousMixOver });
+    if (this.evidence && this.diagnostics.mixNonFiniteSamples > previousMixInvalid) this.evidence.trigger('output-invalid', { nonFinite: this.diagnostics.mixNonFiniteSamples - previousMixInvalid });
+    this.evidence?.end(output, this.mediaGain, this.renderDomainGeneration);
     if (this.diagnostics) {
       this.diagnostics.processCalls++; this.diagnostics.renderFrames += output[0].length;
       this.diagnostics.renderQuantumFrames = blockFrames;

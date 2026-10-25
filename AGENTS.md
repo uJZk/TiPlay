@@ -79,6 +79,13 @@ Resume Android diagnostic UI/compression work from [Diagnostics](docs/Diagnostic
 Debug switch/View logs dialogs, end-and-clear/minimize behavior, Zstandard level 3 and STORED ZIP
 exports. Its targeted verification and remaining vehicle checks are recorded there.
 
+Resume beta.20/code62 and browser v87 audio evidence work at
+[Diagnostics](docs/Audio-evidence.md) and
+[Build](docs/Build.md#beta20-audio-evidence-release). It records capture bounds,
+raw frame-jump witnesses, pre/post waveform coverage, CPU attribution limits and
+the user's explicit full-CI skip for this release. Publication is pending until
+the signed release workflow and artifact checks complete.
+
 ## Checks
 
 Run the CI command from .github/workflows/android.yml before reporting a change as done:

@@ -8,10 +8,10 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is **0.2.20-beta.19** (code **61**). Run
+prerelease preparation is **0.2.20-beta.20** (code **62**); beta.19 remains published until the signed build is verified. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v86** with WebRTC DataChannel as the formal live-media path.
+the current source uses **v87** (deployment pending) with WebRTC DataChannel as the formal live-media path.
 The **beta.17/code59** build introduced overlapping 5 ms recovery tails and
 pitch-preserving SoundTouch CarPlay catch-up up to 20%; v86 adds held catch-up.
 The historical beta.16 APK/webpage v84 build is recorded below. Software checks are in [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -305,3 +305,20 @@ including beta.14 source/checksum digests and its original test scope, remains i
 Select the device with `adb -s <serial>`. Pull the installed APK using `pm path <application-id>` and compare its application ID and signing fingerprint with the candidate. A different ID installs separately; a different signing key cannot update the existing package. Preserve settings by keeping both and using `adb -s <serial> install -r <apk>`; do not uninstall to bypass a mismatch.
 
 If preserving the runtime identity, also compare both `offline-mfi` files byte for byte. An installed APK can supply that identity, but cannot supply the Android signing private key. Confirm the installed version/update time, launch the declared activity and check new application crashes. Installation alone does not validate iPhone or vehicle playback.
+
+
+## Beta.20 audio evidence release
+
+Prepared beta.20/code62 with browser v87. The Debug-only bounded audio recorder,
+validated raw evidence channel, pre-PCM16 native float scan, pre-clamp mixed-sum
+measurement and evidence extraction tool are described in [Diagnostics](Audio-evidence.md).
+This release adds evidence; it does not claim to fix or establish the cause of the
+reported crackle. Browser speaker/backend timing and target-device CPU attribution
+remain unmeasured.
+
+The user explicitly requested skipping full CI. Validation is limited to targeted
+browser/audio/schema/receiver tests, production-CSP Chromium media-clock output,
+Python extraction/release/layout checks,
+public-tree/cache checks and the signed release workflow. The full Android unit/lint
+matrix is not an acceptance claim for this release. Publication details and artifact
+hashes are recorded after the signed build completes.

@@ -668,6 +668,20 @@ class BrowserLinkServer(
                 if (stats == null) performance.count("audioDiagnosticsRejected")
                 else callbacks.onBrowserAudioDiagnostics(stats)
             }
+            "audio-evidence" -> {
+                val capture = fields["d"] as? String ?: return
+                if (RawTraffic.activeSessionId() != capture) return
+                val evidence = BrowserAudioEvidence.parse(fields["v"])
+                if (evidence == null) { performance.count("audioEvidenceRejected"); return }
+                val bytes = WebJson.write(evidence).toByteArray(Charsets.UTF_8)
+                if (RawTraffic.recordForSession(capture, "browser/audio-evidence", bytes)) {
+                    performance.count("audioEvidenceRecorded")
+                    callbacks.log("Browser audio: stage=EVIDENCE id=${evidence["id"]} " +
+                        "blocks=${(evidence["blocks"] as List<*>).size} incomplete=${evidence["incomplete"]} " +
+                        "attempts=${evidence["attempts"]} suppressed=${evidence["suppressed"]} " +
+                        "waveformOmittedBlocks=${evidence["waveformOmittedBlocks"]}")
+                }
+            }
             "video-diag" -> {
                 val capture = fields["d"] as? String ?: return
                 if (RawTraffic.activeSessionId() != capture) return

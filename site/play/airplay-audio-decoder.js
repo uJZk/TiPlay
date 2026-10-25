@@ -75,7 +75,7 @@ function copyDecodedPcm(session, data, pcm) {
 }
 
 /** Independent AAC/Opus/ALAC/PCM stream decoders share the browser output clock and retain their own epochs. */
-export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
+export function createAirPlayAudioDecoder({ onPcm, onError = () => {}, onEvidence = () => {},
   AudioDecoder = globalThis.AudioDecoder, EncodedAudioChunk = globalThis.EncodedAudioChunk, probeTimeout = 1000,
   softwareEldFactory = createSoftwareEldDecoder, drainTimeout = 2000 } = {}) {
   const sessions = new Map();
@@ -129,7 +129,7 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
   }
   function failure(session, cause) {
     if (!live(session)) return;
-    if (diagnostics) diagnostics.errors++;
+    if (diagnostics) { diagnostics.errors++; onEvidence('decoder-error', { type: session.type, epoch: session.epoch }); }
     close(session); onError(cause);
   }
   function recordFor(session, fields) {
@@ -190,6 +190,24 @@ export function createAirPlayAudioDecoder({ onPcm, onError = () => {},
       const frames = data.numberOfFrames, channels = data.numberOfChannels, rate = data.sampleRate;
       if (!Number.isInteger(frames) || frames < 1 || frames > rate || frames * channels * 2 > 64 * 1024 || channels !== session.config.channels || rate < 8000 || rate > 96000
         || (session.sourceFrames && rate !== session.config.sampleRate)) throw new Error('Invalid decoded AirPlay audio.');
+      if (diagnostics) {
+        try {
+          const plane = new Float32Array(frames); let peak = 0, over = 0, invalid = 0;
+          for (let c = 0; c < channels; c++) {
+            data.copyTo(plane, { planeIndex: c, format: 'f32-planar' });
+            for (const value of plane) {
+              if (!Number.isFinite(value)) invalid++;
+              else { peak = Math.max(peak, Math.abs(value)); if (Math.abs(value) > 1) over++; }
+            }
+          }
+          diagnostics.nativeScanFrames = (diagnostics.nativeScanFrames || 0) + frames;
+          diagnostics.nativePeak = Math.max(diagnostics.nativePeak || 0, peak);
+          diagnostics.nativeOverFullScaleSamples = (diagnostics.nativeOverFullScaleSamples || 0) + over;
+          diagnostics.nativeNonFiniteSamples = (diagnostics.nativeNonFiniteSamples || 0) + invalid;
+          if (over || invalid) onEvidence(invalid ? 'decoded-invalid' : 'decoded-range', { type: session.type, epoch: session.epoch,
+            decodeTimestampUs: data.timestamp, frames, peak, overFullScale: over, nonFinite: invalid });
+        } catch (_) { diagnostics.nativeScanErrors = (diagnostics.nativeScanErrors || 0) + 1; }
+      }
       const pcm = new Int16Array(frames * channels);
       copyDecodedPcm(session, data, pcm);
       if (session.sourceFrames) { sourceOutput(session, pcm, rate); return; }

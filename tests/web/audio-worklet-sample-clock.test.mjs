@@ -25,6 +25,7 @@ function harness(getter) {
   const post = data => { activate(); processor.port.onmessage({ data }); };
   post({ calibration, debug: true, diagnosticRevision: 1, clock: { version: 2, generation: 1, rate: 1,
     serverOriginMs: 800000, localOriginMs: 0, state: 'locked', uncertaintyMs: 0 } });
+  processor.evidence.now = () => frame / 48; // Compare media behavior under the same independent diagnostic clock.
   return {
     processor, post,
     rate(value) {

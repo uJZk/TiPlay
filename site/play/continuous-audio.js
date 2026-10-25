@@ -75,7 +75,7 @@ export class ContinuousAudio {
   }
   debug(enabled) {
     this.counters = enabled ? { capacityPackets: 0, latePackets: 0, duplicatePackets: 0, playedPackets: 0, resetPackets: 0, invalidPackets: 0, rebufferCount: 0 } : null;
-    this.lastSourceDeadline = null;
+    this.lastSourceDeadline = null; this.evidenceInputSeen = false; this.evidenceDspSeen = false; this.evidenceDspContextMs = null;
     this.sourceClock.debug(enabled);
   }
   retire(packet, reason) {
@@ -129,6 +129,7 @@ export class ContinuousAudio {
       nominalFrame = Math.round((sampleTimeUs - this.sampleAnchorUs) * this.rate / 1000000);
     }
     const previous = this.lastPacket, consecutive = previous && ((data.sequence - previous.sequence) >>> 0) === 1;
+    if (this.onEvidence && previous && !consecutive) this.onEvidence('packet-gap', { type: this.type, epoch: this.epoch, previousSequence: previous.sequence, sequence: data.sequence, previousEnd: previous.end, packetFirst: nominalFrame });
     // CarPlay's RTP-derived timestamps count nominal samples, independently of
     // the arrival oscillator fit. Presentation-only AirPlay anchors reflect that
     // oscillator, so their compatibility path uses its rate for adjacency.
@@ -172,7 +173,34 @@ export class ContinuousAudio {
     }
     return copied;
   }
-  recover(reason) {
+  measureDsp(result, contextMs) {
+    if (!this.onEvidence) return;
+    if (this.evidenceDspContextMs !== contextMs) {
+      this.evidenceDspContextMs = contextMs;
+      this.evidenceInputFrames = this.evidenceProducedFrames = this.evidenceDspCalls = 0;
+      this.evidenceInputPeak = this.evidenceInputMaxStep = 0;
+    }
+    this.evidenceInputLast ??= new Float32Array(this.channels);
+    for (let i = 0; i < result.consumed * this.channels; i++) {
+      const value = this.input[i]; this.evidenceInputPeak = Math.max(this.evidenceInputPeak, Math.abs(value));
+      const c = i % this.channels;
+      if (this.evidenceInputSeen) this.evidenceInputMaxStep = Math.max(this.evidenceInputMaxStep, Math.abs(value - this.evidenceInputLast[c]));
+      this.evidenceInputLast[c] = value;
+      if (c === this.channels - 1) this.evidenceInputSeen = true;
+    }
+    this.evidenceInputFrames += result.consumed; this.evidenceProducedFrames += result.produced; this.evidenceDspCalls++;
+  }
+  recover(reason, detail = {}) {
+    if (this.onEvidence) {
+      const head = this.queue.find(packet => packet.end > this.inputFrame);
+      this.onEvidence(reason, { ...detail, type: this.type, epoch: this.epoch, state: this.state,
+        inputFrame: this.inputFrame, sourceFrame: this.sourceFrame, outputFrames: this.outputFrames,
+        queueBytes: this.bytes, queuePackets: this.queue.length, nextPacketFirst: head?.first ?? null,
+        nextPacketEnd: head?.end ?? null, phaseErrorMs: this.phaseErrorMs, phaseCorrectionPpm: this.phaseCorrectionPpm ?? 0,
+        requestedCorrectionPpm: (this.catchUpCorrection || 0) * 1e6, resampleRatio: this.slewRatio,
+        sourceDeltaUpperMs: this.sourceDeltaUpperMs, sourceDeadlineState: this.sourceDeadlineState,
+        dspContextMs: this.evidenceDspContextMs ?? null, inputFrames: this.evidenceInputFrames ?? null, producedFrames: this.evidenceProducedFrames ?? 0, dspCalls: this.evidenceDspCalls ?? 0 });
+    }
     this.catchUpCorrection = this.catchUpTrend = 0;
     this.catchUpObservation = null; this.catchUpSamples = [];
     this.catchUpBoost = null; this.catchUpBoostArmed = true;
@@ -490,6 +518,7 @@ export class ContinuousAudio {
       const available = preparation.needInput
         ? this.read(preparation.inputFrame, Math.min(4096, Math.ceil(count * nextRatio) + Math.ceil(this.rate * 0.006))) : 0;
       const converted = this.backend.process(this.input, available, this.output, count);
+      this.measureDsp(converted, contextMs);
       preparation.inputFrame += converted.consumed;
       const finalRatio = preparation.ratio + (nextRatio - preparation.ratio) * converted.produced / count;
       if (converted.produced) {
@@ -588,6 +617,7 @@ export class ContinuousAudio {
       // Drain the filter before feeding again: producer lead belongs to the bounded PCM queue.
       const available = needInput ? this.read(this.inputFrame, Math.min(4096, Math.ceil((frames - produced) * nextRatio) + Math.ceil(this.rate * 0.006))) : 0;
       const result = this.backend.process(this.input, available, this.output, frames - produced);
+      this.measureDsp(result, contextMs);
       this.inputFrame += result.consumed;
       this.kernel.fresh(this.output, 0, output, produced, result.produced, this);
       produced += result.produced;

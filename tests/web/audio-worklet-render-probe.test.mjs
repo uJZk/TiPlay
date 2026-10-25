@@ -122,3 +122,22 @@ test('Debug, PCM reset and node replacement have separate sample-domain lifetime
   const replacement = harness(); replacement.post({ renderProbe: 1 }); replacement.render(128, 4096);
   assert.deepEqual(replacement.replies(), [{ token: 1, generation: 0, startFrame: 4096, endFrame: 4224, renderQuantumFrames: 128 }]);
 });
+
+test('Debug preserves exact counter recovery evidence and final samples before ordinary telemetry can overwrite it', () => {
+  const h = harness(); h.post({ debug: true, diagnosticRevision: 4, generation: 8 });
+  h.processor.evidence.now = () => 0;
+  const timeline = new ContinuousAudio({ filterDelay: () => 0 }, 48000, 1, 48000, () => {}, 1000);
+  timeline.epoch = 3;
+  timeline.render = (_target, _context, _clock, _frames, output) => { output.fill(.125); return 128; };
+  h.processor.watchTimeline(timeline); h.processor.timelines.set(0, timeline);
+  h.render(); h.render(128, 384); h.render(); h.render();
+  const message = h.processor.messages.find(m => m.evidence);
+  assert.equal(message.diagnosticRevision, 4); assert.equal(message.playbackGeneration, 8);
+  const cause = message.evidence.causes.find(c => c.reason === 'device-clock-jump');
+  assert.equal(cause.observedFrame, 384); assert.equal(cause.expectedFrame, 128); assert.equal(cause.deltaFrames, 256);
+  assert.equal(cause.epoch, 3); assert.equal(message.evidence.incomplete, false);
+  assert.equal(message.evidence.blocks.at(-1).wave[0], .125);
+  assert.equal(h.processor.evidence.stats().evidenceFirstJump.deltaFrames, 256);
+  h.post({ debug: false }); const count = h.processor.messages.filter(m => m.evidence).length;
+  h.render(128, 4096); assert.equal(h.processor.messages.filter(m => m.evidence).length, count);
+});

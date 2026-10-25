@@ -1,4 +1,5 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
+import { packAudioEvidence } from './audio-evidence.js';
 import { presentationTime } from './clock-sync.js';
 import { readAudioRecords } from './audio-protocol.js';
 import { initialPlaybackPlans } from './playback-window.js';
@@ -14,7 +15,7 @@ import { loadAudioCore } from './wasm/audio-core.js';
 
 /** Playback only. Android owns demand-driven car Bluetooth capture and speech playback. */
 export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {},
-  onAudioReference = () => {}, onSourceDeadline = () => {} }) {
+  onAudioReference = () => {}, onSourceDeadline = () => {}, onEvidence = () => false }) {
   let context = null, node = null, ready = null, connection = null, request = null;
   let support = false, enabled = true, voiceRevision = null, voiceState = 'idle', voiceError = null;
   let queuedBytes = 0, capacity = null, audioError = null, disposed = false;
@@ -22,7 +23,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let clock = null, delayPlans = initialPlaybackPlans(), timedPackets = 0, fallbackPackets = 0, arrivalAnchoredPackets = 0;
   let playbackGeneration = 0;
   let debugEnabled = false, pcmMetrics = null, workletMetrics = null, reportAt = null;
-  let diagnosticRevision = 0;
+  let diagnosticRevision = 0, evidenceForwarded = 0, evidenceDropped = 0, evidenceEventSequence = 0, evidenceNodeSequence = 0, evidenceBaseline = null, evidenceBaselineAt = null;
   let contextObservation = null;
   let processorErrors = 0, recoveries = 0, processorFailed = false, recoveryAttempts = 0, recoveryTimer = null;
   let lastControlAt = -Infinity;
@@ -32,7 +33,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   const outputClock = createAudioOutputMapping(), playoutReferences = new Map();
   // Keep one counter per bounded logical stream. Epoch changes retire its local counter,
   // while the page-wide rejection total survives stream replacement and processor recovery.
-  const deadlineStreams = new Map();
+  const deadlineStreams = new Map(), recordTimings = new Map();
   let deadlineRejectedFrames = 0, deadlineEventSequence = 0;
   const importantUnknown = new Set(['source-anchor-unavailable', 'output-clock-unavailable', 'clock-uncertainty-unavailable']);
   const deadlineReasons = new Set([...importantUnknown, 'source-deadline', 'no-output']);
@@ -82,13 +83,36 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     capacity?.(); capacity = null;
   };
   const packetDecoder = createAirPlayAudioDecoder({
-    onPcm: record => { publishPcm(record).catch(cause => {
+    onEvidence: (reason, detail) => { if (debugEnabled) node?.port.postMessage({ evidenceTrigger: { reason, detail } }); },
+    onPcm: record => { if (debugEnabled) record.decodedAtMs = now(); publishPcm(record).catch(cause => {
       if (disposed) return;
       stopStream(); audioError = cause.message || String(cause); notify();
     }); },
     onError: cause => { releaseEncoded(); audioError = cause.message || String(cause); notify(); },
   });
   const now = () => performance.timeOrigin + performance.now();
+  function emitEvidence(evidence, origin = 'worklet') {
+    if (!debugEnabled) return;
+    const main = { receivedAtMs: now(), diagnosticRevision, playbackGeneration, processorInstance: evidenceNodeSequence, evidenceOrigin: origin, baselineAgeMs: evidenceBaselineAt === null ? null : now() - evidenceBaselineAt,
+      visibility: typeof document === 'undefined' ? 'unknown' : document.visibilityState,
+      ...readAudioPlaybackStats(context), contextState: context?.state,
+      queuedBytes, pendingPcmBytes, encodedReservedBytes: reservedBytes(), ...outputClock.diagnostics() };
+    const types = [...new Set([...evidence.causes.map(c => c.type).filter(Number.isInteger), ...recordTimings.keys()])].slice(0, 4);
+    for (const type of types) {
+      const timing = recordTimings.get(type);
+      if (timing) for (const [key, value] of Object.entries(timing)) main[`stream${type}.${key}`] = value;
+    }
+    const decoder = packetDecoder.stats();
+    for (const key of ['packets', 'frames', 'peak', 'errors', 'nativePeak', 'nativeScanFrames', 'nativeOverFullScaleSamples', 'nativeNonFiniteSamples', 'nativeScanErrors'])
+      if (decoder?.[key] !== undefined) main['decoder.' + key] = decoder[key];
+    for (const [key, value] of Object.entries(main)) if (value === undefined || typeof value === 'object') delete main[key];
+    const keys = Object.keys(main);
+    if (keys.length > 95) { for (const key of keys.slice(95)) delete main[key]; main.mainOmittedFields = keys.length - 95; }
+    try { const packed = packAudioEvidence({ ...evidence, id: ++evidenceEventSequence }, main);
+      if (packed && onEvidence(packed) === true) evidenceForwarded++; else evidenceDropped++;
+    } catch (_) { evidenceDropped++; }
+  }
+
   function observeContextState() {
     if (!debugEnabled) return;
     const at = now(), state = context?.state ?? null;
@@ -106,7 +130,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     let contextTimeMs = null;
     try { const raw = context?.currentTime; if (Number.isFinite(raw)) contextTimeMs = raw * 1000; } catch (_) {}
     return {
-      processorErrors, recoveries, processorFailed, recoveryAttempts,
+      processorErrors, recoveries, processorFailed, recoveryAttempts, evidenceForwarded, evidenceDropped,
       contextState: context?.state ?? 'unavailable', contextTimeMs,
       contextObservedStateChanges: contextObservation.changes, contextObservedNonRunningMs: contextObservation.nonRunningMs,
       contextRate: context?.sampleRate ?? null, contextBaseLatencyMs: context?.baseLatency * 1000,
@@ -176,7 +200,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   function debug(value) {
     const next = value === true;
     if (next === debugEnabled) return;
-    debugEnabled = next; diagnosticRevision++; contextObservation = null;
+    debugEnabled = next; recordTimings.clear(); diagnosticRevision++; contextObservation = null;
     pcmMetrics = next ? pcmStats() : null; workletMetrics = null; reportAt = null;
     observeContextState();
     outputClock.debug(next); packetDecoder.debug(next); node?.port.postMessage({ debug: next, diagnosticRevision, generation: playbackGeneration }); notify();
@@ -224,7 +248,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     // cloning compiled code does not share stream state or require cross-origin isolation.
     const installed = new AudioWorkletNode(context, 'tiplay-audio', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
       processorOptions: { soxrModule, audioCoreModule, liveTempoModule } });
-    node = installed; nodeConnected = false;
+    node = installed; nodeConnected = false; evidenceNodeSequence++; evidenceBaseline = null; evidenceBaselineAt = null;
     const id = ++preparationSequence;
     let resolve, reject, connected = false;
     const prepared = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -239,7 +263,11 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
         queuedBytes = Math.max(0, queuedBytes - data.consumed); capacity?.(); capacity = null;
       }
       if (debugEnabled && data.diagnosticRevision === diagnosticRevision && data.playbackGeneration === playbackGeneration
-        && data.diagnostics) { workletMetrics = data.diagnostics; reportAt = now(); }
+        && data.diagnostics) { evidenceBaseline = data.evidenceBaseline ?? null; evidenceBaselineAt = now(); workletMetrics = data.diagnostics; reportAt = now(); }
+      if (data.evidence && debugEnabled && data.diagnosticRevision === diagnosticRevision && data.playbackGeneration === playbackGeneration) {
+        emitEvidence(data.evidence);
+      }
+
       if (data.playout && data.playout.generation === playbackGeneration) {
         const reference = outputClock.reference(data.playout, context);
         if (reference) {
@@ -250,6 +278,8 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       }
     };
     installed.onprocessorerror = () => {
+      if (debugEnabled) emitEvidence({ ...(evidenceBaseline ?? { schema: 1, sampleRate: context?.sampleRate || 48000, clock: 'wall', blocks: [], attempts: 0, suppressed: 0, timeOriginMs: null }),
+        causes: [{ reason: 'processor-error' }], incomplete: true }, 'processor-error');
       if (disposed || node !== installed) return;
       processorErrors++; processorFailed = true; audioError = 'Audio processor failed.';
       if (!connected) { reject(new Error(audioError)); return; }
@@ -341,6 +371,9 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     const sourceTime = presentationTime(record.presentationMs, clock);
     if (clock?.version !== 2) record.sourceTime = sourceTime;
     record.arrivalLocalTimeMs = performance.now();
+    if (debugEnabled) { record.workletPostedAtMs = now();
+      const timing = recordTimings.get(record.type); if (timing) { timing.lastPostAtMs = record.workletPostedAtMs; timing.decodedAtMs = record.decodedAtMs ?? null; }
+    }
     const purpose = record.semanticType ?? record.type;
     const voice = record.mode === 'carplay' && purpose >= 1 && purpose <= 4;
     const arrivalAnchored = voice && !Number.isFinite(sourceTime);
@@ -367,6 +400,14 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       if (!response.ok) throw new Error(`Audio HTTP ${response.status}`);
       audioError = null; notify();
       for await (const record of readAudioRecords(response.body, abort.signal)) {
+        if (debugEnabled) {
+          const at = now(), previous = recordTimings.get(record.type);
+          const gapMs = previous?.epoch === record.epoch ? at - previous.lastReadAtMs : null;
+          recordTimings.set(record.type, { epoch: record.epoch, sequence: record.sequence, lastReadAtMs: at,
+            readGapMs: gapMs, readGapMaxMs: Math.max(previous?.epoch === record.epoch ? previous.readGapMaxMs || 0 : 0, gapMs || 0), presentationMs: Number.isFinite(record.presentationMs) ? record.presentationMs : null });
+          if (gapMs > 100 && record.kind === 7) node?.port.postMessage({ evidenceTrigger: { reason: 'arrival-gap',
+            detail: { type: record.type, epoch: record.epoch, sequence: record.sequence, gapMs, readAtMs: at } } });
+        }
         if (abort.signal.aborted) break;
         if (record.kind === 2 && record.type === 5) { route({ revision: record.epoch }); continue; }
         if (record.kind === 6) {

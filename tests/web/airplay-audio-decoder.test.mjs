@@ -31,7 +31,7 @@ function outputData(planes, timestamp = 1000000, sampleRate = 44100) {
 function harness(t, options = {}) {
   const codecs = fakeCodecs(options), outputs = [], errors = [];
   const decoder = createAirPlayAudioDecoder({ onPcm: record => outputs.push(record), onError: error => errors.push(error), AudioDecoder: codecs.Decoder, EncodedAudioChunk: codecs.Chunk, probeTimeout: options.probeTimeout ?? 1000,
-    softwareEldFactory: options.softwareEldFactory, drainTimeout: options.drainTimeout });
+    softwareEldFactory: options.softwareEldFactory, drainTimeout: options.drainTimeout, onEvidence: options.onEvidence });
   t.after(() => decoder.dispose()); return { decoder, outputs, errors, ...codecs };
 }
 
@@ -446,4 +446,19 @@ test('one PCM measurement updates aggregate and per-stream counters without reta
   assert.deepEqual(aggregate, { packets: 1, frames: 20000, nonzero: 32000, peak: 1 }); assert.deepEqual(stream, aggregate);
   pcm.fill(0); measurePcm(aggregate, pcm.buffer, 2, stream);
   assert.deepEqual(aggregate, { packets: 2, frames: 40000, nonzero: 32000, peak: 1 }); assert.deepEqual(stream, aggregate);
+});
+
+
+test('Debug measures native floats before PCM16 clipping and labels unavailable scans', async t => {
+  const evidence = [], h = harness(t, { onEvidence: (reason, detail) => evidence.push({ reason, detail }) });
+  h.decoder.debug(true);
+  await h.decoder.configure({ ...configRecord(fixture.config), mode: 'airplay-audio' });
+  await h.decoder.decode(packetRecord([1, 2, 3], 1, { mode: 'airplay-audio' }));
+  h.instances[0].callbacks.output(outputData([[1.25, -.5, 0], [-1.1, .25, 0]]));
+  const metrics = h.decoder.stats(); assert.equal(metrics.nativePeak, 1.25);
+  assert.equal(metrics.nativeOverFullScaleSamples, 2); assert.equal(metrics.nativeScanFrames, 3);
+  assert.equal(evidence[0].reason, 'decoded-range'); assert.equal(evidence[0].detail.type, 0);
+  const pcm = new Int16Array(h.outputs.at(-1).pcm); assert.equal(pcm[0], 32767); assert.equal(pcm[1], -32768);
+  h.decoder.debug(false); h.instances[0].callbacks.output(outputData([[1.3, 0], [0, 0]]));
+  assert.equal(evidence.length, 1, 'Standard mode does not run diagnostic float scans');
 });
