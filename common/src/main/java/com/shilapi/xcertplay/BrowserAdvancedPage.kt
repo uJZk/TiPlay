@@ -3,6 +3,7 @@ package com.shilapi.xcertplay
 import android.app.Activity
 import android.app.AlertDialog
 import android.view.View
+import android.widget.Switch
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -14,8 +15,7 @@ internal class BrowserAdvancedPage(
     private val activity: Activity,
     private val changed: () -> Unit,
     private val returnToMain: () -> Unit,
-    private val saveReport: () -> Unit,
-    private val showCapture: () -> Unit = {},
+    private val showLogs: () -> Unit,
 ) {
     private val ui = TiPlayNativeUi(activity)
     private val spacing = BrowserNativeSettingsUi(activity)
@@ -39,9 +39,9 @@ internal class BrowserAdvancedPage(
         content.addView(ui.label(activity.getString(id), heading = true).also(spacing::section),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(16); bottomMargin = ui.dp(8) })
     }
-    private val captureButton: Button
-    private val retainedButton: Button
-    val reportButton: Button
+    private val debugToggle: Switch
+    private var refreshing = false
+    private val reportButton: Button
 
     init {
         button(activity.getString(R.string.back), returnToMain)
@@ -89,23 +89,18 @@ internal class BrowserAdvancedPage(
             AirPlayReceiverSettings.setDisabled(activity, it)
         }
         heading(R.string.diagnostics)
-        content.addView(ui.label(activity.getString(R.string.settings_standard_log_description)))
-        captureButton = button(activity.getString(R.string.settings_debug_logging)) {
-            if (AirPlayPersistence.loadDiagnosticLogLevel(activity) != DiagnosticLogLevel.DEBUG) {
-                AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.DEBUG)
+        debugToggle = spacing.toggle(content, activity.getString(R.string.settings_debug_logging),
+            activity.getString(R.string.settings_debug_mode_description),
+            AirPlayPersistence.loadDiagnosticLogLevel(activity) == DiagnosticLogLevel.DEBUG, true) { enabled ->
+            if (!refreshing) {
+                if (enabled && !DiagnosticLogActions.busy) {
+                    AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.DEBUG)
+                    refresh()
+                    showLogs()
+                } else if (!enabled) DiagnosticLogActions.perform(activity, DiagnosticLogAction.STOP, ::refresh)
             }
-            refresh()
-            showCapture()
         }
-        content.addView(ui.label(activity.getString(R.string.settings_debug_mode_description)))
-        reportButton = button(activity.getString(R.string.save_diagnostic_report)) {
-            if (AirPlayPersistence.loadDiagnosticLogLevel(activity) == DiagnosticLogLevel.DEBUG) showCapture()
-            else saveReport()
-        }
-        retainedButton = button(activity.getString(R.string.settings_capture_export_retained)) {
-            DiagnosticCaptureExport.save(activity)
-        }
-        button(activity.getString(R.string.settings_clear_captured_data)) { DiagnosticCaptureClearUi.clear(activity) }
+        reportButton = button(activity.getString(R.string.settings_view_logs), showLogs)
         refresh()
     }
 
@@ -115,9 +110,12 @@ internal class BrowserAdvancedPage(
     }
 
     fun refresh() {
-        val active = AirPlayPersistence.loadDiagnosticLogLevel(activity) == DiagnosticLogLevel.DEBUG
-        captureButton.setText(if (active) R.string.settings_capture_running else R.string.settings_debug_logging)
-        retainedButton.visibility = if (!active && DiagnosticLogs.hasRetainedCapture(activity)) View.VISIBLE else View.GONE
+        refreshing = true
+        if (!DiagnosticLogActions.busy) debugToggle.isChecked =
+            AirPlayPersistence.loadDiagnosticLogLevel(activity) == DiagnosticLogLevel.DEBUG
+        debugToggle.isEnabled = !DiagnosticLogActions.busy
+        reportButton.isEnabled = !DiagnosticLogActions.busy
+        refreshing = false
         spacing.normalizeSpacing(content, recursive = true)
     }
 }

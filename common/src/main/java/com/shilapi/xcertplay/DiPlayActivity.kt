@@ -188,7 +188,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     private var setupFromSettings = false
     private var settingsSectionFilter: Set<SettingsSection>? = null
     private var hostSettingsPage = false
-    private var captureDialog: DiagnosticCaptureDialog? = null
+    private var logDialog: DiagnosticLogDialog? = null
     private var capturePromptShown = false
     private var browserAdvancedPage: BrowserAdvancedPage? = null
     private var clusterSafeAreaDialog: Dialog? = null
@@ -560,9 +560,9 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     override fun onResume() {
         super.onResume()
         if (isFinishing) return
-        if (!capturePromptShown && DiagnosticCaptureDialog.claimRestartPrompt()) {
+        if (!capturePromptShown && DiagnosticLogDialog.claimRestartPrompt()) {
             capturePromptShown = true
-            showCaptureProgress()
+            showLogDialog()
         }
         refreshBrowserLocationAccess()
         HotspotExtraAddressSettings.sync(this) // phone + browser mode: keep the car browser's hotspot address
@@ -607,7 +607,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     }
 
     override fun onDestroy() {
-        captureDialog?.close()
+        logDialog?.close()
         settingsSearchPopup?.dismiss()
         appearanceObserverRemoval?.invoke()
         appearanceObserverRemoval = null
@@ -707,12 +707,8 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                     returnToMain = {
                         startActivity(CarPlaySettingsNavigation.mainIntent(this))
                         finish()
-                    }, saveReport = { exportDiagnostics() }, showCapture = ::showCaptureProgress).also { browserAdvancedPage = it }
+                    }, showLogs = ::showLogDialog).also { browserAdvancedPage = it }
                 advanced.refresh()
-                exportButton = advanced.reportButton.apply {
-                    isEnabled = !exportInProgress
-                    if (exportInProgress) setText(R.string.saving_report)
-                }
                 advanced.view
             }
             ui.applyWindow(this)
@@ -733,12 +729,8 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                     returnToMain = {
                         startActivity(CarPlaySettingsNavigation.mainIntent(this))
                         finish()
-                    }, saveReport = { exportDiagnostics() }, showCapture = ::showCaptureProgress).also { browserAdvancedPage = it }
+                    }, showLogs = ::showLogDialog).also { browserAdvancedPage = it }
                 advanced.refresh()
-                exportButton = advanced.reportButton.apply {
-                    isEnabled = !exportInProgress
-                    if (exportInProgress) setText(R.string.saving_report)
-                }
                 advanced.view
             }
             ui.applyWindow(this)
@@ -5718,11 +5710,9 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         }, "adb-cluster-authorize").start()
     }
 
-    private fun showCaptureProgress() {
-        val progress = captureDialog ?: DiagnosticCaptureDialog(this) {
-            browserAdvancedPage?.refresh()
-            exportDiagnostics(debug = true)
-        }.also { captureDialog = it }
+    private fun showLogDialog() {
+        val progress = logDialog ?: DiagnosticLogDialog(this,
+            changed = { browserAdvancedPage?.refresh() }).also { logDialog = it }
         progress.show()
     }
 
@@ -5790,9 +5780,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                             else -> getString(R.string.your_report_was_saved_to_the_selected_location)
                         })
                         .apply {
-                            if (savedReport.mimeType == "application/zip") setPositiveButton(R.string.settings_clear_captured_data) { _, _ ->
-                                DiagnosticCaptureClearUi.clear(this@DiPlayActivity)
-                            } else setPositiveButton(getString(R.string.view_diagnostic_report)) { _, _ -> showDiagnosticReport(report) }
+                            if (savedReport.mimeType != "application/zip") setPositiveButton(getString(R.string.view_diagnostic_report)) { _, _ -> showDiagnosticReport(report) }
                         }
                         .setNegativeButton(getString(R.string.done), null)
                         .setNeutralButton(getString(R.string.share)) { _, _ ->

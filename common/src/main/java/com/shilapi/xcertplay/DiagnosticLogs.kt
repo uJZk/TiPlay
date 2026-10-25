@@ -35,10 +35,6 @@ internal object DiagnosticLogs {
             log
         }
 
-    fun hasRetainedCapture(context: Context): Boolean = File(context.filesDir, "logs").listFiles()?.any {
-        it.name.startsWith("raw-traffic-") && it.name.endsWith(".tsv.zst") && it.length() > 0
-    } == true
-
     fun append(message: String) = AsyncDiagnosticLog.append(current, message)
 
     fun integrityLine(): String = current?.integrityLine() ?: "LOG_INTEGRITY initialized=false coverage=unavailable"

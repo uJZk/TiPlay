@@ -24,7 +24,6 @@ class BrowserAdvancedPageTest {
     private lateinit var page: BrowserAdvancedPage
     private var returns = 0
     private var changes = 0
-    private var reportSaves = 0
     private var progressShows = 0
 
     @Before fun setup() {
@@ -46,7 +45,7 @@ class BrowserAdvancedPageTest {
 
     private fun create() = BrowserAdvancedPage(activity,
         changed = { changes++ },
-        returnToMain = { returns++ }, saveReport = { reportSaves++ }, showCapture = { progressShows++ })
+        returnToMain = { returns++ }, showLogs = { progressShows++ })
 
     @Test fun advancedSettingsApplyImmediatelyAndReturnNeverAppliesAgain() {
         val audio = views(page.view).filterIsInstance<Switch>().single { it.text == activity.getString(R.string.settings_disable_carplay_audio) }
@@ -109,19 +108,27 @@ class BrowserAdvancedPageTest {
         assertFalse(AirPlayReceiverSettings.isDisabled(activity))
     }
 
-    @Test fun debugCaptureStartsWithoutReconnectAndReopensProgressInsteadOfStopping() {
-        assertEquals(DiagnosticLogLevel.STANDARD, AirPlayPersistence.loadDiagnosticLogLevel(activity))
-        button(R.string.settings_debug_logging).performClick()
-        assertEquals(DiagnosticLogLevel.DEBUG, AirPlayPersistence.loadDiagnosticLogLevel(activity))
+    @Test fun debugSwitchAndViewLogsAreSeparateAndApplyWithoutReconnect() {
+        val toggle = views(page.view).filterIsInstance<Switch>().single {
+            it.text == activity.getString(R.string.settings_debug_logging)
+        }
+        assertFalse(toggle.isChecked)
+        button(R.string.settings_view_logs).performClick()
         assertEquals(1, progressShows)
+        assertEquals(DiagnosticLogLevel.STANDARD, AirPlayPersistence.loadDiagnosticLogLevel(activity))
+        toggle.performClick()
+        assertEquals(DiagnosticLogLevel.DEBUG, AirPlayPersistence.loadDiagnosticLogLevel(activity))
+        assertEquals(2, progressShows)
         assertEquals(0, changes)
         page = create()
-        button(R.string.settings_capture_running).performClick()
-        assertEquals(2, progressShows)
-        assertEquals(DiagnosticLogLevel.DEBUG, DiagnosticLogPolicy.level)
-        button(R.string.save_diagnostic_report).performClick()
+        assertTrue(views(page.view).filterIsInstance<Switch>().single {
+            it.text == activity.getString(R.string.settings_debug_logging)
+        }.isChecked)
+        button(R.string.settings_view_logs).performClick()
         assertEquals(3, progressShows)
-        assertEquals(0, reportSaves)
+        assertEquals(1, views(page.view).filterIsInstance<Button>().count {
+            it.text == activity.getString(R.string.settings_view_logs)
+        })
     }
 
     @Test fun productAdvancedHasOnlyRequestedDescriptionsAndOneReportAction() {
@@ -131,8 +138,8 @@ class BrowserAdvancedPageTest {
             R.string.choose_save_location, R.string.wireless_connection_help, R.string.choose_image))
             assertFalse(labels.contains(activity.getString(id)))
         assertFalse(labels.any { it.startsWith(activity.getString(R.string.settings_permission_microphone) + " ") })
-        button(R.string.save_diagnostic_report).performClick()
-        assertEquals(1, reportSaves)
+        button(R.string.settings_view_logs).performClick()
+        assertEquals(1, progressShows)
     }
 
     @Test fun advancedSettingsNeverRenderADuplicatePermissionChecklist() {

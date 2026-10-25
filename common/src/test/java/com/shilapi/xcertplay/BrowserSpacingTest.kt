@@ -43,7 +43,7 @@ class BrowserSpacingTest {
             it.text == activity.getString(R.string.settings_browser_location_permission_reason)
         })
         val report = views(page.view).filterIsInstance<Button>().single {
-            it.text == activity.getString(R.string.save_diagnostic_report)
+            it.text == activity.getString(R.string.settings_view_logs)
         }
         val parent = report.parent as ViewGroup
         val previous = (0 until parent.indexOfChild(report)).map(parent::getChildAt).last { it.visibility != View.GONE }

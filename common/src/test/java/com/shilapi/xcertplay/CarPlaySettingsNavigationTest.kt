@@ -74,7 +74,7 @@ class CarPlaySettingsNavigationTest {
         assertFalse(labels.contains(screen.getString(R.string.efficient_video)))
         assertFalse(labels.contains(screen.getString(R.string.advanced_audio_channel_mapping)))
         for (id in listOf(R.string.settings_disable_carplay_audio, R.string.right_hand_drive,
-            R.string.diagnostics, R.string.save_diagnostic_report)) {
+            R.string.diagnostics, R.string.settings_view_logs)) {
             assertTrue(screen.getString(id), labels.contains(screen.getString(id)))
         }
         for (id in listOf(R.string.manufacturer, R.string.model, R.string.oem_label,

@@ -71,6 +71,9 @@ internal object DiagnosticExportStore {
         return saveInDirectory(context, File(context.filesDir, "diagnostic-reports"), report, savedInApp = true)
     }
 
+    fun saveForSharing(context: Context, report: DiagnosticReportContent): SavedReport =
+        saveInDirectory(context, File(context.filesDir, "diagnostic-reports"), report, savedInApp = true)
+
     private fun saveInDirectory(
         context: Context,
         directory: File,

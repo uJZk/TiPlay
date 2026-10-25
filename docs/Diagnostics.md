@@ -21,16 +21,21 @@ negotiated viewport or touch coordinates. Its fields are:
 | Delta | Latest synchronized canvas submission time minus iPhone scheduled presentation time; unavailable without a new synchronized draw within one second. This is not capture-to-display latency. |
 | Drops | Explicit browser input, scheduler, transfer-replacement and presentation discards in the current video configuration. It cannot count decoder-internal, network or phone loss. Replacement streams reset it; repeating a configuration does not. |
 
-Debug starts off on a fresh install. Its enabled state is persisted. Restarting Android's
-app process restores capture in a new session and shows a dismissible progress dialog
-on the main/advanced phone page. Closing it or choosing **Continue in background**
-only hides the dialog. **Stop and export** disables the persisted state and saves the
-capture; there is no separate Stop action. Advanced settings can reopen progress and
-export retained captures after stopping, including retrying a failed save.
+Debug defaults off on a fresh install. Advanced settings has a **Debug mode** switch
+and one **View logs** button. Enabled state persists; a new process resumes capture
+and opens the log dialog.
 
-Progress shows duration, compressed size and storage failure. Standard redacts
-Android/web logs, including older Debug history. Debug also captures full messages
-in `android/log`. Legacy head-unit/HUD/vehicle-probe static dumps are omitted.
+- Debug off: **Save / Share / Close**, using redacted Android/web logs.
+- Debug on: **End and export / End and share / End / Minimize**.
+- Ending disables Debug and clears raw capture history. Export/share first creates
+  an independent usable file, then clears capture. A failed export retains evidence
+  and reports failure; recording remains stopped. Turning the switch off also ends
+  and clears capture.
+- Minimize/back/outside dismissal only hides the window; capture continues. The
+  View logs button reopens it. Progress shows duration, size and storage failure.
+
+Rolling metadata remains redacted. Standard exports redact older Debug history too;
+full Debug text lives in `android/log`. Legacy static device dumps are omitted.
 
 Raw capture covers iPhone TCP control/encrypted protocol, video, audio, timing, events
 and iAP; RFCOMM; browser HTTP headers/query/body before parsing, including rejected
@@ -147,19 +152,17 @@ Export snapshots lengths/handles under the capture lock, then copies off-thread
 with bounded memory. Storage fallbacks reuse the finished archive. Temporary files
 are cleaned, including abandoned ones on restart. Failed exports preserve captures;
 saved ZIPs are independent of later recording/clearing.
-**Clear captured data** removes all retained process journals and starts a fresh
-session if capture is active, preserving saved exports, preferences and metadata logs.
+Ending removes all retained process journals, preserving saved/share files and
+redacted rolling metadata.
 Debug captures contain private media, credentials and identifiers; review before
 sharing and keep them out of Git. Disk pressure does not automatically stop capture.
 
 
-Targeted verification covers 35 shared tests (raw capture, Zstandard round trips,
-retained-process export and browser audio routing) and 146 common tests (diagnostics,
-redaction, persisted restart state, dismiss/reopen/stop-export dialog and advanced UI).
-All pass. The phone Debug APK builds successfully and packages Zstandard JNI for
-arm64-v8a, armeabi-v7a, x86 and x86_64. Full CI is intentionally skipped for this change. Android vehicle checks
-remain: microphone-active Siri/navigation audibility and echo, real restart dialog,
-long-running level-3 CPU/storage cost, screen-off capture and storage exhaustion.
+Capture/compression and browser audio checks passed for beta.18. Current UI verification:
+**154 tests passed**, covering dialogs, switches, spacing/translations, cleanup,
+export/share survival and failure retention. Debug APK build and resource/public-tree
+checks pass. Full CI remains skipped. Vehicle follow-up: microphone-active audio/echo,
+restart dialog, sustained CPU/storage, screen-off capture and full storage.
 
 `captureIntegrity.timing` and `RAW_CAPTURE_TIMING` aggregate completed append calls,
 lock-wait/append totals and maxima for the current or last capture session, including

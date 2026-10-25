@@ -40,11 +40,6 @@ internal object BrowserAdvancedSettings {
             reconnectNeeded()
         }
         BrowserCarPlayAudioSettings.addControls(context, card, toggle, reconnectNeeded)
-        toggle(card, context.getString(R.string.settings_debug_logging), "",
-            AirPlayPersistence.loadDiagnosticLogLevel(context) == DiagnosticLogLevel.DEBUG) {
-            AirPlayPersistence.saveDiagnosticLogLevel(context,
-                if (it) DiagnosticLogLevel.DEBUG else DiagnosticLogLevel.STANDARD)
-        }
         val rates = (AirPlayDisplaySettings.MIN_FPS..AirPlayDisplaySettings.MAX_FPS
             step AirPlayDisplaySettings.FPS_STEP).toList()
         choice(card, context.getString(R.string.frame_rate), rates.map { "$it fps" },

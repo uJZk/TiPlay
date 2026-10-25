@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.Intent
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import com.shilapi.xcertplay.host.R
 
 internal object BrowserDiagnosticResultUi {
@@ -22,18 +23,20 @@ internal object BrowserDiagnosticResultUi {
             })
         }
         AlertDialog.Builder(activity).setView(content)
-            .apply {
-                if (saved.mimeType == "application/zip") setPositiveButton(R.string.settings_clear_captured_data) { _, _ ->
-                    DiagnosticCaptureClearUi.clear(activity)
-                }
-            }
             .setNeutralButton(R.string.share) { _, _ ->
-                runCatching { activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                    type = saved.mimeType
-                    putExtra(Intent.EXTRA_STREAM, saved.uri)
-                    clipData = ClipData.newRawUri(activity.getString(R.string.report_clip_label), saved.uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }, activity.getString(R.string.share_diagnostic_report))) }
+                share(activity, saved)
             }.setNegativeButton(R.string.done, null).show()
+    }
+    fun share(activity: Activity, saved: DiagnosticExportStore.SavedReport) {
+        runCatching {
+            activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = saved.mimeType
+                putExtra(Intent.EXTRA_STREAM, saved.uri)
+                clipData = ClipData.newRawUri(activity.getString(R.string.report_clip_label), saved.uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }, activity.getString(R.string.share_diagnostic_report)))
+        }.onFailure {
+            Toast.makeText(activity, R.string.settings_logs_action_failed, Toast.LENGTH_LONG).show()
+        }
     }
 }

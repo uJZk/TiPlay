@@ -637,7 +637,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var awaitingLocationPermission = false
     private var vpnReady = false
     private var hotspotStatus = HotspotStatus(state = "off")
-    private var diagnosticCaptureDialog: DiagnosticCaptureDialog? = null
+    private var diagnosticCaptureDialog: DiagnosticLogDialog? = null
     private var browserMainPage: BrowserMainSettingsMenu? = null
     private var browserSettingsChanges: AutoCloseable? = null
     private var browserMainState: Bundle? = null
@@ -1271,8 +1271,8 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         DiagnosticLogs.initialize(this)
-        if (DiagnosticCaptureDialog.claimRestartPrompt()) {
-            diagnosticCaptureDialog = DiagnosticCaptureDialog(this) { DiagnosticCaptureExport.save(this) }
+        if (DiagnosticLogDialog.claimRestartPrompt()) {
+            diagnosticCaptureDialog = DiagnosticLogDialog(this)
                 .also { it.show() }
         }
         if (!headUnitIntegrations()) {

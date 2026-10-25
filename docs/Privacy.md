@@ -10,17 +10,16 @@ You initiate diagnostic export. Standard records redacted Android and webpage lo
 and reapplies redaction to retained historical messages before exporting TXT. Debug
 records incoming CarPlay/webpage streams and full Android/web diagnostic messages
 without redaction; these may contain private media, credentials and identifiers.
-Debug is opt-in on a fresh install and persists until **Stop and export**. Restarting
-the process resumes capture in a new session and opens its progress dialog. Closing
-the dialog keeps recording in the background.
+Debug is opt-in and persists while enabled. Restarting resumes capture and opens
+its log dialog. Minimize hides the dialog while recording continues. Advanced
+settings provides a Debug switch and one View logs button.
 
-Capture compresses live with Zstandard level 3. Debug ZIPs contain STORED `.zst`
-entries, including retained process journals; export does not recompress captured
-media. Exported text reports use Zstandard level 3. Saving and stopping preserve captures so failed exports can be retried.
-**Clear captured data** on the diagnostics page or saved-report dialog removes
-retained raw journals while preserving saved files, preferences and metadata logs.
-Active capture begins a new session after clear. Review reports before sharing;
-GitHub issues are public.
+Ordinary logs offer Save/Share/Close. Debug offers End and export/End and share/End/
+Minimize. Ending or turning off the switch stops capture and clears raw journals.
+Export/share creates an independent file before cleanup; failed writes retain the
+stopped capture for recovery. Saved files and redacted metadata are unaffected.
+Capture and report compression use Zstandard level 3. ZIP entries are STORED,
+without recompressing captured media. Review files before sharing; issues are public.
 
 Exports normally use Downloads/TiPlay. If unavailable, TiPlay uses `Android/data/<package>/files/diagnostic-reports/`, then private app storage. The confirmation shows the TXT or ZIP path; **Share** works when file managers restrict `Android/data`. Each fallback directory retains its newest eight exports and is removed on uninstall. Sharing grants read access only to the selected report. On Android 9, apps with storage permission may read external reports. Release uses `com.ujzk.tiplay`; debug adds `.hudtest`.
 
