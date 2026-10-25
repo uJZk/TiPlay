@@ -1,6 +1,6 @@
 package com.shilapi.xcertplay.diagnostics
 
-import java.io.BufferedOutputStream
+import com.github.luben.zstd.ZstdOutputStreamNoFinalizer
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -14,6 +14,7 @@ import java.net.DatagramSocket
  * Each tab-separated record is timestamp, sequence, channel, byte count, Base64 bytes.
  */
 object RawTraffic {
+    internal const val COMPRESSION_LEVEL = 3
     @Volatile var enabled = false
         private set
     private val lock = Any()
@@ -27,7 +28,7 @@ object RawTraffic {
     private var lastFailureEpochMillis = 0L
     private var failedByteAttempts = 0L
     private var lastFailureChannel = "none"
-    private var writer: BufferedOutputStream? = null
+    private var writer: OutputStream? = null
     private val base64 = Base64.getEncoder()
     @Volatile private var timing = RawCaptureTiming()
     private val channelOffsets = mutableMapOf<String, Long>()
@@ -64,18 +65,27 @@ object RawTraffic {
             "durability" to "application-flush-no-fsync", "timing" to timing.snapshot())
     }
 
+    @Volatile var startedAtMillis = 0L
+        private set
+    @Volatile var compressedBytes = 0L
+        private set
+    private var compressed = false
     private var configuration = ""
+    @Volatile private var ingressOnly = false
     @Volatile private var sessionId: String? = null
     private var pendingSessionHeader: ByteArray? = null
     private var needsBoundaryCheck = true
 
-    fun configure(destination: File, active: Boolean, configuration: String = "") = synchronized(lock) {
-        val changed = file != destination
+    fun configure(destination: File, active: Boolean, configuration: String = "", ingressOnly: Boolean = false, compressed: Boolean = false) = synchronized(lock) {
+        this.ingressOnly = ingressOnly
+        val changed = file != destination || this.compressed != compressed
         val starting = active && (!enabled || changed)
         if (!active && enabled) record("capture/stop", "disabled".toByteArray())
         if (changed || !active) closeWriter()
         if (changed || starting) needsBoundaryCheck = true
         file = destination
+        this.compressed = compressed
+        compressedBytes = destination.length()
         enabled = active
         if (starting) {
             this.configuration = configuration
@@ -85,6 +95,7 @@ object RawTraffic {
 
     private fun startSession() {
         timing = RawCaptureTiming()
+        startedAtMillis = System.currentTimeMillis()
         val session = java.util.UUID.randomUUID().toString()
         sessionId = session
         channelOffsets.clear()
@@ -102,6 +113,10 @@ object RawTraffic {
         closeWriter()
         val target = file
         check(target == null || !target.exists() || target.delete()) { "Could not clear raw capture" }
+        if (compressed) target?.parentFile?.listFiles()?.filter {
+            it.isFile && ((it.name.startsWith("raw-traffic-") && it.name.endsWith(".tsv.zst")) || it.name == "raw-traffic.tsv")
+        }?.forEach { check(it.delete()) { "Could not clear retained capture" } }
+        compressedBytes = 0
         failures = 0; lastFailure = "none"
         lastFailureText = ""; firstFailureEpochMillis = 0; lastFailureEpochMillis = 0
         failedByteAttempts = 0; lastFailureChannel = "none"; needsBoundaryCheck = true
@@ -130,6 +145,10 @@ object RawTraffic {
     private fun recordReferenced(channel: String, bytes: ByteArray, offset: Int, length: Int,
                                  requestedAtNanos: Long = 0L): Reference? {
         if (!enabled || length <= 0) return null
+        // Keep canonical ingress plus lifecycle/diagnostic metadata. Outgoing media and
+        // Android playback PCM duplicate input and are not part of the requested capture.
+        if (ingressOnly && (channel.startsWith("android-audio/") ||
+                channel.endsWith("/out") || channel.endsWith("/out/written") || channel.endsWith("/out/attempt"))) return null
         val requestedAt = if (requestedAtNanos == 0L) System.nanoTime() else requestedAtNanos
         synchronized(lock) {
             if (!enabled) return null
@@ -156,7 +175,7 @@ object RawTraffic {
                     throw java.io.IOException("Capture journal unavailable")
                 }
                 // An interrupted append must not merge its partial line with the next session/record.
-                if (needsBoundaryCheck) {
+                if (needsBoundaryCheck && !compressed) {
                     java.io.RandomAccessFile(target, "rw").use { tail ->
                         if (tail.length() > 0) {
                             tail.seek(tail.length() - 1)
@@ -165,7 +184,13 @@ object RawTraffic {
                     }
                     needsBoundaryCheck = false
                 }
-                val output = writer ?: java.io.FileOutputStream(target, true).buffered(64 * 1024).also { writer = it }
+                val output = writer ?: run {
+                    val disk = java.io.FileOutputStream(target, true).buffered(64 * 1024)
+                    try {
+                        if (compressed) ZstdOutputStreamNoFinalizer(disk, COMPRESSION_LEVEL).setCloseFrameOnFlush(true)
+                        else disk
+                    } catch (error: Throwable) { disk.close(); throw error }
+                }.also { writer = it }
                 var position = offset
                 val end = offset + length
                 while (position < end) {
@@ -182,6 +207,7 @@ object RawTraffic {
                 // No payload queue: every call flushes before returning, applying disk backpressure.
                 // This is application I/O completion, not an fsync/power-loss durability guarantee.
                 output.flush()
+                compressedBytes = target.length()
                 if (channel == "capture/start") pendingSessionHeader = null
                 channelOffsets[channel] = channelOffset + length
                 return if (referenceIntegrity) Reference(requireNotNull(sessionId), channel, firstSequence, sequence, channelOffset, length) else null
@@ -265,7 +291,7 @@ object RawTraffic {
         if (enabled) record("iphone/udp/${socket.localPort}/${packet.socketAddress}/in", packet.data, packet.offset, packet.length)
     }
 
-    internal class Snapshot(private val input: InputStream, val length: Long, val status: String) : java.io.Closeable {
+    internal class Snapshot(private val input: InputStream, val length: Long, val status: String, val compressed: Boolean = false, val name: String = "raw-traffic.tsv.zst") : java.io.Closeable {
         override fun close() = input.close()
         fun open(): InputStream {
             return object : InputStream() {
@@ -288,18 +314,35 @@ object RawTraffic {
         }
     }
 
-    private fun snapshot(): Snapshot = synchronized(lock) {
-        val length = file?.length() ?: 0L
-        Snapshot(if (length == 0L) java.io.ByteArrayInputStream(byteArrayOf()) else file!!.inputStream(), length,
-            "RAW_CAPTURE failures=$failures lastFailure=$lastFailure enabled=$enabled format=tsv-base64 bytes=$length snapshotEpochMillis=${System.currentTimeMillis()}\n" +
+    private fun snapshot(target: File? = file): Snapshot = synchronized(lock) {
+        val length = target?.length() ?: 0L
+        Snapshot(if (length == 0L) java.io.ByteArrayInputStream(byteArrayOf()) else target!!.inputStream(), length,
+            "RAW_CAPTURE failures=$failures lastFailure=$lastFailure enabled=$enabled format=${if (compressed) "zstd-tsv-base64-v1" else "tsv-base64"} bytes=$length snapshotEpochMillis=${System.currentTimeMillis()}\n" +
                 "RAW_CAPTURE_INTEGRITY coverage=${if (failures == 0L) "no-observed-write-failure" else "partial"} " +
                 "firstFailureEpochMillis=$firstFailureEpochMillis lastFailureEpochMillis=$lastFailureEpochMillis " +
                 "failedByteAttempts=$failedByteAttempts lastFailureSource=$lastFailureChannel " +
                 "lastFailureText=$lastFailureText referenceIntegrity=$referenceIntegrity durability=application-flush\n" +
-                "RAW_CAPTURE_TIMING " + timing.snapshot().entries.joinToString(" ") { "${it.key}=${it.value}" } + "\n")
+                "RAW_CAPTURE_TIMING " + timing.snapshot().entries.joinToString(" ") { "${it.key}=${it.value}" } + "\n", compressed, target?.name ?: "raw-traffic.tsv.zst")
     }
 
-    fun writeArchive(output: OutputStream, logName: String, report: String, temporaryRoot: File) =
-        snapshot().use { RawTrafficArchive.write(output, logName, report, it, temporaryRoot) }
-
+    fun writeArchive(output: OutputStream, logName: String, report: String, temporaryRoot: File) {
+        val (compressedExport, snapshots) = synchronized(lock) {
+            val selected = if (!compressed) listOf(snapshot()) else {
+                val retained = file?.parentFile?.listFiles()?.filter {
+                    it.isFile && it.name.startsWith("raw-traffic-") && it.name.endsWith(".tsv.zst")
+                }?.sortedBy { it.name }.orEmpty()
+                val opened = mutableListOf<Snapshot>()
+                try {
+                    (retained + listOfNotNull(file?.takeIf { it.isFile })).distinct().forEach { opened.add(snapshot(it)) }
+                    opened
+                } catch (error: Throwable) { opened.forEach { it.close() }; throw error }
+            }
+            compressed to selected
+        }
+        try {
+            if (compressedExport) {
+                CompressedTrafficArchive.write(output, logName, report, snapshots, temporaryRoot)
+            } else snapshots.firstOrNull()?.let { RawTrafficArchive.write(output, logName, report, it, temporaryRoot) }
+        } finally { snapshots.forEach { it.close() } }
+    }
 }

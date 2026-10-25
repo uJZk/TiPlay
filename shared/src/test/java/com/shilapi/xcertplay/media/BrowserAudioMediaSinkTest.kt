@@ -404,8 +404,10 @@ class BrowserAudioMediaSinkTest {
             voice.ready()
             for (id in listOf(call, AudioStreamId(100, "speechrecognition"), AudioStreamId(100, "default"),
                 AudioStreamId(100, "navigation"))) packet(sink, id, 3)
-            awaitAudio(voice, 4)
-            assertTrue(voice.audio.all { BluetoothVoicePolicy.allowed(it.first) })
+            awaitAudio(voice, 1)
+            assertTrue(voice.audio.all { it.first.audioType == "telephony" })
+            val guidance = List(3) { sampleValue(pcm(reader)!!) }
+            assertEquals(listOf(3, 3, 3), guidance)
             packet(sink, AudioStreamId(100, "alert"), 6)
             packet(sink, AudioStreamId(102, "compatibility"), 7)
             val browserValues = List(2) { sampleValue(pcm(reader)!!) }.toSet()

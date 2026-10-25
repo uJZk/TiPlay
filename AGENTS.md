@@ -23,7 +23,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 - [AirPlay](docs/AirPlay.md): receiver/media contracts, native/software audio negotiation,
   AAC-ELD fallback and asynchronous URL startup. Physical audio/video checks remain in
   [Todo](docs/Todo.md#browser-and-carplay-audio) and [ordinary AirPlay acceptance](docs/Testing.md#ordinary-airplay-acceptance).
-- [Diagnostics](docs/Diagnostics.md): opt-in unredacted capture sessions, browser decode/render and live-policy evidence, URL failure/cleanup and resource-transfer boundaries, process-default-off and clear behavior, Standard TXT/Debug ZIP formats and Debug-only AirPlay proxy routing; [privacy](docs/Privacy.md).
+- [Diagnostics](docs/Diagnostics.md): opt-in unredacted capture sessions, browser decode/render and live-policy evidence, URL failure/cleanup and resource-transfer boundaries, persisted capture/restart dialog and clear behavior, Standard TXT/Zstandard-in-STORED-ZIP formats and Debug-only AirPlay proxy routing; [privacy](docs/Privacy.md).
   Status refresh, permission reminders, iPhone Bluetooth audio copy and USB lifecycle capture validation are recorded in [Testing](docs/Testing.md#debug-raw-capture-and-car-bluetooth-hints); remaining device checks are in [Todo](docs/Todo.md#connection-settings-and-browser).
 - [Geolocation](docs/geolocation.md): implemented GPS fallback, datum detection/conversion, browser cache and iPhone forwarding. Verification is in [Testing](docs/Testing.md#location-and-notification-verification); physical follow-up is in [Todo](docs/Todo.md#location).
 - [Build](docs/Build.md), including the [current beta release verification and limits](docs/Build.md#beta-release), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md). Control-queue isolation and URL PCM continuity evidence are in [Diagnostics](docs/Diagnostics.md). Permission-checklist/browser-readiness verification is recorded in Testing; physical follow-up is in [Todo](docs/Todo.md#connection-settings-and-browser).
@@ -64,6 +64,10 @@ The independent
 [Cloudflare Workers comparison](docs/Todo.md#cloudflare-workers-audio-comparison)
 and vehicle uploads remain separate unfinished work; native WebRTC audio tracks
 remain a separate non-URL alternative.
+
+Resume Android diagnostic UI/compression work from [Diagnostics](docs/Diagnostics.md):
+persisted capture, dismissible background progress, Zstandard level 3 and STORED ZIP
+exports. Its targeted verification and remaining vehicle checks are recorded there.
 
 ## Checks
 

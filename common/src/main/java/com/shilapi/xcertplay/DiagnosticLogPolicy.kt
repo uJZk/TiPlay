@@ -50,7 +50,7 @@ internal object DiagnosticLogPolicy {
         errorValue.findAll(message).any { it.groupValues[1].lowercase() !in setOf("0", "none", "null", "-", "false") } ||
         lossValue.findAll(message).any { it.groupValues[1].removePrefix("+").toLongOrNull()?.let { value -> value > 0 } == true }
 
-    fun reportLine(): String = "Log detail: ${level.key}; debug exports unredacted raw streams in ZIP; standard exports metadata TXT"
+    fun reportLine(selectedLevel: DiagnosticLogLevel = level): String = "Log detail: ${selectedLevel.key}; debug exports unredacted raw streams in ZIP; standard exports metadata TXT"
 
     private fun withoutTimestamp(message: String): String = message.substringAfter("  ", message)
 }

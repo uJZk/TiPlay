@@ -54,18 +54,27 @@ class SessionLogIntegrityTest {
         } finally { DiagnosticLogPolicy.level = previous; log.close(); folder.deleteRecursively() }
     }
 
-    @Test fun debugPreservesCredentialsEvenWhenExportedAfterReturningToStandard() {
+    @Test fun standardExportRedactsDebugHistoryWithoutDestroyingDebugEvidence() {
         val folder = Files.createTempDirectory("tiplay-log-debug").toFile()
         val log = SessionLogFile(folder.resolve("diplay.log"))
         val previous = DiagnosticLogPolicy.level
         try {
             DiagnosticLogPolicy.level = DiagnosticLogLevel.DEBUG
             val raw = "password=private pairingCode=1234 url=http://192.168.1.2/media"
-            log.append(raw)
+            // Simulate unredacted history produced by older app versions.
+            assertTrue(log.reserve())
+            log.appendReserved(raw)
+            log.complete()
             DiagnosticLogPolicy.level = DiagnosticLogLevel.STANDARD
             val report = StringBuilder()
             DiagnosticLogSnapshot.appendTo(report, folder)
-            assertTrue(report.toString().contains(raw))
+            assertFalse(report.toString().contains("private"))
+            assertFalse(report.toString().contains("1234"))
+            assertFalse(report.toString().contains("192.168.1.2"))
+            assertTrue(log.file.readText().contains(raw))
+            val debugReport = StringBuilder()
+            DiagnosticLogSnapshot.appendTo(debugReport, folder, level = DiagnosticLogLevel.DEBUG)
+            assertTrue(debugReport.toString().contains(raw))
         } finally { DiagnosticLogPolicy.level = previous; log.close(); folder.deleteRecursively() }
     }
 

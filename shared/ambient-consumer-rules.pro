@@ -10,3 +10,6 @@
 }
 # The pinned WebRTC AAR calls Java classes/methods by their JNI names.
 -keep class org.webrtc.** { *; }
+
+# Zstandard JNI resolves these class and method names at runtime.
+-keep class com.github.luben.zstd.** { *; }

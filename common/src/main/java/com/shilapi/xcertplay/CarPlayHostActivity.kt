@@ -637,6 +637,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var awaitingLocationPermission = false
     private var vpnReady = false
     private var hotspotStatus = HotspotStatus(state = "off")
+    private var diagnosticCaptureDialog: DiagnosticCaptureDialog? = null
     private var browserMainPage: BrowserMainSettingsMenu? = null
     private var browserSettingsChanges: AutoCloseable? = null
     private var browserMainState: Bundle? = null
@@ -1269,6 +1270,11 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        DiagnosticLogs.initialize(this)
+        if (DiagnosticCaptureDialog.claimRestartPrompt()) {
+            diagnosticCaptureDialog = DiagnosticCaptureDialog(this) { DiagnosticCaptureExport.save(this) }
+                .also { it.show() }
+        }
         if (!headUnitIntegrations()) {
             DiPlaySessionService.refreshForegroundAccess(this)
             val granted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -2017,6 +2023,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        diagnosticCaptureDialog?.close()
         cancelScreenReturnRecovery()
         browserCarPlayWatch?.close()
         browserCarPlayWatch = null

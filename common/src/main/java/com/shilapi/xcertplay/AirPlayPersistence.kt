@@ -519,11 +519,13 @@ object AirPlayPersistence {
             .apply()
     }
 
-    // Process-local: every fresh process starts in Standard, including service/receiver startup.
-    internal fun loadDiagnosticLogLevel(@Suppress("UNUSED_PARAMETER") context: Context): DiagnosticLogLevel =
-        DiagnosticLogPolicy.level
+    internal fun loadDiagnosticLogLevel(context: Context): DiagnosticLogLevel =
+        if (context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getBoolean("diagnostic_capture_active", false)) DiagnosticLogLevel.DEBUG else DiagnosticLogLevel.STANDARD
 
     internal fun saveDiagnosticLogLevel(context: Context, level: DiagnosticLogLevel) {
+        check(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean("diagnostic_capture_active", level == DiagnosticLogLevel.DEBUG).commit())
         DiagnosticLogs.initialize(context, level)
         DiagnosticLogs.append("Diagnostic log level changed level=${level.key}")
     }

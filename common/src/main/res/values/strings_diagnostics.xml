@@ -4,11 +4,19 @@
     <string name="settings_hint_car_bluetooth_disconnected">No Android car Bluetooth audio connection detected (A2DP/HFP). Connect this Android phone to the car in Bluetooth settings.</string>
     <string name="settings_hint_car_bluetooth_unknown">Cannot confirm the car Bluetooth connection. Check Nearby devices permission and Bluetooth settings.</string>
     <string name="settings_hint_car_bluetooth_verify">An audio Bluetooth device is connected. Confirm it is the car in Bluetooth settings.</string>
-    <string name="settings_debug_mode_description">Record all raw iPhone, browser, USB and Android audio output data without redaction. Each enable starts a session. Debug turns off when the process restarts. Save as ZIP; clear captured data from the saved-report dialog.</string>
+    <string name="settings_debug_mode_description">Capture all incoming CarPlay and webpage streams plus Android/web logs. Compress live and export ZIP. Contains unredacted private audio/video; may affect performance. Closing the window keeps recording. Restart resumes capture and opens its window.</string>
     <string name="settings_hint_debug_enabled">Debug mode is on. Performance may be affected.</string>
     <string name="settings_clear_captured_data">Clear captured data</string>
     <string name="settings_capture_cleared">Captured data cleared. Saved files are unchanged.</string>
     <string name="settings_capture_clear_failed">Could not clear captured data. Try again.</string>
     <string name="settings_hint_iphone_car_audio">Make sure your iPhone is connected to the car audio over Bluetooth. TiPlay is no longer receiving or forwarding CarPlay audio.</string>
     <string name="settings_hint_permissions_missing">Incomplete permissions or access: %1$s. Open “%2$s” below to review and allow access.</string>
+    <string name="settings_standard_log_description">Only records redacted Android and webpage logs.</string>
+    <string name="settings_capture_progress">Recording · %1$d:%2$02d · %3$d KiB compressed</string>
+    <string name="settings_capture_running">Recording full data</string>
+    <string name="settings_capture_stop_export">Stop and export</string>
+    <string name="settings_capture_background">Continue in background</string>
+    <string name="settings_capture_background_hint">Closing this window keeps recording in the background.</string>
+    <string name="settings_capture_storage_failed">Storage write failed. Capture may be incomplete.</string>
+    <string name="settings_capture_export_retained">Export captured data</string>
 </resources>

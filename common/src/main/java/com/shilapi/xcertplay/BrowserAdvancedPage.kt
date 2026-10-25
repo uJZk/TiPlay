@@ -15,6 +15,7 @@ internal class BrowserAdvancedPage(
     private val changed: () -> Unit,
     private val returnToMain: () -> Unit,
     private val saveReport: () -> Unit,
+    private val showCapture: () -> Unit = {},
 ) {
     private val ui = TiPlayNativeUi(activity)
     private val spacing = BrowserNativeSettingsUi(activity)
@@ -38,6 +39,8 @@ internal class BrowserAdvancedPage(
         content.addView(ui.label(activity.getString(id), heading = true).also(spacing::section),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(16); bottomMargin = ui.dp(8) })
     }
+    private val captureButton: Button
+    private val retainedButton: Button
     val reportButton: Button
 
     init {
@@ -86,12 +89,23 @@ internal class BrowserAdvancedPage(
             AirPlayReceiverSettings.setDisabled(activity, it)
         }
         heading(R.string.diagnostics)
-        BrowserNativeSettingsUi(activity).toggle(content, activity.getString(R.string.settings_debug_logging),
-            activity.getString(R.string.settings_debug_mode_description), AirPlayPersistence.loadDiagnosticLogLevel(activity) == DiagnosticLogLevel.DEBUG, true) {
-            AirPlayPersistence.saveDiagnosticLogLevel(activity,
-                if (it) DiagnosticLogLevel.DEBUG else DiagnosticLogLevel.STANDARD)
+        content.addView(ui.label(activity.getString(R.string.settings_standard_log_description)))
+        captureButton = button(activity.getString(R.string.settings_debug_logging)) {
+            if (AirPlayPersistence.loadDiagnosticLogLevel(activity) != DiagnosticLogLevel.DEBUG) {
+                AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.DEBUG)
+            }
+            refresh()
+            showCapture()
         }
-        reportButton = button(activity.getString(R.string.save_diagnostic_report), saveReport)
+        content.addView(ui.label(activity.getString(R.string.settings_debug_mode_description)))
+        reportButton = button(activity.getString(R.string.save_diagnostic_report)) {
+            if (AirPlayPersistence.loadDiagnosticLogLevel(activity) == DiagnosticLogLevel.DEBUG) showCapture()
+            else saveReport()
+        }
+        retainedButton = button(activity.getString(R.string.settings_capture_export_retained)) {
+            DiagnosticCaptureExport.save(activity)
+        }
+        button(activity.getString(R.string.settings_clear_captured_data)) { DiagnosticCaptureClearUi.clear(activity) }
         refresh()
     }
 
@@ -101,6 +115,9 @@ internal class BrowserAdvancedPage(
     }
 
     fun refresh() {
+        val active = AirPlayPersistence.loadDiagnosticLogLevel(activity) == DiagnosticLogLevel.DEBUG
+        captureButton.setText(if (active) R.string.settings_capture_running else R.string.settings_debug_logging)
+        retainedButton.visibility = if (!active && DiagnosticLogs.hasRetainedCapture(activity)) View.VISIBLE else View.GONE
         spacing.normalizeSpacing(content, recursive = true)
     }
 }

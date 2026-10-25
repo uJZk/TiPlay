@@ -21,26 +21,33 @@ negotiated viewport or touch coordinates. Its fields are:
 | Delta | Latest synchronized canvas submission time minus iPhone scheduled presentation time; unavailable without a new synchronized draw within one second. This is not capture-to-display latency. |
 | Drops | Explicit browser input, scheduler, transfer-replacement and presentation discards in the current video configuration. It cannot count decoder-internal, network or phone loss. Replacement streams reset it; repeating a configuration does not. |
 
-Debug starts off (Standard), regardless of persisted settings. Activities/services
-share its process-local switch. Enabling immediately creates session ID, start time,
-app version and capture configuration without reconnecting. Main settings warns of
-performance impact. Standard retains filtered connection/negotiation/failure/final
-summaries; Debug preserves unredacted messages and raw capture without sampling,
-queue drops, truncation or expiry.
+Debug starts off on a fresh install. Its enabled state is persisted. Restarting Android's
+app process restores capture in a new session and shows a dismissible progress dialog
+on the main/advanced phone page. Closing it or choosing **Continue in background**
+only hides the dialog. **Stop and export** disables the persisted state and saves the
+capture; there is no separate Stop action. Advanced settings can reopen progress and
+export retained captures after stopping, including retrying a failed save.
+
+The progress dialog reports current-session duration, current-process compressed
+bytes and storage failure. Standard records redacted Android and webpage logs.
+Rolling metadata stays redacted in both modes, and Standard export reapplies
+redaction/filtering to older retained history. Debug records full message text in
+`android/log` alongside raw ingress in the realtime Zstandard journal. Static legacy
+head-unit/HUD/vehicle-probe report dumps are omitted.
 
 Raw capture covers iPhone TCP control/encrypted protocol, video, audio, timing, events
 and iAP; RFCOMM; browser HTTP headers/query/body before parsing, including rejected
-requests; Android AudioTrack and verified SCO PCM; and USB discovery/permissions,
+requests; USB discovery/permissions,
 descriptors, open/configuration/interface lifecycle, request queue/wait/cancel/close,
-control transfers, USBMUX/NCM/CH341, interrupts, partial writes and failures. USB records
+control transfers, USBMUX/NCM/CH341, interrupts and failures. Android playback PCM and outbound payload copies are omitted;
+the canonical incoming streams and Android/browser diagnostic events remain. USB records
 carry connection/request IDs and requested/completed lengths. Asynchronous input is
 captured once at completion before parsing, including bytes drained after timeout.
 Debug forces AirPlay URL resources through Android and captures response bodies;
 disabling restores direct eligibility, reopening active playback on policy changes.
 Android owns A2DP/HFP encoding and USB host-controller signalling. Capture cannot
 observe Bluetooth air packets, USB bus signalling, unread kernel buffers or packets
-lost before application delivery. AudioTrack acceptance proves submission, not sound;
-`android-audio/track` may include non-Bluetooth routes.
+lost before application delivery. Capture does not establish speaker playback timing.
 
 The integrated WebRTC path retains bounded stage metrics: Android hub queue,
 transport submission to browser record read (including sender queue/network/reassembly),
@@ -106,50 +113,57 @@ decrypt/Annex-B transformation and downstream epoch/sequence. `captureIntegrity`
 exposes write failures; uncertain partial writes suppress new exact-range references
 until the next capture session. Append does not establish fsync durability.
 
-Capture cannot recover earlier traffic or prove uninstrumented coverage. The ZIP
-stores encoded media, not uncompressed video or browser worklet PCM. Check
-`sessions.tsv`, time ranges, channel bytes and integrity counters; ZIP size and
-zero failures cannot establish coverage across retained versions.
+Capture cannot recover earlier traffic or prove uninstrumented coverage. It stores
+application-visible incoming media/protocol bytes, not radio/bus signalling. Debug
+omits outgoing payload duplicates and Android playback PCM; USB lifecycle metadata
+and browser diagnostic events remain. Input is still captured before parsing.
 
-App-private `logs/raw-traffic.tsv` stores tab-separated `epochMillis`, process-local
-sequence, channel, byte count and Base64 bytes; capture/start identifies processes.
-Concatenate ≤48 KiB chunks by channel. `/attempt` and `/written` distinguish
-attempted/accepted output. The reused synchronous writer propagates disk backpressure and
-flushes each record without `fsync`/power-loss guarantees. Bulk Base64 encodes exact
-source ranges without slice or payload-string copies; journal/export formats remain
-compatible. The [benchmark](../tests/bench/raw-capture/README.md) measures host
-encoding/allocation, not Android storage behavior. `RAW_CAPTURE failures` retains
-count, first/last times, source, safe cause and failed-byte-attempt upper bound.
-Sessions survive mode changes/restarts until capture/app-data clear. Debug disable
-stops appends without deleting history. Video needs substantial storage.
+App-private `logs/raw-traffic-<process-id>.tsv.zst` files use **Zstandard level 3**,
+provided by pinned zstd-jni 1.5.7-4 (Android AAR, desktop JNI for tests). A reusable
+compressor closes a complete frame on each append flush. No payload queue, sampling,
+expiry or rotation is added. TSV fields after decompression remain `epochMillis`,
+process-local sequence, channel, byte count and Base64 bytes. Payload chunks are
+at most 48 KiB. Full Android/browser diagnostic messages share the journal as
+`android/log`. Process-local session IDs and timestamps distinguish restarts.
 
-Standard mode saves a single `TiPlay-yyyyMMdd-HHmmss-SSS.txt` containing the diagnostic report, without raw traffic. Debug mode uses the same naming pattern with `.zip`. The ZIP contains:
+Compression, Base64 encoding and disk writes remain synchronous, so a slow disk or
+CPU can backpressure ingress. Level 3 is the requested compression setting; real Android/vehicle
+performance still requires measurement. Flush is not fsync. A crash may interrupt
+the final frame, while earlier completed frames remain recoverable. Each new process
+uses a separate file so its readable data does not follow a previous truncated frame.
+Current-process integrity counters do not establish previous-process completeness.
 
-- A TXT with the same basename for the diagnostic report.
-- `streams/<session-id>/`: separate files per exact channel/direction, with a unique numeric prefix and readable channel label. Opaque/protocol bytes use `.bin`; explicitly labelled PCM16LE audio uses headerless `.pcm`. These are application I/O streams, not independently playable media containers or radio/bus captures.
-- `events.tsv`: UTC Unix milliseconds, process-local sequence, stream path, byte offset and byte length for each record. File order is capture order; capture/start markers identify process changes when sequence numbers restart.
-- `streams.tsv`: stream paths, original channel names encoded as Base64 UTF-8 and total byte counts. Labels preserve PCM rate/configuration and output attempt/written distinctions.
-- `sessions.tsv`: session IDs, start times and Base64 UTF-8 capture/start metadata containing application version, capture configuration and process UUID.
-- `capture.txt`: snapshot time, byte count, capture failures, `RAW_CAPTURE_INTEGRITY`, `RAW_CAPTURE_TIMING` and format instructions. `no-observed-write-failure` is the writer's observation; `partial` identifies a known integrity failure.
+Standard exports a redacted `.txt` report with no raw history. Debug exports `.zip`
+as a **STORED-only container**; all compressed content uses Zstandard:
 
-Export snapshots immutable lengths off the UI thread and spools streams to app-cache
-files instead of retaining payloads/index in memory. Storage fallbacks/share copies
-reuse the finished ZIP; later appends belong to later exports. Success/handled failure
-cleans temporary files; next initialization cleans artifacts abandoned by a killed
-process. `unparsed.tsv` preserves malformed/interrupted fragments; `capture.txt`
-counts them and marks reconstruction incomplete while valid records still export.
-Appends repair incomplete line boundaries without discarding fragments. Storage/read
-errors fail export. Sharing uses matching `text/plain`/`application/zip`; no clipboard action.
+- `<report>.txt.zst`: Android/webpage report and redacted rolling metadata.
+- `capture.txt.zst`: format instructions and current-process capture integrity.
+- `captures/raw-traffic-<process-id>.tsv.zst`: current and retained process journals,
+  copied unchanged, without splitting/decompressing/recompressing media.
 
-The ZIP includes earlier sessions. Disabling Debug stops appends without deletion;
-re-enable it to export retained history. Saving preserves the capture. **Clear
-captured data** in the saved-ZIP dialog deletes raw history and resets failure
-counters, preserving saved artifacts, settings and metadata logs. Active capture
-starts a fresh session with unchanged configuration. Clearing takes the capture
-lock; an existing export snapshot can finish through its open handle. Storage
-pressure does not automatically stop capture. Standard TXT excludes raw history
-but retains previously recorded unredacted Debug messages. Captures may contain
-credentials, pairing codes, personal data and media; keep them out of Git.
+Use `zstd -dc <file.zst>` to read a journal/report. Reconstruct each channel by
+concatenating decoded Base64 payload chunks in file order, respecting capture/start
+session boundaries. The old split-stream exporter remains for compatibility tests;
+it now packages STORED entries too and performs no DEFLATE compression.
+
+Export snapshots lengths and open handles under the capture lock, then copies to
+bounded-memory temporary files off the UI thread. Storage fallbacks/share copies
+reuse the finished archive. Temporary artifacts are cleaned after success/failure
+and abandoned ones on next initialization. Storage/read errors fail export without
+deleting capture data. Saved ZIPs remain independent of later recording or clearing.
+**Clear captured data** removes all retained process journals and starts a fresh
+session if capture is active, preserving saved exports, preferences and metadata logs.
+Debug captures contain private media, credentials and identifiers; review before
+sharing and keep them out of Git. Disk pressure does not automatically stop capture.
+
+
+Targeted verification covers 35 shared tests (raw capture, Zstandard round trips,
+retained-process export and browser audio routing) and 146 common tests (diagnostics,
+redaction, persisted restart state, dismiss/reopen/stop-export dialog and advanced UI).
+All pass. The phone Debug APK builds successfully and packages Zstandard JNI for
+arm64-v8a, armeabi-v7a, x86 and x86_64. Full CI is intentionally skipped for this change. Android vehicle checks
+remain: microphone-active Siri/navigation audibility and echo, real restart dialog,
+long-running level-3 CPU/storage cost, screen-off capture and storage exhaustion.
 
 `captureIntegrity.timing` and `RAW_CAPTURE_TIMING` aggregate completed append calls,
 lock-wait/append totals and maxima for the current or last capture session, including
@@ -753,9 +767,9 @@ After Bluetooth handoff, the 45-second watchdog requires a rendered frame before
 
 One log target belongs to the app process, initialized before activities/services and shared by CarPlay, browser and ordinary AirPlay. Opening settings, replacing a session or destroying an Activity does not reset it; late teardown callbacks keep their original target.
 
-Standard metadata filters precede a bounded background queue; Debug message text bypasses redaction. Raw capture is separate from this queue. Accepted records include date and timezone. Overflow and write failures increment integrity counters; a later successful write persists a loss marker. Rotation and process startup expire older history; the authoritative limits are in `SessionLogFile` and the export. Clearing app data removes private logs.
+Redacted metadata filters precede a bounded background queue; full Debug message text goes to the realtime Zstandard capture. Raw capture is separate from this queue. Accepted records include date and timezone. Overflow and write failures increment integrity counters; a later successful write persists a loss marker. Rotation and process startup expire older history; the authoritative limits are in `SessionLogFile` and the export. Clearing app data removes private logs.
 
-Export runs off the UI thread, waits a bounded time for writes and snapshots under the rotation lock. It reports detail/policy omissions, losses, storage/rejected-write counts, pending work and drain timeout. The metadata completeness counter covers accepted messages in retained history; raw write failures have their own counter. abrupt Android termination can lose in-memory records. Explicit shutdown attempts a bounded flush. Crashes and Android process exits have separate report sections.
+Export runs off the UI thread, waits a bounded time for writes and snapshots under the rotation lock. It reports detail/policy omissions, losses, storage/rejected-write counts, pending work and drain timeout. The metadata completeness counter covers accepted messages in retained history; raw write failures have their own counter. abrupt Android termination can lose in-memory records. Explicit shutdown attempts a bounded flush. The report focuses on retained Android/browser events rather than unrelated static device dumps.
 
 Sources: `shared/.../diagnostics/RawTraffic.kt`, `RawTrafficArchive.kt`; `common/.../DiagnosticLogs.kt`, `DiagnosticLogPolicy.kt`, `DiagnosticRedactor.kt`, `SessionLogFile.kt`, `DiagnosticLogSnapshot.kt`, `DiagnosticExportStore.kt`, `DiagnosticReportContent.kt`; `shared/.../network/WirelessStartupDiagnostics.kt`; `site/play/fps-window.js`.
 

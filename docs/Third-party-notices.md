@@ -39,6 +39,15 @@ https://developer.apple.com/assets/elements/icons/carplay/carplay-96x96_2x.png
 
 CarPlay and the CarPlay icon are Apple Inc. marks/assets. This asset is not covered by the project's open-source code license. Its use here does not imply Apple approval or certification.
 
+## Zstandard diagnostic compression
+
+[zstd-jni](https://github.com/luben/zstd-jni/tree/v1.5.7-4), pinned to 1.5.7-4,
+provides Android AAR JNI binaries and the desktop JNI test runtime. Bindings use
+BSD-2-Clause; the bundled [Zstandard](https://github.com/facebook/zstd) library is
+dual BSD-3-Clause/GPL-2.0. TiPlay uses its BSD-3-Clause option. Upstream license
+texts are packaged with the dependency and available in its source distribution.
+JNI class names are preserved by the shared consumer rules.
+
 ## Runtime dependencies
 
 - AndroidX and Jetpack Compose — Android Open Source Project; Apache License 2.0.

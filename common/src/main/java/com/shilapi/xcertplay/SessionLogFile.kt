@@ -42,7 +42,11 @@ internal class SessionLogFile(val file: File) : Closeable {
     }
 
     internal fun prepare(message: String): String? {
-        val safe = if (DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG) message else DiagnosticRedactor.redact(message)
+        if (com.shilapi.xcertplay.diagnostics.RawTraffic.enabled) {
+            com.shilapi.xcertplay.diagnostics.RawTraffic.record("android/log", message.toByteArray(Charsets.UTF_8))
+        }
+        // Full Debug text lives in the realtime Zstandard journal. Rolling metadata is always safe.
+        val safe = DiagnosticRedactor.redact(message)
         if (safe == null) {
             privacyFiltered.incrementAndGet()
             return null

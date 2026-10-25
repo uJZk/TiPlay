@@ -4,11 +4,19 @@
     <string name="settings_hint_car_bluetooth_disconnected">Не виявлено аудіоз’єднання Android з автомобілем через Bluetooth (A2DP/HFP). Підключіть телефон у налаштуваннях Bluetooth.</string>
     <string name="settings_hint_car_bluetooth_unknown">Не вдалося перевірити Bluetooth автомобіля. Перевірте дозвіл пристроїв поблизу та налаштування Bluetooth.</string>
     <string name="settings_hint_car_bluetooth_verify">Підключено аудіопристрій Bluetooth. Переконайтеся в налаштуваннях, що це автомобіль.</string>
-    <string name="settings_debug_mode_description">Записує всі початкові дані iPhone, браузера, USB та аудіовиходу Android без маскування. Кожне ввімкнення створює сеанс; після перезапуску процесу режим вимкнено. Зберігає ZIP; очищення запису доступне у вікні завершення.</string>
+    <string name="settings_debug_mode_description">Запис усіх вхідних даних CarPlay і вебсторінки та журналів Android і вебу. Стиснення в реальному часі, експорт ZIP. Містить особисті аудіо й відео; можливе навантаження. Закриття не зупиняє запис. Перезапуск відновлює запис і вікно.</string>
     <string name="settings_hint_debug_enabled">Режим налагодження ввімкнено. Можливе зниження продуктивності.</string>
     <string name="settings_clear_captured_data">Очистити записані дані</string>
     <string name="settings_capture_cleared">Записані дані очищено. Збережені файли не змінено.</string>
     <string name="settings_capture_clear_failed">Не вдалося очистити записані дані. Спробуйте ще раз.</string>
     <string name="settings_hint_iphone_car_audio">Переконайтеся, що iPhone підключено до аудіосистеми автомобіля через Bluetooth. TiPlay більше не приймає й не передає звук CarPlay.</string>
     <string name="settings_hint_permissions_missing">Не надано дозволи або доступ: %1$s. Відкрийте «%2$s» нижче для перевірки й надання доступу.</string>
+    <string name="settings_standard_log_description">Лише журнали Android і вебсторінки з маскуванням особистих даних.</string>
+    <string name="settings_capture_progress">Запис · %1$d:%2$02d · стиснуто %3$d КіБ</string>
+    <string name="settings_capture_running">Запис повних даних</string>
+    <string name="settings_capture_stop_export">Зупинити й експортувати</string>
+    <string name="settings_capture_background">Продовжити у фоні</string>
+    <string name="settings_capture_background_hint">Закриття вікна не зупиняє запис у фоні.</string>
+    <string name="settings_capture_storage_failed">Помилка запису. Дані можуть бути неповними.</string>
+    <string name="settings_capture_export_retained">Експортувати записані дані</string>
 </resources>
