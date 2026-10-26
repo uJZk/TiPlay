@@ -7,11 +7,11 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is **0.2.20-beta.20** (code **62**). Run
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published prerelease is **0.2.20-beta.21** (code **63**);
+[beta.21 release](#beta21-release) records provenance and checks. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v87** with WebRTC DataChannel as the formal live-media path.
+the deployed page uses **v90**, with original-codec WebRTC RTP for live video and negotiated audio.
 The **beta.17/code59** build introduced overlapping 5 ms recovery tails and
 pitch-preserving SoundTouch CarPlay catch-up up to 20%; v86 adds held catch-up.
 The historical beta.16 APK/webpage v84 build is recorded below. Software checks are in [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -202,7 +202,7 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Current browser deployment
 
-Browser v90 and beta.21/code63 are being released together; see [beta.21 release](#beta21-release). The v89 record below describes its earlier web-only rollout.
+Browser v90 and beta.21/code63 are published together; see [beta.21 release](#beta21-release). The v89 record below describes its earlier web-only rollout.
 
 Browser **v89** is the web-only audio rollout: NetEq-first Opus, libav.js AAC-LC/
 ELD/ALAC, continuous 48 kHz conversion, software capability negotiation and URL
@@ -365,12 +365,23 @@ public-tree/cache checks and independent artifact/public-site verification passe
 Target-device CPU attribution, physical audio and sustained capture overhead remain
 unmeasured. Detailed artifacts stay outside Git in `/workspace/tiplay-beta20/`.
 
+<a id="beta-release"></a>
+
 ## Beta.21 release
 
-Release preparation: **0.2.20-beta.21**, code **63**, browser **v90**. The user explicitly requests signed beta APK publication and the matching browser deployment. The existing signed release workflow runs Release lint/build, exact runtime identity checks, signing and attachment generation; full Android CI remains explicitly skipped.
+Published [TiPlay 0.2.20-beta.21](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.21), code **63**, browser **v90**, at **2026-10-26 17:20:40 UTC+08:00**. The user explicitly requests signed beta APK publication and the matching browser deployment. The existing signed release workflow runs Release lint/build, exact runtime identity checks, signing and attachment generation; full Android CI remains explicitly skipped.
 
 This release replaces URL casting with local pinned libmedia AVPlayer and removes the obsolete custom player/cache/subtitle/tempo implementation. Live video uses original-codec WebRTC RTP directly into Canvas; negotiated Opus uses an independent original-codec RTP audio peer, with unsupported formats retaining the existing decoder path.
 
 Completed before release: 533 browser tests, real Chromium MP4/HLS/Canvas/audio/subtitle/seek/replay/cancel/offline-runtime checks, 43 targeted Android tests, all four native ABIs and native-to-native original Opus RTP verification. See [Testing](Testing.md#current-release-source). Vehicle/hardware decode, browser RTP interoperability, rotating live-window recovery and CEA-608/708 remain unverified. URL-only ALAC is unsupported; realtime ALAC fallback is retained.
 
-Publication provenance and independent downloaded-artifact checks will be recorded here after the release completes.
+Build commit: `c2d51accf8e896975a7490891c18b79a23c5d35f`. [Signed workflow](https://github.com/uJZk/TiPlay/actions/runs/40297314279) passed Release lint/build, signing, runtime checks and draft upload. [Pages deployment](https://github.com/uJZk/TiPlay/actions/runs/40297317768) succeeded on 2026-10-26; all **213** public files match local beta.21/v90 assembly byte-for-byte, with correct WASM MIME types. Published APK/source/checksum attachments were downloaded again and match the independently verified draft bytes.
+
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.21.apk` | 113,988,416 | `a6c1356811e702c363118560debce61e95ce71e9b34d010ef72b1dffafc95596` |
+| `TiPlay-0.2.20-beta.21-source.zip` | 40,686,234 | `07452417763cfaf81e9b2ecc44833c4b7b8d485c6ad3b4f26ea6f960ad527d70` |
+| `SHA256SUMS.txt` | 191 | `7c03b7564f08cae9303ec46d6077b375dd1292b092d214ddc32f3a58c313d404` |
+
+Independent checks confirm non-debug `com.ujzk.tiplay`, code63, signature continuity with beta.20 (`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`), exact build-commit `git archive` source, exactly two unchanged runtime identity containers, 51 native libraries, all 25 ELF64 libraries with 16 KiB LOAD alignment and successful 16 KiB ZIP alignment. The four libdatachannel payloads and packaged notices match committed sources. Build and public-byte evidence are retained outside Git under `/workspace/work/beta21-*` and `/workspace/work/tiplay-validation/`.

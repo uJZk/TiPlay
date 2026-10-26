@@ -56,7 +56,7 @@ and measured slower-case exceptions. Rebuild and byte-verify the binaries using
 record frame-based live timing, causal output probes and natural URL completion;
 [Testing](docs/Testing.md#browser-wasm-verification) records browser and Android
 verification, including faulty-currentTime Chromium runs.
-The current published prerelease is beta.20/code62 with webpage v87. Its CarPlay
+The previous published prerelease was beta.20/code62 with webpage v87; published beta.21/code63 with v90 is tracked in [Build](docs/Build.md#beta21-release). Its CarPlay
 session/resource and single-initial-SETUP boundaries are documented in
 [AirPlay](docs/AirPlay.md#carplay-coexistence); [Build](docs/Build.md#beta-release)
 records its exact build commit, published artifacts, verification and signer/runtime/source provenance.
@@ -95,7 +95,7 @@ first, libav fallback, manual tempo and video-frame PD; the current AVPlayer mig
 
 Resume from [Audio tempo](docs/Audio-tempo.md), the
 [SIMD report](tests/bench/libav/README.md), and [Build](docs/Build.md#current-browser-deployment).
-The earlier v89 tie-up skipped CI and APK compilation. The current user explicitly requests beta APK deployment; build signed beta.21/code63, preserving the full Android suite skip. Local web,
+The earlier v89 tie-up skipped CI and APK compilation. The current beta.21/code63 APK and v90 page are published; signed Release lint/build and independent artifact checks pass. Preserve the full Android suite skip. Local web,
 actual Chromium Worklet/decoder/URL, offline-cache, site assembly and native-source
 consistency checks are used. Commit with `[skip ci]`; deploy only the existing
 Pages publishing workflow. Physical Tesla CPU, sound quality and simultaneous
@@ -227,3 +227,5 @@ permission and connection contracts that the phone + browser flow actually uses.
 Follow [docs/Upstream.md](docs/Upstream.md) for upstream maintenance rules, preserved identifiers, historical names and the one-way merge procedure.
 
 Resume the current beta APK deployment from [beta.21 release](docs/Build.md#beta21-release) and [current verification](docs/Testing.md#current-release-source). Full Android suite remains explicitly skipped.
+
+Beta.21/code63 and browser v90 are published from `c2d51accf8e896975a7490891c18b79a23c5d35f`; [Build](docs/Build.md#beta21-release) records public hashes, signed/Pages runs and independent checks. No physical vehicle acceptance is implied.

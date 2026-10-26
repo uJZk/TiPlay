@@ -27,8 +27,7 @@ Worker-to-Worklet output and local-track Processor-to-Canvas main/Worker paths p
 Android has **43 targeted JVM tests**; the native two-track JNI/DTLS-SRTP oracle
 matches 80 original packets per track. Browser RTP interoperability remains blocked
 by the managed browser's zero host ICE candidates. The full Android suite is
-explicitly skipped. No APK or Pages deployment certifies these source changes;
-vehicle playback, CPU, memory and physical output still need acceptance. Earlier
+explicitly skipped. Beta.21/code63 and browser v90 are published; [Build](Build.md#beta21-release) records signed Release lint/build and artifact checks. Vehicle playback, CPU, memory and physical output still need acceptance. Earlier
 version-specific evidence below remains historical.
 
 ## Browser WASM verification
