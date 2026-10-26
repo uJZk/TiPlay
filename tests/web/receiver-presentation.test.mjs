@@ -1,10 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { airPlayContext, createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor } from '../../site/play/receiver-presentation.js';
+import { carPlayRunning, airPlayContext, createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor } from '../../site/play/receiver-presentation.js';
 
 const status = (state, { carplay = 'connected', source = 'carplay', playback, revision } = {}) => ({
   videoSource: source, receivers: { carplay: { state: carplay }, airplay: { state, ...(revision === undefined ? {} : { revision }) } }, ...(playback ? { airplay: playback } : {}),
+});
+
+test('music UI yields to a connected CarPlay session, including a missing or loaned picture', () => {
+  for (const state of ['connected', 'suspended']) {
+    assert.equal(carPlayRunning({ videoSource: null, receivers: { carplay: { state } } }, null), true);
+  }
+  assert.equal(carPlayRunning({ videoSource: 'carplay' }, null), true);
+  assert.equal(carPlayRunning({}, { mode: 'carplay' }), true, 'older receiver snapshots use the current producer');
+  for (const state of ['disabled', 'idle', 'waiting', 'connecting', 'failed']) {
+    assert.equal(carPlayRunning({ videoSource: null, receivers: { carplay: { state } } }, { mode: 'carplay' }), false,
+      'an old configuration cannot restore a retired CarPlay session');
+  }
 });
 
 test('explicit producer and no-producer snapshots supersede old configs, with missing-field compatibility only', () => {
@@ -26,10 +38,19 @@ test('background receiver errors do not create a casting context or inherit old 
   assert.equal(videoProblemFor(status('listening'), old, 'hvc1'), 'hvc1');
   assert.equal(videoProblemFor(status('video', { carplay: 'suspended' }), old, 'hvc1'), 'hvc1',
     'pending borrowing does not retire a codec problem on the authoritative CarPlay producer');
-  for (const kind of ['video', 'photo', 'audio']) {
+  for (const kind of ['video', 'photo']) {
     assert.equal(videoProblemFor(status('playing', { playback: { id: 2, kind, resource: 'opaque', outputAllowed: true } }), old, 'hvc1'), null);
   }
   assert.equal(videoProblemFor(status('listening', { source: null }), old, 'hvc1'), null);
+});
+
+test('background AirPlay audio cannot hide a decoder failure after the picture returns to CarPlay', () => {
+  const current = { mode: 'carplay' };
+  assert.equal(videoProblemFor(status('playing', { playback: { id: 2, kind: 'video', resource: 'opaque',
+    outputAllowed: true, videoShown: false } }), current, 'hvc1'), 'hvc1');
+  assert.equal(videoProblemFor(status('audio', { playback: { id: 3, kind: 'audio' } }), current, 'hvc1'), 'hvc1');
+  assert.equal(videoProblemFor(status('audio', { carplay: 'idle', source: null,
+    playback: { id: 3, kind: 'audio' } }), current, 'hvc1'), null);
 });
 
 test('old first-frame evidence cannot hide waiting surfaces for a new producer or ownership handoff', () => {

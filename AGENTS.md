@@ -95,12 +95,28 @@ first, libav fallback, manual tempo and video-frame PD; the current AVPlayer mig
 
 Resume from [Audio tempo](docs/Audio-tempo.md), the
 [SIMD report](tests/bench/libav/README.md), and [Build](docs/Build.md#current-browser-deployment).
-The earlier v89 tie-up skipped CI and APK compilation. The current beta.21/code63 APK and v90 page are published; signed Release lint/build and independent artifact checks pass. Preserve the full Android suite skip. Local web,
+The earlier v89 tie-up skipped CI and APK compilation. The beta.21/code63 APK and v90 page were published with signed Release lint/build and independent artifact checks; that rollout skipped the full Android suite. Local web,
 actual Chromium Worklet/decoder/URL, offline-cache, site assembly and native-source
-consistency checks are used. Commit with `[skip ci]`; deploy only the existing
-Pages publishing workflow. Physical Tesla CPU, sound quality and simultaneous
+consistency checks are used. Release commits may use `[skip ci]` to control ordering;
+manually run Android checks before signing/publication, then deploy with the existing Pages workflow. Physical Tesla CPU, sound quality and simultaneous
 stream acceptance remain unverified. Do not claim a measured clock or a codec
 benchmark establishes speaker timing or eliminates every click.
+
+Current unshipped AirPlay work adds classic SDP/UDP RAOP and AirPlay 2 transient
+HAP/NTP realtime audio; [AirPlay](docs/AirPlay.md) records the unsupported RSA,
+persistent HomeKit, buffered/PTP/multiroom paths and BLE/AWDL boundary. Audio-only
+SETUP must not borrow the CarPlay display. Three-choice browser consent remembers
+presented keys or stable sender-reported IDs; all senders see the same controls.
+Browser v95 source integrates that work with the published beta.22/code64 base;
+URL playback retains AVPlayer's clocks and resource ownership. The earlier local
+URL frame-witness adapter is superseded by that engine. No deployment or
+iPhone/vehicle interoperability is implied by these source changes.
+Pure-audio now-playing uses the Video.js control shell with authenticated sender
+metadata/artwork; it is retired while CarPlay is connected or owns the picture.
+Its pause/resume acts on the receiver's live output, not the iPhone app. Previous/next
+and ±10-second actions use the current sender's discovered DACP endpoint; progress
+remains sender-authoritative and pending operations disable those four controls. There is
+no independent floating casting-stop button. Screenshot fixtures are synthetic.
 
 ## Checks
 
@@ -119,8 +135,8 @@ Old Opus/PCMA/PCMU application decoder shortcuts may be removed. Keep supported
 RTP tracks and fallback streams under the same browser mixing/ducking policy. See
 [the media transport contract](docs/CarPlay-DataChannel.md) and
 [audio thread boundaries](docs/Audio-tempo.md). Beta.21/code63 release progress is recorded in [Build](docs/Build.md#beta21-release). Targeted native JNI/RTP checks pass; browser RTP interoperability and vehicle acceptance remain unverified.
-The user explicitly skips the full Android test suite for this work. Keep that
-separate from completed targeted compile/tests and browser checks.
+The v90 rollout explicitly skipped the full Android test suite. The current
+beta.23 audit requires the source checks below, separate from device acceptance.
 
 URL casting uses libmedia AVPlayer, which owns resource loading,
 buffering, decoding, playback clocks, synchronization and Canvas rendering.
@@ -242,3 +258,10 @@ Pages 40303064954, downloaded attachment hashes and independent verification.
 Only the signing/publication workflow was explicitly authorized; Android CI and
 the full suite stayed skipped. Browser v90 is retained. iPhone/vehicle acceptance
 remains pending.
+
+Resume beta.23/code65 and browser v95 at [AirPlay](docs/AirPlay.md#carplay-video-in-car-in-the-browser),
+[current verification](docs/Testing.md#current-release-source) and [beta.23 release](docs/Build.md#beta23-release).
+The user authorized a complete Video in Car/AirPlay review, owner-scoped display
+borrow/return fixes, tie-up, signed beta APK publication and Pages deployment.
+Preserve earlier audio/trust/BLE/DACP work; verify audio-only screen return,
+precise type-130 retirement and stale-owner cleanup before publishing.

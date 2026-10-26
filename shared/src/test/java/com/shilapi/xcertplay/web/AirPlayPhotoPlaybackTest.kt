@@ -4,6 +4,29 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayPhotoPlaybackTest {
+    @Test fun browserDecodeFailureBelongsToTheCurrentPhotoAndIsDeliveredOnlyOnce() {
+        val events = mutableListOf<String>()
+        val first = AirPlayPhotoPlayback(byteArrayOf(-1, -40, -1, -39)) { events += "first:$it" }
+        val previous = AirPlayBrowserPlayback.register(
+            { AirPlayBrowserPlayback.State(0.0, 0.0, false, true, false, false, "photo") }, photo = first,
+        ) { _, _ -> }
+        val oldId = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
+        val second = AirPlayPhotoPlayback(byteArrayOf(-1, -40, -1, -39)) { events += "second:$it" }
+        val current = AirPlayBrowserPlayback.register(
+            { AirPlayBrowserPlayback.State(0.0, 0.0, false, true, false, false, "photo") }, photo = second,
+        ) { _, _ -> }
+        try {
+            val id = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
+            assertFalse(AirPlayBrowserPlayback.report(oldId, mapOf("failed" to true)))
+            assertFalse(AirPlayBrowserPlayback.report(id, mapOf("failed" to false)))
+            assertTrue(AirPlayBrowserPlayback.report(id, mapOf("failed" to true)))
+            assertFalse(AirPlayBrowserPlayback.report(id, mapOf("failed" to true)))
+            previous.close()
+            assertSame(second, AirPlayBrowserPlayback.photo(id))
+            assertEquals(listOf("second:failed"), events)
+        } finally { previous.close(); current.close() }
+    }
+
     @Test fun browserResourcesRetainOriginalBytesAndCloseRetiresOnlyTheirOwner() {
         val bytes = byteArrayOf(0xff.toByte(), 0xd8.toByte(), 1, 2, 3, 0xff.toByte(), 0xd9.toByte())
         val photo = AirPlayPhotoPlayback(bytes)

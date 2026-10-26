@@ -30,6 +30,23 @@ by the managed browser's zero host ICE candidates. The full Android suite is
 explicitly skipped. Beta.21/code63 and browser v90 are published; [Build](Build.md#beta21-release) records signed Release lint/build and artifact checks. Vehicle playback, CPU, memory and physical output still need acceptance. Earlier
 version-specific evidence below remains historical.
 
+The beta.22 integration baseline passed 547 browser tests, eight Chromium music
+layouts, AVPlayer MP4 controls/Canvas/cleanup and the required Android unit/lint/
+debug-build command. Its two stale Standard-log tests were adapted to AVPlayer.
+
+Beta.23/code65 and v95 pass local verification after the Video in Car/AirPlay
+audit. New coverage exercises encrypted SETUP/info/RECORD, precise type-130
+retirement, owner-scoped display replacement/return, URL audio-only continuation,
+late callbacks, photo failures, visual/background-audio registry ownership, RAOP
+advertisement refresh and three-choice consent. The complete Android command
+passes 4,321 tests (2,452 shared, 1,863 common, six home), all debug lint/build
+targets, with no skips or failures. Native AirPlay JNI checks also pass. The 568 browser tests, eight music layouts, 48 consent scenarios, photo CSP and
+complete AVPlayer URL checks pass. HLS subtitle switching/seek and screen return
+pass twice after draining old subtitle requests before reset; generated-runtime
+regressions and a byte-identical vendor rebuild cover that ordering. Signed
+artifact and public-delivery verification remain pending. RAOP/AP2, BLE
+and trust coverage does not establish physical iPhone/vehicle interoperability.
+
 ## Browser WASM verification
 
 Browser v89 passes **729 local browser tests**. Its acceptance covers real AAC/ALAC/ELD Worker decoding, exact
@@ -43,40 +60,20 @@ multistream headroom and audible clicks remain unverified. Earlier results below
 refer to their original versions.
 
 
-The beta.15 WASM build passed **893 browser tests** and the complete required Android
-command: **4,131 unit tests**, all three debug lint targets and all three debug APK
-assemblies. The native libsoxr JNI/signal/concurrency checks pass. All five shipped
-WASM binaries rebuild byte-for-byte from their pinned complete source inputs.
+The historical beta.15/code57 and v83 checks passed 893 browser tests, 4,131
+Android unit tests, all required debug lint/build targets and native libsoxr
+JNI/signal/concurrency checks. The five WASM binaries rebuilt byte-for-byte.
+Production-CSP Chromium exercised actual decoder Workers, Worklet output,
+WebGL/2D rendering, SRP and real Service Worker offline loading. Original release
+artifacts and signer/runtime/source verification remain in [Build](Build.md#beta-release).
 
-Chromium 151 checks use production CSP: live AudioWorklet output, independent
-timelines and suspend/resume pass with 85 runtime hashes unchanged; the actual
-AAC module worker matches 96 golden PCM frames across eight profiles and passes
-load-failure/retry/disposal checks. URL playback passes WebGL and 2D with actual
-SoundTouch SIMD loading and backend reporting. SRP pairing and tamper checks pass
-with native BigInt; the slower WASM candidate stays outside production.
-The real Service Worker also passes a nested-path offline reload: all 86 runtime
-cache entries retain their hashes, all five WASM binaries execute offline, and
-direct/Worker AAC output matches golden PCM. Uncached requests fail and source
-archives stay outside the cache.
-
-Clock-safety regressions independently vary the public getter and actual frame
-counter: frozen, biased, slow/fast, jumping and throwing getters cannot train
-rate compensation or change Worklet PCM. Causal probes preserve request-time
-freshness across delayed ACKs; delayed native samples retain their original
-event age. Native outage reacquisition and six-hour output projection pass.
-Latency-estimate fallback continues rendering without claiming a source deadline
-was verified. URL EOF follows natural node completion even when the getter
-crosses the tail early or stays frozen.
-The production-CSP Chromium 151 media-clock harness passes normally and with
-four injected main-getter faults: frozen, 0.98× progress, ±5-second jumps and
-exceptions. Every run produces real nonzero Worklet PCM, preserves independent
-source deadlines and suspend/resume behavior, and retains all 85 runtime hashes.
-
-Beta.15/code57 and v83 repeat the complete Android CI, all 893 browser tests,
-normal Chromium media-clock output and real offline loading. All 150 browser
-inputs remain identical after normalizing three version declarations. Signed
-release lint/build and independent signer/runtime/native-library/DEX/source/checksum
-verification pass; exact artifacts are in [Build](Build.md#beta-release).
+Clock-safety regressions varied the public getter independently of actual frame
+counters: frozen, biased, slow/fast, jumping and throwing getters could not train
+rate compensation or alter Worklet PCM. Causal probes retained request-time
+freshness across delayed ACKs; native outages, six-hour projections and natural
+URL completion were tested. The standalone production-CSP media-clock harness
+also produced nonzero Worklet PCM under four injected getter faults. These
+results belong to those engine revisions; AVPlayer now owns URL playback.
 
 These are software/source-build and signed-artifact results; vehicle acoustic,
 panel-latency and physical acceptance remain unverified. See
@@ -733,6 +730,13 @@ follow-up in [Todo](Todo.md#browser-and-carplay-audio).
 
 ## Ordinary AirPlay acceptance
 
+[AirPlay](AirPlay.md) records RAOP/AirPlay 2 wire coverage, BLE lifecycle checks and
+protocol limits. Before the remote migration, the Chromium notification harness
+passed 48 English/Chinese prompts at 320/800 pixels, covering all three choices,
+audio/mirror copy, layout and readability. Pure-audio fixtures exercise sender
+metadata/artwork, Video.js controls, DACP command delivery and CarPlay hiding;
+these synthetic checks do not replace the device checklist below.
+
 URL acceptance uses the actual AVPlayer pipeline and local MP4/HLS resources under
 the production CSP. Verify Canvas output without creating video elements, operation
 without SharedArrayBuffer, pause/resume, seek, completion, source replacement,
@@ -743,7 +747,7 @@ require integration/device evidence; do not infer those passes from old tests.
 
 Use unprotected content from an actual iPhone. Check discovery and device approval, mirroring, audio-only playback, JPEG/PNG photos, and URL MP4/HLS playback with seeking, subtitles, buffering and iPhone controls. Test stopping/replacing a cast and returning the browser display to CarPlay while retained CarPlay audio continues as designed. Exercise authentication/resource expiry and recovery after network loss.
 
-Check advertised audio codecs in the actual browser: ALAC/AAC-LC follow native decoder support; AAC-ELD remains offered and uses supported WebCodecs before the bundled software decoder. Verify clear failures when no implemented decoder can handle the format. HDR content is subject to TiPlay's SDR policy. DRM services and apps that prohibit AirPlay are outside acceptance. See [AirPlay](AirPlay.md) for receiver boundaries.
+Check advertised audio codecs in the actual browser: ALAC/AAC-LC/AAC-ELD follow reported libav.js software decoder support; realtime playback enters NetEq at 48 kHz without WebCodecs audio. Verify clear failures when no implemented decoder can handle the format. HDR content is subject to TiPlay's SDR policy. DRM services and apps that prohibit AirPlay are outside acceptance. See [AirPlay](AirPlay.md) for receiver boundaries.
 
 Record Android/device, browser/vehicle firmware, iPhone/iOS, app version, transport, exact steps and remaining failures. Share reviewed diagnostics without pairing codes, keys or personal data. Track outstanding physical validation in [Todo](Todo.md).
 

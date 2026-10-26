@@ -78,7 +78,7 @@ class FirstUseActivityTest {
 
     @Test fun permanentlyDeniedBluetoothCanBeRecoveredFromChecklist() {
         BrowserCarPlaySettings.saveMode(context, BrowserCarPlaySettings.Mode.WIRELESS)
-        shadowOf(context).grantPermissions(Manifest.permission.NEARBY_WIFI_DEVICES)
+        shadowOf(context).grantPermissions(Manifest.permission.NEARBY_WIFI_DEVICES, Manifest.permission.BLUETOOTH_ADVERTISE)
         shadowOf(context).denyPermissions(Manifest.permission.BLUETOOTH_CONNECT)
         context.getSharedPreferences("tiplay_permission_requests", 0).edit()
             .putBoolean(Manifest.permission.BLUETOOTH_CONNECT, true).commit()
@@ -108,7 +108,7 @@ class FirstUseActivityTest {
     }
 
     @Test fun grantMissingRequestsOnlyMissingAndRefreshesAfterResult() {
-        val granted = arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.NEARBY_WIFI_DEVICES,
+        val granted = arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.NEARBY_WIFI_DEVICES,
             Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.POST_NOTIFICATIONS)
         shadowOf(context).grantPermissions(*granted)
         shadowOf(context).denyPermissions(Manifest.permission.RECORD_AUDIO)
@@ -157,7 +157,7 @@ class FirstUseActivityTest {
     }
 
     @Test fun permanentDenialOffersAppSettingsAndFinishRequiresExplicitConfirmation() {
-        val permissions = arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.NEARBY_WIFI_DEVICES,
+        val permissions = arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.NEARBY_WIFI_DEVICES,
             Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.RECORD_AUDIO)
         shadowOf(context).denyPermissions(*permissions)

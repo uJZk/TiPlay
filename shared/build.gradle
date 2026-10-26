@@ -32,6 +32,11 @@ android {
         // Geely/Lynk head-unit input API (com.geely.inputservice); declarations in src/main/aidl.
         aidl true
     }
+    testOptions {
+        // Full protocol/resource tests include Robolectric sandboxes and 32 MiB boundary fixtures.
+        // Keep the suite from exhausting Gradle's 512 MiB default test-worker heap.
+        unitTests.all { maxHeapSize = '2g' }
+    }
     compileOptions {
         coreLibraryDesugaringEnabled true
         sourceCompatibility = JavaVersion.VERSION_11

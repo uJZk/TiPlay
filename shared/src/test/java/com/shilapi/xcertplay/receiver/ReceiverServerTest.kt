@@ -174,6 +174,7 @@ class ReceiverServerTest {
         val items = CopyOnWriteArrayList<ReceiverPlay>()
         val states = CopyOnWriteArrayList<String>()
         val logs = CopyOnWriteArrayList<String>()
+        val metadata = CopyOnWriteArrayList<ReceiverAudioMetadataUpdate>()
         val ended = CountDownLatch(1)
         @Volatile var prepared = 0
         @Volatile var rejectedMirrorSinks = 0
@@ -190,6 +191,7 @@ class ReceiverServerTest {
         override fun seek(seconds: Double) { sought = seconds }
         override fun rate(value: Double) { speed = value }
         override fun playback() = playbackState ?: ReceiverPlayback(100.0, sought, speed, true)
+        override fun audioMetadata(value: ReceiverAudioMetadataUpdate) { metadata += value }
         override fun status(state: String) { states.add(state); if (state == "listening") ended.countDown() }
         override fun log(message: String) { logs.add(message); onLog(message) }
     }
@@ -317,6 +319,8 @@ class ReceiverServerTest {
         val guarded = object : ReceiverServer.Listener by listener {
             override fun authorizeDevice(verifiedPublicKey: ByteArray?, deviceName: String) = false
             override fun authorizeConnection(sessionToken: String, deviceName: String) = false
+            override fun authorizeDevice(sessionToken: String, verifiedPublicKey: ByteArray?, deviceName: String, mediaType: String) = false
+            override fun authorizeConnection(sessionToken: String, deviceName: String, mediaType: String) = false
         }
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), guarded)
         receiver.start()
@@ -324,6 +328,14 @@ class ReceiverServerTest {
             connect(receiver.port).use { control ->
                 assertEquals(200, control.status("GET", "/info"))
                 assertEquals(200, control.status("GET", "/playback-info"))
+                assertEquals(200, control.status("SETUP", "/", BplistCodec.encode(emptyMap<String, Any?>())))
+                assertEquals(403, control.status("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(
+                    mapOf("type" to 96, "ct" to 1),
+                )))))
+                assertEquals(403, control.status("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(
+                    mapOf("type" to 110, "streamConnectionID" to 1234L),
+                )))))
+                assertEquals(0, listener.prepared)
                 assertEquals(403, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
                 assertEquals(403, control.status("PUT", "/photo", byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xd9.toByte())))
                 assertEquals("403", control.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
@@ -592,12 +604,12 @@ class ReceiverServerTest {
             preparing.authenticateMirror()
             val setup = BplistCodec.encode(mapOf("eiv" to ByteArray(16), "ekey" to ByteArray(72), "timingPort" to 0))
             assertEquals(200, preparing.status("SETUP", "/", setup))
-            assertEquals(1, listener.prepared)
+            assertEquals(0, listener.prepared)
             assertTrue(listener.states.isEmpty())
             if (mirror == null) {
                 preparing.close()
                 awaitConnectionCount(receiver, 0)
-                assertEquals(listOf("listening"), listener.states.toList())
+                assertTrue(listener.states.isEmpty())
                 assertEquals(0, listener.stopped)
                 return
             }
@@ -737,9 +749,13 @@ class ReceiverServerTest {
         encryptedMirrorProbe(false, audioDrain = true, failedReplacement = true)
     }
 
+    @Test fun sameSessionAudioMirrorAudioRestoresMetadataAndCannotCarryThePreviousTracksArtwork() =
+        encryptedMirrorProbe(false, audioDrain = true, metadataRoundTrip = true)
+
     private fun encryptedMirrorProbe(teardown: Boolean, dataEofRecovery: Boolean = false, audioDrain: Boolean = false,
                                      sleepResume: Boolean = false, dataSocketResume: Boolean = false,
-                                     partialHeader: Boolean = false, failedReplacement: Boolean = false) {
+                                     partialHeader: Boolean = false, failedReplacement: Boolean = false,
+                                     metadataRoundTrip: Boolean = false) {
         val identity = AirPlayIdentity.generate()
         val listener = Listener()
         val rawKey = ByteArray(16) { (it + 1).toByte() }
@@ -781,12 +797,27 @@ class ReceiverServerTest {
             assertEquals("volume: 0.0\r\n", volume.body.toString(Charsets.US_ASCII))
             assertEquals("volume: 0.0\r\n", control.send("GET_PARAMETER", "rtsp://receiver/stream",
                 "volume\r\n".toByteArray()).body.toString(Charsets.US_ASCII))
+            val audioSetup = mapOf("type" to 96, "ct" to 4, "audioFormat" to 0x400000L, "spf" to 1024)
+            val firstAudioPorts = if (metadataRoundTrip) {
+                val opened = BplistCodec.decode(control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(audioSetup)))).body) as Map<*, *>
+                val audio = (opened["streams"] as List<*>).single() as Map<*, *>
+                assertEquals("audio", listener.states.last())
+                fun field(tag: String, bytes: ByteArray) = tag.toByteArray(Charsets.US_ASCII) +
+                    ByteBuffer.allocate(4).putInt(bytes.size).array() + bytes
+                val song = field("mlit", field("minm", "First track".toByteArray()) +
+                    field("asar", "First artist".toByteArray()) + field("asal", "First album".toByteArray()) +
+                    field("astm", ByteBuffer.allocate(4).putInt(10000).array()))
+                assertEquals("200", control.send("SET_PARAMETER", "/", song, contentType = "application/x-dmap-tagged").path)
+                assertEquals("200", control.send("SET_PARAMETER", "/", byteArrayOf(-1, -40, 1, 2, -1, -39), contentType = "image/jpeg").path)
+                assertEquals("200", control.send("SET_PARAMETER", "/", "progress: 0/22050/441000\r\n".toByteArray(), contentType = "text/parameters").path)
+                listOf((audio["dataPort"] as Number).toInt(), (audio["controlPort"] as Number).toInt())
+            } else emptyList()
             val requested = listOf(mapOf("type" to 110, "streamConnectionID" to 1234L)) +
-                if (audioDrain) listOf(mapOf("type" to 96, "ct" to 4, "audioFormat" to 0x400000L, "spf" to 1024)) else emptyList()
+                if (audioDrain && !metadataRoundTrip) listOf(audioSetup) else emptyList()
             val stream = BplistCodec.decode(control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to requested))).body) as Map<*, *>
             val ports = (stream["streams"] as List<*>).map { it as Map<*, *> }
             val port = (ports.single { (it["type"] as Number).toInt() == 110 }["dataPort"] as Number).toInt()
-            val audioPorts = ports.find { (it["type"] as Number).toInt() == 96 }?.let {
+            val audioPorts = if (metadataRoundTrip) firstAudioPorts else ports.find { (it["type"] as Number).toInt() == 96 }?.let {
                 listOf((it["dataPort"] as Number).toInt(), (it["controlPort"] as Number).toInt())
             }.orEmpty()
             for (audioPort in audioPorts) {
@@ -815,6 +846,47 @@ class ReceiverServerTest {
                 val second = byteArrayOf(0, 0, 0, 2, 0x41, 1)
                 data.getOutputStream().write(packet(0, encryption.update(first)) + packet(0, encryption.update(second)))
                 assertNotNull(subscription.take(5000)); assertNotNull(subscription.take(5000))
+                if (metadataRoundTrip) {
+                    fun endPicture() {
+                        assertEquals(200, control.status("TEARDOWN", "/", BplistCodec.encode(mapOf("streams" to listOf(mapOf("type" to 110))))))
+                        assertEquals("audio", listener.states.last())
+                        assertNull(listener.hub.info())
+                    }
+                    endPicture()
+                    val restored = listener.metadata.last()
+                    assertEquals("First track", restored.title)
+                    assertEquals("First artist", restored.artist)
+                    assertEquals("First album", restored.album)
+                    assertEquals(10000L, restored.durationMillis)
+                    assertArrayEquals(byteArrayOf(-1, -40, 1, 2, -1, -39), restored.artwork!!.bytes)
+                    assertEquals(ReceiverAudioProgress(0, 22050, 441000), restored.progress)
+                    assertEquals("200", control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(
+                        mapOf("type" to 110, "streamConnectionID" to 1235L),
+                    )))).path)
+                    assertEquals("mirror", listener.states.last())
+                    val before = listener.metadata.size
+                    fun field(tag: String, bytes: ByteArray) = tag.toByteArray(Charsets.US_ASCII) +
+                        ByteBuffer.allocate(4).putInt(bytes.size).array() + bytes
+                    assertEquals("200", control.send("SET_PARAMETER", "/", field("minm", "Second track".toByteArray()),
+                        contentType = "application/x-dmap-tagged").path)
+                    assertEquals("200", control.send("SET_PARAMETER", "/", field("asar", "Second artist".toByteArray()),
+                        contentType = "application/x-dmap-tagged").path)
+                    assertEquals("Hidden metadata is retained without creating an audio UI", before, listener.metadata.size)
+                    endPicture()
+                    val secondTrack = listener.metadata.last()
+                    assertEquals("Second track", secondTrack.title)
+                    assertEquals("Second artist", secondTrack.artist)
+                    assertEquals("", secondTrack.album)
+                    assertEquals(0L, secondTrack.durationMillis)
+                    assertTrue(secondTrack.artwork!!.bytes.isEmpty())
+                    assertNull(secondTrack.progress)
+                    val received = listener.metadata.size
+                    assertEquals("200", control.send("SETUP", "rtsp://receiver/stream", BplistCodec.encode(setup)).path)
+                    assertEquals("200", control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(audioSetup)))).path)
+                    assertEquals("New audio ownership must not replay retired metadata", received, listener.metadata.size)
+                    assertEquals(200, control.status("TEARDOWN", "/"))
+                    return
+                }
                 if (failedReplacement) {
                     listener.rejectedMirrorSinks = 1
                     val failed = control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(

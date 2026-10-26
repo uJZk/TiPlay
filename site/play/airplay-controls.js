@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { createAirPlayDiagnostics } from './airplay-diagnostics.js';
 import { fetchMediaResource } from './airplay-fetch.js';
+import { createAirPlayArtwork } from './airplay-artwork.js';
 export function playbackState(value) {
   if (!value || !Number.isSafeInteger(value.id) || value.id < 1) return null;
   const duration = Number.isFinite(value.duration) ? Math.max(0, value.duration) : 0;
@@ -32,29 +33,40 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   loadPlayer = () => import('./videojs-player.js') } = {}) {
   const layer = document.createElement('div');
   layer.className = 'airplay-player'; layer.hidden = true;
-  const photoStop = document.createElement('button');
-  photoStop.className = 'airplay-photo-stop'; photoStop.textContent = lang === 'zh' ? '结束投放' : 'Stop casting';
-  photoStop.hidden = true; stage.append(layer, photoStop);
+  const stopText = lang === 'zh' ? '结束投放' : 'Stop casting';
+  stage.append(layer);
   let state = null, player = null, loading = null, key = null, appliedRevision = -1, appliedSeekRevision = -1, appliedTrackRevision = -1, metadata = false, timer = null;
   let directive = null, disposed = false, waiting = false, sourceReady = false;
-  let diagnostics = null, photo = null, preparation = null;
+  let outputWasAllowed = true;
+  let diagnostics = null, photo = null, preparation = null, playerKind = null, carPlayRunning = false;
+  let playerModule = null, artworkURL = null;
+  const artwork = createAirPlayArtwork(fetchPhone, url => {
+    artworkURL = url;
+    if (state?.kind === 'audio' && playerKind === 'audio') updateAudio(state);
+  });
+  const loadModule = () => playerModule ??= loadPlayer().catch(error => { playerModule = null; throw error; });
   const stop = () => {
     if (!state) return;
     diagnostics?.event('explicit-stop');
     send({ k: 'ap', id: state.id, a: 'stop' });
   };
-  photoStop.addEventListener('click', stop);
-  for (const element of [layer, photoStop]) for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'keydown', 'keyup'])
+  for (const element of [layer]) for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'keydown', 'keyup'])
     element.addEventListener(type, event => event.stopPropagation());
   function clear() {
     diagnostics?.dispose(); diagnostics = null;
     loading?.abort(); loading = null;
     clearInterval(timer); timer = null;
-    const retiring = player; player = null; retiring?.dispose(); layer.replaceChildren();
+    const retiring = player; player = null;
+    try { retiring?.dispose(); } catch (_) {
+      // A controls-adapter failure cannot leave its media or surface owning the returned picture.
+      try { retiring?.media?.dispose?.(); } catch (_) {}
+    }
+    layer.replaceChildren();
     preparation = null; layer.removeAttribute('aria-busy'); layer.removeAttribute('data-preparing');
-    photo?.dispose(); photo = null;
-    key = null; metadata = sourceReady = false; waiting = false; appliedRevision = appliedSeekRevision = appliedTrackRevision = -1;
-    layer.hidden = photoStop.hidden = true;
+    photo?.dispose(); photo = null; playerKind = null; artwork.update(null, null); artworkURL = null;
+    key = null; metadata = sourceReady = false; waiting = false; outputWasAllowed = true;
+    appliedRevision = appliedSeekRevision = appliedTrackRevision = -1;
+    layer.hidden = true;
   }
   function beginPreparation() {
     const indicator = document.createElement('div');
@@ -65,10 +77,6 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     spinner.className = 'airplay-preparation-spinner'; spinner.setAttribute('aria-hidden', 'true');
     indicator.append(spinner); layer.append(indicator); preparation = indicator;
     layer.setAttribute('aria-busy', 'true'); layer.setAttribute('data-preparing', '');
-    syncVideoStop();
-  }
-  function syncVideoStop() {
-    photoStop.hidden = Boolean(player) || !state?.resource || state?.outputAllowed === false;
   }
   function finishPreparation() {
     preparation?.remove(); preparation = null;
@@ -82,16 +90,15 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   }
   const failureText = error => /HDR|SDR/.test(error?.message || '')
     ? (lang === 'zh' ? '此视频需要 HDR，TiPlay 仅支持 SDR 视频' : 'This video requires HDR. TiPlay supports SDR video.')
-    : (lang === 'zh' ? '无法播放视频，请结束投屏后从 iPhone 重试。' : 'Unable to play video. Stop casting, then try again from your iPhone.');
+    : (lang === 'zh' ? '无法播放视频，请从 iPhone 重试。' : 'Unable to play video. Try again from your iPhone.');
   function showFailure(error) {
     finishPreparation();
     if (player) { player.fail(failureText(error)); return; }
     const message = document.createElement('p'); message.className = 'airplay-error'; message.role = 'alert';
     message.textContent = failureText(error); layer.append(message);
-    syncVideoStop();
   }
   function report() {
-    if (!player || !state) return;
+    if (!player || !state || state.kind === 'audio' || state.kind === 'photo') return;
     if (player.error() && !metadata) appliedRevision = state.revision;
     if (appliedRevision !== state.revision) return;
     const media = player.media;
@@ -112,7 +119,12 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       ended: media.ended, failed: Boolean(player.error()) });
   }
   function applyDirective() {
-    if (!player || !metadata || !sourceReady || !directive || directive.revision === appliedRevision) return;
+    if (!player || !directive) return;
+    const allowed = directive.outputAllowed !== false;
+    const permissionChanged = allowed !== outputWasAllowed;
+    outputWasAllowed = allowed;
+    if (!allowed) player.media.pause();
+    if (!metadata || !sourceReady || !permissionChanged && directive.revision === appliedRevision) return;
     const command = directive, observation = diagnostics;
     // Seek is applied only for a new iPhone command; status polling never moves the local media clock.
     const seekRevision = directive.seekRevision ?? directive.revision;
@@ -133,7 +145,8 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       appliedTrackRevision = directive.trackRevision;
     }
     applyDirectiveRate(player.media, directive);
-    if (directive.playing) {
+    if (typeof directive.muted === 'boolean') player.media.muted = directive.muted;
+    if (directive.playing && allowed) {
       observation?.event('directive-play', undefined, command);
       player.media.play()?.then(() => observation?.event('play-resolved', undefined, command), error => {
         observation?.event('play-rejected', error, command); report();
@@ -143,23 +156,63 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       player.media.pause();
     }
   }
-  function resourceRoute(next, forceProxy = next.proxyOnly === true) {
+  function resourceRoute(next, forceProxy = next.proxyOnly === true, resource = next.resource) {
     const { code, session } = credentials();
-    return `/airplay-resource?id=${next.id}&r=${encodeURIComponent(next.resource)}&c=${encodeURIComponent(code)}&s=${encodeURIComponent(session)}${forceProxy ? '&proxy=1' : ''}`;
+    return `/airplay-resource?id=${next.id}&r=${encodeURIComponent(resource)}&c=${encodeURIComponent(code)}&s=${encodeURIComponent(session)}${forceProxy ? '&proxy=1' : ''}`;
+  }
+  function updateAudio(next) {
+    if (playerKind !== 'audio' || !player) return;
+    const controls = Array.isArray(next.controls) ? next.controls : [];
+    const canPause = controls.includes('play') && controls.includes('pause');
+    const remoteReady = next.remotePending !== true;
+    player.update({ ...next, artwork: undefined, artworkURL, canPause,
+      seekable: next.seekable === true && controls.includes('seek'),
+      canPrevious: remoteReady && controls.includes('previous'), canNext: remoteReady && controls.includes('next'),
+      canSkipBack: remoteReady && controls.includes('skip-back'), canSkipForward: remoteReady && controls.includes('skip-forward') });
+    const resource = typeof next.artworkResource === 'string' && next.artworkResource.length <= 128 ? next.artworkResource : null;
+    artwork.update(resource ? `${next.id}:${host()}:${resource}` : null,
+      resource ? resourceRoute(next, true, resource) : null);
+  }
+  async function openAudio(next) {
+    const currentKey = `audio:${next.id}:${host()}`;
+    clear(); key = currentKey; layer.hidden = carPlayRunning;
+    const abort = loading = new AbortController();
+    try {
+      const { createAudioPlayer } = await loadModule();
+      if (abort.signal.aborted || key !== currentKey || disposed || carPlayRunning) return;
+      const control = (action, value) => {
+        if (loading !== abort || abort.signal.aborted || disposed || state?.kind !== 'audio' || key !== currentKey || carPlayRunning) return;
+        if (action !== 'stop' && !state.controls?.includes(action)) return;
+        if (state.remotePending === true && ['previous', 'next', 'skip-back', 'skip-forward'].includes(action)) return;
+        if (action === 'seek' && (!state.seekable || !Number.isFinite(value) || value < 0 || value > state.duration)) return;
+        send({ k: 'ap', id: state.id, a: action, ...(action === 'seek' ? { v: value } : {}) });
+      };
+      player = createAudioPlayer(layer, { lang, stop: () => control('stop'), stopText,
+        onPlay: () => control('play'), onPause: () => control('pause'),
+        onSeek: value => control('seek', value), onPrevious: () => control('previous'), onNext: () => control('next'),
+        onSkipBack: () => control('skip-back'), onSkipForward: () => control('skip-forward') });
+      playerKind = 'audio'; updateAudio(state);
+    } catch (error) {
+      if (!abort.signal.aborted && key === currentKey && !disposed) showFailure(error);
+    }
   }
   async function openPhoto(next) {
     const currentKey = `${next.id}:${host()}:${next.resource}:${next.proxyOnly === true}`;
-    clear(); key = currentKey; layer.hidden = photoStop.hidden = next.outputAllowed === false;
+    clear(); key = currentKey; layer.hidden = next.outputAllowed === false;
     const abort = loading = new AbortController();
     try {
-      const { createPhotoPresenter } = await import('./airplay-photo.js');
+      const [{ createPhotoPresenter }, { createPhotoPlayer }] = await Promise.all([import('./airplay-photo.js'), loadModule()]);
       if (abort.signal.aborted || key !== currentKey || disposed) return;
-      photo = createPhotoPresenter(layer, { fetchResource: (url, init) => fetchMediaResource((resource, options) => fetchPhone(new URL(resource).pathname + new URL(resource).search, options), url, init, { signal: abort.signal }), signal: abort.signal });
+      player = createPhotoPlayer(layer, { lang, stop: () => {
+        if (loading === abort && !abort.signal.aborted && !disposed && key === currentKey) stop();
+      }, stopText }); playerKind = 'photo';
+      photo = createPhotoPresenter(player.surface, { fetchResource: (url, init) => fetchMediaResource((resource, options) => fetchPhone(new URL(resource).pathname + new URL(resource).search, options), url, init, { signal: abort.signal }), signal: abort.signal });
       await photo.load(`http://${host()}${resourceRoute(next)}`);
     } catch (error) {
       if (!abort.signal.aborted && key === currentKey && !disposed) {
         const message = document.createElement('p'); message.className = 'airplay-error'; message.role = 'alert';
-        message.textContent = lang === 'zh' ? '无法显示照片，请结束投屏后从 iPhone 重试。' : 'Unable to display photo. Stop casting, then try again from your iPhone.'; layer.append(message);
+        message.textContent = lang === 'zh' ? '无法显示照片，请从 iPhone 重试。' : 'Unable to display photo. Try again from your iPhone.'; layer.append(message);
+        send({ k: 'ap-state', id: next.id, failed: true });
       }
     }
   }
@@ -169,7 +222,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     const resume = player && (forced || key !== currentKey) && key?.startsWith(sourceKey) && appliedRevision === next.revision
       ? { time: player.media.currentTime, rate: player.media.playbackRate } : null;
     clear(); key = currentKey;
-    layer.hidden = next.outputAllowed === false;
+    layer.hidden = next.outputAllowed === false || next.videoShown === false;
     beginPreparation();
     const abort = loading = new AbortController();
     const owns = () => loading === abort && !abort.signal.aborted && !disposed;
@@ -182,6 +235,14 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     let route;
     const fetchExternal = (url, init) => fetch(url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
     try {
+      const { createVideoPlayer } = await loadModule();
+      if (!owns() || key !== currentKey) return;
+      player = createVideoPlayer(layer, { lang, stop: () => { if (owns() && key === currentKey) stop(); }, stopText, signal: abort.signal,
+        onCanvasError: error => observation.event('canvas-error', error),
+        proxyOnly: next.proxyOnly === true,
+        proxyOrigin: `http://${host()}`,
+      });
+      playerKind = 'video';
       route = resourceRoute(next, forceProxy);
       observation.event('probe-start', undefined, next);
       let response;
@@ -200,14 +261,6 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       await response.body?.cancel();
       if (abort.signal.aborted || key !== currentKey || disposed) return;
       observation.event('probe-ready');
-      const { createVideoPlayer } = await loadPlayer();
-      if (abort.signal.aborted || key !== currentKey || disposed) return;
-      player = createVideoPlayer(layer, { lang, stop, stopText: photoStop.textContent, signal: abort.signal,
-        onCanvasError: error => observation.event('canvas-error', error),
-        proxyOnly: next.proxyOnly === true,
-        proxyOrigin: `http://${host()}`,
-      });
-      syncVideoStop();
       const opened = player;
       const media = player.media;
       observation.monitor(media, player.surface);
@@ -225,7 +278,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
           else syncPreparation();
           report();
         });
-      await player.source(next.directUrl && !forceProxy ? next.directUrl : `http://${host()}${route}`, type);
+      await player.source(next.directUrl && !forceProxy ? next.directUrl : `http://${host()}${route}`, type, { proxyOnly: forceProxy });
       if (abort.signal.aborted || player !== opened) return;
       sourceReady = true; applyDirective(); syncPreparation();
       // A command received during source preparation takes precedence over the old player's snapshot.
@@ -247,24 +300,38 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   }
   return {
     update(value) {
+      if (disposed) return;
       const next = playbackState(value);
       state = next; directive = next;
       if (!next) { clear(); return; }
-      if (next.kind === 'audio') { if (key) clear(); photoStop.hidden = false; return; }
+      if (next.kind === 'audio') {
+        if (carPlayRunning) { if (key) clear(); return; }
+        const nextKey = `audio:${next.id}:${host()}`;
+        if (key !== nextKey) void openAudio(next);
+        else updateAudio(next);
+        return;
+      }
       if (next.kind === 'photo') {
         if (!next.resource && key) clear();
         if (next.resource && key !== `${next.id}:${host()}:${next.resource}:${next.proxyOnly === true}`) void openPhoto(next);
-        layer.hidden = photoStop.hidden = next.outputAllowed === false;
+        layer.hidden = next.outputAllowed === false;
         return;
       }
-      layer.hidden = next.outputAllowed === false;
+      layer.hidden = next.outputAllowed === false || next.videoShown === false;
       if (!next.resource || !Number.isSafeInteger(next.revision)) { clear(); return; }
       const nextKey = `${next.id}:${host()}:${next.resource}:${next.proxyOnly === true}`;
       if (key !== nextKey) open(next);
       else applyDirective();
-      syncVideoStop();
     },
-    videoActive: () => state?.kind === 'audio' || (Boolean(state?.resource) && state?.outputAllowed !== false),
-    dispose() { disposed = true; clear(); layer.remove(); photoStop.remove(); },
+    setCarPlayRunning(value) {
+      if (disposed) return;
+      const changed = carPlayRunning !== Boolean(value); carPlayRunning = Boolean(value);
+      if (!changed || state?.kind !== 'audio') return;
+      if (carPlayRunning) clear();
+      else void openAudio(state);
+    },
+    videoActive: () => !disposed && (state?.kind === 'audio' ? !carPlayRunning
+      : (Boolean(state?.resource) && state?.outputAllowed !== false && state?.videoShown !== false)),
+    dispose() { disposed = true; state = directive = null; clear(); artwork.dispose(); layer.remove(); },
   };
 }

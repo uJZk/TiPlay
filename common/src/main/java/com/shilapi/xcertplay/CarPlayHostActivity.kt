@@ -5817,7 +5817,7 @@ class CarPlayHostActivity : ComponentActivity() {
         updateClusterMapShown()
         CarPlayMediaKeys.attach(this, next)
         if (airPlayConfig.videoInCar) {
-            if (!headUnitIntegrations()) next.videoListener = BrowserVideoInCar(next::sendVideoMessage)
+            if (!headUnitIntegrations()) next.videoListener = BrowserVideoInCar(next::sendVideoMessage, next::setVideoPlaybackStatus)
             else CarPlayVideo.attach(this, next)
         }
         val display = CarPlaySessionDisplay(

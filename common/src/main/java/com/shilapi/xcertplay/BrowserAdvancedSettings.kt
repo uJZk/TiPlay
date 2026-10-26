@@ -2,7 +2,6 @@ package com.shilapi.xcertplay
 
 import android.content.Context
 import android.widget.LinearLayout
-import android.widget.Button
 import android.widget.Toast
 import com.shilapi.xcertplay.airplay.AirPlayDisplaySettings
 import com.shilapi.xcertplay.host.R
@@ -24,15 +23,10 @@ internal object BrowserAdvancedSettings {
         toggle: (LinearLayout, String, String, Boolean, (Boolean) -> Unit) -> Unit,
         reconnectNeeded: () -> Unit,
     ) {
-        card.addView(Button(context).apply {
-            setText(R.string.settings_forget_airplay_devices)
-            isAllCaps = false
-            minHeight = TiPlayNativeUi(context).dp(48)
-            setOnClickListener {
-                AirPlayDeviceTrustStore.forgetAll(context)
-                Toast.makeText(context, R.string.settings_airplay_devices_forgotten, Toast.LENGTH_SHORT).show()
-            }
-        }, LinearLayout.LayoutParams(-1, -2))
+        BrowserNativeSettingsUi(context).button(card, context.getString(R.string.settings_forget_airplay_devices)) {
+            AirPlayDeviceTrustStore.forgetAll(context)
+            Toast.makeText(context, R.string.settings_airplay_devices_forgotten, Toast.LENGTH_SHORT).show()
+        }
         toggle(card, context.getString(R.string.settings_browser_location_disable),
             context.getString(R.string.settings_browser_location_disable_description),
             com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(context)) {

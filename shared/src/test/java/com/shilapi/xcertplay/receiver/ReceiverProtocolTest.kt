@@ -10,6 +10,19 @@ import org.junit.Test
 import java.io.ByteArrayInputStream
 
 class ReceiverProtocolTest {
+    @Test fun classicDiscoveryOffersOnlyItsActual44100StereoBrowserFormats() {
+        val identity = AirPlayIdentity.generate()
+        val full = ReceiverConfig("TiPlay", "02:11:22:33:44:55", identity,
+            audioOutputFormats = ReceiverAudioCapabilities.OUTPUT_FORMATS)
+        assertEquals("021122334455@TiPlay", full.raopName)
+        assertEquals("0,1", full.raopTxt["cn"])
+        assertEquals("0,3", full.raopTxt["et"])
+        assertEquals("UDP", full.raopTxt["tp"])
+        // A browser offering only 8 kHz mono cannot accept the advertised CD profile.
+        assertEquals("", full.copy(audioOutputFormats = 1L shl 2).raopTxt["cn"])
+        assertEquals("1", full.copy(audioOutputFormats = 1L shl 18).raopTxt["cn"])
+    }
+
     @Test fun playbackBufferFullDescribesReadyPlaybackWithoutClaimingTheWholeVideoIsLoaded() {
         val state = ReceiverPlayback(duration = 100.0, position = 50.0, rate = 1.0,
             ready = true, buffering = false, bufferedPosition = 60.0)
@@ -44,8 +57,8 @@ class ReceiverProtocolTest {
         assertEquals("1.0", config.serverInfo()["protovers"])
         assertEquals(config.features, config.serverInfo()["features"])
         assertEquals(ReceiverCapabilities.txtFeatures(config.features), config.txt["features"])
-        for (bit in listOf(0, 1, 4, 7, 9, 13, 14, 16, 18, 19, 20, 21, 22, 27, 30)) assertTrue(config.features and (1L shl bit) != 0L)
-        for (bit in listOf(2, 3, 5, 6, 8, 10, 11, 12, 15, 17, 23, 26, 32, 33, 34, 40, 41, 42, 61)) {
+        for (bit in listOf(0, 1, 4, 7, 9, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 30, 38, 48)) assertTrue(config.features and (1L shl bit) != 0L)
+        for (bit in listOf(2, 3, 5, 6, 8, 10, 11, 12, 23, 26, 32, 33, 34, 40, 41, 42, 61)) {
             assertEquals("Unexpected advertised feature $bit", 0L, config.features and (1L shl bit))
         }
         assertFalse(config.info().containsKey("modes"))

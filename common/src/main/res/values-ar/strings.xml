@@ -907,8 +907,8 @@
     <string name="settings_mfi_target_description">اختر USB/CH341 فقط عندما يكون محوّل مصادقة CH341 متصلًا بوحدة الوسائط. بدونه، اختر «محلي دون اتصال». يُطبَّق عند الاتصال التالي.</string>
     <string name="settings_call_speakerphone">المكالمات عبر مكبّر الصوت</string>
     <string name="settings_call_speakerphone_description">لهاتف أو جهاز لوحي بنظام Android يُستخدم كوحدة وسائط: يشغّل مكالمات CarPlay عبر مكبّر الصوت بدلًا من سمّاعة الأذن ويستخدم ميكروفون التحدث الحر. اتركه متوقفًا في وحدة وسائط السيارة. يُطبَّق من المكالمة التالية.</string>
-    <string name="settings_forget_airplay_devices">نسيان جميع أجهزة AirPlay الموثوقة</string>
-    <string name="settings_airplay_devices_forgotten">تم نسيان أجهزة AirPlay الموثوقة</string>
+    <string name="settings_forget_airplay_devices">إعادة ضبط قائمة أجهزة AirPlay الموثوقة</string>
+    <string name="settings_airplay_devices_forgotten">تمت إعادة ضبط قائمة أجهزة AirPlay الموثوقة</string>
     <string name="settings_navigation_attenuation">مستوى صوت إرشادات الملاحة</string>
     <string name="settings_navigation_attenuation_value">%1$d ديسيبل</string>
     <string name="settings_navigation_attenuation_description">يخفض صوت إرشادات ملاحة CarPlay فقط دون تغيير صوت الموسيقى أو المكالمات. يُطبَّق التغيير فورًا وتظل وحدة السيارة تتحكم بمستوى صوت الملاحة.</string>

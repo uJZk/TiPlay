@@ -172,4 +172,70 @@ class ReceiverDeviceTrustTest {
         assertTrue(store.keys.isEmpty())
         assertSame(ReceiverDeviceTrust.Decision.Denied, trust.requestOnce("169.254.0.1", "iPhone"))
     }
+    @Test fun verifiedAllowOnceCannotBecomePermanentOrAuthorizeAnotherConnection() {
+        val store = Memory()
+        val trust = ReceiverDeviceTrust(store) { 0 }
+        trust.browserSeen("browser")
+        val token = "0123456789abcdef-first"
+        val next = "0123456789abcdef-second"
+        val pending = trust.requestSession(token, key, "iPhone", "audio") as ReceiverDeviceTrust.Decision.Pending
+        assertEquals("audio", trust.prompt("browser")!!["mediaType"])
+        assertEquals(true, trust.prompt("browser")!!["verified"])
+        assertTrue(trust.respond("browser", pending.id, true, remember = false))
+        assertTrue(store.keys.isEmpty())
+        assertSame(ReceiverDeviceTrust.Decision.Allowed, trust.requestSession(token, key, "Renamed", "audio"))
+        assertTrue(trust.requestSession(next, key, "iPhone", "audio") is ReceiverDeviceTrust.Decision.Pending)
+        trust.endSession(next)
+        trust.endSession(token)
+        trust.forgetAll() // Cancellation suppresses retry prompts for the same stable identity.
+        assertTrue(trust.requestSession(token, key, "iPhone", "audio") is ReceiverDeviceTrust.Decision.Pending)
+    }
+
+    @Test fun alwaysAllowUsesVerifiedKeyAndNeverPersistsConnectionTokens() {
+        val store = Memory()
+        val trust = ReceiverDeviceTrust(store) { 0 }
+        trust.browserSeen("browser")
+        val pending = trust.requestSession("0123456789abcdef-first", key, "iPhone", "mirror") as ReceiverDeviceTrust.Decision.Pending
+        assertTrue(trust.respond("browser", pending.id, true, remember = true))
+        assertEquals(setOf(ReceiverDeviceTrust.fingerprint(key)), store.keys)
+        trust.browserGone("browser")
+        assertSame(ReceiverDeviceTrust.Decision.Allowed,
+            trust.requestSession("0123456789abcdef-second", key, "Renamed", "mirror"))
+    }
+
+    @Test fun forgedAlwaysAllowForUnverifiedSenderIsOnlyConnectionScoped() {
+        val store = Memory()
+        val trust = ReceiverDeviceTrust(store) { 0 }
+        trust.browserSeen("browser")
+        val token = "0123456789abcdef-first"
+        val pending = trust.requestSession(token, null, "iPhone", "audio") as ReceiverDeviceTrust.Decision.Pending
+        assertTrue(trust.respond("browser", pending.id, true, remember = true))
+        assertTrue(store.keys.isEmpty())
+        assertSame(ReceiverDeviceTrust.Decision.Allowed, trust.requestSession(token, null, "iPhone"))
+        trust.endSession(token)
+        trust.forgetAll()
+        assertTrue(trust.requestSession(token, null, "iPhone") is ReceiverDeviceTrust.Decision.Pending)
+    }
+
+    @Test fun rejectedStableIdentityCannotReopenPromptsByChangingControlConnections() {
+        val trust = ReceiverDeviceTrust(Memory()) { 0 }
+        trust.browserSeen("browser")
+        val pending = trust.requestSession("0123456789abcdef-first", key, "iPhone", "audio") as ReceiverDeviceTrust.Decision.Pending
+        assertTrue(trust.respond("browser", pending.id, false))
+        assertSame(ReceiverDeviceTrust.Decision.Denied,
+            trust.requestSession("0123456789abcdef-second", key, "Renamed", "audio"))
+        trust.forgetAll()
+        assertTrue(trust.requestSession("0123456789abcdef-third", key, "iPhone", "audio") is ReceiverDeviceTrust.Decision.Pending)
+    }
+
+    @Test fun verifiedOneTimeGrantEndsWithItsControlConnection() {
+        val trust = ReceiverDeviceTrust(Memory()) { 0 }
+        trust.browserSeen("browser")
+        val token = "0123456789abcdef-first"
+        val pending = trust.requestSession(token, key, "iPhone", "audio") as ReceiverDeviceTrust.Decision.Pending
+        assertTrue(trust.respond("browser", pending.id, true, remember = false))
+        trust.endSession(token)
+        assertTrue(trust.requestSession(token, key, "iPhone", "audio") is ReceiverDeviceTrust.Decision.Pending)
+    }
+
 }

@@ -64,12 +64,12 @@ try {
   await page.waitForFunction(() => document.querySelector('#photo-smoke img')?.naturalWidth > 0);
   const result = await page.evaluate(() => {
     const stage = document.querySelector('#photo-smoke'), image = stage.querySelector('img');
-    const layer = stage.querySelector('.airplay-player'), stop = stage.querySelector('button');
-    const hidden = layer.hidden && stop.hidden;
+    const layer = stage.querySelector('.airplay-player'), stop = stage.querySelector('.airplay-stop');
+    const hidden = layer.hidden && !stop.checkVisibility();
     window.photoControls.update({ ...window.photoState, outputAllowed: true });
-    const shown = !layer.hidden && !stop.hidden && stage.querySelector('img') === image;
+    const shown = !layer.hidden && stop.checkVisibility() && stage.querySelector('img') === image;
     window.photoControls.update(window.photoState);
-    const result = { hidden, shown, rehidden: layer.hidden && stop.hidden,
+    const result = { hidden, shown, rehidden: layer.hidden && !stop.checkVisibility(),
       width: image.naturalWidth, height: image.naturalHeight, fit: image.style.objectFit,
       violations: window.photoPolicyViolations };
     window.photoControls.dispose(); stage.remove();

@@ -155,6 +155,8 @@ internal object TeslaBrowserLink {
     private var resourceController: CarPlayController? = null // worker only
     private var resourceSubscription: java.io.Closeable? = null // worker only
     private var resourceReconcileRetry: ScheduledFuture<*>? = null // worker only
+    private val legacyDisplayOwner = Any()
+    private var displayOwner: Any? = null // guarded by tapLock
     private var displayAvailability: ((Boolean) -> Unit)? = null // guarded by tapLock
     private var pendingAirPlayEnd = false // guarded by tapLock
     private var airPlayNotificationGeneration = 0L // guarded by tapLock
@@ -165,15 +167,24 @@ internal object TeslaBrowserLink {
     val airPlayActive: Boolean get() = airPlayRequested || carPlayDisplayPaused
 
     /** Begin a resource loan. A write is not a grant; rendering waits for modesChanged. */
-    fun pauseCarPlayDisplay(available: ((Boolean) -> Unit)? = null) {
-        val (releaseTouches, notificationGeneration) = synchronized(tapLock) {
+    fun pauseCarPlayDisplay(available: ((Boolean) -> Unit)? = null) =
+        pauseCarPlayDisplay(legacyDisplayOwner, available)
+
+    /** Each producer keeps its token until its own picture has been released. */
+    fun pauseCarPlayDisplay(owner: Any, available: ((Boolean) -> Unit)? = null) {
+        val (releaseTouches, notificationGeneration, revoked) = synchronized(tapLock) {
             val starting = !airPlayRequested
+            val replacing = displayOwner !== owner
+            val revoked = if (replacing) displayAvailability else null
+            displayOwner = owner
             airPlayRequested = true
             pendingAirPlayEnd = false
-            if (available != null) displayAvailability = available
-            if (starting) airPlayNotificationGeneration++
-            starting to airPlayNotificationGeneration
+            if (available != null || replacing) displayAvailability = available
+            if (starting || replacing) airPlayNotificationGeneration++
+            Triple(starting, airPlayNotificationGeneration, revoked)
         }
+        // Producers can reenter the link while retiring. Never invoke them under its monitor.
+        runCatching { revoked?.invoke(false) }.onFailure { log("AirPlay display revocation failed: ${it.javaClass.simpleName}") }
         if (releaseTouches) main.post {
             if (synchronized(tapLock) { airPlayNotificationGeneration == notificationGeneration && airPlayRequested })
                 host.get()?.onAirPlayStarted()
@@ -185,17 +196,27 @@ internal object TeslaBrowserLink {
         }
     }
 
-    fun resumeCarPlayDisplay() {
+    fun resumeCarPlayDisplay() { resumeCarPlayDisplay(legacyDisplayOwner, legacy = true) }
+
+    /** A retired producer cannot release another casting path's current screen loan. */
+    fun resumeCarPlayDisplay(owner: Any): Boolean = resumeCarPlayDisplay(owner, legacy = false)
+
+    private fun resumeCarPlayDisplay(owner: Any, legacy: Boolean): Boolean {
         synchronized(tapLock) {
-            // A stale receiver callback must not revoke a newer display owner.
-            if (hub.hasAirPlayDisplay() || com.shilapi.xcertplay.web.AirPlayBrowserPlayback.snapshot()?.get("resource") != null) return
+            if (displayOwner !== owner) return false
+            // Legacy callers have no producer identity. Token owners release only after their
+            // own picture is retired; a retained URL may still be playing audio-only.
+            if (legacy && (hub.hasAirPlayDisplay() ||
+                    com.shilapi.xcertplay.web.AirPlayBrowserPlayback.snapshot()?.get("resource") != null)) return false
             val wasActive = airPlayRequested
             airPlayRequested = false
+            displayOwner = null
             if (wasActive) airPlayNotificationGeneration++
             displayAvailability = null
             pendingAirPlayEnd = pendingAirPlayEnd || wasActive
         }
         worker.execute(::reconcileCarPlayResources)
+        return true
     }
 
     private fun reconcileCarPlayResources() {
@@ -820,6 +841,7 @@ internal object TeslaBrowserLink {
             carPlayDisplayPaused = false
             airPlayRequested = false
             airPlayDisplayReady = false
+            displayOwner = null
             displayAvailability = null
             pendingAirPlayEnd = false
             airPlayNotificationGeneration++

@@ -23,6 +23,7 @@ class VideoSettingsChannel(
     private val log: (String) -> Unit,
 ) : Closeable {
     private val closed = AtomicBoolean(false)
+    private val resourcesLock = Any()
     private var server: ServerSocket? = null
     private var socket: Socket? = null
     private var readCounter = 0L
@@ -33,20 +34,30 @@ class VideoSettingsChannel(
             reuseAddress = true
             bind(InetSocketAddress(bindAddress, 0))
         }
-        server = bound
-        Thread({ accept(bound) }, "diplay-video-settings").apply { isDaemon = true }.start()
+        synchronized(resourcesLock) {
+            if (closed.get()) { bound.close(); throw java.io.IOException("video settings channel is closed") }
+            server = bound
+            Thread({ accept(bound) }, "diplay-video-settings").apply { isDaemon = true }.start()
+        }
         return bound.localPort
     }
 
     private fun accept(bound: ServerSocket) {
+        var accepted: Socket? = null
         try {
-            val accepted = bound.accept()
-            socket = accepted
+            val peer = bound.accept()
+            accepted = peer
+            synchronized(resourcesLock) {
+                if (closed.get() || server !== bound) return
+                socket = peer
+            }
+            bound.close()
             log("video settings channel connected")
-            run(accepted)
+            run(peer)
         } catch (error: Exception) {
             if (!closed.get()) log("video settings channel ended: ${error.message}")
         } finally {
+            runCatching { accepted?.close() }
             close()
         }
     }
@@ -101,9 +112,12 @@ class VideoSettingsChannel(
     }
 
     override fun close() {
-        if (!closed.compareAndSet(false, true)) return
-        runCatching { socket?.close() }
-        runCatching { server?.close() }
+        val resources = synchronized(resourcesLock) {
+            if (!closed.compareAndSet(false, true)) return
+            (socket to server).also { socket = null; server = null }
+        }
+        runCatching { resources.first?.close() }
+        runCatching { resources.second?.close() }
     }
 
     private fun u32(b: ByteArray, o: Int) =

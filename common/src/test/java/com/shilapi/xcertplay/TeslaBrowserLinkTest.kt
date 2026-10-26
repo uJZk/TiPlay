@@ -405,11 +405,13 @@ class TeslaBrowserLinkTest {
         val avcc = byteArrayOf(1, 0x64, 0, 0x28, -1, -31, 0, 4, 0x67, 0x64, 0, 0x28, 1, 0, 2, 0x68, -18)
         carPlay.onScreenStreamActive(110, true)
         carPlay.onVideoCodec(110, VideoCodec.H264); carPlay.onVideoConfig(110, avcc)
-        TeslaBrowserLink.pauseCarPlayDisplay()
+        val service = org.robolectric.Robolectric.buildService(AirPlayReceiverService::class.java).create()
+        AirPlayReceiverService::class.java.getDeclaredMethod("requestDisplay",
+            com.shilapi.xcertplay.web.WebMediaSink::class.java, CountDownLatch::class.java)
+            .apply { isAccessible = true }.invoke(service.get(), null, null)
         assertTrue(TeslaBrowserLink.awaitIdle())
         val borrowed = com.shilapi.xcertplay.web.WebMediaSink(TeslaBrowserLink.hub, 720, 1280, 60)
         borrowed.onScreenStreamActive(110, true)
-        val service = org.robolectric.Robolectric.buildService(AirPlayReceiverService::class.java).create()
         service.destroy()
         assertTrue(TeslaBrowserLink.awaitIdle())
         assertEquals(1920, TeslaBrowserLink.hub.info()!!.width)
@@ -418,6 +420,96 @@ class TeslaBrowserLinkTest {
         borrowed.close()
         assertEquals(1920, TeslaBrowserLink.hub.info()!!.width)
         TeslaBrowserLink.releaseTap(retained.sink)
+    }
+
+    @Test fun producerTokensRevokeThePreviousGrantAndIgnoreItsDelayedReturn() {
+        started()
+        val previous = Any()
+        val replacement = Any()
+        val previousAvailability = CopyOnWriteArrayList<Boolean>()
+        val replacementAvailability = CopyOnWriteArrayList<Boolean>()
+        TeslaBrowserLink.pauseCarPlayDisplay(previous) { previousAvailability += it }
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertEquals(listOf(true), previousAvailability)
+        TeslaBrowserLink.pauseCarPlayDisplay(replacement) { replacementAvailability += it }
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertEquals(listOf(true, false), previousAvailability)
+        assertTrue(replacementAvailability.contains(true))
+        assertFalse("A retired URL or mirror cannot return a new VideoInCar loan",
+            TeslaBrowserLink.resumeCarPlayDisplay(previous))
+        TeslaBrowserLink.resumeCarPlayDisplay()
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertTrue("Legacy cleanup cannot release an identified producer", TeslaBrowserLink.airPlayActive)
+        assertTrue(TeslaBrowserLink.airPlayDisplayReady)
+        assertTrue(TeslaBrowserLink.resumeCarPlayDisplay(replacement))
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertFalse(TeslaBrowserLink.airPlayActive)
+    }
+
+    @Test fun audioOnlyReturnCanRetainItsUrlResourceWithoutKeepingTheScreen() {
+        started()
+        val owner = Any()
+        val playback = com.shilapi.xcertplay.web.AirPlayVideoPlayback(
+            com.shilapi.xcertplay.receiver.ReceiverPlay("https://example.test/item.mp4", 0.0, false),
+            { _, _ -> null }, event = {})
+        val entry = com.shilapi.xcertplay.web.AirPlayBrowserPlayback.register(playback::state, video = playback) { _, _ -> }
+        try {
+            TeslaBrowserLink.pauseCarPlayDisplay(owner)
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            assertTrue(TeslaBrowserLink.airPlayActive)
+            assertTrue(com.shilapi.xcertplay.web.AirPlayBrowserPlayback.snapshot()?.get("resource") != null)
+            playback.setVideoShown(false)
+            assertTrue(TeslaBrowserLink.resumeCarPlayDisplay(owner))
+            assertTrue(TeslaBrowserLink.awaitIdle())
+            assertFalse("URL audio may remain registered after its picture is returned", TeslaBrowserLink.airPlayActive)
+            assertTrue(com.shilapi.xcertplay.web.AirPlayBrowserPlayback.snapshot()?.get("resource") != null)
+            assertEquals(true, com.shilapi.xcertplay.web.AirPlayBrowserPlayback.snapshot()?.get("playing"))
+        } finally { entry.close(); playback.close() }
+    }
+
+    @Test fun aRevocationCallbackMayReplaceTheRequestedProducerWithoutReceivingAnOldGrant() {
+        started()
+        val original = Any()
+        val superseded = Any()
+        val replacement = Any()
+        val supersededAvailability = CopyOnWriteArrayList<Boolean>()
+        val replacementAvailability = CopyOnWriteArrayList<Boolean>()
+        var reenter = false
+        TeslaBrowserLink.pauseCarPlayDisplay(original) { available ->
+            if (!available && reenter) {
+                reenter = false
+                TeslaBrowserLink.pauseCarPlayDisplay(replacement) { replacementAvailability += it }
+            }
+        }
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        reenter = true
+        TeslaBrowserLink.pauseCarPlayDisplay(superseded) { supersededAvailability += it }
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertFalse(supersededAvailability.contains(true))
+        assertTrue(replacementAvailability.contains(true))
+        assertFalse(TeslaBrowserLink.resumeCarPlayDisplay(superseded))
+        assertTrue(TeslaBrowserLink.resumeCarPlayDisplay(replacement))
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertFalse(TeslaBrowserLink.airPlayActive)
+    }
+
+    @Test fun destroyingAnOldOrdinaryReceiverCannotReturnAnIntegratedVideoLoan() {
+        started()
+        val service = org.robolectric.Robolectric.buildService(AirPlayReceiverService::class.java).create()
+        AirPlayReceiverService::class.java.getDeclaredMethod("requestDisplay",
+            com.shilapi.xcertplay.web.WebMediaSink::class.java, CountDownLatch::class.java)
+            .apply { isAccessible = true }.invoke(service.get(), null, null)
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        val integratedVideo = Any()
+        TeslaBrowserLink.pauseCarPlayDisplay(integratedVideo)
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        service.destroy()
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertTrue(TeslaBrowserLink.airPlayActive)
+        assertTrue(TeslaBrowserLink.airPlayDisplayReady)
+        assertTrue(TeslaBrowserLink.resumeCarPlayDisplay(integratedVideo))
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertFalse(TeslaBrowserLink.airPlayActive)
     }
 
     @Test

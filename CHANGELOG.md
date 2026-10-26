@@ -4,6 +4,22 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.23
+
+Version code 65 and browser cache/diagnostic revision v95. Release provenance and
+verification are tracked in [Build](docs/Build.md#beta23-release).
+
+- Complete the negotiated Video in Car capability declaration so the iPhone receives matching SETUP and `/info` information. Retire playback, settings, overlay and iAP streams independently.
+- Bind display loans to their owner and session generation. Stop stale callbacks from returning or reviving a newer cast; keep URL audio playing when its picture returns to CarPlay.
+- Add RAOP and transient AirPlay 2 realtime audio reception, BLE discovery hints, three-choice device consent and an Android trust-list reset. Pure audio keeps the CarPlay picture.
+- Use Video.js controls for the music view with sender cover/title/artist and DACP previous/next and ten-second skip requests. Background audio cannot replace a visual cast.
+- Fix AVPlayer pause/resume, source retirement and subtitle-switch/seek races; report photo failures and restore metadata after audio/mirror switching.
+
+Software checks pass locally; signed artifacts and deployment are verified
+separately. Physical iPhone/vehicle playback remains to be retested. RSA AirTunes,
+persistent HomeKit, PTP/multiroom, AWDL media transport and FairPlay-protected video
+are not provided by this release.
+
 ## 0.2.20-beta.16
 
 Version code 58 and browser cache/diagnostic revision v84. Release artifacts and

@@ -20,6 +20,6 @@ object AirPlayTrustNotifications {
     @Synchronized fun browserSeen(session: String) { current?.browserSeen(session) }
     @Synchronized fun browserGone(session: String) { current?.browserGone(session) }
     @Synchronized fun prompt(session: String): Map<String, Any?>? = current?.prompt(session)
-    @Synchronized fun respond(session: String, id: String, allow: Boolean): Boolean = current?.respond(session, id, allow) == true
+    @Synchronized fun respond(session: String, id: String, allow: Boolean, remember: Boolean = true): Boolean = current?.respond(session, id, allow, remember) == true
     @Synchronized fun forgetAll() { current?.forgetAll() }
 }

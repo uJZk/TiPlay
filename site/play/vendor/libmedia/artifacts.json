@@ -14,6 +14,8 @@
   "pendingSeekReplyPatches": 1,
   "subtitlePacketBridgePatches": 1,
   "subtitlePacketReleasePatches": 4,
+  "subtitleDrainPatches": 3,
+  "subtitleSeekPatches": 3,
   "sdrVariantPolicyPatches": 3,
   "artifacts": [
     {
@@ -98,8 +100,8 @@
     },
     {
       "path": "630.avplayer.js",
-      "bytes": 24232,
-      "sha256": "fa61a6370d15329e97450e19045027d93ef2eb1610d23778bc26e771fcbc388f"
+      "bytes": 24670,
+      "sha256": "bfe5d2afd1dc9d34ab1f088bc4ab33d0b01e99da52a17546d34e54fb4a65bce8"
     },
     {
       "path": "641.avplayer.js",
@@ -173,8 +175,8 @@
     },
     {
       "path": "upstream.js",
-      "bytes": 603231,
-      "sha256": "2bbd5b24646762e2a2f081cdd00f7f98bfdc7ad0d421834a11651f08ed31bd3a"
+      "bytes": 603697,
+      "sha256": "caa9aa0939bab53cd9a9e3a443a351a47c6c699cf9a02d0169ba8b6f9af3669e"
     },
     {
       "path": "AudioSourceWorkletProcessorWorklet.js",

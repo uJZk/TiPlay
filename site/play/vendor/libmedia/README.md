@@ -90,6 +90,16 @@ negative status codes keep their upstream path. Original release paths and a
 finally guard ensure each owned packet releases once and the in-flight flag
 clears on failures. The helper is resolved once in module scope to avoid shadowed
 webpack-loader variables. Browser acceptance includes HLS subtitle switching.
+Before a seek or subtitle switch, the renderer pauses and sends a drain marker
+over its existing subtitle packet port. The demux handler answers an older
+pending subtitle pull with the upstream retry status, then acknowledges the
+marker. The renderer waits for that pull to finish before clearing old cues and
+performing the seek. Its next pull therefore receives the newly cached first
+cue; an old EOF cannot end the restarted renderer. Audio/video request handoffs
+remain unchanged. The controls adapter enables subtitles before selecting them,
+so a later redundant enable cannot erase a cue produced by selection. Generated
+code tests cover the port ordering, stale EOF/packet drain and unchanged
+non-subtitle requests.
 HLS master selection uses the upstream-parsed variant metadata: declared PQ/HLG
 and Dolby Vision codecs are excluded before any variant request, explicit SDR
 variants take precedence over unknown transfer metadata, and unknown variants

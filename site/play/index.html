@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="reconnect.css">
 <link rel="stylesheet" href="airplay-controls.css">
+<link rel="stylesheet" href="airplay-now-playing.css">
 <link rel="stylesheet" href="airplay-trust.css">
 <link rel="stylesheet" href="vendor/videojs/skin.min.css">
 <script type="module" src="app.js"></script>
@@ -67,7 +68,7 @@
 <img id="reconnect-wallpaper" src="reconnect-wallpaper-blurred.png" alt="" referrerpolicy="no-referrer">
 <img id="reconnect-logo" src="icon.svg" alt="TiPlay" width="128" height="128">
 <p id="reconnect-message" role="status" aria-live="polite" aria-atomic="true"></p>
-<button id="reconnect-settings" type="button" data-i18n="settings"></button>
+<button id="reconnect-settings" class="corner-action" type="button" data-i18n="settings"></button>
 </section>
 
 <div class="notification-stack">
@@ -76,10 +77,11 @@
 <p id="browser-notice-message" class="notification-message" data-browser-message></p>
 <div class="airplay-trust-actions"><button type="button" data-browser-close></button></div>
 </aside>
-<aside class="tiplay-notification" id="airplay-trust" role="alertdialog" aria-labelledby="airplay-trust-heading" aria-describedby="airplay-trust-name" hidden>
+<aside class="tiplay-notification" id="airplay-trust" role="alertdialog" aria-labelledby="airplay-trust-heading" aria-describedby="airplay-trust-name airplay-trust-details" hidden>
 <div class="airplay-trust-header"><img src="icon.svg" alt="" width="38" height="38"><strong id="airplay-trust-heading" data-trust-heading></strong></div>
 <p id="airplay-trust-name" data-trust-name></p>
-<div class="airplay-trust-actions"><button type="button" data-trust-reject></button><button type="button" data-trust-allow></button></div>
+<p id="airplay-trust-details" class="airplay-trust-details" data-trust-details></p>
+<div class="airplay-trust-actions"><button type="button" data-trust-allow></button><button type="button" data-trust-once></button><button type="button" data-trust-reject></button></div>
 </aside>
 <aside class="tiplay-notification" id="location-notice" role="alertdialog" aria-labelledby="location-notice-heading" aria-describedby="location-notice-message" hidden>
 <div class="airplay-trust-header"><img src="icon.svg" alt="" width="38" height="38"><strong id="location-notice-heading" data-location-heading></strong></div>

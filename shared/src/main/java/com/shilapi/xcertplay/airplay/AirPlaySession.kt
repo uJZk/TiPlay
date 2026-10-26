@@ -18,6 +18,8 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class AirPlayDeviceInfo(
@@ -42,6 +44,8 @@ interface AirPlaySessionListener {
     fun onScreenBorrowChanged(session: AirPlaySession, state: CarPlayScreenBorrowState) {}
     /** Video in car: a playback message on a remote control session (X-Apple-StreamID). */
     fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) {}
+    /** A specific playback control stream retired; settings/overlay teardown does not end playback. */
+    fun onVideoPlaybackStreamEnded(session: AirPlaySession, streamId: Long) {}
     /** Video in car: requestUI "videoplayback:", the iPhone asks the car to show its video player. */
     fun onVideoPlaybackUiRequested(session: AirPlaySession) {}
     fun onDebugLog(message: String) {}
@@ -61,6 +65,10 @@ interface AirPlayMediaHandler {
     fun onBufferedAudioControl(session: AirPlaySession, method: String, body: Map<String, Any?>): Map<String, Any?>? = null
     fun onFeedback(session: AirPlaySession): Map<String, Any?>? = null
     fun onTeardown(session: AirPlaySession, type: Int) {}
+    /** A type-130 stream ID retires independently of the iAP and other video streams. */
+    fun onDataStreamTeardown(session: AirPlaySession, streamId: Long) {
+        if (streamId == 1L) onTeardown(session, 130)
+    }
     fun onSessionClosed(session: AirPlaySession) {}
     fun setIapTunnelHandler(handler: ((BlockingDuplexByteStream) -> Boolean)?) {}
     fun onSetupResponseSent(session: AirPlaySession) {}
@@ -137,12 +145,27 @@ class AirPlaySession(
         get() = (socket.remoteSocketAddress as? InetSocketAddress)?.address
     val controllerId: String? get() = pairVerify.verifiedControllerId
     val sharedSecret: ByteArray? get() = pairVerify.shared?.copyOf()
-    val videoInCar: Boolean get() = config.videoInCar
+    val videoInCar: Boolean get() = videoPlaybackNegotiated
+    @Volatile private var videoPlaybackNegotiated = false
+    @Volatile private var videoPlaybackAllowed = VideoInCar.allowed
+    @Volatile private var videoPlaybackStatus = "idle"
+    private val videoStateLock = Any()
+    private var videoStatusStreamId: Long? = null // guarded by videoStateLock
+    private enum class DataStreamKind { IAP, SETTINGS, PLAYBACK, OVERLAY, OTHER }
+    private val dataStreams = ConcurrentHashMap<Long, DataStreamKind>()
+    private val nextVideoStreamId = AtomicLong(3L)
+    private val settingsStreamIdUsed = AtomicBoolean(false)
+
+    internal fun allocateVideoDataStreamId(settings: Boolean = false): Long? {
+        if (closed.get() || !videoPlaybackNegotiated) return null
+        return if (settings && settingsStreamIdUsed.compareAndSet(false, true)) 2L
+        else nextVideoStreamId.getAndIncrement().takeIf { it >= 3L }
+    }
     private val videoPlaybackAvailability = VideoPlaybackAvailability { allowed ->
         sendCommand(
             linkedMapOf(
                 "type" to "setVideoPlaybackAllowed",
-                "params" to linkedMapOf("videoPlaybackAllowed" to allowed),
+                "params" to linkedMapOf("videoPlaybackAllowed" to allowed, "playbackStatus" to videoPlaybackStatus),
             ),
         )
     }
@@ -183,6 +206,12 @@ class AirPlaySession(
         // Native writes hold eventWriteLock and can wait indefinitely for a slow peer. Closing
         // their owned sockets must precede any listener or teardown that might need that lock.
         closeEventResources()
+        synchronized(videoStateLock) {
+            dataStreams.clear()
+            videoStatusStreamId = null
+            videoPlaybackStatus = "idle"
+            videoPlaybackNegotiated = false
+        }
         recordCommandResults(cancelled)
         screenBorrowDiagnostics.closed(reason, screenBorrowState)
         screenBorrow.close()
@@ -382,6 +411,8 @@ class AirPlaySession(
      * with X-Apple-StreamID and {params: {data: bplist(message)}}.
      */
     fun sendRemoteControlMessage(streamId: Long, message: Map<String, Any?>): Boolean = synchronized(eventWriteLock) {
+        val kind = dataStreams[streamId]
+        if (closed.get() || kind != DataStreamKind.PLAYBACK && kind != DataStreamKind.OVERLAY) return false
         sendCommandLocked(
             linkedMapOf("params" to linkedMapOf("data" to BplistCodec.encode(message))),
             "X-Apple-StreamID: $streamId\r\n",
@@ -392,8 +423,58 @@ class AirPlaySession(
      * Video in car: retains whether video may play now and sends the latest value once SETUP has
      * enabled video and the event channel is ready. An iPhone without the feature gets no command.
      */
-    internal fun setVideoPlaybackAllowed(allowed: Boolean): VideoPlaybackDelivery =
-        videoPlaybackAvailability.setDesired(allowed)
+    internal fun setVideoPlaybackAllowed(allowed: Boolean): VideoPlaybackDelivery {
+        videoPlaybackAllowed = allowed
+        return videoPlaybackAvailability.setDesired(allowed)
+    }
+
+    /** Only the current playback stream may report its confirmed picture/audio-only state. */
+    internal fun setVideoPlaybackStatus(streamId: Long, status: String): Boolean {
+        val changed = synchronized(videoStateLock) {
+            if (closed.get() || dataStreams[streamId] != DataStreamKind.PLAYBACK ||
+                status !in setOf("idle", "video", "audioOnly")) return false
+            (videoPlaybackStatus != status || videoStatusStreamId != streamId).also {
+                videoStatusStreamId = streamId
+                videoPlaybackStatus = status
+            }
+        }
+        if (changed) videoPlaybackAvailability.refresh()
+        return true
+    }
+
+    private fun registerDataStream(stream: Map<String, Any?>, response: Map<String, Any?>): Boolean = synchronized(videoStateLock) {
+        val id = (response["streamID"] as? Number)?.toLong()?.takeIf { it > 0 } ?: return false
+        if (closed.get()) return false
+        val uuid = (stream["clientTypeUUID"] as? String)?.uppercase()
+        val kind = when {
+            id == 1L -> DataStreamKind.IAP
+            uuid == VideoInCar.SETTINGS_CHANNEL_UUID -> DataStreamKind.SETTINGS
+            uuid == VideoInCar.PLAYBACK_UUID -> DataStreamKind.PLAYBACK
+            uuid in VideoInCar.REMOTE_CONTROL_UUIDS -> DataStreamKind.OVERLAY
+            else -> DataStreamKind.OTHER
+        }
+        if (kind == DataStreamKind.SETTINGS) dataStreams.entries.removeAll { it.value == DataStreamKind.SETTINGS }
+        if (dataStreams.size >= MAX_DATA_STREAMS && !dataStreams.containsKey(id)) return false
+        dataStreams[id] = kind
+        true
+    }
+
+    private fun retireDataStreams(ids: Collection<Long>, closeMedia: Boolean) {
+        val retired = synchronized(videoStateLock) {
+            ids.mapNotNull { id -> dataStreams.remove(id)?.let { id to it } }.also { entries ->
+                if (entries.any { it.first == videoStatusStreamId }) {
+                    videoStatusStreamId = null
+                    videoPlaybackStatus = "idle"
+                }
+            }
+        }
+        for ((id, kind) in retired) {
+            if (closeMedia) media.onDataStreamTeardown(this, id)
+            if (kind == DataStreamKind.PLAYBACK) listener.onVideoPlaybackStreamEnded(this, id)
+        }
+        // The peer already knows it retired this stream. Do not delay resource/UI cleanup on an
+        // unrelated blocked event write; the next permission/status update carries the idle state.
+    }
 
     private fun sendCommandLocked(command: Map<String, Any?>, extraHeaders: String = ""): Boolean {
         if (closed.get()) return false
@@ -692,7 +773,7 @@ class AirPlaySession(
                 else RtspMessage.Response(headers = mapOf("Content-Type" to OCTET_CONTENT_TYPE), body = body)
             }
             path.endsWith("/info") -> {
-                val info = AirPlayInfoPlist.build(config)
+                val info = AirPlayInfoPlist.build(config, videoPlaybackNegotiated, videoPlaybackAllowed)
                 if (request.body.isNotEmpty()) {
                     val requestInfo = try {
                         BplistCodec.decode(request.body).toString()
@@ -708,7 +789,8 @@ class AirPlaySession(
                         "audioLatencies=${(info["audioLatencies"] as? List<*>)?.size ?: 0}",
                 )
                 debugLog(AirPlayAudioDiagnostics.info(config, info))
-                debugLog("airplay /info videoInCar=${config.videoInCar}")
+                debugLog("airplay /info videoInCar=${config.videoInCar} negotiated=$videoPlaybackNegotiated " +
+                    "videoPlaybackInfo=${info.containsKey("videoPlaybackInfo")} videoPlaybackAllowed=$videoPlaybackAllowed")
                 debugLog("airplay /info displays=${info["displays"]}")
                 RtspMessage.Response(
                     headers = mapOf("Content-Type" to PLIST_CONTENT_TYPE),
@@ -815,6 +897,7 @@ class AirPlaySession(
         }
         val features = setupEnabledFeatures(config, dict["features"] as? List<*>)
         val videoPlaybackEnabled = VideoInCar.FEATURE in features
+        videoPlaybackNegotiated = videoPlaybackEnabled
         val videoDelivery = videoPlaybackAvailability.setFeatureEnabled(videoPlaybackEnabled)
         debugLog("airplay video playback negotiated=$videoPlaybackEnabled availability=$videoDelivery")
         response["enabledFeatures"] = features
@@ -878,7 +961,13 @@ class AirPlaySession(
                     }
                 }
                 STREAM_TYPE_DATA -> {
-                    val streamResponse = media.onDataStream(this, stream)
+                    val uuid = (stream["clientTypeUUID"] as? String)?.uppercase()
+                    val needsVideo = uuid == VideoInCar.SETTINGS_CHANNEL_UUID || uuid in VideoInCar.REMOTE_CONTROL_UUIDS
+                    val offeredResponse = if (needsVideo && !videoPlaybackNegotiated) null else media.onDataStream(this, stream)
+                    val streamResponse = offeredResponse?.takeIf { registerDataStream(stream, it) }
+                    if (offeredResponse != null && streamResponse == null) {
+                        (offeredResponse["streamID"] as? Number)?.toLong()?.let { media.onDataStreamTeardown(this, it) }
+                    }
                     debugLog(
                         "airplay data stream type=$type accepted=${streamResponse != null} " +
                             "dataPort=${streamResponse?.get("dataPort") ?: "none"}",
@@ -910,12 +999,23 @@ class AirPlaySession(
         val streamId = request.headers["x-apple-streamid"]?.toLongOrNull()
         val data = params["data"] as? ByteArray
         if (streamId != null && data != null) {
-            runCatching { asMap(BplistCodec.decode(data)) }.getOrNull()
-                ?.let { listener.onRemoteControlMessage(this, streamId, it) }
+            val message = runCatching { asMap(BplistCodec.decode(data)) }.getOrNull()
+            if (!closed.get() && message != null) when (dataStreams[streamId]) {
+                DataStreamKind.PLAYBACK -> listener.onRemoteControlMessage(this, streamId, message)
+                DataStreamKind.OVERLAY -> if (message["kind"] == "request") {
+                    val reply = message.filterKeys { it in setOf("type", "messageID", "controlMessage", "property") } + ("kind" to "response")
+                    sendRemoteControlMessage(streamId, reply)
+                }
+                else -> Unit // Settings, iAP and retired IDs cannot control the video player.
+            }
             return RtspMessage.Response(status = 200)
         }
+        if (type == "changeVideoPlaybackToAudioOnly" && videoPlaybackNegotiated) {
+            val streams = dataStreams.filterValues { it == DataStreamKind.PLAYBACK }.keys.toList()
+            streams.forEach { id -> listener.onRemoteControlMessage(this, id, mapOf("type" to type)) }
+        }
         if (type == "requestUI" && string(params["url"]) == VideoInCar.UI_URL) {
-            listener.onVideoPlaybackUiRequested(this)
+            if (videoPlaybackNegotiated && dataStreams.containsValue(DataStreamKind.PLAYBACK)) listener.onVideoPlaybackUiRequested(this)
         } else if (type == "requestUI") {
             listener.onHostUiRequested(this)
         }
@@ -924,12 +1024,16 @@ class AirPlaySession(
     }
 
     private fun handleTeardown(request: RtspMessage.Request): RtspMessage.Response {
-        val decodedBody = try {
-            BplistCodec.decode(request.body)
+        val decodedBody = if (request.body.isEmpty()) emptyMap<String, Any?>() else try {
+            BplistCodec.decode(request.body) as? Map<*, *> ?: return RtspMessage.Response(status = 400)
         } catch (_: Exception) {
-            null
+            return RtspMessage.Response(status = 400)
         }
+        if (decodedBody.containsKey("streams") && decodedBody["streams"] !is List<*>) return RtspMessage.Response(status = 400)
         val types = teardownStreamTypes(decodedBody)
+        val ids = ((decodedBody["streams"] as? List<*>).orEmpty()).filterIsInstance<Map<*, *>>()
+            .filter { (it["type"] as? Number)?.toLong() == STREAM_TYPE_DATA.toLong() }
+            .mapNotNull { (it["streamID"] as? Number)?.toLong()?.takeIf { id -> id > 0 } }
 
         debugLog(
             "airplay TEARDOWN types=${types ?: "all"} activeBefore=$activeStreams " +
@@ -943,6 +1047,9 @@ class AirPlaySession(
             screenBorrowDiagnostics.screen(CarPlayScreenDataBoundary.TEARDOWN, false, screenBorrowState)
         }
         if (types == null || STREAM_TYPE_ALT_SCREEN in types) clearClusterContent()
+        if (types == null || STREAM_TYPE_DATA in types) retireDataStreams(dataStreams.keys.toList(), closeMedia = false)
+        else retireDataStreams(ids, closeMedia = true)
+        if (types != null && STREAM_TYPE_DATA !in types && dataStreams.isEmpty()) activeStreams.remove(STREAM_TYPE_DATA)
         if (types == null) {
             activeStreams.toList().forEach { media.onTeardown(this, it) }
             activeStreams.clear()
@@ -1292,6 +1399,7 @@ class AirPlaySession(
         const val STREAM_TYPE_MAIN_BUFFERED_AUDIO = 103
         private val BUFFERED_AUDIO_METHODS = setOf("SETRATE", "SETRATEANCHORTIME", "GETANCHOR", "FLUSHBUFFERED")
 
+        const val MAX_DATA_STREAMS = 32
         const val READ_CHUNK_BYTES = 16 * 1024
         const val ZOOM_DIRECTION_IN = 0
         const val ZOOM_DIRECTION_OUT = 1
@@ -1340,13 +1448,15 @@ internal fun setupEnabledFeatures(config: AirPlayConfig, proposed: List<*>?): Li
  * down one of the latter must not close the iAP tunnel.
  */
 internal fun teardownStreamTypes(body: Any?): List<Int>? {
-    val entries = ((body as? Map<*, *>)?.get("streams") as? List<*>).orEmpty().mapNotNull { entry ->
+    val streams = ((body as? Map<*, *>)?.get("streams") as? List<*>) ?: return null
+    if (streams.isEmpty()) return null
+    return streams.mapNotNull { entry ->
         val stream = entry as? Map<*, *> ?: return@mapNotNull null
-        val type = (stream["type"] as? Number)?.toInt() ?: return@mapNotNull null
-        type to (stream["streamID"] as? Number)?.toLong()
-    }
-    if (entries.isEmpty()) return null
-    return entries.filterNot { (type, streamId) -> type == 130 && streamId != null && streamId != 1L }.map { it.first }
+        val type = (stream["type"] as? Number)?.toLong()?.takeIf { it in 0..Int.MAX_VALUE.toLong() }?.toInt()
+            ?: return@mapNotNull null
+        // A specific data stream ID has its own lifecycle; it must never become group teardown.
+        if (type == 130 && stream.containsKey("streamID")) null else type
+    }.distinct()
 }
 
 internal fun safeClose(closeable: Closeable?) {

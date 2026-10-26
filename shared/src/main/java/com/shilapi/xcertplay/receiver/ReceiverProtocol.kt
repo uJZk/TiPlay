@@ -13,14 +13,32 @@ data class ReceiverConfig(val name: String, val deviceId: String, val identity: 
                           val hevcEnabled: Boolean = false, val mirrorEnabled: Boolean = true,
                           val audioOutputFormats: Long = 0L) {
     init { ReceiverAudioCapabilities.validateFormats(audioOutputFormats) }
-    // Bit 30 advertises the existing mirror RTSP endpoint on the AirPlay port, so
-    // clients need no separate AirTunes service. Audio uses the browser output path.
+    // AirPlay and classic AirTunes use one RTSP listener and independent browser audio output.
     val features: Long = ReceiverCapabilities.features(hevcEnabled, mirrorEnabled, audioOutputFormats)
     val txt: Map<String, String> get() = mapOf(
         "deviceid" to deviceId, "features" to ReceiverCapabilities.txtFeatures(features),
         "flags" to "0x4", "model" to "AppleTV3,2", "srcvers" to "220.68", "vv" to "2",
         "pi" to identity.pairingId, "pk" to identity.publicKeyHex, "pw" to "false",
     )
+    val raopName: String get() = deviceId.replace(":", "").uppercase() + "@" + name
+    /** Offer only classic codecs accepted by the SDP parser and current browser. */
+    val raopTxt: Map<String, String> get() {
+        fun supports(codec: Int): Boolean {
+            val index = ReceiverMirrorAudioFormat.supported.indexOfFirst {
+                it.codec == codec && it.sampleRate == 44100 && it.channels == 2 && it.bitDepth == 16
+            }
+            return index >= 0 && audioOutputFormats and (1L shl (index + 2)) != 0L
+        }
+        val codecs = buildList {
+            if (supports(1)) add("0")
+            if (supports(2)) add("1")
+        }
+        return mapOf("txtvers" to "1", "ch" to "2", "cn" to codecs.joinToString(","),
+            "et" to "0,3", "sv" to "false", "tp" to "UDP", "ss" to "16", "sr" to "44100",
+            "md" to "0,1,2",
+            "pw" to "false", "vn" to "65537", "vs" to "220.68", "am" to "AppleTV3,2",
+            "sf" to "0x4", "ft" to ReceiverCapabilities.txtFeatures(features), "pk" to identity.publicKeyHex)
+    }
     fun info(): Map<String, Any?> = mapOf(
         "deviceID" to deviceId, "macAddress" to deviceId, "name" to name,
         "features" to features, "model" to "AppleTV3,2", "sourceVersion" to "220.68",

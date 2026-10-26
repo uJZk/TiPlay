@@ -30,7 +30,7 @@ import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
 import { createAirPlayTrustNotification } from './airplay-trust.js';
 import { createBrowserNotice } from './browser-notice.js';
-import { createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor } from './receiver-presentation.js';
+import { carPlayRunning, createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor } from './receiver-presentation.js';
 import { browserDiagnosticEvents, createFaultDiagnosticReporter, PAGE_VERSION } from './browser-diagnostics.js';
 
 const STRINGS = {
@@ -839,6 +839,7 @@ function render() {
   $('message').textContent = inlineNotice ? t(notice.key, ...notice.args) : '';
   $('status').textContent = text;
   $('status').hidden = !text || Boolean($('message').textContent);
+  airplayControls.setCarPlayRunning?.(carPlayRunning(status, config));
   const videoReady = videoReadyFor(status, config, live);
   renderReconnect({ active, live: videoReady || airplayControls.videoActive(), phase: airplayControls.videoActive() ? 'waiting' : phase, pending: !airplayControls.videoActive() && fitRequestedAt > 0, text });
   $('connect').textContent = t(active ? 'resume' : 'connect');

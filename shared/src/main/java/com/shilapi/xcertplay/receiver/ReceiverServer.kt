@@ -43,13 +43,26 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         fun photo(bytes: ByteArray) {}
         fun videoProperty(property: String, value: Any?): Boolean = false
         fun authorizeDevice(verifiedPublicKey: ByteArray?, deviceName: String): Boolean = false
+        fun authorizeDevice(sessionToken: String, verifiedPublicKey: ByteArray?, deviceName: String, mediaType: String): Boolean =
+            authorizeDevice(verifiedPublicKey, deviceName)
         fun authorizeConnection(sessionToken: String, deviceName: String): Boolean = false
+        fun authorizeConnection(sessionToken: String, deviceName: String, mediaType: String): Boolean =
+            authorizeConnection(sessionToken, deviceName)
         fun onAuthorizationSessionEnded(sessionToken: String) {}
         fun flushMirrorAudio() {}
         fun mirrorAudio(format: ReceiverMirrorAudioFormat, payload: ByteArray) {}
         fun mirrorAudioTimed(format: ReceiverMirrorAudioFormat, payload: ByteArray, sample: Long, presentationNanos: Long?) =
             mirrorAudio(format, payload)
         fun stopMirrorAudio() {}
+        fun audioMetadata(value: ReceiverAudioMetadataUpdate) {}
+        fun audioSample(sample: Long, sampleRate: Int) {}
+        fun audioRemoteControls(actions: List<String>) {}
+        fun audioRemoteRequested() {}
+        fun audioRemoteRequested(action: String) = audioRemoteRequested()
+        fun audioRemoteFinished(accepted: Boolean) {}
+        fun audioRemoteIdle() {}
+        fun audioRemoteExpired() {}
+        fun audioTimelineReset() {}
         fun stopPlayback()
         fun seek(seconds: Double)
         fun rate(value: Double)
@@ -63,6 +76,10 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     private val sockets = ConcurrentHashMap.newKeySet<Socket>()
     private val slots = Semaphore(12)
     private val ownership = Any()
+    val dacpDiscovery = ReceiverDacpDiscovery(::refreshAudioControls)
+    private val remoteCommands = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue<Runnable>(8)) {
+        Thread(it, "tiplay-airplay-dacp").apply { isDaemon = true }
+    }
     private var owner: Connection? = null
     private var mirrorPreparation: Connection? = null // does not reserve media ownership
     private var playbackPeer: InetAddress? = null
@@ -94,8 +111,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     fun updateDisplay(fps: Int, hevc: Boolean): ReceiverConfig = synchronized(ownership) {
         if (config.fps != fps || config.hevcEnabled != hevc) {
             config = config.copy(fps = fps, hevcEnabled = hevc)
-            owner?.let { mirror -> mirror.finish() }
-            owner = null
+            owner?.takeUnless { it.hasStandaloneAudio() }?.let { mirror -> mirror.finish() }
         }
         config
     }
@@ -144,6 +160,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         maintenance.shutdownNow()
+        remoteCommands.shutdownNow()
+        dacpDiscovery.close()
         runCatching { server.close() }
         sockets.forEach { runCatching { it.close() } }
         synchronized(ownership) {
@@ -190,6 +208,82 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         if (!connection.hasStandaloneAudio()) return@synchronized
         connection.closeMedia(); owner = null
         listener.status("listening")
+    }
+
+    /** Receiver-local mute/pause: the sender and its live RTP clock keep running. */
+    fun pauseAudio(paused: Boolean): Boolean = synchronized(ownership) {
+        val connection = owner?.takeIf { it.hasStandaloneAudio() } ?: return@synchronized false
+        connection.pauseAudio(paused)
+        true
+    }
+
+    /** Only fixed actions reach the current sender's discovered DACP endpoint. */
+    fun remoteAudio(action: String): Boolean = synchronized(ownership) {
+        val connection = owner?.takeIf { it.hasStandaloneAudio() } ?: return@synchronized false
+        if (closed.get() || connection.remotePending || action !in connection.remoteActions()) return@synchronized false
+        val task = RemoteAudioCommand(connection, connection.remoteEpoch, action)
+        try {
+            remoteCommands.execute(task)
+            connection.remotePending = true
+            connection.remoteAcknowledged = false
+            connection.audioAwaitingTimeline = true
+            if (action in listOf("previous", "next")) connection.retireAudioProgress()
+            val serial = ++connection.remoteSerial
+            listener.audioRemoteRequested(action)
+            maintenance.schedule({ synchronized(ownership) {
+                if (owner === connection && connection.remoteSerial == serial) connection.clearRemotePending(resumeSamples = true)
+            } }, 2, TimeUnit.SECONDS)
+            true
+        }
+        catch (_: RejectedExecutionException) { false }
+    }
+
+    private fun refreshAudioControls() = synchronized(ownership) {
+        if (!closed.get()) owner?.takeIf { it.hasStandaloneAudio() }?.let {
+            it.checkRemoteEndpoint()
+            listener.audioRemoteControls(it.remoteActions())
+        }
+    }
+
+    private data class RemoteDacpTarget(val client: ReceiverDacpClient, val position: Long?,
+                                       val credentials: Pair<String, String>, val port: Int)
+
+    private inner class RemoteAudioCommand(val connection: Connection, val epoch: Long, val action: String) : Runnable {
+        override fun run() {
+            val command = synchronized(ownership) {
+                if (closed.get() || owner !== connection || connection.remoteEpoch != epoch || action !in connection.remoteActions()) return
+                val credentials = connection.remoteCredentials ?: return
+                val port = dacpDiscovery.endpoint(credentials.first, connection.peerAddress) ?: return
+                val target = if (action in listOf("skip-back", "skip-forward")) connection.skipTarget(action) ?: return else null
+                RemoteDacpTarget(ReceiverDacpClient(connection.peerAddress, port, credentials.second), target, credentials, port)
+            }
+            val client = command.client
+            val current = {
+                synchronized(ownership) {
+                    !closed.get() && owner === connection && connection.remoteEpoch == epoch &&
+                        connection.remoteCredentials == command.credentials && action in connection.remoteActions() &&
+                        dacpDiscovery.endpoint(command.credentials.first, connection.peerAddress) == command.port
+                }
+            }
+            val installed = synchronized(ownership) {
+                if (!current()) false else { connection.remoteClient = client; connection.remoteClientPort = command.port; true }
+            }
+            if (!installed) { client.close(); return }
+            try {
+                val wireAction = if (action in listOf("skip-back", "skip-forward")) "seek" else action
+                val accepted = client.command(wireAction, command.position, current)
+                synchronized(ownership) { if (current()) {
+                    connection.remoteAcknowledged = accepted
+                    listener.audioRemoteFinished(accepted)
+                    if (!accepted) connection.clearRemotePending(resumeSamples = true)
+                } }
+                listener.log("audioRemote action=$action result=${if (accepted) "accepted" else "unavailable"}")
+                // HTTP success acknowledges the command only. Sender metadata remains authoritative.
+            } finally {
+                client.close()
+                synchronized(ownership) { if (connection.remoteClient === client) { connection.remoteClient = null; connection.remoteClientPort = null } }
+            }
+        }
     }
 
     /** An iPhone app may own its HLS playlists. Request them on reverse HTTP, as UxPlay does. */
@@ -290,6 +384,10 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
 
     private inner class Connection(private val socket: Socket) {
         private val pairing = ReceiverPairing(config.identity)
+        private val pairing2 = ReceiverAirPlay2Pairing()
+        private var controlCipher: ReceiverAirPlay2Cipher? = null
+        private var eventServer: ServerSocket? = null
+        private var eventSocket: Socket? = null
         private var handshake: ByteArray? = null
         private var key: ByteArray? = null
         private var mirror: ReceiverMirrorStream? = null
@@ -297,7 +395,27 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         private var audio: ReceiverAudioDrain? = null
         private var audioIv: ByteArray? = null
         private var audioOrder: ReceiverMirrorAudioTiming? = null
+        private var raop: ReceiverRaop.Announcement? = null
+        private var raopRecording = false
+        private var audioPaused = false
+        var remoteCredentials: Pair<String, String>? = null
+            private set
+        var remoteEpoch = 0L
+            private set
+        var remoteClient: ReceiverDacpClient? = null
+        var remoteClientPort: Int? = null
+        var remotePending = false
+        var remoteAcknowledged = false
+        var remoteSerial = 0L
+        private var audioProgress: ReceiverAudioProgress? = null
+        private var audioTitle: String? = null
+        private var cachedAudioMetadata: ReceiverAudioMetadataUpdate? = null
+        private var audioSampleRate = 0
+        private var currentAudioSample: Long? = null
+        var audioAwaitingTimeline = false
+        val peerAddress: InetAddress get() = peer
         private var mediaIdentity: ByteArray? = null
+        private var claimedIdentity: ByteArray? = null
         private val connectionNonce = java.util.UUID.randomUUID().toString().replace("-", "")
         private var connectionApproved = false
         private var timing: NtpClock? = null
@@ -318,14 +436,14 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 TcpLiveness.configure(socket) {}
                 socket.tcpNoDelay = true
                 socket.soTimeout = 120_000
-                val input = BufferedInputStream(RawTraffic.input("iphone/ReceiverServer/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()))
+                var input: java.io.InputStream = BufferedInputStream(RawTraffic.input("iphone/ReceiverServer/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()))
                 while (!closed.get() && !socket.isClosed) {
                     stage = ReceiverProtocolDiagnostics.Stage.READ
                     val request = try { readReceiverRequest(input) } catch (error: ReceiverRequestBodyTooLarge) {
                         val response = RtspMessage.Response(status = 413, statusText = "Payload Too Large",
                             headers = mapOf("Connection" to "close"))
                         synchronized(output) {
-                            output.write(RtspMessage.buildResponse(error.request, response)); output.flush()
+                            writeResponse(error.request, response)
                         }
                         diagnostics.response(diagnosticId, response)
                         break
@@ -368,7 +486,13 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         }
                         diagnostics.response(diagnosticId, response)
                         val headers = response.headers + ("Server" to "AirTunes/220.68")
-                        output.write(RtspMessage.buildResponse(request, response.copy(headers = headers))); output.flush()
+                        writeResponse(request, response.copy(headers = headers))
+                        // HAP M4 is plaintext. Cipher framing starts with the next message,
+                        // retaining bytes the buffered socket has already read ahead.
+                        if (controlCipher == null && pairing2.complete) pairing2.takeControlCipher()?.let {
+                            controlCipher = it
+                            input = it.input(input)
+                        }
                     }
                     if (response.status == 101) {
                         socket.soTimeout = 0
@@ -387,6 +511,10 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             diagnostics.stage(diagnosticId, ReceiverProtocolDiagnostics.Stage.CLOSE)
             events.shutdownNow()
             runCatching { socket.close() }
+            runCatching { eventServer?.close() }; eventServer = null
+            runCatching { eventSocket?.close() }; eventSocket = null
+            controlCipher?.close(); controlCipher = null
+            pairing2.close()
             verifiedSessions.entries.removeIf { it.value.connection == diagnosticId }
             approvedSessions.entries.removeIf { it.value.connection == diagnosticId }
             runCatching { listener.onAuthorizationSessionEnded(connectionNonce) }
@@ -421,7 +549,174 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
 
         fun hasStandaloneAudio(): Boolean = audio != null && mirror == null
 
+        private fun retireRemote() {
+            remoteEpoch++
+            remoteSerial++
+            remoteClient?.close(); remoteClient = null
+            remoteClientPort = null
+            remoteCommands.queue.removeIf { (it as? RemoteAudioCommand)?.connection === this }
+            clearRemotePending(resumeSamples = true)
+        }
+
+        fun clearRemotePending(resumeSamples: Boolean = false) {
+            if (remotePending) {
+                remotePending = false
+                if (owner === this) listener.audioRemoteIdle()
+            }
+            if (resumeSamples) {
+                audioAwaitingTimeline = false
+                if (owner === this) { listener.audioTimelineReset(); listener.audioRemoteExpired() }
+            }
+        }
+
+        fun checkRemoteEndpoint() {
+            val expected = remoteClientPort ?: return
+            if (remoteCredentials?.let { dacpDiscovery.endpoint(it.first, peer) } != expected) retireRemote()
+        }
+
+        private fun captureRemote(headers: Map<String, String>) = synchronized(ownership) {
+            if (!headers.containsKey("dacp-id") && !headers.containsKey("active-remote")) return@synchronized
+            val id = if (headers.containsKey("dacp-id")) headers["dacp-id"]?.let(ReceiverDacpDiscovery::normalizeId)
+                else remoteCredentials?.first
+            val token = if (headers.containsKey("active-remote")) headers["active-remote"]?.takeIf(ReceiverDacpClient::validActiveRemote)
+                else remoteCredentials?.second
+            val credentials = if (id != null && token != null) id to token else null
+            if (credentials != remoteCredentials) {
+                retireRemote()
+                remoteCredentials = credentials
+                if (owner === this && hasStandaloneAudio()) refreshAudioControls()
+            }
+        }
+
+        fun remoteActions(): List<String> {
+            val credentials = remoteCredentials ?: return emptyList()
+            if (!hasStandaloneAudio() || dacpDiscovery.endpoint(credentials.first, peer) == null) return emptyList()
+            return listOf("previous", "next") + if (audioProgress?.let { ((it.end - it.start) and 0xffff_ffffL) > 0 } == true && audioSampleRate > 0)
+                listOf("skip-back", "skip-forward") else emptyList()
+        }
+
+        fun skipTarget(action: String): Long? {
+            val progress = audioProgress ?: return null
+            if (audioSampleRate <= 0) return null
+            val duration = (progress.end - progress.start) and 0xffff_ffffL
+            val reported = (progress.current - progress.start) and 0xffff_ffffL
+            val sample = currentAudioSample?.let { (it - progress.start) and 0xffff_ffffL }
+                ?.takeIf { it <= duration } ?: reported
+            val current = maxOf(sample, reported).coerceAtMost(duration) * 1000 / audioSampleRate
+            val total = duration * 1000 / audioSampleRate
+            return (current + if (action == "skip-back") -10_000 else 10_000).coerceIn(0, total)
+        }
+
+        fun retireAudioProgress() {
+            audioProgress = null
+            currentAudioSample = null
+            cachedAudioMetadata = cachedAudioMetadata?.copy(progress = null, durationMillis = 0)
+            if (owner === this) refreshAudioControls()
+        }
+
+        private fun publishState(state: String) {
+            listener.status(state)
+            if (state == "audio") {
+                // The UI creates its pending audio model synchronously. Restore metadata even
+                // when the sender did not repeat it after its picture stream ended.
+                if (owner === this && hasStandaloneAudio()) cachedAudioMetadata?.let { value ->
+                    listener.audioMetadata(value.copy(artwork = value.artwork?.let {
+                        it.copy(bytes = it.bytes.copyOf())
+                    }))
+                    currentAudioSample?.let { listener.audioSample(it, audioSampleRate) }
+                }
+                refreshAudioControls()
+            }
+        }
+
+        private fun rememberAudioMetadata(value: ReceiverAudioMetadataUpdate): ReceiverAudioMetadataUpdate {
+            val changedTrack = value.title != null && audioTitle != null && audioTitle != value.title
+            if (changedTrack) retireAudioProgress()
+            val validProgress = value.progress?.takeIf {
+                ((it.current - it.start) and 0xffff_ffffL) <= ((it.end - it.start) and 0xffff_ffffL)
+            }
+            // A title replacement starts a new track. Missing fields may not carry the old
+            // track's cover, credits or timeline across a mirror/audio transition.
+            val delta = if (changedTrack) value.copy(
+                artist = value.artist ?: "", album = value.album ?: "", durationMillis = value.durationMillis ?: 0,
+                artwork = value.artwork ?: ReceiverAudioArtwork(ByteArray(0), null), progress = validProgress,
+            ) else value.copy(progress = validProgress)
+            val previous = if (changedTrack) null else cachedAudioMetadata
+            cachedAudioMetadata = ReceiverAudioMetadataUpdate(
+                title = delta.title ?: previous?.title,
+                artist = delta.artist ?: previous?.artist,
+                album = delta.album ?: previous?.album,
+                durationMillis = delta.durationMillis ?: previous?.durationMillis,
+                artwork = delta.artwork?.let { it.copy(bytes = it.bytes.copyOf()) } ?: previous?.artwork,
+                progress = validProgress ?: previous?.progress,
+            )
+            value.title?.let { audioTitle = it }
+            validProgress?.let { audioProgress = it; currentAudioSample = null }
+            return delta
+        }
+
+        fun pauseAudio(paused: Boolean) {
+            if (audioPaused == paused) return
+            audioPaused = paused
+            listener.flushMirrorAudio()
+        }
+
+        /** Caller holds the one writer lock; authenticated frames keep their counter order. */
+        private fun writeResponse(request: RtspMessage.Request, response: RtspMessage.Response) {
+            val bytes = RtspMessage.buildResponse(request, response)
+            output.write(controlCipher?.encrypt(bytes) ?: bytes)
+            output.flush()
+        }
+
+        private fun eventPort(): Int {
+            eventServer?.let { return it.localPort }
+            check(pairing2.complete)
+            val server = ServerSocket().apply { bind(InetSocketAddress(InetAddress.getByName("::"), 0)) }
+            val port = server.localPort
+            eventServer = server
+            Thread({
+                var accepted: Socket? = null
+                var cipher: ReceiverAirPlay2Cipher? = null
+                try {
+                    while (!socket.isClosed && !closed.get()) {
+                        val candidate = server.accept()
+                        if (candidate.inetAddress != peer) { candidate.close(); continue }
+                        accepted = candidate
+                        eventSocket = candidate
+                        if (socket.isClosed || closed.get()) { candidate.close(); return@Thread }
+                        server.close()
+                        candidate.tcpNoDelay = true
+                        candidate.soTimeout = 120_000
+                        cipher = requireNotNull(pairing2.takeEventCipher())
+                        val eventCipher = requireNotNull(cipher)
+                        val input = eventCipher.input(BufferedInputStream(candidate.getInputStream()))
+                        val output = candidate.getOutputStream()
+                        while (!socket.isClosed && !closed.get()) {
+                            val request = readReceiverRequest(input) ?: break
+                            // This channel carries keepalive/control acknowledgements, never a
+                            // second media lease or an unauthenticated ownership handoff.
+                            if (request.method.startsWith("RTSP/") || request.method.startsWith("HTTP/")) continue
+                            output.write(eventCipher.encrypt(RtspMessage.buildResponse(request, RtspMessage.Response())))
+                            output.flush()
+                        }
+                        break
+                    }
+                } catch (_: Exception) {
+                    // Event recovery needs a fresh pairing epoch; never reset nonce counters.
+                } finally {
+                    cipher?.close()
+                    runCatching { accepted?.close() }
+                    runCatching { server.close() }
+                }
+            }, "tiplay-airplay-events-read").apply { isDaemon = true; start() }
+            return port
+        }
+
         fun closeMedia() {
+            retireRemote()
+            audioProgress = null; audioSampleRate = 0; currentAudioSample = null
+            audioTitle = null
+            cachedAudioMetadata = null
             if (owner === this) {
                 if (hasStandaloneAudio()) listener.stopPlayback()
                 listener.stopMirrorAudio()
@@ -432,6 +727,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             timing?.close(); timing = null
             key = null; handshake = null
             audioIv?.fill(0); audioIv = null
+            raop = null; raopRecording = false
+            audioPaused = false
         }
 
         fun event(state: String, id: String, category: String) {
@@ -446,7 +743,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 events.execute {
                     runCatching {
                         synchronized(output) {
-                            output.write(headers.toByteArray()); output.write(body); output.flush()
+                            val bytes = headers.toByteArray() + body
+                            output.write(controlCipher?.encrypt(bytes) ?: bytes); output.flush()
                         }
                     }.onFailure { error ->
                         if (error is Exception) diagnostics.failure(diagnosticId, ReceiverProtocolDiagnostics.Stage.WRITE, error)
@@ -465,24 +763,28 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             val query = receiverQuery(request.path)
             val id = request.headers["x-apple-session-id"] ?: "default"
             require(id.matches(Regex("[A-Za-z0-9._-]{1,128}")))
+            captureRemote(request.headers)
+            ReceiverSenderIdentity.identity(null, request.headers)?.let { claimedIdentity = it }
+            val mediaType = receiverMediaType(request, path, raop != null)
             if ((path == "/play" && request.method == "POST") ||
-                (path == "/photo" && request.method == "PUT") || request.method == "SETUP" ||
+                (path == "/photo" && request.method == "PUT") || request.method == "ANNOUNCE" ||
+                request.method == "SETUP" && mediaType != "unknown" ||
                 path in listOf("/reverse", "/stop", "/scrub", "/rate", "/setProperty")) {
                 // Browser confirmation is bounded and must never block ownership or FCUP progress.
-                val verifiedKey = pairing.verifiedPublicKey ?: verifiedSessions[peer to id]
-                    ?.takeIf { strongSessionId(id) && System.nanoTime() < it.expiresNanos }?.publicKey?.copyOf()
+                val senderIdentity = ReceiverSenderIdentity.identity(pairing.verifiedPublicKey ?: pairing.presentedPublicKey ?: verifiedSessions[peer to id]
+                    ?.takeIf { strongSessionId(id) && System.nanoTime() < it.expiresNanos }?.publicKey?.copyOf(), request.headers) ?: claimedIdentity
                 val name = (request.headers["x-apple-client-name"] ?: request.headers["x-apple-device-name"] ?: "AirPlay")
                     .filter { !it.isISOControl() }.take(80)
-                if (verifiedKey != null) {
-                    if (!listener.authorizeDevice(verifiedKey, name)) return RtspMessage.Response(status = 403, statusText = "Forbidden")
-                    mediaIdentity = verifiedKey.copyOf()
+                if (senderIdentity != null) {
+                    if (!listener.authorizeDevice(connectionNonce, senderIdentity, name, mediaType)) return RtspMessage.Response(status = 403, statusText = "Forbidden")
+                    mediaIdentity = senderIdentity.copyOf()
                 } else {
                     val approved = approvedSessions[peer to id]?.takeIf {
                         strongSessionId(id) && System.nanoTime() < it.expiresNanos
                     }
                     if (approved != null) mediaIdentity = approved.publicKey.copyOf()
                     else {
-                        if (!connectionApproved) connectionApproved = listener.authorizeConnection(connectionNonce, name)
+                        if (!connectionApproved) connectionApproved = listener.authorizeConnection(connectionNonce, name, mediaType)
                         if (!connectionApproved) return RtspMessage.Response(status = 403, statusText = "Forbidden")
                         mediaIdentity = AirPlayCrypto.sha512(connectionNonce.toByteArray()).copyOf(32)
                         approvedSessions.entries.removeIf { entry -> System.nanoTime() >= entry.value.expiresNanos }
@@ -497,6 +799,15 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                     return ReceiverInfoProtocol.response(config, request)
                 }
                 path == "/server-info" -> return xml(config.serverInfo())
+                path == "/pair-setup" && (request.headers["x-apple-hkp"] == "4" ||
+                    request.headers["content-type"]?.substringBefore(';')?.trim()
+                        ?.equals("application/pairing+tlv8", true) == true) -> {
+                    if (controlCipher != null) return RtspMessage.Response(status = 455, statusText = "Method Not Valid in This State")
+                    return RtspMessage.Response(headers = mapOf("Content-Type" to "application/pairing+tlv8"),
+                        body = pairing2.handle(request.body))
+                }
+                path == "/pair-setup" && request.headers.containsKey("x-apple-hkp") ->
+                    return RtspMessage.Response(status = 501, statusText = "Not Implemented")
                 path == "/pair-setup" -> return ReceiverHandshake.pairing { pairing.setup(request.body) }
                 path == "/pair-verify" -> {
                     val response = ReceiverHandshake.pairing { pairing.verify(request.body) }
@@ -516,9 +827,17 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                     return response
                 }
                 request.method == "OPTIONS" -> return RtspMessage.Response(headers = mapOf("Public" to
-                    "SETUP, RECORD, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER, FLUSH"))
+                    "ANNOUNCE, SETUP, RECORD, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER, FLUSH"))
+                request.method == "ANNOUNCE" -> return announce(request)
                 request.method == "SETUP" -> return setup(request)
-                request.method == "RECORD" -> return RtspMessage.Response(headers = mapOf("Audio-Latency" to "0"))
+                request.method == "RECORD" -> {
+                    synchronized(ownership) {
+                        if (raop != null && (owner !== this || audio == null))
+                            return RtspMessage.Response(status = 455, statusText = "Method Not Valid in This State")
+                        raopRecording = true
+                    }
+                    return RtspMessage.Response(headers = mapOf("Audio-Latency" to "0"))
+                }
                 request.method == "TEARDOWN" -> {
                     synchronized(ownership) {
                         val types = receiverTeardownTypes(request.body)
@@ -528,13 +847,14 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                             if (96 in types) {
                                 if (owner === this && hasStandaloneAudio()) listener.stopPlayback()
                                 audio?.close(); audio = null; audioOrder = null
+                                cachedAudioMetadata = null; audioTitle = null; audioProgress = null; currentAudioSample = null
                                 if (owner === this) listener.stopMirrorAudio()
                             }
                             if (110 in types) {
                                 mirrorToken = null
                                 val hadMirror = mirror != null
                                 mirror?.close(); mirror = null
-                                if (hadMirror && owner === this) listener.status(if (audio != null) "audio" else "listening")
+                                if (hadMirror && owner === this) publishState(if (audio != null) "audio" else "listening")
                             }
                             if (audio != null || mirror != null) return RtspMessage.Response()
                             closeMedia()
@@ -685,8 +1005,22 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                     return RtspMessage.Response()
                 }
                 request.method == "GET_PARAMETER" -> return ReceiverMirrorParameters.reply(request)
-                request.method == "SET_PARAMETER" -> return ReceiverMetadata.receive(request) {
-                    listener.log("c=$diagnosticId $it")
+                request.method == "SET_PARAMETER" -> {
+                    // Parse/copy bounded metadata before taking ownership. Volume-only compatibility
+                    // replies remain inert; actual metadata belongs exclusively to the media owner.
+                    var parsed: ReceiverAudioMetadataUpdate? = null
+                    val response = ReceiverMetadata.receive(request, { listener.log("c=$diagnosticId $it") }) { parsed = it }
+                    val value = parsed ?: return response
+                    synchronized(ownership) {
+                        if (owner !== this) return RtspMessage.Response(status = 403, statusText = "Forbidden")
+                        if (audio != null) {
+                            if (remoteAcknowledged && (value.title != null || value.progress != null)) clearRemotePending()
+                            val update = rememberAudioMetadata(value)
+                            if (hasStandaloneAudio()) listener.audioMetadata(update)
+                            refreshAudioControls()
+                        }
+                        return response
+                    }
                 }
                 request.method == "FLUSH" -> {
                     synchronized(ownership) {
@@ -702,6 +1036,9 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                             require(value != null && value in 0..0xffffffffL)
                         }
                         audioOrder?.flush(sequence, sample)
+                        currentAudioSample = null
+                        audioAwaitingTimeline = false
+                        listener.audioTimelineReset()
                         listener.flushMirrorAudio()
                     }
                     return RtspMessage.Response()
@@ -723,10 +1060,118 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             peer == other.peer && mediaIdentity != null &&
                 mediaIdentity?.contentEquals(other.mediaIdentity ?: ByteArray(0)) == true
 
+        private fun announce(request: RtspMessage.Request): RtspMessage.Response {
+            val announcement = try { ReceiverRaop.announce(request.body) }
+            catch (_: ReceiverRaop.UnsupportedEncryption) {
+                return RtspMessage.Response(status = 461, statusText = "Unsupported Transport")
+            }
+            ReceiverAudioCapabilities.validateStream(announcement.stream(0), config.audioOutputFormats)
+            return synchronized(ownership) {
+                if (owner != null && owner !== this && !sameVerifiedPeer(requireNotNull(owner))) return busy()
+                // ANNOUNCE negotiates only. It cannot displace another producer or borrow the screen.
+                raop = announcement
+                RtspMessage.Response()
+            }
+        }
+
+        private fun setupRaop(request: RtspMessage.Request): RtspMessage.Response {
+            val announcement = raop ?: return RtspMessage.Response(status = 455, statusText = "Method Not Valid in This State")
+            val transport = ReceiverRaop.transport(requireNotNull(request.headers["transport"]))
+            ReceiverAudioCapabilities.validateStream(announcement.stream(transport.controlPort), config.audioOutputFormats)
+            val encrypted = announcement.encryptedKey
+            val rawKey = if (encrypted == null) null else
+                (fairPlayDecrypt(requireNotNull(handshake), encrypted)?.also { require(it.size == 16) }
+                    ?: error("invalid transport key"))
+            // Preserve the preceding valid session if any negotiation field was invalid.
+            if (owner != null && owner !== this) { owner?.closeMedia(); owner = null }
+            if (playbackPeer != null) finishPlayback(PlaybackFinishReason.IPHONE_STOP)
+            mirrorToken = null
+            mirror?.close(); mirror = null
+            if (mirrorPreparation === this) mirrorPreparation = null
+            timing?.close()
+            val clock = NtpClock(log = { listener.log("c=$diagnosticId $it") },
+                wireTimeline = com.shilapi.xcertplay.airplay.NtpWireTimeline())
+            timing = clock
+            val timingPort = clock.listen()
+            clock.start(peer, transport.timingPort)
+            raopRecording = false
+            val ports = openAudio(announcement.format, rawKey, announcement.iv?.copyOf(), transport.controlPort)
+            publishState("audio")
+            return RtspMessage.Response(headers = mapOf(
+                "Transport" to transport.response(ports.first, ports.second, timingPort),
+                "Session" to connectionNonce,
+            ))
+        }
+
+        /** UDP intake is shared by legacy SDP and plist audio; neither path owns the display. */
+        private fun openAudio(format: ReceiverMirrorAudioFormat, audioKey: ByteArray?, iv: ByteArray?,
+                              controlPort: Int): Pair<Int, Int> {
+            require(controlPort in 0..65535)
+            val order = ReceiverMirrorAudioTiming(format.sampleRate, requireNotNull(timing)::ntpTimeNanos)
+            lateinit var receiver: ReceiverAudioDrain
+            fun current(): Boolean = owner === this && audioOrder === order && (raop == null || raopRecording)
+            fun deliver(packets: List<ReceiverMirrorAudioTiming.Packet>) {
+                if (current()) packets.forEach {
+                    if (!audioAwaitingTimeline) currentAudioSample = it.sample
+                    if (!audioPaused) {
+                        if (it.discontinuity) listener.flushMirrorAudio()
+                        if (hasStandaloneAudio()) listener.audioSample(it.sample, format.sampleRate)
+                        listener.mirrorAudioTimed(format, it.payload, it.sample, it.presentationNanos)
+                    }
+                }
+            }
+            fun retransmit() { order.retransmissionRequests().forEach { receiver.sendControl(it, controlPort) } }
+            fun receive(packet: ByteArray) {
+                val payload = if (audioKey?.size == 32) ReceiverAirPlay2AudioPacket.decrypt(packet, audioKey)
+                    else ReceiverMirrorAudioPacket.payload(packet, audioKey, iv)
+                payload?.let {
+                    synchronized(ownership) { if (current()) deliver(order.offer(packet, payload)) }
+                    retransmit()
+                }
+            }
+            receiver = ReceiverAudioDrain(peer, { listener.log("c=$diagnosticId $it") },
+                packetReceived = ::receive,
+                controlReceived = { packet ->
+                    order.sync(packet)
+                    order.control(packet)?.let(::receive)
+                    retransmit()
+                }, idle = {
+                    synchronized(ownership) { if (current()) deliver(order.drain()) }
+                    retransmit()
+                }, failed = { _, _ ->
+                    synchronized(ownership) {
+                        if (owner === this && audio === receiver && audioOrder === order) {
+                            audio = null; audioOrder = null
+                            cachedAudioMetadata = null; audioTitle = null; audioProgress = null; currentAudioSample = null
+                            listener.stopMirrorAudio()
+                            if (mirror == null) { listener.stopPlayback(); owner = null; listener.status("listening") }
+                        }
+                    }
+                })
+            val ports = receiver.start()
+            retireRemote()
+            if (audio != null && owner === this) listener.stopMirrorAudio()
+            audio?.close()
+            audio = receiver; audioOrder = order; audioPaused = false; audioSampleRate = format.sampleRate; owner = this
+            return ports
+        }
+
         private fun setup(request: RtspMessage.Request): RtspMessage.Response = synchronized(ownership) {
             if (closed.get() || (owner != null && owner !== this && !sameVerifiedPeer(owner!!)) ||
                 (playbackPeer != null && (playbackConnection?.let { !sameVerifiedPeer(it) } != false))) return busy()
+            if (request.body.isEmpty() && request.headers.containsKey("transport")) return setupRaop(request)
             val dict = BplistCodec.decode(request.body) as? Map<*, *> ?: error("setup must be dictionary")
+            val timingProtocol = dict["timingProtocol"]
+            require(timingProtocol == null || !dict.containsKey("ekey")) { "mixed audio transport setup" }
+            if (timingProtocol != null && timingProtocol != "NTP")
+                return RtspMessage.Response(status = 461, statusText = "Unsupported Transport")
+            if (timingProtocol == "NTP" && !dict.containsKey("streams")) {
+                if (controlCipher == null) return RtspMessage.Response(status = 403, statusText = "Forbidden")
+                if (timing != null) return RtspMessage.Response(status = 455, statusText = "Method Not Valid in This State")
+                val timingPort = dict["timingPort"]
+                require(timingPort == null || timingPort is Byte || timingPort is Short || timingPort is Int || timingPort is Long)
+                require(((timingPort as? Number)?.toLong() ?: 0) in 0..65535)
+            }
             diagnostics.setup(diagnosticId, dict, pairing.sharedSecret != null, handshake?.size ?: 0)
             val requestedStreams = dict["streams"]?.let { value ->
                 require(value is List<*> && value.size <= 16)
@@ -737,6 +1182,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                     return RtspMessage.Response(status = 461, statusText = "Unsupported Transport")
                 entries.filter { (it["type"] as Number).toInt() == 96 }.forEach {
                     ReceiverAudioCapabilities.validateStream(it, config.audioOutputFormats)
+                    if (it.containsKey("shk")) require(controlCipher != null && (it["shk"] as? ByteArray)?.size == 32)
                 }
                 entries.filter { (it["type"] as Number).toInt() == 110 }.forEach {
                     require(it["streamConnectionID"] is Number) { "missing connection id" }
@@ -746,6 +1192,16 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             if (owner != null && owner !== this) { owner?.closeMedia(); owner = null }
             if (playbackPeer != null) finishPlayback(PlaybackFinishReason.IPHONE_STOP)
             val response = linkedMapOf<String, Any?>()
+            if (timingProtocol == "NTP" && requestedStreams == null) {
+                val timingPort = (dict["timingPort"] as? Number)?.toInt() ?: 0
+                require(timingPort in 0..65535)
+                val clock = NtpClock(log = { listener.log("c=$diagnosticId $it") },
+                    wireTimeline = com.shilapi.xcertplay.airplay.NtpWireTimeline())
+                timing = clock
+                response["timingPort"] = clock.listen()
+                clock.start(peer, timingPort)
+                response["eventPort"] = eventPort()
+            }
             val encrypted = dict["ekey"] as? ByteArray
             if (encrypted != null) {
                 val iv = dict["eiv"] as? ByteArray
@@ -769,83 +1225,23 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 clock.start(peer, timingPort)
                 // Legacy mirroring has no separate event channel; do not point it at the control listener.
                 response["eventPort"] = 0
-                mirrorPreparation = this
-                listener.prepareMirror()
             }
             requestedStreams?.let { streams ->
                 response["streams"] = streams.mapNotNull { entry ->
                     val stream = entry
                     if ((stream["type"] as Number).toInt() == 96) {
-                        requireNotNull(key)
-                        requireNotNull(timing)
-                        val format = ReceiverMirrorAudioFormat.parse(stream)
-                        val audioKey = requireNotNull(key).copyOf()
-                        val iv = audioIv?.copyOf()
-                        // AAC NoData units retain RTP ordering and source coordinates; the browser
-                        // renders their silence without feeding them to the compressed decoder.
-                        val order = ReceiverMirrorAudioTiming(format?.sampleRate ?: 44100, requireNotNull(timing)::ntpTimeNanos)
-                        audioOrder = order
-                        val controlPort = (stream["controlPort"] as? Number)?.toInt() ?: 0
-                        require(controlPort in 0..65535)
-                        fun deliver(packets: List<ReceiverMirrorAudioTiming.Packet>) {
-                            if (format != null) synchronized(ownership) {
-                                if (owner === this && audioOrder === order) packets.forEach {
-                                    if (it.discontinuity) listener.flushMirrorAudio()
-                                    listener.mirrorAudioTimed(format, it.payload, it.sample, it.presentationNanos)
-                                }
-                            }
-                        }
-                        lateinit var receiver: ReceiverAudioDrain
-                        fun retransmit() { order.retransmissionRequests().forEach { receiver.sendControl(it, controlPort) } }
-                        receiver = ReceiverAudioDrain(peer, { listener.log("c=$diagnosticId $it") }, packetReceived = { packet ->
-                            if (format != null && iv != null && synchronized(ownership) { owner === this }) {
-                                ReceiverMirrorAudioPacket.decrypt(packet, audioKey, iv)?.let { payload ->
-                                    synchronized(ownership) {
-                                        if (audioOrder === order && owner === this) deliver(order.offer(packet, payload))
-                                    }
-                                    retransmit()
-                                }
-                            }
-                        }, controlReceived = { packet ->
-                            order.sync(packet)
-                            order.control(packet)?.let { recovered ->
-                                if (iv != null) ReceiverMirrorAudioPacket.decrypt(recovered, audioKey, iv)?.let { payload ->
-                                    synchronized(ownership) {
-                                        if (audioOrder === order && owner === this) deliver(order.offer(recovered, payload))
-                                    }
-                                }
-                            }
-                            retransmit()
-                        }, idle = {
-                            synchronized(ownership) { if (audioOrder === order && owner === this) deliver(order.drain()) }
-                            retransmit()
-                        }, failed = { _, _ ->
-                            synchronized(ownership) {
-                                // A retired drain cannot mute or release a replacement stream. The picture
-                                // and its timing/key negotiation survive a soundtrack transport failure.
-                                if (owner === this && audio === receiver && audioOrder === order) {
-                                    audio = null; audioOrder = null
-                                    listener.stopMirrorAudio()
-                                    if (mirror == null) {
-                                        listener.stopPlayback()
-                                        owner = null
-                                        listener.status("listening")
-                                    }
-                                }
-                            }
-                        })
-                        val ports = receiver.start()
-                        if (audio != null && owner === this) listener.stopMirrorAudio()
-                        audio?.close()
-                        audio = receiver
-                        owner = this
-                        if (mirror == null && streams.none { (it["type"] as Number).toInt() == 110 }) listener.status("audio")
+                        val ports = openAudio(requireNotNull(ReceiverMirrorAudioFormat.parse(stream)),
+                            (stream["shk"] as? ByteArray)?.copyOf() ?: requireNotNull(key).copyOf(), audioIv?.copyOf(),
+                            (stream["controlPort"] as? Number)?.toInt() ?: 0)
+                        raopRecording = true
+                        if (mirror == null && streams.none { (it["type"] as Number).toInt() == 110 }) publishState("audio")
                         return@mapNotNull mapOf("type" to 96, "dataPort" to ports.first, "controlPort" to ports.second)
                     }
                     val streamKey = requireNotNull(key)
                     val clock = requireNotNull(timing)
                     val connectionId = (stream["streamConnectionID"] as? Number)?.toLong() ?: error("missing connection id")
                     mirrorPreparation = this
+                    listener.prepareMirror()
                     val token = Any()
                     mirrorToken = token
                     val previous = mirror
@@ -866,7 +1262,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                                     // A data-channel EOF ends the picture, not the RTSP session. Keep timing
                                     // and transport keys until TEARDOWN/control EOF, allowing its reply or
                                     // another SETUP on this connection.
-                                    listener.status(if (audio != null) "audio" else "listening")
+                                    publishState(if (audio != null) "audio" else "listening")
                                 }
                             }
                         }
@@ -884,7 +1280,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                             if (mirrorPreparation === this) mirrorPreparation = null
                             if (owner === this) owner = if (audio != null) this else null
                             timing?.reportVideoEnd()
-                            listener.status(if (audio != null) "audio" else "listening")
+                            publishState(if (audio != null) "audio" else "listening")
                         }
                         throw error
                     }
@@ -898,6 +1294,21 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
 private fun busy() = RtspMessage.Response(status = 453, statusText = "Not Enough Bandwidth")
 private fun plist(dict: Map<String, Any?>) = RtspMessage.Response(headers = mapOf("Content-Type" to "application/x-apple-binary-plist"), body = BplistCodec.encode(dict))
 private fun xml(dict: Map<String, Any?>) = RtspMessage.Response(headers = mapOf("Content-Type" to "text/x-apple-plist+xml"), body = receiverXml(dict))
+
+/** Key/timing SETUP carries no media intent; approval waits for actual streams. */
+internal fun receiverMediaType(request: RtspMessage.Request, path: String = receiverRequestPath(request.path),
+                               announcedAudio: Boolean = false): String = when {
+    request.method == "ANNOUNCE" -> "audio"
+    path == "/photo" -> "photo"
+    path == "/play" -> "video"
+    request.method == "SETUP" && announcedAudio && request.body.isEmpty() -> "audio"
+    request.method == "SETUP" -> {
+        val streams = (runCatching { BplistCodec.decode(request.body) }.getOrNull() as? Map<*, *>)?.get("streams") as? List<*>
+        val types = streams?.mapNotNull { ((it as? Map<*, *>)?.get("type") as? Number)?.toInt() }.orEmpty()
+        when { 110 in types -> "mirror"; types.isNotEmpty() && types.all { it == 96 } -> "audio"; else -> "unknown" }
+    }
+    else -> "unknown"
+}
 
 internal class ReceiverRequestBodyTooLarge(val request: RtspMessage.Request) : IllegalArgumentException("receiver body too large")
 

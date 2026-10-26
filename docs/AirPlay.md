@@ -4,23 +4,51 @@ TiPlay's experimental receiver sends ordinary AirPlay mirroring, unprotected URL
 video, photos and audio to the paired car browser. It starts when TiPlay opens,
 subject to Android local-network permission. Its Bonjour name **TiPlay AirPlay**,
 listener and pairing identity are separate from CarPlay's **TiPlay** entry.
+The RAOP/AirPlay 2 audio, BLE hints, three-choice trust and pure-audio music controls
+described here are beta.23/v95 work integrated with the beta.22/code64 base;
+published artifacts are recorded separately in [Build](Build.md#beta22-release).
 
 ## Use
 
 1. Put the iPhone, Android phone and browser on a network that permits communication
    between devices, then open the paired [HTTPS browser page](Browser.md).
 2. Select **TiPlay AirPlay** in Screen Mirroring or a compatible app's AirPlay menu.
-3. Allow a new sender in the browser's upper-right notification within five seconds.
-   Expiry or browser disconnection rejects the request.
+3. Choose **Always allow**, **Allow once** or **Reject** in the browser's existing
+   notification card within five seconds. It shows the sender name, requested casting
+   type and its effect on the CarPlay picture. Unknown intent is labelled a connection
+   request rather than guessed. Expiry or browser disconnection rejects the request.
 4. End casting on the iPhone, or use browser Stop for URL video/photos. A still-valid
    CarPlay session returns after the iPhone confirms screen ownership.
 
-Android Advanced settings can disable AirPlay immediately or forget trusted devices.
-Disablement persists without reconnecting CarPlay. Forgetting trust affects future
-connections and leaves the current cast running. Persistent trust requires a verified
-pairing public-key fingerprint; legacy HTTP senders get connection-only approval.
-IP/name is never trust, and approval cannot displace another active sender. Ordinary
-AirPlay uses no PIN; browser pairing retains its separate code.
+Android Advanced settings can disable AirPlay immediately or **Reset AirPlay trusted
+devices**. Disablement persists without reconnecting CarPlay. Reset removes stored
+and connection-only grants, cancels pending prompts and leaves already-running media,
+CarPlay pairing and browser pairing intact; later authorization requires a fresh choice.
+Always allow stores the sender's stable key fingerprint, or a normalized sender-reported
+AirPlay device/client identifier for third-party senders without a key. These identifiers
+are claims, not proof of ownership. All senders see the same three choices without an
+identity-verification warning or disabled button. A sender providing no stable key or
+identifier can receive connection permission but cannot be recognized on a later
+connection. Allow once never persists trust. IP/name is never trust, and approval
+cannot displace another active sender. Ordinary AirPlay uses no PIN; browser pairing
+retains its separate code.
+
+## Nearby Bluetooth discovery
+
+When Android supports BLE advertising and the Nearby devices permission is granted,
+the receiver advertises an Apple Continuity AirPlay-target hint (manufacturer `0x004C`,
+message `0x09`) with its IPv4 address and configuration seed. The sender does not have
+to join the receiver's network before receiving the BLE hint. Bluetooth discovery does
+not carry media or configure Wi-Fi. Android's public API does not expose Apple's AWDL,
+so cross-network appearance in the iOS AirPlay picker and peer-to-peer playback are
+not guaranteed; Bonjour resolution and a reachable network path are still needed.
+
+Advertising follows the receiver lifecycle, refreshes after permission/radio/address
+changes and ignores retired callbacks. Unsupported BLE or denied permission leaves
+LAN Bonjour and CarPlay running. No Bluetooth pairing, scan or device-name change
+is performed. The observed packet reference is
+[Continuity AirPlay target](https://github.com/furiousMAC/continuity/blob/d9fa98bddafbfa3baafc84e37a417d78a0598546/messages/airplay_target.md);
+real iPhone picker behavior remains a device acceptance check.
 
 ## Playback and limitations
 
@@ -36,24 +64,80 @@ The audio transport implements PCM, ALAC, AAC-LC and AAC-ELD. Browser capabiliti
 are intrinsic software-decoder capabilities, not WebCodecs probes. Realtime AAC-LC,
 AAC-ELD and ALAC use libav.js Workers, and raw PCM uses the WASM unpacker plus
 continuous software resampling where needed. All enter NetEq as PCM16/48 kHz.
-CarPlay Opus enters NetEq's own decoder directly. No realtime WebCodecs audio
-path remains. Each source retains its clock, transport ID and epoch. Only reported
+Negotiated source codecs can instead use standard WebRTC audio tracks; unsupported
+formats retain the DataChannel software path, where Opus enters NetEq directly.
+No realtime WebCodecs audio path remains. Each source retains its clock, transport ID and epoch. Only reported
 formats appear in receiver offers or pass SETUP; unknown capabilities offer no audio.
 Reports belong to the current browser session and are never restored from a saved
 viewport; changes constrain the next SETUP without interrupting current media.
 Sender negotiation and actual sound still require iPhone validation.
-Network PCM defaults to big endian, pending real-sender confirmation;
-24-bit input becomes PCM16 output. Standalone type-96 audio is supported, without
-`_raop`, AirPlay 2 buffered audio or microphone transmission. CarPlay buffering is
-[a separate protocol](Browser.md#audio-and-microphone).
+Network PCM uses big endian; 24-bit input becomes PCM16 output.
+
+Ordinary audio has three transport paths on the same receiver listener:
+
+| Protocol | Implemented path | Explicit limits |
+| --- | --- | --- |
+| AirPlay 1 / classic RAOP | `_raop` discovery; SDP ANNOUNCE; UDP SETUP/RECORD, PCM/ALAC, NTP, retransmission and FLUSH; clear or FairPlay AES-CBC packets | AirTunes RSA `Apple-Challenge`/`rsaaeskey` is unsupported; no private AirTunes credential is imported |
+| Legacy plist audio | FairPlay transport setup and type-96 UDP PCM/ALAC/AAC-LC/AAC-ELD | Existing legacy pair-verify path; no microphone |
+| AirPlay 2 realtime | Transient HAP/SRP pairing, authenticated control/event channels, NTP and type-96 ChaCha20-Poly1305 audio | Persistent HomeKit pairing, PTP/multiroom and type-103 buffered audio are unsupported and not advertised |
+
+The protocol comparison uses
+[Shairport Sync RTSP handling](https://github.com/mikebrady/shairport-sync/blob/b991d91350e537c1f50dac98d9a3c836eceddcfc/rtsp.c)
+and its [transient HAP pairing](https://github.com/mikebrady/shairport-sync/blob/b991d91350e537c1f50dac98d9a3c836eceddcfc/pair_ap/pair_homekit.c).
+TiPlay reuses its existing SRP/cryptography primitives and browser decoders rather
+than embedding Shairport's Linux audio backend. Authenticated HAP frames are bounded
+to 1,024 bytes with independent channel counters; pairing failure retires that epoch.
+Transient pairing provides no persistent verified sender identity. The browser still
+authorizes the actual audio stream, and any separately presented sender identifier
+remains a claim. Capability flags offer transient/CoreUtils pairing only while a
+browser audio decoder is available; they do not offer buffered audio or PTP.
+Independent SRP-client and loopback socket tests cover encrypted control, events,
+audio delivery and unsupported transport rejection. These checks do not establish
+iOS picker selection, interoperability with every sender or physical output timing.
+CarPlay buffering is [a separate protocol](Browser.md#audio-and-microphone).
 
 Unprotected MP4, HLS-TS and CMAF/fMP4 HLS require decodable, accessible resources.
 Recognized HDR is rejected; there is no tone mapping or confirmed sender SDR-request
 mechanism. Legacy FairPlay transport-key negotiation enables mirroring, not FairPlay
 Streaming licenses, SAMPLE-AES or DRM playback. Photo display has Stop, not a timeline
 or slideshow scheduler. iOS may send photos through mirroring instead of `PUT /photo`.
-Remote volume/artwork/song-text capabilities are disabled; compatibility volume
-replies do not change gain. Content already drawn into video remains visible.
+Sender DMAP title/artist/album/duration, JPEG/PNG artwork and RTP progress updates
+populate the audio player's real state. Artwork stays bounded in memory and uses
+the paired browser's authenticated resource route; new artwork revisions retire
+old resource keys, and stopping playback retires the cover. Metadata from another
+control connection cannot overwrite the current sender. Progress uses the negotiated
+sample rate and delivered RTP coordinates, including wraparound, rather than browser
+`currentTime` or an assumed audible position.
+
+The audio player's play/pause controls act locally on TiPlay's AirPlay soundtrack:
+pause clears its output queue while retaining the sender connection, packet ordering
+and clock; resume returns to the live sender position. They do not pause the iPhone's
+music app. Previous/next and ±10-second controls are enabled only when the current
+sender supplies a valid DACP-ID and Active-Remote token and its matching `_dacp._tcp`
+advertisement resolves to that same RTSP peer. The discovery listener shares TiPlay's
+existing Bonjour instances. A service name, arbitrary TXT address or browser input
+cannot select another host. Skip also requires valid, nonzero sender progress and
+the negotiated sample rate; the server computes and clamps the millisecond target.
+
+DACP uses fixed `previtem`/`nextitem` and `setproperty?dacp.playingtime=` commands,
+following [Shairport's DACP request format](https://github.com/mikebrady/shairport-sync/blob/b991d91350e537c1f50dac98d9a3c836eceddcfc/dacp.c#L251)
+and [DMAP playing-time control](https://github.com/postlund/pyatv/blob/v0.16.1/pyatv/protocols/dmap/__init__.py#L380).
+No remote playback-rate capability or draggable live-audio timeline is advertised.
+Commands run on a bounded daemon queue outside session locks, with a one-second HTTP
+deadline and bounded response headers. A successful HTTP response acknowledges the
+command, not a new playback position. Sender progress/title updates remain authoritative.
+One command is pending at a time; controls wait for a subsequent sender update after
+acknowledgement, failure or a two-second retry limit. RTP-derived progress is held
+across remote commands until a sender FLUSH or that bounded recovery, so stale packets
+cannot manufacture a seek result. Peer/port/token changes and session retirement cancel
+obsolete work; new sessions cannot inherit queued commands. Sender apps may omit DACP
+or reject individual commands; actual iPhone response still requires device acceptance.
+CarPlay's audio remains independent. Compatibility volume replies do not change gain.
+Content already drawn into video remains visible.
+When CarPlay is running, its picture keeps priority while AirPlay audio and metadata
+continue independently. The music view appears when CarPlay is absent and uses the
+same Video.js control style as URL media; it shows sender metadata rather than
+inventing a track title or artwork.
 
 ## CarPlay coexistence
 
@@ -125,8 +209,12 @@ auxiliary user observation, not ownership/data proof or an explanation of iOS in
 Pending loans retain CarPlay picture/input and release existing touches. Mirror SETUP
 waits boundedly before supplying data ports so the initial keyframe is not lost.
 URL video prepares but pauses/hides output; photos retain their resource while hidden.
-Standalone audio returns a provisional visual loan. Without valid CarPlay, AirPlay
-can use the canvas directly. Takeover blocks background CarPlay input/fit requests.
+Key/timing-only SETUP does not borrow the screen or prompt for an unknown media type.
+Pure audio never requests a visual loan, keeps CarPlay picture/input/audio active and
+survives display frame-rate/codec edits. Switching from existing visual media to
+audio releases the earlier visual producer and returns its screen loan. Without valid
+CarPlay, visual AirPlay can use the canvas directly. Takeover blocks background
+CarPlay input/fit requests.
 
 Keep valid CarPlay control, wireless resources, clocks and configuration. Block
 restarts/resize renegotiation during casting; retries recheck ownership and resume
@@ -374,24 +462,38 @@ acceptance remains in [Todo.md](Todo.md).
 
 ## CarPlay Video in Car in the browser
 
-Phone + browser mode now offers `videoPlayback` when the iPhone proposes it in
-SETUP. `BrowserVideoInCar` handles queue insertion, rate, seek, playback-info and
-property requests, and `videoplayback:` UI requests. It uses the existing browser
-URL player and resource proxy, including iPhone `unhandledURL` loading for app
-schemes; it does not launch the inherited Android video activity. Replacement,
-stop, browser completion/failure and CarPlay session end retire the browser entry
-and return the borrowed display. Output still waits for confirmed screen ownership.
+Phone + browser mode offers `videoPlayback` only when the iPhone proposes it in
+initial SETUP. The same per-session negotiated state controls `/info`: its
+`videoPlaybackInfo` and `playbackCapabilities` are top-level sibling dictionaries.
+The former contains permission and the little-endian Base64 bitmap of actual
+legacy capabilities; no unimplemented high feature bits are added. This restores
+the capability declaration removed when browser VideoInCar was previously retired.
+The reported permission is kept with the session and updated through the event
+channel, together with playback status.
 
-The protocol reference is [LIVI video_playback.rs at e0e07e89](https://github.com/f-io/LIVI/blob/e0e07e89d1deba369f2bc0d10f1e65c546a45a38/native/livi-helperd/crates/livi-cp/src/video_playback.rs).
-TiPlay retains its existing CMTime playback-info responses and uses measured
-browser playback state. Unsupported assets report an error to the iPhone; FairPlay
-video remains unsupported. No Android re-encoding is added.
+`BrowserVideoInCar` handles queue insertion, rate, seek, playback-info, properties
+and `videoplayback:` UI requests through the existing AVPlayer URL pipeline and
+iPhone `unhandledURL` resources. Unknown/retired remote stream IDs cannot control
+a newer item. Settings, overlay, playback and iAP type-130 IDs retire independently;
+a settings or overlay teardown must not end CarPlay or its iAP tunnel. Full
+teardown releases listeners and workers even if the control socket remains open.
 
-Vehicle parking-state integration is explicitly deferred for this implementation:
-the browser listener currently permits playback without a gear signal. This is
-not evidence of P gear. All 77 targeted Android tests passed, including four new
-browser-video tests and the existing host configuration/URL-seek checks. Browser
-resource replacement, seek, pause, unsupported local URLs and session cleanup
-are covered. The full Android suite was interrupted after a socket-close timeout
-and a proxy-test heap exhaustion; both cases passed separately with two Gradle
-workers. iPhone/vehicle playback remains a physical acceptance check.
+Video in Car and ordinary AirPlay each own their display token. A retired player
+cannot return another producer's screen. The previous picture is revoked before
+CarPlay resumes, and replacement/stop/failure callbacks are generation-checked.
+URL audio-only playback returns the picture while retaining allowed audio; waiting
+for a confirmed screen loan separately gates output. Returning to video obtains
+a new confirmed loan. Raw AirPlay audio needs no display loan and cannot replace
+a live URL/photo entry in the browser registry.
+
+The protocol reference is [LIVI 187730f9](https://github.com/f-io/LIVI/blob/187730f99c14bbf75cf6cdf8dae53076a7d52cb7/native/crates/livi-cp/src/video_playback.rs),
+reviewed alongside the earlier pinned e0e07e89 implementation. TiPlay retains
+CMTime replies and measured browser playback state rather than LIVI's assumed
+four-hour duration or seekable-as-buffered fallback. Unsupported assets report
+an error; FairPlay video remains unsupported. No Android re-encoding is added.
+
+Parking-state integration remains deferred by user instruction: the browser
+listener permits playback without a gear signal. This is not evidence of P gear.
+Current software and release verification is recorded in [Testing](Testing.md#current-release-source)
+and [Build](Build.md#beta23-release); iPhone/vehicle playback remains a physical
+acceptance check.

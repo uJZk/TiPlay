@@ -6,6 +6,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.net.ServerSocket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -20,6 +21,147 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class CarPlaySocketLifecycleTest {
+    @Test fun negotiatedVideoInfoAndIndividualDataStreamRetirementPreserveCarPlay() {
+        ServerSocket(0, 1, InetAddress.getByName("::1")).use { controlServer ->
+            connect(controlServer.localPort).use { peer ->
+                val received = java.util.concurrent.CopyOnWriteArrayList<Long>()
+                val ended = java.util.concurrent.CopyOnWriteArrayList<Long>()
+                val dataClosed = java.util.concurrent.CopyOnWriteArrayList<Long>()
+                val groupClosed = java.util.concurrent.CopyOnWriteArrayList<Int>()
+                val active = AtomicInteger()
+                val engine = CarPlayMediaEngine(object : MediaSink {})
+                val eventReady = AtomicInteger()
+                var eventPeer: Socket? = null
+                var settingsPeer: Socket? = null
+                var iapPeer: Socket? = null
+                val session = authenticatedSession(videoInCar = true, socket = controlServer.accept(),
+                    listener = object : AirPlaySessionListener {
+                        override fun onSessionActive(session: AirPlaySession) { active.incrementAndGet() }
+                        override fun onDebugLog(message: String) {
+                            if (message.startsWith("airplay video event ready")) eventReady.incrementAndGet()
+                        }
+                        override fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) { received += streamId }
+                        override fun onVideoPlaybackStreamEnded(session: AirPlaySession, streamId: Long) { ended += streamId }
+                    }, media = object : AirPlayMediaHandler {
+                        override fun onScreen(session: AirPlaySession, type: Int, stream: Map<String, Any?>) = 32_000
+                        override fun onDataStream(session: AirPlaySession, stream: Map<String, Any?>) = engine.onDataStream(session, stream)
+                        override fun onDataStreamTeardown(session: AirPlaySession, streamId: Long) {
+                            dataClosed += streamId
+                            engine.onDataStreamTeardown(session, streamId)
+                        }
+                        override fun onTeardown(session: AirPlaySession, type: Int) {
+                            groupClosed += type
+                            engine.onTeardown(session, type)
+                        }
+                        override fun onSessionClosed(session: AirPlaySession) = engine.onSessionClosed(session)
+                    })
+                val keys = session.pairVerify.controlKeys!!
+                session.cipher = ControlCipher(keys.readKey, keys.writeKey)
+                val cipher = ControlCipher(keys.writeKey, keys.readKey)
+                session.start()
+                var cseq = 10
+                fun exchange(method: String, path: String, value: Any? = null, streamId: Long? = null): RtspMessage.Request {
+                    val body = value?.let(BplistCodec::encode) ?: ByteArray(0)
+                    val head = "$method $path RTSP/1.0\r\nCSeq: ${cseq++}\r\n" +
+                        (streamId?.let { "X-Apple-StreamID: $it\r\n" } ?: "") + "Content-Length: ${body.size}\r\n\r\n"
+                    peer.getOutputStream().apply { write(cipher.encrypt(head.toByteArray(Charsets.US_ASCII) + body)); flush() }
+                    return readMessage(peer, cipher)
+                }
+                fun data(id: Long) = mapOf("streams" to listOf(mapOf("type" to 130L, "streamID" to id)))
+                fun command(id: Long) = exchange("POST", "/command", mapOf("params" to mapOf("data" to
+                    BplistCodec.encode(mapOf("type" to "setRate", "rate" to 1.0)))), id)
+                try {
+                    val before = BplistCodec.decode(exchange("GET", "/info").body) as Map<*, *>
+                    assertFalse(before.containsKey("videoPlaybackInfo"))
+                    session.setVideoPlaybackAllowed(true)
+                    val initialBody = BplistCodec.encode(mapOf("timingPort" to 0, "features" to listOf("videoPlayback", "iAPChannel")))
+                    val initial = setup(peer, cipher, "1", initialBody)
+                    assertEquals("200", initial.path)
+                    val features = (BplistCodec.decode(initial.body) as Map<*, *>)["enabledFeatures"] as List<*>
+                    assertTrue(features.contains("videoPlayback"))
+                    val eventPort = ((BplistCodec.decode(initial.body) as Map<*, *>)["eventPort"] as Number).toInt()
+                    val currentEvent = connect(eventPort)
+                    eventPeer = currentEvent
+                    val events = peerCipher(session)
+                    await { eventReady.get() == 1 }
+                    val initialEvent = readCommand(currentEvent, events)
+                    assertEquals("idle", (initialEvent["params"] as Map<*, *>)["playbackStatus"])
+                    val info = BplistCodec.decode(exchange("GET", "/info").body) as Map<*, *>
+                    val video = info["videoPlaybackInfo"] as Map<*, *>
+                    assertEquals(true, video["videoPlaybackAllowed"])
+                    assertTrue(info["playbackCapabilities"] is Map<*, *>)
+                    assertFalse(video.containsKey("playbackCapabilities"))
+                    session.setVideoPlaybackAllowed(false)
+                    assertEquals(false, (readCommand(currentEvent, events)["params"] as Map<*, *>)["videoPlaybackAllowed"])
+                    val forbidden = BplistCodec.decode(exchange("GET", "/info").body) as Map<*, *>
+                    assertEquals(false, (forbidden["videoPlaybackInfo"] as Map<*, *>)["videoPlaybackAllowed"])
+                    assertArrayEquals(initial.body, setup(peer, cipher, "1", initialBody).body)
+                    assertEquals("455", setup(peer, cipher, "2", BplistCodec.encode(mapOf("timingPort" to 0))).path)
+                    assertEquals("200", exchange("RECORD", "/s").path)
+                    assertEquals(1, active.get())
+                    val streams = listOf(
+                        mapOf("type" to 130L, "clientTypeUUID" to "E9459FD0-BCAD-4C45-820F-1E72447EF2F2", "seed" to 6L),
+                        mapOf("type" to 130L, "clientTypeUUID" to VideoInCar.SETTINGS_CHANNEL_UUID, "seed" to 7L),
+                        mapOf("type" to 130L, "clientTypeUUID" to VideoInCar.PLAYBACK_UUID, "controlType" to 1L, "clientUUID" to "playback"),
+                        mapOf("type" to 130L, "clientTypeUUID" to VideoInCar.REMOTE_CONTROL_UUIDS.last(), "controlType" to 1L, "clientUUID" to "overlay"),
+                        mapOf("type" to 110L))
+                    val accepted = BplistCodec.decode(exchange("SETUP", "/s", mapOf("streams" to streams)).body) as Map<*, *>
+                    val acceptedStreams = accepted["streams"] as List<*>
+                    assertEquals(5, acceptedStreams.size)
+                    val firstSettings = connect(((acceptedStreams[1] as Map<*, *>)["dataPort"] as Number).toInt())
+                    settingsPeer = firstSettings
+                    val currentIap = connect(((acceptedStreams[0] as Map<*, *>)["dataPort"] as Number).toInt())
+                    iapPeer = currentIap
+                    command(999); command(3); command(4); command(2)
+                    assertEquals(listOf(3L), received.toList())
+                    assertFalse(session.setVideoPlaybackStatus(4, "video"))
+                    assertFalse(session.setVideoPlaybackStatus(3, "invented"))
+                    assertTrue(session.setVideoPlaybackStatus(3, "audioOnly"))
+                    assertEquals("audioOnly", (readCommand(currentEvent, events)["params"] as Map<*, *>)["playbackStatus"])
+                    assertTrue(session.sendRemoteControlMessage(3, VideoInCar.playbackStateNotification(true, "item")))
+                    assertEquals("playbackState", (BplistCodec.decode(((readCommand(currentEvent, events)["params"] as Map<*, *>)["data"] as ByteArray)) as Map<*, *>)["type"])
+                    session.setVideoPlaybackAllowed(true)
+                    assertEquals("audioOnly", (readCommand(currentEvent, events)["params"] as Map<*, *>)["playbackStatus"])
+                    for (id in listOf(2L, 4L, 3L)) assertEquals("200", exchange("TEARDOWN", "/s", data(id)).path)
+                    assertEquals(listOf(2L, 4L, 3L), dataClosed.toList())
+                    session.setVideoPlaybackAllowed(false)
+                    assertEquals("idle", (readCommand(currentEvent, events)["params"] as Map<*, *>)["playbackStatus"])
+                    assertPeerClosed(firstSettings)
+                    currentIap.soTimeout = 100
+                    assertThrows(SocketTimeoutException::class.java) { currentIap.getInputStream().read() }
+                    assertEquals(listOf(3L), ended.toList())
+                    assertTrue(130 in session.activeStreams && 110 in session.activeStreams)
+                    command(3)
+                    assertEquals(listOf(3L), received.toList())
+                    assertFalse(session.sendRemoteControlMessage(3, mapOf("type" to "property")))
+                    exchange("TEARDOWN", "/s", data(999))
+                    exchange("TEARDOWN", "/s", mapOf("streams" to listOf(mapOf("unexpected" to true))))
+                    assertTrue(groupClosed.isEmpty())
+                    exchange("TEARDOWN", "/s", data(1))
+                    assertEquals(listOf(2L, 4L, 3L, 1L), dataClosed.toList())
+                    assertPeerClosed(currentIap)
+                    assertEquals(setOf(110), session.activeStreams)
+                    assertFalse(session.isClosed)
+                    val replacement = BplistCodec.decode(exchange("SETUP", "/s", mapOf("streams" to listOf(streams[1]))).body) as Map<*, *>
+                    val settings = (replacement["streams"] as List<*>).single() as Map<*, *>
+                    assertEquals(5L, settings["streamID"])
+                    firstSettings.close()
+                    val replacementSettings = connect((settings["dataPort"] as Number).toInt())
+                    settingsPeer = replacementSettings
+                    exchange("TEARDOWN", "/s", data(2)) // Retiring the old settings ID cannot close its replacement.
+                    replacementSettings.soTimeout = 100
+                    assertThrows(SocketTimeoutException::class.java) { replacementSettings.getInputStream().read() }
+                    exchange("TEARDOWN", "/s", emptyMap<String, Any?>())
+                    assertPeerClosed(replacementSettings)
+                    assertEquals(setOf(110, 130), groupClosed.toSet())
+                    assertEquals(listOf(3L), ended.toList())
+                    assertFalse(session.isClosed)
+                    assertEquals("200", exchange("GET", "/info").path)
+                } finally { settingsPeer?.close(); iapPeer?.close(); eventPeer?.close(); closeAndJoin(session) }
+            }
+        }
+    }
+
     @Test fun initialSetupRetriesAreStrictAndPreserveTheEstablishedEventCipherAndAudio() {
         ServerSocket(0, 1, InetAddress.getByName("::1")).use { controlServer ->
             connect(controlServer.localPort).use { peer ->
@@ -354,13 +496,13 @@ class CarPlaySocketLifecycleTest {
     }
 
     private fun authenticatedSession(listener: AirPlaySessionListener = object : AirPlaySessionListener {},
-        media: AirPlayMediaHandler = object : AirPlayMediaHandler {}, socket: Socket = Socket()): AirPlaySession {
+        media: AirPlayMediaHandler = object : AirPlayMediaHandler {}, socket: Socket = Socket(), videoInCar: Boolean = false): AirPlaySession {
         val pairings = PairingStore()
         val controller = AirPlayCrypto.ed25519Generate()
         val identifier = "lifecycle-test-controller".asciiBytes()
         pairings.save(identifier.toString(Charsets.US_ASCII), controller.publicKey)
         val session = AirPlaySession(socket, AirPlayConfig("test", "02:00:00:00:00:02",
-            "02:00:00:00:00:01", "1.0", main = AirPlayDisplayConfig(800, 480)),
+            "02:00:00:00:00:01", "1.0", main = AirPlayDisplayConfig(800, 480), videoInCar = videoInCar),
             AirPlayIdentity.generate(), pairings, null, listener, media)
         val ephemeral = AirPlayCrypto.x25519Generate()
         val m2 = Tlv8Codec.decode(session.pairVerify.handle(Tlv8Codec.encode(listOf(

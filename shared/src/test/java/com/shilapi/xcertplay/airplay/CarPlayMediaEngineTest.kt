@@ -76,10 +76,14 @@ class CarPlayMediaEngineTest {
         val video = testSession(videoInCar = true)
         try {
             assertNull(engine.onDataStream(plain, stream))
+            assertNull(engine.onDataStream(video, stream))
+            AirPlaySession::class.java.getDeclaredField("videoPlaybackNegotiated").apply { isAccessible = true }.setBoolean(video, true)
             val first = engine.onDataStream(video, stream)
             assertEquals(130, first?.get("type"))
             assertEquals(3L, first?.get("streamID"))
             assertEquals(4L, engine.onDataStream(video, stream)?.get("streamID"))
+            video.close()
+            assertNull(engine.onDataStream(video, stream))
         } finally {
             plain.close()
             video.close()

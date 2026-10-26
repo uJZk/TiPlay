@@ -9,6 +9,8 @@ button:where(:not(.media-skin *)):active{transform:scale(.98);background:rgba(25
 button:where(:not(.media-skin *)):disabled{opacity:.55;cursor:default;transform:none}
 button:where(:not(.media-skin *))[aria-pressed=true]{background:rgba(195,220,255,.2);border-color:var(--accent)}
 button:where(:not(.media-skin *)):focus-visible,input:focus-visible,a:focus-visible,summary:focus-visible,pre:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+.corner-action{position:absolute;bottom:max(16px,env(safe-area-inset-bottom));left:max(16px,env(safe-area-inset-left));min-height:48px;background:linear-gradient(150deg,rgba(255,255,255,.15),rgba(255,255,255,.05));border:1px solid rgba(255,255,255,.14);color:#eef1f7;box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 4px 20px rgba(0,0,0,.12)}
+@media(max-height:360px){.corner-action{bottom:max(8px,env(safe-area-inset-bottom));min-height:44px}}
 .primary{background:linear-gradient(150deg,#d7e9ff,#adcfff);color:#102b4f;border-color:transparent;box-shadow:0 4px 18px rgba(0,0,0,.14)}
 .primary:active{background:#b5d5ff}
 main{height:100%;min-height:0;position:relative}

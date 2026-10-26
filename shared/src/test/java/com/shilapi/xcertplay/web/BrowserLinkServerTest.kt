@@ -7,6 +7,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -27,6 +28,30 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class BrowserLinkServerTest {
+    @Test fun audioArtworkUsesAuthenticatedResourcesAndRetiresWithItsPlayback() {
+        val audio = AirPlayAudioPlayback()
+        val jpeg = byteArrayOf(-1, -40, 1, 2, 3, -1, -39)
+        audio.update(com.shilapi.xcertplay.receiver.ReceiverAudioMetadataUpdate(
+            title = "Live sender track", artwork = com.shilapi.xcertplay.receiver.ReceiverAudioArtwork(jpeg, "image/jpeg"),
+        ))
+        val registration = AirPlayBrowserPlayback.register(audio::state, audio = audio) { _, _ -> }
+        try {
+            val snapshot = AirPlayBrowserPlayback.snapshot()!!
+            val id = snapshot["id"] as Long
+            val resource = snapshot["artworkResource"] as String
+            assertFalse(snapshot.containsKey("resource"))
+            assertEquals(200, control(1).status)
+            val path = "/airplay-resource?id=$id&r=$resource&s=$session"
+            assertEquals(401, get("$path&c=9999").status)
+            val response = get("$path&c=$code")
+            assertEquals(200, response.status)
+            assertEquals("image/jpeg", response.headers["content-type"])
+            assertArrayEquals(jpeg, response.body)
+            registration.close()
+            assertEquals(404, get("$path&c=$code").status)
+        } finally { registration.close() }
+    }
+
     private val code = "1234"
     private val session = "page-session-0001"
     private val other = "page-session-0002"
@@ -882,12 +907,39 @@ class BrowserLinkServerTest {
             val snapshot = control(2).json["airplayTrust"] as Map<*, *>
             assertEquals(pending.id, snapshot["id"])
             assertEquals(true, snapshot["verified"])
-            val allow = """{"k":"ap-trust","id":"${pending.id}","allow":true}"""
+            val allow = """{"k":"ap-trust","id":"${pending.id}","allow":true,"remember":true}"""
             assertEquals(401, control(3, allow, c = "0000").status)
             assertTrue(remembered.isEmpty())
             assertEquals(200, control(3, allow).status)
             assertEquals(setOf(com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.fingerprint(key)), remembered)
+            assertEquals(com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.Decision.Allowed, trust.request(key, "iPhone"))
             assertNull(control(4).json["airplayTrust"])
+        }
+    }
+
+    @Test fun legacyConsentWithoutRememberCanOnlyApproveItsCurrentReceiverConnection() {
+        val remembered = mutableSetOf<String>()
+        val trust = com.shilapi.xcertplay.receiver.ReceiverDeviceTrust(object : com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.Store {
+            override fun contains(fingerprint: String) = fingerprint in remembered
+            override fun remember(fingerprint: String) { remembered += fingerprint }
+            override fun forgetAll() { remembered.clear() }
+        })
+        val token = "0123456789abcdef-first"
+        val key = ByteArray(32) { it.toByte() }
+        AirPlayTrustNotifications.attach(trust).use {
+            assertEquals(200, control(1).status)
+            val pending = trust.requestSession(token, key, "iPhone", "audio")
+                as com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.Decision.Pending
+            assertEquals(pending.id, (control(2).json["airplayTrust"] as Map<*, *>)["id"])
+            val legacyAllow = """{"k":"ap-trust","id":"${pending.id}","allow":true}"""
+            assertEquals(200, control(3, legacyAllow).status)
+            assertTrue("An older webpage cannot implicitly request persistent trust", remembered.isEmpty())
+            assertSame(com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.Decision.Allowed,
+                trust.requestSession(token, key, "iPhone", "audio"))
+            trust.endSession(token)
+            assertTrue(trust.requestSession("0123456789abcdef-next", key, "iPhone", "audio")
+                is com.shilapi.xcertplay.receiver.ReceiverDeviceTrust.Decision.Pending)
+            assertTrue(remembered.isEmpty())
         }
     }
 

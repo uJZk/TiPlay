@@ -21,6 +21,8 @@ class ReceiverPairing(private val identity: AirPlayIdentity) {
     private var verifiedSigning: ByteArray? = null
     /** Identity proven by the peer's Ed25519 signature, never by its advertised name or address. */
     val verifiedPublicKey: ByteArray? get() = verifiedSigning?.copyOf()
+    /** Sender-presented signing key; it has not necessarily proved possession yet. */
+    val presentedPublicKey: ByteArray? get() = verifiedSigning?.copyOf() ?: peerSigning?.copyOf()
 
     fun setup(body: ByteArray): ByteArray {
         clearState()

@@ -20,10 +20,11 @@ import org.robolectric.shadows.ShadowVpnService
 class BrowserPermissionStatusTest {
     private val context get() = RuntimeEnvironment.getApplication()
     @Before fun reset() {
+        context.getSharedPreferences("tiplay_airplay_receiver", 0).edit().putBoolean("disabled", false).commit()
         BrowserCarPlaySettings.saveMode(context, BrowserCarPlaySettings.Mode.USB)
         BrowserCarPlayAudioSettings.saveDisabled(context, false)
         BrowserLocationSettings.setDisabled(context, false)
-        shadowOf(context).denyPermissions(Manifest.permission.BLUETOOTH_CONNECT,
+        shadowOf(context).denyPermissions(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE,
             Manifest.permission.NEARBY_WIFI_DEVICES, Manifest.permission.RECORD_AUDIO,
             Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.POST_NOTIFICATIONS)
@@ -54,5 +55,11 @@ class BrowserPermissionStatusTest {
         BrowserCarPlaySettings.saveMode(context, BrowserCarPlaySettings.Mode.WIRELESS)
         missing = BrowserPermissionStatus.missingLabels(context)
         assertFalse(R.string.onboarding_usb_vpn in missing)
+    }
+
+    @Test fun airPlayBeaconGrantIsRequestedOnlyWhenAirPlayIsEnabled() {
+        assertTrue(Manifest.permission.BLUETOOTH_ADVERTISE in BrowserPermissionStatus.runtimeGroups(context).flatMap { it.permissions })
+        context.getSharedPreferences("tiplay_airplay_receiver", 0).edit().putBoolean("disabled", true).commit()
+        assertFalse(Manifest.permission.BLUETOOTH_ADVERTISE in BrowserPermissionStatus.runtimeGroups(context).flatMap { it.permissions })
     }
 }

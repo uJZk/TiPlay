@@ -1,6 +1,6 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 .airplay-player { position:absolute; inset:0; z-index:3; background:#000; color:#fff; }
-.airplay-player [hidden], .airplay-player[hidden], .airplay-photo-stop[hidden] { display:none; }
+.airplay-player [hidden], .airplay-player[hidden] { display:none; }
 .airplay-player media-i18n, .airplay-player video-player, .airplay-player tiplay-media { display:contents; }
 .airplay-player media-container { width:100%; height:100%; --media-video-border-radius:0; touch-action:manipulation; }
 .airplay-player .media-button[data-available="false"] { display:none; }
@@ -21,7 +21,6 @@
 .airplay-player [data-gesture-required] .media-play-button-play-icon { display:block !important; }
 .airplay-player [data-gesture-required] .media-play-button-pause-icon,
 .airplay-player [data-gesture-required] .media-play-button-restart-icon { display:none !important; }
-.airplay-photo-stop { position:absolute; z-index:3; bottom:max(16px,env(safe-area-inset-bottom)); right:max(16px,env(safe-area-inset-right)); }
 @container media-root (width < 32rem) {
   .airplay-player .video-controls-primary { flex-wrap:wrap; }
   .airplay-player .video-time-slider-group { flex-basis:100%; order:-1; }

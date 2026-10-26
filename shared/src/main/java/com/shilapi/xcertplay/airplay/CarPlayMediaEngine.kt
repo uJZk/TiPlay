@@ -101,7 +101,8 @@ class CarPlayMediaEngine(
     private val audioOwners = mutableMapOf<AudioStreamId, StreamKey>()
     private val screenOwners = mutableMapOf<Int, StreamKey>()
     private val pendingIapTunnels = ConcurrentHashMap<AirPlaySession, PendingIapTunnel>()
-    private val videoSettingsChannels = ConcurrentHashMap<AirPlaySession, VideoSettingsChannel>()
+    private data class VideoSettings(val id: Long, val channel: VideoSettingsChannel)
+    private val videoSettingsChannels = ConcurrentHashMap<AirPlaySession, VideoSettings>()
     private val bufferedStreams = ConcurrentHashMap<AirPlaySession, BufferedStream>()
     private val microphoneScheduler by lazy {
         ScheduledThreadPoolExecutor(1) { task -> Thread(task, "carplay-mic-start").apply { isDaemon = true } }.apply {
@@ -131,7 +132,6 @@ class CarPlayMediaEngine(
             ?.let { bufferedTransition = null }
         return !session.isClosed && session !in retiredBufferedSessions && bufferedTransition == null
     }
-    @Volatile private var nextRemoteControlStreamId = FIRST_REMOTE_CONTROL_STREAM_ID
     @Volatile private var iapTunnelHandler: ((BlockingDuplexByteStream) -> Boolean)? = null
 
     override fun setIapTunnelHandler(handler: ((BlockingDuplexByteStream) -> Boolean)?) {
@@ -419,6 +419,7 @@ class CarPlayMediaEngine(
     }
 
     override fun onDataStream(session: AirPlaySession, stream: Map<String, Any?>): Map<String, Any?>? {
+        if (session.isClosed) return null
         val uuid = (stream["clientTypeUUID"] as? String)?.uppercase() ?: return null
         if (session.videoInCar) videoDataStream(session, uuid, stream)?.let { return it }
         if (uuid != IAP_DATASTREAM_UUID) return null
@@ -473,7 +474,16 @@ class CarPlayMediaEngine(
             bridge.close()
             throw error
         }
-        streams[StreamKey(session, STREAM_TYPE_DATA)] = if (handler != null) bridge else tunnel
+        val installed = if (handler != null) bridge else tunnel
+        var previous: Closeable? = null
+        val accepted = synchronized(outputLock) {
+            if (session.isClosed) false else {
+                previous = streams.put(StreamKey(session, STREAM_TYPE_DATA), installed)
+                true
+            }
+        }
+        previous?.close()
+        if (!accepted) { clearPendingIapTunnel(session); installed.close(); return null }
         return linkedMapOf<String, Any?>("type" to STREAM_TYPE_DATA, "streamID" to 1L, "dataPort" to port)
             .apply {
                 stream["streamConnectionID"]?.let { connectionId ->
@@ -488,7 +498,7 @@ class CarPlayMediaEngine(
      */
     private fun videoDataStream(session: AirPlaySession, uuid: String, stream: Map<String, Any?>): Map<String, Any?>? {
         if (uuid in VideoInCar.REMOTE_CONTROL_UUIDS && (stream["controlType"] as? Number)?.toInt() == 1) {
-            val streamId = nextRemoteControlStreamId++
+            val streamId = session.allocateVideoDataStreamId() ?: return null
             session.logTrace("video remote-control stream accepted uuid=$uuid streamID=$streamId")
             return linkedMapOf("type" to STREAM_TYPE_DATA, "streamID" to streamId)
         }
@@ -498,11 +508,20 @@ class CarPlayMediaEngine(
         fun key(label: String) = AirPlayCrypto.hkdfSha512(
             shared, "DataStream-Salt$seed".toByteArray(Charsets.US_ASCII), label.toByteArray(Charsets.US_ASCII), 32,
         )
+        val streamId = session.allocateVideoDataStreamId(settings = true) ?: return null
         val channel = VideoSettingsChannel(key(DATASTREAM_OUTPUT_KEY), key(DATASTREAM_INPUT_KEY)) { session.logDebug(it) }
         val port = channel.listen(session.localAddress ?: InetAddress.getByName("::"))
-        videoSettingsChannels.put(session, channel)?.close()
+        var previous: VideoSettings? = null
+        val accepted = synchronized(outputLock) {
+            if (session.isClosed) false else {
+                previous = videoSettingsChannels.put(session, VideoSettings(streamId, channel))
+                true
+            }
+        }
+        previous?.channel?.close()
+        if (!accepted) { channel.close(); return null }
         session.logTrace("video settings stream listening port=$port")
-        return linkedMapOf<String, Any?>("type" to STREAM_TYPE_DATA, "streamID" to VIDEO_SETTINGS_STREAM_ID, "dataPort" to port)
+        return linkedMapOf<String, Any?>("type" to STREAM_TYPE_DATA, "streamID" to streamId, "dataPort" to port)
             .apply {
                 stream["streamConnectionID"]?.let { connectionId ->
                     this["streamConnectionID"] = unsignedPlistInteger(connectionId)
@@ -564,7 +583,10 @@ class CarPlayMediaEngine(
     }
 
     override fun onTeardown(session: AirPlaySession, type: Int) {
-        if (type == STREAM_TYPE_DATA) clearPendingIapTunnel(session)
+        if (type == STREAM_TYPE_DATA) {
+            clearPendingIapTunnel(session)
+            synchronized(outputLock) { videoSettingsChannels.remove(session) }?.channel?.close()
+        }
         if (type == BufferedAudioStream.STREAM_TYPE) {
             retireBuffered(session)
             return
@@ -576,10 +598,23 @@ class CarPlayMediaEngine(
         retired.forEach(Closeable::close)
     }
 
+    override fun onDataStreamTeardown(session: AirPlaySession, streamId: Long) {
+        if (streamId == 1L) {
+            clearPendingIapTunnel(session)
+            val retired = synchronized(outputLock) { retireOutputLocked(StreamKey(session, STREAM_TYPE_DATA)) }
+            retired.forEach(Closeable::close)
+        } else {
+            val settings = synchronized(outputLock) {
+                videoSettingsChannels[session]?.takeIf { it.id == streamId }?.also { videoSettingsChannels.remove(session, it) }
+            }
+            settings?.channel?.close()
+        }
+    }
+
     override fun onSessionClosed(session: AirPlaySession) {
         clearPendingIapTunnel(session)
         retireBuffered(session)
-        videoSettingsChannels.remove(session)?.close()
+        synchronized(outputLock) { videoSettingsChannels.remove(session) }?.channel?.close()
         val retired = synchronized(outputLock) {
             (streams.keys + audioMeta.keys + pendingMicrophone.keys + audioCaptures.keys)
                 .filter { it.session === session && it.type != BufferedAudioStream.STREAM_TYPE }
@@ -741,8 +776,6 @@ class CarPlayMediaEngine(
         private const val DATASTREAM_OUTPUT_KEY = "DataStream-Output-Encryption-Key"
         private const val DATASTREAM_INPUT_KEY = "DataStream-Input-Encryption-Key"
         private const val IAP_DATASTREAM_UUID = "E9459FD0-BCAD-4C45-820F-1E72447EF2F2"
-        private const val VIDEO_SETTINGS_STREAM_ID = 2L
-        private const val FIRST_REMOTE_CONTROL_STREAM_ID = 3L
         private const val OPUS_24K = 0x20000000L
         private const val OPUS_48K = 0x40000000L
     }

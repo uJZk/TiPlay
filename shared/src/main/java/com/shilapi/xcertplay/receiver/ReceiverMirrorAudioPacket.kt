@@ -8,7 +8,12 @@ import javax.crypto.spec.SecretKeySpec
  * Codec NoData units still occupy source time; only the browser decoder interprets their payload. */
 internal object ReceiverMirrorAudioPacket {
     fun decrypt(packet: ByteArray, key: ByteArray, iv: ByteArray): ByteArray? {
-        if (key.size != 16 || iv.size != 16 || packet.size < 12 ||
+        return payload(packet, key, iv)
+    }
+
+    /** Clear RAOP and per-packet CBC share exactly the same bounded RTP framing. */
+    fun payload(packet: ByteArray, key: ByteArray? = null, iv: ByteArray? = null): ByteArray? {
+        if ((key == null) != (iv == null) || key != null && (key.size != 16 || iv?.size != 16) || packet.size < 12 ||
             packet[0].toInt() and 0xc0 != 0x80 || packet[1].toInt() and 0x7f != 0x60) return null
         var offset = 12 + (packet[0].toInt() and 0x0f) * 4
         if (offset > packet.size) return null
@@ -22,7 +27,7 @@ internal object ReceiverMirrorAudioPacket {
         if (bytes <= 0) return null
         val blocks = bytes / 16 * 16
         val output = packet.copyOfRange(offset, packet.size)
-        if (blocks > 0) {
+        if (blocks > 0 && key != null && iv != null) {
             val cipher = Cipher.getInstance("AES/CBC/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
             cipher.doFinal(packet, offset, blocks).copyInto(output)

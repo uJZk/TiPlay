@@ -10,6 +10,12 @@ export function videoSourceFor(status, config) {
   return configSource(config);
 }
 
+/** A connected CarPlay session keeps its UI even while its picture is recovering or loaned. */
+export function carPlayRunning(status, config) {
+  return ['connected', 'suspended'].includes(status?.receivers?.carplay?.state)
+    || videoSourceFor(status, config) === 'carplay';
+}
+
 export function airPlayContext(status, config) {
   const playback = status?.airplay;
   return status?.receivers?.carplay?.state === 'suspended' || videoSourceFor(status, config) === 'airplay'
@@ -25,7 +31,8 @@ export function airPlayFailed(status) {
 export function videoProblemFor(status, config, unsupported) {
   if (!unsupported) return null;
   const playback = status?.airplay;
-  if (playback?.kind === 'audio' || playback?.resource && playback.outputAllowed !== false) return null;
+  if (playback?.kind === 'audio' && !carPlayRunning(status, config)
+    || playback?.kind !== 'audio' && playback?.resource && playback.outputAllowed !== false && playback.videoShown !== false) return null;
   const source = videoSourceFor(status, config);
   if (!source || source !== configSource(config)) return null;
   return unsupported;

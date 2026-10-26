@@ -858,8 +858,8 @@
     <string name="settings_mfi_target_description">Elige USB/CH341 solo si hay un adaptador de autenticación CH341 conectado a la unidad principal. Sin él, elige Local sin conexión. Se aplica en la próxima conexión.</string>
     <string name="settings_call_speakerphone">Llamadas por el altavoz</string>
     <string name="settings_call_speakerphone_description">Para un teléfono o una tableta Android usados como unidad principal: reproduce las llamadas de CarPlay por su altavoz en lugar del auricular y usa su micrófono manos libres. Déjalo desactivado en la unidad principal de un coche. Se aplica desde la próxima llamada.</string>
-    <string name="settings_forget_airplay_devices">Olvidar todos los dispositivos AirPlay de confianza</string>
-    <string name="settings_airplay_devices_forgotten">Se olvidaron los dispositivos AirPlay de confianza</string>
+    <string name="settings_forget_airplay_devices">Restablecer dispositivos AirPlay de confianza</string>
+    <string name="settings_airplay_devices_forgotten">Lista de confianza de AirPlay restablecida</string>
     <string name="settings_navigation_attenuation">Volumen de las indicaciones de navegación</string>
     <string name="settings_navigation_attenuation_value">%1$d dB</string>
     <string name="settings_navigation_attenuation_description">Reduce solo las indicaciones de navegación de CarPlay, sin cambiar música ni llamadas. Se aplica al instante; sigue funcionando el volumen de navegación de la unidad.</string>

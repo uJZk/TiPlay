@@ -100,6 +100,13 @@ try {
     if (await page.locator('media-fullscreen-button,media-pip-button,media-volume-slider,media-mute-button').count())
       throw new Error('Removed controls were restored');
     if (await page.locator('.airplay-stop').count() !== 1) throw new Error('Missing stop control');
+    const surface = page.locator('media-container');
+    const clickControl = async selector => {
+      // Exercise the official touch gesture when playback has auto-hidden the toolbar.
+      if (!await page.locator('media-controls-content').evaluate(element => element.hasAttribute('data-visible')))
+        await surface.tap({ position: { x: 20, y: 20 } });
+      await page.locator(selector).click();
+    };
     const canvas = page.locator('#stage canvas');
     if (await canvas.count() !== 1) throw new Error('Expected exactly one Canvas renderer');
     const first = await canvas.screenshot();
@@ -107,7 +114,7 @@ try {
     if (first.equals(await canvas.screenshot())) throw new Error('Canvas video did not change');
     if (await page.evaluate(() => videoCreates || document.querySelectorAll('video').length))
       throw new Error('URL playback created a video element');
-    await page.locator('media-play-button').click();
+    await clickControl('media-play-button');
     await page.waitForFunction(() => actualVideo().paused);
     const before = await page.evaluate(() => actualVideo().currentTime);
     await page.waitForTimeout(250);
@@ -115,19 +122,18 @@ try {
     await page.evaluate(() => controls.update({ id: 1, resource: mediaResource, revision: 1,
       seekRevision: 1, target: .5, fraction: true, playing: false }));
     await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime / actualVideo().duration - .5) < .04);
-    await page.locator('media-playback-rate-button').click();
+    await clickControl('media-playback-rate-button');
     await page.waitForFunction(() => actualVideo().playbackRate === 1.25 && events.some(event => event.k === 'ap-state' && event.rate === 1.25));
     await page.evaluate(() => { actualVideo().playbackRate = 1; });
     const seekPosition = await page.evaluate(() => actualVideo().currentTime), seekPicture = await canvas.screenshot();
-    await page.locator('media-play-button').click();
+    await clickControl('media-play-button');
     await page.waitForFunction(position => !actualVideo().paused && actualVideo().currentTime > position + .3, seekPosition);
     if (seekPicture.equals(await canvas.screenshot())) throw new Error('Paused seek/resume did not produce new Canvas pictures');
-    await page.locator('media-play-button').click();
+    await clickControl('media-play-button');
     await page.waitForFunction(() => actualVideo().paused);
-    await page.locator('media-seek-button[seconds="-10"]').click();
+    await clickControl('media-seek-button[seconds="-10"]');
     await page.waitForFunction(() => !actualVideo().seeking);
     const position = await page.evaluate(() => actualVideo().currentTime);
-    const surface = page.locator('media-container');
     await surface.dblclick({ position: { x: 120, y: 100 } });
     await page.waitForTimeout(250);
     if (!await page.evaluate(position => actualVideo().paused && Math.abs(actualVideo().currentTime - position) < .1, position))
@@ -141,18 +147,6 @@ try {
       if (!fits) throw new Error('Narrow layout overflow: '+selector);
     }
     if (mode === 'hls') {
-      if (process.env.AVPLAYER_DEBUG) await page.evaluate(async () => {
-        const { default: Player } = await import('/vendor/libmedia/avplayer.js');
-        for (const port of Player.Instances[0]?.subtitleRender?.leftPorts?.values() || []) {
-          const request = port.request.bind(port);
-          port.request = async (...args) => {
-            const packet = await request(...args);
-            if (args[0] === 'pull') console.log('subtitle-packet-shape:', typeof packet,
-              packet && typeof packet === 'object' ? Object.keys(packet).join(',') : String(packet));
-            return packet;
-          };
-        }
-      });
       await page.evaluate(async () => { await actualVideo().play(); });
       await page.evaluate(() => {
         const track = [...actualVideo().textTracks].find(track => /en/i.test(track.language));
@@ -188,11 +182,47 @@ try {
       });
       await page.waitForFunction(() => !actualVideo().seeking && actualVideo().currentTime >= 1.35
         && actualVideo().currentTime < 3 && [...document.querySelectorAll('.airplay-avplayer .ASS-box')]
-          .some(box => box.textContent.includes('HLS caption')), null, { timeout: 5000 });
+          .some(box => box.textContent.includes('HLS caption')), null, { timeout: 5000 }).catch(async error => {
+            console.log('subtitle-seek-state:', await page.evaluate(() => ({
+              position: actualVideo().currentTime, paused: actualVideo().paused, seeking: actualVideo().seeking,
+              tracks: [...actualVideo().textTracks].map(track => ({ id: track.id, mode: track.mode, language: track.language })),
+              captions: [...document.querySelectorAll('.airplay-avplayer .ASS-box')].map(box => box.textContent),
+              engine: actualVideo().getPlaybackDiagnostics(), error: actualVideo().error,
+            })));
+            throw error;
+          });
     }
+    await page.evaluate(() => {
+      window.retainedEngine = actualVideo();
+      window.pictureReturnPosition = actualVideo().currentTime;
+      controls.update({ id: 1, resource: mediaResource, revision: 2, seekRevision: 1,
+        target: 0, fraction: false, playing: true, videoShown: false, muted: true });
+    });
+    await page.waitForFunction(() => actualVideo() === retainedEngine && !actualVideo().paused
+      && actualVideo().currentTime > pictureReturnPosition + .2);
+    if (!await page.evaluate(() => document.querySelector('.airplay-player').hidden
+      && !controls.videoActive() && actualVideo().muted)) throw new Error('Picture return did not preserve hidden URL audio');
+    await page.evaluate(() => controls.update({ id: 1, resource: mediaResource, revision: 3, seekRevision: 1,
+      target: 0, fraction: false, playing: true, videoShown: true, muted: false }));
+    if (!await page.evaluate(() => actualVideo() === retainedEngine && !actualVideo().paused
+      && !document.querySelector('.airplay-player').hidden && controls.videoActive() && !actualVideo().muted))
+      throw new Error('Regaining picture ownership replaced or paused URL audio');
+    await page.evaluate(() => controls.update({ id: 1, resource: mediaResource, revision: 3, seekRevision: 1,
+      target: 0, fraction: false, playing: true, outputAllowed: false }));
+    await page.waitForFunction(() => actualVideo().paused && !controls.videoActive());
+    await page.evaluate(() => controls.update({ id: 1, resource: mediaResource, revision: 3, seekRevision: 1,
+      target: 0, fraction: false, playing: true, outputAllowed: true }));
+    await page.waitForFunction(() => !actualVideo().paused && controls.videoActive()).catch(async error => {
+      console.log('permission-resume-state:', await page.evaluate(() => ({
+        position: actualVideo()?.currentTime, paused: actualVideo()?.paused,
+        active: controls.videoActive(), engine: actualVideo()?.getPlaybackDiagnostics(), error: actualVideo()?.error,
+        events: events.slice(-15),
+      })));
+      throw error;
+    });
     checkDiagnostics(await page.evaluate(() => events.filter(event => event.k === 'ap-diag')));
     if (process.env.TEST_PLAYER_SCREENSHOT) await page.screenshot({ path: process.env.TEST_PLAYER_SCREENSHOT, fullPage: true });
-    await page.locator('.airplay-stop').click();
+    await clickControl('.airplay-stop');
     if (!await page.evaluate(() => events.some(event => event.k === 'ap' && event.a === 'stop'))) throw new Error('Stop did not reach AirPlay control channel');
     await page.evaluate(() => controls.update(null));
     await page.waitForFunction(() => !document.querySelector('#stage canvas'));
@@ -207,7 +237,7 @@ try {
     if (requests.some(request => request.includes('/vendor/mediabunny/') || request.includes('/vendor/soundtouch/')))
       throw new Error('URL playback loaded an obsolete engine dependency');
     console.log(JSON.stringify({ mode, softwareVideoOverride: SOFTWARE_VIDEO, canvasOnly: true, controls: true, pause: true, seek: true, rate: true,
-      captions: mode === 'hls', narrowLayout: true, disposal: true }));
+      captions: mode === 'hls', narrowLayout: true, audioOnlyPictureReturn: true, outputRevocation: true, disposal: true }));
     await page.close();
   }
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

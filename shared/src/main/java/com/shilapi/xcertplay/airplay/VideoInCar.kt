@@ -1,7 +1,6 @@
 package com.shilapi.xcertplay.airplay
 
 import com.shilapi.xcertplay.compat.Base64Compat
-import java.math.BigInteger
 
 /** Whether the latest video availability update was sent now or retained for a later AirPlay stage. */
 internal enum class VideoPlaybackDelivery { SENT, QUEUED, UNCHANGED }
@@ -48,6 +47,12 @@ internal class VideoPlaybackAvailability(
                 lastSent = null
             }
         }
+        return flush()
+    }
+
+    /** Resend a changed playback status even when permission itself stayed the same. */
+    fun refresh(): VideoPlaybackDelivery {
+        synchronized(stateLock) { generation++; lastSent = null }
         return flush()
     }
 
@@ -111,8 +116,9 @@ object VideoInCar {
     const val FEATURE = "videoPlayback"
     const val UI_URL = "videoplayback:"
     const val SETTINGS_CHANNEL_UUID = "BB493F61-A6B8-4769-8D74-80C23A9F71C4"
+    const val PLAYBACK_UUID = "A6B27562-B43A-4F2D-B75F-82391E250194"
     val REMOTE_CONTROL_UUIDS = setOf(
-        "A6B27562-B43A-4F2D-B75F-82391E250194", // video setup
+        PLAYBACK_UUID, // video setup
         "E3DC3EA6-E6C3-4B30-847C-B7ACFEBEA654", // overlay UI
     )
 
@@ -137,28 +143,21 @@ object VideoInCar {
             (iphoneLoadsAppSchemes && APP_SCHEME.matches(scheme) && scheme !in NOT_APP_SCHEMES)
     }
 
-    /** The legacy AirPlay feature bits plus [ADDITIONAL_FEATURE_BITS], as base64 of the little-endian bit set. */
+    /** Base64 of the declared legacy bitmap, little-endian with no padding or trailing zero bytes. */
     fun featuresEx(legacyFeatures: Long): String {
-        var bits = BigInteger.valueOf(legacyFeatures)
-        listOf(0, 64).forEach { bits = bits.setBit(it) }
-        val littleEndian = bits.toByteArray().reversedArray().dropLastWhile { it == 0.toByte() }.toByteArray()
-        return Base64Compat.encode(littleEndian)
+        val bytes = ByteArray(Long.SIZE_BYTES) { index -> (legacyFeatures ushr (index * 8)).toByte() }
+        return Base64Compat.encode(bytes.dropLastWhile { it == 0.toByte() }.toByteArray()).trimEnd('=')
     }
 
-    /**
-     * /info videoPlaybackInfo. The capabilities follow the web app's playerCapabilities, with what this
-     * player cannot do turned off.
-     */
+    /** /info top-level entries. Keep permission and receiver capabilities in their separate dictionaries. */
     fun info(legacyFeatures: Long, allowed: Boolean): Map<String, Any?> = linkedMapOf(
-        "videoPlaybackAllowed" to allowed,
-        "featuresEx" to featuresEx(legacyFeatures),
+        "videoPlaybackInfo" to linkedMapOf(
+            "videoPlaybackAllowed" to allowed,
+            "featuresEx" to featuresEx(legacyFeatures),
+        ),
         "playbackCapabilities" to linkedMapOf(
             "supportsOfflineHLS" to false,
-            "supportsAirPlayVideoWithSharePlay" to false,
-            "supportsInterstitials" to false,
-            "supportsIntegratedTimeline" to false,
-            "supportsAVMetrics" to false,
-            "supportsUIForAudioOnlyContent" to true,
+            "supportsUIForAudioOnlyContent" to false,
             "supportsFPSSecureStop" to false,
         ),
     )
@@ -192,6 +191,10 @@ object VideoInCar {
         val positionSeconds: Double,
         val durationSeconds: Double,
         val bufferedSeconds: Double,
+        val buffering: Boolean = false,
+        val rate: Double = if (playing) 1.0 else 0.0,
+        val seekable: Boolean = durationSeconds > 0,
+        val muted: Boolean = false,
     )
 
     /**
@@ -203,21 +206,18 @@ object VideoInCar {
         val duration = state?.durationSeconds ?: 0.0
         val info = linkedMapOf<String, Any?>(
             "item" to linkedMapOf("uuid" to itemUuid),
-            "rate" to if (state?.playing == true) 1.0 else 0.0,
+            "rate" to (state?.rate?.takeIf { it.isFinite() && it >= 0 } ?: 0.0),
             "readyToPlay" to ready,
-            "playbackLikelyToKeepUp" to ready,
+            "playbackLikelyToKeepUp" to (ready && state?.buffering != true),
         )
         if (state != null && ready) {
             info["position"] = cmTime(state.positionSeconds)
-            info["duration"] = cmTime(duration)
-            info["seekableTimeRanges"] = listOf(range(0.0, duration))
-            info["loadedTimeRanges"] = listOf(range(0.0, state.bufferedSeconds))
+            if (duration.isFinite() && duration > 0) info["duration"] = cmTime(duration)
+            info["seekableTimeRanges"] = if (state.seekable && duration.isFinite() && duration > 0) listOf(range(0.0, duration)) else emptyList<Any>()
+            info["loadedTimeRanges"] = loadedRanges(state)
         }
-        info["droppedVideoFrames"] = 0L
-        info["totalVideoFrames"] = 0L
-        info["decodedFrameCount"] = 0L
         info["playbackState"] = when {
-            state == null || !ready -> "loading"
+            state == null || !ready || state.buffering -> "loading"
             state.playing -> "playing"
             else -> "paused"
         }
@@ -236,9 +236,10 @@ object VideoInCar {
         val ready = state?.prepared == true
         val value: Any? = when (key) {
             "hasEnabledAudio" -> true
-            "muted" -> false
-            "seekableTimeRanges" -> if (ready) listOf(range(0.0, state!!.durationSeconds)) else null
-            "loadedTimeRanges" -> if (ready) listOf(range(0.0, state!!.bufferedSeconds)) else null
+            "muted" -> state?.muted ?: false
+            "seekableTimeRanges" -> if (ready && state!!.seekable && state.durationSeconds.isFinite() && state.durationSeconds > 0)
+                listOf(range(0.0, state.durationSeconds)) else emptyList<Any>()
+            "loadedTimeRanges" -> if (ready) loadedRanges(state!!) else null
             else -> null
         }
         return linkedMapOf("key" to key, "value" to value, "kind" to "response", "type" to "property", "messageID" to messageId)
@@ -264,6 +265,13 @@ object VideoInCar {
     /** CMTime as the web app sends it: milliseconds, flags 1 (valid). */
     fun cmTime(seconds: Double): Map<String, Any?> =
         linkedMapOf("value" to Math.round(seconds * 1000), "timescale" to 1000L, "flags" to 1L, "epoch" to 0L)
+
+    private fun loadedRanges(state: PlayerState): List<Map<String, Any?>> {
+        val start = state.positionSeconds
+        val end = state.bufferedSeconds
+        return if (start.isFinite() && start >= 0 && end.isFinite() && end > start) listOf(range(start, end - start))
+        else emptyList()
+    }
 
     private fun range(start: Double, duration: Double) = linkedMapOf("start" to cmTime(start), "duration" to cmTime(duration))
 

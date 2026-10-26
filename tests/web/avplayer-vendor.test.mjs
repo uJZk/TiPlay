@@ -155,8 +155,9 @@ test('seek satisfies an already pending subtitle pull through the existing packe
 });
 
 const subtitleCode = await readFile(new URL('630.avplayer.js', directory), 'utf8');
-const subtitlePull = subtitleCode.match(/async pull\(\)\{if\(this\.pulling[\s\S]+?(?=getDemuxerPort\()/)?.[0];
-assert.ok(subtitlePull, 'actual SubtitleRender pull implementation exists');
+const subtitlePull = subtitleCode.match(/async __tiplayPullPacket\(\)\{if\(this\.pulling[\s\S]+?(?=getDemuxerPort\()/)?.[0];
+const subtitlePullWrapper = subtitleCode.match(/pull\(\)\{if\(this\.pulling\)return this\.__tiplayPullDone;[\s\S]+?(?=async __tiplayBeforeSeek\()/)?.[0];
+assert.ok(subtitlePull && subtitlePullWrapper, 'actual SubtitleRender pull implementation exists');
 test('subtitle worker packets deserialize through the existing helper and release exactly once', async () => {
   for (const pooled of [true, false]) for (const mode of ['object','pointer','eof','request-error','decode-error','deserialize-error']) {
     const memory = new Map([[72,0n],[112,30000n]]), pointer = 64, failure = new Error(mode);
@@ -166,7 +167,7 @@ test('subtitle worker packets deserialize through the existing helper and releas
     const allocate = () => { allocations++; return pointer; };
     const release = actual => { assert.equal(actual, pointer); releases++; };
     const serialized = { pts:0n, duration:30000n, timeBase:{num:1,den:1000}, data:new Uint8Array([65]), sideData:[] };
-    const Pull = runInNewContext(`(class {${subtitlePull}})`, {
+    const Pull = runInNewContext(`(class {${subtitlePull}${subtitlePullWrapper}})`, {
       n:{f:{17:read}}, o:{M:{17:write}}, p:{Mr:value=>value}, v:{i0:{}}, b:{Yz(){}}, k:'fixture',
       g:{_5:allocate,Qe:release},
       __tiplayUnserializePacket(packet, actual) {
@@ -236,5 +237,7 @@ test('AVPlayer shipped assets match the recorded build and unmodified WASM sourc
   assert.equal(manifest.pendingSeekReplyPatches, 1);
   assert.equal(manifest.subtitlePacketBridgePatches, 1);
   assert.equal(manifest.subtitlePacketReleasePatches, 4);
+  assert.equal(manifest.subtitleDrainPatches, 3);
+  assert.equal(manifest.subtitleSeekPatches, 3);
   assert.equal(manifest.sdrVariantPolicyPatches, 3);
 });

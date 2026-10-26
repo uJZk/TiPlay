@@ -8,11 +8,22 @@ interface CarPlayVideoListener {
     /** Whether the car is in P, or null when it cannot tell. Blocking; read once a second while CarPlay runs. */
     fun readParked(): Boolean?
 
-    /** Video became allowed or not; when not, the player must close. Any thread. */
+    /** Picture permission changed; withdraw the picture when false, while permitted audio may continue. Any thread. */
     fun onVideoAllowedChanged(allowed: Boolean)
+
+    /** Monotonic controller session generation; callbacks from a retired generation must be ignored. */
+    fun onVideoSessionStarted(generation: Long) {}
+
+    fun onVideoMessage(generation: Long, streamId: Long, message: Map<String, Any?>) = onVideoMessage(streamId, message)
+    fun onVideoStreamEnded(generation: Long, streamId: Long) = onVideoStreamEnded(streamId)
+    fun onVideoUiRequested(generation: Long) = onVideoUiRequested()
+    fun onVideoSessionEnded(generation: Long) = onVideoSessionEnded()
 
     /** A playback message from the iPhone, e.g. insertPlayQueueItem, setRate, seek, stop. Any thread. */
     fun onVideoMessage(streamId: Long, message: Map<String, Any?>)
+
+    /** Only this playback stream ended; another playback/overlay stream or iAP may still be active. */
+    fun onVideoStreamEnded(streamId: Long) {}
 
     /** The iPhone asks the car to show its video player (requestUI "videoplayback:"). Any thread. */
     fun onVideoUiRequested()

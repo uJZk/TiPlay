@@ -16,6 +16,102 @@ import org.robolectric.annotation.LooperMode
 @Config(sdk = [29])
 @LooperMode(LooperMode.Mode.PAUSED)
 class AirPlayCastPlayerSeekTest {
+    @Test fun initialPausedAudioOnlyIntentIsPublishedBeforeTheFirstBrowserSnapshot() = withPlayer { player, _ ->
+        player.setVideoShown(false)
+        assertTrue(player.play(ReceiverPlay("https://example.test/audio.mp4", 0.0, false), initialRate = 0.0, initialMuted = true))
+        shadowOf(Looper.getMainLooper()).idle()
+        val source = AirPlayBrowserPlayback.snapshot()!!
+        assertEquals(false, source["playing"])
+        assertEquals(false, source["videoShown"])
+        assertEquals(true, source["outputAllowed"])
+        assertEquals(true, source["muted"])
+        player.setVideoShown(true)
+        assertEquals(true, AirPlayBrowserPlayback.snapshot()!!["videoShown"])
+        assertEquals(false, AirPlayBrowserPlayback.snapshot()!!["playing"])
+    }
+
+    @Test fun asynchronousUrlCreationFailureRetiresItsEntryAndReportsFailureOnMain() = withPlayer { player, events ->
+        assertTrue(player.play(ReceiverPlay("https://bad url/item.mp4", 0.0, false)))
+        val epoch = player.playbackEpoch
+        shadowOf(Looper.getMainLooper()).idle()
+        assertNull(AirPlayBrowserPlayback.snapshot())
+        assertEquals(listOf("failed" to epoch), events)
+        assertTrue(player.play(replacementVideo()))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("video", AirPlayBrowserPlayback.snapshot()!!["kind"])
+    }
+
+    @Test fun browserPhotoDecodeFailureReleasesItsBindingAndCannotStopAReplacement() = withPlayer { player, events ->
+        player.photo(byteArrayOf(-1, -40, -1, -39))
+        shadowOf(Looper.getMainLooper()).idle()
+        val id = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
+        assertTrue(AirPlayBrowserPlayback.report(id, mapOf("failed" to true)))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertNull(AirPlayBrowserPlayback.snapshot())
+        assertEquals("failed", events.last().first)
+        player.photo(byteArrayOf(-1, -40, -1, -39))
+        shadowOf(Looper.getMainLooper()).idle()
+        val replacement = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
+        assertFalse(AirPlayBrowserPlayback.report(id, mapOf("failed" to true)))
+        assertEquals(replacement, AirPlayBrowserPlayback.snapshot()!!["id"])
+    }
+
+    @Test fun aDifferentVisualOwnerRetiresTheNativePlayerBeforeOldControlsCanReviveIt() = withPlayer { player, events ->
+        assertTrue(player.play(replacementVideo()))
+        shadowOf(Looper.getMainLooper()).idle()
+        val oldId = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
+        val replacement = AirPlayCastPlayer({ _, _ -> null }) { _, _ -> }
+        replacement.setOutputAllowed(true)
+        try {
+            replacement.photo(byteArrayOf(-1, -40, -1, -39))
+            shadowOf(Looper.getMainLooper()).idle()
+            val photoId = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
+            assertTrue("The displaced owner is retired, not merely hidden", player.retired)
+            assertEquals("stopped", events.last().first)
+            assertFalse(AirPlayBrowserPlayback.command(oldId, "play"))
+            player.setVideoShown(true)
+            player.setOutputAllowed(true)
+            player.rate(1.0)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(photoId, AirPlayBrowserPlayback.snapshot()!!["id"])
+            replacement.stop()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertNull(AirPlayBrowserPlayback.snapshot())
+            assertTrue(player.play(replacementVideo()))
+            shadowOf(Looper.getMainLooper()).idle()
+            assertFalse(player.retired)
+            assertEquals("video", AirPlayBrowserPlayback.snapshot()!!["kind"])
+        } finally { replacement.close() }
+    }
+
+    @Test fun audioMetadataBeforeMainDispatchAndLocalPauseStayBoundToTheAudioProducer() = withPlayer { player, _ ->
+        val pauses = mutableListOf<Boolean>()
+        assertTrue(player.audio(pause = { pauses.add(it); true }) {})
+        player.audioMetadata(com.shilapi.xcertplay.receiver.ReceiverAudioMetadataUpdate(title = "First track",
+            progress = com.shilapi.xcertplay.receiver.ReceiverAudioProgress(1000, 45100, 442000)))
+        player.audioSample(45100, 44100)
+        shadowOf(Looper.getMainLooper()).idle()
+        val snapshot = AirPlayBrowserPlayback.snapshot()!!
+        val id = snapshot["id"] as Long
+        assertEquals("First track", snapshot["title"])
+        assertEquals(1.0, snapshot["position"] as Double, 0.0)
+        assertFalse(snapshot.containsKey("resource"))
+        assertFalse(AirPlayBrowserPlayback.command(id, "seek", 3.0))
+        assertTrue(AirPlayBrowserPlayback.command(id, "pause"))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf(true), pauses)
+        assertEquals(false, AirPlayBrowserPlayback.snapshot()!!["playing"])
+        assertTrue(AirPlayBrowserPlayback.command(id, "play"))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf(true, false), pauses)
+        assertEquals(true, AirPlayBrowserPlayback.snapshot()!!["playing"])
+        player.photo(byteArrayOf(-1, -40, -1, -39))
+        player.audioMetadata(com.shilapi.xcertplay.receiver.ReceiverAudioMetadataUpdate(title = "Stale track"))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("photo", AirPlayBrowserPlayback.snapshot()!!["kind"])
+        assertNull(AirPlayBrowserPlayback.snapshot()!!["title"])
+    }
+
     private fun withPlayer(test: (AirPlayCastPlayer, MutableList<Pair<String, Long>>) -> Unit) {
         TeslaBrowserLink.resetForTest()
         val events = mutableListOf<Pair<String, Long>>()

@@ -6,7 +6,7 @@ import { createMediaEngine } from '../../site/play/airplay-media.js';
 
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
-function fixture({ suspended = false, loadGate, playGate, seekGate, startupDeadline, live = false, ignoreEarlyRate = false, audioSpecs, supportedCodecs } = {}) {
+function fixture({ suspended = false, loadGate, playGate, pauseGate, seekGate, subtitleGate, startupDeadline, resourceDeadline, live = false, ignoreEarlyRate = false, audioSpecs, supportedCodecs } = {}) {
   const players = [], containers = [];
   class Player {
     static stops = 0;
@@ -25,13 +25,13 @@ function fixture({ suspended = false, loadGate, playGate, seekGate, startupDeadl
     ]; }
     getSelectedAudioStreamId() { return this.selectedAudio ?? 2; }
     async selectAudio(id) { this.selectedAudio = id; }
-    async selectSubtitle(id) { this.selectedSubtitle = id; }
+    async selectSubtitle(id) { await subtitleGate?.promise; this.selectedSubtitle = id; }
     setSubtitleEnable(value) { this.subtitleEnabled = value; }
     isLive() { return live; }
     isSuspended() { return this.suspended; }
     async resume() { this.suspended = false; this.fire('audioContextRunning'); }
-    async play(options) { this.playOptions = options; this.startVolumes ||= []; this.startVolumes.push(this.volume); await playGate?.promise; this.started = true; this.fire('played'); this.fire('firstVideoRendered'); }
-    async pause() { this.pauses = (this.pauses || 0) + 1; }
+    async play(options) { this.playCalls = (this.playCalls || 0) + 1; this.playOptions = options; this.startVolumes ||= []; this.startVolumes.push(this.volume); await playGate?.promise; this.started = true; this.fire('played'); this.fire('firstVideoRendered'); }
+    async pause() { this.pauses = (this.pauses || 0) + 1; await pauseGate?.promise; }
     async seek(value) { this.seeks.push(value); await seekGate?.promise; this.currentTime = value; }
     setVolume(value) { this.volume = value; }
     setPlaybackRate(value) { if (!live && (!ignoreEarlyRate || this.started)) this.rate = value; }
@@ -41,7 +41,7 @@ function fixture({ suspended = false, loadGate, playGate, seekGate, startupDeadl
   }
   const media = createMediaEngine({ prepend() {} }, { library: { default: Player, AVPlayerSupportedCodecs: supportedCodecs }, languages: ['zh'],
     containerFactory() { const container = { style: {}, remove() { this.removed = true; } }; containers.push(container); return container; },
-    startupDeadline, proxyOnly: true, proxyOrigin: 'http://192.168.1.2:8080',
+    startupDeadline, resourceDeadline, proxyOnly: true, proxyOrigin: 'http://192.168.1.2:8080',
   });
   return { media, players, Player, containers };
 }
@@ -76,7 +76,8 @@ test('zero initial seek keeps prepared source; seek converts seconds to original
   h.media.currentTime = 0; assert.deepEqual(h.players[0].seeks, []);
   h.media.currentTime = 2; h.media.currentTime = 6;
   assert.equal(h.media.seeking, true); assert.equal(h.media.currentTime, 6);
-  gate.resolve(); await flush();
+  const completed = new Promise(resolve => h.media.addEventListener('seeked', resolve, { once: true }));
+  gate.resolve(); await completed;
   assert.deepEqual(h.players[0].seeks, [102000n, 106000n]); assert.equal(h.media.currentTime, 6); assert.equal(h.media.seeking, false);
   h.media.dispose();
 });
@@ -85,6 +86,14 @@ test('pause rejects an in-flight play and late played event cannot resume intent
   const gate = deferred(), h = fixture({ playGate: gate }); await h.media.load('http://media.test/a.mp4');
   const playing = h.media.play(); h.media.pause(); gate.resolve();
   await assert.rejects(playing, { name: 'AbortError' }); assert.equal(h.media.paused, true);
+  h.media.dispose();
+});
+
+test('a synchronous permission revocation on play never starts the upstream media graph', async () => {
+  const h = fixture(); await h.media.load('http://media.test/a.mp4');
+  h.media.addEventListener('play', () => h.media.pause());
+  await assert.rejects(h.media.play(), { name: 'AbortError' });
+  assert.equal(h.players[0].playOptions, undefined); assert.equal(h.media.paused, true);
   h.media.dispose();
 });
 
@@ -113,6 +122,49 @@ test('dispose aborts a hung load immediately and releases source, Canvas and fin
   await flush(); h.media.dispose(); await rejection; await flush();
   assert.equal(h.players[0].destroyed, 1); assert.equal(h.containers[0].removed, true); assert.equal(h.Player.stops, 1);
   gate.resolve(); await flush(); assert.equal(h.players[0].destroyed, 1);
+});
+
+test('source retirement silences immediately and a synchronous destroy failure cannot retain the old Canvas', async () => {
+  const h = fixture(); await h.media.load('http://media.test/a.mp4'); await h.media.play();
+  const first = h.players[0]; first.destroy = () => { throw new Error('Worker already stopped'); };
+  const replacement = h.media.load('http://media.test/b.mp4');
+  assert.equal(first.volume, 0); assert.equal(h.containers[0].removed, true);
+  await replacement; assert.equal(h.players.length, 2); assert.equal(h.media.error, null);
+  h.media.dispose(); await flush();
+});
+
+test('a cancelled replacement cannot bypass an older pending pipeline retirement', async () => {
+  const h = fixture(); await h.media.load('http://media.test/a.mp4'); await h.media.play();
+  const destruction = deferred(), pipeline = deferred();
+  h.players[0].destroy = () => destruction.promise;
+  h.Player.stopPipelines = async () => { h.Player.stops++; await pipeline.promise; };
+  const cancelled = h.media.load('http://media.test/b.mp4');
+  const rejected = assert.rejects(cancelled, { name: 'AbortError' });
+  await flush();
+  const current = h.media.load('http://media.test/c.mp4');
+  await rejected; await flush();
+  assert.equal(h.players.length, 1, 'unfinished old destruction keeps replacement constructors out');
+  destruction.resolve(); await flush();
+  assert.equal(h.Player.stops, 1); assert.equal(h.players.length, 1, 'global pipeline shutdown also completes before reuse');
+  pipeline.resolve(); await current;
+  assert.equal(h.players.length, 2); assert.match(h.players[1].src, /c\.mp4$/);
+  h.media.dispose(); await flush();
+});
+
+test('a hung outgoing Worker shutdown fails replacement preparation within the existing resource deadline', async () => {
+  const h = fixture({ resourceDeadline: 20 }); await h.media.load('http://media.test/a.mp4');
+  const destruction = deferred(); h.players[0].destroy = () => destruction.promise;
+  await assert.rejects(h.media.load('http://media.test/b.mp4'), { name: 'TimeoutError' });
+  assert.equal(h.media.error.name, 'TimeoutError'); assert.equal(h.players.length, 1);
+  destruction.resolve(); h.media.dispose(); await flush();
+});
+
+test('source-specific proxy fallback remains strict when a paused live source is reopened', async () => {
+  const h = fixture({ live: true });
+  await h.media.load('http://media.test/live.m3u8', 'application/x-mpegurl', { proxyOnly: true });
+  await h.media.play(); h.media.pause(); await h.media.play();
+  for (const player of h.players) assert.equal(player.loadOptions.http.headers['X-TiPlay-Proxy-Origin'], 'http://192.168.1.2:8080');
+  h.media.dispose();
 });
 
 test('AVPlayer owns subtitle selection, parsing and rendering; bridge contains no cues', async () => {
@@ -154,12 +206,54 @@ test('live pause silences and retires the source; resume opens the URL again at 
   h.media.dispose();
 });
 
+test('changing mute or volume cannot unmute a retired live source before its asynchronous destruction', async () => {
+  const h = fixture({ live: true }); await h.media.load('http://media.test/live.m3u8'); await h.media.play();
+  const destruction = deferred(), old = h.players[0]; old.destroy = () => destruction.promise;
+  h.media.pause(); assert.equal(old.volume, 0);
+  h.media.volume = .8; h.media.muted = true; h.media.muted = false;
+  assert.equal(old.volume, 0, 'retired graph keeps silence while desired volume changes');
+  destruction.resolve(); await h.media.play();
+  assert.equal(h.players[1].volume, .8); h.media.dispose();
+});
+
 
 test('rapid play-pause-play shares unfinished upstream initialization without cancelling the new intent', async () => {
   const gate = deferred(), h = fixture({ playGate: gate }); await h.media.load('http://media.test/a.mp4');
   const old = h.media.play(); const rejected = assert.rejects(old, { name: 'AbortError' });
   h.media.pause(); const current = h.media.play(); gate.resolve();
   await rejected; await current; assert.equal(h.media.paused, false); assert.equal(h.media.buffering, false);
+  h.media.dispose();
+});
+
+test('resuming waits for the actual upstream pause before restarting the retained graph', async () => {
+  const pause = deferred(), h = fixture({ pauseGate: pause });
+  await h.media.load('http://media.test/movie.mp4'); await h.media.play();
+  const player = h.players[0]; h.media.pause(); const resumed = h.media.play(); await flush();
+  assert.equal(player.playCalls, 1, 'a pending pause cannot finish on top of a newer upstream play');
+  pause.resolve(); await resumed;
+  assert.equal(player.playCalls, 2); assert.equal(h.media.paused, false);
+  h.media.dispose();
+});
+
+test('same-turn subtitle change and seek do not replace AVPlayer demux state concurrently', async () => {
+  const subtitle = deferred(), h = fixture({ subtitleGate: subtitle });
+  await h.media.load('http://media.test/movie.mp4'); await h.media.play();
+  h.media.textTracks[0].mode = 'showing'; h.media.currentTime = 3;
+  await flush(); assert.deepEqual(h.players[0].seeks, [], 'seek waits for the active track transition');
+  const completed = new Promise(resolve => h.media.addEventListener('seeked', resolve, { once: true }));
+  subtitle.resolve(); await completed;
+  assert.equal(h.players[0].selectedSubtitle, 4);
+  assert.deepEqual(h.players[0].seeks, [103000n]); assert.equal(h.media.seeking, false);
+  h.media.dispose();
+});
+
+test('subtitle enable cannot clear the first cue delivered by selection', async () => {
+  const h = fixture(); await h.media.load('http://media.test/movie.mp4'); await h.media.play();
+  const player = h.players[0]; let cue;
+  player.setSubtitleEnable = enabled => { if (enabled) cue = undefined; };
+  player.selectSubtitle = async () => { cue = 'first cue from the selected track'; };
+  h.media.textTracks[0].mode = 'showing'; await flush();
+  assert.equal(cue, 'first cue from the selected track');
   h.media.dispose();
 });
 

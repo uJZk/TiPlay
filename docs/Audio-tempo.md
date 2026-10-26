@@ -1,15 +1,21 @@
 # Audio buffering and tempo
 
-Browser v89 introduced the NetEq/libav implementation below. Source v90 adds
-independent stream dispatch and direct Worker-to-Worklet PCM delivery; it has not
-been published. Android retains the beta.20/code62 version identity. The current
-work skips the full Android suite at the user's request; targeted results do not
-establish vehicle sound quality, CPU headroom or physical speaker/video timing.
+Browser v89 introduced the NetEq/libav implementation below. Published v90 adds
+independent stream dispatch and direct Worker-to-Worklet PCM delivery; beta.22/code64
+retains that page. Beta.23/v95 integrates ordinary AirPlay audio and controls
+with this base. Targeted results do not establish vehicle sound quality, CPU
+headroom or physical speaker/video timing; release-specific verification is in
+[Build](Build.md#beta22-release).
 
 ## Live audio: official NetEq
 
-CarPlay, AirPlay mirror and live AirPlay audio use the official libWebRTC NetEq
-core, compiled to WASM with its Opus and L16 decoders. Each source stream/epoch
+Negotiated source codecs travel as original encoded audio over standard WebRTC;
+Android does not decode/reencode them. The browser routes received tracks into
+the shared AudioWorklet mixing/ducking path. Unsupported source formats use the
+DataChannel software path below.
+
+CarPlay, AirPlay mirror and live AirPlay audio on that software path use the
+official libWebRTC NetEq core, compiled to WASM with its Opus and L16 decoders. Each source stream/epoch
 has its own instance of the NetEq engine within a private worklet runtime. There
 is no replacement JavaScript jitter controller, PD, PID or SoundTouch live path.
 Video and live audio run independently. Neither video presentation timestamps nor
@@ -17,7 +23,7 @@ clock-fit generations steer live audio or cause a NetEq restart. `currentTime`
 is never a live playback witness; counter discontinuities remain diagnostic
 measurement-domain changes while actual emitted block lengths advance consumption.
 
-Realtime decoder order is now:
+Software decoder order is:
 
 1. Raw 48 kHz PCM16/24 is unpacked using the existing WASM audio kernel.
 2. Encoded 48 kHz Opus goes directly to NetEq's official decoder, retaining FEC/PLC.

@@ -5,7 +5,7 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** First-use consent for a cryptographically verified ordinary AirPlay sender. */
+/** First-use consent and optional remembered sender identities, separate from media ownership. */
 class ReceiverDeviceTrust(
     private val store: Store,
     private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000 },
@@ -21,13 +21,15 @@ class ReceiverDeviceTrust(
         object Denied : Decision()
         class Pending internal constructor(val id: String, internal val revision: Long,
                                            internal val fingerprint: String, internal val verified: Boolean,
+                                           internal val persistentFingerprint: String,
                                            internal val finished: CountDownLatch = CountDownLatch(1)) : Decision() {
             @Volatile internal var allowed = false
         }
     }
 
     private data class Request(val decision: Decision.Pending, val fingerprint: String, val name: String,
-                               val browser: String, val expires: Long, val verified: Boolean)
+                               val browser: String, val expires: Long, val verified: Boolean,
+                               val mediaType: String)
     private var pending: Request? = null
     private var browser: String? = null
     private var browserSeenAt = Long.MIN_VALUE
@@ -62,17 +64,28 @@ class ReceiverDeviceTrust(
         return requestIdentity("connection:$sessionToken", deviceName, verified = false)
     }
 
-    private fun requestIdentity(fingerprint: String, deviceName: String, verified: Boolean): Decision {
+    /** One-time permission belongs to this receiver-generated connection, never to a name/IP.
+     * The optional identity can be a presented key or a normalized stable sender claim. */
+    @Synchronized fun requestSession(sessionToken: String, publicKey: ByteArray?, deviceName: String,
+                                     mediaType: String = "unknown"): Decision {
+        if (!validToken(sessionToken)) return Decision.Denied
+        val key = fingerprint(publicKey)
+        return requestIdentity("connection:$sessionToken", deviceName, key != null, key.orEmpty(), mediaType)
+    }
+
+    private fun requestIdentity(fingerprint: String, deviceName: String, verified: Boolean,
+                                persistentFingerprint: String = fingerprint, mediaType: String = "unknown"): Decision {
         expire()
-        if (if (verified) store.contains(fingerprint) else fingerprint in allowedConnections) return Decision.Allowed
+        if ((verified && store.contains(persistentFingerprint)) || fingerprint in allowedConnections) return Decision.Allowed
         val now = nowMillis()
         if (!verified && now < unverifiedDeniedUntil) return Decision.Denied
-        if (deniedUntil[fingerprint]?.let { now < it } == true) return Decision.Denied
+        if (deniedUntil[if (verified) persistentFingerprint else fingerprint]?.let { now < it } == true) return Decision.Denied
         val activeBrowser = browser?.takeIf { now - browserSeenAt in 0..BROWSER_LIVE_MILLIS } ?: return Decision.Denied
         pending?.let { return if (it.fingerprint == fingerprint && it.browser == activeBrowser) it.decision else Decision.Denied }
         val name = deviceName.filter { !it.isISOControl() }.trim().take(80).ifEmpty { "AirPlay" }
-        return Decision.Pending(UUID.randomUUID().toString(), revision, fingerprint, verified).also {
-            pending = Request(it, fingerprint, name, activeBrowser, now + APPROVAL_MILLIS, verified)
+        return Decision.Pending(UUID.randomUUID().toString(), revision, fingerprint, verified, persistentFingerprint).also {
+            pending = Request(it, fingerprint, name, activeBrowser, now + APPROVAL_MILLIS, verified,
+                mediaType.takeIf { type -> type in setOf("audio", "mirror", "video", "photo") } ?: "unknown")
         }
     }
 
@@ -80,6 +93,9 @@ class ReceiverDeviceTrust(
     fun authorize(publicKey: ByteArray?, deviceName: String): Boolean = await(request(publicKey, deviceName))
 
     fun authorizeOnce(sessionToken: String, deviceName: String): Boolean = await(requestOnce(sessionToken, deviceName))
+
+    fun authorizeSession(sessionToken: String, publicKey: ByteArray?, deviceName: String,
+                         mediaType: String = "unknown"): Boolean = await(requestSession(sessionToken, publicKey, deviceName, mediaType))
 
     private fun await(decision: Decision): Boolean = when (decision) {
         Decision.Allowed -> true
@@ -94,7 +110,7 @@ class ReceiverDeviceTrust(
             synchronized(this) {
                 if (pending?.decision === decision) cancelPending()
                 decision.allowed && decision.revision == revision &&
-                    (if (decision.verified) store.contains(decision.fingerprint) else decision.fingerprint in allowedConnections)
+                    ((decision.verified && store.contains(decision.persistentFingerprint)) || decision.fingerprint in allowedConnections)
             }
         }
     }
@@ -103,16 +119,16 @@ class ReceiverDeviceTrust(
         expire()
         val request = pending?.takeIf { it.browser == session } ?: return null
         return mapOf("id" to request.decision.id, "name" to request.name,
-            "verified" to request.verified,
+            "verified" to request.verified, "mediaType" to request.mediaType,
             "remainingMillis" to (request.expires - nowMillis()).coerceIn(0, APPROVAL_MILLIS))
     }
 
     /** Late, replayed and replaced-browser responses can never establish trust. */
-    @Synchronized fun respond(session: String, id: String, allow: Boolean): Boolean {
+    @Synchronized fun respond(session: String, id: String, allow: Boolean, remember: Boolean = true): Boolean {
         expire()
         val request = pending?.takeIf { it.browser == session && it.decision.id == id } ?: return false
         if (allow) {
-            if (request.verified) store.remember(request.fingerprint)
+            if (remember && request.verified) store.remember(request.decision.persistentFingerprint)
             else {
                 allowedConnections += request.fingerprint
                 while (allowedConnections.size > MAX_CONNECTION_GRANTS) allowedConnections.remove(allowedConnections.first())
@@ -158,7 +174,8 @@ class ReceiverDeviceTrust(
 
     private fun finish(request: Request) {
         if (!request.decision.allowed) {
-            deniedUntil[request.fingerprint] = nowMillis() + DENIAL_COOLDOWN_MILLIS
+            deniedUntil[if (request.verified) request.decision.persistentFingerprint else request.fingerprint] =
+                nowMillis() + DENIAL_COOLDOWN_MILLIS
             while (deniedUntil.size > MAX_DENIALS) deniedUntil.remove(deniedUntil.keys.first())
             if (!request.verified) unverifiedDeniedUntil = nowMillis() + DENIAL_COOLDOWN_MILLIS
         }

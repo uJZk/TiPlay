@@ -4,8 +4,9 @@ import java.io.Closeable
 import java.io.ByteArrayInputStream
 
 /** A still image retains its original encoding; browsers decode it once and fit their current viewport. */
-class AirPlayPhotoPlayback(bytes: ByteArray) : Closeable {
+class AirPlayPhotoPlayback(bytes: ByteArray, private val event: (String) -> Unit = {}) : Closeable {
     private var image: ByteArray? = bytes.copyOf()
+    private var failed = false
     val contentType = if (bytes.size >= 2 && bytes[0] == 0xff.toByte() && bytes[1] == 0xd8.toByte())
         "image/jpeg" else "image/png"
 
@@ -33,5 +34,13 @@ class AirPlayPhotoPlayback(bytes: ByteArray) : Closeable {
     private fun unsatisfied(size: Int) = AirPlayVideoProxy.Resource(416, contentType,
         listOf("Content-Range" to "bytes */$size"), ByteArrayInputStream(ByteArray(0)))
     @Synchronized fun source(): Map<String, Any?> = if (image == null) emptyMap() else mapOf("resource" to "photo")
+    fun fail(): Boolean {
+        synchronized(this) {
+            if (image == null || failed) return false
+            failed = true
+        }
+        event("failed")
+        return true
+    }
     @Synchronized override fun close() { image = null }
 }

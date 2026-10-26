@@ -40,7 +40,7 @@ export function createMediaEngine(surface, options = {}) {
   let error = null, rate = 1, defaultRate = 1, muted = false, volume = 1;
   const playWaiters = new Set(), audioTracks = createAudioTrackList(selectAudioTrack);
   const textTracks = createSubtitleTrackList(selectSubtitleTrack);
-  const active = item => !disposed && item === owner && !item.controller.signal.aborted;
+  const active = item => Boolean(item) && !disposed && item === owner && !item.controller.signal.aborted;
   const event = type => { if (!disposed) media.dispatchEvent(new Event(type)); };
   function settlePlay(cause) {
     for (const waiter of playWaiters) cause ? waiter.reject(cause) : waiter.resolve();
@@ -88,13 +88,15 @@ export function createMediaEngine(surface, options = {}) {
     item.resize?.disconnect();
     // Scope DOM and asynchronous disposal to this source: an old completion cannot remove the new Canvas.
     item.container?.remove();
-    item.cleanup = Promise.resolve(item.player?.destroy?.()).catch(() => {}).then(async () => {
-      const state = item.libraryState;
-      if (!state) return;
-      state.users.delete(item);
-      if (!state.users.size) await item.Player.stopPipelines?.();
+    // Destroy can wait for Workers/network IO. Silence the outgoing owner before returning the screen.
+    try { item.player?.setVolume?.(0, true); } catch (_) {}
+    const state = item.libraryState, previousCleanup = state?.cleanup;
+    item.cleanup = Promise.resolve().then(() => item.player?.destroy?.()).catch(() => {}).then(async () => {
+      // A cancelled replacement must not replace an older, unfinished destruction barrier.
+      await previousCleanup;
+      if (state?.users.delete(item) && !state.users.size) await item.Player.stopPipelines?.();
     }).catch(() => {});
-    if (item.libraryState) item.libraryState.cleanup = item.cleanup;
+    if (state) state.cleanup = item.cleanup;
     return item.cleanup;
   }
   function fail(cause, item = owner) {
@@ -176,6 +178,24 @@ export function createMediaEngine(surface, options = {}) {
     buffering = false; readyState = 4; item.startedAt ??= now(); item.phase = 'playing';
     event('playing'); settlePlay();
   }
+  function changeSource(item, apply) {
+    // AVPlayer track changes and seeks both replace demux/render state. Serialize those controls,
+    // while their existing desired-value loops coalesce repeated UI commands.
+    const next = Promise.resolve(item.changing).catch(() => {}).then(() => {
+      if (!active(item)) throw interrupted();
+      return apply();
+    });
+    item.changing = next;
+    return next;
+  }
+  function changeSubtitle(item, id) {
+    return changeSource(item, async () => {
+      // Enabling an already selected upstream track resets its renderer. Do that
+      // before selection seeks/restarts it, so a new cue cannot be cleared later.
+      item.player.setSubtitleEnable?.(id !== undefined);
+      if (id !== undefined) await item.player.selectSubtitle(Number(id));
+    });
+  }
   function wire(item) {
     const player = item.player;
     const on = (name, listener) => player.on(name, (...args) => { if (active(item)) listener(...args); });
@@ -191,14 +211,15 @@ export function createMediaEngine(surface, options = {}) {
     on('timeout', () => fail(new DOMException('Media resource timed out.', 'TimeoutError'), item));
     on('streamUpdate', () => { void updateMetadata(item).then(() => event('progress')).catch(cause => fail(cause, item)); });
   }
-  async function load(src, type) {
+  async function load(src, type, sourceOptions = {}) {
     if (disposed) throw interrupted();
     const previous = owner; owner = null; serial++; settlePlay(interrupted()); retire(previous);
     position = origin = width = height = 0; duration = NaN; error = null;
     paused = true; ended = seeking = buffering = false; readyState = networkState = 0;
     audioTracks.replace([], null); textTracks.replace([]); event('emptied');
     if (!src) return;
-    const item = owner = { src: String(src), type, serial, controller: new AbortController(), openedAt: now(), phase: 'dependencies', loaded: false };
+    const item = owner = { src: String(src), type, serial, proxyOnly: sourceOptions.proxyOnly ?? options.proxyOnly,
+      controller: new AbortController(), openedAt: now(), phase: 'dependencies', loaded: false };
     networkState = 2; event('loadstart');
     try {
       const library = await withDeadline(abortable(dependencies(), item.controller.signal), options.resourceDeadline || 15000);
@@ -208,7 +229,12 @@ export function createMediaEngine(surface, options = {}) {
       item.Player = Player; item.supportedCodecs = library.AVPlayerSupportedCodecs;
       item.libraryState = libraries.get(Player) || { users: new Set(), cleanup: Promise.resolve() };
       libraries.set(Player, item.libraryState);
-      await abortable(item.libraryState.cleanup, item.controller.signal);
+      // New retirements may join while this source waits; drain the current barrier before reusing the pool.
+      let cleanup;
+      do {
+        cleanup = item.libraryState.cleanup;
+        await withDeadline(abortable(cleanup, item.controller.signal), options.resourceDeadline || 15000);
+      } while (cleanup !== item.libraryState.cleanup);
       if (!active(item)) throw interrupted();
       item.libraryState.users.add(item);
       item.container = options.containerFactory?.() || document.createElement('div');
@@ -231,7 +257,7 @@ export function createMediaEngine(surface, options = {}) {
       item.phase = 'metadata';
       await withDeadline(abortable(item.player.load(String(src), { ext: extension(String(src), type),
         http: { credentials: 'omit', referrerPolicy: 'no-referrer',
-          ...(options.proxyOnly ? { headers: { 'X-TiPlay-Proxy-Origin': options.proxyOrigin } } : {}) },
+          ...(item.proxyOnly ? { headers: { 'X-TiPlay-Proxy-Origin': options.proxyOrigin } } : {}) },
         ioLoaderOptions: { retryCount: 2, retryInterval: 1 },
       }), item.controller.signal), options.resourceDeadline || 15000);
       if (!active(item)) throw interrupted();
@@ -258,17 +284,23 @@ export function createMediaEngine(surface, options = {}) {
     if (error) throw new Error(error.message);
     let item = owner;
     if (item?.livePaused) {
-      const { src, type } = item;
-      await load(src, type);
+      const { src, type, proxyOnly } = item;
+      await load(src, type, { proxyOnly });
       return play();
     }
     if (!item?.loaded) throw new DOMException('No media source is loaded.', 'InvalidStateError');
     if (!paused) return item.playing;
-    paused = false; ended = false; buffering = true; startupDeadline(item); event('play'); event('waiting');
+    paused = false; ended = false; buffering = true; startupDeadline(item); event('play');
+    // Permission listeners can synchronously revoke playback while handling the play event.
+    if (!active(item) || paused) throw interrupted();
+    event('waiting');
     const promise = new Promise((resolve, reject) => playWaiters.add({ resolve, reject }));
     void promise.catch(() => {}); item.playing = promise;
     const playRevision = item.playRevision = (item.playRevision || 0) + 1;
     try {
+      await item.nativePause;
+      await item.changing;
+      if (!active(item) || paused || item.playRevision !== playRevision) throw interrupted();
       item.player.setVolume(muted ? 0 : volume, true);
       if (!item.player.isLive?.()) item.player.setPlaybackRate(rate);
       if (!item.nativePlay) {
@@ -284,8 +316,8 @@ export function createMediaEngine(surface, options = {}) {
       item.player.setVolume(muted ? 0 : volume, true);
       if (!item.player.isLive?.()) item.player.setPlaybackRate(rate);
       const selectedSubtitle = [...textTracks].find(track => track.mode === 'showing');
-      if (selectedSubtitle) await item.player.selectSubtitle(Number(selectedSubtitle.id));
-      item.player.setSubtitleEnable?.(Boolean(selectedSubtitle));
+      await changeSubtitle(item, selectedSubtitle?.id);
+      if (!active(item) || paused || item.playRevision !== playRevision) throw interrupted();
       if (item.preferredAudio && item.player.getSelectedAudioStreamId?.() !== Number(item.preferredAudio))
         await item.player.selectAudio(Number(item.preferredAudio));
       if (item.preferredAudio) audioTracks.select(item.preferredAudio);
@@ -309,7 +341,12 @@ export function createMediaEngine(surface, options = {}) {
       // AVPlayer has no live pause. Stop this source, silence it immediately, and reopen at the live edge on resume.
       item.livePaused = true; item.player.setVolume(0, true); readyState = networkState = 0;
       retire(item);
-    } else if (item?.loaded) void item.player.pause().catch(cause => fail(cause, item));
+    } else if (item?.loaded) {
+      try {
+        const pending = item.nativePause = Promise.resolve(item.player.pause());
+        void pending.catch(cause => fail(cause, item)).finally(() => { if (item.nativePause === pending) item.nativePause = null; });
+      } catch (cause) { fail(cause, item); }
+    }
     event('pause');
   }
   function seek(value) {
@@ -328,7 +365,7 @@ export function createMediaEngine(surface, options = {}) {
       try {
         while (active(item) && item.seekTarget !== undefined) {
           const next = item.seekTarget; item.seekTarget = undefined;
-          await item.player.seek(BigInt(Math.round((next + origin) * 1000)));
+          await changeSource(item, () => item.player.seek(BigInt(Math.round((next + origin) * 1000))));
         }
         if (active(item)) { seeking = false; ended = false; publishTime(); event('seeked'); event('progress'); }
       } catch (cause) { fail(cause, item); }
@@ -353,9 +390,9 @@ export function createMediaEngine(surface, options = {}) {
       try {
         do {
           const desired = item.subtitleDesired;
-          if (desired !== undefined) await item.player.selectSubtitle(Number(desired));
+          await changeSubtitle(item, desired);
           if (!active(item)) return;
-          if (desired === item.subtitleDesired) { item.player.setSubtitleEnable?.(desired !== undefined); break; }
+          if (desired === item.subtitleDesired) break;
         } while (active(item));
       } catch (cause) { fail(cause, item); }
       finally { item.subtitleSelecting = false; }
@@ -398,8 +435,10 @@ export function createMediaEngine(surface, options = {}) {
   getter('defaultPlaybackRate', () => defaultRate, value => { defaultRate = rateValue(value); });
   getter('volume', () => volume, value => { const next = Number(value);
     if (!Number.isFinite(next) || next < 0 || next > 1) throw new DOMException('Volume must be between 0 and 1.', 'IndexSizeError');
-    volume = next; owner?.player?.setVolume(muted ? 0 : volume, true); event('volumechange'); });
-  getter('muted', () => muted, value => { muted = Boolean(value); owner?.player?.setVolume(muted ? 0 : volume, true); event('volumechange'); });
+    volume = next; if (active(owner)) owner.player?.setVolume(muted ? 0 : volume, true); event('volumechange'); });
+  getter('muted', () => muted, value => {
+    muted = Boolean(value); if (active(owner)) owner.player?.setVolume(muted ? 0 : volume, true); event('volumechange');
+  });
   Object.assign(media, { load, play, pause, dispose, selectAudioTrack, resumeFromGesture, getPlaybackDiagnostics: snapshot,
     getVideoPlaybackQuality: () => { const stats = playerStats(); return { creationTime: now() * 1000,
       totalVideoFrames: finite(stats.videoFrameRenderCount), droppedVideoFrames: 0, corruptedVideoFrames: 0 }; },

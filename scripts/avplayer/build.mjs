@@ -53,7 +53,7 @@ async function output(name, data) {
   artifacts.push({ path: name, bytes: Buffer.byteLength(data), sha256: sha(data) });
 }
 const source = new URL('node_modules/@libmedia/avplayer/dist/esm/', root);
-let fetchSites = 0, workletSites = 0, liveSites = 0, cleanupSites = 0, cancellationSites = 0, contextGuardSites = 0, lifecycleSites = 0, lifecycleAwaits = 0, rpcErrorSites = 0, subtitleEofSites = 0, seekReplySites = 0, subtitlePacketBridgeSites = 0, subtitleReleaseSites = 0, sdrPolicySites = 0;
+let fetchSites = 0, workletSites = 0, liveSites = 0, cleanupSites = 0, cancellationSites = 0, contextGuardSites = 0, lifecycleSites = 0, lifecycleAwaits = 0, rpcErrorSites = 0, subtitleEofSites = 0, seekReplySites = 0, subtitlePacketBridgeSites = 0, subtitleReleaseSites = 0, subtitleDrainSites = 0, subtitleSeekSites = 0, sdrPolicySites = 0;
 for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).sort()) {
   let code = await readFile(new URL(name, source), 'utf8');
   const edits = [];
@@ -91,6 +91,13 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
       const methods = node.body.body.map(method => method.key?.name);
       if (methods.includes('getDemuxerPort') && methods.includes('setDemuxTask')) {
         const pull=node.body.body.find(method=>method.key?.name==='pull');
+        // Drain the previous generation on the same port before any demux seek.
+        // The marker follows the old pull even when its request is still in transit.
+        edits.push({start:pull.key.start,end:pull.key.end,value:'__tiplayPullPacket'});
+        edits.push({start:node.body.end-1,end:node.body.end-1,
+          value:`pull(){if(this.pulling)return this.__tiplayPullDone;const pending=this.__tiplayPullPacket();this.__tiplayPullDone=pending;return pending;}async __tiplayBeforeSeek(){this.pause();const port=this.leftPorts.get(this.currentPort);if(port){const result=await port.request('__tiplaySubtitleDrain');if(result<0)throw new Error('Unable to drain subtitle playback.');}await this.__tiplayPullDone;this.reset();}`});
+        addedAwaits+=2;
+        subtitleDrainSites++;
         const imports=code.slice(code.lastIndexOf('var ',node.start),node.start);
         const packetImport=/([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\(46564\)/.exec(imports);
         if(!packetImport)throw new Error('Upstream subtitle AVPacket import changed');
@@ -108,6 +115,11 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
             const original=code.slice(declaration.init.start,declaration.init.end);
             edits.push({start:declaration.init.start,end:declaration.init.end,
               value:`((packet)=>{if(packet && typeof packet==='object'){const pointer=this.avpacketPool?this.avpacketPool.alloc():${packetAPI}._5();__tiplayOwnedPacket=pointer;return __tiplayUnserializePacket(packet,pointer);}if(typeof packet==='number' && packet>0 || typeof packet==='bigint' && packet>0n)__tiplayOwnedPacket=packet;return packet;})(${original})`});
+            const statement=pull.value.body.body.find(statement=>statement.type==='VariableDeclaration'
+              && statement.declarations.includes(declaration));
+            if(!statement)throw new Error('Upstream subtitle status response changed');
+            edits.push({start:statement.end,end:statement.end,value:`if(${declaration.id.name}===-1048575)return;`});
+            subtitleDrainSites++;
             subtitlePacketBridgeSites++;
           },
           CallExpression(call){
@@ -125,6 +137,20 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
         });
       }
       if (methods.includes('doDemux') && methods.includes('replyAVPacket')) {
+        const connect=node.body.body.find(method=>method.key?.name==='connectStreamTask');
+        simple(connect.value.body,{SwitchStatement(statement){
+          if(statement.discriminant.type!=='MemberExpression' || statement.discriminant.property.name!=='method')return;
+          const request=code.slice(statement.discriminant.object.start,statement.discriminant.object.end);
+          const pull=statement.cases.find(branch=>branch.test?.value==='pull');
+          if(!pull)throw new Error('Upstream subtitle drain request dispatch changed');
+          const body=code.slice(pull.start,pull.end);
+          const match=/([\w$]+)\.cacheAVPackets\.get\(([\w$]+)\.streamIndex\)/.exec(body);
+          if(!match)throw new Error('Upstream stream request ownership changed');
+          const task=match[1],port=match[2];
+          edits.push({start:pull.start,end:pull.start,
+            value:`case '__tiplaySubtitleDrain':{const stream=${task}.formatContext.streams.find(stream=>stream.index===${port}.streamIndex);if(stream?.codecpar.codecType!==3){${port}.reply(${request},-1048575);break;}const pending=${task}.cacheRequests.get(${port}.streamIndex);if(pending){${port}.reply(pending,-1048575);${task}.cacheRequests.delete(${port}.streamIndex);}${port}.reply(${request},0);break;}`});
+          subtitleDrainSites++;
+        }});
         const seek=node.body.body.find(method=>method.key?.name==='seek');
         simple(seek.value.body,{ReturnStatement(statement){
           const expressions=statement.argument?.expressions;
@@ -193,6 +219,21 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
       }
     },
     MethodDefinition(node) {
+      if(node.key.name==='doSeek'){
+        edits.push({start:node.value.body.start+1,end:node.value.body.start+1,
+          value:'await this.subtitleRender?.__tiplayBeforeSeek();'});
+        addedAwaits++;
+        subtitleSeekSites++;
+      }
+      if(node.key.name==='selectSubtitle')simple(node.value.body,{AssignmentExpression(expression){
+        if(expression.left.type!=='MemberExpression' || expression.left.object.type!=='ThisExpression'
+          || expression.left.property.name!=='lastStatus')return;
+        const original=code.slice(expression.start,expression.end);
+        edits.push({start:expression.start,end:expression.end,
+          value:`(await this.subtitleRender?.__tiplayBeforeSeek(),${original})`});
+        addedAwaits++;
+        subtitleSeekSites++;
+      }});
       if(node.key.name==='fetchMasterPlayList'){
         simple(node.value.body,{
           AssignmentExpression(expression){
@@ -364,6 +405,7 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
 }
 if (sdrPolicySites !== 3) throw new Error(`Upstream SDR selection/error sites changed: ${sdrPolicySites}`);
 if (subtitlePacketBridgeSites !== 1 || subtitleReleaseSites !== 4) throw new Error(`Upstream subtitle packet ownership sites changed: ${subtitlePacketBridgeSites}/${subtitleReleaseSites}`);
+if (subtitleDrainSites !== 3 || subtitleSeekSites !== 3) throw new Error(`Upstream subtitle drain/seek sites changed: ${subtitleDrainSites}/${subtitleSeekSites}`);
 if (subtitleEofSites !== 3 || seekReplySites !== 1) throw new Error(`Upstream subtitle EOF/seek sites changed: ${subtitleEofSites}/${seekReplySites}`);
 if (rpcErrorSites !== 2) throw new Error(`Upstream RPC error serializers changed: ${rpcErrorSites}`);
 if (lifecycleSites !== 4 || lifecycleAwaits < 10) throw new Error(`Upstream lifecycle sites changed: ${lifecycleSites}/${lifecycleAwaits}`);
@@ -410,5 +452,5 @@ for (const name of ['LGPL-2.1.txt','GPL-3.0.txt']) {
 notices.push('===== WASM corresponding sources =====\nFFmpeg audio codec/resample modules and SoundTouch tempo: LGPL-2.1-or-later.\nPinned source/build definitions: https://github.com/zhaohappy/libmedia/tree/' + lock.commit + '\n');
 await writeFile(new URL('THIRD_PARTY_LICENSES.txt', destination), notices.join('\n'));
 await writeFile(new URL('artifacts.json', destination), JSON.stringify({ version: lock.version,
-  commit: lock.commit, fetchRequestInitPatches: fetchSites, sameOriginWorkletPatches: workletSites, hlsClassificationPatches: liveSites, pipelineCleanupPatches: cleanupSites, cancellationPatches: cancellationSites, contextEventGuardPatches: contextGuardSites, lifecycleGuardMethods: lifecycleSites, lifecycleGuardAwaits: lifecycleAwaits, rpcErrorSerializerPatches: rpcErrorSites, subtitleEofPatches: subtitleEofSites, pendingSeekReplyPatches: seekReplySites, subtitlePacketBridgePatches: subtitlePacketBridgeSites, subtitlePacketReleasePatches: subtitleReleaseSites, sdrVariantPolicyPatches: sdrPolicySites, artifacts }, null, 2) + '\n');
+  commit: lock.commit, fetchRequestInitPatches: fetchSites, sameOriginWorkletPatches: workletSites, hlsClassificationPatches: liveSites, pipelineCleanupPatches: cleanupSites, cancellationPatches: cancellationSites, contextEventGuardPatches: contextGuardSites, lifecycleGuardMethods: lifecycleSites, lifecycleGuardAwaits: lifecycleAwaits, rpcErrorSerializerPatches: rpcErrorSites, subtitleEofPatches: subtitleEofSites, pendingSeekReplyPatches: seekReplySites, subtitlePacketBridgePatches: subtitlePacketBridgeSites, subtitlePacketReleasePatches: subtitleReleaseSites, subtitleDrainPatches: subtitleDrainSites, subtitleSeekPatches: subtitleSeekSites, sdrVariantPolicyPatches: sdrPolicySites, artifacts }, null, 2) + '\n');
 console.log(`Vendored libmedia ${lock.version}: ${artifacts.length} files, ${fetchSites} scoped RequestInit patches.`);

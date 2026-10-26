@@ -18,6 +18,7 @@ internal object BrowserPermissionStatus {
     fun runtimeGroups(context: Context): List<Group> = buildList {
         if (Build.VERSION.SDK_INT >= 31) add(Group(R.string.nearby_devices, buildList {
             add(Manifest.permission.BLUETOOTH_CONNECT)
+            if (!AirPlayReceiverSettings.isDisabled(context)) add(Manifest.permission.BLUETOOTH_ADVERTISE)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.NEARBY_WIFI_DEVICES)
         }))
         add(Group(R.string.settings_permission_microphone, listOf(Manifest.permission.RECORD_AUDIO),

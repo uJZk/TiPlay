@@ -15,6 +15,56 @@ class VideoInCarTest {
         main = AirPlayDisplayConfig(widthPixels = 1280, heightPixels = 720),
     )
 
+    @Test fun infoHasIndependentCapabilityAndPermissionDictionariesWithoutInventingFeatureBits() {
+        for (allowed in listOf(false, true)) {
+            val info = BplistCodec.decode(BplistCodec.encode(VideoInCar.info(0x80, allowed))) as Map<*, *>
+            val video = info["videoPlaybackInfo"] as Map<*, *>
+            assertEquals(allowed, video["videoPlaybackAllowed"])
+            assertEquals("gA", video["featuresEx"])
+            assertFalse(video.containsKey("playbackCapabilities"))
+            val capabilities = info["playbackCapabilities"] as Map<*, *>
+            assertTrue(capabilities.values.all { it == false })
+        }
+        assertEquals("", VideoInCar.featuresEx(0))
+        assertEquals("4q5TVmE", VideoInCar.featuresEx(0x615653aee2))
+        assertEquals("gA", VideoInCar.featuresEx(0x80))
+    }
+
+    @Test fun statusChangesCanResendUnchangedPermissionAndDoNotStrandTheDeliveryPump() {
+        var status = "idle"
+        val sent = mutableListOf<Pair<Boolean, String>>()
+        val availability = VideoPlaybackAvailability { allowed -> sent += allowed to status; true }
+        availability.setDesired(true)
+        availability.setFeatureEnabled(true)
+        availability.setEventReady(true)
+        status = "video"
+        assertEquals(VideoPlaybackDelivery.SENT, availability.refresh())
+        assertEquals(listOf(true to "idle", true to "video"), sent)
+        assertEquals(VideoPlaybackDelivery.UNCHANGED, availability.setDesired(true))
+    }
+
+    @Test fun actualRateBufferingMuteAndUnknownDurationAreReportedWithoutInventingSeekRanges() {
+        val state = VideoInCar.PlayerState(true, true, 12.5, 0.0, 15.0,
+            buffering = true, rate = 1.5, seekable = false, muted = true)
+        val info = VideoInCar.playbackInfoResponse(3L, "A", state)["info"] as Map<*, *>
+        assertEquals(1.5, info["rate"])
+        assertEquals(false, info["playbackLikelyToKeepUp"])
+        assertEquals("loading", info["playbackState"])
+        assertFalse(info.containsKey("duration"))
+        assertEquals(emptyList<Any>(), info["seekableTimeRanges"])
+        assertFalse(info.containsKey("decodedFrameCount"))
+        assertFalse(info.containsKey("totalVideoFrames"))
+        assertFalse(info.containsKey("droppedVideoFrames"))
+        val loaded = (info["loadedTimeRanges"] as List<*>).single() as Map<*, *>
+        assertEquals(12_500L, (loaded["start"] as Map<*, *>)["value"])
+        assertEquals(2_500L, (loaded["duration"] as Map<*, *>)["value"])
+        val empty = VideoInCar.propertyResponse(8L, "loadedTimeRanges", state.copy(bufferedSeconds = 5.0))
+        assertEquals(emptyList<Any>(), empty["value"])
+        assertEquals(true, VideoInCar.propertyResponse(4L, "muted", state)["value"])
+        assertEquals(emptyList<Any>(), VideoInCar.propertyResponse(5L, "seekableTimeRanges", state)["value"])
+        assertEquals(emptyList<Int>(), teardownStreamTypes(mapOf("streams" to listOf(mapOf("nonsense" to true)))))
+    }
+
     @Test
     fun setupEnablesVideoOnlyWhenConfiguredAndProposed() {
         val proposed = listOf("iAPChannel", "videoPlayback")
@@ -81,7 +131,7 @@ class VideoInCarTest {
         fun body(vararg streams: Map<String, Any?>) = mapOf("streams" to streams.toList())
 
         assertEquals(emptyList<Int>(), teardownStreamTypes(body(mapOf("type" to 130L, "streamID" to 3L))))
-        assertEquals(listOf(130), teardownStreamTypes(body(mapOf("type" to 130L, "streamID" to 1L))))
+        assertEquals(emptyList<Int>(), teardownStreamTypes(body(mapOf("type" to 130L, "streamID" to 1L))))
         assertEquals(listOf(130, 110), teardownStreamTypes(body(mapOf("type" to 130L), mapOf("type" to 110L))))
         assertNull(teardownStreamTypes(emptyMap<String, Any?>()))
         assertNull(teardownStreamTypes(null))

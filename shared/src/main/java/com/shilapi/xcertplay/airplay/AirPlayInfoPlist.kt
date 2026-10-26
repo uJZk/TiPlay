@@ -33,7 +33,8 @@ object AirPlayInfoPlist {
         return features
     }
 
-    fun build(config: AirPlayConfig): Map<String, Any?> {
+    fun build(config: AirPlayConfig, videoPlaybackEnabled: Boolean = config.videoInCar,
+        videoPlaybackAllowed: Boolean = VideoInCar.allowed): Map<String, Any?> {
         val displays = arrayListOf<Any?>(
             displayEntry(config.main, STREAM_TYPE_MAIN_SCREEN, MAIN_UUID),
         )
@@ -84,6 +85,7 @@ object AirPlayInfoPlist {
         if (config.hevc) info["hevcInfo"] = emptyMap<String, Any?>()
         // With the mainBuffered session feature the iPhone requires this key; an empty dictionary is accepted.
         if (config.bufferedAudioOutputEnabled) info["mainBufferedInfo"] = emptyMap<String, Any?>()
+        if (config.videoInCar && videoPlaybackEnabled) info.putAll(VideoInCar.info(features(config), videoPlaybackAllowed))
         return info
     }
 

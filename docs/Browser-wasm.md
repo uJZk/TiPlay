@@ -4,14 +4,16 @@ TiPlay keeps browser APIs in JavaScript and runs bulk audio computation in genui
 WebAssembly. There is no wasm2js substitute. Source, adapters, pinned build inputs
 and licenses accompany the replaceable libraries; NetEq source archives are checksum-pinned build downloads.
 
-Source v90 adds per-stream audio dispatch, direct software-Worker PCM delivery and
-optional native WebRTC video-track reception into Canvas. These source changes
-are not a published release; v89 remains the historical audio-rollout record.
+Published v90 adds per-stream audio dispatch, direct software-Worker PCM delivery
+and native WebRTC video-track reception into Canvas. Beta.22/code64 retains that
+page; beta.23/v95 integrates ordinary AirPlay audio and controls with the same
+URL-engine and media-transport boundaries. V89 remains the historical audio-rollout record.
 
 ## Execution
 
 | Work | Execution and reason |
 | --- | --- |
+| Negotiated RTP audio | Browser WebRTC decodes the original source codec; received tracks feed the shared AudioWorklet mixer. Android performs no audio decode/reencode. |
 | Continuous resampling | Continuous libswresample in libav.js decoder Workers; source gaps reset the filter run. |
 | Live mixing, ducking, fades, clipping | Fixed-memory WASM audio core, one block at a time. Very small PCM conversions retain JavaScript when copying costs more than the arithmetic. |
 | Realtime AAC-LC/ELD/ALAC decode | FFmpeg/libav.js decoder Workers; no WebCodecs audio decoder. |
@@ -63,7 +65,7 @@ latency estimates. Playback can continue, while source-deadline status stays
 unknown until a valid native timestamp mapping is available. Neither mapping is
 an independent measurement at the vehicle speakers.
 
-Live audio follows NetEq's independent packet/consumption timeline. Libav.js
+Live software audio follows NetEq's independent packet/consumption timeline. Libav.js
 Workers normalize input to 48 kHz, and the AudioContext explicitly requests 48 kHz.
 Browser-owned conversion handles the output device; browser libsoxr is removed.
 No source/video phase controller or clock-generation recovery remains in this

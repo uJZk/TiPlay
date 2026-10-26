@@ -4,7 +4,7 @@ import { createAirPlayTrustNotification } from '../../site/play/airplay-trust.js
 
 function fixture() {
   let now = 0;
-  const nodes = Object.fromEntries(['heading', 'name', 'allow', 'reject'].map(key => [key, {
+  const nodes = Object.fromEntries(['heading', 'name', 'details', 'allow', 'once', 'reject'].map(key => [key, {
     textContent: '', listener: null, addEventListener(_type, fn) { this.listener = fn; }, click() { this.listener(); },
   }]));
   const root = { hidden: true, querySelector(selector) { return nodes[selector.match(/data-trust-(\w+)/)[1]]; } };
@@ -26,10 +26,10 @@ test('a five-second prompt disappears without granting or sending automatic cons
   const f = fixture();
   f.notification.update({ id: 'first', name: '<script>untrusted</script>', remainingMillis: 5000 });
   assert.equal(f.root.hidden, false);
-  assert.equal(f.nodes.name.textContent, '<script>untrusted</script>');
+  assert.equal(f.nodes.name.textContent, 'From “<script>untrusted</script>”.');
   f.tick(4999); assert.equal(f.root.hidden, false);
   f.tick(5000); assert.equal(f.root.hidden, true);
-  f.nodes.allow.click();
+  f.nodes.once.click();
   assert.deepEqual(f.sent, []);
   f.notification.update({ id: 'first', name: 'Retry', remainingMillis: 5000 });
   assert.equal(f.root.hidden, true, 'an expired ID cannot reopen on a delayed poll');
@@ -48,12 +48,12 @@ test('polls cannot extend the original deadline and forged durations are bounded
 test('only a click on the live prompt sends an explicit Allow or Reject over control', () => {
   const f = fixture();
   f.notification.update({ id: 'first', remainingMillis: 5000 });
-  f.nodes.allow.click(); f.nodes.allow.click();
-  assert.deepEqual(f.sent, [{ k: 'ap-trust', id: 'first', allow: true }]);
+  f.nodes.once.click(); f.nodes.once.click();
+  assert.deepEqual(f.sent, [{ k: 'ap-trust', id: 'first', allow: true, remember: false }]);
   assert.equal(f.root.hidden, true);
   f.notification.update({ id: 'second', remainingMillis: 5000 });
   f.nodes.reject.click();
-  assert.deepEqual(f.sent[1], { k: 'ap-trust', id: 'second', allow: false });
+  assert.deepEqual(f.sent[1], { k: 'ap-trust', id: 'second', allow: false, remember: false });
   f.notification.update({ id: 'second', remainingMillis: 3000 });
   assert.equal(f.root.hidden, true);
 });
@@ -62,10 +62,10 @@ test('server cancellation and disconnect invalidate old UI actions', () => {
   const f = fixture();
   f.notification.update({ id: 'first', remainingMillis: 5000 });
   f.notification.update(null);
-  f.nodes.allow.click(); assert.deepEqual(f.sent, []);
+  f.nodes.once.click(); assert.deepEqual(f.sent, []);
   f.notification.update({ id: 'second', remainingMillis: 5000 });
   f.notification.clear();
-  f.nodes.allow.click(); assert.deepEqual(f.sent, []);
+  f.nodes.once.click(); assert.deepEqual(f.sent, []);
   assert.equal(f.root.hidden, true);
 });
 
@@ -77,10 +77,39 @@ test('invalid status input never displays consent', () => {
   }
 });
 
-test('the consent button explains whether the verified device will be remembered', () => {
+test('all senders get all three choices without identity warnings', () => {
   const f = fixture();
-  f.notification.update({ id: 'verified', remainingMillis: 5000, verified: true });
-  assert.equal(f.nodes.allow.textContent, 'Allow and remember');
-  f.notification.update({ id: 'legacy', remainingMillis: 5000, verified: false });
-  assert.equal(f.nodes.allow.textContent, 'Allow this connection');
+  for (const verified of [true, false]) {
+    const id = String(verified);
+    f.notification.update({ id, remainingMillis: 5000, verified, mediaType: 'audio', name: 'iPhone' });
+    assert.equal(f.nodes.allow.textContent, 'Always allow');
+    assert.equal(f.nodes.once.textContent, 'Allow once');
+    assert.equal(f.nodes.heading.textContent, 'Allow AirPlay audio?');
+    assert.equal(f.nodes.details.textContent, 'Plays audio while keeping the CarPlay picture.');
+    f.nodes.once.click();
+    assert.deepEqual(f.sent.at(-1), { k: 'ap-trust', id, allow: true, remember: false });
+  }
+});
+
+test('always allow sends persistent consent for any sender, without verification gating', () => {
+  const f = fixture();
+  for (const verified of [true, false]) {
+    const id = String(verified);
+    f.notification.update({ id, verified, remainingMillis: 5000 });
+    f.nodes.allow.click();
+    assert.deepEqual(f.sent.at(-1), { k: 'ap-trust', id, allow: true, remember: true });
+  }
+});
+
+test('casting type explains screen takeover, and unknown values never invent a type', () => {
+  const f = fixture();
+  for (const [mediaType, title] of [['mirror', 'screen mirroring'], ['video', 'video'], ['photo', 'photos']]) {
+    f.notification.update({ id: mediaType, mediaType, remainingMillis: 5000, verified: true });
+    assert.ok(f.nodes.heading.textContent.includes(title));
+    assert.match(f.nodes.details.textContent, /in place of the CarPlay picture/);
+  }
+  f.notification.update({ id: 'other', mediaType: '<video>', name: '\u0000\n', remainingMillis: 5000 });
+  assert.equal(f.nodes.heading.textContent, 'Allow an AirPlay connection?');
+  assert.equal(f.nodes.name.textContent, 'From “AirPlay”.');
+  assert.match(f.nodes.details.textContent, /not known yet/);
 });

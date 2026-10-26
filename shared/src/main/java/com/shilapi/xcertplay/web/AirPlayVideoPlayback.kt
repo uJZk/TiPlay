@@ -23,6 +23,8 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String, String?) -> Rece
     private var seekable = false
     private var closed = false
     private var outputAllowed = true
+    private var videoShown = true
+    private var muted = false
     private var availableTracks: Map<String, Set<String>> = emptyMap()
     private var trackRevision = 0L
     private var trackSelection: List<Map<String, Any?>> = emptyList()
@@ -61,11 +63,12 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String, String?) -> Rece
 
     @Synchronized fun state() = AirPlayBrowserPlayback.State(playback.duration, playback.position,
         requestedPlaying && outputAllowed, playback.ready, playback.buffering, seekable,
-        rate = requestedRate, outputAllowed = outputAllowed)
+        rate = requestedRate, outputAllowed = outputAllowed, videoShown = videoShown, muted = muted)
 
     @Synchronized fun source(): Map<String, Any?> = mapOf("resource" to proxy.rootId,
         "proxyOnly" to com.shilapi.xcertplay.diagnostics.RawTraffic.enabled, "directUrl" to proxy.directUrl(itemUrl),
-        "revision" to revision, "seekRevision" to seekRevision, "target" to target, "fraction" to fraction, "outputAllowed" to outputAllowed,
+        "revision" to revision, "seekRevision" to seekRevision, "target" to target, "fraction" to fraction,
+        "outputAllowed" to outputAllowed, "videoShown" to videoShown, "muted" to muted,
         "trackRevision" to trackRevision, "trackSelection" to trackSelection, "textMarkup" to textMarkup)
 
     @Synchronized fun setOutputAllowed(allowed: Boolean) {
@@ -74,10 +77,18 @@ class AirPlayVideoPlayback(item: ReceiverPlay, iphone: (String, String?) -> Rece
         revision++
     }
 
-    /** Only select tracks the browser has actually decoded/discovered; unknown plist shapes are refused. */
+    /** Giving the picture back to CarPlay must not pause a permitted URL audio stream. */
+    @Synchronized fun setVideoShown(shown: Boolean) {
+        if (closed || videoShown == shown) return
+        videoShown = shown
+        revision++
+    }
+
+    /** Accept only implemented properties and tracks actually discovered by the browser. */
     @Synchronized fun property(name: String, value: Any?): Boolean {
         if (closed) return false
         when (name) {
+            "muted" -> muted = value as? Boolean ?: return false
             "selectedMediaArray" -> {
                 val selections = value as? List<*> ?: return false
                 if (selections.size > 2) return false

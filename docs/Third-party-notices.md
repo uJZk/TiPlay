@@ -13,6 +13,11 @@ transport-key module is copied from that revision with its GPL-3.0 license retai
 Juho Vähä-Herttua's FairPlay transport reply tables are LGPL-2.1-or-later;
 the license and provenance are in `shared/src/main/jni/airplay/`.
 The Android control, discovery and browser adapters are TiPlay additions.
+Classic RAOP and transient AirPlay 2 audio were compared with Shairport Sync
+[`b991d913`](https://github.com/mikebrady/shairport-sync/tree/b991d91350e537c1f50dac98d9a3c836eceddcfc).
+TiPlay uses its existing SRP/cryptography and browser decoders; Shairport's Linux
+audio application is not embedded. Video in Car capability/session contracts were
+reviewed against LIVI [`187730f9`](https://github.com/f-io/LIVI/tree/187730f99c14bbf75cf6cdf8dae53076a7d52cb7).
 This is not the UxPlay desktop application or its GStreamer renderer, and it does not
 provide FairPlay Streaming licenses for protected video.
 

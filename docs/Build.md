@@ -108,8 +108,8 @@ fixed-memory audio core for realtime audio. WebCodecs audio and libsoxr are remo
 from that realtime revision. Current URL playback uses libmedia AVPlayer; its dependency build is separate from the WASI helper.
 AudioContext and NetEq both use 48 kHz. [Audio tempo](Audio-tempo.md) records the
 final decoder order, memory bounds, lifecycle and remaining device acceptance.
-The user's current instruction skips CI and APK compilation; existing APK release
-records below remain historical and do not certify these new browser changes.
+The v89 rollout skipped CI and APK compilation; those release records remain
+historical. The beta.23 release follows the source and signed-artifact checks.
 See [execution boundaries](Browser-wasm.md), including measured cases that retain
 native browser APIs or JavaScript.
 
@@ -424,3 +424,31 @@ succeeded; public `app-version.js` and `/download/` show beta.22. Browser v90
 runtime bytes are unchanged. Release files and independent verification evidence
 are retained outside Git in `/workspace/tiplay-beta22/remote-artifacts/` and
 `/workspace/tiplay-beta22/`; temporary signing inputs were removed.
+
+
+<a id="beta23-release"></a>
+## Beta.23 release
+
+Beta.23/code65 and browser v95 are being prepared from the beta.22 base. The user
+authorized full Video in Car/AirPlay review, owner-scoped screen transfer fixes,
+signed APK publication and Pages deployment. The release includes the session's
+RAOP/AirPlay 2 audio, BLE discovery hints, three-choice trust, reset setting and
+Video.js music view with sender artwork/title/artist and DACP track/skip controls.
+
+The release repairs the accepted `videoPlayback` feature's missing `/info`
+declaration, precise type-130 cleanup, delayed display callbacks, URL audio-only
+screen return and ordinary AirPlay replacement/return. A subtitle-specific
+drain/seek handshake fixes a late EOF/new-cue race in the pinned AVPlayer runtime;
+its audio/video packet handoff and clock ownership stay upstream.
+
+Local verification passes 568 browser tests, 4,321 Android unit tests, all three
+debug lint/build targets, native AirPlay JNI boundaries, site/draft/cache checks,
+and a reproducible 45-file AVPlayer vendor build. Actual Chromium covers full URL
+MP4/HLS playback, subtitle switching/seek, return/reborrow, consent, music layouts
+and photo CSP. Desktop software decoding does not establish vehicle hardware
+playback. No new APK or webpage is published by this record yet.
+
+Use a `[skip ci]` build commit to control rollout, dispatch Android checks and the
+existing signed workflow, verify its APK/committed-source/checksum draft, then
+publish the beta and dispatch Pages. Record build SHA, runs, downloaded hashes
+and public bytes after completion. Physical iPhone/vehicle acceptance remains open.

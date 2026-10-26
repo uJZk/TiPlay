@@ -26,15 +26,20 @@ class AirPlayPlaybackStandardDiagnosticsTest {
                 time = 1
                 accept.invoke(diagnostics, 7L, fixture["failureEvent"] as Map<*, *>, true)
                 val failed = log.file.readLines()
-                assertEquals(25, failed.size)
-                assertTrue(failed.any { it.contains("event=error") && it.contains("errorType=EncodingError") })
-                assertTrue(failed.takeLast(12).any { it.contains("running=true") && it.contains("waitReason=error") && it.contains("recovered=false") })
-                assertTrue(failed.takeLast(12).any { it.contains("codec=vp09.00.10.08.01.01.01.01.00") && it.contains("hardwareSupportProbe=supported") })
+                assertEquals(11, failed.size)
+                assertTrue(failed.any { it.contains("event=error") && it.contains("errorType=EncodingError") &&
+                    it.contains("errorText=Decoder failed for [url]") })
+                assertTrue(failed.takeLast(5).any { it.contains("running=false") && it.contains("waitReason=buffering") && it.contains("recovered=false") })
+                assertTrue(failed.takeLast(5).any { it.contains("codec=av01.0.08M.08.0.110.01.01.01.0") && it.contains("codedWidth=1920 codedHeight=1080") })
                 accept.invoke(diagnostics, 7L, fixture["cleanupEvent"] as Map<*, *>, true)
                 val terminal = log.file.readLines()
-                assertEquals(37, terminal.size)
-                assertTrue(terminal.takeLast(12).any { it.contains("videoOwnedFrames=1") && it.contains("samplesClosed=56") })
-                assertTrue(terminal.takeLast(12).all { it.length <= 600 && it.contains("recovered=false") })
+                assertEquals(16, terminal.size)
+                assertTrue(terminal.takeLast(5).any { it.contains("waitReason=error running=false intentPlaying=false") })
+                assertTrue(terminal.takeLast(5).any { it.contains("audioPacketQueueLength=0 videoPacketQueueLength=0") })
+                assertTrue(terminal.takeLast(5).any { it.contains("videoFrameRenderCount=120") && it.contains("videoStutter=1") })
+                assertTrue(terminal.takeLast(5).all { it.length <= 600 && it.contains("recovered=false") })
+                assertFalse(terminal.joinToString("\n").contains("private.test"))
+                assertFalse(terminal.joinToString("\n").contains("secret"))
                 accept.invoke(diagnostics, 7L, fixture["cleanupEvent"] as Map<*, *>, true)
                 assertEquals("Repeated terminal progress cannot flood Standard", terminal, log.file.readLines())
                 assertTrue(log.integrityLine(), log.integrityLine().contains("privacyFiltered=0") && log.integrityLine().contains("filtered=0"))
@@ -47,9 +52,7 @@ class AirPlayPlaybackStandardDiagnosticsTest {
         val parser = Class.forName("com.shilapi.xcertplay.web.WebJson")
         val fixture = parser.getMethod("parse", String::class.java)
             .invoke(parser.getField("INSTANCE").get(null), file.readText()) as Map<*, *>
-        val originalEvent = fixture["event"] as Map<*, *>
-        val event = originalEvent + ("engine" to ((originalEvent["engine"] as Map<*, *>) +
-            ("audioTempoBackend" to "wasm-simd")))
+        val event = fixture["event"] as Map<*, *>
         val directory = java.nio.file.Files.createTempDirectory("airplay-standard-fixture").toFile()
         val previous = DiagnosticLogPolicy.level
         try {
@@ -65,45 +68,39 @@ class AirPlayPlaybackStandardDiagnosticsTest {
                 val accept = type.getMethod("event", Long::class.javaPrimitiveType, Map::class.java, Boolean::class.javaPrimitiveType)
                 accept.invoke(diagnostics, 7L, event, true)
                 val saved = log.file.readLines()
-                assertEquals(12, saved.size)
+                assertEquals(5, saved.size)
                 assertTrue(saved.all { it.length <= 600 && it.contains("stalled=true") })
                 val state = saved.single { it.contains("stage=ENGINE_STATE") }
-                assertTrue(state, state.contains("waitReason=audio-context-resume") && state.contains("resumePending=true"))
-                assertTrue(state, state.contains("contextState=suspended") && state.contains("generation=4"))
-                assertTrue(saved.any { it.contains("stage=ENGINE_BUFFER") && it.contains("targetMs=1000") && it.contains("limitingTrack=audio") })
-                assertTrue(saved.any { it.contains("stage=ENGINE_PIPELINE") && it.contains("videoBudgetBlocked=true") && it.contains("audioReadPending=true") })
-                assertTrue(saved.any { it.contains("videoCapacityFrames=32") && it.contains("audioCapacityBytes=12582912") })
-                assertTrue(saved.any { it.contains("codec=vp09.00.10.08.01.01.01.01.00") && it.contains("actualHardware=unknown") })
-                assertTrue(saved.any { it.contains("samplesReceived=57") && it.contains("samplesClosed=53") && it.contains("bytes=app-rgba8-estimate") })
-                assertTrue(saved.any { it.contains("userActivationHasBeenActive=false") && it.contains("gestureRequired=true") })
-                assertTrue(saved.any { it.contains("resourceLastResult=eof") && it.contains("resourceLastStatus=206") })
-                assertTrue(saved.any { it.contains("stage=ENGINE_PCM") && it.contains("audioTempoBackend=wasm-simd") &&
-                    it.contains("audioSourceRate=44100") && it.contains("audioContextRate=44100") })
+                assertTrue(state, state.contains("engine=libmedia-avplayer renderMode=canvas waitReason=buffering"))
+                assertTrue(state, state.contains("running=false intentPlaying=true gestureRequired=false") && state.contains("generation=4"))
+                assertTrue(saved.any { it.contains("stage=ENGINE_PIPELINE") && it.contains("audioPacketQueueLength=2 videoPacketQueueLength=5") &&
+                    it.contains("audioFrameDecodeCount=441 videoFrameDecodeCount=123") })
+                assertTrue(saved.any { it.contains("stage=ENGINE_RENDER") && it.contains("audioFrameRenderCount=440 videoFrameRenderCount=120") &&
+                    it.contains("audioStutter=0 videoStutter=1") })
+                assertTrue(saved.any { it.contains("stage=ENGINE_CODEC") && it.contains("codec=av01.0.08M.08.0.110.01.01.01.0") &&
+                    it.contains("codedWidth=1920 codedHeight=1080") })
                 assertTrue(saved.any { it.contains("stage=ENGINE_STARTUP") && it.contains("startupPhase=first-samples") &&
-                    it.contains("openElapsedMs=5000") && it.contains("phaseElapsedMs=1000") })
-                assertTrue(saved.any { it.contains("stage=ENGINE_CONTINUITY") && it.contains("audioPcmPeak=0.73") })
+                    it.contains("openElapsedMs=5000") })
                 val engine = event["engine"] as Map<*, *>
                 val recovered = event + ("engine" to (engine + mapOf("running" to true, "waitReason" to "none",
-                    "contextState" to "running", "resumePending" to false, "audioResumeCompleted" to 1,
-                    "startReason" to "read-progress-fallback", "readProgressFallbacks" to 1)))
+                    "startupPhase" to "playing")))
                 time = 1000; accept.invoke(diagnostics, 7L, recovered, true)
                 val afterRecovery = log.file.readLines()
-                assertEquals(24, afterRecovery.size)
-                assertTrue(afterRecovery.takeLast(12).all { it.contains("stalled=false recovered=true") && it.length <= 600 })
-                assertTrue(afterRecovery.any { it.contains("startReason=read-progress-fallback") && it.contains("readProgressFallbacks=1") })
+                assertEquals(10, afterRecovery.size)
+                assertTrue(afterRecovery.takeLast(5).all { it.contains("stalled=false recovered=true") && it.length <= 600 })
+                assertTrue(afterRecovery.takeLast(5).any { it.contains("running=true intentPlaying=true") && it.contains("waitReason=none") })
                 time = 20000; accept.invoke(diagnostics, 7L, recovered, true)
                 assertEquals("Standard healthy progress must not repeat the recovery", afterRecovery, log.file.readLines())
-                accept.invoke(diagnostics, 7L, fixture["continuityEvent"] as Map<*, *>, true)
-                val afterContinuity = log.file.readLines()
-                assertEquals(36, afterContinuity.size)
-                assertTrue(afterContinuity.takeLast(12).all { it.length <= 600 && it.contains("stalled=false recovered=false") })
-                assertTrue(afterContinuity.takeLast(12).any { it.contains("audioSilenceFrames=1") })
-                assertTrue(afterContinuity.last().contains("audioScheduleGapUs=22.676"))
-                time = 26000; accept.invoke(diagnostics, 7L, fixture["continuityEvent"] as Map<*, *>, true)
-                assertEquals("Unchanged audio continuity cannot flood Standard", afterContinuity, log.file.readLines())
+                val healthyProgress = recovered + ("engine" to ((recovered["engine"] as Map<*, *>) + mapOf(
+                    "audioFrameRenderCount" to 900, "videoFrameRenderCount" to 999, "audioPacketQueueLength" to 3)))
+                time = 26000; accept.invoke(diagnostics, 7L, healthyProgress, true)
+                assertEquals("Healthy AVPlayer counter growth cannot flood Standard", afterRecovery, log.file.readLines())
                 accept.invoke(diagnostics, Long.MAX_VALUE, fixture["maximumEvent"] as Map<*, *>, true)
-                assertEquals(48, log.file.readLines().size)
-                assertTrue(log.file.readLines().joinToString("\n"), log.file.readLines().all { it.length <= 600 })
+                val maximum = log.file.readLines()
+                assertEquals(15, maximum.size)
+                assertTrue(maximum.joinToString("\n"), maximum.all { it.length <= 600 })
+                assertFalse(maximum.joinToString("\n").contains("private.test"))
+                assertFalse(maximum.joinToString("\n").contains("secret"))
                 assertTrue(log.integrityLine(), log.integrityLine().contains("privacyFiltered=0") && log.integrityLine().contains("filtered=0"))
             }
         } finally { DiagnosticLogPolicy.level = previous; directory.deleteRecursively() }

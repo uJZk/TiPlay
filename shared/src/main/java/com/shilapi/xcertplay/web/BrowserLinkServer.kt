@@ -401,7 +401,8 @@ class BrowserLinkServer(
             ?: return refused(refuse(400, "bad-request"), AirPlayResourceDiagnostics.RefusalReason.BAD_RESOURCE)
         val photo = AirPlayBrowserPlayback.photo(id)
         val playback = AirPlayBrowserPlayback.video(id)
-        if (photo == null && playback == null) return refused(refuse(404, "not-found"), AirPlayResourceDiagnostics.RefusalReason.PLAYBACK_NOT_FOUND)
+        val audio = AirPlayBrowserPlayback.audio(id)
+        if (photo == null && playback == null && audio == null) return refused(refuse(404, "not-found"), AirPlayResourceDiagnostics.RefusalReason.PLAYBACK_NOT_FOUND)
         val forceProxy = request.query["proxy"] == "1"
         playback?.proxy?.directResource(resourceId)?.takeIf { !forceProxy }?.let { direct ->
             resourceDiagnostics.opened(transferRequest, id, numericResource,
@@ -410,7 +411,8 @@ class BrowserLinkServer(
         }
         val openStarted = System.nanoTime()
         val resource = try {
-            if (photo != null) { if (resourceId == "photo") photo.open(request.headers["range"]) else null }
+            if (audio != null) audio.open(resourceId, request.headers["range"])
+            else if (photo != null) { if (resourceId == "photo") photo.open(request.headers["range"]) else null }
             else playback!!.proxy.open(resourceId, request.headers["range"], forceProxy) { child ->
                 "/airplay-resource?id=$id&r=${AirPlayVideoProxy.query(child)}&c=${AirPlayVideoProxy.query(request.query["c"].orEmpty())}&s=${AirPlayVideoProxy.query(session)}${if (forceProxy) "&proxy=1" else ""}"
             }
@@ -437,7 +439,8 @@ class BrowserLinkServer(
                 when {
                     !running.get() -> AirPlayResourceDiagnostics.TransferOwner.SERVER_STOPPED
                     gate.current != session -> AirPlayResourceDiagnostics.TransferOwner.BROWSER_RETIRED
-                    (if (photo != null) AirPlayBrowserPlayback.photo(id) !== photo
+                    (if (audio != null) AirPlayBrowserPlayback.audio(id) !== audio
+                        else if (photo != null) AirPlayBrowserPlayback.photo(id) !== photo
                         else AirPlayBrowserPlayback.video(id) !== playback) -> AirPlayResourceDiagnostics.TransferOwner.PLAYBACK_RETIRED
                     else -> AirPlayResourceDiagnostics.TransferOwner.ACTIVE
                 }
@@ -712,7 +715,7 @@ class BrowserLinkServer(
             "ap-trust" -> {
                 val id = fields["id"] as? String ?: return
                 val allow = fields["allow"] as? Boolean ?: return
-                if (id.length <= 64) AirPlayTrustNotifications.respond(session, id, allow)
+                if (id.length <= 64) AirPlayTrustNotifications.respond(session, id, allow, fields["remember"] == true)
             }
         }
     }

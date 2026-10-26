@@ -18,6 +18,7 @@ const extract = name => {
 const fixture = `
 import { airPlayContext, airPlayFailed, createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor } from './receiver-presentation.js';
 import { createBrowserNotice } from './browser-notice.js';
+import { createAirPlayTrustNotification } from './airplay-trust.js';
 import { createReconnectOverlay } from './reconnect.js';
 import { rtcFailureSummary } from './rtc-diagnostics.js';
 import { PAGE_VERSION } from './browser-diagnostics.js';
@@ -28,14 +29,16 @@ const t = (key, ...args) => (STRINGS[lang][key] ?? STRINGS.en[key]).replace(/\\{
 const $ = id => document.getElementById(id), stage = $('stage');
 for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
 const browserNotice = createBrowserNotice($('browser-notice'), lang), receiverNotices = createReceiverNoticeTracker();
-let active = true, live = false, phase = 'waiting', notice = null, status = null, config = null, unsupported = null;
+let active = true, live = false, phase = 'waiting', notice = null, status = null, config = null, unsupported = null, videoError = null;
 let receiverFailure = false;
 let videoStats = {}, fitRequestedAt = 0, statsVisible = false, rtcProgress = null, lastError = null, retryAt = 0;
 let portalRevision = null, mediaTiming = null, session = null, attempt = 0, reconnects = 0, lastViewport = '', statsTimer;
 const streamId = 1, videoPath = { path: 'component-fixture' }, link = { code: null };
-const browserLocation = { update() {} }, browserAudio = { status() {}, debug() {} }, airplayTrust = { update() {}, clear() {} };
+const browserLocation = { update() {} }, browserAudio = { status() {}, debug() {} };
 const airplayControls = { update() {}, videoActive: () => status?.airplay?.kind === 'audio' || Boolean(status?.airplay?.resource && status.airplay.outputAllowed !== false) };
-const sink = { delay() {} }, timingFor = () => ({ plans() {}, started() {} }), outbox = { push() {} };
+const trustResponses = [], outbox = { push(event) { trustResponses.push(event); } };
+const airplayTrust = createAirPlayTrustNotification($('airplay-trust'), event => outbox.push(event), lang);
+const sink = { delay() {} }, timingFor = () => ({ plans() {}, started() {} });
 const codecName = value => value, releaseTouches = () => {}, cancelViewport = () => {}, onResize = () => {}, keepScreenOn = () => {};
 const resizeCanvas = () => {}, scheduleViewport = () => {}, reportDiagnostics = () => {}, newSessionId = () => 'component-fixture';
 const connectVideo = () => { phase = 'connecting'; render(); };
@@ -44,8 +47,9 @@ ${['start', 'showPortal', 'applyStatus', 'updateReceiverNotice', 'resetReceiverP
 $('stats-toggle').addEventListener('click', () => { statsVisible = !statsVisible; render(); });
 $('diagnostics').addEventListener('toggle', render);
 window.receiverUi = {
-  reset() { resetReceiverPresentation(); browserNotice.reset(); config = status = unsupported = notice = null; phase = 'waiting'; live = false; active = true; $('panel').hidden = true; stage.hidden = false; render(); },
+  reset() { resetReceiverPresentation(); browserNotice.reset(); airplayTrust.clear(); trustResponses.length = 0; config = status = unsupported = notice = videoError = null; phase = 'waiting'; live = false; active = true; $('panel').hidden = true; stage.hidden = false; render(); },
   injectStatus: applyStatus,
+  trustResponses: () => trustResponses,
   componentDecoderEvent: value => onVideoMessage({ id: 1, ...value }),
   portal: showPortal,
   resume() { $('panel').hidden = true; stage.hidden = false; render(); },
@@ -85,6 +89,46 @@ try {
     const inject = value => page.evaluate(value => receiverUi.injectStatus(value), value);
     const video = value => page.evaluate(value => receiverUi.componentDecoderEvent(value), value);
     const reset = () => page.evaluate(() => receiverUi.reset());
+    const trustLabels = locale === 'zh-CN' ? ['总是允许', '允许一次', '拒绝'] : ['Always allow', 'Allow once', 'Reject'];
+    for (const verified of [true, false]) for (const mediaType of ['audio', 'mirror']) {
+      for (const [action, allow, remember] of [['allow', true, true], ['once', true, false], ['reject', false, false]]) {
+        const id = `trust-${verified}-${mediaType}-${action}`;
+        await inject({ ...receiver('carplay', 'connected', 'listening'),
+          airplayTrust: { id, verified, mediaType, name: 'Living-room iPhone with a long device name', remainingMillis: 5000 } });
+        const card = page.locator('#airplay-trust');
+        await card.waitFor({ state: 'visible' });
+        assert.deepEqual(await card.locator('button').allTextContents(), trustLabels);
+        assert.equal(await card.locator('button:visible').count(), 3);
+        assert.equal(await card.locator('[data-trust-heading]').textContent(), locale === 'zh-CN'
+          ? mediaType === 'audio' ? '允许 AirPlay 音频投屏？' : '允许 AirPlay 屏幕镜像？'
+          : mediaType === 'audio' ? 'Allow AirPlay audio?' : 'Allow AirPlay screen mirroring?');
+        assert.equal(await card.locator('[data-trust-details]').textContent(), locale === 'zh-CN'
+          ? mediaType === 'audio' ? '仅播放声音，CarPlay 画面将继续显示。' : '将显示设备屏幕，暂时代替 CarPlay 画面。'
+          : mediaType === 'audio' ? 'Plays audio while keeping the CarPlay picture.' : 'Shows the device screen in place of the CarPlay picture.');
+        assert.doesNotMatch(await card.textContent(), /verif|identity|identif|验证|身份|校验/i);
+        const layout = await card.evaluate(element => {
+          const bounds = element.getBoundingClientRect();
+          const detailsStyle = getComputedStyle(element.querySelector('[data-trust-details]'));
+          return { cardFits: bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight,
+            contentFits: element.scrollWidth <= element.clientWidth,
+            detailsReadable: detailsStyle.color === getComputedStyle(element).color && Number(detailsStyle.opacity) >= .8,
+            buttonsFit: [...element.querySelectorAll('button')].every(button => {
+              const rect = button.getBoundingClientRect();
+              return rect.left >= bounds.left && rect.right <= bounds.right && rect.top >= bounds.top
+                && rect.bottom <= bounds.bottom && button.scrollWidth <= button.clientWidth;
+            }) };
+        });
+        assert.deepEqual(layout, { cardFits: true, contentFits: true, detailsReadable: true, buttonsFit: true }, `${locale} ${width}px ${mediaType} consent fits`);
+        if (process.env.RECEIVER_UI_ARTIFACT_DIR && !verified && action === 'allow') {
+          await mkdir(process.env.RECEIVER_UI_ARTIFACT_DIR, { recursive: true });
+          await page.screenshot({ path: resolve(process.env.RECEIVER_UI_ARTIFACT_DIR, `airplay-trust-${mediaType}-${locale}-${width}.png`) });
+        }
+        await card.locator(`[data-trust-${action}]`).click();
+        assert.equal(await card.isVisible(), false);
+        assert.deepEqual(await page.evaluate(() => receiverUi.trustResponses().at(-1)), { k: 'ap-trust', id, allow, remember });
+      }
+    }
+    await reset();
     await inject(receiver('carplay', 'connected', 'listening'));
     await video({ type: 'config', config: { epoch: 1, mode: 'carplay' } });
     assert.equal((await state()).waiting, true, 'new epoch waits for its own first frame');
@@ -169,14 +213,15 @@ try {
     await page.evaluate(() => receiverUi.portal());
     assert.equal(await page.$eval('#diagnostics', element => element.open), false);
     await page.click('#diagnostics > summary');
-    await page.waitForFunction(() => document.getElementById('connection-details').textContent.includes('v84'));
+    const pageVersion = await page.evaluate(async () => (await import('./browser-diagnostics.js')).PAGE_VERSION);
+    await page.waitForFunction(version => document.getElementById('connection-details').textContent.split('\n')[0] === version, pageVersion);
     await page.click('#stats-toggle');
     assert.equal(await page.getAttribute('#stats-toggle', 'aria-checked'), 'true');
     await page.click('#stats-toggle');
     assert.equal(await page.getAttribute('#stats-toggle', 'aria-checked'), 'false');
     assert.equal(await page.evaluate(() => document.getElementById('panel').scrollWidth <= document.getElementById('panel').clientWidth), true);
     assert.deepEqual(errors, []);
-    const record = { locale, width, checks: 'passed' }; results.push(record); console.log(JSON.stringify(record));
+    const record = { locale, width, checks: 'passed', trustPrompts: 12 }; results.push(record); console.log(JSON.stringify(record));
     if (process.env.RECEIVER_UI_ARTIFACT_DIR) {
       await mkdir(process.env.RECEIVER_UI_ARTIFACT_DIR, { recursive: true });
       await page.screenshot({ path: resolve(process.env.RECEIVER_UI_ARTIFACT_DIR, `receiver-ui-${locale}-${width}.png`) });

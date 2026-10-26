@@ -9,6 +9,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AirPlayInfoPlistTest {
+    @Test fun videoCapabilityFollowsNegotiationAndTheCurrentSessionPermission() {
+        val config = AirPlayConfig("test", "02:00:00:00:00:02", "02:00:00:00:00:02", "366.0",
+            AirPlayDisplayConfig(1280, 720), videoInCar = true)
+        assertFalse(AirPlayInfoPlist.build(config, videoPlaybackEnabled = false).containsKey("videoPlaybackInfo"))
+        for (allowed in listOf(false, true, false)) {
+            val info = BplistCodec.decode(BplistCodec.encode(AirPlayInfoPlist.build(config,
+                videoPlaybackEnabled = true, videoPlaybackAllowed = allowed))) as Map<*, *>
+            val video = info["videoPlaybackInfo"] as Map<*, *>
+            assertEquals(allowed, video["videoPlaybackAllowed"])
+            assertTrue(info.containsKey("playbackCapabilities"))
+            assertFalse(video.containsKey("playbackCapabilities"))
+            assertEquals(110L, ((info["displays"] as List<*>).single() as Map<*, *>)["type"])
+            assertTrue(info.containsKey("modes"))
+            assertTrue(info.containsKey("hidDevices"))
+            assertEquals(info["features"], java.nio.ByteBuffer.wrap(java.util.Base64.getDecoder()
+                .decode((video["featuresEx"] as String).let { it + "=".repeat((4 - it.length % 4) % 4) })
+                .copyOf(Long.SIZE_BYTES)).order(java.nio.ByteOrder.LITTLE_ENDIAN).long)
+        }
+        assertFalse(AirPlayInfoPlist.build(config.copy(videoInCar = false), videoPlaybackEnabled = true)
+            .containsKey("videoPlaybackInfo"))
+    }
+
     @Test fun phoneBrowserClearsMusicTextAndArtworkWithoutDisablingProgressOrCarPlay() {
         val base = AirPlayConfig("test", "02:00:00:00:00:02", "02:00:00:00:00:02", "366.0", AirPlayDisplayConfig(1280, 720))
         val disabled = base.copy(metadataArtworkEnabled = false, metadataTextEnabled = false)

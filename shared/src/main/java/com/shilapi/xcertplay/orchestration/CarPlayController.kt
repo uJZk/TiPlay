@@ -241,6 +241,7 @@ class CarPlayController(
     @Volatile private var mux: Iap2UsbMuxHost? = null
     @Volatile private var csm: Iap2Session? = null
     @Volatile private var activeSession: AirPlaySession? = null
+    private var videoSessionGeneration = 0L // wirelessResourceLock; carried across asynchronous video callbacks.
     @Volatile private var screenBorrowed = false
     private val screenBorrowListeners = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
     private val glancePublishLock = Any()
@@ -288,6 +289,10 @@ class CarPlayController(
     /** Answers the iPhone on a video in car remote control session; a network write, any thread. */
     fun sendVideoMessage(streamId: Long, message: Map<String, Any?>): Boolean =
         activeSession?.sendRemoteControlMessage(streamId, message) ?: false
+
+    /** Actual browser picture mode; source play/pause alone cannot distinguish video from audio-only. */
+    fun setVideoPlaybackStatus(streamId: Long, status: String): Boolean =
+        activeSession?.setVideoPlaybackStatus(streamId, status) ?: false
 
     @Volatile private var hotspot: WirelessHotspotManager? = null
     @Volatile private var wifiScanPause: WifiScanPause? = null
@@ -356,11 +361,15 @@ class CarPlayController(
             uiListener?.onCornerMask(session, png, displayWidth)
         }
         override fun onSessionActive(session: AirPlaySession) {
-            val replacement = synchronized(wirelessResourceLock) {
+            val (replacement, videoGeneration) = synchronized(wirelessResourceLock) {
                 if (closed || session.isClosed) return
                 if (currentCornerMask?.session !== session) currentCornerMask = null
-                (activeSession !== session).also { activeSession = session }
+                val replacement = activeSession !== session
+                if (replacement) videoSessionGeneration++
+                activeSession = session
+                replacement to videoSessionGeneration
             }
+            videoListener?.onVideoSessionStarted(videoGeneration)
             if (replacement) {
                 if (config.headUnitIntegrations) {
                     BydNavigationOutputs.start(appContext)
@@ -399,21 +408,21 @@ class CarPlayController(
         }
 
         override fun onSessionEnded(session: AirPlaySession) {
-            val endedCurrent = synchronized(wirelessResourceLock) {
+            val endedGeneration = synchronized(wirelessResourceLock) {
                 if (currentCornerMask?.session === session) currentCornerMask = null
                 if (activeSession === session) {
                     activeSession = null
                     synchronized(albumReplayLock) { initialArtworkReplay = null }
-                    true
-                } else false
+                    videoSessionGeneration
+                } else null
             }
-            if (endedCurrent) {
+            if (endedGeneration != null) {
                 screenBorrowListeners.forEach { it() }
                 if (config.headUnitIntegrations && activeSession == null) BydNavigationOutputs.endNow(preserveTurnOverlay = !closed && config.transport == CarPlayTransport.WIRELESS)
                 if (config.headUnitIntegrations && activeSession == null) BydBluetoothSuspend.resume(appContext, this@CarPlayController) { debugLog(it) }
 
                 publishGlanceConnection()
-                if (activeSession == null) videoListener?.onVideoSessionEnded()
+                videoListener?.onVideoSessionEnded(endedGeneration)
                 synchronized(wirelessResourceLock) {
                     if (activeSession != null) null else synchronized(playbackStatus) {
                         val wasPlaying = playbackStatus.playing
@@ -462,12 +471,16 @@ class CarPlayController(
         }
 
         override fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) {
-            if (activeSession === session) videoListener?.onVideoMessage(streamId, message)
+            currentVideoGeneration(session)?.let { videoListener?.onVideoMessage(it, streamId, message) }
+        }
+
+        override fun onVideoPlaybackStreamEnded(session: AirPlaySession, streamId: Long) {
+            currentVideoGeneration(session)?.let { videoListener?.onVideoStreamEnded(it, streamId) }
         }
 
         override fun onVideoPlaybackUiRequested(session: AirPlaySession) {
             debugLog("CarPlay requested the car's video player")
-            if (activeSession === session) videoListener?.onVideoUiRequested()
+            currentVideoGeneration(session)?.let { videoListener?.onVideoUiRequested(it) }
         }
 
         override fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {
@@ -499,6 +512,10 @@ class CarPlayController(
         override fun onDebugLog(message: String) {
             debugLog(message)
         }
+    }
+
+    private fun currentVideoGeneration(session: AirPlaySession): Long? = synchronized(wirelessResourceLock) {
+        videoSessionGeneration.takeIf { activeSession === session }
     }
 
     fun attachUi(
@@ -1967,6 +1984,9 @@ class CarPlayController(
             // Passed on explicitly: without these the car's video player never opened over Wi-Fi.
             override fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) =
                 sessionListener.onRemoteControlMessage(session, streamId, message)
+
+            override fun onVideoPlaybackStreamEnded(session: AirPlaySession, streamId: Long) =
+                sessionListener.onVideoPlaybackStreamEnded(session, streamId)
 
             override fun onVideoPlaybackUiRequested(session: AirPlaySession) =
                 sessionListener.onVideoPlaybackUiRequested(session)
