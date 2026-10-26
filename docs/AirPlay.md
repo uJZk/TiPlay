@@ -371,3 +371,27 @@ playback and `python3 scripts/test_airplay_native.py`, alongside repository requ
 Desktop fixtures do not establish iPhone compatibility, vehicle performance, acoustic
 synchronization, long playback, subtitle alignment or expired-live recovery. Physical
 acceptance remains in [Todo.md](Todo.md).
+
+## CarPlay Video in Car in the browser
+
+Phone + browser mode now offers `videoPlayback` when the iPhone proposes it in
+SETUP. `BrowserVideoInCar` handles queue insertion, rate, seek, playback-info and
+property requests, and `videoplayback:` UI requests. It uses the existing browser
+URL player and resource proxy, including iPhone `unhandledURL` loading for app
+schemes; it does not launch the inherited Android video activity. Replacement,
+stop, browser completion/failure and CarPlay session end retire the browser entry
+and return the borrowed display. Output still waits for confirmed screen ownership.
+
+The protocol reference is [LIVI video_playback.rs at e0e07e89](https://github.com/f-io/LIVI/blob/e0e07e89d1deba369f2bc0d10f1e65c546a45a38/native/livi-helperd/crates/livi-cp/src/video_playback.rs).
+TiPlay retains its existing CMTime playback-info responses and uses measured
+browser playback state. Unsupported assets report an error to the iPhone; FairPlay
+video remains unsupported. No Android re-encoding is added.
+
+Vehicle parking-state integration is explicitly deferred for this implementation:
+the browser listener currently permits playback without a gear signal. This is
+not evidence of P gear. All 77 targeted Android tests passed, including four new
+browser-video tests and the existing host configuration/URL-seek checks. Browser
+resource replacement, seek, pause, unsupported local URLs and session cleanup
+are covered. The full Android suite was interrupted after a socket-close timeout
+and a proxy-test heap exhaustion; both cases passed separately with two Gradle
+workers. iPhone/vehicle playback remains a physical acceptance check.

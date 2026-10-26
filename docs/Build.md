@@ -385,3 +385,26 @@ Build commit: `c2d51accf8e896975a7490891c18b79a23c5d35f`. [Signed workflow](http
 | `SHA256SUMS.txt` | 191 | `7c03b7564f08cae9303ec46d6077b375dd1292b092d214ddc32f3a58c313d404` |
 
 Independent checks confirm non-debug `com.ujzk.tiplay`, code63, signature continuity with beta.20 (`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`), exact build-commit `git archive` source, exactly two unchanged runtime identity containers, 51 native libraries, all 25 ELF64 libraries with 16 KiB LOAD alignment and successful 16 KiB ZIP alignment. The four libdatachannel payloads and packaged notices match committed sources. Build and public-byte evidence are retained outside Git under `/workspace/work/beta21-*` and `/workspace/work/tiplay-validation/`.
+
+## Beta.22 release
+
+Beta.22/code64 adds CarPlay Video in Car to phone + browser mode on the beta.21
+base, retaining browser v90 and its AVPlayer URL pipeline. The implementation,
+LIVI reference and remaining iPhone/vehicle checks are in
+[AirPlay](AirPlay.md#carplay-video-in-car-in-the-browser). Parking-state
+integration is deferred by user request; no gear signal is required in this build.
+FairPlay video remains unsupported.
+
+The user explicitly requests skipping CI. The release is built locally with
+`:mobile:lintRelease :mobile:assembleRelease`, using the configured signing key
+and the unchanged two runtime assets extracted from the hash-verified DiPlay
+0.2.18 APK. Publication includes the signed APK, exact build-commit source ZIP
+and SHA256SUMS.txt. The download-page version is regenerated for beta.22; the
+browser runtime remains v90. The existing Pages workflow is used only to publish
+the updated download metadata. Full Android CI is not dispatched.
+
+Local verification passed: 75 targeted Android tests, mobile Release lint and
+signed build, nine release-draft checks, four download-page tests, two site-layout
+checks, public-tree/cache checks, package/code64/non-debug validation, signer
+continuity, exact runtime-asset comparison and four-ABI ELF64/ZIP 16 KiB alignment.
+Full CI was skipped as requested; no physical iPhone/vehicle acceptance is claimed.

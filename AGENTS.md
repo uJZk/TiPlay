@@ -229,3 +229,9 @@ Follow [docs/Upstream.md](docs/Upstream.md) for upstream maintenance rules, pres
 Resume the current beta APK deployment from [beta.21 release](docs/Build.md#beta21-release) and [current verification](docs/Testing.md#current-release-source). Full Android suite remains explicitly skipped.
 
 Beta.21/code63 and browser v90 are published from `c2d51accf8e896975a7490891c18b79a23c5d35f`; [Build](docs/Build.md#beta21-release) records public hashes, signed/Pages runs and independent checks. No physical vehicle acceptance is implied.
+
+Resume CarPlay Video in Car and beta.22/code64 publication at
+[AirPlay](docs/AirPlay.md#carplay-video-in-car-in-the-browser) and
+[beta.22 release](docs/Build.md#beta22-release). The user explicitly skips CI;
+use local targeted checks and signed Release lint/build. Parking-state integration
+is deferred; physical iPhone/vehicle playback and FairPlay support remain unverified/unsupported.

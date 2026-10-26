@@ -107,7 +107,7 @@ class CarPlayHostBrowserLinkTest {
         assertNull(config.main.viewAreas)
         assertRectangularCarPlayOffer(config)
         assertNull(config.cluster)
-        assertFalse(config.videoInCar)
+        assertTrue(config.videoInCar)
         assertNull(get("pendingViewAreas"))
         assertEquals("TiPlay", config.oemLabel)
         assertEquals("The head-unit settings stay as saved", 160, AirPlayPersistence.loadDisplayScalePercent(activity))

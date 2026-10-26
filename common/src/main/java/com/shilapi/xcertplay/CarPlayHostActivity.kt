@@ -5176,7 +5176,7 @@ class CarPlayHostActivity : ComponentActivity() {
             model = normalizedModel(),
             oemLabel = CarButtonDefaults.label(oemLabel, phoneBrowser = true),
             icons = listOf(loadAirPlayIcon()),
-            videoInCar = false,
+            videoInCar = true,
             mainBufferedAudio = !BrowserCarPlayAudioSettings.disabled(this),
             audioViaCarBluetooth = BrowserCarPlayAudioSettings.disabled(this),
             metadataArtworkEnabled = false,
@@ -5816,7 +5816,10 @@ class CarPlayHostActivity : ComponentActivity() {
         resetSidePanel() // a new session starts without the side panel
         updateClusterMapShown()
         CarPlayMediaKeys.attach(this, next)
-        if (airPlayConfig.videoInCar) CarPlayVideo.attach(this, next)
+        if (airPlayConfig.videoInCar) {
+            if (!headUnitIntegrations()) next.videoListener = BrowserVideoInCar(next::sendVideoMessage)
+            else CarPlayVideo.attach(this, next)
+        }
         val display = CarPlaySessionDisplay(
             airPlayConfig.main.widthPixels, airPlayConfig.main.heightPixels,
             displayRotation(), hideTopBar, hideBottomBar, effectiveSize.width, effectiveSize.height,
