@@ -408,3 +408,19 @@ signed build, nine release-draft checks, four download-page tests, two site-layo
 checks, public-tree/cache checks, package/code64/non-debug validation, signer
 continuity, exact runtime-asset comparison and four-ABI ELF64/ZIP 16 KiB alignment.
 Full CI was skipped as requested; no physical iPhone/vehicle acceptance is claimed.
+
+Local build commit: `da42067de4e67a93503cd6c88ae4bcf440412102`.
+Public beta.22 APK publication is pending: a draft exists, but local binary upload
+returns HTTP 401 with both system and current official GitHub CLI. The automatic
+approval review rejected dispatching `android-release.yml` because it interpreted
+that workflow as conflicting with the user's CI skip. Explicit user authorization
+is required before running that workflow. No remote Android CI was dispatched.
+Pages run [40303064954](https://github.com/uJZk/TiPlay/actions/runs/40303064954)
+succeeded; public `app-version.js` and `/download/` show beta.22. Local release
+artifacts and verification evidence remain in `/workspace/tiplay-beta22/`.
+
+| Local artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `SHA256SUMS.txt` | 191 | `7e024c70b3c3942d5487f7a71982493e39d76f4dcf316b6cf68733e6c88bbc49` |
+| `TiPlay-0.2.20-beta.22-source.zip` | 40,692,131 | `af27303cbe41a1f26d8922b2168b10e0ebcbb460c5dc91fa3a4d2740fbd029b4` |
+| `TiPlay-0.2.20-beta.22.apk` | 114,004,800 | `d75c8df629d6155c215cd66f124d23656c79fcc69fc4aee6356552f393b060d7` |
