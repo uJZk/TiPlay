@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { createLibav, libavAudioParameters } from '../../../site/play/vendor/libav/libav.js';
-
-import { eldSimdPreferred } from '../../../site/play/vendor/libav/libav.js';
+import { createLibav, libavAudioParameters, eldSimdPreferred } from '../../../site/play/vendor/libav/libav.js';
 /** Raw AAC-ELD, one runtime per epoch. Other profiles use portable WASM. */
 export async function createEldDecoder({ sampleRate = 44100, channels = 2, frameLength = 480, sbr = false, simd = eldSimdPreferred(sampleRate, channels, frameLength) } = {}) {
   if (sbr || ![44100, 48000].includes(sampleRate) || ![1, 2].includes(channels) || ![480, 512].includes(frameLength))

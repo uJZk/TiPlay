@@ -1,5 +1,9 @@
 # Independent runtime and benchmark review
 
+Historical wasm2js candidate review. Current browser audio no longer uses this
+engine; see the [benchmark scope](README.md) before reproducing or interpreting these measurements.
+
+
 Scope: pinned libsoxr adapter, existing WASM backend, prospective standalone JS build, AudioWorklet startup, production CSP. No production changes made by this reviewer.
 
 ## Findings

@@ -27,7 +27,7 @@ import org.robolectric.util.ReflectionHelpers
  * "unsupported" activity, which reports string/unsupport_tips and does nothing else. Because a
  * startActivity that reaches it succeeds, the action has to be resolved before it can be trusted —
  * and the replacement only applies where the decoy actually is, on the one Android version that has
- * been measured (docs/BYD_SETTINGS_ENTRY_POINTS.md).
+ * been measured (docs/BYD-settings-entry-points.md).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "en", manifest = Config.NONE)

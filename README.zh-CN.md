@@ -5,7 +5,7 @@
 <p align="center"><strong>用安卓手机，在车载浏览器里使用 CarPlay。</strong></p>
 
 <div align="center">
-<a href="https://github.com/uJZk/TiPlay/actions/workflows/android.yml"><img alt="Android checks" src="https://github.com/uJZk/TiPlay/actions/workflows/android.yml/badge.svg"></a> <a href="https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.1"><img alt="Source version 0.2.20-beta.1" src="https://img.shields.io/badge/source-0.2.20--beta.1-5075d6"></a> <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a> <img alt="Kotlin and JavaScript" src="https://img.shields.io/badge/languages-Kotlin%20%2F%20JavaScript-7f52ff">
+<a href="https://github.com/uJZk/TiPlay/actions/workflows/android.yml"><img alt="Android checks" src="https://github.com/uJZk/TiPlay/actions/workflows/android.yml/badge.svg"></a> <a href="https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.24"><img alt="Source version 0.2.20-beta.24" src="https://img.shields.io/badge/source-0.2.20--beta.24-5075d6"></a> <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a> <img alt="Kotlin and JavaScript" src="https://img.shields.io/badge/languages-Kotlin%20%2F%20JavaScript-7f52ff">
 </div>
 
 <p align="center"><a href="https://github.com/uJZk/TiPlay/releases">下载 APK</a> · <a href="https://ujzk.github.io/TiPlay/">打开浏览器播放器</a> · <a href="docs/README.md">文档目录</a></p>
@@ -25,7 +25,7 @@ TiPlay 让安卓手机接收 iPhone 的 CarPlay 会话。iPhone 通过 USB 或�
 - **USB 与无线 CarPlay**：支持数据线连接或无线连接 iPhone 与安卓手机。
 - **AirPlay**：在浏览器中进行屏幕镜像、查看照片和播放兼容的非 DRM 媒体。
 - **车机定位协同**：获取车载浏览器定位，自动判别坐标系，按需将 GCJ-02 还原为 WGS84，再转发给 iPhone。
-- **音视频抗网络波动**：网页端通过有界缓冲、时钟同步与连续音频重采样，减轻网络抖动对播放流畅度和音画同步的影响。
+- **音视频抗网络波动**：网页端通过有界缓冲与音频恢复减轻网络抖动，实时音频与视频独立计时。
 - **网页端直接解码音视频**：浏览器直接解码 CarPlay 音视频，无需二次转码。
 - **画面自适应**：随浏览器窗口调整画面尺寸，自动选择 HEVC 或 H.264。
 
@@ -55,7 +55,7 @@ AirPlay 镜像图引用 iPhone 屏幕截图，媒体投屏图使用《Big Buck B
 | --- | --- | --- |
 | 安卓手机 | Android 9 及以上 | 运行 TiPlay，接收 CarPlay |
 | iPhone | 已开启 CarPlay | 提供 CarPlay 会话 |
-| 车载浏览器 | 支持 WebCodecs，能通过局域网访问安卓手机 | 显示画面并发送触摸操作 |
+| 车载浏览器 | 支持 WebRTC、MediaStreamTrackProcessor，能通过局域网访问安卓手机 | 显示画面并发送触摸操作 |
 
 使用安卓热点，或允许设备互访的现有 Wi-Fi。首次访问 HTTPS 播放器需要互联网连接。特斯拉浏览器可能需要配置[额外热点地址](docs/Hotspot-address.md)。
 
@@ -89,7 +89,7 @@ USB、网络与权限的详细操作见[安装与连接](docs/Install.md)及[连
 
 音乐通常由浏览器播放。通过 TiPlay 使用通话和 Siri，需要将安卓手机与汽车的蓝牙电话通道配对，并授予安卓麦克风权限。
 
-如果想让 iPhone 直接通过汽车蓝牙播放声音，可开启“高级设置 → 禁用 CarPlay 音频”，将 iPhone 与汽车配对，再选择它作为音频和通话来源。[音频配置说明](docs/Install.md#set-up-sound)。
+如果想让 iPhone 直接通过汽车蓝牙播放声音，可开启“高级设置 → 由 iPhone 蓝牙播放音频”，将 iPhone 与汽车配对，再选择它作为音频和通话来源。[音频配置说明](docs/Install.md#set-up-sound)。
 
 ### AirPlay
 

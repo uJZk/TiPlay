@@ -85,7 +85,7 @@ stream capacity, underrun prevention or whole-player CPU savings.
 
 ## URL fallback output validation
 
-The URL fallback emits planar float PCM, so the same browser workload was
+The retired custom URL fallback emitted planar float PCM, so the same browser workload was
 repeated with `LIBAV_BENCH_PLANAR=1`, selecting all four stereo fixtures. Raw
 results are `results/chromium-planar-run-{1,2,3}.json`. These runs use the same
 warmup/order/iteration rules and production CSP, with no concurrent benchmark
@@ -103,7 +103,8 @@ The 48 kHz measurements remain variable; they do not justify enabling SIMD.
 Unmeasured mono, higher-bit-depth ALAC and other rate pairs also use portable.
 This is a conservative selection from measured workloads, not a claim that
 portable is faster on every CPU. The low-level factory retains an explicit
-SIMD option; `airplay-libav.js` applies the URL decoder policy.
+SIMD option. The former `airplay-libav.js` URL policy is historical; current URL
+playback uses the separately pinned AVPlayer runtime.
 
 ## ELD migration: old FDK versus libav.js
 

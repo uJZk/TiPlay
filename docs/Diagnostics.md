@@ -18,8 +18,8 @@ negotiated viewport or touch coordinates. Its fields are:
 | --- | --- |
 | Codec | Current video codec; hardware preference does not prove hardware decoding. |
 | FPS | Actual successful draws during the last second. |
-| Delta | Latest synchronized canvas submission time minus iPhone scheduled presentation time; unavailable without a new synchronized draw within one second. This is not capture-to-display latency. |
-| Drops | Explicit browser input, scheduler, transfer-replacement and presentation discards in the current video configuration. It cannot count decoder-internal, network or phone loss. Replacement streams reset it; repeating a configuration does not. |
+| Delta | Canvas submission minus a comparable sender presentation reference, when available. Current native-track timestamps alone do not establish that mapping, so Delta can remain unknown. This is not physical capture-to-display latency. |
+| Drops | Explicit application discards/replacements in the current video configuration. It cannot count decoder-internal, network or phone loss. Legacy scheduler fields do not imply a current application pacer. |
 
 Browser v96 adds the current video's bounded error code to **Diagnostics** and
 `tiplayStats.page.video.errorReason`; first-fault `st` telemetry prioritizes the
@@ -86,14 +86,12 @@ Android owns A2DP/HFP encoding and USB host-controller signalling. Capture canno
 observe Bluetooth air packets, USB bus signalling, unread kernel buffers or packets
 lost before application delivery. Capture does not establish speaker playback timing.
 
-The integrated WebRTC path retains bounded stage metrics: Android hub queue,
-transport submission to browser record read (including sender queue/network/reassembly),
-browser fragment reassembly, complete-record consumer wait, record-read to decode
-submission, decode submission to output, decoded output to scheduler/draw and canvas
-submission work. Android-to-browser durations retain clock-mapping uncertainty;
-quantiles of different stages must not be added. WebCodecs decode duration includes
-opaque driver/reference-reorder work, and canvas submission does not measure panel scanout.
-These identify where to investigate, without claiming a measured vehicle bottleneck.
+Transport diagnostics retain bounded queue, fragment/reassembly and consumer-wait
+observations for DataChannel records. The preceding encoded-video pipeline also
+reported read-to-decode, decode-to-output and scheduler/draw residence; these legacy
+fields do not measure the current native RTP receiver. Cross-clock durations retain
+mapping uncertainty, overlapping quantiles cannot be added, and Canvas submission
+does not measure GPU completion or panel scanout.
 
 Native `stage=control-work` groups record ingress/RPC queue occupancy, high-water
 marks, limits, rejected/abandoned work and processing costs by ACK, authentication,
@@ -104,7 +102,7 @@ retirement preserves them in Standard too. Raw capture remains synchronous and
 can still backpressure media through its shared disk writer. Queue isolation does
 not establish that a slow or failing disk can sustain lossless capture.
 
-Source-deadline faults request a compact first snapshot; identity churn is merged
+The compatibility telemetry path prioritizes source-deadline fault snapshots when supplied; identity churn is merged
 within the existing five-second cadence, while cumulative counters remain in
 periodic reports. The first-fault and terminal status snapshots have separate
 bounded outbox slots so ordinary telemetry cannot overwrite them or consume touch
@@ -208,294 +206,114 @@ of a particular audio gap. Older captures cannot supply these fields retroactive
 
 ## Browser audio evidence
 
-Clock evidence separates offset, rate, confidence and clock generation. Worklet stream
-evidence distinguishes phase error, source-rate confidence, resampling ratio, recovery
-reason and network-buffer target. Raw media/source coordinates, relative device-context
-time and exported wall-clock event time are different domains: compare them only through
-their recorded anchors. A small phase correction must not be classified as a new stream.
-Source-supply rate inferred from realtime ingress is weaker evidence than a sender timing
-anchor, especially when network queuing changes slowly.
+Current live audio uses negotiated browser RTP tracks or the PCM/libav.js-to-NetEq
+software path, with shared AudioWorklet mixing/ducking. See [Audio tempo](Audio-tempo.md).
+The worklet loads precompiled NetEq/audio-core modules with private memories;
+it does not run the retired PD/SoundTouch or browser libsoxr controller. The bundled
+NetEq Opus API is exercised by library tests, while product Opus requires native
+RTP negotiation. A retained schema/allowlist field does not prove a retired path runs.
 
-Per-stream source-fit evidence now separates acquiring, tracking, holdover and disabled
-states, with a fixed rejection reason, point count, source span, last measured MAD and
-Debug-interval rejection count. Insufficient span/points/pairs, excessive noise and
-out-of-range rate are distinct; buffered prefetch explicitly disables arrival fitting.
-Accepted-fit age uses the render-context clock and is omitted until an acceptance has
-been observed in that domain. Missing values remain unknown. Source MAD and device-fit
-uncertainty retain six decimal places in milliseconds through browser packing and TXT;
-this is printing precision, not nanosecond measurement accuracy. Other numeric precision,
-the 16 KiB/256-field budget and reporting frequency remain unchanged. Bounded packing
-prioritizes per-stream fit identity/reason before optional detail and reports omissions.
+Debug distinguishes decoder PCM packets/frames/nonzero/peak, worklet rendered
+frames/nonzero/peak, per-stream backend/epoch/queue/state and native-track state.
+Software-stream NetEq telemetry describes adaptive buffering and time stretching;
+native tracks retain the browser receiver's timing. Backend `webrtc-track` and
+`neteq` observations must not be combined into one decode-CPU or latency measure.
+Separate stream transport IDs may share one music/guidance semantic type.
 
-Normal worklet feedback carries the current and observed maximum output-block sizes;
-Debug additionally retains `renderQuantumFrames` and its observed minimum/maximum.
-Output mapping uses a conservative 128-frame floor and expands for larger observed
-blocks. Cross-browser calibration still requires the
-[parameter checks](Todo.md#playback-parameter-evidence).
-Buffered music logs `stage=ANCHOR` at valid SETRATE and `stage=CLOCK` at actual clock
-delivery. The local owner and native generation are separate from browser epochs.
-Requested/selected RTP, receiver network NTP, monotonic anchor, one-time reserve,
-mapping/fallback method and relay lead support correlation without per-packet logging.
+Raw media/source coordinates, emitted worklet frame counts, native output timestamps,
+performance-clock probes and exported wall-clock event times are different domains.
+Compare them only through recorded anchors. Main-thread `contextTimeMs` remains
+diagnostic-only; `renderReportAgeMs` measures receipt age and `renderAgeMs` remains
+unknown. A getter discrepancy does not establish acoustic output time.
 
-Resource `HTTP_FAILURE` records CONNECT, RESPONSE_HEADERS or RESPONSE_BODY, elapsed
-time in that API-call stage, configured connect/read limits, bounded exception types
-and whether the cause chain reports a socket timeout. A configured limit does not prove
-which OS timer fired. `FCUP_DEADLINE` separates queued and dispatched requests, queue,
-exchange and overall ages, and the limiting exchange/overall deadline. Its request ID
-and acquisition-time playback owner must not be retagged to a successor. Request IDs
-and proxy load IDs are distinct scopes. Healthy reads/dispatches add no extra events;
-logger failures cannot interrupt media cleanup or queue progress. These fields contain
-no resource URLs, response bodies or arbitrary exception messages.
+The output-clock diagnostic estimator retains device-rate source, target, confidence,
+generation, attempted-fit noise, accepted-fit age and reject reason separately from
+Android/browser clock offset/rate. Unknown fit values stay absent. `native`, `render`
+and `holdover` describe selected evidence, not measured oscillator hardware. Causal
+request/ACK probes include render quantum and scheduling uncertainty; raw MAD printing
+precision is not measurement accuracy. Native output pairs must pass continuity and
+freshness guards. A held pair retains its original age; a later receipt cannot refresh
+it. See [audio clock roles](Browser-wasm.md#audio-clock-roles) for these boundaries.
+None of these estimates drives the current independent NetEq source timeline.
 
-Device/context rate is recorded separately from Android/browser and source rates, with
-its target, confidence and reset generation. Resampling and phase correction use explicit
-ppm fields so small corrections remain visible after numeric formatting. Output evidence
-includes the native context/performance timestamp pair, its age and feedback distance.
-The last feedback's context boundary, age and distance survive later control-clock
-samples; a reset clears those anchors. Per-stream context time is the actual last
-rendered quantum boundary, and remains unavailable before rendering or after retirement.
-Render age uses current context progress and the independent device rate, so accumulated
-clock offset cannot make a fresh worklet report appear stale. Report/feedback receipt
-ages use the performance clock and remain distinct from that render age.
-Native timestamp sampling records the getter's duration and validates the result against
-clocks read after it returns. During repeated snapshots or brief measurement noise,
-`timestamp-holdover` identifies use of the last validated pair, with its original age and
-growing uncertainty. Repeated pairs do not refresh that anchor's lifetime. A held pair
-expires after 750 ms, cannot cross a context interruption or detected latency change,
-and retains the 1000 ms extrapolation limit; it does not widen either live source deadline.
-Audio snapshots repeat their stage in bounded lines so the metadata redactor's line cap
-cannot silently remove output-clock fields near the end of a full snapshot.
-Unavailable-reason counters distinguish suspended contexts, stale/backward/invalid pairs,
-missing or unbounded fallback latency, invalid feedback and excessive extrapolation.
-`timestamp-discontinuity` records a fresh native pair contradicting the trusted output
-mapping. A single ordered pair cannot establish a pipeline step: confirmation requires
-new, coherent, advancing pairs, and pending evidence leaves the output reference unknown.
-Neither repeated snapshots nor reordered historical pairs refresh that evidence.
+Current worklet playout references report `sourceDeadlineState=unknown` and
+`sourceDeadlineReason=independent-audio`, with no source-time reference. The historical
+`within-bound`/rejected-quantum fields remain compatible with older captures; they
+must not certify current RTP/NetEq sender-relative +300 ms or physical speaker time.
+Counter discontinuities change diagnostic domains; they do not identify every click
+or prove that current audio has skipped samples.
 
-For browser v87/beta.20 snapshots and waveform limits,
-see [Audio evidence](Audio-evidence.md).
+Detailed reports carry the active capture ID, playback generation and Debug revision;
+reopening Debug or clearing capture rejects stale queued reports. Turning Debug off
+stops detailed collection without renegotiating media. Standard retains concise
+processor failure/recovery changes and resource/service failures. Bounded packing
+reports omitted fields rather than inventing values. [Audio evidence](Audio-evidence.md)
+describes the waveform event schema, suppression, truncation and delivery limits.
+Its legacy PD/source-clock lanes are null in the current NetEq implementation.
 
-Snapshots preserve recovery reasons (`clock-step`, `underrun`,
-`source-deadline`, `network-buffer`, `device-clock-jump`, `clock-generation`,
-`suspended`, `sender-deadline`) and `rebufferCount`. Missing fields remain unknown;
-Expired fresh PCM remains rejected; every controlled cut fades the last published
-sample over 5 ms, overlapping fresh fade-in. CarPlay backlog uses dynamic catch-up
-up to 20%: three-second trends guide acceleration; above 200 ms phase error,
-pressure blends toward 20% over the next 100 ms, with slew and PCM guards.
-SoundTouch preserves pitch; libsoxr only corrects sample rates and clocks.
-Decoder `noDataPackets`/`noDataFrames`, count
-synthesized mirror silence, not lost packets or measured speaker output. No additional capture is required.
-
-Audio output references remain active in Standard mode; Debug controls detailed
-collection only. Video records reference availability and audio/video skew while
-continuing its independent presentation timeline. `getOutputTimestamp` establishes
-the browser's device-output mapping, not measured sound at vehicle speakers. Its
-device latency and the resampler's already-accounted content delay must not be added
-twice. Missing/stale output evidence cannot prove sender-relative 300 ms compliance.
-
-Debug records the loaded page's cache identity, decoder backend/frame/nonzero/peak counters,
-AudioContext time/state and latency, clock mapping, AudioWorklet heartbeat/age, rendered
-frames/nonzero/peak and each stream's epoch, queue bounds, playback time and delay. Capacity
-eviction, late/duplicate rejection, playback consumption and reset have separate counters.
-These details use a separate bounded control event so video statistics cannot displace them;
-an omitted-field count makes a size-limit omission visible. Turning Debug off removes the
-details and stops their collection without renegotiating media. Standard keeps processor
-failure/recovery changes and concise resource/service failures.
-The current capture ID travels with detailed reports; reopening Debug or clearing capture
-rejects reports delayed from an earlier capture, even if the control outbox retries them.
-
-`sound=true` means the AudioContext is running. Decoded nonzero PCM establishes content
-reaching the queue; rendered nonzero output establishes samples produced by the worklet.
-Neither proves sound reached vehicle speakers. A full queue can result from a stopped
-worklet or a clock that has not reached its contents: interpret its head/tail/playback
-timestamps with heartbeat and discard counters. Debug raw capture also retains the
-browser audio records, including codec configuration, resets and decrypted encoded
-packets or PCM. DataChannel capture stores each record once under
-`browser/audio/rtc/<epoch>/records`; its `events` channel references unsigned record
-sequence/bytes and `attempt`, `local-enqueue` or `failed`. Local enqueue means SCTP
-accepted the bytes on Android, not remote consumption, decoding or sound. HTTP
-`browser/audio` fixtures retain socket-write semantics in factory-free JVM tests;
-the Android product disables that media route.
-
-For local log-driven reconstruction, see [Preparing a local CarPlay replay](../tests/web-e2e/README.md#preparing-a-local-carplay-replay). The importer preserves original audio bytes and capture order; Android capture times remain distinct from browser arrival times. JS CPU sampling excludes AudioWorklet, native codec and GPU load.
-
-`Browser transport` records stage, transport epoch, host/UDP candidate counts,
-ICE/connection state, safe candidate types, queue/credit counters and decoder
-stagnation. State/failure changes are retained immediately in Standard; repeated
-healthy details are Debug-limited. Audio consumer barriers prevent old subscriptions
-from replaying in-flight audio after re-enable. Independent source-deadline evidence
-distinguishes `within-bound`, `violated` and `unknown` measurements; rejected output quanta
-are recovery events, not successful playback. Candidate IPs, SDP credentials and
-private resource URLs are excluded from these metadata lines.
-The audio rejection count is cumulative across page streams/epochs; its state and
-stream/epoch identify the current worst active reference. Use Debug stream details
-for per-stream attribution. Raw control capture starts at the admitted worker input;
-early rejection, overload and retirement can precede it. A zero write-failure count
-does not establish a complete SCTP/DTLS packet capture.
-Debug also retains incoming DataChannel control once under
-`browser/rtc/<epoch>/control/in`, before parsing on the bounded control worker;
-the native callback does not perform capture I/O. This has the same unredacted
-credential/personal-data boundary as the retained HTTP input capture.
-The deadline estimate includes known Android/browser/output/filter uncertainty;
-upstream iPhone NTP-anchor uncertainty is not separately carried on the wire.
-`within-bound` therefore describes this software mapping, not a physical latency certificate.
-
-AudioWorklet uses precompiled libsoxr/audio-core WASM with private fixed memories.
-For silence, check module/processor errors, recoveries and rendered samples.
-Raw `contextTimeMs` is diagnostic-only; `renderReportAgeMs` measures receipt age.
-Getter disagreement cannot establish `renderAgeMs`, which remains unknown.
-See [WASM and clock boundaries](Browser-wasm.md#audio-clock-roles).
-
-Shared mixing repairs double-faded tails and abrupt ducking with the existing 5 ms
-fade. URL audio has a separate graph; see [waveform verification](Testing.md#media-clock-and-continuous-audio-acceptance).
-
-Device, browser/Android and source rates describe different mappings.
-`deviceClockSource` selects fresh accepted `native` output, then fresh accepted
-`render` progress, then frozen `holdover`. Both fits share bounded estimation and
-one applied-rate controller. Native phase changes preserve independent render
-evidence. Frame/probe intervals measure render progress, not physical oscillator
-rate. `deviceClockAcceptedFitAgeMs`, `deviceClockFitRejected`,
-`deviceClockFitStatus` and `deviceClockFitRejectReason` describe selected evidence;
-unknown age stays absent. Holdover need not mean nominal rate.
-Debug `deviceClockFitDispersionMs` is attempted raw MAD; accepted
-`deviceClockUncertaintyMs` includes selected frame/probe uncertainty. Unknown attempt
-noise stays absent after Debug activation/reset. Six decimals preserve evidence,
-not accuracy. See [fit bounds](Testing.md#media-clock-and-continuous-audio-acceptance).
-`outputTimestampFitUncertaintyMs`, `outputTimestampFitStatus` and
-`outputTimestampFitGeneration` separately retain native phase-fit evidence. Its MAD
-uses context milliseconds, converted before performance-clock comparisons; render
-MAD cannot widen native phase gates. Reference/worklet extrapolation reserves rate
-uncertainty over the actual distance. Context replacement/suspend/sample-domain changes
-resets the sample domain; confirmed observation gaps retain nominal-reset/reacquisition
-behavior. Native phase reacquisition still requires two
-advancing pairs and retains its freshness/holdover limits.
-Debug `renderClockDomainGeneration`/`renderClockDomainChanges` identify worklet-confirmed
-sample continuity. `renderClockProbeState`/`renderClockProbeAgeMs` show pending
-request/ACK probes; `renderClockProbeAccepted`, `renderClockProbeRejected` and
-`renderClockProbeReason` distinguish admission, expiry and invalid/run-external proof.
-Validated generation/frame frontiers enter the history on initial acquisition too;
-their causal interval spans request to ACK plus the reported render block, rather
-than treating ACK receipt as an exact sample time. Counters restart with Debug;
-unknown age stays absent. No per-quantum logging is added.
-Debug `contextObservedStateChanges`/`contextObservedNonRunningMs` retain observed
-transitions/non-running time between snapshots. Delayed/coalesced events may hide
-transitions; these counters cannot certify uninterrupted output.
-Voice Debug `voicePreparationState` distinguishes `idle`, `waiting-clock`,
-`waiting-data`, `waiting-deadline`, `priming`, `waiting-reserve`, `ready` and `playing`.
-`voicePreparedFrames`/`voiceRequiredFrames` count output PCM frames; `voiceWaitMs`
-measures elapsed projected output-clock time, not acoustic delay. Read these with
-existing stream/source identity and state/reason. These bounded scalars add no PCM
-capture and do not enter Standard summaries.
-For CarPlay clock-step recovery, `lastClockStepPhaseErrorMs`,
-`lastClockStepDeviceRatePpm` and `lastClockStepUncertaintyMs` retain the signed phase,
-device-rate estimate and uncertainty before recovery. Compare stream identity and
-cumulative count: current phase may already look healthy. `lastClockStepAgeMs` uses
-the AudioContext clock, excluding suspension. Unknown values stay absent; a new
-timeline clears the slot. No per-step reports or PCM collection are added.
-A recovery establishes a software discontinuity, not every click's cause. Healthy
-URL playback cannot exclude a CarPlay live-audio fault.
-Debug `lastSourceDeadlineDeltaUpperMs`, `lastSourceDeadlineUncertaintyMs`,
-`lastSourceDeadlineLimitMs` and `lastSourceDeadlineAgeMs` retain the actual rejection
-before recovery; healthy current output cannot erase it. A new Debug interval/timeline
-clears the slot. Worklet reports require the current playback generation and Debug
-revision; reset immediately clears cached metrics. Pure idle emits no samples and
-cannot fabricate deadline faults; actual tails and zero-valued PCM remain checked.
-Retired tails use the same deadline guard. Debug retains
-`lastRetiredSourceDeadlineEpoch`, `lastRetiredSourceDeadlineGeneration`,
-`lastRetiredSourceDeadlineDeltaUpperMs`, `lastRetiredSourceDeadlineUncertaintyMs`,
-`lastRetiredSourceDeadlineLimitMs`, `lastRetiredSourceDeadlineAgeMs` and
-`retiredSourceDeadlineRejectedFrames` separately from active-stream evidence.
-The bounded scalar slot identifies the old epoch; Debug/reset clears it and missing
-timing remains unknown. Rejection prevents expired sound, not a proven steady-click cause.
-
-Beta.12/v78 excludes retained beta.11 records and first-snapshot totals. Its two
-CarPlay clock-step recoveries/55.019 s versus beta.11's 188/730.046 s have different
-sources/load and cannot establish acoustic improvement. Mirror underruns rise
-116→618 render-quanta, not 502 pops. Continuous source coordinates coexist with
-260 ms incoming/265 ms send-attempt gaps; all nine NoData units precede that window.
-iPhone/network, receive scheduling and capture interference remain unseparated.
-Renderer counters reach 28/1194.648 ms at 28.850–33.856 s, remaining unchanged through
-253.856 s despite context progress. Seven of fifty native timestamps are over
-20 ms ahead (maximum 98.2 ms), without proving direct acceptance. Observed blocks
-are 128 frames. Reference decoding of 6,088 packets/5,401,600 frames finds no decode,
-non-finite or over-full-scale errors. No observed source-deadline rejection explains
-absent trigger fields. None of this measures physical output or one universal click cause.
-The shared `AudioContext.playbackStats` reader supplies `renderStatsState`,
-`renderUnderrunEvents`, `renderUnderrunDurationMs` and `renderTotalDurationMs` for
-live Debug. URL `ENGINE_RENDER` now reports AVPlayer's upstream render/stutter
-counters, a different measurement domain. Unavailable/invalid/failed states retain unknown
-counts, never fabricated zeros. Available means readable, not fresh: the
+`sound=true` means the AudioContext is running. Decoded nonzero PCM proves content
+reached a software queue; rendered nonzero output proves worklet samples were produced.
+Neither proves sound reached the vehicle speakers. Queue fullness alone cannot locate
+a stall. `AudioContext.playbackStats` reports browser rendering underruns, when readable;
+unavailable/invalid/failed states retain unknown counts. The
 [API](https://webaudio.github.io/web-audio-api/#AudioPlaybackStats) updates about once
-per second subject to visibility/activity rules. Context-lifetime deltas distinguish
-browser rendering underruns from application scheduling gaps; they do not measure
-speakers. No permission, experimental flag, reset or extra sampling timer is used.
-Per-stream `senderTimingState` distinguishes `unavailable`, `mapped-presentation` and
-`arrival-anchored-unverified`; compare its source deadline, policy ceiling and startup
-delay. A mirror stream that initially lacks an anchor can upgrade only from a proven
-decode/sample correspondence, preserving its consumed sample progress. That upgrade
-does not authorize replay of old PCM or bypass the source deadline.
+per second subject to visibility/activity, so readable is not necessarily fresh.
+Observed context state changes/non-running durations can miss coalesced transitions.
+URL `ENGINE_RENDER` uses AVPlayer counters, a separate domain.
 
-For uneven dragging with high FPS and unchanged drops, compare `video.frameIntervalP95Ms`,
-`video.frameIntervalMaxMs`, `video.lastDrawAgeMs`, `video.decodeMsP95`, `video.drawMsP95`
-and `control.rttMsP95`. These fields distinguish irregular picture delivery/submission
-from slow serial input requests. `pacingDroppedFrames` counts superseded pending decoded
-pictures; it does not count source/network loss or prove actual panel presentation.
-The bounded status summary prioritizes these fields; per-stream audio retains its own
-separate diagnostic budget.
+Debug raw capture retains audio configuration, resets and decrypted encoded packets
+or PCM. DataChannel records are stored once under `browser/audio/rtc/<epoch>/records`;
+`events` references sequence/bytes and `attempt`, `local-enqueue` or `failed`.
+Local enqueue proves Android SCTP accepted bytes, not remote consumption or sound.
+HTTP `browser/audio` fixtures retain socket-write semantics in JVM tests; the product
+route is disabled. RTP playback must not be interpreted as DataChannel codec payloads.
+The [local replay importer](../tests/web-e2e/README.md#preparing-a-local-carplay-replay)
+keeps original bytes and capture order; Android capture time is not browser arrival.
+JS sampling excludes AudioWorklet, native codec and GPU work.
 
-The video stages have distinct observable boundaries:
+`Browser transport` separates connection stage, epoch, safe host/UDP candidate counts,
+ICE/channel state, queue/credit and failure boundaries. Standard retains state/failure
+changes immediately; healthy detail is Debug-limited. Audio consumer barriers prevent
+old subscription replay. Candidate IPs, SDP credentials and private resource URLs are
+excluded from metadata. Raw control input is captured once under
+`browser/rtc/<epoch>/control/in` on the admitted control worker; early rejection,
+overload or retirement can precede it. Zero capture failures do not prove a complete
+SCTP/DTLS packet trace. Raw control has the same unredacted privacy boundary as HTTP.
 
-| Evidence | What it measures |
-| --- | --- |
-| Captured Android AU/PTS, `readFrameIntervalMsP95` / `readFrameIntervalMsMax` | Source picture cadence and browser read cadence; the maximum retains a sparse pause hidden by P95. Debug capture timestamps describe the recorded Android input, not exact radio/kernel arrival. |
-| `recordReadToDecodeSubmitMsP95` | Application admission wait before decoder submission. |
-| `decodeMsP95`, `decodeOldestInFlightMs` | Submit-to-output-callback residence and the oldest currently outstanding submission. Residence includes opaque decoder queueing, reordering, execution and callback scheduling. Idle oldest age stays unknown. |
-| `decoderStatsAgeMs` | Age of the actual decoder snapshot, including Worker-to-main message delay. Old stream/epoch snapshots cannot refresh it; internal clock timestamps are not logged. |
-| Output-to-draw, draw intervals, cursor/target convergence | Application presentation wait, drawing cadence and whether actual buffering has reached the requested target. Canvas submission does not prove GPU/panel presentation. |
+Resource `HTTP_FAILURE` separates CONNECT, RESPONSE_HEADERS and RESPONSE_BODY,
+with stage elapsed time, configured limits and safe exception classes. A configured
+limit does not prove which OS timer fired. `FCUP_DEADLINE` separates queue, exchange
+and overall ages, retaining the acquisition-time owner. Proxy load IDs and FCUP request
+IDs are different scopes. Logger failure must not interrupt cleanup or progress.
+No resource URLs, bodies or arbitrary exception messages enter these metadata lines.
 
-Browser samples and uploads remain bounded snapshots and rolling aggregates, not an
-exact replay of every frame at each visible pause. `stageSampleScope` explicitly
-retains the rolling-window scope, which may span epochs. Transport-submit to browser
-read also includes transport, reassembly and consumer scheduling, not pure network
-time. WebCodecs exposes neither separate internal queue/execution timings nor the
-actual hardware implementation. A `prefer-hardware` request or support query is not
-proof of hardware decode; Android phone MediaCodec evidence cannot establish the
-car browser's path. Those questions require performance evidence from the device
-running that browser. Unknown measurements must remain unknown.
-
-For a video-stutter reproduction, enable Debug before starting the browser session,
-keep one viewport size, include a short static interval followed by continuous
-scrolling/animation, and note the visible pause time. Wait about ten seconds after
-the pause before exporting, so the next diagnostic window is included. Changing
-the viewport can restart the source and reset per-epoch drop counters; report that
-separately from an interrupted RTC connection.
-
-Service diagnostics distinguish missing permission from foreground eligibility; a granted
-microphone permission alone does not establish permission to start microphone capture
-in the background.
-
-Debug raw `iphone/carplay-screen-loan/events` retains sparse fixed-schema `STATE`,
-screen-data boundaries, screen-command `COMMAND` events and one `CLOSE` per local
-`connectionId`. Command evidence records event generation/CSeq, borrow/return,
-elapsed time, RTSP status and plist command status separately. REQUEST, WRITTEN,
+Debug `iphone/carplay-screen-loan/events` retains sparse `STATE`, data boundaries,
+`COMMAND` and one `CLOSE` per connection. CSeq/event generation, borrow/return, elapsed
+time, RTSP status and plist command status remain separate. REQUEST, WRITTEN,
 RESPONSE, TIMEOUT, CAPACITY, CANCELLED and WRITE_FAILED are local boundaries;
-ACCEPTED/REJECTED/UNKNOWN describe command results, never a resource grant.
-The five-second deadline and 16 pending-record cap bound the response tracker; idle event
-read timeouts do not close the control/audio session or discard partial ciphertext.
-These details do not enter product status text. Compare desired/sent,
-actual owner, pending, `confirmedBorrow` and `carPlayHasScreen`; a sent request is not
-a grant. Close reasons distinguish known control/event EOF and failures; `UNSPECIFIED`
-does not assert a peer failure. The channel contains no sender identity or plist.
-Capture-session checks reject stale events. Screen availability distinguishes ownership
-from installed/ended data streams. In beta.12, mirror borrowing preserves control;
-after Controller confirms return, no new SETUP arrives on that session. The bounded
-fallback starts 2.007 seconds later with `SCREEN_RETURN_WITHOUT_STREAM`; new-session
-SETUP/data and browser draw acknowledgement prove recovery after 5.119 seconds.
-This is recovery with retained wireless transport, not seamless old-stream return.
-Two URL grants are followed by peer TEARDOWN/control EOF after 322/131 ms; later
-CarPlay pictures belong to new sessions. Successful borrowing and preserved control
-are separate findings. The iPhone icon is user observation; neither its absence nor
-EOF identifies iOS's internal reason. Older captures cannot gain new boundaries.
+ACCEPTED/REJECTED/UNKNOWN describe command results, never a resource grant. Five-second
+tracking and 16 pending records bound diagnostics, not control ownership. Compare
+requested/sent, actual owner, pending, `confirmedBorrow` and stream availability.
+A missing iPhone icon or unspecified close cannot explain iOS intent. Old captures
+cannot acquire new event boundaries. Current ownership rules are kept in
+[AirPlay coexistence](AirPlay.md#carplay-coexistence).
+
+### Historical audio-controller evidence
+
+The retired PD/Soxr implementation's fit, phase/recovery, source-deadline and voice
+preparation fields describe older captures only. Their detailed interpretation is
+[retained in Git](https://github.com/uJZk/TiPlay/blob/5c47dd00/docs/Diagnostics.md#browser-audio-evidence);
+current implementations and tests must not be inferred from that schema.
+
+In beta.12/v78, two CarPlay clock-step recoveries over 55.019 seconds versus
+beta.11's 188/730.046 seconds used different sources/load, so they do not establish
+acoustic improvement. Mirror underruns rose 116→618 render quanta, not 502 pops.
+Continuous source coordinates coexisted with 260 ms input/265 ms send-attempt gaps;
+iPhone/network, scheduling and capture interference remained unseparated. Seven of
+fifty native timestamps were over 20 ms ahead (maximum 98.2 ms), without proving
+acceptance. Reference decoding of 6,088 packets/5,401,600 frames found no decode,
+non-finite or over-full-scale errors. These observations cannot measure physical
+output, establish a universal click cause or validate the replacement NetEq graph.
 
 ### CarPlay capture replay evidence
 
@@ -523,70 +341,46 @@ At 08:21:16.710 +0800 the screen loan is requested, ownership is confirmed at
 16.728, and the original connection reports peer EOF at 17.074. A successor gets
 controller ownership and main-screen SETUP at 08:21:47.816/.846. No unborrow command
 appears, so this capture establishes borrowing and replacement-session recovery,
-not successful return on the original connection. The 19 isolated ownership-state
-tests pass; full Android CI remains blocked by Gradle distribution access.
+not successful return on the original connection. The historical replay review passed 19 isolated ownership-state tests; Gradle
+distribution access blocked its full Android CI at that time. Current release CI
+is recorded separately in [Testing](Testing.md#current-release-source).
 
 ## Live video policy evidence
 
-CarPlay and AirPlay mirroring use the actual scheduling owner's read-only policy
-snapshot. `playbackProfile` identifies the applied video plan, not a newly inferred
-profile after an idle hold expires. The getter does not change scheduling, clock
-selection or audio. These fields accompany the existing browser reports, normally
-about five seconds apart; they are not snapshots taken at every capacity eviction.
+Current CarPlay/mirror video is decoded by the browser's native WebRTC receiver
+and submitted from MediaStreamTrackProcessor directly to Canvas. TiPlay has no
+live VideoDecoder, decoded-picture timer, rAF playback scheduler or touch catch-up.
+Retained profile/plan fields serve compatibility and diagnostics; they do not
+control or measure native jitter buffering or actual RTP playout delay.
 
-| Fields | Interpretation |
-| --- | --- |
-| `policyVideoReadinessMs`, `policyVideoMarginMs`, `policyVideoTargetMs`, `policyTargetReason` | Observed/decayed readiness, actual used margin and the applied plan's target. Reasons are `initial`, `touch`, `readiness`, `initial-floor` or `ceiling`. Unobserved readiness/margin stays missing. |
-| `policyVideoPlanFromMs`, `policyVideoPlanDurationMs`, `policyVideoPlanRemainingMs`, `policyVideoLeadRemainingMs` | Plan origin and convergence duration/remaining time, with the initial lead wait reported separately. During that wait, convergence remaining can still equal its full duration. These are not the current cursor delay; compare `videoCursorDeltaMs` and `videoCursorSpeed`. |
-| `policyInteractionActive`, `policyHoldRemainingMs` | Physical interaction state versus remaining activity hold. Active interaction can remain true with zero hold remaining; release and applied-profile expiry are separate observations. |
-| `policyInteractionStarts`, `policyInteractionReleases`, `policyProfileSwitches`, `policyPlanChanges` | Cumulative timing-owner counts that survive its stream/epoch resets. They preserve short transitions between reports without logging each move; a new owner starts a new baseline. |
-| `policyMaxDelayMs`, `policyMaxVideoFrames`, `policyMaxVideoBytes`, `policySubmitMarginMs` | Applied policy capacities and submission reservation. Frame/byte limits describe application decoded-picture queues, not vendor pools or measured GPU use. |
+Use current codec errors, source/negotiated/initialized native format evidence,
+first-frame Canvas acknowledgement, successful submission counts, draw intervals
+and last-draw age together. FPS counts Canvas submissions; multiple submissions
+before one refresh can overstate visible frames. Explicit application drops do not
+count decoder-internal or network loss. Native track timestamps alone do not
+provide independently mapped sender presentation time, so Delta can remain unknown.
+See the [transport contract](CarPlay-DataChannel.md#current-implementation-and-evidence)
+for v96 receive-level probes and v97 encoder selection. API support, successful
+initialization and Canvas submission each prove a different boundary; none proves
+hardware decoding or physical panel time.
 
-For live video, the target formula reserves the existing 20 ms submission allowance
-once from the 300 ms software limit, giving a maximum target of 280 ms. Submission
-scheduling uses the allowance already represented by that plan; do not subtract
-another 20 ms when interpreting it. CarPlay touch forces the video target to zero.
-The profile's 8 ms margin is not used in that target formula: the actual used margin
-is zero. Neither zero target nor the configured 20/30 ms ordinary/mirror margins
-establish zero latency or empirically optimal tuning. Touch affects video only.
+Allowlisted `policyVideo*`, cursor, source-clock and WebCodecs stage fields can
+remain in older captures or compatibility fixtures. In the retired application
+scheduler, submit-to-output duration included opaque decoder queueing, execution
+and callback delivery; output-to-draw described application waiting/submission.
+Those stage definitions do not measure the current native RTP receiver. Historical
+20 ms submission reserve, 280 ms target cap, zero touch target, 64 MiB surface budget
+and five-second policy snapshots are not current receiver settings. Full historical
+field meanings remain [in Git](https://github.com/uJZk/TiPlay/blob/5c47dd00/docs/Diagnostics.md#live-video-policy-evidence).
+Missing fields remain unknown; an allowlist entry is not evidence it was collected.
 
-`sourceClockState` (`fresh`, `stale`, `unavailable`), `sourceClockAgeMs`,
-`sourceClockGeneration` and `sourceClockMaxAgeMs` describe the mapping available to the
-decoder. The same 15-second freshness rule governs presentation mapping; uncertainty
-remains in `stageClockUncertaintyMs`. A fresh clock alone does not establish that a
-particular picture has valid source timing. Untimed scheduled pictures cannot be
-counted as verified source-relative 300 ms compliance.
+For stutter reproduction, enable Debug before connecting, retain one viewport,
+include static and continuous-motion intervals, and note visible pause times.
+Wait about ten seconds before exporting to include the next diagnostic window.
+Viewport replacement can reset per-epoch counters separately from an RTC reconnect.
+Captures and rolling aggregates cannot reconstruct every frame or hidden driver queue.
 
-The main control estimator reports a different boundary:
-`clockEstimatorObservationAgeMs` is the age of its last RTT-valid observation;
-`clockEstimatorSelectedAgeMs` is the age of the selected mapping anchor.
-`clockEstimatorState` distinguishes `unavailable`, `suspended`, `pending-jump`,
-`observation-stale`, `selected-stale` and `fresh`. Missing ages stay unknown, not zero.
-Continuing clock replies can coexist with an old selected anchor. `selected-stale`
-is a derived state, not proof of one particular RTT-filter rejection or a stopped
-main thread. Compare estimator evidence with the decoder's mapping rather than
-renaming an old mapping timestamp as a gap in clock probes.
-When the historical low-RTT fit selects an anchor older than 15 seconds, the
-estimator can select real observations from the last 15 seconds whose midpoints
-agree with the existing mapping's software error estimate. It recomputes the
-selected anchor and uncertainty from those observations, preserving the learned
-rate when their span cannot support a new rate fit. This estimate is not a
-statistical confidence interval and does not grow with anchor age to force
-recovery. Inconsistent or missing observations still leave mapping unavailable;
-pending clock jumps, suspension and stream generations retain their guards.
-
-Standard `Browser transport: stage=POLICY` preserves observed profile/interaction
-counter changes, capacity-drop increases and clock-validity boundaries, and can
-accompany existing transport/failure boundaries. Healthy periodic detail remains
-Debug-only. Plan changes, ages and each move do not create per-frame Standard logs.
-The ordinary bounded status prioritizes core policy evidence; complete plan fields
-can require Debug. An allowlist entry does not guarantee that a budgeted payload
-contains it; check omission counts and keep absent fields unknown.
-
-Earlier captures show mirror reads/draws advancing without additive drops and
-CarPlay capacity/pacing replacements. A 64 MiB budget admits four coded pictures;
-queued pictures explain differing stage counts. Sparse PTS, stale mapping and
-untimed pictures prevent latency attribution or validation of touch hold/catch-up.
+The following observations belong to the preceding DataChannel/WebCodecs engine:
 
 Beta.7/v73 returned to waiting without an observed browser-process crash. Media
 ACKs stopped amid control RPCs and 12–17 detailed reports/second; `timeout` and

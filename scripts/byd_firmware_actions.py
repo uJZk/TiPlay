@@ -4,7 +4,7 @@
 BYD head units answer a long list of standard `android.settings.*` actions with a decoy activity
 that reports "the multimedia system does not support this operation", and a `startActivity` that
 reaches it succeeds. This builds the table needed to see which actions are intercepted and which
-real activity, if any, answers the rest. See docs/BYD_SETTINGS_ENTRY_POINTS.md.
+real activity, if any, answers the rest. See docs/BYD-settings-entry-points.md.
 
     python3 scripts/byd_firmware_actions.py --image system.img --out build/byd-actions
 

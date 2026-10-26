@@ -14,8 +14,9 @@ libmedia AVPlayer resource/demux pipeline and playback clocks.
 
 Native JNI/RTP checks pass; browser RTP interoperability and vehicle acceptance
 remain open. A codec/profile mismatch, reordered source timestamps, unsupported
-frame adaptation, source boundary or processor failure reports a video-only
-error and preserves the audio/control connection. There is no encoded-video
+frame adaptation, failed source replacement or processor failure reports a
+video-only error and preserves the audio/control connection. Supported source
+changes use authenticated video-only renegotiation with generation/ready barriers. There is no encoded-video
 DataChannel or WebCodecs fallback. H.264 B
 slices are detected before submission; HEVC reordering is currently detected by
 nonmonotonic source PTS, not a complete HEVC reference parser. Sources without a
@@ -69,7 +70,7 @@ are disabled rather than used for bootstrap. HTTP retains SRP pairing, public
 discovery and random-token resources/retirement only. Protocol fixtures do not
 provide a product fallback.
 
-The four policies and current verification boundaries are in the
+The four playback scenarios and current verification boundaries are in the
 [WebRTC roadmap](WebRTC-roadmap.md). Earlier beta.2/v70 had user-confirmed real CarPlay playback; beta.3/v71 recorded
 desktop host-to-host UDP and source-cadence/reconnect evidence. Standalone D remains
 a local synthetic playback observation. Desktop real-PeerConnection tests exercise
@@ -92,9 +93,9 @@ reachability, actual car hardware decoding, physical latency or P/non-P continui
 | Debug capture | Keep complete application-visible original streams. Store the original video payload **once**, with downstream events referencing that copy. No silent sampling or capture loss. |
 
 Natural latency variation is not an instruction to refill a 300 ms buffer.
-Playback balances the four user-selected priorities through bounded profiles.
-Necessary readiness/jitter margins remain below the live ceiling; URL casting has
-a separate receiver-owned media clock and stronger prebuffering. Touch press and
+The four scenarios describe playback priorities, not selectable latency profiles.
+Native WebRTC owns live reception timing; URL casting has a separate
+receiver-owned AVPlayer media clock and prebuffering policy. Touch press and
 release leave playback timing unchanged.
 
 ## Design boundaries
@@ -155,9 +156,9 @@ For example, display order `I0 B1 B2 P3` can require decode order
 `I0 P3 B1 B2`, because B1/B2 reference P3. Waiting for the whole group at reception
 does not remove this dependency, and can delay useful parallel decoding.
 
-WebCodecs VideoDecoder outputs pictures in presentation order. Do not add another
-codec-reorder buffer after its output callback. The application may still have a
-short display scheduler and skip decoded old pictures when presentation is late.
+Current live video rejects detected reordering and draws decoded RTP-track frames
+directly. The preceding WebCodecs decoder/presentation scheduler is retired; its
+output-order assumptions must not be used to add another live reorder buffer.
 `max_num_reorder_frames` is a bitstream restriction, not a millisecond latency
 cap or an instruction to always accumulate that many frames. Do not lower a
 parameter-set declaration below the real stream's requirements to disguise delay.
@@ -219,7 +220,8 @@ channel, so resource URLs do not disclose the four-digit code.
 - Separate video, ordinary audio and control logically. Multiple DataChannels in
   one PeerConnection normally share an SCTP association, congestion control and
   resources; they do not provide the isolation of separate network paths.
-- Reassemble complete video AUs. Bound application fragments by negotiated
+- For the retained encoded-record protocol, reassemble complete AUs. Bound
+  application fragments by negotiated
   `maxMessageSize`, including application headers. Without confirmed SCTP message
   interleaving, an initial 8–16 KiB fragment candidate avoids sending a large IDR
   as one association-monopolizing message. Final sizing needs measurement.
@@ -234,9 +236,9 @@ channel, so resource URLs do not disclose the four-digit code.
   owner must retire the old peer and its pending control/media epochs.
 - Maintain necessary decode lookahead. A rule allowing only one compressed AU
   until an output arrives can deadlock a stream requiring future reference input.
-- Select and pin the Android WebRTC dependency after checking supported ABIs,
-  threading/lifecycle, DataChannel features, licenses, APK cost and reproducible
-  builds. Do not assume existing Android media dependencies provide this API.
+- The pinned Android WebRTC dependency and verified ABIs/licenses are recorded
+  below. Changes must recheck threading/lifecycle, features, APK cost and
+  reproducible builds.
 
 Reliable DataChannel is not automatically faster than TCP/WSS. Retransmission,
 ordered delivery and shared congestion can still stall video. The implementation
@@ -304,7 +306,7 @@ unbounded disk failure. Do not silently sample, overwrite or drop raw payload.
 
 The Android dependency is `io.github.webrtc-sdk:android:150.7871.01` (WebRTC M150),
 pinned from Maven Central with four project ABIs; TiPlay keeps minSdk 25.
-See [licenses and artifact provenance](Third-party-notices.md#android-webrtc-datachannels).
+See [licenses and artifact provenance](Third-party-notices.md#android-webrtc-transports).
 The official page replaces the root at <https://ujzk.github.io/TiPlay/>; the old
 independent `/webrtc/` site is removed without an alias or redirect. The APK uses
 the root. Native peer disposal runs outside WebRTC callbacks, control work is bounded and
@@ -360,12 +362,11 @@ new reader until its matching barrier and consumes/discards older in-flight
 records. Control/media can arrive in different orders without replaying old audio.
 Unadmitted old records cancel without consuming a wire sequence or blocking credit.
 
-On the encoded-record path Android fragments from canonical payload references instead of allocating another
-complete outgoing AU. Reliable queue overload, credit expiry and decoder stagnation
-are explicit recovery outcomes. The decoder uses bounded admission with enough
-reference lookahead; it never discards compressed prediction frames to catch up.
-Presentation may skip decoded pictures. Mirroring suspension marks input
-`DECODE_ONLY`, preserving decoding while closing hidden output frames.
+The encoded-video record framing remains a metadata/protocol compatibility boundary;
+it is not a fallback for live video. Current live pictures use original-codec RTP,
+with source dependency/IDR guards and video-only failure as described above.
+Mirroring suspension closes hidden decoded output without adding a second video
+encoder or an application presentation queue.
 
 Run the required [source checks](Testing.md#automated-checks) and applicable
 [browser harnesses](../tests/web-e2e/README.md). Source tests cover real desktop

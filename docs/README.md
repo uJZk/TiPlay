@@ -19,7 +19,7 @@ Start with the [English README](../README.md) or [简体中文](../README.zh-CN.
 - [Audio tempo](Audio-tempo.md): live audio buffering, decoder priority, AVPlayer URL playback ownership and verification limits.
 - [Browser WASM](Browser-wasm.md): execution boundaries, module ownership, complete upstream libraries and performance verification.
 - [Settings](Settings.md): drafts, immediate apply and connection recovery.
-- [Geolocation](geolocation.md): browser coordinate evidence, Android conversion and detection and iPhone forwarding.
+- [Geolocation](Geolocation.md): browser coordinate evidence, Android conversion and detection and iPhone forwarding.
 - [Testing](Testing.md) and [Todo](Todo.md): automated checks and pending physical acceptance.
 - [CarPlay DataChannel contract](CarPlay-DataChannel.md): reliable WebRTC transport, SRP-authenticated SDP binding, framing/credit and independent timing.
 - [WebRTC roadmap](WebRTC-roadmap.md): formal root deployment, four playback profiles, preserved experimental playback/source-cadence evidence and remaining physical acceptance.
@@ -29,6 +29,6 @@ Start with the [English README](../README.md) or [简体中文](../README.zh-CN.
 - [Contributor instructions](../AGENTS.md), [changes](../CHANGELOG.md) and [security](../SECURITY.md).
 
 Keep one stable page per topic. Filenames start with a capital, use hyphens, and omit dates;
-conventional entry files and legal/vendor names are exceptions. Only the [latest sweep](docs-sweep-2026-10-15/README.md)
-is retained. Earlier implementation notes, validation logs and release diaries remain in Git;
+conventional entry files and legal/vendor names are exceptions. Only the latest [code sweep](sweep-2026-10-26/README.md) and
+[documentation sweep](docs-sweep-2026-10-26/README.md) are retained. Earlier implementation notes, validation logs and release diaries remain in Git;
 [upstream releases](https://github.com/shihabal3amri/DiPlay/releases) describe the separate upstream product.

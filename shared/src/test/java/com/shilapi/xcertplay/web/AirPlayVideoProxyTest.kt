@@ -4,7 +4,6 @@ import com.shilapi.xcertplay.receiver.ReceiverResource
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.IOException
-import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.io.Closeable
 import java.net.HttpURLConnection

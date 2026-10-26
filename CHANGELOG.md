@@ -47,10 +47,47 @@ Local checks, full Android CI, independent signed-artifact verification and all
 persistent HomeKit, PTP/multiroom, AWDL media transport and FairPlay-protected video
 are not provided by this release.
 
+## 0.2.20-beta.22
+
+Version code 64, retaining browser v90. Add CarPlay Video in Car through the
+existing AVPlayer URL pipeline; parking-state integration was deferred by user
+request. FairPlay-protected video remains unsupported. Signed release and targeted
+checks passed; full CI was skipped for this release. See [Build](docs/Build.md#beta22-release).
+
+## 0.2.20-beta.21
+
+Version code 63 and browser v90. Replace custom URL playback with pinned libmedia
+AVPlayer, use original-codec WebRTC RTP live video directly into Canvas, and add
+the independent original-codec audio peer. Unsupported audio formats retain the
+supported fallback path. Signed release, targeted checks and public bytes passed;
+full Android CI was skipped for this release. See [Build](docs/Build.md#beta21-release)
+for exact checks and remaining physical/browser interoperability acceptance.
+
+## 0.2.20-beta.20
+
+Version code 62 and browser v87. Add bounded Debug audio evidence and waveform
+capture without changing the then-current recovery policy. Signed release and
+targeted checks passed; full CI was skipped for this release. See
+[Build](docs/Build.md#previous-beta20-release) and [Audio evidence](docs/Audio-evidence.md).
+
+## 0.2.20-beta.19
+
+Version code 61, retaining browser v86. Add persisted Debug capture, View logs,
+end/export/share/discard/minimize actions and Zstandard level 3 STORED-ZIP exports.
+Signed release and targeted checks passed; full CI was skipped for this release.
+The [historical release record](docs/Build.md#previous-beta19-release) retains provenance.
+
+## 0.2.20-beta.17–18
+
+Version codes 59–60, browsers v85–86. The historical SoundTouch/libsoxr engine
+added overlapping recovery tails, bounded catch-up and held-tempo exits. These
+controllers were later retired. Source, checks and artifact hashes remain in
+[Build](docs/Build.md#browser-v86-release) and Git history.
+
 ## 0.2.20-beta.16
 
 Version code 58 and browser cache/diagnostic revision v84. Release artifacts and
-publication evidence are recorded in [Build](docs/Build.md#beta-release).
+publication evidence are recorded in [Build](docs/Build.md#previous-release-provenance).
 
 - Improve CarPlay/AirPlay screen borrowing, return and recovery. Match control replies to the current command and session, reject stale results and release retired session resources without interrupting unrelated audio or control channels.
 - Keep initial RTSP setup idempotent within one verified session. Reject a different repeated initialization without resetting event encryption or valid control/audio resources.
@@ -66,7 +103,7 @@ that all remaining clicks or vehicle-specific compatibility issues are resolved.
 ## 0.2.20-beta.15
 
 Version code 57 and browser cache/diagnostic revision v83. Release artifacts and
-publication evidence are recorded in [Build](docs/Build.md#beta-release).
+publication evidence are recorded in [Build](docs/Build.md#previous-release-provenance).
 
 - Run bulk browser audio in genuine libsoxr, FDK AAC, fixed-memory mixing and SIMD SoundTouch WASM. Retain native browser APIs and measured faster JavaScript cases, with complete corresponding source and notices.
 - Base live timing on actual render frames and causal request/receipt bounds. Keep one bounded drift-compensation controller, preserve original measurement age and leave source deadlines unknown without valid native output timestamps.
@@ -85,7 +122,7 @@ acceptance; source checks do not establish them.
 ## 0.2.20-beta.14
 
 Version code 56 and browser cache/diagnostic revision v80. Publication evidence is
-recorded in [Build](docs/Build.md#beta-release).
+recorded in [Build](docs/Build.md#previous-release-provenance).
 
 - Keep independent render-rate evidence through native output-phase resets and apply one bounded rate controller. Preserve native phase validation, full projection uncertainty and actual source deadlines.
 - Recover voice playback from real contiguous PCM with retained Soxr preparation. Fix permanent waiting after clock/deadline changes, short utterances on large render blocks, conflicting delay plans and first presentation-anchor promotion; reuse source conversion, phase checks and mixing.
@@ -102,7 +139,7 @@ provenance and remaining device checks are recorded in Build.
 ## 0.2.20-beta.8
 
 Version code 50 and browser cache/diagnostic revision v74. Signed artifacts and
-deployment verification are recorded in [Build](docs/Build.md#beta-release).
+deployment verification are recorded in [Build](docs/Build.md#previous-release-provenance).
 
 - Prevent pending control diagnostics from stopping both live media pumps. Process media ACKs independently of slow application RPCs while retaining authentication barriers, audio-lease ordering, bounded queues and owner retirement.
 - Bound source-deadline diagnostic bursts and preserve first-fault/terminal snapshots independently of ordinary telemetry. Keep decoder evidence before cleanup, record the current failure and closed channel, and separate queue wait, raw-capture, parsing and application work costs.
@@ -119,7 +156,7 @@ speaker output and physical latency still require device acceptance.
 ## 0.2.20-beta.7
 
 Version code 49 and browser cache/diagnostic revision v73. Signed artifacts and
-deployment verification are recorded in [Build](docs/Build.md#beta-release).
+deployment verification are recorded in [Build](docs/Build.md#previous-release-provenance).
 
 - Point every language's download entry to the GitHub Releases index without a version-specific URL.
 - Prevent URL casting from waiting indefinitely for an unreachable prebuffer target under bounded decoded-sample resources. Account for retained pictures and the next sample, and allow progress from actual playable coverage after the normal wait without claiming knowledge of the hardware decoder pool.
@@ -157,7 +194,7 @@ Integrated local verification: 237 scoped Android regressions, 473 browser tests
 Full-page playback uses an explicit test-only software override; strict desktop
 hardware-unavailable behavior is checked separately. Full Android CI was skipped at the user’s explicit request. Signed release lint/build,
 APK signature/runtime/source/checksums and all 130 deployed paths passed independent
-verification. See [Build](docs/Build.md#beta-release) for the exact commit, hashes and
+verification. See [Build](docs/Build.md#previous-release-provenance) for the exact commit, hashes and
 Actions evidence.
 
 Physical phone/vehicle acceptance remains incomplete. The +300 ms checks describe

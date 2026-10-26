@@ -1,5 +1,9 @@
 # Independent DSP review of the TiPlay libsoxr asm.js build
 
+Historical wasm2js candidate review. Current browser audio no longer uses this
+engine; see the [benchmark scope](README.md) before reproducing or interpreting these measurements.
+
+
 Scope: pinned libsoxr commit 945b592b70470e29f917f4de89b4281fbbd540c0, existing WASI build, adapter, streaming resampler and ContinuousAudio. No production files changed by this reviewer.
 
 ## Findings and minimum safe trimming

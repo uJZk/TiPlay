@@ -133,6 +133,8 @@ The freestanding audio core links no standard runtime archives.
 - Retained native SpeexDSP 1.2.1 compatibility code: BSD-style licence under
   `shared/src/main/jni/speexdsp/COPYING`. The browser ships no Speex/WASM AEC.
 
+<a id="android-webrtc-datachannels"></a>
+
 ## Android WebRTC transports
 
 The pinned `io.github.webrtc-sdk:android:150.7871.01` AAR supplies Chromium M150

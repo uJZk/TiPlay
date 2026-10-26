@@ -41,8 +41,6 @@ async function waitFor(label, predicate, timeout = 15000) {
   }
 }
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
 /** The Kotlin standard library jar of the version the build uses, from the Gradle cache. */
 function kotlinStdlib() {
   if (process.env.KOTLIN_STDLIB) return process.env.KOTLIN_STDLIB;

@@ -5,7 +5,7 @@
 | `android-home.png` | `BrowserMainSettingsMenu.kt` — Main settings |
 | `android-settings.png` | `BrowserAdvancedPage.kt` — Advanced settings |
 
-The app UI was rendered from the current TiPlay Android Views with Robolectric
+The app UI was rendered from the TiPlay Android Views at capture time with Robolectric
 4.17 native graphics, Android SDK 33 and the `en-w412dp-h892dp-xxhdpi`
 configuration. The 1236 × 2676 captures were scaled proportionally into the phone
 presentation. Text and controls were not redrawn by image generation.

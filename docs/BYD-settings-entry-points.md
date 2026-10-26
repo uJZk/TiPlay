@@ -1,5 +1,7 @@
 # BYD DiLink 1.0 settings entry points (Android 7.1)
 
+Historical audit of retained upstream native-head-unit behavior. TiPlay supports Android phone + car browser only; these screens are outside its product navigation and acceptance scope. The firmware observations below are not a new vehicle test.
+
 Firmware audit of DiLink 1.0 (BYD Song Pro 2019, platform MSM8953 / Android 7.1.2, package
 `VP128_1.38.2103120.14.2103090.zip`) covering every screen DiPlay opens through a settings intent.
 

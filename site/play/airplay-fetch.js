@@ -8,8 +8,7 @@ export async function fetchMediaResource(fetcher, url, init = {}, { signal, dead
     if (parent.aborted) abort({ target: parent });
     else parent.addEventListener('abort', abort, { once: true });
   }
-  // A serial transport bounds each actual network unit itself. Its virtual response
-  // can remain idle during pause/buffering and must not inherit a whole-file timer.
+  // Callers may disable this whole-body deadline while retaining their cancellation signals.
   const timer = deadline === null ? null
     : setTimeout(() => controller.abort(new DOMException('Media resource timed out.', 'TimeoutError')), deadline);
   const cleanup = () => {

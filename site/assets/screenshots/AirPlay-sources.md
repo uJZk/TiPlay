@@ -2,7 +2,7 @@
 
 `browser-airplay-mirror.png` and `browser-airplay-cast.png` are illustrative
 documentation captures. Their illustrative status and source credits are recorded
-here rather than overlaid on the pictures. They use the production browser
+here rather than overlaid on the pictures. They use the then-current production browser
 renderer and media controls, with local sample inputs. They do not document an
 actual iPhone AirPlay session or physical vehicle test. Both browser content areas
 are 854 × 480 (480p); the decorative browser address bar shows TiPlay's official site,
@@ -20,7 +20,7 @@ under TiPlay's GPL license, and no endorsement is implied.
 
 The reference contains no phone case, bezel or hardware frame. Its original
 status bar, Dynamic Island, app grid and dock remain visible. The image is
-encoded as one temporary H.264 frame, decoded by the browser's actual
+encoded as one temporary H.264 frame, decoded by the then-current browser's actual
 `VideoDecoder`, and drawn with production `createRenderer` and `letterbox`.
 It is scaled proportionally to the browser's height, with black side areas as
 expected for a portrait screen inside a landscape browser. The only outer

@@ -84,18 +84,18 @@ fallback is excluded because car browsers can pause it while driving. Codec prob
 does not prove a particular vehicle/browser's compatibility. Experimental mirroring,
 URL video, photos and ordinary audio follow [AirPlay.md](AirPlay.md).
 
-The [media transport](CarPlay-DataChannel.md) retains reliable, ordered DataChannels
-for audio/control and encoded-video fallback. Compatible source builds can use a
-standard WebRTC video track: browser decoding feeds MediaStreamTrackProcessor,
-then Canvas directly, without creating a video element. Encoded source video is
-never reencoded. Source changes or unsupported track behavior explicitly return
-video to WebCodecs/Canvas without reconnecting audio. Touch forwarding does not
-change playback timing. The WebCodecs path requests hardware decoding without an
-intentional software fallback; browser hints and RTP capabilities cannot prove
-actual hardware use. URL casting retains its
-independent media decoder compatibility policy. The [roadmap](WebRTC-roadmap.md) separates
-implemented behavior from Shizuku-address ICE, vehicle gear-transition continuity
-and physical latency acceptance.
+The [media transport](CarPlay-DataChannel.md) uses reliable ordered DataChannels
+for control, video metadata and audio without a negotiated RTP codec. Live
+CarPlay/mirroring requires an original-codec WebRTC video track: browser decoding
+feeds MediaStreamTrackProcessor, then Canvas directly, without a video element.
+Android does not decode or reencode that video. Supported source changes use
+authenticated video-only renegotiation and generation/ready barriers. Unsupported
+codec/profile, detected reordering, failed replacement or processor failure report
+a video-only error; audio/control remain connected. There is no live encoded-video DataChannel or
+WebCodecs fallback. Touch forwarding leaves both playback timelines unchanged.
+Browser capabilities do not prove actual hardware decoding. URL casting retains
+AVPlayer's independent decoder policy. The [roadmap](WebRTC-roadmap.md) separates
+current source, historical observations and physical acceptance.
 
 The APK neither bundles nor serves the page. The formal page is
 <https://ujzk.github.io/TiPlay/>; its deployment replaces the former root client
@@ -110,9 +110,10 @@ clipboard and long fingerprint entry are unnecessary. Online-guess limits remain
 necessary for a four-digit secret. After proof verification, the encrypted control
 channel still admits `{k:'auth',q,s,c}` before media/ownership is released.
 
-After authentication, audio/control and video records use reliable ordered
-DataChannels, with optional negotiated RTP video and no public STUN/TURN or
-Internet media relay. Public `/hello` identifies protocol
+After authentication, control/video metadata and software-path audio records use
+reliable ordered DataChannels. Live video requires negotiated RTP; compatible
+audio codecs also use original-codec RTP. No public STUN/TURN or Internet media
+relay is configured. Public `/hello` identifies protocol
 availability; old code-authorized HTTP media/control routes are not a fallback.
 `/video` and `/audio` return 410 in the Android product. `/airplay-resource` uses a
 random active-session bearer delivered only by successful encrypted admission;
@@ -139,73 +140,50 @@ Sound-enabled sessions always offer `mainBuffered`; only negotiated type 103 use
 There is no product buffer switch or Android two-minute reservoir. Artwork/song text
 are not requested; playback state/progress/controls remain.
 
-Real-time CarPlay media can also arrive ahead of its RTP playback anchor. Its timestamped
-queue uses the same retention budget as buffered music, while retaining real-time overflow
-handling. Retaining those samples does not delay their scheduled playback; a shorter queue
-can discard them before their playback time arrives.
+Real-time and buffered CarPlay input retain finite byte/packet budgets. A retained
+RTP presentation anchor is protocol evidence, not proof that the browser NetEq or
+native-track receiver schedules speaker output at that anchor.
 
-Each decoded stream/format epoch owns a continuous source-sample position and a
-stateful [libav.js resampler](../site/play/vendor/libav/README.md). Filter state survives
+Software formats requiring conversion own a continuous source-sample position and
+stateful [libav.js resampler](../site/play/vendor/libav/README.md) per stream/format epoch.
+Raw 48 kHz PCM bypasses that Worker; negotiated RTP uses browser decoding. Filter state survives
 packet boundaries; RTP packet adjacency stays on the nominal sample coordinate rather than
 the arrival-clock drift estimate. Distinct CarPlay streams retain separate transport IDs
 even when they share a music/guidance semantic type; mixing and ducking use the semantic
-type while stop/reset applies only to that transport. Real timestamp gaps, seeks and stream replacement enter bounded
-rebuffer/fade recovery. Temporary input shortages never flush the filter as end-of-file.
+type while stop/reset applies only to that transport. Real timestamp gaps remain
+source-coordinate gaps and reset a software resampling run; ordinary shortages do
+not flush it as EOF. NetEq owns software playout rather than following source/video
+phase targets. Replacement and EOS retain bounded lifecycle/fade handling.
 
 ### Media clocks and synchronization
 
-Authenticated control status supplies the clock exchanges; public `/hello` timing
-is not a trusted source anchor. These exchanges estimate both Android/browser time offset and relative clock rate
-from a bounded history, filtering high-delay and inconsistent observations. Centered
-coordinates avoid deriving rate from enormous absolute timestamps. Ordinary calibration
-refines a target; it does not remap queued audio packets. AudioWorklet advances an integer
-device-sample counter and relative per-stream anchors. Small drift changes the resampling
-ratio smoothly; confirmed clock steps, device discontinuities and substantial network-buffer
-target changes use separate recovery reasons. Network readiness and clock correction keep
-independent state.
+Authenticated control status supplies Android/browser clock exchanges; public
+`/hello` timing is not a trusted source anchor. Source, Android, browser and output
+clock domains remain distinct. Missing source anchors must remain unknown rather
+than turning first arrival into an invented source zero.
 
-The device/context clock has its own rate relative to the browser performance clock.
-Valid output timestamp pairs provide a bounded, robust fit; Android/browser and source-rate
-estimates retain their separate meanings. Context-to-performance extrapolation, emitted-content
-references and resampling all use the same device-rate conversion. Guidance integrates that
-rate without moving its arrival anchor. Genuine timestamp steps, gaps and suspend/resume
-reset calibration; ordinary rate fitting does not repeatedly restart audio. Effective output
-rate can reflect scheduling as well as an oscillator, so it does not identify a hardware fault.
+Live RTP reception owns browser buffering and decode timing. Software-path audio
+uses continuous libav.js resampling to 48 kHz, then NetEq's independent packet and
+consumption timeline. Video timing and clock-fit generations do not steer or
+restart that audio. The former live PD/Soxr phase correction, fixed guidance
+startup policy and touch catch-up are retired. Worklet frame counts and causal
+probes provide diagnostic output evidence; `currentTime` alone is not a playback
+witness. Current worklet references report source deadlines as unknown with
+`independent-audio`, rather than certifying a sender-relative ceiling.
 
-Actual output references map emitted content through `AudioContext.getOutputTimestamp()`.
-That pair already includes the device pipeline. Feature fallback uses reported base/output
-latencies once, marks its uncertainty and rejects unbounded mappings. Resampler content
-delay is reflected in the source position, so video must not add it again. Live video
-and audio have independent sender-relative **+300 ms** ceilings. Output references
-measure skew and uncertainty; missing or stale audio evidence does not freeze video.
-Touch advances only the video cursor and cannot reset or accelerate audio. The former
-45 ms early / 125 ms late audio-versus-video window is superseded for live presentation.
-CarPlay navigation, calls, Siri and alerts use
-an independent 20 ms arrival-anchored buffer while preserving RTP sample intervals, so a lack
-of presentation lead cannot prevent speech from starting. These speech streams do not
-constrain the video clock. Source/Android/browser anchors retain their confidence;
-arrival fallback is never presented as proof of sender-relative compliance.
+Independent +300 ms live audio/video ceilings remain acceptance requirements.
+Neither output-clock mappings, rendered PCM nor Canvas submissions measure
+vehicle speaker or panel time. See [clock roles](Browser-wasm.md#audio-clock-roles)
+for the measurement boundary and [physical acceptance](Testing.md#media-clock-and-continuous-audio-acceptance)
+for unperformed device checks.
 
-Android/browser calibration does not establish the iPhone oscillator's rate. Ordinary
-AirPlay timing anchors and realtime source-supply evidence have different confidence;
-buffered prefetch must never be interpreted as a faster source clock. Realtime ingress
-estimation is bounded and rejects obvious network-queue steps, but cannot distinguish
-every slow network-delay trend from sender drift. Keep that uncertainty and recovery
-boundary visible in diagnostics. Desktop clock/output tests establish software behavior;
-speaker sound, vehicle display latency and sustained iPhone interoperability require
-[physical acceptance](Testing.md#media-clock-and-continuous-audio-acceptance).
-
-Resampler impulse calibration runs outside the audio rendering thread. Playback waits for
-the matching source/output format and a new node's preparation before connecting output;
-queued preparation remains inside the existing audio-memory budget. Preparing a new format
-does not prove every vehicle's real-time rendering budget is met.
-
-Type 103 uses authenticated AAC-LC and bounded relay/browser reservoirs. SETRATE
-starts at an RTP anchor, GETANCHOR reads it, rate zero pauses, and FLUSHBUFFERED
-resets output. Compressed preload may survive pause, isolated from retired sessions.
-The decoded buffer covers the producer's lead, startup anchor, permitted output delay and
-clock/packet margin. Memory remains bounded; capacity protection preserves the next buffered
-sample to play instead of repeatedly evicting it for later arrivals. A processor failure
+Type 103 uses authenticated AAC-LC and bounded relay/browser reservoirs. The
+Android protocol owner retains the SETRATE RTP anchor, exposes it through GETANCHOR,
+handles rate-zero pause and resets output on FLUSHBUFFERED. Those protocol replies
+do not certify browser playout at that anchor. Compressed preload may survive pause, isolated from retired sessions.
+The browser capacity budget accounts for producer lead, startup and clock/packet
+margins. NetEq consumption owns software playback and credit; these capacity values
+are not measured delay or a promise of source-anchor scheduling. A processor failure
 retires the old node/epoch and permits only bounded reconstruction within one connection.
 Stalled browsers retire instead of dropping ordered music. iPhone protocol feedback
 estimates position, not physical speaker time. Lossless/spatial audio is not advertised.
@@ -281,10 +259,9 @@ URL casting
 uses AVPlayer's playback clocks, preloading and buffering through a Canvas-only
 adapter. The former TiPlay 750/1500 ms URL watermarks and decoded-queue budgets
 are retired; upstream buffer settings and peak memory still require vehicle tuning.
-Live
-audio follows its receiver sample/latency anchor; buffered music follows SETRATE.
-Arrival playback is an explicit synchronization fallback. Physical output latency
-requires device measurement; acceptance remains in [Todo.md](Todo.md).
+Live audio follows the independent native receiver or software NetEq consumption
+timeline. Android SETRATE/GETANCHOR replies do not measure browser speaker output.
+Physical output latency requires device measurement; acceptance remains in [Todo.md](Todo.md).
 
 ### Browser session lifecycle
 
@@ -319,4 +296,4 @@ The Android Advanced page owns the location permission button. Browser permissio
 show a card in the upper left, sharing the AirPlay notification style. It explains how to
 allow browser location or enable **Disable browser location** on Android. The card stays
 until **Close** is pressed. The waiting screen's **Setting** action is in the lower left.
-See [geolocation](geolocation.md) for GPS fallback, coordinate detection and local caching.
+See [geolocation](Geolocation.md) for GPS fallback, coordinate detection and local caching.

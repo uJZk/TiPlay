@@ -17,7 +17,7 @@ import { followAppearance } from './appearance.js';
 import { probeMirrorAudioFormats } from './airplay-capabilities.js';
 import { createReconnectOverlay } from './reconnect.js';
 import { pumpChunkStream, createFrameDelivery } from './transport.js';
-import { createRtcMediaTransport, RTC_TRANSPORT } from './webrtc-transport.js';
+import { createRtcMediaTransport } from './webrtc-transport.js';
 import { createRtcTrackReader, createRtcVideoPipeline, rtcVideoCodecs, phoneSupportsRtcVideo,
   probeRtcMirrorCapabilities as probeMirrorCapabilities } from './rtc-video.js';
 import { authenticateRtcOffer } from './rtc-pairing.js';
@@ -486,12 +486,6 @@ function phoneFetch(route, init = {}) {
   return fetch(`http://${link.host}${route}`, {
     cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer', targetAddressSpace: addressSpaceFor(link.host), ...init,
   });
-}
-
-async function httpError(response) {
-  let word = null;
-  try { word = (await response.json()).error; } catch (_) {}
-  return Object.assign(new Error(word || `HTTP ${response.status}`), { status: response.status });
 }
 
 let portalRevision = null;
@@ -1000,7 +994,7 @@ function releaseTouches() {
 
 // Touch is forwarded immediately without changing either media timeline.
 function setInteraction(_active) {
-  // Both the native RTP path and WebCodecs fallback use one playback policy.
+  // Touch does not alter the independent live audio and video playback policies.
 }
 
 /** Returns true when the pointer took a slot. */

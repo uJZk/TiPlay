@@ -2878,7 +2878,6 @@ class CarPlayHostActivity : ComponentActivity() {
     private val MENU_ACCENT: Int get() = overlayPalette.overlayAccent
     private val MENU_ACCENT_TRACK: Int get() = overlayPalette.overlayAccentTrack
     private val MENU_TRACK_OFF: Int get() = overlayPalette.overlayTrackOff
-    private val MENU_BUTTON_TEXT: Int get() = overlayPalette.overlayOnAccent
     private val MENU_DANGER: Int get() = overlayPalette.overlayDanger
 
     private fun refreshAppAppearance() {
@@ -5182,31 +5181,6 @@ class CarPlayHostActivity : ComponentActivity() {
             metadataArtworkEnabled = false,
             metadataTextEnabled = false,
         )
-    }
-
-    /** Car Bluetooth audio: shows whether the iPhone keeps A2DP/HFP with the car now and once CarPlay runs. */
-    private fun logCarBluetoothAudio() {
-        appendLog("Car Bluetooth audio: on; CarPlay audio not offered")
-        val adapter = runCatching { getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter ?: android.bluetooth.BluetoothAdapter.getDefaultAdapter() }.getOrNull()
-            ?: return appendLog("Car Bluetooth audio: no Bluetooth adapter")
-        fun probe(moment: String) {
-            for ((name, profile) in listOf("A2DP" to android.bluetooth.BluetoothProfile.A2DP,
-                    "HFP" to android.bluetooth.BluetoothProfile.HEADSET)) {
-                runCatching {
-                    adapter.getProfileProxy(applicationContext, object : android.bluetooth.BluetoothProfile.ServiceListener {
-                        override fun onServiceConnected(id: Int, proxy: android.bluetooth.BluetoothProfile) {
-                            val devices = runCatching { proxy.connectedDevices.map { it.name ?: "?" } }
-                                .getOrElse { listOf("unreadable:${it.javaClass.simpleName}") }
-                            appendLog("Car Bluetooth audio: $moment $name connected=$devices")
-                            adapter.closeProfileProxy(id, proxy)
-                        }
-                        override fun onServiceDisconnected(id: Int) = Unit
-                    }, profile)
-                }.onFailure { appendLog("Car Bluetooth audio: $moment $name unavailable ${it.javaClass.simpleName}") }
-            }
-        }
-        probe("start")
-        mainHandler.postDelayed({ if (!isDestroyed) probe("after30s") }, 30_000L)
     }
 
     private fun loadAirPlayIcon(): AirPlayIcon {

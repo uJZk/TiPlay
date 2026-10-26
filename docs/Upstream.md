@@ -32,8 +32,9 @@ adjusts Android `AudioTrack` playback rate from a smoothed buffer level; its
 sustained compressed-music congestion. Retain those inherited implementations,
 but do not substitute them for browser audio timing. In phone + browser mode,
 `TeslaBrowserLink.tee` selects `BrowserAudioMediaSink`; browser output uses
-AudioWorklet sample counts, continuous libsoxr rate correction and actual output
-timestamps for video synchronization. The Android controller cannot control that
+48 kHz AudioWorklet sample counts and official NetEq, with libav.js conversion
+for supported fallback formats. Live video uses independent native WebRTC RTP
+timing into Canvas; it does not follow browser audio timestamps. The Android controller cannot control that
 output device. The browser implementation costs more CPU and needs sustained
 vehicle verification; similar symptoms alone do not establish interchangeable fixes.
 
@@ -52,9 +53,9 @@ mode, settings-lifecycle and recovery hooks survive alongside upstream additions
 
 | Area | Effective phone/browser behavior and decision |
 | --- | --- |
-| Music drift and sustained stale backlog (#788, #814) | Android music renderer is bypassed. Keep browser continuous ASRC, bounded queues, output-clock mapping and buffered-stream backpressure; do not run both controllers or copy the native packet-drop policy into ordered music. |
+| Music drift and sustained stale backlog (#788, #814) | Android music renderer is bypassed. Keep browser NetEq/libav conversion, bounded queues, independent live timing and buffered-stream backpressure; do not run both controllers or copy the native packet-drop policy into ordered music. |
 | Queue policy for music versus calls | Upstream shares a 192-packet hard queue bound, but media rebuffer/clock trim and the 1.5-second sustained-lag guard are music-specific. TiPlay's SCO queue now bounds both summed packet duration and RTP span to 160 ms, using actual PCM/AAC/Opus duration; an independent 256-packet safety cap bounds pathological tiny packets. Drop oldest complete compressed access units, or retain a bounded PCM tail. Preserve original arrival/decode leases; reject expired input/output and PCM at render time using anchored presentation +125 ms, or a 160 ms arrival fallback. Include AudioTrack queued frames and resampler lookahead in deadline accounting. RTP/decoded gaps, trimming and underrun use 5 ms in-place blends. These are software bounds, not an acoustic latency guarantee. |
-| Shared browser/native resampling | SCO playback and microphone capture now build the browser's patched float32 vr32/HQ C engine directly with NDK/JNI. Each stream keeps its own filter/phase state and never flushes on temporary shortage. Remove the old Kotlin FIR/linear converter. This reuses DSP and continuity/recovery principles, not the browser's AudioContext/device-clock mapping; SCO hardware timing remains separate. |
+| Shared browser/native resampling | SCO playback and microphone capture now build the browser's patched float32 vr32/HQ C engine directly with NDK/JNI. Each stream keeps its own filter/phase state and never flushes on temporary shortage. Remove the old Kotlin FIR/linear converter. This retains the native DSP and continuity/recovery principles; current browser playback uses NetEq/libav instead. SCO hardware timing remains separate. |
 | Audio thread scheduling (#740) | Shared UDP receive priority already reaches TiPlay. Extend the same guarded audio-priority request to TiPlay's SCO microphone, speaker and speech decoder; leave buffered network prefetch at its normal priority. |
 | Navigation gain (#752) | Native adjustable -20…0 dB gain has no browser setting or output connection. TiPlay already applies a fixed 0.25 amplitude to navigation on SCO. A user-adjustable browser gain is a useful enhancement, not an adopted feature; see Todo. |
 | Audio focus resume (#804), earpiece fallback (#797), microphone source (#770) | These control native Android playback/capture. Browser music and TiPlay's verified HFP/SCO route have separate owners; do not enable loudspeaker fallback or native phone-audio mode for them. |

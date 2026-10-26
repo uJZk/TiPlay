@@ -1,5 +1,9 @@
 # Final independent runtime review
 
+Historical wasm2js candidate review. Current browser audio no longer uses this
+engine; see the [benchmark scope](README.md) before reproducing or interpreting these measurements.
+
+
 The final selected pure-JavaScript artifact is `candidate-a.mjs` / delivered `soxr.asm.js`, SHA-256 `0dda221ebb9979a01840c475caed3d9aee84c436f4a1e91483a868ca5df85777`, 364,339 bytes. It uses libsoxr's original HQ variable-rate DSP, float32-only I/O pruning, clang O3/LTO and Binaryen optimization before translation, but omits the final wasm2js O3 pass after measured variant comparison. It is wasm2js-generated typed JavaScript / asm.js-like code, not validated legacy asm.js. It has no runtime WASM dependency.
 
 ## Verified behavior

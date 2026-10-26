@@ -9,10 +9,10 @@ license credits. Edit both languages together.
 The feature list starts with USB/wireless CarPlay, followed by AirPlay screen
 mirroring, photos and compatible unprotected media. Browser location with
 coordinate-system detection and conditional GCJ-02 → WGS84 conversion,
-resilience to network jitter, browser-side audio/video decoding without an extra
+bounded buffering and independent live timing, browser-side audio/video decoding without an extra
 transcoding stage, and adaptive display complete the list. Browser touch control
 and music/calls/Siri are not separate feature-list entries; their usage guidance
-remains in the README. Implementation references are [Geolocation](geolocation.md),
+remains in the README. Implementation references are [Geolocation](Geolocation.md),
 [Browser](Browser.md) and [AirPlay](AirPlay.md).
 
 Credits retain DiPlay/xcertplay receiver lineage and link component license
@@ -61,22 +61,16 @@ are not evidence of a live TiPlay vehicle session.
 
 ## Verification and maintenance
 
-The README-only update passed local Markdown file/anchor and image-dimension
-checks, whitespace checks, site generation/assembly and all four site tests.
-The assembled site also preserves all six screenshot files byte for byte.
-The site tests initially hit a sandbox child-process restriction (`EPERM`);
-the unchanged tests passed when rerun with the required execution permissions.
-The earlier browser suite passed 340 tests. Full Android checks were stopped
-and waived by the maintainer for this documentation-only change; no completed
-Android CI result is claimed for this update.
+For documentation-only edits, verify local Markdown/image/source links, image
+dimensions when artwork changes, and site generation/assembly. Historical test
+counts and CI waivers for the original README update remain in Git; they do not
+waive checks for later source changes.
 
 No application code, build configuration or runtime behavior changed. Future
 README edits should retain the approved feature priorities, update both
 languages and verify image/source links. Screenshot assets use the existing
 GitHub Pages publication path; pushing them to `main` triggers that workflow.
 
-The GitHub repository description remains unchanged: the integration returned
-HTTP 403 (`Resource not accessible by integration`) when updating repository
-metadata. An owner or a token with repository administration access can set it to:
+Repository metadata is managed separately from these files. Suggested description:
 
 > CarPlay and AirPlay in your car’s browser, powered by an Android phone. USB and wireless CarPlay, screen mirroring, photos and media playback.

@@ -1,6 +1,5 @@
 package com.shilapi.xcertplay.transport
 
-import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context

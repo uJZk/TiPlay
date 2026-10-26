@@ -12,9 +12,9 @@ The Android/browser product version comes from `tiplayVersionName` and
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
 the deployed page uses **v97**, with original-codec WebRTC RTP for live video and negotiated audio.
-The **beta.17/code59** build introduced overlapping 5 ms recovery tails and
-pitch-preserving SoundTouch CarPlay catch-up up to 20%; v86 adds held catch-up.
-The historical beta.16 APK/webpage v84 build is recorded below. Software checks are in [Testing](Testing.md#webrtc-integrated-acceptance).
+Earlier SoundTouch/libsoxr browser implementations are historical; current playback
+boundaries are in [Audio tempo](Audio-tempo.md). Software checks are in
+[Testing](Testing.md#webrtc-integrated-acceptance).
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
 independent `/webrtc/` subsite without an alias or redirect; the APK defaults to the
 root. The beta record below identifies both build and deployment provenance. Every
@@ -106,13 +106,13 @@ packages are defined by the Android workflow.
 
 ## Browser WASM build
 
-Browser **v89** uses official NetEq, libav.js decoder/resampler Workers and the
+The historical browser **v89** introduced official NetEq, libav.js decoder/resampler Workers and the
 fixed-memory audio core for realtime audio. WebCodecs audio and libsoxr are removed
 from that realtime revision. Current URL playback uses libmedia AVPlayer; its dependency build is separate from the WASI helper.
 AudioContext and NetEq both use 48 kHz. [Audio tempo](Audio-tempo.md) records the
 final decoder order, memory bounds, lifecycle and remaining device acceptance.
 The v89 rollout skipped CI and APK compilation; those release records remain
-historical. The beta.23 release follows the source and signed-artifact checks.
+historical. The current beta release follows the source and signed-artifact checks.
 See [execution boundaries](Browser-wasm.md), including measured cases that retain
 native browser APIs or JavaScript.
 
@@ -153,7 +153,7 @@ archive, full corresponding sources and artifact hashes are documented in
 [vendor/libav](../site/play/vendor/libav/README.md). Both generated loaders and
 both WASM binaries were independently rebuilt byte-for-byte. The
 [performance report](../tests/bench/libav/README.md) records gains, regressions
-and the corrected AAC-ELD parameter diagnosis; the historical URL audio fallback used these builds locally; current URL playback uses AVPlayer resources; it is not a published release.
+and the corrected AAC-ELD parameter diagnosis; the historical URL audio fallback used these builds. Current URL playback uses AVPlayer resources; the component benchmark is not release provenance.
 
 After changing runtime assets, run `python3 scripts/update_browser_cache.py` and
 bump `PAGE_VERSION`/the Service Worker revision together. CI checks the generated
@@ -411,7 +411,7 @@ unmeasured. Detailed artifacts stay outside Git in `/workspace/tiplay-beta20/`.
 
 ## Beta.21 release
 
-Published [TiPlay 0.2.20-beta.21](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.21), code **63**, browser **v90**, at **2026-10-26 17:20:40 UTC+08:00**. The user explicitly requests signed beta APK publication and the matching browser deployment. The existing signed release workflow runs Release lint/build, exact runtime identity checks, signing and attachment generation; full Android CI remains explicitly skipped.
+Published [TiPlay 0.2.20-beta.21](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.21), code **63**, browser **v90**, at **2026-10-26 17:20:40 UTC+08:00**. The user authorized signed beta APK publication and the matching browser deployment. The existing signed release workflow runs Release lint/build, exact runtime identity checks, signing and attachment generation; full Android CI was explicitly skipped for that release.
 
 This release replaces URL casting with local pinned libmedia AVPlayer and removes the obsolete custom player/cache/subtitle/tempo implementation. Live video uses original-codec WebRTC RTP directly into Canvas; negotiated Opus uses an independent original-codec RTP audio peer, with unsupported formats retaining the existing decoder path.
 

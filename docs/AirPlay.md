@@ -69,7 +69,8 @@ are intrinsic software-decoder capabilities, not WebCodecs probes. Realtime AAC-
 AAC-ELD and ALAC use libav.js Workers, and raw PCM uses the WASM unpacker plus
 continuous software resampling where needed. All enter NetEq as PCM16/48 kHz.
 Negotiated source codecs can instead use standard WebRTC audio tracks; unsupported
-formats retain the DataChannel software path, where Opus enters NetEq directly.
+formats retain the DataChannel PCM/libav.js-NetEq path. Opus requires native RTP
+negotiation and fails explicitly without it.
 No realtime WebCodecs audio path remains. Each source retains its clock, transport ID and epoch. Only reported
 formats appear in receiver offers or pass SETUP; unknown capabilities offer no audio.
 Reports belong to the current browser session and are never restored from a saved
@@ -301,7 +302,7 @@ FLUSH boundaries as other audio; dropping them before ordering creates false gap
 The browser recognizes the exact marker only for mirrored AAC-LC/ELD and emits
 the negotiated frame length as zero PCM in source order. These are explicit silence
 samples, not evidence of network loss or a measurement of physical output.
-Native AAC output consumes a bounded queue of submitted source-sample spans;
+Software AAC output consumes a bounded queue of submitted source-sample spans;
 callbacks may split/merge samples or compact timestamps across silence. Source
 coordinates come from those spans. NoData submission does not block later encoded
 input and does not flush/reset codec overlap state. Only silence blocked by missing
@@ -311,9 +312,9 @@ An externally revoked display can still replace the browser decoder epoch. Ordin
 mirroring has no confirmed sender keyframe-request implementation, so the local
 recovery callback cannot guarantee a new independently decodable frame. Continuing
 prediction frames alone cannot restore a decoder whose initial keyframe was lost.
-Read live policy, source-clock freshness and capacity-drop evidence separately from
-URL buffering; the [live diagnostics](Diagnostics.md#live-video-policy-evidence)
-describe the measured windows and remaining tuning limits.
+Read native RTP/Canvas evidence separately from URL buffering. The
+[live diagnostics](Diagnostics.md#live-video-policy-evidence) distinguish current
+receiver behavior from the retired application video policy.
 
 ## URL engine and captions
 
@@ -499,5 +500,5 @@ an error; FairPlay video remains unsupported. No Android re-encoding is added.
 Parking-state integration remains deferred by user instruction: the browser
 listener permits playback without a gear signal. This is not evidence of P gear.
 Current software and release verification is recorded in [Testing](Testing.md#current-release-source)
-and [Build](Build.md#beta23-release); iPhone/vehicle playback remains a physical
+and [Build](Build.md#beta24-release); iPhone/vehicle playback remains a physical
 acceptance check.

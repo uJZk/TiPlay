@@ -1,0 +1,13 @@
+# D1 scope, part 1
+
+| File | Commit touches | Commits (newest first) |
+| --- | --- | --- |
+| `docs/AirPlay.md` | 26 | `5c47dd00`, `7a612943`, `6c7c76d2`, `da42067d`, `c2d51acc`, `e89386ee`, `d8708330`, `572207cc`, `59efe314`, `70a86088`, `9e21deb1`, `f139a0e0`, `9eaac6e4`, `35eb9976`, `b62e843d`, `725d1666`, `d223db5b`, `1892f908`, `35bb257c`, `2e2783eb`, `16c8c32f`, `c218820b`, `e3d5f339`, `7b8ce6f5`, `006bee2d`, `0ceea5a9` |
+| `docs/Audio-evidence.md` | 1 | `3d146d37` |
+| `docs/Audio-tempo.md` | 5 | `6c7c76d2`, `c2d51acc`, `251fc9ad`, `b3d387ca`, `e89386ee` |
+| `docs/Browser-wasm.md` | 8 | `6c7c76d2`, `c2d51acc`, `251fc9ad`, `e89386ee`, `d9af73b0`, `d8708330`, `851627d1`, `d2c2609a` |
+| `docs/Browser.md` | 23 | `c2d51acc`, `e89386ee`, `dd8230bf`, `572207cc`, `d2c2609a`, `d223db5b`, `1592a061`, `a0ee5924`, `c96ded23`, `88a18dc7`, `a16f7e5a`, `e713aa5a`, `b15b27f0`, `1892f908`, `35bb257c`, `907ca80f`, `2e2783eb`, `c218820b`, `e3d5f339`, `7b8ce6f5`, `4247c566`, `3bc7891d`, `f0d57e05` |
+| `docs/CarPlay-DataChannel.md` | 14 | `5c47dd00`, `637e2ecd`, `7a612943`, `c2d51acc`, `e89386ee`, `b62e843d`, `d223db5b`, `cd51b888`, `1592a061`, `a0ee5924`, `a16f7e5a`, `e713aa5a`, `b15b27f0`, `ef083415` |
+| `docs/Diagnostics.md` | 38 | `5c47dd00`, `637e2ecd`, `7a612943`, `c2d51acc`, `3d146d37`, `49edbd08`, `3cc8e786`, `7234f391`, `e8d69448`, `32d36c77`, `dd8230bf`, `d8708330`, `572207cc`, `d2c2609a`, `eeb6e907`, `59efe314`, `70a86088`, `9e21deb1`, `f139a0e0`, `9eaac6e4`, `35eb9976`, `b62e843d`, `725d1666`, `d223db5b`, `1592a061`, `e713aa5a`, `b15b27f0`, `6f1d9cea`, `8826cf47`, `1892f908`, `35bb257c`, `907ca80f`, `2e2783eb`, `c218820b`, `7b8ce6f5`, `dc64c1a6`, `c80faa91`, `0ceea5a9` |
+| `docs/Testing.md` | 50 | `5c47dd00`, `637e2ecd`, `7a612943`, `dccb1c3e`, `8191b9fc`, `6c7c76d2`, `a3f4e49c`, `c2d51acc`, `b3d387ca`, `e89386ee`, `572207cc`, `72d1fb8a`, `d2c2609a`, `5ea829ad`, `eeb6e907`, `c8ea58e0`, `59efe314`, `059bf02b`, `70a86088`, `204d1f85`, `9e21deb1`, `f21060ca`, `f139a0e0`, `9eaac6e4`, `35eb9976`, `b62e843d`, `4db15028`, `725d1666`, `d223db5b`, `1592a061`, `a0ee5924`, `c96ded23`, `88a18dc7`, `b6dabb18`, `e713aa5a`, `6f1d9cea`, `1892f908`, `35bb257c`, `822ff25a`, `907ca80f`, `c218820b`, `7b8ce6f5`, `dc64c1a6`, `006bee2d`, `c80faa91`, `0ceea5a9`, `c59b6f13`, `4247c566`, `3bc7891d`, `f0d57e05` |
+| `docs/WebRTC-roadmap.md` | 25 | `572207cc`, `72d1fb8a`, `4cd58062`, `5ea829ad`, `eeb6e907`, `59efe314`, `059bf02b`, `70a86088`, `204d1f85`, `9e21deb1`, `f21060ca`, `f139a0e0`, `af8e42e2`, `9eaac6e4`, `35eb9976`, `41b70209`, `b62e843d`, `725d1666`, `d223db5b`, `7e2e253c`, `46ffb3ff`, `cd51b888`, `1592a061`, `a0ee5924`, `b15b27f0` |

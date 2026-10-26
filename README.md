@@ -5,7 +5,7 @@
 <p align="center"><strong>CarPlay in your car’s browser, powered by an Android phone.</strong></p>
 
 <div align="center">
-<a href="https://github.com/uJZk/TiPlay/actions/workflows/android.yml"><img alt="Android checks" src="https://github.com/uJZk/TiPlay/actions/workflows/android.yml/badge.svg"></a> <a href="https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.1"><img alt="Source version 0.2.20-beta.1" src="https://img.shields.io/badge/source-0.2.20--beta.1-5075d6"></a> <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a> <img alt="Kotlin and JavaScript" src="https://img.shields.io/badge/languages-Kotlin%20%2F%20JavaScript-7f52ff">
+<a href="https://github.com/uJZk/TiPlay/actions/workflows/android.yml"><img alt="Android checks" src="https://github.com/uJZk/TiPlay/actions/workflows/android.yml/badge.svg"></a> <a href="https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.24"><img alt="Source version 0.2.20-beta.24" src="https://img.shields.io/badge/source-0.2.20--beta.24-5075d6"></a> <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a> <img alt="Kotlin and JavaScript" src="https://img.shields.io/badge/languages-Kotlin%20%2F%20JavaScript-7f52ff">
 </div>
 
 <p align="center"><a href="https://github.com/uJZk/TiPlay/releases">Download APK</a> · <a href="https://ujzk.github.io/TiPlay/">Open browser player</a> · <a href="docs/README.md">Documentation</a></p>
@@ -16,14 +16,14 @@
 
 ## Overview
 
-TiPlay turns an Android phone into a receiver for your iPhone’s CarPlay session. The iPhone connects to Android over USB or wireless CarPlay; TiPlay relays the picture to the car’s browser, where you control it by touch.
+TiPlay turns an Android phone into a receiver for your iPhone’s CarPlay session. The iPhone connects to Android over USB or wireless CarPlay; TiPlay relays the picture to the car’s browser, where you control it by touch. The supported product is **Android phone + car browser**.
 
 ## Features
 
 - **USB and wireless CarPlay** — connect the iPhone to the Android phone by cable or wirelessly.
 - **AirPlay** — mirror the screen, show photos and play compatible media in the browser.
 - **Car-browser location for navigation** — obtain location from the car browser, automatically identify its coordinate system and convert GCJ-02 to WGS84 when needed before forwarding it to the iPhone.
-- **Resilient browser playback** — bounded buffering, clock synchronization and continuous audio resampling help absorb network jitter and keep audio/video in sync.
+- **Resilient browser playback** — bounded buffering and browser audio recovery help absorb network jitter; live audio and video use independent timing.
 - **Direct audio/video decoding in the browser** — decode CarPlay audio/video directly in the browser, without an extra transcoding stage.
 - **Adaptive display** — adjust to the browser window and automatically select HEVC or H.264.
 
@@ -41,7 +41,7 @@ TiPlay turns an Android phone into a receiver for your iPhone’s CarPlay sessio
 | :---: | :---: |
 | ![iPhone screen mirroring demonstration in the TiPlay browser](site/assets/screenshots/browser-airplay-mirror.png) | ![Big Buck Bunny still with TiPlay AirPlay media playback controls](site/assets/screenshots/browser-airplay-cast.png) |
 
-[Android image sources](site/assets/screenshots/Android-sources.md) · [Browser image sources](site/assets/screenshots/Browser-sources.md) · [AirPlay image sources](site/assets/screenshots/AirPlay-sources.md).
+These images include simulated states and illustrative composites; they do not establish a live vehicle connection. [Android image sources](site/assets/screenshots/Android-sources.md) · [Browser image sources](site/assets/screenshots/Browser-sources.md) · [AirPlay image sources](site/assets/screenshots/AirPlay-sources.md).
 
 ## Installation
 
@@ -51,9 +51,9 @@ TiPlay turns an Android phone into a receiver for your iPhone’s CarPlay sessio
 | --- | --- | --- |
 | Android phone | Android 9 or later | Runs TiPlay and receives CarPlay |
 | iPhone | CarPlay enabled | Supplies the CarPlay session |
-| Car browser | WebCodecs support and local-network access to Android | Displays the picture and sends touch input |
+| Car browser | WebRTC, MediaStreamTrackProcessor and local-network access to Android | Displays the picture and sends touch input |
 
-Use an Android hotspot or an existing Wi-Fi network that allows devices to communicate. Tesla browsers may need an [workaround for LAN restrictions](docs/Hotspot-address.md).
+Use an Android hotspot or an existing Wi-Fi network that allows devices to communicate. The first HTTPS player load needs internet access. Tesla browsers may need a [workaround for LAN restrictions](docs/Hotspot-address.md).
 
 ### Connect for the first time
 
@@ -74,7 +74,7 @@ For USB or detailed instructions, see [Install and connect](docs/Install.md) and
 
 Music normally plays in the browser. Calls and Siri through TiPlay need the Android phone paired with the car’s Bluetooth telephone profile, plus Android microphone permission.
 
-To use the iPhone’s direct Bluetooth audio connection instead, enable **Advanced settings → Disable CarPlay audio**, and make sure to pair the iPhone with the car. [Audio setup](docs/Install.md#set-up-sound).
+To use the iPhone’s direct Bluetooth audio connection instead, enable **Advanced settings → Play audio through iPhone Bluetooth**, and make sure to pair the iPhone with the car. [Audio setup](docs/Install.md#set-up-sound).
 
 ## Help and documentation
 

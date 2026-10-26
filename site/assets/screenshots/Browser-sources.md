@@ -1,6 +1,6 @@
 # Browser screenshots
 
-`browser-connect.png` presents a Chromium screenshot of the current production
+`browser-connect.png` presents a Chromium screenshot of the then-current production
 `site/play/` connection page, captured locally at an 854 × 480 (480p) viewport in English. Capture-only
 page zoom of approximately 61% keeps the entire connection form visible. The empty
 pairing field and default phone address are the application's real initial state.

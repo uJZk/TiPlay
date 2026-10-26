@@ -48,10 +48,10 @@ CarPlay audio is enabled by default. `BrowserCarPlayAudioSettings` independently
 ## Location and video controls
 
 Advanced settings offers **Disable browser location**, off by default. Enabling it hides
-the Android location permission button, stops browser/Android location forwarding and renegotiates
-CarPlay to use the iPhone's location. When enabled, browser location is detected/converted
+the checklist location permission entry when no other selected feature needs it, stops browser/Android location forwarding and renegotiates
+CarPlay to use the iPhone's location. When browser location is enabled, it is detected/converted
 on Android; until confirmation, Android supplies high accuracy GPS fixes. See
-[geolocation](geolocation.md) for quality gates and local browser caching.
+[geolocation](Geolocation.md) for quality gates and local browser caching.
 
 The browser probes and reports its decoder capabilities automatically. CarPlay and AirPlay
 select HEVC only when reported supported, otherwise H.264. The former manual HEVC opt-out

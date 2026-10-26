@@ -2,91 +2,69 @@
 
 TiPlay supports an Android phone plus car browser. Follow [installation](Install.md) and [build](Build.md) instructions; use a parked car for physical acceptance.
 
-The earlier receiver/session baseline passed 908 browser tests, 4,189 Android
-tests (2,366 shared, 1,817 common, six home), debug lint/builds and Chinese/English
-presentation checks. Published artifacts remain in [Build](Build.md#beta-release);
-managed ICE restrictions and physical playback remain separate acceptance limits.
+Release-specific test counts and public artifact checks are evidence for their
+recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-The historical browser v90 baseline passed **533 browser tests** after the AVPlayer migration and removal
-of the retired URL player, live video decoder/pacer and touch catch-up policy.
-Actual Chromium 151 verifies MP4/HLS Canvas output, nonzero URL audio, VOD
-pause/seek/end/replay, live refresh and fresh-edge resume, SDR variant selection,
-WebVTT language switching and simultaneous selection/seek. Tests cover missing
-terminal newlines, proxy-only nested resources/redirects, malformed HLS and early
-or pending-request cancellation, with no video elements, CSP violations, retained
-workers or retained URL AudioContexts. Desktop video uses an explicitly labelled
-software-decoder test override; this does not establish Tesla hardware decoding.
+Beta.24/code66 and browser v97 pass 4,335 local Android tests, all required Debug
+lint/build targets, 598 web tests, full CI and independent signed/public checks.
+Fourteen sender-selection regressions cover Baseline-first startup, asynchronous
+High selection, unchanged encoded bytes, IDR recovery, profile/level/mode rejection,
+bounded timeout, retired selector/encoder isolation and callback/release/re-init
+interleavings. These JVM regressions do not load Android JNI or establish vehicle
+decoding. [Build](Build.md#beta24-release) records exact commits, runs, hashes and
+all 217 public files; no physical acceptance is implied.
 
-The audio-only media-clock normal/unreadable-getter runs, real AAC/ELD/ALAC
-Worker-to-Worklet output and local-track Processor-to-Canvas main/Worker paths pass.
-That release had **43 targeted JVM tests**; the native two-track JNI/DTLS-SRTP oracle
-matches 80 original packets per track. Browser RTP interoperability remains blocked
-by the managed browser's zero host ICE candidates. Beta.21 explicitly skipped the
-full Android suite. Beta.21/code63 and browser v90 were published; [Build](Build.md#beta21-release) records signed Release lint/build and artifact checks. Vehicle playback, CPU, memory and physical output still need acceptance. Earlier
-version-specific evidence below remains historical.
+The retained v96 receive-level coverage exercises bounded H.264 probes, both
+authenticated offers, cancellation, pre-CONFIG frame ownership and safe video-error
+details. Actual Chromium accepts the production helper's local SDP. Managed browser
+policy yields zero host ICE candidates, so it blocks browser RTP playback rather
+than providing a successful decoding result. The subsequent device capture isolated
+actual encoder identity from receive-level admission; v97 addresses that separate
+selection boundary. Real JNI switching, browser RTP audio/video, actual hardware use
+and iPhone/vehicle continuity still require device evidence.
 
-Beta.23/code65 and v95 pass local verification after the Video in Car/AirPlay
-audit. New coverage exercises encrypted SETUP/info/RECORD, precise type-130
-retirement, owner-scoped display replacement/return, URL audio-only continuation,
-late callbacks, photo failures, visual/background-audio registry ownership, RAOP
-advertisement refresh and three-choice consent. The complete Android command
-passes 4,321 tests (2,452 shared, 1,863 common, six home), all debug lint/build
-targets, with no skips or failures. Native AirPlay JNI checks also pass. The 568 browser tests, eight music layouts, 48 consent scenarios, photo CSP and
-complete AVPlayer URL checks pass. HLS subtitle switching/seek and screen return
-pass twice after draining old subtitle requests before reset; generated-runtime
-regressions and a byte-identical vendor rebuild cover that ordering. Full Android
-CI, WASM reproduction, independent signed-artifact checks and all 216 public files
-pass; [Build](Build.md#beta23-release) records exact commits, runs and hashes. RAOP/AP2, BLE
-and trust coverage does not establish physical iPhone/vehicle interoperability.
+The beta.23/v95 AirPlay baseline exercised encrypted SETUP/info/RECORD, independent
+type-130 retirement, owner-scoped screen replacement/return, URL audio-only
+continuation, late callbacks, photo failures, registry ownership, RAOP refresh and
+three-choice consent. It passed 4,321 Android and 568 browser tests, full CI/WASM
+reproduction and signed/public verification. Those checks do not establish physical
+RAOP/AP2, BLE, trust or vehicle interoperability; [Build](Build.md#beta23-release)
+retains that release's provenance.
 
-Browser v96 passes 598 web tests and the required Android command (4,321 tests,
-all lint/debug builds). Regression covers bounded H.264 receive-level probing,
-both authenticated offers, cancellation, pre-CONFIG frame ownership and safe
-video-error details. Real Chromium accepts the production helper's SDP; zero
-ICE candidates still block RTP decoding. The supplied High4.2/SDP3.1 failure is
-recorded in [Build](Build.md#current-browser-deployment); vehicle retesting remains open.
-
-Beta.24/code66 and v97 add 14 native sender-selection regressions: Baseline-first
-startup, asynchronous High selection, unchanged encoded bytes, IDR recovery,
-profile/level/mode rejection, bounded timeout, retired selector/encoder isolation,
-and callback/release/re-init interleavings. All pass with 4,335 local Android
-tests, 598 web tests, full CI and independent signed/public checks recorded in
-[Build](Build.md#beta24-release). These JVM tests do not load Android JNI or
-establish vehicle decoding.
+The v90 AVPlayer migration baseline verified actual Chromium 151 MP4/HLS Canvas,
+nonzero URL audio, VOD pause/seek/end/replay, live refresh/fresh-edge resume, SDR
+selection, WebVTT language switching and selection/seek. Malformed HLS, nested
+proxy resources/redirects and pending-request cancellation were covered, without
+video elements, CSP violations or retained URL Workers/AudioContexts. Desktop
+video used an explicit software test override, which cannot establish Tesla hardware
+use. Native two-track JNI/DTLS-SRTP evidence matched 80 original packets per track;
+browser end-to-end RTP remained blocked. Beta.21 skipped its full Android suite;
+that historical scope does not qualify the current complete run.
 
 ## Browser WASM verification
 
-Browser v89 passes **729 local browser tests**. Its acceptance covers real AAC/ALAC/ELD Worker decoding, exact
-48 kHz PCM duration across 8–48 kHz sources, gap resets, EOF draining, cancelled
-initialization, four simultaneous software streams and overload rejection. Actual
-Chromium verifies software negotiation with WebCodecs audio disabled, NetEq Opus/
-FEC and mixing, NoData history, URL fallback and offline cached module Workers.
-Site assembly/public-tree and native libsoxr source consistency checks pass.
-That rollout explicitly skipped CI and APK compilation. Physical Tesla CPU, output quality,
-multistream headroom and audible clicks remain unverified. Earlier results below
-refer to their original versions.
+The current suite uses actual shipped WASM and software decoder Workers for
+AAC-LC/ELD/ALAC, exact PCM duration across 8–48 kHz sources, packet/gap boundaries,
+EOF draining, cancellation, four-Worker limits and overload. It checks native RTP
+metadata and explicitly rejects unnegotiated Opus; NetEq's synthetic Opus/FEC
+library tests do not select the product audio path. Worklet tests exercise PCM-NetEq,
+shared mixing/ducking, EOS/credit and stale-epoch isolation. Native SCO libsoxr
+checks cover Android's separate resampler, not a browser libsoxr runtime.
 
+Use actual Chromium harnesses for software-Worker-to-Worklet output, production
+CSP, precompiled modules, nonzero PCM, Service Worker/offline resources and
+main/Worker Processor-to-Canvas paths. Frame counters and causal probes remain
+separate from main-thread getter values; frozen, jumping or throwing getters
+must not alter live PCM. AVPlayer owns URL timing/completion independently.
 
-The historical beta.15/code57 and v83 checks passed 893 browser tests, 4,131
-Android unit tests, all required debug lint/build targets and native libsoxr
-JNI/signal/concurrency checks. The five WASM binaries rebuilt byte-for-byte.
-Production-CSP Chromium exercised actual decoder Workers, Worklet output,
-WebGL/2D rendering, SRP and real Service Worker offline loading. Original release
-artifacts and signer/runtime/source verification remain in [Build](Build.md#beta-release).
-
-Clock-safety regressions varied the public getter independently of actual frame
-counters: frozen, biased, slow/fast, jumping and throwing getters could not train
-rate compensation or alter Worklet PCM. Causal probes retained request-time
-freshness across delayed ACKs; native outages, six-hour projections and natural
-URL completion were tested. The standalone production-CSP media-clock harness
-also produced nonzero Worklet PCM under four injected getter faults. These
-results belong to those engine revisions; AVPlayer now owns URL playback.
-
-These are software/source-build and signed-artifact results; vehicle acoustic,
-panel-latency and physical acceptance remain unverified. See
-[WASM boundaries](Browser-wasm.md) and the [browser harnesses](../tests/web-e2e/README.md).
+Historical beta.15/v83 and v89 counts refer to earlier engines, including removed
+URL/live controllers. Their targeted CI skips and counts are retained in
+[Build](Build.md) and the [historical testing record](https://github.com/uJZk/TiPlay/blob/5c47dd00/docs/Testing.md#browser-wasm-verification).
+They are not current coverage or vehicle acceptance. Tesla CPU, output quality,
+multistream headroom, acoustic/panel latency and audible clicks remain unverified.
+See [WASM boundaries](Browser-wasm.md) and [browser harnesses](../tests/web-e2e/README.md).
 
 ## Automated checks
 
@@ -131,243 +109,83 @@ session clock drift still require [device acceptance](Todo.md#browser-and-carpla
 
 ## WebRTC integrated acceptance
 
-Run browser unit tests, shared Android pairing/transport tests and the applicable
-real-PeerConnection harness after integrating changes. SRP vectors come from actual
-Bouncy Castle 1.79 and cover public values, mutual proofs and HMAC binding. Reject
-wrong code, replay/expired challenges, changed SDP/server proofs and retired owners.
-Protocol checks cover TDR1 fragmentation, record credit, independent audio
-subscription barriers, control limits, cancellation, decoder admission and
-explicit overload/stall recovery. No HTTP media/control fallback may bypass SRP.
+Run browser unit tests, shared Android pairing/transport tests and applicable
+real-PeerConnection harnesses after media changes. SRP vectors use Bouncy Castle
+1.79 and cover public values, mutual proofs and SDP HMAC binding. Reject wrong
+codes, replay/expired challenges, altered SDP/proofs and retired owners. No HTTP
+media/control fallback may bypass authenticated admission.
 
-Historical Minibili and ordinary MP4/HLS replay evidence does not establish
-optimal vehicle thresholds or a unique field failure cause. See
-[live policy evidence](Diagnostics.md#live-video-policy-evidence) and
-[published artifacts](Build.md#beta-release).
+Protocol checks cover TDR1 fragmentation/credit, audio consumer barriers, control
+limits, cancellation and explicit overload/stall recovery. Native queue regressions
+hold application RPCs while ACKs drain, preserving authentication, capture order,
+audio-lease FIFO and bounded overload evidence. These DataChannel checks do not
+establish reliable ordered delivery of current RTP video or its browser decode.
 
-Native queue regressions hold an application RPC while 300 ordinary
-ACKs drain, preserve canonical capture ordering and verify authentication,
-audio-lease FIFO, malformed credit, owner retirement and bounded overload evidence.
-Real Chromium DataChannel integration passed 17 checks, and ordinary 44.1 kHz AAC
-MP4/HLS replay passed using the actual media engine, controls and diagnostics.
-The complete page passed 90 checks with the explicit software-only test override,
-including all four worker/main paths, touch, reconnection and v74 offline cache.
-Four default-policy checks separately confirmed an explicit unsupported state on
-the desktop hardware-unavailable path. Neither result establishes actual vehicle
-hardware decoding.
+Current live video requires original-codec RTP and MediaStreamTrackProcessor to
+Canvas, with no video element, second encoding, encoded-video DataChannel fallback,
+live VideoDecoder/pacer or touch catch-up. Verify video-only errors, authenticated
+video replacement generations, source/dependency/IDR guards, safe first-frame
+ownership and successful Canvas acknowledgement. Existing DataChannel decoder/pacer
+fixtures and older complete-page software overrides describe the preceding engine.
+API support and Canvas submission do not prove hardware use or physical output.
 
-The retired custom URL player had packet-trimming, sample-identity and
-AudioBufferSource continuity regressions, including Chromium waveform comparisons
-and deliberate main-thread stalls. Those results apply to that historical engine;
-the associated executable harnesses were removed when AVPlayer took ownership of
-URL buffering, scheduling and audio/video synchronization. They do not validate
-AVPlayer's output or establish physical speaker continuity.
+Preserve remote diagnostic coverage: independent bounded audio/video reports,
+capture/stream/epoch interval baselines, legacy and current production-shaped
+fixtures, 256-field wire bounds, anonymous ICE/native metrics, omission accounting,
+held-journal-lock races and source PTS/arrival windows. Source cadence excludes
+configuration/keepalive and retains repeated/backward/missing references. A field
+allowlist does not establish current collection or physical observability.
 
-The earlier user clarification assigned those steady-playback clicks to CarPlay. URL
-signal checks and healthy YouTube windows cannot exclude faults in that independent
-live-audio path. The later beta.9 report also includes mirror clicks and a higher
-CarPlay click frequency during touch; both require physical retesting.
+Resource cases cover owner/route reuse and revocation, redirects/partial manifests,
+Range isolation, FCUP deadlines and bounded startup/cleanup evidence. Real JVM
+socket fixtures verified approximately ten-second response-header, initial-body
+and returned-body expiry. They do not validate Android's actual network timers or
+five-second connect expiry. Inline-resource limits, NoData source ordering and
+retirement remain independent from the removed custom URL scheduler. AVPlayer
+URL tests use its actual pipeline and local resources, not the old scheduler oracle.
 
-Android cases cover resource-route
-reuse/revocation, redirects and partial manifests, bounded startup/continuity
-diagnostics, device-fit/source-anchor evidence and the audio/video diagnostic
-allowlists. Mirror worklet regressions
-preserve sample progress when the first valid source anchor follows untimed PCM,
-reject expired output, retain unknown origins and isolate the concurrent CarPlay
-stream. CarPlay recovery tests retain the pre-recovery phase/rate/uncertainty and
-context-clock age without changing real Soxr samples or recovery decisions.
-Video tests retain actual snapshot age, maximum read interval and oldest outstanding
-decode age, reject old stream/epoch snapshots and preserve bounded diagnostic budgets.
+Screen-loan regressions cover reentrant borrow/return writes, command/status versus
+ownership, event generations, late encrypted replies and bounded pending records.
+Returned controller ownership without a main stream triggers the existing two-second
+recovery after rechecking owner/session, timely or pending SETUP, settings, browser
+readiness and later loans. Socket fixtures cover exact initial-SETUP retries, RTSP
+455 for another initial transaction, independent stream SETUP, one event cipher per
+verification epoch, port/Worker retirement, blocked writes and close during publication.
+A response never grants ownership; stale callbacks cannot stop a successor.
 
-The native `airplay-short-audio.mjs` (retired custom-player harness)
-oracle passed ten Chromium cases across 44.1/48 kHz, comparing every rendered sample
-with a native whole-buffer source limited to the same metadata duration. One-sample,
-fractional-sample and large decoder-padding cases had zero difference, resolved
-play before ended and emitted ended once. Audio EOF now waits for the effective
-submitted tail on the audio clock, independently of the video tolerance. Unit
-regressions also cover final-sample seeks, suspended clocks and mixed audio/video
-tails. These signal claims are at 1x; tempo conversion retains its existing rounded
-output-sample count and is not lossless at every playback rate.
-The URL signal, MP4/HLS controls and shared media-clock harnesses were rerun on
-this source. The complete v75 page also passed 90 checks with the explicit desktop
-software decoder override, covering all four main/Worker paths, reconnection,
-takeover and offline cache. The shared clock run recorded no runtime source changes;
-its default hardware probes remained explicitly unavailable on this desktop browser.
-These checks do not establish the vehicle decoder implementation or physical output.
+The beta.12 field capture confirmed mirror borrowing with retained control, ownership
+return without old-session SETUP, fallback after 2.007 seconds and actual browser draw
+after 5.119 seconds through a replacement session. Both URL loans received confirmed
+grants before peer TEARDOWN/control EOF after 322/131 ms; subsequent pictures used new
+sessions. This proves one recovery path, not seamless return or iPhone internal intent.
+The current contract is in [AirPlay](AirPlay.md#carplay-coexistence).
 
-Parameter verification covers actual formulas, reachable watermarks, memory-accounting
-domains and field samples; [the parameter table](WebRTC-roadmap.md#参数核验与调优边界)
-distinguishes proved software bounds from defaults still needing vehicle calibration.
-Use a source cadence with continuous motion when measuring stutter: static picture
-updates can have long PTS intervals without dropped frames. Compare target and actual
-cursor delay during convergence, and retain unknown source/output timing instead of
-calling every missing anchor a passed latency measurement.
+Historical custom-player signal, EOF, watermarks, 96→256 MiB and live PD/Soxr
+parameter regressions are [retained in Git](https://github.com/uJZk/TiPlay/blob/5c47dd00/docs/Testing.md#webrtc-integrated-acceptance).
+Their executable implementation-specific harnesses were removed with those engines.
+The old 180 ms main-thread-pause oracle produced a 115.420 ms 4K audio gap; a slow
+video oracle produced 42 gaps in twelve seconds. Those results establish old
+scheduling limits, not AVPlayer throughput or vehicle sound. The beta.12 4K field
+attempt was not continuous playback, and zero recorded faults in two 360p windows
+were not acoustic passes. [Diagnostics](Diagnostics.md#airplay-url-playback-evidence)
+keeps the corresponding interpretation boundaries.
 
-An independent hardware-clock/real-Soxr oracle verifies that repeated 10 ms
-output-pipeline changes no longer
-discard a coherent applied device rate, while a real 38 ms change still recovers.
-The fixture covers an actual oscillator change, source progress, nonzero PCM and
-the unchanged 30/300 ms recovery/deadline policy. An idle stream emits no samples
-and cannot fabricate a deadline-recovery count; actual tails and zero-valued source
-PCM still receive deadline checks.
+Use the [browser harness instructions](../tests/web-e2e/README.md) for real
+SRP/ICE/DTLS/SCTP and RTP checks. No usable host candidates is a blocked environment,
+not a simulated success. Run the intended vehicle with the official root URL,
+Android address and four-digit code. Check wrong-code lockout/new code, reconnect,
+replacement owners, explicit disable/disconnect, cached/offline reopen and denied
+local-network permission. Exercise large AUs, retransmission, Wi-Fi/hotspot/VPN,
+Shizuku aliases, suspend/resume, heat and storage pressure. Reproduce historical
+beta.3 reconnect/source-gap scenarios before declaring them resolved.
 
-Parameter cases cover exact MAD 3/0.5/1.5 ms, one-second source buckets/fastest arrival,
-inclusive source/device 10/2-second pairs, 125 ms plan-history continuity and
-64/128/256-frame render blocks. A 10,000-update same-clock burst remains cloneable
-and bounded after superseded activations are removed. Three parallel real JVM socket
-fixtures expired at approximately 10 seconds in response-header, initial-body and
-returned-body reads, retaining production limits and FCUP behavior. These do not
-validate Android's network stack or the 5-second connect expiry.
-An additional real-Soxr case reproduces non-finite output beyond the old 512-frame
-mixing buffer, then verifies 1024-frame expansion, smaller-block reuse, nonzero output
-in both halves and identical PCM with Debug toggled. No per-quantum allocation is
-added when the existing buffer is sufficient.
-
-Real Chromium checks passed shared CarPlay/mirror clocks, MP4/HLS playback and 90
-complete-page checks with the explicit software decoder override. The initial URL
-probe is held by the fixture: the accessible loading indicator must already be
-visible before headers or player import, and retire on actual playing. Stop,
-replacement, paused/gesture handoff and permission revocation also have regressions.
-
-Screen-loan regressions reproduce reentrant borrow/return write failures and the
-old host's failure to recover a returned resource without a primary data stream.
-The latter fails before the fix with `WantedButNotInvoked`. Recovery now waits the
-existing two-second interval, rechecks the same owner/session and preserves timely
-or in-flight SETUP. Tests cover 1999/2000 ms, settings spanning the wait, new loans,
-browser loss/re-authentication,
-atomic retirement and first-frame viewport reconciliation. Control/audio continuity,
-keyframe requests, stale owners and mirror isolation retain their earlier checks.
-`CarPlayCommandResultsTest` and `CarPlayEventChannelTest` add independent coverage
-for bounded command results, monotonic expiry, late/duplicate replies, encrypted
-response fragments across idle read timeouts and retired readers. A synchronized
-race fixture prevents old modesChanged from overwriting a successor in low-level
-reader fixtures. Responses never authorize ownership.
-Socket lifecycle fixtures exercise real TCP/UDP and encrypted RTSP SETUP rather
-than only installing internal fields. Exact initial-SETUP retries preserve the
-original ports/cipher; other initial transactions receive 455. Stream SETUP remains
-valid. One cipher per verification epoch rejects nonce-zero replay, and fresh
-PairVerify cannot decrypt a prior epoch's ciphertext. Resource cases check port
-reuse, worker retirement, late accepts, blocked writes and close during publication.
-Delivery-pump fixtures reproduce same-value recursion and transport/state-lock
-inversion, and verify stop/return across a channel change during the first borrow.
-The beta.12 field capture confirms a mirror loan retaining control, ownership return
-without old-session SETUP, fallback after 2.007 seconds and actual browser draw after
-5.119 seconds. Both URL loans are confirmed before peer TEARDOWN/control EOF after
-322/131 ms; subsequent CarPlay drawing uses new sessions. This proves one recovery
-path, not seamless return or iPhone internal intent. Broader picture/sound acceptance
-remains in Todo; published sources remain those in [Build](Build.md#beta-release).
-
-Capture regressions cover lock-wait/failed-append timing, retained deadline
-evidence, playback-generation rejection and fixed diagnostic schemas. Browser cases
-add exact 20/10/40 ms timestamp, 8/30 ms recovery and URL watermarks/lookahead/submission
-boundaries; 17 deliberate parameter/comparison mutations are caught. These checks
-prove software boundaries, not optimal vehicle settings. Source-deadline evidence is
-Debug-only, and stale-generation reports cannot repopulate cleared metrics.
-
-That historical live/URL revision shared the optional `AudioContext.playbackStats` reader; AVPlayer URL diagnostics now use upstream counters.
-Tests cover unavailable/throwing/invalid getters, real zeroes, seconds-to-milliseconds,
-safe bounds and no reset or Debug-off live reads. Its four scalar fields preserve the
-16/64 KiB live budgets; that revision's worst URL control envelope was 4009 bytes within the
-existing 4096-byte reservation, with every native group at most 600 characters.
-The production-CSP shared-clock harness verifies the actual live graph's renderer
-state/counters, nonzero PCM and independent CarPlay/mirror references, with all 61
-runtime source hashes unchanged. Chromium 151 exposes the API without experimental flags. Slow or visibility-
-gated updates and unavailable counters remain unknown; this is not speaker capture.
-Signed artifacts and publication are recorded separately in
-[Build](Build.md#beta-release); historical scoped runs do not replace current CI.
-
-The subsequent beta.12/v78 read-only field review binds sid2, 255.671 seconds and
-63,290 records; its 208 ZIP entries pass CRC/path/length and sequence/offset checks.
-The 0.914-second beta.11 residue and historical TXT are excluded. Reference decoding
-of 6,088 packets / 5,401,600 frames reports no decode/non-finite/over-full-scale errors.
-Live renderer growth is confined to the early window; mirror samples remain continuous
-despite 260/265 ms incoming/send-attempt gaps. The user's 4K attempt was not continuous
-playback; its 26 scheduled-audio gaps totalling 3.055517 seconds cannot establish
-steady-click cause. Two 360p windows have zero recorded scheduling/renderer faults,
-not acoustic proof. These observations add no new feature-test or physical pass claim.
-
-Pre-budget-change read-only oracles use the beta.12 URL engine and 96 MiB
-budget: one 180 ms main-thread pause produces a 115.420 ms gap at 4K, zero at 360p;
-continuous 30-fps PTS supplied at about ten decoded frames/second produces 42 gaps
-in 12 seconds, with no skipped/repeated submitted source samples and no audio clock
-beyond actual decoded video coverage. This measures scheduling behavior, not actual
-codec throughput or sound. An audio-master alternative was not adopted because slow
-video could fall unboundedly behind. A 30-second bounded-separation/last-presented-PTS
-regression remains a design requirement, not an executed pass. These are historical
-96 MiB baselines, not verification of the later 256 MiB custom-player budget; AVPlayer now owns URL buffering.
-The isolated 256 MiB change passed all 737 browser tests and the real Chromium MP4/HLS
-Video.js harness. After refining the existing 4K fixture to 30 fps so it still
-exercises `video-budget` startup, all 106 targeted cases passed again; production
-source was unchanged after the full run. The replacement-surface rejection now
-uses an 8192×8192 sample to preserve the same admission failure boundary. CarPlay/mirror 64 MiB,
-32 queued URL frames, URL DSP, watermarks, 500 ms audio scheduling and synchronization
-were unchanged by that budget adjustment; subsequent live-audio fixes are described
-below. The reference-based CarPlay changes were outside that capture review, and
-full Android CI was not rerun for that review.
-
-Native cases additionally cover fixed source-fit/quantum
-fields, six-place MAD printing, one-time 400 ms SETRATE anchors, HTTP failure phases
-and FCUP deadline ownership/logger isolation. Source/quantum Debug collection and
-diagnostic observation preserve real Soxr PCM and recovery decisions. The v76 source passed 90
-complete-page checks with the explicit desktop software decoder override and real
-AAC/ELD, shared media-clock and MP4/HLS harnesses. Shared-clock source hashes remained
-unchanged throughout the run; hardware paths were explicitly unavailable on this desktop.
-The follow-up preserves exact AAC signal continuity across 19 mirror
-NoData units in real Chromium: native AAC-LC and Worker software ELD both resume with
-zero PCM difference from their uninterrupted baseline. Source timestamps cover the
-inserted samples continuously; callback timestamps may compact gaps or clamp a
-negative initial timestamp and are not substituted for RTP sample coordinates.
-The production worklet/Soxr regression also compares a single contradictory output
-pair with a stable control: both live modes avoid false recovery and retain their
-resampler. Real two-pair pipeline changes still recover. Diagnostic-only observation
-retains byte-identical output; temporarily unknown mapping can retain a minute
-existing phase correction, tested against half an input PCM16 quantization step.
-
-Boundary probes additionally exercise default NoData 2000 ms timeout without extending
-it on new markers, source-span capacity, URL watermarks at 0.25/1/4x, 500 ms submitted
-audio, 2/3-second read admission, frame/byte limits, manifest/inline 2 MiB and browser
-15-second expiry. They distinguish fixed unit deadlines from progress watchdogs and
-retain one-sample 1x clips. Clock regressions cover exact valid oscillator endpoints,
-genuinely wider drift, expired references, historical/repeated pairs and reacquisition
-after opposite extreme device rates. None of these software limits establishes optimal
-vehicle tuning, driver/GPU memory consumption or acoustic continuity.
-
-The former experimental isolated-site assembler is no longer the production deployment:
-`https://ujzk.github.io/TiPlay/` is replaced directly, the independent `/webrtc/`
-site is removed without alias/redirect. All language download pages link to the
-GitHub Releases index without a version-specific URL;
-the historical 0.2.16 release/download URL is no longer available.
-
-Preserve remote diagnostic coverage when running the integrated suite: bounded
-independent video snapshots, capture-session/stream/epoch interval baselines,
-legacy and current production-shaped diagnostic fixture validation
-(the wire payload remains limited to 256 fields), anonymous ICE/native metrics,
-missing/budget-omitted fields, held journal-lock races and complete-frame source
-PTS/arrival windows. Source cadence excludes configuration/keepalive records and
-retains missing, repeated, backward and cross-window PTS/arrival gaps. These tests
-observe source pauses and consumer progress; they do not prove network loss or
-remove the need to reproduce the historical source-frame stalls.
-
-Use the current [browser harness instructions](../tests/web-e2e/README.md) for real
-SRP/ICE/DTLS/SCTP. A browser that cannot enumerate usable host ICE candidates is a
-blocked environment result, not a simulated success. Full-page software overrides
-must never be reported as hardware-decode evidence. URL/photo/audio harnesses
-remain applicable because resource playback is retained.
-
-On the intended vehicle, manually enter the official root URL, Android address and
-four-digit code. Check wrong-code lockout, new code, same-page reconnect, replacement
-owners, disable/disconnect, cached/offline reopen and local-network denial. Exercise
-large access units, retransmission, shared Wi-Fi/hotspot/VPN, Shizuku aliases,
-suspend/resume, sustained heat and storage pressure. Use source/read/decode/draw and
-native queue/credit evidence to distinguish source supply from transport retirement
-or decoded refresh replacement. Reproduce the old beta.3 200ms-guard/reconnect and
-7.75-second source-gap scenarios rather than claiming them fixed from counts alone.
-
-Confirm actual vehicle hardware decoding and source-relative panel/acoustic output
-with uncertainty. Repeat touch without resetting audio; test source-anchor loss,
-independent speech/media epochs and verified HFP startup/loss/restoration. The live
-+300ms enforcement includes known software clock/output/filter uncertainty, while
-upstream iPhone NTP uncertainty is not separately transmitted. Missing anchors stay
-unknown and `within-bound` is not a physical latency certificate.
+Confirm actual vehicle hardware decoding and independent source-relative panel/
+acoustic output with clock uncertainty. Repeat touch without changing either media
+timeline; test source-anchor loss, separate speech/media epochs and verified HFP
+startup/loss/restoration. Independent +300 ms live ceilings are requirements, not
+current measured/enforced output. Current worklet references are
+`unknown`/`independent-audio`; missing source timing cannot become a passed latency
+measurement. Physical follow-up remains in [Todo](Todo.md).
 
 ## Receiver status and browser notices
 
@@ -404,7 +222,7 @@ software behavior only.
 
 ## Location and notification verification
 
-The implemented [location flow](geolocation.md) uses precise Android GPS until the
+The implemented [location flow](Geolocation.md) uses precise Android GPS until the
 browser datum is confirmed, refined GCJ-02 conversion and browser-local datum caching.
 Location behavior is covered by the source checks above. The debug APK contains geocoordinates and JNA native
 libraries for arm64-v8a, armeabi-v7a, x86 and x86_64; the library checksum matches its
@@ -449,293 +267,104 @@ Turn it on again and verify normal system-controlled rotation.
 
 ## Media clock and continuous audio acceptance
 
-The local, unpublished v88 revision replaces live PD/SoundTouch with official
-NetEq WASM. Decoder priority is browser-native, NetEq Opus, then libav.js ELD;
-AAC-LC remains browser-only. NetEq tests cover actual shipped WASM, synthetic
-FEC-positive Opus, missing packets, 384 ms bursts, 44.1/48 kHz conversions, finite
-stream drain/credit, stale epochs, independent video and faulty clock getters.
-That revision retained manual×automatic SoundTouch tempo and its −45…+125 ms target for URL casting; the current AVPlayer migration removes that custom policy.
-See [Audio tempo](Audio-tempo.md) for scope and physical verification limits.
-That revision skipped full Android CI under the user's instruction; its local
-checks did not establish a new release.
+Current live audio uses browser-owned original-codec RTP or the software
+PCM/libav.js-to-NetEq path; [Audio tempo](Audio-tempo.md) defines selection,
+resampling, EOS/credit and capacity bounds. Opus without native RTP negotiation
+fails explicitly. The AudioContext and NetEq graph use 48 kHz. Real libav.js tests
+cover exact resampling duration, source timestamp gaps, NoData, cancellation and
+finite filter draining. Shared mixer tests cover nonzero PCM, semantic ducking,
+stream isolation, endings and 5 ms fade boundaries. Library Opus/FEC tests do not
+establish product transport or sound quality.
 
-The beta.13/v79 live-audio source corrects recovery-tail double fading and
-instantaneous voice/media gain changes, independently reproduced with production
-code and real Soxr. Recovery resumes the already-faded amplitude; the shared mixer
-uses the existing 5 ms envelope across continuous, timestamped and compatibility
-streams, retaining media attenuation during voice tails. DC isolates gain edges from
-real speech: the former 0.4000205 single-sample jump becomes about 0.0016670; a 50 Hz
-control distinguishes natural waveform slope. CarPlay 48 kHz and mirror 44.1→48 kHz
-recovery comparisons cover partial underruns, unavailable/reacquired references and
-64/128/256/1024-frame blocks. Compare independent old-tail envelopes and fresh Soxr
-output, including source sample progress; counters alone are insufficient.
+Worklet frames advance from actual emitted block lengths. Counter discontinuities
+remain diagnostic domain changes rather than steering live audio. Exercise variable
+render quanta, stale generation/epoch rejection, direct Worker ports, bounded input
+credit and retirement while another semantic peer stays audible. Check native-track
+and software streams under the same ducking/telephony policy. Synthetic constant
+samples and recovery counters alone cannot establish audible continuity.
 
-Active/recovery/retired tails share the source-deadline calculation. Keep the old
-sample's provenance across crossfades and epoch/reset retirement; reject expired
-tails while preserving legal tails and unknown references. Debug retains a bounded
-retired-tail rejection with its own epoch/generation, separate from successor
-metrics; the browser/native selector fixture checks the diagnostic path and print
-precision. Large-quantum cases separately bound fresh PCM, crossfaded old samples
-and partial-underrun tails over their actual contribution intervals: a 5 ms tail
-inside a 1024-frame block must not inherit the whole block or its zero padding as
-extra source age. Both sides of the deadline remain checked, without a larger limit.
-These software checks do not establish that every vehicle click or the
-separate URL-audio graph is fixed.
+Use the [E2E harness](../tests/web-e2e/README.md) for production CSP, WASM loading,
+actual nonzero Worklet output, native output timestamps, causal probes, main/Worker
+Canvas and suspend/resume. Run timing-sensitive harnesses separately from Gradle
+or other browser loads; retain the same timing assertions when isolating contention.
+Frozen, jumping or unreadable main-thread getters must not steer audio. Output
+mapping and probe uncertainty remain diagnostic; `sourceDeadlineState=unknown`
+with `independent-audio` does not certify sender-relative or physical output timing.
 
-The beta.13 source passed **777/777 browser tests**, **22 scoped Android audio
-diagnostic tests** and the real Chromium 151 production-CSP media-clock harness.
-All 61 browser runtime hashes stayed unchanged through actual AudioWorklet,
-CarPlay/mirror output, suspend/resume and worker/main Canvas checks. Independent
-review accepted the corrected short-tail bounds; the earlier 771-test intermediate
-run is superseded. That historical scoped run did not include full Android CI. These changes are
-published as beta.13/v79; [Build](Build.md#beta-release) identifies the verified artifacts and deployment.
-The beta.13/code55/v79 metadata preflight additionally passed 9 release-draft,
-2 root-site, 35 browser-diagnostic and 40 scoped native diagnostic/protocol cases
-across four classes. All 239 checked inputs remained byte-identical after version
-normalization; download entries still open the version-independent Releases index.
+AVPlayer URL audio owns a separate graph, clocks and synchronization. Check actual
+pause/seek/end/replay, buffering, live-edge resume, track changes and teardown rather
+than applying removed BufferSource/SoundTouch waveform assertions. A healthy URL
+window cannot exclude a live CarPlay defect, and live NetEq tests cannot validate
+AVPlayer sound. Their independent device checks remain open.
 
-Frozen beta.12 capture replay also compares identical decoded mirror PCM delivered
-at nominal and recorded send-attempt times through the production worklet/Soxr.
-Recorded delivery can starve output despite continuous source samples. An ignored
-full-10-ms-read admission variant lowers recovery counts but increases emitted
-silence by 21.271/29.542 ms in the same central windows; it was rejected. Playback
-counters cover the complete replay, while waveform comparisons use a fixed central
-14.891-second window. Independent source-availability masks distinguish missing
-input from available instantaneous samples without claiming Soxr history/lookahead
-is sufficient. CarPlay packet-coordinate replay finds no gaps/overlaps in 4,582
-packets / 4,678,720 frames; no source-coordinate change was justified.
+### Historical live-clock and waveform observations
 
-The subsequent beta.13 capture binds the current code55/v79 recording and excludes
-the short beta.12 residue. In a 130-second pure-media window without active speech
-mixing, 38 clock-step recoveries accumulate while renderer-underrun totals stay
-unchanged. Both native-output and rendered-context long-baseline slopes are about
-1.4% slower than the performance clock; this is effective sample-clock progress,
-not proof of a physical oscillator fault. Frequent output-step fit resets leave the
-applied correction behind that progress. All 6,336 AAC packets in that window decode
-with continuous sample coordinates, finite PCM and no systematic packet-boundary
-edge. Batched arrivals must not be classified as speech DTX or lost samples.
-An independent 20-second production-Soxr oracle with actual context rate 0.9857 and
-applied rate 0.998 produces seven phase recoveries and source-cursor jumps; matching
-the rate produces none. This establishes a reproducible clock-compensation defect,
-without assigning every reported click or speech onset/ending to that defect.
+Earlier beta.13/v79 PD/Soxr regressions independently reproduced double-faded
+recovery tails and abrupt voice/media gain changes. The former 0.4000205
+single-sample DC gain jump fell to about 0.0016670 with the 5 ms envelope; source
+progress, nonzero signals, 44.1→48 kHz conversion and 64–1024-frame blocks were checked.
+These old-controller tests do not validate every vehicle click or the current engine.
 
-Rate estimation separates native output pairs from running render-cursor pairs.
-A fresh accepted native fit takes priority; render progress supplies a fallback,
-and missing fresh evidence freezes the one applied-rate controller. Confirmed
-sampling/native gaps retain nominal-reset/reacquisition behavior; holding the old
-rate across a true rate change increased missing output in an independent oracle
-and was rejected. Output phase steps do not clear the independent render fit. Existing 4/16-second fit spans,
-2-second slope pairs, ±2% accepted estimate range and 1000 ppm/second slew remain.
-Render fits reserve the largest observed block's half-width in their measurement
-uncertainty and retain actual raw MAD; this does not make a short coarse-block fit
-precise. Its noise gate allows that known resolution in addition to 3 ms excess
-noise. Native noise remains independent and cannot inherit this enlarged allowance.
-Projection uncertainty uses the reciprocal extrema of the existing rate range over
-the actual anchor distance, including the emitted quantum. Reusing a held anchor
-does not add the same rate-age interval twice. Actual source deadlines retain the
-300 ms ceiling with complete uncertainty. Debug-only observed state-transition
-counts/non-running duration preserve brief observed pauses between snapshots;
-delayed/coalesced browser events remain a limitation. The capture reports a reduced
-Chromium 148/Linux user agent, not a specific browser build. All 221 live snapshots
-are running, but no raw lifecycle event or cumulative pause counter establishes
-uninterrupted context progress between them.
-Voice preparation separates first admission from recovery after actual accepted
-PCM output, including silent PCM. First admission retains the 30 ms phase reserve;
-recovery uses the actual 300 ms ceiling with complete uncertainty. The 20 ms wait
-is paid once per startup/recovery, not repeatedly added to a stopped source cursor.
-Preferred delay plans remain soft targets, clamped to the current admission budget;
-a reachable 280 ms plan cannot contradict first-admission headroom and block startup.
-Candidates use the renderer's shared integer-frame/raw-source mapping and contiguous
-input runs; expired candidates are reconsidered as fresh PCM or clock evidence
-arrives. Real Soxr input/output preparation survives callbacks under the existing
-16-call budget. Its staged prefix retains source/rate metadata, then hands the same
-live filter back to the ordinary renderer and shared mixer. A finite short utterance
-may emit actual partial output after the wait; zero padding cannot widen its source
-age. Source holes, unknown clocks and source/output deadlines remain explicit.
-Tests cover actual delivery gaps, same-origin clock generations, uncertainty changes,
-expired-to-fresh recovery, short/silent utterances, large quanta and low-rate priming.
-Arrival guidance acquiring its first presentation anchor preserves its live filter;
-later real generation changes still recover. This separate recovery defect does not
-establish the cause of the no-navigation pure-media field window.
+The beta.13 capture's pure-media window had 38 clock-step recoveries/129.983 seconds
+with continuous decoded AAC samples and no renderer-underrun increase. Effective
+context/output progress was about 1.4% slower than the performance clock, without
+proving an oscillator fault. An independent real-Soxr oracle reproduced phase
+recovery from mismatched compensation. Beta.14 then showed four recoveries/55.007
+seconds, versus 38/129.983 seconds; content/load/duration differed, so this was not
+a controlled acoustic improvement. Its 80.011-second segment retained 1,632 render-fit
+resets and 13 native phase-fit resets. These are older controller observations.
 
-The beta.14 functional corrections passed all 814 browser tests, 69 scoped Android cases,
-the mobile debug build and the production-CSP media-clock harness in Chromium 151.
-The browser runs bind unchanged runtime/test inputs. That historical scoped run
-omitted full Android CI; these checks do not measure vehicle speaker output.
-Beta.14/code56/v80 metadata preflight also passes 9 release-draft tests, 2 root-site
-tests, 62 browser checks and 51 native cases across four classes. Those scoped
-counts overlap the functional suites. All 138 checked functional inputs remain
-byte-identical after normalizing only the three version-bearing JavaScript files;
-the three shared diagnostic fixtures also use v80. Chromium checks pass again on
-the versioned source with all 61 runtime hashes unchanged.
-
-The next field capture binds beta.14/code56/v80 and covers only CarPlay, as
-confirmed by the user. Excluding old-session residue and first-snapshot totals,
-the new pure-media window has four clock-step recoveries over 55.007 seconds
-(4.36/minute), versus 38 over 129.983 seconds (17.54/minute) in beta.13. These are
-software recovery rates, not measured acoustic pop counts or a controlled trial:
-content, duration and effective context progress differ. No new renderer underrun,
-source-deadline rejection or clock-generation recovery occurs in that new window.
-Across the continuous 80.011-second context segment, rendered progress is 293.67 ms
-shorter than journal time; all observed state-change/non-running counters remain
-zero. API counters exclude observed pauses, not unreported internal scheduling.
-The render fit nevertheless resets 1,632 times, while native phase-fit resets
-increase by 13; none of the 17 snapshots selects the render fallback. Five-second
-snapshots cannot identify each reset's micro-sample trigger. Reference decoding
-of all configured media/voice payloads yields 4,216,896 finite source frames with
-continuous per-frame coordinates and no systematic packet-boundary edge. A
-cross-transport relay gap belongs to reconnect, not steady pure-media playback.
-This sample does not establish mirror/URL acoustic improvement.
-
-The actual worklet counter advances 3,826,176 frames/29,892 callbacks in the same
-80.011-second interval, or 79.712 seconds at 48 kHz. Its cursor advances identically;
-the main getter differs by only 5.33 ms of endpoint lag. Correcting known report
-receipt age still leaves about 276–283 ms, so main getter lag alone cannot explain
-the whole deficit. Unknown send/queue delays and process scheduling remain;
-these counters do not establish a physical DAC rate.
-
-A historical Chromium 151 experiment reproduced continuous 128-frame Worklet
-progress while the main getter advanced in four-block batches: the old short-pair
-gate reset 2,313 times, and skipping repeated readings still reset it 322 times.
-The v81 token fence was an intermediate correction. Current live timing instead
-uses actual frame counters and causal request/ACK intervals; a valid first
-frontier is retained. See [current clock roles](Browser-wasm.md#audio-clock-roles)
-and [WASM verification](#browser-wasm-verification). Load-dependent reference
-acquisition remains a field acceptance item; none of these observations measures
-vehicle speaker output or a physical DAC rate.
+An intermediate Chromium 151 experiment observed continuous 128-frame worklet
+progress with main getter advances in four-block batches; the old short-pair gate
+reset 2,313 times, or 322 times after skipping repeats. The v81 token fence was an
+intermediate correction. Current diagnostics use frame counters and causal request/
+ACK intervals, while current NetEq timing stays independent. None measures a DAC.
+Detailed historical source-deadline/tail/voice-preparation/fit cases and release-local
+counts are [retained in Git](https://github.com/uJZk/TiPlay/blob/5c47dd00/docs/Testing.md#media-clock-and-continuous-audio-acceptance).
+Retired-controller test coverage is not a current implementation claim.
 
 The independent [ChatGPT clock test](https://ujzk.github.io/TiPlay/chatgpt/) runs
-90 seconds of baseline, bounded main-thread load and recovery. It records getter
-batching, actual worklet frame progress, causal probe intervals, state/visibility,
-timer precision and optional output statistics. Users can mark audible events and
-export local JSON; nothing is uploaded automatically. Paused/background intervals
-are segmented, and unknown timer precision or capped history downgrades conclusions.
-It imports no TiPlay playback runtime. Its synthetic tone/main-thread load cannot
-exclude codec, Soxr or video/GPU effects when a problem is absent. The published
-page-only v2 source is `957b67f5`, with 33 scoped checks, a 15-second browser
-workflow and independently decoded actual-screen QR verification. The unchanged
-tone generator retains the earlier complete 90-second runs. A large result card
-supports photographing the screen; bounded fragment-only QR summaries can be
-opened/saved on a phone without copying or downloading on Tesla. Summary export
-preserves selected spans, nulls, caps and omitted-mark counts; it excludes raw
-samples and does not upload a report. That page-only publication did not include
-the production-clock correction, deployed separately as v81; neither establishes
-a physical DAC rate. Use the same
-vehicle/output path for a field comparison.
+90 seconds of baseline, bounded main-thread load and recovery without importing
+TiPlay's playback runtime. It records getter batching, frame progress, causal probe
+bounds, visibility/state and optional statistics. Users can mark audible events and
+export local JSON or bounded fragment-only QR summaries; nothing uploads automatically.
+Unknown timer precision, omitted data or background pauses limit conclusions.
 
-In the user's Tesla 48 kHz, 90-second standalone run, all three process-progress
-intervals include zero: baseline −49.47…23.43 ms, main-thread load −43.50…30.90 ms,
-and recovery −5.13…35.57 ms. Getter differences are −27.20/+4.97/−5.73 ms over
-approximately 30 seconds each; probe RTT P95 is 40.60/43.40/42.00 ms. The user
-heard no clicks, despite four baseline and two recovery frame-coordinate
-discontinuities. This does not reproduce a sustained deficit in the lightweight
-graph or establish those discontinuities as audible events. Frequent repeated
-readings and multi-block updates confirm the getter observation boundary on the
-vehicle. Production codec/Soxr/video workload is absent, so production-load
-scheduling and remaining reported clicks stay open. Tesla cannot reliably copy
-or export the raw file; the user transcribed the visible results.
+In the user's Tesla 48 kHz standalone run, process-progress intervals included zero:
+−49.47…23.43 ms baseline, −43.50…30.90 ms load and −5.13…35.57 ms recovery. Getter
+differences were −27.20/+4.97/−5.73 ms; probe RTT P95 was 40.60/43.40/42.00 ms. No
+click was heard despite four baseline and two recovery frame discontinuities. This
+lightweight graph did not reproduce the production deficit or establish audible
+frame-counter faults. Results were transcribed from the vehicle's visible display.
+A 44.1 kHz run included three or four very slight load-phase sounds, later clarified
+as possibly different from the original CarPlay clicks. Its progress intervals were
+34.28…40.28/−46.62…−16.52/−45.91…−8.01 ms, getter differences 48.71/6.18/−0.02 ms
+and frame-discontinuity counts 5/2/0. One run per rate cannot establish a rate cause
+or exclude production codec/video workload. These are throughput bounds, not DAC timing.
 
-A subsequent 44.1 kHz standalone run includes three or four user-heard light
-clicks during main-thread load. Its baseline/load/recovery process intervals are
-34.28…40.28/−46.62…−16.52/−45.91…−8.01 ms; getter differences are
-48.71/6.18/−0.02 ms and frame-discontinuity counts 5/2/0. Unlike the previous
-48 kHz run, this reports a light sound in the independent browser/system output
-path. The user subsequently clarified that it is very slight and might differ
-from the original CarPlay clicks. Treat it as a separate unconfirmed symptom;
-it neither reproduces the original defect nor excludes TiPlay's codec/Soxr path.
-One run per rate does not establish a rate-specific cause. Scheduling, buffering
-and browser-internal rate conversion remain comparison hypotheses; these intervals
-describe recorded throughput with unknown timer-coarsening error, not DAC timing.
+The separate [Cloudflare comparison](Todo.md#cloudflare-workers-audio-comparison)
+remains unfinished. Its old Soxr-versus-wasm2js proposal must be reconsidered against
+the current NetEq/libav.js implementation; no comparison backend, uploader or vehicle
+pass is implied. Browser-owned native RTP is already a negotiated product path.
 
-The requested next [Cloudflare Workers audio comparison](Todo.md#cloudflare-workers-audio-comparison)
-has not started: no WASM comparison page, upload endpoint or vehicle comparison is
-implemented or deployed by this work. Current live CarPlay/mirror output already
-uses a persistent AudioWorklet, bounded PCM timelines, stateful WASM Soxr and
-explicit underrun recovery. Its sample continuity and clock observations still
-need physical acceptance. URL casting now uses the separate libmedia AVPlayer pipeline. The retired custom
-BufferSource scheduler and its 500 ms submission horizon are no longer product
-policies. Historical live-clock evidence does not validate this replacement.
+### Buffered flush and device follow-up
 
-The planned experiment must isolate the DSP backend rather than compare different
-playback designs. Use the same pinned algorithm and PCM, verify output accounting
-and quality, then cross or randomize backend order on the same device/route/rate
-and buffers through normal, interaction/load and recovery phases. Report audible
-marks separately from queue underruns, recovery actions and optional renderer/output
-statistics. Check WASM support, CSP and successful preinitialization; record the
-actual backend, including unsupported cases. Direct bounded uploads must expose
-success/failure and retain failed results for retry, without requiring Tesla JSON
-export. This isolates live Soxr DSP, not the separate URL playback pipeline.
-No acoustic benefit or physical clock cause is established in advance;
-worker isolation, preallocation and WASM cannot guarantee OS scheduling deadlines.
-Native WebRTC audio for non-URL streams remains an alternative, not this round's
-implementation. The detailed pending protocol and collection limits stay in Todo.
+Immediate `FLUSHBUFFERED` has independent before/fix regressions for an old-origin
+packet forwarded before a new track anchor. Tests cover the 23-bit sequence ring,
+excluded marker, first-retained `until`, equality/wrap, queued/forwarded/capacity-wait
+races, old-prefix draining, fence retirement, new sender and pause/anchor reset.
+Deferred range cancellation returns RTSP 501 without changing playback. These
+protocol tests do not establish sender fallback or physical track changes, nor
+explain a continuous pure-media clock window.
 
-Immediate buffered flush has a separate captured before/fix regression: a new
-track anchor previously forwarded an old-origin packet first. Protocol reference
-checks establish the 23-bit sequence ring, excluded marker and first-retained
-`until`. Scoped tests cover equality/wrap, queued/forwarded frames, capacity-wait
-races, old-prefix draining without media pacing, empty-marker fence retirement,
-new-sender isolation and pause/anchor reset without a preceding pause command.
-Deferred range requests return explicit RTSP 501 without changing playback or
-calling the media handler. All **44 scoped native cases** across buffered stream,
-session and RTP timeline pass; sender fallback and physical track changes remain
-unverified. This boundary defect does not explain the uninterrupted pure-media
-window's clock recoveries. A separate before/fix regression retains prefetched
-future-track origins: sequence filtering can scan the queue, while timestamp
-trimming only removes its leading prefix.
-
-Run the browser clock, continuous-audio, AudioWorklet, frame-pacing and main-thread integration tests
-with the repository's Node test command. Their deterministic virtual-time cases vary
-Android, producer and device rates independently, inject network jitter/queue steps and
-calibration changes, and retain dynamic PCM through the real variable-rate JavaScript engine.
-Check burst coalescing, deadline-timer fallback, frame-interval tails, waveform error and boundary continuity, bounded phase/rate correction, queue growth,
-stream/format isolation, explicit interruption fades and rejection of old generations.
-Fixed 1024-frame AAC packets with naturally estimated positive drift exercise the production
-resampler beyond its clock-fitting warmup; continuous nominal RTP must not acquire artificial
-sample gaps. Worklet cases cover short-lead speech with a 188 ms device pipeline, sustained
-arrival-delay steps, and concurrent streams sharing a semantic type, including ending one
-while the other remains audible. Constant samples or counters alone do not establish audio quality.
-Independent device-rate cases include a context clock running 4000 ppm slow while the
-Android/browser mapping stays at unit rate. Production worklet, resampler, output mapping
-and video scheduler run together with dynamic PCM, checking sustained output without
-clock-step resets, unavailable-reference drops or wider video/A/V limits. Calibration
-tests verify real format-specific measurements, cancellation and bounded preparation;
-the worklet must not perform cold impulse measurements during playback.
-Output-clock regressions inject future/backward native pairs, slow timestamp getters and
-measurement refits while rendering dynamic audio through the real resampler. Measurement
-generation changes must preserve its live state; actual suspension or skipped render
-quanta must still recover. Held output anchors retain the original expiry and accumulate
-uncertainty. Mirror packet tests distinguish presentation-clock refinement from stable
-decoded sample coordinates, and retain real RTP/sample gaps.
-Synthetic pipeline changes also use an independent emitted-sample/output-time oracle,
-including lagging platform latency attributes; passing the mapper's own timing checks
-alone cannot establish correct skew.
-Live resampling now uses libav.js Workers; tests cover exact one-second output
-length across 8–48 kHz PCM rates, packet boundaries and EOF draining. NetEq and
-the render graph use 48 kHz. These are software checks, not a hardware deadline
-or physical output-quality guarantee.
-
-Use the [browser E2E harness](../tests/web-e2e/README.md) for actual CSP, WASM loading,
-AudioWorklet output, output timestamps, worker/main Canvas paths and context suspend/resume.
-Run timing-sensitive browser checks separately from Gradle builds and other browser harnesses;
-resource contention can starve actual rendering. Keep timing assertions unchanged when isolating a failure.
-Verify the audio-output reference remains active with Debug off. Synthetic clocks must
-also test stale/invalid references, large epochs, output-device latency changes and the
-fallback's uncertainty. Live video and audio independently retain a sender-relative
-300 ms ceiling; touch must leave the audio timeline unchanged. Missing audio references
-retain unavailable/skew evidence while video continues. A dropped/infeasible
-frame is an explicit recovery outcome, not a successful synchronized presentation. First-frame
-proof tests reject scheduler drops, expired paced frames and failed GPU submissions. JVM media
-ownership tests exercise old-session teardown/feedback, callbacks after replacement and screen
-EOF during a loan; retirement is atomic with delivery and cannot stop a successor.
-
-For device acceptance, record source app/iPhone, Android transport, browser/vehicle,
-output route and reproduction times. Exercise long music/navigation playback, delayed
-and bursty delivery, background/foreground, pause/resume, seek, track/format changes,
-AirPlay takeover/return and changing output routes. Listen for quiet buzz/clicks as well
-as gaps, and measure corresponding audio/video events across recovery. Software output
-timestamps cannot establish acoustic speaker time or panel scanout. Keep physical
-follow-up in [Todo](Todo.md#browser-and-carplay-audio).
+For physical acceptance, record source app/iPhone, Android transport, browser/vehicle,
+output route and reproduction times. Exercise long music/navigation playback,
+bursty/delayed delivery, repeated NetEq stretching, all simultaneous streams,
+background/foreground, pause/resume, format/track changes, AirPlay takeover/return
+and verified HFP/SCO transitions. Check navigation endings, ducking recovery and
+quiet buzz/clicks as well as gaps. Measure source/output events independently;
+software timestamp mappings cannot establish speaker sound or panel scanout. Keep
+unperformed checks in [Todo](Todo.md#browser-and-carplay-audio).
 
 ## Ordinary AirPlay acceptance
 
@@ -756,15 +385,15 @@ require integration/device evidence; do not infer those passes from old tests.
 
 Use unprotected content from an actual iPhone. Check discovery and device approval, mirroring, audio-only playback, JPEG/PNG photos, and URL MP4/HLS playback with seeking, subtitles, buffering and iPhone controls. Test stopping/replacing a cast and returning the browser display to CarPlay while retained CarPlay audio continues as designed. Exercise authentication/resource expiry and recovery after network loss.
 
-Check advertised audio codecs in the actual browser: ALAC/AAC-LC/AAC-ELD follow reported libav.js software decoder support; realtime playback enters NetEq at 48 kHz without WebCodecs audio. Verify clear failures when no implemented decoder can handle the format. HDR content is subject to TiPlay's SDR policy. DRM services and apps that prohibit AirPlay are outside acceptance. See [AirPlay](AirPlay.md) for receiver boundaries.
+Check advertised audio codecs in the actual browser: ALAC/AAC-LC/AAC-ELD follow reported libav.js software support; fallback PCM enters NetEq at 48 kHz without WebCodecs audio. Negotiated original codecs use native RTP and the shared mixer; Opus without negotiation must fail explicitly. Verify clear failures when no implemented decoder can handle the format. HDR content is subject to TiPlay's SDR policy. DRM services and apps that prohibit AirPlay are outside acceptance. See [AirPlay](AirPlay.md) for receiver boundaries.
 
 Record Android/device, browser/vehicle firmware, iPhone/iOS, app version, transport, exact steps and remaining failures. Share reviewed diagnostics without pairing codes, keys or personal data. Track outstanding physical validation in [Todo](Todo.md).
 
 ## Debug raw capture and car Bluetooth hints
 
 Run the repository workflow checks against the intended source. Browser audio regressions
-exercise actual worklet/timeline code with nonzero PCM across the producer lead, output-delay
-and clock-margin boundary; they also distinguish decoded from rendered output, classify
+exercise actual NetEq/worklet code with nonzero PCM, bounded producer lead, EOS
+and stream retirement; they also distinguish decoded from rendered output, classify
 discard reasons, isolate retired worklet reports and bound processor-failure recovery.
 Diagnostic transport checks verify independent audio-detail limits, live Debug switching and
 exact browser audio response capture. Socket fixtures must close their clients after checking

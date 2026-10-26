@@ -1,5 +1,7 @@
 # DiPlay 0.2.20 — 2026-10-15
 
+Historical upstream DiPlay release notes, retained for provenance. These native-head-unit requirements and instructions do not describe TiPlay; use [Install](Install.md), [Build](Build.md) and [Testing](Testing.md) for the phone/browser product.
+
 Public preview for compatible BYD Android head units. Android 7.1+ (API 25) remains the minimum; Android 7.1–8.1 still needs vehicle testing. This update keeps music playing on head units whose audio clock drifts, plays calls that a head unit sent to an earpiece on the loudspeaker, starts wired CarPlay on more head units and after **Save and reconnect**, turns the car hotspot on by itself on more head units, puts the CarPlay map on more BYD dashboards, and records more of what happens in the diagnostic report.
 
 ## Highlights
@@ -70,12 +72,12 @@ Public preview for compatible BYD Android head units. Android 7.1+ (API 25) rema
 
 ## Updating and reporting problems
 
-Install the official APK over the previous public release to preserve settings and pairing records. The package remains `com.shihab.diplay`; release packaging verifies the existing signing certificate. Source builds omit runtime authentication assets by default; see [building from source](Build.md).
+Install the official APK over the previous public release to preserve settings and pairing records. The package remains `com.shihab.diplay`; release packaging verifies the existing signing certificate. Source builds omit runtime authentication assets by default; see the [upstream source](https://github.com/shihabal3amri/DiPlay/tree/v0.2.20).
 
 Reproduce remaining problems on **0.2.20**, then open **Settings → Diagnostics → Save diagnostic report**. Android 10+ normally saves to **Downloads/DiPlay**; on Android 7.1–9, DiPlay asks for storage access and saves there too. If it is unavailable, follow the save confirmation and use **View report** or **Share**. Review the `.txt` and attach it to a matching [existing issue](https://github.com/shihabal3amri/DiPlay/issues) or [new issue](https://github.com/shihabal3amri/DiPlay/issues/new/choose). Connection reports require the diagnostic log. Reports are not uploaded automatically.
 
 Include car/head unit, Android/DiLink and full firmware, iPhone/iOS, USB or wireless mode, relevant settings, reproduction steps and failure time.
 
-See [validation](Testing.md) for automated checks. No new maintainer vehicle test of the complete release is claimed. The entries marked "Pending in-car acceptance", the music playback-rate adjustment, the call loudspeaker fallback, the wired and car hotspot changes, the dashboard map changes and the experimental options above need current in-car feedback; test optional features while parked.
+The following validation statement belongs to the upstream release. No new maintainer vehicle test of the complete release is claimed. The entries marked "Pending in-car acceptance", the music playback-rate adjustment, the call loudspeaker fallback, the wired and car hotspot changes, the dashboard map changes and the experimental options above need current in-car feedback; test optional features while parked.
 
 Thanks to the contributors linked in the 34 pull requests above, and to the users supplying diagnostic reports and vehicle feedback.

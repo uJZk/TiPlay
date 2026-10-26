@@ -4,21 +4,18 @@ These optional scripts run the production browser code in desktop Chromium. [CI]
 
 ## Requirements and basic runs
 
-Use Node 22, `playwright-core` installed outside the repository, and a Chromium executable supplied through `CHROMIUM`. Codec availability varies by Chromium build. The general harness defaults to `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`; URL/audio/photo checks default to `/usr/bin/chromium`, so explicitly setting the path is recommended.
+Use Node 22, `playwright-core` installed outside the repository, and a Chromium executable supplied through `CHROMIUM`. Codec availability varies by Chromium build. The retained historical general harness defaults to `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`; URL/audio/photo checks default to `/usr/bin/chromium`, so explicitly setting the path is recommended.
 
 ```sh
 npm install --prefix /tmp/pw playwright-core
-NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/run.mjs
+NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/media-clock.mjs
 ```
 
-The default general harness keeps the production `prefer-hardware` request. On a
-desktop browser that rejects it, the harness checks the explicit unsupported
-capability state and stops before playback cases. To exercise real compressed
-WebCodecs decode and the complete page on such a machine, explicitly set
-`E2E_SOFTWARE_VIDEO=1`. That harness-only instrumentation replaces the native
-decoder's hardware hint with `no-preference` in the main page and worker; its
-output labels the override. It does not establish hardware decoding or change
-production behavior.
+`run.mjs` retains the former DataChannel/WebCodecs live-video fixture, including
+its hardware-preference override and decoder-path cases. It does not supply the
+current native RTP track contract and is not a current complete-page playback
+check. Keep its old results historical; use `rtc-canvas.mjs` for the current
+track-to-Canvas boundary and real-device acceptance for Android RTP interoperability.
 
 All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LAN servers require direct access. `run.mjs` and `phone-run.mjs` print `ok -` checks and finish with `all checks passed`, or exit nonzero on failure. Other harnesses print results and exit nonzero on assertion failure.
 
@@ -114,10 +111,14 @@ requires matching encoded input, transformations and keyframe/epoch boundaries;
 neither network arrival jitter nor video content can be inferred from audio alone.
 Standard TXT supports counter/timing analysis but cannot supply missing payloads.
 
-### Audio playback and thread CPU traces
+### Historical audio replay and thread CPU traces
 
-After correlating audio send outcomes and choosing the session clock mapping,
-the actual audio pipeline can replay a bounded clip:
+The retained capture replay harness was written for the former source-timed
+ContinuousAudio/libsoxr pipeline. Current output references are `untimed`, while
+the harness expects `playing` references and deadline-rejection fields. Its old
+CPU/waveform results do not validate current NetEq playback. Reproduce the commands
+below only in matching historical source, or adapt and verify the harness before
+using it for current evidence:
 
 ```sh
 NODE_PATH=/tmp/pw/node_modules CHROMIUM=/usr/bin/chromium \
@@ -130,7 +131,7 @@ python3 scripts/summarize_browser_trace.py /tmp/carplay-audio-profile/trace.json
 
 The harness serves only loopback fixtures and production assets under the actual
 page CSP, preloads genuine WASM, clicks a start button, and runs
-`createBrowserAudio`, native AAC/Opus decoding, libsoxr and the audio worklet.
+the then-current `createBrowserAudio`, native AAC/Opus decoding, libsoxr and audio worklet.
 It reinstalls the most recent captured configuration per logical stream when a
 clip begins mid-epoch; original payloads and source presentation times remain
 unchanged. An open clip stays open until cancellation so its end cannot manufacture
@@ -195,7 +196,7 @@ replay CPU cost does not establish vehicle CPU utilization or physical crackles.
 | --- | --- |
 | `geolocation.mjs` | Actual Chromium geolocation permissions/watch, browser-local datum cache across reload, release on opt-out, and persistent guidance with an explicit close action. Uses a module fixture without vehicle/Android sensors. |
 | `webrtc.mjs` | Production transport against a second real Chromium PeerConnection: reliable ordered channels, fragmentation, byte-exact record reconstruction, consumption credit, independent audio cancellation, touch/control, owner abort, malformed epochs and bounded signaling timeout. No synthetic RTCPeerConnection or media API is substituted. |
-| `run.mjs` | Complete production page over a real browser DataChannel peer with synthetic phone VP8 input, pairing/code privacy, touch/viewport, telemetry, reconnect/keyframe recovery, localization, takeover, nested hosting and offline Service Worker cache boundaries. Exercises worker-stream, worker-chunk, worker-frame and main-thread fallback, and asserts no legacy HTTP media stream opens. Optional FFmpeg/libvpx (`FFMPEG` override); otherwise browser `VideoEncoder`, also forced by `E2E_VP8=browser`. |
+| `run.mjs` | Historical pre-RTP page fixture over a real browser DataChannel peer with synthetic phone VP8 input, pairing/code privacy, touch/viewport, telemetry, reconnect/keyframe recovery, localization, takeover, nested hosting and offline Service Worker cache boundaries. Exercises worker-stream, worker-chunk, worker-frame and main-thread fallback, and asserts no legacy HTTP media stream opens. Optional FFmpeg/libvpx (`FFMPEG` override); otherwise browser `VideoEncoder`, also forced by `E2E_VP8=browser`. |
 | `phone-run.mjs` | Compiled JVM shared compatibility API: removed local-page routes, Host/cache rules, H.264 framing, authenticated control/touch, source-owner epochs, `/bye` and privacy. Directly requests legacy records and verifies the production page rejects this server's missing native RTC. It does not test production playback or Android native WebRTC. |
 | `receiver-ui.mjs` | Production presentation functions with real Chromium DOM, CSS and CSP, driven by structured receiver/decoder events. Covers Chinese/English at 320/800 pixels, all three AirPlay consent actions, sender/type/effect copy, notification fit/readability, pending borrow, producer/epoch replacement, no success text, permission/failure revisions, closable notices, diagnostics and monitor controls. This component harness does not pair, decode media or establish DataChannel delivery. |
 | `airplay-video.mjs` | Production AVPlayer adapter and Video.js controls under the production CSP: changing Canvas pictures, pause/seek/rate, seek button, double-click isolation, narrow layout, upstream English/Chinese HLS subtitles at EOF, simultaneous subtitle selection/seek, stop signaling and disposal. Needs an MP4 fixture; HLS optional. |
@@ -207,7 +208,10 @@ replay CPU cost does not establish vehicle CPU utilization or physical crackles.
 | `media-clock.mjs` | Production CSP, genuine NetEq/audio-core WASM and AudioWorklet, independent mixed CarPlay/mirror PCM, actual output timestamp evidence and suspend/resume. Requires AudioWorklet; renderer/output-timestamp availability stays explicit. Current native video/Canvas is checked separately by `rtc-canvas.mjs`. |
 | `rtc.mjs` | Production four-digit SRP6a pairing with native browser WebCrypto, actual BC 1.79 cross-language vectors and forged-proof/SDP/session rejection. The full run then checks two real Chromium peers with ICE/DTLS/SCTP, byte-exact large-record fragmentation, independent audio consumption and reopen barriers, receive credit, eight concurrent delayed control replies, trusted clock, graceful bye, abort, malformed epochs and bounded signaling timeout. No Android JNI, packet-loss simulation, vehicle hardware decode or physical output proof. |
 
-The Performance monitor check verifies a non-intercepting overlay without replacing the media connection. Current fields are codec, actual last-second draw FPS, latest synchronized Delta and explicit browser discards; five-second offset distributions remain in diagnostics. Fake source times validate the timing path, not iPhone capture-to-display latency. Resize/reconnect checks cover browser layout/reporting, not iPhone replacement-display negotiation.
+The Performance monitor covers codec, actual draw FPS and explicit browser discards.
+Current native video has no source-time mapping, so synchronized Delta is unknown.
+Retained historical fixture timestamps do not establish current capture-to-display
+latency. Resize/reconnect checks cover layout/reporting, not iPhone display negotiation.
 
 ## DataChannel transport
 
@@ -252,15 +256,15 @@ NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium \
 ```
 
 The runner clicks the page's Start button and uses the production CSP and bundled
-WASM resampler and audio core without autoplay or CSP bypasses. All assets and synthetic media stay on
+NetEq and audio core without autoplay or CSP bypasses. All assets and synthetic media stay on
 loopback. It verifies output references before enabling diagnostic capture, then
 checks nonzero worklet output, independent CarPlay/mirror producers, an actual
-context suspend/resume and clock refinement. It does not instantiate the retired
+context suspend/resume and independent output references. It does not instantiate the retired
 application video decoder or decoded-frame scheduler; `rtc-canvas.mjs` checks the
 current native WebRTC track-to-Canvas path separately.
 
 The page uses the exact production CSP with `'wasm-unsafe-eval'` and without
-JavaScript eval permission. Both shipped WASM modules must load and produce actual
+JavaScript eval permission. Both NetEq/audio-core WASM modules must load and produce actual
 nonzero worklet output and Standard-mode references; it cannot pass by bypassing
 audio output or inventing physical speaker timing.
 
@@ -274,12 +278,11 @@ These checks measure browser audio output-clock estimates and Worklet output. Th
 do not measure acoustic speaker delay, physical panel presentation, vehicle audio
 routes or iPhone negotiation; physical acceptance remains separate.
 
-CarPlay Canvas and audio check independent sender-relative 300 ms ceilings.
-AirPlay mirror Canvas and audio check the same independent 300 ms ceilings;
-audio skew is diagnostic and does not gate video. These bounds cover known
-software clock/output mappings, not unknown upstream capture or physical output.
-Worker hardware-preference probes are reported separately: an unsupported headless configuration is explicitly unavailable,
-without software fallback or a claim of validated CarPlay hardware decoding.
+The audio probe explicitly requires null source timing for independent audio;
+it does not check a source-relative 300 ms deadline or A/V synchronization.
+The transport contract's independent physical latency limits remain device
+acceptance requirements. Current native video/Canvas is covered separately by
+`rtc-canvas.mjs`; desktop availability cannot certify vehicle hardware decoding.
 
 ## Compiled phone API
 

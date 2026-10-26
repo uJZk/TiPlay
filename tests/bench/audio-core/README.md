@@ -21,8 +21,7 @@ Small PCM16 conversions retain JavaScript below 256 samples: its copy overhead
 outweighed the numeric loop at 64/128 samples. Bulk crossfades and larger conversions
 benefit from WASM. No fast-math, resampler quality or timing policy change is used.
 
-The real signal and lifecycle acceptance remains in `tests/web/audio-core.test.mjs`,
-`audio-worklet-mixing.test.mjs`, `continuous-audio.test.mjs`,
-`continuous-voice-preparation.test.mjs`, and the deadline/recovery suites. They check
-PCM waveforms, retired-tail source age, focus transitions and independent source
-identity using the production kernels and real libsoxr.
+Current kernel, mixer and ownership checks are in `tests/web/audio-core.test.mjs`,
+`audio.test.mjs` and `neteq.test.mjs`. The former ContinuousAudio/libsoxr
+deadline and voice-preparation suites were retired with that playback engine;
+their historical results do not validate current NetEq playback.

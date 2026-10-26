@@ -3,7 +3,7 @@ import { History, listen, closeServer } from './resources.mjs';
 import { pairingCodeLeaks } from './privacy.mjs';
 // End-to-end production-page check against a real browser DataChannel peer and synthetic phone media.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';

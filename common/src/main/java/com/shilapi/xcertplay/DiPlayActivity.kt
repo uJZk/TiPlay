@@ -6646,7 +6646,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         private const val BYD_SETTINGS_TAG = "DiPlay-Settings"
 
         // BYD's own screens. An explicit component skips intent-filter matching, so the decoy cannot
-        // answer one. Source: docs/BYD_SETTINGS_ENTRY_POINTS.md.
+        // answer one. Source: docs/BYD-settings-entry-points.md.
         private val BYD_BLUETOOTH_MANAGER =
             ComponentName("com.byd.btsetting", "com.byd.btsetting.BluetoothManagerDialog")
         private val BYD_HOTSPOT =

@@ -4,10 +4,10 @@ TiPlay keeps browser APIs in JavaScript and runs bulk audio computation in genui
 WebAssembly. There is no wasm2js substitute. Source, adapters, pinned build inputs
 and licenses accompany the replaceable libraries; NetEq source archives are checksum-pinned build downloads.
 
-Published v90 adds per-stream audio dispatch, direct software-Worker PCM delivery
-and native WebRTC video-track reception into Canvas. Beta.22/code64 retains that
-page; beta.23/v95 integrates ordinary AirPlay audio and controls with the same
-URL-engine and media-transport boundaries. V89 remains the historical audio-rollout record.
+The live-audio engine and native RTP paths are described in
+[Audio buffering and tempo](Audio-tempo.md) and the
+[media transport contract](CarPlay-DataChannel.md). Current signed/page provenance
+is recorded in [Build](Build.md#beta24-release).
 
 ## Execution
 
@@ -17,7 +17,7 @@ URL-engine and media-transport boundaries. V89 remains the historical audio-roll
 | Continuous resampling | Continuous libswresample in libav.js decoder Workers; source gaps reset the filter run. |
 | Live mixing, ducking, fades, clipping | Fixed-memory WASM audio core, one block at a time. Very small PCM conversions retain JavaScript when copying costs more than the arithmetic. |
 | Realtime AAC-LC/ELD/ALAC decode | FFmpeg/libav.js decoder Workers; no WebCodecs audio decoder. |
-| Live buffering and tempo | Official NetEq WASM: adaptive jitter delay, Opus/L16 decode, time stretching and concealment. Opus decodes directly in NetEq; other codecs arrive as normalized PCM16/48 kHz. |
+| Live buffering and tempo | Official NetEq WASM: adaptive jitter delay, L16 decode, time stretching and concealment for normalized PCM16/48 kHz. Opus requires native RTP negotiation; the library Opus API is not a product fallback. |
 | Live audio thread boundary | Bounded per-stream FIFO dispatch; software decoder Workers transfer PCM directly to AudioWorklet MessagePorts. Main-thread control and accounting remain; independent streams do not await each other's decode. |
 | URL playback | libmedia AVPlayer owns IO, demuxing, decoding, buffering, clocks and rendering. Its Canvas path uses browser/WebCodecs facilities and the required locally hosted WASM resources. TiPlay does not wrap it in another decoded queue or tempo controller. |
 | Transport and binary headers | Native WebRTC/SCTP, streams, typed arrays and DataView. Keeping views avoids copying whole media packets into WASM to inspect a few fields. |
@@ -39,8 +39,7 @@ Both variants decode all eight existing AAC-ELD profiles after the adapter
 explicitly supplies `AVMEDIA_TYPE_AUDIO`. Earlier failures were caused by our
 missing codec-type parameter: the context sample rate stayed zero. The
 [actual-WASM regression](../tests/web/libav-eld.test.mjs) reproduces that omission
-and validates the corrected calls. The realtime ELD Worker uses libav.js; the FDK runtime and build files are removed. The former URL adapter also used these modules, but AVPlayer now owns URL decoding independently. These libav.js measurements do not establish AVPlayer performance. Realtime decoding uses NetEq/libav.js. Browser v89 is published separately
-from the unchanged Android beta.20 APK; vehicle acceptance remains pending.
+and validates the corrected calls. The realtime ELD Worker uses libav.js; the FDK runtime and build files are removed. The former URL adapter also used these modules, but AVPlayer now owns URL decoding independently. These libav.js measurements do not establish AVPlayer performance. Realtime software decoding uses NetEq/libav.js; vehicle acceptance remains pending.
 
 Tesla SIMD support was already established for the user's Model Y AMD Ryzen:
 report `d73a0959`, 2026-10-08, Chromium 148, recorded WASM SIMD and AudioWorklet
@@ -61,8 +60,9 @@ request/receipt interval, including the render quantum. Fits retain those bounds
 moving callback latency cannot itself prove a rate change. Native output timestamp
 pairs are checked against verified frame progress and their own continuity.
 Missing native timestamps use a bounded frame/probe mapping plus the browser's
-latency estimates. Playback can continue, while source-deadline status stays
-unknown until a valid native timestamp mapping is available. Neither mapping is
+latency estimates. Playback can continue, while current worklet source deadlines remain
+`unknown`/`independent-audio` even with a valid output mapping. Output-clock
+evidence is diagnostic and supplies no independently mapped source reference. Neither mapping is
 an independent measurement at the vehicle speakers.
 
 Live software audio follows NetEq's independent packet/consumption timeline. Libav.js
@@ -72,7 +72,7 @@ No source/video phase controller or clock-generation recovery remains in this
 path. Counter discrepancies change diagnostic measurement domains only. The
 [buffering audit](Audio-tempo.md) documents decoder priority, EOS/credit handling,
 capacity bounds and unverified physical behavior. Heavy sample conversion,
-mixing, Opus and NetEq DSP execute in WASM; JS owns stream/block adaptation.
+mixing and NetEq PCM DSP execute in WASM; JS owns stream/block adaptation.
 
 URL playback uses AVPlayer's audio/video clocks and completion events. TiPlay
 forwards media position, buffering, seek, rate and end state through its existing
@@ -86,14 +86,15 @@ drains and ends its NetEq stream.
 
 The main thread compiles live-audio modules before creating the AudioWorkletNode
 and passes compiled `WebAssembly.Module` values in `processorOptions`. Each node
-instantiates private memories before playback. Calibration runs in its own worker.
+instantiates private memories before playback.
 The render callback initiates no downloads or explicit compilation. The live
 NetEq runtime is shared within a worklet and bounded to 32 MiB; its handles
 are independent and their scratch blocks are limited to 512 frames. `WebAssembly.compile()` performs initial browser compilation before
 node creation; the browser may still lazily compile functions or optimize machine
 code in the background. This does not guarantee that playback is free of internal
 JIT activity.
-The live resampler has a fixed 16 MiB heap; the audio core uses fixed scratch space.
+The audio core uses fixed scratch space; live software resampling belongs to
+libav.js Workers. The retired browser libsoxr heap is not part of this graph.
 Stream queues and network consumption credits keep their existing byte limits.
 No SharedArrayBuffer, cross-origin isolation or WASM threads are required.
 
@@ -142,9 +143,9 @@ The browser suite exercises actual shipped WASM binaries, signal continuity,
 deadlines, arbitrary packet boundaries, epoch changes and error recovery. The
 [media-clock harness](../tests/web-e2e/media-clock.mjs) verifies actual nonzero
 AudioWorklet output under production CSP, records module hashes, and checks
-suspend/resume and independent source timing. The AAC tests compare PCM with
-golden outputs from the preceding implementation. Tempo tests verify duration,
-pitch and finite output.
+suspend/resume and independent source timing. The software decoder tests compare actual PCM outputs and verify resampling
+duration, finite output and lifecycle boundaries. Library-level Opus tests do
+not establish that the product selects NetEq Opus.
 
 Benchmarks include boundary copies and distinguish engine CPU from wall-clock
 render scheduling. Run them on the target browser before interpreting small

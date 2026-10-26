@@ -53,7 +53,7 @@ dependencies {
     implementation libs.androidx.app
     implementation libs.bouncycastle
     implementation libs.jmdns
-    // TiPlay: the Shizuku hotspot address method (docs/HOTSPOT_ADDRESS.md).
+    // TiPlay: the Shizuku hotspot address method (docs/Hotspot-address.md).
     implementation libs.shizuku.api
     implementation libs.shizuku.provider
     // Android AAR packages all supported ABIs; JVM tests load the matching desktop JNI library.

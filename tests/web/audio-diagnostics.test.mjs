@@ -5,15 +5,12 @@ import assert from 'node:assert/strict';
 import { createBrowserAudio } from '../../site/play/audio.js';
 import { browserDiagnosticEvents } from '../../site/play/browser-diagnostics.js';
 import { createAirPlayAudioDecoder } from '../../site/play/airplay-audio-decoder.js';
-import { constantDelay } from '../../site/play/delay-plan.js';
-import { BUFFERED_AUDIO_WINDOW_MS, BUFFERED_FEED_LEAD_MS, BUFFERED_START_LATENCY_MS, AUDIO_CLOCK_MARGIN_MS, MAX_AUDIO_AHEAD_BYTES } from '../../site/play/audio-buffer-policy.js';
 
 let Processor;
 globalThis.AudioWorkletProcessor = class { constructor() { this.messages = []; this.port = { postMessage: value => this.messages.push(value) }; } };
 globalThis.registerProcessor = (_, value) => { Processor = value; };
 globalThis.sampleRate = 48000;
 globalThis.currentTime = 0; globalThis.currentFrame = 0;
-const setRenderTime = seconds => { globalThis.currentTime = seconds; globalThis.currentFrame = Math.round(seconds * sampleRate); };
 await import('../../site/play/audio-worklet.js');
 
 test('decoder diagnostics count actual signed PCM samples only while enabled', async () => {

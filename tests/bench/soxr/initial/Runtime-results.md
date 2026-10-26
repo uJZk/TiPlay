@@ -1,5 +1,9 @@
 # Runtime review results
 
+Historical wasm2js candidate review. Current browser audio no longer uses this
+engine; see the [benchmark scope](../README.md) before reproducing or interpreting these measurements.
+
+
 The current optimized candidate passes real Chromium 151 AudioWorklet execution without JavaScript dynamic compilation or WebAssembly. It retains the existing audio-processing API, has a fixed 16 MiB heap, and produces all 25,600 requested frames across 200 render quanta, with nonzero output, no non-finite samples, no native error and no CSP violation. `Optimized-strict-csp.json` uses the final `script-src 'self'` production policy, with no `wasm-unsafe-eval` permission. The smoke test disables the worklet's global WebAssembly before importing the candidate.
 
 This is a loading and output smoke test. It does not certify glitch-free real-time playback, video performance, or old car-browser compatibility.

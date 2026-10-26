@@ -1,6 +1,5 @@
 package com.shilapi.xcertplay.backup
 
-import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.Socket
 import java.net.URL
