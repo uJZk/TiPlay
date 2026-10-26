@@ -4,6 +4,18 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## Browser v96
+
+Web-only CarPlay startup repair; Android remains beta.23/code65.
+
+- Correct the H.264 receive-level declaration: query existing profiles at the product's bounded 1080p60 format, then raise only supported, smooth receive profiles to level 4.2 before authenticated signaling. Keep the original source bitstream and strict Android admission checks.
+- Retain at most one decoded frame that arrives before its configuration, so a static first picture does not become a false timeout. Release retained frames on retirement, invalid metadata and generation changes.
+- Replace the generic update instruction with video-specific failure text and a safe error code in browser Diagnostics and first-fault telemetry.
+
+598 browser tests and the required Android unit/lint/debug-build command pass.
+Real Chromium accepts the production helper's SDP. The environment still supplies
+no ICE candidates, so real RTP decoding and vehicle playback require retesting.
+
 ## 0.2.20-beta.23
 
 Version code 65 and browser cache/diagnostic revision v95. Release provenance and

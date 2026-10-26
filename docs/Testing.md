@@ -44,6 +44,13 @@ CI, WASM reproduction, independent signed-artifact checks and all 216 public fil
 pass; [Build](Build.md#beta23-release) records exact commits, runs and hashes. RAOP/AP2, BLE
 and trust coverage does not establish physical iPhone/vehicle interoperability.
 
+Browser v96 passes 598 web tests and the required Android command (4,321 tests,
+all lint/debug builds). Regression covers bounded H.264 receive-level probing,
+both authenticated offers, cancellation, pre-CONFIG frame ownership and safe
+video-error details. Real Chromium accepts the production helper's SDP; zero
+ICE candidates still block RTP decoding. The supplied High4.2/SDP3.1 failure is
+recorded in [Build](Build.md#current-browser-deployment); vehicle retesting remains open.
+
 ## Browser WASM verification
 
 Browser v89 passes **729 local browser tests**. Its acceptance covers real AAC/ALAC/ELD Worker decoding, exact

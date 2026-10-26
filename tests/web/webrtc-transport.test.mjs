@@ -209,6 +209,51 @@ const videoOptions = { PeerConnection: RenegotiatingPeer, videoTrack: true, vide
 const videoAnswer = request => JSON.stringify({ k: 'video-answer', q: request.q, generation: request.generation,
   videoTransport: 'webrtc-track-v1', sdp: 'new-answer\r\na=candidate:1 1 udp 1 192.0.2.2 5001 typ host\r\n' });
 
+test('initial and replacement video signal the checked receive level while codec preferences stay unchanged', async () => {
+  const original = 'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 102\r\na=recvonly\r\na=mid:video\r\n' +
+    'a=rtpmap:102 H264/90000\r\na=fmtp:102 packetization-mode=1;profile-level-id=64001f;level-asymmetry-allowed=1\r\n' +
+    'a=candidate:1 1 udp 1 192.0.2.1 5000 typ host\r\n';
+  class ReceivePeer extends RenegotiatingPeer {
+    async createOffer() { return { type: 'offer', sdp: original }; }
+  }
+  const codecs = [{ mimeType: 'video/H264', clockRate: 90000,
+    sdpFmtpLine: 'packetization-mode=1;profile-level-id=64001f;level-asymmetry-allowed=1' }];
+  let probes = 0, authenticatedOffer;
+  const f = await fixture({ ...videoOptions, PeerConnection: ReceivePeer, videoCodecs: codecs,
+    probeVideoReceiveLevels: async input => { assert.equal(input, codecs); probes++; return Object.freeze({ '6400': '2a' }); },
+    exchange: async sdp => { authenticatedOffer = sdp; return { type: 'answer',
+      sdp: 'remote-answer\r\na=candidate:1 1 udp 1 192.0.2.2 5001 typ host\r\n', epoch: 7,
+      fragmentBytes: RTC_FRAGMENT_BYTES, transport: RTC_TRANSPORT }; } });
+  try {
+    const expected = original.replace('64001f', '64002a');
+    assert.equal(authenticatedOffer, expected);
+    assert.equal(f.peer.localDescription.sdp, expected);
+    assert.equal(f.peer.transceivers[0].codecs, codecs);
+    assert.match(codecs[0].sdpFmtpLine, /64001f/);
+    const pending = f.media.restartVideo(); await settle();
+    const replacement = f.channels.control.sent.find(message => message.k === 'video-offer');
+    assert.equal(replacement.sdp, expected);
+    f.channels.control.receive(videoAnswer(replacement)); await pending;
+    assert.equal(probes, 1);
+    assert.equal(f.media.isConnected(), true);
+    assert.equal(f.channels.audio.readyState, 'open');
+  } finally { f.media.close(); }
+});
+
+test('a retired peer cannot signal a receive probe that completes after cancellation', async () => {
+  let finish, exchanged = false;
+  const abort = new AbortController();
+  const media = createRtcMediaTransport({ ...videoOptions, signal: abort.signal,
+    probeVideoReceiveLevels: () => new Promise(resolve => { finish = resolve; }),
+    credentials: () => ({ code: '1234', session: 'retired' }),
+    exchange: async () => { exchanged = true; throw Error('Retired owner signaled'); } });
+  const connecting = media.connect();
+  abort.abort(); await assert.rejects(connecting);
+  finish(Object.freeze({ '6400': '2a' })); await settle();
+  assert.equal(exchanged, false);
+  assert.equal(Peer.latest.localDescription, undefined);
+});
+
 test('video-only renegotiation waits for generation preparation and retains audio/control and metadata', async () => {
   let prepare, prepared = false;
   const tracks = [], generations = [];

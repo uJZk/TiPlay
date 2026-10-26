@@ -4,10 +4,10 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v95';
+export const PAGE_VERSION = 'v96';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
-  'page.version', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
+  'page.version', 'video.errorReason', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
   'video.decodeDroppedFrames', 'video.scheduledDroppedFrames', 'video.transferDroppedFrames', 'video.renderDroppedFrames', 'video.pacingDroppedFrames',
   'video.playbackProfile', 'video.decodedQueueFrames', 'video.decodedQueueBytes', 'video.scheduledCapacityFrames',
   'video.currentDelta', 'video.currentFps', 'video.frameIntervalP95Ms',

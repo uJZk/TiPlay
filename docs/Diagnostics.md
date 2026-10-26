@@ -21,6 +21,14 @@ negotiated viewport or touch coordinates. Its fields are:
 | Delta | Latest synchronized canvas submission time minus iPhone scheduled presentation time; unavailable without a new synchronized draw within one second. This is not capture-to-display latency. |
 | Drops | Explicit browser input, scheduler, transfer-replacement and presentation discards in the current video configuration. It cannot count decoder-internal, network or phone loss. Replacement streams reset it; repeating a configuration does not. |
 
+Browser v96 adds the current video's bounded error code to **Diagnostics** and
+`tiplayStats.page.video.errorReason`; first-fault `st` telemetry prioritizes the
+same field. Codes contain only lowercase letters, digits and hyphens, with a
+100-character limit; invalid text becomes `rtc-video-failed`. This separates
+video-only failures from the healthy audio/control transport. Debug raw capture
+retains the incoming telemetry; Android's existing Standard text allowlist is
+unchanged. A generic playback failure no longer asks the user to update versions.
+
 Debug defaults off. Enabling starts capture silently; **View logs** opens its dialog.
 Log and export-result windows share a bottom text-button bar. The privacy notice
 appears only inside Debug logs. A new process restores enabled capture and its dialog.

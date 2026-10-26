@@ -261,3 +261,16 @@ The release is published from `8191b9fcc45497d194f38f05174a8993be04c625`:
 signed workflow 40340444194, independent public-asset checks and Pages 40344544258
 all pass. All 216 public files match v95. Preserve the audio/trust/BLE/DACP and
 owner-scoped return/retirement contracts; physical iPhone/vehicle retesting is next.
+
+Resume browser v96's CarPlay startup repair at [Build](docs/Build.md#current-browser-deployment)
+and [the transport contract](docs/CarPlay-DataChannel.md). The user's beta.23/v95
+capture proves High4.2 source versus High3.1 SDP rejection, with active iPhone
+video reception. Keep Android's strict codec admission and original compressed
+frames. The bounded receive-level helper probes existing H264 mode-1 profiles,
+changes only a profile confirmed by the browser API up to level 4.2 before authenticated signaling,
+and retains the original offer when probing fails. The page also retains one
+early decoded frame and exposes safe video errors. 598 web tests and the complete
+required Android command pass; actual Chromium accepts the production helper's
+local SDP, but managed zero-candidate ICE still blocks RTP/vehicle acceptance.
+This is web-only; beta.23/code65 signed artifacts stay unchanged. Complete public
+deployment verification before recording this page as shipped.

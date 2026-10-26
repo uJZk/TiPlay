@@ -5,8 +5,12 @@ video, photos and audio to the paired car browser. It starts when TiPlay opens,
 subject to Android local-network permission. Its Bonjour name **TiPlay AirPlay**,
 listener and pairing identity are separate from CarPlay's **TiPlay** entry.
 The RAOP/AirPlay 2 audio, BLE hints, three-choice trust and pure-audio music controls
-described here are beta.23/v95 work integrated with the beta.22/code64 base;
-published artifacts are recorded separately in [Build](Build.md#beta22-release).
+described here shipped in beta.23/v95 on the beta.22/code64 base;
+published artifacts are recorded separately in [Build](Build.md#beta23-release).
+Browser v96 corrects the main picture's H.264 receive-level SDP declaration after
+a bounded WebRTC decoding-capability probe; it does not change the iPhone's
+encoded stream or establish vehicle hardware decoding. See the
+[live video transport contract](CarPlay-DataChannel.md#current-implementation-and-evidence).
 
 ## Use
 
@@ -54,7 +58,7 @@ real iPhone picker behavior remains a device acceptance check.
 
 | Input | Android | Browser |
 | --- | --- | --- |
-| Mirror | Authenticate/decrypt and relay H.264 or enabled HEVC | WebCodecs and Canvas |
+| Mirror | Authenticate/decrypt and relay H.264 or enabled HEVC | Original-codec WebRTC RTP, MediaStreamTrackProcessor and Canvas |
 | URL video | Protocol, authenticated resources and controls | libmedia AVPlayer Canvas playback; Video.js controls |
 | JPEG/PNG | Bounded original-image cache/resource | Native decoding, EXIF orientation, contain fitting |
 | Type-96 audio | RTP/decryption, packet order, RTP/NTP mapping | libav.js software decode/resample, NetEq and AudioWorklet output |

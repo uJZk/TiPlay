@@ -2,6 +2,7 @@
  * Reliable LAN media transport. Fragment sequencing and application consumption are distinct from SCTP delivery. */
 import { candidateCounts, candidateDiagnosticFields, rtcFailureReason } from './rtc-diagnostics.js';
 import { RTC_VIDEO_TRANSPORT, rtcVideoCodecs } from './rtc-video.js';
+import { applyRtcVideoReceiveLevels, probeRtcVideoReceiveLevels } from './rtc-video-receive.js';
 
 export const RTC_TRANSPORT = 'webrtc-datachannel-v1';
 export const RTC_MAGIC = 0x31524454;
@@ -65,7 +66,8 @@ function transportError(reason, message = reason) {
 export function createRtcMediaTransport({ signal, exchange, credentials, onError = () => {},
   PeerConnection = globalThis.RTCPeerConnection, timeoutMs = 20000, onProgress = () => {},
   videoTrack = false, videoCodecs = rtcVideoCodecs(), onVideoTrack = () => {}, onVideoGeneration = () => {},
-  onVideoError = () => {}, videoTimeoutMs = 12000, audioTimeoutMs = 10000 } = {}) {
+  onVideoError = () => {}, videoTimeoutMs = 12000, audioTimeoutMs = 10000,
+  probeVideoReceiveLevels = probeRtcVideoReceiveLevels } = {}) {
   if (typeof PeerConnection !== 'function') throw transportError('webrtc-unavailable', 'This browser does not support WebRTC DataChannel.');
   const peer = new PeerConnection({ iceServers: [], iceTransportPolicy: 'all', bundlePolicy: 'max-bundle' });
   const channels = {};
@@ -102,6 +104,14 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
   const lifetime = new Promise((_, reject) => { rejectLifetime = reject; });
   lifetime.catch(() => {});
   const duringLife = pending => Promise.race([pending, lifetime]);
+  let receiveLevels = null;
+  async function createVideoOffer() {
+    const levels = videoTrack ? await duringLife(receiveLevels ??= probeVideoReceiveLevels(videoCodecs)) : null;
+    const offer = await duringLife(peer.createOffer());
+    // Codec preferences must remain capabilities returned by the browser. Its
+    // receive-level declaration is applied to the offer before local ICE/SRP.
+    return levels ? { type: offer.type, sdp: applyRtcVideoReceiveLevels(offer.sdp, levels) } : offer;
+  }
   const diagnostic = () => ({ stage: ({ 'create-offer': 'local-ice', 'local-description': 'local-ice', 'ice-gathering': 'local-ice',
     signaling: 'pairing', 'remote-description': 'remote-ice', channels: 'remote-ice', 'dc-auth': 'dc-auth', connected: 'connected' })[stats.stage] ?? 'local-ice',
     ...candidateDiagnosticFields('local', candidateCounts(peer.localDescription?.sdp)),
@@ -361,7 +371,7 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       videoTransceiver?.stop();
       videoTransceiver = peer.addTransceiver('video', { direction: 'recvonly' });
       videoTransceiver.setCodecPreferences(videoCodecs);
-      const offer = await duringLife(peer.createOffer());
+      const offer = await createVideoOffer();
       await duringLife(peer.setLocalDescription(offer));
       const sdp = await duringLife(gatherLocalOffer(peer, lifetimeAbort.signal));
       if (new TextEncoder().encode(sdp).byteLength > 48 * 1024) throw transportError('rtc-video-offer-size');
@@ -414,7 +424,7 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       timer = setTimeout(() => fail('connect-timeout'), timeoutMs);
       try {
         progress('create-offer');
-        const offer = await duringLife(peer.createOffer());
+        const offer = await createVideoOffer();
         progress('local-description');
         await duringLife(peer.setLocalDescription(offer));
         progress('ice-gathering');

@@ -117,7 +117,9 @@ const STRINGS = {
     unsupported: 'This browser cannot decode {0}.',
     unsupportedHevc: 'This browser cannot decode this HEVC stream. Reconnect to report decoder support again.',
     unsupportedHdr: 'AirPlay mirroring requires SDR video; this source sends HDR.',
-    rtcVideoFailed: 'This video cannot be played. Check that TiPlay and the browser are up to date, then reconnect.',
+    rtcVideoFailed: 'The video picture could not start. Reconnect, or check Diagnostics for the failure reason.',
+    rtcVideoCodecFailed: 'The video format exceeds the receive capabilities negotiated for this connection. Reconnect, or check Diagnostics for details.',
+    rtcVideoFailureDetail: 'Video failure: {0}',
     noVideo: 'This browser cannot show the video ({0}). Open the page over HTTPS in a browser with WebCodecs support.',
     invalidCode: 'Enter the 4-digit pairing code.',
     invalidHost: 'Enter an IPv4 address with port, for example 169.254.111.111:8080.',
@@ -205,7 +207,9 @@ const STRINGS = {
     unsupported: '此浏览器无法解码 {0}。',
     unsupportedHevc: '此浏览器无法解码此 HEVC 视频流，请重新连接以再次汇报解码能力。',
     unsupportedHdr: 'AirPlay 镜像需要 SDR 视频，当前来源发送的是 HDR。',
-    rtcVideoFailed: '当前视频无法播放。请确认 TiPlay 和浏览器已更新，再重新连接。',
+    rtcVideoFailed: '视频画面未能启动。请重新连接，或在“诊断”中查看失败原因。',
+    rtcVideoCodecFailed: '视频格式超出本次连接协商的接收能力。请重新连接，或在“诊断”中查看详情。',
+    rtcVideoFailureDetail: '视频错误：{0}',
     noVideo: '此浏览器无法显示画面（{0}）。请使用支持 WebCodecs 的浏览器通过 HTTPS 打开本页。',
     invalidCode: '请输入 4 位配对码。',
     invalidHost: '请输入带端口的 IPv4 地址，例如 169.254.111.111:8080。',
@@ -771,9 +775,14 @@ function onVideoMessage(message) {
       videoError = null;
       const pending = videoRestart = { media };
       media.restartVideo().catch(error => {
-        if (rtcMedia === media && id === streamId) { videoError = error.reason || 'rtc-video-renegotiation-failed'; render(); }
+        if (rtcMedia === media && id === streamId) {
+          videoError = error.reason || 'rtc-video-renegotiation-failed';
+          try { reportDiagnostics('fault'); } catch (_) {}
+          render();
+        }
       }).finally(() => { if (videoRestart === pending) videoRestart = null; });
     } else videoError = message.reason || 'rtc-video-failed';
+    if (videoError) { try { reportDiagnostics('fault'); } catch (_) {} }
     render(); return;
   }
 
@@ -834,7 +843,10 @@ function render() {
     const key = videoProblem === 'hdr' ? 'unsupportedHdr' : /^(hvc1|hev1)\b/.test(videoProblem) ? 'unsupportedHevc' : 'unsupported';
     problem = { id: `codec:${videoProblem}`, text: t(key, codecName(videoProblem)) };
   }
-  if (active && videoError) problem = { id: `rtc-video:${videoError}`, text: t(videoError === 'hdr' ? 'unsupportedHdr' : 'rtcVideoFailed', videoError) };
+  if (active && videoError) {
+    const codecFailure = ['codec-profile-not-negotiated', 'video-codec-not-negotiated', 'encoder-codec-mismatch'].includes(videoError);
+    problem = { id: `rtc-video:${videoError}`, text: t(videoError === 'hdr' ? 'unsupportedHdr' : codecFailure ? 'rtcVideoCodecFailed' : 'rtcVideoFailed') };
+  }
   browserNotice.update(problem);
   $('message').textContent = inlineNotice ? t(notice.key, ...notice.args) : '';
   $('status').textContent = text;
@@ -898,12 +910,14 @@ function retryStatusText(error, seconds) {
 }
 
 function connectionDetailsText() {
+  const reason = typeof videoError === 'string' && /^[a-z0-9-]{1,100}$/.test(videoError) ? videoError : videoError ? 'rtc-video-failed' : null;
+  const videoFailure = reason ? `\n${t('rtcVideoFailureDetail', reason)}` : '';
   if (phase === 'retry' && lastError) {
-    return `${PAGE_VERSION}\n${rtcRetryText(lastError, Math.max(1, Math.ceil((retryAt - Date.now()) / 1000)))}`;
+    return `${PAGE_VERSION}\n${rtcRetryText(lastError, Math.max(1, Math.ceil((retryAt - Date.now()) / 1000)))}${videoFailure}`;
   }
-  if (!rtcProgress) return `${PAGE_VERSION}\n${t('diagnosticsEmpty')}`;
+  if (!rtcProgress) return `${PAGE_VERSION}\n${t('diagnosticsEmpty')}${videoFailure}`;
   const candidates = rtcCandidateText(rtcProgress);
-  return `${PAGE_VERSION}\n${rtcStageText(rtcProgress.stage)}${candidates ? `\n${candidates}` : ''}`;
+  return `${PAGE_VERSION}\n${rtcStageText(rtcProgress.stage)}${candidates ? `\n${candidates}` : ''}${videoFailure}`;
 }
 
 function statusText() {
@@ -955,7 +969,8 @@ function pageStats() {
     themeDark: appearance.matches,
     link: { path: videoPath.path, fallback: videoPath.reason, codecs: probedCodecs, phase, attempt, reconnects, live, unsupported, errorReason: lastError?.reason ?? lastError?.rtcReason ?? null, connection: rtcProgress, failure: lastError ? rtcFailureSummary(lastError) : null },
     transport: rtcMedia?.stats() ?? null,
-    video: { ...decoderStatsSnapshot(videoStats), clockEstimatorState: estimator?.clockEstimatorState,
+    video: { ...decoderStatsSnapshot(videoStats), errorReason: typeof videoError === 'string' && /^[a-z0-9-]{1,100}$/.test(videoError) ? videoError : videoError ? 'rtc-video-failed' : null,
+      clockEstimatorState: estimator?.clockEstimatorState,
       clockEstimatorObservationAgeMs: estimator?.clockEstimatorObservationAgeMs,
       clockEstimatorSelectedAgeMs: estimator?.clockEstimatorSelectedAgeMs },
     sender: safeSenderDiagnostics(status?.phone?.rtc),

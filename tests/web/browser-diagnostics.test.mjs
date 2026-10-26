@@ -75,6 +75,17 @@ test('dense details reserve two protected fault summaries within a 16 KiB contro
   assert.ok(Buffer.byteLength(JSON.stringify(batch)) <= 16 * 1024);
 });
 
+test('video failure reasons survive a dense ordinary snapshot independently of transport success', () => {
+  const [event] = browserDiagnosticEvents({
+    video: { ...Object.fromEntries(Array.from({ length: 300 }, (_, index) => ['counter' + index, 123456789])),
+      errorReason: 'codec-profile-not-negotiated' },
+    transport: { state: 'connected', reason: null },
+  }, false);
+  assert.equal(event.v['video.errorReason'], 'codec-profile-not-negotiated');
+  assert.equal(event.v['transport.state'], 'connected');
+  assert.ok(Buffer.byteLength(JSON.stringify(event)) < 2048);
+});
+
 test('busy video summaries retain cadence, audio and touch RTT within the ordinary budget', () => {
   const video = { ...Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`counter${i}`, i])),
     currentFps: 48, currentDelta: -19, frameIntervalP95Ms: 61, frameIntervalMaxMs: 128,

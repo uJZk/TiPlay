@@ -205,6 +205,7 @@ function retryPage(lastError) {
       connecting(progress) { phase = 'connecting'; rtcProgress = progress; render(); return $('status').textContent; },
       details() { $('diagnostics').open = true; render(); return $('connection-details').textContent; },
       problem: () => problem, inlineMessage: () => $('message').textContent, statusHidden: () => $('status').hidden,
+      videoFailed(reason) { videoError = reason; render(); },
       trustState: () => ({ visible: trustVisible, clears: trustClears }) };
   `)($, { now: () => now }, (callback, delay) => setTimer(callback, delay, 0), id => timers.delete(id),
     (callback, delay) => setTimer(callback, delay, delay), id => timers.delete(id), value => overlays.push(value.text), lastError, rtcFailureSummary, PAGE_VERSION,
@@ -225,6 +226,16 @@ function retryPage(lastError) {
     },
   };
 }
+
+test('video negotiation failures expose the safe video reason without changing connection-stage details', () => {
+  const page = retryPage();
+  page.videoFailed('codec-profile-not-negotiated');
+  assert.equal(page.problem().text, 'rtcVideoCodecFailed');
+  assert.match(page.details(), /rtcVideoFailureDetail:codec-profile-not-negotiated/);
+  page.videoFailed('credential\nsecret=do-not-export');
+  assert.match(page.details(), /rtcVideoFailureDetail:rtc-video-failed/);
+  assert.doesNotMatch(page.details(), /credential|secret|do-not-export/);
+});
 
 test('waiting messages follow receiver phase and actual video source rather than session availability', () => {
   const page = retryPage(null);

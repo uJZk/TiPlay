@@ -210,6 +210,23 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Current browser deployment
 
+Browser **v96** is prepared as a web-only repair on beta.23/code65. The supplied
+23:18–23:24 diagnostic capture showed an active CarPlay High 4.2 source
+(`avc1.64002a`, 1568×1080@60) rejected against the browser's High 3.1 SDP
+(`64001f`). The receiver was already receiving video; this was separate from the
+previous `/info` repair. The page now queries existing receive profiles and raises
+only a supported, smooth H.264 mode-1 profile to level 4.2, before local description
+and authenticated signaling. Original compressed frames, profile and frame rate
+are unchanged. Initial and replacement offers share the bounded policy.
+
+Verification passes 598 browser tests, the complete required Android command
+(4,321 tests, three debug lint/build targets), site/public-tree/cache checks and
+real Chromium production-helper probing/local-description acceptance. Actual
+RTP-to-Processor decoding remains blocked by this environment's zero ICE
+candidates; these checks do not establish Tesla playback. Android production code
+and the signed beta.23 assets are unchanged. Record the Pages run and public-byte
+verification after deployment; source-only evidence is kept under `/tmp/tiplay-v96-*`.
+
 Browser **v95** and beta.23/code65 download metadata are deployed from
 `8191b9fcc45497d194f38f05174a8993be04c625` by
 [Pages run 40344544258](https://github.com/uJZk/TiPlay/actions/runs/40344544258).

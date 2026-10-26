@@ -7,8 +7,8 @@ import { RECORD, encodeRecord } from '../../site/play/link.js';
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const frame = () => ({ closed: 0, close() { this.closed++; } });
-const config = (epoch, videoTransport = RTC_VIDEO_TRANSPORT, videoGeneration = 1) => encodeRecord({ kind: RECORD.CONFIG, epoch,
-  payload: new TextEncoder().encode(JSON.stringify({ codec: 'avc1.640028', mode: 'carplay', width: 800, height: 480, fps: 60, videoTransport, videoGeneration })) });
+const config = (epoch, videoTransport = RTC_VIDEO_TRANSPORT, videoGeneration = 1, fields = {}) => encodeRecord({ kind: RECORD.CONFIG, epoch,
+  payload: new TextEncoder().encode(JSON.stringify({ codec: 'avc1.640028', mode: 'carplay', width: 800, height: 480, fps: 60, videoTransport, videoGeneration, ...fields })) });
 
 test('capability discovery gates RTP offers for old phones and only admits passthrough codecs', async () => {
   assert.equal(await phoneSupportsRtcVideo(async () => ({ ok: true, json: async () => ({ app: 'TiPlay', protocol: 1 }) })), false);
@@ -53,12 +53,12 @@ test('native frames are fenced by current metadata and never instantiate an appl
   const pipeline = createRtcVideoPipeline({ post: value => posted.push(value), present: value => { drawn.push(value); value.close(); } });
   t.after(() => pipeline.stop());
   pipeline.read(9, new ReadableStream({ start(value) { controller = value; } }));
-  const early = frame(); pipeline.trackFrame(early); assert.equal(early.closed, 1);
+  const early = frame(); pipeline.trackFrame(early); assert.equal(early.closed, 0);
   controller.enqueue(config(1)); await settle();
   const native = frame(); pipeline.trackFrame(native);
-  assert.deepEqual(drawn, [native]); assert.equal(pipeline.stats().videoTransport, RTC_VIDEO_TRANSPORT);
+  assert.deepEqual(drawn, [early, native]); assert.equal(early.closed, 1); assert.equal(pipeline.stats().videoTransport, RTC_VIDEO_TRANSPORT);
   controller.enqueue(encodeRecord({ kind: RECORD.IDLE, epoch: 1 })); await settle();
-  const late = frame(); pipeline.trackFrame(late); assert.equal(late.closed, 1); assert.equal(drawn.length, 1);
+  const late = frame(); pipeline.trackFrame(late); assert.equal(late.closed, 1); assert.equal(drawn.length, 2);
   // Returning to another source cannot revive a stale RTP track on this peer.
   controller.enqueue(config(2)); await settle();
   assert.equal(posted.at(-1).type, 'video-error'); assert.equal(posted.at(-1).reason, 'video-source-changed-reconnect-required');
@@ -120,6 +120,161 @@ test('a decoded native first frame cancels the startup deadline without requirin
   pipeline.trackFrame(frame());
   now = 5000; tick();
   assert.equal(messages.some(value => value.type === 'video-error'), false);
+});
+
+test('one static RTP picture arriving before CONFIG renders after metadata and never falsely times out', async t => {
+  let controller, tick, now = 100;
+  t.mock.method(globalThis, 'setInterval', callback => { tick = callback; return 1; });
+  const messages = [], order = [], drawn = [];
+  const pipeline = createRtcVideoPipeline({ now: () => now, firstFrameWaitMs: 1000,
+    post: value => { messages.push(value); if (value.type === 'config') order.push('config'); },
+    present: (value, metadata, id) => { order.push('present'); drawn.push({ value, metadata, id }); value.close(); } });
+  t.after(() => pipeline.stop());
+  pipeline.read(9, new ReadableStream({ start(value) { controller = value; } }));
+  const early = frame(); pipeline.trackFrame(early, 1);
+  assert.equal(early.closed, 0); assert.equal(drawn.length, 0, 'no rendering under unknown metadata');
+  controller.enqueue(config(7)); await settle();
+  assert.deepEqual(order, ['config', 'present']);
+  assert.equal(drawn[0].value, early); assert.equal(drawn[0].metadata.epoch, 7); assert.equal(drawn[0].id, 9);
+  assert.equal(early.closed, 1); assert.equal(pipeline.stats().decoded, 1);
+  now = 5000; tick();
+  assert.equal(messages.some(value => value.type === 'video-error'), false);
+  assert.equal(pipeline.stats().errorReason, null);
+});
+
+test('pending native pictures retain only the latest frame until the first matching CONFIG', async t => {
+  let controller;
+  t.mock.method(globalThis, 'setInterval', () => 1);
+  const drawn = [], pipeline = createRtcVideoPipeline({ post() {}, present: value => { drawn.push(value); value.close(); } });
+  t.after(() => pipeline.stop());
+  pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  const frames = Array.from({ length: 4 }, frame);
+  for (const value of frames) pipeline.trackFrame(value, 1);
+  assert.deepEqual(frames.map(value => value.closed), [1, 1, 1, 0]);
+  assert.equal(pipeline.stats().decoded, 0);
+  controller.enqueue(config(1)); await settle();
+  controller.enqueue(config(1)); await settle();
+  assert.deepEqual(drawn, [frames[3]]); assert.deepEqual(frames.map(value => value.closed), [1, 1, 1, 1]);
+});
+
+test('retiring, idling or rejecting the source closes its pending native picture exactly once', async t => {
+  t.mock.method(globalThis, 'setInterval', () => 1);
+  const actions = {
+    stop: pipeline => pipeline.stop(),
+    replacement: pipeline => pipeline.read(2, new ReadableStream()),
+    generation: pipeline => pipeline.resetGeneration(2),
+    failure: pipeline => pipeline.fail('rtc-video-track-ended'),
+    idle: (_, controller) => controller.enqueue(encodeRecord({ kind: RECORD.IDLE })),
+    invalid: (_, controller) => controller.enqueue(encodeRecord({ kind: RECORD.CONFIG, payload: new TextEncoder().encode('null') })),
+    malformed: (_, controller) => controller.enqueue(encodeRecord({ kind: RECORD.CONFIG, payload: new TextEncoder().encode('{') })),
+    legacy: (_, controller) => controller.enqueue(config(1, 'webrtc-datachannel-v1')),
+  };
+  for (const [name, action] of Object.entries(actions)) {
+    let controller;
+    const drawn = [], pipeline = createRtcVideoPipeline({ post() {}, present: value => drawn.push(value) });
+    pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+    const early = frame(); pipeline.trackFrame(early, 1);
+    action(pipeline, controller); await settle();
+    assert.equal(early.closed, 1, name); assert.deepEqual(drawn, [], name);
+    pipeline.stop(); assert.equal(early.closed, 1, `${name}: disposal does not close it twice`);
+  }
+});
+
+test('pending pictures never cross video generations or consume an old-generation CONFIG', async t => {
+  let controller;
+  t.mock.method(globalThis, 'setInterval', () => 1);
+  const drawn = [], pipeline = createRtcVideoPipeline({ post() {}, present: value => { drawn.push(value); value.close(); } });
+  t.after(() => pipeline.stop());
+  pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  const old = frame(); pipeline.trackFrame(old, 1);
+  pipeline.resetGeneration(2); assert.equal(old.closed, 1);
+  const stale = frame(); pipeline.trackFrame(stale, 1); assert.equal(stale.closed, 1);
+  const current = frame(); pipeline.trackFrame(current, 2);
+  controller.enqueue(encodeRecord({ kind: RECORD.END, payload: new TextEncoder().encode('retired-source') }));
+  controller.enqueue(config(1)); await settle();
+  assert.equal(current.closed, 0); assert.deepEqual(drawn, []);
+  controller.enqueue(config(2, RTC_VIDEO_TRANSPORT, 2)); await settle();
+  assert.deepEqual(drawn, [current]); assert.equal(current.closed, 1);
+});
+
+test('pending mirror pictures receive the same HDR rejection as pictures arriving after CONFIG', async t => {
+  let controller;
+  t.mock.method(globalThis, 'setInterval', () => 1);
+  const messages = [], drawn = [], pipeline = createRtcVideoPipeline({ post: value => messages.push(value), present: value => drawn.push(value) });
+  t.after(() => pipeline.stop());
+  pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  const early = { ...frame(), colorSpace: { transfer: 'smpte2084' } }; pipeline.trackFrame(early, 1);
+  controller.enqueue(config(1, RTC_VIDEO_TRANSPORT, 1, { mode: 'airplay-mirror' })); await settle();
+  assert.equal(early.closed, 1); assert.deepEqual(drawn, []);
+  assert.equal(messages.at(-1).type, 'video-error'); assert.equal(messages.at(-1).reason, 'hdr');
+  assert.equal(pipeline.stats().errorReason, 'hdr');
+});
+
+test('synchronous CONFIG retirement cannot present a pending picture under a replacement owner', async t => {
+  t.mock.method(globalThis, 'setInterval', () => 1);
+  for (const action of ['stop', 'reset', 'fail']) {
+    let controller;
+    const drawn = [], pipeline = createRtcVideoPipeline({
+      post: value => { if (value.type === 'config') {
+        if (action === 'stop') pipeline.stop();
+        else if (action === 'reset') pipeline.resetGeneration(2);
+        else pipeline.fail('rtc-video-track-ended');
+      } },
+      present: value => drawn.push(value),
+    });
+    pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+    const early = frame(); pipeline.trackFrame(early, 1);
+    controller.enqueue(config(1)); await settle();
+    assert.equal(early.closed, 1, action); assert.deepEqual(drawn, [], action);
+    pipeline.stop(); assert.equal(early.closed, 1, action);
+  }
+});
+
+test('a CONFIG callback failure closes its detached pending frame', async t => {
+  let controller;
+  t.mock.method(globalThis, 'setInterval', () => 1);
+  const drawn = [], pipeline = createRtcVideoPipeline({
+    post: value => { if (value.type === 'config') throw Error('presentation consumer failed'); },
+    present: value => drawn.push(value),
+  });
+  t.after(() => pipeline.stop());
+  pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  const early = frame(); pipeline.trackFrame(early, 1);
+  controller.enqueue(config(1)); await settle();
+  assert.equal(early.closed, 1); assert.deepEqual(drawn, []);
+  pipeline.stop(); assert.equal(early.closed, 1);
+});
+
+test('a CONFIG callback can install the next generation without losing its pending frame', async t => {
+  let controller;
+  t.mock.method(globalThis, 'setInterval', () => 1);
+  const drawn = [], next = frame(), pipeline = createRtcVideoPipeline({
+    post: value => { if (value.type === 'config' && value.config.videoGeneration === 1) {
+      pipeline.resetGeneration(2); pipeline.trackFrame(next, 2);
+    } },
+    present: value => { drawn.push(value); value.close(); },
+  });
+  t.after(() => pipeline.stop());
+  pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  const early = frame(); pipeline.trackFrame(early, 1);
+  controller.enqueue(config(1)); await settle();
+  assert.equal(early.closed, 1); assert.equal(next.closed, 0); assert.deepEqual(drawn, []);
+  controller.enqueue(config(2, RTC_VIDEO_TRANSPORT, 2)); await settle();
+  assert.deepEqual(drawn, [next]); assert.equal(next.closed, 1);
+});
+
+test('a newer frame presented during CONFIG cannot be overwritten by the pending older picture', async t => {
+  let controller;
+  t.mock.method(globalThis, 'setInterval', () => 1);
+  const drawn = [], newer = frame(), pipeline = createRtcVideoPipeline({
+    post: value => { if (value.type === 'config') pipeline.trackFrame(newer, 1); },
+    present: value => { drawn.push(value); value.close(); },
+  });
+  t.after(() => pipeline.stop());
+  pipeline.read(1, new ReadableStream({ start(value) { controller = value; } }));
+  const early = frame(); pipeline.trackFrame(early, 1);
+  controller.enqueue(config(1)); await settle();
+  assert.deepEqual(drawn, [newer]); assert.equal(early.closed, 1); assert.equal(newer.closed, 1);
 });
 
 test('a video-only generation handshake fences delayed metadata END, config and old track frames', async t => {
