@@ -7,8 +7,8 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published prerelease is **0.2.20-beta.21** (code **63**);
-[beta.21 release](#beta21-release) records provenance and checks. Run
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published prerelease is **0.2.20-beta.22** (code **64**);
+[beta.22 release](#beta22-release) records provenance and checks. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
 the deployed page uses **v90**, with original-codec WebRTC RTP for live video and negotiated audio.
@@ -202,7 +202,7 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Current browser deployment
 
-Browser v90 and beta.21/code63 are published together; see [beta.21 release](#beta21-release). The v89 record below describes its earlier web-only rollout.
+Browser v90 is retained; download metadata now shows beta.22/code64; see [beta.22 release](#beta22-release). The v89 record below describes its earlier web-only rollout.
 
 Browser **v89** is the web-only audio rollout: NetEq-first Opus, libav.js AAC-LC/
 ELD/ALAC, continuous 48 kHz conversion, software capability negotiation and URL
@@ -388,39 +388,39 @@ Independent checks confirm non-debug `com.ujzk.tiplay`, code63, signature contin
 
 ## Beta.22 release
 
-Beta.22/code64 adds CarPlay Video in Car to phone + browser mode on the beta.21
-base, retaining browser v90 and its AVPlayer URL pipeline. The implementation,
-LIVI reference and remaining iPhone/vehicle checks are in
-[AirPlay](AirPlay.md#carplay-video-in-car-in-the-browser). Parking-state
-integration is deferred by user request; no gear signal is required in this build.
-FairPlay video remains unsupported.
+Published [TiPlay 0.2.20-beta.22](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.22),
+code **64**, at **2026-10-26 18:10:21 UTC+08:00**, retaining browser **v90**.
+Build commit: `544127d3f4c5e342425613645f7bb89e09656aeb`.
 
-The user explicitly requests skipping CI. The release is built locally with
-`:mobile:lintRelease :mobile:assembleRelease`, using the configured signing key
-and the unchanged two runtime assets extracted from the hash-verified DiPlay
-0.2.18 APK. Publication includes the signed APK, exact build-commit source ZIP
-and SHA256SUMS.txt. The download-page version is regenerated for beta.22; the
-browser runtime remains v90. The existing Pages workflow is used only to publish
-the updated download metadata. Full Android CI is not dispatched.
+This adds CarPlay Video in Car to phone + browser mode on the beta.21 base,
+using the existing AVPlayer URL pipeline. The LIVI reference, command handling
+and cleanup are in [AirPlay](AirPlay.md#carplay-video-in-car-in-the-browser).
+Parking-state integration is deferred by user request; no gear signal is required.
+FairPlay video remains unsupported. Physical iPhone/vehicle acceptance is pending.
 
-Local verification passed: 75 targeted Android tests, mobile Release lint and
-signed build, nine release-draft checks, four download-page tests, two site-layout
-checks, public-tree/cache checks, package/code64/non-debug validation, signer
-continuity, exact runtime-asset comparison and four-ABI ELF64/ZIP 16 KiB alignment.
-Full CI was skipped as requested; no physical iPhone/vehicle acceptance is claimed.
+The user explicitly skipped Android CI and the full test suite. Local verification
+passed 75 targeted Android tests, Release lint/build, nine release-draft checks,
+four download-page tests, two layout tests and public-tree/cache checks. Local
+large-attachment uploads returned 401. After explicit user authorization, only the
+existing [signed release workflow](https://github.com/uJZk/TiPlay/actions/runs/40303963168)
+ran Release lint/build, pinned runtime validation, signing and draft upload.
+Android CI was not dispatched. The published APK is the workflow artifact;
+the earlier local candidate is retained separately as evidence.
 
-Local build commit: `da42067de4e67a93503cd6c88ae4bcf440412102`.
-Public beta.22 APK publication is pending: a draft exists, but local binary upload
-returns HTTP 401 with both system and current official GitHub CLI. The automatic
-approval review rejected dispatching `android-release.yml` because it interpreted
-that workflow as conflicting with the user's CI skip. Explicit user authorization
-is required before running that workflow. No remote Android CI was dispatched.
-Pages run [40303064954](https://github.com/uJZk/TiPlay/actions/runs/40303064954)
-succeeded; public `app-version.js` and `/download/` show beta.22. Local release
-artifacts and verification evidence remain in `/workspace/tiplay-beta22/`.
+Downloaded release attachments independently pass package/code64/non-debug checks,
+signer continuity (`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`),
+exact build-commit `git archive` comparison, checksums, exact two runtime identity
+containers, all four supported ABIs, 51 native libraries and ELF64/ZIP 16 KiB alignment.
+Server attachment sizes/digests agree with downloaded bytes before publication.
 
-| Local artifact | Bytes | SHA-256 |
+| Published artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `SHA256SUMS.txt` | 191 | `7e024c70b3c3942d5487f7a71982493e39d76f4dcf316b6cf68733e6c88bbc49` |
-| `TiPlay-0.2.20-beta.22-source.zip` | 40,692,131 | `af27303cbe41a1f26d8922b2168b10e0ebcbb460c5dc91fa3a4d2740fbd029b4` |
-| `TiPlay-0.2.20-beta.22.apk` | 114,004,800 | `d75c8df629d6155c215cd66f124d23656c79fcc69fc4aee6356552f393b060d7` |
+| `SHA256SUMS.txt` | 191 | `0f102ff1ad92e93c286fd3c00335406f1499dcc38260f311f75eb4d6d1816107` |
+| `TiPlay-0.2.20-beta.22-source.zip` | 40,692,553 | `fe0f185f9862b187d1e96313d182cfad77b2329e48805df59c229ecde626ae87` |
+| `TiPlay-0.2.20-beta.22.apk` | 114,004,800 | `5e19eb180212aa2afce639436a0b8e99110cff9af4534c6239624921ff9a0fd8` |
+
+[Pages run 40303064954](https://github.com/uJZk/TiPlay/actions/runs/40303064954)
+succeeded; public `app-version.js` and `/download/` show beta.22. Browser v90
+runtime bytes are unchanged. Release files and independent verification evidence
+are retained outside Git in `/workspace/tiplay-beta22/remote-artifacts/` and
+`/workspace/tiplay-beta22/`; temporary signing inputs were removed.
