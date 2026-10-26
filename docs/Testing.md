@@ -2,13 +2,10 @@
 
 TiPlay supports an Android phone plus car browser. Follow [installation](Install.md) and [build](Build.md) instructions; use a parked car for physical acceptance.
 
-The earlier receiver/session baseline recorded **908 browser tests** and **4,189 Android
-unit tests** (2,366 shared, 1,817 common and six home), all three required debug lint
-targets and all three debug APK builds. The real Chromium presentation component
-suite passes Chinese/English at 320/800 pixels. Its structured events do not establish
-media transport or physical playback; the full media-page harness is blocked by
-this environment's managed ICE policy. Published artifacts remain recorded in
-[Build](Build.md#beta-release).
+The earlier receiver/session baseline passed 908 browser tests, 4,189 Android
+tests (2,366 shared, 1,817 common, six home), debug lint/builds and Chinese/English
+presentation checks. Published artifacts remain in [Build](Build.md#beta-release);
+managed ICE restrictions and physical playback remain separate acceptance limits.
 
 ## Current release source
 
@@ -50,6 +47,13 @@ both authenticated offers, cancellation, pre-CONFIG frame ownership and safe
 video-error details. Real Chromium accepts the production helper's SDP; zero
 ICE candidates still block RTP decoding. The supplied High4.2/SDP3.1 failure is
 recorded in [Build](Build.md#current-browser-deployment); vehicle retesting remains open.
+
+Beta.24/code66 and v97 add 14 native sender-selection regressions: Baseline-first
+startup, asynchronous High selection, unchanged encoded bytes, IDR recovery,
+profile/level/mode rejection, bounded timeout, retired selector/encoder isolation,
+and callback/release/re-init interleavings. Final execution and signed/public
+delivery are tracked in [Build](Build.md#beta24-release); these JVM tests do not
+load the Android JNI runtime or establish vehicle decoding.
 
 ## Browser WASM verification
 

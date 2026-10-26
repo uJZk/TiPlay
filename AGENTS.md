@@ -276,3 +276,13 @@ This web-only repair is published from `7a6129434fc138f9d2ac36b1f446bc1191cbf0a7
 by Pages 40353155061; all 217 public files (31,811,644 bytes) match. Beta.23/code65
 signed artifacts stay unchanged. The next step is a fresh Tesla CarPlay reconnect
 with page v96 and, if it still fails, the new video error code and capture.
+
+Resume beta.24/code66/v97 at [Build](docs/Build.md#beta24-release),
+[the media transport](docs/CarPlay-DataChannel.md) and [Diagnostics](docs/Diagnostics.md).
+The latest v96 capture passed the receive-level check but failed in the actual
+JNI encoder callback with `encoder-codec-mismatch`. Keep source admission and
+actual encoder identity separate; use the SDK's public selector for the negotiated
+source-compatible format, drop intermediate wrong-format units and request IDR.
+Preserve all profile/level/mode checks, the bounded deadline and per-instance
+callback ownership. Fourteen new tests await final full validation; commit,
+push, signed beta publication and Pages remain within the authorized CarPlay fix.

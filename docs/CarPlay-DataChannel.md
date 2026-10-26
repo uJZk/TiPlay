@@ -33,6 +33,34 @@ performance. Actual Chromium verifies the production probe and retention of
 level 4.2 by `setLocalDescription`; managed zero-host-ICE policy still prevents
 an end-to-end RTP playback check. See [current verification](Testing.md#current-release-source).
 
+The native sender uses the public `VideoEncoderSelector` to select the real
+encoder and negotiated RTP payload type; SDP answer ordering alone does not
+select the running encoder. The immutable source must match both the authenticated
+remote offer and the answer's profile, receive level and H.264 packetization mode
+1. The selector returns the answer's complete permitted format, preserving a
+lower negotiated level instead of replacing it with the offer or a factory query.
+
+`onResolutionChange` runs on the first input frame and size changes;
+`onAvailableBitrate` can request the same selection later. Native switching is
+asynchronous. An old, incompatible wrapper returns `NO_OUTPUT` before constructing
+encoded output or calling its callback. A new initialized wrapper invalidates the
+old AU dependency chain and requests a fresh source IDR before resuming. An
+uncompleted selection fails only video after six seconds. This does not change
+source SPS, profile, dimensions or frame rate, or introduce another encoder.
+
+Selector owner tokens bind callbacks to their bridge/native stream. Factory
+allocation, native `onCurrentEncoder` announcement and successful wrapper
+initialization remain separate observations. The published SDK callback captures
+a native pointer: a per-wrapper `callbackGate` serializes initialization, callback
+use and release. Release waits for an in-flight callback and clears its callback
+and active slot together; output rechecks ownership and the AU dependency chain
+at that gate. Retired callbacks cannot publish through a replacement wrapper.
+
+Fourteen focused Java selection/lifetime regressions have been added; their final
+execution and release checks remain pending in [Testing](Testing.md#current-release-source).
+They do not load the Android JNI bridge. Native sender switching, browser RTP
+playback and hardware decoding still require actual device evidence.
+
 The Android product injects its native RTC runtime; JVM server tests use
 an injectable peer. The current page requires `webrtc-datachannel-v1` and does not
 silently revert to HTTP media. Android disables the old `/video` and `/audio` routes

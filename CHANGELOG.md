@@ -4,6 +4,19 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.24
+
+Version code 66 and browser revision v97. Release evidence is tracked in
+[Build](docs/Build.md#beta24-release).
+
+- Bind the actual WebRTC sender encoder to the original video source through the public encoder selector. Keep the negotiated receive contract separate from encoder allocation and initialization.
+- During an asynchronous format switch, drop mismatched access units, request a fresh keyframe and retain the six-second selection deadline. Preserve the complete profile, level and packetization checks; no video transcoding is introduced.
+- Isolate retired encoder and selector instances, serialize native callbacks with release, and prevent old access units from entering a reinitialized callback.
+- Record bounded source, negotiated, requested and actual codec diagnostics when selection state changes.
+
+The v96 receive-level repair remains in place. This release addresses the later
+native `encoder-codec-mismatch`; physical CarPlay playback still requires retesting.
+
 ## Browser v96
 
 Web-only CarPlay startup repair; Android remains beta.23/code65.

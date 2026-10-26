@@ -95,7 +95,7 @@ internal object BrowserRtcVideoPolicy {
 
     /** Never advertise a profile different from the immutable source bitstream. */
     fun matches(source: String, codec: Codec): Boolean = when {
-        source.startsWith("avc1.") && codec.name == "H264" -> {
+        source.startsWith("avc1.") && codec.name == "H264" && codec.parameters["packetization-mode"] == "1" -> {
             val actual = source.substringAfter('.').lowercase()
             val negotiated = codec.parameters["profile-level-id"]?.lowercase().orEmpty()
             actual.length == 6 && negotiated.length == 6 &&

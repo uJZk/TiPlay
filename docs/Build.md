@@ -519,3 +519,33 @@ public-download and site verification reports remain outside Git under
 `/tmp/tiplay-beta23/` and `/tmp/tiplay-beta23-public-verification.json`; music
 screenshots under `/tmp/tiplay-beta23-now-playing/` use synthetic metadata/artwork.
 The later documentation-only commit does not change the build/source provenance.
+
+<a id="beta24-release"></a>
+
+## Beta.24 release
+
+Beta.24/code66 and browser v97 are being prepared to repair the native sender's
+actual encoder selection. The user's v96 capture shows an authenticated High4.2
+offer and active CarPlay source, followed by `encoder-codec-mismatch` during the
+real JNI encoder callback. Unlike the earlier SDP3.1 rejection, source admission
+now succeeds. The old bridge conflated answer format with allocated encoder
+format, while the SDK's actual sender selection can follow remote codec order.
+The capture did not include the actual factory format, so it does not prove
+which other profile was selected.
+
+The bridge now uses the public encoder selector to request the source-compatible
+negotiated format. Initial source frames still reach the source so its resolution
+callback can trigger selection; switching is asynchronous. Mismatched frames
+produce no output while resolution/bitrate callbacks request the correct sender,
+then a fresh IDR resumes the chain. A six-second deadline bounds failed selection.
+The source remains subject to offer/answer profile, level and packetization-mode
+checks. No SDP, SPS, compressed payload or frame-rate policy is rewritten by this
+native repair.
+
+Selector and encoder ownership, callback/release serialization and a final
+access-unit chain check protect replacement and reinitialization. Safe codec
+diagnostics distinguish source, answer, factory request, announced format and
+initialized encoder. Fourteen new JVM regressions cover these boundaries without
+loading Android JNI; exact test/signing/public verification results will be
+recorded here after completion. The signed release uses the existing workflow;
+physical iPhone/Tesla playback remains pending.

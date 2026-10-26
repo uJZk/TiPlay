@@ -173,6 +173,11 @@ private class AndroidBrowserRtcPeer(
                     VideoCodecInfo(it.name, it.parameters, emptyList())
                 }.toTypedArray()
                 override fun createEncoder(info: VideoCodecInfo): VideoEncoder? = this@AndroidBrowserRtcPeer.videoTrack?.createEncoder(info)
+                // libwebrtc chooses the actual sender independently of answer ordering.
+                // Capture this bridge for each stream's selector; retired streams must not
+                // redirect callbacks into a later source's bridge.
+                override fun getEncoderSelector(): VideoEncoderFactory.VideoEncoderSelector? =
+                    this@AndroidBrowserRtcPeer.videoTrack?.getEncoderSelector()
             })
             factory = builder.createPeerConnectionFactory()
             val config = PeerConnection.RTCConfiguration(emptyList()).apply {
@@ -424,9 +429,22 @@ private class AndroidBrowserRtcPeer(
         var config: WebVideoRecord? = null
         var configuredGeneration = videoLease.generation
         var replacementAnnounced = false
+        var lastCodecDiagnostic: Map<String, Any?>? = null
+        var lastCodecCheckNanos = Long.MIN_VALUE
+        fun reportCodec(force: Boolean = false) {
+            val now = System.nanoTime()
+            if (!force && lastCodecCheckNanos != Long.MIN_VALUE && now - lastCodecCheckNanos < TimeUnit.SECONDS.toNanos(1)) return
+            lastCodecCheckNanos = now
+            val values = runCatching { videoTrack?.diagnostics()?.filterKeys { it in setOf(
+                "source", "negotiated", "requested", "announced", "current", "preferred", "selection", "failure") } }.getOrNull() ?: return
+            if (values == lastCodecDiagnostic) return
+            lastCodecDiagnostic = values
+            runCatching { log("Browser RTC: stage=video-codec epoch=$epoch generation=${videoLease.generation} " + WebJson.write(values)) }
+        }
         fun endVideo(reason: String) {
             videoFailure = reason
             videoTrack?.disable(reason)
+            reportCodec(force = true)
             runCatching { sendControl(WebJson.write(mapOf("k" to "video-error", "reason" to reason,
                 "generation" to videoLease.generation))) }
             sendRecord("video", sequence++, BrowserRtcRecord.video(WebVideoRecords.end(reason)))
@@ -464,6 +482,7 @@ private class AndroidBrowserRtcPeer(
             var subscription = video.subscribe(reliable = true).also { videoSubscription = it }
             while (!closed.get()) {
                 val record = subscription.take(1_000) ?: WebVideoRecords.HEARTBEAT
+                reportCodec()
                 videoFailure?.let { endVideo(it); return }
                 if (videoLease.readyTimedOut()) { endVideo("video-ready-timeout"); break }
                 if (videoLease.ready && configuredGeneration != videoLease.generation) {
@@ -684,16 +703,21 @@ private class AndroidBrowserRtcPeer(
         }
     }
 
-    override fun snapshot(): Map<String, Any?> = synchronized(wake) {
+    override fun snapshot(): Map<String, Any?> {
+        // Encoder callbacks have their own monitor; do not acquire it while
+        // holding the transport wake lock.
+        val videoCodec = videoTrack?.diagnostics()
+        return synchronized(wake) {
         mapOf("transport" to BrowserRtcProtocol.NAME, "videoTransport" to videoTransport,
             "audioTransport" to audioTransport, "audioError" to audioFailure, "nativeAudio" to audioRouter.snapshot(),
-            "videoError" to (videoFailure ?: videoTrack?.failure), "epoch" to epoch, "state" to state,
+            "videoError" to (videoFailure ?: videoTrack?.failure), "videoCodec" to videoCodec, "epoch" to epoch, "state" to state,
             "live" to live, "authenticated" to authenticated, "records" to records.get(), "videoInFlightBytes" to credits["video"]?.bytes,
             "audioInFlightBytes" to credits["audio"]?.bytes,
             "oldestAgeMs" to credits.values.maxOf { it.oldestAgeMillis(System.nanoTime()) },
             "noProgressMs" to credits.values.maxOf { it.noProgressMillis(System.nanoTime()) },
             "networkMode" to "kernel-interfaces", "ready" to (authenticated && connected), "closed" to closed.get(),
             "video" to creditSnapshot("video"), "audio" to creditSnapshot("audio"), "control" to controls.summary())
+        }
     }
 
     private fun creditSnapshot(label: String): Map<String, Any?> {

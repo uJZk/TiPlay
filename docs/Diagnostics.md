@@ -29,6 +29,33 @@ video-only failures from the healthy audio/control transport. Debug raw capture
 retains the incoming telemetry; Android's existing Standard text allowlist is
 unchanged. A generic playback failure no longer asks the user to update versions.
 
+Native `Browser RTC: stage=video-codec` lines add bounded JSON for the source and
+actual encoder selection. They contain only fixed codec/profile fields and safe
+state/reason values, with no SDP, arbitrary fmtp, URLs or device identities.
+Changed values are checked at most once per second, deduplicated, and forced at
+a video failure boundary. Read the fields as separate observations:
+
+| Field | Meaning |
+| --- | --- |
+| `source` | Codec/profile/level parsed from the source configuration. |
+| `negotiated` | First primary video format in the local answer; the source must fit this contract. |
+| `requested` | Latest format passed to factory allocation; a query/allocation alone does not establish the running encoder. |
+| `announced` | Native `onCurrentEncoder` notification, before initialization succeeds. |
+| `current` | Most recently initialized wrapper's format; not proof of encoded output or browser drawing. |
+| `preferred` | Source-compatible format the selector requests within the answer's limits. |
+| `selection` | `idle`, `waiting`, `ready`, `failed` or `closed`; readiness is the wrapper state, not physical playback. |
+| `failure` | Current video failure reason, if available. |
+
+Compare `source`, `negotiated` and `current` to distinguish a receive-capability
+failure from an incompatible native encoder selection. The complete safe
+`offered` matrix remains in the `videoCodec` peer snapshot and is omitted from
+these Standard lines. The diagnostic snapshot is collected outside the transport
+wake lock. The v96 field report establishes `encoder-codec-mismatch`; it did not
+record the actual native encoder's fmtp, so it does not prove a Baseline-first
+selection. That ordering is covered by a regression fixture. The added fourteen
+Java selection/lifetime tests await final execution and do not load JNI; actual
+RTP playback and vehicle hardware decoding remain unverified.
+
 Debug defaults off. Enabling starts capture silently; **View logs** opens its dialog.
 Log and export-result windows share a bottom text-button bar. The privacy notice
 appears only inside Debug logs. A new process restores enabled capture and its dialog.
