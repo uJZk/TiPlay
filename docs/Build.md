@@ -11,7 +11,7 @@ The Android/browser product version comes from `tiplayVersionName` and
 [beta.23 release](#beta23-release) records provenance and checks. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v95**, with original-codec WebRTC RTP for live video and negotiated audio.
+the deployed page uses **v96**, with original-codec WebRTC RTP for live video and negotiated audio.
 The **beta.17/code59** build introduced overlapping 5 ms recovery tails and
 pitch-preserving SoundTouch CarPlay catch-up up to 20%; v86 adds held catch-up.
 The historical beta.16 APK/webpage v84 build is recorded below. Software checks are in [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -210,7 +210,8 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Current browser deployment
 
-Browser **v96** is prepared as a web-only repair on beta.23/code65. The supplied
+Browser **v96** is published as a web-only repair on beta.23/code65, from
+`7a6129434fc138f9d2ac36b1f446bc1191cbf0a7`. The supplied
 23:18–23:24 diagnostic capture showed an active CarPlay High 4.2 source
 (`avc1.64002a`, 1568×1080@60) rejected against the browser's High 3.1 SDP
 (`64001f`). The receiver was already receiving video; this was separate from the
@@ -224,10 +225,14 @@ Verification passes 598 browser tests, the complete required Android command
 real Chromium production-helper probing/local-description acceptance. Actual
 RTP-to-Processor decoding remains blocked by this environment's zero ICE
 candidates; these checks do not establish Tesla playback. Android production code
-and the signed beta.23 assets are unchanged. Record the Pages run and public-byte
-verification after deployment; source-only evidence is kept under `/tmp/tiplay-v96-*`.
+and the signed beta.23 assets are unchanged.
+[Pages run 40353155061](https://github.com/uJZk/TiPlay/actions/runs/40353155061)
+passes from that source commit. All **217** public files (**31,811,644 bytes**)
+match the committed assembly, with correct script/WASM MIME types and no redirects.
+Verification evidence is kept outside Git under `/tmp/tiplay-v96-*`; the later
+documentation-only commit does not change runtime or APK provenance.
 
-Browser **v95** and beta.23/code65 download metadata are deployed from
+The preceding browser **v95** and beta.23/code65 download metadata were deployed from
 `8191b9fcc45497d194f38f05174a8993be04c625` by
 [Pages run 40344544258](https://github.com/uJZk/TiPlay/actions/runs/40344544258).
 All **216** public files (**31,801,191 bytes**) match the committed assembly,

@@ -272,5 +272,7 @@ and retains the original offer when probing fails. The page also retains one
 early decoded frame and exposes safe video errors. 598 web tests and the complete
 required Android command pass; actual Chromium accepts the production helper's
 local SDP, but managed zero-candidate ICE still blocks RTP/vehicle acceptance.
-This is web-only; beta.23/code65 signed artifacts stay unchanged. Complete public
-deployment verification before recording this page as shipped.
+This web-only repair is published from `7a6129434fc138f9d2ac36b1f446bc1191cbf0a7`
+by Pages 40353155061; all 217 public files (31,811,644 bytes) match. Beta.23/code65
+signed artifacts stay unchanged. The next step is a fresh Tesla CarPlay reconnect
+with page v96 and, if it still fails, the new video error code and capture.
