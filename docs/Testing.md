@@ -51,9 +51,10 @@ recorded in [Build](Build.md#current-browser-deployment); vehicle retesting rema
 Beta.24/code66 and v97 add 14 native sender-selection regressions: Baseline-first
 startup, asynchronous High selection, unchanged encoded bytes, IDR recovery,
 profile/level/mode rejection, bounded timeout, retired selector/encoder isolation,
-and callback/release/re-init interleavings. Final execution and signed/public
-delivery are tracked in [Build](Build.md#beta24-release); these JVM tests do not
-load the Android JNI runtime or establish vehicle decoding.
+and callback/release/re-init interleavings. All pass with 4,335 local Android
+tests, 598 web tests, full CI and independent signed/public checks recorded in
+[Build](Build.md#beta24-release). These JVM tests do not load Android JNI or
+establish vehicle decoding.
 
 ## Browser WASM verification
 

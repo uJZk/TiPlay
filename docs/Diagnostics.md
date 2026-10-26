@@ -53,7 +53,7 @@ these Standard lines. The diagnostic snapshot is collected outside the transport
 wake lock. The v96 field report establishes `encoder-codec-mismatch`; it did not
 record the actual native encoder's fmtp, so it does not prove a Baseline-first
 selection. That ordering is covered by a regression fixture. The added fourteen
-Java selection/lifetime tests await final execution and do not load JNI; actual
+Java selection/lifetime tests pass locally and in full CI without loading JNI; actual
 RTP playback and vehicle hardware decoding remain unverified.
 
 Debug defaults off. Enabling starts capture silently; **View logs** opens its dialog.

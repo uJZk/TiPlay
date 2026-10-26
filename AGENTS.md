@@ -26,7 +26,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 - [Diagnostics](docs/Diagnostics.md): opt-in unredacted capture sessions, browser decode/render and live-policy evidence, URL failure/cleanup and resource-transfer boundaries, persisted capture/restart dialog and clear behavior, Standard TXT/Zstandard-in-STORED-ZIP formats and Debug-only AirPlay proxy routing; [privacy](docs/Privacy.md).
   Status refresh, permission reminders, iPhone Bluetooth audio copy and USB lifecycle capture validation are recorded in [Testing](docs/Testing.md#debug-raw-capture-and-car-bluetooth-hints); remaining device checks are in [Todo](docs/Todo.md#connection-settings-and-browser).
 - [Geolocation](docs/geolocation.md): implemented GPS fallback, datum detection/conversion, browser cache and iPhone forwarding. Verification is in [Testing](docs/Testing.md#location-and-notification-verification); physical follow-up is in [Todo](docs/Todo.md#location).
-- [Build](docs/Build.md), including the [current beta release verification and limits](docs/Build.md#beta23-release), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md). Control-queue isolation and URL PCM continuity evidence are in [Diagnostics](docs/Diagnostics.md). Permission-checklist/browser-readiness verification is recorded in Testing; physical follow-up is in [Todo](docs/Todo.md#connection-settings-and-browser).
+- [Build](docs/Build.md), including the [current beta release verification and limits](docs/Build.md#beta24-release), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md). Control-queue isolation and URL PCM continuity evidence are in [Diagnostics](docs/Diagnostics.md). Permission-checklist/browser-readiness verification is recorded in Testing; physical follow-up is in [Todo](docs/Todo.md#connection-settings-and-browser).
   Consolidated hints, explicit-operation feedback and their device checks are in [Testing](docs/Testing.md#phone-and-browser-acceptance).
   Receiver-status verification and remaining device checks are in [Testing](docs/Testing.md#receiver-status-and-browser-notices);
   provisioned-JDK proxy certificate setup is in [Build](docs/Build.md#managed-cloud-certificate-trust).
@@ -136,8 +136,8 @@ Old Opus/PCMA/PCMU application decoder shortcuts may be removed. Keep supported
 RTP tracks and fallback streams under the same browser mixing/ducking policy. See
 [the media transport contract](docs/CarPlay-DataChannel.md) and
 [audio thread boundaries](docs/Audio-tempo.md). Beta.21/code63 release progress is recorded in [Build](docs/Build.md#beta21-release). Targeted native JNI/RTP checks pass; browser RTP interoperability and vehicle acceptance remain unverified.
-The v90 rollout explicitly skipped the full Android test suite. The current
-beta.23 audit requires the source checks below, separate from device acceptance.
+The v90 rollout explicitly skipped the full Android test suite. Source changes
+require the checks below, separate from device acceptance.
 
 URL casting uses libmedia AVPlayer, which owns resource loading,
 buffering, decoding, playback clocks, synchronization and Canvas rendering.
@@ -252,7 +252,7 @@ For that historical release, only the signing/publication workflow was authorize
 Android CI and the full suite stayed skipped. It retained browser v90. iPhone/vehicle acceptance
 remains pending.
 
-Resume beta.23/code65 and browser v95 at [AirPlay](docs/AirPlay.md#carplay-video-in-car-in-the-browser),
+The historical beta.23/code65 and browser v95 review is recorded in [AirPlay](docs/AirPlay.md#carplay-video-in-car-in-the-browser),
 [current verification](docs/Testing.md#current-release-source) and [beta.23 release](docs/Build.md#beta23-release).
 The user authorized a complete Video in Car/AirPlay review, owner-scoped display
 borrow/return fixes, tie-up, signed beta APK publication and Pages deployment.
@@ -274,8 +274,8 @@ required Android command pass; actual Chromium accepts the production helper's
 local SDP, but managed zero-candidate ICE still blocks RTP/vehicle acceptance.
 This web-only repair is published from `7a6129434fc138f9d2ac36b1f446bc1191cbf0a7`
 by Pages 40353155061; all 217 public files (31,811,644 bytes) match. Beta.23/code65
-signed artifacts stay unchanged. The next step is a fresh Tesla CarPlay reconnect
-with page v96 and, if it still fails, the new video error code and capture.
+signed artifacts stayed unchanged for that web-only repair. Its vehicle retest
+found the native encoder-selection fault addressed by beta.24 below.
 
 Resume beta.24/code66/v97 at [Build](docs/Build.md#beta24-release),
 [the media transport](docs/CarPlay-DataChannel.md) and [Diagnostics](docs/Diagnostics.md).
@@ -284,5 +284,9 @@ JNI encoder callback with `encoder-codec-mismatch`. Keep source admission and
 actual encoder identity separate; use the SDK's public selector for the negotiated
 source-compatible format, drop intermediate wrong-format units and request IDR.
 Preserve all profile/level/mode checks, the bounded deadline and per-instance
-callback ownership. Fourteen new tests await final full validation; commit,
-push, signed beta publication and Pages remain within the authorized CarPlay fix.
+callback ownership. Beta.24/code66 and v97 are published from
+`637e2ecdb2c96d38d92504fd8a395c65b9cb05d3`: 14 new regressions, all 4,335 local
+Android tests, 598 web tests, full CI 40358971686, signed workflow 40358976659,
+independent public APK/source checks and Pages 40362871807 all pass. All 217
+public files match. Install beta.24 and reconnect with page v97 for the next
+physical acceptance; capture the new codec diagnostics if it still fails.

@@ -6,7 +6,7 @@ subject to Android local-network permission. Its Bonjour name **TiPlay AirPlay**
 listener and pairing identity are separate from CarPlay's **TiPlay** entry.
 The RAOP/AirPlay 2 audio, BLE hints, three-choice trust and pure-audio music controls
 described here shipped in beta.23/v95 on the beta.22/code64 base;
-published artifacts are recorded separately in [Build](Build.md#beta23-release).
+current signed artifacts are recorded separately in [Build](Build.md#beta24-release).
 Browser v96 corrects the main picture's H.264 receive-level SDP declaration after
 a bounded WebRTC decoding-capability probe; it does not change the iPhone's
 encoded stream or establish vehicle hardware decoding. See the

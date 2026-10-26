@@ -56,8 +56,8 @@ use and release. Release waits for an in-flight callback and clears its callback
 and active slot together; output rechecks ownership and the AU dependency chain
 at that gate. Retired callbacks cannot publish through a replacement wrapper.
 
-Fourteen focused Java selection/lifetime regressions have been added; their final
-execution and release checks remain pending in [Testing](Testing.md#current-release-source).
+Fourteen focused Java selection/lifetime regressions pass in the complete local
+Android suite and CI; release checks are in [Testing](Testing.md#current-release-source).
 They do not load the Android JNI bridge. Native sender switching, browser RTP
 playback and hardware decoding still require actual device evidence.
 

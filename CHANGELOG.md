@@ -15,7 +15,9 @@ Version code 66 and browser revision v97. Release evidence is tracked in
 - Record bounded source, negotiated, requested and actual codec diagnostics when selection state changes.
 
 The v96 receive-level repair remains in place. This release addresses the later
-native `encoder-codec-mismatch`; physical CarPlay playback still requires retesting.
+native `encoder-codec-mismatch`. All 598 web and 4,335 Android tests, full CI,
+independent signed-artifact checks and 217 public files pass; physical CarPlay
+playback still requires retesting.
 
 ## Browser v96
 

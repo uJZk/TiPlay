@@ -7,11 +7,11 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published prerelease is **0.2.20-beta.23** (code **65**);
-[beta.23 release](#beta23-release) records provenance and checks. Run
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published prerelease is **0.2.20-beta.24** (code **66**);
+[beta.24 release](#beta24-release) records provenance and checks. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v96**, with original-codec WebRTC RTP for live video and negotiated audio.
+the deployed page uses **v97**, with original-codec WebRTC RTP for live video and negotiated audio.
 The **beta.17/code59** build introduced overlapping 5 ms recovery tails and
 pitch-preserving SoundTouch CarPlay catch-up up to 20%; v86 adds held catch-up.
 The historical beta.16 APK/webpage v84 build is recorded below. Software checks are in [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -210,7 +210,14 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Current browser deployment
 
-Browser **v96** is published as a web-only repair on beta.23/code65, from
+Browser **v97** and beta.24/code66 download metadata are deployed from
+`637e2ecdb2c96d38d92504fd8a395c65b9cb05d3` by
+[Pages run 40362871807](https://github.com/uJZk/TiPlay/actions/runs/40362871807).
+All **217** public files (**31,811,644 bytes**) match the committed assembly,
+with correct script/WASM MIME types and no redirects. The signed APK and its
+source/checksums are verified in [beta.24](#beta24-release).
+
+The preceding browser **v96** was published as a web-only repair on beta.23/code65, from
 `7a6129434fc138f9d2ac36b1f446bc1191cbf0a7`. The supplied
 23:18–23:24 diagnostic capture showed an active CarPlay High 4.2 source
 (`avc1.64002a`, 1568×1080@60) rejected against the browser's High 3.1 SDP
@@ -524,8 +531,10 @@ The later documentation-only commit does not change the build/source provenance.
 
 ## Beta.24 release
 
-Beta.24/code66 and browser v97 are being prepared to repair the native sender's
-actual encoder selection. The user's v96 capture shows an authenticated High4.2
+Published [TiPlay 0.2.20-beta.24](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.24),
+code **66**, browser **v97**, at **2026-10-27 00:48:47 UTC+08:00**.
+Build commit: `637e2ecdb2c96d38d92504fd8a395c65b9cb05d3`.
+This repairs the native sender's actual encoder selection. The user's v96 capture shows an authenticated High4.2
 offer and active CarPlay source, followed by `encoder-codec-mismatch` during the
 real JNI encoder callback. Unlike the earlier SDP3.1 rejection, source admission
 now succeeds. The old bridge conflated answer format with allocated encoder
@@ -545,7 +554,37 @@ native repair.
 Selector and encoder ownership, callback/release serialization and a final
 access-unit chain check protect replacement and reinitialization. Safe codec
 diagnostics distinguish source, answer, factory request, announced format and
-initialized encoder. Fourteen new JVM regressions cover these boundaries without
-loading Android JNI; exact test/signing/public verification results will be
-recorded here after completion. The signed release uses the existing workflow;
-physical iPhone/Tesla playback remains pending.
+initialized encoder. Fourteen new JVM regressions pass without loading Android
+JNI. Local validation passes **598 browser tests**, **4,335 Android tests**
+(2,466 shared, 1,863 common, six home; no failures/errors/skips), all three debug
+lint/build targets and site/draft/cache/public-tree checks. Physical iPhone/Tesla
+playback remains pending.
+
+[Full Android CI 40358971686](https://github.com/uJZk/TiPlay/actions/runs/40358971686)
+passes unit tests, lint, debug builds, native DSP checks and WASM reproduction.
+[Signed workflow 40358976659](https://github.com/uJZk/TiPlay/actions/runs/40358976659)
+passes Release lint/build, signing, runtime checks and draft upload. The draft
+assets were independently downloaded and verified before publication; all three
+published assets were downloaded again and match exactly. The release tag resolves
+to the build commit above.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.24.apk` | 114,168,744 | `2554e2471a081fc2c62924a94529c3a8e49986f4b4cb30e9c149e62dc620f237` |
+| `TiPlay-0.2.20-beta.24-source.zip` | 40,825,229 | `943ff5b47c3b744f306c704ae920ef8869c3d8d6c2ee47a7b43b114dd9be6173` |
+| `SHA256SUMS.txt` | 191 | `fec39126c47003da5694bebaa7305388600daa16c12e65ad131ee9e1d21035dd` |
+
+Independent checks confirm non-debug `com.ujzk.tiplay`, code66, signer continuity
+(`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`),
+exact committed source, the new selection/diagnostic DEX markers and the two
+unchanged runtime identity containers. All four supported ABIs and 51 native
+libraries match the expected set, including three unchanged legacy JNA stubs.
+All 25 ELF64 libraries and the APK ZIP pass 16 KiB alignment; the four
+libdatachannel payloads match beta.23.
+
+[Pages 40362871807](https://github.com/uJZk/TiPlay/actions/runs/40362871807) succeeds
+from the same build commit. All 217 public files (31,811,644 bytes) match the local
+assembly with correct MIME types and no redirects. Reports and downloaded
+artifacts remain outside Git under `/tmp/tiplay-beta24/` and
+`/tmp/tiplay-beta24-public-verification.json`. Later documentation-only changes
+do not change the APK/source or webpage build provenance.
