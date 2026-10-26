@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Rebuild all browser WASM libraries or verify their byte-for-byte provenance."""
+"""Rebuild WASI audio-core/NetEq/SoundTouch; libav.js uses its separate Emscripten builder."""
 import argparse
 import hashlib
 from pathlib import Path

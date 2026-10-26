@@ -1,6 +1,6 @@
 # Linked WebAssembly runtime notices
 
-The browser's SoundTouch reactor link portions of the
+The browser's NetEq and SoundTouch reactors link portions of the
 WASI SDK C/C++ runtime. This directory retains their full runtime license texts,
 credits and source-level third-party notices alongside the media libraries'
 own licenses. Keep these files with distributions of the corresponding WASM

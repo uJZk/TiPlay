@@ -200,8 +200,18 @@ ELD/ALAC, continuous 48 kHz conversion, software capability negotiation and URL
 fallback. Local Node and real Chromium/production-CSP, offline and site checks
 are recorded in [Testing](Testing.md#browser-wasm-verification). CI and APK builds
 are explicitly skipped. Android remains beta.20/code62. Publish via the existing
-Pages workflow after a `[skip ci]` commit; verify public v88 and runtime hashes.
+Pages workflow after a `[skip ci]` commit; verify public v89 and runtime hashes.
 The older browser/APK records below describe their original releases.
+
+Verified 2026-10-26: runtime commit `b3d387ca9a31eb9efad91471f278fc0a881ec59e`
+was published by [Pages run 40261108564](https://github.com/uJZk/TiPlay/actions/runs/40261108564).
+All **89** public runtime/Service Worker files matched the assembled local bytes;
+module-script MIME types were correct. Both page and cache report **v89**. The
+follow-up fixes ended raw-PCM epoch revival without blocking a distinct mode or
+an explicit producer reset. The final local suite passes **729** tests; actual
+Chromium software/Worklet/URL, clock-jump and offline checks pass. No Android CI
+run was created for this runtime commit, and no APK was compiled or published.
+
 
 
 The formal root webpage **v87** is deployed from

@@ -2,8 +2,8 @@
 
 This describes browser v89. The Android APK remains beta.20/code62; this
 web-only rollout does not build or publish an APK. Software checks do not establish vehicle
-sound quality, CPU headroom or physical speaker/video timing. Full Android CI was
-explicitly skipped by the user; this change does not publish an APK or website.
+sound quality, CPU headroom or physical speaker/video timing. CI and APK compilation are
+explicitly skipped by the user; the webpage uses the existing Pages deployment.
 
 ## Live audio: official NetEq
 

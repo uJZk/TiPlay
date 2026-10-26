@@ -35,8 +35,8 @@ missing codec-type parameter: the context sample rate stayed zero. The
 [actual-WASM regression](../tests/web/libav-eld.test.mjs) reproduces that omission
 and validates the corrected calls. The realtime ELD Worker now uses libav.js; the FDK runtime and build files are removed. URL casting now uses these modules as a native audio decoder fallback;
 its adapter selects measured beneficial stereo 44.1→48 kHz AAC-LC/16-bit ALAC SIMD profiles
-and portable otherwise. Realtime decoder migration and vehicle acceptance remain
-separate, and this change is unpublished.
+and portable otherwise. Realtime decoding now uses NetEq/libav.js. Browser v89 is published separately
+from the unchanged Android beta.20 APK; vehicle acceptance remains pending.
 
 Tesla SIMD support was already established for the user's Model Y AMD Ryzen:
 report `d73a0959`, 2026-10-08, Chromium 148, recorded WASM SIMD and AudioWorklet
