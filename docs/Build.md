@@ -7,11 +7,11 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published prerelease is **0.2.20-beta.22** (code **64**);
-[beta.22 release](#beta22-release) records provenance and checks. Run
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published prerelease is **0.2.20-beta.23** (code **65**);
+[beta.23 release](#beta23-release) records provenance and checks. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v90**, with original-codec WebRTC RTP for live video and negotiated audio.
+the deployed page uses **v95**, with original-codec WebRTC RTP for live video and negotiated audio.
 The **beta.17/code59** build introduced overlapping 5 ms recovery tails and
 pitch-preserving SoundTouch CarPlay catch-up up to 20%; v86 adds held catch-up.
 The historical beta.16 APK/webpage v84 build is recorded below. Software checks are in [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -210,7 +210,12 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Current browser deployment
 
-Browser v90 is retained; download metadata now shows beta.22/code64; see [beta.22 release](#beta22-release). The v89 record below describes its earlier web-only rollout.
+Browser **v95** and beta.23/code65 download metadata are deployed from
+`8191b9fcc45497d194f38f05174a8993be04c625` by
+[Pages run 40344544258](https://github.com/uJZk/TiPlay/actions/runs/40344544258).
+All **216** public files (**31,801,191 bytes**) match the committed assembly,
+with correct script/WASM MIME types and no redirects. See [beta.23](#beta23-release)
+for signed APK provenance. The v89/v87 records below are historical.
 
 The historical browser **v89** web-only audio rollout added NetEq-first Opus, libav.js AAC-LC/
 ELD/ALAC, continuous 48 kHz conversion, software capability negotiation and URL
@@ -435,11 +440,14 @@ are retained outside Git in `/workspace/tiplay-beta22/remote-artifacts/` and
 
 
 <a id="beta23-release"></a>
+
 ## Beta.23 release
 
-Beta.23/code65 and browser v95 are being prepared from the beta.22 base. The user
-authorized full Video in Car/AirPlay review, owner-scoped screen transfer fixes,
-signed APK publication and Pages deployment. The release includes the session's
+Published [TiPlay 0.2.20-beta.23](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.23),
+code **65**, browser **v95**, at **2026-10-26 22:56:33 UTC+08:00**.
+Build commit: `8191b9fcc45497d194f38f05174a8993be04c625`.
+The user authorized full Video in Car/AirPlay review, owner-scoped screen transfer
+fixes, signed APK publication and Pages deployment. The release includes the session's
 RAOP/AirPlay 2 audio, BLE discovery hints, three-choice trust, reset setting and
 Video.js music view with sender artwork/title/artist and DACP track/skip controls.
 
@@ -454,9 +462,38 @@ debug lint/build targets, native AirPlay JNI boundaries, site/draft/cache checks
 and a reproducible 45-file AVPlayer vendor build. Actual Chromium covers full URL
 MP4/HLS playback, subtitle switching/seek, return/reborrow, consent, music layouts
 and photo CSP. Desktop software decoding does not establish vehicle hardware
-playback. No new APK or webpage is published by this record yet.
+playback. Physical iPhone/vehicle acceptance remains open.
 
-Use a `[skip ci]` build commit to control rollout, dispatch Android checks and the
-existing signed workflow, verify its APK/committed-source/checksum draft, then
-publish the beta and dispatch Pages. Record build SHA, runs, downloaded hashes
-and public bytes after completion. Physical iPhone/vehicle acceptance remains open.
+[Full Android CI](https://github.com/uJZk/TiPlay/actions/runs/40340438194) passes
+both the complete source checks and WASM byte reproduction. The initial CI attempt
+exposed changing timestamps in Gitiles archives and a reset Robolectric SDK
+download. WebRTC now uses its fixed official Git commit/tree and object-integrity
+checks; six source-integrity regressions pass, and NetEq remains byte-identical.
+Robolectric's CI downloader uses the official Maven Central endpoint.
+
+[Signed workflow 40340444194](https://github.com/uJZk/TiPlay/actions/runs/40340444194)
+passes Release lint/build, signing, runtime checks and verified draft upload.
+The draft attachments were independently downloaded before publication; the three
+public attachments were downloaded again and match exactly. The release tag resolves
+to the build commit above.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.23.apk` | 114,152,356 | `dfc1ae661ceb6fdf58d19946ce916a11afcb1256e249c436092b066261f99da1` |
+| `TiPlay-0.2.20-beta.23-source.zip` | 40,802,157 | `40bb8fdf14b6577188298c212ab000769d57c1d984084a782bf75202892ac16a` |
+| `SHA256SUMS.txt` | 191 | `264eb8a6a676a7185701162bc409f88a1c8ca206e4f7084f1f826775e94e89ff` |
+
+Independent checks confirm non-debug `com.ujzk.tiplay`, code65, signer continuity
+(`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`),
+an exact build-commit `git archive`, and the two unchanged runtime identity
+containers. All four supported ABIs are present; the 51 native libraries include
+three unchanged legacy JNA stubs. All 25 ELF64 libraries and the APK ZIP pass
+16 KiB alignment checks, and the four libdatachannel payloads match beta.22.
+
+[Pages run 40344544258](https://github.com/uJZk/TiPlay/actions/runs/40344544258)
+succeeds from the same build commit. All 216 public files (31,801,191 bytes) match
+the local assembly, with correct script/WASM MIME types and no redirects. Draft,
+public-download and site verification reports remain outside Git under
+`/tmp/tiplay-beta23/` and `/tmp/tiplay-beta23-public-verification.json`; music
+screenshots under `/tmp/tiplay-beta23-now-playing/` use synthetic metadata/artwork.
+The later documentation-only commit does not change the build/source provenance.

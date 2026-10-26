@@ -15,8 +15,8 @@ verification are tracked in [Build](docs/Build.md#beta23-release).
 - Use Video.js controls for the music view with sender cover/title/artist and DACP previous/next and ten-second skip requests. Background audio cannot replace a visual cast.
 - Fix AVPlayer pause/resume, source retirement and subtitle-switch/seek races; report photo failures and restore metadata after audio/mirror switching.
 
-Software checks pass locally; signed artifacts and deployment are verified
-separately. Physical iPhone/vehicle playback remains to be retested. RSA AirTunes,
+Local checks, full Android CI, independent signed-artifact verification and all
+216 public site files pass. Physical iPhone/vehicle playback remains to be retested. RSA AirTunes,
 persistent HomeKit, PTP/multiroom, AWDL media transport and FairPlay-protected video
 are not provided by this release.
 

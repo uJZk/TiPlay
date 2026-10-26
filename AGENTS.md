@@ -26,7 +26,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 - [Diagnostics](docs/Diagnostics.md): opt-in unredacted capture sessions, browser decode/render and live-policy evidence, URL failure/cleanup and resource-transfer boundaries, persisted capture/restart dialog and clear behavior, Standard TXT/Zstandard-in-STORED-ZIP formats and Debug-only AirPlay proxy routing; [privacy](docs/Privacy.md).
   Status refresh, permission reminders, iPhone Bluetooth audio copy and USB lifecycle capture validation are recorded in [Testing](docs/Testing.md#debug-raw-capture-and-car-bluetooth-hints); remaining device checks are in [Todo](docs/Todo.md#connection-settings-and-browser).
 - [Geolocation](docs/geolocation.md): implemented GPS fallback, datum detection/conversion, browser cache and iPhone forwarding. Verification is in [Testing](docs/Testing.md#location-and-notification-verification); physical follow-up is in [Todo](docs/Todo.md#location).
-- [Build](docs/Build.md), including the [current beta release verification and limits](docs/Build.md#beta-release), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md). Control-queue isolation and URL PCM continuity evidence are in [Diagnostics](docs/Diagnostics.md). Permission-checklist/browser-readiness verification is recorded in Testing; physical follow-up is in [Todo](docs/Todo.md#connection-settings-and-browser).
+- [Build](docs/Build.md), including the [current beta release verification and limits](docs/Build.md#beta23-release), [WSLC](docs/Wlsc.md) and [testing](docs/Testing.md). Control-queue isolation and URL PCM continuity evidence are in [Diagnostics](docs/Diagnostics.md). Permission-checklist/browser-readiness verification is recorded in Testing; physical follow-up is in [Todo](docs/Todo.md#connection-settings-and-browser).
   Consolidated hints, explicit-operation feedback and their device checks are in [Testing](docs/Testing.md#phone-and-browser-acceptance).
   Receiver-status verification and remaining device checks are in [Testing](docs/Testing.md#receiver-status-and-browser-notices);
   provisioned-JDK proxy certificate setup is in [Build](docs/Build.md#managed-cloud-certificate-trust).
@@ -102,15 +102,16 @@ manually run Android checks before signing/publication, then deploy with the exi
 stream acceptance remain unverified. Do not claim a measured clock or a codec
 benchmark establishes speaker timing or eliminates every click.
 
-Current unshipped AirPlay work adds classic SDP/UDP RAOP and AirPlay 2 transient
+Beta.23 AirPlay support adds classic SDP/UDP RAOP and AirPlay 2 transient
 HAP/NTP realtime audio; [AirPlay](docs/AirPlay.md) records the unsupported RSA,
 persistent HomeKit, buffered/PTP/multiroom paths and BLE/AWDL boundary. Audio-only
 SETUP must not borrow the CarPlay display. Three-choice browser consent remembers
 presented keys or stable sender-reported IDs; all senders see the same controls.
-Browser v95 source integrates that work with the published beta.22/code64 base;
+Published beta.23/code65 and browser v95 integrate that work with the beta.22 base;
 URL playback retains AVPlayer's clocks and resource ownership. The earlier local
-URL frame-witness adapter is superseded by that engine. No deployment or
-iPhone/vehicle interoperability is implied by these source changes.
+URL frame-witness adapter is superseded by that engine. Publication and public-byte
+checks are recorded in [Build](docs/Build.md#beta23-release); physical iPhone/vehicle
+interoperability remains pending.
 Pure-audio now-playing uses the Video.js control shell with authenticated sender
 metadata/artwork; it is retired while CarPlay is connected or owns the picture.
 Its pause/resume acts on the receiver's live output, not the iPhone app. Previous/next
@@ -255,5 +256,8 @@ Resume beta.23/code65 and browser v95 at [AirPlay](docs/AirPlay.md#carplay-video
 [current verification](docs/Testing.md#current-release-source) and [beta.23 release](docs/Build.md#beta23-release).
 The user authorized a complete Video in Car/AirPlay review, owner-scoped display
 borrow/return fixes, tie-up, signed beta APK publication and Pages deployment.
-Preserve earlier audio/trust/BLE/DACP work; verify audio-only screen return,
-precise type-130 retirement and stale-owner cleanup before publishing.
+The release is published from `8191b9fcc45497d194f38f05174a8993be04c625`:
+568 browser tests, 4,321 local Android tests, full CI 40340438194 (including WASM),
+signed workflow 40340444194, independent public-asset checks and Pages 40344544258
+all pass. All 216 public files match v95. Preserve the audio/trust/BLE/DACP and
+owner-scoped return/retirement contracts; physical iPhone/vehicle retesting is next.

@@ -39,8 +39,9 @@ passes 4,321 tests (2,452 shared, 1,863 common, six home), all debug lint/build
 targets, with no skips or failures. Native AirPlay JNI checks also pass. The 568 browser tests, eight music layouts, 48 consent scenarios, photo CSP and
 complete AVPlayer URL checks pass. HLS subtitle switching/seek and screen return
 pass twice after draining old subtitle requests before reset; generated-runtime
-regressions and a byte-identical vendor rebuild cover that ordering. Signed
-artifact and public-delivery verification remain pending. RAOP/AP2, BLE
+regressions and a byte-identical vendor rebuild cover that ordering. Full Android
+CI, WASM reproduction, independent signed-artifact checks and all 216 public files
+pass; [Build](Build.md#beta23-release) records exact commits, runs and hashes. RAOP/AP2, BLE
 and trust coverage does not establish physical iPhone/vehicle interoperability.
 
 ## Browser WASM verification
@@ -51,7 +52,7 @@ initialization, four simultaneous software streams and overload rejection. Actua
 Chromium verifies software negotiation with WebCodecs audio disabled, NetEq Opus/
 FEC and mixing, NoData history, URL fallback and offline cached module Workers.
 Site assembly/public-tree and native libsoxr source consistency checks pass.
-CI and APK compilation are explicitly skipped. Physical Tesla CPU, output quality,
+That rollout explicitly skipped CI and APK compilation. Physical Tesla CPU, output quality,
 multistream headroom and audible clicks remain unverified. Earlier results below
 refer to their original versions.
 
@@ -443,8 +444,8 @@ FEC-positive Opus, missing packets, 384 ms bursts, 44.1/48 kHz conversions, fini
 stream drain/credit, stale epochs, independent video and faulty clock getters.
 That revision retained manual×automatic SoundTouch tempo and its −45…+125 ms target for URL casting; the current AVPlayer migration removes that custom policy.
 See [Audio tempo](Audio-tempo.md) for scope and physical verification limits.
-Full Android CI remains skipped under the user's instruction; no new release is
-implied by local checks.
+That revision skipped full Android CI under the user's instruction; its local
+checks did not establish a new release.
 
 The beta.13/v79 live-audio source corrects recovery-tail double fading and
 instantaneous voice/media gain changes, independently reproduced with production
