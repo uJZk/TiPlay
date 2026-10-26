@@ -40,7 +40,7 @@ const ENUM_FIELDS = {
   'raw.acceleration': ['prefer-hardware', 'prefer-software', 'no-preference'],
   'raw.decoderImplementation': ['unknown'], 'raw.presentationTimingState': ['unobserved', 'unavailable', 'mapped-presentation'],
   'raw.pacingMode': ['display-refresh', 'immediate'],
-  'raw.playbackProfile': ['default', 'carplay', 'carplay-touch', 'airplay-mirror', 'airplay-cast', 'airplay-audio'],
+  'raw.playbackProfile': ['default', 'carplay', 'airplay-mirror', 'airplay-cast', 'airplay-audio'],
   'raw.policyTargetReason': ['initial', 'touch', 'readiness', 'initial-floor', 'ceiling'],
   'raw.sourceClockState': ['fresh', 'stale', 'unavailable'],
   'raw.clockEstimatorState': ['unavailable', 'suspended', 'pending-jump', 'observation-stale', 'selected-stale', 'fresh'],

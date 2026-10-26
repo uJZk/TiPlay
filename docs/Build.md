@@ -105,13 +105,20 @@ packages are defined by the Android workflow.
 
 Browser **v89** uses official NetEq, libav.js decoder/resampler Workers and the
 fixed-memory audio core for realtime audio. WebCodecs audio and libsoxr are removed
-from realtime playback; SoundTouch and native audio remain for URL casting.
+from that realtime revision. Current URL playback uses libmedia AVPlayer; its dependency build is separate from the WASI helper.
 AudioContext and NetEq both use 48 kHz. [Audio tempo](Audio-tempo.md) records the
 final decoder order, memory bounds, lifecycle and remaining device acceptance.
 The user's current instruction skips CI and APK compilation; existing APK release
 records below remain historical and do not certify these new browser changes.
 See [execution boundaries](Browser-wasm.md), including measured cases that retain
 native browser APIs or JavaScript.
+
+URL casting uses the separately pinned libmedia AVPlayer build. Its local modules,
+audio WASM, same-origin Worklets, compatibility patches and integrity checks are
+documented in [vendor/libmedia](../site/play/vendor/libmedia/README.md). Rebuild it
+with `npm ci && npm run build` from `scripts/avplayer/`; the Video.js controls build
+remains separate under `scripts/videojs/`. Regenerate the offline manifest with
+`python3 scripts/update_browser_cache.py` after changing browser resources.
 
 The shipped binaries build from complete corresponding sources with WASI SDK 34
 (Clang 23.1.0), Binaryen 132, CMake 4.1.2 and Ninja 1.13.0. Python 3.12+, `patch`
@@ -125,10 +132,10 @@ python3 scripts/build_wasm.py --check \
 ```
 
 The downloader verifies toolchain archive hashes before extraction. `--check`
-builds into a temporary directory and compares every WASI/SoundTouch artifact built by this helper, without
+builds into a temporary directory and compares every WASI artifact built by this helper, without
 changing production files. Omit it to replace the artifacts intentionally;
 individual build entry points are in `scripts/soxr/`,
-`scripts/soundtouch/`, `scripts/neteq/` and `scripts/build_audio_core.py`. CI reproduces all modules
+`scripts/neteq/` and `scripts/build_audio_core.py`. CI reproduces all modules
 independently of Android compilation.
 
 The libav.js portable/SIMD pair uses **Emscripten 4.0.7**, separately
@@ -138,7 +145,7 @@ archive, full corresponding sources and artifact hashes are documented in
 [vendor/libav](../site/play/vendor/libav/README.md). Both generated loaders and
 both WASM binaries were independently rebuilt byte-for-byte. The
 [performance report](../tests/bench/libav/README.md) records gains, regressions
-and the corrected AAC-ELD parameter diagnosis; the URL audio fallback uses these builds locally; it is not a published release.
+and the corrected AAC-ELD parameter diagnosis; the historical URL audio fallback used these builds locally; current URL playback uses AVPlayer resources; it is not a published release.
 
 After changing runtime assets, run `python3 scripts/update_browser_cache.py` and
 bump `PAGE_VERSION`/the Service Worker revision together. CI checks the generated
@@ -194,6 +201,8 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
 ## Current browser deployment
+
+Browser v90 and beta.21/code63 are being released together; see [beta.21 release](#beta21-release). The v89 record below describes its earlier web-only rollout.
 
 Browser **v89** is the web-only audio rollout: NetEq-first Opus, libav.js AAC-LC/
 ELD/ALAC, continuous 48 kHz conversion, software capability negotiation and URL
@@ -324,7 +333,7 @@ Select the device with `adb -s <serial>`. Pull the installed APK using `pm path 
 If preserving the runtime identity, also compare both `offline-mfi` files byte for byte. An installed APK can supply that identity, but cannot supply the Android signing private key. Confirm the installed version/update time, launch the declared activity and check new application crashes. Installation alone does not validate iPhone or vehicle playback.
 
 
-## Beta release
+## Previous beta.20 release
 
 Published [TiPlay 0.2.20-beta.20](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.20),
 code **62**, at **2026-10-25 16:57:06 UTC+08:00**, with browser **v87**.
@@ -355,3 +364,13 @@ currentTime. Three extraction tests, nine release-draft tests, two layout tests,
 public-tree/cache checks and independent artifact/public-site verification passed.
 Target-device CPU attribution, physical audio and sustained capture overhead remain
 unmeasured. Detailed artifacts stay outside Git in `/workspace/tiplay-beta20/`.
+
+## Beta.21 release
+
+Release preparation: **0.2.20-beta.21**, code **63**, browser **v90**. The user explicitly requests signed beta APK publication and the matching browser deployment. The existing signed release workflow runs Release lint/build, exact runtime identity checks, signing and attachment generation; full Android CI remains explicitly skipped.
+
+This release replaces URL casting with local pinned libmedia AVPlayer and removes the obsolete custom player/cache/subtitle/tempo implementation. Live video uses original-codec WebRTC RTP directly into Canvas; negotiated Opus uses an independent original-codec RTP audio peer, with unsupported formats retaining the existing decoder path.
+
+Completed before release: 533 browser tests, real Chromium MP4/HLS/Canvas/audio/subtitle/seek/replay/cancel/offline-runtime checks, 43 targeted Android tests, all four native ABIs and native-to-native original Opus RTP verification. See [Testing](Testing.md#current-release-source). Vehicle/hardware decode, browser RTP interoperability, rotating live-window recovery and CEA-608/708 remain unverified. URL-only ALAC is unsupported; realtime ALAC fallback is retained.
+
+Publication provenance and independent downloaded-artifact checks will be recorded here after the release completes.

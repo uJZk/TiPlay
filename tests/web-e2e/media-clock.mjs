@@ -94,7 +94,7 @@ try {
   }
   assert.deepEqual(changed, [], 'Runtime source remained unchanged throughout the check');
   console.log(JSON.stringify({ browser: await browser.version(), getterFault: getterFault || 'none', summary: result.summary,
-    workers: result.workers, sourceSha256: hash(JSON.stringify(before)), sourceFiles: Object.keys(before).length,
+    sourceSha256: hash(JSON.stringify(before)), sourceFiles: Object.keys(before).length,
     physicalOutputMeasured: false }, null, 2));
 } finally {
   try { await browser?.close(); }

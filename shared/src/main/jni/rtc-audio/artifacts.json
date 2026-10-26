@@ -1,0 +1,38 @@
+{
+  "arm64-v8a": {
+    "bytes": 2727560,
+    "sha256": "867b6db8efd07eb33213279f40fba369bc0f5f7c336e6d0e9c55d10bef77afb2",
+    "loadAlignments": [
+      16384,
+      16384,
+      16384
+    ]
+  },
+  "armeabi-v7a": {
+    "bytes": 1825436,
+    "sha256": "7c3f7aa92c53b4bb3d8b134e70124ae48442928a69dab2f027e60eb4861d2524",
+    "loadAlignments": [
+      16384,
+      16384,
+      16384
+    ]
+  },
+  "x86": {
+    "bytes": 2694452,
+    "sha256": "90dd2455517e6e1870f8635f9b68dbeafb1f36eb6a0f0892a282d7eee7a3b784",
+    "loadAlignments": [
+      16384,
+      16384,
+      16384
+    ]
+  },
+  "x86_64": {
+    "bytes": 2791376,
+    "sha256": "5e454ea96f285c2a3efe38931c2dca563b857c86f000f99018b66781ff01ff85",
+    "loadAlignments": [
+      16384,
+      16384,
+      16384
+    ]
+  }
+}

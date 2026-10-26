@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 // SPDX-License-Identifier: GPL-3.0-only
 import './wasm-init.mjs';
 import test from 'node:test';
@@ -84,31 +83,31 @@ test('unsupported compressed AirPlay codec surfaces browser audio error without 
  assert.equal(audio.stats().queuedBytes,0,'unsupported buffered packets release decoder reservations before END');
 });
 
-const opusPacket = () => Uint8Array.from(Buffer.from(JSON.parse(readFileSync(new URL('./fixtures/neteq-opus.json', import.meta.url))).packets[0], 'base64'));
-test('ended config retires the NetEq epoch and rejects late encoded packets', async t=>{
+const pcmPacket = () => new Uint8Array(new Int16Array([100, 200]).buffer);
+test('ended config retires the PCM NetEq epoch and rejects late codec records', async t=>{
  const {controller,messages,decoders}=await audioHarness(t,{supported:true});
- const c={codec:'opus',sampleRate:48000,channels:1};
+ const c={codec:'pcm',sampleRate:48000,channels:1,bitDepth:16,littleEndian:true};
  controller.enqueue(configFrame(c,{rate:48000,channels:1}));
- controller.enqueue(frame(7,opusPacket(),{rate:48000,channels:1}));
- await until(()=>messages.some(r=>r.payload));
+ controller.enqueue(frame(7,pcmPacket(),{rate:48000,channels:1}));
+ await until(()=>messages.some(r=>r.pcm?.byteLength));
  controller.enqueue(configFrame({ended:true},{rate:48000,channels:1,epoch:4}));
  await until(()=>messages.some(r=>r.ended===true));
- const count=messages.filter(r=>r.payload).length;
- controller.enqueue(frame(7,opusPacket(),{rate:48000,channels:1,epoch:3}));
- await new Promise(r=>setTimeout(r,10));assert.equal(messages.filter(r=>r.payload).length,count);
+ const count=messages.filter(r=>r.pcm?.byteLength).length;
+ controller.enqueue(frame(7,pcmPacket(),{rate:48000,channels:1,epoch:3}));
+ await new Promise(r=>setTimeout(r,10));assert.equal(messages.filter(r=>r.pcm?.byteLength).length,count);
  assert.equal(decoders.length,0);
 });
-test('Bluetooth microphone demand preserves encoded music and the NetEq epoch', async t=>{
+test('Bluetooth microphone demand preserves fallback PCM music and the NetEq epoch', async t=>{
  const {audio,controller,messages,decoders}=await audioHarness(t,{supported:true});
- const c={codec:'opus',sampleRate:48000,channels:1};
+ const c={codec:'pcm',sampleRate:48000,channels:1,bitDepth:16,littleEndian:true};
  controller.enqueue(configFrame(c,{rate:48000,channels:1,flags:3}));
- controller.enqueue(frame(7,opusPacket(),{rate:48000,channels:1,flags:1}));
- await until(()=>messages.some(r=>r.payload));
+ controller.enqueue(frame(7,pcmPacket(),{rate:48000,channels:1,flags:1}));
+ await until(()=>messages.some(r=>r.pcm?.byteLength));
  const resets=messages.filter(r=>r.reset).length;
  audio.status({voice:{revision:1,state:'active',muted:true}});
  controller.enqueue(frame(2,new Uint8Array(),{type:5,channels:1,flags:16,epoch:2}));
- controller.enqueue(frame(7,opusPacket(),{rate:48000,channels:1,flags:1,sequence:8,decodeTimestampUs:1020000}));
- await until(()=>messages.filter(r=>r.payload).length===2);
+ controller.enqueue(frame(7,pcmPacket(),{rate:48000,channels:1,flags:1,sequence:8,decodeTimestampUs:1020000}));
+ await until(()=>messages.filter(r=>r.pcm?.byteLength).length===2);
  assert.equal(decoders.length,0);assert.equal(messages.filter(r=>r.reset).length,resets);
  assert.equal(audio.stats().browserMuted,false);
 });

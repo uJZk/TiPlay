@@ -43,7 +43,11 @@ class BrowserRtcSignalingTest {
         override fun log(message: String) {}
     }
     private val server = BrowserLinkServer(hub, callbacks, "127.0.0.1", 0, audioHub = audio,
-        rtcFactory = BrowserRtcFactory { session, control -> FakePeer(session, peers.size + 1, control).also(peers::add) })
+        rtcFactory = object : BrowserRtcFactory {
+            override val supportsAudioTrack = true
+            override fun create(session: String, control: (Map<*, *>) -> String): BrowserRtcSession =
+                FakePeer(session, peers.size + 1, control).also(peers::add)
+        })
     private var port = 0
     @Before fun start() { port = server.start().getOrThrow() }
     @After fun stop() { server.stop(); audioLease.close() }
@@ -53,6 +57,7 @@ class BrowserRtcSignalingTest {
         var closed = false
         var authenticated = false
         override val live get() = !closed
+        override val audioTransport get() = BrowserRtcAudioRouter.TRANSPORT
         override fun answer(offer: String): String { check(offer.startsWith("v=0")); return "v=0\r\ns=test-answer\r\n" }
         override fun snapshot(): Map<String, Any?> = mapOf("epoch" to epoch)
         override fun maintain() {}
@@ -125,7 +130,9 @@ class BrowserRtcSignalingTest {
         assertEquals(0, browserSeen); assertTrue(peers.isEmpty())
         assertEquals(false, hub.snapshot()["viewer"])
         assertFalse(audioLease.closed)
-        assertEquals(200, request("/hello").status)
+        val hello = request("/hello")
+        assertEquals(200, hello.status)
+        assertEquals(BrowserRtcAudioRouter.TRANSPORT, hello.json["audioTransport"])
     }
 
     @Test fun srpBindsBothSdpsAndOnlyAuthenticatedDtlsControlGetsOwnershipAndResourceToken() {
@@ -136,6 +143,7 @@ class BrowserRtcSignalingTest {
         val hello = auth(peer)
         assertTrue(peer.authenticated)
         assertEquals("TiPlay", hello["app"])
+        assertEquals(BrowserRtcAudioRouter.TRANSPORT, hello["audioTransport"])
         assertTrue(hello["clockMs"] is Number)
         val token = hello["resourceToken"] as String
         assertTrue(Regex("[A-Za-z0-9_-]{43}").matches(token))

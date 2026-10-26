@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Rebuild WASI audio-core/NetEq/SoundTouch; libav.js uses its separate Emscripten builder."""
+"""Rebuild WASI audio-core/NetEq; other media libraries have separate builders."""
 import argparse
 import hashlib
 from pathlib import Path
@@ -27,7 +27,6 @@ def main():
             ['scripts/build_audio_core.py', '--output', str(out / 'wasm/audio-core.wasm')],
             ['scripts/neteq/build.py', '--cmake', args.cmake, '--ninja', args.ninja,
              '--output', str(out / 'vendor/neteq/neteq.wasm')],
-            ['scripts/soundtouch/build.py', '--output', str(out / 'vendor/soundtouch')],
         ]
         for command in commands:
             subprocess.run([sys.executable, *command, '--sdk', sdk], cwd=ROOT, check=True)

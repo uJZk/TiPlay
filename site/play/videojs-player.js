@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { VERSION, MediaAttachMixin, HTMLVideoAdapter } from './vendor/videojs/player.min.js';
-import { createVideoCaptions } from './airplay-captions.js';
 import { createMediaEngine } from './airplay-media.js';
-import { createMediaTextTracks } from './airplay-text-tracks.js';
-import { fetchSdrMediaResource } from './airplay-sdr.js';
-import { createSerialMediaFetch } from './airplay-resource-fetch.js';
 
-/** Register a native-like media surface with Video.js; TiPlay owns its clock and output. */
+/** Register AVPlayer's native-like facade with Video.js controls. */
 class TiPlayMedia extends MediaAttachMixin(HTMLElement) {
   getMediaTarget() { return this.adapter; }
   initialize(engine) {
@@ -31,7 +27,7 @@ customElements.define('tiplay-media', TiPlayMedia);
 let playerSequence = 0;
 
 /** Official Video.js default skin anatomy, with Canvas media and casting actions. */
-export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, signal, onCanvasError }) {
+export function createVideoPlayer(layer, { lang, stop, stopText, signal, onCanvasError, proxyOnly = false, proxyOrigin }) {
   const captionsMenu = `tiplay-captions-${++playerSequence}`;
   const audioMenu = `tiplay-audio-${playerSequence}`;
   const locale = document.createElement('media-i18n');
@@ -63,22 +59,12 @@ export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, 
   const element = locale.querySelector('video-player');
   const surface = locale.querySelector('media-container');
   const elementMedia = document.createElement('tiplay-media');
-  let subtitles, disposed = false, sourceSerial = 0;
-  const serialFetchResource = createSerialMediaFetch(fetchResource || fetch, { signal });
-  const media = createMediaEngine(surface, { serialFetchResource, signal, onCanvasError,
-    onClock: time => subtitles?.update(time),
+  let disposed = false, sourceSerial = 0;
+  const media = createMediaEngine(surface, { signal, onCanvasError, proxyOnly, proxyOrigin,
     languages: [lang, ...(globalThis.navigator?.languages || [])],
-    onCaptionPacket: (...args) => subtitles?.appendCaptionPacket?.(...args),
-    onCaptionReset: position => subtitles?.resetCaptionDecoder?.(position),
-    onResource: (url, response, origin) => subtitles?.inspectMediaResource?.(url, response, { origin }),
-    onTimeline: timeline => subtitles?.setMediaOrigin?.(timeline.origin),
-    onResync: (src, type) => { void subtitles?.load(src, type, { mediaOrigin: () => media.timestampOrigin }).catch(() => {}); },
   });
   media.querySelectorAll = selectors => elementMedia.querySelectorAll(selectors);
   media.querySelector = selectors => elementMedia.querySelector(selectors);
-  subtitles = createMediaTextTracks({ fetchResource: (url, init) => fetchSdrMediaResource(serialFetchResource, url, init, { signal, deadline: null }), signal });
-  Object.defineProperty(media, 'textTracks', { get: () => subtitles.tracks });
-  media.addTextTrack = (...args) => subtitles.addTextTrack(...args);
   elementMedia.initialize(media);
   surface.prepend(elementMedia);
   const playButton = surface.querySelector('media-play-button');
@@ -107,21 +93,20 @@ export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, 
     void media.resumeFromGesture().catch(() => {});
   };
   surface.addEventListener('click', gesturePlay, true);
-  const captionClock = () => subtitles.update(media.currentTime);
-  for (const type of ['timeupdate', 'seeked', 'loadeddata']) media.addEventListener(type, captionClock);
   const end = locale.querySelector('.airplay-stop');
   end.setAttribute('aria-label', stopText); end.title = stopText;
   end.addEventListener('click', stop);
   layer.append(locale);
-  const captions = createVideoCaptions(media, surface);
   const menu = locale.querySelector('media-menu');
   const subtitleButton = locale.querySelector('media-captions-button');
   const audioButton = locale.querySelector('.airplay-audio');
+  const rateButton = locale.querySelector('.airplay-rate');
   const syncMenus = () => {
-    subtitleButton.dataset.available = String([...subtitles.tracks].some(track => ['subtitles', 'captions'].includes(track.kind) && !track.error && (track.supported || track.cues?.length > 0)));
+    subtitleButton.dataset.available = String([...media.textTracks].some(track => ['subtitles', 'captions'].includes(track.kind) && !track.error && (track.supported || track.cues?.length > 0)));
     audioButton.dataset.available = String(media.audioTracks.length > 1);
+    rateButton.dataset.available = String(!media.isLive);
   };
-  for (const type of ['addtrack', 'removetrack', 'change', 'load']) subtitles.tracks.addEventListener(type, syncMenus);
+  for (const type of ['addtrack', 'removetrack', 'change', 'load']) media.textTracks.addEventListener(type, syncMenus);
   for (const type of ['addtrack', 'removetrack', 'change']) media.audioTracks.addEventListener(type, syncMenus);
   // v10 adds commandfor only once a second track appears; rediscover the native menu trigger.
   const menuTrigger = new MutationObserver(() => menu.requestUpdate());
@@ -138,34 +123,19 @@ export function createVideoPlayer(layer, { lang, stop, stopText, fetchResource, 
     },
     async source(src, type) {
       const serial = ++sourceSerial;
-      subtitles.clear();
-      // Install the caption session before the demuxer starts fetching init/segment resources.
-      const subtitleLoading = subtitles.load(src, type, { mediaOrigin: () => media.timestampOrigin });
-      void subtitleLoading.catch(() => {});
       await media.load(src, type);
-      if (!disposed && serial === sourceSerial && !signal?.aborted) {
-        // Independent discovery cannot hold video preparation or iPhone directives hostage.
-        void subtitleLoading.then(() => {
-          if (!disposed && serial === sourceSerial) { captionClock(); syncMenus(); }
-        }, () => {
-          if (!disposed && serial === sourceSerial && !signal?.aborted) subtitles.tracks.dispatchEvent(new Event('error'));
-        });
-      }
+      if (disposed || serial !== sourceSerial || signal?.aborted) return;
       syncMenus();
     },
     dispose() {
       if (disposed) return;
       disposed = true; sourceSerial++;
       menuTrigger.disconnect();
-      for (const type of ['addtrack', 'removetrack', 'change', 'load']) subtitles.tracks.removeEventListener(type, syncMenus);
+      for (const type of ['addtrack', 'removetrack', 'change', 'load']) media.textTracks.removeEventListener(type, syncMenus);
       for (const type of ['addtrack', 'removetrack', 'change']) media.audioTracks.removeEventListener(type, syncMenus);
-      captions.dispose();
-      subtitles.dispose();
-      for (const type of ['timeupdate', 'seeked', 'loadeddata']) media.removeEventListener(type, captionClock);
       for (const type of gestureEvents) media.removeEventListener(type, syncGesture);
       surface.removeEventListener('click', gesturePlay, true);
       media.dispose(); elementMedia.adapter.destroy();
-      serialFetchResource.dispose();
       locale.remove();
     },
   };

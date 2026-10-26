@@ -1,0 +1,67 @@
+{
+  "upstream": "zhaohappy/libmedia",
+  "version": "1.3.1",
+  "commit": "152f629d3021fd8013efa464fcb7b55f9fbe7753",
+  "assets": [
+    {
+      "path": "decode/aac.wasm",
+      "url": "https://raw.githubusercontent.com/zhaohappy/libmedia/152f629d3021fd8013efa464fcb7b55f9fbe7753/dist/decode/aac.wasm",
+      "bytes": 694438,
+      "sha256": "9cbef85899775c7431dfffbd704d30fa185089f1f4280e2ea90be07e40b635c8"
+    },
+    {
+      "path": "decode/mp3.wasm",
+      "url": "https://raw.githubusercontent.com/zhaohappy/libmedia/152f629d3021fd8013efa464fcb7b55f9fbe7753/dist/decode/mp3.wasm",
+      "bytes": 392628,
+      "sha256": "357bc4c581f5381dc5d815c45965312dda9d2b906b823a79643fad8e4e662313"
+    },
+    {
+      "path": "decode/opus.wasm",
+      "url": "https://raw.githubusercontent.com/zhaohappy/libmedia/152f629d3021fd8013efa464fcb7b55f9fbe7753/dist/decode/opus.wasm",
+      "bytes": 679540,
+      "sha256": "9c0ca5f7d22fe0d2557b6cb075a48dd3c3c1295dd1da0f7ef7dd36f8071d9235"
+    },
+    {
+      "path": "decode/flac.wasm",
+      "url": "https://raw.githubusercontent.com/zhaohappy/libmedia/152f629d3021fd8013efa464fcb7b55f9fbe7753/dist/decode/flac.wasm",
+      "bytes": 372252,
+      "sha256": "60023457a89eaa041957773d6a4a6c196df17df642a924746faacf535f874dca"
+    },
+    {
+      "path": "decode/vorbis.wasm",
+      "url": "https://raw.githubusercontent.com/zhaohappy/libmedia/152f629d3021fd8013efa464fcb7b55f9fbe7753/dist/decode/vorbis.wasm",
+      "bytes": 596631,
+      "sha256": "fe92937f0ac4de980467da04a617e58c6f228d137862767dfdbf8694bd101aff"
+    },
+    {
+      "path": "decode/pcm.wasm",
+      "url": "https://raw.githubusercontent.com/zhaohappy/libmedia/152f629d3021fd8013efa464fcb7b55f9fbe7753/dist/decode/pcm.wasm",
+      "bytes": 361715,
+      "sha256": "ec82fbecf825a34d35b979b727769cb8380bf1e06e61d30bb79a75c517655cc8"
+    },
+    {
+      "path": "decode/ac3.wasm",
+      "url": "https://raw.githubusercontent.com/zhaohappy/libmedia/152f629d3021fd8013efa464fcb7b55f9fbe7753/dist/decode/ac3.wasm",
+      "bytes": 576905,
+      "sha256": "d2803836e5a9f69266312db639f07dd60f61189a017df3cf7d19aa98d512b754"
+    },
+    {
+      "path": "decode/eac3.wasm",
+      "url": "https://raw.githubusercontent.com/zhaohappy/libmedia/152f629d3021fd8013efa464fcb7b55f9fbe7753/dist/decode/eac3.wasm",
+      "bytes": 601595,
+      "sha256": "2329e65263f9aa04cce5ced5e134c53316b67d2682f44325e6f3b5a982219461"
+    },
+    {
+      "path": "resample/resample.wasm",
+      "url": "https://raw.githubusercontent.com/zhaohappy/libmedia/152f629d3021fd8013efa464fcb7b55f9fbe7753/dist/resample/resample.wasm",
+      "bytes": 252290,
+      "sha256": "7709e04280d6f9487872cbcfbffa747032aaa5e45a72849a1aaceb05259b347d"
+    },
+    {
+      "path": "stretchpitch/stretchpitch.wasm",
+      "url": "https://raw.githubusercontent.com/zhaohappy/libmedia/152f629d3021fd8013efa464fcb7b55f9fbe7753/dist/stretchpitch/stretchpitch.wasm",
+      "bytes": 45783,
+      "sha256": "9397d474f85fbf3d0bc6b5b78bb500d0329a7a2c4ce212c8531cd56514434a7a"
+    }
+  ]
+}

@@ -93,3 +93,37 @@ test('encoded Opus reordering is delegated to NetEq rather than rejected by the 
     assert.equal(stream.state, 'ended'); assert.equal(released, opus.slice(0, 4).reduce((n, p) => n + p.length, 0));
   } finally { stream.clear(); }
 });
+
+test('finite PCM tails shorter than 10 ms render in mono and stereo and return only source credit', () => {
+  for (const channels of [1, 2]) for (const frames of [1, 479, 481, 512, 1024, 5573]) {
+    let released = 0;
+    const stream = new NetEqAudio(new NetEqRuntime(), 48000, channels, 48000, bytes => released += bytes, {});
+    const pcm = sine(48000, 0, frames, channels);
+    try {
+      stream.push({ pcm: pcm.buffer, decodeTimestampUs: 0, arrivalLocalTimeMs: 0 }, 0);
+      stream.finish();
+      assert.equal(stream.endFrame, frames, 'padding must not extend the source timeline');
+      for (let block = 0; block < 200 && stream.state !== 'ended'; block++) {
+        const output = new Float32Array(128 * channels);
+        stream.render(output, 128, block * 128 / 48);
+        assert.ok(output.every(Number.isFinite));
+      }
+      assert.equal(stream.state, 'ended', `${channels} channels, ${frames} source frames`);
+      assert.equal(released, pcm.byteLength, 'padding must not create extra byte credit');
+      assert.equal(stream.queueBytes, 0);
+    } finally { stream.clear(); }
+  }
+});
+
+test('a partial PCM block before a timestamp gap retains the gap and renders through EOS', () => {
+  const stream = new NetEqAudio(new NetEqRuntime(), 48000, 2, 48000, () => {}, {});
+  try {
+    stream.push({ pcm: sine(48000, 0, 512, 2).buffer, decodeTimestampUs: 0, arrivalLocalTimeMs: 0 }, 0);
+    stream.push({ pcm: sine(48000, 4800, 512, 2).buffer, decodeTimestampUs: 100000, arrivalLocalTimeMs: 0 }, 0);
+    assert.equal(stream.endFrame, 5312, 'source gap must not become contiguous PCM');
+    stream.finish();
+    for (let block = 0; block < 300 && stream.state !== 'ended'; block++)
+      stream.render(new Float32Array(256), 128, block * 128 / 48);
+    assert.equal(stream.state, 'ended');
+  } finally { stream.clear(); }
+});

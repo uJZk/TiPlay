@@ -62,21 +62,3 @@ test('ordinary CarPlay and mirror decrease their applied delay at 20ms/s and 10m
     close(delayAt(plan, 13585), midpoint); close(delayAt(plan, 16085), nextTarget);
   }
 });
-
-test('touch eligibility ends exactly 750ms after release and cannot extend itself through diagnostic reads', () => {
-  let at = 1000;
-  const timing = createMediaTiming(() => {}, () => at); timing.mode('carplay');
-  timing.observe('video', 900); timing.observe('audio', 900); timing.started(); timing.interaction(true);
-  at = 1010; timing.interaction(false);
-  const touch = timing.plan(), audio = timing.plan('audio');
-  at = 1760 - EPSILON_MS;
-  assert.equal(timing.profile().name, 'carplay-touch');
-  close(timing.stats().policyHoldRemainingMs, EPSILON_MS);
-  at = 1760;
-  assert.equal(timing.profile().name, 'carplay');
-  assert.equal(timing.stats().policyHoldRemainingMs, 0);
-  assert.equal(timing.plan(), touch, 'eligibility expiry alone cannot rewrite a curve that is already in progress');
-  at += EPSILON_MS; timing.observe('video', at - 5);
-  assert.equal(timing.plan().playbackProfile, 'carplay'); close(timing.plan().to, 25);
-  assert.equal(timing.plan('audio'), audio);
-});

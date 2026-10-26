@@ -1,0 +1,22 @@
+TiPlay original-encoded audio WebRTC transport
+
+libdatachannel v0.24.6 (MPL-2.0), unmodified source:
+https://github.com/paullouisageneau/libdatachannel/tree/6b1e2e620f1e37f0eafeee702eaea0043cb305fd
+Mbed TLS 3.6.7 is used under its Apache-2.0 license option.
+libjuice/MPL-2.0, libsrtp/BSD, usrsctp/BSD and plog/MIT are statically linked.
+Their full upstream license texts accompany this notice.
+
+sources.lock.json contains fixed source commits, publicly downloadable archives
+and SHA-256 checksums for every source dependency, including build framework.
+artifacts.json contains the four Android ABI shared-library checksums and ELF
+LOAD alignments. Libraries use 16 KiB page alignment. The dependencies use
+unmodified upstream sources; build flags enable media and DTLS-SRTP and hide
+non-C-API symbols. No audio encoder/decoder or microphone capture is used.
+
+The application JNI adapter is TiPlay GPL-3.0-only code, built from:
+shared/src/main/jni/rtc-audio/rtc_audio_jni.c
+Rebuild instructions and fixed-source fetch/verification are provided in:
+scripts/rtc-audio/build.py
+https://github.com/uJZk/TiPlay
+
+These files are packaged in Android APK assets/licenses/rtc-audio/.

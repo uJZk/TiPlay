@@ -20,7 +20,9 @@ function pageTouches(outbox) {
   const names = ['cancelMove', 'releaseTouches', 'setInteraction', 'pointerDown', 'pointerMove', 'pointerUp'];
   const functions = names.map(name => new RegExp(`function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`).exec(source)[0]).join('\n');
   return new Function('outbox', 'createTouchSlots', 'mapPoint', 'queueMicrotask', `
-    const slots = createTouchSlots(), live = true, config = { width: 100, height: 100 };
+    const slots = createTouchSlots(), live = true, config = { width: 100, height: 100, mode: 'carplay' };
+    const mediaTiming = { interaction() { throw new Error('touch must not change media timing'); } };
+    const sink = { interaction() { throw new Error('touch must not change video pacing'); } };
     const touch = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }) };
     let movePending = false, moveGeneration = 0;
     const requestAnimationFrame = () => { throw new Error('touch must not wait for display refresh'); };

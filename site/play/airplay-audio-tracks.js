@@ -25,17 +25,17 @@ export function createAudioTrackList(onSelect) {
   list.item = index => entries[index] ?? null;
   list.getTrackById = id => entries.find(track => track.id === id) ?? null;
   list.replace = (descriptors, selectedId) => {
+    const previous = entries;
     for (let index = 0; index < indexed; index++) delete list[index];
-    for (const track of entries) { const event = new Event('removetrack'); event.track = track; list.dispatchEvent(event); }
     selected = selectedId;
     entries = descriptors.map(descriptor => Object.defineProperty({ ...descriptor }, 'enabled', {
       enumerable: true, get: () => selected === descriptor.id,
       set: value => { if (value && selected !== descriptor.id) onSelect(descriptor.id); },
     }));
-    entries.forEach((track, index) => {
-      list[index] = track; const event = new Event('addtrack'); event.track = track; list.dispatchEvent(event);
-    });
-    indexed = entries.length; list.dispatchEvent(new Event('change'));
+    entries.forEach((track, index) => { list[index] = track; });
+    indexed = entries.length;
+    for (const track of previous) { const event = new Event('removetrack'); event.track = track; list.dispatchEvent(event); }
+    for (const track of entries) { const event = new Event('addtrack'); event.track = track; list.dispatchEvent(event); } list.dispatchEvent(new Event('change'));
   };
   list.select = id => {
     if (!list.getTrackById(id) || selected === id) return false;

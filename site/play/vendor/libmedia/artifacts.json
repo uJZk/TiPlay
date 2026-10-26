@@ -1,0 +1,245 @@
+{
+  "version": "1.3.1",
+  "commit": "152f629d3021fd8013efa464fcb7b55f9fbe7753",
+  "fetchRequestInitPatches": 13,
+  "sameOriginWorkletPatches": 1,
+  "hlsClassificationPatches": 3,
+  "pipelineCleanupPatches": 1,
+  "cancellationPatches": 6,
+  "contextEventGuardPatches": 1,
+  "lifecycleGuardMethods": 4,
+  "lifecycleGuardAwaits": 32,
+  "rpcErrorSerializerPatches": 2,
+  "subtitleEofPatches": 3,
+  "pendingSeekReplyPatches": 1,
+  "subtitlePacketBridgePatches": 1,
+  "subtitlePacketReleasePatches": 4,
+  "sdrVariantPolicyPatches": 3,
+  "artifacts": [
+    {
+      "path": "163.avplayer.js",
+      "bytes": 3174,
+      "sha256": "f6982459f57750aac6f374b13aafc7762d160c57557e06014258cbe51b6f9ec8"
+    },
+    {
+      "path": "182.avplayer.js",
+      "bytes": 13010,
+      "sha256": "f05e7a4fe6dcaa18c0342982e55eb4e910ea625c818bccf0836273ccfd0ca302"
+    },
+    {
+      "path": "195.avplayer.js",
+      "bytes": 5815,
+      "sha256": "6e1336f97644b1b796e6bfd63d9996d2a654b8f570309221f2a00f8f1da66c01"
+    },
+    {
+      "path": "199.avplayer.js",
+      "bytes": 7138,
+      "sha256": "99407f6beb46c22447bb1f9eabb2cfe96022b2c290d4b3f1e7db6aff51c42c14"
+    },
+    {
+      "path": "239.avplayer.js",
+      "bytes": 47862,
+      "sha256": "d35ac44ee530338336c3506bf8ca58f033760a9d7fb8529246576f925189fe67"
+    },
+    {
+      "path": "248.avplayer.js",
+      "bytes": 20276,
+      "sha256": "9e551bfc66a0db809b681b47cf91a92db1c01528eb0bf7ac2040b4d24588ce96"
+    },
+    {
+      "path": "26.avplayer.js",
+      "bytes": 95381,
+      "sha256": "a1c53e643e6504fff60e0151621cc12cf1084693d107e1357a1200162f3c21a2"
+    },
+    {
+      "path": "261.avplayer.js",
+      "bytes": 27769,
+      "sha256": "342c0ac6701a7364f79f998b84081d5228ae3c7c125136581a34cf9093ff2b49"
+    },
+    {
+      "path": "272.avplayer.js",
+      "bytes": 64188,
+      "sha256": "8d1d48e505a3dbc98ecadbf67575e1d77c0d4a2eca38105023e052da544a367f"
+    },
+    {
+      "path": "325.avplayer.js",
+      "bytes": 23979,
+      "sha256": "58d93a0e98b0a70a72df371ecaa42b280b4052365cb10ff19a1ea5bf192ae51b"
+    },
+    {
+      "path": "33.avplayer.js",
+      "bytes": 10104,
+      "sha256": "b26b7e0675b74238fd7bb381be33e96f7ba313573d8c709de64808113d6cf2dc"
+    },
+    {
+      "path": "384.avplayer.js",
+      "bytes": 39176,
+      "sha256": "adacf9a6478ddd95b06293144a6e51213fad906493934bf426fa39793244e69f"
+    },
+    {
+      "path": "43.avplayer.js",
+      "bytes": 9003,
+      "sha256": "8397d7196ac5bfddc0bb7c3224a78fcc8ac4b60128c6a3376c54d33b24e15cd9"
+    },
+    {
+      "path": "462.avplayer.js",
+      "bytes": 7107,
+      "sha256": "ea31ae3b04bd2d44d41b674339153be1a5a3cefac442ca0a0ed0ef07baec216c"
+    },
+    {
+      "path": "502.avplayer.js",
+      "bytes": 41190,
+      "sha256": "5ef47e824ff36959c9746e3f445e4568d67e520b239d2a384409457fa1d557a4"
+    },
+    {
+      "path": "573.avplayer.js",
+      "bytes": 44303,
+      "sha256": "ffcedb0645e22f598bb5b9b322fa24cdd3dec51a7ad992061defd186a946974d"
+    },
+    {
+      "path": "630.avplayer.js",
+      "bytes": 24232,
+      "sha256": "fa61a6370d15329e97450e19045027d93ef2eb1610d23778bc26e771fcbc388f"
+    },
+    {
+      "path": "641.avplayer.js",
+      "bytes": 2706,
+      "sha256": "caef502855d40f5f184673598b7b3e0bfe069eeaaa5ae42395610599fc416fee"
+    },
+    {
+      "path": "735.avplayer.js",
+      "bytes": 44270,
+      "sha256": "8f0e86ad04077ea384fd611c402786faf0086922ec394a15e7967590bea781d9"
+    },
+    {
+      "path": "747.avplayer.js",
+      "bytes": 4114,
+      "sha256": "8a229fd18f0a30987226153e319fde1ed4aebf636273603d487a8d8b887d2d5e"
+    },
+    {
+      "path": "749.avplayer.js",
+      "bytes": 7822,
+      "sha256": "d1ebc7d5384c484bf5b2d880565884d573a5fabf18194a350de4c043d05eb8c1"
+    },
+    {
+      "path": "790.avplayer.js",
+      "bytes": 5068,
+      "sha256": "952b41aa7542f6ce1aa8c4cbf1f1e3165ffcf9f5eae7cac40fa6e9543905a1f5"
+    },
+    {
+      "path": "794.avplayer.js",
+      "bytes": 7523,
+      "sha256": "92bee9970297645d2d8bbe722d9f953c8d749974479cd68bf91039bc7d75c61c"
+    },
+    {
+      "path": "850.avplayer.js",
+      "bytes": 37102,
+      "sha256": "94d5291d298be62c4498d88ae106dea12f1896f8bb3527d433e2073b0b149003"
+    },
+    {
+      "path": "881.avplayer.js",
+      "bytes": 32452,
+      "sha256": "0fea20b8024d9df27c9f0c2487f3d2a9ae9cc6bab7ef0ac74ba01e6a206e5223"
+    },
+    {
+      "path": "932.avplayer.js",
+      "bytes": 30412,
+      "sha256": "f214c3b8a1d0bba009b85a888648fd983ac70833c1205c9f42625e0d82ee6815"
+    },
+    {
+      "path": "943.avplayer.js",
+      "bytes": 85647,
+      "sha256": "b600831c9ab77fcbf5db6e9786d5ceb566071c344f243c0908fcd154c3599e78"
+    },
+    {
+      "path": "956.avplayer.js",
+      "bytes": 22828,
+      "sha256": "5d60e56cd6f417b57b83c893c68b933cde50c68043a661cbb8756a192b136bdd"
+    },
+    {
+      "path": "961.avplayer.js",
+      "bytes": 7727,
+      "sha256": "a788dc5a67237717584b1c4526037c6c863f2675b289a8007febca6b8dffaca2"
+    },
+    {
+      "path": "97.avplayer.js",
+      "bytes": 34074,
+      "sha256": "a7d1016c947e1f93c7403ed0eea0350fc8db5e40d76adbe621fcec807958a8e5"
+    },
+    {
+      "path": "991.avplayer.js",
+      "bytes": 35962,
+      "sha256": "087b67f66710ba6dacd0f47aef14f48889f40196f7f4135e9d52d6d3d2bcdd75"
+    },
+    {
+      "path": "upstream.js",
+      "bytes": 603231,
+      "sha256": "2bbd5b24646762e2a2f081cdd00f7f98bfdc7ad0d421834a11651f08ed31bd3a"
+    },
+    {
+      "path": "AudioSourceWorkletProcessorWorklet.js",
+      "bytes": 12347,
+      "sha256": "3540816440100dcb08cad5c98a2b7deb777404b37c8d451e815654244bc034cb"
+    },
+    {
+      "path": "AudioSourceWorkletProcessor2Worklet.js",
+      "bytes": 57107,
+      "sha256": "1bb34562aa7eb765331c102954f2d61c6994f60316d300a0d5c6f1df9bd28b31"
+    },
+    {
+      "path": "avplayer.js",
+      "bytes": 1912,
+      "sha256": "88103dc4f9e83630f4694e89472e9f0b121765ca35bfe29026f8f3e8c6ac04d0"
+    },
+    {
+      "path": "decode/aac.wasm",
+      "bytes": 694438,
+      "sha256": "9cbef85899775c7431dfffbd704d30fa185089f1f4280e2ea90be07e40b635c8"
+    },
+    {
+      "path": "decode/mp3.wasm",
+      "bytes": 392628,
+      "sha256": "357bc4c581f5381dc5d815c45965312dda9d2b906b823a79643fad8e4e662313"
+    },
+    {
+      "path": "decode/opus.wasm",
+      "bytes": 679540,
+      "sha256": "9c0ca5f7d22fe0d2557b6cb075a48dd3c3c1295dd1da0f7ef7dd36f8071d9235"
+    },
+    {
+      "path": "decode/flac.wasm",
+      "bytes": 372252,
+      "sha256": "60023457a89eaa041957773d6a4a6c196df17df642a924746faacf535f874dca"
+    },
+    {
+      "path": "decode/vorbis.wasm",
+      "bytes": 596631,
+      "sha256": "fe92937f0ac4de980467da04a617e58c6f228d137862767dfdbf8694bd101aff"
+    },
+    {
+      "path": "decode/pcm.wasm",
+      "bytes": 361715,
+      "sha256": "ec82fbecf825a34d35b979b727769cb8380bf1e06e61d30bb79a75c517655cc8"
+    },
+    {
+      "path": "decode/ac3.wasm",
+      "bytes": 576905,
+      "sha256": "d2803836e5a9f69266312db639f07dd60f61189a017df3cf7d19aa98d512b754"
+    },
+    {
+      "path": "decode/eac3.wasm",
+      "bytes": 601595,
+      "sha256": "2329e65263f9aa04cce5ced5e134c53316b67d2682f44325e6f3b5a982219461"
+    },
+    {
+      "path": "resample/resample.wasm",
+      "bytes": 252290,
+      "sha256": "7709e04280d6f9487872cbcfbffa747032aaa5e45a72849a1aaceb05259b347d"
+    },
+    {
+      "path": "stretchpitch/stretchpitch.wasm",
+      "bytes": 45783,
+      "sha256": "9397d474f85fbf3d0bc6b5b78bb500d0329a7a2c4ce212c8531cd56514434a7a"
+    }
+  ]
+}

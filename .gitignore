@@ -52,3 +52,7 @@ release-signing.properties
 # Python helper/test caches
 __pycache__/
 *.py[cod]
+
+# AVPlayer reproducible build dependencies and downloaded artifact cache
+/scripts/avplayer/node_modules/
+/scripts/avplayer/.cache/

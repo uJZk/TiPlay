@@ -4,6 +4,10 @@ TiPlay keeps browser APIs in JavaScript and runs bulk audio computation in genui
 WebAssembly. There is no wasm2js substitute. Source, adapters, pinned build inputs
 and licenses accompany the replaceable libraries; NetEq source archives are checksum-pinned build downloads.
 
+Source v90 adds per-stream audio dispatch, direct software-Worker PCM delivery and
+optional native WebRTC video-track reception into Canvas. These source changes
+are not a published release; v89 remains the historical audio-rollout record.
+
 ## Execution
 
 | Work | Execution and reason |
@@ -12,12 +16,12 @@ and licenses accompany the replaceable libraries; NetEq source archives are chec
 | Live mixing, ducking, fades, clipping | Fixed-memory WASM audio core, one block at a time. Very small PCM conversions retain JavaScript when copying costs more than the arithmetic. |
 | Realtime AAC-LC/ELD/ALAC decode | FFmpeg/libav.js decoder Workers; no WebCodecs audio decoder. |
 | Live buffering and tempo | Official NetEq WASM: adaptive jitter delay, Opus/L16 decode, time stretching and concealment. Opus decodes directly in NetEq; other codecs arrive as normalized PCM16/48 kHz. |
-| URL audio tempo | SoundTouch C++ with the 20/5/5 ms policy, SIMD where available and portable WASM otherwise, including fused quad/5.1 downmix and interleave. |
-| URL audio, video decode and display | Native WebCodecs, Web Audio, Canvas/WebGL, image decode and the browser compositor. |
+| Live audio thread boundary | Bounded per-stream FIFO dispatch; software decoder Workers transfer PCM directly to AudioWorklet MessagePorts. Main-thread control and accounting remain; independent streams do not await each other's decode. |
+| URL playback | libmedia AVPlayer owns IO, demuxing, decoding, buffering, clocks and rendering. Its Canvas path uses browser/WebCodecs facilities and the required locally hosted WASM resources. TiPlay does not wrap it in another decoded queue or tempo controller. |
 | Transport and binary headers | Native WebRTC/SCTP, streams, typed arrays and DataView. Keeping views avoids copying whole media packets into WASM to inspect a few fields. |
 | Pairing | Established SRP library with native BigInt and WebCrypto. A full LibTomMath WASM candidate was slower in actual Chromium, including both warm handshake and cold loading. |
 | Geolocation | Browser geolocation; coordinate conversion already runs in Android's native library. |
-| UI, captions, containers and control | DOM, native typed-array byte search, maintained Mediabunny/hls.js parsers, and bounded block-level scheduling. Object/string results would otherwise need repeated JS/WASM conversion. |
+| UI, captions and control | DOM, typed arrays and maintained upstream parsers. URL containers belong to AVPlayer; AirPlay session/resource ownership and controls remain TiPlay-owned. |
 | Clock fitting and deadlines | Bounded scalar JavaScript policy. Device, source and presentation clocks remain independent; WASM does not provide a better browser clock. |
 
 ## libav.js SIMD validation
@@ -33,9 +37,7 @@ Both variants decode all eight existing AAC-ELD profiles after the adapter
 explicitly supplies `AVMEDIA_TYPE_AUDIO`. Earlier failures were caused by our
 missing codec-type parameter: the context sample rate stayed zero. The
 [actual-WASM regression](../tests/web/libav-eld.test.mjs) reproduces that omission
-and validates the corrected calls. The realtime ELD Worker now uses libav.js; the FDK runtime and build files are removed. URL casting now uses these modules as a native audio decoder fallback;
-its adapter selects measured beneficial stereo 44.1→48 kHz AAC-LC/16-bit ALAC SIMD profiles
-and portable otherwise. Realtime decoding now uses NetEq/libav.js. Browser v89 is published separately
+and validates the corrected calls. The realtime ELD Worker uses libav.js; the FDK runtime and build files are removed. The former URL adapter also used these modules, but AVPlayer now owns URL decoding independently. These libav.js measurements do not establish AVPlayer performance. Realtime decoding uses NetEq/libav.js. Browser v89 is published separately
 from the unchanged Android beta.20 APK; vehicle acceptance remains pending.
 
 Tesla SIMD support was already established for the user's Model Y AMD Ryzen:
@@ -70,23 +72,13 @@ path. Counter discrepancies change diagnostic measurement domains only. The
 capacity bounds and unverified physical behavior. Heavy sample conversion,
 mixing, Opus and NetEq DSP execute in WASM; JS owns stream/block adaptation.
 
-URL playback retains `currentTime` as the coordinate required by native
-`AudioBufferSourceNode.start()`. Its audio/video/media positions share that graph;
-they do not assume one graph second equals one performance-clock second. Natural
-node completion, scoped to the current playback owner, gates audio EOF. A getter
-crossing the estimated tail cannot stop still-live sources. User tempo changes
-remain independent of clock correction. URL and live adapters share native
-SoundTouch construction, effective tempo validation (0.2–4.8x), and 20/5/5 ms windows.
-The user's 0.25–4x selection is multiplied by the shared ±20% automatic correction.
-URL synchronization compares the native output timestamp's submitted PCM position
-with the displayed video frame, targeting audio-minus-video −45…+125 ms. It never
-uses `currentTime` getter jumps as a phase witness. Unknown/stale/discontinuous
-native timestamps disable automatic correction. A breach enables PD toward the
-40 ms centre; it continues in the window rather than toggling at its edges.
-Processed queue duration lowers loop gain, and chunk-specific tempo keeps source
-positions and native scheduling consistent through changes. The user-facing rate
-and phone feedback retain the manual multiplier. This is a target window, not a
-hard bound during initial error or stalls. URL EOF flushes finite input; live EOS explicitly drains and ends its NetEq stream.
+URL playback uses AVPlayer's audio/video clocks and completion events. TiPlay
+forwards media position, buffering, seek, rate and end state through its existing
+AirPlay facade, without recreating AVPlayer's scheduling or applying the retired
+URL PD/SoundTouch controller. MSE and video-element output are disabled so video
+remains on Canvas. Neither an upstream media clock nor a successful Canvas
+submission proves physical speaker/panel timing. Live software EOS independently
+drains and ends its NetEq stream.
 
 ## Loading and memory
 
@@ -109,11 +101,12 @@ was 9.6 ms for native BigInt versus 16.6 ms for WASM; cold loading also regresse
 Node's opposite result was insufficient to select a browser backend. The wire
 proof, SDP transcript binding and Android Bouncy Castle verification remain intact.
 
-Software AAC decoding and non-1× URL playback instantiate their own bounded
-libraries away from the live render callback. A missing, blocked or invalid module
-reports a playback error; it cannot silently run the old JavaScript engine under
-a WASM label. The no-SIMD tempo backend reports `wasm`.
-Concurrent module loads deduplicate and failed loads may be retried.
+Live software decoding and AVPlayer URL playback load their own resources away
+from the live render callback. Missing or invalid modules report a playback error;
+the removed URL engine is not a hidden fallback. URL runtime assets and build
+provenance are recorded in the [AVPlayer vendor README](../site/play/vendor/libmedia/README.md).
+Its baseline modules and non-SAB Worker mode do not require cross-origin isolation. Upstream queue and buffer
+limits do not establish a total browser, GPU or hardware-decoder memory bound.
 
 Production CSP grants `'wasm-unsafe-eval'` alongside same-origin scripts. This
 permits WASM compilation while retaining the ban on JavaScript `eval`/`Function`.

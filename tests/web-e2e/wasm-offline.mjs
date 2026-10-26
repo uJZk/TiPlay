@@ -19,8 +19,12 @@ assert.ok(version); assert.ok(assets.length > 1);
 const archive = path => /(?:\.zip|\.tar\.(?:gz|bz2|xz))$|(?:^|\/)source\//i.test(path);
 assert.equal(assets.some(archive), false, 'legal/source archives must remain downloadable without occupying the playback cache');
 const wasmPaths = assets.filter(path => path.endsWith('.wasm'));
-assert.deepEqual([...wasmPaths].sort(), ['vendor/libav/libav-6.10.9.0-tiplay.wasm.wasm', 'vendor/libav/libav-6.10.9.0-tiplay-simd.wasm.wasm', 'vendor/neteq/neteq.wasm', 'vendor/soundtouch/soundtouch.simd.wasm',
-  'vendor/soundtouch/soundtouch.wasm', 'wasm/audio-core.wasm'].sort());
+for (const required of ['vendor/libav/libav-6.10.9.0-tiplay.wasm.wasm',
+  'vendor/libav/libav-6.10.9.0-tiplay-simd.wasm.wasm', 'vendor/neteq/neteq.wasm', 'wasm/audio-core.wasm']) {
+  assert.ok(wasmPaths.includes(required), `Required runtime module is cached: ${required}`);
+}
+assert.ok(wasmPaths.some(path => path.startsWith('vendor/libmedia/')), 'AVPlayer runtime modules are cached');
+assert.equal(wasmPaths.some(path => path.startsWith('vendor/soundtouch/')), false, 'The superseded URL DSP is removed');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const paths = [...new Set([...assets.map(path => path === './' ? 'index.html' : path), 'sw.js'])];
 const identity = async () => Object.fromEntries(await Promise.all(paths.map(async path => [path, hash(await readFile(resolve(root, path)))])));
@@ -121,20 +125,6 @@ try {
     const kernel = new AudioKernel(), input16 = Int16Array.from({ length: 512 }, (_, index) => [-32768, -16384, 0, 16384, 32767][index % 5]);
     const converted = new Float32Array(input16.length); kernel.pcm16(input16, 0, converted, 0, input16.length);
     require(converted.every((value, index) => value === input16[index] / 32768), 'Cached audio core converts exact PCM');
-    const { loadSoundTouch, soundTouchSimdSupported } = await import('./vendor/soundtouch/soundtouch.js');
-    const tempo = [];
-    for (const simd of soundTouchSimdSupported() ? [false, true] : [false]) {
-      const engine = await loadSoundTouch({ simd, cache: false }), processor = engine.create(48000, 1.25);
-      const signal = Float32Array.from({ length: 4800 }, (_, index) => Math.sin(2 * Math.PI * 440 * index / 48000));
-      try {
-        const blocks = [processor.push(signal), processor.finish()].filter(Boolean);
-        const frames = blocks.reduce((count, block) => count + block.length / 2, 0);
-        require(frames === 3840, 'Cached SoundTouch preserves the requested duration');
-        require(blocks.every(block => block.every(Number.isFinite)) && blocks.some(block => block.some(value => Math.abs(value) > 0.01)),
-          'Cached SoundTouch produces a real finite tone');
-        tempo.push({ backend: engine.backend, frames });
-      } finally { processor.dispose(); }
-    }
     const { createAirPlayAudioDecoder } = await import('./airplay-audio-decoder.js');
     const blocks = [], failures = [];
     const decoder = createAirPlayAudioDecoder({ onPcm: r => { if (r.pcm.byteLength) blocks.push(new Uint8Array(r.pcm)); }, onError: e => failures.push(String(e)) });
@@ -153,7 +143,7 @@ try {
     let archiveRejected = false;
     try { await fetch('./vendor/libav/source/ffmpeg-9.0.tar.xz'); } catch { archiveRejected = true; }
     require(archiveRejected, 'Source archives are outside the offline playback cache');
-    return { binaries, networkRejected, audioCoreSamples: converted.length, tempo, aac, archiveRejected,
+    return { binaries, networkRejected, audioCoreSamples: converted.length, aac, archiveRejected,
       violations: globalThis.__cspViolations, csp: document.querySelector('meta[http-equiv="Content-Security-Policy"]').content };
   }, { wasmPaths, packets, golden });
   assert.deepEqual(result.violations, []); assert.deepEqual([...errors], []); assert.deepEqual([...externals], []);

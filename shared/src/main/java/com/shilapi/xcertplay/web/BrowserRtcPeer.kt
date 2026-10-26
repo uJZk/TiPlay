@@ -10,6 +10,13 @@ import org.webrtc.PeerConnectionFactory
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.CandidatePairChangeEvent
+import org.webrtc.RtpParameters
+import org.webrtc.RtpTransceiver
+import org.webrtc.MediaStreamTrack
+import org.webrtc.RtpSender
+import org.webrtc.VideoEncoder
+import org.webrtc.VideoEncoderFactory
+import org.webrtc.VideoCodecInfo
 import com.shilapi.xcertplay.diagnostics.DiagnosticErrorText
 import com.shilapi.xcertplay.diagnostics.RawTraffic
 import java.io.Closeable
@@ -27,12 +34,16 @@ import kotlin.concurrent.withLock
 /** Injectable so source/JVM harnesses need not load Android native WebRTC. */
 fun interface BrowserRtcFactory {
     fun create(session: String, control: (Map<*, *>) -> String): BrowserRtcSession
+    val supportsVideoTrack: Boolean get() = false
+    val supportsAudioTrack: Boolean get() = false
 }
 
 interface BrowserRtcSession : Closeable {
     val session: String
     val epoch: Int
     val live: Boolean
+    val videoTransport: String get() = BrowserRtcVideoPolicy.UNAVAILABLE
+    val audioTransport: String get() = "unavailable"
     fun answer(offer: String): String
     fun snapshot(): Map<String, Any?>
     fun maintain()
@@ -40,7 +51,7 @@ interface BrowserRtcSession : Closeable {
     fun authenticate()
 }
 
-/** Only the Android product constructs this factory. No RTP tracks, microphone or video encoder. */
+/** Original video and supported audio use RTP; authenticated control and fallback audio retain DataChannels. */
 class AndroidBrowserRtcFactory(
     context: Context,
     private val video: WebVideoHub,
@@ -48,6 +59,8 @@ class AndroidBrowserRtcFactory(
     private val log: (String) -> Unit,
 ) : BrowserRtcFactory {
     private val context = context.applicationContext
+    override val supportsVideoTrack = true
+    override val supportsAudioTrack: Boolean get() = audio != null
     override fun create(session: String, control: (Map<*, *>) -> String): BrowserRtcSession =
         AndroidBrowserRtcPeer(context, session, video, audio, log, control)
 }
@@ -82,6 +95,14 @@ private class AndroidBrowserRtcPeer(
     private val gathering = CountDownLatch(1)
     private var factory: PeerConnectionFactory? = null
     private var connection: PeerConnection? = null
+    @Volatile private var videoTrack: BrowserRtcVideoTrack? = null
+    private var videoSender: RtpSender? = null
+    private var videoCodecOffers = emptyList<BrowserRtcVideoPolicy.Codec>()
+    private var previousVideoOffer: String? = null
+    private val videoLease = BrowserRtcVideoLease()
+    @Volatile private var pendingVideoConfig: WebVideoRecord? = null
+    @Volatile private var videoFailure: String? = null
+    override val videoTransport: String get() = if (videoTrack != null) BrowserRtcVideoPolicy.TRACK else BrowserRtcVideoPolicy.UNAVAILABLE
     @Volatile private var videoSubscription: WebVideoSubscription? = null
     @Volatile private var audioSubscription: WebAudioHub.Subscription? = null
     private val audioLease = BrowserRtcAudioLease()
@@ -97,14 +118,35 @@ private class AndroidBrowserRtcPeer(
     @Volatile private var firstCandidateNanos: Long? = null
     private val records = java.util.concurrent.atomic.AtomicLong()
     private val audioCapture = BrowserRtcAudioCapture(epoch)
+    private val nativeAudioCapture = BrowserRtcAudioCapture(epoch)
+    private val nativeAudioSequence = java.util.concurrent.atomic.AtomicInteger()
+    private val audioRouteLock = Any()
+    @Volatile private var audioFailure: String? = null
+    override val audioTransport: String get() = if (audio != null) BrowserRtcAudioRouter.TRANSPORT else "unavailable"
+    private val audioRouter = BrowserRtcAudioRouter(onFailure = ::nativeAudioFailure,
+        captureNative = { bytes, submit -> nativeAudioCapture.route(nativeAudioSequence.getAndIncrement(), bytes, submit) })
+    private val audioSignaling = BrowserRtcAudioSignaling(audioRouter,
+        authenticated = { authenticated && audio != null }, live = { !closed.get() },
+        respond = { response -> runCatching {
+            if ((WebJson.parse(response) as? Map<*, *>)?.get("error") == null) audioFailure = null
+            sendControl(response)
+        }.onFailure {
+            if (!closed.get()) log("Browser RTC: stage=audio-response epoch=$epoch reason=control-send-failed exception=${DiagnosticErrorText.types(it)}")
+        } })
     private val candidateCounts = ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
 
     override val live: Boolean get() = !closed.get()
 
     override fun answer(offer: String): String {
         require(offer.length in 1..48 * 1024 && offer.lineSequence().any { it.startsWith("m=application ") }) { "invalid data offer" }
-        require(offer.lineSequence().none { it.startsWith("m=audio ") || it.startsWith("m=video ") ||
+        require(offer.lineSequence().none { it.startsWith("m=audio ") ||
             (it.startsWith("a=candidate:") && (it.contains(" typ relay") || it.contains(" typ srflx"))) }) { "non-local or media-track offer" }
+        val hasVideo = offer.lineSequence().any { it.startsWith("m=video ") }
+        require(!hasVideo || BrowserRtcVideoPolicy.receiveOnlyOffer(offer)) { "video-offer-must-be-receive-only" }
+        val offeredCodecs = if (hasVideo) BrowserRtcVideoPolicy.codecs(offer).let { codecs ->
+            val current = video.info()?.codec
+            codecs.sortedByDescending { current != null && BrowserRtcVideoPolicy.matches(current, it) }
+        } else emptyList()
         require(offer.lineSequence().filter { it.startsWith("a=max-message-size:") }.all {
             val maximum = it.substringAfter(':').trim().toLongOrNull()
             maximum != null && (maximum == 0L || maximum >= BrowserRtcProtocol.MESSAGE_BYTES)
@@ -116,20 +158,41 @@ private class AndroidBrowserRtcPeer(
             // ConnectivityManager does not expose a Network handle for that server interface.
             // M144 AndroidNetworkMonitor otherwise marks such interfaces unavailable. Native
             // getifaddrs enumeration retains IPv4 link-local addresses; never rewrite candidates.
-            factory = PeerConnectionFactory.builder().setOptions(PeerConnectionFactory.Options().apply {
+            val videoTrack = offeredCodecs.takeIf { it.isNotEmpty() }?.let {
+                BrowserRtcVideoTrack(it, requestKeyFrame = { video.requestKeyFrame() })
+            }.also { this.videoTrack = it }
+            videoCodecOffers = offeredCodecs
+            previousVideoOffer = offer
+            val builder = PeerConnectionFactory.builder().setOptions(PeerConnectionFactory.Options().apply {
                 disableNetworkMonitor = true
-            }).createPeerConnectionFactory()
+            })
+            if (videoTrack != null) builder.setVideoEncoderFactory(object : VideoEncoderFactory {
+                // libwebrtc caches this list once. Replacement bridges use the same negotiated
+                // factory capabilities; only the current video's encoder delegate is replaced.
+                override fun getSupportedCodecs(): Array<VideoCodecInfo> = videoCodecOffers.map {
+                    VideoCodecInfo(it.name, it.parameters, emptyList())
+                }.toTypedArray()
+                override fun createEncoder(info: VideoCodecInfo): VideoEncoder? = this@AndroidBrowserRtcPeer.videoTrack?.createEncoder(info)
+            })
+            factory = builder.createPeerConnectionFactory()
             val config = PeerConnection.RTCConfiguration(emptyList()).apply {
                 sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
                 continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_ONCE
                 // Host candidates only. No Internet STUN, TURN or media relay.
                 iceTransportsType = PeerConnection.IceTransportsType.ALL
                 tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.DISABLED
+                // The source is already encoded: pixel/fps adaptation cannot rewrite it.
+                enableCpuOveruseDetection = false
+                suspendBelowMinBitrate = false
             }
             connection = requireNotNull(factory?.createPeerConnection(config, observer)) { "peer allocation" }
             awaitSdp("remote-description") { connection!!.setRemoteDescription(it, SessionDescription(SessionDescription.Type.OFFER, offer)) }
+            if (videoTrack != null) {
+                attachVideoTrack(videoTrack)
+            }
             val answer = awaitSdp("create-answer") { connection!!.createAnswer(it, MediaConstraints()) }
             awaitSdp("local-description") { connection!!.setLocalDescription(it, requireNotNull(answer)) }
+            videoTrack?.negotiated(requireNotNull(answer).description)
             val gatherDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
             while (!closed.get() && gathering.count > 0) {
                 val now = System.nanoTime()
@@ -237,14 +300,32 @@ private class AndroidBrowserRtcPeer(
 
     private fun receiveApplicationControl(fields: Map<*, *>): String? {
         if (closed.get()) return null
+        if (fields["k"] == "video-ready") {
+            check(authenticated) { "authentication-required" }
+            fields["generation"].exactInt()?.let(videoLease::ready)
+            synchronized(wake) { wake.notifyAll() }
+            return null
+        }
+        if (fields["k"] == "video-offer") return replaceVideo(fields)
+        if (fields["k"] == "audio-offer") { audioSignaling.offer(fields); return null }
+        if (fields["k"] == "audio-track-ready") {
+            check(authenticated) { "authentication-required" }
+            audioRouter.readyTrack(fields)
+            return null
+        }
         if (fields["k"] == "audio-ready") {
             val enabled = fields["enabled"] as? Boolean ?: error("audio-ready")
             val generation = BrowserRtcProtocol.unsignedInt(fields["generation"]) ?: error("audio-generation")
             val changed = synchronized(wake) {
                 if (closed.get()) return null
                 check(authenticated) { "authentication-required" }
-                val changed = audioLease.request(enabled, generation)
-                if (changed) audioSubscription?.close()
+                // Retire the old native route before publishing/waking the new consumer.
+                // Otherwise the pump could admit its replayed config and then lose it to reset.
+                val changed = synchronized(audioRouteLock) {
+                    audioLease.request(enabled, generation).also { changed ->
+                        if (changed) { audioSubscription?.close(); audioRouter.reset(); audioFailure = null }
+                    }
+                }
                 wake.notifyAll()
                 changed
             }
@@ -252,6 +333,69 @@ private class AndroidBrowserRtcPeer(
             return null
         }
         return control(fields)
+    }
+
+    private fun attachVideoTrack(bridge: BrowserRtcVideoTrack) {
+        val peer = requireNotNull(connection)
+        val owner = requireNotNull(factory)
+        val sender = peer.addTrack(bridge.attach(owner), listOf("tiplay-video"))
+        videoSender = sender
+        val parameters = sender.parameters
+        parameters.degradationPreference = RtpParameters.DegradationPreference.DISABLED
+        check(sender.setParameters(parameters)) { "video-sender-parameters" }
+        peer.transceivers.firstOrNull { it.sender.id() == sender.id() }?.let { transceiver ->
+            check(transceiver.setDirection(RtpTransceiver.RtpTransceiverDirection.SEND_ONLY)) { "video-sender-direction" }
+            val sourceCodec = video.info()?.codec
+            if (sourceCodec != null) {
+                val capabilities = owner.getRtpSenderCapabilities(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO).codecs
+                val matching = capabilities.filter { BrowserRtcVideoPolicy.matches(sourceCodec,
+                    BrowserRtcVideoPolicy.Codec(it.name.uppercase(), it.parameters)) }
+                if (matching.isNotEmpty()) transceiver.setCodecPreferences(matching + capabilities.filter { it.name.equals("rtx", true) }).throwError()
+            }
+        }
+    }
+
+    /** A video-only control RPC. Its failures never retire audio or the authenticated SCTP peer. */
+    private fun replaceVideo(fields: Map<*, *>): String {
+        val q = fields["q"]
+        val next = fields["generation"].exactInt()
+        return try {
+            check(authenticated && !closed.get()) { "authentication-required" }
+            val offer = fields["sdp"] as? String ?: error("invalid-video-offer")
+            check(next != null && pendingVideoConfig != null) { "video-source-unavailable" }
+            BrowserRtcVideoPolicy.validateReplacement(requireNotNull(previousVideoOffer), offer)
+            val codecs = BrowserRtcVideoPolicy.codecs(offer).filter { offered -> videoCodecOffers.any { it.name == offered.name } }
+            check(codecs.isNotEmpty()) { "video-codec-not-negotiated" }
+            videoLease.offer(next)
+            val task = lifecycle.submit<String> {
+                check(!closed.get()) { "peer-closed" }
+                val peer = requireNotNull(connection)
+                val old = videoTrack
+                old?.disable("video-track-replaced")
+                nativeLock.withLock { videoSender?.setTrack(null, false); videoSender = null }
+                awaitSdp("video-remote-description") { peer.setRemoteDescription(it, SessionDescription(SessionDescription.Type.OFFER, offer)) }
+                val bridge = BrowserRtcVideoTrack(codecs, requestKeyFrame = { video.requestKeyFrame() })
+                videoTrack = bridge
+                nativeLock.withLock {
+                    old?.close()
+                    attachVideoTrack(bridge)
+                }
+                val answer = requireNotNull(awaitSdp("video-create-answer") { peer.createAnswer(it, MediaConstraints()) })
+                awaitSdp("video-local-description") { peer.setLocalDescription(it, answer) }
+                bridge.negotiated(answer.description)
+                previousVideoOffer = offer
+                videoLease.answered()
+                WebJson.write(mapOf("q" to q, "k" to "video-answer", "sdp" to answer.description,
+                    "generation" to next, "videoTransport" to BrowserRtcVideoPolicy.TRACK))
+            }
+            task.get(9, TimeUnit.SECONDS)
+        } catch (error: Exception) {
+            val reason = error.message?.takeIf { it.startsWith("video-") || it == "invalid-video-offer" } ?: "video-renegotiation-failed"
+            videoFailure = reason
+            videoTrack?.disable(reason)
+            log("Browser RTC: stage=video-replacement epoch=$epoch reason=$reason failed=true exception=${DiagnosticErrorText.types(error)}")
+            WebJson.write(mapOf("q" to q, "k" to "video-answer", "generation" to next, "error" to reason))
+        }
     }
 
     private fun respondToControl(fields: Map<*, *>, response: String) {
@@ -277,16 +421,80 @@ private class AndroidBrowserRtcPeer(
 
     private fun pumpVideo() {
         var sequence = 0
+        var config: WebVideoRecord? = null
+        var configuredGeneration = videoLease.generation
+        var replacementAnnounced = false
+        fun endVideo(reason: String) {
+            videoFailure = reason
+            videoTrack?.disable(reason)
+            runCatching { sendControl(WebJson.write(mapOf("k" to "video-error", "reason" to reason,
+                "generation" to videoLease.generation))) }
+            sendRecord("video", sequence++, BrowserRtcRecord.video(WebVideoRecords.end(reason)))
+            log("Browser RTC: stage=video epoch=$epoch transport=${BrowserRtcVideoPolicy.TRACK} reason=$reason state=ended")
+        }
+        fun pauseVideo(next: WebVideoRecord?) {
+            pendingVideoConfig = next
+            // A newer source can arrive while its replacement receiver is still being installed.
+            // Only retire the active old bridge; the new, unused bridge must remain configurable.
+            if (videoLease.ready) videoTrack?.disable("video-track-replacement")
+            videoLease.pause()
+            if (next != null && videoLease.awaitingOffer && !replacementAnnounced) {
+                sendRecord("video", sequence++, BrowserRtcRecord.video(WebVideoRecords.end("video-renegotiation-required")))
+                replacementAnnounced = true
+            }
+        }
+        fun configureVideo(record: WebVideoRecord): Boolean {
+            config = record; pendingVideoConfig = record
+            if (videoTrack?.configure(record) != true) {
+                val sourceCodec = (WebJson.parse(String(record.payload, Charsets.UTF_8)) as? Map<*, *>)?.get("codec") as? String
+                // The first source can appear after initial signaling. Replace just video once
+                // its real codec is known instead of transcoding or using a DataChannel fallback.
+                if (videoLease.generation == 1 && sourceCodec != null && videoCodecOffers.any { BrowserRtcVideoPolicy.matches(sourceCodec, it) }) {
+                    pauseVideo(record); return true
+                }
+                endVideo(videoTrack?.failure ?: "video-codec-not-negotiated"); return false
+            }
+            sendRecord("video", sequence++, BrowserRtcRecord.video(BrowserRtcVideoPolicy.metadata(record,
+                BrowserRtcVideoPolicy.TRACK, generation = videoLease.generation)))
+            return true
+        }
         try {
             awaitAuthentication()
+            if (videoTrack == null) { endVideo("video-track-not-negotiated"); return }
             var subscription = video.subscribe(reliable = true).also { videoSubscription = it }
             while (!closed.get()) {
                 val record = subscription.take(1_000) ?: WebVideoRecords.HEARTBEAT
-                if (record.kind == WebVideoRecords.KIND_END && String(record.payload, Charsets.UTF_8) in setOf("source-ended", "source-changed")) {
-                    subscription.close()
-                    sendRecord("video", sequence++, BrowserRtcRecord.video(WebVideoRecords.IDLE))
-                    subscription = video.subscribe(reliable = true).also { videoSubscription = it }
+                videoFailure?.let { endVideo(it); return }
+                if (videoLease.readyTimedOut()) { endVideo("video-ready-timeout"); break }
+                if (videoLease.ready && configuredGeneration != videoLease.generation) {
+                    configuredGeneration = videoLease.generation; replacementAnnounced = false; config = null
+                    val pending = pendingVideoConfig
+                    if (pending != null && !configureVideo(pending)) break
+                    video.requestKeyFrame(force = true)
+                }
+                if (videoLease.ready) {
+                    val failure = videoTrack?.pollFailure()
+                    if (failure != null) { endVideo(failure); break }
+                }
+                if (record.kind == WebVideoRecords.KIND_CONFIG) {
+                    if (!videoLease.ready || config != null && config!!.epoch != record.epoch) pauseVideo(record)
+                    else if (!configureVideo(record)) break
                     continue
+                }
+                if (record.kind == WebVideoRecords.KIND_IDLE && config != null) {
+                    // Wait for the next actual source config before asking for a new video track.
+                    // The old track is never reused across epochs; audio/SCTP remain untouched.
+                    pauseVideo(null)
+                }
+                if (record.kind == WebVideoRecords.KIND_END) {
+                    val reason = String(record.payload, Charsets.UTF_8)
+                    if (reason in setOf("source-ended", "source-changed")) {
+                        pauseVideo(null)
+                        sendRecord("video", sequence++, BrowserRtcRecord.video(WebVideoRecords.IDLE))
+                        subscription.close()
+                        subscription = video.subscribe(reliable = true).also { videoSubscription = it }
+                        continue
+                    } else { endVideo(reason); break }
                 }
                 record.sourceCapture?.let { source ->
                     RawTraffic.recordForSession(source.session, "browser/rtc/video-reference",
@@ -296,16 +504,58 @@ private class AndroidBrowserRtcPeer(
                 WebDebugTiming.record(record, System.nanoTime(), extended = true)?.let {
                     sendRecord("video", sequence++, BrowserRtcRecord.video(it))
                 }
-                sendRecord("video", sequence++, BrowserRtcRecord.video(record))
-                if (record.kind == WebVideoRecords.KIND_END) { fail(String(record.payload, Charsets.UTF_8)); break }
+                if (record.kind == WebVideoRecords.KIND_FRAME) {
+                    // Drain while replacing the track, preserving finite source-side memory.
+                    // Resume only after video-ready, then ask the source for a fresh key frame.
+                    if (!videoLease.ready) continue
+                    val accepted = nativeLock.withLock { !closed.get() && videoTrack?.offer(record) == true }
+                    if (!accepted) {
+                        endVideo(videoTrack?.failure ?: "video-track-unavailable"); break
+                    }
+                } else sendRecord("video", sequence++, BrowserRtcRecord.video(record))
             }
-        } catch (error: Exception) { if (!closed.get()) failed("video", error) }
+        } catch (error: Exception) {
+            if (!closed.get()) {
+                val reason = logFailure("video", error)
+                videoFailure = reason; videoTrack?.disable(reason)
+                // A blocked video credit must not retire independently playing audio. Control is
+                // a separate bounded channel and can report a video-only error even then.
+                runCatching { sendControl(WebJson.write(mapOf("k" to "video-error", "reason" to reason,
+                    "generation" to videoLease.generation))) }
+            }
+        }
         finally { videoSubscription?.close(); videoSubscription = null }
+    }
+
+    private fun nativeAudioFailure(reason: String) {
+        if (closed.get() || !authenticated) return
+        audioFailure = reason
+        val generation = (audioRouter.snapshot()["generation"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 1
+        val event = if (reason == "audio-slots-exhausted") "audio-restart-required" else "audio-error"
+        log("Browser RTC: stage=native-audio epoch=$epoch generation=$generation reason=$reason failed=true")
+        runCatching { sendControl(WebJson.write(mapOf("k" to event, "reason" to reason, "generation" to generation))) }
+        synchronized(wake) { wake.notifyAll() }
     }
 
     private fun pumpAudio() {
         var sequence = 0
         var announced: BrowserRtcAudioLease.Lease? = null
+        fun send(lease: BrowserRtcAudioLease.Lease, bytes: ByteArray, nativeMetadata: Boolean) {
+            val nextSequence = sequence
+            if (nativeMetadata) {
+                sendRecord("audio", nextSequence, BrowserRtcRecord(listOf(bytes))) { audioLease.owns(lease) }
+                nativeAudioCapture.nativeMetadata(nextSequence, bytes)
+            } else audioCapture.send(nextSequence, bytes) {
+                sendRecord("audio", nextSequence, BrowserRtcRecord(listOf(bytes))) { audioLease.owns(lease) }
+            }
+            sequence++
+        }
+        fun flushMetadata(lease: BrowserRtcAudioLease.Lease) {
+            val pending = synchronized(audioRouteLock) {
+                if (audioLease.owns(lease)) audioRouter.drainMetadata() else emptyList()
+            }
+            for (record in pending) send(lease, record, nativeMetadata = true)
+        }
         try {
             awaitAuthentication()
             while (!closed.get()) {
@@ -315,8 +565,6 @@ private class AndroidBrowserRtcPeer(
                 }
                 if (closed.get()) break
                 if (lease == null) continue
-                // This pump is the sole audio sender: the previous lease's admitted record and
-                // subscription are finished before this cross-channel boundary is announced.
                 if (announced != lease) {
                     sendControl(WebJson.write(mapOf("k" to "audio-barrier", "epoch" to epoch,
                         "generation" to (lease.generation.toLong() and 0xffff_ffffL),
@@ -328,21 +576,20 @@ private class AndroidBrowserRtcPeer(
                 val subscription = audio?.subscribe(reliable = true)?.also { audioSubscription = it } ?: break
                 try {
                     while (!closed.get() && audioLease.owns(lease) && !subscription.closed) {
-                        val bytes = subscription.take(1_000) ?: continue
-                        if (!audioLease.owns(lease) || subscription.closed) break
-                        val nextSequence = sequence
                         try {
-                            audioCapture.send(nextSequence, bytes) {
-                                sendRecord("audio", nextSequence, BrowserRtcRecord(listOf(bytes))) {
-                                    audioLease.owns(lease)
-                                }
+                            flushMetadata(lease)
+                            // Native SDP completion can produce metadata without another source
+                            // packet. Polling is bounded and never delays fallback decoding on SDP.
+                            val bytes = subscription.take(100)
+                            flushMetadata(lease)
+                            if (bytes == null) continue
+                            val routed = synchronized(audioRouteLock) {
+                                if (!audioLease.owns(lease) || subscription.closed) throw BrowserRtcAudioLeaseRetired()
+                                audioRouter.route(bytes)
                             }
-                            sequence++
-                        } catch (_: BrowserRtcAudioLeaseRetired) {
-                            // No credit or fragment was admitted, so the wire sequence is unused.
-                            // Finishing an admitted partial record never depends on another credit.
-                            break
-                        }
+                            if (routed != null) send(lease, routed, nativeMetadata = routed !== bytes)
+                            flushMetadata(lease)
+                        } catch (_: BrowserRtcAudioLeaseRetired) { break }
                     }
                     if (!closed.get()) audioLease.terminalReason(lease, subscription)?.let { reason ->
                         log("Browser RTC: stage=audio-subscription epoch=$epoch reason=$reason " +
@@ -424,7 +671,7 @@ private class AndroidBrowserRtcPeer(
         if (closed.get()) return
         val now = System.nanoTime()
         val reason = synchronized(wake) {
-            if (credits.values.any { it.noProgressMillis(now) > 6_000 }) "consumer-stalled"
+            if (credits.any { (label, credit) -> (label != "video" || videoFailure == null) && credit.noProgressMillis(now) > 6_000 }) "consumer-stalled"
             else if (now - created > TimeUnit.SECONDS.toNanos(15) &&
                 (!authenticated || !everConnected || !channelStarted.containsAll(setOf("video", "audio", "control")))) "peer-open-timeout"
             else if (disconnectedSince?.let { now - it > TimeUnit.SECONDS.toNanos(6) } == true) "ice-disconnected-timeout"
@@ -438,7 +685,9 @@ private class AndroidBrowserRtcPeer(
     }
 
     override fun snapshot(): Map<String, Any?> = synchronized(wake) {
-        mapOf("transport" to BrowserRtcProtocol.NAME, "epoch" to epoch, "state" to state,
+        mapOf("transport" to BrowserRtcProtocol.NAME, "videoTransport" to videoTransport,
+            "audioTransport" to audioTransport, "audioError" to audioFailure, "nativeAudio" to audioRouter.snapshot(),
+            "videoError" to (videoFailure ?: videoTrack?.failure), "epoch" to epoch, "state" to state,
             "live" to live, "authenticated" to authenticated, "records" to records.get(), "videoInFlightBytes" to credits["video"]?.bytes,
             "audioInFlightBytes" to credits["audio"]?.bytes,
             "oldestAgeMs" to credits.values.maxOf { it.oldestAgeMillis(System.nanoTime()) },
@@ -489,6 +738,7 @@ private class AndroidBrowserRtcPeer(
                 credit.entries.joinToString(" ") { "${it.key}=${it.value}" })
         }
         controls.close()
+        synchronized(audioRouteLock) { audioSignaling.close() }
         controls.diagnosticLines(epoch, reason).forEach(log)
         videoSubscription?.close()
         audioSubscription?.close()
@@ -504,6 +754,8 @@ private class AndroidBrowserRtcPeer(
                     cleanup("peer-dispose") { peer.dispose() }
                 }
                 connection = null
+                videoTrack?.let { owner -> cleanup("video-track-dispose") { owner.close() } }
+                videoTrack = null
                 factory?.let { owner -> cleanup("factory-dispose") { owner.dispose() } }
                 factory = null
             }

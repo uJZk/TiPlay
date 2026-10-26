@@ -78,16 +78,21 @@ See [Video.js gestures](https://videojs.org/docs/framework/html/reference/compon
 
 ## Playback and security
 
-HTTPS, WebCodecs and the negotiated codec are required. Android relays encoded CarPlay
+HTTPS and a compatible negotiated codec are required. Android relays encoded CarPlay
 video; the browser decodes/draws Canvas in a worker or main thread. An HTML video/MSE
 fallback is excluded because car browsers can pause it while driving. Codec probing
 does not prove a particular vehicle/browser's compatibility. Experimental mirroring,
 URL video, photos and ordinary audio follow [AirPlay.md](AirPlay.md).
 
-The product media path uses [reliable, ordered DataChannels](CarPlay-DataChannel.md),
-with webpage-controlled WebCodecs decoding. Encoded source video is never reencoded.
-Live CarPlay/mirroring requests hardware decoding without an intentional software
-fallback; that hint cannot prove actual hardware use. URL casting retains its
+The [media transport](CarPlay-DataChannel.md) retains reliable, ordered DataChannels
+for audio/control and encoded-video fallback. Compatible source builds can use a
+standard WebRTC video track: browser decoding feeds MediaStreamTrackProcessor,
+then Canvas directly, without creating a video element. Encoded source video is
+never reencoded. Source changes or unsupported track behavior explicitly return
+video to WebCodecs/Canvas without reconnecting audio. Touch forwarding does not
+change playback timing. The WebCodecs path requests hardware decoding without an
+intentional software fallback; browser hints and RTP capabilities cannot prove
+actual hardware use. URL casting retains its
 independent media decoder compatibility policy. The [roadmap](WebRTC-roadmap.md) separates
 implemented behavior from Shizuku-address ICE, vehicle gear-transition continuity
 and physical latency acceptance.
@@ -105,8 +110,9 @@ clipboard and long fingerprint entry are unnecessary. Online-guess limits remain
 necessary for a four-digit secret. After proof verification, the encrypted control
 channel still admits `{k:'auth',q,s,c}` before media/ownership is released.
 
-After authentication, video/audio/control use reliable ordered DataChannels with
-no public STUN/TURN or Internet media relay. Public `/hello` identifies protocol
+After authentication, audio/control and video records use reliable ordered
+DataChannels, with optional negotiated RTP video and no public STUN/TURN or
+Internet media relay. Public `/hello` identifies protocol
 availability; old code-authorized HTTP media/control routes are not a fallback.
 `/video` and `/audio` return 410 in the Android product. `/airplay-resource` uses a
 random active-session bearer delivered only by successful encrypted admission;
@@ -250,34 +256,31 @@ preferences do not override the browser canvas.
 
 The performance monitor cannot alter viewport/touch mapping. It shows codec,
 last-second successful Canvas submissions, latest frame Delta and explicit drops.
-Delta is measured at the final submission check relative to synchronized scheduled
-presentation: negative is early, positive late. Missing sync shows unknown. Multiple
+Delta remains unknown without comparable source/output timing; a native track
+timestamp alone is not an independently mapped sender presentation reference. Multiple
 submissions before one display refresh can overstate visible FPS. Debug diagnostics
 also report frame-interval P95/max and time since the last successful submission;
 a high average FPS alone cannot establish smooth pacing. These values do not measure
 physical screen refresh, capture-to-screen latency or prove hardware decode.
 See [Diagnostics.md](Diagnostics.md).
 
-Decoded live video is scheduled in the decoder worker without a per-frame
-main-thread readiness acknowledgement. Video and audio readiness observations update
-their own timing plans; transferred frames retain acknowledgement backpressure and final
-presentation checks. When animation callbacks are available, the presenter retains
-only the newest eligible frame for the next display refresh. A deadline timer and
-measured upload budget bound that wait; the final upload/submission check still
-rejects expired frames. The first-frame connection proof is emitted
-only after a successful final canvas submission, including transferred frames; decoding or
-queue admission alone is insufficient. Workers without a usable animation
-source submit immediately. Timer/immediate WebGL submissions explicitly flush queued
-GPU commands without waiting for completion; refresh callbacks use their native
-frame boundary. See [MDN's flush guidance](https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices#flush_when_expecting_results).
-Superseded pending pictures count as pacing drops.
-Four shared profiles control tradeoffs: CarPlay touch favors latency slightly,
-ordinary CarPlay favors smoothness, AirPlay mirror favors smoothness slightly,
-and URL casting favors smoothness strongly. Live CarPlay/mirror ceilings are 300 ms;
-these are limits, not fixed buffers. Touch uses continuous video-only catch-up and a
-750 ms interaction hold without restoring the old backlog on release. URL casting
-uses a media clock with 750 ms startup / 1500 ms recovery watermarks, bounded by GPU
-memory and available content; these values are implementation defaults awaiting vehicle tuning.
+The browser's native WebRTC receiver owns live-video buffering and decode timing.
+TiPlay submits its decoded VideoFrames directly to Canvas in a worker or on the
+main thread; it has no application video decoder, decoded-frame timer, rAF pacing
+controller or touch-specific catch-up policy. Cross-thread delivery retains bounded
+acknowledgements. First-frame connection proof still requires a successful Canvas
+submission. Immediate WebGL submissions flush queued GPU commands without waiting
+for completion; see [MDN's flush guidance](https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices#flush_when_expecting_results).
+
+The retained media-planning fields serve audio/diagnostic compatibility. They do
+not measure or control the native receiver's jitter-buffer target or actual video
+playout delay. Live delay limits remain acceptance goals, not measured results or
+instructions to fill a fixed buffer. Touch forwarding leaves playback timing alone.
+
+URL casting
+uses AVPlayer's playback clocks, preloading and buffering through a Canvas-only
+adapter. The former TiPlay 750/1500 ms URL watermarks and decoded-queue budgets
+are retired; upstream buffer settings and peak memory still require vehicle tuning.
 Live
 audio follows its receiver sample/latency anchor; buffered music follows SETRATE.
 Arrival playback is an explicit synchronization fallback. Physical output latency

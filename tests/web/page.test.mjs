@@ -13,6 +13,26 @@ import { airPlayContext, airPlayFailed, createReceiverNoticeTracker, videoProble
 const play = new URL('../../site/play/', import.meta.url);
 const read = name => readFileSync(new URL(name, play), 'utf8');
 
+test('source replacement requests video-only renegotiation once and ignores old generation messages', async () => {
+  const source = /function onVideoMessage\([^\n]*\) \{[\s\S]*?\n\}/.exec(read('app.js'))[0];
+  const h = new Function(`
+    const active = true, streamId = 4, currentVideoGeneration = 2;
+    let config = { epoch: 7 }, live = true, videoStats = {}, videoError = null, videoRestart = null, restarts = 0, reject;
+    let rtcMedia = { restartVideo() { restarts++; return new Promise((_resolve, no) => { reject = no; }); } };
+    const render = () => {};
+    ${source}
+    return { send: onVideoMessage, state: () => ({ live, restarts, videoError }), retire: () => { rtcMedia = {}; }, reject: error => reject(error) };
+  `)();
+  h.send({ type: 'video-error', id: 4, videoGeneration: 1, reason: 'video-renegotiation-required' });
+  assert.deepEqual(h.state(), { live: true, restarts: 0, videoError: null });
+  h.send({ type: 'video-error', id: 4, videoGeneration: 2, reason: 'video-renegotiation-required' });
+  h.send({ type: 'video-error', id: 4, videoGeneration: 2, reason: 'video-renegotiation-required' });
+  assert.deepEqual(h.state(), { live: false, restarts: 1, videoError: null });
+  h.retire(); h.reject(Object.assign(Error('old reply'), { reason: 'old-failure' }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.state().videoError, null, 'a retired video-only exchange cannot update the next owner');
+});
+
 test('rejected audio blocks request compact diagnostics only for a first source fault', () => {
   const callback = /onSourceDeadline: (\(\{ first \}\) => \{[\s\S]*?\n  \}),/.exec(read('app.js'))[1];
   const events = []; let snapshots = 0;
@@ -85,7 +105,7 @@ test('decoder setup precedes pairing and the first authenticated clock reaches v
   const codecsReady = new Promise(resolve => { finishSetup = resolve; });
   const events = [];
   const run = new Function('codecsReady', 'events', 'abortable', `
-    let streamId = 0, sink = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastViewport, rtcMedia, lastError;
+    let streamId = 0, sink = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastViewport, rtcMedia, lastError, videoError, videoRestart, currentVideoGeneration = 1;
     const faultDiagnostics = { reset() {} };
     let rtcProgress, resourceToken, controlClock, outbox = null, heartbeatTimer, mediaTiming;
     const controlWaiters = new Set();
@@ -155,6 +175,7 @@ function retryPage(lastError) {
     let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort, rtcMedia, rtcProgress, resourceToken, controlClock;
     const controlWaiters = new Set(), codecsReady = new Promise(() => {}), abortable = value => value;
     let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null, config = null;
+    let videoError = null, videoRestart = null, currentVideoGeneration = 1;
     let receiverFailure = false;
     const receiverNotices = createReceiverNoticeTracker();
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
@@ -508,6 +529,7 @@ test('a failed connection attempt cancels its unresolved SRP exchange before sch
   const connect = /async function connectVideo\(\) \{([\s\S]*?)\n\}/.exec(read('app.js'))[0];
   const run = new Function('abortable', `
     let streamId = 0, rtcMedia = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastError, lastViewport;
+    let videoError = null, videoRestart = null, currentVideoGeneration = 1;
     let rtcProgress, resourceToken, controlClock;
     const faultDiagnostics = { reset() {} };
     const session = 'owner', link = { code: '1234' }, controlWaiters = new Set();

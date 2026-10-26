@@ -1,22 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { createBrowserAudio } from '/play/audio.js';
-import { createFramePresenter } from '/play/video.js';
-import { createTimedFrames } from '/play/media-timing.js';
 import { constantDelay } from '/play/delay-plan.js';
-import { createWorkerProbe } from '/e2e/media-clock-worker-probe.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const fail = message => { throw new Error(message); };
 globalThis.__audioProbeReady = true;
 
 globalThis.startAudioProbe = async () => {
-  let audio, videoTimer, controlTimer, frames, presenter, mirrorFrames, mirrorPresenter;
+  let audio, controlTimer;
   const abort = new AbortController(), nativeContext = globalThis.AudioContext, contexts = [], violations = [];
   addEventListener('securitypolicyviolation', event => violations.push({ directive: event.effectiveDirective, blocked: event.blockedURI }));
   globalThis.AudioContext = class extends nativeContext {
     constructor(...args) { super(...args); contexts.push(this); }
   };
-  const packetTimers = new Set(), states = [], reports = [], draws = [], workerProbes = [];
+  const packetTimers = new Set(), states = [], reports = [];
   let epoch = 0, diagnosticPeak = 0, diagnosticNonzero = 0, audioErrors = [], sourceOrigin, localOrigin;
   let rate = 1.00015, sequence = 0, lastReference = null, debugEnabled = false, referencesWithoutDebug = 0;
   try {
@@ -37,20 +34,6 @@ globalThis.startAudioProbe = async () => {
       }
       return bytes;
     }
-    const canvas = document.getElementById('picture'), input = document.createElement('canvas');
-    input.width = 160; input.height = 90;
-    const painter = input.getContext('2d');
-    const recordDraw = mode => ({ at, timing, audioAt }) => draws.push({ mode,
-      skew: Number.isFinite(audioAt) ? audioAt - at : null, sourceDelay: Number.isFinite(timing) ? at - timing : null });
-    presenter = createFramePresenter(canvas, { applyTimingPolicy: true, pace: true, onPresent: recordDraw('carplay') });
-    const mirrorCanvas = document.createElement('canvas'); mirrorCanvas.width = 160; mirrorCanvas.height = 90; document.body.append(mirrorCanvas);
-    mirrorPresenter = createFramePresenter(mirrorCanvas, { applyTimingPolicy: true, pace: true, onPresent: recordDraw('airplay-mirror') });
-    mirrorFrames = createTimedFrames((frame, config, id, timing, outputWindow) => mirrorPresenter.present(frame, config, timing, outputWindow));
-    mirrorFrames.delay(constantDelay(60));
-    frames = createTimedFrames((frame, config, id, timing, outputWindow) => {
-      presenter.present(frame, config, timing, outputWindow);
-    });
-    frames.delay(constantDelay(0));
     audio = createBrowserAudio({
       credentials: () => ({ code: '0000', session: 'synthetic-local-only' }),
       onState(state) {
@@ -61,8 +44,6 @@ globalThis.startAudioProbe = async () => {
         }
       },
       onAudioReference(reference) {
-        presenter.audio(reference); frames.audio(reference); mirrorPresenter.audio(reference); mirrorFrames.audio(reference);
-        for (const probe of workerProbes) probe.audio(reference);
         if (reference) {
           states.push({ mode: reference.mode, state: reference.state, at: performance.now() });
           if (reference.state === 'untimed') {
@@ -113,27 +94,7 @@ globalThis.startAudioProbe = async () => {
     // The runner clicks the page's button. No autoplay override or CSP
     // relaxation is passed to the browser.
     audio.start();
-    workerProbes.push(await createWorkerProbe(false, clock()));
-    workerProbes.push(await createWorkerProbe(true, clock()));
-    // Keep the production hardware preference. Unavailable native decoders are
-    // reported explicitly; Canvas/audio timing still use real browser outputs.
-    workerProbes.push(await createWorkerProbe(false, clock(), 'carplay'));
-    workerProbes.push(await createWorkerProbe(true, clock(), 'carplay'));
-    controlTimer = setInterval(() => { const value = clock(); audio.clock(value); for (const probe of workerProbes) probe.clock(value); }, 100);
-    videoTimer = setInterval(() => {
-      // The desktop H.264 decoder may retain several frames. Deliver future
-      // producer anchors early enough to exercise scheduling inside the same cap.
-      const local = performance.now() + 200;
-      painter.fillStyle = '#2366bb'; painter.fillRect(0, 0, 160, 90);
-      painter.fillStyle = '#ee9922'; painter.fillRect(sequence % 120, 20, 20, 50);
-      const frame = new VideoFrame(input, { timestamp: Math.round(local * 1000) });
-      frames.present(frame, { mode: 'carplay', epoch: 1, width: 160, height: 90 }, 1,
-        performance.timeOrigin + local, { sourceTimeMs: rawSourceAt(local), clockGeneration: 1 });
-      mirrorFrames.present(new VideoFrame(input, { timestamp: Math.round(local * 1000) }),
-        { mode: 'airplay-mirror', epoch: 1, width: 160, height: 90 }, 1,
-        performance.timeOrigin + local, { sourceTimeMs: rawSourceAt(local), clockGeneration: 1 });
-      for (const probe of workerProbes) probe.frame(local, rawSourceAt(local));
-    }, 1000 / 30);
+    controlTimer = setInterval(() => audio.clock(clock()), 100);
     await sleep(2000);
     if (referencesWithoutDebug < 20) fail('Missing production playout references: ' + JSON.stringify(audio.stats()));
     debugEnabled = true;
@@ -163,45 +124,23 @@ globalThis.startAudioProbe = async () => {
     if (!(diagnosticPeak > .05 && diagnosticNonzero > 1000)) fail('Actual worklet output did not contain the nonzero waveform');
     if (violations.length) fail('Production CSP blocked integration');
     if (audioErrors.length) fail('Audio integration reported errors: ' + audioErrors.join('; '));
-    const outside = value => !Number.isFinite(value.sourceDelay) || value.sourceDelay > 300;
-    const carplayDraws = draws.filter(value => value.mode === 'carplay'), mirrorDraws = draws.filter(value => value.mode === 'airplay-mirror');
-    if (carplayDraws.length < 50 || mirrorDraws.length < 50 || draws.some(outside)) {
-      fail('Canvas submission escaped an independent sender-relative 300ms ceiling');
-    }
-    const workers = workerProbes.map(probe => probe.result());
-    for (const result of workers) {
-      if (result.errors.length) fail('Actual ' + result.mode + ' worker failed: ' + JSON.stringify(result));
-      if (result.unsupported) continue;
-      if (!(result.stats?.decoded > 100)) fail('Actual ' + result.mode + ' decode failed: ' + JSON.stringify(result));
-      if (result.mode === 'offscreen' && !(result.stats?.currentFps > 10)) fail('Actual worker OffscreenCanvas did not draw');
-      if (result.mode === 'transfer' && (result.draws < 50 || result.maxSourceDelay > 300)) {
-        fail('Actual transferred video violated its independent source cap: ' + JSON.stringify(result));
-      }
-    }
     globalThis.__audioProbeResult = { done: true, ok: true, browser: navigator.userAgent,
       secureContext: isSecureContext, resamplerCsp: 'production policy, no bypass', outputBeforeSuspend,
       summary: { carplayReferences: primary.length, mixedMirrorReferences: reports.length - primary.length, referencesWithoutDebug,
-        peak: diagnosticPeak, nonzero: diagnosticNonzero, draws: draws.length, audioRenderer,
-        carplayDraws: carplayDraws.length, mirrorDraws: mirrorDraws.length,
-        carplayMaxSourceDelayMs: Math.max(...carplayDraws.map(value => value.sourceDelay)),
-        mirrorMaxSourceDelayMs: Math.max(...mirrorDraws.map(value => value.sourceDelay)),
+        peak: diagnosticPeak, nonzero: diagnosticNonzero, audioRenderer,
         mirrorAudioMaxSourceDelayMs: null,
         carplayAudioMaxSourceDelayMs: null,
-        hardwareDecode: workers.map(value => ({ mode: value.mediaMode, path: value.mode,
-          state: value.unsupported ? 'unavailable-on-this-browser' : 'requested-hardware-implementation-unproven' })),
-        minAirplaySkewMs: null, maxAirplaySkewMs: null,
-        scheduler: frames.stats(), presenter: presenter.stats() },
-      states, reports: reports.filter((_, index) => index % 10 === 0), lastReference, workers,
+        minAirplaySkewMs: null, maxAirplaySkewMs: null },
+      states, reports: reports.filter((_, index) => index % 10 === 0), lastReference,
       physicalOutputMeasured: false };
   } catch (error) {
     globalThis.__audioProbeResult = { done: true, ok: false, error: error.stack || String(error),
       violations, audioErrors, states: states.slice(-30), reports: reports.slice(-30),
-      diagnosticPeak, diagnosticNonzero, draws: { count: draws.length, outside: draws.filter(value => !Number.isFinite(value.sourceDelay) || value.sourceDelay > 300) }, scheduler: frames?.stats(), presenter: presenter?.stats(), workers: workerProbes.map(probe => probe.result()) };
+      diagnosticPeak, diagnosticNonzero };
   } finally {
-    clearInterval(videoTimer); clearInterval(controlTimer); abort.abort(); audio?.dispose();
+    clearInterval(controlTimer); abort.abort(); audio?.dispose();
     for (const timer of packetTimers) clearInterval(timer);
-    frames?.reset(); presenter?.dispose(); mirrorFrames?.reset(); mirrorPresenter?.dispose(); globalThis.AudioContext = nativeContext;
-    for (const probe of workerProbes) probe.dispose();
+    globalThis.AudioContext = nativeContext;
   }
 };
 document.getElementById('start').addEventListener('click', () => void globalThis.startAudioProbe());

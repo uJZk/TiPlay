@@ -79,13 +79,13 @@ test('busy video summaries retain cadence, audio and touch RTT within the ordina
   const video = { ...Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`counter${i}`, i])),
     currentFps: 48, currentDelta: -19, frameIntervalP95Ms: 61, frameIntervalMaxMs: 128,
     pacingMode: 'display-refresh', pacingDroppedFrames: 3,
-    playbackProfile: 'carplay-touch', decodedQueueFrames: 3, decodedQueueBytes: 24000000, decodedResourceDroppedFrames: 2 };
+    playbackProfile: 'carplay', decodedQueueFrames: 3, decodedQueueBytes: 24000000, decodedResourceDroppedFrames: 2 };
   const [event] = browserDiagnosticEvents({ video, control: { rttMsP95: 72, pending: 1 },
     audio: { sound: true, queuedBytes: 4096 } }, false);
   assert.equal(event.v['video.frameIntervalP95Ms'], 61);
   assert.equal(event.v['video.currentFps'], 48);
   assert.equal(event.v['video.pacingDroppedFrames'], 3);
-  assert.equal(event.v['video.playbackProfile'], 'carplay-touch');
+  assert.equal(event.v['video.playbackProfile'], 'carplay');
   assert.equal(event.v['video.decodedQueueBytes'], 24000000);
   assert.equal(event.v['control.rttMsP95'], 72);
   assert.equal(event.v['audio.queuedBytes'], 4096);

@@ -43,3 +43,12 @@ test('legacy APK pause/play preserves the selected 2x speed while explicit rate 
   applyDirectiveRate(media, { playing: true, rate: 2 }); assert.equal(media.playbackRate, 2);
   assert.deepEqual(writes, [0.75, 2]);
 });
+
+test('unsupported sender speeds preserve VOD playback and live playback stays at normal speed', () => {
+  const media = { playbackRate: 1.5, isLive: false };
+  for (const rate of [.25, 4, NaN]) applyDirectiveRate(media, { rate });
+  assert.equal(media.playbackRate, 1.5);
+  media.isLive = true;
+  applyDirectiveRate(media, { rate: 2 });
+  assert.equal(media.playbackRate, 1);
+});

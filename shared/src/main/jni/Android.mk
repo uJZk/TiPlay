@@ -37,3 +37,18 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH)/speexdsp $(LOCAL_PATH)/speexdsp/include
 LOCAL_CFLAGS := -O2 -DFLOATING_POINT -DUSE_KISS_FFT -DEXPORT= -Wno-unused-parameter
 LOCAL_LDLIBS := -lm
 include $(BUILD_SHARED_LIBRARY)
+
+# Fixed libdatachannel media transport, built by scripts/rtc-audio/build.py.
+include $(CLEAR_VARS)
+LOCAL_MODULE := datachannel
+LOCAL_SRC_FILES := rtc-audio/prebuilt/$(TARGET_ARCH_ABI)/libdatachannel.so
+include $(PREBUILT_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := tiplay_rtc_audio
+LOCAL_SRC_FILES := rtc-audio/rtc_audio_jni.c
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/rtc-audio/include
+LOCAL_CFLAGS := -O2 -Wall -Wextra -Werror -DRTC_ENABLE_WEBSOCKET=0 -DRTC_ENABLE_MEDIA=1
+LOCAL_SHARED_LIBRARIES := datachannel
+LOCAL_LDFLAGS := -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384
+include $(BUILD_SHARED_LIBRARY)

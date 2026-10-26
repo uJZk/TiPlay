@@ -27,7 +27,7 @@ AirPlay uses no PIN; browser pairing retains its separate code.
 | Input | Android | Browser |
 | --- | --- | --- |
 | Mirror | Authenticate/decrypt and relay H.264 or enabled HEVC | WebCodecs and Canvas |
-| URL video | Protocol, authenticated resources and controls | Mediabunny/WebCodecs; TiPlay Canvas/Web Audio engine; Video.js controls |
+| URL video | Protocol, authenticated resources and controls | libmedia AVPlayer Canvas playback; Video.js controls |
 | JPEG/PNG | Bounded original-image cache/resource | Native decoding, EXIF orientation, contain fitting |
 | Type-96 audio | RTP/decryption, packet order, RTP/NTP mapping | libav.js software decode/resample, NetEq and AudioWorklet output |
 
@@ -235,125 +235,61 @@ resource probe, player import or source decoding. It hands off on actual playbac
 ready paused controls or an autoplay gesture prompt. Errors, stop and replacement
 retire the previous indicator; a pending CarPlay loan still hides AirPlay output.
 
-Startup diagnostics separate dependency loading, video/audio selection, audio-menu
-discovery, metadata and first decoded samples from readiness and actual `playing`.
-The browser's source-engine elapsed time freezes at the first actual playback;
-later seeks do not restart that measurement. It excludes the preceding resource
-type probe. Initial zero-position directives reuse already prepared frames;
-nonzero initial positions and later explicit seeks still rebuild at their target.
-Audio-menu discovery currently checks alternative renditions before selected-track
-decoding starts. A slow unused rendition can therefore still delay preparation;
-moving those reads into playback requires scheduling that cannot starve active media.
+URL video uses libmedia AVPlayer for HTTP reading, demuxing, decoding, compressed
+and decoded queues, preloading, buffering, playback clocks and audio/video
+synchronization. TiPlay keeps a thin media facade for the existing AirPlay and
+Video.js controls. Its video output is Canvas; MSE and hidden video-element
+playback are disabled. WebCodecs hardware decoding is preferred where the browser
+supports it. Actual decoder selection and vehicle performance require runtime
+evidence; requesting hardware acceleration does not prove hardware use.
 
-URL audio keeps Mediabunny's native decoding first. Unsupported AAC-LC/ALAC or
-an actual native decoding failure falls back to libav.js in a module Worker,
-reusing Mediabunny's encoded-packet demuxing and seeking. Network errors and
-cancellation do not request another decoder. Audio track selection includes these
-fallback configurations. AAC-ELD is not yet advertised by this URL adapter;
-the underlying libav decoder passes all eight ELD fixture profiles after fixing
-the missing audio codec-type parameter. The realtime ELD path now uses libav.js too; FDK has been removed.
+AVPlayer owns VOD pause/resume, seeking, rate changes, stream selection and completion.
+The facade maps those operations and events to the existing playback identity,
+seek revisions, loading state and phone reports. A source replacement or stop
+retires the old player and its IO/output resources; stale callbacks cannot update
+the replacement. The resource proxy, authenticated session and CarPlay screen loan
+remain separate owners. A prepared or paused player is not evidence of advancing
+playback, and browser audio activation can still require a user gesture.
 
-The URL adapter selects SIMD only for measured stereo AAC-LC and 16-bit ALAC
-44.1→48 kHz workloads, subject to browser SIMD support. At 48 kHz, and for
-unmeasured rates/layouts/bit depths, it selects portable WASM. An initially
-unsupported native decoder uses 48 kHz software output. A failure after native
-PCM has already been delivered preserves that PCM's sample rate; 44.1→44.1 kHz
-therefore also uses portable WASM. Software recovery replays two AAC access units
-for overlap/filter history, clips output at the already delivered frontier and
-flushes at EOF. Seek/replacement/stop cancels the generation's Worker. Existing
-buffer limits, tempo composition and URL A/V synchronization continue to apply.
-The [performance report](../tests/bench/libav/README.md) and
-[production-CSP Worker test](../tests/web-e2e/libav-cast.mjs) record verification.
+Upstream live playback has no ordinary pause operation. For a live URL, TiPlay
+mutes and destroys the current player on pause, retaining only the source/control
+identity. Resume reloads at the live edge; it does not preserve a time-shift buffer
+or resume the old buffered position. A recreated AudioContext can require another
+trusted gesture. VOD pause/resume retains the existing player. A 15-second
+first-render deadline reports a startup timeout if output never begins; timeout
+alone does not establish an unsupported codec.
 
-TiPlay owns one audio-leading clock, bounded queues, buffering, seek and rate;
-silent video uses monotonic time. The shared URL-casting profile favors smoothness:
-750 ms startup / 1500 ms recovery are target playback-time watermarks, not guaranteed
-decoded coverage. The corresponding media-time target is multiplied by playback rate.
-Short-resource EOF, a limiting application budget or a bounded pending-read wait can
-permit playback from smaller real coverage; diagnostics distinguish these decisions.
-These defaults require vehicle tuning. Underrun freezes both streams; playable buffers
-use their intersection. HLS date-time is not media position. Video.js uses its official default skin with ±10-second seek controls and a
-matching casting-end button, and adapts this engine,
-without a second HTML video clock. SoundTouch preserves pitch during rate changes.
-Controls expose actual time/buffer/seek ranges, rate, available tracks, loading and
-Stop, without volume/fullscreen. Pause retains rate, including older APK commands
-that omit it. Playback IDs and independent seek revisions reject stale reports;
-iPhone queries acknowledge new seek targets immediately while browser actual position
-remains distinct. Direct-to-proxy error recovery preserves the current position/rate
-when no newer playback directive supersedes it. Replacement cancels requests/decoders/output.
-Live recovery is bounded.
+The former Mediabunny-based engine, TiPlay decoded-video/PCM queues, serialized
+256 KiB browser reader pool and custom URL PD/SoundTouch scheduling are retired.
+Their 750/1500 ms startup/recovery watermarks, 32-frame/256 MiB video estimate,
+2/3-second video/audio lookahead and 500 ms audio submission horizon are not
+AVPlayer settings. Historical tests and beta.12 field observations of those limits
+do not establish acceptance of the replacement.
 
-The URL engine has separate admission limits; they must not be added or described as
-one total-memory or total-GPU limit:
+The adapter configures `preLoadTime: 4`, `enableJitterBuffer: true`,
+`lowLatency: false`, `jitterBufferMin: 1` and `jitterBufferMax: 4` (seconds where
+applicable). Four-second VOD preloading and the live jitter watermarks are upstream
+controls, not guaranteed decoded coverage, end-to-end delay or total memory caps.
+AVPlayer has its own preloading and queue backpressure. Its live jitter controller
+can adjust buffer watermarks and playback speed from queue/input statistics;
+that policy is not WebRTC NetEq. Queue length or buffered duration is not a hard
+total-memory bound. Browser network buffers, WASM memories, decoded pictures,
+GPU textures and private hardware-decoder surfaces remain separate allocations.
+Measure long playback, high-bitrate/4K material, repeated seeks, source replacement
+and teardown on the intended vehicle before claiming a safe peak or lower CPU.
 
-| Limit | Scope |
-| --- | --- |
-| 32 frames | Application queue of decoded video samples waiting for presentation; the retained canvas picture is separate. |
-| 256 MiB | Current URL video admission estimate for queue plus retained picture, reserving the next sample; changed from beta.12's 96 MiB at the user's request. Coded width × coded height × four bytes estimates ownership, not GPU allocation. Already decoded samples awaiting admission are separate. |
-| 2 seconds | Video media-time lookahead checked before another sink read; sample granularity can cross the threshold. |
-| 3 seconds | Audio media-time lookahead checked before another sink read; an admitted packet can cross the threshold. A single decoded audio packet longer than three seconds is rejected. |
-| 12 MiB | Decoded PCM queue admission threshold checked before the next audio read, not a total PCM hard limit. An admitted packet or tempo output can append in full and cross it; incoming packets, processing and scheduled Web Audio copies are separate. |
-| 16 MiB | Mediabunny raw-byte cache eviction threshold. It can retain the one entry crossing this soft threshold; it does not measure decoder surfaces or all browser network storage. |
-| 256 KiB | Ordinary serialized resource-read unit, not a complete-file size limit. Playlists and resource probes have their own bounds. |
-
-Read admission includes the retained picture and anticipates a replacement rather
-than requiring one more decoded frame to discover capacity pressure. Both pictures
-must fit the estimate, so a single sample above 128 MiB is rejected with the current
-256 MiB budget. Under the earlier 96 MiB setting, a finite-surface regression showed
-this failure: at 1080p/30, a pool holding thirteen
-application samples could stop at about 433 ms before the former next-frame budget
-check, while fourteen allowed startup. This is a controlled code-level failure model;
-the browser's actual hardware pool capacity was not measured in field evidence.
-Pending reads can also reflect resource or decoder waiting. A
-`read-progress-fallback` starts from existing playable coverage after the normal
-startup/recovery wait; it does not assert that hardware buffers are full.
-
-Mediabunny also owns internal decoded samples and decoder/reference buffers outside
-the application queue. Its current sink has no public decoded-prefetch-size option;
-holding fewer application pictures does not establish a total surface bound. The
-canvas retains one sample, and an incoming sample or orientation/render resources can
-coexist with it. Application sample receipt/close counters cannot measure vendor
-decoder output or physical surface release. Likewise, a supported codec and requested
-hardware/latency hint do not establish the decoder's actual hardware implementation.
-The beta.12 field/oracle evidence used 96 MiB, about three 4K/30 pictures or
-67–100 ms. The requested current 256 MiB estimate holds about eight, roughly 267 ms;
-actual coverage can be smaller. The separate 32-frame queue cap remains; the held
-picture counts toward bytes but not those 32 queued frames. At 1080p/30 the joint
-limits cover roughly one second, not several seconds. These remain estimates, not
-vehicle calibration or private decoder-pool capacity. Audio submission is bounded by
-the common continuous A/V coverage
-and existing 500 ms horizon, so ready PCM cannot compensate for missing video or a
-blocked shared animation-frame tick. The beta.12 user's 4K playback was itself
-non-continuous; it cannot establish the cause of steady-playback clicks. The
-controlled scheduling baseline does not identify actual vehicle decoder throughput.
-An audio-master change was not adopted because sustained slow decoding could leave
-video unboundedly behind. Worker isolation, a source-provided lower-cost representation
-and measured hardware throughput remain options requiring explicit ownership,
-synchronization and slow-progress acceptance. The 96-to-256 MiB URL budget adjustment
-left CarPlay/mirror at 64 MiB and did not change DSP, watermarks, the 500 ms audio
-horizon or synchronization. Subsequent DSP changes are described in
-[Browser WASM](Browser-wasm.md). No acoustic improvement is established. See
-[URL playback evidence](Diagnostics.md#airplay-url-playback-evidence).
-
-Readiness and play intent are distinct from an advancing clock. With audio, a suspended
-AudioContext or pending resume can leave decoded media ready without actual playback;
-user activation may be required. Seek, rate and audio-track changes retire the old
-generation and rebuild both queues at the shared position. A retained video picture
-covers the interval until its successor's presentation timestamp, including still-image
-and variable-frame-rate gaps; this does not fabricate missing audio coverage.
-Decoded audio durations and scheduling cursors use integer PCM-frame counts.
-Continuous packet timestamps are aligned only within half a source sample;
-initial seek trimming and genuine gaps/overlaps remain distinct. Partial scheduling
-advances by the samples actually submitted rather than a floating-point target.
-The URL AudioContext requests the decoded source rate and verifies that the browser
-honors it. This keeps short source nodes on one sample grid; the browser converts
-the complete context stream to the output device's rate. Same-format generations
-reuse the context, while a changed audio format retires it before preparing the
-replacement. Unsupported context rates fail explicitly. Requested/context rates
-do not measure the physical device's oscillator or speaker output.
-Failures preserve the available state before cleanup and report actual ownership
-afterwards separately. A canvas-retained picture can remain held until it is closed;
-queue cleanup alone does not establish that all samples or vendor surfaces were released.
+Video.js retains the default controls and Canvas media adapter, including
+±10-second seek, rate, available tracks, preparation/buffering and Stop. The current upstream VOD rate
+range exposed by this adapter is 0.5–2×. Live playback stays at manual 1×
+and hides the rate button; unsupported sender rates cannot abort playback. Exact buffered TimeRanges are unavailable
+from the upstream public queue statistics, so the facade leaves them empty rather
+than converting packet counts into invented coverage. There is
+no second HTML video clock. Pause retains the requested rate, including older APK
+commands that omit it. Playback IDs and independent seek revisions reject stale
+reports; iPhone queries may acknowledge a new seek target before actual playback
+reaches it. Direct-to-proxy recovery preserves position/rate when no newer
+directive supersedes it. Resource errors remain errors rather than a reason to
+silently restore the old playback engine.
 
 Authenticated resources validate browser/playback/resource identity, preserve Range,
 stream media and rewrite bounded HLS manifests/children/keys. Current-iPhone resources
@@ -376,24 +312,13 @@ Changed resource URLs and replacement playback items probe their own routes; the
 first failing route can still add its connection/error wait before fallback succeeds.
 Debug's forced proxy path and synchronous raw-capture writes can also change loading
 costs, so captured admission times do not establish ordinary direct-path startup time.
-Browser media and caption discovery serialize actual network reads. Range-capable media
-uses bounded byte-range units. When Range is ignored, a sequential body is reused per
-resource identity: URL, headers excluding Range and fetch credentials/mode/redirect.
-Different identities can retain separate readers. Interleaved audio/video reads from
-the same URL and identity still retire that reader on a backward logical range and may
-download the prefix again; `resourceBackwardRestarts` and `resourceRangeIgnored` expose
-these observations without recording the URL. The
-LRU pool holds at most four readers and 4 MiB of application-retained network chunks;
-these bounds do not measure the browser's internal network buffers. Backward seeks,
-owner cancellation, eviction and five seconds of inactivity retire readers, awaiting
-cancellation before reusing their slots. FCUP exchanges remain serialized. Startup probes
-request at most 64 KiB, including through FCUP, so
-a large video need not fit inside the broker's whole-response limit just to discover its type.
-Track ranking uses master metadata;
-SDR/decoder validation probes candidates one at a time and skips unavailable alternatives.
-Interrupted requests may be reused only within their original deadlines. Expiry,
-cancellation and replacement release the queue; consumed responses are not a live
-manifest cache. Local files and `skd` keys are excluded.
+Browser resource reads follow the player loader's prefetch, concurrency, retry
+and cancellation policy. TiPlay does not add a second browser network queue or
+media-byte cache. Android FCUP exchanges remain serialized and resource-specific
+route preferences remain distinct from cached response bodies. Startup probes
+request at most 64 KiB, including through FCUP, so a large video need not fit
+inside the broker's whole-response limit merely to discover its type. Local
+files and `skd` keys are excluded from the authenticated resource route.
 
 FCUP sharing keys include the requested byte range. Range reaches both Android HTTP and
 the iPhone loader; a validated partial response is passed through once. An FCUP sender that
@@ -412,16 +337,22 @@ either header alone can still receive 403. Android HTTP and iPhone FCUP apply th
 host-scoped compatibility headers, reevaluating the destination after HTTP redirects
 while preserving signed URLs and byte ranges.
 
-Captions support WebVTT, AVC/HEVC CEA-608/708 text, HLS fMP4 `wvtt`/`stpp` and MP4
-`tx3g`/`wvtt`/`stpp`. Identity AES-128 segments support rotating keys, explicit/sequence
-IVs and encrypted initialization maps, without DRM authorization. Cues follow the
-engine clock through seek/discontinuity/origin changes; lookahead cannot show them
-early. Independent source offsets need a real media anchor; lost live overlap anchors
-stop that track. Bounded discovery never blocks video, disabled sidecars do not
-continuously fetch, and caption failure cannot terminate playback. Only parsed tracks
-expose controls. Output is plain text, excluding TTML images/complex layout and
-CEA-708 window styling. [Apple's AirPlay 2 TV guidance](https://developer.apple.com/streaming/hls-authoring-specification-for-apple-devices.html#amended-requirements-for-airplay-2-enabled-tvs)
-specifies WebVTT; broader support does not prove sender delivery.
+AVPlayer owns subtitle parsing and rendering. TiPlay exposes available subtitle
+stream descriptors and selection through the existing menu; the previous separate
+HLS/MP4 caption discovery, parser and Canvas-caption clock are removed. Supported
+upstream formats do not prove that an AirPlay sender supplies them. In particular,
+CEA-608/708 delivery and rendering need separate verification before being claimed
+as supported by this URL adapter. [Apple's AirPlay 2 TV guidance](https://developer.apple.com/streaming/hls-authoring-specification-for-apple-devices.html#amended-requirements-for-airplay-2-enabled-tvs)
+specifies WebVTT.
+
+The local AVPlayer 1.3.1 bundle includes the selected baseline audio decoder,
+resampling and stretch resources. Video requires browser WebCodecs support; no
+WASM video decoder restores an unsupported codec. Upstream 1.3.1 does not provide
+the former URL ALAC software fallback, and its supported-codec set excludes ALAC.
+This adapter rejects ALAC-only URL audio explicitly instead of silently playing
+video without sound; an available supported alternate audio track is selected.
+Live ALAC still uses its separate libav.js path. Runtime files are hosted with TiPlay rather than
+loaded from an upstream CDN.
 
 ## Maintenance
 
@@ -430,7 +361,7 @@ specifies WebVTT; broader support does not prove sender delivery.
 | Capability/format truth | [ReceiverCapabilities](../shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverCapabilities.kt), [audio formats](../shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverMirrorAudioFormat.kt) |
 | Resource bounds/deadlines | [ReceiverResourceRequests](../shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverResourceRequests.kt), [proxy](../shared/src/main/java/com/shilapi/xcertplay/web/AirPlayVideoProxy.kt) |
 | Engine/control ownership | [airplay-media.js](../site/play/airplay-media.js), [videojs-player.js](../site/play/videojs-player.js) |
-| Dependencies/licenses/rebuild | [lockfile](../scripts/videojs/package-lock.json), [media bundle](../site/play/vendor/mediabunny/README.md), [controls bundle](../site/play/vendor/videojs/README.md) |
+| Dependencies/licenses/rebuild | [AVPlayer lockfile](../scripts/avplayer/package-lock.json), [player provenance](../site/play/vendor/libmedia/README.md), [controls bundle](../site/play/vendor/videojs/README.md) |
 | UxPlay/playfair provenance | [notices](Third-party-notices.md), [native record](../shared/src/main/jni/airplay/README.md) |
 
 Runtime dependencies are self-hosted. Asset changes update the complete Service Worker

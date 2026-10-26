@@ -4,8 +4,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserAudio } from '../../site/play/audio.js';
 import { createAudioReferenceTimeline } from '../../site/play/audio-output-clock.js';
-import { createTimedFrames } from '../../site/play/media-timing.js';
-import { constantDelay } from '../../site/play/delay-plan.js';
 
 // Browser scheduling and clocks are controlled; the production worklet and DSP
 // are loaded unchanged and exchange real structured-cloned, transferred records.

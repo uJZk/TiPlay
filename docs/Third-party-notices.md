@@ -119,27 +119,34 @@ The freestanding audio core links no standard runtime archives.
   [test fixtures](../tests/web/fixtures/aac-eld/README.md). FDK is not a runtime dependency.
 - Video.js native controls, skin and media adapter helpers: Apache-2.0, self-hosted under
   `site/play/vendor/videojs/` with license texts and retained bundle notices.
-- SoundTouch 2.4.0: LGPL-2.1-or-later, built from complete unmodified C++ source
-  for SIMD WASM tempo processing. Portable builds remain available for reproduction
-  and comparison. Sources, ABI adapter, license and provenance are under
-  [vendor/soundtouch](../site/play/vendor/soundtouch/README.md).
-- Mediabunny and the no-SIMD SoundTouchJS tempo backend: MPL-2.0. hls.js WebVTT and CEA-608 parsing helpers: Apache-2.0 with
-  retained notices for their Mozilla-derived parser. The media bundle, full dependency
-  licenses and source provenance are under `site/play/vendor/mediabunny/`; the source
-  packages and their integrity are pinned in `scripts/videojs/package-lock.json`.
+- libmedia AVPlayer 1.3.1: LGPL-3.0-or-later, with MIT-licensed cheap/common and subtitle helpers.
+  The self-hosted Canvas/Web Audio player, local lazy-loaded modules, FFmpeg audio
+  decoders/resampler and SoundTouch tempo WASM are under
+  [vendor/libmedia](../site/play/vendor/libmedia/README.md). Package integrity,
+  release commit, artifact checksums, complete dependency notices and reproducible
+  scoped RequestInit patches are recorded there. No video WASM encoder/decoder is shipped.
 - Retained native SpeexDSP 1.2.1 compatibility code: BSD-style licence under
   `shared/src/main/jni/speexdsp/COPYING`. The browser ships no Speex/WASM AEC.
 
-## Android WebRTC DataChannels
+## Android WebRTC transports
 
 The pinned `io.github.webrtc-sdk:android:150.7871.01` AAR supplies Chromium M150
 WebRTC/SCTP, from [webrtc-sdk/android](https://github.com/webrtc-sdk/android/tree/v150.7871.01).
-TiPlay uses reliable ordered DataChannels; it does not create WebRTC native media
-tracks. WebRTC uses BSD-3-Clause, the publisher repository uses MIT, and bundled
+TiPlay uses reliable ordered DataChannels and original-codec native video tracks.
+WebRTC uses BSD-3-Clause, the publisher repository uses MIT, and bundled
 components retain their individual licenses. The unmodified publisher notices,
 source URLs, AAR SHA-256 and ABI sizes are retained under
 [licenses/webrtc](../shared/src/main/assets/licenses/webrtc/PROVENANCE.txt)
 and included in APK assets with binary distributions.
+
+Original-codec audio uses a separate libdatachannel 0.24.6 peer through its official
+C API. libdatachannel and libjuice use MPL-2.0; Mbed TLS 3.6.7 uses its Apache-2.0
+option; usrsctp and libsrtp use BSD licenses; plog uses MIT. Source revisions,
+archive checksums, corresponding license texts, four-ABI artifact checksums and
+rebuild instructions are in
+[native RTC audio](../shared/src/main/jni/rtc-audio/README.md).
+The TiPlay JNI bridge remains GPL-3.0-only. This transport neither decodes nor
+re-encodes the source audio.
 
 ## Browser SRP pairing
 

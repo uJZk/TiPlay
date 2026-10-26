@@ -38,6 +38,234 @@ async function fixture(options = {}) {
   return { media, peer: Peer.latest, channels: Peer.latest.channels, errors, abort };
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
+const audioAnswer = (request, fields = {}) => JSON.stringify({ q: request.q, generation: request.generation, sdp: 'native-audio-answer', ...fields });
+
+test('audio-only signaling shares authenticated control without colliding with application RPCs or retiring media', async () => {
+  const f = await fixture();
+  try {
+    const native = f.media.audioOffer({ sdp: 'native-audio-offer', generation: 1 });
+    const ordinary = f.media.control(2, [{ k: 'heartbeat' }]);
+    const offer = f.channels.control.sent.find(message => message.k === 'audio-offer');
+    assert.ok(offer.q > 2 ** 40);
+    f.channels.control.receive(JSON.stringify({ q: 2, state: 'ok' }));
+    assert.equal((await ordinary).state, 'ok');
+    f.channels.control.receive(audioAnswer(offer));
+    assert.equal((await native).sdp, 'native-audio-answer');
+    assert.equal(f.media.isConnected(), true);
+    assert.equal(f.channels.audio.readyState, 'open'); assert.equal(f.channels.video.readyState, 'open');
+  } finally { f.media.close(); }
+});
+
+test('native audio offers reject empty SDP, UTF-8 overflow and invalid generations before sending', async () => {
+  const f = await fixture();
+  try {
+    for (const value of [null, {}, { sdp: '', generation: 1 }, { sdp: ' \r\n', generation: 1 },
+      { sdp: '界'.repeat(17000), generation: 1 }, ...[0, -1, 1.5, 0x80000000, Number.NaN].map(generation => ({ sdp: 'offer', generation }))])
+      await assert.rejects(f.media.audioOffer(value), error => error.reason === 'audio-offer-format');
+    assert.equal(f.channels.control.sent.some(message => message.k === 'audio-offer'), false);
+    const pending = f.media.audioOffer({ sdp: 'offer', generation: 1 });
+    const offer = f.channels.control.sent.find(message => message.k === 'audio-offer');
+    f.channels.control.receive(audioAnswer(offer)); await pending;
+    await assert.rejects(f.media.audioOffer({ sdp: 'offer', generation: 1 }), error => error.reason === 'audio-offer-generation');
+    assert.equal(f.media.isConnected(), true);
+  } finally { f.media.close(); }
+});
+
+test('bad native audio answers reject only their RPC and preserve fallback/video transport', async () => {
+  for (const fields of [{ sdp: '' }, { sdp: ' \r\n' }, { sdp: '界'.repeat(17000) }, { generation: 2 }]) {
+    const f = await fixture();
+    try {
+      const pending = f.media.audioOffer({ sdp: 'offer', generation: 1 });
+      const rejected = assert.rejects(pending, error => error.reason === 'audio-answer-format');
+      const offer = f.channels.control.sent.find(message => message.k === 'audio-offer');
+      f.channels.control.receive(audioAnswer(offer, fields)); await rejected;
+      assert.equal(f.media.isConnected(), true); assert.deepEqual(f.errors, []);
+    } finally { f.media.close(); }
+  }
+});
+
+test('native audio deadline and old replies cannot settle a later peer generation', async () => {
+  const f = await fixture({ audioTimeoutMs: 15 });
+  try {
+    await assert.rejects(f.media.audioOffer({ sdp: 'offer-1', generation: 1 }), error => error.reason === 'control-timeout');
+    const old = f.channels.control.sent.find(message => message.k === 'audio-offer');
+    let settled = false;
+    const pending = f.media.audioOffer({ sdp: 'offer-2', generation: 2 }).then(value => { settled = true; return value; });
+    const current = f.channels.control.sent.filter(message => message.k === 'audio-offer').at(-1);
+    f.channels.control.receive(audioAnswer(old)); await settle();
+    assert.equal(settled, false);
+    f.channels.control.receive(audioAnswer(current)); assert.equal((await pending).generation, 2);
+    assert.equal(f.media.isConnected(), true);
+  } finally { f.media.close(); }
+});
+
+test('native audio events are generation-bound, sanitized, isolated from listener errors and removable', async () => {
+  const f = await fixture(), events = [];
+  const remove = f.media.audioEvents(value => events.push(value));
+  const throwing = f.media.audioEvents(() => { throw Error('output observer failed'); });
+  const send = fields => f.channels.control.receive(JSON.stringify({ k: 'audio-error', generation: 1, reason: 'audio-source-failed', ...fields }));
+  try {
+    send({}); assert.deepEqual(events, [], 'no native generation has been negotiated');
+    const pending = f.media.audioOffer({ sdp: 'offer', generation: 1 });
+    const offer = f.channels.control.sent.find(message => message.k === 'audio-offer');
+    f.channels.control.receive(audioAnswer(offer)); await pending;
+    for (const fields of [{ generation: 0 }, { generation: 0x80000000 }, { generation: 1.5 },
+      { generation: 2 }, { reason: 'x'.repeat(101) }, { reason: { invalid: true } }]) send(fields);
+    assert.deepEqual(events, []);
+    send({ extra: 'not-a-public-event-field' });
+    assert.deepEqual(events, [{ k: 'audio-error', generation: 1, reason: 'audio-source-failed' }]);
+    send({ k: 'audio-restart-required', reason: undefined }); assert.equal(events.length, 2);
+    assert.equal(f.media.isConnected(), true); assert.deepEqual(f.errors, []);
+    remove(); throwing(); send({}); assert.equal(events.length, 2);
+    f.media.close(); send({}); assert.equal(events.length, 2, 'closed peers cannot dispatch retained callbacks');
+  } finally { remove(); throwing(); f.media.close(); }
+});
+
+test('native audio signaling requires authentication and closing retires pending negotiation without affecting later owners', async () => {
+  const media = createRtcMediaTransport({ PeerConnection: Peer });
+  try { await assert.rejects(media.audioOffer({ sdp: 'offer', generation: 1 }), error => error.reason === 'audio-unavailable'); }
+  finally { media.close(); }
+  const f = await fixture();
+  const pending = f.media.audioOffer({ sdp: 'offer', generation: 1 });
+  const rejected = assert.rejects(pending, error => error.reason === 'transport-closed');
+  const offer = f.channels.control.sent.find(message => message.k === 'audio-offer');
+  f.media.close(); await rejected;
+  f.channels.control.receive(audioAnswer(offer)); assert.equal(f.media.stats().state, 'closed');
+});
+
+test('pre-auth native audio events cannot bypass authentication or tear down the main peer', async () => {
+  const f = await fixture({ exchange: async () => {
+    Peer.latest.channels.control.receive(JSON.stringify({ k: 'audio-error', generation: 1, reason: 'not-authenticated' }));
+    return { type: 'answer', sdp: 'remote-answer\r\na=candidate:1 1 udp 1 192.0.2.2 5001 typ host\r\n',
+      epoch: 7, fragmentBytes: RTC_FRAGMENT_BYTES, transport: RTC_TRANSPORT };
+  } });
+  try { assert.equal(f.media.isConnected(), true); assert.deepEqual(f.errors, []); assert.equal(f.media.stats().nativeAudioInvalidEvents, 1); }
+  finally { f.media.close(); }
+});
+
+test('native slot-ready control is exact-owner, generation-bound and independent of media payloads', async () => {
+  const f = await fixture();
+  try {
+    const owner = { rtcGeneration: 1, rtpSlot: 'slot_0', rtcOwnerEpoch: 0xffffffff, type: 255, mode: 'carplay' };
+    assert.throws(() => f.media.audioTrackReady(owner), error => error.reason === 'audio-track-ready-format');
+    const pending = f.media.audioOffer({ sdp: 'offer', generation: 1 });
+    const offer = f.channels.control.sent.find(message => message.k === 'audio-offer');
+    f.channels.control.receive(audioAnswer(offer)); await pending;
+    for (const value of [{ ...owner, rtcGeneration: 2 }, { ...owner, rtpSlot: '' }, { ...owner, rtpSlot: 0 },
+      { ...owner, rtcOwnerEpoch: -1 }, { ...owner, rtcOwnerEpoch: 0x100000000 }, { ...owner, type: 5 },
+      { ...owner, type: 256 }, { ...owner, mode: 'invalid' }])
+      assert.throws(() => f.media.audioTrackReady(value), error => error.reason === 'audio-track-ready-format');
+    f.media.audioTrackReady({ ...owner, extra: 'discarded' });
+    assert.deepEqual(f.channels.control.sent.at(-1), { k: 'audio-track-ready', ...owner });
+    assert.equal(f.media.isConnected(), true);
+  } finally { f.media.close(); }
+});
+
+test('native video uses a recvonly transceiver and withholds remote track until authentication', async () => {
+  const received = [], video = { kind: 'video', stopped: 0, stop() { this.stopped++; } };
+  class TrackPeer extends Peer {
+    addTransceiver(kind, options) {
+      this.videoTransceiver = { kind, ...options, setCodecPreferences: codecs => { this.preferredCodecs = codecs; } };
+      return this.videoTransceiver;
+    }
+    async setRemoteDescription(description) {
+      this.ontrack({ track: video });
+      assert.equal(received.length, 0, 'an SDP track event is not an authenticated media session');
+      await super.setRemoteDescription(description);
+    }
+  }
+  const codecs = [{ mimeType: 'video/H264', clockRate: 90000 }];
+  const f = await fixture({ PeerConnection: TrackPeer, videoTrack: true, videoCodecs: codecs, onVideoTrack: track => received.push(track) });
+  assert.equal(f.peer.videoTransceiver.kind, 'video'); assert.equal(f.peer.videoTransceiver.direction, 'recvonly');
+  assert.deepEqual(f.peer.preferredCodecs, codecs); assert.deepEqual(received, [video]);
+  assert.equal(f.media.fallbackVideo, undefined, 'live video cannot fall back to a compressed DataChannel decoder');
+  assert.equal(f.media.isConnected(), true);
+  assert.equal(f.channels.audio.readyState, 'open');
+  assert.equal(f.media.videoTrack(), video); f.media.close(); assert.equal(video.stopped, 1);
+  const late = { kind: 'video', stopped: false, stop() { this.stopped = true; } };
+  f.peer.ontrack({ track: late }); assert.equal(late.stopped, true); assert.equal(received.length, 1);
+});
+
+test('legacy peers never request a media transceiver', async () => {
+  const f = await fixture();
+  assert.equal(f.peer.videoTransceiver, undefined); assert.equal(f.media.videoTrack(), null);
+  f.media.close();
+});
+
+class RenegotiatingPeer extends Peer {
+  constructor(options) { super(options); this.transceivers = []; }
+  addTransceiver(kind, options) {
+    const transceiver = { kind, ...options, stopped: false, stop() { this.stopped = true; }, setCodecPreferences(codecs) { this.codecs = codecs; } };
+    this.transceivers.push(transceiver); return transceiver;
+  }
+  async setRemoteDescription(description) {
+    if (!this.remoteDescription) await super.setRemoteDescription(description);
+    else this.remoteDescription = description;
+    const track = { kind: 'video', stopped: false, stop() { this.stopped = true; } };
+    this.ontrack({ track, transceiver: this.transceivers.at(-1) });
+  }
+}
+const videoOptions = { PeerConnection: RenegotiatingPeer, videoTrack: true, videoCodecs: [{ mimeType: 'video/H264', clockRate: 90000 }] };
+const videoAnswer = request => JSON.stringify({ k: 'video-answer', q: request.q, generation: request.generation,
+  videoTransport: 'webrtc-track-v1', sdp: 'new-answer\r\na=candidate:1 1 udp 1 192.0.2.2 5001 typ host\r\n' });
+
+test('video-only renegotiation waits for generation preparation and retains audio/control and metadata', async () => {
+  let prepare, prepared = false;
+  const tracks = [], generations = [];
+  const f = await fixture({ ...videoOptions, onVideoTrack: (track, generation) => tracks.push({ track, generation }),
+    onVideoGeneration: generation => { generations.push(generation); return new Promise(resolve => { prepare = () => { prepared = true; resolve(); }; }); } });
+  try {
+    const original = tracks[0].track;
+    const pending = f.media.restartVideo();
+    assert.equal(f.media.restartVideo(), pending, 'only one negotiation can be in flight');
+    await settle();
+    const offer = f.channels.control.sent.find(value => value.k === 'video-offer');
+    assert.equal(offer.generation, 2); assert.equal(original.stopped, true); assert.equal(f.peer.transceivers[0].stopped, true);
+    f.channels.control.receive(videoAnswer(offer)); await settle();
+    assert.deepEqual(generations, [2]); assert.equal(tracks.length, 1);
+    assert.equal(f.channels.control.sent.some(value => value.k === 'video-ready'), false);
+    prepare(); await pending;
+    assert.equal(prepared, true); assert.equal(tracks.at(-1).generation, 2);
+    assert.deepEqual(f.channels.control.sent.at(-1), { k: 'video-ready', generation: 2 });
+    assert.equal(f.media.isConnected(), true); assert.equal(f.channels.audio.readyState, 'open'); assert.equal(f.channels.video.readyState, 'open');
+    assert.equal(f.peer.options.bundlePolicy, 'max-bundle');
+  } finally { f.media.close(); }
+});
+
+test('video renegotiation timeout is bounded and a late answer cannot settle a later attempt', async () => {
+  const f = await fixture({ ...videoOptions, videoTimeoutMs: 15 });
+  try {
+    await assert.rejects(f.media.restartVideo(), error => error.reason === 'rtc-video-renegotiation-timeout');
+    assert.equal(f.media.isConnected(), true);
+    const old = f.channels.control.sent.find(value => value.k === 'video-offer');
+    let settled = false;
+    const second = f.media.restartVideo().then(() => { settled = true; });
+    await settle(); const current = f.channels.control.sent.filter(value => value.k === 'video-offer').at(-1);
+    assert.notEqual(current.q, old.q); assert.equal(current.generation, old.generation);
+    f.channels.control.receive(videoAnswer(old)); await settle(); assert.equal(settled, false);
+    f.channels.control.receive(videoAnswer(current)); await second;
+    assert.equal(f.media.isConnected(), true);
+  } finally { f.media.close(); }
+});
+
+test('closing a peer cancels video negotiation and cannot deliver its late track/answer to another owner', async () => {
+  const f = await fixture(videoOptions);
+  const pending = f.media.restartVideo(); await settle();
+  const offer = f.channels.control.sent.find(value => value.k === 'video-offer');
+  f.media.close(); await assert.rejects(pending);
+  f.channels.control.receive(videoAnswer(offer));
+  assert.equal(f.media.stats().state, 'closed');
+  assert.equal(f.channels.control.sent.some(value => value.k === 'video-ready'), false);
+});
+
+test('video-only errors and stale video generations cannot retire independent audio', async () => {
+  const errors = [], f = await fixture({ ...videoOptions, onVideoError: reason => errors.push(reason) });
+  try {
+    f.channels.control.receive(JSON.stringify({ k: 'video-error', reason: 'unsupported-codec', generation: 1 }));
+    f.channels.control.receive(JSON.stringify({ k: 'video-error', reason: 'old-source', generation: 0 }));
+    assert.deepEqual(errors, ['unsupported-codec']); assert.equal(f.media.isConnected(), true); assert.equal(f.errors.length, 0);
+  } finally { f.media.close(); }
+});
 
 test('direct peer uses reliable ordered channels and never configures a relay or partial reliability', async () => {
   const f = await fixture();

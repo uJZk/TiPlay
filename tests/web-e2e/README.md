@@ -4,7 +4,7 @@ These optional scripts run the production browser code in desktop Chromium. [CI]
 
 ## Requirements and basic runs
 
-Use Node 22, `playwright-core` installed outside the repository, and a Chromium executable supplied through `CHROMIUM`. Codec availability varies by Chromium build. The general/video scripts default to `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`; audio/photo default to `/usr/bin/chromium`, so explicitly setting the path is recommended.
+Use Node 22, `playwright-core` installed outside the repository, and a Chromium executable supplied through `CHROMIUM`. Codec availability varies by Chromium build. The general harness defaults to `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`; URL/audio/photo checks default to `/usr/bin/chromium`, so explicitly setting the path is recommended.
 
 ```sh
 npm install --prefix /tmp/pw playwright-core
@@ -21,6 +21,27 @@ output labels the override. It does not establish hardware decoding or change
 production behavior.
 
 All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LAN servers require direct access. `run.mjs` and `phone-run.mjs` print `ok -` checks and finish with `all checks passed`, or exit nonzero on failure. Other harnesses print results and exit nonzero on assertion failure.
+
+## Direct live-audio and video-track checks
+
+```sh
+CHROMIUM=/path/to/chromium node tests/web-e2e/audio-direct-output.mjs
+CHROMIUM=/path/to/chromium node tests/web-e2e/rtc-canvas.mjs
+```
+
+The audio check runs actual AAC-LC, AAC-ELD and ALAC stereo decoder Workers into
+the production AudioWorklet through MessagePorts. It requires nonzero rendered
+output, scalar-only main-thread reports, exact admitted/consumed byte accounting,
+finite EOS and released owners. It does not measure speakers or CPU savings.
+
+The video check uses a Canvas-generated source, local WebRTC RTP reception,
+MediaStreamTrackProcessor and the production main/Worker Canvas presenters; it
+does not create a video element. `--local-track` bypasses RTP solely to isolate
+Processor and Canvas behavior. That result must not be reported as successful
+WebRTC reception or Android compressed-video passthrough. The current execution
+environment's managed Chromium policy disables non-proxied UDP, so the RTP check
+cannot obtain ICE candidates there; leave that policy unchanged and report the
+unrun integration boundary. Both paths still require actual vehicle acceptance.
 
 ## Live CarPlay CPU sampling
 
@@ -177,25 +198,15 @@ replay CPU cost does not establish vehicle CPU utilization or physical crackles.
 | `run.mjs` | Complete production page over a real browser DataChannel peer with synthetic phone VP8 input, pairing/code privacy, touch/viewport, telemetry, reconnect/keyframe recovery, localization, takeover, nested hosting and offline Service Worker cache boundaries. Exercises worker-stream, worker-chunk, worker-frame and main-thread fallback, and asserts no legacy HTTP media stream opens. Optional FFmpeg/libvpx (`FFMPEG` override); otherwise browser `VideoEncoder`, also forced by `E2E_VP8=browser`. |
 | `phone-run.mjs` | Compiled JVM shared compatibility API: removed local-page routes, Host/cache rules, H.264 framing, authenticated control/touch, source-owner epochs, `/bye` and privacy. Directly requests legacy records and verifies the production page rejects this server's missing native RTC. It does not test production playback or Android native WebRTC. |
 | `receiver-ui.mjs` | Production presentation functions with real Chromium DOM, CSS and CSP, driven by structured receiver/decoder events. Covers Chinese/English at 320/800 pixels, pending borrow, producer/epoch replacement, no success text, permission/failure revisions, closable notices, diagnostics and monitor controls. This component harness does not pair, decode media or establish DataChannel delivery. |
-| `airplay-video.mjs` | Real Mediabunny/WebCodecs playback engine, Video.js controls/skin, canvas pixels, seek/pause/rate, ±10-second buttons, mouse/touch double-tap isolation, narrow layout with production CSS, captions, mute restoration, ownership, disposal and sanitized failure diagnostics under production CSP. Needs an MP4 fixture; HLS optional. |
+| `airplay-video.mjs` | Production AVPlayer adapter and Video.js controls under the production CSP: changing Canvas pictures, pause/seek/rate, seek button, double-click isolation, narrow layout, upstream English/Chinese HLS subtitles at EOF, simultaneous subtitle selection/seek, stop signaling and disposal. Needs an MP4 fixture; HLS optional. |
+| `avplayer-url.mjs` | Generates original MP4/HLS fixtures with FFmpeg and exercises the production AVPlayer adapter: real Canvas pixels, pause/resume, seek, ended/replay, no-ENDLIST live classification/refresh/resume, explicit SDR preference and all-HDR rejection, proxy-only nested URL/redirect guards, HTTP failure, cancellation and worker/context cleanup. Uses no SharedArrayBuffer, rejects video-element creation and external runtime dependencies. |
 | `airplay-photo.mjs` | Actual page CSP, authenticated synthetic EXIF JPEG, native decode/contain fit, ownership, resource reuse and cleanup. |
-| `wasm-offline.mjs` | Production Service Worker at a nested path; offline WASM/module loading, audio core, scalar/SIMD SoundTouch and live libav ELD Worker output against native FFmpeg PCM. Source archives stay outside the runtime cache. |
+| `wasm-offline.mjs` | Production Service Worker at a nested path; offline loading of every cached WASM asset, audio core execution and live libav ELD Worker output against native FFmpeg PCM. This does not establish offline AVPlayer playback. Source archives stay outside the runtime cache. |
 | `airplay-audio.mjs` | Real libav Workers under production CSP: AAC-LC, eight ELD profiles, ALAC 16/24-bit, normalized 48 kHz timelines, EOF, NoData codec history and cancellation. WebCodecs audio is disabled during the test. |
-| `url-audio-signal.mjs` | Production URL engine with synthetic decoded PCM, native OfflineAudioContext source nodes and a whole-buffer reference, plus real AudioContext/AudioWorklet capture during deliberate main-thread stalls. Checks source-rate requests, packet/slice continuity, continuous resampling and bounded scheduling recovery for 44.1/48 kHz output. No mirror worklet or captured media is used. |
-| `airplay-short-audio.mjs` | Production URL engine against native whole-buffer duration-limited rendering at 44.1/48 kHz. Covers one-sample and fractional-sample durations, padded decoded packets, exact output samples and play/ended ordering; it does not measure physical speaker output. |
-| `media-clock.mjs` | Production CSP, genuine WASM soxr/audio core/AudioWorklet, independent mixed CarPlay/mirror PCM, actual output timestamps, suspend/resume, and main/worker/OffscreenCanvas video timing. Requires H.264 decoding, AudioWorklet, `getOutputTimestamp`, OffscreenCanvas and transferable streams. |
+| `media-clock.mjs` | Production CSP, genuine NetEq/audio-core WASM and AudioWorklet, independent mixed CarPlay/mirror PCM, actual output timestamp evidence and suspend/resume. Requires AudioWorklet; renderer/output-timestamp availability stays explicit. Current native video/Canvas is checked separately by `rtc-canvas.mjs`. |
 | `rtc.mjs` | Production four-digit SRP6a pairing with native browser WebCrypto, actual BC 1.79 cross-language vectors and forged-proof/SDP/session rejection. The full run then checks two real Chromium peers with ICE/DTLS/SCTP, byte-exact large-record fragmentation, independent audio consumption and reopen barriers, receive credit, eight concurrent delayed control replies, trusted clock, graceful bye, abort, malformed epochs and bounded signaling timeout. No Android JNI, packet-loss simulation, vehicle hardware decode or physical output proof. |
 
 The Performance monitor check verifies a non-intercepting overlay without replacing the media connection. Current fields are codec, actual last-second draw FPS, latest synchronized Delta and explicit browser discards; five-second offset distributions remain in diagnostics. Fake source times validate the timing path, not iPhone capture-to-display latency. Resize/reconnect checks cover browser layout/reporting, not iPhone replacement-display negotiation.
-
-For URL audio signal regression, run
-`NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/url-audio-signal.mjs`.
-`TEST_URL_AUDIO_ENGINE=/absolute/path/to/airplay-media.js` optionally selects a
-frozen source snapshot for a before/after check; the runner reports its SHA-256.
-The deterministic scheduling clock creates the production graph before native
-offline rendering. This measures PCM, node boundaries and native resampling;
-it does not establish live device deadlines, autoplay permission or audible
-speaker behavior. Keep this separate from the mirror decoder/worklet checks.
 
 ## DataChannel transport
 
@@ -243,28 +254,22 @@ The runner clicks the page's Start button and uses the production CSP and bundle
 WASM resampler and audio core without autoplay or CSP bypasses. All assets and synthetic media stay on
 loopback. It verifies output references before enabling diagnostic capture, then
 checks nonzero worklet output, independent CarPlay/mirror producers, an actual
-context suspend/resume and clock refinement. Main-thread presentation, real H.264
-worker decode with frame transfer, and worker OffscreenCanvas use the same output
-reference and retain separate source-relative video and audio timelines.
+context suspend/resume and clock refinement. It does not instantiate the retired
+application video decoder or decoded-frame scheduler; `rtc-canvas.mjs` checks the
+current native WebRTC track-to-Canvas path separately.
 
 The page uses the exact production CSP with `'wasm-unsafe-eval'` and without
 JavaScript eval permission. Both shipped WASM modules must load and produce actual
 nonzero worklet output and Standard-mode references; it cannot pass by bypassing
-audio output or widening a video deadline.
+audio output or inventing physical speaker timing.
 
-The H.264 source is the original black 16×16
-[`embedded-tx3g.mp4` fixture](../web/fixtures/README.md), whose FFmpeg generation
-instructions are recorded with the fixture. The probe demuxes its first keyframe,
-converts AVC parameter sets and length-prefixed NAL units to Annex B, and repeats
-that independent keyframe with synthetic presentation timestamps. A 200 ms
-producer lead permits desktop decoder buffering before the source deadline; it
-does not increase the video latency cap. Audio uses continuous nonzero synthetic
-tones, with separate producers and epochs.
+Audio uses continuous nonzero synthetic tones, with separate producers and epochs.
+No video codec or retired video-timing fixture is required for this audio check.
 
 `MEDIA_CLOCK_RESULT` optionally saves the full result, served-asset hashes and
 runtime SHA256 snapshots before and after the run. Runtime changes during a run
 fail the check. Browser/workers and the loopback server close on success or failure.
-These checks measure browser output-clock estimates and Canvas submission. They
+These checks measure browser audio output-clock estimates and Worklet output. They
 do not measure acoustic speaker delay, physical panel presentation, vehicle audio
 routes or iPhone negotiation; physical acceptance remains separate.
 
@@ -309,7 +314,19 @@ NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium \
   node tests/web-e2e/airplay-video.mjs
 ```
 
-Omit `TEST_VIDEO_HLS` for MP4-only coverage. The HLS stub supplies authenticated WebVTT and language switching. At 1.25x, the harness requires an actual SoundTouch SIMD WASM fetch and the `wasm-simd` diagnostic under the exact production CSP. `TEST_PLAYER_SCREENSHOT` optionally saves a player screenshot. Test instrumentation alone reads canvas pixels. The harness forces autoplay and uses local resources; production autoplay, FCUP/CORS reachability, HFP/SCO and vehicle compatibility remain device checks.
+Omit `TEST_VIDEO_HLS` for MP4-only coverage. The subtitle fixtures deliberately retain valid EOF boundaries: one final newline in English and no final newline in Chinese. Both languages must render through the actual non-SAB Worker pipeline, including a same-turn subtitle change and seek. `TEST_PLAYER_SCREENSHOT` optionally saves a player screenshot. The harness uses the AVPlayer Canvas path and checks the production controls; it does not retain assumptions about the removed custom PCM queues or standalone SoundTouch backend. The harness forces autoplay and uses local resources; production autoplay, FCUP/CORS reachability, HFP/SCO and vehicle compatibility remain device checks.
+
+For self-contained MP4/HLS engine checks (FFmpeg must provide libx264 and AAC):
+
+```sh
+NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/avplayer-url.mjs
+```
+
+This check runs without cross-origin isolation, verifies changing nonblack Canvas pictures, observes the generated tone at the actual Web Audio output gain and rejects even transient main-document video-element creation. The analyser is test-only instrumentation, not speaker-output evidence. A mixed HLS master advertises higher-bandwidth PQ, Dolby Vision and unknown-range variants alongside explicit SDR; the test requires SDR playback without requesting the disallowed children, and an all-HDR master must fail before a child request. It exercises real decoding and playback; its live fixture repeats a fixed window and does not establish rotating live-window recovery. It does not measure vehicle memory peaks, hardware decoder selection, audible quality or physical output timing. `--cancellation-only` runs only HTTP failure and pending/early source retirement checks; its result does not establish playback. Cancellation cases cover MP4 headers, HLS master headers, AES-key loading and early 0/20 ms disposal.
+
+Old custom-engine PCM waveform/short-tail harnesses were removed with that engine; their earlier results do not establish AVPlayer behavior.
+
+Like the general video harness, both URL harnesses accept `E2E_SOFTWARE_VIDEO=1` for desktop browsers that reject the production hardware preference. This explicit test-only override applies `no-preference` to WebCodecs in the main document and generated worker scripts. The result labels the override; it does not prove hardware decoding or change the production player.
 
 ```sh
 NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/airplay-photo.mjs

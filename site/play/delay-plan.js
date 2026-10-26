@@ -1,29 +1,21 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 export const INITIAL_MEDIA_DELAY = 60;
 export const MAX_MEDIA_DELAY = 500;
-// These are bounded scheduling policies, not measured end-to-end guarantees.
-// URL casting has a receiver-owned media clock and can prebuffer; live media
-// retains the independently measured sender-relative deadline.
+// Compatibility planning values, not measured native RTP buffering or delay.
+// URL casting is owned by AVPlayer; native live-video scheduling belongs to WebRTC.
 export const PLAYBACK_PROFILES = Object.freeze({
-  'carplay-touch': Object.freeze({ name: 'carplay-touch', maxDelayMs: 300, initialDelayMs: 0,
-    jitterMarginMs: 8, readinessDecay: 0.05, videoDecreaseRate: 0.25,
-    maxVideoFrames: 24, maxVideoBytes: 64 * 1024 * 1024, interactionHoldMs: 750 }),
   carplay: Object.freeze({ name: 'carplay', maxDelayMs: 300, initialDelayMs: 0,
     jitterMarginMs: 20, readinessDecay: 0.01, videoDecreaseRate: 0.02,
-    maxVideoFrames: 24, maxVideoBytes: 64 * 1024 * 1024, interactionHoldMs: 750 }),
+    maxVideoFrames: 24, maxVideoBytes: 64 * 1024 * 1024 }),
   'airplay-mirror': Object.freeze({ name: 'airplay-mirror', maxDelayMs: 300, initialDelayMs: 40,
     jitterMarginMs: 30, readinessDecay: 0.005, videoDecreaseRate: 0.01,
     maxVideoFrames: 24, maxVideoBytes: 64 * 1024 * 1024 }),
-  'airplay-cast': Object.freeze({ name: 'airplay-cast', maxDelayMs: 3000, initialDelayMs: 750,
-    jitterMarginMs: 100, readinessDecay: 0.005, videoDecreaseRate: 0.005,
-    startupBufferMs: 750, resumeBufferMs: 1500, maxVideoAheadMs: 2000, maxAudioAheadMs: 3000,
-    maxVideoFrames: 32, maxVideoBytes: 256 * 1024 * 1024 }),
   default: Object.freeze({ name: 'default', maxDelayMs: MAX_MEDIA_DELAY, initialDelayMs: INITIAL_MEDIA_DELAY,
     jitterMarginMs: 20, readinessDecay: 0.005, videoDecreaseRate: 0.005,
     maxVideoFrames: 24, maxVideoBytes: 64 * 1024 * 1024 }),
 });
-export function playbackProfile(mode, interacting = false) {
-  return PLAYBACK_PROFILES[mode === 'carplay' && interacting ? 'carplay-touch' : mode] ?? PLAYBACK_PROFILES.default;
+export function playbackProfile(mode) {
+  return PLAYBACK_PROFILES[mode] ?? PLAYBACK_PROFILES.default;
 }
 export const MEDIA_DELAY_LIMITS = Object.freeze(Object.fromEntries(
   Object.entries(PLAYBACK_PROFILES).filter(([key]) => key !== 'default').map(([key, value]) => [key, value.maxDelayMs])));
@@ -55,7 +47,7 @@ export function planDelay(previous, target, now, { leadMs = DELAY_PLAN_LEAD_MS,
   const rate = target > from ? increaseRate : decreaseRate;
   // A new activation supersedes old plans that had not begun before it. They
   // cannot affect any earlier lookup, and retaining them grows the linked
-  // history during same-clock bursts or immediate touch catch-up.
+  // history during same-clock bursts or earlier activations.
   let retained = previous;
   while (retained.previous && retained.at >= at) retained = retained.previous;
   // Quintic smoothstep's maximum derivative is 1.875. Scale its duration

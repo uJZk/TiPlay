@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { createLibav, libavAudioParameters } from './vendor/libav/libav.js';
 let lib, decoder, graph, source, sink, settings, inputEnd;
-let queue = Promise.resolve();
+let queue = Promise.resolve(), direct = null, sequence = 0;
 const split = value => [value >>> 0, Math.floor(value / 4294967296)];
 async function execute(data) {
   if (data.kind === 'init') {
@@ -78,12 +78,69 @@ async function execute(data) {
     return { timestamp, planes: value.data, sampleRate: settings.outputRate };
   }) };
 }
+/** The render endpoint owns admission; only metadata returns to the main thread. */
+function connectOutput(output) {
+  const pending = new Map();
+  let readyResolve, readyReject;
+  const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
+  // Binding can be rejected while the decoder module is still loading.
+  ready.catch(() => {});
+  output.port.onmessage = ({ data }) => {
+    if (data.ready) { readyResolve(); return; }
+    if (data.failed) {
+      const cause = Error(data.failed); readyReject(cause);
+      for (const call of pending.values()) call.reject(cause); pending.clear(); return;
+    }
+    const call = pending.get(data.deliveryId);
+    if (!call) return;
+    pending.delete(data.deliveryId);
+    if (data.error) call.reject(Object.assign(Error(data.error), { deliveryId: data.deliveryId })); else call.resolve();
+  };
+  output.port.start?.();
+  return { ...output, ready, pending };
+}
+async function deliver(data, result) {
+  if (settings.outputFormat === 1 && (result.frames || []).reduce((bytes, frame) => bytes + (frame.pcm?.byteLength || 0), 0) > 256 * 1024)
+    throw Error('Audio decode output batch exceeds its memory limit.');
+  if (!direct) return result;
+  await direct.ready;
+  const owner = direct.record;
+  if (data.record) direct.fields = data.record;
+  const fields = { ...owner, ...(direct.fields || {}) };
+  const at = performance.timeOrigin + performance.now();
+  const arrival = at - (Number.isFinite(owner.arrivalTimeOrigin) ? owner.arrivalTimeOrigin : performance.timeOrigin);
+  const records = (result.frames || []).map(frame => {
+    if (!(frame.pcm instanceof ArrayBuffer)) throw Error('Direct audio output requires PCM16.');
+    const timestamp = frame.timestamp * 1e6;
+    let pcmStats;
+    if (fields.diagnosticPcm) {
+      pcmStats = { packets: 1, frames: frame.pcm.byteLength / 2 / fields.channels, nonzero: 0, peak: 0 };
+      for (const sample of new Int16Array(frame.pcm)) {
+        if (sample) pcmStats.nonzero++; pcmStats.peak = Math.max(pcmStats.peak, Math.abs(sample) / 32768);
+      }
+    }
+    return { ...fields, sequence: sequence++, flags: fields.flags & ~2, rate: 48000, pcm: frame.pcm,
+      decodeTimestampUs: timestamp, presentationMs: Number.isFinite(fields.presentationOffsetMs)
+        ? timestamp / 1000 + fields.presentationOffsetMs : NaN,
+      arrivalLocalTimeMs: arrival, decodedAtMs: at, workletPostedAtMs: at, ...(pcmStats ? { pcmStats } : {}) };
+  });
+  if (data.kind === 'init') records.push({ ...owner, flags: owner.flags | 2, ended: false, pcm: new ArrayBuffer(0) });
+  if (data.endRecord) records.push({ ...owner, ...data.endRecord, generation: owner.generation,
+    flags: data.endRecord.flags | 2, ended: true, pcm: new ArrayBuffer(0) });
+  // The worklet reports this batch to main before it can return consumption credit.
+  const accepted = new Promise((resolve, reject) => direct.pending.set(data.id, { resolve, reject }));
+  direct.port.postMessage({ deliveryId: data.id, records }, [...new Set(records.map(record => record.pcm))]);
+  await accepted;
+  return { ...result, frames: [], deliveryId: data.id };
+}
 self.onmessage = ({ data }) => {
   queue = queue.then(async () => {
     try {
-      const result = await execute(data);
+      if (data.kind === 'init' && data.output) direct = connectOutput(data.output);
+      const result = await deliver(data, await execute(data));
       const transfers = result.frames?.flatMap(frame => frame.pcm ? [frame.pcm] : frame.planes.map(plane => plane.buffer)) || [];
       self.postMessage({ id: data.id, ...result }, [...new Set(transfers)]);
-    } catch (cause) { self.postMessage({ id: data.id, error: String(cause?.message || cause) }); }
+    } catch (cause) { self.postMessage({ id: data.id, error: String(cause?.message || cause),
+      ...(cause?.deliveryId !== undefined ? { deliveryId: cause.deliveryId } : {}) }); }
   });
 };

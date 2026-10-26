@@ -16,7 +16,7 @@ Start with the [English README](../README.md) or [简体中文](../README.zh-CN.
 
 - [Build](Build.md) and [Windows containers](Wlsc.md): toolchain, runtime identity, signing and updates.
 - [Audio evidence](Audio-evidence.md): Debug trigger/waveform capture, extraction and CPU attribution limits.
-- [Audio tempo](Audio-tempo.md): official NetEq live buffering, decoder priority, URL tempo composition and verification limits.
+- [Audio tempo](Audio-tempo.md): live audio buffering, decoder priority, AVPlayer URL playback ownership and verification limits.
 - [Browser WASM](Browser-wasm.md): execution boundaries, module ownership, complete upstream libraries and performance verification.
 - [Settings](Settings.md): drafts, immediate apply and connection recovery.
 - [Geolocation](geolocation.md): browser coordinate evidence, Android conversion and detection and iPhone forwarding.

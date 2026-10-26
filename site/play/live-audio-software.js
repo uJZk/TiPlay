@@ -31,7 +31,7 @@ export function liveAudioSettings(config) {
   }
   return { ...settings, outputFormat: 1 };
 }
-export function createLiveAudioDecoder(config, { Worker = globalThis.Worker, timeout = 15000 } = {}) {
+export function createLiveAudioDecoder(config, { Worker = globalThis.Worker, timeout = 15000, output = null } = {}) {
   const settings = liveAudioSettings(config);
   if (!settings || typeof Worker !== 'function') throw Error('Unsupported software audio configuration.');
   if (instances >= MAX_INSTANCES) throw Error('Software audio decoder limit reached.');
@@ -40,17 +40,17 @@ export function createLiveAudioDecoder(config, { Worker = globalThis.Worker, tim
   const pending = new Map();
   const close = (cause = new DOMException('Audio decoder closed.', 'AbortError')) => {
     if (closed) return;
-    closed = true; instances--; worker?.terminate();
+    closed = true; instances--; worker?.terminate(); output?.close?.();
     for (const item of pending.values()) { clearTimeout(item.timer); item.reject(cause); }
     pending.clear();
   };
-  const call = (kind, fields = {}) => {
+  const call = (kind, fields = {}, transfer = []) => {
     if (closed) return Promise.reject(new DOMException('Audio decoder closed.', 'AbortError'));
     const id = ++next;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => close(Error('Audio decoding timed out.')), timeout);
       pending.set(id, { resolve, reject, timer });
-      try { worker.postMessage({ id, kind, ...fields }, fields.payload ? [fields.payload] : []); }
+      try { worker.postMessage({ id, kind, ...fields }, [...transfer, ...(fields.payload ? [fields.payload] : [])]); }
       catch (cause) { close(cause); }
     });
   };
@@ -58,24 +58,29 @@ export function createLiveAudioDecoder(config, { Worker = globalThis.Worker, tim
     worker = new Worker(new URL('./airplay-libav-worker.js', import.meta.url), { type: 'module' });
     worker.onerror = () => close(Error('Audio decoder worker failed.'));
     worker.onmessageerror = () => close(Error('Invalid decoder response.'));
-    worker.onmessage = ({ data }) => {
+    worker.onmessage = async ({ data }) => {
       const item = pending.get(data?.id);
       if (!item) return;
-      pending.delete(data.id); clearTimeout(item.timer);
-      if (data.error) item.reject(Error(data.error)); else item.resolve(data);
+      try {
+        if (data.deliveryId !== undefined) await output?.wait?.(data.deliveryId);
+        if (closed || !pending.has(data.id)) return;
+        pending.delete(data.id); clearTimeout(item.timer);
+        if (data.error) item.reject(Error(data.error)); else item.resolve(data);
+      } catch (cause) { close(cause); }
     };
   } catch (cause) { close(cause); }
   const ready = closed ? Promise.reject(Error('Audio worker initialization failed.'))
-    : call('init', { settings }).then(result => { backend = result.backend; });
-  return { ready, close, get backend() { return backend; },
-    async decode(payload, timestamp, silentFrames = 0) {
+    : call('init', { settings, ...(output ? { output: { id: output.id, port: output.port, record: output.record } } : {}) },
+      output ? [output.port] : []).then(result => { backend = result.backend; });
+  return { ready, close, directOutput: Boolean(output), get backend() { return backend; },
+    async decode(payload, timestamp, silentFrames = 0, record = null) {
       await ready;
       if (pending.size >= 32) throw Error('Audio decode queue is full.');
       const bytes = payload instanceof ArrayBuffer ? new Uint8Array(payload) : payload;
       if (!(bytes instanceof Uint8Array) || bytes.byteLength > 1024 * 1024) throw Error('Invalid audio access unit.');
-      const result = await call('decode', { payload: bytes.slice().buffer, timestamp: timestamp / 1e6, silentFrames });
+      const result = await call('decode', { payload: bytes.slice().buffer, timestamp: timestamp / 1e6, silentFrames, record });
       return result.frames;
     },
-    async flush() { await ready; return (await call('flush')).frames; },
+    async flush(endRecord = null) { await ready; return (await call('flush', { endRecord })).frames; },
   };
 }

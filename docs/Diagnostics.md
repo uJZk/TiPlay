@@ -387,7 +387,8 @@ non-finite or over-full-scale errors. No observed source-deadline rejection expl
 absent trigger fields. None of this measures physical output or one universal click cause.
 The shared `AudioContext.playbackStats` reader supplies `renderStatsState`,
 `renderUnderrunEvents`, `renderUnderrunDurationMs` and `renderTotalDurationMs` for
-live Debug and URL `ENGINE_RENDER`. Unavailable/invalid/failed states retain unknown
+live Debug. URL `ENGINE_RENDER` now reports AVPlayer's upstream render/stutter
+counters, a different measurement domain. Unavailable/invalid/failed states retain unknown
 counts, never fabricated zeros. Available means readable, not fresh: the
 [API](https://webaudio.github.io/web-audio-api/#AudioPlaybackStats) updates about once
 per second subject to visibility/activity rules. Context-lifetime deltas distinguish
@@ -573,169 +574,69 @@ with source coordinates and explicit silence.
 
 ## AirPlay URL playback evidence
 
-Beta.12 contains one 3840×2160 AV1 attempt and two 640×360 attempts. The user confirms
-non-continuous 4K playback: 26 underruns/3.055517 s of gaps cannot explain steady-playback
-clicks. Zero scheduling/renderer underruns at 360p do not prove clean sound. Its
-96 MiB budget holds one retained/two queued 4K pictures; `video-budget` starts with
-about 92 ms video despite three seconds of PCM. Shared-rAF audio submission remains
-bounded by common continuous A/V coverage and 500 ms. Pending reads cannot separate
-codec, resource/demux and main-thread costs; `no-preference`/unsupported probes leave
-actual decoding unknown.
-With that historical 96 MiB budget, a synthetic 180 ms main-thread pause creates
-a 115.420 ms 4K audio gap (none at 360p); slow video creates 42 gaps in 12 s within
-decoded coverage. These measure scheduling, not codec speed or sound. Audio-master
-was rejected because video can fall unboundedly behind; a 15 s single-read watchdog
-cannot detect continuous slow progress. Current budgeting is 256 MiB; these baselines
-do not validate it. Synchronization/horizon remain unchanged; see
-[follow-up](Todo.md#ordinary-airplay).
+Current URL playback uses libmedia AVPlayer, independently of live CarPlay/mirror
+audio. The [URL engine contract](AirPlay.md#url-engine-and-captions) describes
+player ownership and the Canvas-only path. Compare playback ID, command revision
+and engine generation before interpreting snapshots. A settled old command keeps
+its revision without acquiring the replacement player's snapshot; inactive players
+cannot report a current engine. Ready state and play intent do not establish an
+advancing clock, resolved play promise, rendered picture or audible output.
 
-Beta.10 MiniBili/another URL reached playing after 10.411/16.779 s; buffering appeared
-at 8.903/12.490 s during paused preparation. The immediate indicator covers
-resource/import/decode preparation; neither startup nor `video-budget` guarantees
-750 ms end-to-end readiness.
-
-Beta.9 MiniBili reached CDN 206 without a demonstrated UA/Referer failure. A
-123,248-byte WebVTT became a ~164k-character `data:` URL and blocked serial FCUP
-on unanswered 10 s waits. Local `INLINE_DATA` handling avoids that exchange without
-proving CDN risk control, iPhone size limits or universal playback.
-
-URL casting has its own media engine and AudioContext. CarPlay/mirror audio telemetry
-does not establish that this context is running. Compare playback ID, command revision
-and engine generation before interpreting successive snapshots. A settled old command
-keeps its revision without acquiring a newer engine's snapshot; retired/inactive players
-cannot report a current engine. `ready`, play intent, `loadedmetadata` and
-`readyState=3` do not establish actual `playing`, a resolved play promise or an advancing
-media clock. A pending AudioContext resume can leave decoded media ready while position
-stays at a seek target.
-
-Earlier URL regression inputs exposed sample loss/repetition in packet trimming and
-partial scheduling; their fixes preserve the existing sample-identity contract.
-Actual `playing` with advancing context time differs from readiness without progress.
-Neither planned continuity nor browser rendering establishes acoustic output or
-excludes discontinuities in the source.
-
-The bounded engine snapshot is split into fixed groups so the metadata line limit does
-not silently discard the later fields:
+The current fixed scalar schema reports the facade and actual upstream statistics:
 
 | Group | Evidence |
 | --- | --- |
-| `ENGINE_STATE` | Playing intent versus running clock, wait reason, AudioContext state/resume pending, clock anchor and stall elapsed/count. |
-| `ENGINE_BUFFER` | Position, playable/per-track ends, scheduled audio end, limiting track, target/time capacities, startup decision and read-progress fallback count. |
-| `ENGINE_PIPELINE` | Queue counts/bytes, frame/byte capacities, pending sink reads, budget blocking and end-of-stream flags. |
-| `ENGINE_CODEC` | Validated complete short codec/profile token, coded/display dimensions, observed sample cadence/duration, support probe and requested hardware/latency hints. |
-| `ENGINE_OWNERSHIP` | Retained sample generation, held/pending/total application-owned samples and estimated bytes; received/closed samples, pending video-read age and last sample age. |
-| `ENGINE_AUDIO` | Resume counts, activation/gesture state, context latency hint and available URL-context base/output latency and output-clock estimates. |
-| `ENGINE_NETWORK` | Serialized resource-reader activity/queue, byte progress and its age, timeouts/cancellations, backward restarts, ignored ranges and safe last status/result. |
-| `ENGINE_PCM` | Decoded source rate/channels, requested and actual context rates, decoded frames and separate seek/overlap trims. |
-| `ENGINE_CONTINUITY` | Subsample timestamp alignment count/max correction, inserted silence, source PCM peak, over-full-scale and non-finite sample counts. |
-| `ENGINE_RENDER` | Shared feature-detected browser-render underrun count/duration and observed context duration; unsupported remains unknown. |
-| `ENGINE_STARTUP` | Fixed preparation phase and browser monotonic elapsed milliseconds; total preparation time freezes at first actual playing. |
-| `ENGINE_SCHEDULE` | Submitted frames, node-time gaps/overlaps, late starts, uncovered graph intervals/count/total/max duration and rebuffer stops. |
+| `ENGINE_STATE` | Engine/render mode, wait reason, playing intent versus running state, gesture requirement, media position, requested/effective rate and combined upstream stutter count. |
+| `ENGINE_PIPELINE` | Upstream audio/video compressed-packet queue lengths and decoded-frame counts, when available. |
+| `ENGINE_RENDER` | Upstream audio/video rendered-frame counts and separate audio/video stutter counters, when available. |
+| `ENGINE_CODEC` | Validated short codec token and known coded dimensions. |
+| `ENGINE_STARTUP` | Preparation phase and monotonic open elapsed milliseconds, when supplied by the facade. |
 
-`startupPhase` distinguishes dependencies, video/audio selection, alternate audio-menu
-discovery, metadata, first samples and ready/playing. `openElapsedMs` starts at the
-engine's source preparation, after the controls' initial resource probe; it includes
-pause/activation waits, but not that probe or the outer player import. `phaseElapsedMs` describes the current
-phase, not a retained history of every completed phase. Source replacement starts a
-new measurement; later seeks cannot reset a completed startup. Compare `probe-start`,
-`probe-ready`, `loadedmetadata`, `seeked`, `playing` and `play-resolved` to identify
-the remaining boundaries. Android receipt times include control transport and capture
-admission; they are not browser event timestamps or the sender's original send time.
+The only accepted engine/render identifiers are `libmedia-avplayer` and `canvas`.
+Phases are none, dependencies, metadata, first-samples, ready and playing. Wait
+reasons distinguish no source, paused, seeking, preparing/buffering, ended, error,
+audio-context-suspended and normal running. These are bounded adapter observations;
+they do not classify all upstream causes of a stall. Unsupported fields remain
+absent in browser events and unknown in Android logs rather than becoming zero.
+Codec/dimensions do not identify actual hardware decoding or private pool capacity.
+Packet queue counts are not exact buffered TimeRanges, unique byte coverage or a
+total-memory measurement. The facade does not invent those values.
 
-`audioScheduleUnderruns`, `audioScheduleUnderrunMs` and
-`audioScheduleUnderrunMaxMs` describe observed gaps between submitted audio nodes,
-including recovery after rebuffering. `audioRebufferStops` counts playback-policy
-interruptions while an audio clock is needed; user pause/seek does not increment it.
-These counters cover gaps previously hidden by clearing the node tail on freeze.
-They do not measure the device audio renderer or prove an audible click. In particular,
-zero counters cannot exclude an output-device discontinuity. `audioBaseLatencyMs`,
-`audioOutputLatencyMs`, `audioOutputTimestampAgeMs` and `audioOutputContextLagMs`
-refer to the current URL AudioContext only. `audioOutputTimestampState` distinguishes
-unavailable/closed/format-mismatch/startup/invalid/future/context-ahead/valid/failed;
-finite age/lag remain signed even for future or context-ahead results. Unsupported
-coordinates stay absent. These diagnostics do not drive scheduling or measure the
-speaker; do not substitute another context's values. A late scheduler uses one mapping
-for subsequent nodes and video, preserving source sample order without starting
-overdue slices together; already elapsed silence cannot be recovered. The later
-context-clock reading supplies a schedule-order estimate.
-`audioSubmitUncertaintyMaxMs` reports maximum observed nonnegative request/getter
-separation; it cannot bound native start or establish getter freshness. These
-requested node times do not measure physical output. URL EOF requires natural
-completion of every current-owner source before clearing the tail. Cancelled
-callbacks cannot authorize successor completion; sealed source coverage survives
-empty rebuffer boundaries. Natural completion proves graph processing, without
-measuring speaker time.
+The previous custom engine's BufferSource scheduling, PCM identity/peak/alignment,
+application sample ownership, serial-reader and PD/SoundTouch counters are removed.
+`ENGINE_BUFFER`, `ENGINE_OWNERSHIP`, `ENGINE_AUDIO`, `ENGINE_NETWORK`, `ENGINE_PCM`,
+`ENGINE_CONTINUITY` and `ENGINE_SCHEDULE` no longer describe the current URL engine.
+An upstream render counter is not the browser device's audio-underrun counter or
+proof of sound at the speakers. Live-audio probes remain separate evidence.
 
-Semantic media/command edges remain visible. Engine-state changes are sampled from
-progress/timeupdate events with a 250 ms minimum interval; an unchanged snapshot with
-play intent but no running clock repeats at most every five seconds, and healthy state
-at most every ten seconds. Android applies a further unchanged-state deduplication.
-Standard, the default mode, retains semantic media/command edges, preparation-phase
-boundaries, failures and explicit `stalled=true` evidence. Changes to overlap trimming,
-inserted silence, scheduling gaps/overlaps, underruns, rebuffer stops, late starts or invalid/over-full-scale PCM also admit a bounded
-continuity snapshot at most every five seconds. Silence can be a legitimate track
-offset; it is not an error label. Normal decoded/scheduled growth, seek trimming
-and subsample alignment alone do not trigger extra Standard reports. One recovery
-snapshot can follow an accepted stall only for
-the same playback ID, revision and generation; source replacement is not recovery of
-that identity. Unchanged healthy detail is Debug-only. These are sampling
-intervals when events execute, not an independent watchdog: a blocked browser main
-thread cannot emit a timely snapshot. Group lines carry the same identity, and missing
-fields remain unknown rather than becoming zero or false.
+Semantic media/command edges remain visible. Progress/timeupdate sampling reads
+statistics at most every 250 ms; unchanged stalled state repeats at most every
+five seconds and healthy browser summaries at most every ten seconds. Android
+applies its own bounded admission: Standard keeps preparation boundaries,
+failures, explicit stalled state and one same-ID/revision/generation recovery.
+Healthy periodic details are Debug-only. Source replacement is not recovery of
+the prior identity. Repeated terminal errors remain bounded; a real fault and one
+changed cleanup snapshot bypass the ordinary sampling gate. Error snapshots retain
+available upstream state before teardown; cleanup snapshots describe only the
+observable facade/upstream state, not verified release of every GPU surface.
+A blocked main thread cannot emit a timely diagnostic, so this is not a watchdog.
 
-An engine failure preserves an immutable snapshot before cleanup, including the
-available codec token, requested hints, known dimensions, original play intent, queues and
-context state. The error event carries this snapshot; a separate post-cleanup snapshot
-reports actual application ownership and successful closes. A canvas-retained picture
-can legitimately leave one held sample after queue/decoder cleanup; it must not be
-reported as zero until that picture is closed. Both snapshots use the same bounded
-schema and retain unknown fields as unknown.
+Both ends whitelist enums, booleans, finite safe numbers and bounded codec tokens.
+Fractional queue counters, invalid dimensions, arbitrary strings, URLs, decoder
+configurations and media payloads are rejected. The shared cross-language fixture
+and tests retain the existing 4096-byte control-envelope quota and bounded log
+lines. Diagnostic failures cannot interrupt playback or disclose credentials.
 
-Standard retains `error`, `open-error`, `canvas-error` and `play-rejected` failure
-edges, the first terminal error snapshot and one changed cleanup snapshot after the
-fault without the ordinary 250 ms gate. Repeated identical terminal states, or changes
-only to clock values, remain limited to five seconds. An error state is never reported
-as recovery of a prior stall. These observations describe application cleanup, not
-vendor-internal decoder outputs or physical surface release.
-
-Read `waitReason` with both track coverage and context state. Suspended/resuming audio,
-startup/recovery watermarks, a timeline gap and a starved track are different causes
-of a stopped clock. Smaller decoded queues do not prove network starvation; a reader
-can stop requesting because its consumer has stopped pulling. A fallback based on
-pending-read age does not identify hardware pool exhaustion. The
-[URL engine limits](AirPlay.md#url-engine-and-captions) are separate application
-budgets, not a total GPU or network-memory measurement.
-`resourceBytes` is the serialized reader's cumulative response-body bytes read,
-including rereads; it is neither unique media coverage nor bytes consumed by the
-decoder. Network progress and last-result fields cannot measure decoder-internal
-work or audio reaching the speakers. `resourceLastStatus=0` means no recorded response
-status; actual HTTP statuses are restricted to 100–599.
-
-PCM level counters inspect the decoded source, before context mixing, gain and
-device conversion. Scheduling continuity compares planned node times and submitted
-sample counts; it does not record the browser's final mixed PCM or prove speaker
-output. Unknown context/source rates remain unknown. Local continuous-tone and
-sample-identity inputs reproduce the old packet-trim and partial-node defects;
-native OfflineAudioContext rendering separately checks node/resampler continuity
-against an independent whole-buffer reference.
-
-Codec support and `requestedHardwareAcceleration` describe negotiation/requested
-configuration. They do not identify the actual decoder backend;
-`actualHardware`, `poolCapacity` and `vendorBuffers` remain explicitly unknown. Sample cadence and
-`samplesReceived` describe samples delivered to the application sink. `samplesClosed`
-counts successful first application closes; neither counter observes all vendor
-decoder outputs or physical GPU-surface release. These two counters span the engine
-lifetime, while video queue counts describe the active generation. Held/pending/owned
-counts can include a picture retained across generation changes; use
-`videoHeldGeneration` rather than attributing it to the new queue. Estimated video bytes use coded
-RGBA8-equivalent size. They exclude vendor/reference buffers and rendering allocations;
-application receipt/close cannot establish that an internal buffer leak is absent.
-
-Finite-surface tests reproduce startup deadlock from requesting another sample before
-recognizing capacity; suspended-context replay separately reproduces readiness without
-progress until a real Play action. Neither measures vehicle pool capacity or uniquely
-explains field readiness without those observations. Complete upstream responses do
-not prove final browser delivery.
+Earlier field observations remain historical evidence of the retired player.
+Beta.12's non-continuous 3840×2160 AV1 attempt recorded 26 underruns/3.055517 seconds
+of graph gaps under a 96 MiB application budget; its later 256 MiB estimate did not
+validate sustained throughput or sound. Synthetic main-thread/slow-video fixtures
+measured the old scheduler, not AVPlayer or vehicle codec speed. Beta.10 MiniBili
+and another URL reached playing after 10.411/16.779 seconds. Beta.9's CDN 206 and
+large inline WebVTT blocking serial FCUP identify resource-path observations,
+not acceptance of the replacement. Local `INLINE_DATA` handling avoids that FCUP
+exchange without proving universal reachability. Physical AVPlayer startup,
+long-play memory, continuity, teardown and sound remain open.
 
 Resource diagnostics distinguish Android HTTP from iPhone FCUP, preserve upstream status
 and report bounded denial details in Debug. Resource I/O failures retain bounded

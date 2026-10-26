@@ -27,7 +27,7 @@ function activationLog(initial) {
   return { valueAt, add(target, now, { leadMs = DELAY_PLAN_LEAD_MS, increaseRate = .02,
     decreaseRate = .005, smooth = false } = {}) {
     const at = now + leadMs, from = valueAt(at);
-    // An immediate touch plan supersedes older activations that were still
+    // An earlier plan supersedes older activations that were still
     // waiting for their lead time. Keep the oracle as a chronological log.
     while (entries.at(-1).at >= at) entries.pop();
     entries.push({ at, from, to: target, smooth,

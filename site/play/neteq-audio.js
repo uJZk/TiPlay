@@ -42,7 +42,13 @@ export class NetEqAudio {
   }
 
   submitChunk(arrival) {
-    if (!this.engine.insertPcm(this.chunk, this.chunkFrames, this.sequence++, this.chunkStart, arrival)) throw new Error('NetEq rejected PCM audio.');
+    // NetEq pulls complete 10 ms blocks. A finite decoder/filter tail (or the
+    // last block before a timestamp gap) must not become a shorter L16 packet:
+    // upstream GetAudio cannot always render that packet without an error.
+    // Pad only the transport block; source timestamps, endFrame and byte credit
+    // continue to describe actual source samples rather than the added silence.
+    if (this.chunkFrames < CHUNK) this.chunk.fill(0, this.chunkFrames * this.channels);
+    if (!this.engine.insertPcm(this.chunk, CHUNK, this.sequence++, this.chunkStart, arrival)) throw new Error('NetEq rejected PCM audio.');
     this.chunkFrames = 0;
   }
   push(record, nowMs) {

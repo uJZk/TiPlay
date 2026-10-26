@@ -1,12 +1,25 @@
-# CarPlay reliable DataChannel contract
+# CarPlay browser media transport
 
 ## Current implementation and evidence
 
-The Android phone/browser product now uses reliable, ordered WebRTC DataChannels
-for compressed CarPlay and ordinary AirPlay live media. The browser still controls
-WebCodecs video decoding, NetEq/libav.js audio and Canvas presentation; Android creates no RTP media track,
-video encoder or browser microphone path. AirPlay URL casting retains its existing
+The Android phone/browser product retains reliable, ordered WebRTC DataChannels
+for audio, control, video metadata and compatible encoded-video playback. Source
+builds also negotiate a receive-only browser video track when both endpoints
+advertise `webrtc-track-v1`. Android forwards original compressed access units
+through a pass-through encoder interface; it does not decode or reencode video.
+The browser consumes the decoded track with MediaStreamTrackProcessor and draws
+VideoFrames directly to Canvas, without an HTML video element. NetEq/libav.js
+audio remains independent. AirPlay URL casting retains its existing
 resource/demux pipeline and uses the shared smoothness-first casting profile.
+
+The native video track path is implemented but still requires Android JNI/RTP and
+vehicle acceptance. A codec/profile mismatch, reordered source timestamps,
+unsupported frame adaptation, source boundary or processor failure explicitly
+falls back to the existing WebCodecs/Canvas encoded-record path. That fallback
+is permanent for the peer and preserves its audio/control connection. H.264 B
+slices are detected before submission; HEVC reordering is currently detected by
+nonmonotonic source PTS, not a complete HEVC reference parser. Sources without a
+matching initial negotiated codec also use the encoded-record path.
 
 The Android product injects its native RTC runtime; JVM server tests use
 an injectable peer. The current page requires `webrtc-datachannel-v1` and does not
@@ -27,22 +40,22 @@ reachability, actual car hardware decoding, physical latency or P/non-P continui
 
 | Area | Requirement |
 | --- | --- |
-| Scope | iPhone source, Android phone intermediary, existing car browser. Live CarPlay/mirroring use DataChannels; URL casting retains resource playback with the shared casting profile. |
+| Scope | iPhone source, Android phone intermediary, existing car browser. Live CarPlay/mirroring use a negotiated RTP video track or encoded DataChannel records; URL casting retains resource playback with the shared casting profile. |
 | Platform | Android application and webpage may change. Do not require a native car application, modified browser or modified driver. |
 | Live video | Actual hardware decoding must occur in the car webpage. Android decoding followed by raw YUV delivery does not satisfy this requirement. Software video fallback does not satisfy it either. URL casting retains its independent media decoder compatibility policy. |
 | Normal video delay | At most **+300 ms relative to sender presentation time**, with the lowest practical delay while preserving compressed input and normal pictures as far as possible. This is a ceiling, not a fixed buffer target. Preserve signed measurements; no new hard lower bound of zero was specified. |
-| Touch | Forward immediately at the earliest available scheduling opportunity. Smoothly bring **video** Delta toward zero as quickly as smoothness permits. Complete compressed reception and dependency decoding continue; skipping old **decoded** pictures during catch-up is explicitly allowed. |
+| Touch | Forward immediately at the earliest available scheduling opportunity. Touch does not select a special playback profile or change either media timeline. |
 | Audio delay | Independently at most **+300 ms relative to its sender presentation time**, normally as low as practical. The former audio-versus-video windows, including -180/+500 ms, are superseded. No additional hard A/V skew window was specified. |
 | Audio continuity | Touch must not reset, accelerate or change the audio timeline. Audio may use software decoding. |
 | Audio routing | Preserve music/navigation through the car browser. Microphone demand uses Android with verified car HFP/SCO input and corresponding voice playback. Do not use handset microphone or loudspeaker fallback; the webpage must not request microphone access. |
-| Transport | Use reliable, ordered DataChannel delivery. Do not configure partial reliability to discard compressed media after a timeout or retransmission count. |
+| Transport | Audio/control and encoded-video fallback use reliable, ordered DataChannel delivery, without partial reliability. Negotiated RTP video uses the browser's WebRTC reception policy; it does not promise reliable ordered compressed-frame delivery. |
 | Debug capture | Keep complete application-visible original streams. Store the original video payload **once**, with downstream events referencing that copy. No silent sampling or capture loss. |
 
 Natural latency variation is not an instruction to refill a 300 ms buffer.
 Playback balances the four user-selected priorities through bounded profiles.
 Necessary readiness/jitter margins remain below the live ceiling; URL casting has
-a separate receiver-owned media clock and stronger prebuffering. Touch release must not restore
-the previous accumulated delay.
+a separate receiver-owned media clock and stronger prebuffering. Touch press and
+release leave playback timing unchanged.
 
 ## Design boundaries
 
@@ -58,19 +71,34 @@ and actual vehicle compatibility remain unresolved boundaries; no source-level c
 ## Component boundaries
 
 ```text
-iPhone CarPlay
+iPhone CarPlay / AirPlay mirror
   -> Android receive/decrypt/configuration and original timestamps
-  -> reliable DataChannel, bounded application fragmentation and flow control
-  -> webpage reassembly in encoded decode order
-  -> WebCodecs actual hardware decoding
-  -> short display queue / touch-only decoded-picture selection
-  -> Canvas / browser compositor / car display
+  -> negotiated original-codec RTP track
+     -> browser WebRTC buffering and decoding
+     -> MediaStreamTrackProcessor -> VideoFrame -> Canvas
+  OR reliable DataChannel, bounded application fragmentation and flow control
+     -> webpage reassembly in encoded decode order
+     -> WebCodecs decoding -> bounded display queue -> Canvas
+  -> browser compositor / car display
 
 ordinary audio -> independent decode/transport/output timeline -> car browser
 microphone demand -> Android <-> verified car HFP/SCO
 touch and clock exchange -> small control messages, independent of media work
 original stream capture -> one canonical payload journal with referenced events
 ```
+
+The pass-through Java VideoEncoder seam pairs each existing access unit with a
+non-pixel VideoFrame buffer. JNI capture timestamps preserve source PTS spacing,
+including burst arrivals. Pixel conversion/scaling is rejected. An input dropped
+before encoding invalidates the dependency chain and requests a new source key
+frame. Neither an RTP codec capability nor the hardware-preference hint on the
+encoded-record path proves actual vehicle hardware decoding.
+
+Processor exposure is detected separately on Window and DedicatedWorker. A main
+thread Processor can transfer VideoFrames through bounded delivery to the
+existing Worker/OffscreenCanvas; a Worker-only implementation transfers the
+track instead. Transfer/processor failures request video-only fallback. Old APKs
+without the discovery capability keep the original DataChannel-only offer.
 
 Preserve source-compressed video without reencoding: the subsequent explicit
 constraint is never to encode the video a second time. Decryption, configuration
@@ -93,7 +121,7 @@ does not remove this dependency, and can delay useful parallel decoding.
 
 WebCodecs VideoDecoder outputs pictures in presentation order. Do not add another
 codec-reorder buffer after its output callback. The application may still have a
-short display scheduler and skip decoded old pictures during touch catch-up.
+short display scheduler and skip decoded old pictures when presentation is late.
 `max_num_reorder_frames` is a bitstream restriction, not a millisecond latency
 cap or an instruction to always accumulate that many frames. Do not lower a
 parameter-set declaration below the real stream's requirements to disguise delay.
@@ -205,17 +233,12 @@ complete input, finite resources and +300 ms cannot all be preserved, report the
 violation and use a real supported renegotiation/recovery boundary. Do not reset
 PTS or discard predictive compressed frames to make metrics look compliant.
 
-### Touch-only catch-up
+### Presentation and interaction
 
-Advance a video presentation cursor continuously; choose available decoded
-pictures near it. Keep audio sample progress unchanged. At equal 60 fps source
-and display, removing 300 ms of backlog requires skipping roughly 18 decoded
-pictures. Spare display refresh capacity can reduce necessary skips.
-
-The current policy uses quintic smoothstep with a maximum 1.25x source-cursor
-speed and a 750 ms interaction hold. These are scheduling defaults, not verified
-vehicle thresholds. Repeated touch preserves convergence; release does not refill
-the previous backlog or change the audio plan.
+Touch-specific catch-up is disabled at the application boundary. The encoded-record
+path retains its bounded presentation queue and normal playback profiles; the RTP
+path uses the browser's receive timing and presents decoded track frames directly.
+Neither path uses a touch event to steer audio or change the video playback profile.
 
 If the newest complete, decoded picture can only become physically visible at
 +40 ms, skipping older outputs cannot produce zero Delta. Report this available
@@ -302,7 +325,7 @@ new reader until its matching barrier and consumes/discards older in-flight
 records. Control/media can arrive in different orders without replaying old audio.
 Unadmitted old records cancel without consuming a wire sequence or blocking credit.
 
-Android fragments from canonical payload references instead of allocating another
+On the encoded-record path Android fragments from canonical payload references instead of allocating another
 complete outgoing AU. Reliable queue overload, credit expiry and decoder stagnation
 are explicit recovery outcomes. The decoder uses bounded admission with enough
 reference lookahead; it never discards compressed prediction frames to catch up.
@@ -312,7 +335,7 @@ Presentation may skip decoded pictures. Mirroring suspension marks input
 Run the required [source checks](Testing.md#automated-checks) and applicable
 [browser harnesses](../tests/web-e2e/README.md). Source tests cover real desktop
 DataChannel exchange, framing/credit/epoch rejection, lifecycle/ownership,
-independent audio, decoded-frame bounds, touch convergence and AirPlay resource
+independent audio, decoded-frame bounds, touch forwarding and AirPlay resource
 cancellation. They do not establish Android JNI behavior on every device, actual
 hardware use, acoustic/panel latency or sustainable thermal performance.
 

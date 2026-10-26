@@ -10,6 +10,27 @@ media transport or physical playback; the full media-page harness is blocked by
 this environment's managed ICE policy. Published artifacts remain recorded in
 [Build](Build.md#beta-release).
 
+## Current release source
+
+Browser v90 passes **533 browser tests** after the AVPlayer migration and removal
+of the retired URL player, live video decoder/pacer and touch catch-up policy.
+Actual Chromium 151 verifies MP4/HLS Canvas output, nonzero URL audio, VOD
+pause/seek/end/replay, live refresh and fresh-edge resume, SDR variant selection,
+WebVTT language switching and simultaneous selection/seek. Tests cover missing
+terminal newlines, proxy-only nested resources/redirects, malformed HLS and early
+or pending-request cancellation, with no video elements, CSP violations, retained
+workers or retained URL AudioContexts. Desktop video uses an explicitly labelled
+software-decoder test override; this does not establish Tesla hardware decoding.
+
+The audio-only media-clock normal/unreadable-getter runs, real AAC/ELD/ALAC
+Worker-to-Worklet output and local-track Processor-to-Canvas main/Worker paths pass.
+Android has **43 targeted JVM tests**; the native two-track JNI/DTLS-SRTP oracle
+matches 80 original packets per track. Browser RTP interoperability remains blocked
+by the managed browser's zero host ICE candidates. The full Android suite is
+explicitly skipped. No APK or Pages deployment certifies these source changes;
+vehicle playback, CPU, memory and physical output still need acceptance. Earlier
+version-specific evidence below remains historical.
+
 ## Browser WASM verification
 
 Browser v89 passes **729 local browser tests**. Its acceptance covers real AAC/ALAC/ELD Worker decoding, exact
@@ -129,28 +150,13 @@ Four default-policy checks separately confirmed an explicit unsupported state on
 the desktop hardware-unavailable path. Neither result establishes actual vehicle
 hardware decoding.
 
-The independent URL signal oracle exercises production packet trimming and partial
-scheduling with continuous tone/sample-identity inputs. It reproduced all eight
-original failures and checks genuine single-sample gaps/overlaps, fractional seek,
-format changes, pause/resume and tempo output. The native
-[`url-audio-signal.mjs`](../tests/web-e2e/url-audio-signal.mjs) harness compares the
-production AudioBufferSource graph with a whole-buffer reference in four rate
-combinations. On Chromium 151.0.7922.34, the final 44.1 kHz graph followed by one
-continuous 48 kHz device-equivalent conversion had no zero frames, maximum step
-residual 1.49e-8 and relative error -169.54 dB over the measured 1.7-second window.
-Both constructor-requested and actual graph rates were observed. This offline
-conversion checks signal continuity; it does not measure the physical device
-driver, speaker output or vehicle latency.
+The retired custom URL player had packet-trimming, sample-identity and
+AudioBufferSource continuity regressions, including Chromium waveform comparisons
+and deliberate main-thread stalls. Those results apply to that historical engine;
+the associated executable harnesses were removed when AVPlayer took ownership of
+URL buffering, scheduling and audio/video synchronization. They do not validate
+AVPlayer's output or establish physical speaker continuity.
 
-The current URL scheduler also has deterministic tests for a callback arriving after
-the submitted audio tail, a task around native `start()`, both source rates and a
-finite video-surface pool. They verify source identity, absence of overlapping
-submissions, a consistent media clock and bounded recovery rather than accepting a
-full resume watermark after every late callback. The Chromium signal harness now
-also captures a real AudioContext through an independent AudioWorklet while the
-main thread deliberately stalls. Both 44.1/48 kHz runs retained sample order with
-no signal errors, and rendered silence agreed with the bounded scheduling evidence.
-This capture is before the OS/device output stage and does not prove speaker output.
 The earlier user clarification assigned those steady-playback clicks to CarPlay. URL
 signal checks and healthy YouTube windows cannot exclude faults in that independent
 live-audio path. The later beta.9 report also includes mirror clicks and a higher
@@ -167,7 +173,7 @@ context-clock age without changing real Soxr samples or recovery decisions.
 Video tests retain actual snapshot age, maximum read interval and oldest outstanding
 decode age, reject old stream/epoch snapshots and preserve bounded diagnostic budgets.
 
-The native [`airplay-short-audio.mjs`](../tests/web-e2e/airplay-short-audio.mjs)
+The native `airplay-short-audio.mjs` (retired custom-player harness)
 oracle passed ten Chromium cases across 44.1/48 kHz, comparing every rendered sample
 with a native whole-buffer source limited to the same metadata duration. One-sample,
 fractional-sample and large decoder-padding cases had zero difference, resolved
@@ -252,10 +258,10 @@ boundaries; 17 deliberate parameter/comparison mutations are caught. These check
 prove software boundaries, not optimal vehicle settings. Source-deadline evidence is
 Debug-only, and stale-generation reports cannot repopulate cleared metrics.
 
-Live and URL diagnostics share the optional `AudioContext.playbackStats` reader.
+That historical live/URL revision shared the optional `AudioContext.playbackStats` reader; AVPlayer URL diagnostics now use upstream counters.
 Tests cover unavailable/throwing/invalid getters, real zeroes, seconds-to-milliseconds,
 safe bounds and no reset or Debug-off live reads. Its four scalar fields preserve the
-16/64 KiB live budgets; the worst URL control envelope is 4009 bytes within the
+16/64 KiB live budgets; that revision's worst URL control envelope was 4009 bytes within the
 existing 4096-byte reservation, with every native group at most 600 characters.
 The production-CSP shared-clock harness verifies the actual live graph's renderer
 state/counters, nonzero PCM and independent CarPlay/mirror references, with all 61
@@ -282,7 +288,7 @@ beyond actual decoded video coverage. This measures scheduling behavior, not act
 codec throughput or sound. An audio-master alternative was not adopted because slow
 video could fall unboundedly behind. A 30-second bounded-separation/last-presented-PTS
 regression remains a design requirement, not an executed pass. These are historical
-96 MiB baselines, not verification of the requested current 256 MiB URL budget.
+96 MiB baselines, not verification of the later 256 MiB custom-player budget; AVPlayer now owns URL buffering.
 The isolated 256 MiB change passed all 737 browser tests and the real Chromium MP4/HLS
 Video.js harness. After refining the existing 4K fixture to 30 fps so it still
 exercises `video-budget` startup, all 106 targeted cases passed again; production
@@ -443,7 +449,7 @@ NetEq WASM. Decoder priority is browser-native, NetEq Opus, then libav.js ELD;
 AAC-LC remains browser-only. NetEq tests cover actual shipped WASM, synthetic
 FEC-positive Opus, missing packets, 384 ms bursts, 44.1/48 kHz conversions, finite
 stream drain/credit, stale epochs, independent video and faulty clock getters.
-URL casting retains manual×automatic SoundTouch tempo and its −45…+125 ms target.
+That revision retained manual×automatic SoundTouch tempo and its −45…+125 ms target for URL casting; the current AVPlayer migration removes that custom policy.
 See [Audio tempo](Audio-tempo.md) for scope and physical verification limits.
 Full Android CI remains skipped under the user's instruction; no new release is
 implied by local checks.
@@ -641,11 +647,9 @@ has not started: no WASM comparison page, upload endpoint or vehicle comparison 
 implemented or deployed by this work. Current live CarPlay/mirror output already
 uses a persistent AudioWorklet, bounded PCM timelines, stateful WASM Soxr and
 explicit underrun recovery. Its sample continuity and clock observations still
-need physical acceptance. URL casting remains a separate BufferSource-node engine;
-page-side demux/PCM processing, tempo changes and rAF-driven scheduling depend on
-the main thread, while WebCodecs decoding is asynchronous browser work. Its 500 ms
-audio submission horizon is also limited by common A/V coverage. The present
-live-clock correction does not move that URL pipeline into a Worker or Worklet.
+need physical acceptance. URL casting now uses the separate libmedia AVPlayer pipeline. The retired custom
+BufferSource scheduler and its 500 ms submission horizon are no longer product
+policies. Historical live-clock evidence does not validate this replacement.
 
 The planned experiment must isolate the DSP backend rather than compare different
 playback designs. Use the same pinned algorithm and PCM, verify output accounting
@@ -655,7 +659,7 @@ marks separately from queue underruns, recovery actions and optional renderer/ou
 statistics. Check WASM support, CSP and successful preinitialization; record the
 actual backend, including unsupported cases. Direct bounded uploads must expose
 success/failure and retain failed results for retry, without requiring Tesla JSON
-export. This isolates live Soxr DSP, not the separate URL BufferSource graph.
+export. This isolates live Soxr DSP, not the separate URL playback pipeline.
 No acoustic benefit or physical clock cause is established in advance;
 worker isolation, preallocation and WASM cannot guarantee OS scheduling deadlines.
 Native WebRTC audio for non-URL streams remains an alternative, not this round's
@@ -730,15 +734,13 @@ follow-up in [Todo](Todo.md#browser-and-carplay-audio).
 
 ## Ordinary AirPlay acceptance
 
-Automated URL regressions verify bounded retained readers for ignored Range responses,
-including interleaved audio/video with unknown-length 200 responses, LRU/byte limits,
-independent cancellation and idle cleanup. They also verify
-bounded FCUP startup probes, complete/partial HLS rewriting and preserved time/rate when direct
-playback switches to the proxy after an error. Assert downloaded byte counts as well as output
-correctness, so repeated prefix downloads cannot pass unnoticed.
-Transient 502/503/504 GET responses receive at most one retry within the original
-resource deadline. Tests check cancellation during the retry delay and no retries for
-403/404 responses; a repeated upstream failure must still surface as an error.
+URL acceptance uses the actual AVPlayer pipeline and local MP4/HLS resources under
+the production CSP. Verify Canvas output without creating video elements, operation
+without SharedArrayBuffer, pause/resume, seek, completion, source replacement,
+network failure and disposal. The former custom serial-reader and decoder-queue
+tests were removed with their implementation. Upstream loader behavior, ignored
+Range bandwidth, long playback memory and authenticated iPhone resources still
+require integration/device evidence; do not infer those passes from old tests.
 
 Use unprotected content from an actual iPhone. Check discovery and device approval, mirroring, audio-only playback, JPEG/PNG photos, and URL MP4/HLS playback with seeking, subtitles, buffering and iPhone controls. Test stopping/replacing a cast and returning the browser display to CarPlay while retained CarPlay audio continues as designed. Exercise authentication/resource expiry and recovery after network loss.
 
@@ -763,7 +765,7 @@ classification. Foreground-service tests cover granted-but-ineligible access, bo
 foreground retry and refusal without a process crash. Task-removal tests preserve the active
 session when the empty launcher task is removed, while session-task removal still stops it.
 
-`RawTrafficTest`, `DiagnosticExportStoreTest` and `SessionLogIntegrityTest` cover exact recovery of large binary payloads, byte ranges, unredacted credentials, disabled capture, exclusion of retained raw history from Standard TXT, Debug ZIP stream reconstruction, snapshot stability, PCM/binary extensions, temporary-file cleanup and preservation of interrupted records without preventing later session exports. `DiagnosticLogsTest` covers ignoring persisted Debug values at process initialization and capture configuration. `DiagnosticCaptureClearUiTest` covers the completed-export Clear action; `BrowserMainPageTest` covers the performance hint. `DiagnosticExportFallbackTest` also covers ZIP MIME/extension preservation, distinct share URIs and byte-identical fallback copies. `AirPlayVideoProxyTest` and `BrowserLinkServerTest` verify that the debug policy removes peer URLs, rewrites playlist children and proxies redirects, while Standard retains direct eligibility. The Chromium `airplay-video.mjs` harness toggles the policy during decoded playback and checks proxy requests, absence of direct iPhone requests while enabled and restored direct playback when disabled.
+`RawTrafficTest`, `DiagnosticExportStoreTest` and `SessionLogIntegrityTest` cover exact recovery of large binary payloads, byte ranges, unredacted credentials, disabled capture, exclusion of retained raw history from Standard TXT, Debug ZIP stream reconstruction, snapshot stability, PCM/binary extensions, temporary-file cleanup and preservation of interrupted records without preventing later session exports. `DiagnosticLogsTest` covers ignoring persisted Debug values at process initialization and capture configuration. `DiagnosticCaptureClearUiTest` covers the completed-export Clear action; `BrowserMainPageTest` covers the performance hint. `DiagnosticExportFallbackTest` also covers ZIP MIME/extension preservation, distinct share URIs and byte-identical fallback copies. `AirPlayVideoProxyTest` and `BrowserLinkServerTest` verify that the debug policy removes peer URLs, rewrites playlist children and proxies redirects, while Standard retains direct eligibility. The historical custom-player Chromium harness checked Debug proxy switching during playback. The AVPlayer harness verifies nested-resource and redirect proxy-only guards. Switching Debug policy during an actual iPhone session still requires device acceptance.
 
 `BrowserMainPageTest` covers the iPhone Bluetooth audio reminder, missing-permission checklist guidance and state refresh without session recovery. USB queue replay tests capture exact USBMUX/NCM bytes before parsing and preserve a completion after timeout/cancellation. Hardware checks must still confirm Bluetooth/hotspot refresh latency (including quick-settings toggles and return from Android settings), permissions at each supported API level, and USB attach → authorization → re-enumeration → transfer → detach archives.
 

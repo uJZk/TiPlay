@@ -253,7 +253,9 @@ class BrowserLinkServer(
         return when (request.path) {
             "/hello" -> respond(output, request, json(200, WebJson.write(mapOf("app" to "TiPlay", "protocol" to 1,
                 "clockMs" to System.nanoTime() / 1e6, "audio" to (audioHub != null),
-                "transport" to if (rtcFactory != null) BrowserRtcProtocol.NAME else "http-records-v1"))))
+                "transport" to if (rtcFactory != null) BrowserRtcProtocol.NAME else "http-records-v1",
+                "videoTransport" to if (rtcFactory?.supportsVideoTrack == true) BrowserRtcVideoPolicy.TRACK else BrowserRtcVideoPolicy.UNAVAILABLE,
+                "audioTransport" to if (rtcFactory?.supportsAudioTrack == true) BrowserRtcAudioRouter.TRANSPORT else "unavailable"))))
             "/rtc/pair/start" -> respond(output, request, rtcPairStart(request))
             "/rtc/pair/finish" -> respond(output, request, rtcPairFinish(request))
             "/rtc" -> respond(output, request, refuse(410, "transport-required"))
@@ -522,7 +524,8 @@ class BrowserLinkServer(
                                 lease.authenticated = true
                                 callbacks.onBrowserSeen(session)
                                 WebJson.write(status(q, session) + mapOf("app" to "TiPlay", "protocol" to 1,
-                                    "transport" to BrowserRtcProtocol.NAME, "resourceToken" to lease.token))
+                                    "transport" to BrowserRtcProtocol.NAME, "videoTransport" to lease.peer.videoTransport, "audioTransport" to lease.peer.audioTransport,
+                                    "resourceToken" to lease.token))
                             }
                             "bye" -> {
                                 check(lease.authenticated && lease.code == callbacks.code() && gate.current == session) { "authentication-required" }
@@ -551,7 +554,7 @@ class BrowserLinkServer(
             synchronized(lock) { check(rtc === peer && peer.live && running.get()) { "rtc-owner-retired" } }
             json(200, WebJson.write(mapOf("type" to "answer", "sdp" to answer, "epoch" to peer.epoch,
                 "session" to peer.epoch, "fragmentBytes" to BrowserRtcProtocol.MESSAGE_BYTES,
-                "transport" to BrowserRtcProtocol.NAME, "M2" to verified.serverProof,
+                "transport" to BrowserRtcProtocol.NAME, "videoTransport" to peer.videoTransport, "audioTransport" to peer.audioTransport, "M2" to verified.serverProof,
                 "binding" to verified.bind(offer, answer, peer.epoch.toLong()))))
         } catch (error: Exception) {
             next?.retire("signaling-failed")

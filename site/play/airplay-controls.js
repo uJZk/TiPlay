@@ -14,7 +14,10 @@ export function playbackBuffering(media, waiting = false) {
 }
 /** Older APK directives omit rate; their play/pause commands preserve the browser's selected speed. */
 export function applyDirectiveRate(media, directive) {
-  if (Number.isFinite(directive.rate)) media.playbackRate = directive.rate;
+  if (!Number.isFinite(directive.rate)) return;
+  // A rate-unaware/live sender cannot make an unsupported speed abort playback.
+  if (media.isLive === true) { media.playbackRate = 1; return; }
+  if (directive.rate >= .5 && directive.rate <= 2) media.playbackRate = directive.rate;
 }
 /** Source preparation already owns the first frame at zero; later seek commands still apply. */
 export function directiveSeekTarget(media, directive, initial = false) {
@@ -75,7 +78,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     if (!preparation || !player) return;
     const media = player.media;
     if (player.error() || sourceReady && (media.ended || media.gestureRequired
-      || media.paused && media.readyState >= 2)) finishPreparation();
+      || media.paused && media.readyState >= 1)) finishPreparation();
   }
   const failureText = error => /HDR|SDR/.test(error?.message || '')
     ? (lang === 'zh' ? '此视频需要 HDR，TiPlay 仅支持 SDR 视频' : 'This video requires HDR. TiPlay supports SDR video.')
@@ -128,13 +131,6 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
         if (selection.type === 'subtitle') for (const track of player.media.textTracks) track.mode = track.id === selection.id ? 'showing' : 'disabled';
       }
       appliedTrackRevision = directive.trackRevision;
-    }
-    if (directive.textMarkup) {
-      const overlay = player.surface.querySelector('.airplay-captions');
-      if (overlay) {
-        overlay.style.fontSize = `${20 * directive.textMarkup.fontScale}px`;
-        overlay.style.color = directive.textMarkup.color;
-      }
     }
     applyDirectiveRate(player.media, directive);
     if (directive.playing) {
@@ -208,13 +204,8 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       if (abort.signal.aborted || key !== currentKey || disposed) return;
       player = createVideoPlayer(layer, { lang, stop, stopText: photoStop.textContent, signal: abort.signal,
         onCanvasError: error => observation.event('canvas-error', error),
-        fetchResource: (url, init) => {
-          const target = new URL(url);
-          if (target.origin === `http://${host()}` && target.pathname === '/airplay-resource')
-            return fetchPhone(target.pathname + target.search, init);
-          if (next.proxyOnly === true) throw new Error('Debug media must pass through Android');
-          return fetchExternal(url, init);
-        },
+        proxyOnly: next.proxyOnly === true,
+        proxyOrigin: `http://${host()}`,
       });
       syncVideoStop();
       const opened = player;

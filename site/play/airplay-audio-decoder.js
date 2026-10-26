@@ -35,21 +35,23 @@ const rawAacPacket = payload => {
 const noData = record => record.mode === 'airplay-mirror' && record.payload?.byteLength === 4
   && new Uint8Array(record.payload).every((value, index) => value === [0, 104, 52, 0][index]);
 
-/** Realtime audio: encoded Opus goes to NetEq; all other decoding is software. */
-export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = () => {}, onEvidence = () => {},
-  softwareFactory = createLiveAudioDecoder } = {}) {
+/** Native RTP preserves supported source codecs; fallback decodes only to NetEq PCM. */
+export function createAirPlayAudioDecoder({ onPcm, onNative = null, onNativeEnd = () => {}, onError = () => {}, onEvidence = () => {},
+  softwareFactory = createLiveAudioDecoder, createDirectOutput = null } = {}) {
   const sessions = new Map(), endedEpochs = new Map();
   const ownerKey = owner => `${owner.mode}:${owner.type}`;
   let disposed = false, diagnostics = null;
   const live = session => !disposed && !session.closed && sessions.get(session.type) === session;
   const recordFor = (session, fields = {}) => ({ type: session.type, mode: session.mode, epoch: session.epoch,
     semanticType: session.semanticType, sequence: session.outputSequence, flags: session.flags & ~2,
+    ...(session.native ? { rtcGeneration: session.config.rtcGeneration, rtpSlot: session.config.rtpSlot,
+      rtcOwnerEpoch: session.config.rtcOwnerEpoch ?? session.epoch } : {}),
     rate: 48000, channels: session.config.channels, ...fields });
   function publish(record) {
     if (diagnostics && record.pcm.byteLength) {
       const stream = diagnostics['stream' + record.type] ??= pcmStats();
       const owner = sessions.get(record.type);
-      Object.assign(stream, { backend: owner?.neteq ? 'neteq-opus' : owner?.software?.backend || 'pcm', rate: record.rate, channels: record.channels, epoch: record.epoch });
+      Object.assign(stream, { backend: owner?.software?.backend || 'pcm', rate: record.rate, channels: record.channels, epoch: record.epoch });
       measurePcm(diagnostics, record.pcm, record.channels, stream);
     }
     onPcm(record);
@@ -57,6 +59,7 @@ export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = (
   function close(session) {
     if (!session || session.closed) return;
     session.closed = true; session.software?.close();
+    if (session.native) onNativeEnd(recordFor(session));
     for (const cancel of session.pending) cancel(); session.pending.clear();
   }
   function reset(type) {
@@ -68,7 +71,7 @@ export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = (
     if (diagnostics) diagnostics.errors++;
     onEvidence('decoder-error', { type: session.type, epoch: session.epoch });
     close(session); endedEpochs.set(ownerKey(session), session.epoch);
-    if (Number.isInteger(session.config?.sampleRate) && [1, 2].includes(session.config?.channels))
+    if (!session.native && Number.isInteger(session.config?.sampleRate) && [1, 2].includes(session.config?.channels))
       publish(recordFor(session, { pcm: new ArrayBuffer(0), flags: session.flags | 2, ended: true, presentationMs: NaN }));
     onError(cause);
   }
@@ -81,18 +84,35 @@ export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = (
         presentationMs: Number.isFinite(session.presentationOffsetMs) ? timestamp / 1000 + session.presentationOffsetMs : NaN }));
     }
   }
+  function directPcm(record) {
+    if (!diagnostics || !record.pcmStats || !record.pcmBytes) return;
+    const session = sessions.get(record.type);
+    if (!session || !live(session) || session.mode !== record.mode || session.epoch !== record.epoch) return;
+    const stream = diagnostics['stream' + record.type] ??= pcmStats();
+    Object.assign(stream, { backend: session.software?.backend || 'pcm', rate: record.rate, channels: record.channels, epoch: record.epoch });
+    for (const target of [diagnostics, stream]) {
+      target.packets += record.pcmStats.packets; target.frames += record.pcmStats.frames;
+      target.nonzero += record.pcmStats.nonzero; target.peak = Math.max(target.peak, record.pcmStats.peak);
+    }
+  }
   async function finish(record) {
     const session = sessions.get(record.type);
     if (session && session.mode !== record.mode) { endedEpochs.set(ownerKey(record), record.epoch); return false; }
     if (session && ((record.epoch - session.epoch) | 0) < 0) return false;
+    if (session?.native && record.config?.audioTransport === 'webrtc-track-v1'
+      && (record.config.rtcGeneration !== session.config.rtcGeneration
+        || String(record.config.rtpSlot) !== String(session.config.rtpSlot)
+        || record.config.rtcOwnerEpoch !== undefined
+          && record.config.rtcOwnerEpoch !== (session.config.rtcOwnerEpoch ?? session.epoch))) return false;
     if (session && !session.closed) {
       await session.tail;
-      if (session.software && live(session)) outputs(session, await session.software.flush());
+      if (session.software && live(session)) outputs(session, await session.software.flush(session.direct
+        ? { ...recordFor(session), flags: record.flags | 2, ended: true } : null));
       if (!live(session)) return false;
       close(session);
     }
     sessions.delete(record.type); endedEpochs.set(ownerKey(record), record.epoch);
-    publish({ ...record, rate: 48000, flags: record.flags | 2, ended: true, pcm: new ArrayBuffer(0) });
+    if (!session?.direct && !session?.native) publish({ ...record, rate: 48000, flags: record.flags | 2, ended: true, pcm: new ArrayBuffer(0) });
     return true;
   }
   async function configure(record) {
@@ -121,20 +141,29 @@ export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = (
         throw Error('Invalid CarPlay audio stream purpose.');
       await loadAudioCore();
       if (!live(session)) return false;
-      if (config.codec === 'opus') {
-        if (config.sampleRate !== 48000 || !onEncoded) throw Error('Opus requires the NetEq decoder.');
-        session.neteq = true;
-        onEncoded({ ...recordFor(session), flags: record.flags | 2, neteqConfig: config });
+      if (config.audioTransport === 'webrtc-track-v1') {
+        if (typeof onNative !== 'function') throw Error('Native RTP audio is unavailable.');
+        session.native = true;
+        await onNative({ ...record, config });
+        if (!live(session)) return false;
+      } else if (config.audioTransport !== undefined) {
+        throw Error('Unknown audio transport.');
+      } else if (config.codec === 'opus') {
+        throw Error('Opus requires negotiated native RTP audio.');
       } else {
         if (!liveAudioSettings(config)) throw Error(`Unsupported software ${config.codec.toUpperCase()} audio format.`);
         if (config.codec !== 'pcm' || config.sampleRate !== 48000) {
-          session.software = softwareFactory(config);
+          const output = createDirectOutput?.(recordFor(session));
+          try { session.software = softwareFactory(config, output ? { output } : {}); }
+          catch (cause) { output?.close?.(); throw cause; }
+          session.direct = session.software.directOutput === true;
+          if (output && !session.direct) output.close?.();
           await session.software.ready;
         }
         if (!live(session)) return false;
-        publish(recordFor(session, { pcm: new ArrayBuffer(0), flags: record.flags | 2, ended: false, presentationMs: NaN }));
+        if (!session.direct) publish(recordFor(session, { pcm: new ArrayBuffer(0), flags: record.flags | 2, ended: false, presentationMs: NaN }));
       }
-      if (diagnostics) diagnostics['stream' + session.type] = { ...pcmStats(), backend: session.neteq ? 'neteq-opus'
+      if (diagnostics) diagnostics['stream' + session.type] = { ...pcmStats(), backend: session.native ? 'webrtc-track'
         : session.software?.backend || 'pcm', epoch: session.epoch, rate: 48000, channels: config.channels };
       return live(session);
     } catch (cause) { fail(session, cause); return false; }
@@ -144,16 +173,13 @@ export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = (
     try {
       if (record.rate !== session.config.sampleRate || record.channels !== session.config.channels)
         throw Error('Audio format changed without configuration.');
+      if (session.native) throw Error('Native RTP audio cannot accept DataChannel codec payloads.');
       session.flags = record.flags;
       if (!Number.isFinite(record.decodeTimestampUs) && session.config.codec === 'pcm')
         record = { ...record, decodeTimestampUs: session.nextPcmTimestampUs ?? 0 };
       if (!Number.isFinite(record.decodeTimestampUs) || Math.abs(record.decodeTimestampUs) > Number.MAX_SAFE_INTEGER)
         throw Error('Invalid audio timestamp.');
       const config = session.config;
-      if (session.neteq) {
-        if (!record.payload?.byteLength || record.payload.byteLength > 65536) throw Error('Invalid Opus packet.');
-        onEncoded({ ...record, flags: record.flags & ~2, semanticType: session.semanticType }); return true;
-      }
       if (Number.isFinite(record.presentationMs)) session.presentationOffsetMs = record.presentationMs - record.decodeTimestampUs / 1000;
       let payload = config.codec === 'pcm' ? decodePcmPacket(record.payload, config)
         : config.codec.startsWith('aac') ? rawAacPacket(record.payload) : record.payload;
@@ -164,7 +190,8 @@ export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = (
         diagnostics.noDataFrames = (diagnostics.noDataFrames || 0) + silent;
       }
       if (config.codec === 'pcm') session.nextPcmTimestampUs = record.decodeTimestampUs + payload.byteLength / 2 / config.channels * 1e6 / config.sampleRate;
-      if (session.software) outputs(session, await session.software.decode(payload, record.decodeTimestampUs, silent));
+      if (session.software) outputs(session, await session.software.decode(payload, record.decodeTimestampUs, silent,
+        { ...recordFor(session), presentationOffsetMs: session.presentationOffsetMs, diagnosticPcm: Boolean(diagnostics) }));
       else publish(recordFor(session, { sequence: record.sequence ?? session.outputSequence++, pcm: payload, presentationMs: record.presentationMs, decodeTimestampUs: record.decodeTimestampUs }));
       return live(session);
     } catch (cause) { fail(session, cause); return false; }
@@ -191,7 +218,7 @@ export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = (
     session.nextPcmTimestampUs = timestamp + record.pcm.byteLength / 2 / record.channels * 1e6 / record.rate;
     return decode({ ...record, payload: record.pcm, decodeTimestampUs: timestamp });
   }
-  return { configure, decode, pcm, reset, debug(enabled) { diagnostics = enabled ? { ...pcmStats(), errors: 0 } : null; },
+  return { configure, decode, pcm, reset, directPcm, debug(enabled) { diagnostics = enabled ? { ...pcmStats(), errors: 0 } : null; },
     stats: () => diagnostics ? { ...diagnostics } : null,
     dispose() { reset(); disposed = true; diagnostics = null; } };
 }

@@ -1,6 +1,7 @@
 /*! SPDX-License-Identifier: GPL-3.0-only
  * Reliable LAN media transport. Fragment sequencing and application consumption are distinct from SCTP delivery. */
 import { candidateCounts, candidateDiagnosticFields, rtcFailureReason } from './rtc-diagnostics.js';
+import { RTC_VIDEO_TRANSPORT, rtcVideoCodecs } from './rtc-video.js';
 
 export const RTC_TRANSPORT = 'webrtc-datachannel-v1';
 export const RTC_MAGIC = 0x31524454;
@@ -62,18 +63,35 @@ function transportError(reason, message = reason) {
 
 /** No STUN/TURN: every candidate must use a direct local path. Signaling uses the existing pairing gate. */
 export function createRtcMediaTransport({ signal, exchange, credentials, onError = () => {},
-  PeerConnection = globalThis.RTCPeerConnection, timeoutMs = 20000, onProgress = () => {} } = {}) {
+  PeerConnection = globalThis.RTCPeerConnection, timeoutMs = 20000, onProgress = () => {},
+  videoTrack = false, videoCodecs = rtcVideoCodecs(), onVideoTrack = () => {}, onVideoGeneration = () => {},
+  onVideoError = () => {}, videoTimeoutMs = 12000, audioTimeoutMs = 10000 } = {}) {
   if (typeof PeerConnection !== 'function') throw transportError('webrtc-unavailable', 'This browser does not support WebRTC DataChannel.');
-  const peer = new PeerConnection({ iceServers: [], iceTransportPolicy: 'all' });
+  const peer = new PeerConnection({ iceServers: [], iceTransportPolicy: 'all', bundlePolicy: 'max-bundle' });
   const channels = {};
+  let remoteVideoTrack = null;
+  let videoTransceiver = null, videoGeneration = 1, videoNegotiation = null, videoAnswer = null, videoRequestSequence = 0;
   try {
     for (const label of ['control', 'video', 'audio']) channels[label] = peer.createDataChannel(label, { ordered: true });
+    if (videoTrack) {
+      if (!videoCodecs.length || typeof peer.addTransceiver !== 'function') throw transportError('rtc-video-unavailable');
+      const transceiver = videoTransceiver = peer.addTransceiver('video', { direction: 'recvonly' });
+      // Do not negotiate an encoder the phone would have to transcode into.
+      if (typeof transceiver.setCodecPreferences !== 'function') throw transportError('rtc-video-codecs-unavailable');
+      try { transceiver.setCodecPreferences(videoCodecs); }
+      catch (_) { throw transportError('rtc-video-codecs-unavailable'); }
+    }
   } catch (error) { peer.close(); throw error; }
   const stats = { transport: RTC_TRANSPORT, state: 'connecting', reason: null, generation: null,
     queuedBytes: 0, highWaterBytes: 0, fragmentsReceived: 0, bytesReceived: 0,
     reassemblyErrors: 0, recordsReceived: 0, recordsConsumed: 0, audioDiscardedRecords: 0,
     controlRequests: 0, controlFailures: 0, stage: 'new', localCandidates: 0, localUdpCandidates: 0, remoteCandidates: 0, remoteUdpCandidates: 0, iceCandidateErrors: 0, iceState: peer.iceConnectionState ?? 'new', connectionState: peer.connectionState ?? 'new' };
   const requests = new Map(), lifetimeAbort = new AbortController();
+  const audioEventListeners = new Set();
+  // Application RPCs use their own increasing q; reserve a distant safe-integer
+  // range for native-audio negotiation so both can be outstanding at once.
+  let audioRequestSequence = 2 ** 40;
+  let nativeAudioGeneration = 0;
   let epoch = null, closed = false, connected = false, audioEnabled = false, disconnectedTimer = null;
   let audioGeneration = 0, audioBarrier = null, audioBarrierTimer = null;
   let authenticatedHello = null, authenticatedClockSample = null, resourceToken = null;
@@ -106,6 +124,14 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
     close(error);
     onError(error);
   }
+  peer.ontrack = event => {
+    if (!videoTrack || event.track?.kind !== 'video' || closed) { event.track?.stop?.(); return; }
+    if (event.transceiver && videoTransceiver && event.transceiver !== videoTransceiver) { event.track.stop(); return; }
+    if (remoteVideoTrack && remoteVideoTrack !== event.track) { event.track.stop(); onVideoError('rtc-video-track-replaced'); return; }
+    remoteVideoTrack = event.track;
+    // An ontrack event may precede authentication. Never render it before auth.
+    if (connected && !videoNegotiation) onVideoTrack(remoteVideoTrack, videoGeneration);
+  };
   function acknowledge(channel, sequence, bytes) {
     if (closed) return;
     try { sendControl({ k: 'ack', channel, q: sequence, bytes }); stats.recordsConsumed++; }
@@ -220,6 +246,31 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       let response;
       try { response = JSON.parse(data); } catch (_) { throw transportError('control-format'); }
       if (!response || typeof response !== 'object' || Array.isArray(response)) throw transportError('control-format');
+      if (response.k === 'video-error') {
+        if (!videoNegotiation && (response.generation ?? 1) === videoGeneration) onVideoError(typeof response.reason === 'string' ? response.reason : 'rtc-video-failed');
+        return;
+      }
+      if (response.k === 'video-answer') {
+        if (videoAnswer && response.generation === videoAnswer.generation && response.q === videoAnswer.q) videoAnswer.resolve(response);
+        return;
+      }
+      if (response.k === 'audio-error' || response.k === 'audio-restart-required') {
+        if (!connected || closed || !Number.isSafeInteger(response.generation) || response.generation < 1
+          || response.generation > 0x7fffffff || (response.reason !== undefined
+            && (typeof response.reason !== 'string' || !/^[a-z0-9][a-z0-9-]{0,99}$/.test(response.reason)))) {
+          stats.nativeAudioInvalidEvents = (stats.nativeAudioInvalidEvents ?? 0) + 1; return;
+        }
+        if (response.generation !== nativeAudioGeneration) {
+          stats.nativeAudioStaleEvents = (stats.nativeAudioStaleEvents ?? 0) + 1; return;
+        }
+        const event = { k: response.k, generation: response.generation,
+          ...(response.reason === undefined ? {} : { reason: response.reason }) };
+        stats.nativeAudioError = event.reason ?? null;
+        for (const listener of audioEventListeners) {
+          try { listener(event); } catch (_) {} // One output observer cannot retire the shared peer.
+        }
+        return;
+      }
       if (response.k === 'audio-barrier') {
         if (response.epoch !== epoch || !uint32(response.generation) || !response.generation || !uint32(response.sequence)) throw transportError('audio-barrier-format');
         if (!audioEnabled || response.generation !== audioGeneration) return;
@@ -288,15 +339,51 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       stats.iceSampledAt = performance.now();
     } catch (_) { stats.statsErrors = (stats.statsErrors ?? 0) + 1; }
   }
-  function requestControl(q, payload) {
+  function requestControl(q, payload, deadlineMs = 5000) {
     if (closed || requests.has(q) || requests.size >= 16) return Promise.reject(transportError('control-unavailable'));
     stats.controlRequests++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { requests.delete(q); stats.controlFailures++; reject(transportError('control-timeout')); }, 5000);
+      const timer = setTimeout(() => { requests.delete(q); stats.controlFailures++; reject(transportError('control-timeout')); }, deadlineMs);
       requests.set(q, { resolve, reject, timer });
       try { sendControl(payload); }
       catch (error) { clearTimeout(timer); requests.delete(q); stats.controlFailures++; reject(error); }
     });
+  }
+  function restartVideo() {
+    if (videoNegotiation) return videoNegotiation;
+    if (!connected || closed || !videoTrack) return Promise.reject(transportError('rtc-video-unavailable'));
+    const next = videoGeneration + 1;
+    const q = ++videoRequestSequence;
+    if (!Number.isSafeInteger(next) || next > 0xffffffff) return Promise.reject(transportError('rtc-video-generation'));
+    let deadline;
+    const task = (async () => {
+      remoteVideoTrack?.stop(); remoteVideoTrack = null;
+      videoTransceiver?.stop();
+      videoTransceiver = peer.addTransceiver('video', { direction: 'recvonly' });
+      videoTransceiver.setCodecPreferences(videoCodecs);
+      const offer = await duringLife(peer.createOffer());
+      await duringLife(peer.setLocalDescription(offer));
+      const sdp = await duringLife(gatherLocalOffer(peer, lifetimeAbort.signal));
+      if (new TextEncoder().encode(sdp).byteLength > 48 * 1024) throw transportError('rtc-video-offer-size');
+      const response = await duringLife(new Promise((resolve, reject) => {
+        videoAnswer = { generation: next, q, resolve, reject };
+        deadline = setTimeout(() => reject(transportError('rtc-video-renegotiation-timeout')), videoTimeoutMs);
+        try { sendControl({ k: 'video-offer', q, generation: next, sdp }); }
+        catch (error) { reject(error); }
+      }));
+      if (closed || videoAnswer?.generation !== next) throw transportError('stopped');
+      if (response.error) throw transportError('rtc-video-renegotiation-rejected');
+      if (response.videoTransport !== RTC_VIDEO_TRANSPORT || typeof response.sdp !== 'string'
+        || new TextEncoder().encode(response.sdp).byteLength > 48 * 1024) throw transportError('rtc-video-answer-format');
+      await duringLife(peer.setRemoteDescription({ type: 'answer', sdp: response.sdp }));
+      if (closed || videoAnswer?.generation !== next) throw transportError('stopped');
+      await duringLife(Promise.resolve(onVideoGeneration(next)));
+      videoGeneration = next; stats.videoGeneration = next;
+      if (remoteVideoTrack) onVideoTrack(remoteVideoTrack, next);
+      sendControl({ k: 'video-ready', generation: next });
+    })();
+    videoNegotiation = task.finally(() => { clearTimeout(deadline); videoAnswer = null; videoNegotiation = null; });
+    return videoNegotiation;
   }
   const aborted = () => close(transportError('stopped'));
   signal?.addEventListener('abort', aborted, { once: true });
@@ -308,12 +395,15 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
     clearTimeout(timer); clearTimeout(disconnectedTimer); clearTimeout(audioBarrierTimer);
     signal?.removeEventListener('abort', aborted);
     clearInterval(statsTimer);
+    videoAnswer?.reject(error); videoAnswer = null;
     lifetimeAbort.abort();
     rejectReady(error); rejectLifetime(error);
     for (const pending of requests.values()) { clearTimeout(pending.timer); pending.reject(error); }
     requests.clear();
+    audioEventListeners.clear();
     for (const receiver of Object.values(receivers)) receiver.stop(error);
     for (const channel of Object.values(channels)) channel.close();
+    remoteVideoTrack?.stop?.(); remoteVideoTrack = null;
     peer.close();
   }
   const video = receivers.video.open();
@@ -361,6 +451,8 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
         authenticatedHello = publicHello;
         authenticatedClockSample = { serverMs: hello.clockMs, started, ended: performance.timeOrigin + performance.now() };
         connected = true; stats.state = 'connected'; progress('connected'); clearTimeout(timer);
+        stats.videoTransport = hello.videoTransport ?? RTC_TRANSPORT;
+        if (remoteVideoTrack) onVideoTrack(remoteVideoTrack, videoGeneration);
         statsTimer ??= setInterval(sampleStats, 2000); sampleStats();
         return this;
       } catch (error) { if (!closed) fail(error); throw error; }
@@ -385,10 +477,42 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       const { session: s } = credentials();
       return requestControl(q, { s, q, e: events });
     },
+    async audioOffer(value = {}) {
+      const { sdp, generation } = value ?? {};
+      if (!connected || closed) throw transportError('audio-unavailable');
+      if (typeof sdp !== 'string' || !sdp.trim() || new TextEncoder().encode(sdp).byteLength > 48 * 1024
+        || !Number.isSafeInteger(generation) || generation < 1 || generation > 0x7fffffff)
+        throw transportError('audio-offer-format');
+      if (generation <= nativeAudioGeneration) throw transportError('audio-offer-generation');
+      const q = ++audioRequestSequence;
+      nativeAudioGeneration = generation;
+      const response = await requestControl(q, { k: 'audio-offer', q, sdp, generation }, audioTimeoutMs);
+      if (generation !== nativeAudioGeneration) throw transportError('audio-answer-stale');
+      if (response.generation !== generation || typeof response.sdp !== 'string' || !response.sdp.trim()
+        || new TextEncoder().encode(response.sdp).byteLength > 48 * 1024)
+        throw transportError('audio-answer-format');
+      return response;
+    },
+    audioTrackReady(value = {}) {
+      if (!connected || closed) throw transportError('audio-unavailable');
+      const { rtcGeneration, rtpSlot, rtcOwnerEpoch, type, mode } = value ?? {};
+      if (!Number.isSafeInteger(rtcGeneration) || rtcGeneration !== nativeAudioGeneration || rtcGeneration < 1
+        || typeof rtpSlot !== 'string' || !/^[A-Za-z0-9_-]{1,32}$/.test(rtpSlot)
+        || !uint32(rtcOwnerEpoch) || !Number.isInteger(type) || type < 0 || type > 255 || type === 5
+        || !['carplay', 'airplay-mirror', 'airplay-audio'].includes(mode)) throw transportError('audio-track-ready-format');
+      sendControl({ k: 'audio-track-ready', rtcGeneration, rtpSlot, rtcOwnerEpoch, type, mode });
+    },
+    audioEvents(listener) {
+      if (typeof listener !== 'function') throw new TypeError('Invalid audio event listener.');
+      if (!closed) audioEventListeners.add(listener);
+      return () => audioEventListeners.delete(listener);
+    },
     bye() { if (connected && !closed) { const { session: s } = credentials(); return requestControl(0, { k: 'bye', q: 0, s }); } return Promise.resolve(); },
     hello: () => authenticatedHello,
     clockSample: () => authenticatedClockSample,
     resourceToken: () => resourceToken,
+    videoTrack: () => remoteVideoTrack,
+    restartVideo,
     close,
     isConnected: () => connected && !closed,
     stats: () => ({ ...stats, controlMessageLimitBytes: Math.min(64 * 1024, peer.sctp?.maxMessageSize || 64 * 1024),

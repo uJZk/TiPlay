@@ -497,9 +497,9 @@ async function main() {
     check(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)), 'the page reloaded from the Service Worker cache and decoded again');
     check(await page.evaluate(async () => {
       await import('./videojs-player.js');
-      const toolkit = await import('./vendor/mediabunny/mediabunny.min.js');
-      return Boolean(customElements.get('video-player') && customElements.get('tiplay-media') && toolkit.Input && toolkit.VideoSampleSink);
-    }), 'Video.js controls and the media toolkit load from the offline cache');
+      const toolkit = await import('./vendor/libmedia/avplayer.js');
+      return Boolean(customElements.get('video-player') && customElements.get('tiplay-media') && typeof toolkit.default === 'function');
+    }), 'Video.js controls and AVPlayer load from the offline cache');
     const offline = await download.goto(`${origin}${DOWNLOAD_PATH}`).then(() => null, error => error.message.split('\n')[0]);
     check(offline !== null, `without the page server the download page stays offline (${offline}): the worker never caches it`);
     await download.close();

@@ -1,0 +1,6 @@
+/* Keep libdatachannel's stable C surface public and isolate static dependencies
+ * from the separate libWebRTC DSO loaded in the same Android process. */
+{
+  global: rtc*;
+  local: *;
+};

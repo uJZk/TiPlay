@@ -52,4 +52,23 @@ class BrowserRtcAudioCaptureTest {
         capture.send(0, audioRecord(2, 2)) { accepted = true }
         assertTrue(accepted)
     }
+    @Test fun nativeRoutingCapturesOnceWithoutClaimingRtpOrSctpDelivery() {
+        val captured = mutableListOf<Pair<String, ByteArray>>()
+        val capture = BrowserRtcAudioCapture(7, { true }) { channel, bytes -> captured += channel to bytes }
+        val original = audioRecord(6, 2, "{\"codec\":\"opus\"}".toByteArray())
+        val metadata = audioRecord(6, 2, "{\"codec\":\"opus\",\"audioTransport\":\"webrtc-track-v1\",\"rtpSlot\":\"voice\",\"rtcGeneration\":2,\"rtcOwnerEpoch\":1}".toByteArray())
+        var routed = false
+        capture.route(0, original) { routed = true }
+        capture.nativeMetadata(9, metadata)
+        assertTrue(routed)
+        assertEquals(1, captured.count { it.first.endsWith("/records") })
+        assertSame(original, captured.single { it.first.endsWith("/records") }.second)
+        assertTrue(captured.all { it.first.startsWith("browser/audio/rtc/7/rtp/") })
+        val events = captured.filter { it.first.endsWith("/events") }.map { WebJson.parse(String(it.second)) as Map<*, *> }
+        assertEquals(listOf("route-attempt", "route-returned", "metadata-local-enqueue"), events.map { it["phase"] })
+        assertEquals("voice", events.last()["rtpSlot"])
+        assertEquals(9L, events.last()["sequence"])
+        assertTrue(events.none { it["phase"] == "local-enqueue" || it["phase"] == "sent" || it["phase"] == "consumed" })
+    }
+
 }

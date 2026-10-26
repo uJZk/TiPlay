@@ -5,9 +5,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_HOST, FLAG, HEADER_BYTES, MAX_PAYLOAD, RECORD, RecordError, RecordStreamError, RecordParser, Samples, addressSpaceFor,
-  backoffDelay, buildLink, chooseDecoderConfig, choosePath, createControlOutbox, createRecordStream, createTouchSlots,
+  backoffDelay, buildLink, createControlOutbox, createRecordStream, createTouchSlots,
   encodeRecord, flatStats, hostParam, letterbox, linkFromAddress, linkLocation, mapPoint, newSessionId, normalizeHost, parseLinkHash,
-  parseLinkSearch, supportedCodecs, viewportFor,
+  parseLinkSearch, viewportFor,
 } from '../../site/play/link.js';
 
 const utf8 = text => new TextEncoder().encode(text);
@@ -266,22 +266,6 @@ test('consumer backpressure suspends the network watchdog and preserves its expl
   resume(new RecordStreamError('decode-stalled', 'capacity did not return'));
   await reading;
   assert.deepEqual(f.ends, [[9, 'decode-stalled']]);
-});
-
-test('the video path takes the Tesla rung when everything is there and replaces only what is missing', () => {
-  const all = { secureContext: true, videoDecoder: true, workerVideoDecoder: true, offscreenCanvas: true, transferableStreams: true };
-  assert.deepEqual(choosePath(all), { path: 'worker', decode: 'worker', draw: 'worker', feed: 'stream', reason: null });
-  assert.deepEqual(choosePath({ ...all, transferableStreams: false }),
-    { path: 'worker-chunks', decode: 'worker', draw: 'worker', feed: 'chunks', reason: 'streams are not transferable' });
-  assert.deepEqual(choosePath({ ...all, offscreenCanvas: false }),
-    { path: 'worker-frames', decode: 'worker', draw: 'main', feed: 'stream', reason: 'no OffscreenCanvas' });
-  assert.equal(choosePath({ ...all, offscreenCanvas: false, transferableStreams: false }).reason, 'streams are not transferable, no OffscreenCanvas');
-  assert.deepEqual(choosePath({ ...all, workerVideoDecoder: false }),
-    { path: 'main', decode: 'main', draw: 'main', feed: null, reason: 'no VideoDecoder in workers' });
-  assert.deepEqual(choosePath({ ...all, secureContext: false }), { path: 'none', decode: null, draw: null, feed: null, reason: 'not a secure context' });
-  assert.equal(choosePath({ ...all, videoDecoder: false }).reason, 'no WebCodecs');
-  assert.deepEqual(choosePath({ secureContext: false }),
-    { path: 'none', decode: null, draw: null, feed: null, reason: 'not a secure context' });
 });
 
 test('landscape pillarbox is excluded and video center maps correctly', () => {
@@ -562,27 +546,6 @@ test('viewport is CSS × DPR rounded to even and only within the phone limits', 
   assert.deepEqual(viewportFor(640, 480, 0), { w: 640, h: 480, cw: 640, ch: 480, dpr: 1 });
 });
 
-test('codec probing lists the families the decoder accepts', async () => {
-  const seen = [];
-  const supports = async config => {
-    seen.push(config);
-    if (config.codec.startsWith('hvc1')) throw new TypeError('invalid');
-    return { supported: config.codec !== 'av01.0.08M.08' };
-  };
-  assert.deepEqual(await supportedCodecs(supports), ['avc1', 'vp8', 'vp09']);
-  assert.deepEqual(seen[0], { codec: 'avc1.640028', codedWidth: 1280, codedHeight: 720, optimizeForLatency: true, hardwareAcceleration: 'prefer-hardware' });
-});
-
-test('the decoder config requests hardware without opting into a software fallback', async () => {
-  const record = { codec: 'vp8', width: 800, height: 480 };
-  const expected = { codec: 'vp8', codedWidth: 800, codedHeight: 480, optimizeForLatency: true };
-  assert.deepEqual(await chooseDecoderConfig(async () => ({ supported: true }), record), { ...expected, hardwareAcceleration: 'prefer-hardware' });
-  const softwareOnly = async config => ({ supported: config.hardwareAcceleration !== 'prefer-hardware' });
-  assert.equal(await chooseDecoderConfig(softwareOnly, record), null);
-  assert.equal(await chooseDecoderConfig(async () => ({ supported: false }), record), null);
-  assert.equal(await chooseDecoderConfig(async () => { throw new TypeError('bad codec'); }, record), null);
-});
-
 test('samples report nearest-rank percentiles over a bounded window', () => {
   const samples = new Samples(240);
   assert.equal(samples.percentile(50), null);
@@ -615,22 +578,6 @@ test('stopping a stream unblocks a pending configuration and releases its reader
   assert.equal(signal.aborted, true);
   assert.equal(body.locked, false);
   assert.deepEqual(ends, []);
-});
-
-
-test('source codec reporting excludes software-only HEVC so negotiation can retain hardware-compatible H.264', async () => {
-  const configurations = [];
-  const supported = await supportedCodecs(async config => {
-    configurations.push(config);
-    return { supported: config.codec.startsWith('avc1') || config.hardwareAcceleration !== 'prefer-hardware' };
-  });
-  assert.deepEqual(supported, ['avc1']);
-  assert.ok(configurations.every(config => config.hardwareAcceleration === 'prefer-hardware' && config.optimizeForLatency === true));
-});
-
-
-test('a hung capability query cannot block pairing indefinitely or advertise unknown codecs', async () => {
-  assert.deepEqual(await supportedCodecs(() => new Promise(() => {}), { avc1: 'avc1.640028' }, 5), []);
 });
 
 

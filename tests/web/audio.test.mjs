@@ -6,7 +6,6 @@ import assert from 'node:assert/strict';
 import { readAudioRecords } from '../../site/play/audio-protocol.js';
 import { createBrowserAudio } from '../../site/play/audio.js';
 import { audioDelayAt } from '../../site/play/playback-window.js';
-import { createFramePresenter } from '../../site/play/video.js';
 import { constantDelay, delayAt, planDelay } from '../../site/play/delay-plan.js';
 import { browserDiagnosticEvents } from '../../site/play/browser-diagnostics.js';
 

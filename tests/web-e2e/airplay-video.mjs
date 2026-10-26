@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { SOFTWARE_VIDEO, configureVideoDecoder } from './avplayer-hardware-override.mjs';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -7,8 +8,6 @@ const { chromium } = createRequire(import.meta.url)('playwright-core');
 const root = fileURLToPath(new URL('../../site/play/', import.meta.url)).replace(/\/$/, '');
 const sample = process.env.TEST_VIDEO_MP4;
 const hls = process.env.TEST_VIDEO_HLS;
-const soakSeconds = Number(process.env.TEST_CAST_SOAK_SECONDS || 0);
-if (!Number.isFinite(soakSeconds) || soakSeconds < 0 || soakSeconds > 60) throw new Error('TEST_CAST_SOAK_SECONDS must be between 0 and 60');
 const diagnosticFields = new Set(['k', 'id', 'revision', 'event', 'position', 'duration', 'paused', 'ended',
   'seeking', 'dragging', 'readyState', 'networkState', 'rate', 'errorCode', 'errorName', 'errorText', 'engine']);
 function checkDiagnostics(entries) {
@@ -22,14 +21,20 @@ function checkDiagnostics(entries) {
   if (JSON.stringify(entries).includes('private.example') || JSON.stringify(entries).includes('private-session'))
     throw new Error('AirPlay diagnostics exposed private resource or exception text');
 }
+if (process.env.TEST_CAST_MODE && !['mp4', 'hls'].includes(process.env.TEST_CAST_MODE)) throw new Error('Unknown TEST_CAST_MODE');
+if (process.env.TEST_CAST_MODE === 'hls' && !hls) throw new Error('HLS mode needs TEST_VIDEO_HLS');
 if (!sample) throw new Error('Set TEST_VIDEO_MP4 to an ordinary playable MP4 fixture');
 const server = createServer((req, res) => {
   const path = req.url.split('?')[0];
   const resource = new URL(req.url, 'http://localhost').searchParams.get('r');
+  const resourceRoute = name => {
+    const route = new URL(req.url, 'http://localhost'); route.pathname = '/airplay-resource';
+    route.searchParams.set('r', name); return route.pathname + route.search;
+  };
   if (hls && path === '/airplay-resource' && resource === 'hls') {
     const route = new URL(req.url, 'http://localhost'); route.searchParams.set('r', 'hls-media');
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    res.end(`#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="text",NAME="English",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,URI="?r=hls-text"\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="text",NAME="中文",LANGUAGE="zh",DEFAULT=NO,AUTOSELECT=NO,URI="?r=hls-text-zh"\n#EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=320x180,SUBTITLES="text"\n${route.pathname}${route.search}\n`); return;
+    res.end(`#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="text",NAME="English",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,URI="${resourceRoute('hls-text')}"\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="text",NAME="中文",LANGUAGE="zh",DEFAULT=NO,AUTOSELECT=NO,URI="${resourceRoute('hls-text-zh')}"\n#EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=320x180,SUBTITLES="text"\n${route.pathname}${route.search}\n`); return;
   }
   if (hls && path === '/airplay-resource' && /^hls-(text|vtt)(-zh)?$/.test(resource)) {
     if (!['id', 'c', 's'].every(key => new URL(req.url, 'http://localhost').searchParams.has(key))) {
@@ -37,8 +42,9 @@ const server = createServer((req, res) => {
     }
     const playlist = resource.startsWith('hls-text'), chinese = resource.endsWith('-zh');
     res.setHeader('Content-Type', playlist ? 'application/vnd.apple.mpegurl' : 'text/vtt');
-    res.end(playlist ? `#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\n?r=hls-vtt${chinese ? '-zh' : ''}\n#EXT-X-ENDLIST\n`
-      : `WEBVTT\nX-TIMESTAMP-MAP=LOCAL:00:00.000,MPEGTS:270000\n\n00:01.300 --> 00:01.500\n<b>${chinese ? '中文字幕' : 'HLS caption'}</b>\n`); return;
+    // Valid WebVTT EOF boundaries: English has one final LF; Chinese has none.
+    res.end(playlist ? `#EXTM3U\n#EXT-X-TARGETDURATION:30\n#EXTINF:30,\n${resourceRoute('hls-vtt'+(chinese ? '-zh' : ''))}\n#EXT-X-ENDLIST\n`
+      : `WEBVTT\n\n00:00.000 --> 00:30.000\n<b>${chinese ? '中文字幕' : 'HLS caption'}</b>${chinese ? '' : '\n'}`); return;
   }
   if (hls && (path === '/airplay-resource' && resource === 'hls-media' || /^\/part\d+\.ts$/.test(path))) {
     res.setHeader('Content-Type', path.endsWith('.ts') ? 'video/mp2t' : 'application/vnd.apple.mpegurl');
@@ -58,503 +64,150 @@ const server = createServer((req, res) => {
 });
 await new Promise(r => server.listen(0,'127.0.0.1',r));
 const url = `http://127.0.0.1:${server.address().port}`;
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', headless:true, args:['--no-sandbox','--no-proxy-server','--autoplay-policy=no-user-gesture-required'] });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || '/usr/bin/chromium', headless:true,
+  args:['--no-sandbox','--no-proxy-server','--autoplay-policy=no-user-gesture-required'] });
 try {
-  for (const mode of ['webgl', '2d', ...(hls ? ['hls'] : [])]) {
-  const page = await browser.newPage({ hasTouch:true });
-  await page.addInitScript(mode => {
-    window.pictures = []; window.drawClock = [];
-    window.lightweightReadback = false; window.lastPicturePixels = null;
-    window.actualVideo = () => document.querySelector('tiplay-media')?.engine;
-    window.mediaResource = mode === 'hls' ? 'hls' : '0';
-    window.playerLanguage = mode === 'hls' ? 'zh' : 'en';
-    window.airplayReportTicks = [];
-    const nativeInterval = window.setInterval.bind(window);
-    window.setInterval = (callback, delay, ...args) => {
-      if (delay !== 400 || callback?.name !== 'report') return nativeInterval(callback, delay, ...args);
-      return nativeInterval(() => {
-        const before = window.events.filter(event => event.k === 'ap-diag').length;
-        callback(...args);
-        window.airplayReportTicks.push(window.events.filter(event => event.k === 'ap-diag').length - before);
-      }, delay);
-    };
-    const original = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function(type, options) {
-      if (mode === '2d' && type.startsWith('webgl')) return null;
-      const context = original.call(this, type, options);
-      if (!context || context.recorded) return context;
-      context.recorded = true;
-      const canvas = this;
-      const method = type === '2d' ? 'drawImage' : 'drawArrays';
-      const draw = context[method];
-      context[method] = function(...args) {
-        const result = draw.apply(this, args);
-        if (canvas.className !== 'airplay-canvas') return result;
-        drawClock.push({ at: performance.now(), position: actualVideo().currentTime });
-        if (lightweightReadback && drawClock.length % 30 !== 0 && lastPicturePixels) {
-          pictures.push({ ...lastPicturePixels, width: canvas.width, height: canvas.height, time: actualVideo().currentTime });
-          return result;
-        }
-        // Readback is test instrumentation only; production never reads video pixels into JS.
-        const pixels = type === '2d' ? this.getImageData(0, 0, canvas.width, canvas.height).data : new Uint8Array(canvas.width * canvas.height * 4);
-        if (type !== '2d') this.readPixels(0, 0, canvas.width, canvas.height, this.RGBA, this.UNSIGNED_BYTE, pixels);
-        let hash = 0, colored = false;
-        for (let i = 0; i < pixels.length; i += 16) {
-          colored ||= Boolean(pixels[i] || pixels[i + 1] || pixels[i + 2]);
-          hash = (Math.imul(hash, 31) + pixels[i] + 3 * pixels[i + 1] + 7 * pixels[i + 2]) | 0;
-        }
-        lastPicturePixels = { type, hash, colored, corner: Array.from(pixels.slice(0, 3)) };
-        pictures.push({ ...lastPicturePixels, width: canvas.width, height: canvas.height, time: actualVideo().currentTime });
-        return result;
+  for (const mode of ['mp4', ...(hls ? ['hls'] : [])].filter(mode => !process.env.TEST_CAST_MODE || mode === process.env.TEST_CAST_MODE)) {
+    const page = await browser.newPage({ hasTouch: true });
+    const errors = [], requests = [];
+    page.on('pageerror', error => { errors.push(error.stack || error.message); console.log('PAGEERROR:', error.stack || error.message); });
+    page.on('request', request => requests.push(request.url()));
+    if (process.env.AVPLAYER_DEBUG) page.on('console', message => console.log('browser:', message.type(), message.text()));
+    await page.addInitScript(() => {
+      window.videoCreates = 0;
+      const create = Document.prototype.createElement;
+      Document.prototype.createElement = function(name, ...args) {
+        if (String(name).toLowerCase() === 'video') window.videoCreates++;
+        return create.call(this, name, ...args);
       };
-      return context;
-    };
-  }, mode);
-  const requests=[], resourceRequests=[]; page.on('request', request => {
-    requests.push(request.url());
-    if (new URL(request.url()).pathname === '/airplay-resource') resourceRequests.push({ url: request.url(), range: request.headers().range });
-  });
-  const errors=[];page.on('pageerror', e=>errors.push(e.message));
-  page.on('console', message => { if (message.type() === 'error') console.log('console:',message.text()); });
-
-  await page.goto(url+'/harness');
-  // Hold the real first resource request: cold source preparation must display
-  // loading before resource headers, Video.js or a decoder is available.
-  let releaseProbe, reachedProbe;
-  const probeReleased = new Promise(resolve => { releaseProbe = resolve; });
-  const probeReached = new Promise(resolve => { reachedProbe = resolve; });
-  let heldProbe = false;
-  await page.route('**/airplay-resource?**', async route => {
-    if (!heldProbe) { heldProbe = true; reachedProbe(); await probeReleased; }
-    await route.continue();
-  });
-  const opening = page.evaluate(async () => {
-    const {createAirPlayControls} = await import('/airplay-controls.js');
-    window.events=[];
-    window.controls=createAirPlayControls(document.getElementById('stage'),event=>events.push(event),playerLanguage, {
-      fetchPhone:(route,init)=>fetch(route,init),
-      credentials:()=>({code:'1234',session:'session'}),host:()=>location.host,
     });
-    controls.update({id:1,resource:mediaResource,revision:0,seekRevision:0,target:0,fraction:false,playing:true});
-    for (let i=0; i<100 && !document.querySelector('video-player') && !events.some(e=>e.failed); i++) await new Promise(r=>setTimeout(r,50));
-    const player=actualVideo();
-    return {version:document.querySelector('video-player')?.dataset.version,active:controls.videoActive(),fullscreen:document.querySelectorAll('media-fullscreen-button,media-pip-button').length,
-      stop:document.querySelectorAll('.airplay-stop').length,spinner:document.querySelectorAll('media-buffering-indicator').length,
-      volume:document.querySelectorAll('media-volume-slider,media-mute-button').length,
-      fill:document.querySelector('media-container')?.clientHeight === 480};
-  });
-  try {
-    await Promise.race([probeReached, opening.then(() => { throw new Error('Source opened without the held probe'); })]);
-    await page.locator('.airplay-preparation').waitFor({ state: 'visible' });
-    const preparation = await page.evaluate(() => {
-      const layer = document.querySelector('.airplay-player');
-      const indicator = document.querySelector('.airplay-preparation');
-      const spinner = document.querySelector('.airplay-preparation-spinner');
-      const bounds = spinner.getBoundingClientRect();
-      return { busy: layer.getAttribute('aria-busy'), role: indicator.getAttribute('role'),
-        label: indicator.getAttribute('aria-label'), width: bounds.width, height: bounds.height,
-        animation: getComputedStyle(spinner).animationName, player: Boolean(document.querySelector('video-player')) };
-    });
-    if (preparation.busy !== 'true' || preparation.role !== 'status' || !preparation.label ||
-      preparation.width <= 0 || preparation.height <= 0 || preparation.animation !== 'airplay-preparation-spin' || preparation.player)
-      throw new Error('Initial resource preparation has no visible accessible loading indicator: ' + JSON.stringify(preparation));
-    console.log(`${mode}: loading is visible before the first resource response or player import`);
-  } finally { releaseProbe(); }
-  const result = await opening;
-  console.log(JSON.stringify({result,errors}));
-  if(result.version !== '10.1.0' || errors.length || result.fullscreen!==0 || result.volume!==0 || result.stop!==1 || result.spinner!==1 || !result.fill) throw new Error('Player integration failed');
-  await page.waitForFunction(()=>events.some(event=>event.k==='ap-state' && event.ready && event.duration>0));
-  await page.waitForFunction(()=>events.some(event=>event.k==='ap-diag' && event.event==='play-resolved'));
-  await page.waitForFunction(()=>events.some(event=>event.k==='ap-diag' && event.event==='playing') &&
-    !document.querySelector('.airplay-preparation') && !document.querySelector('.airplay-player').hasAttribute('aria-busy'));
-  if (resourceRequests[0]?.range !== 'bytes=0-65535') throw new Error('Initial media probe was not bounded');
-  const openingDiagnostics = await page.evaluate(()=>events.filter(event=>event.k==='ap-diag'));
-  checkDiagnostics(openingDiagnostics);
-  for (const expected of ['open', 'probe-start', 'probe-ready', 'loadedmetadata', 'directive-play', 'play', 'playing', 'play-resolved'])
-    if (!openingDiagnostics.some(entry=>entry.event===expected)) throw new Error(`Missing initial AirPlay diagnostic: ${expected}`);
-  if (openingDiagnostics.some(entry => entry.event === 'directive-seek'))
-    throw new Error('The initial zero-position directive restarted prepared media');
-  await page.waitForFunction(()=>new Set(pictures.filter(p=>p.colored).map(p=>p.hash)).size>=2);
-  const picture = await page.evaluate(() => ({ ...pictures.at(-1), nativeVideos: document.querySelectorAll('video').length,
-    canvases: document.querySelectorAll('.airplay-canvas').length, intrinsicWidth: actualVideo().videoWidth }));
-  if (!picture.colored || !(picture.intrinsicWidth > 0) || picture.nativeVideos !== 0 || picture.canvases !== 1 || picture.width > Math.min(800, picture.intrinsicWidth) || picture.corner.some(Boolean))
-    throw new Error('Canvas pixels, source resolution cap, single engine or letterboxing failed');
-  if ((mode === '2d') !== (picture.type === '2d')) throw new Error('Unexpected canvas renderer');
-  console.log(`${mode}: decoded video pictures reached the canvas without a native video clock`);
-  const runningDiagnostics = openingDiagnostics.filter(entry => entry.engine?.running);
-  if (!runningDiagnostics.some(entry => entry.engine.intentPlaying && entry.engine.waitReason === 'none'))
-    throw new Error('Readiness was reported without evidence that the real playback clock started');
-  if (soakSeconds > 0) {
-    const continuity = await page.evaluate(async seconds => {
-      lightweightReadback = true;
-      const engine = actualVideo(), began = performance.now(), start = engine.currentTime;
-      const mark = events.length, drawMark = drawClock.length, states = [];
-      while (performance.now() - began < seconds * 1000 && !engine.ended && !engine.error) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        states.push({ at: performance.now(), position: engine.currentTime, buffering: engine.buffering,
-          ...engine.getPlaybackDiagnostics() });
-      }
-      const elapsed = (performance.now() - began) / 1000, position = engine.currentTime;
-      lightweightReadback = false;
-      const frames = drawClock.slice(drawMark);
-      const waits = events.slice(mark).filter(event => event.k === 'ap-diag' && event.event === 'waiting').length;
-      return { start, position, elapsed, rate: engine.playbackRate, duration: engine.duration, ended: engine.ended,
-        error: engine.error, waits, frames: frames.length, last: states.at(-1),
-        maxDrawGapMs: frames.length > 1 ? Math.max(...frames.slice(1).map((frame, index) => frame.at - frames[index].at)) : null };
-    }, soakSeconds);
-    const expected = Math.min(continuity.duration, continuity.start + continuity.elapsed * continuity.rate);
-    if (continuity.error || continuity.waits || continuity.frames < 2 || continuity.position < expected - 0.2 ||
-      !continuity.ended && (!continuity.last?.running || continuity.last.buffering))
-      throw new Error('Continuous available URL media did not follow its independent wall clock: ' + JSON.stringify(continuity));
-    console.log(JSON.stringify({ mode, continuousPlayback: continuity }));
-  }
-
-  if (mode === 'hls' && !/[\u4e00-\u9fff]/.test(await page.locator('media-play-button').getAttribute('aria-label')))
-    throw new Error('Chinese controls did not use the bundled locale');
-  if (mode === 'webgl') {
-    await page.evaluate(() => {
-      window.policyEngine = actualVideo();
-      controls.update({id:1,resource:mediaResource,revision:0,seekRevision:0,target:0,fraction:false,
-        playing:true,proxyOnly:true,directUrl:'http://127.0.0.1:1/iphone-private.mp4'});
-    });
-    await page.waitForFunction(() => actualVideo() !== policyEngine && actualVideo()?.readyState >= 2);
-    if (requests.some(url => url.includes('iphone-private.mp4')) || !requests.some(url => url.includes('proxy=1')))
-      throw new Error('Debug mode did not force active playback through Android');
-    await page.evaluate(() => {
-      window.policyEngine = actualVideo();
-      controls.update({id:1,resource:mediaResource,revision:0,seekRevision:0,target:0,fraction:false,
-        playing:true,proxyOnly:false,directUrl:location.origin+'/airplay-resource?r=0&direct=1'});
-    });
-    await page.waitForFunction(() => actualVideo() !== policyEngine && actualVideo()?.readyState >= 2);
-    if (!requests.some(url => url.includes('direct=1'))) throw new Error('Disabling debug did not restore direct playback');
-    console.log('debug switch: active media reopened through Android and direct playback returned when disabled');
-    const recoveryPosition = await page.evaluate(() => {
-      window.recoveringEngine = actualVideo();
-      const position = Math.min(0.75, recoveringEngine.duration / 3);
-      recoveringEngine.currentTime = position;
-      return position;
-    });
-    await page.waitForFunction(() => !recoveringEngine.seeking);
-    await page.evaluate(() => recoveringEngine.dispatchEvent(new Event('error')));
-    await page.waitForFunction(() => actualVideo() !== recoveringEngine && actualVideo()?.readyState >= 2);
-    await page.waitForFunction(position => actualVideo().currentTime >= position - 0.02, recoveryPosition);
-    const recoveredPosition = await page.evaluate(() => actualVideo().currentTime);
-    if (recoveredPosition > recoveryPosition + 0.5) throw new Error('Proxy recovery did not retain the current media position');
-    console.log('direct playback error: proxy recovery retained the current media position');
-  }
-  const progress = await page.evaluate(() => {
-    const player=actualVideo();
-    player.pause(); player.currentTime = Math.min(0.25,player.duration/3); const before=player.currentTime;
-    controls.update({id:1,resource:mediaResource,revision:1,seekRevision:0,target:0,fraction:false,playing:false});
-    const paused=player.currentTime;
-    const target=Math.min(0.4,player.duration/2);
-    controls.update({id:1,resource:mediaResource,revision:2,seekRevision:1,target,fraction:false,playing:false});
-    return {before,paused,target,seeked:player.currentTime};
-  });
-  if(Math.abs(progress.before-progress.paused)>0.01||Math.abs(progress.target-progress.seeked)>0.01)throw new Error('Rate change rolled back progress or new seek was ignored');
-  await page.waitForFunction(target => !actualVideo().seeking && Math.abs(pictures.at(-1).time-target)<0.03, progress.target);
-  await page.waitForTimeout(150);
-  const pausedFrames = await page.evaluate(()=>pictures.length);
-  await page.waitForTimeout(150);
-  if(await page.evaluate(()=>pictures.length)!==pausedFrames) throw new Error('Paused video keeps drawing');
-  // Decoder progress may legitimately supplement the last paused/seeked edge.
-  // Measure each actual report task so those asynchronous edges cannot be
-  // mistaken for diagnostics caused by an ordinary periodic state report.
-  await page.evaluate(() => { airplayReportTicks.length = 0; });
-  await page.waitForFunction(() => airplayReportTicks.length >= 2);
-  const reportDiagnostics = await page.evaluate(() => airplayReportTicks.slice());
-  if(reportDiagnostics.some(count => count !== 0))
-    throw new Error(`Periodic AirPlay reports emitted extra diagnostics: ${JSON.stringify(reportDiagnostics)}`);
-  await page.evaluate(()=>document.getElementById('stage').style.height='800px');
-  await page.waitForFunction(()=>{ const expected=Math.min(800,actualVideo().videoWidth); return pictures.at(-1).width===expected && pictures.at(-1).height===expected; });
-  if(mode==='webgl') {
-    await page.evaluate(()=>{
-      const canvas=document.querySelector('.airplay-canvas');
-      const gl=canvas.getContext('webgl2')||canvas.getContext('webgl');
-      const extension=gl.getExtension('WEBGL_lose_context');
-      if(!extension) throw new Error('Context loss fixture unavailable');
-      window.beforeRestore=pictures.length;
-      extension.loseContext(); setTimeout(()=>extension.restoreContext(),300);
-    });
-    await page.waitForFunction(()=>pictures.length>beforeRestore && pictures.at(-1).colored);
-  }
-  if (mode === 'hls') {
-    await page.evaluate(() => { actualVideo().currentTime = 1.35; });
-    await page.waitForFunction(() => !actualVideo().seeking && document.querySelector('.airplay-captions')?.textContent === 'HLS caption');
-    if (await page.locator('.airplay-captions b').count()) throw new Error('Discovered HLS cue markup was inserted');
-    await page.locator('media-captions-button').click();
-    await page.waitForFunction(() => document.querySelector('media-menu').open);
-    await page.locator('media-menu-radio-item[data-track="subtitle-1"]').click();
-    await page.waitForFunction(() => document.querySelector('.airplay-captions').textContent === '中文字幕');
-    await page.evaluate(() => { actualVideo().currentTime = 1.6; });
-    await page.waitForFunction(() => !actualVideo().seeking && document.querySelector('.airplay-captions').hidden);
-    await page.evaluate(target => {
-      for (const track of actualVideo().textTracks) track.mode = 'disabled';
-      actualVideo().currentTime = target;
-    }, progress.target);
-    await page.waitForFunction(() => !actualVideo().seeking);
-    console.log('HLS: authenticated WebVTT, native language selection and pure-text timed cues verified');
-  }
-  await page.evaluate(() => {
-    const track = actualVideo().addTextTrack('captions', 'English', 'en');
-    track.addCue(new VTTCue(0, 3, '<b>caption</b>')); track.mode = 'showing';
-  });
-  await page.waitForFunction(() => document.querySelector('.airplay-captions')?.textContent === 'caption');
-  if (mode === 'webgl' && process.env.TEST_PLAYER_SCREENSHOT)
-    await page.screenshot({ path: process.env.TEST_PLAYER_SCREENSHOT, fullPage: true });
-  if (await page.locator('.airplay-captions b').count()) throw new Error('Caption text was interpreted as markup');
-  await page.locator('media-captions-button').click();
-  if (mode === 'hls') {
-    await page.waitForFunction(() => document.querySelector('media-menu').open);
-    await page.locator('media-menu-radio-item[data-track="off"]').click();
-  }
-  await page.waitForFunction(() => document.querySelector('.airplay-captions').hidden);
-
-  await page.locator('media-playback-rate-button').click();
-  await page.waitForFunction(() => actualVideo().playbackRate === 1.25 &&
-    events.some(event => event.k === 'ap-state' && event.rate === 1.25));
-  await page.waitForFunction(() => actualVideo().readyState >= 2 && !actualVideo().seeking);
-  const tempo = await page.evaluate(() => actualVideo().getPlaybackDiagnostics());
-  if (tempo.audioTempoBackend !== 'wasm-simd' || !requests.some(value => new URL(value).pathname === '/vendor/soundtouch/soundtouch.simd.wasm'))
-    throw new Error('Non-1x URL audio did not use the actual SIMD WASM tempo engine under production CSP: ' + JSON.stringify(tempo));
-  console.log(`${mode}: 1.25x URL audio uses ${tempo.audioTempoBackend} under production CSP`);
-  await page.evaluate(() => { actualVideo().playbackRate = 1; });
-  await page.waitForFunction(() => actualVideo().readyState >= 2);
-
-  await page.locator('media-play-button').click();
-  await page.waitForFunction(target=>!actualVideo().paused && pictures.at(-1).time>target+0.05, progress.target);
-  await page.locator('media-play-button').click();
-  if(!await page.evaluate(()=>actualVideo().paused)) throw new Error('Canvas intercepted player controls');
-  const slider = page.locator('media-time-slider');
-  await slider.scrollIntoViewIfNeeded();
-  const bounds = await slider.boundingBox();
-  await slider.click({ position: { x: bounds.width * 0.55, y: bounds.height / 2 } });
-  await page.waitForFunction(() => Math.abs(actualVideo().currentTime / actualVideo().duration - 0.55) < 0.05);
-  const dragMark = await page.evaluate(()=>events.length);
-  await page.mouse.move(bounds.x + bounds.width * 0.2, bounds.y + bounds.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(bounds.x + bounds.width * 0.65, bounds.y + bounds.height / 2, { steps: 8 });
-  await page.mouse.up();
-  await page.waitForFunction(mark=>events.slice(mark).some(event=>event.k==='ap-diag' && event.event==='drag-end'), dragMark);
-  await page.waitForFunction(()=>!actualVideo().seeking && Math.abs(actualVideo().currentTime / actualVideo().duration - 0.65)<0.05);
-  const dragDiagnostics = await page.evaluate(mark=>events.slice(mark).filter(event=>event.k==='ap-diag'), dragMark);
-  if (dragDiagnostics.filter(entry=>entry.event==='drag-start' && entry.dragging).length!==1 ||
-      dragDiagnostics.filter(entry=>entry.event==='drag-end' && !entry.dragging).length!==1 ||
-      !dragDiagnostics.some(entry=>entry.event==='seeking' && entry.seeking) ||
-      !dragDiagnostics.some(entry=>entry.event==='seeked' && !entry.seeking))
-    throw new Error('Time-slider gesture or seek edges were not diagnosed');
-  console.log(JSON.stringify({mode, drag:dragDiagnostics.map(({event,position,duration,seeking,dragging})=>
-    ({event,position,duration,seeking,dragging}))}));
-
-  const skipStart = await page.evaluate(() => actualVideo().currentTime);
-  await page.locator('media-seek-button[seconds="-10"]').click();
-  await page.waitForFunction(target => !actualVideo().seeking && Math.abs(actualVideo().currentTime - target) < 0.03, Math.max(0, skipStart - 10));
-  await page.locator('media-seek-button[seconds="10"]').click();
-  await page.waitForFunction(target => !actualVideo().seeking && Math.abs(actualVideo().currentTime - target) < 0.03, Math.max(0, skipStart - 10) + 10);
-  const surface = page.locator('media-container');
-  const area = await surface.boundingBox();
-  const point = side => ({ x: area.width * (side === 'left' ? .25 : .75), y: area.height * .4 });
-  await page.evaluate(() => { actualVideo().currentTime = 12; });
-  await page.waitForFunction(() => !actualVideo().seeking);
-  for (const side of ['left', 'right']) {
-    const position = point(side);
-    await surface.dblclick({ position });
-    await page.waitForTimeout(350);
-    if (!await page.evaluate(() => actualVideo().paused && !actualVideo().seeking && Math.abs(actualVideo().currentTime - 12) < .03))
-      throw new Error(`${side} mouse double-click changed playback`);
-    await page.touchscreen.tap(area.x + position.x, area.y + position.y);
-    await page.touchscreen.tap(area.x + position.x, area.y + position.y);
-    await page.waitForTimeout(350);
-    if (!await page.evaluate(() => actualVideo().paused && !actualVideo().seeking && Math.abs(actualVideo().currentTime - 12) < .03))
-      throw new Error(`${side} touch double-tap changed playback`);
-  }
-  await surface.click({ position: point('right') });
-  await page.waitForTimeout(300);
-  if (!await page.evaluate(() => actualVideo().paused && Math.abs(actualVideo().currentTime - 12) < .03))
-    throw new Error('Single tap changed playback instead of only showing controls');
-  console.log(`${mode}: mouse/touch double-taps do not seek; single taps only toggle controls`);
-  const style = await page.locator('.airplay-stop').evaluate(button => {
-    const stop = getComputedStyle(button), play = getComputedStyle(document.querySelector('media-play-button'));
-    return { padding: stop.padding, border: stop.borderWidth, radius: stop.borderRadius,
-      playRadius: play.borderRadius, width: button.getBoundingClientRect().width,
-      icon: button.querySelector('svg').getBoundingClientRect().width };
-  });
-  if (style.padding !== '0px' || style.border !== '0px' || style.radius !== style.playRadius || style.icon > style.width)
-    throw new Error('Page styles overrode the official Video.js stop control: ' + JSON.stringify(style));
-  // The skin must remain usable on a narrow browser with the production page CSS.
-  await page.evaluate(() => { document.getElementById('stage').style.width = '320px'; });
-  for (const selector of ['media-seek-button[seconds="-10"]', 'media-seek-button[seconds="10"]', '.airplay-stop', 'media-time-slider']) {
-    const visible = await page.locator(selector).evaluate(control => {
-      const r = control.getBoundingClientRect(), parent = document.getElementById('stage').getBoundingClientRect();
-      return r.width > 0 && r.left >= parent.left && r.right <= parent.right;
-    });
-    if (!visible) throw new Error('Narrow Video.js layout clipped ' + selector);
-  }
-  await page.evaluate(() => { document.getElementById('stage').style.width = '800px'; });
-  console.log(`${mode}: +/-10 seeking, matching skin controls and narrow layout passed`);
-
-  await page.evaluate(()=>{
-    const player=actualVideo();
-    player.currentTime = player.duration-0.15; player.play();
-  });
-  await page.waitForFunction(()=>actualVideo().ended);
-  if (!await page.evaluate(() => events.some(event => event.k === 'ap-state' && event.ended && !event.buffering && !event.playing)))
-    throw new Error('Ended playback was reported as loading');
-  await page.waitForTimeout(100);
-  const endedFrames=await page.evaluate(()=>pictures.length);
-  await page.waitForTimeout(100);
-  if(await page.evaluate(()=>pictures.length)!==endedFrames) throw new Error('Ended video keeps drawing');
-  await page.locator('.airplay-stop').click();
-  if (!await page.evaluate(() => events.some(event => event.k === 'ap' && event.id === 1 && event.a === 'stop')))
-    throw new Error('Stop control did not reach the iPhone');
-  if (!await page.evaluate(()=>events.some(event=>event.k==='ap-diag' && event.event==='ended' && event.ended) &&
-      events.some(event=>event.k==='ap-diag' && event.event==='explicit-stop')))
-    throw new Error('Media completion and explicit stop were not distinguished');
-  const retiredDiagnostics = await page.evaluate(()=>{
-    const retired = actualVideo();
-    controls.update(null);
-    const mark=events.filter(event=>event.k==='ap-diag').length;
-    for (const type of ['play','pause','loadedmetadata','seeking','seeked','ended','error']) retired.dispatchEvent(new Event(type));
-    return {mark,after:events.filter(event=>event.k==='ap-diag').length};
-  });
-  if (retiredDiagnostics.mark!==retiredDiagnostics.after) throw new Error('Retired player emitted late diagnostics');
-  if(await page.locator('video-player').count()) throw new Error('Player not disposed');
-  if(await page.locator('.airplay-canvas').count()) throw new Error('Canvas not disposed');
-  const disposedFrames=await page.evaluate(()=>pictures.length);
-  await page.waitForTimeout(100);
-  if(await page.evaluate(()=>pictures.length)!==disposedFrames) throw new Error('Disposed canvas keeps drawing');
-  await page.evaluate(()=>controls.update({id:3,resource:mediaResource,revision:0,seekRevision:0,target:0,fraction:false,playing:true}));
-  await page.waitForFunction(count=>events.some(event=>event.id===3&&event.ready)&&pictures.length>count, disposedFrames);
-  if(await page.locator('.airplay-canvas').count()!==1) throw new Error('Replacement did not create exactly one canvas');
-  await page.evaluate(()=>controls.update({id:4,kind:'photo'}));
-  if(await page.locator('.airplay-canvas').count()) throw new Error('Photo handoff retained video canvas');
-  await page.evaluate(()=>{
-    controls.update({id:2,resource:'broken',revision:0,seekRevision:0,target:0,fraction:false,playing:true});
-    controls.update({id:2,resource:'broken',revision:1,seekRevision:0,target:0,fraction:false,playing:false});
-  });
-  await page.waitForFunction(()=>events.some(event=>event.id===2&&event.revision===1&&event.failed));
-  if (!await page.evaluate(()=>events.some(event=>event.k==='ap-diag' && event.id===2 && event.revision===1 && event.event==='open-error')))
-    throw new Error('Resource-open failure did not preserve its active revision');
-  checkDiagnostics(await page.evaluate(()=>events.filter(event=>event.k==='ap-diag')));
-  await page.evaluate(()=>controls.update(null));
-  if(errors.length) throw new Error(`Browser errors: ${errors.join('; ')}`);
-  await page.close();
-  }
-  {
-    const page = await browser.newPage();
-    const errors = []; page.on('pageerror', error => errors.push(error.message));
-    let holdRecovery = false, mediaBlocked, releaseMedia;
-    const blocked = new Promise(resolve => { mediaBlocked = resolve; });
-    const released = new Promise(resolve => { releaseMedia = resolve; });
-    await page.route('**/airplay-resource?*', async route => {
-      const request = route.request(), target = new URL(request.url());
-      if (holdRecovery && target.searchParams.get('proxy') === '1' && request.headers().range !== 'bytes=0-65535') {
-        holdRecovery = false; mediaBlocked(); await released;
-      }
-      await route.continue();
-    });
-    try {
-      await page.goto(url + '/harness');
-      await page.evaluate(async () => {
-        const { createAirPlayControls } = await import('/airplay-controls.js');
-        window.events = []; window.actualVideo = () => document.querySelector('tiplay-media')?.engine;
-        window.controls = createAirPlayControls(document.getElementById('stage'), event => events.push(event), 'en', {
-          fetchPhone: (route, init) => fetch(route, init), credentials: () => ({ code: '1234', session: 'session' }), host: () => location.host,
-        });
-        window.recoveryState = { id: 11, resource: '0', revision: 0, seekRevision: 0, target: 0, fraction: false,
-          playing: true, rate: 1, directUrl: location.origin + '/airplay-resource?r=0&direct=1' };
-        controls.update(recoveryState);
-      });
-      await page.waitForFunction(() => actualVideo()?.readyState >= 2 && events.some(event => event.event === 'play-resolved'));
-      await page.evaluate(() => { window.replacedVideo = actualVideo(); replacedVideo.pause(); replacedVideo.currentTime = 0.75; });
-      await page.waitForFunction(() => !replacedVideo.seeking);
-      holdRecovery = true;
-      await page.evaluate(() => replacedVideo.dispatchEvent(new Event('error')));
-      let blockTimeout;
-      try {
-        await Promise.race([blocked, new Promise((_, reject) => {
-          blockTimeout = setTimeout(() => reject(new Error('Proxy recovery never reached the blocked media request')), 10000);
-        })]);
-      } finally { clearTimeout(blockTimeout); }
-      await page.waitForFunction(() => actualVideo() && actualVideo() !== replacedVideo);
-      await page.evaluate(() => controls.update({ ...recoveryState, revision: 1, seekRevision: 1, target: 2, rate: 1.5, playing: false }));
-      releaseMedia();
-      await page.waitForFunction(() => actualVideo()?.readyState >= 2 && !actualVideo().seeking);
-      const recovered = await page.evaluate(() => ({ time: actualVideo().currentTime, rate: actualVideo().playbackRate, paused: actualVideo().paused }));
-      if (Math.abs(recovered.time - 2) > 0.02 || recovered.rate !== 1.5 || !recovered.paused)
-        throw new Error('A stale recovery snapshot overwrote the newer seek/rate/pause directive: ' + JSON.stringify(recovered));
-      if (errors.length) throw new Error('Recovery directive browser errors: ' + errors.join('; '));
-      console.log('proxy recovery: a newer seek, rate and pause directive superseded the old playback snapshot');
-    } finally { releaseMedia(); await page.close(); }
-  }
-  for (const scenario of ['autoplay-rejection', 'canvas-failure', 'retired-play-promise']) {
-    const page=await browser.newPage();
-    const errors=[]; page.on('pageerror', error=>errors.push(error.message));
-    await page.addInitScript(scenario=>{
-      const secret='https://private.example/media?code=private-code&session=private-session';
-      if (scenario==='canvas-failure') {
-        const original=HTMLCanvasElement.prototype.getContext;
-        HTMLCanvasElement.prototype.getContext=function(type,options){
-          if(type.startsWith('webgl'))return null;
-          const context=original.call(this,type,options);
-          if(context)context.drawImage=()=>{throw new DOMException(secret,'SecurityError');};
-          return context;
-        };
-      } else {
-        const listen = EventTarget.prototype.addEventListener;
-        EventTarget.prototype.addEventListener = function(type, ...args) {
-          if (type === 'loadedmetadata' && this.constructor === EventTarget && typeof this.play === 'function' && !this.mockedPlay) {
-            this.mockedPlay = true;
-            const media = this;
-            window.originalPlay = media.play;
-            media.play = () => {
-              window.retiredMedia = media;
-              if(scenario==='autoplay-rejection')return Promise.reject(new DOMException(secret,'NotAllowedError'));
-              return new Promise((resolve,reject)=>{window.rejectRetiredPlay=()=>reject(new DOMException(secret,'AbortError'));});
-            };
-          }
-          return listen.call(this, type, ...args);
-        };
-      }
-    },scenario);
+    await configureVideoDecoder(page);
     await page.goto(url+'/harness');
-    await page.evaluate(async()=>{
-      const {createAirPlayControls}=await import('/airplay-controls.js');
-      window.events=[];
-      window.controls=createAirPlayControls(document.getElementById('stage'),event=>events.push(event),'en',{
-        fetchPhone:(route,init)=>fetch(route,init), credentials:()=>({code:'private-code',session:'private-session'}),host:()=>location.host,
+    await page.evaluate(async mode => {
+      const { createAirPlayControls } = await import('/airplay-controls.js');
+      window.events = [];
+      window.actualVideo = () => document.querySelector('tiplay-media')?.engine;
+      window.mediaResource = mode === 'hls' ? 'hls' : '0';
+      window.controls = createAirPlayControls(document.querySelector('#stage'), event => events.push(event), 'en', {
+        fetchPhone: (route, init) => fetch(route, init),
+        credentials: () => ({ code: '1234', session: 'session' }), host: () => location.host,
       });
-      controls.update({id:9,resource:'0',revision:0,seekRevision:0,target:0,fraction:false,playing:true});
-    });
-    if(scenario==='retired-play-promise'){
-      await page.waitForFunction(()=>typeof rejectRetiredPlay==='function');
-      const retired=await page.evaluate(async()=>{
-        controls.update(null); const mark=events.length;
-        rejectRetiredPlay();
-        for(const type of ['ended','error','seeked'])retiredMedia.dispatchEvent(new Event(type));
-        await new Promise(resolve=>setTimeout(resolve,50));
-        retiredMedia.play=originalPlay;
-        return {mark,after:events.length};
+      controls.update({ id: 1, resource: mediaResource, revision: 0, seekRevision: 0, target: 0,
+        fraction: false, playing: true });
+    }, mode);
+    await page.waitForFunction(() => actualVideo()?.readyState >= 2 && actualVideo().currentTime > .4, null, { timeout: 30000 })
+      .catch(async error => { console.log('controls-startup:', await page.evaluate(() => ({ events, engine: actualVideo()?.getPlaybackDiagnostics(), error: actualVideo()?.error, layer: document.querySelector('.airplay-player')?.textContent })), errors, requests.slice(-20)); throw error; });
+    if (await page.locator('media-fullscreen-button,media-pip-button,media-volume-slider,media-mute-button').count())
+      throw new Error('Removed controls were restored');
+    if (await page.locator('.airplay-stop').count() !== 1) throw new Error('Missing stop control');
+    const canvas = page.locator('#stage canvas');
+    if (await canvas.count() !== 1) throw new Error('Expected exactly one Canvas renderer');
+    const first = await canvas.screenshot();
+    await page.waitForFunction(() => actualVideo().currentTime > 1);
+    if (first.equals(await canvas.screenshot())) throw new Error('Canvas video did not change');
+    if (await page.evaluate(() => videoCreates || document.querySelectorAll('video').length))
+      throw new Error('URL playback created a video element');
+    await page.locator('media-play-button').click();
+    await page.waitForFunction(() => actualVideo().paused);
+    const before = await page.evaluate(() => actualVideo().currentTime);
+    await page.waitForTimeout(250);
+    if (Math.abs(await page.evaluate(() => actualVideo().currentTime) - before) > .1) throw new Error('Pause clock advanced');
+    await page.evaluate(() => controls.update({ id: 1, resource: mediaResource, revision: 1,
+      seekRevision: 1, target: .5, fraction: true, playing: false }));
+    await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime / actualVideo().duration - .5) < .04);
+    await page.locator('media-playback-rate-button').click();
+    await page.waitForFunction(() => actualVideo().playbackRate === 1.25 && events.some(event => event.k === 'ap-state' && event.rate === 1.25));
+    await page.evaluate(() => { actualVideo().playbackRate = 1; });
+    const seekPosition = await page.evaluate(() => actualVideo().currentTime), seekPicture = await canvas.screenshot();
+    await page.locator('media-play-button').click();
+    await page.waitForFunction(position => !actualVideo().paused && actualVideo().currentTime > position + .3, seekPosition);
+    if (seekPicture.equals(await canvas.screenshot())) throw new Error('Paused seek/resume did not produce new Canvas pictures');
+    await page.locator('media-play-button').click();
+    await page.waitForFunction(() => actualVideo().paused);
+    await page.locator('media-seek-button[seconds="-10"]').click();
+    await page.waitForFunction(() => !actualVideo().seeking);
+    const position = await page.evaluate(() => actualVideo().currentTime);
+    const surface = page.locator('media-container');
+    await surface.dblclick({ position: { x: 120, y: 100 } });
+    await page.waitForTimeout(250);
+    if (!await page.evaluate(position => actualVideo().paused && Math.abs(actualVideo().currentTime - position) < .1, position))
+      throw new Error('Canvas double click changed playback');
+    await page.evaluate(() => { document.querySelector('#stage').style.width = '320px'; });
+    for (const selector of ['.airplay-stop', 'media-time-slider']) {
+      const fits = await page.locator(selector).evaluate(control => {
+        const bounds = control.getBoundingClientRect(), stage = document.querySelector('#stage').getBoundingClientRect();
+        return bounds.width > 0 && bounds.left >= stage.left && bounds.right <= stage.right;
       });
-      if(retired.mark!==retired.after)throw new Error('Retired play promise reported into a closed player');
-    }else{
-      const expected=scenario==='autoplay-rejection'?'play-rejected':'canvas-error';
-      const errorName=scenario==='autoplay-rejection'?'NotAllowedError':'SecurityError';
-      await page.waitForFunction(expected=>events.some(event=>event.k==='ap-diag' && event.event===expected),expected);
-      if(!await page.evaluate(({expected,errorName})=>events.some(event=>event.k==='ap-diag' && event.event===expected && event.errorName===errorName),{expected,errorName}))
-        throw new Error('Failure diagnostic omitted its safe exception name');
-      if(scenario==='autoplay-rejection' && !await page.evaluate(()=>document.querySelector('tiplay-media').paused && !events.some(event=>event.k==='ap-state' && event.failed)))
-        throw new Error('Autoplay rejection diagnostics changed playback failure behavior');
-      if(scenario==='canvas-failure')
-        await page.waitForFunction(()=>events.some(event=>event.k==='ap-state' && event.failed));
-      console.log(JSON.stringify({scenario, failure:await page.evaluate(expected=>events.find(event=>
-        event.k==='ap-diag' && event.event===expected),expected)}));
+      if (!fits) throw new Error('Narrow layout overflow: '+selector);
     }
-    checkDiagnostics(await page.evaluate(()=>events.filter(event=>event.k==='ap-diag')));
-    await page.evaluate(()=>controls.dispose());
-    if(errors.length)throw new Error(`Diagnostic scenario browser errors: ${errors.join('; ')}`);
+    if (mode === 'hls') {
+      if (process.env.AVPLAYER_DEBUG) await page.evaluate(async () => {
+        const { default: Player } = await import('/vendor/libmedia/avplayer.js');
+        for (const port of Player.Instances[0]?.subtitleRender?.leftPorts?.values() || []) {
+          const request = port.request.bind(port);
+          port.request = async (...args) => {
+            const packet = await request(...args);
+            if (args[0] === 'pull') console.log('subtitle-packet-shape:', typeof packet,
+              packet && typeof packet === 'object' ? Object.keys(packet).join(',') : String(packet));
+            return packet;
+          };
+        }
+      });
+      await page.evaluate(async () => { await actualVideo().play(); });
+      await page.evaluate(() => {
+        const track = [...actualVideo().textTracks].find(track => /en/i.test(track.language));
+        if (!track) throw new Error('HLS subtitle track missing');
+        track.mode = 'showing';
+      });
+      await page.waitForFunction(() => !actualVideo().seeking && [...document.querySelectorAll('.airplay-avplayer .ASS-box')]
+        .some(box => box.textContent.includes('HLS caption')), null, { timeout: 5000 })
+        .catch(async error => { console.log('subtitle-native-state:', await page.evaluate(async () => {
+          const { default: Player } = await import('/vendor/libmedia/avplayer.js');
+          const raw = Player.Instances[0], renderer = raw?.subtitleRender;
+          return JSON.stringify({ currentTime:raw?.currentTime, taskId:raw?.taskId, subtitleTaskId:raw?.subtitleTaskId,
+            selectedSubtitleStream:raw?.selectedSubtitleStream && {id:raw.selectedSubtitleStream.id,index:raw.selectedSubtitleStream.index},
+            streams:raw?.getStreams().map(stream => ({id:stream.id,mediaType:stream.mediaType,startTime:stream.startTime,
+              timeBase:stream.timeBase,codecId:stream.codecparProxy?.codecId,codecType:stream.codecparProxy?.codecType})),
+            renderer:renderer && {queue:renderer.queue,ended:renderer.ended,pulling:renderer.pulling,delay:renderer.delay,
+              currentPort:typeof renderer.currentPort,loopStarted:renderer.loop?.isStarted?.(),keys:Object.keys(renderer)}},
+            (_,value)=>typeof value==='bigint'?String(value):value);
+        })); console.log('subtitle-state:', await page.evaluate(() => ({
+          tracks: [...actualVideo().textTracks].map(track => ({id:track.id,label:track.label,language:track.language,mode:track.mode})),
+          dom: document.querySelector('.airplay-avplayer')?.innerHTML.slice(0,5000), engine: actualVideo().getPlaybackDiagnostics(), error: actualVideo().error
+        }))); throw error; });
+      await page.evaluate(() => {
+        const track = [...actualVideo().textTracks].find(track => track.language === 'zh');
+        if (!track) throw new Error('Chinese HLS subtitle track missing');
+        track.mode = 'showing';
+      });
+      await page.waitForFunction(() => [...document.querySelectorAll('.airplay-avplayer .ASS-box')]
+        .some(box => box.textContent.includes('中文字幕')), null, { timeout: 5000 });
+      await page.evaluate(() => {
+        [...actualVideo().textTracks].find(track => track.language === 'en').mode = 'showing';
+        actualVideo().currentTime = 1.35;
+      });
+      await page.waitForFunction(() => !actualVideo().seeking && actualVideo().currentTime >= 1.35
+        && actualVideo().currentTime < 3 && [...document.querySelectorAll('.airplay-avplayer .ASS-box')]
+          .some(box => box.textContent.includes('HLS caption')), null, { timeout: 5000 });
+    }
+    checkDiagnostics(await page.evaluate(() => events.filter(event => event.k === 'ap-diag')));
+    if (process.env.TEST_PLAYER_SCREENSHOT) await page.screenshot({ path: process.env.TEST_PLAYER_SCREENSHOT, fullPage: true });
+    await page.locator('.airplay-stop').click();
+    if (!await page.evaluate(() => events.some(event => event.k === 'ap' && event.a === 'stop'))) throw new Error('Stop did not reach AirPlay control channel');
+    await page.evaluate(() => controls.update(null));
+    await page.waitForFunction(() => !document.querySelector('#stage canvas'));
+    await page.evaluate(() => controls.update({ id: 2, resource: mediaResource, revision: 0, seekRevision: 0,
+      target: 0, fraction: false, playing: false }));
+    await page.waitForFunction(() => actualVideo()?.paused && actualVideo().readyState >= 1 && !document.querySelector('.airplay-preparation'));
+    if (!await page.evaluate(() => actualVideo().paused && actualVideo().currentTime === 0))
+      throw new Error('An initially paused URL source started playback');
+    await page.evaluate(() => controls.dispose());
+    await page.waitForFunction(() => !document.querySelector('#stage canvas'));
+    if (errors.length) throw new Error('Page errors: '+errors.join(' | '));
+    if (requests.some(request => request.includes('/vendor/mediabunny/') || request.includes('/vendor/soundtouch/')))
+      throw new Error('URL playback loaded an obsolete engine dependency');
+    console.log(JSON.stringify({ mode, softwareVideoOverride: SOFTWARE_VIDEO, canvasOnly: true, controls: true, pause: true, seek: true, rate: true,
+      captions: mode === 'hls', narrowLayout: true, disposal: true }));
     await page.close();
-    console.log(`${scenario}: safe diagnostic edges and existing playback behavior verified`);
   }
-  console.log('AirPlay MP4/HLS Video.js v10 checks passed');
-} finally {await browser.close();await new Promise(r=>server.close(r));}
+} finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

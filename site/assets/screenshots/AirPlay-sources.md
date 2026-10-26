@@ -36,7 +36,7 @@ licenses the movie and related production artwork under
 [Creative Commons Attribution 3.0](https://creativecommons.org/licenses/by/3.0/).
 
 The still is temporarily encoded into a local eight-second MP4 solely so the
-real `createAirPlayControls`, Video.js and Mediabunny/WebCodecs rendering path can
+then-current `createAirPlayControls`, Video.js and Mediabunny/WebCodecs rendering path could
 show its normal playback controls. The final deliverable is a single screenshot,
 not a video. The original image is fitted at its native 16:9 ratio; the production
 controls are visible. No additional demo text or attribution overlays are added;

@@ -39,19 +39,38 @@ test('actual software decoders normalize every compressed fixture to a continuou
   }
 });
 
-test('Opus uses NetEq even if a browser decoder is supplied; stale epochs never submit packets', async () => {
-  const encoded = [], errors = [];
-  const decoder = createAirPlayAudioDecoder({ onPcm() {}, onEncoded: r => encoded.push(r), onError: e => errors.push(e),
-    AudioDecoder: class { constructor() { throw Error('Must never construct'); } },
-    softwareFactory() { throw Error('Opus must not reach libav'); } });
-  const record = setup({ codec: 'opus', sampleRate: 48000, channels: 1 });
-  assert.equal(await decoder.configure(record), true);
-  assert.equal(encoded[0].neteqConfig.codec, 'opus');
-  const opus = JSON.parse(await (await import('node:fs/promises')).readFile(new URL('./fixtures/neteq-opus.json', import.meta.url), 'utf8'));
-  const payload = Uint8Array.from(Buffer.from(opus.packets[0], 'base64')).buffer;
-  assert.equal(await decoder.decode({ ...record, flags: 0, decodeTimestampUs: 0, payload }), true);
-  assert.equal(await decoder.decode({ ...record, epoch: 0, flags: 0, decodeTimestampUs: 0, payload }), false);
-  assert.equal(encoded.length, 2); assert.deepEqual(errors, []); decoder.dispose();
+test('native Opus metadata configures the RTP graph and EOS without software decoding or PCM publication', async () => {
+  const native = [], ended = [], pcm = [], errors = [];
+  const decoder = createAirPlayAudioDecoder({ onPcm: r => pcm.push(r), onNative: r => native.push(r),
+    onNativeEnd: r => ended.push(r), onError: e => errors.push(e),
+    softwareFactory() { throw Error('Native Opus must not reach libav'); } });
+  const record = setup({ codec: 'opus', sampleRate: 48000, channels: 1,
+    audioTransport: 'webrtc-track-v1', rtpSlot: '0', rtcGeneration: 1, rtcOwnerEpoch: 1 });
+  try {
+    assert.equal(await decoder.configure(record), true);
+    assert.equal(native.length, 1);
+    assert.equal(await decoder.decode({ ...record, epoch: 0, payload: new ArrayBuffer(1) }), false);
+    assert.equal(await decoder.configure({ ...record, epoch: 2, config: { ...record.config, rtcOwnerEpoch: 0, ended: true } }), false);
+    assert.equal(ended.length, 0, 'an unrelated owner cannot retire the native session');
+    assert.equal(await decoder.configure({ ...record, epoch: 2, config: { ...record.config, ended: true } }), true);
+    assert.equal(ended.length, 1); assert.equal(ended[0].rtcOwnerEpoch, 1); assert.equal(ended[0].epoch, 1);
+    const replacement = { ...record, epoch: 3, config: { ...record.config, rtcOwnerEpoch: 3, rtpSlot: '1' } };
+    assert.equal(await decoder.configure(replacement), true);
+    assert.equal(await decoder.configure({ ...record, epoch: 4, config: { ...record.config, ended: true } }), false);
+    assert.equal(ended.length, 1, 'old owner EOS cannot retire a newer slot even with a later wire epoch');
+    assert.equal(await decoder.configure({ ...replacement, epoch: 4, config: { ...replacement.config, ended: true } }), true);
+    assert.equal(ended.length, 2); assert.equal(ended[1].rtcOwnerEpoch, 3);
+    assert.deepEqual(pcm, []); assert.deepEqual(errors, []);
+  } finally { decoder.dispose(); }
+});
+
+test('Opus without native negotiation fails explicitly instead of selecting old NetEq or software decoders', async () => {
+  const errors = [], decoder = createAirPlayAudioDecoder({ onPcm() {}, onError: cause => errors.push(cause),
+    softwareFactory() { throw Error('No silent software fallback'); } });
+  try {
+    assert.equal(await decoder.configure(setup({ codec: 'opus', sampleRate: 48000, channels: 1 })), false);
+    assert.match(errors[0].message, /negotiated native RTP/);
+  } finally { decoder.dispose(); }
 });
 
 test('PCM24 unpack preserves sign and drops only the low eight bits', () => {

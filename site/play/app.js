@@ -3,27 +3,29 @@
  * common/src/main/assets/web/app.js at commit c1bd077 (pointer handling, viewport report, reconnect loop, stats getter).
  * Modified for TiPlay, 2026-10. Source code: https://github.com/uJZk/TiPlay
  *
- * TiPlay browser link: direct reliable DataChannels carry compressed video and independent audio.
- * WebCodecs and Canvas run in the decoder worker when supported. */
+ * TiPlay browser link: native WebRTC video frames are rendered directly to Canvas;
+ * independent audio and control retain their own transport and timing. */
 import {
-  DEFAULT_HOST, abortable, addressSpaceFor, backoffDelay, choosePath, createControlOutbox, createTouchSlots,
-  isCode, linkFromAddress, linkLocation, mapPoint, newSessionId, normalizeHost, supportedCodecs,
+  DEFAULT_HOST, abortable, addressSpaceFor, backoffDelay, createControlOutbox, createTouchSlots,
+  isCode, linkFromAddress, linkLocation, mapPoint, newSessionId, normalizeHost,
   viewportFor,
 } from './link.js';
 import { APP_VERSION } from './app-version.js';
 import { createLocationNotice } from './location-notice.js';
 import { createBrowserLocation, locationEvents } from './geolocation.js';
 import { followAppearance } from './appearance.js';
-import { probeMirrorCapabilities, probeMirrorAudioFormats } from './airplay-capabilities.js';
+import { probeMirrorAudioFormats } from './airplay-capabilities.js';
 import { createReconnectOverlay } from './reconnect.js';
-import { pumpChunkStream } from './transport.js';
+import { pumpChunkStream, createFrameDelivery } from './transport.js';
 import { createRtcMediaTransport, RTC_TRANSPORT } from './webrtc-transport.js';
+import { createRtcTrackReader, createRtcVideoPipeline, rtcVideoCodecs, phoneSupportsRtcVideo,
+  probeRtcMirrorCapabilities as probeMirrorCapabilities } from './rtc-video.js';
 import { authenticateRtcOffer } from './rtc-pairing.js';
 import { rtcFailureSummary } from './rtc-diagnostics.js';
 import { createVideoDiagnosticTracker, safeSenderDiagnostics, decoderStatsMatch, decoderStatsSnapshot } from './video-diagnostics.js';
 import { formatPerformanceMonitor, performanceStats } from './fps-window.js';
 import { createClockEstimator } from './clock-sync.js';
-import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from './media-timing.js';
+import { createMediaTiming } from './media-timing.js';
 import { createBrowserAudio } from './audio.js';
 import { createAirPlayControls } from './airplay-controls.js';
 import { createAirPlayTrustNotification } from './airplay-trust.js';
@@ -115,6 +117,7 @@ const STRINGS = {
     unsupported: 'This browser cannot decode {0}.',
     unsupportedHevc: 'This browser cannot decode this HEVC stream. Reconnect to report decoder support again.',
     unsupportedHdr: 'AirPlay mirroring requires SDR video; this source sends HDR.',
+    rtcVideoFailed: 'This video cannot be played. Check that TiPlay and the browser are up to date, then reconnect.',
     noVideo: 'This browser cannot show the video ({0}). Open the page over HTTPS in a browser with WebCodecs support.',
     invalidCode: 'Enter the 4-digit pairing code.',
     invalidHost: 'Enter an IPv4 address with port, for example 169.254.111.111:8080.',
@@ -202,6 +205,7 @@ const STRINGS = {
     unsupported: '此浏览器无法解码 {0}。',
     unsupportedHevc: '此浏览器无法解码此 HEVC 视频流，请重新连接以再次汇报解码能力。',
     unsupportedHdr: 'AirPlay 镜像需要 SDR 视频，当前来源发送的是 HDR。',
+    rtcVideoFailed: '当前视频无法播放。请确认 TiPlay 和浏览器已更新，再重新连接。',
     noVideo: '此浏览器无法显示画面（{0}）。请使用支持 WebCodecs 的浏览器通过 HTTPS 打开本页。',
     invalidCode: '请输入 4 位配对码。',
     invalidHost: '请输入带端口的 IPv4 地址，例如 169.254.111.111:8080。',
@@ -253,9 +257,11 @@ const slots = createTouchSlots();
 let session = null, active = false, phase = 'ready', notice = null;
 let attempt = 0, reconnects = 0, retryTimer = null, retryAt = 0, streamId = 0, videoAbort = null, lastError = null;
 let retryCountdownTimer = null, rtcMedia = null, rtcProgress = null, resourceToken = null;
+let videoRestart = null;
+let currentVideoGeneration = 1;
 let controlClock = null;
 const controlWaiters = new Set(), videoDiagnosticTracker = createVideoDiagnosticTracker();
-let config = null, live = false, status = null, unsupported = null, videoStats = {};
+let config = null, live = false, status = null, unsupported = null, videoStats = {}, videoError = null;
 let receiverFailure = false;
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 let terminalDiagnosticId = null;
@@ -322,10 +328,10 @@ let videoPath = { path: 'pending', reason: null }, sink = null, probedCodecs = '
 const pathReady = setUpVideo().catch(error => {
   videoPath = { path: 'none', reason: String(error?.message ?? error) };
 });
-const codecsReady = pathReady.then(async () => {
-  let names = [];
-  if (videoPath.decode === 'worker' || videoPath.decode === 'main') names = await supportedCodecs(config => VideoDecoder.isConfigSupported(config));
-  probedCodecs = names.join(',');
+const codecsReady = pathReady.then(() => {
+  const codecs = videoPath.rtcTrack ? rtcVideoCodecs() : [];
+  probedCodecs = [codecs.some(codec => /\/H264$/i.test(codec.mimeType)) ? 'avc1' : null,
+    codecs.some(codec => /\/(H265|HEVC)$/i.test(codec.mimeType)) ? 'hvc1' : null].filter(Boolean).join(',');
   return probedCodecs;
 });
 
@@ -341,7 +347,7 @@ function streamsTransferable() {
   }
 }
 
-/** Starts the decoder worker; resolves with it and whether it has VideoDecoder, or null when module workers fail. */
+/** Starts the Canvas worker and probes its track processor, or returns null if workers fail. */
 function startWorker() {
   return new Promise(resolve => {
     let worker;
@@ -364,99 +370,110 @@ function startWorker() {
       clearTimeout(timer);
       worker.onerror = null;
       worker.onmessage = null;
-      resolve({ worker, videoDecoder: data.videoDecoder });
+      resolve({ worker, trackProcessor: data.trackProcessor === true });
     };
   });
 }
 
 async function setUpVideo() {
-  const features = {
-    secureContext: window.isSecureContext === true,
-    videoDecoder: typeof VideoDecoder === 'function',
-    workerVideoDecoder: false,
-    offscreenCanvas: typeof HTMLCanvasElement.prototype.transferControlToOffscreen === 'function',
-    transferableStreams: streamsTransferable(),
-  };
-  const started = features.secureContext && features.videoDecoder ? await startWorker() : null;
-  features.workerVideoDecoder = Boolean(started?.videoDecoder);
-  videoPath = choosePath(features);
-  const path = videoPath;
-  if (started && path.decode !== 'worker') started.worker.terminate();
+  const mainProcessor = typeof globalThis.MediaStreamTrackProcessor === 'function';
+  const started = window.isSecureContext === true ? await startWorker() : null;
+  const rtcTrack = window.isSecureContext === true && (mainProcessor || started?.trackProcessor) && rtcVideoCodecs().length > 0
+    && typeof globalThis.RTCPeerConnection?.prototype?.addTransceiver === 'function'
+    && typeof globalThis.RTCRtpTransceiver?.prototype?.setCodecPreferences === 'function';
+  const workerPath = Boolean(started && rtcTrack);
+  videoPath = { path: rtcTrack ? workerPath ? 'rtc-worker' : 'rtc-main' : 'rtc-unavailable',
+    decode: 'native-webrtc', draw: workerPath && typeof HTMLCanvasElement.prototype.transferControlToOffscreen === 'function' ? 'worker' : 'main',
+    rtcTrack: Boolean(rtcTrack), reason: rtcTrack ? null : 'Native WebRTC video track processing is unavailable.' };
+  if (started && !workerPath) started.worker.terminate();
   const canvas = $('screen');
-  const firstPresented = config => onVideoMessage({ type: 'decoded', id: config.streamId, epoch: config.epoch });
-  if (path.decode === 'worker') {
+  if (workerPath) {
     const { worker } = started;
-    let presenter = null;
-    if (path.draw === 'worker') {
+    let presenter = null, activeTrack = null, trackId = null, generation = 1, generationReady = null;
+    const trackDelivery = createFrameDelivery(message => {
+      try { worker.postMessage({ type: 'rtc-frame', ...message, generation: message.config.videoGeneration }, [message.frame]); }
+      catch (error) { sink.failVideo('rtc-video-frame-transfer-failed'); throw error; }
+    });
+    const trackReader = createRtcTrackReader({
+      present: frame => trackDelivery.present(frame, { videoGeneration: generation }, trackId, null),
+      onError: () => sink.failVideo('rtc-video-track-ended'),
+    });
+    if (videoPath.draw === 'worker') {
       const offscreen = canvas.transferControlToOffscreen();
       worker.postMessage({ type: 'canvas', canvas: offscreen }, [offscreen]);
-    } else {
-      presenter = (await import('./video.js')).createFramePresenter(canvas, { applyTimingPolicy: true, pace: true, onFirstPresent: firstPresented });
-    }
-    const presentationEpochs = createVideoEpochGuard(() => presenter?.close());
+    } else presenter = (await import('./video.js')).createFramePresenter(canvas, {
+      onFirstPresent: config => onVideoMessage({ type: 'decoded', id: config.streamId, epoch: config.epoch, videoGeneration: config.videoGeneration }),
+    });
     worker.onmessage = ({ data }) => {
-      if (active && data.id === streamId) presentationEpochs.message(data);
       if (data.type === 'frame') {
         try {
-          if (active && data.id === streamId) presenter.present(data.frame, data.config, data.timing, data.outputWindow);
+          if (active && data.id === streamId && data.config.videoGeneration === generation) presenter.present(data.frame, data.config, null);
           else data.frame.close();
-        } finally {
-          worker.postMessage({ type: 'frame-ack', frameId: data.frameId });
-        }
+        } finally { worker.postMessage({ type: 'frame-ack', frameId: data.frameId }); }
+      } else if (data.type === 'rtc-frame-ack') trackDelivery.acknowledge(data.frameId);
+      else if (data.type === 'video-generation-ready') {
+        if (generationReady?.id === data.id && generationReady.generation === data.generation) { clearTimeout(generationReady.timer); generationReady.resolve(); generationReady = null; }
       }
       else if (data.type === 'stats') onVideoMessage({ type: 'stats', id: data.id, stats: { ...data.stats, ...presenter?.stats() } });
-      else if (data.type === 'idle') {
-        if (active && data.id === streamId) presenter?.close();
+      else {
+        if (data.id === streamId && ['config', 'idle', 'video-error'].includes(data.type)) presenter?.close();
+        if (data.id === streamId && data.type === 'video-error') { trackReader.stop(); trackDelivery.stop(); }
         onVideoMessage(data);
       }
-      else onVideoMessage(data);
     };
-    worker.onerror = () => stop('noVideo', 'decoder worker failed');
+    worker.onerror = () => onVideoMessage({ type: 'video-error', id: trackId, reason: 'rtc-video-worker-failed' });
     sink = {
-      clock(clock) { worker.postMessage({ type: 'clock', clock }); },
-      audio(reference) { presenter?.audio(reference); worker.postMessage({ type: 'audio-output', reference }); },
-      interaction(active) { worker.postMessage({ type: 'interaction', active }); },
+      clock() {}, audio() {},
       open(id, body, signal) {
-        if (path.feed === 'stream') worker.postMessage({ type: 'stream', id, stream: body }, [body]);
-        else {
-          const channel = new MessageChannel();
-          worker.postMessage({ type: 'feed', id, port: channel.port2 }, [channel.port2]);
-          pumpChunkStream(body, channel.port1, signal);
-        }
+        trackReader.stop(); trackDelivery.stop(); activeTrack = null; trackId = id; generation = 1;
+        if (streamsTransferable()) worker.postMessage({ type: 'stream', id, stream: body }, [body]);
+        else { const channel = new MessageChannel(); worker.postMessage({ type: 'feed', id, port: channel.port2 }, [channel.port2]); pumpChunkStream(body, channel.port1, signal); }
       },
-      stop() { worker.postMessage({ type: 'stop' }); presenter?.close(); },
-      dispose() { worker.postMessage({ type: 'dispose' }); presenter?.dispose(); },
-      resize: (width, height) => (presenter ? presenter.resize(width, height) : worker.postMessage({ type: 'resize', width, height })),
+      resetGeneration(id, next) {
+        trackReader.stop(); trackDelivery.stop(); presenter?.close(); activeTrack = null; generation = next;
+        return new Promise((resolve, reject) => {
+          if (generationReady) { clearTimeout(generationReady.timer); generationReady.reject(Error('Video generation replaced.')); }
+          const timer = setTimeout(() => { generationReady = null; reject(Error('Video generation preparation timed out.')); }, 3000);
+          generationReady = { id, generation: next, resolve, reject, timer };
+          worker.postMessage({ type: 'video-generation', id, generation: next });
+        });
+      },
+      track(id, track, next = generation) {
+        if (!track || trackId !== id || generation !== next || activeTrack === track) return;
+        activeTrack = track;
+        if (mainProcessor) trackReader.read(track).catch(() => sink.failVideo('rtc-video-processor-unavailable'));
+        else { try { worker.postMessage({ type: 'rtc-track', id, track, generation }, [track]); } catch (_) { sink.failVideo('rtc-video-track-transfer-failed'); } }
+      },
+      failVideo(reason) { trackReader.stop(); trackDelivery.stop(); worker.postMessage({ type: 'video-error', id: trackId, reason }); },
+      stop() {
+        if (generationReady) { clearTimeout(generationReady.timer); generationReady.reject(Error('Video stopped.')); generationReady = null; }
+        trackId = null; activeTrack = null; trackReader.stop(); trackDelivery.stop(); worker.postMessage({ type: 'stop' }); presenter?.close();
+      },
+      dispose() { this.stop(); trackReader.close(); trackDelivery.stop(); worker.postMessage({ type: 'dispose' }); presenter?.dispose(); },
+      resize: (width, height) => presenter ? presenter.resize(width, height) : worker.postMessage({ type: 'resize', width, height }),
     };
-  } else if (path.decode === 'main') {
-    const { createDecoderPipeline, createFramePresenter } = await import('./video.js');
-    const presenter = createFramePresenter(canvas, { applyTimingPolicy: true, pace: true, onFirstPresent: firstPresented });
-    const frames = createTimedFrames((frame, config, id, timing, outputWindow) => presenter.present(frame, config, timing, outputWindow), {
-      observe(source, ready) { mediaTiming.observe('video', source, ready); },
+  } else {
+    const presenter = (await import('./video.js')).createFramePresenter(canvas, {
+      onFirstPresent: config => onVideoMessage({ type: 'decoded', id: config.streamId, epoch: config.epoch, videoGeneration: config.videoGeneration }),
     });
-    const epochs = createVideoEpochGuard(() => { frames.reset(); presenter.close(); });
-    const pipeline = createDecoderPipeline({ post: message => {
-      if (message.type === 'end') message = { ...message, stats: {
-        ...message.stats, ...frames.stats(), ...mediaTiming.stats(), ...presenter.stats(),
-      } };
-      epochs.message(message);
+    let activeTrack = null, trackId = null, generation = 1, timer = null;
+    const pipeline = createRtcVideoPipeline({ post: message => {
+      if (['config', 'idle', 'video-error'].includes(message.type)) presenter.close();
+      if (message.type === 'video-error') trackReader.stop();
       onVideoMessage(message);
-    }, present: frames.present });
-    let timer = null;
-    const stop = () => { clearInterval(timer); epochs.reset(); pipeline.stop(); };
+    }, present: (frame, config) => presenter.present(frame, config, null) });
+    const trackReader = createRtcTrackReader({ present: frame => pipeline.trackFrame(frame, generation), onError: () => pipeline.fail('rtc-video-track-ended') });
+    const stop = () => { clearInterval(timer); activeTrack = null; trackId = null; trackReader.stop(); pipeline.stop(); presenter.close(); };
     sink = {
-      clock: pipeline.clock,
-      audio(reference) { presenter.audio(reference); frames.audio(reference); },
-      delay(plans) { frames.delay(plans.video); },
-      interaction(active) { mediaTiming.interaction(active); },
-      open(id, body) {
-        stop();
-        pipeline.read(id, body);
-        timer = setInterval(() => onVideoMessage({ type: 'stats', id, stats: { ...pipeline.stats(), ...frames.stats(), ...mediaTiming.stats(), ...presenter.stats() } }), 1000);
+      clock() {}, audio() {},
+      open(id, body) { stop(); trackId = id; generation = 1; pipeline.read(id, body); timer = setInterval(() => onVideoMessage({ type: 'stats', id, stats: { ...pipeline.stats(), ...presenter.stats() } }), 1000); },
+      resetGeneration(id, next) { trackReader.stop(); presenter.close(); activeTrack = null; pipeline.resetGeneration(next); generation = next; },
+      track(id, track, next = generation) {
+        if (!track || trackId !== id || generation !== next || activeTrack === track) return;
+        activeTrack = track; trackReader.read(track).catch(() => pipeline.fail('rtc-video-processor-unavailable'));
       },
-      stop,
-      dispose() { stop(); presenter.dispose(); },
-      resize: presenter.resize,
+      failVideo: pipeline.fail, stop,
+      dispose() { stop(); trackReader.close(); presenter.dispose(); }, resize: presenter.resize,
     };
   }
 }
@@ -561,6 +578,8 @@ function sendBye() {
 
 async function connectVideo() {
   const id = ++streamId;
+  videoError = null; videoRestart = null;
+  currentVideoGeneration = 1;
   faultDiagnostics.reset();
   rtcMedia?.close();
   rtcMedia = null; resourceToken = null; controlClock = null; rtcProgress = null;
@@ -587,9 +606,20 @@ async function connectVideo() {
     sink.clock(null); browserAudio.clock(null);
     for (const [mode, timing] of mediaTimings) { timing.reset(); timing.mode(mode); }
     mediaTiming = timingFor('carplay');
+    const useVideoTrack = videoPath.rtcTrack && await phoneSupportsRtcVideo(phoneFetch, abort.signal);
+    if (id !== streamId || abort.signal.aborted) return;
     let opened = false;
     const media = rtcMedia = createRtcMediaTransport({
       signal: abort.signal,
+      videoTrack: useVideoTrack,
+      onVideoGeneration: generation => {
+        if (id !== streamId || abort.signal.aborted) return;
+        config = null; live = false; videoError = null; unsupported = null; videoStats = {};
+        currentVideoGeneration = generation;
+        return sink.resetGeneration(id, generation);
+      },
+      onVideoTrack: (track, generation) => { if (opened && id === streamId && !abort.signal.aborted) sink.track(id, track, generation); },
+      onVideoError: reason => { if (opened && id === streamId && !abort.signal.aborted) sink.failVideo(reason); },
       credentials: () => ({ code: link.code, session: ownerSession }),
       exchange: offer => authenticateRtcOffer({ fetchPhone: phoneFetch, session: ownerSession, code: link.code, offer, signal: abort.signal }),
       onProgress: progress => { if (id === streamId && !abort.signal.aborted) { rtcProgress = progress; render(); } },
@@ -610,7 +640,12 @@ async function connectVideo() {
     sink.clock(clock); browserAudio.clock(clock);
     controlClock = { media, estimator: clockEstimator };
     sink.open(id, media.video, abort.signal);
-    browserAudio.attach(abort.signal, media.hello(), () => media.openAudio());
+    if (media.videoTrack?.()) sink.track(id, media.videoTrack());
+    if (!useVideoTrack) sink.failVideo?.('rtc-video-unavailable');
+    browserAudio.attach(abort.signal, media.hello(), () => media.openAudio(), {
+      exchange: value => media.audioOffer(value), subscribe: listener => media.audioEvents(listener),
+      ready: value => media.audioTrackReady(value),
+    });
     if (!outbox) {
       outbox = createControlOutbox({ maxInFlight: 8, send: (q, events) => postControl(q, events, ownerSession), heldContacts: () => slots.contacts(), onStatus: applyStatus, onError: controlFailed });
       heartbeatTimer = setInterval(() => outbox?.heartbeat(), 400);
@@ -627,6 +662,7 @@ async function connectVideo() {
     clearTimeout(timer);
     if (id !== streamId) return;
     abort.abort(); // Retire signaling fetches as well as the peer before starting another attempt.
+
     if (error.status === 401) stop('badCode');
     else if (error.status === 409) stop('replaced');
     else if (error.reason === 'webrtc-unavailable') stop('unsupportedTransport');
@@ -724,6 +760,23 @@ function controlFailed(error) {
 
 function onVideoMessage(message) {
   if (!active || message.id !== streamId) return;
+  const generation = message.videoGeneration ?? message.config?.videoGeneration ?? message.stats?.videoGeneration;
+  if (generation !== undefined && generation !== currentVideoGeneration) return;
+  if (message.type === 'video-error') {
+    live = false;
+    if (message.stats && decoderStatsMatch(message.stats, streamId, config?.epoch)) videoStats = performanceStats(message.stats);
+    if (message.reason === 'video-renegotiation-required' || message.reason === 'video-source-changed-reconnect-required') {
+      const media = rtcMedia, id = streamId;
+      if (!media || videoRestart?.media === media) return;
+      videoError = null;
+      const pending = videoRestart = { media };
+      media.restartVideo().catch(error => {
+        if (rtcMedia === media && id === streamId) { videoError = error.reason || 'rtc-video-renegotiation-failed'; render(); }
+      }).finally(() => { if (videoRestart === pending) videoRestart = null; });
+    } else videoError = message.reason || 'rtc-video-failed';
+    render(); return;
+  }
+
   if (message.type === 'media-ready') {
     mediaTiming.observe('video', message.source, message.ready);
     return;
@@ -736,6 +789,7 @@ function onVideoMessage(message) {
     // the new producer's PCM before this config, so video cannot clear that audio.
     if (config?.epoch !== message.config.epoch || config?.mode !== message.config.mode) { videoStats = {}; live = false; }
     config = message.config;
+    videoError = null;
     unsupported = null;
     updateReceiverNotice();
   } else if (message.type === 'idle') {
@@ -780,6 +834,7 @@ function render() {
     const key = videoProblem === 'hdr' ? 'unsupportedHdr' : /^(hvc1|hev1)\b/.test(videoProblem) ? 'unsupportedHevc' : 'unsupported';
     problem = { id: `codec:${videoProblem}`, text: t(key, codecName(videoProblem)) };
   }
+  if (active && videoError) problem = { id: `rtc-video:${videoError}`, text: t(videoError === 'hdr' ? 'unsupportedHdr' : 'rtcVideoFailed', videoError) };
   browserNotice.update(problem);
   $('message').textContent = inlineNotice ? t(notice.key, ...notice.args) : '';
   $('status').textContent = text;
@@ -927,10 +982,9 @@ function releaseTouches() {
   if (lifted.length) { outbox?.push({ k: 't', p: lifted }); setInteraction(false); }
 }
 
-function setInteraction(active) {
-  if (config?.mode !== 'carplay') return;
-  mediaTiming.interaction(active);
-  sink?.interaction?.(active);
+// Touch is forwarded immediately without changing either media timeline.
+function setInteraction(_active) {
+  // Both the native RTP path and WebCodecs fallback use one playback policy.
 }
 
 /** Returns true when the pointer took a slot. */

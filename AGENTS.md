@@ -50,7 +50,7 @@ Resume device-clock, buffered-flush and voice-preparation/recovery fixes with in
 [continuous-audio acceptance](docs/Testing.md#media-clock-and-continuous-audio-acceptance);
 [Todo](docs/Todo.md#browser-and-carplay-audio) retains physical clicks and separate URL-audio follow-up.
 The browser's [WASM boundary](docs/Browser-wasm.md) documents libav.js decoding/resampling,
-NetEq, fixed-memory live-audio kernels and SIMD SoundTouch, with native-browser
+NetEq, fixed-memory live-audio kernels and AVPlayer URL playback, with native-browser
 and measured slower-case exceptions. Rebuild and byte-verify the binaries using
 [Build](docs/Build.md#browser-wasm-build). Its [audio clock roles](docs/Browser-wasm.md#audio-clock-roles)
 record frame-based live timing, causal output probes and natural URL completion;
@@ -90,13 +90,12 @@ Browser v89 audio work is documented in [Audio tempo](docs/Audio-tempo.md).
 Realtime Opus decodes directly in official NetEq. AAC-LC/ELD/ALAC and non-48 kHz
 PCM use libav.js Workers with continuous resampling to PCM16/48 kHz. No realtime
 WebCodecs audio, FDK, libsoxr or live SoundTouch/PD remains. The AudioContext is
-48 kHz; live audio and video are independent. URL casting retains native audio
-first, libav fallback, manual tempo and video-frame PD. Preserve the Android
-beta.20/code62 identity; no new APK is compiled/published for this rollout.
+48 kHz; live audio and video are independent. That v89 URL implementation used native audio
+first, libav fallback, manual tempo and video-frame PD; the current AVPlayer migration replaces it. That rollout preserved Android beta.20/code62; the current beta.21 release supersedes this web-only restriction.
 
 Resume from [Audio tempo](docs/Audio-tempo.md), the
 [SIMD report](tests/bench/libav/README.md), and [Build](docs/Build.md#current-browser-deployment).
-This tie-up explicitly skips CI and APK compilation per user request. Local web,
+The earlier v89 tie-up skipped CI and APK compilation. The current user explicitly requests beta APK deployment; build signed beta.21/code63, preserving the full Android suite skip. Local web,
 actual Chromium Worklet/decoder/URL, offline-cache, site assembly and native-source
 consistency checks are used. Commit with `[skip ci]`; deploy only the existing
 Pages publishing workflow. Physical Tesla CPU, sound quality and simultaneous
@@ -104,6 +103,33 @@ stream acceptance remain unverified. Do not claim a measured clock or a codec
 benchmark establishes speaker timing or eliminates every click.
 
 ## Checks
+
+The current source work adds browser v90's bounded per-stream audio dispatch,
+direct decoder-Worker-to-Worklet PCM ports, and original-codec RTP video consumed
+by MediaStreamTrackProcessor directly into Canvas. No video element or second
+video encoding is allowed. Live video has no DataChannel/WebCodecs fallback.
+Source changes use video-only authenticated renegotiation and generation/ready
+barriers; unsupported codec/profile, reordering and processor failure report a
+video-only error. Touch-specific catch-up is disabled. The user also requires
+original encoded audio over standard WebRTC whenever the source codec is
+negotiated; no Android audio decode/reencode is allowed. The independent native
+audio peer uses libdatachannel's official packetizers, not private libWebRTC ABI
+hooks. Unsupported source formats retain DataChannel/libav/PCM-NetEq output.
+Old Opus/PCMA/PCMU application decoder shortcuts may be removed. Keep supported
+RTP tracks and fallback streams under the same browser mixing/ducking policy. See
+[the media transport contract](docs/CarPlay-DataChannel.md) and
+[audio thread boundaries](docs/Audio-tempo.md). Beta.21/code63 release progress is recorded in [Build](docs/Build.md#beta21-release). Targeted native JNI/RTP checks pass; browser RTP interoperability and vehicle acceptance remain unverified.
+The user explicitly skips the full Android test suite for this work. Keep that
+separate from completed targeted compile/tests and browser checks.
+
+URL casting uses libmedia AVPlayer, which owns resource loading,
+buffering, decoding, playback clocks, synchronization and Canvas rendering.
+Keep only thin AirPlay session/proxy/authentication and controls adapters. Do not
+retain the superseded custom URL player, serial request scheduler, decoded queues,
+SoundTouch wrapper or their implementation-specific tests. Canvas is mandatory:
+disable MSE/video-element paths and use local pinned runtime resources without
+CDN requests. Verify the production CSP and operation without SharedArrayBuffer;
+browser tests do not certify physical Tesla playback or subtitle-format parity.
 
 Run the CI command from .github/workflows/android.yml before reporting a change as done:
 
@@ -199,3 +225,5 @@ permission and connection contracts that the phone + browser flow actually uses.
 ## Upstream
 
 Follow [docs/Upstream.md](docs/Upstream.md) for upstream maintenance rules, preserved identifiers, historical names and the one-way merge procedure.
+
+Resume the current beta APK deployment from [beta.21 release](docs/Build.md#beta21-release) and [current verification](docs/Testing.md#current-release-source). Full Android suite remains explicitly skipped.

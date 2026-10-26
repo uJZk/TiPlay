@@ -8,7 +8,7 @@ TiPlay is a GPL-3.0 derivative of [DiPlay by shihabal3amri](https://github.com/s
 | --- | --- |
 | [DiPlay](https://github.com/shihabal3amri/DiPlay) | CarPlay/shared Android source; full merge ancestry through `1b1ac5f2` (0.2.20 plus main fixes). |
 | [Video.js](https://github.com/videojs/video.js) | Browser controls/media adapter; [pinned inputs and update procedure](../site/play/vendor/videojs/README.md). |
-| [Mediabunny](https://github.com/Vanilagy/mediabunny) | URL demuxing/WebCodecs, with SoundTouch and hls.js helpers; [provenance/licenses](../site/play/vendor/mediabunny/README.md). |
+| [libmedia](https://github.com/zhaohappy/libmedia) | AVPlayer URL playback engine: IO, demuxing, decoding, buffering, synchronization and Canvas rendering. [Pinned inputs, local resources and licenses](../site/play/vendor/libmedia/README.md) accompany the vendored player. |
 | [libsoxr](https://github.com/chirlu/soxr) | Native Android SCO resampling; [native source inputs](../scripts/soxr/vendor/README.md) and [Android C/JNI subset](../shared/src/main/jni/soxr/README.md). |
 | [UxPlay](https://github.com/FDH2/UxPlay) | Ordinary AirPlay protocol reference and native transport-key modules; `ec203121355220dd90278a369eeabb0b8ba4f14a`, [native provenance](../shared/src/main/jni/airplay/README.md). |
 | [WebRTC Android SDK](https://github.com/webrtc-sdk/android) | Fixed `150.7871.01` Maven AAR for local reliable DataChannels; publisher binary notices and [exact provenance](Third-party-notices.md#android-webrtc-datachannels) accompany the APK. |
@@ -65,7 +65,7 @@ mode, settings-lifecycle and recovery hooks survive alongside upstream additions
 | Wheel remapping/double Siri, masks and temporary system bars (#813, #823, #811, #818) | Native service has an early phone-mode bypass; new foreground media remapping and native display hooks also need explicit mode guards. Rectangular browser negotiation remains separate. |
 | Ambient idle behavior and decoded music lighting | Media callbacks bypass native audio, but constructing the retained Android sink previously still opened ambient control. Create that lifecycle sink without an Android audio context in phone mode. |
 | Crash diagnostics and safe own-screen starts (#827) | Keep the shared improvements; they complement process-scoped TiPlay capture and do not replace it. Native settings helpers and maintenance tools stay outside browser navigation. |
-| AirPlay borrowing and URL resources | TiPlay's serial resource fetch, cancellation/seek behavior, admission lease checks and deferred recovery remain intact. The incoming range adds no competing browser resource loader or video scheduler. |
+| AirPlay borrowing and URL resources | Admission lease checks, authenticated resource routing and deferred recovery remain TiPlay-owned. URL buffering, decoding and scheduling now belong to AVPlayer; the incoming Android range added no competing browser engine. |
 
 Four boundary gaps were corrected: native sink initialization, automatic hotspot
 control, foreground media remapping and native display hooks. Sink/hotspot startup

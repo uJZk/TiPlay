@@ -110,26 +110,6 @@ export function timeoutSignal(ms) {
   return controller.signal;
 }
 
-/**
- * The video path for this browser (contract §7.2). The first rung is the Tesla path; each later one replaces only
- * what is missing. `features`: secureContext, videoDecoder, workerVideoDecoder, offscreenCanvas, transferableStreams,
- * `decode` and `draw` say where that work happens; `feed` is how the worker gets the response body.
- */
-export function choosePath(features) {
-  if (features.secureContext && features.videoDecoder) {
-    if (!features.workerVideoDecoder) return { path: 'main', decode: 'main', draw: 'main', feed: null, reason: 'no VideoDecoder in workers' };
-    const feed = features.transferableStreams ? 'stream' : 'chunks';
-    const reasons = [];
-    if (!features.transferableStreams) reasons.push('streams are not transferable');
-    if (!features.offscreenCanvas) reasons.push('no OffscreenCanvas');
-    const draw = features.offscreenCanvas ? 'worker' : 'main';
-    const path = draw === 'main' ? 'worker-frames' : feed === 'chunks' ? 'worker-chunks' : 'worker';
-    return { path, decode: 'worker', draw, feed, reason: reasons.join(', ') || null };
-  }
-  const reason = features.secureContext ? 'no WebCodecs' : 'not a secure context';
-  return { path: 'none', decode: null, draw: null, feed: null, reason };
-}
-
 export class RecordError extends Error {}
 
 /** A stable failure boundary for a consumer that cannot preserve complete media. */
@@ -248,7 +228,7 @@ export function abortable(promise, signal) {
  * `error` (onRecord threw) or `timeout` (no record for `timeoutMs`; call `watchdog()` about once a second).
  * A stream that `read()` replaced or `stop()` ended reports nothing.
  */
-export function createRecordStream({ onRecord, onAlive = () => {}, onEnd = () => {}, timeoutMs = 4000, now = () => performance.now() }) {
+export function createRecordStream({ onRecord, onAlive = () => {}, onEnd = () => {}, timeoutMs = 4000, now = () => performance.now(), endRecordIsTerminal = true }) {
   const totals = { bytes: 0, records: 0, gaps: 0, discontinuities: 0 };
   let current = null;
 
@@ -285,7 +265,7 @@ export function createRecordStream({ onRecord, onAlive = () => {}, onEnd = () =>
             mine.alive = true;
             onAlive(id);
           }
-          if (record.kind === RECORD.END) {
+          if (record.kind === RECORD.END && endRecordIsTerminal) {
             reason = utf8.decode(record.payload) || 'end';
             break reading;
           }
@@ -524,36 +504,6 @@ export function viewportFor(cssWidth, cssHeight, devicePixelRatio) {
   if (!(w >= 320 && h >= 320 && w <= 4096 && h <= 4096)) return null;
   if (w / h < 0.5 || w / h > 4) return null;
   return { w, h, cw: Math.round(cssWidth), ch: Math.round(cssHeight), dpr: Math.round(dpr * 100) / 100 };
-}
-
-/** Representative codec strings used to report compatible source codec families. */
-export const PROBE_CODECS = Object.freeze({
-  avc1: 'avc1.640028', hvc1: 'hvc1.1.6.L120.90', vp8: 'vp8', vp09: 'vp09.00.40.08', av01: 'av01.0.08M.08',
-});
-
-/** Probe the same hardware-requested configuration used by production decoding at 1280×720. */
-export async function supportedCodecs(isConfigSupported, codecs = PROBE_CODECS, probeTimeout = 1000) {
-  const results = await Promise.all(Object.entries(codecs).map(async ([name, codec]) => {
-    let timer;
-    try {
-      const config = await Promise.race([
-        chooseDecoderConfig(isConfigSupported, { codec, width: 1280, height: 720 }),
-        new Promise(resolve => { timer = setTimeout(() => resolve(null), probeTimeout); }),
-      ]);
-      return config ? name : null;
-    } finally { clearTimeout(timer); }
-  }));
-  return results.filter(Boolean);
-}
-
-/** Request hardware decoding for a config record; return null when that configuration is unsupported. */
-export async function chooseDecoderConfig(isConfigSupported, { codec, width, height }) {
-  const config = { codec, codedWidth: width, codedHeight: height, optimizeForLatency: true, hardwareAcceleration: 'prefer-hardware' };
-  try {
-    // This is a request hint, not proof of the implementation actually selected.
-    if ((await isConfigSupported(config)).supported) return config;
-  } catch (_) { /* An invalid or unsupported configuration has no software fallback. */ }
-  return null;
 }
 
 /** A bounded window of recent samples. */

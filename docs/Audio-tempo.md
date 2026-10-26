@@ -1,9 +1,10 @@
 # Audio buffering and tempo
 
-This describes browser v89. The Android APK remains beta.20/code62; this
-web-only rollout does not build or publish an APK. Software checks do not establish vehicle
-sound quality, CPU headroom or physical speaker/video timing. CI and APK compilation are
-explicitly skipped by the user; the webpage uses the existing Pages deployment.
+Browser v89 introduced the NetEq/libav implementation below. Source v90 adds
+independent stream dispatch and direct Worker-to-Worklet PCM delivery; it has not
+been published. Android retains the beta.20/code62 version identity. The current
+work skips the full Android suite at the user's request; targeted results do not
+establish vehicle sound quality, CPU headroom or physical speaker/video timing.
 
 ## Live audio: official NetEq
 
@@ -27,6 +28,22 @@ Realtime decoding never probes or constructs WebCodecs AudioDecoder. The receive
 advertises intrinsic software PCM/ALAC/AAC capabilities rather than native-browser
 support. Four simultaneous software decoder Workers are allowed; excess owners
 fail explicitly. Cancellation terminates each Worker and settles pending calls.
+
+The live record reader dispatches into bounded per-transport-stream FIFO queues.
+Configuration, payload and EOS remain ordered within a stream; one stream's
+asynchronous software decode no longer serializes other streams. Admission still
+applies byte, record and stream limits. A full queue can backpressure the shared
+ordered reader; finite memory does not guarantee unlimited isolation from a
+producer that outruns playback.
+
+Software decoder Workers transfer PCM directly to the AudioWorklet through
+private MessagePorts. The main thread retains configuration, errors, timing and
+capacity accounting, but does not relay the decoded PCM buffers. Output acceptance
+and consumption acknowledgements preserve bounded admission. Reset, replacement
+and cancellation retire the old port and its generation; late output cannot
+revive a retired stream. Opus and native-rate PCM retain their existing direct
+main-thread-to-Worklet path. URL casting uses its separate decoder adapter.
+This removes a PCM payload hop, not all dependency on main-thread control work.
 
 The AudioContext explicitly requests 48 kHz, matching NetEq; browser output-device
 conversion remains browser-owned. There is no browser libsoxr runtime or post-NetEq
@@ -61,6 +78,12 @@ at most 16 simultaneous source streams. EOS drains finite resampler tails and
 ends the utterance instead of synthesizing concealment forever. Epoch replacement
 releases the old engine, and stale epochs cannot revive it.
 
+The PCM adapter pads a finite partial L16 transport block to NetEq's 10 ms input
+size. Source timestamps, the real source end and byte credit exclude that padding.
+This also applies to a partial block before a source timestamp gap; the next block
+retains its original timestamp. Short unpadded final packets previously caused
+GetAudio failures, reproduced on both the old main-thread and direct paths.
+
 ## Computation boundary
 
 NetEq buffering decisions, Opus decode, PLC, acceleration and preemptive expansion
@@ -77,24 +100,24 @@ mutexes and clock/environment services; it cannot start task queues.
 
 ## AirPlay URL casting
 
-URL playback retains SoundTouch for user-selected tempo and automatic A/V
-correction. `effective = manual × (1 + correction)`; button/phone feedback retains
-the manual multiplier. Chunks store their immutable effective tempo. The requested
-inclusive window is audio-minus-video −45…+125 ms, with a derived centre of 40 ms.
-A breach enables continuous PD toward that centre until pause/seek/reset or loss
-of usable native output timestamps. The processed queue duration reduces gain.
-This is a convergence target, not an instantaneous guarantee during startup/stalls.
+URL casting uses libmedia AVPlayer as its playback engine. AVPlayer owns resource
+reading, compressed-packet queues, decoding, audio output, video scheduling,
+buffering and audio/video synchronization. TiPlay adapts the AirPlay resource
+proxy and playback controls; it does not run a second PCM queue or phase controller
+around the player. Video uses the Canvas path, with MSE/video-element playback
+disabled. This is separate from the real-time WebRTC and software-audio paths.
 
-URL currentTime remains a native graph scheduling coordinate, never an independent
-physical timing proof. Natural AudioBufferSourceNode completion gates audio EOF.
-SoundTouch retains the 20/5/5 ms sequence/seek/overlap policy and effective range
-0.2–4.8x, derived from manual 0.25–4x and automatic ±20%. Existing response/D/slew
-constants remain engineering choices; no claim of optimal vehicle tuning is made.
-The obsolete live PD experiments and held-rate model are removed.
+User rate changes are passed to AVPlayer. The former TiPlay
+`manual × (1 + correction)` composition, custom PD target and standalone
+SoundTouch adapter are retired with the previous URL engine. Upstream playback
+statistics and media position describe software progress, not measured output at
+the vehicle speakers or panel. See [URL playback ownership](AirPlay.md#url-engine-and-captions)
+for buffering and resource boundaries. Vehicle CPU, peak memory, audible quality
+and synchronization still require physical acceptance.
 
 ## Verification and limits
 
-The final local suite passes 729 tests. Tests run the shipped NetEq WASM with synthetic Opus/FEC and PCM, deliberate
+The published v89 local suite passed 729 tests. Tests run the shipped NetEq WASM with synthetic Opus/FEC and PCM, deliberate
 loss, 384 ms music-style bursts, 44.1/48 kHz conversion, stream end/reset/credit,
 variable render quanta and throwing/jumping clock getters. Browser tests cover
 software AAC/ALAC/ELD decode and direct NetEq Opus and the production AudioWorklet/CSP path. These
