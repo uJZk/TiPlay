@@ -4,7 +4,7 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v87';
+export const PAGE_VERSION = 'v88';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
@@ -48,7 +48,9 @@ const SUMMARY_KEYS = [
   'video.policyVideoPlanFromMs', 'video.policyVideoPlanDurationMs', 'video.policyVideoPlanRemainingMs',
   'video.policyVideoLeadRemainingMs', 'video.policyPlanChanges',
 ];
-const AUDIO_SOURCE_IDENTITY = ['epoch', 'state', 'lastRecoveryReason'];
+const AUDIO_SOURCE_IDENTITY = ['epoch', 'state', 'backend', 'codec', 'lastRecoveryReason'];
+const AUDIO_NETEQ_KEYS = ['targetDelayMs', 'filteredDelayMs', 'bufferMs', 'concealedSamples',
+  'concealmentEvents', 'insertedSamples', 'removedSamples', 'discardedPackets', 'fecPacketsReceived', 'fecPacketsDiscarded'];
 const AUDIO_SOURCE_DEADLINE = ['lastSourceDeadlineDeltaUpperMs', 'lastSourceDeadlineUncertaintyMs', 'lastSourceDeadlineAgeMs', 'lastSourceDeadlineLimitMs'];
 const AUDIO_RETIRED_DEADLINE = ['lastRetiredSourceDeadlineEpoch', 'lastRetiredSourceDeadlineGeneration',
   'lastRetiredSourceDeadlineDeltaUpperMs', 'lastRetiredSourceDeadlineUncertaintyMs', 'lastRetiredSourceDeadlineAgeMs',
@@ -79,7 +81,7 @@ function audioDiagnosticKeys(full) {
     'evidenceAttempts', 'evidenceSuppressed', 'evidenceCompleted', 'evidenceIncomplete',
     'evidenceClock', 'evidenceEndWorkMsMax', 'evidenceForwarded', 'evidenceDropped', 'mixPreClipPeak', 'mixOverFullScaleSamples', 'mixNonFiniteSamples',
     'decoder.nativeScanFrames', 'decoder.nativePeak', 'decoder.nativeOverFullScaleSamples', 'decoder.nativeNonFiniteSamples', 'decoder.nativeScanErrors',
-    ...perStream(AUDIO_SOURCE_IDENTITY), ...perStream(AUDIO_SOURCE_DEADLINE), ...perStream(AUDIO_RETIRED_DEADLINE),
+    ...perStream(AUDIO_SOURCE_IDENTITY), ...perStream(AUDIO_NETEQ_KEYS), ...perStream(AUDIO_SOURCE_DEADLINE), ...perStream(AUDIO_RETIRED_DEADLINE),
     ...perStream(AUDIO_VOICE_PREPARATION), ...perStream(AUDIO_SOURCE_FIT),
     ...AUDIO_CLOCK_KEYS, ...perStream(AUDIO_SOURCE_DETAIL), ...Object.keys(full)])]
     .filter(key => Object.hasOwn(full, key));

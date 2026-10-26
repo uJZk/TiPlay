@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { createBrowserAudio } from '/play/audio.js';
 import { loadAudioCore } from '/play/wasm/audio-core.js';
-import { loadSoxr } from '/play/streaming-resampler.js';
 import { constantDelay } from '/play/delay-plan.js';
 import { createCaptureReplay } from '/e2e/capture-replay.mjs';
 
@@ -35,7 +34,7 @@ globalThis.AudioContext = class extends NativeAudioContext {
     }
   }
 };
-await Promise.all([loadAudioCore(), loadSoxr()]);
+await loadAudioCore();
 let audio, replay, stop, ticker, sampler;
 globalThis.captureReady = true;
 globalThis.captureResult = null;

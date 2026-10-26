@@ -139,7 +139,7 @@ handling. Retaining those samples does not delay their scheduled playback; a sho
 can discard them before their playback time arrives.
 
 Each decoded stream/format epoch owns a continuous source-sample position and a
-stateful [libsoxr resampler](../site/play/vendor/soxr/README.md). Filter state survives
+stateful [libav.js resampler](../site/play/vendor/libav/README.md). Filter state survives
 packet boundaries; RTP packet adjacency stays on the nominal sample coordinate rather than
 the arrival-clock drift estimate. Distinct CarPlay streams retain separate transport IDs
 even when they share a music/guidance semantic type; mixing and ducking use the semantic

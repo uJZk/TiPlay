@@ -1,9 +1,9 @@
 # SoundTouch tempo engine
 
 The normal non-1x URL audio path uses the complete upstream **SoundTouch 2.4.0**
-C++ library compiled to WebAssembly SIMD. Pitch and sample rate stay unchanged;
+C++ library compiled to WebAssembly, using SIMD when available. Pitch and sample rate stay unchanged;
 TiPlay changes tempo only. At 1x, Web Audio receives the decoded source PCM
-directly and neither tempo engine is initialized.
+directly without creating a tempo processor.
 
 The unmodified upstream source archive is retained in
 [`source/soundtouch-2.4.0.tar.gz`](source/soundtouch-2.4.0.tar.gz), together with the
@@ -15,9 +15,9 @@ The library is LGPL-2.1-or-later; its complete upstream license is retained in
 [`COPYING.LGPL`](COPYING.LGPL). TiPlay's loader and ABI use the project's GPL-3.0-only
 license. Users can rebuild and replace either standalone `.wasm` file.
 
-The adapter enables the upstream hierarchical quick-seek setting used by the
-existing SoundTouchJS backend, retains the existing 0.25–4x sequence/seek window
-curve and disables the rate converter's anti-alias filter because its rate
+The adapter enables upstream hierarchical quick-seek, shares a fixed 20/5/5 ms
+sequence/seek/overlap policy across live and URL audio, accepts 0.2–4.8x effective tempo,
+and disables the rate converter's anti-alias filter because its rate
 always stays exactly 1. The library's `flush()` supplies the exact finite source
 duration; padding is never published as additional media. Each processor owns a
 separate instance with 4 MiB initial and 16 MiB maximum linear memory. Input is
@@ -30,35 +30,19 @@ stores because an extra planar-copy stage regressed measured cases. Exported
 samples are owned copies, and close drops the instance references as well as freeing
 native objects. Compilation is cached; instance state is never shared between streams.
 
-## Live CarPlay tempo
+## URL-only tempo
 
-`live-tempo.js` compiles this library before worklet startup. Each worklet owns
-one bounded runtime and each CarPlay stream owns an isolated mono/stereo native
-handle. `tempo_live_create` uses fixed 20 ms sequence, 5 ms seek and 5 ms overlap
-settings; `tempo_set` changes tempo over 0.95–1.20 without changing rate or pitch.
-The live adapter bypasses WSOLA for initial numerical phase noise below 0.01%,
-then retains overlap state through return to 1x. It does not flush during packet
-shortages. Stream recovery disposes both DSP handles and preserves the published
-5 ms output edge. The independent source/device clock ratio remains in libsoxr;
-catch-up never expands its ±5% clock-conversion range.
-
-The URL capability and benchmark policy below remains specific to URL audio.
-Live audio uses portable WASM when SIMD is absent, with an explicit load failure
-rather than a silent resampling substitute. Its CPU and latency need separate
-vehicle acceptance; URL benchmarks do not establish live worklet performance.
+Live streams use official NetEq and no longer construct SoundTouch handles.
+The URL adapter retains manual/automatic tempo composition and the existing
+20/5/5 ms windows. The obsolete live constructor export is removed.
 
 ## Capability and performance policy
 
 `soundTouchSimdSupported()` tests native SIMD support. Supported browsers use
 `soundtouch.simd.wasm`; download, CSP and compilation failures remain explicit
-errors. They do not silently switch engines. Browsers without SIMD retain the
-existing maintained **SoundTouchJS 2.1.1** backend in the Mediabunny bundle because
-portable WASM was slower in some measured workloads. The existing bundle's
-[source provenance and dependency licenses](../mediabunny/README.md) remain
-authoritative for that MPL-2.0 component. `soundtouch.wasm` is the portable
-comparison/validation build, available for independent replacement and testing.
-The bounded `audioTempoBackend` diagnostic reports `none`, `wasm-simd`, `wasm` or
-`soundtouchjs`.
+errors. Browsers without SIMD use `soundtouch.wasm`; the separate SoundTouchJS
+playback fallback has been removed to keep one implementation across all modes.
+The bounded `audioTempoBackend` diagnostic reports `none`, `wasm-simd` or `wasm`.
 
 The reproducible full-adapter benchmark is
 [`tests/bench/soundtouch/run.mjs`](../../../../tests/bench/soundtouch/run.mjs).
@@ -72,7 +56,9 @@ Compilation/download are separate startup costs.
 
 On Node 22.23.3 / AMD EPYC 9V45, SIMD was **1.06–1.96x faster by process CPU time**
 than the original adapter across all 18 cases. Portable WASM ranged from
-**0.79–1.10x** and therefore is not the automatic non-SIMD fallback. The recorded
+**0.79–1.10x**. These are historical results for the previous longer URL windows;
+the shared 20/5/5 ms policy has not been benchmarked on a vehicle. Portable WASM
+is now selected for implementation consistency, not a demonstrated speed gain. The recorded
 [raw results](../../../../tests/bench/soundtouch/Results.json) identify the runtime,
 CPU and metric. Those measurements do not establish vehicle CPU, end-to-end
 latency or physical sound quality. Independent signal tests verify pitch,

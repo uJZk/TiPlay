@@ -1,3 +1,4 @@
+import { SoftwareWorker } from './live-worker.mjs';
 // SPDX-License-Identifier: GPL-3.0-only
 import './wasm-init.mjs';
 import test from 'node:test';
@@ -349,6 +350,7 @@ test('an unreadable main-thread context getter cannot interrupt PCM publication 
 });
 
 test('two seconds of buffered music cannot block a following low-rate navigation packet', async () => {
+  const previousWorker = globalThis.Worker; globalThis.Worker = SoftwareWorker;
   const browser = mockBrowser(); let controller;
   const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'session' }), fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
   try {
@@ -358,117 +360,12 @@ test('two seconds of buffered music cannot block a following low-rate navigation
     for (let i = 0; i < 100; i++) controller.enqueue(music);
     const navigation = record(new Array(320).fill(2), { rate: 8000 }); navigation[5] = 1; controller.enqueue(navigation);
     await new Promise(resolve => setImmediate(resolve));
-    const sent = browser.messages.filter(value => value.pcm);
+    for (let i=0;i<200 && !browser.messages.some(r=>r.type===1 && r.pcm?.byteLength);i++) await new Promise(r=>setTimeout(r,5));
+    const sent = browser.messages.filter(value => value.pcm?.byteLength);
     assert.equal(sent.length, 101);
     assert.equal(sent.at(-1).type, 1, 'navigation posts without waiting for any music completion');
-  } finally { audio.dispose(); browser.done(); }
+  } finally { audio.dispose(); browser.done(); globalThis.Worker = previousWorker; }
 });
-
-test('worklet mixes separate streams and bounds an unpaced music producer', async () => {
-  let Processor;
-  globalThis.sampleRate = 48000;
-  globalThis.currentTime = 0;
-  globalThis.currentFrame = 0;
-  globalThis.AudioWorkletProcessor = class { constructor() { this.messages = []; this.port = { postMessage: message => this.messages.push(message) }; } };
-  globalThis.registerProcessor = (_, processor) => { Processor = processor; };
-  await import('../../site/play/audio-worklet.js');
-  const processor = new Processor();
-  const publish = (type, count, value, flags = 0) => processor.port.onmessage({ data: { type, rate: 48000, channels: 1, flags, pcm: new Int16Array(count).fill(value).buffer } });
-  publish(0, 128, 8192); publish(1, 128, 8192);
-  const left = new Float32Array(128), right = new Float32Array(128);
-  processor.process([], [[left, right]]);
-  assert.ok(left[0] > .49 && left.at(-1) > .39 && left.at(-1) < .4,
-    'guidance ducks music through the shared 5ms envelope instead of a one-sample gain step');
-  assert.deepEqual(left, right);
-  const mixed = new Processor();
-  const mix = (type, count, value, flags = 0) => mixed.port.onmessage({ data: {
-    type, epoch: 1, rate: 48000, channels: 1, flags, pcm: new Int16Array(count).fill(value).buffer,
-  } });
-  mix(0, 256, 8192); mix(6, 128, 8192, 4);
-  mixed.process([], [[left, right]]);
-  assert.ok(left.every(value => value === 0.5), 'CarPlay and mirror media mix without treating the mirror as guidance');
-  mix(6, 0, 0, 6);
-  globalThis.currentFrame = 128;
-  mixed.process([], [[left, right]]);
-  assert.ok(left.every(value => value === 0.25), 'ending mirror audio preserves queued CarPlay music');
-  const separatePlans = new Processor();
-  globalThis.currentTime = 0;
-  globalThis.currentFrame = 0;
-  separatePlans.port.onmessage({ data: { clockBase: 1100, plansByMode: {
-    carplay: { video: constantDelay(0), audio: constantDelay(0) },
-    'airplay-mirror': { video: constantDelay(100), audio: constantDelay(100) },
-  } } });
-  for (const [type, mode, sourceTime] of [[0, 'carplay', 1100], [6, 'airplay-mirror', 1000]]) {
-    separatePlans.port.onmessage({ data: { type, mode, epoch: 1, sequence: 0, sourceTime,
-      rate: 48000, channels: 1, flags: 0, pcm: new Int16Array(128).fill(8192).buffer } });
-  }
-  separatePlans.process([], [[left, right]]);
-  assert.ok(left.every(value => value === 0.5), 'each simultaneous PCM mode follows its own delay plan');
-  for (let i = 0; i < 100; i++) publish(0, 4800, 1, 1);
-  assert.ok(processor.streams.get(0).frames <= 96000);
-  assert.ok(processor.messages.some(message => message.consumed));
-  const live = new Processor();
-  for (let i = 0; i < 20; i++) live.port.onmessage({ data: { type: 1, rate: 48000, channels: 1, flags: 0, pcm: new Int16Array(4800).fill(i === 19 ? 16384 : 0).buffer } });
-  assert.equal(live.streams.get(1).frames, 9600, 'live queue retains at most 250 ms');
-  const timed = new Processor();
-  globalThis.currentTime = 0;
-  globalThis.currentFrame = 0;
-  timed.port.onmessage({ data: { plans: { video: constantDelay(60), audio: constantDelay(60) }, clockBase: 1060 } });
-  const publishTimed = (type, epoch, sourceTime) => timed.port.onmessage({ data: {
-    type, epoch, sourceTime, sequence: 0, rate: 48000, channels: 1, flags: 0, pcm: new Int16Array(480).fill(8192).buffer,
-  } });
-  publishTimed(0, 1, 1000); publishTimed(1, 1, 1000);
-  timed.process([], [[left, right]]);
-  assert.ok(left[0] > .49 && left.at(-1) > .39 && left.at(-1) < .4,
-    'timestamped guidance shares the same smooth media envelope');
-  publishTimed(1, 2, 1010);
-  assert.equal(timed.timelines.get(0).epoch, 1, 'guidance epoch does not reset music');
-  publishTimed(1, 1, 1000);
-  assert.equal(timed.timelines.get(1).epoch, 2, 'retired epoch cannot replace the new timeline');
-  timed.port.onmessage({ data: { type: 1, epoch: 1, rate: 48000, channels: 1, sourceTime: NaN, flags: 2, pcm: new ArrayBuffer(0) } });
-  assert.equal(timed.timelines.get(1).epoch, 2, 'retired fallback reset cannot clear timestamped playback');
-  timed.port.onmessage({ data: { reset: true } });
-  assert.equal(timed.timelines.size, 0);
-  const smooth = new Processor();
-  let plan = planDelay(constantDelay(60), 80, 1060);
-  smooth.port.onmessage({ data: { plans: { video: plan, audio: plan }, clockBase: 1060 } });
-  smooth.port.onmessage({ data: { type: 0, epoch: 1, sequence: 0, rate: 48000, channels: 1, sourceTime: 1000, flags: 1, pcm: new Int16Array(48000).fill(16384).buffer } });
-  for (let block = 0; block < 200; block++) {
-    globalThis.currentTime = block * 128 / 48000;
-    globalThis.currentFrame = block * 128;
-    if (block === 100) { plan = planDelay(plan, 60, 1060 + currentTime * 1000); smooth.port.onmessage({ data: { plans: { video: plan, audio: plan } } }); }
-    smooth.process([], [[left, right]]);
-    assert.ok(left.every(value => value === 0.5), 'actual worklet keeps continuous PCM audible during both delay ramps');
-    const wall = 1060 + (currentTime + 127 / 48000) * 1000;
-    assert.ok(Math.abs(smooth.timelines.get(0).through - (wall - delayAt(plan, wall))) < 0.000001);
-  }
-  for (const [rawAudioDelay, audioWall, videoWall] of [[0, 1000, 1100], [200, 1200, 1080]]) {
-    globalThis.currentTime = 0;
-    globalThis.currentFrame = 0;
-    const matched = new Processor(), plans = { video: constantDelay(80), audio: constantDelay(rawAudioDelay) };
-    matched.port.onmessage({ data: { plans, clockBase: audioWall } });
-    matched.port.onmessage({ data: { type: 0, epoch: 1, sequence: 0, rate: 48000, channels: 1, sourceTime: 1000, flags: 0, pcm: new Int16Array(480).fill(16384).buffer } });
-    matched.port.onmessage({ data: { type: 0, epoch: 1, sequence: 1, rate: 48000, channels: 1, sourceTime: 700, flags: 0, pcm: new Int16Array(480).fill(8192).buffer } });
-    matched.process([], [[left, right]]); assert.equal(left[0], 0.5, 'expired audio is discarded and matching audio remains audible');
-    assert.equal(audioWall - audioDelayAt(plans, audioWall), 1000);
-    const submitted = [], canvas = { width: 800, height: 480, getContext: type => type === '2d' ? { fillRect() {}, drawImage(frame) { submitted.push({ source: frame.timestamp, at: videoWall }); } } : null, removeEventListener() {} };
-    const presenter = createFramePresenter(canvas, { now: () => videoWall, videoPlan: () => plans.video });
-    presenter.present({ timestamp: 1000, displayWidth: 800, displayHeight: 480, close() {} }, { epoch: 1, mode: 'carplay' }, 1000);
-    assert.equal(submitted.length, 1);
-    const actualOffset = audioWall - submitted[0].at;
-    assert.equal(actualOffset, audioWall - videoWall, 'video submission cannot retime the independently scheduled audio sample');
-    assert.ok(matched.messages.some(message => message.consumed === 960), 'too-late PCM never makes video wait');
-    presenter.dispose();
-  }
-  const clipping = new Processor();
-  for (const type of [1, 2]) clipping.port.onmessage({ data: { type, rate: 48000, channels: 1, flags: 0, pcm: new Int16Array(128).fill(32767).buffer } });
-  clipping.process([], [[left, right]]);
-  assert.ok(left.every(value => value === 1), 'overlapping prompts saturate instead of producing out-of-range samples');
-  delete globalThis.currentTime;
-  delete globalThis.currentFrame;
-  delete globalThis.AudioWorkletProcessor; delete globalThis.registerProcessor; delete globalThis.sampleRate;
-});
-
 
 test('cancelling a pending DataChannel audio read releases its subscription without waiting for a packet', async () => {
   let cancelled = 0;

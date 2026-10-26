@@ -147,214 +147,33 @@ async function harness({ devicePpm = 90, outputDelayMs = 80 } = {}) {
   };
 }
 
-test('real DSP stays continuous through transient native timestamp faults, slow reads and measurement restarts', async () => {
-  const h = await harness({ devicePpm: -4000 });
+test('transport and actual NetEq keep audio independent of clock estimates', async () => {
+  const h = await harness();
   try {
     await h.playing();
-    const processor = h.nodes[0].processor, player = processor.timelines.get(0), backend = player.backend;
-    const nativeTimestamp = h.context.getOutputTimestamp.bind(h.context);
-    let fault = null, reads = 0, minimumEnergy = Infinity, maximumStep = 0, previous = null;
-    const observe = block => {
-      minimumEnergy = Math.min(minimumEnergy, block.reduce((sum, value) => sum + value ** 2, 0));
-      for (const sample of block) {
-        if (previous !== null) maximumStep = Math.max(maximumStep, Math.abs(sample - previous));
-        previous = sample;
-      }
-    };
-    h.context.getOutputTimestamp = () => {
-      reads++;
-      if (fault === 'slow') {
-        fault = null;
-        // Audio keeps rendering while the main thread waits for a native getter.
-        for (let i = 0; i < 15; i++) observe(h.quantum(false));
-      }
-      const timestamp = nativeTimestamp();
-      if (fault === 'future') timestamp.performanceTime += 100;
-      if (fault === 'backward') { timestamp.contextTime -= .2; timestamp.performanceTime -= 200; }
-      return timestamp;
-    };
-    for (let quantum = 0; quantum < 2400; quantum++) {
-      if (quantum % 30 === 0) await h.feed(Math.ceil(((h.localMs - 10000) + 700) * 48));
-      fault = quantum >= 300 && quantum < 320 ? 'future' : quantum >= 500 && quantum < 520 ? 'backward' : null;
-      if (quantum === 700) { fault = 'slow'; h.audio.clock(h.calibration()); }
-      if (quantum === 900) processor.port.onmessage({ data: {
-        deviceClock: { generation: 100, rate: processor.deviceClock.rate },
-      } });
-      observe(h.quantum());
+    const stream = h.nodes[0].processor.streams.get(0), engine = stream.engine;
+    for (const generation of [4, 9, 2]) {
+      h.audio.clock({ ...h.calibration(generation), serverOriginMs: -1e9, rate: .98 });
+      for (let i = 0; i < 30; i++) h.quantum();
+      assert.equal(h.nodes[0].processor.streams.get(0).engine, engine);
     }
-    assert.equal(player.backend === backend, true, 'rejected measurements and fit generations preserve the actual Soxr filter');
-    assert.deepEqual(player.recoveryCounts, {});
-    assert.ok(reads > 100);
-    assert.ok(minimumEnergy > 3, `dynamic audio keeps every block audible: ${minimumEnergy}`);
-    assert.ok(maximumStep < .3, `native measurements cannot introduce waveform discontinuities: ${maximumStep}`);
-    assert.ok(h.references.some(reference => reference?.outputMethod === 'timestamp-holdover'));
+    assert.ok(h.references.some(value => value?.playoutState === 'playing' || value?.state === 'untimed'));
+    assert.ok(h.references.every(value => value?.audibleTimeMs == null));
+    assert.ok(h.postedPcm.every(packet => packet.sourceTime === undefined));
   } finally { await h.close(); }
 });
 
-function videoConsumer(h, initialReference) {
-  let draws = 0, timer = 0;
-  const frames = createTimedFrames(frame => { draws++; frame.close(); }, { now: () => h.now, schedule: () => ++timer, cancel() {} });
-  frames.delay(constantDelay(0)); frames.audio(initialReference);
-  h.observeReference(reference => frames.audio(reference));
-  return {
-    assertIndependent(clockGeneration = 3) {
-      const frame = { closed: false, close() { this.closed = true; } };
-      frames.present(frame, { mode: 'carplay' }, 1, h.now,
-        { sourceTimeMs: initialReference.sourceTimeMs, clockGeneration });
-      assert.equal(frame.closed, true, 'the presenter owns and releases the independently available video');
-      assert.ok(draws > 0, 'unavailable audio cannot freeze independent video');
-      assert.notEqual(frames.stats().audioSyncState, 'video-only');
-    },
-    close() { frames.reset(); },
-  };
-}
-
-test('production audio transport and real soxr retain raw anchors through clock refinements with debug off', async () => {
-  const h = await harness();
-  try {
-    await h.feed(48000);
-    const firstPacket = h.postedPcm[0], firstTimeline = h.nodes[0].processor.timelines.get(0);
-    let minimumEnergy = Infinity, maximumStep = 0, previous = 0, refinements = 0, worstBlock = null;
-    for (let quantum = 0; quantum < 1500; quantum++) {
-      if (quantum % 30 === 0) await h.feed(Math.ceil(((h.localMs - 10000) + 700) * 48));
-      if (quantum && quantum % 300 === 0) {
-        h.audio.clock(h.calibration(3, 1 + ++refinements * 0.00002)); h.drain();
-      }
-      const block = h.quantum();
-      if (quantum > 50) {
-        const energy = block.reduce((sum, value) => sum + value ** 2, 0);
-        if (energy < minimumEnergy) {
-          minimumEnergy = energy;
-          worstBlock = { quantum, state: firstTimeline.state, reason: firstTimeline.reason,
-            phaseErrorMs: firstTimeline.phaseErrorMs, bytes: firstTimeline.bytes, inputFrame: firstTimeline.inputFrame };
-        }
-        for (const sample of block) { maximumStep = Math.max(maximumStep, Math.abs(sample - previous)); previous = sample; }
-      } else previous = block.at(-1);
-    }
-    const player = h.nodes[0].processor.timelines.get(0), reference = h.references.findLast(value => value?.state === 'playing');
-    assert.equal(h.audio.stats().debug, undefined);
-    assert.ok(reference, 'audio output references are necessary playback data in Standard mode');
-    assert.equal(player, firstTimeline, 'calibrations retain the live stream and its sample counter');
-    assert.equal(player.sourceAnchorMs, firstPacket.presentationMs);
-    assert.equal(h.nodes[0].processor.clock.localOriginMs, 10000, 'the main-thread boundary removes the large performance epoch once');
-    assert.ok(h.nodes[0].processor.contextAnchor.localTimeMs < 20000);
-    assert.ok(player.backend.resampler.runtime.exports.memory.buffer instanceof ArrayBuffer);
-    assert.ok(player.backend.resampler.outputFrames > 100000, 'the production JavaScript engine processes actual samples');
-    assert.ok(Math.abs(player.slewRatio - 1) > 0.00003, 'production clock refinements reach the variable-rate JavaScript engine');
-    assert.ok(minimumEnergy > 3, `dynamic PCM minimum block energy ${minimumEnergy}: ${JSON.stringify(worstBlock)}`);
-    assert.ok(maximumStep < 0.3, 'packet boundaries and ratio refinements remain continuous');
-    assert.ok(h.postedPcm.every(packet => packet.sourceTime === undefined), 'v2 calibration never rewrites raw packets into epoch-valued sourceTime');
-    for (const packet of h.postedPcm) assert.equal(packet.presentationMs, h.sourceOrigin + h.outputDelayMs + packet.sequence * 20);
-    assert.equal(reference.clockGeneration, 3);
-    const physicalRate = 1 + 90 / 1e6;
-    const quantumBoundMs = reference.renderQuantumMaxFrames / 48 / .98;
-    assert.ok(Math.abs(reference.outputLatencyMs - h.outputDelayMs / physicalRate) <= quantumBoundMs,
-      'render-derived latency retains the actual callback interval instead of claiming an exact getter pair');
-    const audibleTruth = h.now + (reference.contextTimeMs - h.context.frames / 48 + h.outputDelayMs) / physicalRate;
-    assert.ok(Math.abs(reference.audibleTimeMs - audibleTruth) <= reference.uncertaintyMs,
-      'the independent sample/performance oracle includes device delay once, without base/output/filter additions');
-  } finally { await h.close(); }
-});
-
-test('suspend invalidates the active producer identity and resumes through the real processor', async () => {
+test('real receiver credits NetEq consumption and rejects stale port generations', async () => {
   const h = await harness();
   try {
     await h.playing();
-    const before = h.references.findLast(value => value?.state === 'playing'); assert.ok(before);
-    const video = videoConsumer(h, before);
-    h.context.suspend(); h.drain();
-    const invalid = h.references.at(-1);
-    assert.equal(invalid.mode, before.mode); assert.equal(invalid.epoch, before.epoch);
-    assert.equal(invalid.state, 'suspended'); assert.equal(invalid.audibleTimeMs, null);
-    assert.equal(h.audioReferences.resolve('carplay', before.sourceTimeMs, 3, h.now).required, true);
-    video.assertIndependent();
-    h.advanceWall(50); await h.context.resume(); h.drain();
-    for (let i = 0; i < 30; i++) h.quantum();
-    const resumed = h.references.findLast(value => value?.state === 'playing');
-    assert.ok(resumed.at > before.at); assert.equal(resumed.epoch, before.epoch);
-    assert.ok(h.nodes[0].processor.timelines.get(0).backend.resampler.outputFrames > 0);
-    video.close();
-  } finally { await h.close(); }
-});
-
-test('EOF and processor failure preserve invalid audio identity while replacement rejects retired-port feedback', async () => {
-  for (const failure of ['eof', 'processor']) {
-    const h = await harness();
-    try {
-      await h.playing();
-      const previousNode = h.nodes.at(-1), staleCallback = previousNode.port.onmessage;
-      const before = h.references.findLast(value => value?.state === 'playing'); assert.ok(before);
-      const video = videoConsumer(h, before);
-      if (failure === 'eof') { const request = h.requests.at(-1); request.closed = true; request.controller.close(); await h.settle(); }
-      else previousNode.onprocessorerror();
-      const resolved = h.audioReferences.resolve('carplay', before.sourceTimeMs, 3, h.now);
-      assert.equal(resolved.required, true, `${failure} must keep audio required while output is unavailable`);
-      assert.notEqual(resolved.state, 'video-only');
-      assert.equal(h.references.at(-1).audibleTimeMs, null);
-      video.assertIndependent();
-      h.advanceWall(failure === 'eof' ? 1001 : 101); await h.settle();
-      await h.feed(96000, { epoch: 8, restart: true });
-      for (let i = 0; i < 40; i++) h.quantum();
-      const after = h.references.findLast(value => value?.state === 'playing');
-      assert.ok(after.generation > before.generation, `${failure} resumes in a fresh playback generation`);
-      assert.equal(after.epoch, 8);
-      const count = h.references.length;
-      staleCallback({ data: { playout: { ...before, contextTimeMs: h.context.currentTime * 1000 } } });
-      assert.equal(h.references.length, count, 'retired-node and same-node old-generation callbacks cannot revive old output');
-      assert.equal(h.audioReferences.update({ ...before, at: h.now }), false);
-      assert.equal(h.audioReferences.resolve('carplay', after.sourceTimeMs, 3, h.now).reference.epoch, 8);
-      video.close();
-    } finally { await h.close(); }
-  }
-});
-
-test('clock generation recovery rejects earlier source/output references without reusing epoch arithmetic', async () => {
-  const h = await harness();
-  try {
-    await h.playing();
-    const before = h.references.findLast(value => value?.state === 'playing'); assert.ok(before);
-    const video = videoConsumer(h, before);
-    h.audio.clock(h.calibration(4)); h.drain();
-    assert.equal(h.audioReferences.resolve('carplay', before.sourceTimeMs, 4, h.now).state, 'clock-generation');
-    video.assertIndependent(4);
-    for (let i = 0; i < 30; i++) h.quantum();
-    const after = h.references.findLast(value => value?.state === 'playing');
-    assert.equal(after.clockGeneration, 4);
-    assert.equal(after.generation, before.generation);
-    assert.ok(after.sequence > before.sequence);
-    assert.equal(h.audioReferences.update({ ...before, at: h.now }), false);
-    assert.equal(h.audioReferences.resolve('carplay', after.sourceTimeMs, 4, h.now).state, 'audio-output');
-    video.close();
-  } finally { await h.close(); }
-});
-
-test('a queued old-generation report cannot repopulate output after an explicit reset', async () => {
-  const h = await harness();
-  try {
-    await h.playing();
-    const before = h.references.findLast(value => value?.state === 'playing'); assert.ok(before);
-    const pendingFeedback = h.feedback.findLast(value => value.state === 'playing');
-    h.audio.reset(); h.drain();
-    const count = h.references.length;
-    // This is a real report emitted before reset, delivered from the same live
-    // MessagePort after reset. Browser tasks can be pending in precisely this order.
-    h.nodes[0].port.onmessage({ data: { playout: pendingFeedback } });
-    assert.equal(h.references.length, count, 'main thread rejects reports from retired playback generations');
-    assert.equal(h.audioReferences.resolve('carplay', before.sourceTimeMs, 3, h.now).state, 'video-only');
-  } finally { await h.close(); }
-});
-
-test('render-age diagnostics do not mistake accumulated context-clock offset for a stale report', async () => {
-  const h = await harness({ devicePpm: -4000 });
-  try {
-    await h.playing();
-    h.audio.debug(true); h.drain();
-    h.context.frames += 480000;
-    h.advanceWall(10040);
-    h.quantum();
-    const details = h.audio.stats().debug;
-    assert.equal(details.renderReportAgeMs, 0);
-    assert.ok(details.renderAgeMs >= 0 && details.renderAgeMs < 5,
-      `fresh worklet report acquired a fictitious ${details.renderAgeMs}ms age from clock offset`);
+    const count = h.references.length, old = h.nodes[0];
+    h.audio.status({ audio: false }); await h.settle();
+    old.port.onmessage?.({ data: { playout: { generation: -1, state: 'playing' } } });
+    assert.equal(h.references.length, count + 1); // Explicit invalidation, never old playback.
+    h.audio.status({ audio: true }); await h.settle();
+    await h.feed(48000, { epoch: 8, restart: true });
+    for (let i = 0; i < 80; i++) h.quantum();
+    assert.equal(h.nodes.at(-1).processor.streams.get(0).epoch, 8);
   } finally { await h.close(); }
 });

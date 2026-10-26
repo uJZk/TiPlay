@@ -16,7 +16,7 @@ assert.ok(csp && !csp.split(/\s+/).includes("'unsafe-eval'"), 'Use the exact pro
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.mp4': 'video/mp4' };
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 async function sourceIdentity() {
-  const paths = (await readdir(pageRoot, { recursive: true })).filter(path => /\.(js|wasm)$/.test(path)).sort();
+  const paths = (await readdir(pageRoot, { recursive: true })).filter(path => /\.(js|mjs|wasm)$/.test(path)).sort();
   paths.push('index.html');
   return Object.fromEntries(await Promise.all(paths.map(async path => [path, hash(await readFile(resolve(pageRoot, path)))])));
 }
@@ -89,7 +89,7 @@ try {
   assert.deepEqual(externalRequests, [], 'Every media/asset request remains loopback');
   if (getterFault) assert.ok(await page.evaluate(() => globalThis.__clockGetterFaultReads > 10), 'Faulty getter was actually observed');
   assert.equal(await page.evaluate(() => typeof WebAssembly), 'object');
-  for (const asset of ['/play/vendor/soxr/soxr.wasm', '/play/wasm/audio-core.wasm']) {
+  for (const asset of ['/play/wasm/audio-core.wasm', '/play/vendor/neteq/neteq.wasm']) {
     assert.ok(servedAssets[asset], `Actual WASM engine loaded under production CSP: ${asset}`);
   }
   assert.deepEqual(changed, [], 'Runtime source remained unchanged throughout the check');

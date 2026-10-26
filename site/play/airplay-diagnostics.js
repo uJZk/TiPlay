@@ -15,10 +15,12 @@ const ENGINE_ENUMS = Object.freeze({
     'video-budget', 'audio-budget', 'unknown']),
   renderStatsState: new Set(['available', 'unavailable', 'invalid', 'failed']),
   audioOutputTimestampState: new Set(['unavailable', 'closed', 'format-mismatch', 'startup', 'invalid', 'future', 'context-ahead', 'valid', 'failed']),
+  audioVideoSyncState: new Set(['unavailable', 'inactive', 'no-video-reference', 'no-output-timestamp', 'stale-output-timestamp', 'output-timestamp-discontinuity', 'no-submitted-audio', 'native-output-and-video-frame']),
   audioTempoBackend: new Set(['none', 'wasm-simd', 'wasm', 'soundtouchjs']),
   contextState: new Set(['running', 'suspended', 'interrupted', 'closed', 'unavailable', 'unknown']),
   clockSource: new Set(['audio', 'performance', 'unknown']),
   limitingTrack: new Set(['video', 'audio', 'both', 'none', 'unknown']),
+  audioDecoderBackend: new Set(['webcodecs', 'libav-wasm', 'libav-simd']),
   startReason: new Set(['none', 'watermark', 'video-budget', 'audio-budget', 'end-of-stream', 'read-progress-fallback']),
   requestedHardwareAcceleration: new Set(['no-preference', 'prefer-hardware', 'prefer-software', 'unknown']),
   hardwareSupportProbe: new Set(['supported', 'unsupported', 'unavailable', 'error', 'unknown']),
@@ -28,7 +30,8 @@ const ENGINE_ENUMS = Object.freeze({
 });
 const ENGINE_FLAGS = ['running', 'intentPlaying', 'resumePending', 'hasPlayed', 'videoBudgetBlocked',
   'videoDone', 'audioDone', 'videoReadPending', 'audioReadPending', 'userActivationHasBeenActive', 'gestureRequired'];
-const ENGINE_NUMBERS = ['openElapsedMs', 'phaseElapsedMs', 'generation', 'clockTime', 'clockPosition', 'scheduledEnd', 'position', 'playableEnd',
+const ENGINE_NUMBERS = ['manualPlaybackRate', 'automaticPlaybackRate', 'effectivePlaybackRate', 'audioAppliedTempo', 'audioVideoSyncErrorMs', 'audioVideoSyncMinimumMs', 'audioVideoSyncMaximumMs', 'audioSyncControlDelayMs', 'audioSyncResponseMs',
+  'openElapsedMs', 'phaseElapsedMs', 'generation', 'clockTime', 'clockPosition', 'scheduledEnd', 'position', 'playableEnd',
   'videoEnd', 'audioEnd', 'targetMs', 'videoFrames', 'videoBytes', 'audioChunks', 'audioBytes', 'stallElapsedMs', 'stallCount',
   'videoCapacityFrames', 'videoCapacityBytes', 'videoCapacityAheadMs', 'audioCapacityBytes', 'audioCapacityAheadMs',
   'codedWidth', 'codedHeight', 'displayWidth', 'displayHeight', 'observedSampleCadenceMs', 'observedSampleDurationMs',
@@ -55,7 +58,7 @@ const ENGINE_WHOLE = new Set(['generation', 'videoFrames', 'videoBytes', 'audioC
   'audioDecodedFrames', 'audioSeekTrimmedFrames', 'audioOverlapTrimmedFrames', 'audioAlignedPackets',
   'audioSilenceFrames', 'audioScheduledFrames', 'audioLateStarts', 'audioPcmOverFullScaleSamples', 'audioNonFiniteSamples',
   'audioScheduleUnderruns', 'audioRebufferStops', 'renderUnderrunEvents']);
-const ENGINE_SIGNED = new Set(['audioOutputTimestampAgeMs', 'audioOutputContextLagMs']);
+const ENGINE_SIGNED = new Set(['audioVideoSyncErrorMs', 'audioVideoSyncMinimumMs', 'audioOutputTimestampAgeMs', 'audioOutputContextLagMs']);
 const ENGINE_DIMENSIONS = new Set(['codedWidth', 'codedHeight', 'displayWidth', 'displayHeight']);
 const CODEC = /^(?:avc|h264|hevc|h265|vp8|vp9|av1|avc1|avc3|hvc1|hev1|vp09|av01|mp4v)(?:\.[a-z0-9]{1,16}){0,9}$/i;
 const ENGINE_SIGNATURE = ['generation', 'startupPhase', 'running', 'intentPlaying', 'waitReason', 'contextState', 'resumePending',

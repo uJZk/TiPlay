@@ -2,7 +2,7 @@
 
 TiPlay supports an Android phone plus car browser. Follow [installation](Install.md) and [build](Build.md) instructions; use a parked car for physical acceptance.
 
-The current receiver/session source passes **908 browser tests** and **4,189 Android
+The earlier receiver/session baseline recorded **908 browser tests** and **4,189 Android
 unit tests** (2,366 shared, 1,817 common and six home), all three required debug lint
 targets and all three debug APK builds. The real Chromium presentation component
 suite passes Chinese/English at 320/800 pixels. Its structured events do not establish
@@ -11,6 +11,17 @@ this environment's managed ICE policy. Published artifacts remain recorded in
 [Build](Build.md#beta-release).
 
 ## Browser WASM verification
+
+Browser v88 passes **728 local browser tests**. Its acceptance covers real AAC/ALAC/ELD Worker decoding, exact
+48 kHz PCM duration across 8–48 kHz sources, gap resets, EOF draining, cancelled
+initialization, four simultaneous software streams and overload rejection. Actual
+Chromium verifies software negotiation with WebCodecs audio disabled, NetEq Opus/
+FEC and mixing, NoData history, URL fallback and offline cached module Workers.
+Site assembly/public-tree and native libsoxr source consistency checks pass.
+CI and APK compilation are explicitly skipped. Physical Tesla CPU, output quality,
+multistream headroom and audible clicks remain unverified. Earlier results below
+refer to their original versions.
+
 
 The beta.15 WASM build passed **893 browser tests** and the complete required Android
 command: **4,131 unit tests**, all three debug lint targets and all three debug APK
@@ -427,6 +438,16 @@ Turn it on again and verify normal system-controlled rotation.
 
 ## Media clock and continuous audio acceptance
 
+The local, unpublished v88 revision replaces live PD/SoundTouch with official
+NetEq WASM. Decoder priority is browser-native, NetEq Opus, then libav.js ELD;
+AAC-LC remains browser-only. NetEq tests cover actual shipped WASM, synthetic
+FEC-positive Opus, missing packets, 384 ms bursts, 44.1/48 kHz conversions, finite
+stream drain/credit, stale epochs, independent video and faulty clock getters.
+URL casting retains manual×automatic SoundTouch tempo and its −45…+125 ms target.
+See [Audio tempo](Audio-tempo.md) for scope and physical verification limits.
+Full Android CI remains skipped under the user's instruction; no new release is
+implied by local checks.
+
 The beta.13/v79 live-audio source corrects recovery-tail double fading and
 instantaneous voice/media gain changes, independently reproduced with production
 code and real Soxr. Recovery resumes the already-faded amplitude; the shared mixer
@@ -680,10 +701,10 @@ decoded sample coordinates, and retain real RTP/sample gaps.
 Synthetic pipeline changes also use an independent emitted-sample/output-time oracle,
 including lagging platform latency attributes; passing the mapper's own timing checks
 alone cannot establish correct skew.
-The [libsoxr report](../scripts/soxr/REPORT.md) retains independent DSP/runtime reviews,
-format/anti-alias/120-second drift results and raw repeated performance measurements.
-These establish the tested engine's signal and runtime behavior, not a
-whole-worklet hardware deadline or universal CPU improvement.
+Live resampling now uses libav.js Workers; tests cover exact one-second output
+length across 8–48 kHz PCM rates, packet boundaries and EOF draining. NetEq and
+the render graph use 48 kHz. These are software checks, not a hardware deadline
+or physical output-quality guarantee.
 
 Use the [browser E2E harness](../tests/web-e2e/README.md) for actual CSP, WASM loading,
 AudioWorklet output, output timestamps, worker/main Canvas paths and context suspend/resume.

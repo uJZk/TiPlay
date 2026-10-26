@@ -49,8 +49,8 @@ timestamp does not establish speaker/panel timing.
 Resume device-clock, buffered-flush and voice-preparation/recovery fixes with independent waveform checks at
 [continuous-audio acceptance](docs/Testing.md#media-clock-and-continuous-audio-acceptance);
 [Todo](docs/Todo.md#browser-and-carplay-audio) retains physical clicks and separate URL-audio follow-up.
-The browser's [WASM boundary](docs/Browser-wasm.md) documents genuine libsoxr,
-FDK AAC, fixed-memory live-audio kernels and SIMD SoundTouch, with native-browser
+The browser's [WASM boundary](docs/Browser-wasm.md) documents libav.js decoding/resampling,
+NetEq, fixed-memory live-audio kernels and SIMD SoundTouch, with native-browser
 and measured slower-case exceptions. Rebuild and byte-verify the binaries using
 [Build](docs/Build.md#browser-wasm-build). Its [audio clock roles](docs/Browser-wasm.md#audio-clock-roles)
 record frame-based live timing, causal output probes and natural URL completion;
@@ -85,6 +85,23 @@ Resume beta.20/code62 and browser v87 audio evidence work at
 raw frame-jump witnesses, pre/post waveform coverage, CPU attribution limits and
 the user's explicit full-CI skip for this release. The APK/source/checksums are published, and public v87 bytes are verified.
 The added manual browser-trace workflow was removed at the user's request.
+
+Browser v88 audio work is documented in [Audio tempo](docs/Audio-tempo.md).
+Realtime Opus decodes directly in official NetEq. AAC-LC/ELD/ALAC and non-48 kHz
+PCM use libav.js Workers with continuous resampling to PCM16/48 kHz. No realtime
+WebCodecs audio, FDK, libsoxr or live SoundTouch/PD remains. The AudioContext is
+48 kHz; live audio and video are independent. URL casting retains native audio
+first, libav fallback, manual tempo and video-frame PD. Preserve the Android
+beta.20/code62 identity; no new APK is compiled/published for this rollout.
+
+Resume from [Audio tempo](docs/Audio-tempo.md), the
+[SIMD report](tests/bench/libav/README.md), and [Build](docs/Build.md#current-browser-deployment).
+This tie-up explicitly skips CI and APK compilation per user request. Local web,
+actual Chromium Worklet/decoder/URL, offline-cache, site assembly and native-source
+consistency checks are used. Commit with `[skip ci]`; deploy only the existing
+Pages publishing workflow. Physical Tesla CPU, sound quality and simultaneous
+stream acceptance remain unverified. Do not claim a measured clock or a codec
+benchmark establishes speaker timing or eliminates every click.
 
 ## Checks
 

@@ -65,12 +65,12 @@ globalThis.startAudioProbe = async () => {
         for (const probe of workerProbes) probe.audio(reference);
         if (reference) {
           states.push({ mode: reference.mode, state: reference.state, at: performance.now() });
-          if (reference.state === 'playing') {
+          if (reference.state === 'untimed') {
             if (!debugEnabled) referencesWithoutDebug++;
             reports.push({ mode: reference.mode, method: reference.outputMethod, latencyMs: reference.outputLatencyMs,
               filterDelayMs: reference.filterDelayMs, uncertaintyMs: reference.uncertaintyMs,
               source: reference.sourceTimeMs, rate: reference.mediaRate,
-              sourceDelayMs: reference.audibleTimeMs - (performance.timeOrigin + localOrigin + (reference.sourceTimeMs - sourceOrigin) * rate) });
+              sourceDelayMs: null });
             if (reference.mode === 'carplay') lastReference = reference;
           }
         }
@@ -159,7 +159,7 @@ globalThis.startAudioProbe = async () => {
     diagnosticNonzero = Math.max(diagnosticNonzero, state.debug?.renderNonzero || 0);
     const primary = reports.filter(value => value.mode === 'carplay');
     if (primary.length < 50 || !reports.some(value => value.mode === 'airplay-mirror')) fail('Both actual worklet producers must report output');
-    if (!primary.some(value => value.method === 'timestamp')) fail('Actual getOutputTimestamp was not used');
+    if (!primary.every(value => value.source === null)) fail('Independent audio must not invent source/video synchronization');
     if (!(diagnosticPeak > .05 && diagnosticNonzero > 1000)) fail('Actual worklet output did not contain the nonzero waveform');
     if (violations.length) fail('Production CSP blocked integration');
     if (audioErrors.length) fail('Audio integration reported errors: ' + audioErrors.join('; '));
@@ -167,9 +167,6 @@ globalThis.startAudioProbe = async () => {
     const carplayDraws = draws.filter(value => value.mode === 'carplay'), mirrorDraws = draws.filter(value => value.mode === 'airplay-mirror');
     if (carplayDraws.length < 50 || mirrorDraws.length < 50 || draws.some(outside)) {
       fail('Canvas submission escaped an independent sender-relative 300ms ceiling');
-    }
-    if (reports.some(value => !Number.isFinite(value.sourceDelayMs) || !Number.isFinite(value.uncertaintyMs) || value.sourceDelayMs + value.uncertaintyMs > 300)) {
-      fail('Audio output exceeded its independent sender-relative 300ms ceiling including uncertainty');
     }
     const workers = workerProbes.map(probe => probe.result());
     for (const result of workers) {
@@ -188,11 +185,11 @@ globalThis.startAudioProbe = async () => {
         carplayDraws: carplayDraws.length, mirrorDraws: mirrorDraws.length,
         carplayMaxSourceDelayMs: Math.max(...carplayDraws.map(value => value.sourceDelay)),
         mirrorMaxSourceDelayMs: Math.max(...mirrorDraws.map(value => value.sourceDelay)),
-        mirrorAudioMaxSourceDelayMs: Math.max(...reports.filter(value => value.mode === 'airplay-mirror').map(value => value.sourceDelayMs + value.uncertaintyMs)),
-        carplayAudioMaxSourceDelayMs: Math.max(...primary.map(value => value.sourceDelayMs + value.uncertaintyMs)),
+        mirrorAudioMaxSourceDelayMs: null,
+        carplayAudioMaxSourceDelayMs: null,
         hardwareDecode: workers.map(value => ({ mode: value.mediaMode, path: value.mode,
           state: value.unsupported ? 'unavailable-on-this-browser' : 'requested-hardware-implementation-unproven' })),
-        minAirplaySkewMs: Math.min(...mirrorDraws.map(value => value.skew)), maxAirplaySkewMs: Math.max(...mirrorDraws.map(value => value.skew)),
+        minAirplaySkewMs: null, maxAirplaySkewMs: null,
         scheduler: frames.stats(), presenter: presenter.stats() },
       states, reports: reports.filter((_, index) => index % 10 === 0), lastReference, workers,
       physicalOutputMeasured: false };

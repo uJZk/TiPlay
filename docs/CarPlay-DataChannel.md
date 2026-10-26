@@ -4,7 +4,7 @@
 
 The Android phone/browser product now uses reliable, ordered WebRTC DataChannels
 for compressed CarPlay and ordinary AirPlay live media. The browser still controls
-WebCodecs decoding and Canvas presentation; Android creates no RTP media track,
+WebCodecs video decoding, NetEq/libav.js audio and Canvas presentation; Android creates no RTP media track,
 video encoder or browser microphone path. AirPlay URL casting retains its existing
 resource/demux pipeline and uses the shared smoothness-first casting profile.
 

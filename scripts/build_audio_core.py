@@ -8,9 +8,9 @@ import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 EXPORTS = ['audio_input16', 'audio_input', 'audio_output', 'audio_last',
-           'audio_recovery', 'audio_gain', 'audio_peak', 'audio_remaining',
+           'audio_gain', 'audio_peak', 'audio_remaining',
            'audio_nonzero', 'audio_pcm16', 'audio_unpack', 'audio_quantize_planar',
-           'audio_scan16', 'audio_fresh', 'audio_tail',
+           'audio_scan16', 'audio_mix_preclip_peak', 'audio_mix_over', 'audio_mix_invalid', 'audio_tail',
            'audio_mix_begin', 'audio_mix_add', 'audio_mix_tail', 'audio_mix_end']
 
 def main():

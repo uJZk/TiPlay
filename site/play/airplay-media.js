@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import { canDecodeCastAudio, castAudioBuffers } from './airplay-libav.js';
+import { playbackTempo, updateVideoTempoCorrection, VIDEO_SYNC_MIN_MS, VIDEO_SYNC_MAX_MS } from './audio-tempo-policy.js';
 import { readAudioPlaybackStats } from './audio-playback-stats.js';
 import { createFrameCanvas } from './airplay-canvas.js';
-import { createTempoProcessor, downmixStereo } from './airplay-tempo.js';
-import { loadSoundTouch, soundTouchSimdSupported } from './vendor/soundtouch/soundtouch.js';
+import { createTempoProcessor } from './airplay-tempo.js';
+import { loadSoundTouch } from './vendor/soundtouch/soundtouch.js';
 import { audioTrackLabel, createAudioTrackList, preferredAudioTrack } from './airplay-audio-tracks.js';
 import { fetchSdrMediaResource, hasHdrTransfer, requireSdrTrack, sdrError } from './airplay-sdr.js';
 import { decodableAudioTracks, selectPlayableTrack } from './airplay-track-selection.js';
@@ -159,7 +161,7 @@ export function createMediaEngine(surface, options = {}) {
     // Naturally completed source coverage is already processed, even if the
     // getter is held back or its decoded queue entries have been released.
     const completed = item?.audioCompletion.completedEnd;
-    return Number.isFinite(completed) ? Math.max(estimate, Math.min(completed, limit)) : estimate;
+    return Number.isFinite(completed) && !item?.syncStamp ? Math.max(estimate, Math.min(completed, limit)) : estimate;
   }
   function updatePosition() { position = readPosition(); }
   function stopNodes(item, preserveContinuity = false) {
@@ -177,8 +179,9 @@ export function createMediaEngine(surface, options = {}) {
       ? Math.min(item.lastRequestedAudioEnd, context.currentTime) : null;
     item.audioSubmitEnd = preserveContinuity && item.audioSubmitEnd !== null && context
       ? Math.min(item.audioSubmitEnd, context.currentTime) : null;
+    item.audioSegments.length = 0; item.syncStamp = null; item.sync = {};
     for (const chunk of item.audio) chunk.scheduledFrames = Math.max(0, Math.min(chunk.channels[0].length,
-      frameCeil(position, chunk.start, chunk.sampleRate / rate, origin)));
+      frameCeil(position, chunk.start, chunk.sampleRate / chunk.tempo, origin)));
   }
   function freeze(preserveAudioContinuity = false) {
     updatePosition(); running = false;
@@ -261,6 +264,7 @@ export function createMediaEngine(surface, options = {}) {
       videoReady: false, audioReady: false, metadataReady: false, nodes: new Set(), scheduledEnd: position,
       audioCompletion: { pending: 0, completedEnd: null, naturalEnd: null },
       start: position, audioEnd: position, tempo: null, tempoRate: null, tempoStart: position, tempoOutput: 0,
+      sync: {}, syncStamp: null, syncState: 'unavailable', syncErrorMs: null, audioSegments: [], audioDecodeLast: null, tempoTransition: null,
       videoReadPending: false, audioReadPending: false, videoReadStarted: null, audioReadStarted: null,
       audioSourceRate: null, audioSourceChannels: null, audioDecodedFrames: 0, audioSeekTrimmedFrames: 0,
       audioOverlapTrimmedFrames: 0, audioAlignedPackets: 0, audioAlignmentMaxUs: 0, audioSilenceFrames: 0,
@@ -330,9 +334,9 @@ export function createMediaEngine(surface, options = {}) {
     session.input = input;
     item.input = input;
     session.tracksPromise ||= (async () => {
-      const selection = { signal: session.controller.signal };
+      const selection = { signal: session.controller.signal, canDecode: canDecodeCastAudio };
       setStartupPhase(session, 'video-selection');
-      const video = await selectPlayableTrack(query => input.getPrimaryVideoTrack(query), { ...selection, video: true });
+      const video = await selectPlayableTrack(query => input.getPrimaryVideoTrack(query), { ...selection, video: true, canDecode: track => track.canDecode() });
       // An HLS master can expose mutually exclusive variants; pair the selected video with its audio.
       setStartupPhase(session, 'audio-selection');
       const audio = await selectPlayableTrack(query => video ? video.getPrimaryPairableAudioTrack(query)
@@ -362,7 +366,7 @@ export function createMediaEngine(surface, options = {}) {
     if (session.audioAlternatives?.length) item.audioTrack = session.audioAlternatives.find(candidate => candidate.id === session.selectedAudio)?.track;
     const selected = [item.videoTrack, item.audioTrack].filter(Boolean);
     if (!selected.length) throw new DOMException('This resource contains no audio or video.', 'NotSupportedError');
-    const decodable = await Promise.all(selected.map(track => track.canDecode()));
+    const decodable = await Promise.all(selected.map(track => track === item.audioTrack ? canDecodeCastAudio(track) : track.canDecode()));
     if (!active(item)) return;
     if (decodable.some(value => !value)) throw new DOMException('This browser cannot decode the media codec.', 'NotSupportedError');
     const [first, end, live, nextWidth, nextHeight] = await Promise.all([
@@ -545,33 +549,58 @@ export function createMediaEngine(surface, options = {}) {
     try { return await prepare; }
     finally { if (contextPreparation === prepare) contextPreparation = null; }
   }
-  function appendAudio(item, channels, sampleRate, start) {
+  function appendAudio(item, channels, sampleRate, start, tempo = rate) {
     if (!channels[0]?.length) return;
     // Bound even pathological files with giant audio packets by splitting into 250 ms chunks.
     const block = Math.max(1, Math.round(sampleRate * 0.25));
     for (let offset = 0; offset < channels[0].length; offset += block) {
       const length = Math.min(block, channels[0].length - offset);
-      const a = start + offset / sampleRate * rate;
-      const b = start + (offset + length) / sampleRate * rate;
+      const a = start + offset / sampleRate * tempo;
+      const b = start + (offset + length) / sampleRate * tempo;
       item.audio.push({ channels: channels.map(channel => channel.slice(offset, offset + length)), sampleRate,
-        start: a, end: b, scheduledFrames: 0 });
+        start: a, end: b, tempo, scheduledFrames: 0 });
     }
-    item.audioEnd = start + channels[0].length / sampleRate * rate; item.audioReady = true;
+    item.audioDecodeLast = channels.map(channel => channel.at(-1));
+    item.audioEnd = start + channels[0].length / sampleRate * tempo; item.audioReady = true;
   }
   function appendStretched(item, samples, sampleRate) {
     if (!samples) return;
     const frames = samples.length / 2, left = new Float32Array(frames), right = new Float32Array(frames);
     for (let i = 0; i < frames; i++) { left[i] = samples[i * 2]; right[i] = samples[i * 2 + 1]; }
-    const start = item.tempoStart + item.tempoOutput / sampleRate * rate;
+    const transition = item.tempoTransition;
+    if (transition) {
+      for (let i = 0; i < frames && transition.remaining > 0; i++, transition.remaining--) {
+        const alpha = 1 - (transition.remaining - 1) / transition.total;
+        left[i] = left[i] * alpha + transition.last[0] * (1 - alpha);
+        right[i] = right[i] * alpha + transition.last[transition.last.length - 1] * (1 - alpha);
+      }
+      if (!transition.remaining) item.tempoTransition = null;
+    }
+    const start = item.tempoStart;
     item.tempoOutput += frames;
-    appendAudio(item, [left, right], sampleRate, start);
+    appendAudio(item, [left, right], sampleRate, start, item.tempoRate);
+    item.tempoStart += frames / sampleRate * item.tempoRate;
   }
   async function pumpAudio(item, lib) {
-    const tempoCore = rate === 1 ? null : soundTouchSimdSupported() ? await loadSoundTouch() : lib.SoundTouchCore;
+    let tempoCore;
     if (!active(item)) return;
-    const iterator = new lib.AudioBufferSink(item.audioTrack).buffers(origin + item.start)[Symbol.asyncIterator]();
+    const iterator = castAudioBuffers(lib, item.audioTrack, origin + item.start, { signal: item.controller.signal,
+      onBackend: backend => { item.audioDecoderBackend = backend; } })[Symbol.asyncIterator]();
     item.iterators.push(iterator);
     let sampleRate = null, decodedEnd = item.start, hasDecoded = false;
+    const submit = async (channels, start) => {
+      const nextTempo = playbackTempo(rate, item.sync.catchUpCorrection || 0);
+      if (!item.tempo && nextTempo === 1) { appendAudio(item, channels, sampleRate, start); return; }
+      if (!item.tempo) {
+        tempoCore ||= await loadSoundTouch();
+        if (!active(item)) return;
+        item.tempo = createTempoProcessor(tempoCore, sampleRate, nextTempo); item.tempoStart = start;
+        if (item.audioDecodeLast) item.tempoTransition = { last: item.audioDecodeLast,
+          total: Math.max(1, Math.round(sampleRate * .005)), remaining: Math.max(1, Math.round(sampleRate * .005)) };
+      } else if (nextTempo !== item.tempoRate) item.tempo.setTempo(nextTempo);
+      item.tempoRate = nextTempo;
+      appendStretched(item, item.tempo.pushChannels(channels), sampleRate);
+    };
     const complete = () => {
       if (item.tempo) appendStretched(item, item.tempo.finish(), sampleRate);
       item.audioDone = true; item.audioReady = true; notify(item);
@@ -646,23 +675,11 @@ export function createMediaEngine(surface, options = {}) {
           const cursor = decodedEnd + filled / sampleRate;
           const silence = new Float32Array(length);
           item.audioSilenceFrames += length;
-          if (rate === 1) appendAudio(item, [silence, silence], sampleRate, cursor);
-          else {
-            if (!item.tempo) { item.tempo = createTempoProcessor(tempoCore, sampleRate, rate); item.tempoStart = cursor; }
-            appendStretched(item, item.tempo.push(silence), sampleRate);
-          }
+          await submit([silence, silence], cursor);
           filled += length; notify(item);
         }
       }
-      if (rate === 1) appendAudio(item, channels, sampleRate, actualStart);
-      else {
-        if (!item.tempo) { item.tempo = createTempoProcessor(tempoCore, sampleRate, rate); item.tempoStart = actualStart; }
-        if (item.tempo.pushChannels) appendStretched(item, item.tempo.pushChannels(channels), sampleRate);
-        else {
-          const stereo = downmixStereo(channels);
-          appendStretched(item, item.tempo.push(stereo[0], stereo[1]), sampleRate);
-        }
-      }
+      await submit(channels, actualStart);
       decodedEnd = actualStart + channels[0].length / sampleRate; hasDecoded = true;
       if (Number.isFinite(duration) && decodedEnd >= duration - playbackEpsilon(item, decodedEnd, duration)) {
         // A finite container can exclude a decoder's padding. It must not wait
@@ -819,7 +836,13 @@ export function createMediaEngine(surface, options = {}) {
       videoSinkReadPendingMs: item?.videoReadPending ? Math.max(0, (now() - item.videoReadStarted) * 1000) : 0,
       lastSampleAgeMs: Number.isFinite(item?.lastSampleAt) ? Math.max(0, (now() - item.lastSampleAt) * 1000) : undefined,
       audioResumeRequests, audioResumeCompleted, audioResumeFailed,
-      audioSourceRate: item?.audioSourceRate, audioSourceChannels: item?.audioSourceChannels,
+      audioDecoderBackend: item?.audioDecoderBackend, audioSourceRate: item?.audioSourceRate, audioSourceChannels: item?.audioSourceChannels,
+      manualPlaybackRate: rate, automaticPlaybackRate: 1 + (item?.sync.catchUpCorrection || 0),
+      effectivePlaybackRate: playbackTempo(rate, item?.sync.catchUpCorrection || 0),
+      audioAppliedTempo: item?.tempoRate ?? rate,
+      audioVideoSyncState: item?.syncState || 'unavailable', audioVideoSyncErrorMs: item?.syncErrorMs,
+      audioVideoSyncMinimumMs: VIDEO_SYNC_MIN_MS, audioVideoSyncMaximumMs: VIDEO_SYNC_MAX_MS,
+      audioSyncControlDelayMs: item?.sync.controlDelayMs, audioSyncResponseMs: item?.sync.responseHorizonMs,
       audioTempoBackend: item?.tempo?.backend || 'none',
       audioRequestedContextRate, audioContextRate: context?.sampleRate,
       audioDecodedFrames: item?.audioDecodedFrames, audioSeekTrimmedFrames: item?.audioSeekTrimmedFrames,
@@ -875,24 +898,24 @@ export function createMediaEngine(surface, options = {}) {
   function scheduleAudio(item, mediaEnd) {
     if (!item.audioTrack || !context || context.state !== 'running' || context.sampleRate !== item.audioSourceRate) return;
     const target = Math.min(mediaEnd, position + MAX_AUDIO_SCHEDULE * rate, Number.isFinite(duration) ? duration : Infinity);
-    let cursor = Math.max(position, item.scheduledEnd);
+    let cursor = item.audioSubmitEnd === null ? Math.max(position, item.scheduledEnd) : item.scheduledEnd;
     for (const chunk of item.audio) {
       if (chunk.end <= cursor) continue;
       if (chunk.start > cursor + 0.025 || cursor >= target) break;
       // A just-decoded chunk can arrive behind the playback cursor. Clip that
       // first submission once, then advance only by samples actually submitted.
       const offset = Math.max(chunk.scheduledFrames,
-        Math.min(chunk.channels[0].length, Math.max(0, frameCeil(cursor, chunk.start, chunk.sampleRate / rate, origin))));
+        Math.min(chunk.channels[0].length, Math.max(0, frameCeil(cursor, chunk.start, chunk.sampleRate / chunk.tempo, origin))));
       const atContainerEnd = Number.isFinite(duration) && Math.abs(target - duration) <= playbackEpsilon(item, target, duration);
-      const limit = atContainerEnd ? frameCeil(target, chunk.start, chunk.sampleRate / rate, origin)
-        : Math.floor((target - chunk.start) / rate * chunk.sampleRate
-          + frameEpsilon(origin + target, origin + chunk.start, chunk.sampleRate / rate));
+      const limit = atContainerEnd ? frameCeil(target, chunk.start, chunk.sampleRate / chunk.tempo, origin)
+        : Math.floor((target - chunk.start) / chunk.tempo * chunk.sampleRate
+          + frameEpsilon(origin + target, origin + chunk.start, chunk.sampleRate / chunk.tempo));
       const length = Math.min(chunk.channels[0].length - offset, limit - offset);
       if (length < 1) continue;
-      const start = chunk.start + offset / chunk.sampleRate * rate;
-      const end = Math.min(chunk.start + (offset + length) / chunk.sampleRate * rate,
+      const start = chunk.start + offset / chunk.sampleRate * chunk.tempo;
+      const end = Math.min(chunk.start + (offset + length) / chunk.sampleRate * chunk.tempo,
         Number.isFinite(duration) ? duration : Infinity);
-      const nodeDuration = (end - start) / rate;
+      const nodeDuration = (end - start) / chunk.tempo;
       const buffer = context.createBuffer(chunk.channels.length, length, chunk.sampleRate);
       chunk.channels.forEach((channel, index) => buffer.copyToChannel(channel.subarray(offset, offset + length), index));
       const node = context.createBufferSource(); node.buffer = buffer; node.connect(gain);
@@ -912,7 +935,8 @@ export function createMediaEngine(surface, options = {}) {
       };
       // Every node uses the same anchor as currentTime and the video presenter.
       const expected = clockTime + (start - clockPosition) / rate;
-      const when = Math.max(context.currentTime, expected, item.audioSubmitEnd ?? 0);
+      const synchronized = Boolean(item.syncStamp) || Math.abs(chunk.tempo - rate) > 1e-9;
+      const when = Math.max(context.currentTime, synchronized ? item.audioSubmitEnd ?? expected : expected, item.audioSubmitEnd ?? 0);
       if (when > expected + 0.5 / chunk.sampleRate) {
         item.audioLateStarts++; item.audioLateStartMaxMs = Math.max(item.audioLateStartMaxMs, (when - expected) * 1000);
       }
@@ -934,12 +958,15 @@ export function createMediaEngine(surface, options = {}) {
       // precision or freshness as proof that samples have played.
       const observedFence = Math.max(when, context.currentTime);
       item.audioSubmitUncertaintyMaxMs = Math.max(item.audioSubmitUncertaintyMaxMs, (observedFence - when) * 1000);
-      if (observedFence > expected) {
+      if ((!synchronized || item.audioSubmitEnd === null) && observedFence > expected) {
         // Shift the shared mapping without treating the submitted future tail
         // as already played. Even a one-ulp tail correction must preserve the
         // current media cursor rather than advancing it to this node's start.
         clockTime += observedFence - expected; updatePosition();
       }
+      item.audioSegments.push({ when, until: when + nodeDuration, start, end, tempo: chunk.tempo });
+      // Bounded evidence even on browsers without a usable native output timestamp.
+      while (item.audioSegments.length > 256) item.audioSegments.shift();
       item.lastRequestedAudioEnd = when + nodeDuration;
       item.audioSubmitEnd = observedFence + nodeDuration;
       chunk.scheduledFrames = offset + length; item.audioScheduledFrames += length;
@@ -969,12 +996,47 @@ export function createMediaEngine(surface, options = {}) {
       : 'Media sample reading made no progress without an active resource request.', 'TimeoutError'));
     return false;
   }
+  function synchronizeAudio(item) {
+    item.syncErrorMs = null;
+    let stamp;
+    try { stamp = context?.getOutputTimestamp?.(); } catch (_) {}
+    let reason = !running || paused || seeking ? 'inactive'
+      : !held || held.serial !== item.serial || !item.videoTrack || !item.audioTrack ? 'no-video-reference'
+      : !stamp || !Number.isFinite(stamp.contextTime) || !Number.isFinite(stamp.performanceTime)
+        || stamp.contextTime < 0 || stamp.performanceTime <= 0 ? 'no-output-timestamp'
+      : Math.abs(now() * 1000 - stamp.performanceTime) > 250 ? 'stale-output-timestamp' : null;
+    const previous = item.syncStamp;
+    if (!reason && previous) {
+      const wall = stamp.performanceTime - previous.performanceTime, graph = (stamp.contextTime - previous.contextTime) * 1000;
+      if (wall === 0 && graph === 0) return;
+      if (wall <= 0 || graph < 0 || Math.abs(graph - wall) > Math.max(10, wall * .05)) reason = 'output-timestamp-discontinuity';
+    }
+    const segment = !reason && item.audioSegments.find(part => stamp.contextTime >= part.when && stamp.contextTime < part.until);
+    if (!reason && !segment) reason = 'no-submitted-audio';
+    if (reason) {
+      item.syncState = reason; item.sync = {}; item.syncStamp = null;
+      return;
+    }
+    item.syncStamp = stamp;
+    const audioPosition = segment.start + (stamp.contextTime - segment.when) * segment.tempo;
+    // A legitimate still-image interval is a video reference range, not a frozen clock.
+    const videoPosition = held.end - held.start > VIDEO_SYNC_MAX_MS / 1000 ? Math.min(held.end, Math.max(held.start, audioPosition)) : held.start;
+    const error = (audioPosition - videoPosition) * 1000;
+    item.syncErrorMs = error; item.syncState = 'native-output-and-video-frame';
+    item.sync.manualPlaybackRate = rate;
+    item.sync.controlDelayMs = Math.max(0, (item.audioEnd - audioPosition) * 1000 / rate);
+    item.sync.phaseCorrectionPpm = (segment.tempo / rate - 1) * 1e6;
+    updateVideoTempoCorrection(item.sync, error, now() * 1000, 1000 / 60);
+    // Feed the actually available multiplier back when the shared 0.25–4x limit binds.
+    item.sync.catchUpCorrection = playbackTempo(rate, item.sync.catchUpCorrection) / rate - 1;
+    while (item.audioSegments.length && item.audioSegments[0].until <= stamp.contextTime) item.audioSegments.shift();
+  }
   function tick() {
     animation = null;
     if (disposed) return;
     const item = generation;
     if (!item) return;
-    updatePosition(); presentDue(item, position); publishClock();
+    updatePosition(); presentDue(item, position); synchronizeAudio(item); publishClock();
     while (item.audio.length && item.audio[0].end <= position - FRAME_EPSILON) item.audio.shift();
     notifyRoom(item);
     if (item.metadataReady && item.videoDone && item.audioDone) {

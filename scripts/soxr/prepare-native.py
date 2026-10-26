@@ -4,7 +4,7 @@
 import argparse, hashlib, pathlib, re, shutil, subprocess, tarfile, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SOURCE = ROOT / 'site/play/vendor/soxr/source'
+SOURCE = ROOT / 'scripts/soxr/vendor/source'
 TARGET = ROOT / 'shared/src/main/jni/soxr'
 FILES = ['soxr.c', 'soxr.h', 'data-io.c', 'data-io.h', 'vr32.c', 'vr-coefs.h',
          'internal.h', 'std-types.h', 'math-wrap.h', 'fifo.h', 'filter.h']
@@ -26,7 +26,7 @@ def prepare(output):
             lambda match: '#define ' + match[1] + ' ' + str(int(match[1] in enabled)),
             (tree / 'soxr-config.h.in').read_text()))
         for name in ['COPYING.LGPL', 'LICENCE']:
-            shutil.copyfile(ROOT / 'site/play/vendor/soxr' / name, output / name)
+            shutil.copyfile(ROOT / 'scripts/soxr/vendor' / name, output / name)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

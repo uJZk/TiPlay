@@ -476,3 +476,11 @@ test('renderer statistics use bounded scalar metadata and the existing healthy c
     assert.equal(hostile, null);
   } finally { diagnostics.dispose(); }
 });
+
+
+test('shared tempo evidence keeps manual intent and signed video error distinct', () => {
+  const values = { manualPlaybackRate: 2, automaticPlaybackRate: .98, effectivePlaybackRate: 1.96,
+    audioAppliedTempo: 2, audioVideoSyncErrorMs: -46, audioVideoSyncMinimumMs: -45, audioVideoSyncMaximumMs: 125,
+    audioVideoSyncState: 'native-output-and-video-frame', audioSyncControlDelayMs: 2500, audioSyncResponseMs: 5000 };
+  assert.deepEqual(playbackDiagnostics({ getPlaybackDiagnostics: () => values }), values);
+});

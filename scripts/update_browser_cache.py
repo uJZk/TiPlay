@@ -8,7 +8,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / 'site/play'
-RUNTIME_SUFFIXES = {'.js', '.wasm', '.css', '.html', '.svg', '.png'}
+RUNTIME_SUFFIXES = {'.js', '.mjs', '.wasm', '.css', '.html', '.svg', '.png'}
 
 
 def assets():

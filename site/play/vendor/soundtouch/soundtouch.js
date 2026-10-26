@@ -119,6 +119,10 @@ function createProcessor(module, sampleRate, rate) {
     } catch (cause) { close(); throw cause; }
   }
   return {
+    setTempo(nextRate) {
+      assertOpen();
+      if (!Number.isFinite(nextRate) || !engine.tempo_set(handle, nextRate)) throw new RangeError('Invalid playback tempo.');
+    },
     push: pushStereo,
     pushChannels,
     finish() {

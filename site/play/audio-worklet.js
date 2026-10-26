@@ -1,498 +1,170 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
+import { NetEqRuntime, prepareNetEq } from './neteq.js';
+import { NetEqAudio } from './neteq-audio.js';
 import { AudioEvidence } from './audio-evidence.js';
-import { LiveTempoRuntime, prepareLiveTempo } from './live-tempo.js';
-import { PcmTimeline } from './pcm-timeline.js';
-import { initialPlaybackPlans, audioDelayAt, audioLimit } from './playback-window.js';
-import { BUFFERED_AUDIO_WINDOW_MS } from './audio-buffer-policy.js';
-import { SoxrRuntime, prepareSoxr } from './streaming-resampler.js';
 import { AudioKernel, prepareAudioCore } from './wasm/audio-core.js';
-import { ContinuousAudio, AUDIO_FADE_MS, AUDIO_RECOVERY_ERROR_MS } from './continuous-audio.js';
-import { rateProjectionUncertainty } from './audio-device-clock.js';
 
-const purpose = (type, stream) => stream.semanticType ?? type;
-const isVoice = (type, stream) => purpose(type, stream) >= 1 && purpose(type, stream) <= 4;
-const isMedia = (type, stream) => purpose(type, stream) === 0 || purpose(type, stream) === 6;
-const SPEECH_START_BUFFER_MS = 20;
-const MEDIA_DUCK_GAIN = 0.2;
+const FADE_MS = 5, DUCK_GAIN = .2, MAX_STREAMS = 16;
 
+/** Live audio follows packet supply. Video/source clock estimates never steer it. */
 class TiPlayAudio extends AudioWorkletProcessor {
   constructor(options = {}) {
     super();
-    if (options.processorOptions?.soxrModule) prepareSoxr(options.processorOptions.soxrModule);
+    if (options.processorOptions?.neteqModule) prepareNetEq(options.processorOptions.neteqModule);
     if (options.processorOptions?.audioCoreModule) prepareAudioCore(options.processorOptions.audioCoreModule);
-    if (options.processorOptions?.liveTempoModule) prepareLiveTempo(options.processorOptions.liveTempoModule);
-    this.streams = new Map();
-    this.timelines = new Map(); this.epochs = new Map(); this.delayPlans = initialPlaybackPlans(); this.clockBase = null;
-    this.plansByMode = {};
-    this.diagnostics = null; this.lastReportTime = -Infinity; this.diagnosticRevision = null; this.playbackGeneration = null;
-    this.runtime = new SoxrRuntime({ allowCalibration: false }); this.clock = null; this.contextAnchor = null; this.localTimeOriginMs = 0;
-    this.runtime.liveTempo = new LiveTempoRuntime();
-    this.kernel = this.runtime.audioKernel = new AudioKernel();
-    this.evidence = null;
-    this.renderedFrames = 0; this.feedbackSequence = 0; this.lastFeedbackMs = -Infinity; this.suspended = false;
-    this.renderQuantumMaxFrames = 0;
-    this.nextContextFrame = null; this.outputUncertaintyMs = 0; this.outputMethod = null;
-    this.renderDomainGeneration = 0; this.renderDomainStartFrame = null; this.renderDomainNextFrame = null;
-    this.renderProbeToken = 0; this.pendingRenderProbe = null;
-    this.deviceClock = { rate: 1 }; this.arrivalAnchor = null;
-    this.retiring = [];
-    this.continuous = [];
-    this.mediaGain = 1;
-    this.mediaGainStep = (1 - MEDIA_DUCK_GAIN) / Math.max(1, Math.round(AUDIO_FADE_MS * sampleRate / 1000));
-    this.disposed = false;
-    this.port.onmessage = ({ data }) => {
-      if (this.disposed) return;
-      if (data.dispose) {
-        this.evidence?.flush();
-        for (const timeline of this.timelines.values()) timeline.clear();
-        this.timelines.clear();
-        for (const [type, stream] of this.streams) for (const pcm of stream.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', type);
-        this.streams.clear(); this.epochs.clear(); this.retiring = []; this.runtime = null; this.disposed = true;
-        return;
-      }
-      const contextMs = this.renderContextMs();
-      if (Number.isSafeInteger(data.renderProbe) && data.renderProbe > this.renderProbeToken) {
-        this.renderProbeToken = data.renderProbe; this.pendingRenderProbe = data.renderProbe;
-      }
-      if (data.evidenceTrigger && this.evidence) this.evidence.trigger(data.evidenceTrigger.reason, data.evidenceTrigger.detail);
-      if (data.calibration) {
-        const { rate, outputRate, delayMs } = data.calibration;
-        if (outputRate !== sampleRate) throw new Error('Audio calibration output rate does not match the device.');
-        this.runtime.setCalibration(rate, outputRate, delayMs);
-      }
-      if (data.prepare) {
-        const { id, rate, outputRate } = data.prepare;
-        let backend;
-        try {
-          if (outputRate !== sampleRate) throw new Error('Invalid audio preparation output rate.');
-          this.runtime.filterDelay(rate, outputRate); // Cache only; never measure on this thread.
-          backend = this.runtime.create(rate, outputRate, 2);
-          const input = new Float32Array(4096 * 2), output = new Float32Array(512 * 2);
-          backend.process(input, 4096, output);
-          for (let i = 0; i < 8; i++) backend.process(input, 0, output);
-          this.port.postMessage({ prepared: id });
-        } catch (error) { this.port.postMessage({ prepareError: id, error: error.message || String(error) }); }
-        finally { backend?.dispose(); }
-        return;
-      }
-      if ('clock' in data) this.clock = data.clock;
-      if (data.deviceClock && Number.isFinite(data.deviceClock.rate) && data.deviceClock.rate >= 0.98 && data.deviceClock.rate <= 1.02) {
-        // Integrate changes without moving guidance's existing arrival anchor.
-        this.arrivalAnchor = { contextTimeMs: contextMs, timeMs: this.arrivalTime(contextMs) };
-        // A generation identifies the timestamp measurement fit, not a jump in
-        // emitted samples. Suspend and the actual render counter recover below;
-        // restarting a noisy fit must preserve the live resampler signal.
-        this.deviceClock = data.deviceClock;
-      }
-      if ('contextAnchor' in data) this.contextAnchor = data.contextAnchor;
-      if ('outputMethod' in data) this.outputMethod = data.outputMethod;
-      if ('localTimeOriginMs' in data) this.localTimeOriginMs = data.localTimeOriginMs;
-      if ('outputUncertaintyMs' in data) this.outputUncertaintyMs = data.outputUncertaintyMs;
-      if ('suspended' in data) {
-        if (data.suspended && !this.suspended) for (const [type, timeline] of this.timelines) if (timeline instanceof ContinuousAudio) {
-          if (timeline.arrivalPlayback) { this.retireTimeline(timeline); this.timelines.delete(type); }
-          else timeline.recover('suspended');
-        }
-        this.suspended = data.suspended;
-      }
-      if (typeof data.debug === 'boolean') {
-        this.evidence?.flush();
-        this.evidence = data.debug ? new AudioEvidence(sampleRate, evidence => this.port.postMessage({ evidence,
-          diagnosticRevision: this.diagnosticRevision, playbackGeneration: this.playbackGeneration })) : null;
-        this.diagnostics = data.debug ? { processCalls: 0, renderFrames: 0, renderNonzero: 0, renderPeak: 0, streams: {} } : null;
-        this.diagnosticRevision = data.diagnosticRevision;
-        this.playbackGeneration = Number.isSafeInteger(data.generation) ? data.generation : null;
-        this.lastReportTime = -Infinity;
-
-        for (const timeline of this.timelines.values()) { timeline.debug(data.debug); this.watchTimeline(timeline); }
-      }
-      if (data.plans) this.delayPlans = data.plans;
-      if (data.plansByMode) this.plansByMode = data.plansByMode;
-      if (data.clockBase !== undefined) this.clockBase = data.clockBase;
-      if (data.reset) {
-        this.playbackGeneration = Number.isSafeInteger(data.generation) ? data.generation : null;
-
-        for (const [type, stream] of this.streams) for (const pcm of stream.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', type);
-        this.streams.clear();
-        for (const timeline of this.timelines.values()) this.retireTimeline(timeline);
-        this.timelines.clear();
-        this.epochs.clear();
-      }
-      if (!data.pcm) return;
-      if (this.evidence && (data.flags & 2)) this.evidence.trigger('packet-reset', { type: data.type, epoch: data.epoch, sequence: data.sequence, frames: data.pcm.byteLength / 2 / data.channels });
-      this.playbackGeneration = Number.isSafeInteger(data.generation) ? data.generation : null;
-      const previousEpoch = this.epochs.get(data.type);
-      const previousTimeline = this.timelines.get(data.type);
-      if (previousEpoch !== undefined && ((data.epoch - previousEpoch) | 0) < 0) { this.credit(data.pcm.byteLength, data.generation, 'late', data.type); return; }
-      if (previousEpoch !== undefined && previousEpoch !== data.epoch) {
-        this.retireTimeline(this.timelines.get(data.type)); this.timelines.delete(data.type);
-        const legacy = this.streams.get(data.type);
-        if (legacy) for (const pcm of legacy.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', data.type);
-        this.streams.delete(data.type);
-      }
-      this.epochs.set(data.type, data.epoch);
-      if (!data.pcm.byteLength && data.flags & 2) {
-        if (previousTimeline && previousEpoch === data.epoch) this.retireTimeline(previousTimeline);
-        this.port.postMessage({ playout: { ...(previousTimeline instanceof ContinuousAudio ? previousTimeline.reference(contextMs) : {}),
-          type: data.type, semanticType: data.semanticType ?? data.type, mode: data.mode, epoch: data.epoch, generation: data.generation,
-          anchoring: previousTimeline?.arrivalPlayback ? 'arrival' : 'presentation',
-          clockGeneration: this.clock?.generation, contextTimeMs: contextMs,
-          state: data.ended === false ? 'priming' : 'ended', sequence: ++this.feedbackSequence } });
-        this.timelines.delete(data.type); return;
-      }
-      if (Number.isFinite(data.presentationMs) || this.clock?.version >= 2 && !Number.isFinite(data.sourceTime)) {
-        let timeline = this.timelines.get(data.type);
-        if (!(timeline instanceof ContinuousAudio) || timeline.rate !== data.rate || timeline.channels !== data.channels || timeline.epoch !== data.epoch || data.flags & 2) {
-          this.retireTimeline(timeline);
-          const mediaWindow = data.mode === 'carplay' && purpose(data.type, data) === 0;
-          timeline = new ContinuousAudio(this.runtime, data.rate, data.channels, sampleRate,
-            (bytes, reason, generation) => this.credit(bytes, generation, reason, data.type),
-            (data.flags & 1) || mediaWindow ? BUFFERED_AUDIO_WINDOW_MS : 1000,
-            { buffered: Boolean(data.flags & 1), mode: data.mode, type: data.type, semanticType: data.semanticType ?? data.type });
-          timeline.debug(Boolean(this.diagnostics)); this.watchTimeline(timeline); timeline.epoch = data.epoch; timeline.generation = data.generation;
-          timeline.arrivalPlayback = data.mode === 'carplay' && isVoice(data.type, data) && !Number.isFinite(data.presentationMs);
-          timeline.synchronized = !timeline.arrivalPlayback && Number.isFinite(data.presentationMs); this.timelines.set(data.type, timeline);
-        }
-        const legacy = this.streams.get(data.type);
-        if (legacy) { for (const pcm of legacy.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', data.type); this.streams.delete(data.type); }
-        // A first real anchor can arrive after either untimed mirror PCM or
-        // arrival-based guidance. Preserve the existing sample progress.
-        if (!timeline.synchronized && Number.isFinite(data.presentationMs)) timeline.synchronize(data);
-        if (timeline.arrivalPlayback) {
-          // Untimed guidance has no lip-sync relationship with the screen. Its sender may
-          // supply no lead at all, so a device-delay target can never catch its tail.
-          // Anchor the first sample to this render clock while retaining RTP gaps.
-          timeline.arrivalStartMs ??= this.arrivalTime(contextMs) + SPEECH_START_BUFFER_MS;
-          if (Number.isFinite(data.presentationMs)) timeline.arrivalSourceMs ??= data.presentationMs
-            - (timeline.lastPacket?.end ?? 0) * 1000 / timeline.rate;
-          data.presentationMs = Number.isFinite(data.presentationMs)
-            ? timeline.arrivalStartMs + data.presentationMs - timeline.arrivalSourceMs
-            : timeline.lastPacket ? timeline.sourceAnchorMs + timeline.lastPacket.end * 1000 / timeline.rate : timeline.arrivalStartMs;
-        } else if (!timeline.synchronized) {
-          const previous = timeline.lastPacket;
-          data.presentationMs = previous ? timeline.sourceAnchorMs + previous.end * 1000 / timeline.rate : this.targetTime(timeline, contextMs) ?? 0;
-        }
-        timeline.push(data, timeline.arrivalPlayback ? 1 : this.clock?.rate || 1, contextMs); return;
-      }
-      if (Number.isFinite(data.sourceTime)) {
-        let timeline = this.timelines.get(data.type);
-        if (!timeline || timeline.rate !== data.rate || timeline.channels !== data.channels || timeline.epoch !== data.epoch || data.flags & 2) {
-          this.retireTimeline(timeline);
-          // Realtime CarPlay media also arrives ahead of its negotiated playback time.
-          const mediaWindow = data.mode === 'carplay' && purpose(data.type, data) === 0;
-          timeline = new PcmTimeline(data.rate, data.channels,
-            (consumed, reason) => this.credit(consumed, data.generation, reason, data.type),
-            (data.flags & 1) || mediaWindow ? BUFFERED_AUDIO_WINDOW_MS : 1000, { buffered: Boolean(data.flags & 1) });
-          timeline.debug(Boolean(this.diagnostics)); this.watchTimeline(timeline);
-          timeline.epoch = data.epoch; this.timelines.set(data.type, timeline);
-        }
-        timeline.mode = data.mode; timeline.semanticType = data.semanticType ?? data.type;
-        const legacy = this.streams.get(data.type);
-        if (legacy) { for (const pcm of legacy.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', data.type); this.streams.delete(data.type); }
-        timeline.push(data); return;
-      }
-      const timed = this.timelines.get(data.type);
-      if (timed) { this.retireTimeline(timed); this.timelines.delete(data.type); }
-      const maximum = data.rate * (data.flags & 1 ? 2 : 0.25);
-      let stream = this.streams.get(data.type);
-      if (!stream || stream.rate !== data.rate || stream.channels !== data.channels || data.flags & 2) {
-        if (stream) for (const pcm of stream.queue) this.credit(pcm.byteLength, pcm.generation, 'reset', data.type);
-        stream = { rate: data.rate, channels: data.channels, semanticType: data.semanticType ?? data.type, queue: [], frames: 0, position: 0 };
-        this.streams.set(data.type, stream);
-      }
-      const pcm = new Int16Array(data.pcm), frames = pcm.length / data.channels;
-      pcm.generation = data.generation;
-      // A broken producer cannot grow memory without bound; drop the oldest whole packet.
-      while (stream.frames + frames > maximum && stream.queue.length) {
-        const old = stream.queue.shift();
-        stream.frames -= old.length / stream.channels; stream.position = 0;
-        this.credit(old.byteLength, old.generation, 'capacity', data.type);
-      }
-      if (frames > maximum) { this.credit(pcm.byteLength, pcm.generation, 'capacity', data.type); return; }
-      stream.queue.push(pcm); stream.frames += frames;
-    };
+    this.kernel = new AudioKernel(); this.mixing = []; this.retiring = [];
+    this.neteq = new NetEqRuntime();
+    this.streams = new Map(); this.epochs = new Map(); this.pending = new Map(); this.endedEpochs = new Map();
+    this.renderedFrames = 0; this.mediaGain = 1; this.disposed = false; this.suspended = false;
+    this.lastReportFrame = this.lastFeedbackFrame = 0; this.feedbackSequence = 0;
+    this.probeToken = 0; this.expectedFrame = null; this.domain = 0; this.domainStart = null; this.renderProbe = null;
+    this.localAnchor = null; this.generation = null; this.diagnostics = null; this.evidence = null;
+    this.port.onmessage = ({ data }) => this.message(data);
   }
-  credit(consumed, generation, reason, type) {
-    if (this.diagnostics && consumed) {
-      const counters = this.diagnostics.streams[type] ??= {};
-      counters[reason + 'Packets'] = (counters[reason + 'Packets'] || 0) + 1;
-      counters[reason + 'Bytes'] = (counters[reason + 'Bytes'] || 0) + consumed;
+  credit(type, bytes, generation, reason) {
+    if (bytes) this.port.postMessage({ consumed: bytes, generation });
+    if (this.diagnostics) {
+      const stream = this.diagnostics.streams[type] ??= {};
+      stream[reason + 'Bytes'] = (stream[reason + 'Bytes'] || 0) + bytes;
     }
-    this.port.postMessage({ consumed, generation });
   }
-  retireTimeline(timeline) {
-    if (!timeline) return;
-    if (timeline instanceof ContinuousAudio && timeline.last.some(value => value !== 0)) {
-      // Preserve one non-renewable 5ms edge, even after a source deadline.
-      // A partially rendered fade keeps only its remaining duration.
-      const remaining = Math.min(timeline.tailRemaining, timeline.fadeFrames);
-      if (remaining > 0) this.retiring.push({ samples: timeline.last.slice(), remaining, total: remaining,
-        type: timeline.type, semanticType: timeline.semanticType });
-      if (this.retiring.length > 16) this.retiring.shift();
+  reset() {
+    for (const stream of this.streams.values()) stream.clear();
+    this.streams.clear(); this.epochs.clear(); this.pending.clear(); this.endedEpochs.clear(); this.localAnchor = null;
+  }
+  message(data) {
+    if (this.disposed) return;
+    if (data.dispose) { this.evidence?.flush(); this.reset(); this.disposed = true; return; }
+    if (data.reset) { this.reset(); this.generation = data.generation; }
+    if (data.prepare) {
+      const { id, rate, outputRate } = data.prepare;
+      try {
+        if (rate !== 48000 || outputRate !== 48000 || sampleRate !== 48000) throw new Error('Audio output format changed.');
+        const stream = this.neteq.create('pcm', 1); stream.dispose();
+        this.port.postMessage({ prepared: id });
+      } catch (error) { this.port.postMessage({ prepareError: id, error: error.message }); }
+      return;
     }
-    timeline.clear();
-  }
-  watchTimeline(timeline) {
-    if (timeline instanceof ContinuousAudio) timeline.onEvidence = this.evidence
-      ? (reason, detail) => this.evidence?.trigger(reason, detail) : null;
-  }
-  report() {
-    const metrics = this.diagnostics;
-    if (!metrics) return;
-    const renderedMs = this.renderContextMs();
-    const { streams, ...scalars } = metrics, details = {};
-    for (const type of new Set([...Object.keys(streams).map(Number), ...this.timelines.keys(), ...this.streams.keys()])) {
-      const timeline = this.timelines.get(type), legacy = this.streams.get(type);
-      const fields = timeline ? { ...timeline.stats(), mode: timeline.mode, rate: timeline.rate, channels: timeline.channels, delayMs: timeline.delayMs ?? timeline.networkDelayMs }
-        : { queueBytes: legacy?.queue.reduce((bytes, pcm) => bytes + pcm.byteLength, 0) ?? 0, queuePackets: legacy?.queue.length ?? 0, rate: legacy?.rate, channels: legacy?.channels };
-      details['stream' + type] = { ...fields, epoch: this.epochs.get(type), ...streams[type] };
+    if (typeof data.debug === 'boolean') {
+      this.evidence?.flush(); this.diagnosticRevision = data.diagnosticRevision; this.generation = data.generation;
+      this.diagnostics = data.debug ? { processCalls: 0, renderFrames: 0, renderNonzero: 0, renderPeak: 0, streams: {} } : null;
+      this.evidence = data.debug ? new AudioEvidence(sampleRate, evidence => this.port.postMessage({ evidence,
+        diagnosticRevision: this.diagnosticRevision, playbackGeneration: this.generation })) : null;
     }
-    this.port.postMessage({ diagnosticRevision: this.diagnosticRevision, playbackGeneration: this.playbackGeneration,
-      evidenceBaseline: this.evidence?.baseline(),
-      diagnostics: { ...scalars, ...details, ...this.evidence?.stats(), renderTimeMs: renderedMs } });
-  }
-  renderContextMs() {
-    // Integrate the actual emitted frame count. The main-thread/public time
-    // getter can stall, batch or jump without moving this graph's sample cursor.
-    if (Number.isSafeInteger(this.nextContextFrame) && this.nextContextFrame >= 0)
-      return this.nextContextFrame * 1000 / sampleRate;
-    if (typeof currentFrame === 'number' && Number.isSafeInteger(currentFrame) && currentFrame >= 0)
-      return currentFrame * 1000 / sampleRate;
-    // A counterless compatibility host starts in an unverified local domain.
-    // Do not let a public time getter invent this domain's origin or slope.
-    return 0;
-  }
-  arrivalTime(contextMs) {
-    return this.arrivalAnchor ? this.arrivalAnchor.timeMs + (contextMs - this.arrivalAnchor.contextTimeMs) / this.deviceClock.rate : contextMs;
-  }
-  outputUncertainty(contextMs, frames = 0) {
-    if (!this.contextAnchor || !Number.isFinite(this.outputUncertaintyMs)) return this.outputUncertaintyMs;
-    const start = contextMs - this.contextAnchor.contextTimeMs, end = start + frames * 1000 / sampleRate;
-    return this.outputUncertaintyMs + rateProjectionUncertainty(Math.max(Math.abs(start), Math.abs(end)), this.deviceClock.rate);
-  }
-  deadline(timeline, contextMs) {
-    const outputAt = this.contextAnchor && this.contextAnchor.localTimeMs
-      + (contextMs - this.contextAnchor.contextTimeMs) / this.deviceClock.rate;
-    const unknownReason = timeline.arrivalPlayback ? 'arrival-anchored' : !timeline.synchronized ? 'source-anchor-unavailable'
-      : this.renderDomainNextFrame === null ? 'output-clock-unavailable'
-      : !this.contextAnchor || !Number.isFinite(this.outputUncertaintyMs) || this.outputMethod === 'latency-estimate' ? 'output-clock-unavailable'
-      : !this.clock || this.clock.state === 'stale' ? 'source-clock-unavailable'
-      : !Number.isFinite(this.clock.uncertaintyMs) ? 'clock-uncertainty-unavailable' : null;
-    return unknownReason ? { unknownReason } : {
-      outputAt, limitMs: audioLimit(timeline.mode),
-      uncertaintyMs: Math.max(0, this.outputUncertaintyMs) + Math.max(0, this.clock.uncertaintyMs) + timeline.filterUncertaintyMs,
-      projectionContextMs: contextMs - this.contextAnchor.contextTimeMs, projectionRate: this.deviceClock.rate,
-    };
-  }
-  targetTime(timeline, contextMs, frames = 0) {
-    if (this.suspended) return null;
-    if (timeline.arrivalPlayback) {
-      const renderMs = this.arrivalTime(contextMs), target = renderMs - (timeline.arrivalDelayMs || 0), tail = timeline.queue.at(-1);
-      if (!timeline.backend && tail && target >= timeline.sourceAnchorMs + tail.end * 1000 / timeline.rate) {
-        // After a delivery pause the source may remain behind the render clock.
-        // Re-prime from unplayed samples once, instead of chasing its moving tail.
-        const firstFrame = Math.max(timeline.queue[0].first, Math.ceil(timeline.sourceFrame));
-        const next = Math.max(timeline.rawCursorMs ?? -Infinity,
-          timeline.sourceAnchorMs + firstFrame * 1000 / timeline.rate - timeline.filterDelayMs);
-        timeline.arrivalDelayMs = renderMs - next + SPEECH_START_BUFFER_MS;
-        return next - SPEECH_START_BUFFER_MS;
-      }
-      return target;
+    if (Number.isSafeInteger(data.renderProbe) && data.renderProbe > this.probeToken) { this.probeToken = data.renderProbe; this.renderProbe = data.renderProbe; }
+    if ('suspended' in data && data.suspended !== this.suspended) {
+      this.suspended = data.suspended;
+      if (this.suspended) { this.evidence?.trigger('suspended'); this.reset(); }
     }
-    if (!this.contextAnchor) return null;
-    const localMs = this.contextAnchor.localTimeMs + (contextMs - this.contextAnchor.contextTimeMs) / this.deviceClock.rate;
-    const plans = this.plansByMode[timeline.mode] ?? this.delayPlans;
-    // Reserve the resampler's phase-recovery window inside this track's own
-    // deadline. Its actual emitted source cursor is checked separately below.
-    const uncertainty = Math.max(0, this.outputUncertainty(contextMs, frames) || 0) + timeline.filterUncertaintyMs
-      + Math.max(0, this.clock?.uncertaintyMs || 0);
-    const latest = audioLimit(timeline.mode) - uncertainty - AUDIO_RECOVERY_ERROR_MS;
-    const desired = plans.audio.to;
-    if (timeline.mode === 'carplay' && isVoice(timeline.type, timeline) && timeline.synchronized) {
-      const preparation = timeline.prepareVoice({ contextMs, frames, outputAt: localMs, clock: this.clock,
-        deviceRate: this.deviceClock.rate, deadline: this.deadline(timeline, contextMs),
-        minimumDelayMs: desired,
-        admissionReserveMs: timeline.hasEmitted ? 0 : AUDIO_RECOVERY_ERROR_MS,
-        waitMs: SPEECH_START_BUFFER_MS });
-      return preparation.targetMs;
+    if (data.evidenceTrigger) this.evidence?.trigger(data.evidenceTrigger.reason, data.evidenceTrigger.detail);
+    if (!data.pcm && !data.payload && !data.neteqConfig) return;
+    this.generation = data.generation;
+    const previous = this.epochs.get(data.type);
+    const size = data.pcm?.byteLength ?? data.payload?.byteLength ?? 0;
+    if (previous !== undefined && ((data.epoch - previous) | 0) < 0) { this.credit(data.type, size, data.generation, 'late'); return; }
+    if (this.endedEpochs.get(data.type) === data.epoch && !(data.flags & 2)) { this.credit(data.type, size, data.generation, 'late'); return; }
+    const existing = this.streams.get(data.type);
+    if (data.pcm && !size && data.ended !== false && (data.flags & 2)) {
+      this.epochs.set(data.type, data.epoch); this.endedEpochs.set(data.type, data.epoch);
+      existing?.finish(this.localTime()); this.pending.delete(data.type); return;
     }
-    const proposed = Math.min(desired, latest);
-    if (timeline.networkDelayMs === undefined) {
-      timeline.networkDelayMs = proposed; timeline.networkPlanTargetMs = desired;
-    } else if (Math.abs(proposed - timeline.networkDelayMs) >= 8
-      && (!timeline.backend || Math.abs(desired - timeline.networkPlanTargetMs) >= 8)) {
-      // A changing uncertainty reserve is not a new network plan and must not
-      // discard a coherent live filter. Its actual emitted samples still pass
-      // the full per-quantum source-age check below, including that uncertainty.
-      timeline.networkDelayMs = proposed;
-      timeline.networkPlanTargetMs = desired;
-      if (timeline.backend) timeline.recover('network-buffer');
+    if (previous !== data.epoch || (data.flags & 2)) {
+      existing?.clear(); this.streams.delete(data.type); this.epochs.set(data.type, data.epoch);
+      this.pending.delete(data.type);
+      this.endedEpochs.delete(data.type);
     }
-    const delay = timeline.networkDelayMs;
-    if (!timeline.synchronized) return localMs - delay;
-    const clock = this.clock;
-    if (!clock || !Number.isFinite(clock.localOriginMs) || !Number.isFinite(clock.serverOriginMs)) return null;
-    // Origins are centered once on the main thread. PCM never receives a freshly remapped epoch timestamp.
-    return clock.serverOriginMs + (localMs - delay - clock.localOriginMs) / (clock.rate || 1);
+    if (data.neteqConfig) { this.pending.set(data.type, data.neteqConfig); return; }
+    if (!size) return;
+    if (this.suspended) { this.credit(data.type, size, data.generation, 'reset'); return; }
+    let stream = this.streams.get(data.type);
+    if (!stream) {
+      if (this.streams.size >= MAX_STREAMS) throw new Error('Too many simultaneous audio streams.');
+      const config = this.pending.get(data.type);
+      if (data.payload && (!config || config.codec !== 'opus' || config.sampleRate !== data.rate || config.channels !== data.channels))
+        throw new Error('NetEq Opus packet has no matching configuration.');
+      stream = new NetEqAudio(this.neteq, data.rate, data.channels, sampleRate,
+        (bytes, generation, reason) => this.credit(data.type, bytes, generation, reason),
+        { codec: data.payload ? 'opus' : 'pcm', type: data.type, semanticType: data.semanticType ?? data.type,
+          mode: data.mode, epoch: data.epoch, generation: data.generation });
+      this.streams.set(data.type, stream);
+    }
+    if (stream.rate !== data.rate || stream.channels !== data.channels || (stream.codec === 'opus') !== Boolean(data.payload))
+      throw new Error('Audio format changed without a new stream configuration.');
+    this.localAnchor ??= { frame: this.renderedFrames, ms: data.arrivalLocalTimeMs || 0 };
+    stream.push(data, this.localTime());
   }
-  feedback(contextMs, renderQuantumFrames) {
-    for (const timeline of this.timelines.values()) if (timeline instanceof ContinuousAudio) {
-      const reference = timeline.reference(contextMs);
-      reference.outputUncertaintyMs = this.outputUncertainty(contextMs);
-      reference.renderQuantumFrames = renderQuantumFrames;
-      reference.renderQuantumMaxFrames = this.renderQuantumMaxFrames;
-      if ((!timeline.synchronized || timeline.sourceDeadlineState === 'unknown') && !timeline.arrivalPlayback && reference.state === 'playing') reference.state = 'untimed';
-      reference.sequence = ++this.feedbackSequence;
-      this.port.postMessage({ playout: reference });
-    }
+  localTime() {
+    return this.localAnchor ? this.localAnchor.ms + (this.renderedFrames - this.localAnchor.frame) * 1000 / sampleRate : 0;
   }
   process(inputs, outputs) {
     const output = outputs[0];
-    if (this.disposed) { for (const channel of output) channel.fill(0); return false; }
-    const blockFrames = output[0].length;
-    this.renderQuantumMaxFrames = Math.max(this.renderQuantumMaxFrames, blockFrames);
-    const hardwareFrame = typeof currentFrame === 'number' ? currentFrame : null;
-    const verifiedFrame = Number.isSafeInteger(blockFrames) && blockFrames > 0
-      && typeof currentFrame === 'number' && Number.isSafeInteger(currentFrame) && currentFrame >= 0
-      && Number.isSafeInteger(currentFrame + blockFrames);
-    this.evidence?.begin(hardwareFrame, this.nextContextFrame, blockFrames, output.length, this.renderDomainGeneration, this.renderedFrames, this.mediaGain);
-    if (this.evidence && !verifiedFrame) this.evidence.trigger('frame-invalid');
-    if (verifiedFrame) {
-      if (this.renderDomainNextFrame !== null && hardwareFrame !== this.renderDomainNextFrame) {
-        this.evidence?.trigger('frame-discontinuity', { observedFrame: hardwareFrame, previousExpectedFrame: this.renderDomainNextFrame,
-          deltaFrames: hardwareFrame - this.renderDomainNextFrame, dspExpectedFrame: this.nextContextFrame });
-        this.renderDomainGeneration++; this.renderDomainStartFrame = hardwareFrame;
-      }
-      this.renderDomainStartFrame ??= hardwareFrame;
-      this.renderDomainNextFrame = hardwareFrame + blockFrames;
-    } else {
-      // An unavailable/unsafe counter cannot join two verified sample runs or
-      // certify a probe. Continue the audio cursor without inventing evidence.
-      if (this.renderDomainNextFrame !== null) this.renderDomainGeneration++;
-      this.renderDomainStartFrame = this.renderDomainNextFrame = null;
-    }
-    // The strict measurement fence above does not change the established DSP
-    // recovery allowance or restart a live filter for a one-block discrepancy.
-    const audioFrame = Number.isSafeInteger(hardwareFrame) && hardwareFrame >= 0
-      && Number.isSafeInteger(hardwareFrame + blockFrames);
-    if (this.nextContextFrame === null) {
-      const fallbackFrame = Math.round(this.renderContextMs() * sampleRate / 1000);
-      this.nextContextFrame = audioFrame ? hardwareFrame
-        : Number.isSafeInteger(fallbackFrame) && fallbackFrame >= 0 ? fallbackFrame : 0;
-    }
-    if (audioFrame && Math.abs(hardwareFrame - this.nextContextFrame) > blockFrames) {
-      for (const timeline of this.timelines.values()) if (timeline instanceof ContinuousAudio) timeline.recover('device-clock-jump', { observedFrame: hardwareFrame, expectedFrame: this.nextContextFrame,
-        deltaFrames: hardwareFrame - this.nextContextFrame, blockFrames, renderedFrames: this.renderedFrames });
-      this.nextContextFrame = hardwareFrame;
-    }
-    const contextMs = this.nextContextFrame * 1000 / sampleRate;
-    this.nextContextFrame += blockFrames;
-    this.renderedFrames += blockFrames;
+    if (!output?.length) return !this.disposed;
     for (const channel of output) channel.fill(0);
-    const continuous = this.continuous;
-    let continuousCount = 0;
-    for (const [type, timeline] of this.timelines) if (timeline instanceof ContinuousAudio) {
-      if (!timeline.block || timeline.block.length < blockFrames * timeline.channels)
-        timeline.block = new Float32Array(Math.max(512, blockFrames) * timeline.channels);
-      const produced = timeline.render(this.targetTime(timeline, contextMs, blockFrames), contextMs, timeline.arrivalPlayback ? null : this.clock,
-        blockFrames, timeline.block, this.deviceClock.rate, this.deadline(timeline, contextMs));
-      this.evidence?.stage(timeline, produced, blockFrames, contextMs);
-      const entry = timeline.mixerEntry ??= [type, timeline, 0];
-      entry[2] = produced; continuous[continuousCount++] = entry;
+    if (this.disposed) return false;
+    const frames = output[0].length;
+    const observed = typeof currentFrame === 'number' ? currentFrame : null;
+    const verified = Number.isSafeInteger(observed) && observed >= 0 && Number.isSafeInteger(observed + frames);
+    this.evidence?.begin(observed, this.expectedFrame, frames, output.length, this.domain, this.renderedFrames, this.mediaGain);
+    if (!verified) {
+      this.evidence?.trigger('frame-invalid');
+      if (this.expectedFrame !== null) this.domain++;
+      this.domainStart = null;
     }
-    continuous.length = continuousCount;
-    const bulkMix = !this.streams.size && continuous.length === this.timelines.size
-      && this.kernel.supports(blockFrames, output.length);
-    const previousMixOver = this.diagnostics?.mixOverFullScaleSamples || 0, previousMixInvalid = this.diagnostics?.mixNonFiniteSamples || 0;
-    if (bulkMix) this.mediaGain = this.kernel.mix(continuous, this.retiring, output,
-      this.mediaGain, this.mediaGainStep, this.diagnostics);
-    else for (let i = 0; i < blockFrames; i++) {
-      let voice = false;
-      for (const [type, stream] of this.streams) {
-        while (stream.queue.length && stream.position >= stream.queue[0].length / stream.channels) {
-          const done = stream.queue.shift(), frames = done.length / stream.channels;
-          stream.position -= frames; stream.frames -= frames;
-          this.credit(done.byteLength, done.generation, 'played', type);
-        }
-        if (!stream.queue.length) stream.position = 0;
-        else if (isVoice(type, stream)) voice = true;
+    else {
+      if (this.expectedFrame !== null && observed !== this.expectedFrame) {
+        this.evidence?.trigger('frame-discontinuity', { observedFrame: observed, previousExpectedFrame: this.expectedFrame });
+        this.domain++; this.domainStart = observed;
       }
-      for (const [type, timeline, produced] of continuous) if (isVoice(type, timeline)) {
-        if (timeline.state === 'playing' || i < produced) voice = true;
-        // render() may finish the quantum rebuffering while its output still
-        // contains a voice fade. Keep media ducked for those actual samples.
-        else for (let c = 0; c < timeline.channels; c++) if (timeline.block[i * timeline.channels + c]) voice = true;
-      }
-      for (const tail of this.retiring) if (tail.remaining > 0 && isVoice(tail.type, tail)) voice = true;
-      if (this.clockBase !== null) {
-        const wallTime = this.clockBase + contextMs + i * 1000 / sampleRate;
-        for (const [type, timeline] of this.timelines) if (!(timeline instanceof ContinuousAudio)) {
-          timeline.delayMs = audioDelayAt(this.plansByMode[timeline.mode] ?? this.delayPlans, wallTime);
-          timeline.playbackTime = wallTime - timeline.delayMs;
-          if (isVoice(type, timeline) && timeline.active(timeline.playbackTime)) voice = true;
-        }
-      }
-      // Advance one shared envelope per emitted frame, independent of stream
-      // count, channels and quantum size. A voice state edge must not multiply
-      // a nonzero media waveform by 1 <-> 0.2 in a single sample.
-      const targetGain = voice ? MEDIA_DUCK_GAIN : 1;
-      this.mediaGain += Math.sign(targetGain - this.mediaGain) * Math.min(this.mediaGainStep, Math.abs(targetGain - this.mediaGain));
-      for (const [type, stream] of this.streams) {
-        const pcm = stream.queue[0];
-        if (!pcm) continue;
-        const frame = Math.floor(stream.position), fraction = stream.position - frame;
-        for (let c = 0; c < output.length; c++) {
-          const index = frame * stream.channels + Math.min(c, stream.channels - 1);
-          const next = Math.min(index + stream.channels, pcm.length - stream.channels + Math.min(c, stream.channels - 1));
-          output[c][i] += (pcm[index] + (pcm[next] - pcm[index]) * fraction) / 32768 * (isMedia(type, stream) ? this.mediaGain : 1);
-        }
-        stream.position += stream.rate / sampleRate;
-      }
-      for (const [type, timeline] of continuous) for (let c = 0; c < output.length; c++) {
-        output[c][i] += timeline.block[i * timeline.channels + Math.min(c, timeline.channels - 1)] * (isMedia(type, timeline) ? this.mediaGain : 1);
-      }
-      for (const tail of this.retiring) if (tail.remaining > 0) {
-        for (let c = 0; c < output.length; c++) output[c][i] += tail.samples[Math.min(c, tail.samples.length - 1)]
-          * (tail.remaining - 1) / tail.total * (isMedia(tail.type, tail) ? this.mediaGain : 1);
-        tail.remaining--;
-      }
-      if (this.clockBase !== null) for (const [type, timeline] of this.timelines) if (!(timeline instanceof ContinuousAudio))
-        for (let c = 0; c < output.length; c++) output[c][i] += timeline.sample(timeline.playbackTime, c) * (isMedia(type, timeline) ? this.mediaGain : 1);
+      this.domainStart ??= observed;
     }
-    this.retiring = this.retiring.filter(tail => tail.remaining > 0);
-    if (!bulkMix) for (const channel of output) for (let i = 0; i < channel.length; i++) {
-      if (this.diagnostics) {
-        const value = channel[i];
-        if (!Number.isFinite(value)) this.diagnostics.mixNonFiniteSamples = (this.diagnostics.mixNonFiniteSamples || 0) + 1;
-        else { this.diagnostics.mixPreClipPeak = Math.max(this.diagnostics.mixPreClipPeak || 0, Math.abs(value));
-          if (Math.abs(value) > 1) this.diagnostics.mixOverFullScaleSamples = (this.diagnostics.mixOverFullScaleSamples || 0) + 1; }
-      }
-      channel[i] = Math.max(-1, Math.min(1, channel[i]));
-      if (this.diagnostics) {
-        if (channel[i]) this.diagnostics.renderNonzero++;
-        this.diagnostics.renderPeak = Math.max(this.diagnostics.renderPeak, Math.abs(channel[i]));
-      }
+    // The browser counter is evidence only. The consumption cursor advances by actual output length.
+    this.expectedFrame = verified ? observed + frames : null;
+    this.mixing.length = 0;
+    for (const stream of this.streams.values()) {
+      if (!stream.block || stream.block.length < frames * stream.channels) stream.block = new Float32Array(frames * stream.channels);
+      const produced = stream.render(stream.block, frames, this.localTime());
+      this.evidence?.stage(stream, produced, frames);
+      const entry = stream.mixerEntry ??= [stream.type, stream, 0]; entry[2] = produced; this.mixing.push(entry);
     }
-    if (this.evidence && this.diagnostics.mixOverFullScaleSamples > previousMixOver) this.evidence.trigger('output-range', { mixPreClipPeak: this.diagnostics.mixPreClipPeak, overFullScale: this.diagnostics.mixOverFullScaleSamples - previousMixOver });
-    if (this.evidence && this.diagnostics.mixNonFiniteSamples > previousMixInvalid) this.evidence.trigger('output-invalid', { nonFinite: this.diagnostics.mixNonFiniteSamples - previousMixInvalid });
-    this.evidence?.end(output, this.mediaGain, this.renderDomainGeneration);
+    const step = (1 - DUCK_GAIN) / Math.max(1, Math.round(FADE_MS * sampleRate / 1000));
+    this.mediaGain = this.kernel.mix(this.mixing, this.retiring, output, this.mediaGain, step, this.diagnostics);
+    for (const [type, stream] of this.streams) if (stream.state === 'ended') {
+      this.reference(stream, frames); stream.clear(); this.streams.delete(type);
+    }
+    this.renderedFrames += frames;
+    this.evidence?.end(output, this.mediaGain, this.domain);
     if (this.diagnostics) {
-      this.diagnostics.processCalls++; this.diagnostics.renderFrames += output[0].length;
-      this.diagnostics.renderQuantumFrames = blockFrames;
-      this.diagnostics.renderQuantumMinFrames = Math.min(this.diagnostics.renderQuantumMinFrames ?? blockFrames, blockFrames);
-      this.diagnostics.renderQuantumMaxFrames = Math.max(this.diagnostics.renderQuantumMaxFrames ?? blockFrames, blockFrames);
-      if (contextMs / 1000 - this.lastReportTime >= 0.5) { this.lastReportTime = contextMs / 1000; this.report(); }
+      this.diagnostics.processCalls++; this.diagnostics.renderFrames += frames;
+      this.diagnostics.renderQuantumFrames = frames;
+      this.diagnostics.renderQuantumMinFrames = Math.min(this.diagnostics.renderQuantumMinFrames ?? frames, frames);
+      this.diagnostics.renderQuantumMaxFrames = Math.max(this.diagnostics.renderQuantumMaxFrames ?? frames, frames);
+      if (this.renderedFrames - this.lastReportFrame >= sampleRate / 2) {
+        const { streams, ...scalars } = this.diagnostics;
+        const details = Object.fromEntries([...this.streams].map(([type, stream]) => ['stream' + type,
+          { ...stream.stats(), epoch: stream.epoch, mode: stream.mode, ...streams[type] }]));
+        this.port.postMessage({ diagnosticRevision: this.diagnosticRevision, playbackGeneration: this.generation,
+          evidenceBaseline: this.evidence?.baseline(), diagnostics: { ...scalars, ...details, ...this.evidence?.stats() } });
+        this.lastReportFrame = this.renderedFrames;
+      }
     }
-    if (continuous.length && (contextMs - this.lastFeedbackMs >= 40 || continuous.some(([, timeline]) => timeline.feedbackState !== timeline.state))) {
-      this.feedback(contextMs + blockFrames * 1000 / sampleRate, blockFrames); this.lastFeedbackMs = contextMs;
-      for (const [, timeline] of continuous) timeline.feedbackState = timeline.state;
+    if (this.renderProbe !== null && verified) {
+      this.port.postMessage({ renderProbe: { token: this.renderProbe, generation: this.domain, startFrame: this.domainStart,
+        endFrame: this.expectedFrame, renderQuantumFrames: frames } }); this.renderProbe = null;
     }
-    if (verifiedFrame && this.pendingRenderProbe !== null) {
-      this.port.postMessage({ renderProbe: { token: this.pendingRenderProbe, generation: this.renderDomainGeneration,
-        startFrame: this.renderDomainStartFrame, endFrame: this.renderDomainNextFrame, renderQuantumFrames: blockFrames } });
-      this.pendingRenderProbe = null;
+    if (this.renderedFrames - this.lastFeedbackFrame >= sampleRate * .04) {
+      for (const stream of this.streams.values()) this.reference(stream, frames);
+      this.lastFeedbackFrame = this.renderedFrames;
     }
     return true;
+  }
+  reference(stream, frames) {
+    this.port.postMessage({ playout: {
+      type: stream.type, semanticType: stream.semanticType, mode: stream.mode, epoch: stream.epoch, generation: stream.generation,
+      state: stream.state === 'playing' ? 'untimed' : stream.state, playoutState: stream.state,
+      contextTimeMs: this.renderedFrames * 1000 / sampleRate, sourceTimeMs: null, mediaRate: 1,
+      sourceDeadlineState: 'unknown', sourceDeadlineReason: 'independent-audio',
+      renderQuantumFrames: frames, sequence: ++this.feedbackSequence,
+    } });
   }
 }
 registerProcessor('tiplay-audio', TiPlayAudio);

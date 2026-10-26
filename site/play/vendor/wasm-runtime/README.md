@@ -1,6 +1,6 @@
 # Linked WebAssembly runtime notices
 
-The browser's libsoxr, FDK AAC and SoundTouch reactors link portions of the
+The browser's SoundTouch reactor link portions of the
 WASI SDK C/C++ runtime. This directory retains their full runtime license texts,
 credits and source-level third-party notices alongside the media libraries'
 own licenses. Keep these files with distributions of the corresponding WASM
@@ -51,7 +51,9 @@ and LTO. These builds do not select libunwind. The project's freestanding
 Clang and Binaryen themselves are offline build tools; this notice bundle covers
 runtime code and does not describe those tool executables as browser dependencies.
 
-The [libsoxr](../soxr/README.md), [FDK AAC](../aac-eld/README.md) and
-[SoundTouch](../soundtouch/README.md) materials retain each media library's own
+The [SoundTouch](../soundtouch/README.md) materials retain each media library's own
 license, complete source and replaceable-build instructions. Their license terms
 continue to apply alongside these linked-runtime notices.
+
+Libav.js uses its Emscripten build and bundled component license headers; its
+complete sources and build provenance are in [vendor/libav](../libav/README.md).

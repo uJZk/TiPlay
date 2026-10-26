@@ -103,15 +103,13 @@ packages are defined by the Android workflow.
 
 ## Browser WASM build
 
-Browser **v86** uses the WASM binaries reproduced for **v85**, unchanged by this
-web-only release. Its source uses genuine WASM for
-libsoxr, AAC-ELD and bulk live-audio DSP, and SoundTouch for live/URL tempo.
-It also removes live timing's dependence on the public `currentTime` getter;
-the [clock roles](Browser-wasm.md#audio-clock-roles) distinguish render frames,
-performance time, native output observations and URL graph coordinates.
-The [verification record](Testing.md#browser-wasm-verification) covers source
-builds and browser behavior. Public deployment and signed beta.17 package
-verification are recorded below.
+Browser **v88** uses official NetEq, libav.js decoder/resampler Workers and the
+fixed-memory audio core for realtime audio. WebCodecs audio and libsoxr are removed
+from realtime playback; SoundTouch and native audio remain for URL casting.
+AudioContext and NetEq both use 48 kHz. [Audio tempo](Audio-tempo.md) records the
+final decoder order, memory bounds, lifecycle and remaining device acceptance.
+The user's current instruction skips CI and APK compilation; existing APK release
+records below remain historical and do not certify these new browser changes.
 See [execution boundaries](Browser-wasm.md), including measured cases that retain
 native browser APIs or JavaScript.
 
@@ -123,16 +121,24 @@ and the pinned tools are required. On Linux x86_64:
 python3 -m pip install cmake==4.1.2 ninja==1.13.0
 python3 scripts/soxr/prepare-toolchain.py work/wasm-toolchain
 python3 scripts/build_wasm.py --check \
-  --sdk work/wasm-toolchain/wasi-sdk-34.0-x86_64-linux \
-  --binaryen work/wasm-toolchain/package
+  --sdk work/wasm-toolchain/wasi-sdk-34.0-x86_64-linux
 ```
 
 The downloader verifies toolchain archive hashes before extraction. `--check`
-builds into a temporary directory and compares every shipped WASM byte, without
+builds into a temporary directory and compares every WASI/SoundTouch artifact built by this helper, without
 changing production files. Omit it to replace the artifacts intentionally;
-individual build entry points are in `scripts/soxr/`, `scripts/aac-eld/`,
-`scripts/soundtouch/` and `scripts/build_audio_core.py`. CI reproduces all modules
+individual build entry points are in `scripts/soxr/`,
+`scripts/soundtouch/`, `scripts/neteq/` and `scripts/build_audio_core.py`. CI reproduces all modules
 independently of Android compilation.
+
+The libav.js portable/SIMD pair uses **Emscripten 4.0.7**, separately
+from the WASI helper above. Activate that SDK and Node 22, then run
+`python3 scripts/libav/build.py --output /tmp/libav-check`. The pinned source
+archive, full corresponding sources and artifact hashes are documented in
+[vendor/libav](../site/play/vendor/libav/README.md). Both generated loaders and
+both WASM binaries were independently rebuilt byte-for-byte. The
+[performance report](../tests/bench/libav/README.md) records gains, regressions
+and the corrected AAC-ELD parameter diagnosis; the URL audio fallback uses these builds locally; it is not a published release.
 
 After changing runtime assets, run `python3 scripts/update_browser_cache.py` and
 bump `PAGE_VERSION`/the Service Worker revision together. CI checks the generated
@@ -188,6 +194,15 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
 ## Current browser deployment
+
+Browser **v88** is the web-only audio rollout: NetEq-first Opus, libav.js AAC-LC/
+ELD/ALAC, continuous 48 kHz conversion, software capability negotiation and URL
+fallback. Local Node and real Chromium/production-CSP, offline and site checks
+are recorded in [Testing](Testing.md#browser-wasm-verification). CI and APK builds
+are explicitly skipped. Android remains beta.20/code62. Publish via the existing
+Pages workflow after a `[skip ci]` commit; verify public v88 and runtime hashes.
+The older browser/APK records below describe their original releases.
+
 
 The formal root webpage **v87** is deployed from
 `905f99c66d451190cb71d5ddf9be4bf30e0dcda8`. The manually dispatched

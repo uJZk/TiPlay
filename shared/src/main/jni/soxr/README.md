@@ -2,7 +2,7 @@
 
 Generated from the same archive, commit `945b592b70470e29f917f4de89b4281fbbd540c0`,
 float32 IO patch and vr32/HQ/64-bit phase configuration as the
-[browser backend](../../../../../site/play/vendor/soxr/README.md).
+[pinned native source inputs](../../../../../scripts/soxr/vendor/README.md).
 Only the required C files and headers are retained. The historical
 `vr_process_wasm` name in the shared ABI adapter does not introduce a WASM runtime.
 

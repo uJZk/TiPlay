@@ -7,10 +7,8 @@ import { createAirPlayAudioDecoder } from './airplay-audio-decoder.js';
 import { MAX_AUDIO_AHEAD_BYTES, MAX_DECODED_PACKET_BYTES } from './audio-buffer-policy.js';
 import { pcmStats, measurePcm } from './audio-pcm-stats.js';
 import { createAudioOutputMapping } from './audio-output-clock.js';
-import { createAudioCalibration } from './audio-calibration.js';
 import { readAudioPlaybackStats } from './audio-playback-stats.js';
-import { loadLiveTempo } from './live-tempo.js';
-import { loadSoxr } from './streaming-resampler.js';
+import { loadNetEq } from './neteq.js';
 import { loadAudioCore } from './wasm/audio-core.js';
 
 /** Playback only. Android owns demand-driven car Bluetooth capture and speech playback. */
@@ -27,9 +25,8 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let contextObservation = null;
   let processorErrors = 0, recoveries = 0, processorFailed = false, recoveryAttempts = 0, recoveryTimer = null;
   let lastControlAt = -Infinity;
-  let preparingNode = null, preparationSequence = 0, pendingPublish = null, pendingPcmBytes = 0, nodeConnected = false;
+  let preparingNode = null, preparationSequence = 0, nodeConnected = false;
   let nodeInstallation = null;
-  const calibrations = createAudioCalibration();
   const outputClock = createAudioOutputMapping(), playoutReferences = new Map();
   // Keep one counter per bounded logical stream. Epoch changes retire its local counter,
   // while the page-wide rejection total survives stream replacement and processor recovery.
@@ -83,6 +80,16 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     capacity?.(); capacity = null;
   };
   const packetDecoder = createAirPlayAudioDecoder({
+    onEncoded: record => {
+      if (disposed || !node || context?.state !== 'running') return;
+      const bytes = record.payload?.byteLength || 0;
+      if (queuedBytes + bytes > MAX_AUDIO_AHEAD_BYTES) throw new Error('NetEq input exceeds its memory limit.');
+      queuedBytes += bytes;
+      record.generation = playbackGeneration;
+      record.arrivalLocalTimeMs = performance.now();
+      node.port.postMessage(record, record.payload ? [record.payload] : []);
+      if (bytes) { onMode(record.mode); if ((record.semanticType ?? record.type) === 0) onQueued(record.mode); }
+    },
     onEvidence: (reason, detail) => { if (debugEnabled) node?.port.postMessage({ evidenceTrigger: { reason, detail } }); },
     onPcm: record => { if (debugEnabled) record.decodedAtMs = now(); publishPcm(record).catch(cause => {
       if (disposed) return;
@@ -96,7 +103,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     const main = { receivedAtMs: now(), diagnosticRevision, playbackGeneration, processorInstance: evidenceNodeSequence, evidenceOrigin: origin, baselineAgeMs: evidenceBaselineAt === null ? null : now() - evidenceBaselineAt,
       visibility: typeof document === 'undefined' ? 'unknown' : document.visibilityState,
       ...readAudioPlaybackStats(context), contextState: context?.state,
-      queuedBytes, pendingPcmBytes, encodedReservedBytes: reservedBytes(), ...outputClock.diagnostics() };
+      queuedBytes, encodedReservedBytes: reservedBytes(), ...outputClock.diagnostics() };
     const types = [...new Set([...evidence.causes.map(c => c.type).filter(Number.isInteger), ...recordTimings.keys()])].slice(0, 4);
     for (const type of types) {
       const timing = recordTimings.get(type);
@@ -240,14 +247,14 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   }
   async function prepareNode() {
     const preparingContext = context;
-    const [calibration, soxrModule, audioCoreModule, liveTempoModule] = await Promise.all([
-      calibrations.prepare(48000, preparingContext.sampleRate || 48000), loadSoxr(), loadAudioCore(), loadLiveTempo(),
+    const [audioCoreModule, neteqModule] = await Promise.all([
+      loadAudioCore(), loadNetEq(),
     ]);
     if (disposed || context !== preparingContext) return;
     // Compile away from the render thread. Each processor owns its fixed memories;
     // cloning compiled code does not share stream state or require cross-origin isolation.
     const installed = new AudioWorkletNode(context, 'tiplay-audio', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
-      processorOptions: { soxrModule, audioCoreModule, liveTempoModule } });
+      processorOptions: { audioCoreModule, neteqModule } });
     node = installed; nodeConnected = false; evidenceNodeSequence++; evidenceBaseline = null; evidenceBaselineAt = null;
     const id = ++preparationSequence;
     let resolve, reject, connected = false;
@@ -285,8 +292,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       if (!connected) { reject(new Error(audioError)); return; }
       stopStream(); retireNode(); recoverProcessor(); notify();
     };
-    installed.port.postMessage({ calibration });
-    installed.port.postMessage({ prepare: { id, rate: calibration.rate, outputRate: calibration.outputRate } });
+    installed.port.postMessage({ prepare: { id, rate: 48000, outputRate: preparingContext.sampleRate || 48000 } });
     try {
       await prepared;
       if (disposed || node !== installed) return;
@@ -311,8 +317,6 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     packetDecoder.reset();
     releaseEncoded();
     playbackGeneration++;
-    if (nodeConnected || pendingPcmBytes) calibrations.cancel();
-    pendingPublish = null; pendingPcmBytes = 0;
     clearTimeout(retryTimer); retryTimer = null;
     request?.abort(); request = null;
     resetNode();
@@ -327,41 +331,15 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     if (pcmMetrics) measurePcm(pcmMetrics, record.pcm, record.channels);
     if (disposed || !node) return Promise.resolve();
     if (!record.pcm.byteLength && record.flags & 2) encodedReservations.delete(record.type);
-    else if (record.flags & 1) releaseEncoded(record.type);
     if (context?.state !== 'running') return Promise.resolve();
     if (record.flags & 1 && queuedBytes + record.pcm.byteLength > MAX_AUDIO_AHEAD_BYTES) return Promise.reject(new Error('Decoded buffered audio exceeds its playback memory limit.'));
-    const generation = playbackGeneration, installed = node, bytes = record.pcm.byteLength;
-    const outputRate = context.sampleRate || 48000;
-    const cached = bytes ? calibrations.get(record.rate, outputRate) : null;
-    if (bytes && (!cached || pendingPublish) && queuedBytes + bytes > MAX_AUDIO_AHEAD_BYTES) {
-      return Promise.reject(new Error('Audio format preparation exceeds its playback memory limit.'));
-    }
-    const send = calibration => {
-      if (disposed || generation !== playbackGeneration || node !== installed) return;
-      if (context?.state !== 'running') { queuedBytes = Math.max(0, queuedBytes - bytes); return; }
-      if (calibration) node.port.postMessage({ calibration });
-      sendPcm(record, generation);
-    };
+    const bytes = record.pcm.byteLength;
+    if (queuedBytes + bytes > MAX_AUDIO_AHEAD_BYTES) return Promise.reject(new Error('Audio input exceeds its memory limit.'));
     queuedBytes += bytes;
-    if ((!bytes || cached) && !pendingPublish) { send(cached); return Promise.resolve(); }
-    if (pendingPcmBytes + bytes > MAX_AUDIO_AHEAD_BYTES) {
-      queuedBytes -= bytes; return Promise.reject(new Error('Audio format preparation exceeds its playback memory limit.'));
-    }
-    pendingPcmBytes += bytes;
-    const task = Promise.resolve(pendingPublish).then(async () => {
-      if (disposed || generation !== playbackGeneration || node !== installed) return;
-      const calibration = bytes ? cached || await calibrations.prepare(record.rate, outputRate) : null;
-      send(calibration);
-    }).catch(error => {
-      if (generation !== playbackGeneration || disposed) return;
-      queuedBytes = Math.max(0, queuedBytes - bytes); throw error;
-    }).finally(() => {
-      if (generation === playbackGeneration) pendingPcmBytes = Math.max(0, pendingPcmBytes - bytes);
-      if (pendingPublish === task) pendingPublish = null;
-    });
-    pendingPublish = task;
-    return task;
+    sendPcm(record, playbackGeneration);
+    return Promise.resolve();
   }
+
   function sendPcm(record, generation) {
     const hasPcm = record.pcm.byteLength > 0;
     if (record.pcm.byteLength) onMode(record.mode);
@@ -411,7 +389,6 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
         if (abort.signal.aborted) break;
         if (record.kind === 2 && record.type === 5) { route({ revision: record.epoch }); continue; }
         if (record.kind === 6) {
-          if (record.config?.ended !== true) await calibrations.prepare(record.rate, context.sampleRate || 48000);
           if (abort.signal.aborted) break;
           const configured = await packetDecoder.configure(record);
           if (!abort.signal.aborted && configured) { audioError = null; notify(); }
@@ -426,18 +403,18 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
             encodedReservations.set(record.type, (encodedReservations.get(record.type) || 0) + MAX_DECODED_PACKET_BYTES);
           }
           const accepted = await packetDecoder.decode(record);
-          if (!accepted && record.flags & 1) releaseEncoded(record.type);
+          if (record.flags & 1) releaseEncoded(record.type);
           continue;
         }
         // A CarPlay stream or an ordinary PCM reset retires late output from the old encoded epoch.
-        if ((record.flags & 2) || record.mode === 'carplay') packetDecoder.reset(record.type);
+
         // Read through the producer's two-second music lead so the same HTTP stream
         // can deliver a following navigation/call packet without waiting for music.
         while ((record.flags & 1) && queuedBytes >= MAX_AUDIO_AHEAD_BYTES && !abort.signal.aborted) {
           await new Promise(resolve => { capacity = resolve; });
         }
         if (abort.signal.aborted) break;
-        await publishPcm(record);
+        await packetDecoder.pcm(record);
       }
     } catch (failure) {
       if (!abort.signal.aborted) { audioError = String(failure.message); notify(); }
@@ -446,7 +423,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       if (request === abort) {
         packetDecoder.reset();
         releaseEncoded();
-        playbackGeneration++; pendingPublish = null; pendingPcmBytes = 0; calibrations.cancel();
+        playbackGeneration++;
         request = null; resetNode(); queuedBytes = 0;
         invalidateOutput('output-unavailable');
         if (!abort.signal.aborted && connection === signal && enabled) retryTimer = setTimeout(() => stream(signal), 1000);
@@ -459,7 +436,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     try {
       // Creating/resuming the context happens before awaiting, preserving user activation.
       if (!context) {
-        context = new AudioContext({ latencyHint: 'interactive' });
+        context = new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
         observeContextState();
         context.onstatechange = () => {
           if (disposed || !context) return;
@@ -499,8 +476,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       controls(true);
     },
     reset() { packetDecoder.reset(); releaseEncoded(); playbackGeneration++; queuedBytes = 0;
-      if (pendingPcmBytes) calibrations.cancel();
-      pendingPublish = null; pendingPcmBytes = 0; resetNode(); capacity?.(); capacity = null; invalidateOutput('reset', true); },
+      resetNode(); capacity?.(); capacity = null; invalidateOutput('reset', true); },
     start() { activate(); },
     gesture() { if (!disposed && (!node || context?.state !== 'running' || processorFailed)) { recoveryAttempts = 0; activate(); } },
     attach(signal, hello, openMedia = null) {
@@ -523,6 +499,6 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       notify();
     },
     stop() { clearTimeout(recoveryTimer); recoveryTimer = null; connection = null; mediaSource = null; stopStream(true, 'stopped'); voiceError = null; voiceState = 'idle'; notify(); },
-    dispose() { disposed = true; this.stop(); retireNode(); packetDecoder.dispose(); calibrations.dispose(); if (context) context.onstatechange = null; context?.close().catch(() => {}); context = null; ready = null; },
+    dispose() { disposed = true; this.stop(); retireNode(); packetDecoder.dispose(); if (context) context.onstatechange = null; context?.close().catch(() => {}); context = null; ready = null; },
   };
 }

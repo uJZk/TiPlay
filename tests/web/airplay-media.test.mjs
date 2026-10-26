@@ -17,7 +17,7 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
   deferAudio = null, deferAudioAt = 1, deferAudioEnd = null, videoErrorAt = Infinity, videoError = null,
   videoConfig = null, VideoDecoder = undefined, audioSignal = null, audioTimestamp = value => value,
   audioClockQuantumFrames = 0, audioContextSampleRate = audioSampleRate, honorAudioSampleRate = true,
-  alternateAudioSampleRate = audioSampleRate } = {}) {
+  alternateAudioSampleRate = audioSampleRate, outputTimestamp = null } = {}) {
   let wall = 0, next = 0, reads = { video: 0, audio: 0 }, audioContexts = 0;
   const selection = { primaryAudio: 0, pairableAudio: 0 };
   const durations = videoCadence?.durationTicks.map(ticks => ticks / videoCadence.timescale);
@@ -106,6 +106,7 @@ function fixture({ audio = true, video = true, live = false, timestampOrigin = 1
   class AudioContext {
     constructor(options = {}) { audioContexts++; contexts.push(this); this.currentTime = this.elapsed = 0; this.state = 'suspended';
       this.requestedOptions = options; this.sampleRate = honorAudioSampleRate ? options.sampleRate || audioContextSampleRate : audioContextSampleRate; }
+    getOutputTimestamp() { return outputTimestamp?.({ wall, context: this, pictures }); }
     createGain() { return { gain: { value: 1 }, connect() {}, disconnect() {} }; }
     createBuffer(channels, length, sampleRate) {
       const data = Array.from({ length: channels }, () => new Float32Array(length));
@@ -1004,4 +1005,71 @@ for (const durationMs of [1499, 1500, 1501]) test(`URL policy boundary: audio ad
     assert.equal(state.audioEnd, durationMs * reads / 1000);
     assert.equal(state.audioDecodedFrames, frames * reads);
   } finally { h.media.dispose(); await flush(); }
+});
+
+
+for (const manual of [.5, 1, 2]) for (const lagMs of [-200, 0, 300])
+  test(`URL combines ${manual}x manual tempo with video-frame correction for ${lagMs}ms audio offset`, async () => {
+    const h = fixture({ audioSampleRate: 48000, audioSamplesPerPacket: 4800, duration: 30,
+      outputTimestamp: ({ wall, context }) => ({ contextTime: context.elapsed + lagMs / 1000, performanceTime: wall * 1000 }) });
+    try {
+      await h.media.load('https://example.test/movie.mp4'); await flush();
+      h.media.playbackRate = manual; await flush();
+      const playing = h.media.play(); await flush(); await h.tick(); await playing;
+      for (let i = 0; i < 20; i++) await h.tick(.02);
+      const diagnostics = h.media.getPlaybackDiagnostics();
+      assert.equal(h.media.playbackRate, manual, 'automatic synchronization cannot change the button value');
+      assert.equal(diagnostics.manualPlaybackRate, manual);
+      assert.ok(diagnostics.effectivePlaybackRate >= .25 && diagnostics.effectivePlaybackRate <= 4);
+      if (lagMs === 0) assert.equal(diagnostics.automaticPlaybackRate, 1);
+      else {
+        assert.equal(diagnostics.audioVideoSyncState, 'native-output-and-video-frame');
+        assert.ok(lagMs < 0 ? diagnostics.automaticPlaybackRate > 1 : diagnostics.automaticPlaybackRate < 1);
+      }
+    } finally { h.media.dispose(); }
+  });
+
+test('automatic video correction reaches real queued SoundTouch PCM without reopening or changing the manual button', async () => {
+  const h = fixture({ audioSampleRate: 48000, audioSamplesPerPacket: 4800, duration: 30,
+    outputTimestamp: ({ wall, context }) => ({ contextTime: context.elapsed + .3, performanceTime: wall * 1000 }) });
+  try {
+    await h.media.load('https://example.test/movie.mp4'); await flush();
+    h.media.playbackRate = 2; await flush();
+    const playing = h.media.play(); await flush(); await h.tick(); await playing;
+    const generation = h.media.getPlaybackDiagnostics().generation;
+    let applied = false;
+    for (let q = 0; q < 250; q++) {
+      await h.tick(.02);
+      const state = h.media.getPlaybackDiagnostics();
+      assert.equal(state.generation, generation, 'an automatic command cannot seek or recreate the media generation');
+      assert.equal(h.media.playbackRate, 2);
+      if (state.audioAppliedTempo < 2) {
+        applied = true; assert.equal(state.audioTempoBackend, 'wasm-simd');
+        assert.ok(state.audioAppliedTempo >= 1.6);
+      }
+    }
+    assert.ok(applied, 'the observed correction must reach the actual native tempo processor, not just its diagnostic request');
+  } finally { h.media.dispose(); }
+});
+
+for (const fault of ['invalid', 'stale', 'jump']) test(`URL ${fault} native timing disables automatic correction without changing manual intent`, async () => {
+  let broken = false;
+  const h = fixture({ audioSampleRate: 48000, audioSamplesPerPacket: 4800, duration: 30,
+    outputTimestamp: ({ wall, context }) => ({
+      contextTime: broken && fault === 'invalid' ? NaN : context.elapsed + .3 + (broken && fault === 'jump' ? 10 : 0),
+      performanceTime: wall * 1000 + (broken && fault === 'stale' ? 1000 : 0),
+    }) });
+  try {
+    await h.media.load('https://example.test/movie.mp4'); await flush();
+    h.media.playbackRate = 2; await flush();
+    const playing = h.media.play(); await flush(); await h.tick(); await playing;
+    for (let q = 0; q < 20; q++) await h.tick(.02);
+    assert.ok(h.media.getPlaybackDiagnostics().automaticPlaybackRate < 1);
+    broken = true; await h.tick(.02);
+    const state = h.media.getPlaybackDiagnostics();
+    assert.equal(state.automaticPlaybackRate, 1);
+    assert.equal(h.media.playbackRate, 2);
+    assert.equal(state.audioVideoSyncState, fault === 'invalid' ? 'no-output-timestamp'
+      : fault === 'stale' ? 'stale-output-timestamp' : 'output-timestamp-discontinuity');
+  } finally { h.media.dispose(); }
 });

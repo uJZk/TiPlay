@@ -1,0 +1,85 @@
+{
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+  "hardwareConcurrency": 5,
+  "warmup": 5,
+  "rounds": 20,
+  "packetRepeats": 20,
+  "results": [
+    {
+      "fixture": "AAC-LC 44100 stereo",
+      "samples": 445824,
+      "sha256": "53f7bea06f4bfecc246fe695fff1b9c433d8fd4f2b8ef0fb3700bb6b665f2ee1",
+      "portableMedianMs": 18.299999997019768,
+      "simdMedianMs": 14.699999995529652,
+      "speedup": 1.2448979593595166,
+      "portablePacketP95Ms": 0.20000000298023224,
+      "simdPacketP95Ms": 0.20000000298023224
+    },
+    {
+      "fixture": "AAC-ELD 44100 1ch 480",
+      "errors": {
+        "portable": "Error: Error decoding audio frame: Internal bug, should not have happened",
+        "simd": "Error: Error decoding audio frame: Internal bug, should not have happened"
+      }
+    },
+    {
+      "fixture": "AAC-ELD 44100 1ch 512",
+      "errors": {
+        "portable": "Error: Error decoding audio frame: Internal bug, should not have happened",
+        "simd": "Error: Error decoding audio frame: Internal bug, should not have happened"
+      }
+    },
+    {
+      "fixture": "AAC-ELD 44100 2ch 480",
+      "errors": {
+        "portable": "Error: Error decoding audio frame: Internal bug, should not have happened",
+        "simd": "Error: Error decoding audio frame: Internal bug, should not have happened"
+      }
+    },
+    {
+      "fixture": "AAC-ELD 44100 2ch 512",
+      "errors": {
+        "portable": "Error: Error decoding audio frame: Internal bug, should not have happened",
+        "simd": "Error: Error decoding audio frame: Internal bug, should not have happened"
+      }
+    },
+    {
+      "fixture": "AAC-ELD 48000 1ch 480",
+      "errors": {
+        "portable": "Error: Error decoding audio frame: Internal bug, should not have happened",
+        "simd": "Error: Error decoding audio frame: Internal bug, should not have happened"
+      }
+    },
+    {
+      "fixture": "AAC-ELD 48000 1ch 512",
+      "errors": {
+        "portable": "Error: Error decoding audio frame: Internal bug, should not have happened",
+        "simd": "Error: Error decoding audio frame: Internal bug, should not have happened"
+      }
+    },
+    {
+      "fixture": "AAC-ELD 48000 2ch 480",
+      "errors": {
+        "portable": "Error: Error decoding audio frame: Internal bug, should not have happened",
+        "simd": "Error: Error decoding audio frame: Internal bug, should not have happened"
+      }
+    },
+    {
+      "fixture": "AAC-ELD 48000 2ch 512",
+      "errors": {
+        "portable": "Error: Error decoding audio frame: Internal bug, should not have happened",
+        "simd": "Error: Error decoding audio frame: Internal bug, should not have happened"
+      }
+    },
+    {
+      "fixture": "ALAC 44100 stereo",
+      "samples": 1920000,
+      "sha256": "51e644553d53a0bd0a71186af49591c4c48aa4d99ae5ca3e40d92d170d7b1f9e",
+      "portableMedianMs": 98.5,
+      "simdMedianMs": 91.10000000149012,
+      "speedup": 1.0812294182040487,
+      "portablePacketP95Ms": 0.6999999955296516,
+      "simdPacketP95Ms": 0.6000000014901161
+    }
+  ]
+}

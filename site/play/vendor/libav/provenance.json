@@ -1,0 +1,52 @@
+{
+  "upstream": "https://registry.npmjs.org/libav.js/-/libav.js-6.10.9.tgz",
+  "sourceSha256": "73f7a945d637c564edb050df7fd329845d4a9f556c6ce019bbcab7d778f16b97",
+  "emscripten": "4.0.7",
+  "ffmpeg": "9.0",
+  "fragments": [
+    "avcodec",
+    "avformat",
+    "avfilter",
+    "decoder-aac",
+    "decoder-alac",
+    "swresample",
+    "filter-aresample",
+    "filter-aformat"
+  ],
+  "flags": {
+    "portable": "-O3",
+    "simd": "-O3 -msimd128"
+  },
+  "artifacts": {
+    "libav-6.10.9.0-tiplay-simd.wasm.mjs": {
+      "sha256": "18e2989edf78af874c4257c33664dc510756588c4048bc64992d6e4ca666b098",
+      "bytes": 270002
+    },
+    "libav-6.10.9.0-tiplay-simd.wasm.wasm": {
+      "sha256": "601503628c8dedf33ff4818e3a34e026ed7169492b22a7a18b6a0c15a01be990",
+      "bytes": 1313021
+    },
+    "libav-6.10.9.0-tiplay.wasm.mjs": {
+      "sha256": "94e7c332c5e7ef01625a3e38bb6227443b3e26d932402acca41eb46e42266511",
+      "bytes": 269987
+    },
+    "libav-6.10.9.0-tiplay.wasm.wasm": {
+      "sha256": "f9c08154ddddfd16d7e7127225f63be0e771961fd3362ff29effac482346c1e6",
+      "bytes": 1272298
+    }
+  },
+  "sources": {
+    "emfiberthreads-1.3.tar.gz": {
+      "sha256": "0fe933d7742de3b3213608e0fb087a1ae0d060604d5835f7c9cdfcee0fc8cbcb",
+      "bytes": 7802
+    },
+    "ffmpeg-9.0.tar.xz": {
+      "sha256": "7f607a00dd0d28a729d5a4811205812eef01cf6ef6155025febb6f36a9062d52",
+      "bytes": 12032020
+    },
+    "libav.js.tar.xz": {
+      "sha256": "ad1932a86ef0bcc87b1e71df34b735f8b3cda0022ffe04b95890adfda24cd186",
+      "bytes": 4266860
+    }
+  }
+}

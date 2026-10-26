@@ -14,35 +14,33 @@
     "quick_seek": true,
     "rate_and_pitch": 1,
     "rate_antialias_filter": false,
-    "sequence_ms": "round(130 - 20 * tempo), tempo 0.25 to 4",
-    "seek_window_ms": "round(25 + (0.25 - tempo) * 10 / 3.75)",
+    "sequence_ms": 20,
+    "seek_window_ms": 5,
     "initial_memory_bytes": 4194304,
     "maximum_memory_bytes": 16777216,
     "native_input": "quad/5.1 original planes, fused speaker mapping plus interleave; mono/stereo retain direct JavaScript layout stores by measured policy",
     "input_scratch_bytes": 98304,
     "downmix_arithmetic": "double expression rounded once to float32, matching the established Web Audio speaker mapping",
-    "live": {
-      "channels": "mono/stereo",
-      "tempo_range": [
-        0.95,
-        1.2
-      ],
-      "sequence_ms": 20,
-      "seek_ms": 5,
-      "overlap_ms": 5,
-      "clock_conversion": "libsoxr, independent from tempo"
-    }
+    "overlap_ms": 5,
+    "tempo_range": [
+      0.2,
+      4.8
+    ],
+    "manual_tempo_range": [
+      0.25,
+      4
+    ]
   },
   "binaries": {
     "soundtouch.wasm": {
-      "bytes": 56193,
-      "sha256": "78ad63ce238133414be5806d537dd369920120844fa782940c034ca0cf7a1fd5",
-      "automatic_playback": "live CarPlay on non-SIMD browsers"
+      "bytes": 56052,
+      "sha256": "af617a86d4a36d3417e2b869cba0595e19f8f0e8ec8ade5915ab021238f28c94",
+      "automatic_playback": "all non-1x audio on non-SIMD browsers"
     },
     "soundtouch.simd.wasm": {
-      "bytes": 59356,
-      "sha256": "c402252ea779248fd13114fc1d6763be91f0b770996e8087cc7e307dc5f2bb70",
-      "automatic_playback": "live CarPlay and non-1x SIMD URL audio"
+      "bytes": 59215,
+      "sha256": "b4392feb759c413f311ff60bdafa488667405a1262df980a10f71ca7d71f808c",
+      "automatic_playback": "all non-1x audio on SIMD browsers"
     }
   }
 }

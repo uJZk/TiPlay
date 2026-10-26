@@ -5,7 +5,6 @@ import assert from 'node:assert/strict';
 import { createAudioOutputMapping } from '../../site/play/audio-output-clock.js';
 import { createTimedFrames } from '../../site/play/media-timing.js';
 import { constantDelay } from '../../site/play/delay-plan.js';
-import { SoxrRuntime } from '../../site/play/streaming-resampler.js';
 
 test('independent slow output clock keeps audio continuous while CarPlay video runs independently', async () => {
   const globals = ['AudioWorkletProcessor', 'registerProcessor', 'sampleRate', 'currentTime', 'currentFrame'];
@@ -53,8 +52,6 @@ test('independent slow output clock keeps audio continuous while CarPlay video r
     await import('../../site/play/audio-worklet.js?video-device-clock');
     output = new Processor();
     const post = data => output.port.onmessage({ data });
-    const calibration = new SoxrRuntime();
-    post({ calibration: { rate, outputRate: rate, delayMs: calibration.filterDelay(rate, rate) } });
     post({ prepare: { id: 1, rate, outputRate: rate } });
     frames.delay(constantDelay(0));
     for (let quantum = 0; elapsed < durationMs; quantum++) {
@@ -90,9 +87,10 @@ test('independent slow output clock keeps audio continuous while CarPlay video r
       }
     }
     advance(durationMs + 100);
-    const audio = output.timelines.get(0);
+    const audio = output.streams.get(0);
     assert.ok(draws >= 1340, 'at least 99% of supplied video remains presentable during clock fitting and sustained drift');
-    assert.equal(audio.recoveryCounts['clock-step'], undefined, 'the device rate must not repeatedly cross the phase reset threshold');
+    assert.equal(audio.stats().backend, 'neteq');
+    assert.ok(audio.stats().removedSamples + audio.stats().insertedSamples > 0, 'official time stretching absorbs independent pacing');
     assert.ok(minimumEnergy > 8, 'dynamic PCM remains audible without reset fades');
     assert.ok(Math.abs(mapping.deviceClock().rate - deviceRate) < 0.00001);
     assert.equal(frames.stats().audioSyncUnavailableFrames, 0);

@@ -3,12 +3,22 @@
 #include "SoundTouch.h"
 #include <cstdlib>
 #include <new>
+#include <cstdint>
+#include <cstring>
 #pragma clang fp reassociate(off)
 #pragma clang fp contract(off)
 
+static bool valid_tempo(double tempo) {
+    // Integer classification survives the DSP build's fast-math assumptions.
+    uint64_t bits;
+    std::memcpy(&bits, &tempo, sizeof(bits));
+    const volatile uint64_t exponent = bits & UINT64_C(0x7ff0000000000000);
+    return exponent != UINT64_C(0x7ff0000000000000) && tempo >= .25 * (1 - .2) && tempo <= 4 * (1 + .2);
+}
+
 extern "C" {
 soundtouch::SoundTouch *tempo_create(unsigned sample_rate, double tempo) {
-    if (sample_rate < 8000 || sample_rate > 192000 || !(tempo >= 0.25 && tempo <= 4)) return nullptr;
+    if (sample_rate < 8000 || sample_rate > 192000 || !valid_tempo(tempo)) return nullptr;
     auto *processor = new(std::nothrow) soundtouch::SoundTouch;
     if (!processor) return nullptr;
     processor->setSampleRate(sample_rate);
@@ -19,25 +29,15 @@ soundtouch::SoundTouch *tempo_create(unsigned sample_rate, double tempo) {
     // This adapter changes tempo only; rate and pitch always remain exactly 1.
     // There is no sample-rate conversion that would require an anti-alias filter.
     processor->setSetting(SETTING_USE_AA_FILTER, 0);
-    // Preserve the application's existing auto-window curve (0.25–4x), rather
-    // than silently switching to the C++ tool's shorter default windows.
-    processor->setSetting(SETTING_SEQUENCE_MS, (int)(130 - 20 * tempo + 0.5));
-    processor->setSetting(SETTING_SEEKWINDOW_MS, (int)(25 + (0.25 - tempo) * (10.0 / 3.75) + 0.5));
-    processor->setTempo(tempo);
-    return processor;
-}
-soundtouch::SoundTouch *tempo_live_create(unsigned sample_rate, unsigned channels) {
-    if (channels != 1 && channels != 2) return nullptr;
-    auto *processor = tempo_create(sample_rate, 1.0);
-    if (!processor) return nullptr;
-    processor->setChannels(channels);
+    // Bounded WSOLA policy for URL playback. Live streams use NetEq.
     processor->setSetting(SETTING_SEQUENCE_MS, 20);
     processor->setSetting(SETTING_SEEKWINDOW_MS, 5);
     processor->setSetting(SETTING_OVERLAP_MS, 5);
+    processor->setTempo(tempo);
     return processor;
 }
 int tempo_set(soundtouch::SoundTouch *processor, double tempo) {
-    if (!(tempo >= 0.95 && tempo <= 1.2)) return 0;
+    if (!processor || !valid_tempo(tempo)) return 0;
     processor->setTempo(tempo);
     return 1;
 }

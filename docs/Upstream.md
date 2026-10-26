@@ -9,8 +9,7 @@ TiPlay is a GPL-3.0 derivative of [DiPlay by shihabal3amri](https://github.com/s
 | [DiPlay](https://github.com/shihabal3amri/DiPlay) | CarPlay/shared Android source; full merge ancestry through `1b1ac5f2` (0.2.20 plus main fixes). |
 | [Video.js](https://github.com/videojs/video.js) | Browser controls/media adapter; [pinned inputs and update procedure](../site/play/vendor/videojs/README.md). |
 | [Mediabunny](https://github.com/Vanilagy/mediabunny) | URL demuxing/WebCodecs, with SoundTouch and hls.js helpers; [provenance/licenses](../site/play/vendor/mediabunny/README.md). |
-| [FDK AAC](https://github.com/mstorsjo/fdk-aac) | Third-party modified AAC-ELD browser fallback; [source, modifications and license](../site/play/vendor/aac-eld/README.md). |
-| [libsoxr](https://github.com/chirlu/soxr) | Browser streaming variable-rate resampler and native Android SCO resampling; [browser source/build provenance](../site/play/vendor/soxr/README.md) and [Android C/JNI subset](../shared/src/main/jni/soxr/README.md). |
+| [libsoxr](https://github.com/chirlu/soxr) | Native Android SCO resampling; [native source inputs](../scripts/soxr/vendor/README.md) and [Android C/JNI subset](../shared/src/main/jni/soxr/README.md). |
 | [UxPlay](https://github.com/FDH2/UxPlay) | Ordinary AirPlay protocol reference and native transport-key modules; `ec203121355220dd90278a369eeabb0b8ba4f14a`, [native provenance](../shared/src/main/jni/airplay/README.md). |
 | [WebRTC Android SDK](https://github.com/webrtc-sdk/android) | Fixed `150.7871.01` Maven AAR for local reliable DataChannels; publisher binary notices and [exact provenance](Third-party-notices.md#android-webrtc-datachannels) accompany the APK. |
 

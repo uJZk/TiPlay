@@ -6,7 +6,7 @@ const unsupported = () => new DOMException('This browser cannot decode the media
 
 /** Keep hydration out of Mediabunny's concurrent query sorter. Default ranking reads master metadata;
  * only the selected candidate may load a child playlist/segment, then a failed candidate is excluded. */
-export async function selectPlayableTrack(select, { signal, video = false } = {}) {
+export async function selectPlayableTrack(select, { signal, video = false, canDecode = track => track.canDecode() } = {}) {
   const attempted = new Set();
   let failure = null;
   while (true) {
@@ -19,7 +19,7 @@ export async function selectPlayableTrack(select, { signal, video = false } = {}
     try {
       if (video) await requireSdrTrack(track);
       checkAbort(signal);
-      const supported = await track.canDecode();
+      const supported = await canDecode(track);
       checkAbort(signal);
       if (supported) return track;
       failure = unsupported();
@@ -32,12 +32,12 @@ export async function selectPlayableTrack(select, { signal, video = false } = {}
 }
 
 /** Audio menu discovery is sequential too; an unavailable rendition must not discard usable audio. */
-export async function decodableAudioTracks(candidates, { signal } = {}) {
+export async function decodableAudioTracks(candidates, { signal, canDecode = track => track.canDecode() } = {}) {
   const result = [];
   for (const track of candidates) {
     checkAbort(signal);
     try {
-      const supported = await track.canDecode();
+      const supported = await canDecode(track);
       checkAbort(signal);
       if (supported) result.push(track);
     } catch (cause) {

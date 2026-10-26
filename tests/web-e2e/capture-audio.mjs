@@ -22,7 +22,7 @@ const contextRate = Number(options.get('--context-rate') || 48000);
 assert.ok(options.has('--capture') && options.has('--output') && options.has('--clock-offset-ms'));
 assert.ok(Number.isFinite(startMs) && startMs >= 0 && Number.isFinite(durationMs) && durationMs >= 1000 && durationMs <= 300000);
 assert.ok(Number.isFinite(clockOffsetMs) && Number.isFinite(delayMs) && delayMs >= 0 && delayMs <= 500);
-assert.ok(Number.isInteger(contextRate) && contextRate >= 8000 && contextRate <= 96000);
+assert.equal(contextRate, 48000, 'The realtime NetEq graph requires 48 kHz; source rates are converted in decoder Workers.');
 assert.ok(['true', 'false'].includes(options.get('--debug') || 'true'));
 assert.ok(['true', 'false'].includes(options.get('--capture-waveform') || 'false'));
 const repo = fileURLToPath(new URL('../../', import.meta.url)), capture = resolve(options.get('--capture'));

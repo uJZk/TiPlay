@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 // SPDX-License-Identifier: GPL-3.0-only
 import './wasm-init.mjs';
 import test from 'node:test';
@@ -65,9 +66,9 @@ test('encoded mirror stream 6 coexists with CarPlay codecs and rejects an unlabe
 test('modern AirPlay PCM configuration and packets reach the browser worklet with exact samples and timing',async t=>{
  const{audio,controller,messages}=await audioHarness(t),samples=new Int16Array([-32768,-1,1234,32767]);
  const now=performance.timeOrigin+performance.now();audio.clock({offset:now-1000,at:now,rtt:2});
- controller.enqueue(configFrame());controller.enqueue(frame(7,new Uint8Array(samples.buffer)));
+ controller.enqueue(configFrame({...pcmConfig,sampleRate:48000},{rate:48000}));controller.enqueue(frame(7,new Uint8Array(samples.buffer),{rate:48000}));
  await until(()=>messages.some(record=>record.pcm?.byteLength));const record=messages.find(record=>record.pcm?.byteLength);
- assert.deepEqual([...new Int16Array(record.pcm)],[...samples]);assert.equal(record.mode,'airplay-mirror');assert.equal(record.epoch,3);assert.equal(record.sequence,7);assert.equal(record.rate,44100);assert.equal(record.channels,2);
+ assert.deepEqual([...new Int16Array(record.pcm)],[...samples]);assert.equal(record.mode,'airplay-mirror');assert.equal(record.epoch,3);assert.equal(record.sequence,7);assert.equal(record.rate,48000);assert.equal(record.channels,2);
  assert.equal(record.presentationMs,950);assert.ok(Number.isFinite(record.sourceTime));assert.equal(audio.stats().timedPackets,1);assert.equal(audio.stats().fallbackPackets,0);
  assert.ok(messages.some(record=>record.pcm?.byteLength===0&&(record.flags&2)));
 });
@@ -83,31 +84,31 @@ test('unsupported compressed AirPlay codec surfaces browser audio error without 
  assert.equal(audio.stats().queuedBytes,0,'unsupported buffered packets release decoder reservations before END');
 });
 
-test('ended config closes encoded decoder and late AudioData is discarded before the worklet',async t=>{
- const{controller,messages,decoders}=await audioHarness(t,{supported:true});
- controller.enqueue(configFrame({codec:'aac-lc',sampleRate:44100,channels:2,asc:[18,16],bitDepth:16,samplesPerFrame:1024}));controller.enqueue(frame(7,new Uint8Array([1,2,3])));await until(()=>decoders[0]?.chunks.length);
- const old=decoders[0];controller.enqueue(configFrame({ended:true},{epoch:4}));await until(()=>old.state==='closed');
- const data={closed:false,timestamp:1000000,numberOfFrames:1,numberOfChannels:2,sampleRate:44100,copyTo(target,{format}){if(format==='s16')throw new DOMException('Planar only','NotSupportedError');target[0]=.5;},close(){this.closed=true;}};
- old.callbacks.output(data);assert.equal(data.closed,true);assert.equal(messages.filter(record=>record.pcm?.byteLength).length,0);
- controller.enqueue(frame(7,new Uint8Array([4,5,6]),{epoch:3}));await new Promise(resolve=>setTimeout(resolve,5));assert.equal(messages.filter(record=>record.pcm?.byteLength).length,0);
+const opusPacket = () => Uint8Array.from(Buffer.from(JSON.parse(readFileSync(new URL('./fixtures/neteq-opus.json', import.meta.url))).packets[0], 'base64'));
+test('ended config retires the NetEq epoch and rejects late encoded packets', async t=>{
+ const {controller,messages,decoders}=await audioHarness(t,{supported:true});
+ const c={codec:'opus',sampleRate:48000,channels:1};
+ controller.enqueue(configFrame(c,{rate:48000,channels:1}));
+ controller.enqueue(frame(7,opusPacket(),{rate:48000,channels:1}));
+ await until(()=>messages.some(r=>r.payload));
+ controller.enqueue(configFrame({ended:true},{rate:48000,channels:1,epoch:4}));
+ await until(()=>messages.some(r=>r.ended===true));
+ const count=messages.filter(r=>r.payload).length;
+ controller.enqueue(frame(7,opusPacket(),{rate:48000,channels:1,epoch:3}));
+ await new Promise(r=>setTimeout(r,10));assert.equal(messages.filter(r=>r.payload).length,count);
+ assert.equal(decoders.length,0);
 });
-
-test('Bluetooth microphone demand preserves pending encoded music and its browser decoder',async t=>{
- const{audio,controller,messages,decoders}=await audioHarness(t,{supported:true});
- controller.enqueue(configFrame({codec:'aac-lc',sampleRate:44100,channels:2,asc:[18,16],bitDepth:16,samplesPerFrame:1024},{type:0,flags:3}));
- controller.enqueue(frame(7,new Uint8Array([1,2,3]),{type:0,flags:1}));
- await until(()=>decoders[0]?.chunks.length);
- const decoder=decoders[0],resets=messages.filter(record=>record.reset).length;
+test('Bluetooth microphone demand preserves encoded music and the NetEq epoch', async t=>{
+ const {audio,controller,messages,decoders}=await audioHarness(t,{supported:true});
+ const c={codec:'opus',sampleRate:48000,channels:1};
+ controller.enqueue(configFrame(c,{rate:48000,channels:1,flags:3}));
+ controller.enqueue(frame(7,opusPacket(),{rate:48000,channels:1,flags:1}));
+ await until(()=>messages.some(r=>r.payload));
+ const resets=messages.filter(r=>r.reset).length;
  audio.status({voice:{revision:1,state:'active',muted:true}});
- const route=frame(2,new Uint8Array(),{type:5,channels:1,flags:16,epoch:2});controller.enqueue(route);
- await new Promise(resolve=>setImmediate(resolve));
- assert.equal(decoder.state,'configured');assert.equal(decoders.length,1);
- const data={timestamp:1000000,numberOfFrames:1,numberOfChannels:2,sampleRate:44100,copyTo(target,{format}){if(format==='s16')throw new DOMException('Planar only','NotSupportedError');target[0]=.5;},close(){}};
- decoder.callbacks.output(data);
- await until(()=>messages.some(record=>record.pcm?.byteLength));
- const music=messages.find(record=>record.pcm?.byteLength);
- assert.equal(music.type,0);assert.equal(music.mode,'carplay');assert.equal(music.epoch,3);
- assert.deepEqual([...new Int16Array(music.pcm)],[16384,16384]);
- assert.equal(audio.stats().browserMuted,false);assert.equal(audio.stats().queuedBytes,4);
- assert.equal(messages.filter(record=>record.reset).length,resets,'route controls preserve playback generation and queued credit');
+ controller.enqueue(frame(2,new Uint8Array(),{type:5,channels:1,flags:16,epoch:2}));
+ controller.enqueue(frame(7,opusPacket(),{rate:48000,channels:1,flags:1,sequence:8,decodeTimestampUs:1020000}));
+ await until(()=>messages.filter(r=>r.payload).length===2);
+ assert.equal(decoders.length,0);assert.equal(messages.filter(r=>r.reset).length,resets);
+ assert.equal(audio.stats().browserMuted,false);
 });

@@ -159,6 +159,7 @@ internal class AirPlayPlaybackDiagnostics(
                 "video-budget", "audio-budget", "unknown"),
             "renderStatsState" to setOf("available", "unavailable", "invalid", "failed"),
             "audioOutputTimestampState" to setOf("unavailable", "closed", "format-mismatch", "startup", "invalid", "future", "context-ahead", "valid", "failed"),
+            "audioVideoSyncState" to setOf("unavailable", "inactive", "no-video-reference", "no-output-timestamp", "stale-output-timestamp", "output-timestamp-discontinuity", "no-submitted-audio", "native-output-and-video-frame"),
             "audioTempoBackend" to setOf("none", "wasm-simd", "wasm", "soundtouchjs"),
             "contextState" to setOf("running", "suspended", "interrupted", "closed", "unavailable", "unknown"),
             "clockSource" to setOf("audio", "performance", "unknown"),
@@ -172,7 +173,8 @@ internal class AirPlayPlaybackDiagnostics(
         )
         private val ENGINE_FLAGS = listOf("running", "intentPlaying", "resumePending", "hasPlayed", "videoBudgetBlocked",
             "videoDone", "audioDone", "videoReadPending", "audioReadPending", "userActivationHasBeenActive", "gestureRequired")
-        private val ENGINE_NUMBERS = listOf("openElapsedMs", "phaseElapsedMs", "generation", "clockTime", "clockPosition", "scheduledEnd", "position", "playableEnd",
+        private val ENGINE_NUMBERS = listOf("manualPlaybackRate", "automaticPlaybackRate", "effectivePlaybackRate", "audioAppliedTempo", "audioVideoSyncErrorMs", "audioVideoSyncMinimumMs", "audioVideoSyncMaximumMs", "audioSyncControlDelayMs", "audioSyncResponseMs",
+            "openElapsedMs", "phaseElapsedMs", "generation", "clockTime", "clockPosition", "scheduledEnd", "position", "playableEnd",
             "videoEnd", "audioEnd", "targetMs", "videoFrames", "videoBytes", "audioChunks", "audioBytes", "stallElapsedMs", "stallCount",
             "videoCapacityFrames", "videoCapacityBytes", "videoCapacityAheadMs", "audioCapacityBytes", "audioCapacityAheadMs",
             "codedWidth", "codedHeight", "displayWidth", "displayHeight", "observedSampleCadenceMs", "observedSampleDurationMs",
@@ -202,7 +204,7 @@ internal class AirPlayPlaybackDiagnostics(
         private val AUDIO_CONTINUITY_COUNTERS = listOf("audioOverlapTrimmedFrames", "audioSilenceFrames", "audioScheduleGapUs",
             "audioScheduleOverlapUs", "audioLateStarts", "audioPcmOverFullScaleSamples", "audioNonFiniteSamples",
             "audioScheduleUnderruns", "audioRebufferStops")
-        private val ENGINE_SIGNED = setOf("audioOutputTimestampAgeMs", "audioOutputContextLagMs")
+        private val ENGINE_SIGNED = setOf("audioVideoSyncErrorMs", "audioVideoSyncMinimumMs", "audioOutputTimestampAgeMs", "audioOutputContextLagMs")
         private val ENGINE_DIMENSIONS = setOf("codedWidth", "codedHeight", "displayWidth", "displayHeight")
         private val FAILURE_EVENTS = setOf("error", "open-error", "canvas-error", "play-rejected")
         private val ERROR_VOLATILE_FIELDS = setOf("clockTime", "clockPosition", "position", "playableEnd", "videoEnd", "audioEnd",
@@ -227,13 +229,16 @@ internal class AirPlayPlaybackDiagnostics(
             "ENGINE_NETWORK" to listOf("resourceActive", "resourceQueued", "resourceBytes", "resourceLastProgressAgeMs", "resourceLastResult",
                 "resourceTimeouts", "resourceCancellations", "resourceBackwardRestarts", "resourceRangeIgnored", "resourceLastStatus"),
             "ENGINE_PCM" to listOf("audioTempoBackend", "audioSourceRate", "audioRequestedContextRate", "audioContextRate", "audioSourceChannels",
-                "audioDecodedFrames", "audioSeekTrimmedFrames", "audioOverlapTrimmedFrames"),
+                "audioDecodedFrames", "audioSeekTrimmedFrames", "audioOverlapTrimmedFrames",
+                "manualPlaybackRate", "automaticPlaybackRate", "effectivePlaybackRate", "audioAppliedTempo"),
             "ENGINE_CONTINUITY" to listOf("audioAlignedPackets", "audioAlignmentMaxUs", "audioSilenceFrames", "audioPcmPeak",
                 "audioPcmOverFullScaleSamples", "audioNonFiniteSamples"),
-            "ENGINE_RENDER" to listOf("renderStatsState", "renderUnderrunEvents", "renderUnderrunDurationMs", "renderTotalDurationMs"),
+            "ENGINE_RENDER" to listOf("renderStatsState", "renderUnderrunEvents", "renderUnderrunDurationMs", "renderTotalDurationMs",
+                "audioVideoSyncState", "audioVideoSyncErrorMs", "audioVideoSyncMinimumMs", "audioVideoSyncMaximumMs"),
             "ENGINE_STARTUP" to listOf("startupPhase", "openElapsedMs", "phaseElapsedMs"),
             "ENGINE_SCHEDULE" to listOf("audioScheduledFrames", "audioScheduleGapUs", "audioScheduleOverlapUs", "audioLateStarts", "audioLateStartMaxMs",
-                "audioScheduleUnderruns", "audioScheduleUnderrunMs", "audioScheduleUnderrunMaxMs", "audioRebufferStops"),
+                "audioScheduleUnderruns", "audioScheduleUnderrunMs", "audioScheduleUnderrunMaxMs", "audioRebufferStops",
+                "audioSyncControlDelayMs", "audioSyncResponseMs"),
         )
     }
 }

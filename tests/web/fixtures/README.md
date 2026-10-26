@@ -33,3 +33,9 @@ the authenticated resource route under the real page CSP; no personal image or
 location metadata is included.
 
 Small original HLS-TS and CMAF test patterns are described in the [HLS fixture notes](hls-ts/README.md).
+
+`live-alac24.json` is an original 0.1-second stereo 997 Hz signal generated with
+`aevalsrc=0.125*sin(2*PI*997*t):s=48000:d=0.1` and encoded by native FFmpeg ALAC
+using `-sample_fmt s32p`. The cookie declares 24-bit ALAC. Packet and extradata
+bytes come from `ffprobe -show_packets -show_streams -show_data -of json`.
+It validates the software S32-planar to PCM16 path, not 24-bit output fidelity.

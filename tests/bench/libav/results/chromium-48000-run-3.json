@@ -1,0 +1,29 @@
+{
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+  "hardwareConcurrency": 5,
+  "warmup": 5,
+  "rounds": 20,
+  "packetRepeats": 20,
+  "results": [
+    {
+      "fixture": "AAC-LC 48000 stereo",
+      "samples": 1966080,
+      "sha256": "8b096d7a8c0a5d19171d10e18e1b417903740f5a063ec7b311cd603ce73f9314",
+      "portableMedianMs": 45.399999998509884,
+      "simdMedianMs": 44.20000000298023,
+      "speedup": 1.0271493211639986,
+      "portablePacketP95Ms": 0.10000000149011612,
+      "simdPacketP95Ms": 0.10000000149011612
+    },
+    {
+      "fixture": "ALAC 48000 stereo",
+      "samples": 1920000,
+      "sha256": "928305196b4f3ca473465806d25a56eed1be3a1a3aace436c9e03cee10bb46d4",
+      "portableMedianMs": 56.80000000447035,
+      "simdMedianMs": 64.79999999701977,
+      "speedup": 0.8765432099858433,
+      "portablePacketP95Ms": 0.3999999985098839,
+      "simdPacketP95Ms": 0.3999999985098839
+    }
+  ]
+}

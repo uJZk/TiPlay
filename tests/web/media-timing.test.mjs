@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import { createMediaTiming, createTimedFrames, createVideoEpochGuard } from '../../site/play/media-timing.js';
 import { constantDelay, delayAt, planDelay, mediaDeadline, playbackProfile } from '../../site/play/delay-plan.js';
 import { audioDelayAt, videoExpired } from '../../site/play/playback-window.js';
-import { PcmTimeline } from '../../site/play/pcm-timeline.js';
 
 test('audio readiness and video readiness retain independent bounded plans', () => {
   let now = 1000;
@@ -16,42 +15,6 @@ test('audio readiness and video readiness retain independent bounded plans', () 
   const audio = timing.plan('audio'); now = 1200; timing.observe('video', 1190);
   assert.equal(timing.plan('audio'), audio);
   timing.reset(); assert.equal(timing.delay(), 60); assert.equal(timing.delay('audio'), 60);
-});
-
-test('a common ramp presents each video timestamp while continuous audio reaches the same source time', () => {
-  let now = 1000, pending = null;
-  const observed = [], frames = createTimedFrames((frame, _, __, source) => observed.push({ source, at: now }), {
-    now: () => now, schedule: (callback, wait) => { pending = { callback, at: now + wait }; return callback; }, cancel: () => { pending = null; },
-  });
-  let plan = planDelay(constantDelay(60), 80, now);
-  const audio = new PcmTimeline(8000, 1, () => {}, 2500);
-  for (let i = 0; i < 8; i++) audio.push({ sourceTime: 900 + i * 250, sequence: i, pcm: new Int16Array(2000).fill(16384).buffer });
-  const sources = [1050, 1200, 1350, 1500];
-  frames.delay(plan);
-  for (const source of sources) frames.present({ close() {} }, {}, 1, source);
-  let previous = now - delayAt(plan, now), switched = false;
-  while (now < 1700) {
-    now += 0.125;
-    if (!switched && now >= 1300) {
-      const before = delayAt(plan, now); plan = planDelay(plan, 60, now); frames.delay(plan);
-      assert.equal(delayAt(plan, now), before); switched = true;
-    }
-    const source = now - delayAt(plan, now), advance = source - previous;
-    assert.ok(advance >= 0.125 * 0.98 - 0.000001 && advance <= 0.125 * 1.005 + 0.000001, 'audio has no backwards step or skipped chunk during either ramp');
-    assert.equal(audio.sample(source, 0), 0.5, 'ramping never creates a silent hole in continuous PCM');
-    previous = source;
-    while (pending && pending.at <= now) pending.callback();
-  }
-  assert.deepEqual(observed.map(value => value.source), sources);
-  for (const item of observed) {
-    const expectedPlan = item.at < 1300 ? planDelay(constantDelay(60), 80, 1000) : plan;
-    const audioSource = item.at - delayAt(expectedPlan, item.at);
-    assert.ok(audioSource >= item.source && audioSource - item.source < 0.13, 'video uses the same advancing source clock as PCM');
-  }
-  const increasing = planDelay(constantDelay(60), 80, 1000);
-  const due = mediaDeadline(1050, increasing, 1000);
-  assert.ok(Math.abs(due - delayAt(increasing, due) - 1050) < 0.000001, 'timer solves the ramp deadline instead of using the old delay');
-  frames.reset();
 });
 
 test('the first timestamp after fallback playback cannot jump the effective delay', () => {
@@ -73,17 +36,6 @@ test('CarPlay and AirPlay mirror use their own shared delay caps', () => {
   }
 });
 
-test('mode switches discard an old high delay plan without clearing independent audio queues', () => {
-  let now = 1000;
-  const timing = createMediaTiming(() => {}, () => now), audio = new PcmTimeline(8000, 1, () => {}, 2500);
-  timing.mode('airplay-mirror'); timing.observe('video', 0); timing.observe('audio', 0);
-  audio.push({ sourceTime: 1000, sequence: 0, pcm: new Int16Array(160).fill(16384).buffer });
-  timing.mode('airplay-mirror'); assert.equal(timing.delay(), 280); assert.equal(timing.plan().previous, undefined);
-  timing.mode('carplay'); assert.equal(timing.delay(), 0); assert.equal(timing.plan().previous, undefined);
-  assert.equal(audio.sample(1000, 0), 0.5, 'policy owns no PCM queue and cannot clear newly arrived audio');
-  now = 2000; timing.observe('video', 0); assert.equal(timing.plan().to, 280);
-});
-
 test('fallback video deadlines and decoded buffering fit the 500ms submission limit', () => {
   let now = 1000;
   const frames = createTimedFrames(frame => { frame.shown = true; }, { now: () => now, schedule: () => 1, cancel() {} });
@@ -93,38 +45,6 @@ test('fallback video deadlines and decoded buffering fit the 500ms submission li
   for (let i = 1; i <= 20; i++) frames.present({ close() {} }, {}, 1, 1000 + i * 1000 / 60);
   assert.equal(first.closed, undefined, 'early frames cannot evict the first one before its deadline');
   now = 1480; frames.delay(plan); assert.equal(first.shown, true); frames.reset();
-});
-
-test('decoded video reorders by source time and shares the audio start deadline', () => {
-  let now = 1040, pending = null;
-  const shown = [], consumed = [];
-  const frames = createTimedFrames(frame => shown.push(frame.timestamp), {
-    now: () => now, schedule: callback => { pending = callback; return callback; }, cancel: () => { pending = null; },
-  });
-  const frame = timestamp => ({ timestamp, closed: false, close() { this.closed = true; } });
-  const later = frame(1020), earlier = frame(1000);
-  frames.present(later, {}, 1, 1020); frames.present(earlier, {}, 1, 1000);
-  const audio = new PcmTimeline(8000, 1, bytes => consumed.push(bytes));
-  audio.push({ sourceTime: 1000, sequence: 0, pcm: new Int16Array(160).fill(16384).buffer });
-  assert.deepEqual(shown, []); assert.equal(audio.sample(now - 60, 0), 0);
-  now = 1060; pending();
-  assert.deepEqual(shown, [1000]); assert.equal(audio.sample(now - 60, 0), 0.5);
-  now = 1080; pending(); assert.deepEqual(shown, [1000, 1020]);
-  const stale = frame(1010); frames.present(stale, {}, 1, 1010); assert.equal(stale.closed, true);
-  const queued = frame(1100); frames.present(queued, {}, 1, 1100); frames.reset(); assert.equal(queued.closed, true);
-});
-
-test('audio reorders, discards duplicates and late packets, and preserves gaps', () => {
-  const consumed = [], audio = new PcmTimeline(8000, 1, bytes => consumed.push(bytes));
-  const packet = (sourceTime, sequence, value = 16384) => ({ sourceTime, sequence, pcm: new Int16Array(80).fill(value).buffer });
-  audio.push(packet(1030, 3)); audio.push(packet(1000, 1)); audio.push(packet(1000, 1));
-  assert.equal(audio.queue.length, 2); assert.equal(consumed.length, 1);
-  assert.equal(audio.sample(1000, 0), 0.5);
-  assert.equal(audio.sample(1020, 0), 0, 'missing packet remains a ten millisecond gap');
-  audio.push(packet(1010, 2)); assert.equal(audio.queue.length, 1, 'expired audio never shifts the next packet');
-  assert.equal(audio.sample(1030, 0), 0.5);
-  assert.equal(audio.sample(1025, 0), 0, 'a delay increase holds rather than replays audio');
-  audio.clear(); assert.equal(audio.queue.length, 0);
 });
 
 test('late decoded video collapses to the newest due frame without presenting future frames', () => {
@@ -155,16 +75,6 @@ test('local readiness observations update the plan before drawing and reset rele
   frames.present(second, {}, 1, 1040);
   frames.reset(); frames.delay(constantDelay(60));
   assert.equal(second.closes, 1); assert.deepEqual(shown, []);
-});
-
-test('buffered audio retains a two second burst while live audio remains bounded', () => {
-  const buffered = new PcmTimeline(8000, 1, () => {}, 2500), live = new PcmTimeline(8000, 1, () => {});
-  for (let i = 0; i < 100; i++) {
-    const packet = { sourceTime: i * 20, sequence: i, pcm: new Int16Array(160).buffer };
-    buffered.push(packet); live.push(packet);
-  }
-  assert.equal(buffered.queue.length, 100);
-  assert.equal(live.queue.length, 50);
 });
 
 test('repeated video configuration preserves queued frames until the actual epoch changes', () => {

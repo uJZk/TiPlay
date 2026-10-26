@@ -1,0 +1,50 @@
+{
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+  "hardwareConcurrency": 5,
+  "outputFormat": "f32-planar",
+  "warmup": 5,
+  "rounds": 20,
+  "packetRepeats": 20,
+  "results": [
+    {
+      "fixture": "AAC-LC 44100 stereo",
+      "samples": 445824,
+      "sha256": "4ee76e1bf611e7327bb8b4fe5b95d30487515fd31655c5b4966f7fd605701028",
+      "portableMedianMs": 16,
+      "simdMedianMs": 13,
+      "speedup": 1.2307692307692308,
+      "portablePacketP95Ms": 0.19999999995343387,
+      "simdPacketP95Ms": 0.19999999995343387
+    },
+    {
+      "fixture": "ALAC 44100 stereo",
+      "samples": 1920000,
+      "sha256": "3ed6c7ec6c44dda93901e2d91b766137f509a011b0fa4a8a582e86861f426369",
+      "portableMedianMs": 87.30000000004657,
+      "simdMedianMs": 83.90000000002328,
+      "speedup": 1.0405244338500874,
+      "portablePacketP95Ms": 0.5,
+      "simdPacketP95Ms": 0.5
+    },
+    {
+      "fixture": "AAC-LC 48000 stereo",
+      "samples": 1966080,
+      "sha256": "aa2543ce713977567651aefd0cfeef08721e0aa348dc11ee6224252f5cb53bff",
+      "portableMedianMs": 37.59999999997672,
+      "simdMedianMs": 49.5,
+      "speedup": 0.7595959595954892,
+      "portablePacketP95Ms": 0.10000000009313226,
+      "simdPacketP95Ms": 0.10000000009313226
+    },
+    {
+      "fixture": "ALAC 48000 stereo",
+      "samples": 1920000,
+      "sha256": "e303361aba3f1faca6385ef0f382323e9cbe4e2415f7cfb4516e3e0e1fc54891",
+      "portableMedianMs": 67,
+      "simdMedianMs": 78.09999999997672,
+      "speedup": 0.8578745198466066,
+      "portablePacketP95Ms": 0.40000000002328306,
+      "simdPacketP95Ms": 0.6999999999534339
+    }
+  ]
+}

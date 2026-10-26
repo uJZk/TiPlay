@@ -5,17 +5,20 @@
 enum { FRAMES = 4096, CHANNELS = 8, SAMPLES = FRAMES * CHANNELS };
 static int16_t input16[SAMPLES];
 static float input[SAMPLES], output[SAMPLES];
-static float last[CHANNELS], recovery[CHANNELS];
+static float last[CHANNELS];
 static double media[SAMPLES], other[SAMPLES];
 static uint8_t voice[FRAMES];
-static double result_gain, result_peak;
+static double result_gain, result_peak, mix_preclip_peak;
+static int mix_over, mix_invalid;
+double audio_mix_preclip_peak(void) { return mix_preclip_peak; }
+int audio_mix_over(void) { return mix_over; }
+int audio_mix_invalid(void) { return mix_invalid; }
 static int result_remaining, result_nonzero, mix_frames, mix_channels;
 
 int audio_input16(void) { return (int)(uintptr_t)input16; }
 int audio_input(void) { return (int)(uintptr_t)input; }
 int audio_output(void) { return (int)(uintptr_t)output; }
 int audio_last(void) { return (int)(uintptr_t)last; }
-int audio_recovery(void) { return (int)(uintptr_t)recovery; }
 double audio_gain(void) { return result_gain; }
 double audio_peak(void) { return result_peak; }
 int audio_remaining(void) { return result_remaining; }
@@ -58,23 +61,6 @@ void audio_scan16(int samples) {
     if (value > peak) peak = value;
   }
   result_nonzero = nonzero; result_peak = peak / 32768.0;
-}
-
-void audio_fresh(int frames, int channels, int fade, double gain, int remaining) {
-  if (frames < 0 || frames > FRAMES || channels < 1 || channels > CHANNELS || fade < 1) return;
-  for (int i = 0; i < frames; ++i) {
-    gain += 1.0 / fade;
-    if (gain > 1) gain = 1;
-    double envelope = remaining > 0 ? (remaining - 1.0) / remaining : 0;
-    for (int c = 0; c < channels; ++c) {
-      recovery[c] = (float)(recovery[c] * envelope);
-      /* Float64 arithmetic matches JS; storage retains float32 PCM semantics. */
-      double value = input[i * channels + c] * gain + recovery[c];
-      output[i * channels + c] = last[c] = (float)value;
-    }
-    if (remaining > 0) --remaining;
-  }
-  result_gain = gain; result_remaining = remaining;
 }
 
 void audio_tail(int frames, int channels, int remaining) {
@@ -122,12 +108,19 @@ int audio_mix_tail(int channels, int is_media, int is_voice, int remaining, int 
 }
 
 void audio_mix_end(double gain, double step, int debug) {
+  mix_preclip_peak = 0; mix_over = 0; mix_invalid = 0;
   int nonzero = 0; double peak = 0;
   for (int i = 0; i < mix_frames; ++i) {
     double target = voice[i] ? .2 : 1, difference = target - gain;
     gain += difference > step ? step : difference < -step ? -step : difference;
     for (int c = 0; c < mix_channels; ++c) {
       double value = media[i * mix_channels + c] * gain + other[i * mix_channels + c];
+      if (!__builtin_isfinite(value)) { if (debug) ++mix_invalid; value = 0; }
+      if (debug) {
+        double absolute = value < 0 ? -value : value;
+        if (absolute > mix_preclip_peak) mix_preclip_peak = absolute;
+        if (absolute > 1) ++mix_over;
+      }
       if (value > 1) value = 1;
       else if (value < -1) value = -1;
       float sample = (float)value;

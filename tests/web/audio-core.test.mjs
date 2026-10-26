@@ -14,34 +14,13 @@ test('audio core has no host imports or growing memory', async () => {
   assert.throws(() => kernel.api.memory.grow(1), RangeError);
 });
 
-test('fresh PCM crossfade follows an independent linear envelope and finishes at its real source', () => {
-  const kernel = new AudioKernel(), timeline = state(2), frames = 512;
-  const input = new Float32Array(frames * 2).fill(.25), output = new Float32Array(input.length);
-  kernel.fresh(input, 0, output, 0, frames, timeline);
-  for (let frame = 0; frame < frames; frame++) {
-    const expected = frame < 240 ? .25 * (frame + 1) / 240 + .5 * (239 - frame) / 240 : .25;
-    assert.ok(Math.abs(output[frame * 2] - expected) < 2e-6);
-    assert.equal(output[frame * 2], output[frame * 2 + 1]);
-  }
-  assert.equal(timeline.recoveryRemaining, 0);
-  assert.equal(timeline.gain, 1);
-  assert.deepEqual([...timeline.last], [.25, .25]);
-});
-
-test('crossfade partitioning and tail partitioning preserve every signal sample', () => {
-  const kernel = new AudioKernel(), input = Float32Array.from({ length: 1200 }, (_, i) => Math.sin(i * .013) * .3);
-  const whole = state(2), split = state(2), expected = new Float32Array(input.length), actual = new Float32Array(input.length);
-  kernel.fresh(input, 0, expected, 0, 600, whole);
-  let offset = 0;
-  for (const frames of [17, 64, 128, 3, 240, 148]) {
-    kernel.fresh(input, offset, actual, offset, frames, split); offset += frames;
-  }
-  assert.deepEqual(actual, expected);
-  const wholeTail = new Float32Array(1024), splitTail = new Float32Array(1024);
-  kernel.tail(wholeTail, 0, 512, whole);
-  kernel.tail(splitTail, 0, 31, split); kernel.tail(splitTail, 31, 97, split); kernel.tail(splitTail, 128, 384, split);
-  assert.deepEqual(splitTail, wholeTail);
-  assert.ok(wholeTail.slice(480).every(value => value === 0));
+test('finite tail is identical across output block partitions', () => {
+  const kernel = new AudioKernel(), whole = state(2), split = state(2);
+  whole.last.fill(.25); split.last.fill(.25);
+  const expected = new Float32Array(1024), actual = new Float32Array(1024);
+  kernel.tail(expected, 0, 512, whole);
+  kernel.tail(actual, 0, 31, split); kernel.tail(actual, 31, 97, split); kernel.tail(actual, 128, 384, split);
+  assert.deepEqual(actual, expected); assert.ok(actual.slice(480).every(value => value === 0));
 });
 
 test('PCM16 conversion preserves signed endpoints at small and large batches', () => {

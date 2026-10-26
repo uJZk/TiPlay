@@ -5,9 +5,7 @@ import assert from 'node:assert/strict';
 import { createBrowserAudio } from '../../site/play/audio.js';
 import { browserDiagnosticEvents } from '../../site/play/browser-diagnostics.js';
 import { createAirPlayAudioDecoder } from '../../site/play/airplay-audio-decoder.js';
-import { PcmTimeline } from '../../site/play/pcm-timeline.js';
 import { constantDelay } from '../../site/play/delay-plan.js';
-import { SoxrRuntime } from '../../site/play/streaming-resampler.js';
 import { BUFFERED_AUDIO_WINDOW_MS, BUFFERED_FEED_LEAD_MS, BUFFERED_START_LATENCY_MS, AUDIO_CLOCK_MARGIN_MS, MAX_AUDIO_AHEAD_BYTES } from '../../site/play/audio-buffer-policy.js';
 
 let Processor;
@@ -17,167 +15,6 @@ globalThis.sampleRate = 48000;
 globalThis.currentTime = 0; globalThis.currentFrame = 0;
 const setRenderTime = seconds => { globalThis.currentTime = seconds; globalThis.currentFrame = Math.round(seconds * sampleRate); };
 await import('../../site/play/audio-worklet.js');
-
-function replay({ previousLimit = false, videoDelay = 0, audioDelay = 105, clockShift = 20 } = {}) {
-  const processor = new Processor(), frameMs = 1024 * 1000 / 48000, base = 1792129412763;
-  processor.port.onmessage({ data: { debug: true, clockBase: base,
-    plans: { video: constantDelay(videoDelay), audio: constantDelay(audioDelay) } } });
-  let next = 0, nonzero = 0, samples = 0;
-  for (let block = 0; block < 3000; block++) {
-    const wall = block * 128 / 48;
-    setRenderTime(wall / 1000);
-    while (Math.max((next + 1) * frameMs - BUFFERED_FEED_LEAD_MS, next * frameMs / 4) <= wall) {
-      processor.port.onmessage({ data: { type: 0, mode: 'carplay', epoch: 7, generation: 3,
-        rate: 48000, channels: 2, flags: 1, sequence: next,
-        sourceTime: base + BUFFERED_START_LATENCY_MS + next * frameMs + clockShift,
-        pcm: new Int16Array(2048).fill(8192).buffer } });
-      if (previousLimit) Object.assign(processor.timelines.get(0), { maximumMs: 2500, buffered: false });
-      next++;
-    }
-    const output = [new Float32Array(128), new Float32Array(128)];
-    processor.process([], [output]);
-    if (wall > 3000) { samples += 128; nonzero += output[0].filter(value => value !== 0).length; }
-    assert.ok(processor.timelines.get(0).bytes <= MAX_AUDIO_AHEAD_BYTES);
-  }
-  processor.report();
-  return { audible: nonzero / samples, processor, stats: processor.messages.filter(value => value.diagnostics).at(-1).diagnostics };
-}
-
-test('the real worklet reproduces prior buffered starvation and retains audio across the full timing budget', () => {
-  assert.equal(replay({ previousLimit: true }).audible, 0, 'the captured 2500ms policy continually discarded the sample before playback');
-  for (const options of [{}, { videoDelay: 500, audioDelay: 625, clockShift: AUDIO_CLOCK_MARGIN_MS }]) {
-    const { audible, processor, stats } = replay(options);
-    assert.ok(audible > 0.999, 'nonzero PCM remains continuous at the maximum allowed delay and clock margin');
-    assert.equal(stats.stream0.capacityPackets, 0); assert.ok(stats.stream0.playedPackets > 0);
-    assert.equal(stats.renderPeak, 0.25); assert.ok(stats.renderNonzero > 0);
-    const timeline = processor.timelines.get(0);
-    assert.ok(timeline.queue.at(-1).end - timeline.queue[0].start <= BUFFERED_AUDIO_WINDOW_MS);
-  }
-});
-
-test('realtime CarPlay media retains its one-second sender lead across a delayed audio clock', () => {
-  const processor = new Processor(), frameMs = 1024 * 1000 / 48000, base = 1792129412763;
-  const senderLeadMs = 1000, audioClockLagMs = 925;
-  processor.port.onmessage({ data: { debug: true, clockBase: base - audioClockLagMs,
-    plans: { video: constantDelay(0), audio: constantDelay(20) } } });
-  let next = 0, nonzero = 0, samples = 0, maximumBytes = 0;
-  for (let block = 0; block < 3000; block++) {
-    const wall = block * 128 / 48;
-    setRenderTime(wall / 1000);
-    while (next * frameMs <= wall) {
-      processor.port.onmessage({ data: { type: 0, mode: 'carplay', epoch: 9, generation: 4,
-        rate: 48000, channels: 2, flags: 0, sequence: next,
-        sourceTime: base + senderLeadMs + next * frameMs,
-        pcm: new Int16Array(2048).fill(8192).buffer } });
-      next++;
-    }
-    const output = [new Float32Array(128), new Float32Array(128)];
-    processor.process([], [output]);
-    maximumBytes = Math.max(maximumBytes, processor.timelines.get(0).bytes);
-    if (wall > 3000) { samples += 128; nonzero += output[0].filter(value => value !== 0).length; }
-  }
-  processor.report();
-  const stats = processor.messages.filter(value => value.diagnostics).at(-1).diagnostics;
-  assert.ok(nonzero / samples > 0.999, 'realtime media must retain the sample until its existing presentation deadline');
-  assert.equal(stats.stream0.capacityPackets, 0, 'the negotiated sender lead must fit without evicting audio before playback');
-  assert.ok(stats.stream0.playedPackets > 0);
-  assert.ok(maximumBytes <= MAX_AUDIO_AHEAD_BYTES);
-  assert.equal(processor.timelines.get(0).buffered, false, 'UDP media retains its realtime overflow policy');
-
-  for (const [type, mode, flags, maximumMs, buffered] of [
-    [0, 'carplay', 1, BUFFERED_AUDIO_WINDOW_MS, true],
-    [1, 'carplay', 0, 1000, false],
-    [6, 'airplay-mirror', 4, 1000, false],
-  ]) {
-    const other = new Processor();
-    other.port.onmessage({ data: { type, mode, epoch: 1, flags, sequence: 0,
-      rate: 48000, channels: 2, sourceTime: base, pcm: new Int16Array(2048).buffer } });
-    assert.equal(other.timelines.get(type).maximumMs, maximumMs);
-    assert.equal(other.timelines.get(type).buffered, buffered);
-  }
-});
-
-test('buffered overflow protects the sample about to play and diagnostics separate all retirement reasons', () => {
-  const audio = new PcmTimeline(8000, 1, () => {}, 100, { buffered: true });
-  audio.debug(true);
-  const packet = (sourceTime, sequence) => ({ sourceTime, sequence, pcm: new Int16Array(80).fill(16384).buffer });
-  audio.push(packet(0, 0)); audio.push(packet(0, 0));
-  for (let index = 1; index < 50; index++) audio.push(packet(index * 10, index));
-  assert.equal(audio.sample(0, 0), 0.5, 'future arrivals cannot starve the retained head');
-  audio.sample(10, 0);
-  audio.push(packet(-10, 60));
-  audio.sample(200, 0);
-  audio.push(packet(300, 70)); audio.clear();
-  const stats = audio.stats();
-  assert.ok(stats.capacityPackets > 0); assert.equal(stats.duplicatePackets, 1);
-  assert.ok(stats.playedPackets > 0); assert.ok(stats.latePackets > 0); assert.equal(stats.resetPackets, 1);
-  assert.equal(stats.queueBytes, 0);
-  audio.debug(false); assert.equal(audio.counters, null);
-});
-
-test('worklet scalar telemetry is opt-in, rate-limited and stops immediately when disabled', () => {
-  const processor = new Processor(); setRenderTime(0);
-  const output = [new Float32Array(128), new Float32Array(128)];
-  let frame = 0;
-  const render = () => { setRenderTime(frame / 48000); processor.process([], [output]); frame += 128; };
-  render(); assert.equal(processor.messages.length, 0);
-  processor.port.onmessage({ data: { debug: true } });
-  render();
-  assert.equal(processor.messages.filter(value => value.diagnostics).length, 1);
-  for (let block = 0; block < 100; block++) render();
-  assert.equal(processor.messages.filter(value => value.diagnostics).length, 1);
-  for (let block = 0; block < 100; block++) render();
-  assert.equal(processor.messages.filter(value => value.diagnostics).length, 2);
-  processor.port.onmessage({ data: { debug: false } });
-  for (let block = 0; block < 200; block++) render();
-  assert.equal(processor.messages.filter(value => value.diagnostics).length, 2);
-  assert.equal(processor.diagnostics, null);
-});
-
-test('render quantum evidence measures actual block lengths and resets with Debug without changing output', () => {
-  const processor = new Processor();
-  setRenderTime(0);
-  const render = frames => {
-    const output = [new Float32Array(frames), new Float32Array(frames)];
-    processor.process([], [output]);
-    globalThis.currentFrame += frames;
-    assert.ok(output.every(channel => channel.every(value => value === 0)));
-  };
-  render(256); assert.equal(processor.diagnostics, null);
-  processor.port.onmessage({ data: { debug: true, diagnosticRevision: 1 } });
-  for (const frames of [128, 256, 64, 128]) render(frames);
-  processor.report();
-  const stats = processor.messages.filter(value => value.diagnostics).at(-1).diagnostics;
-  assert.equal(stats.processCalls, 4); assert.equal(stats.renderFrames, 576);
-  assert.equal(stats.renderQuantumFrames, 128); assert.equal(stats.renderQuantumMinFrames, 64); assert.equal(stats.renderQuantumMaxFrames, 256);
-  processor.port.onmessage({ data: { debug: false } }); render(512);
-  processor.port.onmessage({ data: { debug: true, diagnosticRevision: 2 } }); render(128); processor.report();
-  const fresh = processor.messages.filter(value => value.diagnostics).at(-1).diagnostics;
-  assert.equal(fresh.processCalls, 1); assert.equal(fresh.renderQuantumMinFrames, 128); assert.equal(fresh.renderQuantumMaxFrames, 128);
-});
-
-test('worklet source-fit evidence uses render-context ages and a replacement epoch cannot retain the previous fit', () => {
-  const processor = new Processor(), post = data => processor.port.onmessage({ data });
-  post({ calibration: { rate: 48000, outputRate: 48000, delayMs: new SoxrRuntime().filterDelay(48000, 48000) } });
-  post({ debug: true, diagnosticRevision: 1 });
-  const packet = (epoch, ms) => ({ type: 6, mode: 'airplay-mirror', epoch, generation: 1, rate: 48000, channels: 1,
-    flags: 0, sequence: ms / 1000, presentationMs: 1000000 + ms, decodeTimestampUs: ms * 1000, pcm: new Int16Array(960).buffer });
-  try {
-    for (let ms = 0; ms <= 31000; ms += 1000) { setRenderTime(ms / 1000); post(packet(1, ms)); }
-    setRenderTime(31.1);
-    processor.process([], [[new Float32Array(128), new Float32Array(128)]]); processor.report();
-    const fitted = processor.messages.filter(value => value.diagnostics).at(-1).diagnostics.stream6;
-    assert.equal(fitted.sourceClockFitStatus, 'tracking'); assert.equal(fitted.sourceClockFitRejectReason, 'none');
-    assert.equal(fitted.sourceClockPoints, 32); assert.equal(fitted.sourceClockSpanMs, 31000);
-    assert.ok(Math.abs(fitted.sourceClockAcceptedFitAgeMs - (100 + 128 / 48)) < 1e-6);
-    setRenderTime(32); post(packet(2, 32000)); post(packet(1, 33000)); processor.report();
-    const replaced = processor.messages.filter(value => value.diagnostics).at(-1).diagnostics.stream6;
-    assert.equal(replaced.epoch, 2); assert.equal(replaced.sourceClockFitStatus, 'acquiring');
-    assert.equal(replaced.sourceClockFitRejectReason, 'insufficient-span'); assert.equal(replaced.sourceClockPoints, 1);
-    assert.equal(Object.hasOwn(replaced, 'sourceClockAcceptedFitAgeMs'), false);
-    post({ debug: false }); assert.equal(processor.timelines.get(6).sourceClock.snapshot(32000), null);
-  } finally { post({ dispose: true }); }
-});
 
 test('decoder diagnostics count actual signed PCM samples only while enabled', async () => {
   const decoder = createAirPlayAudioDecoder({ onPcm() {} });
@@ -326,24 +163,6 @@ test('reset clears retained worklet evidence and rejects delayed reports from th
     h.audio.debug(true);
     assert.equal(h.audio.stats().debug.stream0, undefined);
   } finally { h.done(); }
-});
-
-test('worklet diagnostic envelopes follow reset and packet generations independently of Debug revision', () => {
-  const processor = new Processor(), post = data => processor.port.onmessage({ data });
-  try {
-    post({ debug: true, diagnosticRevision: 4, generation: 7 }); processor.report();
-    let report = processor.messages.findLast(message => message.diagnostics);
-    assert.equal(report.diagnosticRevision, 4); assert.equal(report.playbackGeneration, 7);
-    post({ reset: true, generation: 8 }); processor.report();
-    report = processor.messages.findLast(message => message.diagnostics);
-    assert.equal(report.diagnosticRevision, 4); assert.equal(report.playbackGeneration, 8);
-    post({ type: 0, mode: 'carplay', epoch: 10, generation: 9, rate: 48000, channels: 1,
-      flags: 0, sequence: 1, sourceTime: 0, pcm: new Int16Array(128).buffer }); processor.report();
-    assert.equal(processor.messages.findLast(message => message.diagnostics).playbackGeneration, 9);
-    post({ debug: false, diagnosticRevision: 5, generation: 9 });
-    const count = processor.messages.filter(message => message.diagnostics).length;
-    processor.report(); assert.equal(processor.messages.filter(message => message.diagnostics).length, count);
-  } finally { post({ dispose: true }); }
 });
 
 test('short observed context suspensions survive sparse snapshots and Debug reset without affecting the audio state', async () => {

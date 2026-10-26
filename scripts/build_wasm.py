@@ -15,20 +15,18 @@ PAGE = ROOT / 'site/play'
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sdk', type=Path, required=True)
-    parser.add_argument('--binaryen', type=Path, required=True)
+    parser.add_argument('--binaryen', type=Path, help=argparse.SUPPRESS)  # Legacy workflow argument; no longer needed.
     parser.add_argument('--cmake', default='cmake')
     parser.add_argument('--ninja', default='ninja')
     parser.add_argument('--check', action='store_true', help='Compare fresh builds without changing shipped files')
     args = parser.parse_args()
     sdk = str(args.sdk.resolve())
-    binaryen = str(args.binaryen.resolve())
     with tempfile.TemporaryDirectory(prefix='tiplay-wasm-') as temporary:
         out = Path(temporary) if args.check else PAGE
         commands = [
             ['scripts/build_audio_core.py', '--output', str(out / 'wasm/audio-core.wasm')],
-            ['scripts/soxr/build.py', '--binaryen', binaryen, '--output', str(out / 'vendor/soxr/soxr.wasm')],
-            ['scripts/aac-eld/build.py', '--cmake', args.cmake, '--ninja', args.ninja,
-             '--output', str(out / 'vendor/aac-eld/aac-eld.wasm')],
+            ['scripts/neteq/build.py', '--cmake', args.cmake, '--ninja', args.ninja,
+             '--output', str(out / 'vendor/neteq/neteq.wasm')],
             ['scripts/soundtouch/build.py', '--output', str(out / 'vendor/soundtouch')],
         ]
         for command in commands:

@@ -19,22 +19,22 @@ assert.ok(version); assert.ok(assets.length > 1);
 const archive = path => /(?:\.zip|\.tar\.(?:gz|bz2|xz))$|(?:^|\/)source\//i.test(path);
 assert.equal(assets.some(archive), false, 'legal/source archives must remain downloadable without occupying the playback cache');
 const wasmPaths = assets.filter(path => path.endsWith('.wasm'));
-assert.deepEqual([...wasmPaths].sort(), ['vendor/aac-eld/aac-eld.wasm', 'vendor/soundtouch/soundtouch.simd.wasm',
-  'vendor/soundtouch/soundtouch.wasm', 'vendor/soxr/soxr.wasm', 'wasm/audio-core.wasm'].sort());
+assert.deepEqual([...wasmPaths].sort(), ['vendor/libav/libav-6.10.9.0-tiplay.wasm.wasm', 'vendor/libav/libav-6.10.9.0-tiplay-simd.wasm.wasm', 'vendor/neteq/neteq.wasm', 'vendor/soundtouch/soundtouch.simd.wasm',
+  'vendor/soundtouch/soundtouch.wasm', 'wasm/audio-core.wasm'].sort());
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const paths = [...new Set([...assets.map(path => path === './' ? 'index.html' : path), 'sw.js'])];
 const identity = async () => Object.fromEntries(await Promise.all(paths.map(async path => [path, hash(await readFile(resolve(root, path)))])));
 const before = await identity();
-const fixture = await readFile(new URL('../web/fixtures/aac-eld/44100-2-480-tone.bin', import.meta.url));
+const fixture = await readFile(new URL('../web/fixtures/aac-eld/48000-2-480-tone.bin', import.meta.url));
 const packets = [];
 for (let offset = 8; offset < fixture.length;) {
   const length = fixture.readUInt32LE(offset); offset += 4;
   assert.ok(length > 0 && offset + length <= fixture.length);
   packets.push([...fixture.subarray(offset, offset + length)]); offset += length;
 }
-const golden = JSON.parse(await readFile(new URL('../web/fixtures/aac-eld/pcm-sha256.json', import.meta.url), 'utf8'))['44100-2-480'];
+const golden = JSON.parse(await readFile(new URL('../web/fixtures/aac-eld/native-pcm-sha256.json', import.meta.url), 'utf8'))['48000-2-480'];
 const requests = new History(), errors = new History(), externals = new History(), offlineResponses = new History();
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.css': 'text/css',
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.css': 'text/css',
   '.svg': 'image/svg+xml', '.png': 'image/png' };
 let browser, offline = false;
 const server = createServer(async (request, response) => {
@@ -121,21 +121,6 @@ try {
     const kernel = new AudioKernel(), input16 = Int16Array.from({ length: 512 }, (_, index) => [-32768, -16384, 0, 16384, 32767][index % 5]);
     const converted = new Float32Array(input16.length); kernel.pcm16(input16, 0, converted, 0, input16.length);
     require(converted.every((value, index) => value === input16[index] / 32768), 'Cached audio core converts exact PCM');
-    const { loadSoxr, SoxrRuntime } = await import('./streaming-resampler.js');
-    await loadSoxr();
-    const runtime = new SoxrRuntime(), resampler = runtime.create(44100, 48000, 1);
-    const input = Float32Array.from({ length: 4096 }, (_, index) => Math.sin(2 * Math.PI * 440 * index / 44100));
-    const output = new Float32Array(512); let consumed = 0, produced = 0, nonzero = false;
-    try {
-      for (let call = 0; call < 24; call++) {
-        const result = resampler.process(input.subarray(consumed), input.length - consumed, output);
-        consumed += result.consumed; produced += result.produced;
-        require(output.subarray(0, result.produced).every(Number.isFinite), 'Cached soxr output is finite');
-        nonzero ||= output.subarray(0, result.produced).some(value => Math.abs(value) > 0.01);
-        if (!result.consumed && !result.produced) break;
-      }
-    } finally { resampler.dispose(); }
-    require(consumed > 0 && produced > 0 && nonzero, 'Cached soxr executes a real resampling stream');
     const { loadSoundTouch, soundTouchSimdSupported } = await import('./vendor/soundtouch/soundtouch.js');
     const tempo = [];
     for (const simd of soundTouchSimdSupported() ? [false, true] : [false]) {
@@ -150,30 +135,25 @@ try {
         tempo.push({ backend: engine.backend, frames });
       } finally { processor.dispose(); }
     }
-    const { createEldDecoder } = await import('./vendor/aac-eld/aac-eld.js');
-    const { createSoftwareEldDecoder } = await import('./aac-eld-software.js');
-    const direct = await createEldDecoder();
-    const worker = createSoftwareEldDecoder({ codec: 'aac-eld', sampleRate: 44100, channels: 2, samplesPerFrame: 480,
-      bitDepth: 16, asc: [0xf8, 0xe8, 0x50, 0] });
-    const streams = { direct: [], worker: [] };
+    const { createAirPlayAudioDecoder } = await import('./airplay-audio-decoder.js');
+    const blocks = [], failures = [];
+    const decoder = createAirPlayAudioDecoder({ onPcm: r => { if (r.pcm.byteLength) blocks.push(new Uint8Array(r.pcm)); }, onError: e => failures.push(String(e)) });
+    const config = { codec: 'aac-eld', sampleRate: 48000, channels: 2, samplesPerFrame: 480, bitDepth: 16, asc: [248,230,80,0] };
+    const record = { type: 0, mode: 'airplay-mirror', epoch: 1, flags: 2, rate: 48000, channels: 2, config };
     try {
-      await worker.ready;
-      for (const packet of packets) {
-        streams.direct.push(new Uint8Array(direct.decode(Uint8Array.from(packet), true).buffer));
-        streams.worker.push(new Uint8Array(await worker.decode(Uint8Array.from(packet))));
-      }
-    } finally { direct.close(); worker.close(); }
-    const aac = {};
-    for (const [name, blocks] of Object.entries(streams)) {
-      const joined = new Uint8Array(blocks.reduce((count, block) => count + block.length, 0));
-      let offset = 0; for (const block of blocks) { joined.set(block, offset); offset += block.length; }
-      aac[name] = { frames: blocks.length, sha256: await sha(joined) };
-      require(aac[name].sha256 === golden, `Cached AAC-ELD ${name} matches the independent PCM golden`);
-    }
+      require(await decoder.configure(record), 'Offline ELD setup');
+      for (let i=0;i<packets.length;i++) require(await decoder.decode({ ...record, flags: 0, payload: Uint8Array.from(packets[i]).buffer, decodeTimestampUs: i*10000 }), 'Offline decode');
+      await decoder.configure({ ...record, config: { ended: true } });
+    } finally { decoder.dispose(); }
+    require(!failures.length, failures.join());
+    const joined = new Uint8Array(blocks.reduce((n,b)=>n+b.length,0));
+    let at=0;for(const block of blocks){joined.set(block,at);at+=block.length;}
+    const aac = { worker: { frames: blocks.length, sha256: await sha(joined) } };
+    require(aac.worker.sha256 === golden, 'Cached live decoder matches native FFmpeg PCM');
     let archiveRejected = false;
-    try { await fetch('./vendor/aac-eld/aac-eld-source.zip'); } catch { archiveRejected = true; }
+    try { await fetch('./vendor/libav/source/ffmpeg-9.0.tar.xz'); } catch { archiveRejected = true; }
     require(archiveRejected, 'Source archives are outside the offline playback cache');
-    return { binaries, networkRejected, audioCoreSamples: converted.length, soxr: { consumed, produced }, tempo, aac, archiveRejected,
+    return { binaries, networkRejected, audioCoreSamples: converted.length, tempo, aac, archiveRejected,
       violations: globalThis.__cspViolations, csp: document.querySelector('meta[http-equiv="Content-Security-Policy"]').content };
   }, { wasmPaths, packets, golden });
   assert.deepEqual(result.violations, []); assert.deepEqual([...errors], []); assert.deepEqual([...externals], []);

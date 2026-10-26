@@ -4,6 +4,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayPlaybackDiagnosticsTest {
+    @Test fun sharedTempoRetainsManualIntentAndSignedVideoWindowWithinTheLineBudget() {
+        val fixture = engineFixture()
+        val original = fixture["engine"] as Map<*, *>
+        val lines = mutableListOf<String>()
+        AirPlayPlaybackDiagnostics(lines::add, debug = { true }, nowMillis = { 0L }).event(7,
+            fixture + ("engine" to (original + mapOf("manualPlaybackRate" to 2, "automaticPlaybackRate" to .98,
+                "effectivePlaybackRate" to 1.96, "audioAppliedTempo" to 2, "audioVideoSyncErrorMs" to -46,
+                "audioVideoSyncMinimumMs" to -45, "audioVideoSyncMaximumMs" to 125,
+                "audioVideoSyncState" to "native-output-and-video-frame", "audioSyncControlDelayMs" to 2500,
+                "audioSyncResponseMs" to 5000))), true)
+        val tempo = lines.single { it.contains("stage=ENGINE_PCM") }
+        val sync = lines.single { it.contains("stage=ENGINE_RENDER") }
+        assertTrue(tempo, tempo.contains("manualPlaybackRate=2") && tempo.contains("effectivePlaybackRate=1.96"))
+        assertTrue(sync, sync.contains("audioVideoSyncErrorMs=-46") && sync.contains("audioVideoSyncMinimumMs=-45"))
+        assertTrue(lines.all { it.length <= 600 })
+    }
+
     @Test fun tempoBackendsRetainOnlyFixedValuesWithinThePcmLineBudget() {
         val fixture = engineFixture()
         val original = fixture["engine"] as Map<*, *>

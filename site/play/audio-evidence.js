@@ -52,8 +52,7 @@ export class AudioEvidence {
       blockFrames, channels, domain, mediaGainStart, startMs, sincePreviousStartMs: startMs !== null && this.previousStart !== null ? startMs - this.previousStart : null };
     this.previousStart = startMs;
   }
-  stage(timeline, produced, frames, contextMs) {
-    const measured = timeline.evidenceDspContextMs === contextMs;
+  stage(timeline, produced, frames) {
     if (this.laneCount >= 4) { this.omittedStreams++; return; }
     let peak = 0, invalid = 0, maxStep = 0;
     timeline.evidenceLastDsp ??= new Float32Array(timeline.channels);
@@ -67,12 +66,10 @@ export class AudioEvidence {
     }
     if (invalid || peak > 1) this.trigger(invalid ? 'output-invalid' : 'output-range', { type: timeline.type, epoch: timeline.epoch, dspPeak: peak, dspNonFinite: invalid });
     if (maxStep > .5) this.trigger('output-edge', { type: timeline.type, epoch: timeline.epoch, stage: 'dsp', maxStep });
-    const packet = timeline.queue.find(p => p.end > timeline.inputFrame);
-    const values = [timeline.type, timeline.epoch, timeline.sourceFrame, timeline.inputFrame, timeline.bytes,
-      timeline.phaseErrorMs, timeline.phaseCorrectionPpm, (timeline.catchUpCorrection || 0) * 1e6, timeline.slewRatio,
-      measured ? timeline.evidenceInputFrames : null, produced, measured ? timeline.evidenceDspCalls : null, timeline.rawCursorMs,
-      packet?.first, packet?.end, timeline.backend?.active ? 1 : 0,
-      measured ? timeline.evidenceInputPeak : null, measured ? timeline.evidenceInputMaxStep : null, peak, invalid, maxStep];
+    // Preserve the published evidence schema. Retired PD/source-clock fields are
+    // unknown, not invented zero corrections. NetEq counters use scalar telemetry.
+    const values = [timeline.type, timeline.epoch, timeline.sourceFrame, timeline.inputFrame, timeline.queueBytes,
+      null, null, null, null, null, produced, null, null, null, null, null, null, null, peak, invalid, maxStep];
     this.lanes.set(values.map(v => Number.isFinite(v) ? v : NaN), this.laneCount++ * AUDIO_EVIDENCE_LANES.length);
   }
   end(output, mediaGain, domainAfter = this.current.domain) {

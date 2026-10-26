@@ -29,17 +29,16 @@ AirPlay uses no PIN; browser pairing retains its separate code.
 | Mirror | Authenticate/decrypt and relay H.264 or enabled HEVC | WebCodecs and Canvas |
 | URL video | Protocol, authenticated resources and controls | Mediabunny/WebCodecs; TiPlay Canvas/Web Audio engine; Video.js controls |
 | JPEG/PNG | Bounded original-image cache/resource | Native decoding, EXIF orientation, contain fitting |
-| Type-96 audio | RTP/decryption, packet order, RTP/NTP mapping | PCM conversion, WebCodecs or software AAC-ELD decoding; AudioWorklet output |
+| Type-96 audio | RTP/decryption, packet order, RTP/NTP mapping | libav.js software decode/resample, NetEq and AudioWorklet output |
 
 No Android URL-video/photo encoder or ordinary audio decoder fallback exists.
-The audio transport implements PCM, ALAC, AAC-LC and AAC-ELD. The current paired
-browser reports a per-format capability mask: PCM uses JavaScript conversion;
-AAC-ELD is always offered through the bundled software decoder, with WebCodecs
-preferred when the actual configuration is supported. Software decoding runs in an
-independent Worker and retains the stream's clock and epoch. ALAC and AAC-LC require
-bounded WebCodecs probes using the actual configuration, sample rate, bit depth and
-supported frame lengths. Only reported formats appear in the receiver's offers or
-pass SETUP, including codec-only requests. Unknown browser capabilities offer no audio.
+The audio transport implements PCM, ALAC, AAC-LC and AAC-ELD. Browser capabilities
+are intrinsic software-decoder capabilities, not WebCodecs probes. Realtime AAC-LC,
+AAC-ELD and ALAC use libav.js Workers, and raw PCM uses the WASM unpacker plus
+continuous software resampling where needed. All enter NetEq as PCM16/48 kHz.
+CarPlay Opus enters NetEq's own decoder directly. No realtime WebCodecs audio
+path remains. Each source retains its clock, transport ID and epoch. Only reported
+formats appear in receiver offers or pass SETUP; unknown capabilities offer no audio.
 Reports belong to the current browser session and are never restored from a saved
 viewport; changes constrain the next SETUP without interrupting current media.
 Sender negotiation and actual sound still require iPhone validation.
@@ -245,6 +244,26 @@ nonzero initial positions and later explicit seeks still rebuild at their target
 Audio-menu discovery currently checks alternative renditions before selected-track
 decoding starts. A slow unused rendition can therefore still delay preparation;
 moving those reads into playback requires scheduling that cannot starve active media.
+
+URL audio keeps Mediabunny's native decoding first. Unsupported AAC-LC/ALAC or
+an actual native decoding failure falls back to libav.js in a module Worker,
+reusing Mediabunny's encoded-packet demuxing and seeking. Network errors and
+cancellation do not request another decoder. Audio track selection includes these
+fallback configurations. AAC-ELD is not yet advertised by this URL adapter;
+the underlying libav decoder passes all eight ELD fixture profiles after fixing
+the missing audio codec-type parameter. The realtime ELD path now uses libav.js too; FDK has been removed.
+
+The URL adapter selects SIMD only for measured stereo AAC-LC and 16-bit ALAC
+44.1→48 kHz workloads, subject to browser SIMD support. At 48 kHz, and for
+unmeasured rates/layouts/bit depths, it selects portable WASM. An initially
+unsupported native decoder uses 48 kHz software output. A failure after native
+PCM has already been delivered preserves that PCM's sample rate; 44.1→44.1 kHz
+therefore also uses portable WASM. Software recovery replays two AAC access units
+for overlap/filter history, clips output at the already delivered frontier and
+flushes at EOF. Seek/replacement/stop cancels the generation's Worker. Existing
+buffer limits, tempo composition and URL A/V synchronization continue to apply.
+The [performance report](../tests/bench/libav/README.md) and
+[production-CSP Worker test](../tests/web-e2e/libav-cast.mjs) record verification.
 
 TiPlay owns one audio-leading clock, bounded queues, buffering, seek and rate;
 silent video uses monotonic time. The shared URL-casting profile favors smoothness:

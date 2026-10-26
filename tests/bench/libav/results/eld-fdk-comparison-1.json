@@ -1,0 +1,213 @@
+{
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+  "warmup": 6,
+  "rounds": 30,
+  "packetRepeats": 20,
+  "output": "interleaved PCM16 at source rate",
+  "loadingAndInitializationTimed": false,
+  "results": [
+    {
+      "fixture": "AAC-ELD 44100 1ch 480",
+      "sourceAudioSeconds": 2.6122448979591835,
+      "fdk": {
+        "medianMs": 6.100000000093132,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "d73f2d50e93e5d95ec59662044f2a9cb70d7e715b40f91a03293efbaa550681e",
+        "lastBlockPeak": 6351
+      },
+      "libavPortable": {
+        "medianMs": 4.899999999906868,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "f248390de446e4b8c2e908b6e90c28c6e5cb1f424f67c8ff964062b10156b993",
+        "lastBlockPeak": 6351
+      },
+      "libavSimd": {
+        "medianMs": 4.600000000093132,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "f248390de446e4b8c2e908b6e90c28c6e5cb1f424f67c8ff964062b10156b993",
+        "lastBlockPeak": 6351
+      },
+      "libavVsFdkTimePercent": -19.67213115029416,
+      "simdVsPortableTimePercent": -6.122448975906892
+    },
+    {
+      "fixture": "AAC-ELD 44100 1ch 512",
+      "sourceAudioSeconds": 2.786394557823129,
+      "fdk": {
+        "medianMs": 6.699999999720603,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "ca6db41d04e925b237b1cde46839f3214566d232e60b0d9eed690b215f7a8514",
+        "lastBlockPeak": 6425
+      },
+      "libavPortable": {
+        "medianMs": 4.7999999998137355,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "07b717cf860ae928efc0108552673e821a53f19e5d85cef787f43c1a8c02702f",
+        "lastBlockPeak": 6425
+      },
+      "libavSimd": {
+        "medianMs": 4.600000000093132,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "07b717cf860ae928efc0108552673e821a53f19e5d85cef787f43c1a8c02702f",
+        "lastBlockPeak": 6425
+      },
+      "libavVsFdkTimePercent": -28.358208955016416,
+      "simdVsPortableTimePercent": -4.166666661007589
+    },
+    {
+      "fixture": "AAC-ELD 44100 2ch 480",
+      "sourceAudioSeconds": 2.6122448979591835,
+      "fdk": {
+        "medianMs": 12.899999999906868,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "721c8c484808f5ef9efe0913b5f303732e368cd2b66bf2df5266b7197bda4c17",
+        "lastBlockPeak": 6557
+      },
+      "libavPortable": {
+        "medianMs": 6.699999999720603,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "ec839bea90a8accc840338e888577a0ba671ff9705ebfcef86babcb92adf20e3",
+        "lastBlockPeak": 6557
+      },
+      "libavSimd": {
+        "medianMs": 6.399999999906868,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "ec839bea90a8accc840338e888577a0ba671ff9705ebfcef86babcb92adf20e3",
+        "lastBlockPeak": 6557
+      },
+      "libavVsFdkTimePercent": -48.062015505666864,
+      "simdVsPortableTimePercent": -4.477611937705161
+    },
+    {
+      "fixture": "AAC-ELD 44100 2ch 512",
+      "sourceAudioSeconds": 2.786394557823129,
+      "fdk": {
+        "medianMs": 13.800000000279397,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "9b758bb66951622c5a0bde455fd30cb83fdee0b79e9f850fc3aecb1396cc99e9",
+        "lastBlockPeak": 6490
+      },
+      "libavPortable": {
+        "medianMs": 7.2000000001862645,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "f26a0d75cec7e4db47417bbfa76d9273d69419087dad6f0f497e1296a0bd3b57",
+        "lastBlockPeak": 6490
+      },
+      "libavSimd": {
+        "medianMs": 6.7999999998137355,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "f26a0d75cec7e4db47417bbfa76d9273d69419087dad6f0f497e1296a0bd3b57",
+        "lastBlockPeak": 6490
+      },
+      "libavVsFdkTimePercent": -47.82608695622832,
+      "simdVsPortableTimePercent": -5.555555560585845
+    },
+    {
+      "fixture": "AAC-ELD 48000 1ch 480",
+      "sourceAudioSeconds": 2.4,
+      "fdk": {
+        "medianMs": 6.399999999906868,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "d212a8f2bb8a46559fad24890632893b2b4155bde069a82d0494e973cdd8336a",
+        "lastBlockPeak": 6372
+      },
+      "libavPortable": {
+        "medianMs": 4.7999999998137355,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "c34af9efe9e01cffc445e883f89c0100c43f79b6262db604d45f2d3f2be8cc41",
+        "lastBlockPeak": 6372
+      },
+      "libavSimd": {
+        "medianMs": 4.800000000279397,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "c34af9efe9e01cffc445e883f89c0100c43f79b6262db604d45f2d3f2be8cc41",
+        "lastBlockPeak": 6372
+      },
+      "libavVsFdkTimePercent": -25.00000000181899,
+      "simdVsPortableTimePercent": 9.701284220398065e-09
+    },
+    {
+      "fixture": "AAC-ELD 48000 1ch 512",
+      "sourceAudioSeconds": 2.56,
+      "fdk": {
+        "medianMs": 6.5,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "6a58fca9c2a8d1ed49c44c402b24ad8a729bef483698d99c664e73865156e0e1",
+        "lastBlockPeak": 6298
+      },
+      "libavPortable": {
+        "medianMs": 4.600000000093132,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "7138d708e6ff476fa5485181a26b6a8a97a86844d1148d30e2a30b38e981fc47",
+        "lastBlockPeak": 6298
+      },
+      "libavSimd": {
+        "medianMs": 4.5,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "7138d708e6ff476fa5485181a26b6a8a97a86844d1148d30e2a30b38e981fc47",
+        "lastBlockPeak": 6298
+      },
+      "libavVsFdkTimePercent": -29.230769229336428,
+      "simdVsPortableTimePercent": -2.173913045458864
+    },
+    {
+      "fixture": "AAC-ELD 48000 2ch 480",
+      "sourceAudioSeconds": 2.4,
+      "fdk": {
+        "medianMs": 12.699999999720603,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "9a87a43155a713212492351fb4302fa4b046026a15b5cfabcd7cc70a3b568984",
+        "lastBlockPeak": 6493
+      },
+      "libavPortable": {
+        "medianMs": 6.699999999720603,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "bdcb8544e34b99e350cfc4ce45cf527cbd41ef16a9f6428bf1a16a8a5060970f",
+        "lastBlockPeak": 6493
+      },
+      "libavSimd": {
+        "medianMs": 6.400000000372529,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "bdcb8544e34b99e350cfc4ce45cf527cbd41ef16a9f6428bf1a16a8a5060970f",
+        "lastBlockPeak": 6493
+      },
+      "libavVsFdkTimePercent": -47.24409448922834,
+      "simdVsPortableTimePercent": -4.477611930754987
+    },
+    {
+      "fixture": "AAC-ELD 48000 2ch 512",
+      "sourceAudioSeconds": 2.56,
+      "fdk": {
+        "medianMs": 12.799999999813735,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "0cb72d6ad2dcbfe020301a679e048b3849257f72bdd15ff70d7dfe64fe9a7c6c",
+        "lastBlockPeak": 6566
+      },
+      "libavPortable": {
+        "medianMs": 6.699999999720603,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "16bc499d8794fc1b87bad552c6080be25fadcdcab7e9668c8fffb7bf43bcb550",
+        "lastBlockPeak": 6566
+      },
+      "libavSimd": {
+        "medianMs": 6.399999999906868,
+        "packetP95Ms": 0.10000000009313226,
+        "lastBlockSha256": "16bc499d8794fc1b87bad552c6080be25fadcdcab7e9668c8fffb7bf43bcb550",
+        "lastBlockPeak": 6566
+      },
+      "libavVsFdkTimePercent": -47.656250001421085,
+      "simdVsPortableTimePercent": -4.477611937705161
+    }
+  ],
+  "artifacts": {
+    "baselineCommit": "6d4e5018",
+    "baselineSha256": {
+      "aac-eld.js": "358eac072fc1f9a2bc2f9e8d10ca28240c8e4d423e2d120cc8642cec828acc7e",
+      "aac-eld.wasm": "2cfccd341de80efab47b64c09f173575fa32066e5aada602e91e9bd0e01d1f99"
+    },
+    "libavSha256": {
+      "libav-6.10.9.0-tiplay-simd.wasm.wasm": "601503628c8dedf33ff4818e3a34e026ed7169492b22a7a18b6a0c15a01be990",
+      "libav-6.10.9.0-tiplay.wasm.wasm": "f9c08154ddddfd16d7e7127225f63be0e771961fd3362ff29effac482346c1e6"
+    }
+  }
+}

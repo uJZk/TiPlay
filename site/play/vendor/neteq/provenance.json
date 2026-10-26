@@ -1,0 +1,25 @@
+{
+  "upstream": [
+    {
+      "name": "webrtc",
+      "revision": "83de8057df74f225a85c045413aae01398b65c06",
+      "url": "https://webrtc.googlesource.com/src/+archive/83de8057df74f225a85c045413aae01398b65c06.tar.gz",
+      "sha256": "355ace2ed3311485e58567d7d382163f5cfb45760975f99aea1f14f48e1067e0"
+    },
+    {
+      "name": "abseil",
+      "revision": "20250127.1",
+      "url": "https://github.com/abseil/abseil-cpp/archive/refs/tags/20250127.1.tar.gz",
+      "sha256": "b396401fd29e2e679cace77867481d388c807671dc2acc602a0259eeb79b7811"
+    },
+    {
+      "name": "opus",
+      "revision": "1.5.2",
+      "url": "https://downloads.xiph.org/releases/opus/opus-1.5.2.tar.gz",
+      "sha256": "65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1"
+    }
+  ],
+  "toolchain": "WASI SDK 34.0 / LLVM 23.1.0; CMake 4.1.2; Ninja 1.13.0",
+  "coreModifications": false,
+  "wasmSha256": "1ba11b730febc8e633fb6bb8dbda4d4f513db19df3c051b5355158e175538c6d"
+}

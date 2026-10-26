@@ -99,20 +99,24 @@ revisions are retained in
 [linked-runtime notices](../site/play/vendor/wasm-runtime/README.md).
 The freestanding audio core links no standard runtime archives.
 
-- libsoxr (SoX Resampler Library): LGPL-2.1-or-later, used as a separately
-  replaceable, self-hosted WebAssembly variable-rate resampler. Its complete source,
+- libsoxr (SoX Resampler Library): LGPL-2.1-or-later, used for native Android SCO resampling. Its complete source,
   licenses and pinned build provenance are under
-  [vendor/soxr](../site/play/vendor/soxr/README.md); the source tree also includes
+  [native source inputs](../scripts/soxr/vendor/README.md); the source tree also includes
   the adapter and reproducible rebuild script. Android SCO playback/capture uses
   the same patched C engine directly through JNI; its generated native sources
   and licenses are in [native libsoxr](../shared/src/main/jni/soxr/README.md).
   No JS or WASM runtime is used by that Android library. Keep those materials with binary
   distributions so users can rebuild and replace the library.
-- AAC-ELD software fallback: a WASM build of the complete Fraunhofer FDK AAC Codec
-  Library for Android, exposed through a raw ELD adapter. It retains the Fraunhofer
-  license, modification notices and complete corresponding source under
-  [vendor/aac-eld](../site/play/vendor/aac-eld/README.md). This component keeps its
-  own license; the software license does not grant a patent license.
+- libav.js 6.10.9 / FFmpeg 9.0 staged audio builds: LGPL-2.1-or-later FFmpeg,
+  with ISC libav.js components and upstream emfiberthreads support. Generated
+  module headers retain complete component notices; corresponding source archives,
+  checksums and reproducible portable/SIMD build configuration are in
+  [vendor/libav](../site/play/vendor/libav/README.md).
+- AAC-ELD software decoding uses the same FFmpeg/libav.js distribution above.
+  The former FDK runtime, source bundle and build adapter were removed. Synthetic
+  ELD fixtures were originally generated with FDK 2.0.3; their retained generator
+  and source provenance are documented under
+  [test fixtures](../tests/web/fixtures/aac-eld/README.md). FDK is not a runtime dependency.
 - Video.js native controls, skin and media adapter helpers: Apache-2.0, self-hosted under
   `site/play/vendor/videojs/` with license texts and retained bundle notices.
 - SoundTouch 2.4.0: LGPL-2.1-or-later, built from complete unmodified C++ source
@@ -157,3 +161,12 @@ Kazuhiko Arase under the MIT license. The QR implementation is self-hosted; only
 its module export wrapper is adapted. See the retained
 [license](../site/play/chatgpt/vendor/QR-LICENSE.txt) and pinned
 [source provenance](../site/play/chatgpt/vendor/provenance.json).
+
+## NetEq live audio
+
+The browser uses official libWebRTC NetEq and its Opus/L16 decoders. WebRTC is
+BSD-3-Clause with the upstream PATENTS grant; libopus retains its BSD-style
+license and Abseil is Apache-2.0. Exact source revisions, checksums, build adapter
+and license texts are in [vendor/neteq](../site/play/vendor/neteq/README.md).
+NetEq DSP/controller sources are unmodified; TiPlay supplies WASI services and
+the C ABI. This is not the independent Rust NetEq-inspired implementation.
