@@ -38,7 +38,8 @@ const noData = record => record.mode === 'airplay-mirror' && record.payload?.byt
 /** Realtime audio: encoded Opus goes to NetEq; all other decoding is software. */
 export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = () => {}, onEvidence = () => {},
   softwareFactory = createLiveAudioDecoder } = {}) {
-  const sessions = new Map();
+  const sessions = new Map(), endedEpochs = new Map();
+  const ownerKey = owner => `${owner.mode}:${owner.type}`;
   let disposed = false, diagnostics = null;
   const live = session => !disposed && !session.closed && sessions.get(session.type) === session;
   const recordFor = (session, fields = {}) => ({ type: session.type, mode: session.mode, epoch: session.epoch,
@@ -59,14 +60,14 @@ export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = (
     for (const cancel of session.pending) cancel(); session.pending.clear();
   }
   function reset(type) {
-    if (type === undefined) { for (const session of sessions.values()) close(session); sessions.clear(); }
-    else { close(sessions.get(type)); sessions.delete(type); }
+    if (type === undefined) { for (const session of sessions.values()) close(session); sessions.clear(); endedEpochs.clear(); }
+    else { close(sessions.get(type)); sessions.delete(type); for (const key of endedEpochs.keys()) if (key.endsWith(':' + type)) endedEpochs.delete(key); }
   }
   function fail(session, cause) {
     if (!live(session)) return;
     if (diagnostics) diagnostics.errors++;
     onEvidence('decoder-error', { type: session.type, epoch: session.epoch });
-    close(session);
+    close(session); endedEpochs.set(ownerKey(session), session.epoch);
     if (Number.isInteger(session.config?.sampleRate) && [1, 2].includes(session.config?.channels))
       publish(recordFor(session, { pcm: new ArrayBuffer(0), flags: session.flags | 2, ended: true, presentationMs: NaN }));
     onError(cause);
@@ -82,6 +83,7 @@ export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = (
   }
   async function finish(record) {
     const session = sessions.get(record.type);
+    if (session && session.mode !== record.mode) { endedEpochs.set(ownerKey(record), record.epoch); return false; }
     if (session && ((record.epoch - session.epoch) | 0) < 0) return false;
     if (session && !session.closed) {
       await session.tail;
@@ -89,18 +91,22 @@ export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = (
       if (!live(session)) return false;
       close(session);
     }
-    sessions.delete(record.type);
+    sessions.delete(record.type); endedEpochs.set(ownerKey(record), record.epoch);
     publish({ ...record, rate: 48000, flags: record.flags | 2, ended: true, pcm: new ArrayBuffer(0) });
     return true;
   }
   async function configure(record) {
     if (disposed) return false;
     const previous = sessions.get(record.type);
-    if (previous && ((record.epoch - previous.epoch) | 0) < 0) return false;
+    const ended = endedEpochs.get(ownerKey(record));
+    if (ended !== undefined && (((record.epoch - ended) | 0) < 0
+      || record.epoch === ended && !(record.flags & 2))) return false;
+    if (previous && previous.mode === record.mode && ((record.epoch - previous.epoch) | 0) < 0) return false;
     if (record.config?.ended) {
       try { return await finish(record); } catch (cause) { if (previous) fail(previous, cause); return false; }
     }
-    reset(record.type);
+    if (previous && previous.mode !== record.mode) endedEpochs.set(ownerKey(previous), previous.epoch);
+    close(previous); sessions.delete(record.type);
     const config = record.config;
     const session = { config, type: record.type, epoch: record.epoch, mode: record.mode,
       semanticType: config?.semanticType ?? record.type, flags: record.flags, outputSequence: 0,
@@ -165,7 +171,7 @@ export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = (
   }
   function decode(record) {
     const session = sessions.get(record.type);
-    if (!session || !live(session) || session.epoch !== record.epoch) return Promise.resolve(false);
+    if (!session || !live(session) || session.mode !== record.mode || session.epoch !== record.epoch) return Promise.resolve(false);
     const task = new Promise((resolve, reject) => {
       const cancel = () => resolve(false); session.pending.add(cancel);
       session.tail.then(() => decodeRecord(session, record)).then(value => { session.pending.delete(cancel); resolve(value); }, reject);
@@ -175,7 +181,7 @@ export function createAirPlayAudioDecoder({ onPcm, onEncoded = null, onError = (
   async function pcm(record) {
     if (!record.pcm.byteLength && record.flags & 2) return finish(record);
     const previous = sessions.get(record.type);
-    if (!previous || previous.epoch !== record.epoch || record.flags & 2) {
+    if (!previous || previous.mode !== record.mode || previous.epoch !== record.epoch || record.flags & 2) {
       if (!await configure({ ...record, config: { codec: 'pcm', sampleRate: record.rate, channels: record.channels,
         bitDepth: 16, littleEndian: true, ...(record.type >= 7 ? { semanticType: record.semanticType ?? 0 } : {}) } })) return false;
     }

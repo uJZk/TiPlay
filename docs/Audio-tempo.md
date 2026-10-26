@@ -1,6 +1,6 @@
 # Audio buffering and tempo
 
-This describes browser v88. The Android APK remains beta.20/code62; this
+This describes browser v89. The Android APK remains beta.20/code62; this
 web-only rollout does not build or publish an APK. Software checks do not establish vehicle
 sound quality, CPU headroom or physical speaker/video timing. Full Android CI was
 explicitly skipped by the user; this change does not publish an APK or website.
@@ -94,7 +94,7 @@ The obsolete live PD experiments and held-rate model are removed.
 
 ## Verification and limits
 
-The final local suite passes 728 tests. Tests run the shipped NetEq WASM with synthetic Opus/FEC and PCM, deliberate
+The final local suite passes 729 tests. Tests run the shipped NetEq WASM with synthetic Opus/FEC and PCM, deliberate
 loss, 384 ms music-style bursts, 44.1/48 kHz conversion, stream end/reset/credit,
 variable render quanta and throwing/jumping clock getters. Browser tests cover
 software AAC/ALAC/ELD decode and direct NetEq Opus and the production AudioWorklet/CSP path. These
@@ -111,12 +111,17 @@ made solely because the core is WASM or upstream code.
 The user explicitly skips CI and APK compilation. Local verification includes
 Node tests, real Chromium software decoding/NetEq Worklet, URL fallback, normal
 and jumping-currentTime media-clock runs, nested-path offline cache, site assembly
-and native Android libsoxr source consistency. Browser v88 is deployed through
+and native Android libsoxr source consistency. Browser v89 is deployed through
 Pages; Android remains beta.20/code62. The removed native-first decoder and browser
 libsoxr tests were replaced with actual software-decoder, continuous-resampler,
 EOS/gap/cancellation and multistream lifecycle checks. Prior higher test counts
-include retired implementations and are not current v88 coverage counts.
+include retired implementations and are not current v89 coverage counts.
 
 Physical follow-up remains Tesla CPU/peak memory, multi-stream headroom, output
 quality and audible clicks. A bench gain or software test cannot complete those
 checks remotely. The separate Cloudflare comparison is outside this audio rollout.
+
+Ended PCM epochs are tombstoned before accepting implicit legacy PCM setup.
+Only a newer epoch or an explicit owner reset can start again; late raw PCM
+cannot revive an ended utterance. Browser v89 bumps both page/cache versions
+so already cached v88 clients receive this lifecycle fix.

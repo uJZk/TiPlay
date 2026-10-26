@@ -118,3 +118,22 @@ test('four simultaneous software streams are bounded and releasing them permits 
   const replacement = softwareFactory(pcm);
   try { await replacement.ready; } finally { replacement.close(); }
 });
+
+test('late legacy PCM cannot implicitly recreate an ended epoch, while a newer epoch can start', async () => {
+  const output = [], decoder = createAirPlayAudioDecoder({ onPcm: r => { if (r.pcm.byteLength) output.push(r); } });
+  const record = { type: 0, mode: 'carplay', epoch: 1, flags: 0, rate: 48000, channels: 1, pcm: new Int16Array([1000,1000]).buffer };
+  try {
+    assert.equal(await decoder.pcm(record), true);
+    await decoder.pcm({ ...record, flags: 2, pcm: new ArrayBuffer(0) });
+    const count = output.length;
+    assert.equal(await decoder.pcm(record), false);
+    assert.equal(output.length, count);
+    assert.equal(await decoder.pcm({ ...record, mode: 'airplay-mirror' }), true, 'mode ownership is independent');
+    assert.equal(await decoder.pcm(record), false, 'late CarPlay cannot enter the mirror owner');
+    assert.equal(await decoder.pcm({ ...record, flags: 2 }), true, 'an explicit producer reset permits a new owner');
+    assert.equal(await decoder.pcm({ ...record, epoch: 2 }), true);
+    assert.equal(output.length, count + 3);
+    decoder.reset();
+    assert.equal(await decoder.pcm(record), true, 'an explicit owner reset permits a fresh subscription');
+  } finally { decoder.dispose(); }
+});

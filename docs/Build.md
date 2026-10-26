@@ -103,7 +103,7 @@ packages are defined by the Android workflow.
 
 ## Browser WASM build
 
-Browser **v88** uses official NetEq, libav.js decoder/resampler Workers and the
+Browser **v89** uses official NetEq, libav.js decoder/resampler Workers and the
 fixed-memory audio core for realtime audio. WebCodecs audio and libsoxr are removed
 from realtime playback; SoundTouch and native audio remain for URL casting.
 AudioContext and NetEq both use 48 kHz. [Audio tempo](Audio-tempo.md) records the
@@ -195,7 +195,7 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Current browser deployment
 
-Browser **v88** is the web-only audio rollout: NetEq-first Opus, libav.js AAC-LC/
+Browser **v89** is the web-only audio rollout: NetEq-first Opus, libav.js AAC-LC/
 ELD/ALAC, continuous 48 kHz conversion, software capability negotiation and URL
 fallback. Local Node and real Chromium/production-CSP, offline and site checks
 are recorded in [Testing](Testing.md#browser-wasm-verification). CI and APK builds

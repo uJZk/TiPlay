@@ -12,7 +12,7 @@ this environment's managed ICE policy. Published artifacts remain recorded in
 
 ## Browser WASM verification
 
-Browser v88 passes **728 local browser tests**. Its acceptance covers real AAC/ALAC/ELD Worker decoding, exact
+Browser v89 passes **729 local browser tests**. Its acceptance covers real AAC/ALAC/ELD Worker decoding, exact
 48 kHz PCM duration across 8–48 kHz sources, gap resets, EOF draining, cancelled
 initialization, four simultaneous software streams and overload rejection. Actual
 Chromium verifies software negotiation with WebCodecs audio disabled, NetEq Opus/

@@ -86,7 +86,7 @@ raw frame-jump witnesses, pre/post waveform coverage, CPU attribution limits and
 the user's explicit full-CI skip for this release. The APK/source/checksums are published, and public v87 bytes are verified.
 The added manual browser-trace workflow was removed at the user's request.
 
-Browser v88 audio work is documented in [Audio tempo](docs/Audio-tempo.md).
+Browser v89 audio work is documented in [Audio tempo](docs/Audio-tempo.md).
 Realtime Opus decodes directly in official NetEq. AAC-LC/ELD/ALAC and non-48 kHz
 PCM use libav.js Workers with continuous resampling to PCM16/48 kHz. No realtime
 WebCodecs audio, FDK, libsoxr or live SoundTouch/PD remains. The AudioContext is
