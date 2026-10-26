@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Verify pinned NetEq source materialization
+        run: python3 -m unittest discover -s tests -p 'test_neteq_sources.py'
       - name: Install pinned build tools
         run: python3 -m pip install cmake==4.1.2 ninja==1.13.0
       - name: Verify pinned WASI SDK and Binaryen

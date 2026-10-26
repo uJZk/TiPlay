@@ -12,7 +12,7 @@ this environment's managed ICE policy. Published artifacts remain recorded in
 
 ## Current release source
 
-Browser v90 passes **533 browser tests** after the AVPlayer migration and removal
+The historical browser v90 baseline passed **533 browser tests** after the AVPlayer migration and removal
 of the retired URL player, live video decoder/pacer and touch catch-up policy.
 Actual Chromium 151 verifies MP4/HLS Canvas output, nonzero URL audio, VOD
 pause/seek/end/replay, live refresh and fresh-edge resume, SDR variant selection,
@@ -24,15 +24,11 @@ software-decoder test override; this does not establish Tesla hardware decoding.
 
 The audio-only media-clock normal/unreadable-getter runs, real AAC/ELD/ALAC
 Worker-to-Worklet output and local-track Processor-to-Canvas main/Worker paths pass.
-Android has **43 targeted JVM tests**; the native two-track JNI/DTLS-SRTP oracle
+That release had **43 targeted JVM tests**; the native two-track JNI/DTLS-SRTP oracle
 matches 80 original packets per track. Browser RTP interoperability remains blocked
-by the managed browser's zero host ICE candidates. The full Android suite is
-explicitly skipped. Beta.21/code63 and browser v90 are published; [Build](Build.md#beta21-release) records signed Release lint/build and artifact checks. Vehicle playback, CPU, memory and physical output still need acceptance. Earlier
+by the managed browser's zero host ICE candidates. Beta.21 explicitly skipped the
+full Android suite. Beta.21/code63 and browser v90 were published; [Build](Build.md#beta21-release) records signed Release lint/build and artifact checks. Vehicle playback, CPU, memory and physical output still need acceptance. Earlier
 version-specific evidence below remains historical.
-
-The beta.22 integration baseline passed 547 browser tests, eight Chromium music
-layouts, AVPlayer MP4 controls/Canvas/cleanup and the required Android unit/lint/
-debug-build command. Its two stale Standard-log tests were adapted to AVPlayer.
 
 Beta.23/code65 and v95 pass local verification after the Video in Car/AirPlay
 audit. New coverage exercises encrypted SETUP/info/RECORD, precise type-130

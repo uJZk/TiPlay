@@ -3,8 +3,8 @@
     {
       "name": "webrtc",
       "revision": "83de8057df74f225a85c045413aae01398b65c06",
-      "url": "https://webrtc.googlesource.com/src/+archive/83de8057df74f225a85c045413aae01398b65c06.tar.gz",
-      "sha256": "355ace2ed3311485e58567d7d382163f5cfb45760975f99aea1f14f48e1067e0"
+      "url": "https://webrtc.googlesource.com/src",
+      "gitTree": "faed2a8fc410387aed0207f2b7d3e604f968d53c"
     },
     {
       "name": "abseil",

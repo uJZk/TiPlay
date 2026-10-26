@@ -72,6 +72,9 @@ Mockito and native graphics can retain SDK/resource state beyond the Java heap;
 heap limits alone do not prevent exhaustion or long stalls in a full run. Module
 test settings may override the policy's default heap. Keep this isolation in CI
 rather than changing application behavior or omitting tests.
+The same CI init script directs Robolectric's separate SDK downloader to
+`https://repo.maven.apache.org/maven2`; Gradle's `mavenCentral()` does not configure
+that downloader.
 
 Build the phone app with:
 
@@ -121,7 +124,7 @@ remains separate under `scripts/videojs/`. Regenerate the offline manifest with
 `python3 scripts/update_browser_cache.py` after changing browser resources.
 
 The shipped binaries build from complete corresponding sources with WASI SDK 34
-(Clang 23.1.0), Binaryen 132, CMake 4.1.2 and Ninja 1.13.0. Python 3.12+, `patch`
+(Clang 23.1.0), Binaryen 132, CMake 4.1.2 and Ninja 1.13.0. Git, Python 3.12+, `patch`
 and the pinned tools are required. On Linux x86_64:
 
 ```sh
@@ -137,6 +140,11 @@ changing production files. Omit it to replace the artifacts intentionally;
 individual build entry points are in `scripts/soxr/`,
 `scripts/neteq/` and `scripts/build_audio_core.py`. CI reproduces all modules
 independently of Android compilation.
+NetEq fetches WebRTC from its official Git repository with fixed commit and tree
+IDs, checks object integrity and extracts a local archive. Gitiles-generated tar
+timestamps vary between downloads; they cannot provide a stable compressed-byte
+pin. Opus and Abseil retain their release-archive SHA-256 checks. See
+[NetEq provenance](../site/play/vendor/neteq/README.md).
 
 The libav.js portable/SIMD pair uses **Emscripten 4.0.7**, separately
 from the WASI helper above. Activate that SDK and Node 22, then run
@@ -204,12 +212,12 @@ Use the version already declared by the build; changing it requires an intention
 
 Browser v90 is retained; download metadata now shows beta.22/code64; see [beta.22 release](#beta22-release). The v89 record below describes its earlier web-only rollout.
 
-Browser **v89** is the web-only audio rollout: NetEq-first Opus, libav.js AAC-LC/
+The historical browser **v89** web-only audio rollout added NetEq-first Opus, libav.js AAC-LC/
 ELD/ALAC, continuous 48 kHz conversion, software capability negotiation and URL
 fallback. Local Node and real Chromium/production-CSP, offline and site checks
-are recorded in [Testing](Testing.md#browser-wasm-verification). CI and APK builds
-are explicitly skipped. Android remains beta.20/code62. Publish via the existing
-Pages workflow after a `[skip ci]` commit; verify public v89 and runtime hashes.
+are recorded in [Testing](Testing.md#browser-wasm-verification). That rollout
+explicitly skipped CI and APK builds, retaining Android beta.20/code62. It used
+the existing Pages workflow after a `[skip ci]` commit.
 The older browser/APK records below describe their original releases.
 
 Verified 2026-10-26: runtime commit `b3d387ca9a31eb9efad91471f278fc0a881ec59e`
@@ -223,14 +231,14 @@ run was created for this runtime commit, and no APK was compiled or published.
 
 
 
-The formal root webpage **v87** is deployed from
+The historical formal root webpage **v87** was deployed from
 `905f99c66d451190cb71d5ddf9be4bf30e0dcda8`. The manually dispatched
 [Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/40178657118) succeeded.
 Public verification at **2026-10-25 17:01:59 UTC+08:00** compared all **185** files
 (**11,908,440 bytes**) with the committed assembly: every byte matches,
 all **89** Service Worker entries are present, all five WASM binaries use
 `application/wasm`, and no file redirects. The new audio evidence module is in the
-runtime cache. Publication commits use `[skip ci]` at the user's request; this is
+runtime cache. Those publication commits used `[skip ci]` at the user's request; this is
 not a full-CI acceptance claim.
 
 v87 retains v86's held SoundTouch catch-up and contiguous PCM/progress/braking

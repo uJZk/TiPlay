@@ -56,7 +56,7 @@ and measured slower-case exceptions. Rebuild and byte-verify the binaries using
 record frame-based live timing, causal output probes and natural URL completion;
 [Testing](docs/Testing.md#browser-wasm-verification) records browser and Android
 verification, including faulty-currentTime Chromium runs.
-The previous published prerelease was beta.20/code62 with webpage v87; published beta.21/code63 with v90 is tracked in [Build](docs/Build.md#beta21-release). Its CarPlay
+The historical beta.21/code63 release followed beta.20/code62 and is tracked in [Build](docs/Build.md#beta21-release). Its CarPlay
 session/resource and single-initial-SETUP boundaries are documented in
 [AirPlay](docs/AirPlay.md#carplay-coexistence); [Build](docs/Build.md#beta-release)
 records its exact build commit, published artifacts, verification and signer/runtime/source provenance.
@@ -91,7 +91,7 @@ Realtime Opus decodes directly in official NetEq. AAC-LC/ELD/ALAC and non-48 kHz
 PCM use libav.js Workers with continuous resampling to PCM16/48 kHz. No realtime
 WebCodecs audio, FDK, libsoxr or live SoundTouch/PD remains. The AudioContext is
 48 kHz; live audio and video are independent. That v89 URL implementation used native audio
-first, libav fallback, manual tempo and video-frame PD; the current AVPlayer migration replaces it. That rollout preserved Android beta.20/code62; the current beta.21 release supersedes this web-only restriction.
+first, libav fallback, manual tempo and video-frame PD; the AVPlayer migration replaces it. That rollout preserved Android beta.20/code62; beta.21 superseded this web-only restriction.
 
 Resume from [Audio tempo](docs/Audio-tempo.md), the
 [SIMD report](tests/bench/libav/README.md), and [Build](docs/Build.md#current-browser-deployment).
@@ -120,7 +120,7 @@ no independent floating casting-stop button. Screenshot fixtures are synthetic.
 
 ## Checks
 
-The current source work adds browser v90's bounded per-stream audio dispatch,
+The browser retains v90's bounded per-stream audio dispatch,
 direct decoder-Worker-to-Worklet PCM ports, and original-codec RTP video consumed
 by MediaStreamTrackProcessor directly into Canvas. No video element or second
 video encoding is allowed. Live video has no DataChannel/WebCodecs fallback.
@@ -242,21 +242,13 @@ permission and connection contracts that the phone + browser flow actually uses.
 
 Follow [docs/Upstream.md](docs/Upstream.md) for upstream maintenance rules, preserved identifiers, historical names and the one-way merge procedure.
 
-Resume the current beta APK deployment from [beta.22 release](docs/Build.md#beta22-release) and [current verification](docs/Testing.md#current-release-source). Full Android suite remains explicitly skipped.
-
 Beta.21/code63 and browser v90 are published from `c2d51accf8e896975a7490891c18b79a23c5d35f`; [Build](docs/Build.md#beta21-release) records public hashes, signed/Pages runs and independent checks. No physical vehicle acceptance is implied.
-
-Resume CarPlay Video in Car and beta.22/code64 publication at
-[AirPlay](docs/AirPlay.md#carplay-video-in-car-in-the-browser) and
-[beta.22 release](docs/Build.md#beta22-release). The user explicitly skips CI;
-use local targeted checks and signed Release lint/build. Parking-state integration
-is deferred; physical iPhone/vehicle playback and FairPlay support remain unverified/unsupported.
 
 Beta.22/code64 is published from `544127d3f4c5e342425613645f7bb89e09656aeb`.
 [Build](docs/Build.md#beta22-release) records signed workflow 40303963168,
 Pages 40303064954, downloaded attachment hashes and independent verification.
-Only the signing/publication workflow was explicitly authorized; Android CI and
-the full suite stayed skipped. Browser v90 is retained. iPhone/vehicle acceptance
+For that historical release, only the signing/publication workflow was authorized;
+Android CI and the full suite stayed skipped. It retained browser v90. iPhone/vehicle acceptance
 remains pending.
 
 Resume beta.23/code65 and browser v95 at [AirPlay](docs/AirPlay.md#carplay-video-in-car-in-the-browser),

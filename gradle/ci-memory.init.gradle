@@ -2,6 +2,9 @@
 // workers regularly so a full CI run does not accumulate every SDK/resource sandbox.
 allprojects {
     tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+        // Robolectric downloads Android SDK jars itself, outside Gradle's mavenCentral resolver.
+        // Use Central's canonical endpoint instead of its separate repo1 endpoint in CI workers.
+        systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
         maxParallelForks = 1
         forkEvery = project.path == ':shared' ? 20 : 5
         // A module can override this default for its UI tests.

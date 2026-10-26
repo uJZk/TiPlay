@@ -1,8 +1,12 @@
 # Official libWebRTC NetEq for browser audio
 
 `neteq.wasm` contains official NetEq DSP/controller code and the official Opus/L16
-AudioDecoder implementations, built from the exact revisions and SHA-256 archives
-in `provenance.json`. This is not the independently rewritten Rust `neteq` crate.
+AudioDecoder implementations, built from the exact revisions in `provenance.json`.
+WebRTC uses its official Git repository with both commit and tree pins, validated
+objects and a local `git archive`; Opus and Abseil use SHA-256-pinned release archives.
+Gitiles download archives can change their file timestamps between requests, so
+their compressed bytes are not a stable source pin. This is not the independently
+rewritten Rust `neteq` crate.
 
 TiPlay's `source/` supplies the C ABI, private decoder factory and WASI platform
 services. Upstream NetEq algorithms are unmodified. The wasm32 architecture header
@@ -21,13 +25,13 @@ the bounded ABI, not arbitrary library functions. PCM float/int16 conversion is
 native; NetEq operates at 48 kHz with mono or stereo audio. Opus packet duration is
 parsed by libopus. AAC/ALAC decoding is external according to browser capabilities.
 
-Rebuild (Python 3.12+, CMake 4.1.2, Ninja 1.13.0, WASI SDK 34.0):
+Rebuild (Git, Python 3.12+, CMake 4.1.2, Ninja 1.13.0, WASI SDK 34.0):
 
 ```sh
 python3 scripts/neteq/build.py --sdk /path/to/wasi-sdk-34.0-x86_64-linux
 ```
 
-The script downloads checksum-pinned public source archives only during build,
+The script fetches pinned public Git objects and source archives only during build,
 using the normal configured HTTPS proxy/TLS trust. A checked cache can support
 offline rebuilds. Sources are available at the exact URLs in provenance; source
 archives and build files are not needed at browser runtime. `scripts/build_wasm.py`
