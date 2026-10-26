@@ -11,7 +11,7 @@ The Android/browser product version comes from `tiplayVersionName` and
 [beta.24 release](#beta24-release) records provenance and checks. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v97**, with original-codec WebRTC RTP for live video and negotiated audio.
+the deployed page uses **v98**, with original-codec WebRTC RTP for live video and negotiated audio.
 Earlier SoundTouch/libsoxr browser implementations are historical; current playback
 boundaries are in [Audio tempo](Audio-tempo.md). Software checks are in
 [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -210,7 +210,16 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Current browser deployment
 
-Browser **v97** and beta.24/code66 download metadata are deployed from
+Browser **v98** is deployed from cleanup commit
+`4b89fc7d7e88a1e9c1824fef0cf4f7b4bcd98872` by
+[Pages run 40367405686](https://github.com/uJZk/TiPlay/actions/runs/40367405686).
+All **217** public files (**31,811,194 bytes**) match the committed assembly
+byte-for-byte, with script/WASM MIME types and no redirects verified. This is a
+behavior-preserving code/documentation cleanup with matching cache invalidation;
+the published beta.24/code66 APK and its release assets are unchanged. Current
+source checks and remaining decisions are in the [sweep delivery](sweep-2026-10-26/Delivery.md).
+
+The preceding browser **v97** and beta.24/code66 download metadata are deployed from
 `637e2ecdb2c96d38d92504fd8a395c65b9cb05d3` by
 [Pages run 40362871807](https://github.com/uJZk/TiPlay/actions/runs/40362871807).
 All **217** public files (**31,811,644 bytes**) match the committed assembly,

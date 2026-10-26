@@ -2,8 +2,9 @@
 
 ## 当前实现与验证边界
 
-Android 手机 + 车载浏览器是唯一产品范围。当前 beta.24/code66 与网页 v97 的
-来源、发布产物和独立核验见 [Build](Build.md#beta24-release)；源码通过、已发布
+Android 手机 + 车载浏览器是唯一产品范围。当前 APK 为 beta.24/code66，网页 v98 保留 v97 的媒体行为；
+[清理部署](Build.md#current-browser-deployment)与 [beta.24 发布记录](Build.md#beta24-release)
+分别记录网页和 APK 来源、产物及独立核验；源码通过、已发布
 和实车验收是三个不同结论。正式入口为 <https://ujzk.github.io/TiPlay/>，旧
 `/webrtc/` 子站已删除，不保留别名或重定向。
 
