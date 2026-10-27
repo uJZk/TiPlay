@@ -37,8 +37,8 @@ native input admission from bitrate bootstrap:
 ```sh
 python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe --mode paced --start-bitrate 0
 python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe --mode serial --start-bitrate 0
-python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe --mode paced --start-bitrate 24000000
-python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe --mode serial --start-bitrate 24000000
+python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe --mode paced --start-bitrate 16000000
+python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe --mode serial --start-bitrate 16000000
 ```
 
 `paced` offers at the fixture's 60 fps cadence without waiting for encoder input
@@ -49,6 +49,10 @@ retains the SDK's startup and stream defaults. `--encoder-delay 40` can inject
 a controlled delay before the real Java encoder callback; default zero leaves
 the product callback timing unchanged. `--frames` selects the measured phase
 length. `burst` is an additional stress control, not the normal producer policy.
+
+The current startup default is 16 Mbps as requested for beta.28. The published
+beta.27 native measurements used 24 Mbps; reproduce those historical runs with
+`--start-bitrate 24000000`. Changing this prior does not establish vehicle capacity.
 
 Each run warms the real source/encoder, drains preroll at the receiver, then
 reports measured counter differences. Compare `outputFrames`,

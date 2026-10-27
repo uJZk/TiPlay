@@ -38,12 +38,13 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#current-browser-deployment)
-and [beta.27](docs/Build.md#beta27-release). Keep source checks, published artifact
+and [beta.28](docs/Build.md#beta28-release). Keep source checks, published artifact
 identity and vehicle evidence separate. Preserve strict source/profile/level/mode
 admission, original compressed frames, bounded selection and per-instance callback
 ownership. Beta.27 follows the beta.26 vehicle report and actual Android AAR
 reproduction: serialize original-AU capture by input completion, set a bounded
-64 Mbps video ceiling and a one-time 24 Mbps BWE startup prior. Keep the minimum
+64 Mbps video ceiling and a one-time 16 Mbps BWE startup prior (updated in beta.28
+at the user's request; beta.27's recorded native tests used 24 Mbps). Keep the minimum
 unset, real congestion feedback and overload guards; never reset the estimate on
 each IDR/source replacement. Completion follows the encoder callback or published
 input-loss state, not final buffer release. Wait outside native/send locks; old

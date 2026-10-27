@@ -143,7 +143,7 @@ def main():
     parser.add_argument("--adb-port", type=int, default=5037)
     parser.add_argument("--serial")
     parser.add_argument("--mode", choices=("paced", "serial", "burst"), default="serial")
-    parser.add_argument("--start-bitrate", type=int, default=24000000)
+    parser.add_argument("--start-bitrate", type=int, default=16000000)
     parser.add_argument("--encoder-delay", type=int, default=0)
     parser.add_argument("--frames", type=int, default=180)
     parser.add_argument("--expect-continuous", action="store_true")

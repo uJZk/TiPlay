@@ -209,6 +209,24 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
+<a id="beta28-release"></a>
+
+## Beta.28 release
+
+Prepared **0.2.20-beta.28**, code **70**, browser **v103**. At the user's request,
+the one-time native video startup estimate changes from 24 to **16 Mbps**. The
+64 Mbps stream ceiling, unset minimum, native input-completion barrier and real
+congestion feedback remain as in beta.27. This estimate is a startup prior, not a
+fixed encoding rate or a guarantee of network capacity.
+
+The probe's current default and reproduction examples use 16 Mbps. The beta.27
+native measurements below actually used 24 Mbps and retain that recorded value;
+they are not relabeled as tests of the new setting. Twenty-eight targeted shared
+JVM tests and 613 browser tests pass, along with public-tree, cache-manifest,
+release-draft and site-assembly checks. Signed packaging and public download
+checks will be recorded after completion. Full Android test CI remains skipped
+under the user's instruction; 16 Mbps native/vehicle performance is unverified.
+
 <a id="beta27-release"></a>
 
 ## Beta.27 release

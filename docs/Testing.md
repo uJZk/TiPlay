@@ -7,6 +7,11 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+Beta.28/code70, browser v103, changes the startup prior to 16 Mbps at the user's
+request. Its source/publication scope is recorded in [Build](Build.md#beta28-release).
+The beta.27 native measurements below used 24 Mbps; they do not establish new
+16 Mbps native or vehicle performance evidence.
+
 Beta.27/code69, browser v102, adds native-input completion backpressure and bounded
 original-video rate admission after beta.26 still suppressed frames. All 2,489
 shared JVM tests and 613 browser tests pass, including 28 targeted video cases;
@@ -98,8 +103,9 @@ The [Android native video probe](../tests/native/README.md) runs the exact M150
 AAR and compiled product bridge through two native PeerConnections. A software
 API28 emulator reproduced queue-block drops with paced input and native suspension
 with serial input under default bitrate settings. Higher bitrate admission alone
-still suffered queue coalescing. With the production input-completion barrier,
-64 Mbps ceiling and one-time 24 Mbps startup prior, a warmed sender phase produced
+still suffered queue coalescing. With beta.27's measured configuration of the
+production input-completion barrier, 64 Mbps ceiling and one-time 24 Mbps startup
+prior, a warmed sender phase produced
 180/180 callbacks, 4,190,805 original bytes and matching SHA-256, with zero new
 input loss. A low-complexity High-profile phase passed all 180 receiver AUs with
 zero RTP packet loss and matching 13,536-byte source/output SHA-256. The heavy

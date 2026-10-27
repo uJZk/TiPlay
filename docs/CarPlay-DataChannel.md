@@ -160,7 +160,7 @@ replacement; input failure uses generation-scoped control without blocking video
 credit under the shared send lock.
 
 Each sender explicitly admits up to 64 Mbps instead of the SDK's 2.5 Mbps 1080p
-default, with a one-time 24 Mbps peer startup estimate. No minimum is set and real
+default, with a one-time 16 Mbps peer startup estimate. No minimum is set and real
 feedback/pacing may reduce the rate. This prior does not encode at that bitrate or
 change source bytes, and is not reapplied on each IDR/source replacement.
 Actual input loss still invalidates the dependency chain. The source processor
