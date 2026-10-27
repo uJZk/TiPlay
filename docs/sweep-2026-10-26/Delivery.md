@@ -2,7 +2,7 @@
 
 ## Current status
 
-Code and documentation cleanup is committed as `4b89fc7d7e88a1e9c1824fef0cf4f7b4bcd98872`, fast-forwarded into main and pushed. The temporary work branch was deleted. Pages v98 is published and independently byte-verified. Full local Android verification and cloud Android/WASM CI passed. Both sweeps are complete; their final source baseline is that cleanup commit. The initial receipt was documentation-only and used `[skip ci]`. Subsequent user-authorized repairs are recorded below; their current source is v99, pending publication.
+Code and documentation cleanup is committed as `4b89fc7d7e88a1e9c1824fef0cf4f7b4bcd98872`, fast-forwarded into main and pushed. The temporary work branch was deleted. The initial v98 page was published and independently byte-verified. Full local Android verification and cloud Android/WASM CI passed. Both sweeps are complete; their final source baseline is that cleanup commit. The initial receipt was documentation-only and used `[skip ci]`. Subsequent user-authorized repairs are recorded below; v99 is now published from `1bc4eb793f9e2b3d6085f10a434dfa7842f9bcd2` and independently byte-verified.
 
 ## Initial sweep decisions and scope
 
@@ -65,9 +65,16 @@ Follow-up verification:
   uses `[skip ci]` and manual Pages publication after local source checks; the old
   cloud CI run above certifies its own initial sweep source, not a new run.
 
+Publication completed through [Pages 40425187334](https://github.com/uJZk/TiPlay/actions/runs/40425187334)
+from `1bc4eb793f9e2b3d6085f10a434dfa7842f9bcd2`. All 217 public files
+(31,811,563 bytes) match the committed assembly; JavaScript/WASM MIME types and
+no redirects were verified. This follow-up changes no APK release/version.
+Temporary assembled-site output and verification scripts were removed after
+verification; reusable test-browser/toolchain caches and result logs stay ignored.
+
 ## Remaining acceptance
 
-Both deferred software findings are resolved. Publication of v99 is pending.
+Both deferred software findings and the discovered BUNDLE source-switch deadlock are resolved. Browser v99 is published and verified; no software decision remains open from this work.
 Physical iPhone/vehicle interoperability, Android JNI encoder switching, actual
 hardware decoding, speaker/panel latency and sustained vehicle playback remain
 unperformed acceptance. Desktop synthetic RTP cannot establish these results.

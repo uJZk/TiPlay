@@ -22,4 +22,4 @@ The coordinator updated four in-scope code comments/docstrings referencing the r
 
 ## Delivery and next steps
 
-[Delivery status](../sweep-2026-10-26/Delivery.md) records integration checks, the resolved software findings, follow-up verification and outstanding physical acceptance. Cleanup commit `4b89fc7d` is integrated into main and pushed; Pages deployment and all 217 public-byte checks pass. Local full Android verification and cloud Android/WASM CI passed. The final documentation-only receipt uses `[skip ci]`; no site/application inputs change.
+[Delivery status](../sweep-2026-10-26/Delivery.md) records integration checks, the resolved software findings, follow-up verification and outstanding physical acceptance. Cleanup commit `4b89fc7d` is integrated into main and pushed; Pages deployment and all 217 public-byte checks pass. Local full Android verification and cloud Android/WASM CI passed. The original documentation-only receipt used `[skip ci]`. The subsequent authorized repairs and v99 publication are documented in the delivery record.

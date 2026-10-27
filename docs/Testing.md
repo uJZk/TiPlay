@@ -66,7 +66,8 @@ pass-through encoder. These desktop checks do not establish Android JNI selectio
 iPhone media interoperability, native RTP audio, vehicle hardware decode, sustained
 vehicle load or physical audio/video timing. `rtc-canvas.mjs --local-track` remains
 a separate Processor/Canvas diagnostic and cannot substitute for RTP reception.
-See the [harness guide](../tests/web-e2e/README.md) for requirements and failure bounds.
+See the [harness guide](../tests/web-e2e/README.md) for requirements and failure bounds,
+and [current deployment](Build.md#current-browser-deployment) for published bytes.
 
 ## Browser WASM verification
 
