@@ -8,11 +8,11 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is **0.2.20-beta.29** (code **71**);
-[beta.29 release](#beta29-release) records provenance and validation scope. Run
+prerelease is **0.2.20-beta.30** (code **72**);
+[beta.30 release](#beta30-release) records provenance and validation scope. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v104**, with original-codec WebRTC RTP for live video and negotiated audio.
+the deployed page uses **v105**, with original-codec WebRTC RTP for live video and negotiated audio.
 Earlier SoundTouch/libsoxr browser implementations are historical; current playback
 boundaries are in [Audio tempo](Audio-tempo.md). Software checks are in
 [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -213,8 +213,10 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta.30 release
 
-Prepared **0.2.20-beta.30**, code **72**, browser **v105**. Publication checks are
-pending. The user's 16 Mbps startup prior, 64 Mbps ceiling and unset minimum remain.
+Published [TiPlay 0.2.20-beta.30](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.30),
+code **72**, browser **v105**, at **2026-10-27 16:16:52 UTC+08:00**.
+Build commit: `964d176baba161e369c0696f0abe3c1078b22d26`.
+The user's 16 Mbps startup prior, 64 Mbps ceiling and unset minimum remain.
 
 The beta.29 report showed successful High-profile startup followed by native
 allocation decaying to 30 kbps. One generation received 1,360 source AUs but
@@ -267,8 +269,27 @@ final full run pass. The failed port run did not record addresses, so reuse in
 that specific occurrence is not claimed as observed. Native sender statistics are
 sampled only during Debug capture, with fixed fields and current-owner/generation
 guards; ordinary playback adds no periodic sender stats work. Full Android CI
-remains skipped under the user's instruction. Signed and public artifact checks
-will be recorded after completion.
+remains skipped under the user's instruction.
+
+[Signed workflow 40471221589](https://github.com/uJZk/TiPlay/actions/runs/40471221589)
+passed Release lint/build, signing and pinned runtime checks. Artifact
+`12718677145` has ZIP SHA-256
+`841c08eb8787ac944dfdacc0a802b87619720b311cf540396e24ed433841526c`.
+Independent verification confirms signer/runtime continuity with beta.29,
+package/code72, the 51-library set, all 25 ELF64 libraries and ZIP aligned to
+16 KiB, and compiled rate/barrier/diagnostic markers. The source ZIP exactly
+matches the build commit's archive, including application-first setup and all
+45 verified libmedia artifacts. Web changes are verified in source/public bytes,
+not claimed as new DEX literals. All three public attachments were downloaded
+again and match the verified workflow files byte-for-byte. The tag points directly
+to the build commit; prerelease status and stable-latest policy are retained.
+Reports/downloads remain outside Git under `/tmp/tiplay-beta30/`.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.30.apk` | 114,201,512 | `4d19c0c8c3f52857076d5ec42270845bff299a7e48914b4ecee700edc49db576` |
+| `TiPlay-0.2.20-beta.30-source.zip` | 40,934,163 | `41b6c37aae2b4c9091e77ee3e2dd6bc9be9366281fd3dac3cd7d5aea219885f7` |
+| `SHA256SUMS.txt` | 191 | `9967d8a29977b8b2a1eb823c145ba754aac2afa91020d11610b11505c9c33082` |
 
 <a id="beta29-release"></a>
 
@@ -547,7 +568,15 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-Browser **v104** is deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
+Browser **v105** is deployed from `964d176baba161e369c0696f0abe3c1078b22d26` by
+[Pages run 40471225641](https://github.com/uJZk/TiPlay/actions/runs/40471225641).
+All **217** public files (**31,822,664 bytes**) match the local assembly byte-for-byte,
+with JavaScript/WASM MIME types and no redirects verified. Actual page/cache
+values identify v105 and application metadata identifies beta.30. This deployment
+includes the application-owned BUNDLE fix and HLS failure diagnostics.
+[Beta.30](#beta30-release) records validation and publication scope.
+
+The preceding browser **v104** was deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
 [Pages run 40458375995](https://github.com/uJZk/TiPlay/actions/runs/40458375995).
 All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
 with JavaScript/WASM MIME types and no redirects verified. Downloaded page/cache
