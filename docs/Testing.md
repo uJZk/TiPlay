@@ -18,12 +18,14 @@ all 217 public files; no physical acceptance is implied.
 
 The retained v96 receive-level coverage exercises bounded H.264 probes, both
 authenticated offers, cancellation, pre-CONFIG frame ownership and safe video-error
-details. Actual Chromium accepts the production helper's local SDP. Managed browser
-policy yields zero host ICE candidates, so it blocks browser RTP playback rather
-than providing a successful decoding result. The subsequent device capture isolated
-actual encoder identity from receive-level admission; v97 addresses that separate
-selection boundary. Real JNI switching, browser RTP audio/video, actual hardware use
-and iPhone/vehicle continuity still require device evidence.
+details. At that release, actual Chromium accepted the production helper's local
+SDP, while managed-browser policy produced zero host ICE candidates and blocked
+RTP playback. A subsequent device capture isolated actual encoder identity from
+receive-level admission; v97 addresses that separate selection boundary. The
+current full-page desktop RTP checks below use a dedicated ICE-capable test browser
+without changing managed machine policy. Actual Android JNI switching, iPhone
+source passthrough, native RTP audio, vehicle hardware use and physical continuity
+still require device evidence.
 
 The beta.23/v95 AirPlay baseline exercised encrypted SETUP/info/RECORD, independent
 type-130 retirement, owner-scoped screen replacement/return, URL audio-only
@@ -42,6 +44,29 @@ video used an explicit software test override, which cannot establish Tesla hard
 use. Native two-track JNI/DTLS-SRTP evidence matched 80 original packets per track;
 browser end-to-end RTP remained blocked. Beta.21 skipped its full Android suite;
 that historical scope does not qualify the current complete run.
+
+### Desktop RTP integration
+
+An ICE-capable dedicated desktop browser has completed `rtc-canvas.mjs` over real
+local RTP for main/Worker Canvas, the compiled `phone-run.mjs` compatibility and
+secure-refusal checks, and a full `run.mjs` production-page run. The page receives
+synthetic H.264 RTP from a second browser page, while its video DataChannel carries
+metadata only. Actual red/blue Canvas pixels and generations 2/3 verify CarPlay →
+mirror → CarPlay replacement with authenticated control retained. Worker metadata
+stream/chunk, Worker-to-main Canvas and main Processor/Canvas paths, SRP/privacy,
+touch/viewport, diagnostics, reconnect, takeover and offline Service Worker/cache
+checks pass in the final frozen v99 run, including terminal encoder failure and
+compressed-video rejection with control retained. The stock managed-browser
+negative run separately exits nonzero with `RTP E2E blocked: no-local-candidates`;
+it does not report playback success. These are local desktop results, not a new
+cloud full-CI run or published-artifact verification.
+
+The synthetic sender uses browser encoding, not Android's original-compressed-frame
+pass-through encoder. These desktop checks do not establish Android JNI selection,
+iPhone media interoperability, native RTP audio, vehicle hardware decode, sustained
+vehicle load or physical audio/video timing. `rtc-canvas.mjs --local-track` remains
+a separate Processor/Canvas diagnostic and cannot substitute for RTP reception.
+See the [harness guide](../tests/web-e2e/README.md) for requirements and failure bounds.
 
 ## Browser WASM verification
 
@@ -125,9 +150,23 @@ Current live video requires original-codec RTP and MediaStreamTrackProcessor to
 Canvas, with no video element, second encoding, encoded-video DataChannel fallback,
 live VideoDecoder/pacer or touch catch-up. Verify video-only errors, authenticated
 video replacement generations, source/dependency/IDR guards, safe first-frame
-ownership and successful Canvas acknowledgement. Existing DataChannel decoder/pacer
-fixtures and older complete-page software overrides describe the preceding engine.
-API support and Canvas submission do not prove hardware use or physical output.
+ownership and successful Canvas acknowledgement. `run.mjs` now tests the
+production RTP page using synthetic H.264 and metadata-only video records; it does
+not use a live WebCodecs hardware override or an encoded-video fallback. Only URL
+AVPlayer harnesses retain the explicit desktop software-video override. API support
+and Canvas submission do not prove hardware use or physical output.
+
+Source-change regression must preserve the initial video transceiver as an inactive
+BUNDLE transport anchor while retiring its old track and adding a new receive-only
+generation. Later nonanchor transceivers can stop. Authenticated offer/answer and
+ready barriers must complete over the surviving SCTP control channel before new
+metadata/frames are admitted. Check replacement pixels and control progress, not
+only a new track event. A terminal codec/processor failure or compressed DataChannel
+FRAME reports a video-only error; normal source replacement renegotiates.
+
+Missing usable host ICE is a bounded nonzero blocked result, with no local-track
+or legacy-media fallback. The new dedicated-browser desktop pass does not imply
+that a managed browser with zero candidates has gained connectivity.
 
 Preserve remote diagnostic coverage: independent bounded audio/video reports,
 capture/stream/epoch interval baselines, legacy and current production-shaped
@@ -206,8 +245,9 @@ cases cover expansion, actionable waits/errors and retry advice.
 DOM/CSS/CSP in Chinese and English at 320/800 pixels. Its structured event sequences
 cover pending borrow, first-frame epochs, return, URL pause/buffering, old codec
 errors and repeatable failure notices. It proves presentation behavior, not media
-decoding, pairing or DataChannel delivery. A managed browser policy that produces
-no ICE candidates still blocks the full media-page harness.
+decoding, pairing or DataChannel delivery. Full-page RTP integration is checked
+separately by `run.mjs`; zero-candidate managed browsers still produce a blocked
+result rather than inheriting a dedicated-browser pass.
 
 Host regressions bind ownership to controller, control session and resource state,
 rechecking after external callbacks. They reject queued old Active/Frame and

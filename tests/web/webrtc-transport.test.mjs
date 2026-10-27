@@ -265,7 +265,9 @@ test('video-only renegotiation waits for generation preparation and retains audi
     assert.equal(f.media.restartVideo(), pending, 'only one negotiation can be in flight');
     await settle();
     const offer = f.channels.control.sent.find(value => value.k === 'video-offer');
-    assert.equal(offer.generation, 2); assert.equal(original.stopped, true); assert.equal(f.peer.transceivers[0].stopped, true);
+    assert.equal(offer.generation, 2); assert.equal(original.stopped, true);
+    assert.equal(f.peer.transceivers[0].direction, 'inactive');
+    assert.equal(f.peer.transceivers[0].stopped, false, 'BUNDLE anchor keeps the in-band signaling transport alive');
     f.channels.control.receive(videoAnswer(offer)); await settle();
     assert.deepEqual(generations, [2]); assert.equal(tracks.length, 1);
     assert.equal(f.channels.control.sent.some(value => value.k === 'video-ready'), false);
@@ -275,6 +277,38 @@ test('video-only renegotiation waits for generation preparation and retains audi
     assert.equal(f.media.isConnected(), true); assert.equal(f.channels.audio.readyState, 'open'); assert.equal(f.channels.video.readyState, 'open');
     assert.equal(f.peer.options.bundlePolicy, 'max-bundle');
   } finally { f.media.close(); }
+});
+
+test('repeated video replacements preserve the BUNDLE anchor, retire old tracks and keep audio/control usable', async () => {
+  const tracks = [];
+  const f = await fixture({ ...videoOptions, onVideoTrack: (track, generation) => tracks.push({ track, generation }) });
+  const anchor = f.peer.transceivers[0], audio = f.media.openAudio().getReader();
+  try {
+    f.channels.control.receive(JSON.stringify({ k: 'audio-barrier', generation: 1, sequence: 0, epoch: 7 }));
+    for (let generation = 2; generation <= 4; generation++) {
+      const previous = tracks.at(-1).track, retired = f.peer.transceivers.at(-1);
+      const pending = f.media.restartVideo(); await settle();
+      assert.equal(anchor.stopped, false); assert.equal(anchor.direction, 'inactive');
+      assert.equal(previous.stopped, true);
+      if (retired !== anchor) assert.equal(retired.stopped, true, 'non-anchor transceivers do not accumulate live receivers');
+      const offer = f.channels.control.sent.filter(message => message.k === 'video-offer').at(-1);
+      assert.equal(offer.generation, generation);
+      const rpc = f.media.control(100 + generation, [{ k: 'heartbeat' }]);
+      f.channels.control.receive(JSON.stringify({ q: 100 + generation, state: 'streaming' }));
+      assert.equal((await rpc).state, 'streaming');
+      f.channels.audio.receive(fragment(Uint8Array.of(generation), { q: generation - 2 }));
+      assert.deepEqual((await audio.read()).value, Uint8Array.of(generation));
+      f.channels.control.receive(videoAnswer(offer)); await pending;
+      assert.equal(tracks.at(-1).generation, generation);
+      assert.notEqual(tracks.at(-1).track, previous);
+      const stale = { kind: 'video', stopped: false, stop() { this.stopped = true; } };
+      f.peer.ontrack({ track: stale, transceiver: anchor });
+      assert.equal(stale.stopped, true, 'retired anchor cannot donate frames to a new generation');
+      assert.equal(f.media.videoTrack(), tracks.at(-1).track);
+      assert.equal(f.media.isConnected(), true);
+    }
+  } finally { await audio.cancel(); audio.releaseLock(); f.media.close(); }
+  assert.equal(f.peer.closed, true);
 });
 
 test('video renegotiation timeout is bounded and a late answer cannot settle a later attempt', async () => {

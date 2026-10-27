@@ -32,4 +32,6 @@ Full web/Android checks remain coordinator-owned. Chromium end-to-end harnesses 
 
 ## Open decisions
 
+The following original finding was subsequently fixed at the user's request; see [follow-up repairs](Delivery.md#follow-up-repairs).
+
 `tests/web-e2e/run.mjs` still assumes the former compressed-video DataChannel/WebCodecs architecture: its VP8 `VideoDecoder` hardware-support gate, worker/main path names, `decodedFps` and scheduled-presentation fields, and compressed-media assertion disagree with the current RTP/MediaStreamTrackProcessor/Canvas runtime. See its hardware gate around line 268, compressed-media assertion around line 297 and presentation assertions around line 224; the current pipeline in `site/play/rtc-video.js` rejects compressed FRAME records. Updating or retiring those executable assertions changes test contracts and needs a separate decision. They were preserved; the unused import cleanup does not claim that this harness currently validates the production video path.

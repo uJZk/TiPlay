@@ -54,6 +54,9 @@ into Canvas. Do not add a video element, second encoding or DataChannel/WebCodec
 live-video fallback. Source changes use authenticated video-only renegotiation and
 generation/ready barriers; unsupported codec/profile, reordering and processor failure
 report video-only errors. Touch-specific catch-up is disabled.
+Keep the initial video transceiver inactive across source replacement so its BUNDLE
+DTLS/SCTP transport survives in-band video negotiation; retire old tracks and later
+nonanchor transceivers. See [desktop RTP integration](docs/Testing.md#desktop-rtp-integration).
 
 When the source audio codec is negotiated, forward original encoded audio over standard
 WebRTC without Android decode/reencode. The independent audio peer uses libdatachannel's

@@ -2,9 +2,9 @@
 
 ## Current status
 
-Code and documentation cleanup is committed as `4b89fc7d7e88a1e9c1824fef0cf4f7b4bcd98872`, fast-forwarded into main and pushed. The temporary work branch was deleted. Pages v98 is published and independently byte-verified. Full local Android verification and cloud Android/WASM CI passed. Both sweeps are complete; their final source baseline is that cleanup commit. This documentation-only receipt uses `[skip ci]` because no site/application inputs change.
+Code and documentation cleanup is committed as `4b89fc7d7e88a1e9c1824fef0cf4f7b4bcd98872`, fast-forwarded into main and pushed. The temporary work branch was deleted. Pages v98 is published and independently byte-verified. Full local Android verification and cloud Android/WASM CI passed. Both sweeps are complete; their final source baseline is that cleanup commit. The initial receipt was documentation-only and used `[skip ci]`. Subsequent user-authorized repairs are recorded below; their current source is v99, pending publication.
 
-## Decisions and scope
+## Initial sweep decisions and scope
 
 - Fast-forwarded the clean `work` branch from `dccb1c3e` to remote `5c47dd009c7b88e2edadfe77625dfbdf17697d02` (four commits).
 - Recovered code baseline `91430639` from the deleted completed 2026-10-13 record. Documentation baseline is `4bdffcd6`. Reviewed 1,241 current code/test/config files and 45 documents; focused/manual and whole-scope mechanical coverage are distinguished in worker reports.
@@ -26,8 +26,48 @@ Code and documentation cleanup is committed as `4b89fc7d7e88a1e9c1824fef0cf4f7b4
 - [Android/WASM CI 40367405720](https://github.com/uJZk/TiPlay/actions/runs/40367405720) passed: both `check` (27m 37s) and `wasm` (2m 3s) succeeded, including Node 22 browser checks, full Android tests/lint/debug builds, native Soxr streaming checks and byte-identical WASM reproduction.
 - Owned download scratch, assembled-site output and temporary sweep scripts were removed; no session build processes remain. Reusable SDK/JDK/Gradle caches, machine-local SDK selection and verification logs remain ignored; no credentials or build outputs are committed.
 
-## Open decisions and next work
+## Follow-up repairs
 
-- The general `tests/web-e2e/run.mjs` still assumes retired compressed DataChannel video/WebCodecs scheduling. Its test contract must be updated or retired separately; this sweep only removes an unused import and labels historical harness limits.
-- The inherited feature-request template still routes bug/connection reports to upstream DiPlay and includes native head-unit copy. Changing that routing is separate behavior work; the template was preserved.
-- Physical iPhone/vehicle interoperability, JNI encoder switching, hardware decoding, speaker/panel latency and sustained playback remain unperformed acceptance. No performance gain is claimed.
+The user subsequently requested fixes for both deferred findings. The issue forms
+now route current reports to TiPlay and collect Android-phone/car-browser context.
+The general E2E harness and synthetic phone now use real H.264 RTP,
+metadata-only video DataChannel records, actual Canvas pixels and source-generation
+barriers. Old VP8/WebCodecs/pacer assertions and live hardware-preference overrides
+were retired; pairing/privacy, touch/viewport, Debug/portal, reconnect/takeover,
+localization, nested hosting and Service Worker/offline coverage remain.
+
+The new real-browser test reproduced a production source-switch deadlock: stopping
+the initial BUNDLE-leading video transceiver reset DTLS/SCTP before the in-band
+`video-offer` could leave. The browser now retains that transceiver inactive,
+stops the old receiver track and creates a distinct replacement track. Later
+non-anchor transceivers stop normally. Authenticated identity, SDP limits and
+generation/ready gates remain; peer closure releases the inactive anchor.
+
+Follow-up verification:
+
+- Final v99 production-page E2E passed **116 checks**, including actual red/blue
+  pixels after two source changes, all current Worker/chunk/main presentation
+  paths, terminal encoder-error and compressed-record rejection with live controls,
+  secure reconnect, takeover and offline pairing-link reopening.
+- A separate real RTP main/Worker Processor-to-Canvas run passed. The standalone
+  source fixture also passed two generations, error isolation, control continuity
+  and complete track/peer/ICE-waiter retirement. No WebCodecs decoder or local-track
+  substitute was used for these RTP results.
+- The managed `/usr/bin/chromium` still has its original policy; its negative run
+  exits nonzero with `RTP E2E blocked: no-local-candidates`, never a playback pass.
+  Successful RTP runs use a separately installed official Playwright test browser
+  with default settings, without policy-file or network-policy changes.
+- JVM compatibility/shared-server and secure-production-refusal checks passed.
+- All **605 browser and harness-helper unit tests**, **33 Python tests**, form YAML/schema checks and independent production lifecycle review passed. Site assembly, offline-cache and public-tree checks passed.
+- The required complete Android command passed in **9 seconds**, 251 tasks
+  (12 executed, 239 up-to-date). Android source/build inputs are unchanged; the
+  previously passed 4,335 Android results remain applicable. The web-only follow-up
+  uses `[skip ci]` and manual Pages publication after local source checks; the old
+  cloud CI run above certifies its own initial sweep source, not a new run.
+
+## Remaining acceptance
+
+Both deferred software findings are resolved. Publication of v99 is pending.
+Physical iPhone/vehicle interoperability, Android JNI encoder switching, actual
+hardware decoding, speaker/panel latency and sustained vehicle playback remain
+unperformed acceptance. Desktop synthetic RTP cannot establish these results.

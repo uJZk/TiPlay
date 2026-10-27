@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Synthetic phone source with real browser DataChannels when rtcPage is supplied.
+// Synthetic phone source with real H.264 RTP video and reliable control/metadata DataChannels.
 // Retained direct HTTP record/control routes are used only by compatibility/resource tests.
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { installSrpFixture } from './srp-fixture.mjs';
+import { installFakeRtpSource } from './fake-rtp-source.mjs';
+import { RTC_VIDEO_TRANSPORT } from '../../site/play/rtc-video.js';
 import { History, listen, closeServer } from './resources.mjs';
 import { RECORD, FLAG, encodeRecord } from '../../site/play/link.js';
 import { RTC_TRANSPORT, RTC_MAGIC, RTC_HEADER_BYTES, RTC_FRAGMENT_BYTES } from '../../site/play/webrtc-transport.js';
@@ -32,11 +34,18 @@ export function parseIvf(buffer) {
 }
 
 /**
- * Starts the fake phone. `frames` loop at `fps`; every stream starts at frame 0, which must be a key frame.
+ * Starts the fake phone. Native RTC uses a browser Canvas source; direct HTTP compatibility uses `frames`.
  * HTTP or DataChannel controls land in `events` as `{s, q, event}`.
  * rtcPage must be a separate real browser page on a secure test origin.
  */
-export function startFakePhone({ code, frames, width, height, fps = 30, codec = 'vp8', host = '127.0.0.1', rtcPage = null, moduleBase = '/' }) {
+export function startFakePhone({ code, frames, width, height, fps = 30, codec, host = '127.0.0.1', rtcPage = null, moduleBase = '/' }) {
+  codec ??= rtcPage ? 'avc1.42e01f' : 'vp8';
+  if (rtcPage && !/^avc1\.[0-9a-f]{6}$/i.test(codec)) throw Error('Synthetic native RTP requires an H.264 source codec.');
+  let source = { mode: 'carplay', codec, width, height, fps, epoch: 1 };
+  let closed = false;
+  const retirements = new Set();
+  const rtpStats = { framesEncoded: 0, sourcePaints: 0, metadataRecords: 0, compressedRecords: 0,
+    videoGeneration: 1, renegotiations: 0, captureActive: false, readyGeneration: 1, controlState: 'connecting' };
   let portalRevision = 0;
   const events = new History(), requests = new History(), preflights = new History(), bridgeErrors = new History();
   const peerError = error => bridgeErrors.push(error.message);
@@ -53,9 +62,12 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     video = null;
     clearInterval(timer);
     if (previous.rtcEpoch) {
-      void rtcPage.evaluate(epoch => {
-        if (globalThis.__fakeRtc?.epoch === epoch) { globalThis.__fakeRtc.peer.close(); globalThis.__fakeRtc = null; }
+      const retirement = rtcPage.evaluate(epoch => {
+        if (globalThis.__fakeRtc?.epoch === epoch) globalThis.__fakeRtc.dispose();
+        if (globalThis.__fakeRtcRequest?.epoch === epoch) globalThis.__fakeRtcRequest = null;
       }, previous.rtcEpoch).catch(() => {});
+      retirements.add(retirement); retirement.finally(() => retirements.delete(retirement));
+      rtpStats.captureActive = false;
       return;
     }
     res.off('drain', drain);
@@ -142,7 +154,8 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
 
   function status(q) {
     return {
-      q, clockMs: performance.now(), state: 'streaming', codec, display: { w: width, h: height }, viewport, fit, touch: 'ok', portalRevision,
+      q, clockMs: performance.now(), state: 'streaming', codec, display: { w: source.width, h: source.height }, viewport, fit, touch: 'ok', portalRevision,
+      ...(rtcPage ? { videoTransport: RTC_VIDEO_TRANSPORT, videoGeneration: rtpStats.videoGeneration } : {}),
       phone: { fake: 1, videoStreams: videoCount },
     };
   }
@@ -159,95 +172,59 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     return status(lastQ.get(body.s));
   }
 
-  /** The remote endpoint is a real browser PeerConnection; Node only supplies the synthetic compressed source. */
+  /** The remote endpoint sends real H.264 RTP; the DataChannel carries CONFIG metadata only. */
   async function streamRtc(sdp) {
+    if (closed) throw Error('Synthetic phone is closed.');
     closeVideo('replaced');
     const epoch = ++rtcEpoch;
-    const answer = await rtcPage.evaluate(async ({ sdp, epoch, magic, headerBytes, fragmentBytes }) => {
-      globalThis.__fakeRtc?.peer.close();
-      const peer = new RTCPeerConnection({ iceServers: [] });
-      const state = globalThis.__fakeRtc = { peer, epoch, channels: {}, sequence: 0, unconsumed: new Map(), bytes: 0 };
-      peer.ondatachannel = ({ channel }) => {
-        state.channels[channel.label] = channel;
-        if (channel.label === 'control') channel.onmessage = async ({ data }) => {
-          const message = JSON.parse(data);
-          if (message.k === 'auth') {
-            const response = await globalThis.__fakePhoneAuth(message, epoch);
-            state.authorized = !response.error;
-            if (channel.readyState === 'open') channel.send(JSON.stringify(response));
-            return;
-          }
-          if (!state.authorized) throw new Error('media/control admitted before encrypted auth');
-          if (message.k === 'audio-ready' && message.enabled) { channel.send(JSON.stringify({ k: 'audio-barrier', generation: message.generation, sequence: 0, epoch })); return; }
-          if (message.k === 'bye') {
-            const response = await globalThis.__fakePhoneBye(message, epoch);
-            if (channel.readyState === 'open') channel.send(JSON.stringify(response));
-            return;
-          }
-          if (message.k === 'ack') {
-            if (message.channel !== 'video' || state.unconsumed.get(message.q) !== message.bytes) throw new Error('invalid fake-phone consumption credit');
-            state.unconsumed.delete(message.q); state.bytes -= message.bytes;
-          } else if (Array.isArray(message.e)) {
-            const response = await globalThis.__fakePhoneControl(message, epoch);
-            if (globalThis.__fakeRtc === state && channel.readyState === 'open') channel.send(JSON.stringify(response));
-          }
-        };
-      };
-      await peer.setRemoteDescription({ type: 'offer', sdp });
-      await peer.setLocalDescription(await peer.createAnswer());
-      if (peer.iceGatheringState !== 'complete') await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { peer.close(); reject(new Error('fake-phone ICE gathering timed out')); }, 5000);
-        peer.addEventListener('icegatheringstatechange', () => {
-          if (peer.iceGatheringState === 'complete') { clearTimeout(timer); resolve(); }
-        });
-      });
-      state.send = records => {
-        const channel = state.channels.video;
-        if (!state.authorized || channel?.readyState !== 'open' || channel.bufferedAmount > 1024 * 1024
-          || state.bytes + records.reduce((bytes, record) => bytes + record.length, 0) > 4 * 1024 * 1024) return false;
-        for (const bytes of records) {
-          const sequence = state.sequence++;
-          state.unconsumed.set(sequence, bytes.length); state.bytes += bytes.length;
-          for (let offset = 0; offset < bytes.length;) {
-            const size = Math.min(bytes.length - offset, fragmentBytes - headerBytes);
-            const fragment = new Uint8Array(headerBytes + size), header = new DataView(fragment.buffer);
-            [magic, epoch, sequence, bytes.length, offset, size].forEach((value, index) => header.setUint32(index * 4, value, true));
-            fragment.set(bytes.subarray(offset, offset + size), headerBytes); channel.send(fragment); offset += size;
-          }
-        }
-        return true;
-      };
-      return peer.localDescription.sdp;
-    }, { sdp, epoch, magic: RTC_MAGIC, headerBytes: RTC_HEADER_BYTES, fragmentBytes: RTC_FRAGMENT_BYTES });
-    let sequence = 0, cursor = 0, configSent = false, sending = false;
-    const stream = { rtcEpoch: epoch, restart: () => { cursor = 0; }, bufferedBytes: 0, blocked: true,
-      timer: setInterval(async () => {
-        if (video !== stream || sending) return;
-        sending = true;
-        try {
-          const frame = corrupt ? { key: true, data: new Uint8Array(2000).fill(0x5a) } : frames[cursor % frames.length];
-          const payload = new Uint8Array(8); new DataView(payload.buffer).setFloat64(0, performance.now() - 50, true);
-          const timestampUs = Math.round(sequence * 1e6 / fps);
-          const batch = [
-            ...(!configSent ? [encodeRecord({ kind: RECORD.CONFIG, epoch: 1, payload: config })] : []),
-            encodeRecord({ kind: RECORD.TIMING, epoch: 1, sequence, timestampUs, payload }),
-            encodeRecord({ kind: RECORD.FRAME, flags: frame.key ? FLAG.KEY : 0, epoch: 1, sequence, timestampUs, payload: frame.data }),
-          ];
-          const result = await rtcPage.evaluate(({ epoch, records }) => {
-            const state = globalThis.__fakeRtc;
-            if (state?.epoch !== epoch) return null;
-            const sent = state.send(records.map(bytes => Uint8Array.from(atob(bytes), char => char.charCodeAt(0))));
-            return { sent, bytes: state.bytes };
-          }, { epoch, records: batch.map(record => Buffer.from(record).toString('base64')) });
-          if (video !== stream || !result) return;
-          stream.blocked = !result.sent; stream.bufferedBytes = result.bytes;
-          if (result.sent) { cursor++; sequence++; framesWritten++; configSent = true; corrupt = false; }
-        } catch (error) {
-          if (video === stream) { bridgeErrors.push(error.message); closeVideo(null); }
-        } finally { sending = false; }
-      }, 1000 / fps) };
-    video = stream; videoCount++;
-    return { type: 'answer', sdp: answer, epoch, transport: RTC_TRANSPORT, fragmentBytes: RTC_FRAGMENT_BYTES };
+    Object.assign(rtpStats, { framesEncoded: 0, sourcePaints: 0, metadataRecords: 0, compressedRecords: 0,
+      videoGeneration: 1, readyGeneration: 1, renegotiations: 0, captureActive: false, controlState: 'connecting' });
+    framesWritten = 0;
+    const stream = { rtcEpoch: epoch, blocked: true, bufferedBytes: 0, restart() {} };
+    video = stream;
+    let result;
+    try {
+      result = await rtcPage.evaluate(installFakeRtpSource, { offer: sdp, epoch, source, moduleBase,
+        magic: RTC_MAGIC, headerBytes: RTC_HEADER_BYTES, fragmentBytes: RTC_FRAGMENT_BYTES,
+        videoTransport: RTC_VIDEO_TRANSPORT });
+    } catch (error) {
+      if (video === stream) closeVideo(null);
+      throw error;
+    }
+    if (closed || video !== stream) throw Error('Synthetic phone source retired.');
+    videoCount++;
+    let sampling = false;
+    stream.timer = setInterval(async () => {
+      if (sampling || video !== stream) return;
+      sampling = true;
+      try {
+        const snapshot = await rtcPage.evaluate(async epoch => {
+          const state = globalThis.__fakeRtc;
+          return state?.epoch === epoch ? state.snapshot() : null;
+        }, epoch);
+        if (!snapshot || video !== stream) return;
+        Object.assign(rtpStats, snapshot);
+        stream.bufferedBytes = snapshot.bufferedBytes; stream.blocked = snapshot.controlState !== 'open';
+        framesWritten = snapshot.framesEncoded;
+      } catch (error) {
+        if (video === stream && !closed) { bridgeErrors.push(error.message); closeVideo(null); }
+      } finally { sampling = false; }
+    }, 100);
+    return { type: 'answer', sdp: result.sdp, epoch, transport: RTC_TRANSPORT,
+      videoTransport: RTC_VIDEO_TRANSPORT, fragmentBytes: RTC_FRAGMENT_BYTES };
+  }
+
+  async function rtcAction(action, value) {
+    const epoch = video?.rtcEpoch;
+    if (closed || !epoch) throw Error('Synthetic RTP source is not connected.');
+    const result = await rtcPage.evaluate(async ({ epoch, action, value }) => {
+      const state = globalThis.__fakeRtc;
+      if (!state || state.epoch !== epoch) throw Error('Synthetic RTP source retired.');
+      const result = state[action](value);
+      return { result, snapshot: await state.snapshot() };
+    }, { epoch, action, value });
+    if (video?.rtcEpoch === epoch) Object.assign(rtpStats, result.snapshot);
+    return result.result;
   }
 
   const server = createServer(async (req, res) => {
@@ -273,7 +250,7 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     }
     const route = `${req.method} ${url.pathname}`;
     if (route === 'GET /hello') return json(res, 200, { app: 'TiPlay', protocol: 1, clockMs: performance.now(),
-      ...(rtcPage ? { transport: RTC_TRANSPORT } : {}) });
+      ...(rtcPage ? { transport: RTC_TRANSPORT, videoTransport: RTC_VIDEO_TRANSPORT } : {}) });
     if (rtcPage && ['/rtc', '/control', '/video', '/audio'].includes(url.pathname)) return json(res, 410, { error: 'transport-required' });
     if (rtcPage && (route === 'POST /rtc/pair/start' || route === 'POST /rtc/pair/finish')) {
       let body;
@@ -323,6 +300,9 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
 
   const setup = rtcPage ? (async () => {
     await installSrpFixture(rtcPage, { code, moduleBase });
+    await rtcPage.exposeFunction('__fakePhoneBridgeError', (message, epoch) => {
+      if (video?.rtcEpoch === epoch && !closed) bridgeErrors.push(message);
+    });
     await rtcPage.exposeFunction('__fakePhoneAuth', (body, epoch) => {
       let refusal;
       const response = { writeHead(status) { refusal = status; }, end() {} };
@@ -346,17 +326,30 @@ export function startFakePhone({ code, frames, width, height, fps = 30, codec = 
     events, requests, preflights, bridgeErrors,
     assertHistories() { for (const history of [events, requests, preflights, bridgeErrors]) history.assertComplete(); },
     get videoCount() { return videoCount; },
-    get streamStats() { return { framesWritten, blocked: Boolean(video?.blocked), bufferedBytes: video?.bufferedBytes ?? video?.res?.writableLength ?? 0, active: Boolean(video) }; },
+    get streamStats() { return { ...rtpStats, framesWritten, blocked: Boolean(video?.blocked),
+      bufferedBytes: video?.bufferedBytes ?? video?.res?.writableLength ?? 0, active: Boolean(video) }; },
+    async changeSource({ mode = source.mode, width = source.width, height = source.height } = {}) {
+      if (!['carplay', 'airplay-mirror'].includes(mode) || !Number.isSafeInteger(width) || width < 2 || width > 8192
+        || !Number.isSafeInteger(height) || height < 2 || height > 8192) throw Error('Invalid synthetic video source.');
+      const next = { ...source, mode, width, height, epoch: source.epoch + 1 };
+      await rtcAction('changeSource', next); source = next;
+    },
+    injectCompressedVideo() { return rtcAction('injectCompressedVideo'); },
+    failVideo(reason) {
+      if (typeof reason !== 'string' || !/^[a-z0-9-]{1,100}$/.test(reason)) throw Error('Invalid synthetic video error.');
+      return rtcAction('failVideo', reason);
+    },
     setFit(value) { fit = value; },
     requestPortal() { portalRevision++; },
     /** Drops the current RTC peer or compatibility socket, as a vanished hotspot would. */
     dropVideo() { closeVideo(null); },
     /** Sends a key frame of garbage next, which the browser's decoder rejects. */
     corruptNextFrame() { corrupt = true; },
-    close() {
-      closeVideo('stopped');
+    async close() {
+      closed = true; closeVideo('stopped');
       rtcPage?.off('pageerror', peerError);
-      return closeServer(server);
+      await Promise.all([...retirements]);
+      await closeServer(server);
     },
   }));
 }

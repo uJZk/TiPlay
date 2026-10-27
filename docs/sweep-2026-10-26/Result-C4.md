@@ -57,6 +57,8 @@ protocols, public exports or generated files changed.
 
 ## Open decisions
 
+The following original finding was subsequently fixed at the user's request; see [follow-up repairs](Delivery.md#follow-up-repairs).
+
 `.github/ISSUE_TEMPLATE/feature_request.yml` still sends new connection/bug
 reports to the upstream DiPlay repository and asks for DiPlay/native head-unit
 details. These are live user-facing destinations and copy, not historical

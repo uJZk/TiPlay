@@ -17,6 +17,10 @@ body:
     attributes: {label: Car and browser, placeholder: 'Car model/year, browser and vehicle firmware versions'}
     validations: {required: true}
   - type: input
+    id: android
+    attributes: {label: Android phone and system version, placeholder: 'Phone model, Android version and exact firmware'}
+    validations: {required: true}
+  - type: input
     id: phone
     attributes: {label: iPhone model and exact iOS version}
     validations: {required: true}
@@ -30,7 +34,7 @@ body:
     id: reproduce
     attributes:
       label: What happened and how to reproduce it
-      description: 'Include expected behavior, steps, relevant settings and the approximate failure time. Include the Android phone model/system version, Android hotspot or Existing Wi-Fi, and band/channel if shown. For Existing Wi-Fi, include the router model and whether client isolation is enabled.'
+      description: 'Include expected behavior, steps, relevant settings and the approximate failure time. Include Android hotspot or Existing Wi-Fi, and band/channel if shown. For Existing Wi-Fi, include the router model and whether client isolation is enabled.'
     validations: {required: true}
   - type: textarea
     id: diagnostics

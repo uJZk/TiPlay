@@ -84,6 +84,10 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       catch (_) { throw transportError('rtc-video-codecs-unavailable'); }
     }
   } catch (error) { peer.close(); throw error; }
+  // The initial video m-line can anchor BUNDLE's DTLS/SCTP transport. Keep it
+  // inactive when retiring its track: stopping it before the in-band offer
+  // reaches the phone resets the very DataChannel carrying that offer.
+  const bundleVideoAnchor = videoTransceiver;
   const stats = { transport: RTC_TRANSPORT, state: 'connecting', reason: null, generation: null,
     queuedBytes: 0, highWaterBytes: 0, fragmentsReceived: 0, bytesReceived: 0,
     reassemblyErrors: 0, recordsReceived: 0, recordsConsumed: 0, audioDiscardedRecords: 0,
@@ -368,7 +372,8 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
     let deadline;
     const task = (async () => {
       remoteVideoTrack?.stop(); remoteVideoTrack = null;
-      videoTransceiver?.stop();
+      if (videoTransceiver === bundleVideoAnchor) videoTransceiver.direction = 'inactive';
+      else videoTransceiver?.stop();
       videoTransceiver = peer.addTransceiver('video', { direction: 'recvonly' });
       videoTransceiver.setCodecPreferences(videoCodecs);
       const offer = await createVideoOffer();

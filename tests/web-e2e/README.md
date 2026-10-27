@@ -4,18 +4,50 @@ These optional scripts run the production browser code in desktop Chromium. [CI]
 
 ## Requirements and basic runs
 
-Use Node 22, `playwright-core` installed outside the repository, and a Chromium executable supplied through `CHROMIUM`. Codec availability varies by Chromium build. The retained historical general harness defaults to `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`; URL/audio/photo checks default to `/usr/bin/chromium`, so explicitly setting the path is recommended.
+Use Node 22, `playwright-core` installed outside the repository, and a Chromium executable supplied through `CHROMIUM`. Codec availability and local ICE permissions vary by build and browser policy. `run.mjs` first tries `/usr/bin/chromium`, then the provisioned Playwright Chromium path; most other harnesses default to `/usr/bin/chromium`. Explicitly selecting a dedicated test browser is recommended. The full-page run needs H.264 RTP encoding/decoding, Canvas capture, MediaStreamTrackProcessor and usable local ICE.
 
 ```sh
 npm install --prefix /tmp/pw playwright-core
 NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/media-clock.mjs
 ```
 
-`run.mjs` retains the former DataChannel/WebCodecs live-video fixture, including
-its hardware-preference override and decoder-path cases. It does not supply the
-current native RTP track contract and is not a current complete-page playback
-check. Keep its old results historical; use `rtc-canvas.mjs` for the current
-track-to-Canvas boundary and real-device acceptance for Android RTP interoperability.
+Run the complete production page against the synthetic RTP phone:
+
+```sh
+NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/run.mjs
+```
+
+`run.mjs` uses the production SRP, transport, track reader, presenters and page under
+its production CSP. A separate browser page runs `fake-rtp-source.mjs`: it captures
+original synthetic red/blue Canvas pictures and sends a negotiated H.264 RTP track.
+The video DataChannel carries configuration metadata, not compressed pictures.
+The source browser generates and encodes the synthetic fixture; live reception
+uses the production native RTP path without decoder overrides. This does not
+exercise Android's compressed-frame pass-through encoder or iPhone negotiation.
+
+The full-page assertions require real Canvas pixels and encoded-frame progress,
+SRP/code privacy, touch/viewport, diagnostics, reconnect, takeover and nested-path
+offline cache behavior. Source switches CarPlay → mirror → CarPlay must advance
+video generations through authenticated offer/answer and ready barriers while
+retaining control, with blue/red pixels proving the new source reaches Canvas.
+Feature removal exercises Worker metadata streams/chunks, Worker frames delivered
+to a main-thread Canvas, and main-thread Processor/Canvas. These are presentation
+paths over RTP, not a second live decoder or compressed-video fallback. Terminal
+video errors and an injected compressed FRAME must fail only video and leave
+control usable; the FRAME is rejection input, not a media delivery path.
+
+Normal source replacement keeps the initial video transceiver inactive as the
+BUNDLE transport anchor, stops its old receiver track, then negotiates a new
+receive-only generation. Subsequent nonanchor transceivers can be stopped. This
+preserves the SCTP control channel carrying the replacement offer/answer; stopping
+the initial anchor before that exchange can strand both renegotiation and control.
+
+If local ICE candidates are unavailable, the run exits nonzero within its bounded
+connection/output waits and reports the blocked RTP check. Select a dedicated test
+browser with usable local ICE without changing managed machine policy. A blocked
+run is not playback verification and does not silently switch to local-track mode.
+Completed desktop runs prove the tested browser integration, not actual Android JNI,
+original iPhone media, vehicle hardware decoding or physical speaker/panel timing.
 
 All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LAN servers require direct access. `run.mjs` and `phone-run.mjs` print `ok -` checks and finish with `all checks passed`, or exit nonzero on failure. Other harnesses print results and exit nonzero on assertion failure.
 
@@ -35,10 +67,12 @@ The video check uses a Canvas-generated source, local WebRTC RTP reception,
 MediaStreamTrackProcessor and the production main/Worker Canvas presenters; it
 does not create a video element. `--local-track` bypasses RTP solely to isolate
 Processor and Canvas behavior. That result must not be reported as successful
-WebRTC reception or Android compressed-video passthrough. The current execution
-environment's managed Chromium policy disables non-proxied UDP, so the RTP check
-cannot obtain ICE candidates there; leave that policy unchanged and report the
-unrun integration boundary. Both paths still require actual vehicle acceptance.
+WebRTC reception or Android compressed-video passthrough. An ICE-capable dedicated desktop browser has completed the RTP main/Worker
+checks. A managed browser that cannot gather local candidates still fails that
+integration within bounded waits; leave its machine policy unchanged. The
+`--local-track` mode remains a separate Processor/Canvas diagnostic, never an
+automatic fallback or proof of RTP delivery. Both modes still require actual
+vehicle acceptance.
 
 ## Live CarPlay CPU sampling
 
@@ -196,7 +230,7 @@ replay CPU cost does not establish vehicle CPU utilization or physical crackles.
 | --- | --- |
 | `geolocation.mjs` | Actual Chromium geolocation permissions/watch, browser-local datum cache across reload, release on opt-out, and persistent guidance with an explicit close action. Uses a module fixture without vehicle/Android sensors. |
 | `webrtc.mjs` | Production transport against a second real Chromium PeerConnection: reliable ordered channels, fragmentation, byte-exact record reconstruction, consumption credit, independent audio cancellation, touch/control, owner abort, malformed epochs and bounded signaling timeout. No synthetic RTCPeerConnection or media API is substituted. |
-| `run.mjs` | Historical pre-RTP page fixture over a real browser DataChannel peer with synthetic phone VP8 input, pairing/code privacy, touch/viewport, telemetry, reconnect/keyframe recovery, localization, takeover, nested hosting and offline Service Worker cache boundaries. Exercises worker-stream, worker-chunk, worker-frame and main-thread fallback, and asserts no legacy HTTP media stream opens. Optional FFmpeg/libvpx (`FFMPEG` override); otherwise browser `VideoEncoder`, also forced by `E2E_VP8=browser`. |
+| `run.mjs` | Complete production page with real SRP/authenticated DataChannels and a synthetic H.264 RTP source. Requires actual red/blue Canvas pixels, source-generation replacement/ready barriers with retained control, Worker stream/chunk and main-thread presentation paths, video-only failure, privacy, touch/viewport, diagnostics, reconnect, takeover and nested offline Service Worker/cache checks. The video DataChannel is metadata-only; live reception uses the production native RTP path. No Android JNI/iPhone/hardware/physical-output claim. |
 | `phone-run.mjs` | Compiled JVM shared compatibility API: removed local-page routes, Host/cache rules, H.264 framing, authenticated control/touch, source-owner epochs, `/bye` and privacy. Directly requests legacy records and verifies the production page rejects this server's missing native RTC. It does not test production playback or Android native WebRTC. |
 | `receiver-ui.mjs` | Production presentation functions with real Chromium DOM, CSS and CSP, driven by structured receiver/decoder events. Covers Chinese/English at 320/800 pixels, all three AirPlay consent actions, sender/type/effect copy, notification fit/readability, pending borrow, producer/epoch replacement, no success text, permission/failure revisions, closable notices, diagnostics and monitor controls. This component harness does not pair, decode media or establish DataChannel delivery. |
 | `airplay-video.mjs` | Production AVPlayer adapter and Video.js controls under the production CSP: changing Canvas pictures, pause/seek/rate, seek button, double-click isolation, narrow layout, upstream English/Chinese HLS subtitles at EOF, simultaneous subtitle selection/seek, stop signaling and disposal. Needs an MP4 fixture; HLS optional. |
@@ -330,7 +364,7 @@ This check runs without cross-origin isolation, verifies changing nonblack Canva
 
 Old custom-engine PCM waveform/short-tail harnesses were removed with that engine; their earlier results do not establish AVPlayer behavior.
 
-Like the general video harness, both URL harnesses accept `E2E_SOFTWARE_VIDEO=1` for desktop browsers that reject the production hardware preference. This explicit test-only override applies `no-preference` to WebCodecs in the main document and generated worker scripts. The result labels the override; it does not prove hardware decoding or change the production player.
+Only the URL playback harnesses use `E2E_SOFTWARE_VIDEO=1` for desktop browsers that reject the production AVPlayer hardware preference. `run.mjs` does not use this override for live RTP. This explicit test-only override applies `no-preference` to WebCodecs in the main document and generated worker scripts. The result labels the override; it does not prove hardware decoding or change the production player.
 
 ```sh
 NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/airplay-photo.mjs

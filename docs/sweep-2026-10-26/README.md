@@ -14,7 +14,7 @@
 
 ## Open decisions
 
-The obsolete general video E2E contract and inherited issue-template routing remain deferred; see [delivery decisions](../sweep-2026-10-26/Delivery.md#open-decisions-and-next-work). Physical iPhone/vehicle acceptance is not performed by this sweep.
+Both deferred software findings were subsequently fixed at the user's request; see [follow-up repairs](Delivery.md#follow-up-repairs). The RTP test also exposed and now covers a repaired BUNDLE source-switch deadlock. Physical iPhone/vehicle acceptance remains unperformed.
 
 ## Integration cleanup
 
@@ -22,4 +22,4 @@ The coordinator updated four in-scope code comments/docstrings referencing the r
 
 ## Delivery and next steps
 
-[Delivery status](../sweep-2026-10-26/Delivery.md) records integration checks, the two deferred behavior decisions and outstanding physical acceptance. Cleanup commit `4b89fc7d` is integrated into main and pushed; Pages deployment and all 217 public-byte checks pass. Local full Android verification and cloud Android/WASM CI passed. The final documentation-only receipt uses `[skip ci]`; no site/application inputs change.
+[Delivery status](../sweep-2026-10-26/Delivery.md) records integration checks, the resolved software findings, follow-up verification and outstanding physical acceptance. Cleanup commit `4b89fc7d` is integrated into main and pushed; Pages deployment and all 217 public-byte checks pass. Local full Android verification and cloud Android/WASM CI passed. The final documentation-only receipt uses `[skip ci]`; no site/application inputs change.
