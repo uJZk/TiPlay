@@ -7,6 +7,17 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+Beta.29/code71, browser v104, retries keyframe recovery during source silence.
+Four new JVM regressions use the real Hub's 500 ms suppression and verify recovery
+of original High bytes while retaining the two six-second deadlines and terminal
+stop conditions. Actual dual-codec AAR before/after results are described below;
+the 16 Mbps startup value remains unchanged. Source/publication checks are in
+[Build](Build.md#beta29-release), with full Android CI skipped by user instruction.
+The final complete local shared command passed all 2,493 tests using
+`-Pkotlin.incremental=false`; 613 browser tests and public-source/cache/deployment
+checks pass. Socket shutdown verification waits for actual JDK socket-write
+frames, with its original deadlines retained.
+
 Beta.28/code70, browser v103, changes the startup prior to 16 Mbps at the user's
 request. Its source/publication scope is recorded in [Build](Build.md#beta28-release).
 The beta.27 native measurements below used 24 Mbps. A separate actual AAR run of
@@ -101,6 +112,16 @@ See the [harness guide](../tests/web-e2e/README.md) for requirements and failure
 and [current deployment](Build.md#current-browser-deployment) for published bytes.
 
 ### Current media regression checks
+
+The native sparse bootstrap scenario starts with Baseline allocated, High
+negotiated/source/preferred, an initial IDR plus three deltas inside the keyframe
+request limit, then source silence. The beta.28 bridge reproduces zero output and
+`video-encoder-selection-timeout`. The repaired bridge retries from the idle
+poll, selects actual High on the next native initialization and receives a valid
+source IDR over RTP after two accepted requests, without changing SDP/profile
+admission or extending startup deadlines. The test decoder counts AUs and emits
+dummy buffers; one received High AU is not evidence of vehicle render timing.
+See the [native probe](../tests/native/README.md) for the persisted scenario.
 
 The [Android native video probe](../tests/native/README.md) runs the exact M150
 AAR and compiled product bridge through two native PeerConnections. A software

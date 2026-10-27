@@ -209,6 +209,42 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
+<a id="beta29-release"></a>
+
+## Beta.29 release
+
+Prepared **0.2.20-beta.29**, code **71**, browser **v104**. Publication checks are
+pending. Keep the user's 16 Mbps startup prior, 64 Mbps ceiling and unset minimum;
+the new functional change is idle keyframe recovery through the existing poll.
+
+The beta.28 follow-up had three fresh connections with High `64002a` source,
+negotiated and preferred formats but Baseline `42002a` still instantiated. Each
+received four source AUs, submitted one, released one before encoding and produced
+zero output before the six-second selection timeout. Immediate recovery requests
+fell within the Hub's 500 ms limit; the now-static source supplied no more frames
+to trigger a later retry. Browser v103 remained connected with no inbound video.
+
+An actual M150 AAR before/after probe reproduced this sparse startup using the
+same High answer, dual codec capabilities and rate-limited test source. Old
+beta.28 bridge class bytes produced zero frames and selection timeout with only
+Baseline allocated. With idle retries, requests near one and two seconds elicited
+fresh High IDRs; native selection became High/ready and the original 1,129-byte
+IDR reached RTP reception with no packet loss. These are source/native startup
+results, not picture decoding or vehicle timing measurements.
+
+The poll retries only while active and waiting for a keyframe. Existing Hub rate
+limiting, strict profile/level admission, both six-second deadlines, input
+completion backpressure and audio/control ownership remain enforced. All **2,493
+shared JVM tests** and **613 browser tests** pass. Four new JVM cases cover the
+actual Hub limiter, idle recovery and original-byte output, unchanged
+selection/start deadlines, and no retry after close/disable/failure. A socket
+shutdown test now waits for real `java.net`/`sun.nio.ch` write frames rather than
+matching its own generated test method; existing time limits are unchanged.
+The final complete shared run used `-Pkotlin.incremental=false` after a local
+incremental compilation metadata failure. A transient port-rebind conflict also
+passed isolated and final checks. Full Android test CI remains skipped under the
+user's instruction. Signed/public artifact checks will be recorded after completion.
+
 <a id="beta28-release"></a>
 
 ## Beta.28 release

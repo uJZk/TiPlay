@@ -263,6 +263,9 @@ internal class BrowserRtcVideoTrack(
             disable("video-encoder-selection-timeout")
         if (active && !everEncoded.get() && firstSubmittedNanos?.let { nowNanos() - it >= START_TIMEOUT_NANOS } == true)
             disable("video-encoder-start-timeout")
+        // An initial burst can exhaust the source's key-request rate limit. A
+        // static screen needs an idle retry after that limit opens again.
+        if (active && !closed && waitingForKey) requestKeyFrame()
         return failure
     }
 

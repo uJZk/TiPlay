@@ -421,6 +421,15 @@ to Java `setRateAllocation`, so the last nonzero allocation cannot exclude a
 paused native sender. [Android native replay](../tests/native/README.md) separates
 queue coalescing and default-rate pacer suspension without claiming vehicle FPS.
 
+If `source`/`negotiated`/`preferred` name High while `current` remains Baseline,
+check startup progress and keyframe recovery separately from throughput. The
+beta.28 follow-up had only four source AUs, one unencoded release and zero RTP
+output before `video-encoder-selection-timeout`. Its initial recovery attempts
+fell within the existing 500 ms request limit; after the screen went static no
+source-driven retry occurred. The idle poll now retries while waiting, within
+the same limit and unchanged startup deadlines. Native before/after replay of
+this sparse source belongs to [Testing](Testing.md#current-media-regression-checks).
+
 Debug `transport.rtpVideo.*` samples the current video receiver independently of
 the metadata DataChannel. `generation`, `state` and `sampleAgeMs` identify sample
 ownership and freshness. Available counters include received/lost packets,

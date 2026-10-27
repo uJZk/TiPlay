@@ -74,3 +74,45 @@ The work directory retains `build.json`, per-scenario JSON results, combined
 console logs and private native logs. The build record identifies the exact AAR,
 product class bundle, DEX probe and fixture hashes. These generated files and
 synthetic H.264 input belong outside Git.
+
+## Sparse High-profile startup
+
+`--mode bootstrap --expect-bootstrap` covers a source that sends its initial
+High-profile IDR and three dependent frames, then becomes static. Both factories
+and the receiver offer advertise Baseline before High. The sender applies the
+production High + RTX codec preferences before creating its answer, and the
+bridge reads that actual answer. The test does not rewrite SDP or relax source
+profile admission. It delegates the production encoder selector through the
+native AAR factory.
+
+A separate source callback models the existing 500 ms keyframe-request rate
+limit, primed by the setup request. Accepted requests asynchronously return the
+fixture's original High IDR bytes. The existing one-second `pollFailure()`
+heartbeat drives recovery while the source is otherwise quiet. Results retain
+initial/final codec diagnostics, native factory allocations, request attempt and
+acceptance times, source/recovery events, original-byte checks and RTP reception.
+
+Use a genuine High-profile fixture; the default ultrafast continuous fixture can
+use Baseline despite the encoder's maximum permitted profile. For example:
+
+```sh
+ffmpeg -f lavfi -i color=c=red:size=1568x1080:rate=60 -frames:v 180 -an \
+  -c:v libx264 -preset veryfast -profile:v high -level:v 4.2 -bf 0 \
+  -b:v 500k -minrate 500k -maxrate 500k -bufsize 500k \
+  -x264-params 'aud=1:repeat-headers=1:keyint=60:min-keyint=60:scenecut=0:nal-hrd=cbr:filler=1' \
+  -f h264 /tmp/tiplay-high.h264
+python3 tests/native/rtc-video-probe.py build --work-dir /tmp/tiplay-bootstrap \
+  --fixture /tmp/tiplay-high.h264
+python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-bootstrap \
+  --mode bootstrap --start-bitrate 16000000 --expect-bootstrap
+```
+
+The assertion requires matching source, negotiated and current High formats,
+a ready encoder, accepted retries, original access-unit bytes and actual RTP
+reception. With the pinned M150 AAR, the old implementation can remain on its
+initial Baseline encoder after the first IDR is released: all initial requests
+fall inside the 500 ms gate, no more source frames arrive, and selection times
+out. Keep request timing when comparing revisions; if slow emulation permits an
+initial request after 500 ms, that run has not reproduced the same starvation.
+The receiver still uses the counting test decoder, so this does not validate
+H.264 picture decoding or physical startup timing.

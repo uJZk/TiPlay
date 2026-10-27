@@ -403,7 +403,7 @@ class CarPlaySocketLifecycleTest {
             writer = writing
             await {
                 writing.stackTrace.any { frame ->
-                    (frame.className.contains("Socket") || frame.className.startsWith("sun.nio.ch.")) &&
+                    (frame.className.startsWith("java.net.") || frame.className.startsWith("sun.nio.ch.")) &&
                         frame.methodName.contains("write", ignoreCase = true)
                 }
             }

@@ -38,7 +38,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#current-browser-deployment)
-and [beta.28](docs/Build.md#beta28-release). Keep source checks, published artifact
+and [beta.29](docs/Build.md#beta29-release). Keep source checks, published artifact
 identity and vehicle evidence separate. Preserve strict source/profile/level/mode
 admission, original compressed frames, bounded selection and per-instance callback
 ownership. Beta.27 follows the beta.26 vehicle report and actual Android AAR
@@ -52,6 +52,12 @@ wait cancellation must not fail a replacement or block audio/control. See the
 [native replay](tests/native/README.md); its counting decoder does not establish
 picture correctness, vehicle throughput or physical continuity. Native-audio
 activation remains as verified in beta.25; validation scope is recorded in Build.
+Beta.29 retries key-frame recovery from the existing idle poll while the bridge
+is active and waiting. Keep the Hub's 500 ms limiter and both six-second startup
+deadlines. Sparse High-profile startup must recover from a lost initial IDR after
+the source becomes static; do not depend on more source frames to trigger retry.
+The actual AAR before/after probe must retain High SDP/profile admission, not
+manually relabel or force an incompatible encoder.
 Install the matching APK/page for physical acceptance and retain new codec diagnostics
 if it fails. Historical beta-specific CI waivers do not waive checks for new work.
 Software timestamps and codec benchmarks do not establish speaker/panel timing,

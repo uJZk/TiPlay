@@ -107,14 +107,30 @@ def execute(args):
     log = work / (label + ".log")
     with log.open("w") as output:
         run(adb + ["shell", command], stdout=output, stderr=subprocess.STDOUT)
-    lines = [line[len("RESULT_JSON "):] for line in log.read_text().splitlines() if line.startswith("RESULT_JSON ")]
+    prefix = "BOOTSTRAP_RESULT " if args.mode == "bootstrap" else "RESULT_JSON "
+    lines = [line[len(prefix):] for line in log.read_text().splitlines() if line.startswith(prefix)]
     if len(lines) != 1:
         raise SystemExit(f"Probe did not produce one final result; inspect {log}")
     result = json.loads(lines[0])
+    result["nativeSetBitrateAccepted"] = "START_BITRATE true" in log.read_text() if args.start_bitrate > 0 else None
     result["build"] = json.loads((work / "build.json").read_text())
     (work / (label + ".json")).write_text(json.dumps(result, indent=2) + "\n")
     run(adb + ["pull", DEVICE_DIR + f"/native-{label}.log", work / ("native-" + label + ".log")])
     print(json.dumps(result, indent=2))
+    if args.expect_bootstrap:
+        profile = result["sourceProfile"]
+        diagnostics = result["diagnostics"]
+        checks = (result["failure"] is None,
+                  diagnostics["source"] == "avc1." + profile,
+                  diagnostics["negotiated"]["profileLevelId"] == profile,
+                  diagnostics["current"]["profileLevelId"] == profile,
+                  diagnostics["selection"] == "ready",
+                  result["flow"]["outputFrames"] > 0,
+                  result["receiver"].get("framesReceived", 0) > 0,
+                  result["acceptedRequests"] > 0,
+                  result["outputAccessUnitsOriginal"])
+        if not all(checks):
+            raise SystemExit("Sparse High-profile bootstrap assertions failed; inspect scenario JSON and logs")
     if args.expect_continuous:
         delta = result["delta"]
         checks = (delta["outputFrames"] == args.frames,
@@ -142,13 +158,19 @@ def main():
     parser.add_argument("--fixture", type=Path)
     parser.add_argument("--adb-port", type=int, default=5037)
     parser.add_argument("--serial")
-    parser.add_argument("--mode", choices=("paced", "serial", "burst"), default="serial")
+    parser.add_argument("--mode", choices=("paced", "serial", "burst", "bootstrap"), default="serial")
     parser.add_argument("--start-bitrate", type=int, default=16000000)
     parser.add_argument("--encoder-delay", type=int, default=0)
     parser.add_argument("--frames", type=int, default=180)
-    parser.add_argument("--expect-continuous", action="store_true")
+    expectations = parser.add_mutually_exclusive_group()
+    expectations.add_argument("--expect-continuous", action="store_true")
+    expectations.add_argument("--expect-bootstrap", action="store_true")
     parser.add_argument("--native-verbose", action="store_true")
     args = parser.parse_args()
+    if args.expect_bootstrap and args.mode != "bootstrap":
+        parser.error("--expect-bootstrap requires --mode bootstrap")
+    if args.expect_continuous and args.mode == "bootstrap":
+        parser.error("--expect-continuous applies to continuous producer modes")
     if args.action == "build":
         build(args)
     else:

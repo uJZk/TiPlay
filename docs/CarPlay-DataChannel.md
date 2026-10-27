@@ -166,6 +166,13 @@ change source bytes, and is not reapplied on each IDR/source replacement.
 Actual input loss still invalidates the dependency chain. The source processor
 retains the SDK's normal drop/crop/timestamp decisions and separately counts
 observed, adaptation-dropped and forwarded inputs.
+
+An active bridge waiting for a keyframe also retries through the existing idle
+poll. The Hub's 500 ms source-request limit remains enforced, and both six-second
+encoder selection/start deadlines remain unchanged. An initial IDR can be lost
+during asynchronous native format selection while its immediate recovery request
+is rate-limited; a static source then needs the idle retry to produce another IDR.
+Successful recovery, source retirement and failure stop these requests.
 Sender `video-flow` and receiver `transport.rtpVideo` evidence in
 [Diagnostics](Diagnostics.md#live-video-policy-evidence) distinguish those remaining
 boundaries; this configuration alone does not establish vehicle continuity.
