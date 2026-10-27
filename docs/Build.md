@@ -8,11 +8,11 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is **0.2.20-beta.26** (code **68**);
-[beta.26 release](#beta26-release) records provenance and validation scope. Run
+prerelease is **0.2.20-beta.27** (code **69**);
+[beta.27 release](#beta27-release) records provenance and validation scope. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v101**, with original-codec WebRTC RTP for live video and negotiated audio.
+the deployed page uses **v102**, with original-codec WebRTC RTP for live video and negotiated audio.
 Earlier SoundTouch/libsoxr browser implementations are historical; current playback
 boundaries are in [Audio tempo](Audio-tempo.md). Software checks are in
 [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -213,9 +213,10 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta.27 release
 
-Prepared **0.2.20-beta.27**, code **69**, browser **v102**. Signed packaging and
-publication verification are pending. Full Android CI remains skipped under the
-user's instruction; the signed packaging workflow is separate.
+Published [TiPlay 0.2.20-beta.27](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.27),
+code **69**, browser **v102**, at **2026-10-27 12:34:37 UTC+08:00**.
+Build commit: `6098d4ed5fc85f67cc7d290ec3d6ae2068cb4805`. Full Android CI was
+skipped under the user's instruction; the signed packaging workflow is separate.
 
 The beta.26 vehicle report showed 34 inputs forwarded by the source adapter,
 zero adaptation drops, 16 encoded callbacks and 18 inputs released before encode.
@@ -239,6 +240,10 @@ phase also passed 180/180 native receiver AUs with zero packet loss and matching
 13,536-byte input/output SHA-256. The approximately 10 Mbps heavy receiver check
 did not pass on this software emulator: 104/180 complete frames and 161 lost UDP
 packets, despite 180/180 encoder outputs. It is not a high-rate transport pass.
+Another High-profile phase with 181,238 original bytes (about 0.483 Mbps over the
+fixture's nominal three-second window) passed all 180 RTP receiver AUs and zero
+packet loss, with matching encoder SHA-256. Software receive scheduling still
+skipped three decode callbacks (177); it is not reported as 180 picture decodes.
 Warmup and receiver counts are separate; the test decoder counts depacketized AUs
 and emits test buffers without H.264 picture decoding. Software-emulator throughput
 does not establish physical phone/browser performance. The reproducible
@@ -249,8 +254,29 @@ video flow/input/source regressions. New coverage
 includes callback completion with retained buffers, publication of dependency
 loss before waking input, timeout/retirement/interrupt and exception cleanup.
 Source `receivedBytes` and `encoderInputsInFlight` now distinguish actual input
-demand, buffer retention and pending native work. Signed/public verification will
-be recorded here after packaging; vehicle acceptance remains pending.
+demand, buffer retention and pending native work. Vehicle acceptance remains pending.
+
+[Signed workflow 40449501357](https://github.com/uJZk/TiPlay/actions/runs/40449501357)
+passed Release lint/build, signing, pinned runtime checks and draft upload.
+Artifact `12709991701` has ZIP SHA-256
+`f8643dce8660b231af46ad5c008341c04368de1705707a4636bfd55259bab525`.
+It was independently downloaded and verified before publication. All three
+public release attachments were downloaded again and match those verified bytes;
+the prerelease tag points directly to the build commit and stable latest is unchanged.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.27.apk` | 114,185,128 | `c4a3e529557e574a63a786bfd6cc79e0b719a233dbcf87cf5b2fc2fb4d464209` |
+| `TiPlay-0.2.20-beta.27-source.zip` | 40,906,640 | `6aca8a16cbce15fa50ac3c8a421ef4dec1e46e0a1e075cd493ec77c29ba110b7` |
+| `SHA256SUMS.txt` | 191 | `ea62563b9f39f7a87f8a45b5b12445b8c0dae4d3d8ac785a1925aa5302ac694f` |
+
+Independent checks confirm non-debug `com.ujzk.tiplay`, code69, signer/runtime
+continuity against hash-verified beta.26, the exact 51-library set including
+inherited legacy stubs, all 25 ELF64 libraries and ZIP aligned to 16 KiB, compiled
+completion/rate-policy markers, and source ZIP identical to the build commit's
+`git archive`. Reports and verified downloads remain outside Git under
+`/tmp/tiplay-beta27/`; native replay evidence remains under
+`/tmp/tiplay-native-probe/`. The emulator and separate ADB server were stopped.
 
 <a id="beta26-release"></a>
 
@@ -358,7 +384,15 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-Browser **v101** is deployed from `a4cae7f30aee1fd263506e4a80b5f9d2967c2a40` by
+Browser **v102** is deployed from `6098d4ed5fc85f67cc7d290ec3d6ae2068cb4805` by
+[Pages run 40449503779](https://github.com/uJZk/TiPlay/actions/runs/40449503779).
+All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
+with JavaScript/WASM MIME types and no redirects verified. Downloaded page/cache
+values identify v102 and application metadata identifies beta.27. This deployment
+changes version metadata; the native video corrections are in the APK.
+[Beta.27](#beta27-release) records its validation and publication scope.
+
+The preceding browser **v101** was deployed from `a4cae7f30aee1fd263506e4a80b5f9d2967c2a40` by
 [Pages run 40444780537](https://github.com/uJZk/TiPlay/actions/runs/40444780537).
 All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
 with WASM MIME types and no redirects verified. The page/cache identify v101 and

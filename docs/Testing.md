@@ -9,7 +9,8 @@ recorded source, not interchangeable coverage counts for later engines.
 
 Beta.27/code69, browser v102, adds native-input completion backpressure and bounded
 original-video rate admission after beta.26 still suppressed frames. All 2,489
-shared JVM tests and 613 browser tests pass, including 28 targeted video cases; the actual AAR replay below
+shared JVM tests and 613 browser tests pass, including 28 targeted video cases;
+the actual AAR replay below
 provides native queue/pacer evidence. Full Android test CI remains skipped at the
 user's request, with signed packaging recorded in [Build](Build.md#beta27-release).
 
@@ -104,7 +105,12 @@ input loss. A low-complexity High-profile phase passed all 180 receiver AUs with
 zero RTP packet loss and matching 13,536-byte source/output SHA-256. The heavy
 approximately 10 Mbps receiver check remained incomplete on this software
 emulator (104/180 frames, 161 lost UDP packets); it is not reported as passed.
-Warmup and receiver measurements remain separate. The test receiver counts depacketized AUs and emits dummy I420 buffers;
+An approximately 0.483 Mbps High-profile fixture (181,238 bytes) separately passed
+all 180 native RTP receiver AUs with zero packet loss and identical encoded bytes.
+Its software receive scheduling skipped three decode callbacks (177); no 180-frame
+picture decode/render claim follows from the RTP count.
+Warmup and receiver measurements remain separate. The test receiver counts
+depacketized AUs and emits dummy I420 buffers;
 it does not decode pictures or establish vehicle frame rate. Seven new JVM
 concurrency cases cover retained encoded buffers, dependency-loss ordering,
 timeout, retirement, interrupt and callback/recovery exceptions.
