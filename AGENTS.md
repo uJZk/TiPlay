@@ -38,10 +38,11 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#current-browser-deployment)
-and [beta.24](docs/Build.md#beta24-release). Keep source checks, published artifact
-identity and vehicle evidence separate. The v96 receive-level repair and beta.24
-native encoder-selection repair preserve strict source/profile/level/mode admission,
-original compressed frames, bounded selection and per-instance callback ownership.
+and [beta.25](docs/Build.md#beta25-release). Keep source checks, published artifact
+identity and vehicle evidence separate. Preserve strict source/profile/level/mode
+admission, original compressed frames, bounded selection and per-instance callback
+ownership. Beta.25 adds the original-video frame-dropper correction and the native
+audio playout activation repair; its user-directed validation scope is recorded in Build.
 Install the matching APK/page for physical acceptance and retain new codec diagnostics
 if it fails. Historical beta-specific CI waivers do not waive checks for new work.
 Software timestamps and codec benchmarks do not establish speaker/panel timing,
@@ -65,6 +66,11 @@ DataChannel/libav/PCM-NetEq path. Keep RTP and fallback under the same mixing/du
 policy, bounded per-stream dispatch and direct decoder-Worker-to-Worklet PCM ports.
 Negotiated Opus uses native RTP. Libav.js Workers normalize supported fallback
 formats to PCM16/48 kHz for PCM-NetEq. Keep live audio and video independent.
+The native audio peer owns one detached, permanently muted, zero-volume audio
+playout anchor to activate Chromium's receiver. Wait for fulfilled `play()` and
+the exact Worklet binding before announcing slot readiness; retire the anchor
+with its peer. All audible sound stays in the common Worklet mixing/ducking graph.
+This activation must not add another audible output or a video element.
 
 URL casting uses pinned libmedia AVPlayer for resource loading, buffering, decoding,
 clocks, synchronization and Canvas rendering. Keep thin AirPlay session/proxy/authentication

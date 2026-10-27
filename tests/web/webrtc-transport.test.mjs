@@ -585,3 +585,91 @@ test('a partial record retired during cancellation cannot leak into the reopened
     await next.cancel();
   } finally { f.media.close(); }
 });
+
+test('RTP video diagnostics sample the current receiver with bounded standardized counters and no identifying fields', async () => {
+  class StatsPeer extends RenegotiatingPeer {
+    addTransceiver(...args) {
+      const transceiver = super.addTransceiver(...args);
+      transceiver.mid = 'current-mid';
+      transceiver.receiver = { getStats: async () => new Map([
+        ['video', { type: 'inbound-rtp', kind: 'video', mid: 'current-mid', packetsReceived: 70, packetsLost: -1,
+          framesReceived: 60, framesDecoded: 50, framesDropped: 10, keyFramesDecoded: 2, bytesReceived: 12345,
+          nackCount: 3, pliCount: 4, firCount: 0, jitter: .012, jitterBufferDelay: .3,
+          jitterBufferEmittedCount: 50, totalDecodeTime: .5, powerEfficientDecoder: true,
+          freezeCount: Infinity, pauseCount: -1, jitterBufferTargetDelay: NaN,
+          id: 'private-rtp-id', trackIdentifier: 'private-track', decoderImplementation: 'private-decoder', secret: 'private-secret' }],
+        ['old', { type: 'inbound-rtp', kind: 'video', mid: 'old-mid', framesReceived: 900 }],
+        ['audio', { type: 'inbound-rtp', kind: 'audio', framesReceived: 999 }],
+      ]) };
+      return transceiver;
+    }
+  }
+  const f = await fixture({ ...videoOptions, PeerConnection: StatsPeer });
+  try {
+    await settle();
+    const values = f.media.stats().rtpVideo;
+    assert.equal(values.state, 'selected'); assert.equal(values.generation, 1);
+    assert.equal(values.packetsReceived, 70); assert.equal(values.packetsLost, -1);
+    assert.equal(values.framesReceived, 60); assert.equal(values.framesDecoded, 50); assert.equal(values.framesDropped, 10);
+    assert.equal(values.jitterMs, 12); assert.equal(values.jitterBufferDelayMs, 300); assert.equal(values.totalDecodeTimeMs, 500);
+    assert.equal(values.powerEfficientDecoder, true); assert.ok(values.sampleAgeMs >= 0);
+    for (const key of ['freezeCount', 'pauseCount', 'jitterBufferTargetDelayMs', 'id', 'trackIdentifier', 'decoderImplementation', 'secret'])
+      assert.equal(Object.hasOwn(values, key), false, key);
+    assert.doesNotMatch(JSON.stringify(values), /private-/);
+  } finally { f.media.close(); }
+});
+
+test('RTP stats from a retired receiver cannot repopulate a replacement generation', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  let resolveOld;
+  class StatsPeer extends RenegotiatingPeer {
+    addTransceiver(...args) {
+      const transceiver = super.addTransceiver(...args), index = this.transceivers.length;
+      transceiver.receiver = { getStats: () => index === 1 ? new Promise(resolve => { resolveOld = resolve; })
+        : Promise.resolve(new Map([['new', { type: 'inbound-rtp', kind: 'video', framesDecoded: 7 }]])) };
+      return transceiver;
+    }
+  }
+  const f = await fixture({ ...videoOptions, PeerConnection: StatsPeer });
+  try {
+    assert.equal(typeof resolveOld, 'function');
+    const pending = f.media.restartVideo(); await settle();
+    const offer = f.channels.control.sent.find(message => message.k === 'video-offer');
+    f.channels.control.receive(videoAnswer(offer)); await pending;
+    assert.deepEqual(f.media.stats().rtpVideo, { state: 'collecting', generation: 2, sampleAgeMs: null });
+    resolveOld(new Map([['old', { type: 'inbound-rtp', kind: 'video', framesDecoded: 900 }]])); await settle();
+    assert.equal(f.media.stats().rtpVideo.framesDecoded, undefined);
+    t.mock.timers.tick(2000); await settle();
+    assert.equal(f.media.stats().rtpVideo.framesDecoded, 7); assert.equal(f.media.stats().rtpVideo.generation, 2);
+    assert.equal(f.media.isConnected(), true);
+  } finally { f.media.close(); }
+});
+
+test('ambiguous and failed receiver statistics never masquerade as zero packet loss or retire control', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  let mode = 'ambiguous';
+  class StatsPeer extends RenegotiatingPeer {
+    addTransceiver(...args) {
+      const transceiver = super.addTransceiver(...args);
+      transceiver.receiver = { getStats: async () => {
+        if (mode === 'failed') throw Error('private exception');
+        return new Map(mode === 'empty' ? [] : [
+          ['one', { type: 'inbound-rtp', kind: 'video', framesDecoded: 20 }],
+          ['two', { type: 'inbound-rtp', kind: 'video', framesDecoded: 900 }],
+        ]);
+      } };
+      return transceiver;
+    }
+  }
+  const f = await fixture({ ...videoOptions, PeerConnection: StatsPeer });
+  try {
+    await settle(); assert.equal(f.media.stats().rtpVideo.state, 'ambiguous');
+    assert.equal(f.media.stats().rtpVideo.framesDecoded, undefined);
+    mode = 'failed'; t.mock.timers.tick(2000); await settle();
+    assert.equal(f.media.stats().rtpVideo.state, 'failed');
+    mode = 'empty'; t.mock.timers.tick(2000); await settle();
+    assert.equal(f.media.stats().rtpVideo.state, 'no-inbound');
+    assert.equal(f.media.stats().rtpVideo.packetsLost, undefined);
+    assert.equal(f.media.isConnected(), true); assert.deepEqual(f.errors, []);
+  } finally { f.media.close(); }
+});

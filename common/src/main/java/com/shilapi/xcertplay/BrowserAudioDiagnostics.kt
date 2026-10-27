@@ -9,6 +9,8 @@ internal object BrowserAudioDiagnostics {
     private const val LINE_BUDGET = 600
     private val globalFields = setOf(
         "pageVersion", "omittedFields", "contextState", "contextTimeMs", "contextRate", "clockBase",
+        "nativeAudio.state", "nativeAudio.rtcGeneration", "nativeAudio.peerState", "nativeAudio.iceState", "nativeAudio.gatheringState",
+        "nativeAudio.tracks", "nativeAudio.boundSlots", "nativeAudio.readySlots", "nativeAudio.streams", "nativeAudio.drainUnknown",
         "contextObservedStateChanges", "contextObservedNonRunningMs",
         "clockOffsetMs", "clockAgeMs", "clockRttMs", "contextBaseLatencyMs", "contextOutputLatencyMs",
         "processorErrors", "recoveries", "recoveryAttempts", "processorFailed", "renderAgeMs", "renderReportAgeMs",
@@ -70,6 +72,10 @@ internal object BrowserAudioDiagnostics {
     private val streamKey = Regex("(?:decoder\\.)?stream([0-9]{1,3})\\..+")
     private val safeText = Regex("[A-Za-z0-9._-]{1,40}")
     private val enumFields = mapOf(
+        "nativeAudio.state" to setOf("idle", "connecting", "ready", "failed", "closed"),
+        "nativeAudio.peerState" to setOf("new", "connecting", "connected", "disconnected", "failed", "closed", "unavailable"),
+        "nativeAudio.iceState" to setOf("new", "checking", "connected", "completed", "disconnected", "failed", "closed", "unavailable"),
+        "nativeAudio.gatheringState" to setOf("new", "gathering", "complete", "unavailable"),
         "renderStatsState" to setOf("available", "unavailable", "invalid", "failed"),
         "deviceClockFitStatus" to setOf("acquiring", "tracking", "holdover"),
         "deviceClockSource" to setOf("native", "render", "holdover"),
@@ -87,6 +93,12 @@ internal object BrowserAudioDiagnostics {
         fun line(prefix: String, fields: Set<String>, keyPrefix: String = "") {
             val entries = fields.mapNotNull { field ->
                 val raw = stats[keyPrefix + field]
+                if (field in setOf("nativeAudio.tracks", "nativeAudio.boundSlots", "nativeAudio.readySlots", "nativeAudio.streams") &&
+                    (raw !is Number || !raw.toDouble().isFinite() || raw.toDouble() < 0 || raw.toDouble() > 16 || raw.toDouble() % 1.0 != 0.0))
+                    return@mapNotNull null
+                if (field == "nativeAudio.rtcGeneration" && (raw !is Number || !raw.toDouble().isFinite() ||
+                    raw.toDouble() < 1 || raw.toDouble() > Int.MAX_VALUE || raw.toDouble() % 1.0 != 0.0)) return@mapNotNull null
+                if (field == "nativeAudio.drainUnknown" && raw !is Boolean) return@mapNotNull null
                 if ((field in sourceDeadlineEvidenceFields || field in retiredDeadlineEvidenceFields) && raw !is Number)
                     return@mapNotNull null
                 if (field in retiredDeadlineIdentityFields && (raw !is Number || !raw.toDouble().isFinite() ||

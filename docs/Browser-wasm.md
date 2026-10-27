@@ -13,7 +13,7 @@ is recorded in [Build](Build.md#beta24-release).
 
 | Work | Execution and reason |
 | --- | --- |
-| Negotiated RTP audio | Browser WebRTC decodes the original source codec; received tracks feed the shared AudioWorklet mixer. Android performs no audio decode/reencode. |
+| Negotiated RTP audio | Browser WebRTC decodes the original source codec; one muted, zero-volume audio anchor activates peer playout and received tracks feed the shared AudioWorklet mixer. Android performs no audio decode/reencode. |
 | Continuous resampling | Continuous libswresample in libav.js decoder Workers; source gaps reset the filter run. |
 | Live mixing, ducking, fades, clipping | Fixed-memory WASM audio core, one block at a time. Very small PCM conversions retain JavaScript when copying costs more than the arithmetic. |
 | Realtime AAC-LC/ELD/ALAC decode | FFmpeg/libav.js decoder Workers; no WebCodecs audio decoder. |
@@ -25,6 +25,13 @@ is recorded in [Build](Build.md#beta24-release).
 | Geolocation | Browser geolocation; coordinate conversion already runs in Android's native library. |
 | UI, captions and control | DOM, typed arrays and maintained upstream parsers. URL containers belong to AVPlayer; AirPlay session/resource ownership and controls remain TiPlay-owned. |
 | Clock fitting and deadlines | Bounded scalar JavaScript policy. Device, source and presentation clocks remain independent; WASM does not provide a better browser clock. |
+
+The native-audio anchor is browser API plumbing, with no second audible output.
+Sender readiness waits for successful `play()` and the existing Worklet graph
+barrier; retirement releases the element and its MediaStream. The
+[audio contract](Audio-tempo.md#live-audio-official-neteq) describes its ownership
+and the local original-Opus reproduction. Live and URL video retain their Canvas
+paths without a video element.
 
 ## libav.js SIMD validation
 

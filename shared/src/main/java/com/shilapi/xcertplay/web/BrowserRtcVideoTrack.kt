@@ -52,6 +52,21 @@ internal class BrowserRtcVideoTrack(
     private var clock = BrowserRtcVideoPolicy.SourceClock()
     private var firstSubmittedNanos: Long? = null
     private val everEncoded = AtomicBoolean()
+    private val receivedFrames = AtomicLong()
+    private val submittedFrames = AtomicLong()
+    private val outputFrames = AtomicLong()
+    private val outputBytes = AtomicLong()
+    private val awaitingKeyFrames = AtomicLong()
+    private val queueRejectedFrames = AtomicLong()
+    private val releasedUnencodedFrames = AtomicLong()
+    private val nativeKeyFrameRequests = AtomicLong()
+    private val chainRejectedFrames = AtomicLong()
+    private val codecMismatchFrames = AtomicLong()
+    private val duplicateEncoderInputs = AtomicLong()
+    private val lossEvents = AtomicLong()
+    private val rateUpdates = AtomicLong()
+    private val allocatedBitrateBps = AtomicLong()
+    private val allocatedFramerate = AtomicInteger()
 
     fun attach(factory: PeerConnectionFactory): VideoTrack {
         check(source == null && !closed)
@@ -132,6 +147,19 @@ internal class BrowserRtcVideoTrack(
         "failure" to failure,
     )
 
+    /** Bridge-lifetime observations, not RTP delivery or browser decode/display counts. */
+    fun flowDiagnostics(): Map<String, Any?> = linkedMapOf(
+        "scope" to "bridge-lifetime", "receivedFrames" to receivedFrames.get(),
+        "submittedFrames" to submittedFrames.get(), "outputFrames" to outputFrames.get(),
+        "outputBytes" to outputBytes.get(), "awaitingKeyFrames" to awaitingKeyFrames.get(),
+        "queueRejectedFrames" to queueRejectedFrames.get(), "releasedUnencodedFrames" to releasedUnencodedFrames.get(),
+        "nativeKeyFrameRequests" to nativeKeyFrameRequests.get(), "chainRejectedFrames" to chainRejectedFrames.get(),
+        "codecMismatchFrames" to codecMismatchFrames.get(), "duplicateEncoderInputs" to duplicateEncoderInputs.get(),
+        "lossEvents" to lossEvents.get(), "pendingFrames" to pending.get(), "pendingBytes" to pendingBytes.get(),
+        "waitingForKey" to waitingForKey, "rateUpdates" to rateUpdates.get(),
+        "allocatedBitrateBps" to allocatedBitrateBps.get(), "allocatedFramerate" to allocatedFramerate.get(),
+    )
+
     @Synchronized fun configure(record: WebVideoRecord): Boolean {
         if (closed || failure != null) return false
         val old = configuredEpoch
@@ -153,6 +181,7 @@ internal class BrowserRtcVideoTrack(
 
     /** False means this source cannot use the negotiated track and must end with a video error. */
     @Synchronized fun offer(record: WebVideoRecord): Boolean {
+        receivedFrames.incrementAndGet()
         if (!active || closed || failure != null) return false
         if (record.epoch != configuredEpoch) { disable("source-changed"); return false }
         if (record.flags and WebVideoRecords.FLAG_DECODE_ONLY != 0) { disable("decode-only-video"); return false }
@@ -162,10 +191,10 @@ internal class BrowserRtcVideoTrack(
         val last = lastTimestampUs
         if (last != null && record.timestampUs <= last) { disable("reordered-video-timestamp"); return false }
         lastTimestampUs = record.timestampUs
-        if (waitingForKey && !record.keyFrame) { requestKeyFrame(); return true }
+        if (waitingForKey && !record.keyFrame) { awaitingKeyFrames.incrementAndGet(); requestKeyFrame(); return true }
         if (pending.get() >= MAX_PENDING || record.payloadLength > WebVideoRecords.MAX_PAYLOAD ||
             pendingBytes.get() + record.payloadLength > MAX_PENDING_BYTES) {
-            lost(); return true
+            queueRejectedFrames.incrementAndGet(); lost(); return true
         }
         if (record.keyFrame) waitingForKey = false
         val fields = configuration ?: return false
@@ -176,6 +205,7 @@ internal class BrowserRtcVideoTrack(
         if (firstSubmittedNanos == null) firstSubmittedNanos = nowNanos()
         pending.incrementAndGet()
         pendingBytes.addAndGet(record.payloadLength.toLong())
+        submittedFrames.incrementAndGet()
         val buffer = AccessUnit(record, width, height, generation.get(), lossGeneration.get())
         // Capture timestamps must be monotonic in the local clock domain. The Java source's
         // timestamp aligner may move them; encode() echoes the actual frame timestamp for JNI.
@@ -209,6 +239,7 @@ internal class BrowserRtcVideoTrack(
 
     private fun markLost(): Boolean {
         if (!active || closed) return false
+        lossEvents.incrementAndGet()
         waitingForKey = true; lossGeneration.incrementAndGet()
         return true
     }
@@ -249,7 +280,10 @@ internal class BrowserRtcVideoTrack(
             if (references.decrementAndGet() == 0) {
                 pending.decrementAndGet()
                 pendingBytes.addAndGet(-record.payloadLength.toLong())
-                if (!encoded.get() && owner == generation.get() && chain == lossGeneration.get()) lost()
+                if (!encoded.get()) {
+                    releasedUnencodedFrames.incrementAndGet()
+                    if (owner == generation.get() && chain == lossGeneration.get()) lost()
+                }
             }
         }
         override fun cropAndScale(x: Int, y: Int, cropWidth: Int, cropHeight: Int, scaleWidth: Int, scaleHeight: Int): VideoFrame.Buffer {
@@ -300,6 +334,7 @@ internal class BrowserRtcVideoTrack(
             if (unit.owner != generation.get()) return VideoCodecStatus.NO_OUTPUT
             val config = sourceCodec
             if (config == null || !BrowserRtcVideoPolicy.matches(config, codec)) {
+                codecMismatchFrames.incrementAndGet()
                 val refresh = synchronized(this@BrowserRtcVideoTrack) {
                     if (!active || closed || activeEncoder !== this) return VideoCodecStatus.NO_OUTPUT
                     updateSelectionWait(); markLost()
@@ -312,10 +347,13 @@ internal class BrowserRtcVideoTrack(
             }
             // Screen-source cadence adapters may repeat a buffer with a new capture time. A
             // compressed delta AU must never be replayed as if it were a newly encoded frame.
-            if (!unit.encoded.compareAndSet(false, true)) return VideoCodecStatus.NO_OUTPUT
+            if (!unit.encoded.compareAndSet(false, true)) { duplicateEncoderInputs.incrementAndGet(); return VideoCodecStatus.NO_OUTPUT }
             if (!active || closed || unit.owner != generation.get()) return VideoCodecStatus.NO_OUTPUT
-            if (unit.chain != lossGeneration.get() || waitingForKey && !unit.record.keyFrame) return VideoCodecStatus.NO_OUTPUT
+            if (unit.chain != lossGeneration.get() || waitingForKey && !unit.record.keyFrame) {
+                chainRejectedFrames.incrementAndGet(); return VideoCodecStatus.NO_OUTPUT
+            }
             if (info.frameTypes.contains(EncodedImage.FrameType.VideoFrameKey) && !unit.record.keyFrame) {
+                nativeKeyFrameRequests.incrementAndGet()
                 lost(); return VideoCodecStatus.NO_OUTPUT
             }
             val record = unit.record
@@ -327,11 +365,15 @@ internal class BrowserRtcVideoTrack(
                 .setRotation(0).createEncodedImage()
             try {
                 synchronized(callbackGate) {
-                    if (!active || closed || activeEncoder !== this || unit.owner != generation.get() ||
-                        unit.chain != lossGeneration.get() || waitingForKey && !record.keyFrame) return VideoCodecStatus.NO_OUTPUT
+                    if (!active || closed || activeEncoder !== this || unit.owner != generation.get()) return VideoCodecStatus.NO_OUTPUT
+                    if (unit.chain != lossGeneration.get() || waitingForKey && !record.keyFrame) {
+                        chainRejectedFrames.incrementAndGet(); return VideoCodecStatus.NO_OUTPUT
+                    }
                     val output = callback ?: return VideoCodecStatus.UNINITIALIZED
                     if (record.keyFrame) waitingForKey = false
                     output.onEncodedFrame(image, if (codec.name == "H265") VideoEncoder.CodecSpecificInfoH265() else VideoEncoder.CodecSpecificInfoH264())
+                    outputFrames.incrementAndGet()
+                    outputBytes.addAndGet(record.payloadLength.toLong())
                     everEncoded.set(true)
                 }
             } catch (_: Exception) {
@@ -342,7 +384,12 @@ internal class BrowserRtcVideoTrack(
             finally { image.release() }
             return VideoCodecStatus.OK
         }
-        override fun setRateAllocation(allocation: VideoEncoder.BitrateAllocation, framerate: Int) = VideoCodecStatus.OK
+        override fun setRateAllocation(allocation: VideoEncoder.BitrateAllocation, framerate: Int): VideoCodecStatus {
+            rateUpdates.incrementAndGet()
+            allocatedBitrateBps.set(allocation.sum.toLong())
+            allocatedFramerate.set(framerate)
+            return VideoCodecStatus.OK
+        }
         override fun getScalingSettings(): VideoEncoder.ScalingSettings = VideoEncoder.ScalingSettings.OFF
         override fun getImplementationName() = "TiPlay original access-unit passthrough"
         override fun isHardwareEncoder() = false // There is no encoder, hardware or software.

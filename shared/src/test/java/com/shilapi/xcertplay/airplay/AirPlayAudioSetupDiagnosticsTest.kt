@@ -12,6 +12,26 @@ class AirPlayAudioSetupDiagnosticsTest {
     private val config = AirPlayConfig("test", "test", "", "1", AirPlayDisplayConfig(800, 480))
     private val audioTypes = listOf(null, "compatibility", "default", "media", "telephony", "speechRecognition", "alert", "private")
 
+    @Test fun acceptedTypesSurviveDeclinedReplacementAndPartialTeardown() {
+        val diagnostics = AirPlayAudioSetupDiagnostics()
+        diagnostics.record(101, mapOf("audioType" to "default"), accepted = true)
+        diagnostics.record(100, mapOf("audioType" to "telephony"), accepted = true)
+        diagnostics.record(101, mapOf("audioType" to "default"), accepted = false)
+        diagnostics.record(103, mapOf("audioType" to "media"), accepted = false)
+        val snapshot = diagnostics.snapshot()
+        assertEquals(listOf(100, 101), snapshot.activeTypes)
+        diagnostics.retire(listOf(100, 110))
+        assertEquals(listOf(101), diagnostics.snapshot().activeTypes)
+        assertEquals(listOf(100, 101), snapshot.activeTypes)
+        diagnostics.retire()
+        assertTrue(diagnostics.snapshot().activeTypes.isEmpty())
+        assertEquals(4L, diagnostics.snapshot().count)
+        diagnostics.close()
+        diagnostics.record(100, mapOf("audioType" to "telephony"), accepted = true)
+        assertTrue(diagnostics.snapshot().activeTypes.isEmpty())
+        assertEquals(5L, diagnostics.snapshot().count)
+    }
+
     @Test fun summaryPreservesTotalFirstSeenOrderAndSnapshotOwnership() {
         val diagnostics = AirPlayAudioSetupDiagnostics()
         assertEquals(AirPlayAudioDiagnostics.summary(config, emptyList()), diagnostics.snapshot().summary(config))

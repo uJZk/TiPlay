@@ -13,6 +13,21 @@ Android does not decode/reencode them. The browser routes received tracks into
 the shared AudioWorklet mixing/ducking path. Unsupported source formats use the
 DataChannel software path below.
 
+Each native-audio peer owns one detached HTML audio element to activate Chromium's
+RTP playout. It stays muted with zero volume; every audible source still reaches
+the destination through the shared AudioWorklet mixer and its existing ducking
+policy. Connecting received tracks to WebAudio alone can leave incoming RTP
+packets undecoded. The silent anchor introduces no application decoder or encoder
+and adds no second audible output.
+
+The sender's exact-owner readiness barrier requires both a fulfilled anchor
+`play()` request and the Worklet's graph-binding acknowledgement. A rejected
+play request fails the native audio peer explicitly. Peer retirement pauses and
+detaches the anchor, clears its `srcObject`, removes it and retires its graph
+owners. Stream EOS retains the original receiver for its buffered tail;
+`drainUnknown` does not certify completion or actual speaker output. Live video
+continues to use MediaStreamTrackProcessor and Canvas without a video element.
+
 CarPlay, AirPlay mirror and live AirPlay audio on that software path use the
 official libWebRTC NetEq core, compiled to WASM. The product software path uses its L16 decoder; the bundled
 Opus API remains available to library tests. Each source stream/epoch
@@ -133,6 +148,15 @@ software AAC/ALAC/ELD decode and the production AudioWorklet/CSP path. Current
 product tests additionally reject unnegotiated Opus and exercise native RTP metadata
 without selecting a software decoder. These
 are not vehicle acceptance or a closed-loop replay of every uploaded trace.
+
+A local Chromium 156 check using the actual Router/JNI/libdatachannel path and
+sixteen negotiated slots received original Opus RTP but produced zero Worklet
+signal with WebAudio alone.
+Activating the same peer with the muted, zero-volume anchor produced nonzero
+Worklet output (peak approximately 0.2099) from the same encoded fixture. This
+isolates a browser playout-start boundary; it does not establish vehicle sound,
+physical output delay or sustained navigation performance. Current test details
+belong in [Testing](Testing.md).
 
 Required physical follow-up: actual Tesla sample rate and scheduling budget,
 AAC music quality under repeated NetEq time stretching, initial burst adaptation,

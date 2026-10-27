@@ -73,6 +73,8 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
   const channels = {};
   let remoteVideoTrack = null;
   let videoTransceiver = null, videoGeneration = 1, videoNegotiation = null, videoAnswer = null, videoRequestSequence = 0;
+  let rtpVideoStats = { state: 'collecting', generation: 1 }, rtpVideoSampledAt = null;
+  let rtpVideoSampling = null;
   try {
     for (const label of ['control', 'video', 'audio']) channels[label] = peer.createDataChannel(label, { ordered: true });
     if (videoTrack) {
@@ -335,6 +337,7 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
     else if (peer.connectionState === 'disconnected') disconnectedTimer = setTimeout(() => fail('peer-disconnected'), 5000);
   };
   async function sampleStats() {
+    sampleVideoStats();
     if (closed || typeof peer.getStats !== 'function') return;
     try {
       const report = await peer.getStats();
@@ -352,6 +355,55 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       for (const field of ['requestsSent', 'requestsReceived', 'responsesSent', 'responsesReceived']) stats[field] = pair[field] ?? null;
       stats.iceSampledAt = performance.now();
     } catch (_) { stats.statsErrors = (stats.statsErrors ?? 0) + 1; }
+  }
+  async function sampleVideoStats() {
+    if (closed || videoNegotiation) return;
+    const transceiver = videoTransceiver, track = remoteVideoTrack, generation = videoGeneration;
+    const receiver = transceiver?.receiver;
+    if (!track || typeof receiver?.getStats !== 'function') {
+      rtpVideoStats = { state: !videoTrack || typeof receiver?.getStats !== 'function' ? 'unavailable' : 'collecting', generation };
+      rtpVideoSampledAt = null;
+      return;
+    }
+    // At most one request per receiver. A retired receiver cannot delay its successor.
+    if (rtpVideoSampling === receiver) return;
+    rtpVideoSampling = receiver;
+    const current = () => !closed && !videoNegotiation && transceiver === videoTransceiver
+      && track === remoteVideoTrack && generation === videoGeneration;
+    try {
+      const report = await receiver.getStats();
+      if (!current()) return;
+      const inbound = [];
+      report.forEach(value => {
+        if (value.type !== 'inbound-rtp' || (value.kind ?? value.mediaType) !== 'video') return;
+        if (value.trackIdentifier && track.id && value.trackIdentifier !== track.id) return;
+        if (value.mid != null && transceiver.mid != null && value.mid !== transceiver.mid) return;
+        const codec = report.get(value.codecId)?.mimeType;
+        if (codec && /\/(?:rtx|red|ulpfec|flexfec-03)$/i.test(codec)) return;
+        inbound.push(value);
+      });
+      const values = { state: inbound.length === 1 ? 'selected' : inbound.length ? 'ambiguous' : 'no-inbound', generation };
+      if (inbound.length === 1) {
+        const source = inbound[0];
+        // Only numeric/boolean standardized receiver evidence crosses this boundary.
+        // IDs, implementation text, candidate addresses and arbitrary getStats fields do not.
+        for (const key of ['packetsReceived', 'packetsLost', 'bytesReceived', 'framesReceived', 'framesDecoded', 'framesDropped',
+          'keyFramesDecoded', 'nackCount', 'pliCount', 'firCount', 'jitterBufferEmittedCount', 'freezeCount', 'pauseCount']) {
+          const value = source[key];
+          if (Number.isSafeInteger(value) && (value >= 0 || key === 'packetsLost')) values[key] = value;
+        }
+        for (const [key, output] of [['jitter', 'jitterMs'], ['jitterBufferDelay', 'jitterBufferDelayMs'],
+          ['jitterBufferTargetDelay', 'jitterBufferTargetDelayMs'], ['jitterBufferMinimumDelay', 'jitterBufferMinimumDelayMs'],
+          ['totalDecodeTime', 'totalDecodeTimeMs'], ['totalFreezesDuration', 'totalFreezesDurationMs'], ['totalPausesDuration', 'totalPausesDurationMs']]) {
+          const value = source[key];
+          if (Number.isFinite(value) && value >= 0 && value <= 9e12) values[output] = value * 1000;
+        }
+        if (typeof source.powerEfficientDecoder === 'boolean') values.powerEfficientDecoder = source.powerEfficientDecoder;
+      }
+      rtpVideoStats = values; rtpVideoSampledAt = performance.now();
+    } catch (_) {
+      if (current()) { rtpVideoStats = { state: 'failed', generation }; rtpVideoSampledAt = performance.now(); }
+    } finally { if (rtpVideoSampling === receiver) rtpVideoSampling = null; }
   }
   function requestControl(q, payload, deadlineMs = 5000) {
     if (closed || requests.has(q) || requests.size >= 16) return Promise.reject(transportError('control-unavailable'));
@@ -371,6 +423,7 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
     if (!Number.isSafeInteger(next) || next > 0xffffffff) return Promise.reject(transportError('rtc-video-generation'));
     let deadline;
     const task = (async () => {
+      rtpVideoStats = { state: 'collecting', generation: next }; rtpVideoSampledAt = null;
       remoteVideoTrack?.stop(); remoteVideoTrack = null;
       if (videoTransceiver === bundleVideoAnchor) videoTransceiver.direction = 'inactive';
       else videoTransceiver?.stop();
@@ -530,7 +583,9 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
     restartVideo,
     close,
     isConnected: () => connected && !closed,
-    stats: () => ({ ...stats, controlMessageLimitBytes: Math.min(64 * 1024, peer.sctp?.maxMessageSize || 64 * 1024),
+    stats: () => ({ ...stats, rtpVideo: { ...rtpVideoStats,
+      sampleAgeMs: rtpVideoSampledAt == null ? null : Math.max(0, performance.now() - rtpVideoSampledAt) },
+      controlMessageLimitBytes: Math.min(64 * 1024, peer.sctp?.maxMessageSize || 64 * 1024),
       video: receivers.video.stats(), audio: receivers.audio.stats(), ice: {
         state: stats.selectedProtocol ? 'selected' : typeof peer.getStats === 'function' ? 'collecting' : 'unavailable',
         protocol: stats.selectedProtocol ?? null, connectionState: stats.iceState,

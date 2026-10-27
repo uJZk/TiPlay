@@ -7,6 +7,14 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+The [beta.25/code67 candidate](Build.md#beta25-release), browser v100, passes
+613 browser tests. Its first complete local required Android command passed
+4,346 tests and all required Debug lint/build targets. The final repeated Android
+validation was stopped at the user's request; formal CI is explicitly skipped
+for this release. Final signed packaging and public verification are recorded
+separately in Build when completed. The media checks below describe source and
+desktop behavior, with physical iPhone/Tesla acceptance still pending.
+
 Beta.24/code66 and browser v97 pass 4,335 local Android tests, all required Debug
 lint/build targets, 598 web tests, full CI and independent signed/public checks.
 Fourteen sender-selection regressions cover Baseline-first startup, asynchronous
@@ -68,6 +76,35 @@ vehicle load or physical audio/video timing. `rtc-canvas.mjs --local-track` rema
 a separate Processor/Canvas diagnostic and cannot substitute for RTP reception.
 See the [harness guide](../tests/web-e2e/README.md) for requirements and failure bounds,
 and [current deployment](Build.md#current-browser-deployment) for published bytes.
+
+### Current media regression checks
+
+The working source disables M150's raw-frame bitrate dropper for original
+compressed video; scaling/degradation controls alone did not disable it.
+`BrowserRtcVideoFlowTest` verifies original-byte output, bounded input and distinct
+input-loss/keyframe/dependency counters. These Java seam tests do not load Android
+JNI or establish vehicle frame continuity. Receiver RTP counters and bridge output
+must be compared separately from source cadence and Canvas draws.
+
+For native audio, a Chromium 156 control received 80 original Opus packets through
+the product router/JNI but produced no decoded samples through WebAudio alone.
+A detached, permanently muted audio playout anchor starts decoding without adding
+another audible path; the existing Worklet still owns mixing and ducking.
+`rtc-audio.mjs` checks non-first-slot activation, simultaneous purposes, EOS and
+continued music under the production CSP. `rtc-audio-native.mjs` now uses the
+actual router, Kotlin/JNI/libdatachannel, all sixteen offered slots and the product
+ready barrier. Seventeen source owners force generation two; actual nonzero
+Worklet output and old/new anchor cleanup are required. The corrected native run
+recorded independent first/replacement-peer peaks of about 0.324 and 0.192.
+Muted-element `totalAudioEnergy=0` alone cannot
+establish missing decoder output; use decoded samples and actual Worklet samples.
+
+Lifecycle regressions cover rejected/late `play()`, retirement before the ready
+microtask and EOS before readiness without cutting the original buffered tail.
+These synthetic desktop checks establish a reproducible receive/playout defect
+and its source correction, not Android/vehicle interoperability or speaker timing.
+Use the [native audio harness instructions](../tests/web-e2e/README.md) to reproduce
+the test with an ICE-capable browser and host transport built from pinned sources.
 
 ## Browser WASM verification
 

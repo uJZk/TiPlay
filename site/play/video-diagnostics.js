@@ -26,6 +26,10 @@ export const RECEIVER_FIELDS = ['retainedBytes', 'consumedBytes', 'queuedRecords
   'peakRetainedBytes', 'reassemblyMsMean', 'reassemblyMsMax', 'consumerWaitMsMean', 'consumerWaitMsMax'];
 export const ICE_FIELDS = ['currentRoundTripTimeMs', 'availableOutgoingBitrate', 'requestsSent', 'requestsReceived', 'responsesSent',
   'responsesReceived', 'bytesSent', 'bytesReceived', 'sampleAgeMs', 'errors'];
+export const RTP_VIDEO_FIELDS = ['generation', 'sampleAgeMs', 'packetsReceived', 'packetsLost', 'bytesReceived', 'framesReceived',
+  'framesDecoded', 'framesDropped', 'keyFramesDecoded', 'nackCount', 'pliCount', 'firCount', 'jitterMs',
+  'jitterBufferEmittedCount', 'jitterBufferDelayMs', 'jitterBufferTargetDelayMs', 'jitterBufferMinimumDelayMs',
+  'totalDecodeTimeMs', 'freezeCount', 'pauseCount', 'totalFreezesDurationMs', 'totalPausesDurationMs', 'powerEfficientDecoder'];
 export const CONTROL_FIELDS = ['seq', 'inFlight', 'inFlightCount', 'pending', 'posts', 'failures', 'overflows', 'rttMsP50', 'rttMsP95'];
 export const SENDER_ROOT_FIELDS = ['authenticated', 'ready', 'closed', 'nativeSampleAgeMs', 'controlMessageLimitBytes',
   'localCandidateCount', 'remoteCandidateCount', 'localIPv4LinkLocalCandidateCount', 'remoteIPv4LinkLocalCandidateCount', 'pendingWorkerTasks', 'transportBudgetMs'];
@@ -48,12 +52,13 @@ const ENUM_FIELDS = {
   'transport.ice.localCandidateType': ['host', 'srflx', 'prflx', 'relay'],
   'transport.ice.remoteCandidateType': ['host', 'srflx', 'prflx', 'relay'], 'transport.ice.protocol': ['udp', 'tcp'],
   'transport.ice.connectionState': ['new', 'checking', 'connected', 'completed', 'failed', 'disconnected', 'closed'],
+  'transport.rtpVideo.state': ['collecting', 'unavailable', 'selected', 'no-inbound', 'ambiguous', 'failed'],
   'sender.networkMode': ['kernel-interfaces', 'android-network-monitor'],
 };
 const NATIVE_STATES = ['NEW', 'CHECKING', 'CONNECTED', 'COMPLETED', 'FAILED', 'DISCONNECTED', 'CLOSED', 'GATHERING', 'COMPLETE', 'CONNECTING'];
 for (const key of ['iceGatheringState', 'iceConnectionState', 'peerConnectionState']) ENUM_FIELDS[`sender.${key}`] = NATIVE_STATES;
 
-const BOOLEAN_FIELDS = new Set(['raw.touchCatchUpActive', 'raw.policyInteractionActive', 'control.inFlight', 'sender.authenticated', 'sender.ready', 'sender.closed', 'authenticated', 'ready', 'closed']);
+const BOOLEAN_FIELDS = new Set(['transport.rtpVideo.powerEfficientDecoder', 'raw.touchCatchUpActive', 'raw.policyInteractionActive', 'control.inFlight', 'sender.authenticated', 'sender.ready', 'sender.closed', 'authenticated', 'ready', 'closed']);
 const finiteNumber = value => Number.isFinite(value) && Math.abs(value) <= 9e15;
 const WHOLE_POLICY_FIELDS = new Set(['policyInteractionStarts', 'policyInteractionReleases', 'policyProfileSwitches',
   'policyPlanChanges', 'policyMaxVideoFrames', 'policyMaxVideoBytes', 'sourceClockGeneration', 'sourceClockMaxAgeMs']);
@@ -80,6 +85,8 @@ function scalars(output, prefix, source, fields) {
       if (typeof value === 'boolean') output[prefix + key] = value;
       continue;
     }
+    if (prefix === 'transport.rtpVideo.' && (value < 0 && key !== 'packetsLost'
+      || key === 'generation' && !Number.isSafeInteger(value))) continue;
     if (finiteNumber(value) && (!nonnegativePolicyField(key) || value >= 0) &&
         (!WHOLE_POLICY_FIELDS.has(key) || Number.isSafeInteger(value))) output[prefix + key] = value;
   }
@@ -142,6 +149,7 @@ export function videoDiagnosticValues(page, capture, tracker) {
   result['raw.schedulerReasonSubset'] = 'scheduledDroppedFrames';
   scalars(result, 'transport.video.', page.transport?.video, RECEIVER_FIELDS);
   scalars(result, 'transport.ice.', page.transport?.ice, ICE_FIELDS);
+  scalars(result, 'transport.rtpVideo.', page.transport?.rtpVideo, RTP_VIDEO_FIELDS);
   scalars(result, 'control.', page.control, CONTROL_FIELDS);
   scalars(result, 'sender.', page.sender, SENDER_ROOT_FIELDS);
   // page.sender is already flat; flatten only exact permitted names, never traverse arbitrary status properties.
@@ -154,6 +162,7 @@ export function videoDiagnosticValues(page, capture, tracker) {
   for (const key of Object.keys(ENUM_FIELDS)) {
     if (key.startsWith('sender.')) selectedEnums[key] = page.sender?.[key.slice(7)];
     else if (key.startsWith('transport.ice.')) selectedEnums[key] = page.transport?.ice?.[key.slice(14)];
+    else if (key.startsWith('transport.rtpVideo.')) selectedEnums[key] = page.transport?.rtpVideo?.[key.slice(19)];
   }
   enums(result, selectedEnums);
   return result;
@@ -165,6 +174,7 @@ export const VIDEO_DIAGNOSTIC_FIELDS = [
   ...VIDEO_COUNTER_FIELDS.map(key => `interval.${key}`), ...[...VIDEO_COUNTER_FIELDS, ...VIDEO_VALUE_FIELDS].map(key => `raw.${key}`),
   'raw.pipelineCounterScope', 'raw.decodeDropCounterScope', 'raw.schedulerCounterScope', 'raw.transferCounterScope', 'raw.renderCounterScope', 'raw.stageSampleScope',
   'raw.touchSubset', 'raw.schedulerReasonSubset', ...RECEIVER_FIELDS.map(key => `transport.video.${key}`), ...ICE_FIELDS.map(key => `transport.ice.${key}`),
+  ...RTP_VIDEO_FIELDS.map(key => `transport.rtpVideo.${key}`),
   ...CONTROL_FIELDS.map(key => `control.${key}`), ...SENDER_ROOT_FIELDS.map(key => `sender.${key}`),
   ...['video', 'audio'].flatMap(kind => SENDER_MEDIA_FIELDS.map(key => `sender.${kind}.${key}`)),
   ...SENDER_CONTROL_FIELDS.map(key => `sender.control.${key}`), ...Object.keys(ENUM_FIELDS),
@@ -188,6 +198,7 @@ export function packVideoDiagnosticValues(source, pageVersion, byteLimit = VIDEO
   priority.push(...['decoderStatsAgeMs', 'readFrameIntervalMsMax', 'decodeOldestInFlightMs',
     'decodeQueueSize', 'decodedQueueFrames', 'decodedQueueBytes', 'decodeInFlightFrames', 'decodeInFlightBytes',
     'codec', 'acceleration', 'decoderImplementation'].map(key => `raw.${key}`));
+  priority.push('transport.rtpVideo.state', ...RTP_VIDEO_FIELDS.map(key => `transport.rtpVideo.${key}`));
   for (const key of [...new Set([...priority, ...Object.keys(source)])]) {
     if (!(key in source)) continue;
     const original = source[key];

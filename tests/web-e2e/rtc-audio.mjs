@@ -39,8 +39,9 @@ try {
     await context.audioWorklet.addModule('/audio-worklet.js');
     const node = new AudioWorkletNode(context, 'tiplay-audio', { numberOfInputs: 16, outputChannelCount: [2],
       processorOptions: { neteqModule, audioCoreModule } });
-    const messages = [], failures = [], peers = [], oscillators = [];
-    node.port.onmessage = ({ data }) => messages.push(data);
+    const messages = [], failures = [], peers = [], oscillators = [], anchors = [], readyOwners = [];
+    let audio;
+    node.port.onmessage = ({ data }) => { messages.push(data); if (data.nativeAudioBound) audio?.bound(data.nativeAudioBound); };
     node.onprocessorerror = () => failures.push('processor-error');
     node.port.postMessage({ reset: true, generation: 1 });
     node.port.postMessage({ debug: true, diagnosticRevision: 1, generation: 1 });
@@ -49,7 +50,12 @@ try {
     let captureCalls = 0;
     if (navigator.mediaDevices) navigator.mediaDevices.getUserMedia = () => { captureCalls++; throw Error('Unexpected microphone capture'); };
     const originalCreateElement = document.createElement.bind(document);
-    document.createElement = (name, ...args) => { if (String(name).toLowerCase() === 'audio') throw Error('Unexpected audio element'); return originalCreateElement(name, ...args); };
+    document.createElement = (name, ...args) => {
+      if (String(name).toLowerCase() === 'video') throw Error('Unexpected video element');
+      const element = originalCreateElement(name, ...args);
+      if (String(name).toLowerCase() === 'audio') anchors.push(element);
+      return element;
+    };
     const tracks = [220, 1100].map((frequency, index) => {
       const oscillator = senderContext.createOscillator(), gain = senderContext.createGain(), output = senderContext.createMediaStreamDestination();
       oscillator.frequency.value = frequency; gain.gain.value = index ? .15 : .4;
@@ -62,7 +68,8 @@ try {
       catch (cause) { throw Error(stage + ': ' + cause.message + '; ' + peer.localDescription?.sdp.split(/\r?\n/)
         .filter(line => /^(m=|a=mid:|a=send|a=recv|a=inactive)/.test(line)).join('; ')); }
     };
-    const audio = createRtcAudio({ context, node, generation: 1, onError: cause => nativeErrors.push(cause.message),
+    audio = createRtcAudio({ context, node, generation: 1, onError: cause => nativeErrors.push(cause.message),
+      ready: owner => readyOwners.push(owner),
       gather: (peer, signal) => gather(peer, signal, 'receiver'),
       exchange: async ({ sdp, generation }) => {
         const peer = new RTCPeerConnection({ iceServers: [], bundlePolicy: 'max-bundle' }); peers.push(peer);
@@ -78,7 +85,8 @@ try {
       config: { audioTransport: 'webrtc-track-v1', codec: 'opus', rtcGeneration: 1, rtpSlot: String(type), semanticType: type } });
     try {
       await Promise.all([context.resume(), senderContext.resume(), audio.start(1)]);
-      await Promise.all([configure(0), configure(1)]);
+      // Anchor the nonfirst voice slot, then end it while music keeps rendering.
+      await configure(1); await configure(0);
       const wait = async check => { for (let i = 0; i < 200; i++) { if (check()) return; await new Promise(resolve => setTimeout(resolve, 20)); } throw Error('Native audio render timed out'); };
       await wait(() => messages.some(message => message.nativeStarted?.type === 0)
         && messages.some(message => message.nativeStarted?.type === 1));
@@ -91,7 +99,9 @@ try {
       await new Promise(resolve => setTimeout(resolve, 1000));
       const mediaRms = rms(), diagnostics = messages.filter(message => message.diagnostics).at(-1)?.diagnostics;
       return { mixedRms, mediaRms, captureCalls, failures, nativeErrors, diagnostics,
-        elements: document.querySelectorAll('audio').length, native: audio.stats() };
+        elements: document.querySelectorAll('audio').length, native: audio.stats(), readyOwners,
+        playoutAnchors: anchors.map(anchor => ({ muted: anchor.muted, volume: anchor.volume,
+          hidden: anchor.hidden, controls: anchor.controls, paused: anchor.paused })) };
     } finally {
       audio.close(); node.port.postMessage({ dispose: true }); node.disconnect(); analyser.disconnect();
       for (const peer of peers) peer.close(); for (const track of tracks) track.stop();
@@ -100,6 +110,8 @@ try {
   });
   assert.deepEqual(errors, []); assert.deepEqual(result.failures, []); assert.deepEqual(result.nativeErrors, []);
   assert.equal(result.captureCalls, 0); assert.equal(result.elements, 0);
+  assert.deepEqual(result.readyOwners.map(owner => owner.type), [1, 0]);
+  assert.deepEqual(result.playoutAnchors, [{ muted: true, volume: 0, hidden: true, controls: false, paused: false }]);
   assert.ok(result.mixedRms > .01); assert.ok(result.mediaRms > result.mixedRms * 1.2, 'silent ended voice restores music gain');
   assert.equal(result.diagnostics.stream0.backend, 'webrtc-track');
   assert.equal(result.diagnostics.stream1.backend, 'webrtc-track');

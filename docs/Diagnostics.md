@@ -213,6 +213,26 @@ it does not run the retired PD/SoundTouch or browser libsoxr controller. The bun
 NetEq Opus API is exercised by library tests, while product Opus requires native
 RTP negotiation. A retained schema/allowlist field does not prove a retired path runs.
 
+`nativeAudio.state=ready` means the independent native-audio SDP was installed.
+Check its separate `peerState`, `iceState` and `gatheringState` before inferring a
+connected transport. `rtcGeneration` fences replacements; `tracks`, `boundSlots`,
+`readySlots` and `streams` distinguish received tracks, Worklet graph application,
+announced ready active slots and active owners. Ready slots require successful
+playout-anchor `play()` as well as Worklet binding. The Standard summary retains the
+main state/counts; Debug audio records retain all ten bounded fields. Missing
+native-audio fields remain unknown. Failed, retired and closed peers report zero
+live track/slot/owner counts and no pending drain. `drainUnknown=true` means an ended owner's
+receiver stays connected for its buffered tail; it does not certify drain completion
+or audible output. Music may use software AAC while guidance uses this separate
+Opus peer, so successful music alone cannot establish native guidance playback.
+
+RTP packet reception alone also does not establish decoded samples. The local
+original-Opus reproduction received packets with zero Worklet output until a
+muted, zero-volume audio anchor activated Chromium's peer playout. Check the
+existing render nonzero/peak evidence after readiness; the anchor itself has no
+audible output. See [audio buffering and tempo](Audio-tempo.md#live-audio-official-neteq)
+for the ownership and verification limits.
+
 Debug distinguishes decoder PCM packets/frames/nonzero/peak, worklet rendered
 frames/nonzero/peak, per-stream backend/epoch/queue/state and native-track state.
 Software-stream NetEq telemetry describes adaptive buffering and time stretching;
@@ -260,6 +280,14 @@ unavailable/invalid/failed states retain unknown counts. The
 per second subject to visibility/activity, so readable is not necessarily fresh.
 Observed context state changes/non-running durations can miss coalesced transitions.
 URL `ENGINE_RENDER` uses AVPlayer counters, a separate domain.
+
+`airplay audio modes` records incremental main-audio ownership, speech mode,
+phone-call/navigation entity and state, `audioSetups` request count and accepted
+`activeAudioTypes` not yet torn down. Only validated fixed fields are logged;
+repeated states are silent. Unknown means no valid observation, not a routing
+decision. A running browser AudioContext with zero audio SETUP requests does not
+establish a browser decoder failure. Capture from before triggering a navigation
+announcement to distinguish iPhone routing, stream setup, delivery and playback.
 
 Debug raw capture retains audio configuration, resets and decrypted encoded packets
 or PCM. DataChannel records are stored once under `browser/audio/rtc/<epoch>/records`;
@@ -363,6 +391,29 @@ See the [transport contract](CarPlay-DataChannel.md#current-implementation-and-e
 for v96 receive-level probes and v97 encoder selection. API support, successful
 initialization and Canvas submission each prove a different boundary; none proves
 hardware decoding or physical panel time.
+
+Android `Browser RTC: stage=video-flow` reports bridge-lifetime receive, submit,
+encoded-callback output and byte counts every five seconds and at writer retirement.
+It separates waiting for a source keyframe, bounded-queue rejection, native input
+released without encoding, native keyframe demand on a delta, dependency-chain
+rejection and codec mismatch. These counters overlap; do not add them as a total
+lost-frame count. Callback output proves local handoff, not RTP receipt. Pending
+counts and native rate allocations help distinguish source starvation from sender
+input loss. Compare intervals within one peer/video generation and use the receiver
+statistics below for the downstream boundary.
+
+Debug `transport.rtpVideo.*` samples the current video receiver independently of
+the metadata DataChannel. `generation`, `state` and `sampleAgeMs` identify sample
+ownership and freshness. Available counters include received/lost packets,
+received/decoded/dropped frames, keyframes, NACK/PLI/FIR, decode time and freezes.
+`jitterMs` is receiver interarrival jitter. Jitter-buffer delay/target/minimum
+values are cumulative milliseconds; divide their interval changes by the change
+in `jitterBufferEmittedCount` for an interval average, only within one generation.
+Source replacement clears the sample and rejects late old-receiver results.
+Missing, failed or ambiguous reports remain explicit; absent counters are unknown.
+`powerEfficientDecoder`, when exposed, is the browser's declaration, not an
+independent hardware measurement. ICE `availableOutgoingBitrate` describes the
+browser's outgoing direction and cannot establish Android's video send budget.
 
 Allowlisted `policyVideo*`, cursor, source-clock and WebCodecs stage fields can
 remain in older captures or compatibility fixtures. In the retired application

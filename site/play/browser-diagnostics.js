@@ -4,7 +4,7 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v99';
+export const PAGE_VERSION = 'v100';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'video.errorReason', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
@@ -20,6 +20,8 @@ const SUMMARY_KEYS = [
   'transport.controlFailures', 'transport.iceState', 'transport.connectionState',
   'audio.sourceDeadlineState', 'audio.sourceDeadlineReason', 'audio.sourceDeltaUpperMs',
   'audio.sourceDeadlineRejectedFrames', 'audio.sourceDeadlineStream', 'audio.sourceDeadlineEpoch',
+  'audio.nativeAudio.state', 'audio.nativeAudio.rtcGeneration', 'audio.nativeAudio.peerState', 'audio.nativeAudio.iceState',
+  'audio.nativeAudio.gatheringState', 'audio.nativeAudio.streams', 'audio.nativeAudio.readySlots',
   'video.policyInteractionStarts', 'video.policyInteractionReleases', 'video.policyProfileSwitches',
   'video.sourceClockState', 'video.sourceClockAgeMs', 'video.sourceClockGeneration', 'video.sourceClockMaxAgeMs', 'video.stageClockUncertaintyMs',
   'video.clockEstimatorState', 'video.clockEstimatorObservationAgeMs', 'video.clockEstimatorSelectedAgeMs',
@@ -49,6 +51,23 @@ const SUMMARY_KEYS = [
   'video.policyVideoLeadRemainingMs', 'video.policyPlanChanges',
 ];
 const AUDIO_SOURCE_IDENTITY = ['epoch', 'state', 'backend', 'codec', 'lastRecoveryReason'];
+const AUDIO_NATIVE_FIELDS = ['state', 'rtcGeneration', 'peerState', 'iceState', 'gatheringState', 'tracks', 'boundSlots', 'readySlots', 'streams', 'drainUnknown'];
+const AUDIO_NATIVE_ENUMS = {
+  state: ['idle', 'connecting', 'ready', 'failed', 'closed'],
+  peerState: ['new', 'connecting', 'connected', 'disconnected', 'failed', 'closed', 'unavailable'],
+  iceState: ['new', 'checking', 'connected', 'completed', 'disconnected', 'failed', 'closed', 'unavailable'],
+  gatheringState: ['new', 'gathering', 'complete', 'unavailable'],
+};
+function nativeAudioDiagnostics(source) {
+  const values = {};
+  for (const field of AUDIO_NATIVE_FIELDS) {
+    const value = source?.[field];
+    if (AUDIO_NATIVE_ENUMS[field]?.includes(value) || field === 'drainUnknown' && typeof value === 'boolean'
+      || ['tracks', 'boundSlots', 'readySlots', 'streams'].includes(field) && Number.isInteger(value) && value >= 0 && value <= 16
+      || field === 'rtcGeneration' && Number.isInteger(value) && value >= 1 && value <= 0x7fffffff) values[field] = value;
+  }
+  return values;
+}
 const AUDIO_NETEQ_KEYS = ['targetDelayMs', 'filteredDelayMs', 'bufferMs', 'concealedSamples',
   'concealmentEvents', 'insertedSamples', 'removedSamples', 'discardedPackets', 'fecPacketsReceived', 'fecPacketsDiscarded'];
 const AUDIO_SOURCE_DEADLINE = ['lastSourceDeadlineDeltaUpperMs', 'lastSourceDeadlineUncertaintyMs', 'lastSourceDeadlineAgeMs', 'lastSourceDeadlineLimitMs'];
@@ -75,7 +94,8 @@ function audioDiagnosticKeys(full) {
   const perStream = fields => fields.flatMap(field => streams.map(stream => `${stream}.${field}`));
   // Round-robin identity and retained deadline triggers before fit/packet detail,
   // so a busy first stream cannot hide a later stream's actual rejection boundary.
-  return [...new Set(['contextState', 'contextRate', 'contextObservedStateChanges', 'contextObservedNonRunningMs',
+  return [...new Set([...AUDIO_NATIVE_FIELDS.map(key => `nativeAudio.${key}`),
+    'contextState', 'contextRate', 'contextObservedStateChanges', 'contextObservedNonRunningMs',
     'renderQuantumFrames', 'renderQuantumMinFrames', 'renderQuantumMaxFrames',
     ...AUDIO_RENDER_KEYS, ...['evidenceFirstJump', 'evidenceLastJump'].flatMap(prefix => ['observedFrame', 'expectedFrame', 'deltaFrames', 'blockFrames', 'renderedFrames', 'call'].map(key => `${prefix}.${key}`)),
     'evidenceAttempts', 'evidenceSuppressed', 'evidenceCompleted', 'evidenceIncomplete',
@@ -117,7 +137,9 @@ export function createFaultDiagnosticReporter({ emit, intervalMs = 5000, now = (
 
 /** Audio details have their own budget, so video stats cannot crowd out render evidence. */
 export function browserDiagnosticEvents(page, themeDark, debug = false, debugSession = null, videoTracker = null) {
-  const { debug: audioDebug, ...audio } = page.audio ?? {};
+  const { debug: audioDebug, nativeAudio, ...audioValues } = page.audio ?? {};
+  const native = nativeAudioDiagnostics(nativeAudio);
+  const audio = { ...audioValues, ...(Object.keys(native).length ? { nativeAudio: native } : {}) };
   const controlCap = Math.min(64 * 1024, Math.max(0, Number.isFinite(page.transport?.controlMessageLimitBytes)
     ? page.transport.controlMessageLimitBytes : 64 * 1024));
   const ordinaryBudget = Math.min(2048 - 24, Math.max(128, controlCap - 1024));
@@ -126,7 +148,9 @@ export function browserDiagnosticEvents(page, themeDark, debug = false, debugSes
   const detailBudget = Math.min(16 * 1024, Math.floor(Math.max(0, controlCap - ordinaryBudget * 3 - 4096) / 2));
   const details = [], omissions = {};
   if (debug && audioDebug) {
-    const full = flatStats(audioDebug, Infinity), values = { pageVersion: PAGE_VERSION, omittedFields: 0 };
+    const { nativeAudio: ignoredNative, ...debugValues } = audioDebug;
+    const full = flatStats({ ...debugValues, ...(Object.keys(native).length ? { nativeAudio: native } : {}) }, Infinity), values = { pageVersion: PAGE_VERSION, omittedFields: 0 };
+    if (typeof native.drainUnknown === 'boolean') full['nativeAudio.drainUnknown'] = native.drainUnknown;
     let omitted = 0;
     if (detailBudget >= 512) {
       for (const key of audioDiagnosticKeys(full)) {

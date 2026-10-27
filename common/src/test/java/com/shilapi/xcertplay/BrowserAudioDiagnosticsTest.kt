@@ -4,6 +4,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BrowserAudioDiagnosticsTest {
+    @Test fun nativeAudioDiagnosticsSeparateSdpIceAndBoundGraphReadinessWithoutPrivateText() {
+        val input = mapOf("nativeAudio.state" to "ready", "nativeAudio.rtcGeneration" to 2,
+            "nativeAudio.peerState" to "connecting", "nativeAudio.iceState" to "checking", "nativeAudio.gatheringState" to "complete",
+            "nativeAudio.tracks" to 16, "nativeAudio.boundSlots" to 2, "nativeAudio.readySlots" to 1,
+            "nativeAudio.streams" to 2, "nativeAudio.drainUnknown" to true,
+            "nativeAudio.address" to "192.0.2.1", "nativeAudio.error" to "private-error")
+        val lines = BrowserAudioDiagnostics.lines(input)
+        val text = lines.joinToString(" ")
+        for (key in listOf("state", "rtcGeneration", "peerState", "iceState", "gatheringState", "tracks", "boundSlots", "readySlots", "streams", "drainUnknown"))
+            assertTrue(key, text.contains("nativeAudio.$key=${input["nativeAudio.$key"]}"))
+        assertFalse(text.contains("private-error")); assertFalse(text.contains("192.0.2.1"))
+        assertTrue(lines.all { it.length <= 600 })
+        for ((key, value) in listOf("state" to "private-state", "peerState" to "private-state", "iceState" to "private-state",
+            "gatheringState" to "private-state", "tracks" to 17, "boundSlots" to -1, "readySlots" to .5,
+            "streams" to true, "rtcGeneration" to 0, "drainUnknown" to 1))
+            assertTrue(key, BrowserAudioDiagnostics.lines(mapOf("nativeAudio.$key" to value)).isEmpty())
+    }
+
     @Test fun optionalRenderStatisticsKeepKnownZeroAndBoundedNumericEvidence() {
         val lines = BrowserAudioDiagnostics.lines(mapOf("renderStatsState" to "available", "renderUnderrunEvents" to 0,
             "renderUnderrunDurationMs" to 0, "renderTotalDurationMs" to 123.000001))

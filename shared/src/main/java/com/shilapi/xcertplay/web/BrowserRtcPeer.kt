@@ -431,6 +431,29 @@ private class AndroidBrowserRtcPeer(
         var replacementAnnounced = false
         var lastCodecDiagnostic: Map<String, Any?>? = null
         var lastCodecCheckNanos = Long.MIN_VALUE
+        var lastFlowBridge: BrowserRtcVideoTrack? = null
+        var lastFlowGeneration = videoLease.generation
+        var lastFlowCheckNanos = Long.MIN_VALUE
+        fun reportFlow(terminal: Boolean = false) {
+            val bridge = videoTrack ?: (if (terminal) lastFlowBridge else null) ?: return
+            val now = System.nanoTime()
+            fun emit(owner: BrowserRtcVideoTrack, generation: Int, reason: String) {
+                // Keep even large lifetime counters below Standard's 700-character line cap.
+                owner.flowDiagnostics().entries.chunked(9).forEachIndexed { part, fields ->
+                    runCatching { log("Browser RTC: stage=video-flow epoch=$epoch generation=$generation reason=$reason part=${part + 1} " +
+                        fields.joinToString(" ") { "${it.key}=${it.value}" }) }
+                }
+            }
+            if (lastFlowBridge !== bridge) {
+                lastFlowBridge?.let { emit(it, lastFlowGeneration, "replaced") }
+                lastFlowBridge = bridge; lastFlowGeneration = videoLease.generation
+                lastFlowCheckNanos = Long.MIN_VALUE
+            }
+            if (terminal || lastFlowCheckNanos == Long.MIN_VALUE || now - lastFlowCheckNanos >= TimeUnit.SECONDS.toNanos(5)) {
+                lastFlowCheckNanos = now
+                emit(bridge, lastFlowGeneration, if (terminal) "writer-ended" else "periodic")
+            }
+        }
         fun reportCodec(force: Boolean = false) {
             val now = System.nanoTime()
             if (!force && lastCodecCheckNanos != Long.MIN_VALUE && now - lastCodecCheckNanos < TimeUnit.SECONDS.toNanos(1)) return
@@ -483,6 +506,7 @@ private class AndroidBrowserRtcPeer(
             while (!closed.get()) {
                 val record = subscription.take(1_000) ?: WebVideoRecords.HEARTBEAT
                 reportCodec()
+                reportFlow()
                 videoFailure?.let { endVideo(it); return }
                 if (videoLease.readyTimedOut()) { endVideo("video-ready-timeout"); break }
                 if (videoLease.ready && configuredGeneration != videoLease.generation) {
@@ -543,7 +567,7 @@ private class AndroidBrowserRtcPeer(
                     "generation" to videoLease.generation))) }
             }
         }
-        finally { videoSubscription?.close(); videoSubscription = null }
+        finally { reportFlow(terminal = true); videoSubscription?.close(); videoSubscription = null }
     }
 
     private fun nativeAudioFailure(reason: String) {
@@ -707,10 +731,11 @@ private class AndroidBrowserRtcPeer(
         // Encoder callbacks have their own monitor; do not acquire it while
         // holding the transport wake lock.
         val videoCodec = videoTrack?.diagnostics()
+        val videoFlow = videoTrack?.flowDiagnostics()
         return synchronized(wake) {
         mapOf("transport" to BrowserRtcProtocol.NAME, "videoTransport" to videoTransport,
             "audioTransport" to audioTransport, "audioError" to audioFailure, "nativeAudio" to audioRouter.snapshot(),
-            "videoError" to (videoFailure ?: videoTrack?.failure), "videoCodec" to videoCodec, "epoch" to epoch, "state" to state,
+            "videoError" to (videoFailure ?: videoTrack?.failure), "videoCodec" to videoCodec, "videoFlow" to videoFlow, "epoch" to epoch, "state" to state,
             "live" to live, "authenticated" to authenticated, "records" to records.get(), "videoInFlightBytes" to credits["video"]?.bytes,
             "audioInFlightBytes" to credits["audio"]?.bytes,
             "oldestAgeMs" to credits.values.maxOf { it.oldestAgeMillis(System.nanoTime()) },
@@ -858,6 +883,10 @@ private class AndroidBrowserRtcPeer(
         @Synchronized private fun initialize(context: Context) {
             if (initialized) return
             PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context)
+                // M150's raw-frame rate dropper is separate from scaling/degradation settings.
+                // Our input already contains compressed references; skipping one invalidates
+                // every dependent AU. Keep native congestion/queue bounds and IDR recovery.
+                .setFieldTrials("WebRTC-FrameDropper/Disabled/")
                 .setEnableInternalTracer(false).createInitializationOptions())
             initialized = true
         }

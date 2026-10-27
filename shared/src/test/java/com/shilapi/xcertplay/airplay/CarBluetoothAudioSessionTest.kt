@@ -56,6 +56,28 @@ class CarBluetoothAudioSessionTest {
     }
 
     @Test
+    fun modesAndAcceptedAudioTypesAreReportedBeforeSessionClose() {
+        val session = session(base, CountingMedia())
+        try {
+            handle(session, "RECORD", ByteArray(0))
+            val modes = BplistCodec.encode(mapOf("type" to "modesChanged", "params" to mapOf(
+                "resources" to listOf(mapOf("resourceID" to 2, "entity" to 1)),
+                "appStates" to listOf(mapOf("appStateID" to 3, "entity" to 1, "state" to true)))))
+            handle(session, "POST", modes, path = "/command")
+            assertTrue(logs.last { it.startsWith("airplay audio modes") }.let {
+                it.contains("audioOwner=controller") && it.contains("navigationEntity=controller navigationState=true") &&
+                    it.endsWith("audioSetups=0 activeAudioTypes=none")
+            })
+            handle(session, "SETUP", audioSetup())
+            assertTrue(logs.last { it.startsWith("airplay audio modes") }.endsWith("audioSetups=3 activeAudioTypes=100,101,102"))
+            handle(session, "TEARDOWN", BplistCodec.encode(mapOf("streams" to listOf(mapOf("type" to 101)))))
+            assertTrue(logs.last { it.startsWith("airplay audio modes") }.endsWith("audioSetups=3 activeAudioTypes=100,102"))
+            handle(session, "TEARDOWN", ByteArray(0))
+            assertTrue(logs.last { it.startsWith("airplay audio modes") }.endsWith("audioSetups=3 activeAudioTypes=none"))
+        } finally { session.close() }
+    }
+
+    @Test
     fun infoLeavesOutAudioFormatsAndLogsTheRoute() {
         val session = session(base.copy(audioViaCarBluetooth = true), CountingMedia())
         try {

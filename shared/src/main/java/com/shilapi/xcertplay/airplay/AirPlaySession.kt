@@ -97,6 +97,7 @@ class AirPlaySession(
     internal val activeStreams = linkedSetOf<Int>()
     /** Audio streams the iPhone asked for, as "type/audioType", for the summary at close. */
     private val audioSetups = AirPlayAudioSetupDiagnostics()
+    private val audioModes = AirPlayAudioModeDiagnostics()
     @Volatile private var recorded = false
 
     /** Counts the iPhone's cluster stream setups; 0 while no cluster stream is up. */
@@ -224,7 +225,11 @@ class AirPlaySession(
         } catch (error: Exception) {
             Log.w(TAG, "airplay media stream teardown failed", error)
         }
-        if (recorded) debugLog(audioSetups.snapshot().summary(config))
+        audioSetups.close()
+        if (recorded) {
+            logAudioModes()
+            debugLog(audioSetups.snapshot().summary(config))
+        }
         teardown()
         if (notified.compareAndSet(false, true)) listener.onSessionEnded(this)
     }
@@ -730,6 +735,7 @@ class AirPlaySession(
             "RECORD" -> {
                 recorded = true
                 debugLog(AirPlayAudioDiagnostics.recorded(config))
+                logAudioModes()
                 listener.onSessionActive(this)
                 return RtspMessage.Response(status = 200)
             }
@@ -944,8 +950,9 @@ class AirPlaySession(
                 STREAM_TYPE_MAIN_AUDIO, STREAM_TYPE_ALT_AUDIO, STREAM_TYPE_MAIN_HIGH_AUDIO -> {
                     // Car Bluetooth sound: the iPhone should not open audio streams; decline one it opens anyway.
                     val streamResponse = if (config.receivesAudio) media.onAudio(this, type, stream) else null
-                    audioSetups.record(type, stream)
+                    audioSetups.record(type, stream, streamResponse != null)
                     debugLog(AirPlayAudioDiagnostics.setup(config, type, stream, streamResponse))
+                    logAudioModes()
                     if (streamResponse != null) {
                         activeStreams.add(type)
                         result.add(streamResponse)
@@ -953,8 +960,9 @@ class AirPlaySession(
                 }
                 STREAM_TYPE_MAIN_BUFFERED_AUDIO -> {
                     val streamResponse = if (config.bufferedAudioOutputEnabled) media.onBufferedAudio(this, stream) else null
-                    audioSetups.record(type, stream)
+                    audioSetups.record(type, stream, streamResponse != null)
                     debugLog(AirPlayAudioDiagnostics.setup(config, type, stream, streamResponse))
+                    logAudioModes()
                     if (streamResponse != null) {
                         activeStreams.add(type)
                         result.add(streamResponse)
@@ -993,6 +1001,8 @@ class AirPlaySession(
         val params = asMap(body["params"]) ?: emptyMap()
         debugLog("airplay command type=$type keys=${params.keys.sorted()}")
         if (type == "modesChanged") {
+            audioModes.onModesChanged(params)
+            logAudioModes()
             screenBorrow.onModesChanged(params)
             notifyScreenBorrowChanged()
         }
@@ -1057,7 +1067,13 @@ class AirPlaySession(
             types.forEach { type -> if (activeStreams.remove(type)) media.onTeardown(this, type) }
         }
         if (STREAM_TYPE_ALT_SCREEN !in activeStreams) clearClusterContent()
+        audioSetups.retire(types)
+        logAudioModes()
         return RtspMessage.Response(status = 200)
+    }
+
+    private fun logAudioModes() {
+        audioModes.changed(config, audioSetups.snapshot())?.let { debugLog(it) }
     }
 
     private fun notifyCornerMask(png: ByteArray) {

@@ -3,6 +3,10 @@ import { gatherLocalOffer } from './webrtc-transport.js';
 
 export const RTC_AUDIO_TRANSPORT = 'webrtc-track-v1';
 export const RTC_AUDIO_SLOTS = 16;
+const peerStates = ['new', 'connecting', 'connected', 'disconnected', 'failed', 'closed'];
+const iceStates = ['new', 'checking', 'connected', 'completed', 'disconnected', 'failed', 'closed'];
+const gatheringStates = ['new', 'gathering', 'complete'];
+const observedState = (value, allowed) => allowed.includes(value) ? value : 'unavailable';
 
 /** Advertise actual browser RTP decoders, excluding repair/event-only payloads. */
 export function rtcAudioCodecs(Receiver = globalThis.RTCRtpReceiver) {
@@ -13,10 +17,14 @@ export function rtcAudioCodecs(Receiver = globalThis.RTCRtpReceiver) {
   } catch (_) { return []; }
 }
 
-/** Audio-only RTP peer. No microphone, media element, re-encoder or application jitter buffer. */
+/** Audio-only RTP peer. A silent playout anchor starts Chromium's decoder; the Worklet owns all audible mixing. */
 export function createRtcAudio({ exchange, context, node, generation: playbackGeneration,
   signal, onError = () => {}, PeerConnection = globalThis.RTCPeerConnection,
   Receiver = globalThis.RTCRtpReceiver, MediaStream = globalThis.MediaStream,
+  createPlayout = () => {
+    if (!globalThis.document?.createElement) throw Error('Native audio playout is unavailable.');
+    return document.createElement('audio');
+  },
   gather = gatherLocalOffer, timeoutMs = 20000, ready = null, trackTimeoutMs = 5000 } = {}) {
   let current = null, closed = false;
   const codecs = rtcAudioCodecs(Receiver);
@@ -33,6 +41,9 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
       clearTimeout(slot.readyTimer); slot.rejectReady?.(peer.error ?? stopped());
       disconnect(slot); slot.track?.stop?.();
     }
+    if (peer.playout) {
+      peer.playout.pause(); peer.playout.srcObject = null; peer.playout.remove(); peer.playout = null;
+    }
     node.port.postMessage({ nativeAudioRetire: { rtcGeneration: peer.generation, generation: playbackGeneration } });
     peer.pc.close();
   }
@@ -40,21 +51,39 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
     if (closed || current !== peer || peer.closed) return;
     peer.error = cause; retire(peer); onError(cause);
   }
+  function startPlayout(peer, track) {
+    if (peer.playoutPromise) return;
+    // Connecting a remote track to WebAudio alone does not start Chromium's RTP
+    // decoder. One detached, permanently muted element activates peer playout;
+    // every source still reaches the output through the common Worklet mixer.
+    const anchor = peer.playout = createPlayout();
+    anchor.controls = false; anchor.hidden = true; anchor.muted = true; anchor.defaultMuted = true; anchor.volume = 0;
+    anchor.srcObject = new MediaStream([track]);
+    peer.playoutPromise = Promise.resolve(anchor.play()).then(() => {
+      if (closed || current !== peer || peer.closed) return;
+      peer.playoutReady = true;
+      for (const slot of peer.slots) announceReady(peer, slot);
+    }, () => fail(peer, Error('Native audio playout could not start.')));
+  }
   function connectSlot(peer, slot) {
     if (!slot.track || !slot.owner || slot.source || peer.closed || !peer.ready) return;
     try {
       slot.source = context.createMediaStreamSource(new MediaStream([slot.track]));
       slot.source.connect(node, 0, slot.index);
+      startPlayout(peer, slot.track);
       node.port.postMessage({ nativeAudioGraph: { ...slot.owner, generation: playbackGeneration } });
       announceReady(peer, slot);
     } catch (cause) { fail(peer, cause); }
   }
   function announceReady(peer, slot) {
-    if (typeof ready !== 'function' || slot.readySent || !slot.bindingConfirmed || !slot.source || peer.closed) return;
+    if (typeof ready !== 'function' || slot.readySent || !slot.bindingConfirmed || !slot.source || !peer.playoutReady || peer.closed) return;
     slot.readySent = true;
     const owner = slot.owner;
-    Promise.resolve().then(() => ready({ rtcGeneration: peer.generation, rtpSlot: owner.rtpSlot,
-      rtcOwnerEpoch: owner.epoch, type: owner.type, mode: owner.mode })).then(() => {
+    Promise.resolve().then(() => {
+      if (closed || current !== peer || peer.closed || slot.owner !== owner) return;
+      return ready({ rtcGeneration: peer.generation, rtpSlot: owner.rtpSlot,
+        rtcOwnerEpoch: owner.epoch, type: owner.type, mode: owner.mode });
+    }).then(() => {
       if (current !== peer || peer.closed) return;
       clearTimeout(slot.readyTimer); slot.resolveReady();
     }, cause => fail(peer, cause));
@@ -177,8 +206,18 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
     },
     active: record => Boolean(current && !current.closed && record.rtcGeneration === current.generation
       && current.slots.some(slot => slot.owner && !slot.ended && identity(slot.owner) === identity(record))),
-    stats: () => ({ audioTransport: RTC_AUDIO_TRANSPORT, rtcGeneration: current?.generation ?? null,
-      state: closed ? 'closed' : current?.error ? 'failed' : current?.ready ? 'ready' : 'connecting',
-      streams: current?.slots.filter(slot => slot.owner && !slot.ended).length ?? 0,
-      drainUnknown: current?.slots.some(slot => slot.owner && slot.ended) ?? false }) };
+    stats: () => {
+      const live = current && !closed && !current.closed;
+      return { audioTransport: RTC_AUDIO_TRANSPORT, rtcGeneration: current?.generation ?? null,
+        state: closed ? 'closed' : current?.error ? 'failed' : current?.closed ? 'closed'
+          : current?.ready ? 'ready' : current ? 'connecting' : 'idle',
+        peerState: observedState(current?.pc.connectionState, peerStates),
+        iceState: observedState(current?.pc.iceConnectionState, iceStates),
+        gatheringState: observedState(current?.pc.iceGatheringState, gatheringStates),
+        tracks: live ? current.slots.filter(slot => slot.track).length : 0,
+        boundSlots: live ? current.slots.filter(slot => slot.bindingConfirmed).length : 0,
+        readySlots: live ? current.slots.filter(slot => slot.readySent && !slot.ended).length : 0,
+        streams: live ? current.slots.filter(slot => slot.owner && !slot.ended).length : 0,
+        drainUnknown: live ? current.slots.some(slot => slot.owner && slot.ended) : false };
+    } };
 }

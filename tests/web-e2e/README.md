@@ -55,6 +55,7 @@ All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LA
 
 ```sh
 CHROMIUM=/path/to/chromium node tests/web-e2e/audio-direct-output.mjs
+CHROMIUM=/path/to/chromium node tests/web-e2e/rtc-audio.mjs
 CHROMIUM=/path/to/chromium node tests/web-e2e/rtc-canvas.mjs
 ```
 
@@ -62,6 +63,37 @@ The audio check runs actual AAC-LC, AAC-ELD and ALAC stereo decoder Workers into
 the production AudioWorklet through MessagePorts. It requires nonzero rendered
 output, scalar-only main-thread reports, exact admitted/consumed byte accounting,
 finite EOS and released owners. It does not measure speakers or CPU savings.
+
+`rtc-audio.mjs` uses two real browser senders and the production RTP audio graph,
+Worklet ready barrier and mixer under the page CSP. A single detached, permanently
+muted audio element with volume zero starts Chromium's RTP playout; audible output
+still comes only from the Worklet. It anchors the nonfirst navigation slot, then
+ends that source while music continues and its ducking recovers. Capture APIs and
+video elements remain forbidden in the harness.
+
+For the original-codec Android sender, build the pinned Linux host libraries
+outside the repository, then use the existing compiled shared classes and JDK:
+
+```sh
+python3 scripts/rtc-audio/build.py --host --work-dir /tmp/tiplay-rtc-audio
+RTC_AUDIO_HOST_DIR=/tmp/tiplay-rtc-audio/build/host \
+  CHROMIUM=/path/to/chromium node tests/web-e2e/rtc-audio-native.mjs
+```
+
+The build needs CMake, Ninja and a C/C++ compiler. Set `JAVA_HOME` to the JDK and
+`GRADLE_USER_HOME` to the existing Gradle cache; `KOTLIN_STDLIB` can select its
+standard-library JAR explicitly. `--host` creates Linux test outputs only; it
+does not replace packaged Android binaries. The harness compiles
+`RoutedAudioPeerProbe.java` into that host directory and sends original synthetic
+Opus packets through the production Router, Kotlin/JNI and libdatachannel to
+`createBrowserAudio`, its Worklet barrier and actual mixed output. Seventeen short
+navigation owners consume sixteen immutable slots and require generation two;
+the last owner must still decode. It also checks one silent anchor per peer,
+old-peer cleanup and final disposal. RTP packets alone are insufficient: decoded
+samples and nonzero Worklet output are required. A muted anchor's RTP audio energy
+can stay zero even while the Worklet renders nonzero sound. These desktop checks
+do not establish iPhone interoperability, Android device scheduling or physical
+vehicle sound.
 
 The video check uses a Canvas-generated source, local WebRTC RTP reception,
 MediaStreamTrackProcessor and the production main/Worker Canvas presenters; it

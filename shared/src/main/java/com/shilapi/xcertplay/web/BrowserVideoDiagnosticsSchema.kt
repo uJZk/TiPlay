@@ -13,6 +13,7 @@ object BrowserVideoDiagnosticsSchema {
     private val observationValues = words("decoderStatsAgeMs readFrameIntervalMsMax decodeOldestInFlightMs")
     private val receiver = words("retainedBytes consumedBytes queuedRecords partialBytes receivedRecords receivedFragments peakRetainedBytes reassemblyMsMean reassemblyMsMax consumerWaitMsMean consumerWaitMsMax")
     private val ice = words("currentRoundTripTimeMs availableOutgoingBitrate requestsSent requestsReceived responsesSent responsesReceived bytesSent bytesReceived sampleAgeMs errors")
+    private val rtpVideo = words("generation sampleAgeMs packetsReceived packetsLost bytesReceived framesReceived framesDecoded framesDropped keyFramesDecoded nackCount pliCount firCount jitterMs jitterBufferEmittedCount jitterBufferDelayMs jitterBufferTargetDelayMs jitterBufferMinimumDelayMs totalDecodeTimeMs freezeCount pauseCount totalFreezesDurationMs totalPausesDurationMs powerEfficientDecoder")
     private val control = words("seq inFlight inFlightCount pending posts failures overflows rttMsP50 rttMsP95")
     private val senderRoot = words("authenticated ready closed nativeSampleAgeMs controlMessageLimitBytes localCandidateCount remoteCandidateCount localIPv4LinkLocalCandidateCount remoteIPv4LinkLocalCandidateCount pendingWorkerTasks transportBudgetMs")
     private val senderMedia = words("queueBytes queueRecords queueLimitBytes oldestQueuedAgeMs receiverWindowBytes receiverReservedBytes receiverConsumedBytes receiverInFlightBytes oldestUnackedAgeMs nativeBufferedBytes acceptedRecords acceptedBytes fragmentsSent recordsSent recordBytesSent wireBytesSent queueWaitMsMean queueWaitMsMax queuedToNativeSendMsMean queuedToNativeSendMsMax")
@@ -42,15 +43,17 @@ object BrowserVideoDiagnosticsSchema {
         "transport.ice.remoteCandidateType" to words("host srflx prflx relay").toSet(),
         "transport.ice.protocol" to words("udp tcp").toSet(),
         "transport.ice.connectionState" to words("new checking connected completed failed disconnected closed").toSet(),
+        "transport.rtpVideo.state" to words("collecting unavailable selected no-inbound ambiguous failed").toSet(),
         "sender.networkMode" to words("kernel-interfaces android-network-monitor").toSet(),
     ).apply {
         val nativeStates = words("NEW CHECKING CONNECTED COMPLETED FAILED DISCONNECTED CLOSED GATHERING COMPLETE CONNECTING").toSet()
         for (field in words("iceGatheringState iceConnectionState peerConnectionState")) put("sender.$field", nativeStates)
     }
-    val booleanFields = setOf("raw.touchCatchUpActive", "raw.policyInteractionActive", "control.inFlight", "sender.authenticated", "sender.ready", "sender.closed")
+    val booleanFields = setOf("transport.rtpVideo.powerEfficientDecoder", "raw.touchCatchUpActive", "raw.policyInteractionActive", "control.inFlight", "sender.authenticated", "sender.ready", "sender.closed")
     val fields: Set<String> = linkedSetOf("schema", "pageVersion", "omittedFields", "sample", "streamGeneration", "epoch", "interval.durationMs").apply {
         addAll(counters.map { "interval.$it" }); addAll((counters + values + estimatorValues + observationValues).map { "raw.$it" })
         addAll(receiver.map { "transport.video.$it" }); addAll(ice.map { "transport.ice.$it" })
+        addAll(rtpVideo.map { "transport.rtpVideo.$it" })
         addAll(control.map { "control.$it" }); addAll(senderRoot.map { "sender.$it" })
         for (kind in listOf("video", "audio")) addAll(senderMedia.map { "sender.$kind.$it" })
         addAll(senderControl.map { "sender.control.$it" }); addAll(enums.keys)
@@ -91,6 +94,8 @@ object BrowserVideoDiagnosticsSchema {
                 else -> {
                     val number = (item as? Number)?.toDouble() ?: return null
                     if (!number.isFinite() || kotlin.math.abs(number) > MAX_NUMBER) return null
+                    if (name.startsWith("transport.rtpVideo.") && name != "transport.rtpVideo.packetsLost" && number < 0) return null
+                    if (name == "transport.rtpVideo.generation" && number % 1.0 != 0.0) return null
                     val field = name.removePrefix("raw.")
                     if ((field.startsWith("policy") || field.startsWith("sourceClock") || field.startsWith("clockEstimator") || field in observationValues) && number < 0) return null
                     if (field in wholePolicy && number % 1.0 != 0.0) return null

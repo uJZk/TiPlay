@@ -426,3 +426,24 @@ test('a dense live policy summary retains owner, all drop components, actual tar
   assert.ok(Buffer.byteLength(JSON.stringify(actual.v)) <= 2048);
   assert.equal(actual.v['video.policyVideoPlanDurationMs'], undefined, 'full plan detail uses the separately bounded Debug record');
 });
+
+test('native audio readiness and ICE diagnostics survive dense Debug budgets with safe bounded fields', () => {
+  const nativeAudio = { state: 'ready', rtcGeneration: 3, peerState: 'connecting', iceState: 'checking', gatheringState: 'complete',
+    tracks: 16, boundSlots: 2, readySlots: 1, streams: 2, drainUnknown: true, address: '192.0.2.4', error: 'private-native-error' };
+  for (const cap of [16384, 65536]) {
+    const page = { transport: { controlMessageLimitBytes: cap }, audio: { nativeAudio,
+      debug: Object.fromEntries(Array.from({ length: 700 }, (_, i) => [`optional${i}`, i])) } };
+    const [summary, detail] = browserDiagnosticEvents(page, false, true, 'capture');
+    for (const key of ['state', 'rtcGeneration', 'peerState', 'iceState', 'gatheringState', 'streams', 'readySlots'])
+      assert.equal(summary.v[`audio.nativeAudio.${key}`], nativeAudio[key]);
+    for (const key of ['state', 'rtcGeneration', 'peerState', 'iceState', 'gatheringState', 'tracks', 'boundSlots', 'readySlots', 'streams', 'drainUnknown'])
+      assert.equal(detail.v[`nativeAudio.${key}`], nativeAudio[key]);
+    assert.ok(detail.v.omittedFields > 0); assert.ok(Object.keys(detail.v).length <= 256);
+    assert.ok(Buffer.byteLength(JSON.stringify(detail.v)) <= 16384);
+    assert.doesNotMatch(JSON.stringify([summary, detail]), /192\.0\.2\.4|private-native-error/);
+  }
+  const malformed = { state: 'private-state', rtcGeneration: -1, peerState: 'private-state', iceState: 'private-state',
+    gatheringState: 'private-state', tracks: 17, boundSlots: .5, readySlots: true, streams: Infinity, drainUnknown: 'true' };
+  const events = browserDiagnosticEvents({ audio: { nativeAudio: malformed, debug: { nativeAudio: malformed } } }, false, true);
+  assert.equal(JSON.stringify(events).includes('nativeAudio.'), false);
+});

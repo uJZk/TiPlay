@@ -12,6 +12,15 @@ VideoFrames directly to Canvas, without an HTML video element. NetEq/libav.js
 audio remains independent. AirPlay URL casting retains its existing
 libmedia AVPlayer resource/demux pipeline and playback clocks.
 
+Native Opus audio uses its own peer and a peer-owned detached audio element,
+permanently muted with zero volume, to activate Chromium RTP playout. Received
+tracks still enter the common AudioWorklet mixer; the element supplies no second
+audible output. Exact slot readiness requires fulfilled `play()` plus the
+Worklet graph-binding barrier. Retirement releases the anchor and old graph
+owners. The [audio contract](Audio-tempo.md#live-audio-official-neteq) records the
+original-Opus reproduction and EOS boundary. This audio activation does not add a
+video element or change original-codec video forwarding.
+
 Native JNI/RTP checks pass; browser RTP interoperability and vehicle acceptance
 remain open. A codec/profile mismatch, reordered source timestamps, unsupported
 frame adaptation, failed source replacement or processor failure reports a
@@ -130,6 +139,17 @@ non-pixel VideoFrame buffer. JNI capture timestamps preserve source PTS spacing,
 including burst arrivals. Pixel conversion/scaling is rejected. An input dropped
 before encoding invalidates the dependency chain and requests a new source key
 frame. An RTP codec capability does not prove actual vehicle hardware decoding.
+
+The M150 raw-frame bitrate dropper is disabled with the public
+`WebRTC-FrameDropper/Disabled/` initialization trial. Scaling settings and disabled
+degradation preference alone do not disable that separate pre-encoder mechanism.
+It assumes the next frame can be encoded independently; our original compressed
+input cannot satisfy that assumption, and dropping one reference forces IDR recovery.
+This does not disable native congestion-window/queue limits, change source bitrate
+or transcode input. Actual input loss still invalidates the dependency chain.
+Sender `video-flow` and receiver `transport.rtpVideo` evidence in
+[Diagnostics](Diagnostics.md#live-video-policy-evidence) distinguish those remaining
+boundaries; this configuration alone does not establish vehicle continuity.
 
 Processor exposure is detected separately on Window and DedicatedWorker. A main
 thread Processor can transfer VideoFrames through bounded delivery to the

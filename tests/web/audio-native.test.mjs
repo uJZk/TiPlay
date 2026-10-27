@@ -15,9 +15,10 @@ function frame(kind, payload, { type = 0, epoch = 1, rate = 48000, flags = 0 } =
 const setup = (config = opus, fields = {}) => frame(6, new TextEncoder().encode(JSON.stringify(config)), { flags: 2, ...fields });
 const pcm = () => frame(2, new Uint8Array(new Int16Array([123, 456]).buffer), { type: 2 });
 async function harness(t, { exchange } = {}) {
-  const keys = ['AudioContext', 'AudioWorkletNode', 'RTCPeerConnection', 'RTCRtpReceiver', 'MediaStream'];
+  const keys = ['AudioContext', 'AudioWorkletNode', 'RTCPeerConnection', 'RTCRtpReceiver', 'MediaStream', 'document'];
   const saved = Object.fromEntries(keys.map(key => [key, globalThis[key]]));
   const peers = [], nodes = [], contexts = [], sources = [], messages = [], offers = [], modes = [], ready = [];
+  globalThis.document = { createElement: () => ({ play: () => Promise.resolve(), pause() {}, remove() {} }) };
   globalThis.MediaStream = class { constructor(tracks) { this.tracks = tracks; } };
   globalThis.RTCRtpReceiver = { getCapabilities: () => ({ codecs: [{ mimeType: 'audio/opus', clockRate: 48000, channels: 2 }] }) };
   globalThis.RTCPeerConnection = class extends EventTarget {

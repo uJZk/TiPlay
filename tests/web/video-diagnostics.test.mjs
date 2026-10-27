@@ -13,6 +13,22 @@ const video = extra => performanceStats({ streamGeneration: 3, epoch: 7, mode: '
   timingRecords: 99999, ...extra });
 const detail = events => events.find(event => event.k === 'video-diag');
 
+test('current receiver RTP evidence crosses Debug packing without arbitrary getStats text or identities', () => {
+  const page = { video: video(), transport: { rtpVideo: { state: 'selected', generation: 3, sampleAgeMs: 123,
+    packetsReceived: 77, packetsLost: -1, framesDecoded: 50, framesDropped: 2, jitterMs: 4,
+    jitterBufferDelayMs: 900, jitterBufferEmittedCount: 50, powerEfficientDecoder: false,
+    trackIdentifier: 'private-track', decoderImplementation: 'private-decoder', address: '192.0.2.10' } } };
+  const event = detail(browserDiagnosticEvents(page, false, true, 'capture'));
+  for (const key of ['generation', 'sampleAgeMs', 'packetsReceived', 'packetsLost', 'framesDecoded', 'framesDropped',
+    'jitterMs', 'jitterBufferDelayMs', 'jitterBufferEmittedCount', 'powerEfficientDecoder', 'state'])
+    assert.equal(event.v[`transport.rtpVideo.${key}`], page.transport.rtpVideo[key]);
+  assert.doesNotMatch(JSON.stringify(event), /private-track|private-decoder|192\.0\.2\.10/);
+  assert.ok(Object.keys(event.v).length <= 256); assert.ok(Buffer.byteLength(JSON.stringify(event.v)) <= VIDEO_DIAGNOSTIC_BYTES);
+  const invalid = videoDiagnosticValues({ transport: { rtpVideo: { state: 'private-state', generation: .5,
+    sampleAgeMs: -1, framesDecoded: Infinity, powerEfficientDecoder: 1 } } }, 'capture', createVideoDiagnosticTracker());
+  assert.equal(Object.keys(invalid).some(key => key.startsWith('transport.rtpVideo.')), false);
+});
+
 test('decoder snapshot age includes worker delivery and grows without refreshing an old sample', () => {
   const sample = { streamGeneration: 7, epoch: 4, decoderStatsSampledAtMs: 10000, decoded: 30,
     decoderStatsAgeMs: 0, frameIntervalMaxMs: 190 };

@@ -6,6 +6,20 @@ import org.junit.Test
 class BrowserVideoDiagnosticsSchemaTest {
     private fun sample() = linkedMapOf<String, Any?>("schema" to 1, "pageVersion" to "v71", "sample" to 1, "streamGeneration" to 2, "epoch" to 3)
 
+    @Test fun currentRtpReceiverEvidenceKeepsMissingCountersDistinctFromZeroAndRejectsIdentities() {
+        val input = sample() + mapOf("transport.rtpVideo.state" to "selected", "transport.rtpVideo.generation" to 2,
+            "transport.rtpVideo.sampleAgeMs" to 125.5, "transport.rtpVideo.packetsLost" to -1,
+            "transport.rtpVideo.framesReceived" to 100, "transport.rtpVideo.framesDecoded" to 80,
+            "transport.rtpVideo.framesDropped" to 20, "transport.rtpVideo.jitterBufferDelayMs" to 900,
+            "transport.rtpVideo.jitterBufferEmittedCount" to 80, "transport.rtpVideo.powerEfficientDecoder" to false)
+        assertEquals(input, BrowserVideoDiagnosticsSchema.parse(input))
+        assertFalse(input.containsKey("transport.rtpVideo.nackCount"))
+        for (bad in listOf("trackIdentifier" to "private-track", "decoderImplementation" to "private-decoder",
+            "sampleAgeMs" to -1, "generation" to 1.5, "framesReceived" to -1, "state" to "private-state",
+            "powerEfficientDecoder" to 1))
+            assertNull(bad.first, BrowserVideoDiagnosticsSchema.parse(sample() + ("transport.rtpVideo.${bad.first}" to bad.second)))
+    }
+
     @Test fun decoderSampleAgeRareSupplyGapAndOutstandingOutputHaveNonnegativeBounds() {
         val input = sample() + mapOf("raw.decoderStatsAgeMs" to 250.5,
             "raw.readFrameIntervalMsMax" to 190, "raw.decodeOldestInFlightMs" to 284)

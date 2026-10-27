@@ -7,8 +7,11 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published prerelease is **0.2.20-beta.24** (code **66**);
-[beta.24 release](#beta24-release) records provenance and checks. Run
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). The source now prepares
+**0.2.20-beta.25** (code **67**, browser **v100**); its
+[release candidate](#beta25-release) records the current validation and pending packaging.
+The latest verified published prerelease remains **0.2.20-beta.24** (code **66**);
+[beta.24 release](#beta24-release) records its provenance and checks. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
 the deployed page uses **v99**, with original-codec WebRTC RTP for live video and negotiated audio.
@@ -207,6 +210,43 @@ For a local release, provide `DIPLAY_AUTH_ASSETS_DIR` plus `ANDROID_KEYSTORE_PAT
 The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the keystore alias is a `PrivateKeyEntry`; keep passwords in configured secret environment variables. Use SDK Build-Tools `apksigner verify --verbose --print-certs` and `aapt dump badging` on the APK. Check package/version/minimum SDK against the mobile configuration and signing fingerprint against the intended key. Compare both packaged runtime files byte for byte with the selected inputs and reject all extra credential containers, as the workflow does.
 
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
+
+<a id="beta25-release"></a>
+
+## Beta.25 release candidate
+
+Source version **0.2.20-beta.25**, code **67**, prepares browser **v100**. Publication,
+signed APK identity, release attachments and public-page bytes remain pending;
+the beta.24 and v99 records below describe the last verified public artifacts.
+
+This candidate disables the native raw-frame bitrate dropper for original
+compressed CarPlay video and exposes source/input/encoder/RTP/Canvas evidence
+separately. Codec/profile/level admission, access-unit dependencies, bounded
+capture and video-only failure handling remain enforced. Original compressed
+video is not decoded or encoded again on Android.
+
+Native Opus guidance uses a peer-owned, detached audio playout anchor that stays
+muted with zero volume. Chromium's WebAudio-only path could receive original RTP
+while producing zero decoded samples; activating peer playout restores samples
+through the existing Worklet mixer. Slot readiness waits for successful `play()`
+and exact Worklet binding. Retirement releases the anchor and graph owners. Music
+and guidance retain their common mixing/ducking policy with one audible output.
+
+Validation completed **613 browser tests**. The first complete local Android
+command passed **4,346 tests**, all required Debug lint targets and all required
+Debug APK builds. Later focused lifecycle checks and actual Chromium original-Opus
+checks include sixteen negotiated slots, seventeen owners, generation replacement,
+nonzero Worklet output and anchor cleanup; [Testing](Testing.md#current-media-regression-checks)
+records their boundaries. The final repeated Android validation was stopped at
+the user's explicit request. **Formal CI is skipped for this release by explicit
+user instruction.** This scope does not establish a completed final full Android
+rerun, a new CI success or physical iPhone/Tesla acceptance.
+
+The user authorized publishing the beta APK. Signed release packaging and independent
+verification are the next steps: confirm package/version/signing continuity,
+the exact two pinned runtime identity files, native-library/16 KiB alignment,
+committed source correspondence and attachment checksums before recording
+publication. No asset digest or deployment success is claimed here yet.
 
 ## Current browser deployment
 
