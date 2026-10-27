@@ -38,10 +38,13 @@ localization, nested hosting and Service Worker/offline coverage remain.
 
 The new real-browser test reproduced a production source-switch deadlock: stopping
 the initial BUNDLE-leading video transceiver reset DTLS/SCTP before the in-band
-`video-offer` could leave. The browser now retains that transceiver inactive,
-stops the old receiver track and creates a distinct replacement track. Later
-non-anchor transceivers stop normally. Authenticated identity, SDP limits and
-generation/ready gates remain; peer closure releases the inactive anchor.
+`video-offer` could leave. The v99 browser retained that transceiver inactive,
+stopped the old receiver track and created a distinct replacement track. Later
+non-anchor transceivers stopped normally. Authenticated identity, SDP limits and
+generation/ready gates remained; peer closure released the inactive anchor.
+The [current transport contract](../CarPlay-DataChannel.md) supersedes that
+historical policy: application-first BUNDLE setup preserves SCTP and packet
+feedback while allowing every old video transceiver to stop.
 
 Follow-up verification:
 

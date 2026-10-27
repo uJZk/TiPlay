@@ -235,10 +235,13 @@ class CarPlaySocketLifecycleTest {
         try {
             val ports = List(12) { session.openEvent() }
             await { workers(session).size == 1 }
-            ports.dropLast(1).forEach(::assertPortClosed)
-            connect(ports.last()).use { peer ->
+            val currentPort = ports.last()
+            // The OS may reuse a retired ephemeral port for the current listener. A probe of
+            // that numeric alias would consume the current one-shot event connection itself.
+            ports.dropLast(1).distinct().filter { it != currentPort }.forEach(::assertPortClosed)
+            connect(currentPort).use { peer ->
                 await { ready.get() == 1 }
-                assertPortClosed(ports.last())
+                assertPortClosed(currentPort)
                 assertTrue(session.sendCommand(mapOf("type" to "forceKeyFrame")))
                 assertEquals("forceKeyFrame", readCommand(peer, peerCipher(session))["type"])
                 assertFalse(session.isClosed)
@@ -396,8 +399,10 @@ class CarPlaySocketLifecycleTest {
             serverSocket.sendBufferSize = 1_024
             val writing = Thread {
                 try {
+                    // Exceed the unread peer's tiny buffers without making plist/cipher setup
+                    // dominate the bounded wait for the actual native socket write.
                     result.set(session.sendCommand(mapOf("type" to "slow-peer-probe",
-                        "params" to mapOf("data" to ByteArray(4 * 1024 * 1024)))))
+                        "params" to mapOf("data" to ByteArray(256 * 1024)))))
                 } catch (error: Throwable) { failed.set(error) }
             }.apply { isDaemon = true; start() }
             writer = writing

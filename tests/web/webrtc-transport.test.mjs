@@ -209,6 +209,65 @@ const videoOptions = { PeerConnection: RenegotiatingPeer, videoTrack: true, vide
 const videoAnswer = request => JSON.stringify({ k: 'video-answer', q: request.q, generation: request.generation,
   videoTransport: 'webrtc-track-v1', sdp: 'new-answer\r\na=candidate:1 1 udp 1 192.0.2.2 5001 typ host\r\n' });
 
+test('only the final video offer is authenticated after reserving the data transport locally', async () => {
+  let exchanged = 0;
+  class PrimedPeer extends RenegotiatingPeer {
+    async createOffer() {
+      return { type: 'offer', sdp: 'v=0\r\na=group:BUNDLE 0' + (this.transceivers.length ? ' 1' : '') + '\r\n' +
+        'm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:0\r\n' +
+        (this.transceivers.length ? 'm=video 9 UDP/TLS/RTP/SAVPF 102\r\na=mid:1\r\na=recvonly\r\n' : '') +
+        'a=candidate:1 1 udp 1 192.0.2.1 5000 typ host\r\n' };
+    }
+    async setLocalDescription(description) {
+      if (!this.transceivers.length) this.reservedApplication = true;
+      await super.setLocalDescription(description);
+    }
+    addTransceiver(...args) {
+      assert.equal(this.reservedApplication, true, 'the first video must not become the BUNDLE transport owner');
+      return super.addTransceiver(...args);
+    }
+  }
+  const f = await fixture({ ...videoOptions, PeerConnection: PrimedPeer, exchange: async sdp => {
+    exchanged++;
+    assert.match(sdp, /a=group:BUNDLE 0 1\r\n/);
+    assert.ok(sdp.indexOf('m=application ') < sdp.indexOf('m=video '));
+    return { type: 'answer', sdp: 'remote-answer\r\na=candidate:1 1 udp 1 192.0.2.2 5001 typ host\r\n',
+      epoch: 7, fragmentBytes: RTC_FRAGMENT_BYTES, transport: RTC_TRANSPORT };
+  } });
+  try { assert.equal(exchanged, 1); assert.equal(f.media.isConnected(), true); }
+  finally { f.media.close(); }
+});
+
+test('closing during the unpublished data offer cannot create or signal a late video track', async () => {
+  let finish, exchanged = false;
+  class PendingPeer extends RenegotiatingPeer {
+    createOffer() { return new Promise(resolve => { finish = resolve; }); }
+  }
+  const abort = new AbortController();
+  const media = createRtcMediaTransport({ ...videoOptions, PeerConnection: PendingPeer, signal: abort.signal,
+    exchange: async () => { exchanged = true; throw Error('retired offer'); } });
+  const connecting = media.connect(); abort.abort(); await assert.rejects(connecting);
+  finish({ type: 'offer', sdp: 'late data offer' }); await settle();
+  assert.equal(Peer.latest.localDescription, undefined);
+  assert.equal(Peer.latest.transceivers.length, 0);
+  assert.equal(exchanged, false);
+});
+
+test('closing during provisional local-description setup cannot add video after setup completes', async () => {
+  let finish, exchanged = false;
+  class PendingLocalPeer extends RenegotiatingPeer {
+    setLocalDescription(description) { return new Promise(resolve => { finish = () => { this.localDescription = description; resolve(); }; }); }
+  }
+  const abort = new AbortController();
+  const media = createRtcMediaTransport({ ...videoOptions, PeerConnection: PendingLocalPeer, signal: abort.signal,
+    exchange: async () => { exchanged = true; throw Error('retired offer'); } });
+  const connecting = media.connect(); await settle();
+  abort.abort(); await assert.rejects(connecting); finish(); await settle();
+  assert.equal(Peer.latest.closed, true);
+  assert.equal(Peer.latest.transceivers.length, 0);
+  assert.equal(exchanged, false);
+});
+
 test('initial and replacement video signal the checked receive level while codec preferences stay unchanged', async () => {
   const original = 'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 102\r\na=recvonly\r\na=mid:video\r\n' +
     'a=rtpmap:102 H264/90000\r\na=fmtp:102 packetization-mode=1;profile-level-id=64001f;level-asymmetry-allowed=1\r\n' +
@@ -248,10 +307,12 @@ test('a retired peer cannot signal a receive probe that completes after cancella
     credentials: () => ({ code: '1234', session: 'retired' }),
     exchange: async () => { exchanged = true; throw Error('Retired owner signaled'); } });
   const connecting = media.connect();
+  await settle();
   abort.abort(); await assert.rejects(connecting);
   finish(Object.freeze({ '6400': '2a' })); await settle();
   assert.equal(exchanged, false);
-  assert.equal(Peer.latest.localDescription, undefined);
+  assert.equal(Peer.latest.transceivers.length, 1);
+  assert.equal(Peer.latest.remoteDescription, undefined);
 });
 
 test('video-only renegotiation waits for generation preparation and retains audio/control and metadata', async () => {
@@ -266,8 +327,7 @@ test('video-only renegotiation waits for generation preparation and retains audi
     await settle();
     const offer = f.channels.control.sent.find(value => value.k === 'video-offer');
     assert.equal(offer.generation, 2); assert.equal(original.stopped, true);
-    assert.equal(f.peer.transceivers[0].direction, 'inactive');
-    assert.equal(f.peer.transceivers[0].stopped, false, 'BUNDLE anchor keeps the in-band signaling transport alive');
+    assert.equal(f.peer.transceivers[0].stopped, true, 'the application transport outlives every video transceiver');
     f.channels.control.receive(videoAnswer(offer)); await settle();
     assert.deepEqual(generations, [2]); assert.equal(tracks.length, 1);
     assert.equal(f.channels.control.sent.some(value => value.k === 'video-ready'), false);
@@ -279,18 +339,17 @@ test('video-only renegotiation waits for generation preparation and retains audi
   } finally { f.media.close(); }
 });
 
-test('repeated video replacements preserve the BUNDLE anchor, retire old tracks and keep audio/control usable', async () => {
+test('repeated video replacements retire every old video receiver and keep audio/control usable', async () => {
   const tracks = [];
   const f = await fixture({ ...videoOptions, onVideoTrack: (track, generation) => tracks.push({ track, generation }) });
-  const anchor = f.peer.transceivers[0], audio = f.media.openAudio().getReader();
+  const initial = f.peer.transceivers[0], audio = f.media.openAudio().getReader();
   try {
     f.channels.control.receive(JSON.stringify({ k: 'audio-barrier', generation: 1, sequence: 0, epoch: 7 }));
     for (let generation = 2; generation <= 4; generation++) {
       const previous = tracks.at(-1).track, retired = f.peer.transceivers.at(-1);
       const pending = f.media.restartVideo(); await settle();
-      assert.equal(anchor.stopped, false); assert.equal(anchor.direction, 'inactive');
       assert.equal(previous.stopped, true);
-      if (retired !== anchor) assert.equal(retired.stopped, true, 'non-anchor transceivers do not accumulate live receivers');
+      assert.equal(retired.stopped, true, 'video transceivers never own the permanent application transport');
       const offer = f.channels.control.sent.filter(message => message.k === 'video-offer').at(-1);
       assert.equal(offer.generation, generation);
       const rpc = f.media.control(100 + generation, [{ k: 'heartbeat' }]);
@@ -302,8 +361,8 @@ test('repeated video replacements preserve the BUNDLE anchor, retire old tracks 
       assert.equal(tracks.at(-1).generation, generation);
       assert.notEqual(tracks.at(-1).track, previous);
       const stale = { kind: 'video', stopped: false, stop() { this.stopped = true; } };
-      f.peer.ontrack({ track: stale, transceiver: anchor });
-      assert.equal(stale.stopped, true, 'retired anchor cannot donate frames to a new generation');
+      f.peer.ontrack({ track: stale, transceiver: initial });
+      assert.equal(stale.stopped, true, 'retired receiver cannot donate frames to a new generation');
       assert.equal(f.media.videoTrack(), tracks.at(-1).track);
       assert.equal(f.media.isConnected(), true);
     }

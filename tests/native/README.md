@@ -116,3 +116,45 @@ out. Keep request timing when comparing revisions; if slow emulation permits an
 initial request after 500 ms, that run has not reproduced the same starvation.
 The receiver still uses the counting test decoder, so this does not validate
 H.264 picture decoding or physical startup timing.
+
+## Sustained BUNDLE feedback
+
+`--mode bundle` creates the control/video/audio DataChannels, sets a private
+data-only pending local offer, then adds the receive-only video transceiver and
+updates that pending offer. Only the final data + video offer is applied to the
+sender. This makes the application section BUNDLE's canonical first section
+without editing SDP, publishing a separate handshake or rolling back. It retains
+the production's one-active-video admission and High-profile selection.
+
+The probe then replaces the video bridge three times, stopping every retired
+video transceiver while keeping the DataChannels. It verifies that all three
+channels are open at both peers and exchanges control echoes after initial
+negotiation, every replacement, each 300-frame interval and the final drain.
+The measured original-AU phase uses the same input-completion barrier and
+one-time startup bitrate as the ordinary serial mode. The result retains BUNDLE
+tag/application MID, negotiated transport-wide feedback, channel/control checks,
+native counters, packet-send delay and original-byte hashes. SDP files remain in
+the private work directory.
+
+Use the High-profile fixture from the preceding example and an explicit
+**2,400 frames** for at least 40 seconds at the nominal 60 fps cadence:
+
+```sh
+python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-bootstrap \
+  --mode bundle --frames 2400 --start-bitrate 16000000 --expect-continuous
+python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-bootstrap \
+  --mode bundle-video-anchor --frames 2400 --start-bitrate 16000000
+```
+
+`bundle-video-anchor` is the historical failure control: it starts with video as
+the BUNDLE tag and retains that first video transceiver as inactive during
+replacement. On M150 the sustained control can lose usable transport feedback,
+back off by 0.8 per second to 30 kbps, then suspend native inputs despite zero RTP
+packet loss. It is not expected to satisfy continuous assertions. The ordinary
+180-frame default remains unchanged; a three-second run cannot establish that
+this feedback timeout is fixed. `bundle` must preserve all original output bytes,
+RTP reception and control continuity with real adaptive feedback enabled.
+
+Both modes use the counting test decoder. They establish native RTP/admission and
+DataChannel continuity, not picture correctness, acoustic output, high-rate
+capacity or physical vehicle smoothness.

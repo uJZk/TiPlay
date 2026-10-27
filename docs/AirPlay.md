@@ -384,6 +384,13 @@ reaches it. Direct-to-proxy recovery preserves position/rate when no newer
 directive supersedes it. Resource errors remain errors rather than a reason to
 silently restore the old playback engine.
 
+HLS metadata-open failures retain a fixed manifest phase, HTTP status and
+allowlisted exception name through the IO worker. A request failure with status
+zero is distinct from parsing a received HTTP 200 or 502 response. These fields
+identify the failure boundary without exposing a URL or manifest; they do not
+distinguish DNS, CORS, local-network permission and other browser fetch failures.
+The upstream retries and preparation deadlines are unchanged.
+
 Authenticated resources validate browser/playback/resource identity, preserve Range,
 stream media and rewrite bounded HLS manifests/children/keys. Current-iPhone resources
 may redirect directly, with authorized proxy fallback for failed CORS/reachability. Debug mode forces all media through Android, including nested playlists and redirects, and updates the browser directive so active playback reopens on the new route.

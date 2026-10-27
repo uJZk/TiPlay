@@ -36,11 +36,23 @@ paths over RTP, not a second live decoder or compressed-video fallback. Terminal
 video errors and an injected compressed FRAME must fail only video and leave
 control usable; the FRAME is rejection input, not a media delivery path.
 
-Normal source replacement keeps the initial video transceiver inactive as the
-BUNDLE transport anchor, stops its old receiver track, then negotiates a new
-receive-only generation. Subsequent nonanchor transceivers can be stopped. This
-preserves the SCTP control channel carrying the replacement offer/answer; stopping
-the initial anchor before that exchange can strand both renegotiation and control.
+The initial unpublished DataChannel-only pending offer assigns the application
+section as BUNDLE's anchor. The final authenticated offer adds receive-only video.
+Source replacement can then stop every old video transceiver while preserving
+the SCTP transport that carries its replacement offer/answer.
+
+`rtc-bundle.mjs` checks this SDP admission with two actual Chromium PeerConnections:
+three ordered DataChannels, the unpublished pending offer, the final H.264 offer
+and three source replacements. It requires one active video section, the same
+application/ICE/fingerprint identity and transport-wide feedback in every generation.
+It uses the browser's actual codec capability and never reorders SDP or changes
+machine policy. It does not wait for ICE or send media; SDP admission does not
+prove RTP feedback delivery or vehicle throughput. It can run where managed
+browser policy prevents local UDP; the RTP harnesses still need usable local ICE.
+
+```sh
+NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/rtc-bundle.mjs
+```
 
 If local ICE candidates are unavailable, the run exits nonzero within its bounded
 connection/output waits and reports the blocked RTP check. Select a dedicated test
@@ -49,7 +61,7 @@ run is not playback verification and does not silently switch to local-track mod
 Completed desktop runs prove the tested browser integration, not actual Android JNI,
 original iPhone media, vehicle hardware decoding or physical speaker/panel timing.
 
-All harnesses disable the browser proxy (`--no-proxy-server`); their loopback/LAN servers require direct access. `run.mjs` and `phone-run.mjs` print `ok -` checks and finish with `all checks passed`, or exit nonzero on failure. Other harnesses print results and exit nonzero on assertion failure.
+Harnesses serving loopback/LAN content disable the browser proxy (`--no-proxy-server`) for direct local access. `rtc-bundle.mjs` needs no HTTP server and makes no media transport assertions. `run.mjs` and `phone-run.mjs` print `ok -` checks and finish with `all checks passed`, or exit nonzero on failure. Other harnesses print results and exit nonzero on assertion failure.
 
 ## Direct live-audio and video-track checks
 
@@ -393,6 +405,11 @@ NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/avp
 ```
 
 This check runs without cross-origin isolation, verifies changing nonblack Canvas pictures, observes the generated tone at the actual Web Audio output gain and rejects even transient main-document video-element creation. The analyser is test-only instrumentation, not speaker-output evidence. A mixed HLS master advertises higher-bandwidth PQ, Dolby Vision and unknown-range variants alongside explicit SDR; the test requires SDR playback without requesting the disallowed children, and an all-HDR master must fail before a child request. It exercises real decoding and playback; its live fixture repeats a fixed window and does not establish rotating live-window recovery. It does not measure vehicle memory peaks, hardware decoder selection, audible quality or physical output timing. `--cancellation-only` runs only HTTP failure and pending/early source retirement checks; its result does not establish playback. Cancellation cases cover MP4 headers, HLS master headers, AES-key loading and early 0/20 ms disposal.
+
+HLS startup failures additionally exercise a socket reset before response headers,
+an HTTP 502 body and a malformed HTTP 200 manifest. The real IO worker must retain
+their distinct fixed phase/status/name diagnostics without URLs or resource tokens.
+These cases validate failure evidence; they do not repair an unavailable source.
 
 Old custom-engine PCM waveform/short-tail harnesses were removed with that engine; their earlier results do not establish AVPlayer behavior.
 

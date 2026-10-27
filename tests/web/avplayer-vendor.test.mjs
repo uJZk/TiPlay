@@ -61,6 +61,25 @@ test('AVPlayer source cancellation reaches upstream fetch without leaking intern
   assert.equal(calls[1].init.signal, local.signal, 'upstream per-reader cancellation is preserved');
 });
 
+const manifestGuard = code.match(/if\(classification\?\.tiplayManifestFailure\)\{[\s\S]+?\n\}/)?.[0];
+assert.ok(manifestGuard, 'generated manifest failure handoff exists');
+test('HLS worker failure handoff retains fixed stage/status/name without private exception text', () => {
+  const check = runInNewContext(`(classification)=>{${manifestGuard}}`, { DOMException });
+  for (const [failure, name, text] of [
+    [{ phase: 'request', status: 0, cause: 'TypeError' }, 'NetworkError', 'phase=request status=0 cause=TypeError.'],
+    [{ phase: 'body', status: 200, cause: 'AbortError' }, 'NetworkError', 'phase=body status=200 cause=AbortError.'],
+    [{ phase: 'parse', status: 502, cause: 'SyntaxError' }, 'NetworkError', 'phase=parse status=502 cause=SyntaxError.'],
+    [{ phase: 'parse', status: 200, cause: 'SyntaxError' }, 'EncodingError', 'phase=parse status=200 cause=SyntaxError.'],
+    [{ phase: 'playlist', status: 200, cause: 'SecurityError' }, 'SecurityError', 'phase=playlist status=200 cause=SecurityError.'],
+    [{ phase: 'https://private.example/item?token=secret', status: Infinity, cause: 'secret' },
+      'NetworkError', 'phase=request status=0 cause=Error.'],
+  ]) {
+    assert.throws(() => check({ tiplayManifestFailure: { ...failure, message: 'https://private.example/item?token=secret' } }),
+      error => error.name === name && error.message === 'URL manifest open failed: '+text);
+  }
+  assert.doesNotThrow(() => check({}));
+});
+
 test('AVPlayer worker RPC safely serializes missing and null rejection values', () => {
   const serializers = [...code.matchAll(/\(\{message:typeof ([\w$]+)\?\.message[^}]+\}\)/g)];
   assert.equal(serializers.length, 2, 'class and module worker RPC boundaries');

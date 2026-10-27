@@ -80,7 +80,10 @@ control transfers, USBMUX/NCM/CH341, interrupts and failures. Android playback P
 the canonical incoming streams and Android/browser diagnostic events remain. USB records
 carry connection/request IDs and requested/completed lengths. Asynchronous input is
 captured once at completion before parsing, including bytes drained after timeout.
-Debug forces AirPlay URL resources through Android and captures response bodies;
+Debug forces AirPlay URL resources through Android and captures Android HTTP
+response bodies. FCUP resources arrive inside the captured encrypted control
+stream; a capture begun after pairing may not contain enough material to recover
+their plaintext bodies. Successful FCUP byte counts do not imply plaintext capture;
 disabling restores direct eligibility, reopening active playback on policy changes.
 Android owns A2DP/HFP encoding and USB host-controller signalling. Capture cannot
 observe Bluetooth air packets, USB bus signalling, unread kernel buffers or packets
@@ -421,6 +424,17 @@ to Java `setRateAllocation`, so the last nonzero allocation cannot exclude a
 paused native sender. [Android native replay](../tests/native/README.md) separates
 queue coalescing and default-rate pacer suspension without claiming vehicle FPS.
 
+`stage=video-feedback` records fixed booleans from the actual answer and sender
+header-extension configuration. These show negotiated TWCC/REMB and abs-send-time
+support, not proof that feedback arrived. While Debug capture is enabled,
+`stage=video-send` samples the exact current sender every five seconds: original
+RTP counters, target bitrate, fixed quality-limitation reason, cumulative packet
+send delay, linked remote RTCP report/RTT counters and the selected ICE pair.
+Late, expired or retired-generation callbacks cannot publish. Remote report RTT
+and ICE RTT do not prove usable packet-level congestion feedback. Divide interval
+send-delay changes by sent-packet changes within one sender generation; do not
+compare cumulative values across replacements.
+
 If `source`/`negotiated`/`preferred` name High while `current` remains Baseline,
 check startup progress and keyframe recovery separately from throughput. The
 beta.28 follow-up had only four source AUs, one unencoded release and zero RTP
@@ -528,6 +542,16 @@ changed cleanup snapshot bypass the ordinary sampling gate. Error snapshots reta
 available upstream state before teardown; cleanup snapshots describe only the
 observable facade/upstream state, not verified release of every GPU surface.
 A blocked main thread cannot emit a timely diagnostic, so this is not a watchdog.
+
+Terminal HLS master-manifest errors cross the IO-worker boundary with a fixed
+message containing only phase (`request`, `body`, `parse`, `playlist`), HTTP status
+and an allowlisted cause name. For example, `phase=request status=0 cause=TypeError`
+means fetch failed before headers; `phase=parse status=200` means a received body
+failed parsing. A received HTTP 502 remains visible in the status. These are
+diagnostic distinctions, not evidence that every URL can now open. Browser fetch
+failures can share a TypeError across DNS, CORS and local-network permissions;
+status zero does not choose between them. No URL, headers or original error text
+are copied into this handoff, and existing upstream retries are unchanged.
 
 Both ends whitelist enums, booleans, finite safe numbers and bounded codec tokens.
 Fractional queue counters, invalid dimensions, arbitrary strings, URLs, decoder

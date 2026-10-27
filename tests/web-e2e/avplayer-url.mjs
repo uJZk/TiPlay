@@ -16,6 +16,7 @@ const fixtures = await mkdtemp(resolve(tmpdir(), 'tiplay-avplayer-'));
 const csp = /http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(await readFile(resolve(root, 'index.html'), 'utf8'))[1];
 const requests = [], pending = new Set(), foreignRequests = [];
 let foreignOrigin;
+let transientManifestRequests = 0;
 const mime = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm',
   '.mp4': 'video/mp4', '.ts': 'video/mp2t', '.m3u8': 'application/vnd.apple.mpegurl' };
 const foreignServer = createServer(async (req, res) => {
@@ -57,12 +58,14 @@ const server = createServer(async (req, res) => {
       if (name?.startsWith('forbidden-')) { res.writeHead(502); res.end('a disallowed rendition was requested'); return; }
       if (name === 'malformed.m3u8') { res.setHeader('Content-Type', 'application/vnd.apple.mpegurl'); res.end('invalid HLS fixture'); return; }
       if (name === 'broken') { res.writeHead(502); res.end('fixture failure'); return; }
+      if (name === 'reset.m3u8') { req.socket.destroy(); return; }
+      if (name === 'retry.m3u8' && ++transientManifestRequests === 1) { res.writeHead(502); res.end('transient fixture failure'); return; }
       if (name === 'redirect') { res.writeHead(302, { Location: foreignOrigin + '/movie.mp4' }); res.end(); return; }
       if (['hang', 'hang-key'].includes(name)) {
         pending.add(res); res.on('close', () => pending.delete(res)); return;
       }
-      if (!/^(movie\.mp4|index\.m3u8|live\.m3u8|remote\.m3u8|encrypted\.m3u8|part\d+\.ts)$/.test(name || '')) { res.writeHead(404); res.end(); return; }
-      let data = await readFile(resolve(fixtures, ['live.m3u8', 'remote.m3u8', 'encrypted.m3u8'].includes(name) ? 'index.m3u8' : name));
+      if (!/^(movie\.mp4|index\.m3u8|live\.m3u8|remote\.m3u8|encrypted\.m3u8|retry\.m3u8|part\d+\.ts)$/.test(name || '')) { res.writeHead(404); res.end(); return; }
+      let data = await readFile(resolve(fixtures, ['live.m3u8', 'remote.m3u8', 'encrypted.m3u8', 'retry.m3u8'].includes(name) ? 'index.m3u8' : name));
       if (name === 'encrypted.m3u8') data = Buffer.from(data.toString().replace('#EXTINF:', '#EXT-X-KEY:METHOD=AES-128,URI="/airplay-resource?c=1234&s=fixture&r=hang-key"\n#EXTINF:'));
       if (name === 'live.m3u8') data = Buffer.from(data.toString().replace('#EXT-X-ENDLIST', ''));
       res.setHeader('Content-Type', mime[extname(name)]);
@@ -281,6 +284,17 @@ try {
   assert.ok(!requests.some(request => request.resource?.startsWith('forbidden-')),
     'HDR/Dolby/unknown rendition was requested despite an explicit SDR variant');
   console.log(JSON.stringify({ explicitSdrPreferred: true, noHdrRequests: true, hdrOnly }));
+  const retry = await page.evaluate(async () => {
+    const { createMediaEngine } = await import('/airplay-media.js');
+    const media = createMediaEngine(document.querySelector('#stage'), { proxyOnly: true, proxyOrigin: location.origin });
+    try {
+      await media.load(`${location.origin}/airplay-resource?c=1234&s=fixture&r=retry.m3u8`, 'application/vnd.apple.mpegurl');
+      return { duration: media.duration, error: Boolean(media.error) };
+    } finally { await media.dispose(); }
+  });
+  assert.ok(retry.duration > 7 && !retry.error, 'successful retry retained failed-attempt evidence');
+  assert.equal(transientManifestRequests, 2, 'changed upstream manifest retry admission');
+  console.log(JSON.stringify({ recoveredAfterOneManifestRetry: true, manifestRequests: transientManifestRequests }));
   }
   const failure = await page.evaluate(async () => {
     const { createMediaEngine } = await import('/airplay-media.js');
@@ -294,17 +308,24 @@ try {
   });
   assert.ok(failure.rejected || failure.errorEvents > 0);
   assert.equal(failure.error, true);
-  const malformed = await page.evaluate(async () => {
-    const { createMediaEngine } = await import('/airplay-media.js');
-    const media = createMediaEngine(document.querySelector('#stage'));
-    let rejected = false;
-    try { await media.load(`${location.origin}/airplay-resource?c=1234&s=fixture&r=malformed.m3u8`, 'application/vnd.apple.mpegurl'); }
-    catch { rejected = true; }
-    const result = { rejected, error: Boolean(media.error), name: media.error?.name };
-    await media.dispose(); return result;
-  });
-  assert.ok(malformed.rejected && malformed.error, 'malformed HLS did not fail');
-  assert.notEqual(malformed.name, 'TimeoutError', 'malformed HLS hung until the outer preparation deadline');
+  const manifestFailures = [];
+  for (const [resource, phase, status, name] of [['reset.m3u8', 'request', 0, 'NetworkError'],
+    ['broken', 'parse', 502, 'NetworkError'], ['malformed.m3u8', 'parse', 200, 'EncodingError']]) {
+    const failed = await page.evaluate(async resource => {
+      const { createMediaEngine } = await import('/airplay-media.js');
+      const media = createMediaEngine(document.querySelector('#stage'), { proxyOnly: true, proxyOrigin: location.origin });
+      let rejected = false;
+      try { await media.load(`${location.origin}/airplay-resource?c=1234&s=fixture&r=${resource}`, 'application/vnd.apple.mpegurl'); }
+      catch { rejected = true; }
+      const result = { rejected, error: Boolean(media.error), name: media.error?.name, message: media.error?.message };
+      await media.dispose(); return result;
+    }, resource);
+    assert.ok(failed.rejected && failed.error, 'HLS failure did not reject: '+resource);
+    assert.equal(failed.name, name, 'HLS failure classification: '+JSON.stringify(failed));
+    assert.match(failed.message, new RegExp(`^URL manifest open failed: phase=${phase} status=${status} cause=[A-Za-z]+\\.$`));
+    assert.ok(!failed.message.includes('1234') && !failed.message.includes('fixture'), 'HLS error leaked resource identity');
+    manifestFailures.push({ resource, ...failed });
+  }
   await page.waitForFunction(() => evidence.workers === 0 && evidence.contexts === 0, null, { timeout: 10000 });
   for (const [resource, type] of [['hang', 'video/mp4'], ['hang', 'application/vnd.apple.mpegurl'],
     ['encrypted.m3u8', 'application/vnd.apple.mpegurl']]) {
@@ -342,7 +363,7 @@ try {
   }
   assert.deepEqual(networkErrors, [], 'network failure or cleanup caused an uncaught browser exception');
   assert.deepEqual(await page.evaluate(() => evidence.cspViolations), []);
-  console.log(JSON.stringify({ cancellationOnly, networkFailure: failure, malformedHls: malformed, pendingLoadCanceled: ['MP4 headers', 'HLS master headers', 'HLS AES key', 'early 0/20ms'], requests: requests.length }));
+  console.log(JSON.stringify({ cancellationOnly, networkFailure: failure, manifestFailures, pendingLoadCanceled: ['MP4 headers', 'HLS master headers', 'HLS AES key', 'early 0/20ms'], requests: requests.length }));
 } finally {
   await browser?.close();
   await closeServer(server);

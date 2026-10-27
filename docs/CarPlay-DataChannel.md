@@ -183,13 +183,19 @@ existing Worker/OffscreenCanvas; a Worker-only implementation transfers the
 track instead. Transfer/processor failures report a video-only error. Old APKs
 without RTP video support require an upgrade for live video.
 
-For video-only replacement, keep the initial video transceiver inactive when
-retiring its track: that m-line can anchor BUNDLE's DTLS/SCTP transport. Stopping
-it before the in-band `video-offer` reaches the phone can reset SCTP and strand
-the offer on its own control channel. Each generation still receives a distinct
-track; old tracks stop, later non-anchor transceivers retire, and the existing
-generation/ready barriers prevent previous-source frames from being admitted.
-The inactive anchor is released with the peer.
+For initial setup, apply an unpublished data-only local offer before adding the
+first receive-only video transceiver. Update that pending offer with video and
+authenticate/signal only the final offer. This makes the application m-line the
+permanent BUNDLE transport owner without changing generated SDP or requiring a
+separate authentication exchange. Every retired video track and transceiver can
+then stop while DTLS/SCTP survives video replacement.
+
+The old inactive-video-anchor policy avoided stopping the shared transport but
+could starve packet feedback after replacement in M150. A 40-second native
+before/after test reproduced BWE decay to 30 kbps under that policy; data-first
+setup retained adaptive feedback and all original AUs. Each generation receives
+a distinct track; the existing generation/ready barriers prevent previous-source
+frames from being admitted. The application transport is released with the peer.
 
 Preserve source-compressed video without reencoding: the subsequent explicit
 constraint is never to encode the video a second time. Decryption, configuration

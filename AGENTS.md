@@ -38,7 +38,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#current-browser-deployment)
-and [beta.29](docs/Build.md#beta29-release). Keep source checks, published artifact
+and [beta.30](docs/Build.md#beta30-release). Keep source checks, published artifact
 identity and vehicle evidence separate. Preserve strict source/profile/level/mode
 admission, original compressed frames, bounded selection and per-instance callback
 ownership. Beta.27 follows the beta.26 vehicle report and actual Android AAR
@@ -70,9 +70,13 @@ into Canvas. Do not add a video element, second encoding or DataChannel/WebCodec
 live-video fallback. Source changes use authenticated video-only renegotiation and
 generation/ready barriers; unsupported codec/profile, reordering and processor failure
 report video-only errors. Touch-specific catch-up is disabled.
-Keep the initial video transceiver inactive across source replacement so its BUNDLE
-DTLS/SCTP transport survives in-band video negotiation; retire old tracks and later
-nonanchor transceivers. See [desktop RTP integration](docs/Testing.md#desktop-rtp-integration).
+Before adding the first video transceiver, set an unpublished data-only local
+offer, then update that pending offer with video before authentication/signaling.
+The application m-line must own BUNDLE's permanent DTLS/SCTP transport. Stop every
+retired video track/transceiver; an inactive video transport anchor can starve
+packet feedback after replacement and collapse BWE to 30 kbps. Keep TWCC, REMB,
+real congestion guards and the one-time 16 Mbps prior. Do not reorder generated
+SDP or signal the intermediate offer. See [desktop RTP integration](docs/Testing.md#desktop-rtp-integration).
 
 When the source audio codec is negotiated, forward original encoded audio over standard
 WebRTC without Android decode/reencode. The independent audio peer uses libdatachannel's

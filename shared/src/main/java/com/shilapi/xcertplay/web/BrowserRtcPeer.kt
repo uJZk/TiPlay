@@ -96,7 +96,8 @@ private class AndroidBrowserRtcPeer(
     private var factory: PeerConnectionFactory? = null
     private var connection: PeerConnection? = null
     @Volatile private var videoTrack: BrowserRtcVideoTrack? = null
-    private var videoSender: RtpSender? = null
+    @Volatile private var videoSender: RtpSender? = null
+    private val videoDiagnostics = BrowserRtcVideoDiagnostics.Sampler()
     private var videoRateStarted = false
     private var videoCodecOffers = emptyList<BrowserRtcVideoPolicy.Codec>()
     private var previousVideoOffer: String? = null
@@ -205,6 +206,7 @@ private class AndroidBrowserRtcPeer(
             val answer = awaitSdp("create-answer") { connection!!.createAnswer(it, MediaConstraints()) }
             awaitSdp("local-description") { connection!!.setLocalDescription(it, requireNotNull(answer)) }
             videoTrack?.negotiated(requireNotNull(answer).description)
+            reportVideoNegotiation(requireNotNull(answer).description)
             val gatherDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
             while (!closed.get() && gathering.count > 0) {
                 val now = System.nanoTime()
@@ -407,6 +409,7 @@ private class AndroidBrowserRtcPeer(
                 val answer = requireNotNull(awaitSdp("video-create-answer") { peer.createAnswer(it, MediaConstraints()) })
                 awaitSdp("video-local-description") { peer.setLocalDescription(it, answer) }
                 bridge.negotiated(answer.description)
+                reportVideoNegotiation(answer.description)
                 previousVideoOffer = offer
                 videoLease.answered()
                 WebJson.write(mapOf("q" to q, "k" to "video-answer", "sdp" to answer.description,
@@ -767,10 +770,63 @@ private class AndroidBrowserRtcPeer(
             else null
         }
         reason?.let(::fail)
+        if (!closed.get() && authenticated && connected && RawTraffic.enabled) sampleVideoSender(now)
         if (!closed.get() && RawTraffic.enabled && now - lastControlDiagnostics >= TimeUnit.SECONDS.toNanos(10)) {
             lastControlDiagnostics = now
             controls.diagnosticLines(epoch, "periodic").forEach(log)
         }
+    }
+
+    /** Runs on the signaling executor after the actual answer and sender parameters are applied. */
+    private fun reportVideoNegotiation(answer: String) {
+        if (closed.get()) return
+        runCatching {
+            val sender = videoSender ?: return
+            val mid = connection?.transceivers?.firstOrNull { it.sender.id() == sender.id() }?.mid
+            val values = BrowserRtcVideoDiagnostics.negotiation(answer, mid, sender.parameters.headerExtensions.map { it.uri })
+            log("Browser RTC: stage=video-feedback epoch=$epoch generation=${videoLease.generation} " +
+                values.entries.joinToString(" ") { "${it.key}=${it.value}" })
+        }
+    }
+
+    private fun sampleVideoSender(now: Long) {
+        val sender = videoSender ?: return
+        val bridge = videoTrack ?: return
+        val generation = videoLease.generation
+        if (!videoLease.ready) return
+        val request = videoDiagnostics.begin(sender, generation, now) ?: return
+        fun current() = !closed.get() && videoTrack === bridge && videoSender === sender &&
+            videoLease.generation == generation && videoLease.ready &&
+            videoDiagnostics.current(request, sender, generation, System.nanoTime())
+        try {
+            lifecycle.execute {
+                try {
+                    nativeLock.withLock {
+                        if (!current()) return@withLock
+                        // The native callback only enqueues the result. Parsing and log I/O stay
+                        // on our existing executor; one expiring request bounds callback work.
+                        connection?.getStats(sender) { report ->
+                            if (!current()) return@getStats
+                            try {
+                                lifecycle.execute publish@ {
+                                    val sampledAt = System.nanoTime()
+                                    if (!current() || !videoDiagnostics.complete(request, videoSender, videoLease.generation, sampledAt)) return@publish
+                                    val values = mapOf("sampleAgeMs" to TimeUnit.NANOSECONDS.toMillis(sampledAt - request.startedNanos)) +
+                                        BrowserRtcVideoDiagnostics.sender(report)
+                                    values.entries.chunked(7).forEachIndexed { part, fields ->
+                                        log("Browser RTC: stage=video-send epoch=$epoch generation=$generation part=${part + 1} " +
+                                            fields.joinToString(" ") { "${it.key}=${it.value}" })
+                                    }
+                                }
+                            } catch (_: java.util.concurrent.RejectedExecutionException) { /* Peer retired. */ }
+                        }
+                    }
+                } catch (_: Exception) {
+                    if (current() && videoDiagnostics.complete(request, videoSender, videoLease.generation, System.nanoTime()))
+                        log("Browser RTC: stage=video-send epoch=$epoch generation=$generation state=unavailable")
+                }
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) { /* Peer retired. */ }
     }
 
     override fun snapshot(): Map<String, Any?> {
@@ -822,6 +878,7 @@ private class AndroidBrowserRtcPeer(
 
     override fun retire(reason: String) {
         if (!closed.compareAndSet(false, true)) return
+        videoDiagnostics.close()
         synchronized(wake) { authenticated = false; wake.notifyAll() }
         val retiredChannels = synchronized(admission) { channels.values.toList().also { channels.clear() } }
         state = "closed"

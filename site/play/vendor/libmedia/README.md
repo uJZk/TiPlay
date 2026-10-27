@@ -75,7 +75,15 @@ are recorded in the build manifest and checked against the pinned source.
 Both worker RPC error serializers handle null/missing rejection values without
 throwing a secondary exception, preserve known Error names/messages, and use a
 fixed generic message for other values. Negative IO-open results become explicit
-load failures. The two bundled asynchronous IOReader line readers retain a
+load failures. Six HLS failure-evidence adaptations retain only the current
+master-manifest attempt's fixed phase (`request`, `body`, `parse`, `playlist`),
+HTTP status and allowlisted exception name across IO-worker startup. Terminal
+failures become a fixed diagnostic message instead of losing the cause behind
+`Unable to open media source`. Retry count, timing, loading and buffering remain
+upstream-owned; this improves evidence and does not fix an unknown media source.
+Source URLs, response headers, manifest content and arbitrary error messages are
+excluded. A successful retry clears older failed-attempt evidence. The two bundled
+asynchronous IOReader line readers retain a
 nonempty final line only on clean EOF; WebVTT's chunk reader likewise retains
 its final nonempty cue without requiring a blank separator. Empty EOF, aborts
 and network failures still propagate. After seek, an already pending packet

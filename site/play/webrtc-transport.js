@@ -77,19 +77,8 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
   let rtpVideoSampling = null;
   try {
     for (const label of ['control', 'video', 'audio']) channels[label] = peer.createDataChannel(label, { ordered: true });
-    if (videoTrack) {
-      if (!videoCodecs.length || typeof peer.addTransceiver !== 'function') throw transportError('rtc-video-unavailable');
-      const transceiver = videoTransceiver = peer.addTransceiver('video', { direction: 'recvonly' });
-      // Do not negotiate an encoder the phone would have to transcode into.
-      if (typeof transceiver.setCodecPreferences !== 'function') throw transportError('rtc-video-codecs-unavailable');
-      try { transceiver.setCodecPreferences(videoCodecs); }
-      catch (_) { throw transportError('rtc-video-codecs-unavailable'); }
-    }
+    if (videoTrack && (!videoCodecs.length || typeof peer.addTransceiver !== 'function')) throw transportError('rtc-video-unavailable');
   } catch (error) { peer.close(); throw error; }
-  // The initial video m-line can anchor BUNDLE's DTLS/SCTP transport. Keep it
-  // inactive when retiring its track: stopping it before the in-band offer
-  // reaches the phone resets the very DataChannel carrying that offer.
-  const bundleVideoAnchor = videoTransceiver;
   const stats = { transport: RTC_TRANSPORT, state: 'connecting', reason: null, generation: null,
     queuedBytes: 0, highWaterBytes: 0, fragmentsReceived: 0, bytesReceived: 0,
     reassemblyErrors: 0, recordsReceived: 0, recordsConsumed: 0, audioDiscardedRecords: 0,
@@ -111,6 +100,19 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
   lifetime.catch(() => {});
   const duringLife = pending => Promise.race([pending, lifetime]);
   let receiveLevels = null;
+  async function prepareVideo() {
+    // Reserve the application m-line as BUNDLE's permanent transport owner.
+    // Updating this unpublished pending offer keeps SCTP first without editing
+    // SDP or completing a separate data-only signaling/authentication exchange.
+    const dataOffer = await duringLife(peer.createOffer());
+    if (closed) throw transportError('stopped');
+    await duringLife(peer.setLocalDescription(dataOffer));
+    if (closed) throw transportError('stopped');
+    const transceiver = videoTransceiver = peer.addTransceiver('video', { direction: 'recvonly' });
+    if (typeof transceiver.setCodecPreferences !== 'function') throw transportError('rtc-video-codecs-unavailable');
+    try { transceiver.setCodecPreferences(videoCodecs); }
+    catch (_) { throw transportError('rtc-video-codecs-unavailable'); }
+  }
   async function createVideoOffer() {
     const levels = videoTrack ? await duringLife(receiveLevels ??= probeVideoReceiveLevels(videoCodecs)) : null;
     const offer = await duringLife(peer.createOffer());
@@ -425,8 +427,7 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
     const task = (async () => {
       rtpVideoStats = { state: 'collecting', generation: next }; rtpVideoSampledAt = null;
       remoteVideoTrack?.stop(); remoteVideoTrack = null;
-      if (videoTransceiver === bundleVideoAnchor) videoTransceiver.direction = 'inactive';
-      else videoTransceiver?.stop();
+      videoTransceiver?.stop();
       videoTransceiver = peer.addTransceiver('video', { direction: 'recvonly' });
       videoTransceiver.setCodecPreferences(videoCodecs);
       const offer = await createVideoOffer();
@@ -482,6 +483,7 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       timer = setTimeout(() => fail('connect-timeout'), timeoutMs);
       try {
         progress('create-offer');
+        if (videoTrack) await prepareVideo();
         const offer = await createVideoOffer();
         progress('local-description');
         await duringLife(peer.setLocalDescription(offer));

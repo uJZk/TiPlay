@@ -209,6 +209,67 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
+<a id="beta30-release"></a>
+
+## Beta.30 release
+
+Prepared **0.2.20-beta.30**, code **72**, browser **v105**. Publication checks are
+pending. The user's 16 Mbps startup prior, 64 Mbps ceiling and unset minimum remain.
+
+The beta.29 report showed successful High-profile startup followed by native
+allocation decaying to 30 kbps. One generation received 1,360 source AUs but
+output only 214: 88 native input losses invalidated 1,058 subsequent dependent
+frames. The browser received/decoded/drew all 214 without RTP loss, so these
+counts do not support a browser-decoder bottleneck. M150's stale packet-feedback
+RTT guard uses the observed 0.8-per-second reduction; ICE RTT alone does not
+establish usable media feedback.
+
+An actual Android AAR control with three video replacements reproduced that
+decay when the initial video m-line remained an inactive BUNDLE anchor. A
+40-second, 2,400-AU High-profile run produced/received only 1,544 AUs, zero packet
+loss and 650.643 seconds of cumulative packet-send delay. A plain control without
+replacement delivered every AU. The corrected sequence applies an unpublished
+data-only local offer, adds video and updates the pending offer before external
+signaling/authentication. The application then owns the permanent BUNDLE transport;
+every old video track/transceiver stops. In the same 40-second replacement test,
+all 2,400 original AUs (2,412,340 bytes, equal source/output SHA-256) reached RTP
+in the measured final-bridge phase after three source admissions,
+with no new native/source/dependency drops or packet loss. Bandwidth remained
+adaptive; send delay was 0.132 seconds cumulative. These counting-decoder results
+do not establish picture decoding, high-rate vehicle throughput or panel timing.
+The persisted probe repeats this result with all six DataChannel endpoints open
+and 13 control roundtrips across setup, replacements and the measured phase.
+Its counting decoder ran 1,753 times; the software emulator's remaining decode
+deadline skips are separate from complete RTP reception.
+
+Real Chromium SDP admission verifies the initial offer and three replacements,
+one active video, stable application/ICE/fingerprint/SCTP/DTLS identity and
+preserved TWCC. The transport run to that managed browser remains blocked by its
+UDP policy; no policy override or browser RTP pass is claimed. No SDP reordering,
+feedback disabling, bitrate floor or repeated startup reset is used.
+
+Video in Car is a separate URL path. Its main-thread resource probe succeeded,
+then metadata opening failed before a second request reached Android. The
+specific device failure remains unresolved. Terminal HLS errors now retain only
+fixed phase/status/cause through the IO worker. Real Chromium checks distinguish
+request reset, HTTP 502 and malformed HTTP 200; a retry that succeeds clears old
+failure evidence. Normal MP4/HLS/SDR/live picture and Web Audio checks pass under
+production CSP without SharedArrayBuffer. No buffering-policy change or claim of
+device URL recovery follows from these diagnostics.
+
+All **2,500 shared JVM tests** and **617 browser tests** pass. The final complete
+shared command used `-Pkotlin.incremental=false`. Two socket fixtures were
+corrected without changing production code or existing deadlines: a 256 KiB
+payload still blocks the unread tiny-buffer peer while avoiding unrelated
+4 MiB formatting cost, and retired-port probes exclude the current listener's
+numeric address if the OS reuses a port. Both isolated lifecycle checks and the
+final full run pass. The failed port run did not record addresses, so reuse in
+that specific occurrence is not claimed as observed. Native sender statistics are
+sampled only during Debug capture, with fixed fields and current-owner/generation
+guards; ordinary playback adds no periodic sender stats work. Full Android CI
+remains skipped under the user's instruction. Signed and public artifact checks
+will be recorded after completion.
+
 <a id="beta29-release"></a>
 
 ## Beta.29 release

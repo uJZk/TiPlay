@@ -7,6 +7,21 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+Beta.30/code72, browser v105, reserves the application BUNDLE transport before
+adding video and stops every retired video receiver. Actual M150 tests reproduce
+the old post-replacement bitrate collapse and verify the corrected 40-second
+transport; real Chromium verifies the SDP lifecycle. HLS open failures now retain
+bounded request/body/parse evidence through the real IO worker. URL metadata
+opening on the reported device remains unresolved. Seven new shared JVM cases
+cover sanitized native sender/feedback diagnostics and sample ownership; three
+new browser cases cover local-only priming and cancellation. The 16 Mbps startup
+prior and all congestion guards remain unchanged. Current source/publication
+checks are in [Build](Build.md#beta30-release).
+All **2,500 shared JVM tests** and **617 browser tests** pass. The final complete
+shared run uses `-Pkotlin.incremental=false`. Socket fixtures preserve their
+original timeout and ownership assertions while avoiding unrelated oversized
+preparation work and accidental probes of a newly reused listener port.
+
 Beta.29/code71, browser v104, retries keyframe recovery during source silence.
 Four new JVM regressions use the real Hub's 500 ms suppression and verify recovery
 of original High bytes while retaining the two six-second deadlines and terminal
@@ -273,13 +288,23 @@ not use a live WebCodecs hardware override or an encoded-video fallback. Only UR
 AVPlayer harnesses retain the explicit desktop software-video override. API support
 and Canvas submission do not prove hardware use or physical output.
 
-Source-change regression must preserve the initial video transceiver as an inactive
-BUNDLE transport anchor while retiring its old track and adding a new receive-only
-generation. Later nonanchor transceivers can stop. Authenticated offer/answer and
+Initial setup must reserve the application m-line through an unpublished data-only
+local offer, then update that pending offer with video before external signaling.
+Source changes stop every retired video track/transceiver while the application
+remains BUNDLE's transport owner. Authenticated offer/answer and
 ready barriers must complete over the surviving SCTP control channel before new
 metadata/frames are admitted. Check replacement pixels and control progress, not
 only a new track event. A terminal codec/processor failure or compressed DataChannel
 FRAME reports a video-only error; normal source replacement renegotiates.
+
+The [BUNDLE admission check](../tests/web-e2e/rtc-bundle.mjs) exercises real browser
+SDP state, three replacements, one active video receiver and stable application,
+ICE and DTLS identities without rewriting SDP. It does not establish an ICE/RTP
+path. The actual Android AAR probe must additionally run at least 40 seconds after
+replacement: short startup tests miss M150's stale-feedback RTT backoff. The old
+video-anchor control decayed to 30 kbps and delivered 1,544/2,400 AUs with zero RTP
+packet loss; application-first setup delivered all 2,400 original AUs and retained
+adaptive bandwidth. The counting decoder does not establish picture performance.
 
 Missing usable host ICE is a bounded nonzero blocked result, with no local-track
 or legacy-media fallback. The new dedicated-browser desktop pass does not imply

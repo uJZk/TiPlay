@@ -41,6 +41,21 @@ const sdrVariants = `((playlist)=>{
   playlist.variants=explicit.length?explicit:permitted;
   return playlist;
 })`;
+// Fixed scalar evidence survives the IO worker boundary; source URLs and exception messages do not.
+const manifestFailure = `((failure)=>{
+  const phase=['request','body','parse','playlist'].includes(this.__tiplayOpenPhase)?this.__tiplayOpenPhase:'request';
+  const status=Number.isInteger(this.__tiplayOpenStatus)&&this.__tiplayOpenStatus>=0&&this.__tiplayOpenStatus<=599?this.__tiplayOpenStatus:0;
+  const cause=['AbortError','SecurityError','TypeError','SyntaxError','NetworkError','NotSupportedError'].includes(failure?.name)?failure.name:'Error';
+  return {phase,status,cause};
+})`;
+const checkManifestFailure = `if(classification?.tiplayManifestFailure){
+  const failure=classification.tiplayManifestFailure;
+  const phase=['request','body','parse','playlist'].includes(failure.phase)?failure.phase:'request';
+  const status=Number.isInteger(failure.status)&&failure.status>=0&&failure.status<=599?failure.status:0;
+  const cause=['AbortError','SecurityError','TypeError','SyntaxError','NetworkError','NotSupportedError'].includes(failure.cause)?failure.cause:'Error';
+  throw new DOMException('URL manifest open failed: phase='+phase+' status='+status+' cause='+cause+'.',
+    cause==='SecurityError'?'SecurityError':phase==='request'||phase==='body'||status>=400?'NetworkError':'EncodingError');
+}`;
 const artifacts = [];
 await mkdir(destination, { recursive: true });
 for (const name of await readdir(destination)) {
@@ -53,7 +68,7 @@ async function output(name, data) {
   artifacts.push({ path: name, bytes: Buffer.byteLength(data), sha256: sha(data) });
 }
 const source = new URL('node_modules/@libmedia/avplayer/dist/esm/', root);
-let fetchSites = 0, workletSites = 0, liveSites = 0, cleanupSites = 0, cancellationSites = 0, contextGuardSites = 0, lifecycleSites = 0, lifecycleAwaits = 0, rpcErrorSites = 0, subtitleEofSites = 0, seekReplySites = 0, subtitlePacketBridgeSites = 0, subtitleReleaseSites = 0, subtitleDrainSites = 0, subtitleSeekSites = 0, sdrPolicySites = 0;
+let fetchSites = 0, workletSites = 0, liveSites = 0, cleanupSites = 0, cancellationSites = 0, contextGuardSites = 0, lifecycleSites = 0, lifecycleAwaits = 0, rpcErrorSites = 0, subtitleEofSites = 0, seekReplySites = 0, subtitlePacketBridgeSites = 0, subtitleReleaseSites = 0, subtitleDrainSites = 0, subtitleSeekSites = 0, sdrPolicySites = 0, manifestFailureSites = 0;
 for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).sort()) {
   let code = await readFile(new URL(name, source), 'utf8');
   const edits = [];
@@ -208,11 +223,12 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
           const call = expressions[0].argument;
           const loader = code.slice(call.callee.object.start, call.callee.object.end);
           edits.push({ start: expressions[1].start, end: expressions[1].end,
-            value: `({tiplayLive:${loader}.mainLoader?.mediaPlayList ? !${loader}.mainLoader.mediaPlayList.endlist : undefined,tiplaySdrRequired:${loader}.__tiplaySdrRequired===true})` });
+            value: `({tiplayLive:${loader}.mainLoader?.mediaPlayList ? !${loader}.mainLoader.mediaPlayList.endlist : undefined,tiplaySdrRequired:${loader}.__tiplaySdrRequired===true,tiplayManifestFailure:${loader}.__tiplayOpenFailure})` });
           const opening=expressions[0];
           const original=code.slice(opening.start,opening.end);
           edits.push({start:opening.start,end:opening.end,
-            value:`(${loader}.__tiplaySdrRequired=false,${original}.catch(error=>{if(error?.__tiplaySdrRequired){${loader}.__tiplaySdrRequired=true;return;}throw error;}))`});
+            value:`(${loader}.__tiplaySdrRequired=false,${loader}.__tiplayOpenFailure=undefined,${original}.catch(error=>{if(error?.__tiplaySdrRequired){${loader}.__tiplaySdrRequired=true;return;}if(${loader}.__tiplayOpenFailure&&error?.name!=='AbortError')return;throw error;}))`});
+          manifestFailureSites++;
           sdrPolicySites++;
           liveSites++;
         } });
@@ -235,6 +251,24 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
         subtitleSeekSites++;
       }});
       if(node.key.name==='fetchMasterPlayList'){
+        edits.push({start:node.value.body.start+1,end:node.value.body.start+1,
+          value:"this.__tiplayOpenFailure=undefined;this.__tiplayOpenPhase='request';this.__tiplayOpenStatus=0;"});
+        manifestFailureSites++;
+        const attempt=node.value.body.body[0];
+        const declaration=attempt.block?.body[0];
+        const declarations=declaration?.declarations;
+        if(attempt.type!=='TryStatement'||declarations?.length!==3
+          ||declarations[0].init?.type!=='AwaitExpression'||declarations[0].init.argument.callee?.name!=='fetch'
+          ||declarations[1].init?.type!=='AwaitExpression'||declarations[1].init.argument.callee?.property?.name!=='text'
+          ||declarations[2].init?.type!=='CallExpression')throw new Error('Upstream HLS manifest read/parse stages changed');
+        const request=declarations[0].init,parsed=declarations[2].init;
+        edits.push({start:request.start,end:request.start,value:"((response)=>{this.__tiplayOpenStatus=response.status;this.__tiplayOpenPhase='body';return response;})("},
+          {start:request.end,end:request.end,value:')'});
+        manifestFailureSites++;
+        edits.push({start:parsed.start,end:parsed.start,value:"(this.__tiplayOpenPhase='parse',"},
+          {start:parsed.end,end:parsed.end,value:')'},
+          {start:declaration.end,end:declaration.end,value:"this.__tiplayOpenPhase='playlist';"});
+        manifestFailureSites++;
         simple(node.value.body,{
           AssignmentExpression(expression){
             if(expression.left.type!=='MemberExpression' || expression.left.object.type!=='ThisExpression'
@@ -246,7 +280,8 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
           CatchClause(caught){
             if(caught.param?.type!=='Identifier')throw new Error('Upstream HLS error boundary changed');
             const error=caught.param.name;
-            edits.push({start:caught.body.start+1,end:caught.body.start+1,value:`if(${error}?.__tiplaySdrRequired)throw ${error};`});
+            edits.push({start:caught.body.start+1,end:caught.body.start+1,value:`if(${error}?.__tiplaySdrRequired)throw ${error};this.__tiplayOpenFailure=${manifestFailure}(${error});`});
+            manifestFailureSites++;
             sdrPolicySites++;
           },
         });
@@ -317,7 +352,8 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
             || call.callee.object.property.name !== 'IOThread') return;
           const original = code.slice(expression.start, expression.end);
           edits.push({start: expression.start, end: expression.end,
-            value: `((classification)=>{if(classification?.tiplaySdrRequired)throw new DOMException('No SDR video variant is available.','NotSupportedError');if(typeof classification==='number' && classification<0)throw new Error('Unable to open media source.');if(this.isHls() && typeof classification?.tiplayLive === 'boolean')this.isLive_=classification.tiplayLive;})(${original})` });
+            value: `((classification)=>{if(classification?.tiplaySdrRequired)throw new DOMException('No SDR video variant is available.','NotSupportedError');${checkManifestFailure}if(typeof classification==='number' && classification<0)throw new Error('Unable to open media source.');if(this.isHls() && typeof classification?.tiplayLive === 'boolean')this.isLive_=classification.tiplayLive;})(${original})` });
+          manifestFailureSites++;
           liveSites++;
         } });
       }
@@ -404,6 +440,7 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
   await output(name === 'avplayer.js' ? 'upstream.js' : name, code);
 }
 if (sdrPolicySites !== 3) throw new Error(`Upstream SDR selection/error sites changed: ${sdrPolicySites}`);
+if (manifestFailureSites !== 6) throw new Error(`Upstream HLS failure evidence sites changed: ${manifestFailureSites}`);
 if (subtitlePacketBridgeSites !== 1 || subtitleReleaseSites !== 4) throw new Error(`Upstream subtitle packet ownership sites changed: ${subtitlePacketBridgeSites}/${subtitleReleaseSites}`);
 if (subtitleDrainSites !== 3 || subtitleSeekSites !== 3) throw new Error(`Upstream subtitle drain/seek sites changed: ${subtitleDrainSites}/${subtitleSeekSites}`);
 if (subtitleEofSites !== 3 || seekReplySites !== 1) throw new Error(`Upstream subtitle EOF/seek sites changed: ${subtitleEofSites}/${seekReplySites}`);
@@ -452,5 +489,5 @@ for (const name of ['LGPL-2.1.txt','GPL-3.0.txt']) {
 notices.push('===== WASM corresponding sources =====\nFFmpeg audio codec/resample modules and SoundTouch tempo: LGPL-2.1-or-later.\nPinned source/build definitions: https://github.com/zhaohappy/libmedia/tree/' + lock.commit + '\n');
 await writeFile(new URL('THIRD_PARTY_LICENSES.txt', destination), notices.join('\n'));
 await writeFile(new URL('artifacts.json', destination), JSON.stringify({ version: lock.version,
-  commit: lock.commit, fetchRequestInitPatches: fetchSites, sameOriginWorkletPatches: workletSites, hlsClassificationPatches: liveSites, pipelineCleanupPatches: cleanupSites, cancellationPatches: cancellationSites, contextEventGuardPatches: contextGuardSites, lifecycleGuardMethods: lifecycleSites, lifecycleGuardAwaits: lifecycleAwaits, rpcErrorSerializerPatches: rpcErrorSites, subtitleEofPatches: subtitleEofSites, pendingSeekReplyPatches: seekReplySites, subtitlePacketBridgePatches: subtitlePacketBridgeSites, subtitlePacketReleasePatches: subtitleReleaseSites, subtitleDrainPatches: subtitleDrainSites, subtitleSeekPatches: subtitleSeekSites, sdrVariantPolicyPatches: sdrPolicySites, artifacts }, null, 2) + '\n');
+  commit: lock.commit, fetchRequestInitPatches: fetchSites, sameOriginWorkletPatches: workletSites, hlsClassificationPatches: liveSites, pipelineCleanupPatches: cleanupSites, cancellationPatches: cancellationSites, contextEventGuardPatches: contextGuardSites, lifecycleGuardMethods: lifecycleSites, lifecycleGuardAwaits: lifecycleAwaits, rpcErrorSerializerPatches: rpcErrorSites, subtitleEofPatches: subtitleEofSites, pendingSeekReplyPatches: seekReplySites, subtitlePacketBridgePatches: subtitlePacketBridgeSites, subtitlePacketReleasePatches: subtitleReleaseSites, subtitleDrainPatches: subtitleDrainSites, subtitleSeekPatches: subtitleSeekSites, sdrVariantPolicyPatches: sdrPolicySites, hlsManifestFailurePatches: manifestFailureSites, artifacts }, null, 2) + '\n');
 console.log(`Vendored libmedia ${lock.version}: ${artifacts.length} files, ${fetchSites} scoped RequestInit patches.`);

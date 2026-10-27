@@ -116,6 +116,11 @@ def execute(args):
     result["build"] = json.loads((work / "build.json").read_text())
     (work / (label + ".json")).write_text(json.dumps(result, indent=2) + "\n")
     run(adb + ["pull", DEVICE_DIR + f"/native-{label}.log", work / ("native-" + label + ".log")])
+    if args.mode in ("bundle", "bundle-video-anchor"):
+        for name in ("offer.sdp", "answer.sdp", *(f"bundle-{kind}-{i}.sdp" for i in range(3) for kind in ("offer", "answer"))):
+            run(adb + ["pull", DEVICE_DIR + "/" + name, work / name])
+        if args.mode == "bundle":
+            run(adb + ["pull", DEVICE_DIR + "/pending-data-offer.sdp", work / "pending-data-offer.sdp"])
     print(json.dumps(result, indent=2))
     if args.expect_bootstrap:
         profile = result["sourceProfile"]
@@ -142,6 +147,17 @@ def execute(args):
                   result["receiverRtpDelta"].get("framesReceived") == args.frames)
         if not all(checks):
             raise SystemExit("Continuous native RTP assertions failed; inspect scenario JSON and logs")
+        if args.mode in ("bundle", "bundle-video-anchor"):
+            negotiations = result["bundleNegotiations"]
+            checks = (len(negotiations) == 4,
+                      all(n["transportWideExtension"] and n["transportCcFeedback"] for n in negotiations),
+                      result["dataChannelsOpen"],
+                      result["controlEchoSendFailures"] == 0,
+                      all(stage in result["controlRoundTrips"] for stage in ("initial", "replacement-0", "replacement-1", "replacement-2", "final")))
+            if args.mode == "bundle":
+                checks += (all(n["bundleTag"] == n["applicationMid"] for n in negotiations),)
+            if not all(checks):
+                raise SystemExit("BUNDLE/control continuity assertions failed; inspect scenario JSON and logs")
 
 
 def main():
@@ -158,7 +174,7 @@ def main():
     parser.add_argument("--fixture", type=Path)
     parser.add_argument("--adb-port", type=int, default=5037)
     parser.add_argument("--serial")
-    parser.add_argument("--mode", choices=("paced", "serial", "burst", "bootstrap"), default="serial")
+    parser.add_argument("--mode", choices=("paced", "serial", "burst", "bootstrap", "bundle", "bundle-video-anchor"), default="serial")
     parser.add_argument("--start-bitrate", type=int, default=16000000)
     parser.add_argument("--encoder-delay", type=int, default=0)
     parser.add_argument("--frames", type=int, default=180)
