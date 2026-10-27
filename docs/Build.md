@@ -209,6 +209,49 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
+<a id="beta27-release"></a>
+
+## Beta.27 release
+
+Prepared **0.2.20-beta.27**, code **69**, browser **v102**. Signed packaging and
+publication verification are pending. Full Android CI remains skipped under the
+user's instruction; the signed packaging workflow is separate.
+
+The beta.26 vehicle report showed 34 inputs forwarded by the source adapter,
+zero adaptation drops, 16 encoded callbacks and 18 inputs released before encode.
+Receiver RTP had no loss and all 11 received frames were decoded and drawn. The
+captured original stream demanded about 15.1 Mbps including recovery keyframes,
+well above the SDK's default 300 kbps startup and 2.5 Mbps 1080p stream ceiling.
+
+Actual M150 Android AAR replay on an API28 software emulator reproduced independent
+native latest-frame queue coalescing and pacer suspension. Serial input alone still
+paused under default bitrate settings; higher bitrate admission alone still lost
+frames in the native cadence queue. The repair waits for each native encoder input
+to finish before capturing the next AU, and applies a 64 Mbps video ceiling plus a
+one-time 24 Mbps startup prior. The minimum remains unset, feedback and overload
+guards remain active, and source/IDR replacement never resets the estimate.
+No compressed bytes are changed and no new queue or video encoder is added.
+
+The production completion barrier passed a warmed 180-AU native sender phase:
+180 callbacks, 4,190,805 original bytes, matching input/output SHA-256, and zero
+new source/native input drops or dependency rejections. A low-complexity High-profile
+phase also passed 180/180 native receiver AUs with zero packet loss and matching
+13,536-byte input/output SHA-256. The approximately 10 Mbps heavy receiver check
+did not pass on this software emulator: 104/180 complete frames and 161 lost UDP
+packets, despite 180/180 encoder outputs. It is not a high-rate transport pass.
+Warmup and receiver counts are separate; the test decoder counts depacketized AUs
+and emits test buffers without H.264 picture decoding. Software-emulator throughput
+does not establish physical phone/browser performance. The reproducible
+[probe](../tests/native/README.md) records the actual AAR, product classes and inputs.
+
+All **2,489 shared JVM tests** and **613 browser tests** pass, including 28 targeted
+video flow/input/source regressions. New coverage
+includes callback completion with retained buffers, publication of dependency
+loss before waking input, timeout/retirement/interrupt and exception cleanup.
+Source `receivedBytes` and `encoderInputsInFlight` now distinguish actual input
+demand, buffer retention and pending native work. Signed/public verification will
+be recorded here after packaging; vehicle acceptance remains pending.
+
 <a id="beta26-release"></a>
 
 ## Beta.26 release

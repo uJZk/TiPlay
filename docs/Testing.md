@@ -7,6 +7,12 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+Beta.27/code69, browser v102, adds native-input completion backpressure and bounded
+original-video rate admission after beta.26 still suppressed frames. All 2,489
+shared JVM tests and 613 browser tests pass, including 28 targeted video cases; the actual AAR replay below
+provides native queue/pacer evidence. Full Android test CI remains skipped at the
+user's request, with signed packaging recorded in [Build](Build.md#beta27-release).
+
 Beta.26/code68, browser v101, passes **2,481 shared JVM tests** and **613 browser
 tests**, with public-tree, cache, release-draft and site-assembly checks. Twenty
 JVM regressions directly cover video passthrough, flow and source adaptation.
@@ -86,6 +92,22 @@ See the [harness guide](../tests/web-e2e/README.md) for requirements and failure
 and [current deployment](Build.md#current-browser-deployment) for published bytes.
 
 ### Current media regression checks
+
+The [Android native video probe](../tests/native/README.md) runs the exact M150
+AAR and compiled product bridge through two native PeerConnections. A software
+API28 emulator reproduced queue-block drops with paced input and native suspension
+with serial input under default bitrate settings. Higher bitrate admission alone
+still suffered queue coalescing. With the production input-completion barrier,
+64 Mbps ceiling and one-time 24 Mbps startup prior, a warmed sender phase produced
+180/180 callbacks, 4,190,805 original bytes and matching SHA-256, with zero new
+input loss. A low-complexity High-profile phase passed all 180 receiver AUs with
+zero RTP packet loss and matching 13,536-byte source/output SHA-256. The heavy
+approximately 10 Mbps receiver check remained incomplete on this software
+emulator (104/180 frames, 161 lost UDP packets); it is not reported as passed.
+Warmup and receiver measurements remain separate. The test receiver counts depacketized AUs and emits dummy I420 buffers;
+it does not decode pictures or establish vehicle frame rate. Seven new JVM
+concurrency cases cover retained encoded buffers, dependency-loss ordering,
+timeout, retirement, interrupt and callback/recovery exceptions.
 
 The working source disables M150's raw-frame bitrate dropper and the independent
 congestion-window frame-skip policy for original compressed video. The window,

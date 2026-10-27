@@ -409,6 +409,18 @@ to pixels. Source drops are also included in `releasedUnencodedFrames`; later
 encoder losses are not source-adaptation drops. These counters do not distinguish
 every native encoder loss reason or prove congestion-window dropping occurred.
 
+`receivedBytes` includes all offered original access units and their parameter-set
+prefixes, including frames rejected while waiting for a keyframe. Compare its
+interval change with elapsed time to estimate original input demand; it is not
+network throughput. `encoderInputsInFlight` counts inputs whose encoder callback
+or loss handling has not completed. `pendingFrames` can remain nonzero while an
+already encoded buffer is retained; it is not the producer's completion barrier.
+`stage=video-rate` records the one-time startup prior and bounded stream ceiling,
+with the minimum left adaptive. Native zero-bitrate suspension is not forwarded
+to Java `setRateAllocation`, so the last nonzero allocation cannot exclude a
+paused native sender. [Android native replay](../tests/native/README.md) separates
+queue coalescing and default-rate pacer suspension without claiming vehicle FPS.
+
 Debug `transport.rtpVideo.*` samples the current video receiver independently of
 the metadata DataChannel. `generation`, `state` and `sampleAgeMs` identify sample
 ownership and freshness. Available counters include received/lost packets,

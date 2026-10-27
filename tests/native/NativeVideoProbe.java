@@ -1,0 +1,230 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+package com.shilapi.xcertplay.web;
+
+import android.content.Context;
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
+import kotlin.Unit;
+import org.webrtc.*;
+
+/**
+ * Runs the actual Android AAR and product compressed-video bridge in native RTP loopback.
+ * Fixture encoding happens offline; this process never encodes source pictures. The receiver
+ * counts depacketized access units and returns test buffers, without codec decoding.
+ */
+public final class NativeVideoProbe {
+  static final String TRIALS = "WebRTC-FrameDropper/Disabled/WebRTC-CongestionWindow/QueueSize:350,MinBitrate:30000,DropFrame:false/";
+  static final AtomicInteger decoded = new AtomicInteger();
+  static final AtomicInteger keys = new AtomicInteger();
+  static final AtomicInteger blocked = new AtomicInteger();
+  static final AtomicInteger badTimestamps = new AtomicInteger();
+  static volatile BufferedWriter nativeLog;
+  static final Object digestLock = new Object();
+  static java.security.MessageDigest outputDigest;
+  static java.security.MessageDigest offeredDigest;
+  static final Map<String,Object> lastSenderStats = new LinkedHashMap<>();
+  static final Map<String,Object> lastReceiverStats = new LinkedHashMap<>();
+  static String hex(byte[] bytes){StringBuilder out=new StringBuilder();for(byte b:bytes)out.append(String.format("%02x",b&255));return out.toString();}
+  static class Obs implements PeerConnection.Observer {
+    final String name; final CountDownLatch gathered=new CountDownLatch(1), connected=new CountDownLatch(1);
+    Obs(String name){this.name=name;}
+    public void onSignalingChange(PeerConnection.SignalingState s){}
+    public void onIceConnectionChange(PeerConnection.IceConnectionState s){
+      System.out.println("ICE "+name+" "+s);
+      if(s==PeerConnection.IceConnectionState.CONNECTED||s==PeerConnection.IceConnectionState.COMPLETED)connected.countDown();
+    }
+    public void onIceConnectionReceivingChange(boolean b){}
+    public void onIceGatheringChange(PeerConnection.IceGatheringState s){if(s==PeerConnection.IceGatheringState.COMPLETE)gathered.countDown();}
+    public void onIceCandidate(IceCandidate c){}
+    public void onIceCandidatesRemoved(IceCandidate[] c){}
+    public void onAddStream(MediaStream s){}
+    public void onRemoveStream(MediaStream s){}
+    public void onDataChannel(DataChannel c){}
+    public void onRenegotiationNeeded(){}
+    public void onTrack(RtpTransceiver transceiver){
+      if(transceiver.getReceiver().track() instanceof VideoTrack)((VideoTrack)transceiver.getReceiver().track()).addSink(f->{});
+    }
+  }
+  static class Sdp implements SdpObserver {
+    final CountDownLatch done=new CountDownLatch(1); SessionDescription description; String error;
+    public void onCreateSuccess(SessionDescription s){description=s;done.countDown();}
+    public void onSetSuccess(){done.countDown();}
+    public void onCreateFailure(String e){error=e;done.countDown();}
+    public void onSetFailure(String e){error=e;done.countDown();}
+    SessionDescription await() throws Exception {if(!done.await(60,TimeUnit.SECONDS))throw new Exception("SDP timeout");if(error!=null)throw new Exception(error);return description;}
+  }
+  static class Decoder implements VideoDecoder {
+    Callback callback; JavaI420Buffer buffer;
+    public VideoCodecStatus initDecode(Settings s,Callback c){callback=c;buffer=JavaI420Buffer.allocate(2,2);return VideoCodecStatus.OK;}
+    public VideoCodecStatus release(){if(buffer!=null)buffer.release();buffer=null;return VideoCodecStatus.OK;}
+    public VideoCodecStatus decode(EncodedImage image,DecodeInfo info){
+      decoded.incrementAndGet(); if(image.frameType==EncodedImage.FrameType.VideoFrameKey)keys.incrementAndGet();
+      buffer.retain();VideoFrame f=new VideoFrame(buffer,0,image.captureTimeNs);callback.onDecodedFrame(f,null,null);f.release();
+      return VideoCodecStatus.OK;
+    }
+    public String getImplementationName(){return "probe-count-original-access-units";}
+  }
+  static PeerConnection.RTCConfiguration config(){
+    PeerConnection.RTCConfiguration c=new PeerConnection.RTCConfiguration(Collections.emptyList());
+    c.sdpSemantics=PeerConnection.SdpSemantics.UNIFIED_PLAN;
+    c.tcpCandidatePolicy=PeerConnection.TcpCandidatePolicy.DISABLED;c.enableCpuOveruseDetection=false;c.suspendBelowMinBitrate=false;
+    return c;
+  }
+  static long counter(BrowserRtcVideoTrack bridge,String key){return ((Number)bridge.flowDiagnostics().get(key)).longValue();}
+  static List<byte[]> readFixture(String path)throws Exception{
+    byte[] data=Files.readAllBytes(Paths.get(path));ArrayList<Integer> boundaries=new ArrayList<>();
+    for(int i=0;i+5<data.length;i++)if(data[i]==0&&data[i+1]==0&&data[i+2]==0&&data[i+3]==1&&(data[i+4]&31)==9)boundaries.add(i);
+    boundaries.add(data.length);ArrayList<byte[]> frames=new ArrayList<>();
+    for(int i=0;i+1<boundaries.size();i++)frames.add(Arrays.copyOfRange(data,boundaries.get(i),boundaries.get(i+1)));
+    if(frames.isEmpty())throw new Exception("fixture has no AUD");return frames;
+  }
+  static boolean key(byte[] data){for(int i=0;i+4<data.length;i++)if(data[i]==0&&data[i+1]==0&&data[i+2]==1&&(data[i+3]&31)==5)return true;return false;}
+  static String profile(byte[] data){for(int i=0;i+7<data.length;i++)if(data[i]==0&&data[i+1]==0&&data[i+2]==1&&(data[i+3]&31)==7)return String.format("%02x%02x%02x",data[i+4]&255,data[i+5]&255,data[i+6]&255);return "42c02a";}
+  static void stats(PeerConnection p,String label)throws Exception{
+    CountDownLatch done=new CountDownLatch(1);
+    p.getStats(r->{for(RTCStats s:r.getStatsMap().values())if(s.getType().equals("outbound-rtp")||s.getType().equals("inbound-rtp")||s.getType().equals("candidate-pair")){
+      Map<String,Object> safe=new LinkedHashMap<>();
+      for(String k:Arrays.asList("kind","framesReceived","framesDecoded","framesDropped","packetsReceived","packetsLost","bytesReceived","jitterBufferDelay","jitterBufferEmittedCount","framesEncoded","framesSent","keyFramesEncoded","bytesSent","packetsSent","totalPacketSendDelay","targetBitrate","qualityLimitationReason","qualityLimitationDurations","availableOutgoingBitrate","currentRoundTripTime","state","nominated"))if(s.getMembers().containsKey(k))safe.put(k,s.getMembers().get(k));
+      if(label.equals("sender")&&s.getType().equals("outbound-rtp"))synchronized(lastSenderStats){lastSenderStats.clear();lastSenderStats.putAll(safe);}
+      if(label.equals("receiver")&&s.getType().equals("inbound-rtp"))synchronized(lastReceiverStats){lastReceiverStats.clear();lastReceiverStats.putAll(safe);}
+      System.out.println("STATS "+label+" "+s.getType()+" "+safe);
+    }done.countDown();});done.await(10,TimeUnit.SECONDS);
+  }
+  public static void main(String[] args){try{run(args);}catch(Throwable t){t.printStackTrace(System.out);System.exit(1);}}
+  public static void run(String[] args)throws Exception{
+    System.out.println("STEP probe-main");
+    outputDigest=java.security.MessageDigest.getInstance("SHA-256");
+    offeredDigest=java.security.MessageDigest.getInstance("SHA-256");
+    String mode=args.length>0?args[0]:"paced"; int start=args.length>1?Integer.parseInt(args[1]):0;
+    int delay=args.length>2?Integer.parseInt(args[2]):0;int frameCount=args.length>3?Integer.parseInt(args[3]):360;
+    boolean warm=args.length>4&&args[4].equals("warm");
+    boolean verbose=args.length>5&&args[5].equals("verbose");
+    String dir="/data/local/tmp/tiplay-native-probe";
+    nativeLog=new BufferedWriter(new FileWriter(dir+"/native-"+mode+"-"+start+"-"+delay+".log"));
+    System.out.println("STEP context");
+    android.os.Looper.prepareMainLooper();
+    Class<?> activityThread=Class.forName("android.app.ActivityThread");
+    Object thread=activityThread.getMethod("systemMain").invoke(null);
+    Context context=(Context)activityThread.getMethod("getSystemContext").invoke(thread);
+    System.out.println("STEP initialize");
+    PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context)
+      .setNativeLibraryLoader(name->{System.load(dir+"/libjingle_peerconnection_so.so");return true;})
+      .setInjectableLogger((message,severity,tag)->{
+        synchronized(NativeVideoProbe.class){try{nativeLog.write(tag+" "+message);nativeLog.newLine();}catch(Exception ignored){}}
+        if(message.contains("encoder is blocked"))blocked.incrementAndGet();
+        if(message.contains("Same/old NTP timestamp"))badTimestamps.incrementAndGet();
+        if(message.contains("suspend")||message.contains("suspension")||message.contains("Too large for target bitrate")||message.contains("Same/old NTP")||message.contains("encoder is blocked")||message.contains("Number of frames:"))System.out.println("NATIVE "+message);
+      },verbose?Logging.Severity.LS_VERBOSE:Logging.Severity.LS_INFO).createInitializationOptions());
+    System.out.println("STEP initialized");
+    List<byte[]> frames=readFixture(dir+"/fixture.h264");String profile=profile(frames.get(0));
+    Map<String,String> params=new LinkedHashMap<>();params.put("packetization-mode","1");params.put("profile-level-id",profile);params.put("level-asymmetry-allowed","1");
+    VideoCodecInfo codec=new VideoCodecInfo("H264",params,Collections.emptyList());
+    BrowserRtcVideoTrack bridge=new BrowserRtcVideoTrack(Collections.singletonList(new BrowserRtcVideoPolicy.Codec("H264",params)),()->Unit.INSTANCE,null,()->System.nanoTime());
+    VideoEncoderFactory encoder=new VideoEncoderFactory(){
+      public VideoCodecInfo[] getSupportedCodecs(){return bridge.getSupportedCodecs();}
+      public VideoEncoderFactory.VideoEncoderSelector getEncoderSelector(){return bridge.getEncoderSelector();}
+      public VideoEncoder createEncoder(VideoCodecInfo info){
+        VideoEncoder real=bridge.createEncoder(info);
+        return new VideoEncoder(){
+          public VideoCodecStatus initEncode(Settings s,Callback c){return real.initEncode(s,(image,info)->{
+            byte[] bytes=new byte[image.buffer.remaining()];image.buffer.duplicate().get(bytes);
+            synchronized(digestLock){outputDigest.update(bytes);}c.onEncodedFrame(image,info);
+          });}
+          public VideoCodecStatus release(){return real.release();}
+          public VideoCodecStatus encode(VideoFrame f,EncodeInfo i){if(delay>0)try{Thread.sleep(delay);}catch(Exception ignored){}return real.encode(f,i);}
+          public VideoCodecStatus setRateAllocation(BitrateAllocation b,int f){return real.setRateAllocation(b,f);}
+          public ScalingSettings getScalingSettings(){return real.getScalingSettings();}
+          public String getImplementationName(){return real.getImplementationName();}
+          public boolean isHardwareEncoder(){return false;}
+        };
+      }
+    };
+    PeerConnectionFactory.Options options=new PeerConnectionFactory.Options();options.disableNetworkMonitor=true;
+    System.out.println("STEP factories");
+    PeerConnectionFactory txFactory=PeerConnectionFactory.builder().setOptions(options).setFieldTrials(TRIALS).setVideoEncoderFactory(encoder).createPeerConnectionFactory();
+    PeerConnectionFactory rxFactory=PeerConnectionFactory.builder().setOptions(options).setFieldTrials(TRIALS).setVideoDecoderFactory(new VideoDecoderFactory(){
+      public VideoCodecInfo[] getSupportedCodecs(){return new VideoCodecInfo[]{codec};}
+      public VideoDecoder createDecoder(VideoCodecInfo info){return new Decoder();}
+    }).createPeerConnectionFactory();
+    System.out.println("STEP peers");
+    Obs txObs=new Obs("sender"),rxObs=new Obs("receiver");
+    PeerConnection tx=txFactory.createPeerConnection(config(),txObs),rx=rxFactory.createPeerConnection(config(),rxObs);
+    rx.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,new RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY));
+    Sdp s=new Sdp();rx.createOffer(s,new MediaConstraints());SessionDescription offer=s.await();s=new Sdp();rx.setLocalDescription(s,offer);s.await();
+    rxObs.gathered.await(30,TimeUnit.SECONDS);s=new Sdp();tx.setRemoteDescription(s,rx.getLocalDescription());s.await();
+    RtpSender sender=tx.addTrack(bridge.attach(txFactory),Collections.singletonList("probe-video"));
+    RtpParameters parameters=sender.getParameters();parameters.degradationPreference=RtpParameters.DegradationPreference.DISABLED;
+    if(start>0)for(RtpParameters.Encoding e:parameters.encodings)e.maxBitrateBps=64000000;
+    if(!sender.setParameters(parameters))throw new Exception("setParameters failed");
+    for(RtpTransceiver t:tx.getTransceivers())if(t.getSender().id().equals(sender.id()))t.setDirection(RtpTransceiver.RtpTransceiverDirection.SEND_ONLY);
+    if(start>0)System.out.println("START_BITRATE "+tx.setBitrate(null,start,64000000));
+    s=new Sdp();tx.createAnswer(s,new MediaConstraints());SessionDescription answer=s.await();s=new Sdp();tx.setLocalDescription(s,answer);s.await();
+    txObs.gathered.await(30,TimeUnit.SECONDS);bridge.negotiated(tx.getLocalDescription().description);
+    s=new Sdp();rx.setRemoteDescription(s,tx.getLocalDescription());s.await();
+    if(!txObs.connected.await(60,TimeUnit.SECONDS))throw new Exception("ICE sender timeout");
+    Thread.sleep(1000);
+    String config="{\"codec\":\"avc1."+profile+"\",\"width\":1568,\"height\":1080,\"fps\":60}";
+    if(!bridge.configure(new WebVideoRecord(1,0,1,0,1,0,config.getBytes("UTF-8"),null,0,null,null)))throw new Exception("configure failed");
+    int preroll=0;
+    if(warm){
+      while(counter(bridge,"outputFrames")==0&&preroll<10){
+        if(!bridge.awaitInput(10_000))throw new Exception("native input completion timeout");
+        long now=System.nanoTime();bridge.offer(new WebVideoRecord(2,1,1,preroll,1,preroll*16667L,frames.get(0),null,now,now,null));
+        preroll++;Thread.sleep(150);
+      }
+      if(!bridge.awaitInput(10_000))throw new Exception("native input completion timeout");
+      long receiverDeadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
+      while(decoded.get()<counter(bridge,"outputFrames")&&System.nanoTime()<receiverDeadline)Thread.sleep(20);
+      Thread.sleep(250);
+      System.out.println("WARMUP receiverDecoderInvocations="+decoded.get()+" "+bridge.flowDiagnostics());
+    }
+    stats(rx,"receiver");
+    Map<String,Object> receiverBaseline=new LinkedHashMap<>(lastReceiverStats);
+    synchronized(digestLock){outputDigest.reset();offeredDigest.reset();}
+    Map<String,Object> baseline=new LinkedHashMap<>(bridge.flowDiagnostics());int decodedBaseline=decoded.get(),blockedBaseline=blocked.get();
+    System.out.println("PROBE_START mode="+mode+" start="+start+" delay="+delay+" fixtureFrames="+frames.size()+" profile="+profile+" count="+frameCount);
+    long begin=System.nanoTime();int sent=0;
+    for(int i=0;i<frameCount;i++){
+      byte[] bytes=frames.get(i%frames.size());boolean key=key(bytes);
+      if(mode.equals("serial")){
+        if(!bridge.awaitInput(10_000))throw new Exception("native input completion timeout");
+      }
+      if(!mode.equals("burst")){
+        long target=begin+i*16666667L;long sleep=target-System.nanoTime();if(sleep>0)TimeUnit.NANOSECONDS.sleep(sleep);
+      }
+      long now=System.nanoTime();
+      synchronized(digestLock){offeredDigest.update(bytes);}
+      if(!bridge.offer(new WebVideoRecord(2,key?1:0,1,i,1,(i+preroll)*16667L,bytes,null,now,now,null)))throw new Exception("offer failed "+bridge.getFailure());
+      sent++;
+      if(i%60==59)System.out.println("FLOW "+i+" "+bridge.flowDiagnostics());
+    }
+    Thread.sleep(3000);stats(tx,"sender");stats(rx,"receiver");
+    Map<String,Long> delta=new LinkedHashMap<>();
+    for(Map.Entry<String,Object> e:bridge.flowDiagnostics().entrySet())if(e.getValue() instanceof Number&&baseline.get(e.getKey()) instanceof Number&&!e.getKey().startsWith("allocated")&&!e.getKey().startsWith("pending")&&!e.getKey().equals("encoderInputsInFlight"))delta.put(e.getKey(),((Number)e.getValue()).longValue()-((Number)baseline.get(e.getKey())).longValue());
+    System.out.println("DELTA mode="+mode+" start="+start+" receiverDecoderInvocations="+(decoded.get()-decodedBaseline)+" nativeBlocked="+(blocked.get()-blockedBaseline)+" "+delta);
+    System.out.println("RESULT mode="+mode+" start="+start+" delay="+delay+" offered="+sent+" receiverDecoderInvocations="+decoded.get()+" keys="+keys.get()+" nativeBlocked="+blocked.get()+" badTimestamps="+badTimestamps.get()+" "+bridge.flowDiagnostics());
+    Map<String,Object> result=new LinkedHashMap<>();
+    result.put("mode",mode);result.put("startBitrateBps",start);result.put("maxBitrateBps",start>0?64000000:null);
+    result.put("syntheticEncodeDelayMs",delay);result.put("fixtureProfile",profile);result.put("fixtureAccessUnits",frameCount);
+    result.put("warmup",baseline);result.put("delta",delta);result.put("final",bridge.flowDiagnostics());
+    result.put("receiverDecoderInvocations",decoded.get()-decodedBaseline);result.put("nativeBlocked",verbose?blocked.get()-blockedBaseline:null);
+    result.put("nativeLogSeverity",verbose?"verbose":"info");
+    result.put("badTimestamps",badTimestamps.get());result.put("senderStats",lastSenderStats);
+    synchronized(digestLock){result.put("offeredSha256",hex(offeredDigest.digest()));result.put("encoderOutputSha256",hex(outputDigest.digest()));}
+    Map<String,Long> receiverDelta=new LinkedHashMap<>();
+    for(Map.Entry<String,Object> e:lastReceiverStats.entrySet())if(e.getValue() instanceof Number){
+      Object old=receiverBaseline.get(e.getKey());
+      receiverDelta.put(e.getKey(),((Number)e.getValue()).longValue()-(old instanceof Number?((Number)old).longValue():0));
+    }
+    result.put("receiverRtpDelta",receiverDelta);result.put("receiverStats",lastReceiverStats);
+    result.put("receiverTestBufferSize",2);
+    result.put("receiverCodecDecode",false);result.put("physicalPerformanceMeasured",false);
+    System.out.println("RESULT_JSON "+WebJson.INSTANCE.write(result));
+    tx.close();rx.close();bridge.close();tx.dispose();rx.dispose();txFactory.dispose();rxFactory.dispose();
+    synchronized(NativeVideoProbe.class){nativeLog.flush();nativeLog.close();}
+    System.exit(0);
+  }
+}

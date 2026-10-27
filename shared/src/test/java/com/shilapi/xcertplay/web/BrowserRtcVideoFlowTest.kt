@@ -74,6 +74,32 @@ class BrowserRtcVideoFlowTest {
         assertEquals(16L, f.counter("releasedUnencodedFrames")); assertEquals(0L, f.counter("pendingFrames"))
     }
 
+    @Test fun receivedBytesIncludeParameterSetsWaitingFramesAndQueueRejections() = Fixture().use { f ->
+        fun sizedFrame(timeUs: Long, key: Boolean, size: Int, prefix: ByteArray? = null): WebVideoRecord {
+            val original = frame(timeUs, key)
+            return WebVideoRecord(original.kind, original.flags, original.codec, original.sequence,
+                original.epoch, original.timestampUs, original.payload.copyOf(size), prefix)
+        }
+        val first = sizedFrame(0, true, 6, byteArrayOf(0, 0, 0, 1, 0x67, 1, 2))
+        assertTrue(f.bridge.offer(first))
+        assertArrayEquals(first.prefix!! + first.payload, f.output.single())
+        val held = mutableListOf<VideoFrame>()
+        try {
+            f.capture = { it.retain(); held.add(it) }
+            repeat(16) { assertTrue(f.bridge.offer(sizedFrame((it + 1) * 16_667L, true, 6 + it))) }
+            assertTrue(f.bridge.offer(sizedFrame(17 * 16_667L, true, 23))) // Full native queue.
+            assertTrue(f.bridge.offer(sizedFrame(18 * 16_667L, false, 29))) // Waiting for a new IDR.
+            assertEquals(19L, f.counter("receivedFrames"))
+            assertEquals(281L, f.counter("receivedBytes")) // 13 + (6..21) + 23 + 29.
+            assertEquals(1L, f.counter("queueRejectedFrames"))
+            assertEquals(1L, f.counter("awaitingKeyFrames"))
+            assertEquals(17L, f.counter("submittedFrames"))
+            assertEquals(1L, f.counter("outputFrames"))
+            assertEquals(13L, f.counter("outputBytes"))
+        } finally { held.forEach(VideoFrame::release) }
+        assertEquals(0L, f.counter("pendingBytes"))
+    }
+
     @Test fun nativeKeyRequestsAndStaleDependencyChainsHaveDistinctEvidence() = Fixture().use { f ->
         lateinit var held: VideoFrame
         f.capture = { it.retain(); held = it }

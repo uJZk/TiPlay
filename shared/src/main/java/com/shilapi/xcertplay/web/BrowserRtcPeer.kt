@@ -97,6 +97,7 @@ private class AndroidBrowserRtcPeer(
     private var connection: PeerConnection? = null
     @Volatile private var videoTrack: BrowserRtcVideoTrack? = null
     private var videoSender: RtpSender? = null
+    private var videoRateStarted = false
     private var videoCodecOffers = emptyList<BrowserRtcVideoPolicy.Codec>()
     private var previousVideoOffer: String? = null
     private val videoLease = BrowserRtcVideoLease()
@@ -353,7 +354,19 @@ private class AndroidBrowserRtcPeer(
         videoSender = sender
         val parameters = sender.parameters
         parameters.degradationPreference = RtpParameters.DegradationPreference.DISABLED
+        // The resolution-based default is 2.5 Mbps at 1080p. The source is already
+        // compressed and cannot obey that encoder budget. Admit a bounded source
+        // rate; the minimum stays unset so congestion control may still reduce it.
+        check(parameters.encodings.size == 1) { "video-sender-encodings" }
+        parameters.encodings.single().maxBitrateBps = VIDEO_MAX_BITRATE_BPS
         check(sender.setParameters(parameters)) { "video-sender-parameters" }
+        if (!videoRateStarted) {
+            // This is an initial BWE prior, not a floor or a target for new encoding.
+            // Reapplying it on source/IDR replacement would reset real feedback.
+            check(peer.setBitrate(null, VIDEO_START_BITRATE_BPS, VIDEO_MAX_BITRATE_BPS)) { "video-sender-bitrate" }
+            videoRateStarted = true
+            log("Browser RTC: stage=video-rate epoch=$epoch startBps=$VIDEO_START_BITRATE_BPS maxBps=$VIDEO_MAX_BITRATE_BPS minimum=adaptive")
+        }
         peer.transceivers.firstOrNull { it.sender.id() == sender.id() }?.let { transceiver ->
             check(transceiver.setDirection(RtpTransceiver.RtpTransceiverDirection.SEND_ONLY)) { "video-sender-direction" }
             val sourceCodec = video.info()?.codec
@@ -386,8 +399,8 @@ private class AndroidBrowserRtcPeer(
                 nativeLock.withLock { videoSender?.setTrack(null, false); videoSender = null }
                 awaitSdp("video-remote-description") { peer.setRemoteDescription(it, SessionDescription(SessionDescription.Type.OFFER, offer)) }
                 val bridge = BrowserRtcVideoTrack(codecs, requestKeyFrame = { video.requestKeyFrame() })
-                videoTrack = bridge
                 nativeLock.withLock {
+                    videoTrack = bridge
                     old?.close()
                     attachVideoTrack(bridge)
                 }
@@ -470,14 +483,17 @@ private class AndroidBrowserRtcPeer(
             lastCodecDiagnostic = values
             runCatching { log("Browser RTC: stage=video-codec epoch=$epoch generation=${videoLease.generation} " + WebJson.write(values)) }
         }
+        fun publishVideoError(reason: String, generation: Int) {
+            runCatching { sendControl(WebJson.write(mapOf("k" to "video-error", "reason" to reason,
+                "generation" to generation))) }
+            log("Browser RTC: stage=video epoch=$epoch generation=$generation transport=${BrowserRtcVideoPolicy.TRACK} reason=$reason state=ended")
+        }
         fun endVideo(reason: String) {
             videoFailure = reason
             videoTrack?.disable(reason)
             reportCodec(force = true)
-            runCatching { sendControl(WebJson.write(mapOf("k" to "video-error", "reason" to reason,
-                "generation" to videoLease.generation))) }
+            publishVideoError(reason, videoLease.generation)
             sendRecord("video", sequence++, BrowserRtcRecord.video(WebVideoRecords.end(reason)))
-            log("Browser RTC: stage=video epoch=$epoch transport=${BrowserRtcVideoPolicy.TRACK} reason=$reason state=ended")
         }
         fun pauseVideo(next: WebVideoRecord?) {
             pendingVideoConfig = next
@@ -557,9 +573,33 @@ private class AndroidBrowserRtcPeer(
                     // Drain while replacing the track, preserving finite source-side memory.
                     // Resume only after video-ready, then ask the source for a fresh key frame.
                     if (!videoLease.ready) continue
-                    val accepted = nativeLock.withLock { !closed.get() && videoTrack?.offer(record) == true }
-                    if (!accepted) {
-                        endVideo(videoTrack?.failure ?: "video-track-unavailable"); break
+                    val owner = videoTrack ?: continue
+                    val ownerGeneration = videoLease.generation
+                    // Native cadence uses latest-frame coalescing at queue depth two.
+                    // Wait outside nativeLock so callbacks, replacement and disposal can
+                    // finish; the existing reliable source queue provides bounded storage.
+                    val inputReady = owner.awaitInput(VIDEO_INPUT_TIMEOUT_MS)
+                    var inputFailure: String? = null
+                    nativeLock.withLock {
+                        if (!closed.get() && videoTrack === owner && videoLease.ready && videoLease.generation == ownerGeneration) {
+                            val accepted = inputReady && owner.offer(record)
+                            if (!accepted) {
+                                // Mark only the checked owner. Control publication below
+                                // carries its generation and must not hold the send lock.
+                                val reason = owner.failure ?: if (inputReady) "video-track-unavailable" else "video-encoder-input-timeout"
+                                owner.disable(reason)
+                                videoFailure = reason
+                                inputFailure = reason
+                            }
+                        }
+                    }
+                    if (inputFailure != null) {
+                        reportCodec(force = true)
+                        // The scoped control error stops the matching reader. An unscoped
+                        // END could retire a replacement; blocked video credit must also
+                        // leave audio/control free to use the send lock.
+                        publishVideoError(inputFailure!!, ownerGeneration)
+                        break
                     }
                 } else sendRecord("video", sequence++, BrowserRtcRecord.video(record))
             }
@@ -883,6 +923,9 @@ private class AndroidBrowserRtcPeer(
     ) } ?: "operation-failed"
 
     companion object {
+        private const val VIDEO_START_BITRATE_BPS = 24_000_000
+        private const val VIDEO_MAX_BITRATE_BPS = 64_000_000
+        private const val VIDEO_INPUT_TIMEOUT_MS = 6_000L
         private val cleanupExecutor = Executors.newSingleThreadExecutor {
             Thread(it, "browser-rtc-cleanup").apply { isDaemon = true }
         }

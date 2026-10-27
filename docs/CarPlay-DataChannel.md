@@ -151,6 +151,18 @@ The congestion window and pushback remain enabled with their default limits;
 pushback reports a reduced target rate instead of a raw-frame skip ratio. Network
 feedback, RTP pacing and actual overload guards remain active. Passthrough cannot
 change source bitrate to honor that target, so this is not source rate control.
+The native cadence queue also coalesces raw inputs when more than one is queued.
+The producer waits outside native/send locks for the preceding encoder input to
+finish before capture. Completion follows the encoder callback or published loss
+state; it does not wait for an encoded buffer retained for screen cadence. Storage
+stays in the existing bounded reliable source queue. A retired wait cannot fail a
+replacement; input failure uses generation-scoped control without blocking video
+credit under the shared send lock.
+
+Each sender explicitly admits up to 64 Mbps instead of the SDK's 2.5 Mbps 1080p
+default, with a one-time 24 Mbps peer startup estimate. No minimum is set and real
+feedback/pacing may reduce the rate. This prior does not encode at that bitrate or
+change source bytes, and is not reapplied on each IDR/source replacement.
 Actual input loss still invalidates the dependency chain. The source processor
 retains the SDK's normal drop/crop/timestamp decisions and separately counts
 observed, adaptation-dropped and forwarded inputs.
