@@ -7,14 +7,12 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The source now prepares
-**0.2.20-beta.25** (code **67**, browser **v100**); its
-[release candidate](#beta25-release) records the current validation and pending packaging.
-The latest verified published prerelease remains **0.2.20-beta.24** (code **66**);
-[beta.24 release](#beta24-release) records its provenance and checks. Run
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
+prerelease is **0.2.20-beta.25** (code **67**);
+[beta.25 release](#beta25-release) records provenance and validation scope. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v99**, with original-codec WebRTC RTP for live video and negotiated audio.
+the deployed page uses **v100**, with original-codec WebRTC RTP for live video and negotiated audio.
 Earlier SoundTouch/libsoxr browser implementations are historical; current playback
 boundaries are in [Audio tempo](Audio-tempo.md). Software checks are in
 [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -213,44 +211,65 @@ Use the version already declared by the build; changing it requires an intention
 
 <a id="beta25-release"></a>
 
-## Beta.25 release candidate
+## Beta.25 release
 
-Source version **0.2.20-beta.25**, code **67**, prepares browser **v100**. Publication,
-signed APK identity, release attachments and public-page bytes remain pending;
-the beta.24 and v99 records below describe the last verified public artifacts.
+Published [TiPlay 0.2.20-beta.25](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.25),
+code **67**, browser **v100**, at **2026-10-27 10:46:57 UTC+08:00**.
+Build commit: `41c03970e95763f9fc62df395658c1df8f5871ce`.
 
-This candidate disables the native raw-frame bitrate dropper for original
-compressed CarPlay video and exposes source/input/encoder/RTP/Canvas evidence
-separately. Codec/profile/level admission, access-unit dependencies, bounded
-capture and video-only failure handling remain enforced. Original compressed
-video is not decoded or encoded again on Android.
+The native raw-frame bitrate dropper is disabled for original compressed CarPlay
+video. Codec/profile/level admission, access-unit dependencies, bounded capture
+and video-only failure handling remain enforced. Source, encoder-input/output,
+RTP and Canvas counters now distinguish their different progress boundaries.
+Android still forwards original compressed video without decoding or reencoding.
 
-Native Opus guidance uses a peer-owned, detached audio playout anchor that stays
-muted with zero volume. Chromium's WebAudio-only path could receive original RTP
-while producing zero decoded samples; activating peer playout restores samples
-through the existing Worklet mixer. Slot readiness waits for successful `play()`
-and exact Worklet binding. Retirement releases the anchor and graph owners. Music
-and guidance retain their common mixing/ducking policy with one audible output.
+Native Opus guidance uses one peer-owned detached audio playout object, permanently
+muted with zero volume. Chromium's WebAudio-only path could receive RTP without
+producing decoded samples. Starting peer playout restores samples through the
+existing Worklet mixer. Successful `play()` and exact Worklet binding precede the
+ready barrier; retirement releases the object and graph owners. Music and guidance
+retain the common mixing/ducking policy with one audible output.
 
-Validation completed **613 browser tests**. The first complete local Android
-command passed **4,346 tests**, all required Debug lint targets and all required
-Debug APK builds. Later focused lifecycle checks and actual Chromium original-Opus
-checks include sixteen negotiated slots, seventeen owners, generation replacement,
-nonzero Worklet output and anchor cleanup; [Testing](Testing.md#current-media-regression-checks)
-records their boundaries. The final repeated Android validation was stopped at
-the user's explicit request. **Formal CI is skipped for this release by explicit
-user instruction.** This scope does not establish a completed final full Android
-rerun, a new CI success or physical iPhone/Tesla acceptance.
+During this work, **613 browser tests** and the first complete local Android
+command passed: **4,346 tests** plus all required Debug lint/build targets.
+Actual Chromium checks cover non-first-slot activation, original Opus through the
+product router/Kotlin/JNI, sixteen slots, seventeen owners, generation replacement,
+independently nonzero Worklet output and cleanup. [Testing](Testing.md#current-media-regression-checks)
+records these boundaries. The final repeated Android validation was stopped at
+the user's explicit request. **Android full CI was skipped for this release.**
+Physical iPhone/vehicle performance, sound and resource increments remain pending.
 
-The user authorized publishing the beta APK. Signed release packaging and independent
-verification are the next steps: confirm package/version/signing continuity,
-the exact two pinned runtime identity files, native-library/16 KiB alignment,
-committed source correspondence and attachment checksums before recording
-publication. No asset digest or deployment success is claimed here yet.
+The published APK comes from [signed workflow 40439215287](https://github.com/uJZk/TiPlay/actions/runs/40439215287),
+which passed Release lint/build, signing, pinned runtime checks and draft upload.
+Its artifact was independently downloaded and verified before publication. All
+three published attachments were downloaded again and match those verified bytes;
+the release tag resolves to the build commit above.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.25.apk` | 114,168,744 | `9f7b5213b8f1ec2cb6ad6753e3c2609c192d4197fb877e92db18fba041c848c9` |
+| `TiPlay-0.2.20-beta.25-source.zip` | 40,882,883 | `138ed6a7534175197b9951043e428dd7989811f72b2b439d155a98a3a7501bb4` |
+| `SHA256SUMS.txt` | 191 | `8ee2b29f205302f60933f9fbae44ff0f3858057283eb7f4fbbcaae28c60eab8b` |
+
+Independent checks confirm non-debug `com.ujzk.tiplay`, code67, signer continuity
+(`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`),
+the two unchanged runtime identity containers, exact build-commit source and
+repair DEX markers. All 51 native libraries match the expected ABI/name set;
+all 25 ELF64 libraries and the APK ZIP pass 16 KiB alignment. Signing inputs were
+removed after local packaging; reports and verified downloads remain outside Git
+under `/tmp/tiplay-beta25/`. Later documentation-only changes do not change the
+APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-Browser **v99** is deployed from
+Browser **v100** is deployed from `41c03970e95763f9fc62df395658c1df8f5871ce` by
+[Pages run 40438289269](https://github.com/uJZk/TiPlay/actions/runs/40438289269).
+All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
+with WASM MIME types and no redirects verified. It includes native-audio playout
+activation, safe per-generation RTP/audio diagnostics and beta.25 download metadata.
+APK provenance and user-directed CI scope are recorded in [beta.25](#beta25-release).
+
+The preceding browser **v99** was deployed from
 `1bc4eb793f9e2b3d6085f10a434dfa7842f9bcd2` by
 [Pages run 40425187334](https://github.com/uJZk/TiPlay/actions/runs/40425187334).
 All **217** public files (**31,811,563 bytes**) match the exact local assembly,

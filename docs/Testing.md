@@ -7,12 +7,12 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-The [beta.25/code67 candidate](Build.md#beta25-release), browser v100, passes
+The [beta.25/code67 release](Build.md#beta25-release), browser v100, includes the verified scope of
 613 browser tests. Its first complete local required Android command passed
 4,346 tests and all required Debug lint/build targets. The final repeated Android
 validation was stopped at the user's request; formal CI is explicitly skipped
-for this release. Final signed packaging and public verification are recorded
-separately in Build when completed. The media checks below describe source and
+for this release. Signed packaging and independent published-asset verification passed and are
+recorded separately in Build. The media checks below describe source and
 desktop behavior, with physical iPhone/Tesla acceptance still pending.
 
 Beta.24/code66 and browser v97 pass 4,335 local Android tests, all required Debug
