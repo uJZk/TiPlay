@@ -8,11 +8,11 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is **0.2.20-beta.27** (code **69**);
-[beta.27 release](#beta27-release) records provenance and validation scope. Run
+prerelease is **0.2.20-beta.28** (code **70**);
+[beta.28 release](#beta28-release) records provenance and validation scope. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v102**, with original-codec WebRTC RTP for live video and negotiated audio.
+the deployed page uses **v103**, with original-codec WebRTC RTP for live video and negotiated audio.
 Earlier SoundTouch/libsoxr browser implementations are historical; current playback
 boundaries are in [Audio tempo](Audio-tempo.md). Software checks are in
 [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -213,7 +213,9 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta.28 release
 
-Prepared **0.2.20-beta.28**, code **70**, browser **v103**. At the user's request,
+Published [TiPlay 0.2.20-beta.28](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.28),
+code **70**, browser **v103**, at **2026-10-27 13:08:03 UTC+08:00**.
+Build commit: `50f94b322ddf3a79d7bf74e674800cba437b74fa`. At the user's request,
 the one-time native video startup estimate changes from 24 to **16 Mbps**. The
 64 Mbps stream ceiling, unset minimum, native input-completion barrier and real
 congestion feedback remain as in beta.27. This estimate is a startup prior, not a
@@ -221,11 +223,35 @@ fixed encoding rate or a guarantee of network capacity.
 
 The probe's current default and reproduction examples use 16 Mbps. The beta.27
 native measurements below actually used 24 Mbps and retain that recorded value;
-they are not relabeled as tests of the new setting. Twenty-eight targeted shared
+they are not relabeled as tests of the new setting. A separate actual Android
+AAR run with `setBitrate(null,16000000,64000000)` accepted the new prior and passed
+all 180 native RTP receiver AUs, zero packet loss, and identical source/encoder
+SHA-256 for 181,238 original bytes (High-profile, about 0.483 Mbps). Software
+receive scheduling skipped five decode callbacks (175), so this is not a picture
+decode/render or vehicle FPS result. Evidence is outside Git under
+`/tmp/tiplay-beta28/native16/`; the temporary emulator and ADB server were stopped.
+Twenty-eight targeted shared
 JVM tests and 613 browser tests pass, along with public-tree, cache-manifest,
-release-draft and site-assembly checks. Signed packaging and public download
-checks will be recorded after completion. Full Android test CI remains skipped
-under the user's instruction; 16 Mbps native/vehicle performance is unverified.
+release-draft and site-assembly checks. Full Android test CI was skipped
+under the user's instruction; 16 Mbps vehicle performance remains unverified.
+
+[Signed workflow 40452499960](https://github.com/uJZk/TiPlay/actions/runs/40452499960)
+passed Release lint/build, signing, pinned runtime checks and draft upload.
+Artifact `12711630934` has ZIP SHA-256
+`e9a3f927656320e5c43408da28a18760d9a84c599286cfe779ff745e518b2dde`.
+Independent verification confirms package/code70, signer/runtime continuity
+against verified beta.27, the unchanged 51-library set, all 25 ELF64 libraries and
+ZIP aligned to 16 KiB, compiled `startBps=16000000` plus existing barrier markers,
+and source ZIP identical to `git archive` of the build commit. All three public
+attachments match the independently verified workflow files byte-for-byte. The
+tag points directly to the build commit; it remains a prerelease with stable
+latest unchanged. Reports and downloads are outside Git under `/tmp/tiplay-beta28/`.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.28.apk` | 114,185,128 | `bccd89280862ea55b18d7830dc54debefce70d162f3d023d2b45674e58260723` |
+| `TiPlay-0.2.20-beta.28-source.zip` | 40,907,910 | `3f8358cdcb85b4f72f36f4f3eaabe5d9fe79abbf01a12407ae3d09f0741bb628` |
+| `SHA256SUMS.txt` | 191 | `c891d224854d22dfebf1476def71140de99cdb786f0b73f1f35f2473757529a0` |
 
 <a id="beta27-release"></a>
 
@@ -402,7 +428,15 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-Browser **v102** is deployed from `6098d4ed5fc85f67cc7d290ec3d6ae2068cb4805` by
+Browser **v103** is deployed from `50f94b322ddf3a79d7bf74e674800cba437b74fa` by
+[Pages run 40452502158](https://github.com/uJZk/TiPlay/actions/runs/40452502158).
+All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
+with JavaScript/WASM MIME types and no redirects verified. Actual downloaded
+page/cache values identify v103 and application metadata identifies beta.28.
+This deployment changes version metadata; the 16 Mbps startup estimate is in the APK.
+[Beta.28](#beta28-release) records source/native checks and published provenance.
+
+The preceding browser **v102** was deployed from `6098d4ed5fc85f67cc7d290ec3d6ae2068cb4805` by
 [Pages run 40449503779](https://github.com/uJZk/TiPlay/actions/runs/40449503779).
 All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
 with JavaScript/WASM MIME types and no redirects verified. Downloaded page/cache

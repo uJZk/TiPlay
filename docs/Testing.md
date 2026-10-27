@@ -9,8 +9,11 @@ recorded source, not interchangeable coverage counts for later engines.
 
 Beta.28/code70, browser v103, changes the startup prior to 16 Mbps at the user's
 request. Its source/publication scope is recorded in [Build](Build.md#beta28-release).
-The beta.27 native measurements below used 24 Mbps; they do not establish new
-16 Mbps native or vehicle performance evidence.
+The beta.27 native measurements below used 24 Mbps. A separate actual AAR run of
+the new 16 Mbps prior passed 180/180 RTP receiver AUs, zero packet loss and
+unchanged SHA-256 for 181,238 source bytes (about 0.483 Mbps). The software
+receiver skipped five decode callbacks (175); no picture/render or vehicle
+performance claim follows from this transport count.
 
 Beta.27/code69, browser v102, adds native-input completion backpressure and bounded
 original-video rate admission after beta.26 still suppressed frames. All 2,489
