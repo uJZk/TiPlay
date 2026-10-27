@@ -166,6 +166,12 @@ private class AndroidBrowserRtcPeer(
             val builder = PeerConnectionFactory.builder().setOptions(PeerConnectionFactory.Options().apply {
                 disableNetworkMonitor = true
             })
+                // Both droppers assume independent raw frames that can be skipped before
+                // encoding. Original compressed references cannot use either policy.
+                // Keep the congestion window/pushback, pacer and actual overload guards;
+                // DropFrame:false reports the reduced rate instead of skipping input AUs.
+                .setFieldTrials("WebRTC-FrameDropper/Disabled/" +
+                    "WebRTC-CongestionWindow/QueueSize:350,MinBitrate:30000,DropFrame:false/")
             if (videoTrack != null) builder.setVideoEncoderFactory(object : VideoEncoderFactory {
                 // libwebrtc caches this list once. Replacement bridges use the same negotiated
                 // factory capabilities; only the current video's encoder delegate is replaced.
@@ -883,10 +889,6 @@ private class AndroidBrowserRtcPeer(
         @Synchronized private fun initialize(context: Context) {
             if (initialized) return
             PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context)
-                // M150's raw-frame rate dropper is separate from scaling/degradation settings.
-                // Our input already contains compressed references; skipping one invalidates
-                // every dependent AU. Keep native congestion/queue bounds and IDR recovery.
-                .setFieldTrials("WebRTC-FrameDropper/Disabled/")
                 .setEnableInternalTracer(false).createInitializationOptions())
             initialized = true
         }

@@ -209,6 +209,34 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
+<a id="beta26-release"></a>
+
+## Beta.26 release
+
+Prepared **0.2.20-beta.26**, code **68**, browser **v101**. Publication and
+independent artifact verification are pending; beta.25 remains the published build.
+The user retained the instructions to publish the follow-up beta and skip full CI.
+The existing signed packaging workflow remains necessary for signing and release
+attachments; it is separate from the full Android test workflow.
+
+The beta.25 vehicle follow-up still showed 577 received access units, 77 submissions,
+45 encoded callbacks, 32 unencoded releases and 500 frames waiting for recovery.
+Browser RTP loss/NACK/PLI/FIR were zero; decode averaged about 2.4 ms per frame and
+draw p95 was 0.9–1.4 ms. This identifies sender suppression without proving that
+all 32 releases share one native cause.
+
+Each video factory now disables the independent M150 congestion-window raw-frame
+skip policy as well as the bitrate frame dropper. Default window/pushback limits,
+network feedback, pacing, overload guards and reference-chain recovery remain.
+Passthrough does not change the source bitrate to honor reduced encoder targets.
+Three counters at the SDK source-adaptation boundary help separate its drops from
+later encoder losses; the processor keeps the SDK's existing adaptation behavior.
+Twenty targeted JVM regressions and 613 browser tests pass, including four new
+source-adaptation/ownership checks. Public-tree, cache-manifest, release-draft and
+site-assembly checks pass. These tests do not execute Android JNI congestion control or establish
+vehicle smoothness. Full CI is skipped at the user's request; packaging and
+publication checks will be recorded here after completion.
+
 <a id="beta25-release"></a>
 
 ## Beta.25 release

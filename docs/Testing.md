@@ -79,12 +79,25 @@ and [current deployment](Build.md#current-browser-deployment) for published byte
 
 ### Current media regression checks
 
-The working source disables M150's raw-frame bitrate dropper for original
-compressed video; scaling/degradation controls alone did not disable it.
+The working source disables M150's raw-frame bitrate dropper and the independent
+congestion-window frame-skip policy for original compressed video. The window,
+pushback, pacing and real overload guards remain active; scaling/degradation
+controls alone did not disable these raw-frame policies. This does not provide
+source bitrate control for already compressed input.
 `BrowserRtcVideoFlowTest` verifies original-byte output, bounded input and distinct
 input-loss/keyframe/dependency counters. These Java seam tests do not load Android
 JNI or establish vehicle frame continuity. Receiver RTP counters and bridge output
 must be compared separately from source cadence and Canvas draws.
+
+The beta.25 vehicle follow-up still recorded 577 input frames, 77 submissions,
+45 output callbacks and 32 unencoded releases; 500 later frames waited for a
+keyframe. Receiver packet loss/NACK/PLI/FIR were zero, with roughly 2.4 ms average
+decode and 0.9–1.4 ms p95 draw time. These establish substantial sender suppression,
+but do not identify every native drop reason. Beta.26 addresses the independently
+verified congestion-window raw-frame skip path. Twenty targeted JVM regressions
+pass, including four new tests of the actual SDK adaptation helper, original
+buffer/timestamp preservation, source-drop recovery, pixel rejection and lifecycle
+release. They do not load Android JNI or exercise native congestion feedback.
 
 For native audio, a Chromium 156 control received 80 original Opus packets through
 the product router/JNI but produced no decoded samples through WebAudio alone.

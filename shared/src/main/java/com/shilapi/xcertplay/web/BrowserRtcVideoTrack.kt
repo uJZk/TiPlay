@@ -27,6 +27,7 @@ internal class BrowserRtcVideoTrack(
     private val nowNanos: () -> Long = System::nanoTime,
 ) : VideoEncoderFactory, Closeable {
     private var source: VideoSource? = null
+    private val sourceProcessor = BrowserRtcVideoSourceProcessor()
     private var track: VideoTrack? = null
     private var negotiatedCodec: BrowserRtcVideoPolicy.Codec? = null
     @Volatile private var sourceCodec: String? = null
@@ -72,6 +73,7 @@ internal class BrowserRtcVideoTrack(
         check(source == null && !closed)
         val source = factory.createVideoSource(true, false)
         this.source = source
+        source.setVideoProcessor(sourceProcessor)
         source.capturerObserver.onCapturerStarted(true)
         return factory.createVideoTrack("tiplay-original-video", source).also { track = it }
     }
@@ -158,7 +160,7 @@ internal class BrowserRtcVideoTrack(
         "lossEvents" to lossEvents.get(), "pendingFrames" to pending.get(), "pendingBytes" to pendingBytes.get(),
         "waitingForKey" to waitingForKey, "rateUpdates" to rateUpdates.get(),
         "allocatedBitrateBps" to allocatedBitrateBps.get(), "allocatedFramerate" to allocatedFramerate.get(),
-    )
+    ) + sourceProcessor.flowDiagnostics()
 
     @Synchronized fun configure(record: WebVideoRecord): Boolean {
         if (closed || failure != null) return false

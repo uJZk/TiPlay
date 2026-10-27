@@ -140,13 +140,20 @@ including burst arrivals. Pixel conversion/scaling is rejected. An input dropped
 before encoding invalidates the dependency chain and requests a new source key
 frame. An RTP codec capability does not prove actual vehicle hardware decoding.
 
-The M150 raw-frame bitrate dropper is disabled with the public
-`WebRTC-FrameDropper/Disabled/` initialization trial. Scaling settings and disabled
-degradation preference alone do not disable that separate pre-encoder mechanism.
-It assumes the next frame can be encoded independently; our original compressed
-input cannot satisfy that assumption, and dropping one reference forces IDR recovery.
-This does not disable native congestion-window/queue limits, change source bitrate
-or transcode input. Actual input loss still invalidates the dependency chain.
+Each M150 factory disables both raw-frame bitrate dropping and congestion-window
+frame skipping through the public `Builder.setFieldTrials` environment:
+`WebRTC-FrameDropper/Disabled/` and
+`WebRTC-CongestionWindow/QueueSize:350,MinBitrate:30000,DropFrame:false/`.
+Scaling settings and disabled degradation preference alone do not disable either
+pre-encoder mechanism. Both assume the next raw frame can be encoded independently;
+dropping an original compressed reference instead forces IDR recovery.
+The congestion window and pushback remain enabled with their default limits;
+pushback reports a reduced target rate instead of a raw-frame skip ratio. Network
+feedback, RTP pacing and actual overload guards remain active. Passthrough cannot
+change source bitrate to honor that target, so this is not source rate control.
+Actual input loss still invalidates the dependency chain. The source processor
+retains the SDK's normal drop/crop/timestamp decisions and separately counts
+observed, adaptation-dropped and forwarded inputs.
 Sender `video-flow` and receiver `transport.rtpVideo` evidence in
 [Diagnostics](Diagnostics.md#live-video-policy-evidence) distinguish those remaining
 boundaries; this configuration alone does not establish vehicle continuity.

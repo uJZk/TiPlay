@@ -38,11 +38,14 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#current-browser-deployment)
-and [beta.25](docs/Build.md#beta25-release). Keep source checks, published artifact
+and [beta.26](docs/Build.md#beta26-release). Keep source checks, published artifact
 identity and vehicle evidence separate. Preserve strict source/profile/level/mode
 admission, original compressed frames, bounded selection and per-instance callback
-ownership. Beta.25 adds the original-video frame-dropper correction and the native
-audio playout activation repair; its user-directed validation scope is recorded in Build.
+ownership. Beta.26 follows the beta.25 vehicle report: disable the independent
+congestion-window raw-frame skip policy while retaining pushback/pacing, and count
+the SDK source-adaptation boundary. Do not claim every native loss is attributed
+or that passthrough obeys reduced encoder bitrate. Native-audio activation remains
+as verified in beta.25; user-directed validation scope is recorded in Build.
 Install the matching APK/page for physical acceptance and retain new codec diagnostics
 if it fails. Historical beta-specific CI waivers do not waive checks for new work.
 Software timestamps and codec benchmarks do not establish speaker/panel timing,

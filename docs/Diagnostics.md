@@ -402,6 +402,13 @@ counts and native rate allocations help distinguish source starvation from sende
 input loss. Compare intervals within one peer/video generation and use the receiver
 statistics below for the downstream boundary.
 
+`sourceObservedFrames`, `sourceAdaptationDrops` and `sourceForwardedFrames` observe
+the public SDK source-adaptation boundary. The processor keeps normal adaptation
+and aligned timestamps; it does not bypass dropping or convert compressed frames
+to pixels. Source drops are also included in `releasedUnencodedFrames`; later
+encoder losses are not source-adaptation drops. These counters do not distinguish
+every native encoder loss reason or prove congestion-window dropping occurred.
+
 Debug `transport.rtpVideo.*` samples the current video receiver independently of
 the metadata DataChannel. `generation`, `state` and `sampleAgeMs` identify sample
 ownership and freshness. Available counters include received/lost packets,
