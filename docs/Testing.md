@@ -7,6 +7,14 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+Beta.26/code68, browser v101, passes **2,481 shared JVM tests** and **613 browser
+tests**, with public-tree, cache, release-draft and site-assembly checks. Twenty
+JVM regressions directly cover video passthrough, flow and source adaptation.
+Full Android test CI remains skipped at the user's request for this follow-up;
+the separate signed packaging workflow and physical acceptance are recorded in
+[Build](Build.md#beta26-release). The JVM tests do not execute native congestion
+control or establish vehicle smoothness.
+
 The [beta.25/code67 release](Build.md#beta25-release), browser v100, includes the verified scope of
 613 browser tests. Its first complete local required Android command passed
 4,346 tests and all required Debug lint/build targets. The final repeated Android
