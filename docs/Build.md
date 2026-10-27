@@ -8,11 +8,11 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is **0.2.20-beta.28** (code **70**);
-[beta.28 release](#beta28-release) records provenance and validation scope. Run
+prerelease is **0.2.20-beta.29** (code **71**);
+[beta.29 release](#beta29-release) records provenance and validation scope. Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v103**, with original-codec WebRTC RTP for live video and negotiated audio.
+the deployed page uses **v104**, with original-codec WebRTC RTP for live video and negotiated audio.
 Earlier SoundTouch/libsoxr browser implementations are historical; current playback
 boundaries are in [Audio tempo](Audio-tempo.md). Software checks are in
 [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -213,8 +213,10 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta.29 release
 
-Prepared **0.2.20-beta.29**, code **71**, browser **v104**. Publication checks are
-pending. Keep the user's 16 Mbps startup prior, 64 Mbps ceiling and unset minimum;
+Published [TiPlay 0.2.20-beta.29](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.29),
+code **71**, browser **v104**, at **2026-10-27 14:11:24 UTC+08:00**.
+Build commit: `c25e92d26d80e0d69b80dcfa61745222a747b4ec`.
+Keep the user's 16 Mbps startup prior, 64 Mbps ceiling and unset minimum;
 the new functional change is idle keyframe recovery through the existing poll.
 
 The beta.28 follow-up had three fresh connections with High `64002a` source,
@@ -243,7 +245,27 @@ matching its own generated test method; existing time limits are unchanged.
 The final complete shared run used `-Pkotlin.incremental=false` after a local
 incremental compilation metadata failure. A transient port-rebind conflict also
 passed isolated and final checks. Full Android test CI remains skipped under the
-user's instruction. Signed/public artifact checks will be recorded after completion.
+user's instruction.
+
+[Signed workflow 40458373264](https://github.com/uJZk/TiPlay/actions/runs/40458373264)
+passed Release lint/build, signing, pinned runtime checks and draft upload.
+Artifact `12712938944` has ZIP SHA-256
+`81bd110ea0b591a073ea6a62a18427b5db0173671a77c0b8485101e660192cc0`.
+Independent checks confirm package/code71, signer/runtime continuity against
+verified beta.28, the unchanged 51-library set, all 25 ELF64 libraries and ZIP
+aligned to 16 KiB, and existing compiled 16 Mbps/input-barrier markers. The source
+ZIP exactly matches the build commit's `git archive`, including the guarded idle
+retry and recovery regression tests; no new DEX literal is claimed for this
+one-line change. All three public attachments were downloaded again and match
+the verified workflow files byte-for-byte. The tag points directly to the build
+commit; it remains a prerelease with stable latest unchanged. Reports and verified
+downloads remain outside Git under `/tmp/tiplay-beta29/`.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.29.apk` | 114,185,128 | `79b01420c084bdd01d685dbd3c76d1ec9ef32677d5f5042735daaa04f68ed0cf` |
+| `TiPlay-0.2.20-beta.29-source.zip` | 40,915,885 | `727e377454f25968b2869267e546cc87bf89dd213aa8f20685d44a77bd966bc7` |
+| `SHA256SUMS.txt` | 191 | `0719507367d939e16bccd60b0d55c03f8b84d2ad001293e9cb0c547515fb4a4d` |
 
 <a id="beta28-release"></a>
 
@@ -464,7 +486,15 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-Browser **v103** is deployed from `50f94b322ddf3a79d7bf74e674800cba437b74fa` by
+Browser **v104** is deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
+[Pages run 40458375995](https://github.com/uJZk/TiPlay/actions/runs/40458375995).
+All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
+with JavaScript/WASM MIME types and no redirects verified. Downloaded page/cache
+values identify v104 and application metadata identifies beta.29. The deployment
+changes version metadata; idle keyframe recovery is in the APK.
+[Beta.29](#beta29-release) records source/native and publication checks.
+
+The preceding browser **v103** was deployed from `50f94b322ddf3a79d7bf74e674800cba437b74fa` by
 [Pages run 40452502158](https://github.com/uJZk/TiPlay/actions/runs/40452502158).
 All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
 with JavaScript/WASM MIME types and no redirects verified. Actual downloaded
