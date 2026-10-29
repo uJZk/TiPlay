@@ -47,8 +47,8 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
         emit("c=$connection stage=TRUST_IDENTITY source=$safe")
     }
 
-    fun pairingVerify(connection: Long, status: Int, verified: Boolean) =
-        emit("c=$connection stage=PAIR_VERIFY status=${if (status == 200) "ok" else "failed"} verified=$verified")
+    fun pairingVerify(connection: Long, status: Int?, verified: Boolean) =
+        emit("c=$connection stage=PAIR_VERIFY status=${if ((status ?: 200) == 200) "ok" else "failed"} verified=$verified")
 
     fun reverseReply(connection: Long, reply: RtspMessage.Request) {
         val kind = if (reply.method == "EVENT/1.0") "EVENT" else "HTTP"
