@@ -448,6 +448,11 @@ Debug `transport.rtpVideo.*` samples the current video receiver independently of
 the metadata DataChannel. `generation`, `state` and `sampleAgeMs` identify sample
 ownership and freshness. Available counters include received/lost packets,
 received/decoded/dropped frames, keyframes, NACK/PLI/FIR, decode time and freezes.
+When exposed by the browser, packets discarded, multi-packet assembled frame count,
+total assembly time and processing delay distinguish receiver assembly and decode
+boundaries. These times and counts are cumulative: compare changes within one
+generation, not totals across source replacement. The fields are optional and a
+missing value is not zero.
 `jitterMs` is receiver interarrival jitter. Jitter-buffer delay/target/minimum
 values are cumulative milliseconds; divide their interval changes by the change
 in `jitterBufferEmittedCount` for an interval average, only within one generation.

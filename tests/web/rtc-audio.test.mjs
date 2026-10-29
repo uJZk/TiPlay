@@ -8,6 +8,17 @@ const codecs = [{ mimeType: 'audio/opus', clockRate: 48000, channels: 2 },
 const Receiver = { getCapabilities: kind => ({ codecs: kind === 'audio' ? codecs : [] }) };
 const record = (fields = {}) => ({ type: 0, mode: 'carplay', epoch: 1, channels: 2, rate: 48000,
   config: { codec: 'opus', audioTransport: 'webrtc-track-v1', rtpSlot: 'slot0', rtcGeneration: 1, semanticType: 0 }, ...fields });
+
+test('SDP completion does not cancel the ICE connection deadline', async () => {
+  const h = harness({ timeoutMs: 20 });
+  try {
+    await h.audio.start(1);
+    h.peers[0].connectionState = 'connecting'; h.peers[0].iceConnectionState = 'checking';
+    await new Promise(resolve => setTimeout(resolve, 40));
+    assert.match(h.errors[0].message, /connection timed out/);
+    assert.equal(h.peers[0].closed, true);
+  } finally { h.audio.close(); }
+});
 function harness(options = {}) {
   const peers = [], sources = [], messages = [], exchanges = [], errors = [], anchors = [], abort = new AbortController();
   class PeerConnection {

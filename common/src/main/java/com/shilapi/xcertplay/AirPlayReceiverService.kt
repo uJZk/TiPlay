@@ -56,7 +56,7 @@ class AirPlayReceiverService : Service() {
     override fun onCreate() {
         super.onCreate()
         publish("starting")
-        deviceTrust = ReceiverDeviceTrust(AirPlayDeviceTrustStore(this))
+        deviceTrust = ReceiverDeviceTrust(AirPlayDeviceTrustStore(this), diagnostic = ::logDiagnostic)
         trustRegistration = AirPlayTrustNotifications.attach(deviceTrust)
         viewportSubscription = TeslaBrowserLink.listenViewport(this) { viewport ->
             val size = TeslaBrowserCanvas.sizeFor(viewport)

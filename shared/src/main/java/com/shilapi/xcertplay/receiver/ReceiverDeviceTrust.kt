@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit
 /** First-use consent and optional remembered sender identities, separate from media ownership. */
 class ReceiverDeviceTrust(
     private val store: Store,
+    private val diagnostic: (String) -> Unit = {},
     private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000 },
 ) {
     interface Store {
@@ -37,6 +38,8 @@ class ReceiverDeviceTrust(
     private val deniedUntil = linkedMapOf<String, Long>()
     private val allowedConnections = linkedSetOf<String>()
     private var unverifiedDeniedUntil = 0L
+    private var lastDiagnostic: String? = null
+    private var lastDiagnosticAt = Long.MIN_VALUE
 
     /** Called only after authenticating the paired browser's `/control` request. */
     @Synchronized fun browserSeen(session: String) {
@@ -76,13 +79,21 @@ class ReceiverDeviceTrust(
     private fun requestIdentity(fingerprint: String, deviceName: String, verified: Boolean,
                                 persistentFingerprint: String = fingerprint, mediaType: String = "unknown"): Decision {
         expire()
-        if ((verified && store.contains(persistentFingerprint)) || fingerprint in allowedConnections) return Decision.Allowed
+        if (verified && store.contains(persistentFingerprint)) {
+            report("remembered-hit")
+            return Decision.Allowed
+        }
+        if (fingerprint in allowedConnections) {
+            report("connection-hit")
+            return Decision.Allowed
+        }
         val now = nowMillis()
         if (!verified && now < unverifiedDeniedUntil) return Decision.Denied
         if (deniedUntil[if (verified) persistentFingerprint else fingerprint]?.let { now < it } == true) return Decision.Denied
         val activeBrowser = browser?.takeIf { now - browserSeenAt in 0..BROWSER_LIVE_MILLIS } ?: return Decision.Denied
         pending?.let { return if (it.fingerprint == fingerprint && it.browser == activeBrowser) it.decision else Decision.Denied }
         val name = deviceName.filter { !it.isISOControl() }.trim().take(80).ifEmpty { "AirPlay" }
+        report(if (verified) "prompt-persistent" else "prompt-connection")
         return Decision.Pending(UUID.randomUUID().toString(), revision, fingerprint, verified, persistentFingerprint).also {
             pending = Request(it, fingerprint, name, activeBrowser, now + APPROVAL_MILLIS, verified,
                 mediaType.takeIf { type -> type in setOf("audio", "mirror", "video", "photo") } ?: "unknown")
@@ -128,12 +139,21 @@ class ReceiverDeviceTrust(
         expire()
         val request = pending?.takeIf { it.browser == session && it.decision.id == id } ?: return false
         if (allow) {
-            if (remember && request.verified) store.remember(request.decision.persistentFingerprint)
+            if (remember && request.verified) {
+                try {
+                    store.remember(request.decision.persistentFingerprint)
+                    report("remembered-saved")
+                } catch (error: Exception) {
+                    report("remembered-save-failed")
+                    throw error
+                }
+            }
             else {
                 allowedConnections += request.fingerprint
                 while (allowedConnections.size > MAX_CONNECTION_GRANTS) allowedConnections.remove(allowedConnections.first())
+                report(if (remember) "remember-unavailable" else "allowed-once")
             }
-        }
+        } else report("rejected")
         request.decision.allowed = allow
         finish(request)
         return true
@@ -171,6 +191,14 @@ class ReceiverDeviceTrust(
     }
 
     private fun cancelPending() { pending?.let(::finish) }
+
+    private fun report(event: String) {
+        val now = nowMillis()
+        if (event == lastDiagnostic && now - lastDiagnosticAt in 0L until 5_000L) return
+        lastDiagnostic = event
+        lastDiagnosticAt = now
+        runCatching { diagnostic("AirPlay trust: event=$event") }
+    }
 
     private fun finish(request: Request) {
         if (!request.decision.allowed) {

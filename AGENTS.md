@@ -43,8 +43,8 @@ identity and vehicle evidence separate. Preserve strict source/profile/level/mod
 admission, original compressed frames, bounded selection and per-instance callback
 ownership. Beta.27 follows the beta.26 vehicle report and actual Android AAR
 reproduction: serialize original-AU capture by input completion, set a bounded
-64 Mbps video ceiling and a one-time 16 Mbps BWE startup prior (updated in beta.28
-at the user's request; beta.27's recorded native tests used 24 Mbps). Keep the minimum
+64 Mbps video ceiling and a one-time 32 Mbps BWE startup prior (updated at the user's
+request; beta.27's recorded native tests used 24 Mbps). Keep the minimum
 unset, real congestion feedback and overload guards; never reset the estimate on
 each IDR/source replacement. Completion follows the encoder callback or published
 input-loss state, not final buffer release. Wait outside native/send locks; old
@@ -75,7 +75,7 @@ offer, then update that pending offer with video before authentication/signaling
 The application m-line must own BUNDLE's permanent DTLS/SCTP transport. Stop every
 retired video track/transceiver; an inactive video transport anchor can starve
 packet feedback after replacement and collapse BWE to 30 kbps. Keep TWCC, REMB,
-real congestion guards and the one-time 16 Mbps prior. Do not reorder generated
+real congestion guards and the one-time 32 Mbps prior. Do not reorder generated
 SDP or signal the intermediate offer. See [desktop RTP integration](docs/Testing.md#desktop-rtp-integration).
 
 When the source audio codec is negotiated, forward original encoded audio over standard

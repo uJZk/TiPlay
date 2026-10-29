@@ -3,6 +3,7 @@ import { audioTrackLabel, createAudioTrackList, preferredAudioTrack } from './ai
 import { mediaTimeRanges } from './media-ranges.js';
 import { createSubtitleTrackList } from './airplay-track-menu.js';
 import { sanitizePlaybackDiagnostics } from './airplay-diagnostics.js';
+import { createAirPlayFetchBridge } from './airplay-fetch-bridge.js';
 
 const libraries = new WeakMap();
 const interrupted = () => new DOMException('Media playback was interrupted.', 'AbortError');
@@ -84,7 +85,7 @@ export function createMediaEngine(surface, options = {}) {
   }
   function retire(item) {
     if (!item || item.retired) return item?.cleanup;
-    item.retired = true; item.controller.abort(); clearTimeout(item.startupTimer);
+    item.retired = true; item.controller.abort(); item.fetchBridge?.dispose(); clearTimeout(item.startupTimer);
     item.resize?.disconnect();
     // Scope DOM and asynchronous disposal to this source: an old completion cannot remove the new Canvas.
     item.container?.remove();
@@ -255,9 +256,12 @@ export function createMediaEngine(surface, options = {}) {
         if (surface) item.resize.observe(surface);
       }
       item.phase = 'metadata';
+      if (typeof window !== 'undefined' && options.proxyOrigin)
+        item.fetchBridge = createAirPlayFetchBridge(options.proxyOrigin);
       await withDeadline(abortable(item.player.load(String(src), { ext: extension(String(src), type),
         http: { credentials: 'omit', referrerPolicy: 'no-referrer',
-          ...(item.proxyOnly ? { headers: { 'X-TiPlay-Proxy-Origin': options.proxyOrigin } } : {}) },
+          headers: { ...(item.proxyOnly ? { 'X-TiPlay-Proxy-Origin': options.proxyOrigin } : {}),
+            ...(item.fetchBridge ? { 'X-TiPlay-Fetch-Bridge': item.fetchBridge.name } : {}) } },
         ioLoaderOptions: { retryCount: 2, retryInterval: 1 },
       }), item.controller.signal), options.resourceDeadline || 15000);
       if (!active(item)) throw interrupted();

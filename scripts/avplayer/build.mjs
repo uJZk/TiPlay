@@ -11,13 +11,16 @@ const destination = new URL('../../site/play/vendor/libmedia/', root);
 const lock = JSON.parse(await readFile(new URL('wasm.lock.json', root), 'utf8'));
 const sha = data => createHash('sha256').update(data).digest('hex');
 // Dependency-free adapter remains valid in upstream serialized workers.
-// Only RequestInit changes; HTTP buffering, retry and cancellation stay upstream-owned.
+// The optional bridge changes only the Android resource fetch boundary; AVPlayer
+// retains HTTP retry, buffering, and cancellation ownership.
 const fetchAdapter = `((url, init) => {
   const target = new URL(typeof url === 'string' || url instanceof URL ? url : url.url, globalThis.location.href);
   const headers = new Headers(init?.headers);
   const marker = headers.get('X-TiPlay-Proxy-Origin');
+  const bridge = headers.get('X-TiPlay-Fetch-Bridge');
   const proxyOrigin = marker ? new URL(marker).origin : null;
   headers.delete('X-TiPlay-Proxy-Origin');
+  headers.delete('X-TiPlay-Fetch-Bridge');
   if (proxyOrigin && (target.origin !== proxyOrigin || target.pathname !== '/airplay-resource'))
     throw new DOMException('Debug media must pass through Android.', 'SecurityError');
   const hostname = target.hostname;
@@ -26,7 +29,35 @@ const fetchAdapter = `((url, init) => {
     : a === 10 || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168
       || a === 100 && b >= 64 && b <= 127 || a === 169 && b === 254 ? 'local' : undefined;
   const { __tiplaySourceSignal, ...requestInit } = init || {};
-  return globalThis.fetch(url, { ...requestInit, signal: requestInit.signal || __tiplaySourceSignal, cache: 'no-store', referrerPolicy: 'no-referrer',
+  const signal = requestInit.signal || __tiplaySourceSignal;
+  if (bridge && target.protocol === 'http:' && target.pathname === '/airplay-resource' && typeof BroadcastChannel === 'function') {
+    return new Promise((resolve, reject) => {
+      const channel = new BroadcastChannel(bridge), id = crypto.randomUUID();
+      let streamController, settled = false, closed = false;
+      const send = type => { if (!closed) channel.postMessage({ id, type }); };
+      const cleanup = () => { if (closed) return; closed = true; signal?.removeEventListener('abort', abort); channel.close(); };
+      const fail = error => { if (streamController) streamController.error(error); else if (!settled) { settled = true; reject(error); } cleanup(); };
+      const abort = () => { send('cancel'); fail(new DOMException('Media request interrupted.', 'AbortError')); };
+      if (signal?.aborted) { abort(); return; }
+      signal?.addEventListener('abort', abort, { once: true });
+      channel.onmessage = ({ data }) => {
+        if (!data || data.id !== id || closed) return;
+        if (data.type === 'error') { fail(new DOMException('Media resource request failed.', data.name === 'SecurityError' ? 'SecurityError' : data.name === 'AbortError' ? 'AbortError' : 'NetworkError')); return; }
+        if (data.type === 'response') {
+          try {
+            const body = data.body ? new ReadableStream({ start(controller) { streamController = controller; },
+              pull() { send('pull'); }, cancel() { send('cancel'); cleanup(); } }) : null;
+            const response = new Response(body, { status: data.status, statusText: data.statusText, headers: data.headers });
+            Object.defineProperties(response, { url: { value: data.url }, redirected: { value: data.redirected }, type: { value: data.responseType } });
+            settled = true; resolve(response); if (!body) cleanup();
+          } catch (_) { send('cancel'); fail(new DOMException('Invalid media resource response.', 'NetworkError')); }
+        } else if (data.type === 'chunk') streamController?.enqueue(data.value);
+        else if (data.type === 'end') { streamController?.close(); cleanup(); }
+      };
+      channel.postMessage({ id, type: 'request', url: target.href, range: headers.get('Range'), proxyOnly: Boolean(proxyOrigin) });
+    });
+  }
+  return globalThis.fetch(url, { ...requestInit, signal, cache: 'no-store', referrerPolicy: 'no-referrer',
     credentials: 'omit', headers, ...(proxyOrigin ? { redirect: 'error' } : {}), ...(space ? { targetAddressSpace: space } : {}) });
 })`;
 // Select from the upstream-parsed master, before any variant URI is requested.
@@ -98,7 +129,7 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
       simple(node.body, { ReturnStatement(statement) {
         const original = code.slice(statement.argument.start,statement.argument.end);
         edits.push({start: statement.argument.start,end: statement.argument.end,
-          value: `((params)=>({...params,__tiplaySourceSignal:${info}.__tiplaySourceSignal}))(${original})`});
+          value: `((params)=>({...params,__tiplaySourceSignal:${info}.__tiplaySourceSignal}))((${original}))`});
         cancellationSites++;
       } });
     },

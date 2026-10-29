@@ -1,5 +1,6 @@
 /*! SPDX-License-Identifier: GPL-3.0-only */
 import { gatherLocalOffer } from './webrtc-transport.js';
+import { candidateCounts } from './rtc-diagnostics.js';
 
 export const RTC_AUDIO_TRANSPORT = 'webrtc-track-v1';
 export const RTC_AUDIO_SLOTS = 16;
@@ -19,7 +20,7 @@ export function rtcAudioCodecs(Receiver = globalThis.RTCRtpReceiver) {
 
 /** Audio-only RTP peer. A silent playout anchor starts Chromium's decoder; the Worklet owns all audible mixing. */
 export function createRtcAudio({ exchange, context, node, generation: playbackGeneration,
-  signal, onError = () => {}, PeerConnection = globalThis.RTCPeerConnection,
+  signal, onError = () => {}, onConnected = () => {}, PeerConnection = globalThis.RTCPeerConnection,
   Receiver = globalThis.RTCRtpReceiver, MediaStream = globalThis.MediaStream,
   createPlayout = () => {
     if (!globalThis.document?.createElement) throw Error('Native audio playout is unavailable.');
@@ -49,7 +50,17 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
   }
   function fail(peer, cause) {
     if (closed || current !== peer || peer.closed) return;
-    peer.error = cause; retire(peer); onError(cause);
+    const detail = { failureStage: peer.stage, failurePeerState: observedState(peer.pc.connectionState, peerStates),
+      failureIceState: observedState(peer.pc.iceConnectionState, iceStates),
+      localCandidates: candidateCounts(peer.pc.localDescription?.sdp).total,
+      localPrivateIpv4Candidates: candidateCounts(peer.pc.localDescription?.sdp).privateIpv4,
+      localCgnatIpv4Candidates: candidateCounts(peer.pc.localDescription?.sdp).cgnatIpv4,
+      localIpv6Candidates: candidateCounts(peer.pc.localDescription?.sdp).ipv6,
+      remoteCandidates: candidateCounts(peer.pc.remoteDescription?.sdp).total,
+      remotePrivateIpv4Candidates: candidateCounts(peer.pc.remoteDescription?.sdp).privateIpv4,
+      remoteCgnatIpv4Candidates: candidateCounts(peer.pc.remoteDescription?.sdp).cgnatIpv4,
+      remoteIpv6Candidates: candidateCounts(peer.pc.remoteDescription?.sdp).ipv6 };
+    peer.error = cause; retire(peer); onError(cause, detail);
   }
   function startPlayout(peer, track) {
     if (peer.playoutPromise) return;
@@ -99,10 +110,12 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
     let pc;
     try { pc = new PeerConnection({ iceServers: [], iceTransportPolicy: 'all', bundlePolicy: 'max-bundle' }); }
     catch (cause) { return Promise.reject(cause); }
-    const peer = current = { pc, generation, slots: [], abort: new AbortController(), ready: false, closed: false, error: null };
+    const peer = current = { pc, generation, slots: [], abort: new AbortController(), ready: false, closed: false, error: null, stage: 'offer' };
     const cancelled = new Promise((_, reject) => { peer.reject = reject; });
     cancelled.catch(() => {});
-    peer.timer = setTimeout(() => fail(peer, Error('Native audio negotiation timed out.')), timeoutMs);
+    // SDP completion alone does not establish ICE connectivity. Keep the same
+    // deadline until the peer connects so a peer stuck checking can recover.
+    peer.timer = setTimeout(() => fail(peer, Error(peer.ready ? 'Native audio connection timed out.' : 'Native audio negotiation timed out.')), timeoutMs);
     const operation = (async () => {
       try {
         for (let index = 0; index < RTC_AUDIO_SLOTS; index++) {
@@ -124,22 +137,28 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
           connectSlot(peer, slot);
         };
         pc.onconnectionstatechange = () => {
+          if (current !== peer || peer.closed) return;
+          if (pc.connectionState === 'connected') { clearTimeout(peer.timer); onConnected(generation); }
           if (['failed', 'closed'].includes(pc.connectionState)) fail(peer, Error('Native audio connection failed.'));
         };
         await pc.setLocalDescription(await pc.createOffer());
+        peer.stage = 'local-ice';
         const sdp = await gather(pc, peer.abort.signal);
+        peer.stage = 'signaling';
         const answer = await exchange({ k: 'audio-offer', sdp, generation });
         if (closed || current !== peer || peer.closed) throw stopped();
         if (!answer || answer.generation !== generation || typeof answer.sdp !== 'string'
           || !answer.sdp.trim() || new TextEncoder().encode(answer.sdp).byteLength > 48 * 1024) throw Error('Invalid native audio answer.');
+        peer.stage = 'remote-description';
         await pc.setRemoteDescription({ type: 'answer', sdp: answer.sdp });
         if (closed || current !== peer || peer.closed) throw stopped();
         peer.ready = true;
+        peer.stage = 'transport';
         for (const slot of peer.slots) connectSlot(peer, slot);
         if (peer.closed) throw peer.error ?? stopped();
       } catch (cause) { fail(peer, cause); throw cause; }
     })();
-    peer.promise = Promise.race([operation, cancelled]).finally(() => clearTimeout(peer.timer));
+    peer.promise = Promise.race([operation, cancelled]);
     // Background negotiation is optional for fallback streams; it must not create
     // an unhandled rejection before the first native configuration arrives.
     peer.promise.catch(() => {});

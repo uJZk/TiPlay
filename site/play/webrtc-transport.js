@@ -389,14 +389,17 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
         const source = inbound[0];
         // Only numeric/boolean standardized receiver evidence crosses this boundary.
         // IDs, implementation text, candidate addresses and arbitrary getStats fields do not.
-        for (const key of ['packetsReceived', 'packetsLost', 'bytesReceived', 'framesReceived', 'framesDecoded', 'framesDropped',
+        for (const key of ['packetsReceived', 'packetsLost', 'packetsDiscarded', 'bytesReceived', 'framesReceived', 'framesDecoded', 'framesDropped',
+          'framesAssembledFromMultiplePackets',
           'keyFramesDecoded', 'nackCount', 'pliCount', 'firCount', 'jitterBufferEmittedCount', 'freezeCount', 'pauseCount']) {
           const value = source[key];
           if (Number.isSafeInteger(value) && (value >= 0 || key === 'packetsLost')) values[key] = value;
         }
         for (const [key, output] of [['jitter', 'jitterMs'], ['jitterBufferDelay', 'jitterBufferDelayMs'],
           ['jitterBufferTargetDelay', 'jitterBufferTargetDelayMs'], ['jitterBufferMinimumDelay', 'jitterBufferMinimumDelayMs'],
-          ['totalDecodeTime', 'totalDecodeTimeMs'], ['totalFreezesDuration', 'totalFreezesDurationMs'], ['totalPausesDuration', 'totalPausesDurationMs']]) {
+          ['totalDecodeTime', 'totalDecodeTimeMs'], ['totalAssemblyTime', 'totalAssemblyTimeMs'],
+          ['totalProcessingDelay', 'totalProcessingDelayMs'], ['totalInterFrameDelay', 'totalInterFrameDelayMs'],
+          ['totalFreezesDuration', 'totalFreezesDurationMs'], ['totalPausesDuration', 'totalPausesDurationMs']]) {
           const value = source[key];
           if (Number.isFinite(value) && value >= 0 && value <= 9e12) values[output] = value * 1000;
         }

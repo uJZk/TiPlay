@@ -10,6 +10,9 @@ class BrowserVideoDiagnosticsSchemaTest {
         val input = sample() + mapOf("transport.rtpVideo.state" to "selected", "transport.rtpVideo.generation" to 2,
             "transport.rtpVideo.sampleAgeMs" to 125.5, "transport.rtpVideo.packetsLost" to -1,
             "transport.rtpVideo.framesReceived" to 100, "transport.rtpVideo.framesDecoded" to 80,
+            "transport.rtpVideo.packetsDiscarded" to 2, "transport.rtpVideo.framesAssembledFromMultiplePackets" to 90,
+            "transport.rtpVideo.totalAssemblyTimeMs" to 500, "transport.rtpVideo.totalProcessingDelayMs" to 800,
+            "transport.rtpVideo.totalInterFrameDelayMs" to 1000,
             "transport.rtpVideo.framesDropped" to 20, "transport.rtpVideo.jitterBufferDelayMs" to 900,
             "transport.rtpVideo.jitterBufferEmittedCount" to 80, "transport.rtpVideo.powerEfficientDecoder" to false)
         assertEquals(input, BrowserVideoDiagnosticsSchema.parse(input))

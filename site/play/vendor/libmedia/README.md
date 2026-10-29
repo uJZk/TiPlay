@@ -47,8 +47,13 @@ no ambient credentials, and TiPlay's local/loopback address-space classification
 For proxy-only sessions, the internal `X-TiPlay-Proxy-Origin` header carries an
 instance request policy through upstream HTTP options. The adapter removes this
 header before network access, rejects destinations outside the exact Android
-origin and `/airplay-resource` route, and rejects HTTP redirects. It does not
-replace global fetch or implement another HTTP buffer, HLS engine or retry policy.
+origin and `/airplay-resource` route, and rejects HTTP redirects. On HTTPS pages,
+Chromium can block a Blob Worker's private HTTP request as mixed content even
+when the document can access the Android endpoint. A per-source document-thread
+bridge makes only requests to that exact endpoint and streams one requested chunk
+at a time back to the Worker. It preserves Range, response status/headers and
+cancellation. The bridge does not replace global fetch or implement another HLS
+engine, retry policy or media buffer.
 The unreachable upstream CDN WASM default is replaced with a local failure path.
 One pinned `startAudioContext` registration is redirected from an upstream Blob
 AudioWorklet to the official same-origin standalone processor file. The original

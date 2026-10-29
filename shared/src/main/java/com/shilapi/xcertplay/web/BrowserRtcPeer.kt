@@ -980,7 +980,7 @@ private class AndroidBrowserRtcPeer(
     ) } ?: "operation-failed"
 
     companion object {
-        private const val VIDEO_START_BITRATE_BPS = 16_000_000
+        private const val VIDEO_START_BITRATE_BPS = 32_000_000
         private const val VIDEO_MAX_BITRATE_BPS = 64_000_000
         private const val VIDEO_INPUT_TIMEOUT_MS = 6_000L
         private val cleanupExecutor = Executors.newSingleThreadExecutor {

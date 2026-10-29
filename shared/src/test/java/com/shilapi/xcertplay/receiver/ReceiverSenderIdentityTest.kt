@@ -4,6 +4,33 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReceiverSenderIdentityTest {
+    @Test fun opaqueDeviceIdPersistsAcrossConnectionsWithoutRelaxingOtherHeaders() {
+        val claim = mapOf("X-Apple-Device-ID" to "A1bc2Def3Gh4ij")
+        val first = ReceiverSenderIdentity.identity(null, claim)
+        assertNotNull(first)
+        assertArrayEquals(first, ReceiverSenderIdentity.identity(null, claim))
+        assertFalse(first!!.contentEquals(ReceiverSenderIdentity.identity(null,
+            mapOf("X-Apple-Device-ID" to "a1bc2Def3Gh4ij"))))
+        assertNull(ReceiverSenderIdentity.identity(null, mapOf("client-instance" to "A1bc2Def3Gh4ij")))
+        assertNull(ReceiverSenderIdentity.identity(null, mapOf("DACP-ID" to "A1bc2Def3Gh4ij")))
+        val store = object : ReceiverDeviceTrust.Store {
+            private val remembered = mutableSetOf<String>()
+            override fun contains(fingerprint: String) = fingerprint in remembered
+            override fun remember(fingerprint: String) { remembered += fingerprint }
+            override fun forgetAll() = remembered.clear()
+        }
+        val events = mutableListOf<String>()
+        val trust = ReceiverDeviceTrust(store, diagnostic = { events.add(it) })
+        trust.browserSeen("browser")
+        val pending = trust.requestSession("0123456789abcdef-first", first, "iPhone") as ReceiverDeviceTrust.Decision.Pending
+        assertTrue(trust.respond("browser", pending.id, allow = true, remember = true))
+        trust.endSession("0123456789abcdef-first")
+        assertSame(ReceiverDeviceTrust.Decision.Allowed,
+            trust.requestSession("0123456789abcdef-next", ReceiverSenderIdentity.identity(null, claim), "iPhone"))
+        assertEquals(listOf("AirPlay trust: event=prompt-persistent", "AirPlay trust: event=remembered-saved",
+            "AirPlay trust: event=remembered-hit"), events)
+    }
+
     @Test fun publicKeysKeepExistingTrustIdentityAndCannotBeMutatedThroughTheResult() {
         val key = ByteArray(32) { it.toByte() }
         val identity = ReceiverSenderIdentity.identity(key, mapOf("X-Apple-Device-ID" to "AB:CD:EF:12:34:56"))!!
