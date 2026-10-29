@@ -7,6 +7,16 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+Beta.31/code73, browser v106, adds worker resource-request bridging, native audio
+peer recovery, sender identity compatibility and additional diagnostics. The
+[Android checks](https://github.com/uJZk/TiPlay/actions/runs/40801961340)
+passed for the release source, including browser and WASM checks. The libmedia
+build reproduced the committed assets in WSLC using hash-verified cached WASM
+inputs. Real-car playback, repeated trust, navigation audio and HEVC continuity
+remain physical acceptance work.
+
+## Previous release source
+
 Beta.30/code72, browser v105, reserves the application BUNDLE transport before
 adding video and stops every retired video receiver. Actual M150 tests reproduce
 the old post-replacement bitrate collapse and verify the corrected 40-second

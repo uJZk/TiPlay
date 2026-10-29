@@ -8,11 +8,11 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is **0.2.20-beta.30** (code **72**);
-[beta.30 release](#beta30-release) records provenance and validation scope. Run
+prerelease is [**0.2.20-beta.31**](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.31)
+(code **73**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v105**, with original-codec WebRTC RTP for live video and negotiated audio.
+the deployed page uses **v106**, with original-codec WebRTC RTP for live video and negotiated audio.
 Earlier SoundTouch/libsoxr browser implementations are historical; current playback
 boundaries are in [Audio tempo](Audio-tempo.md). Software checks are in
 [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -568,13 +568,11 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-Browser **v105** is deployed from `964d176baba161e369c0696f0abe3c1078b22d26` by
-[Pages run 40471225641](https://github.com/uJZk/TiPlay/actions/runs/40471225641).
-All **217** public files (**31,822,664 bytes**) match the local assembly byte-for-byte,
-with JavaScript/WASM MIME types and no redirects verified. Actual page/cache
-values identify v105 and application metadata identifies beta.30. This deployment
-includes the application-owned BUNDLE fix and HLS failure diagnostics.
-[Beta.30](#beta30-release) records validation and publication scope.
+Browser **v106** was deployed from `9d6d02c3dd2a6071c11a28ba08f2e324a9191f8f` by
+[Pages run 40804661166](https://github.com/uJZk/TiPlay/actions/runs/40804661166).
+The public diagnostic module reports v106. The matching signed beta.31 APK and
+source archive are available from the [release](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.31).
+Real-car acceptance remains pending.
 
 The preceding browser **v104** was deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
 [Pages run 40458375995](https://github.com/uJZk/TiPlay/actions/runs/40458375995).

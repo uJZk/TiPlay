@@ -37,8 +37,8 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume current release work at [Build](docs/Build.md#current-browser-deployment)
-and [beta.30](docs/Build.md#beta30-release). Keep source checks, published artifact
+Resume current release work at [Build](docs/Build.md#current-browser-deployment).
+Keep source checks, published artifact
 identity and vehicle evidence separate. Preserve strict source/profile/level/mode
 admission, original compressed frames, bounded selection and per-instance callback
 ownership. Beta.27 follows the beta.26 vehicle report and actual Android AAR
