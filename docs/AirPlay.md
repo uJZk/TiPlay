@@ -28,13 +28,12 @@ Android Advanced settings can disable AirPlay immediately or **Reset AirPlay tru
 devices**. Disablement persists without reconnecting CarPlay. Reset removes stored
 and connection-only grants, cancels pending prompts and leaves already-running media,
 CarPlay pairing and browser pairing intact; later authorization requires a fresh choice.
-Always allow stores the sender's key fingerprint, or a sender-reported AirPlay
-device/client identifier when no key is available. The receiver prefers a verified
-key, but a presented key or device identifier is a claim and not proof of ownership.
-Opaque alphanumeric device IDs retain their case; existing hexadecimal identifiers
-retain their normalized identity. All senders see the same three choices without an
-identity-verification warning or disabled button. A sender providing no stable key or
-identifier can receive connection permission but cannot be recognized on a later
+Always allow stores only a normalized sender-reported `X-Apple-Client-ID` UUID.
+This header is an unauthenticated claim, not proof of device ownership; it is
+not interchangeable with pairing keys, device IDs or per-session DACP IDs.
+All senders see the same three choices without an
+identity-verification warning or disabled button. A sender providing no valid client
+UUID can receive connection permission but cannot be recognized on a later
 connection. Allow once never persists trust. IP/name is never trust, and approval
 cannot displace another active sender. Ordinary AirPlay uses no PIN; browser pairing
 retains its separate code.

@@ -91,9 +91,10 @@ const STRINGS = {
     unreachable: 'The Android device does not answer. Retrying in {0} s…',
     lost: 'Connection lost. Retrying in {0} s…',
     throttled: 'Too many wrong pairing codes. Retrying in {0} s…',
-    waitingPhone: 'Connected to the Android device. Waiting for the iPhone…',
+    waitingPhone: 'Connected to Android. Waiting for iOS…',
     phoneConnecting: 'CarPlay is connecting…',
-    waitingVideo: 'AirPlay is connecting…',
+    waitingVideo: 'Waiting for the AirPlay picture…',
+    preparingPhoto: 'Preparing photo…',
     waitingFrame: 'Waiting for the CarPlay picture…',
     waitingSource: 'Connected to the Android device. Waiting for a projection…',
     carPlayPreparing: 'CarPlay is preparing…',
@@ -107,8 +108,6 @@ const STRINGS = {
     airPlayFailed: 'AirPlay could not continue.',
     airPlayFailureHelp: 'AirPlay stopped unexpectedly. Check that AirPlay is enabled in TiPlay on Android, then try casting again from your iPhone.',
     pictureUnavailable: 'Picture unavailable.',
-    airPlayPaused: 'AirPlay is paused.',
-    airPlayBuffering: 'AirPlay is buffering…',
     badCode: 'The pairing code is wrong. Check it in TiPlay on the Android device.',
     replaced: 'Another browser took over the display. Connect again to take it back.',
     protocol: 'TiPlay on the Android device does not match this page. Update the app.',
@@ -117,10 +116,9 @@ const STRINGS = {
     unsupported: 'This browser cannot decode {0}.',
     unsupportedHevc: 'This browser cannot decode this HEVC stream. Reconnect to report decoder support again.',
     unsupportedHdr: 'AirPlay mirroring requires SDR video; this source sends HDR.',
-    rtcVideoFailed: 'The video picture could not start. Reconnect, or check Diagnostics for the failure reason.',
     rtcVideoCodecFailed: 'The video format exceeds the receive capabilities negotiated for this connection. Reconnect, or check Diagnostics for details.',
     rtcVideoFailureDetail: 'Video failure: {0}',
-    noVideo: 'This browser cannot show the video ({0}). Open the page over HTTPS in a browser with WebCodecs support.',
+    noVideo: 'This browser cannot show the live picture ({0}). Open this page over HTTPS in a browser that supports live video.',
     invalidCode: 'Enter the 4-digit pairing code.',
     invalidHost: 'Enter an IPv4 address with port, for example 169.254.111.111:8080.',
   },
@@ -181,9 +179,10 @@ const STRINGS = {
     unreachable: '安卓端没有响应，{0} 秒后重试…',
     lost: '连接中断，{0} 秒后重试…',
     throttled: '配对码错误次数过多，{0} 秒后重试…',
-    waitingPhone: '已连接安卓端，等待 iPhone…',
+    waitingPhone: '已连接安卓端，等待 iOS…',
     phoneConnecting: 'CarPlay 正在连接…',
-    waitingVideo: 'AirPlay 正在连接…',
+    waitingVideo: '正在等待 AirPlay 画面…',
+    preparingPhoto: '正在准备照片…',
     waitingFrame: '正在等待 CarPlay 画面…',
     waitingSource: '已连接安卓端，等待投屏…',
     carPlayPreparing: 'CarPlay 正在准备…',
@@ -197,8 +196,6 @@ const STRINGS = {
     airPlayFailed: 'AirPlay 暂时无法继续。',
     airPlayFailureHelp: 'AirPlay 意外中断。请确认安卓端 TiPlay 已开启 AirPlay，然后从 iPhone 重新投屏。',
     pictureUnavailable: '画面暂不可用。',
-    airPlayPaused: 'AirPlay 已暂停。',
-    airPlayBuffering: 'AirPlay 正在缓冲…',
     badCode: '配对码不正确，请在安卓端上的 TiPlay 中核对。',
     replaced: '另一个浏览器接管了画面。再次连接即可收回。',
     protocol: '安卓端上的 TiPlay 与本页不匹配，请更新应用。',
@@ -207,10 +204,9 @@ const STRINGS = {
     unsupported: '此浏览器无法解码 {0}。',
     unsupportedHevc: '此浏览器无法解码此 HEVC 视频流，请重新连接以再次汇报解码能力。',
     unsupportedHdr: 'AirPlay 镜像需要 SDR 视频，当前来源发送的是 HDR。',
-    rtcVideoFailed: '视频画面未能启动。请重新连接，或在“诊断”中查看失败原因。',
     rtcVideoCodecFailed: '视频格式超出本次连接协商的接收能力。请重新连接，或在“诊断”中查看详情。',
     rtcVideoFailureDetail: '视频错误：{0}',
-    noVideo: '此浏览器无法显示画面（{0}）。请使用支持 WebCodecs 的浏览器通过 HTTPS 打开本页。',
+    noVideo: '此浏览器无法显示实时画面（{0}）。请使用支持实时视频的新版浏览器通过 HTTPS 打开本页。',
     invalidCode: '请输入 4 位配对码。',
     invalidHost: '请输入带端口的 IPv4 地址，例如 169.254.111.111:8080。',
   },
@@ -266,7 +262,7 @@ let currentVideoGeneration = 1;
 let controlClock = null;
 const controlWaiters = new Set(), videoDiagnosticTracker = createVideoDiagnosticTracker();
 let config = null, live = false, status = null, unsupported = null, videoStats = {}, videoError = null;
-let receiverFailure = false;
+let receiverFailure = false, videoNoticeId = null;
 let outbox = null, heartbeatTimer = null, statsTimer = null, viewportFrame = null, lastViewport = '';
 let terminalDiagnosticId = null;
 const faultDiagnostics = createFaultDiagnosticReporter({ emit: event => outbox?.push(event, 'fault') });
@@ -831,23 +827,34 @@ function render() {
   const inlineNotice = !active && ['badCode', 'invalidCode', 'invalidHost'].includes(notice?.key);
   let problem = !active && notice && notice.key !== 'stopped' && !inlineNotice
     ? { id: notice.key, text: t(notice.key, ...notice.args) } : null;
-  const videoProblem = active ? videoProblemFor(status, config, unsupported) : null;
+  const source = videoSourceFor(status, config), playback = status?.airplay;
+  const pendingCast = !videoReadyFor(status, config, live) &&
+    ((playback?.kind === 'video' && playback.outputAllowed !== false && playback.videoShown !== false)
+      || (['video', 'loading'].includes(status?.receivers?.airplay?.state)
+        && !(source === 'carplay' && playback?.videoShown === false)));
+  const videoProblem = active && !pendingCast ? videoProblemFor(status, config, unsupported) : null;
   if (active && unsupported && !videoProblem) browserNotice.reset(`codec:${unsupported}`);
   if (videoProblem) {
     const key = videoProblem === 'hdr' ? 'unsupportedHdr' : /^(hvc1|hev1)\b/.test(videoProblem) ? 'unsupportedHevc' : 'unsupported';
     problem = { id: `codec:${videoProblem}`, text: t(key, codecName(videoProblem)) };
   }
-  if (active && videoError) {
-    const codecFailure = ['codec-profile-not-negotiated', 'video-codec-not-negotiated', 'encoder-codec-mismatch'].includes(videoError);
-    problem = { id: `rtc-video:${videoError}`, text: t(videoError === 'hdr' ? 'unsupportedHdr' : codecFailure ? 'rtcVideoCodecFailed' : 'rtcVideoFailed') };
-  }
+  const currentVideoError = active && videoError && !pendingCast ? videoProblemFor(status, config, videoError) : null;
+  const codecFailure = ['codec-profile-not-negotiated', 'video-codec-not-negotiated', 'encoder-codec-mismatch'].includes(currentVideoError);
+  const nextVideoNoticeId = currentVideoError && (currentVideoError === 'hdr' || codecFailure)
+    ? `rtc-video:${currentVideoError}` : null;
+  if (videoNoticeId && videoNoticeId !== nextVideoNoticeId) browserNotice.reset(videoNoticeId);
+  videoNoticeId = nextVideoNoticeId;
+  if (videoNoticeId) problem = { id: videoNoticeId, text: t(currentVideoError === 'hdr' ? 'unsupportedHdr' : 'rtcVideoCodecFailed') };
   browserNotice.update(problem);
   $('message').textContent = inlineNotice ? t(notice.key, ...notice.args) : '';
   $('status').textContent = text;
   $('status').hidden = !text || Boolean($('message').textContent);
   airplayControls.setCarPlayRunning?.(carPlayRunning(status, config));
   const videoReady = videoReadyFor(status, config, live);
-  renderReconnect({ active, live: videoReady || airplayControls.videoActive(), phase: airplayControls.videoActive() ? 'waiting' : phase, pending: !airplayControls.videoActive() && fitRequestedAt > 0, text });
+  const castOwnsPicture = airplayControls.videoActive() || pendingCast;
+  renderReconnect({ active, live: videoReady || castOwnsPicture,
+    phase: castOwnsPicture && !['connecting', 'retry'].includes(phase) ? 'waiting' : phase,
+    pending: !castOwnsPicture && fitRequestedAt > 0, text });
   $('connect').textContent = t(active ? 'resume' : 'connect');
   $('code').disabled = active;
   $('host').disabled = active;
@@ -930,16 +937,22 @@ function statusText() {
   const source = videoSourceFor(status, config);
   if (receiverFailure) return t('airPlayFailed');
   if (status?.receivers?.airplay?.state === 'permission' && (receiver?.state === 'suspended' || source === 'airplay')) return t('airPlayPermission');
-  if (playback?.kind === 'audio') return '';
-  if (playback?.resource && playback.outputAllowed !== false) {
-    if (playback.kind === 'photo') return '';
-    if (playback.buffering) return t('airPlayBuffering');
-    if (playback.ready) return playback.playing ? '' : t('airPlayPaused');
-    return t('waitingVideo');
+  if (playback?.kind === 'audio' && source !== 'carplay') return '';
+  if (playback?.kind !== 'audio' && playback?.resource && playback.outputAllowed !== false && playback.videoShown !== false) {
+    return '';
   }
-  if (videoProblemFor(status, config, unsupported)) return t('pictureUnavailable');
+  // A new cast can arrive before its resource or video track does. A retired
+  // CarPlay fault must not replace the foreground preparation message.
+  const airplayPreparing = (playback?.kind === 'video' && playback.outputAllowed !== false && playback.videoShown !== false)
+    || (['video', 'loading'].includes(status?.receivers?.airplay?.state)
+      && !(source === 'carplay' && playback?.videoShown === false));
+  if (airplayPreparing && !videoReadyFor(status, config, live)) return '';
+  if (videoProblemFor(status, config, unsupported || videoError)) return t('pictureUnavailable');
   if (videoReadyFor(status, config, live)) return '';
-  if (['mirror', 'video', 'loading', 'photo'].includes(status?.receivers?.airplay?.state)) return t('waitingVideo');
+  if (source === 'carplay' && (playback?.videoShown === false || playback?.kind === 'audio')) return t('waitingFrame');
+  if (status?.receivers?.airplay?.state === 'photo') return t('preparingPhoto');
+  if (['video', 'loading'].includes(status?.receivers?.airplay?.state)) return '';
+  if (status?.receivers?.airplay?.state === 'mirror') return t('waitingVideo');
   if (receiver?.state === 'suspended' && source !== 'airplay') return t('carPlaySuspended');
   if (source === 'airplay') return t('waitingVideo');
   if (source === 'carplay') return t('waitingFrame');

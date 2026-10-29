@@ -415,7 +415,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         var audioAwaitingTimeline = false
         val peerAddress: InetAddress get() = peer
         private var mediaIdentity: ByteArray? = null
-        private var claimedIdentity: ReceiverSenderIdentity.Claim? = null
+        private var claimedIdentity: ByteArray? = null
         private var lastTrustSource: String? = null
         private val connectionNonce = java.util.UUID.randomUUID().toString().replace("-", "")
         private var connectionApproved = false
@@ -765,26 +765,15 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             val id = request.headers["x-apple-session-id"] ?: "default"
             require(id.matches(Regex("[A-Za-z0-9._-]{1,128}")))
             captureRemote(request.headers)
-            ReceiverSenderIdentity.claim(request.headers)?.let { claimedIdentity = it }
+            if (claimedIdentity == null) claimedIdentity = ReceiverSenderIdentity.identity(request.headers)
             val mediaType = receiverMediaType(request, path, raop != null)
             if ((path == "/play" && request.method == "POST") ||
                 (path == "/photo" && request.method == "PUT") || request.method == "ANNOUNCE" ||
                 request.method == "SETUP" && mediaType != "unknown" ||
                 path in listOf("/reverse", "/stop", "/scrub", "/rate", "/setProperty")) {
                 // Browser confirmation is bounded and must never block ownership or FCUP progress.
-                val verifiedKey = pairing.verifiedPublicKey
-                val sessionKey = verifiedSessions[peer to id]
-                    ?.takeIf { strongSessionId(id) && System.nanoTime() < it.expiresNanos }?.publicKey?.copyOf()
-                val presentedKey = pairing.presentedPublicKey
-                val claim = ReceiverSenderIdentity.claim(request.headers) ?: claimedIdentity
-                val source = when {
-                    verifiedKey != null -> "verified-key"
-                    sessionKey != null -> "verified-session"
-                    presentedKey != null -> "presented-key"
-                    claim != null -> claim.source
-                    else -> "connection-only"
-                }
-                val senderIdentity = verifiedKey ?: sessionKey ?: presentedKey ?: claim?.value
+                val senderIdentity = claimedIdentity
+                val source = if (senderIdentity != null) "x-apple-client-id" else "connection-only"
                 if (source != lastTrustSource) {
                     diagnostics.trustIdentity(diagnosticId, source)
                     lastTrustSource = source
@@ -793,21 +782,39 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                     .filter { !it.isISOControl() }.take(80)
                 if (senderIdentity != null) {
                     if (!listener.authorizeDevice(connectionNonce, senderIdentity, name, mediaType)) return RtspMessage.Response(status = 403, statusText = "Forbidden")
-                    mediaIdentity = senderIdentity.copyOf()
+                    // A separately approved reverse channel may precede /play. Reuse
+                    // its session identity only for ownership, never for consent.
+                    val pendingReverse = if (path == "/play" && strongSessionId(id) && !hasActivePlayback(id)) approvedSessions[peer to id]
+                        ?.takeIf { System.nanoTime() < it.expiresNanos }
+                        ?.publicKey?.let { key ->
+                            reverse[ReverseKey(peer, id, java.util.Base64.getEncoder().encodeToString(key))]
+                                ?.takeIf { it.claimedIdentity == null || senderIdentity.contentEquals(it.claimedIdentity) }
+                                ?.let { key.copyOf() }
+                        } else null
+                    mediaIdentity = activePlaybackIdentity(id, senderIdentity) ?: pendingReverse ?: senderIdentity.copyOf()
+                    approvedSessions.entries.removeIf { entry -> System.nanoTime() >= entry.value.expiresNanos }
+                    if (strongSessionId(id) && !approvedSessions.containsKey(peer to id) && approvedSessions.size < 32)
+                        approvedSessions[peer to id] = VerifiedSession(senderIdentity.copyOf(), diagnosticId,
+                            System.nanoTime() + TimeUnit.MINUTES.toNanos(2))
                 } else {
-                    val approved = approvedSessions[peer to id]?.takeIf {
-                        strongSessionId(id) && System.nanoTime() < it.expiresNanos
-                    }
-                    if (approved != null) mediaIdentity = approved.publicKey.copyOf()
-                    else {
-                        if (!connectionApproved) connectionApproved = listener.authorizeConnection(connectionNonce, name, mediaType)
-                        if (!connectionApproved) return RtspMessage.Response(status = 403, statusText = "Forbidden")
-                        mediaIdentity = AirPlayCrypto.sha512(connectionNonce.toByteArray()).copyOf(32)
-                        approvedSessions.entries.removeIf { entry -> System.nanoTime() >= entry.value.expiresNanos }
-                        if (strongSessionId(id) && (approvedSessions.size < 32 || approvedSessions.containsKey(peer to id)))
-                            approvedSessions[peer to id] = VerifiedSession(requireNotNull(mediaIdentity).copyOf(), diagnosticId,
-                                System.nanoTime() + TimeUnit.MINUTES.toNanos(2))
-                    }
+                    if (!connectionApproved) connectionApproved = listener.authorizeConnection(connectionNonce, name, mediaType)
+                    if (!connectionApproved) return RtspMessage.Response(status = 403, statusText = "Forbidden")
+                    // Pairing can correlate media ownership after consent, but never grants consent.
+                    val priorOwner = approvedSessions[peer to id]
+                        ?.takeIf { strongSessionId(id) && System.nanoTime() < it.expiresNanos }
+                    val currentOwner = synchronized(ownership) { if (playbackConnection === this) mediaIdentity?.copyOf() else null }
+                    // A separately approved, unidentified reverse socket may join the
+                    // session for FCUP; it cannot inherit control of active playback.
+                    val associated = if (!hasActivePlayback(id) || path == "/reverse")
+                        activePlaybackIdentity(id) ?: priorOwner?.publicKey?.copyOf() ?: pairing.verifiedPublicKey ?: verifiedSessions[peer to id]
+                            ?.takeIf { strongSessionId(id) && System.nanoTime() < it.expiresNanos }?.publicKey?.copyOf()
+                    else null
+                    mediaIdentity = currentOwner ?: associated
+                        ?: AirPlayCrypto.sha512(connectionNonce.toByteArray()).copyOf(32)
+                    approvedSessions.entries.removeIf { entry -> System.nanoTime() >= entry.value.expiresNanos }
+                    if (priorOwner == null && strongSessionId(id) && (approvedSessions.size < 32 || approvedSessions.containsKey(peer to id)))
+                        approvedSessions[peer to id] = VerifiedSession(requireNotNull(mediaIdentity).copyOf(), diagnosticId,
+                            System.nanoTime() + TimeUnit.MINUTES.toNanos(2))
                 }
             }
             when {
@@ -950,10 +957,10 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         return RtspMessage.Response(status = 403, statusText = "Forbidden")
                     }
                     if (mediaIdentity == null) {
-                        mediaIdentity = pairing.verifiedPublicKey ?: (if (strongSessionId(id)) {
-                            (verifiedSessions[peer to id] ?: approvedSessions[peer to id])
+                        mediaIdentity = activePlaybackIdentity(id) ?: (if (strongSessionId(id)) {
+                            (approvedSessions[peer to id] ?: verifiedSessions[peer to id])
                                 ?.takeIf { System.nanoTime() < it.expiresNanos }?.publicKey?.copyOf()
-                        } else null)
+                        } else null) ?: pairing.verifiedPublicKey
                     }
                     if (!matchesPlayback(playbackConnection)) return RtspMessage.Response(status = 403, statusText = "Forbidden")
                     val headers = params["FCUP_Response_Headers"] as? Map<*, *>
@@ -1067,6 +1074,18 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
 
         fun reverseKey(id: String): ReverseKey? = mediaIdentity?.let {
             ReverseKey(peer, id, java.util.Base64.getEncoder().encodeToString(it))
+        }
+
+        /** A live playback owns this session even after a temporary lookup entry expires. */
+        private fun activePlaybackIdentity(id: String, senderIdentity: ByteArray? = null): ByteArray? = synchronized(ownership) {
+            val active = playbackConnection
+            if (!strongSessionId(id) || playbackPeer != peer || playbackId != id || active == null || active.socket.isClosed) null
+            else if (senderIdentity != null && (active.claimedIdentity == null || !senderIdentity.contentEquals(active.claimedIdentity))) null
+            else active.mediaIdentity?.copyOf()
+        }
+
+        private fun hasActivePlayback(id: String): Boolean = synchronized(ownership) {
+            playbackPeer == peer && playbackId == id && playbackConnection?.socket?.isClosed == false
         }
 
         fun matchesPlayback(connection: Connection?): Boolean = connection != null && sameVerifiedPeer(connection)
@@ -1190,6 +1209,22 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 require(((timingPort as? Number)?.toLong() ?: 0) in 0..65535)
             }
             diagnostics.setup(diagnosticId, dict, pairing.sharedSecret != null, handshake?.size ?: 0)
+            // Derive and validate new transport material before retiring the current
+            // owner. A malformed replacement must not interrupt existing playback.
+            val encrypted = dict["ekey"] as? ByteArray
+            val nextIv = if (encrypted != null) (dict["eiv"] as? ByteArray).also {
+                require(it?.size == 16) { "invalid-audio-transport-iv" }
+            } else audioIv
+            val nextKey = if (encrypted != null) {
+                val shared = pairing.sharedSecret ?: return RtspMessage.Response(status = 403, statusText = "Forbidden")
+                val raw = fairPlayDecrypt(requireNotNull(handshake), encrypted) ?: error("invalid transport key")
+                AirPlayCrypto.sha512(raw, shared).copyOf(16)
+            } else key
+            val nextTimingReady = timing != null || encrypted != null
+            if (encrypted != null) {
+                val port = (dict["timingPort"] as? Number)?.toLong() ?: 0
+                require(port in 0L..65535L) { "invalid-timing-port" }
+            }
             val requestedStreams = dict["streams"]?.let { value ->
                 require(value is List<*> && value.size <= 16)
                 val entries = value.map { it as? Map<*, *> ?: error("invalid stream") }
@@ -1199,10 +1234,20 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                     return RtspMessage.Response(status = 461, statusText = "Unsupported Transport")
                 entries.filter { (it["type"] as Number).toInt() == 96 }.forEach {
                     ReceiverAudioCapabilities.validateStream(it, config.audioOutputFormats)
-                    if (it.containsKey("shk")) require(controlCipher != null && (it["shk"] as? ByteArray)?.size == 32)
+                    diagnostics.audioSetupSecurity(diagnosticId, it, nextKey, nextIv, nextTimingReady, controlCipher != null)
+                    if (it.containsKey("shk")) require(controlCipher != null && (it["shk"] as? ByteArray)?.size == 32) { "invalid-audio-shk" }
+                    else {
+                        require(nextKey?.size == 16) { "missing-audio-transport-key" }
+                        require(nextIv?.size == 16) { "missing-audio-transport-iv" }
+                    }
+                    require(nextTimingReady) { "missing-audio-timing" }
+                    val port = (it["controlPort"] as? Number)?.toLong() ?: 0
+                    require(port in 0L..65535L) { "invalid-audio-control-port" }
                 }
                 entries.filter { (it["type"] as Number).toInt() == 110 }.forEach {
                     require(it["streamConnectionID"] is Number) { "missing connection id" }
+                    require(nextKey?.size == 16) { "missing-mirror-transport-key" }
+                    require(nextTimingReady) { "missing-mirror-timing" }
                 }
                 entries
             }
@@ -1219,20 +1264,15 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 clock.start(peer, timingPort)
                 response["eventPort"] = eventPort()
             }
-            val encrypted = dict["ekey"] as? ByteArray
             if (encrypted != null) {
-                val iv = dict["eiv"] as? ByteArray
-                require(iv?.size == 16)
-                val shared = pairing.sharedSecret ?: return RtspMessage.Response(status = 403, statusText = "Forbidden")
                 val transportHandshake = requireNotNull(handshake)
-                val raw = fairPlayDecrypt(transportHandshake, encrypted) ?: error("invalid transport key")
                 val hadMirror = mirror != null
                 closeMedia()
                 if (owner === this) owner = null
                 handshake = transportHandshake
                 if (hadMirror) listener.status("listening")
-                key = AirPlayCrypto.sha512(raw, shared).copyOf(16)
-                audioIv = requireNotNull(iv).copyOf()
+                key = requireNotNull(nextKey).copyOf()
+                audioIv = requireNotNull(nextIv).copyOf()
                 val clock = NtpClock(log = { listener.log("c=$diagnosticId $it") },
                     wireTimeline = com.shilapi.xcertplay.airplay.NtpWireTimeline())
                 timing = clock

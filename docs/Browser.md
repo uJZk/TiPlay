@@ -25,12 +25,17 @@ the video producer are reported separately: waiting for a CarPlay frame must not
 say AirPlay is connecting, and a missing session alone does not prove that TiPlay
 is waiting for an iPhone. Older apps without receiver phases use a neutral waiting
 message. AirPlay URL video, photos and audio have their own playback states.
-Successful connections and healthy playback show no status text. Waiting,
-recovery, pause, buffering and actionable faults remain visible when relevant.
+Successful connections and healthy playback show no status text. Connection
+waiting, recovery and actionable faults remain visible when relevant; video
+preparation, buffering and pause do not create a separate global status.
 The current producer, including an explicit absence, takes precedence over an old
 decoder configuration. A pending screen request keeps the still-authorized picture;
 a replacement video epoch waits for its own first frame.
-AirPlay preparation and screen-return waits suspend the foreground CarPlay status;
+The cast player owns its preparation and buffering indicators, so the full-page
+connection layer does not cover its controls or duplicate its loading indicator.
+An ordinary live-video failure shows a short unavailable state without opening a
+browser notice; its reason remains in Diagnostics. AirPlay preparation and
+screen-return waits suspend the foreground CarPlay status;
 a background CarPlay disconnect must not appear as a failed casting attempt.
 When AirPlay ends and ownership returns, the page resumes the actual CarPlay phase.
 Browser capability/codec failures, protocol mismatches and browser takeover use

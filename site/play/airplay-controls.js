@@ -38,7 +38,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   let state = null, player = null, loading = null, key = null, appliedRevision = -1, appliedSeekRevision = -1, appliedTrackRevision = -1, metadata = false, timer = null;
   let directive = null, disposed = false, waiting = false, sourceReady = false;
   let outputWasAllowed = true;
-  let diagnostics = null, photo = null, preparation = null, playerKind = null, carPlayRunning = false;
+  let diagnostics = null, photo = null, preparation = false, playerKind = null, carPlayRunning = false;
   let playerModule = null, artworkURL = null;
   const artwork = createAirPlayArtwork(fetchPhone, url => {
     artworkURL = url;
@@ -62,24 +62,18 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       try { retiring?.media?.dispose?.(); } catch (_) {}
     }
     layer.replaceChildren();
-    preparation = null; layer.removeAttribute('aria-busy'); layer.removeAttribute('data-preparing');
+    preparation = false; layer.removeAttribute('aria-busy'); layer.removeAttribute('data-preparing');
     photo?.dispose(); photo = null; playerKind = null; artwork.update(null, null); artworkURL = null;
     key = null; metadata = sourceReady = false; waiting = false; outputWasAllowed = true;
     appliedRevision = appliedSeekRevision = appliedTrackRevision = -1;
     layer.hidden = true;
   }
   function beginPreparation() {
-    const indicator = document.createElement('div');
-    indicator.className = 'airplay-preparation media-skin'; indicator.dataset.theme = 'default';
-    indicator.setAttribute('role', 'status');
-    indicator.setAttribute('aria-label', lang === 'zh' ? 'AirPlay 正在缓冲…' : 'AirPlay is buffering…');
-    const spinner = document.createElement('span');
-    spinner.className = 'airplay-preparation-spinner'; spinner.setAttribute('aria-hidden', 'true');
-    indicator.append(spinner); layer.append(indicator); preparation = indicator;
+    preparation = true;
     layer.setAttribute('aria-busy', 'true'); layer.setAttribute('data-preparing', '');
   }
   function finishPreparation() {
-    preparation?.remove(); preparation = null;
+    preparation = false;
     layer.removeAttribute('aria-busy'); layer.removeAttribute('data-preparing');
   }
   function syncPreparation() {

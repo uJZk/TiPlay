@@ -54,6 +54,10 @@ bridge makes only requests to that exact endpoint and streams one requested chun
 at a time back to the Worker. It preserves Range, response status/headers and
 cancellation. The bridge does not replace global fetch or implement another HLS
 engine, retry policy or media buffer.
+For HLS slice input, the format probe examines a bounded ID3 tag and recognizes
+an ADTS AAC sync immediately after it. Upstream otherwise assumes every
+ID3-prefixed input is MP3, while its AAC demuxer already supports the HLS ID3
+transport timestamp. Ordinary non-slice ID3 inputs retain the upstream behavior.
 The unreachable upstream CDN WASM default is replaced with a local failure path.
 One pinned `startAudioContext` registration is redirected from an upstream Blob
 AudioWorklet to the official same-origin standalone processor file. The original

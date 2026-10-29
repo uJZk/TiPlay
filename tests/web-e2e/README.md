@@ -406,6 +406,11 @@ NODE_PATH=/tmp/pw/node_modules CHROMIUM=/path/to/chromium node tests/web-e2e/avp
 
 This check runs without cross-origin isolation, verifies changing nonblack Canvas pictures, observes the generated tone at the actual Web Audio output gain and rejects even transient main-document video-element creation. The analyser is test-only instrumentation, not speaker-output evidence. A mixed HLS master advertises higher-bandwidth PQ, Dolby Vision and unknown-range variants alongside explicit SDR; the test requires SDR playback without requesting the disallowed children, and an all-HDR master must fail before a child request. It exercises real decoding and playback; its live fixture repeats a fixed window and does not establish rotating live-window recovery. It does not measure vehicle memory peaks, hardware decoder selection, audible quality or physical output timing. `--cancellation-only` runs only HTTP failure and pending/early source retirement checks; its result does not establish playback. Cancellation cases cover MP4 headers, HLS master headers, AES-key loading and early 0/20 ms disposal.
 
+An HLS master with a separate synthetic AAC rendition also covers extensionless
+segments containing ID3 transport timestamps followed by ADTS frames; it checks
+actual Canvas changes, Web Audio output, seek and replay through AVPlayer. Set
+`E2E_FORMAT=packed-aac` to focus the playback portion on this fixture.
+
 HLS startup failures additionally exercise a socket reset before response headers,
 an HTTP 502 body and a malformed HTTP 200 manifest. The real IO worker must retain
 their distinct fixed phase/status/name diagnostics without URLs or resource tokens.

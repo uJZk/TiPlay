@@ -42,13 +42,31 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
     fun stage(connection: Long, stage: Stage) = emit("c=$connection stage=$stage")
 
     fun trustIdentity(connection: Long, source: String) {
-        val safe = source.takeIf { it in setOf("verified-key", "verified-session", "presented-key",
-            "x-apple-device-id", "client-instance", "dacp-id", "connection-only") } ?: "other"
+        val safe = source.takeIf { it in setOf("x-apple-client-id", "connection-only") } ?: "other"
         emit("c=$connection stage=TRUST_IDENTITY source=$safe")
     }
 
     fun pairingVerify(connection: Long, status: Int?, verified: Boolean) =
         emit("c=$connection stage=PAIR_VERIFY status=${if ((status ?: 200) == 200) "ok" else "failed"} verified=$verified")
+
+    /** Only presence and expected lengths are reported; no key, IV, or protocol payload is logged. */
+    fun audioSetupSecurity(connection: Long, stream: Map<*, *>, legacyKey: ByteArray?, iv: ByteArray?,
+                           timingReady: Boolean, controlReady: Boolean) {
+        val shk = when {
+            !stream.containsKey("shk") -> "absent"
+            (stream["shk"] as? ByteArray)?.size == 32 -> "valid"
+            else -> "invalid"
+        }
+        val ivState = when (iv?.size) { null -> "absent"; 16 -> "valid"; else -> "invalid" }
+        fun flag(name: String): String = when (stream[name]) {
+            true -> "true"
+            false -> "false"
+            null -> if (stream.containsKey(name)) "invalid" else "absent"
+            else -> "invalid"
+        }
+        emit("c=$connection stage=AUDIO_SETUP_SECURITY shk=$shk legacyKey=${if (legacyKey == null) "absent" else if (legacyKey.size == 16) "valid" else "invalid"} " +
+            "iv=$ivState timing=$timingReady controlCipher=$controlReady usingScreen=${flag("usingScreen")} isMedia=${flag("isMedia")}")
+    }
 
     fun reverseReply(connection: Long, reply: RtspMessage.Request) {
         val kind = if (reply.method == "EVENT/1.0") "EVENT" else "HTTP"

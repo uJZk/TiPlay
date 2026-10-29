@@ -87,6 +87,21 @@ const checkManifestFailure = `if(classification?.tiplayManifestFailure){
   throw new DOMException('URL manifest open failed: phase='+phase+' status='+status+' cause='+cause+'.',
     cause==='SecurityError'?'SecurityError':phase==='request'||phase==='body'||status>=400?'NetworkError':'EncodingError');
 }`;
+// A packed HLS AAC segment can begin with an ID3 transport timestamp. Upstream
+// otherwise classifies every ID3-prefixed input as MP3 before its AAC demuxer
+// gets a chance to parse the timestamp. Only inspect bounded slice input; keep
+// the existing MP3 decision for all other ID3 streams.
+const packedAacProbe = (reader, original) => `{if((${reader}.flags&2)!==0){try{
+  const h=await ${reader}.peekBuffer(10);
+  if((h[3]===3||h[3]===4)&&h.subarray(6,10).every(x=>(x&128)===0)){
+    const length=(h[6]<<21)|(h[7]<<14)|(h[8]<<7)|h[9];
+    const offset=10+length+(h[3]===4&&(h[5]&16)?10:0);
+    if(offset<=Math.min(65536,${reader}.size-2)){
+      const b=await ${reader}.peekBuffer(offset+2);
+      if(b[offset]===255&&(b[offset+1]&246)===240)return 15;
+    }
+  }
+}catch(_){}}${original}}`;
 const artifacts = [];
 await mkdir(destination, { recursive: true });
 for (const name of await readdir(destination)) {
@@ -99,7 +114,7 @@ async function output(name, data) {
   artifacts.push({ path: name, bytes: Buffer.byteLength(data), sha256: sha(data) });
 }
 const source = new URL('node_modules/@libmedia/avplayer/dist/esm/', root);
-let fetchSites = 0, workletSites = 0, liveSites = 0, cleanupSites = 0, cancellationSites = 0, contextGuardSites = 0, lifecycleSites = 0, lifecycleAwaits = 0, rpcErrorSites = 0, subtitleEofSites = 0, seekReplySites = 0, subtitlePacketBridgeSites = 0, subtitleReleaseSites = 0, subtitleDrainSites = 0, subtitleSeekSites = 0, sdrPolicySites = 0, manifestFailureSites = 0;
+let fetchSites = 0, workletSites = 0, liveSites = 0, cleanupSites = 0, cancellationSites = 0, contextGuardSites = 0, lifecycleSites = 0, lifecycleAwaits = 0, rpcErrorSites = 0, subtitleEofSites = 0, seekReplySites = 0, subtitlePacketBridgeSites = 0, subtitleReleaseSites = 0, subtitleDrainSites = 0, subtitleSeekSites = 0, sdrPolicySites = 0, manifestFailureSites = 0, packedAacProbeSites = 0;
 for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).sort()) {
   let code = await readFile(new URL(name, source), 'utf8');
   const edits = [];
@@ -122,6 +137,17 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
     },
     FunctionDeclaration(node) {
       const original = code.slice(node.start,node.end);
+      if (name === 'avplayer.js' && original.includes('/^ID3/') && original.includes('/^FLV/')) {
+        if (!node.async || node.params[0]?.type !== 'Identifier') throw new Error('Upstream format probe changed');
+        simple(node.body, { IfStatement(statement) {
+          if (!code.slice(statement.test.start, statement.test.end).includes('/^ID3/') ||
+            statement.consequent.type !== 'ReturnStatement' || statement.consequent.argument?.value !== 14) return;
+          edits.push({ start: statement.consequent.start, end: statement.consequent.end,
+            value: packedAacProbe(node.params[0].name, code.slice(statement.consequent.start, statement.consequent.end)) });
+          addedAwaits += 2;
+          packedAacProbeSites++;
+        } });
+      }
       if (name !== '272.avplayer.js' || !original.includes('referrerPolicy') || !original.includes('credentials')) return;
       if (node.params.length !== 1 || node.params[0].type !== 'Identifier')
         throw new Error('Upstream HLS request options changed');
@@ -472,6 +498,7 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
 }
 if (sdrPolicySites !== 3) throw new Error(`Upstream SDR selection/error sites changed: ${sdrPolicySites}`);
 if (manifestFailureSites !== 6) throw new Error(`Upstream HLS failure evidence sites changed: ${manifestFailureSites}`);
+if (packedAacProbeSites !== 1) throw new Error(`Upstream packed AAC probe sites changed: ${packedAacProbeSites}`);
 if (subtitlePacketBridgeSites !== 1 || subtitleReleaseSites !== 4) throw new Error(`Upstream subtitle packet ownership sites changed: ${subtitlePacketBridgeSites}/${subtitleReleaseSites}`);
 if (subtitleDrainSites !== 3 || subtitleSeekSites !== 3) throw new Error(`Upstream subtitle drain/seek sites changed: ${subtitleDrainSites}/${subtitleSeekSites}`);
 if (subtitleEofSites !== 3 || seekReplySites !== 1) throw new Error(`Upstream subtitle EOF/seek sites changed: ${subtitleEofSites}/${seekReplySites}`);
@@ -520,5 +547,5 @@ for (const name of ['LGPL-2.1.txt','GPL-3.0.txt']) {
 notices.push('===== WASM corresponding sources =====\nFFmpeg audio codec/resample modules and SoundTouch tempo: LGPL-2.1-or-later.\nPinned source/build definitions: https://github.com/zhaohappy/libmedia/tree/' + lock.commit + '\n');
 await writeFile(new URL('THIRD_PARTY_LICENSES.txt', destination), notices.join('\n'));
 await writeFile(new URL('artifacts.json', destination), JSON.stringify({ version: lock.version,
-  commit: lock.commit, fetchRequestInitPatches: fetchSites, sameOriginWorkletPatches: workletSites, hlsClassificationPatches: liveSites, pipelineCleanupPatches: cleanupSites, cancellationPatches: cancellationSites, contextEventGuardPatches: contextGuardSites, lifecycleGuardMethods: lifecycleSites, lifecycleGuardAwaits: lifecycleAwaits, rpcErrorSerializerPatches: rpcErrorSites, subtitleEofPatches: subtitleEofSites, pendingSeekReplyPatches: seekReplySites, subtitlePacketBridgePatches: subtitlePacketBridgeSites, subtitlePacketReleasePatches: subtitleReleaseSites, subtitleDrainPatches: subtitleDrainSites, subtitleSeekPatches: subtitleSeekSites, sdrVariantPolicyPatches: sdrPolicySites, hlsManifestFailurePatches: manifestFailureSites, artifacts }, null, 2) + '\n');
+  commit: lock.commit, fetchRequestInitPatches: fetchSites, sameOriginWorkletPatches: workletSites, hlsClassificationPatches: liveSites, pipelineCleanupPatches: cleanupSites, cancellationPatches: cancellationSites, contextEventGuardPatches: contextGuardSites, lifecycleGuardMethods: lifecycleSites, lifecycleGuardAwaits: lifecycleAwaits, rpcErrorSerializerPatches: rpcErrorSites, subtitleEofPatches: subtitleEofSites, pendingSeekReplyPatches: seekReplySites, subtitlePacketBridgePatches: subtitlePacketBridgeSites, subtitlePacketReleasePatches: subtitleReleaseSites, subtitleDrainPatches: subtitleDrainSites, subtitleSeekPatches: subtitleSeekSites, sdrVariantPolicyPatches: sdrPolicySites, hlsManifestFailurePatches: manifestFailureSites, packedAacProbePatches: packedAacProbeSites, artifacts }, null, 2) + '\n');
 console.log(`Vendored libmedia ${lock.version}: ${artifacts.length} files, ${fetchSites} scoped RequestInit patches.`);

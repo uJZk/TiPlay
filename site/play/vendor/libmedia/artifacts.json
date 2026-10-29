@@ -18,6 +18,7 @@
   "subtitleSeekPatches": 3,
   "sdrVariantPolicyPatches": 3,
   "hlsManifestFailurePatches": 6,
+  "packedAacProbePatches": 1,
   "artifacts": [
     {
       "path": "163.avplayer.js",
@@ -176,8 +177,8 @@
     },
     {
       "path": "upstream.js",
-      "bytes": 625886,
-      "sha256": "470d5102af518000c4dd48a02920fd25d9ee1bcf13d6781974b6abf9e45b9f8e"
+      "bytes": 626294,
+      "sha256": "2cdfb647236781483d4fa0a5282dd52d050b1cece18da420efce84255e2b5d9d"
     },
     {
       "path": "AudioSourceWorkletProcessorWorklet.js",
