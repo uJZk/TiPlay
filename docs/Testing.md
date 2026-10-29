@@ -7,13 +7,13 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-Beta.32/code74, browser v107, recognizes Client-ID for remembered AirPlay
-consent, supports ID3-prefixed packed AAC HLS and simplifies video loading
-indicators. The [Android and WASM checks](https://github.com/uJZk/TiPlay/actions/runs/40810681150)
-passed; Wlsc ran 628 browser tests, and a synthetic packed-AAC HLS fixture passed
-the real AVPlayer headless regression. Physical YouTube playback, repeat consent
-and AirPlay mirroring remain acceptance work. Missing audio transport keys are
-diagnosed without assuming a plaintext stream.
+Use the [Android workflow](../.github/workflows/android.yml) and the recorded
+workflow run for the source revision under test. Synthetic caption and player tests
+do not establish physical subtitle availability, vehicle rendering, or source
+compatibility. Validate the matching APK and browser page on the target vehicle;
+observe YouTube subtitle delivery, repeated consent, AirPlay mirroring and video
+continuity separately. Missing audio transport keys are diagnosed without assuming
+a plaintext stream.
 
 ## Previous release source
 

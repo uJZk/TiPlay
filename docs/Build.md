@@ -7,18 +7,18 @@ Build the `:mobile` Android phone receiver for the car browser. Other applicatio
 Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [Android workflow](../.github/workflows/android.yml). Set `JAVA_HOME` and `ANDROID_HOME`, or put `sdk.dir=/absolute/sdk/path` in untracked `local.properties`. Android Studio must use the same Gradle JDK and the `mobile` run configuration.
 
 The Android/browser product version comes from `tiplayVersionName` and
-`tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is [**0.2.20-beta.32**](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.32)
-(code **74**). Run
-`python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
-The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v107**, with original-codec WebRTC RTP for live video and negotiated audio.
+`tiplayVersionCode` in [gradle.properties](../gradle.properties). Published artifacts
+and their provenance are available on the [releases page](https://github.com/uJZk/TiPlay/releases).
+Run `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
+The browser diagnostic/cache revision is independent of the product version and is
+defined in [browser-diagnostics.js](../site/play/browser-diagnostics.js) and
+[sw.js](../site/play/sw.js). Live video uses original-codec WebRTC RTP and negotiated audio.
 Earlier SoundTouch/libsoxr browser implementations are historical; current playback
 boundaries are in [Audio tempo](Audio-tempo.md). Software checks are in
 [Testing](Testing.md#webrtc-integrated-acceptance).
 The deployment replaces `https://ujzk.github.io/TiPlay/` and deletes the
 independent `/webrtc/` subsite without an alias or redirect; the APK defaults to the
-root. The beta record below identifies both build and deployment provenance. Every
+root. Use the release and workflow links above for current provenance. Every
 language's download entry opens the GitHub Releases index without a version-specific
 URL. Debug APK metadata retains its diagnostic suffix.
 
@@ -568,13 +568,12 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-Browser **v107** was deployed from `274391d1b9731b19a531d32af5eff273662394b1` by
-[Pages run 40812648160](https://github.com/uJZk/TiPlay/actions/runs/40812648160).
-The public diagnostic module reports v107. The matching signed beta.32 APK and
-source archive are available from the [release](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.32).
-Real-car acceptance remains pending.
+The [public page](https://ujzk.github.io/TiPlay/) is deployed by the
+[Pages workflow](../.github/workflows/pages.yml). Check its workflow run and the
+[releases page](https://github.com/uJZk/TiPlay/releases) for deployment and APK
+provenance; source checks and published artifacts do not establish real-car acceptance.
 
-The preceding browser **v104** was deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
+The earlier browser **v104** was deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
 [Pages run 40458375995](https://github.com/uJZk/TiPlay/actions/runs/40458375995).
 All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
 with JavaScript/WASM MIME types and no redirects verified. Downloaded page/cache
@@ -582,7 +581,7 @@ values identify v104 and application metadata identifies beta.29. The deployment
 changes version metadata; idle keyframe recovery is in the APK.
 [Beta.29](#beta29-release) records source/native and publication checks.
 
-The preceding browser **v103** was deployed from `50f94b322ddf3a79d7bf74e674800cba437b74fa` by
+The earlier browser **v103** was deployed from `50f94b322ddf3a79d7bf74e674800cba437b74fa` by
 [Pages run 40452502158](https://github.com/uJZk/TiPlay/actions/runs/40452502158).
 All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
 with JavaScript/WASM MIME types and no redirects verified. Actual downloaded
@@ -590,7 +589,7 @@ page/cache values identify v103 and application metadata identifies beta.28.
 This deployment changes version metadata; the 16 Mbps startup estimate is in the APK.
 [Beta.28](#beta28-release) records source/native checks and published provenance.
 
-The preceding browser **v102** was deployed from `6098d4ed5fc85f67cc7d290ec3d6ae2068cb4805` by
+The earlier browser **v102** was deployed from `6098d4ed5fc85f67cc7d290ec3d6ae2068cb4805` by
 [Pages run 40449503779](https://github.com/uJZk/TiPlay/actions/runs/40449503779).
 All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
 with JavaScript/WASM MIME types and no redirects verified. Downloaded page/cache
