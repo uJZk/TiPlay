@@ -94,7 +94,6 @@ const STRINGS = {
     waitingPhone: 'Connected to Android. Waiting for iOS…',
     phoneConnecting: 'CarPlay is connecting…',
     waitingVideo: 'Waiting for the AirPlay picture…',
-    preparingVideo: 'Preparing video…',
     preparingPhoto: 'Preparing photo…',
     waitingFrame: 'Waiting for the CarPlay picture…',
     waitingSource: 'Connected to the Android device. Waiting for a projection…',
@@ -109,8 +108,6 @@ const STRINGS = {
     airPlayFailed: 'AirPlay could not continue.',
     airPlayFailureHelp: 'AirPlay stopped unexpectedly. Check that AirPlay is enabled in TiPlay on Android, then try casting again from your iPhone.',
     pictureUnavailable: 'Picture unavailable.',
-    airPlayPaused: 'Video is paused.',
-    airPlayBuffering: 'Video is buffering…',
     badCode: 'The pairing code is wrong. Check it in TiPlay on the Android device.',
     replaced: 'Another browser took over the display. Connect again to take it back.',
     protocol: 'TiPlay on the Android device does not match this page. Update the app.',
@@ -185,7 +182,6 @@ const STRINGS = {
     waitingPhone: '已连接安卓端，等待 iOS…',
     phoneConnecting: 'CarPlay 正在连接…',
     waitingVideo: '正在等待 AirPlay 画面…',
-    preparingVideo: '正在准备视频…',
     preparingPhoto: '正在准备照片…',
     waitingFrame: '正在等待 CarPlay 画面…',
     waitingSource: '已连接安卓端，等待投屏…',
@@ -200,8 +196,6 @@ const STRINGS = {
     airPlayFailed: 'AirPlay 暂时无法继续。',
     airPlayFailureHelp: 'AirPlay 意外中断。请确认安卓端 TiPlay 已开启 AirPlay，然后从 iPhone 重新投屏。',
     pictureUnavailable: '画面暂不可用。',
-    airPlayPaused: '视频已暂停。',
-    airPlayBuffering: '视频正在缓冲…',
     badCode: '配对码不正确，请在安卓端上的 TiPlay 中核对。',
     replaced: '另一个浏览器接管了画面。再次连接即可收回。',
     protocol: '安卓端上的 TiPlay 与本页不匹配，请更新应用。',
@@ -857,7 +851,10 @@ function render() {
   $('status').hidden = !text || Boolean($('message').textContent);
   airplayControls.setCarPlayRunning?.(carPlayRunning(status, config));
   const videoReady = videoReadyFor(status, config, live);
-  renderReconnect({ active, live: videoReady || airplayControls.videoActive(), phase: airplayControls.videoActive() ? 'waiting' : phase, pending: !airplayControls.videoActive() && fitRequestedAt > 0, text });
+  const castOwnsPicture = airplayControls.videoActive() || pendingCast;
+  renderReconnect({ active, live: videoReady || castOwnsPicture,
+    phase: castOwnsPicture && !['connecting', 'retry'].includes(phase) ? 'waiting' : phase,
+    pending: !castOwnsPicture && fitRequestedAt > 0, text });
   $('connect').textContent = t(active ? 'resume' : 'connect');
   $('code').disabled = active;
   $('host').disabled = active;
@@ -942,22 +939,19 @@ function statusText() {
   if (status?.receivers?.airplay?.state === 'permission' && (receiver?.state === 'suspended' || source === 'airplay')) return t('airPlayPermission');
   if (playback?.kind === 'audio' && source !== 'carplay') return '';
   if (playback?.kind !== 'audio' && playback?.resource && playback.outputAllowed !== false && playback.videoShown !== false) {
-    if (playback.kind === 'photo') return '';
-    if (playback.buffering) return t('airPlayBuffering');
-    if (playback.ready) return playback.playing ? '' : t('airPlayPaused');
-    return t('preparingVideo');
+    return '';
   }
   // A new cast can arrive before its resource or video track does. A retired
   // CarPlay fault must not replace the foreground preparation message.
   const airplayPreparing = (playback?.kind === 'video' && playback.outputAllowed !== false && playback.videoShown !== false)
     || (['video', 'loading'].includes(status?.receivers?.airplay?.state)
       && !(source === 'carplay' && playback?.videoShown === false));
-  if (airplayPreparing && !videoReadyFor(status, config, live)) return t('preparingVideo');
+  if (airplayPreparing && !videoReadyFor(status, config, live)) return '';
   if (videoProblemFor(status, config, unsupported || videoError)) return t('pictureUnavailable');
   if (videoReadyFor(status, config, live)) return '';
   if (source === 'carplay' && (playback?.videoShown === false || playback?.kind === 'audio')) return t('waitingFrame');
   if (status?.receivers?.airplay?.state === 'photo') return t('preparingPhoto');
-  if (['video', 'loading'].includes(status?.receivers?.airplay?.state)) return t('preparingVideo');
+  if (['video', 'loading'].includes(status?.receivers?.airplay?.state)) return '';
   if (status?.receivers?.airplay?.state === 'mirror') return t('waitingVideo');
   if (receiver?.state === 'suspended' && source !== 'airplay') return t('carPlaySuspended');
   if (source === 'airplay') return t('waitingVideo');

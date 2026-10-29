@@ -738,7 +738,8 @@ class ReceiverServerTest {
 
     @Test fun missingAudioTransportKeyDoesNotStopExistingUrlPlayback() {
         val listener = Listener()
-        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(),
+            audioOutputFormats = 1L shl 18), listener)
         receiver.start()
         try {
             connect(receiver.port).use { control ->

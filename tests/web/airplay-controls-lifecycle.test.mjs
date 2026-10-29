@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createAirPlayControls } from '../../site/play/airplay-controls.js';
 await import('../../site/play/airplay-photo.js');
 
@@ -9,6 +10,13 @@ const deferred = () => {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 };
+test('video preparation uses the official buffering indicator without a second spinner or label', () => {
+  const shell = readFileSync(new URL('../../site/play/videojs-player.js', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../../site/play/airplay-controls.css', import.meta.url), 'utf8');
+  assert.equal((shell.match(/<media-buffering-indicator\b/g) ?? []).length, 1);
+  assert.match(styles, /\[data-preparing\][^\n]*\.media-buffering-indicator\s*\{\s*display:grid/);
+  assert.doesNotMatch(styles, /airplay-preparation-spinner/);
+});
 class Element extends EventTarget {
   children = []; attributes = new Map(); dataset = {}; style = {}; hidden = false;
   append(...elements) { for (const element of elements) { element.parent = this; this.children.push(element); } }
@@ -70,7 +78,7 @@ function fixture(t, { moduleGate = null, photoDecode = async () => {} } = {}) {
   const directive = (overrides = {}) => ({ id: 1, revision: 1, seekRevision: 1, trackRevision: 1,
     kind: 'video', resource: 'movie', proxyOnly: true, playing: true, target: 0, ...overrides });
   const layer = stage.children[0];
-  const indicator = () => layer.children.find(element => element.className === 'airplay-preparation media-skin');
+  const indicator = () => layer.getAttribute('data-preparing') !== null ? layer : undefined;
   const probeReady = async index => {
     await flush();
     assert.ok(requests[index], 'the player shell precedes its resource probe');
@@ -79,17 +87,18 @@ function fixture(t, { moduleGate = null, photoDecode = async () => {} } = {}) {
   return { controls, directive, layer, stage, get stop() { return players.at(-1)?.stop; }, sent, requests, players, indicator, probeReady };
 }
 
-test('cast loading is visible before probing and persists through source readiness until actual playing', async t => {
+test('cast preparation uses the player loading state until actual playing', async t => {
   const h = fixture(t);
   h.controls.update(h.directive());
   assert.equal(h.layer.hidden, false);
-  assert.equal(h.indicator().getAttribute('role'), 'status');
-  assert.equal(h.indicator().children[1].textContent, 'Preparing video…');
+  assert.ok(h.indicator());
   assert.equal(h.layer.getAttribute('aria-busy'), 'true');
-  assert.equal(h.players.length, 0, 'the initial indicator does not wait for the player module');
+  assert.equal(h.players.length, 0, 'the player module has not loaded yet');
+  assert.equal(h.layer.children.length, 0, 'no separate spinner or loading text is injected');
   assert.equal(h.stage.children.length, 1, 'no standalone Stop button remains');
   await flush();
   assert.equal(h.players.length, 1, 'the official player shell is present before resource headers arrive');
+  assert.equal(h.layer.children.length, 1, 'only the Video.js player owns the loading surface');
   assert.equal(h.stop.hidden, false);
   await h.probeReady(0);
   const player = h.players[0];
