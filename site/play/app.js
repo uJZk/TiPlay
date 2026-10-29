@@ -32,35 +32,10 @@ import { createAirPlayTrustNotification } from './airplay-trust.js';
 import { createBrowserNotice } from './browser-notice.js';
 import { carPlayRunning, createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor } from './receiver-presentation.js';
 import { browserDiagnosticEvents, createFaultDiagnosticReporter, PAGE_VERSION } from './browser-diagnostics.js';
+import { createBrowserDiagnosticLog } from './browser-diagnostic-log.js';
 
 const STRINGS = {
   en: {
-    rtcLocalIce: 'Preparing this browser’s direct connection…',
-    rtcPairing: 'Contacting Android and verifying the pairing code…',
-    rtcRemoteIce: 'Android verified. Opening the direct data channels…',
-    rtcAuth: 'Data channels open. Authenticating the media session…',
-    rtcConnected: 'Connection established. Preparing playback…',
-    rtcCandidates: 'Candidate totals: browser {0}, Android {1}.',
-    rtcBrowserClasses: 'Browser: {0}.',
-    rtcAndroidClasses: 'Android: {0}.',
-    rtcPrivateIpv4: 'private IPv4',
-    rtcCgnatIpv4: 'CGNAT IPv4',
-    rtcLinkLocal: 'link-local IPv4',
-    rtcStates: 'ICE {0}, peer {1}; DC video/audio/control {2}/{3}/{4}.',
-    rtcAndroidNoCandidates: 'Android’s answer contains no ICE candidates; no Android candidate is available for the direct connection.',
-    rtcFetch: 'Cannot reach the Android HTTP service. Check the address and local-network permission.',
-    rtcMissingInterface: 'Android has no WebRTC pairing interface. Check that TiPlay is up to date.',
-    rtcAndroidSignaling: 'Android could not prepare the WebRTC connection. Check its diagnostic report.',
-    rtcPairingFailed: 'The phone’s pairing verification failed. Re-enter the current pairing code.',
-    rtcBadResponse: 'Android returned an invalid pairing response.',
-    rtcIceFailed: 'The direct ICE/data-channel connection failed.',
-    rtcUnsupported: 'This browser does not provide WebRTC data channels.',
-    rtcConnectionFailed: 'The connection failed at this stage.',
-    rtcLocalTimeout: 'The browser’s local ICE candidate collection timed out.',
-    rtcPairingTimeout: 'Contacting and verifying Android timed out.',
-    rtcRemoteTimeout: 'Android was verified, but opening ICE/data channels timed out.',
-    rtcAuthTimeout: 'The data channels opened, but session authentication timed out.',
-    rtcRetryDetail: '{0} Last stage: {1} Retrying in {2} s…',
     heading: 'Connect to TiPlay',
     intro: 'Connect this screen and your Android device to the same network. Enter the code shown in TiPlay to display CarPlay.',
     codeLabel: 'Pairing code',
@@ -73,7 +48,6 @@ const STRINGS = {
     settings: 'Setting',
     diagnostics: 'Diagnostics',
     diagnosticsHelp: 'Connection details for troubleshooting. These do not change playback or enable Android Debug mode.',
-    diagnosticsEmpty: 'No connection details yet.',
     retryNetwork: 'Cannot reach Android. Check its address and allow local-network access. Retrying in {0} s…',
     retryUpdate: 'Update TiPlay on Android and reload this page. Retrying in {0} s…',
     retryAndroid: 'Android is not ready. Open TiPlay on the phone. Retrying in {0} s…',
@@ -117,38 +91,11 @@ const STRINGS = {
     unsupportedHevc: 'This browser cannot decode this HEVC stream. Reconnect to report decoder support again.',
     unsupportedHdr: 'AirPlay mirroring requires SDR video; this source sends HDR.',
     rtcVideoCodecFailed: 'The video format exceeds the receive capabilities negotiated for this connection. Reconnect, or check Diagnostics for details.',
-    rtcVideoFailureDetail: 'Video failure: {0}',
     noVideo: 'This browser cannot show the live picture ({0}). Open this page over HTTPS in a browser that supports live video.',
     invalidCode: 'Enter the 4-digit pairing code.',
     invalidHost: 'Enter an IPv4 address with port, for example 169.254.111.111:8080.',
   },
   zh: {
-    rtcLocalIce: '正在准备车机浏览器的直连候选地址…',
-    rtcPairing: '正在联系安卓端并验证配对码…',
-    rtcRemoteIce: '安卓端已通过验证，正在建立 ICE / 数据通道…',
-    rtcAuth: '数据通道已打开，正在认证媒体会话…',
-    rtcConnected: '连接已建立，正在准备播放…',
-    rtcCandidates: '候选总数：浏览器 {0}，安卓端 {1}。',
-    rtcBrowserClasses: '浏览器分类：{0}。',
-    rtcAndroidClasses: '安卓分类：{0}。',
-    rtcPrivateIpv4: '私有 IPv4',
-    rtcCgnatIpv4: 'CGNAT IPv4',
-    rtcLinkLocal: '链路本地 IPv4',
-    rtcStates: 'ICE {0}，Peer {1}；DC 视频/音频/控制 {2}/{3}/{4}。',
-    rtcAndroidNoCandidates: '安卓端响应中没有 ICE 候选，当前没有可用于直连的安卓候选。',
-    rtcFetch: '无法访问安卓端 HTTP 服务，请检查地址和本地网络访问权限。',
-    rtcMissingInterface: '安卓端缺少 WebRTC 配对接口，请确认 TiPlay 已更新。',
-    rtcAndroidSignaling: '安卓端未能准备 WebRTC 连接，请查看安卓端诊断报告。',
-    rtcPairingFailed: '安卓端的配对校验未通过，请重新输入当前配对码。',
-    rtcBadResponse: '安卓端返回了无效的配对响应。',
-    rtcIceFailed: 'ICE / 数据通道直连失败。',
-    rtcUnsupported: '此浏览器未提供 WebRTC 数据通道。',
-    rtcConnectionFailed: '连接在此阶段失败。',
-    rtcLocalTimeout: '浏览器收集本机 ICE 候选地址超时。',
-    rtcPairingTimeout: '联系安卓端或验证配对超时。',
-    rtcRemoteTimeout: '安卓端已验证，但建立 ICE / 数据通道超时。',
-    rtcAuthTimeout: '数据通道已打开，但媒体会话认证超时。',
-    rtcRetryDetail: '{0} 最后阶段：{1} {2} 秒后重试…',
     heading: '连接 TiPlay',
     intro: '让这块屏幕与安卓端连接同一网络，输入 TiPlay 显示的配对码，即可显示 CarPlay。',
     codeLabel: '配对码',
@@ -161,7 +108,6 @@ const STRINGS = {
     settings: '设置',
     diagnostics: '诊断',
     diagnosticsHelp: '排查问题时查看连接详情。此处不会改变播放或开启安卓端 Debug 模式。',
-    diagnosticsEmpty: '暂无连接诊断。',
     retryNetwork: '无法访问安卓端，请检查地址并允许本地网络访问。{0} 秒后重试…',
     retryUpdate: '请更新安卓端 TiPlay 并重新加载本页。{0} 秒后重试…',
     retryAndroid: '安卓端尚未就绪，请在手机上打开 TiPlay。{0} 秒后重试…',
@@ -205,7 +151,6 @@ const STRINGS = {
     unsupportedHevc: '此浏览器无法解码此 HEVC 视频流，请重新连接以再次汇报解码能力。',
     unsupportedHdr: 'AirPlay 镜像需要 SDR 视频，当前来源发送的是 HDR。',
     rtcVideoCodecFailed: '视频格式超出本次连接协商的接收能力。请重新连接，或在“诊断”中查看详情。',
-    rtcVideoFailureDetail: '视频错误：{0}',
     noVideo: '此浏览器无法显示实时画面（{0}）。请使用支持实时视频的新版浏览器通过 HTTPS 打开本页。',
     invalidCode: '请输入 4 位配对码。',
     invalidHost: '请输入带端口的 IPv4 地址，例如 169.254.111.111:8080。',
@@ -217,6 +162,7 @@ const CODEC_NAMES = { avc1: 'H.264', avc3: 'H.264', hvc1: 'HEVC', hev1: 'HEVC', 
 const LINK_KEY = 'tiplay.link', STATS_KEY = 'tiplay.stats';
 const $ = id => document.getElementById(id);
 const browserNotice = createBrowserNotice($('browser-notice'), lang);
+const diagnosticLog = createBrowserDiagnosticLog({ language: lang });
 const receiverNotices = createReceiverNoticeTracker();
 const stage = $('stage'), touch = $('touch');
 const codecName = codec => CODEC_NAMES[String(codec).split('.')[0]] ?? codec;
@@ -307,7 +253,11 @@ const browserAudio = createBrowserAudio({
   onSourceDeadline: ({ first }) => {
     // Cumulative rejected blocks remain visible in the regular five-second report.
     // Only a new source identity/reason requests an immediate, compact fault event.
-    if (first) faultDiagnostics.report(browserDiagnosticEvents(pageStats(), appearance.matches)[0]);
+    if (first) {
+      const event = browserDiagnosticEvents(pageStats(), appearance.matches)[0];
+      observeDiagnosticSummary(event.v);
+      faultDiagnostics.report(event);
+    }
   },
   fetchPhone: phoneFetch, credentials: () => ({ code: resourceToken, session }),
 });
@@ -817,6 +767,21 @@ function onVideoMessage(message) {
   render();
 }
 
+function pendingCastForCurrentSource() {
+  const source = videoSourceFor(status, config), playback = status?.airplay;
+  return !videoReadyFor(status, config, live) &&
+    ((playback?.kind === 'video' && playback.outputAllowed !== false && playback.videoShown !== false)
+      || (['video', 'loading'].includes(status?.receivers?.airplay?.state)
+        && !(source === 'carplay' && playback?.videoShown === false)));
+}
+
+function observeDiagnosticSummary(summary) {
+  // The sender can still report the retired CarPlay error during cast takeover.
+  // Filter only the local view; the Android telemetry retains the original event.
+  diagnosticLog.observeSummary(pendingCastForCurrentSource() && 'video.errorReason' in summary
+    ? { ...summary, 'video.errorReason': null } : summary);
+}
+
 function render() {
   $('disconnect').hidden = !active;
   $('stats-toggle').setAttribute('aria-checked', String(statsVisible));
@@ -828,10 +793,7 @@ function render() {
   let problem = !active && notice && notice.key !== 'stopped' && !inlineNotice
     ? { id: notice.key, text: t(notice.key, ...notice.args) } : null;
   const source = videoSourceFor(status, config), playback = status?.airplay;
-  const pendingCast = !videoReadyFor(status, config, live) &&
-    ((playback?.kind === 'video' && playback.outputAllowed !== false && playback.videoShown !== false)
-      || (['video', 'loading'].includes(status?.receivers?.airplay?.state)
-        && !(source === 'carplay' && playback?.videoShown === false)));
+  const pendingCast = pendingCastForCurrentSource();
   const videoProblem = active && !pendingCast ? videoProblemFor(status, config, unsupported) : null;
   if (active && unsupported && !videoProblem) browserNotice.reset(`codec:${unsupported}`);
   if (videoProblem) {
@@ -862,44 +824,15 @@ function render() {
   if (active && statsVisible) {
     renderStats();
   }
-  if ($('diagnostics').open) $('connection-details').textContent = connectionDetailsText();
+  diagnosticLog.observe({ phase: active ? phase : 'idle', stage: active ? rtcProgress?.stage : null,
+    source: castOwnsPicture ? 'video' : source, playback: castOwnsPicture && playback?.kind === 'video' ? playback : null,
+    live: videoReady, failure: lastError ? rtcFailureSummary(lastError).reason : null,
+    videoError: videoError && !pendingCast ? videoError : null });
+  diagnosticLog.render($('connection-details'));
 }
 
 function renderStats() {
   $('stats').textContent = formatPerformanceMonitor(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats);
-}
-
-function rtcStageText(stage) {
-  const key = { 'local-ice': 'rtcLocalIce', pairing: 'rtcPairing', 'remote-ice': 'rtcRemoteIce',
-    'dc-auth': 'rtcAuth', connected: 'rtcConnected' }[stage];
-  return t(key ?? 'connecting');
-}
-
-function rtcCandidateText(value) {
-  if (!value || !Number.isInteger(value.localCandidates) || !Number.isInteger(value.remoteCandidates)) return '';
-  const pieces = [t('rtcCandidates', value.localCandidates, value.remoteCandidates)];
-  const categories = [['UdpCandidates', 'UDP'], ['TcpCandidates', 'TCP'], ['PrivateIpv4Candidates', t('rtcPrivateIpv4')],
-    ['CgnatIpv4Candidates', t('rtcCgnatIpv4')], ['LinkLocalCandidates', t('rtcLinkLocal')], ['Ipv6Candidates', 'IPv6'], ['MdnsCandidates', 'mDNS']];
-  for (const [prefix, key] of [['local', 'rtcBrowserClasses'], ['remote', 'rtcAndroidClasses']]) {
-    const nonzero = categories.filter(([field]) => value[prefix + field] > 0)
-      .map(([field, label]) => `${label}:${value[prefix + field]}`);
-    if (nonzero.length) pieces.push(t(key, nonzero.join(', ')));
-  }
-  if (value.iceState || value.connectionState) pieces.push(t('rtcStates', value.iceState ?? '—', value.connectionState ?? '—',
-    value.videoChannelState ?? '—', value.audioChannelState ?? '—', value.controlChannelState ?? '—'));
-  if (['remote-ice', 'dc-auth', 'connected'].includes(value.stage) && value.remoteCandidates === 0) pieces.push(t('rtcAndroidNoCandidates'));
-  return pieces.join(' ');
-}
-
-function rtcRetryText(error, seconds) {
-  const failure = rtcFailureSummary(error);
-  let key = { fetch: 'rtcFetch', 'missing-interface': 'rtcMissingInterface', 'android-signaling': 'rtcAndroidSignaling',
-    pairing: 'rtcPairingFailed', 'bad-response': 'rtcBadResponse', ice: 'rtcIceFailed', unsupported: 'rtcUnsupported' }[failure.reason];
-  if (failure.reason === 'timeout') key = { 'local-ice': 'rtcLocalTimeout', pairing: 'rtcPairingTimeout',
-    'remote-ice': 'rtcRemoteTimeout', 'dc-auth': 'rtcAuthTimeout' }[failure.stage];
-  const detail = t('rtcRetryDetail', t(key ?? 'rtcConnectionFailed'), rtcStageText(failure.stage), seconds);
-  const candidates = rtcCandidateText(failure);
-  return candidates ? `${detail} ${candidates}` : detail;
 }
 
 function retryStatusText(error, seconds) {
@@ -908,17 +841,6 @@ function retryStatusText(error, seconds) {
   const key = { fetch: 'retryNetwork', 'missing-interface': 'retryUpdate', 'bad-response': 'retryUpdate',
     'android-signaling': 'retryAndroid', pairing: 'retryPairing', ice: 'retryConnection', timeout: 'retryConnection' }[rtcFailureSummary(error).reason];
   return t(key ?? (error ? 'unreachable' : 'lost'), seconds);
-}
-
-function connectionDetailsText() {
-  const reason = typeof videoError === 'string' && /^[a-z0-9-]{1,100}$/.test(videoError) ? videoError : videoError ? 'rtc-video-failed' : null;
-  const videoFailure = reason ? `\n${t('rtcVideoFailureDetail', reason)}` : '';
-  if (phase === 'retry' && lastError) {
-    return `${PAGE_VERSION}\n${rtcRetryText(lastError, Math.max(1, Math.ceil((retryAt - Date.now()) / 1000)))}${videoFailure}`;
-  }
-  if (!rtcProgress) return `${PAGE_VERSION}\n${t('diagnosticsEmpty')}${videoFailure}`;
-  const candidates = rtcCandidateText(rtcProgress);
-  return `${PAGE_VERSION}\n${rtcStageText(rtcProgress.stage)}${candidates ? `\n${candidates}` : ''}${videoFailure}`;
 }
 
 function statusText() {
@@ -967,7 +889,11 @@ function statusText() {
 }
 
 function reportDiagnostics(kind = 'latest') {
-  for (const event of browserDiagnosticEvents(pageStats(), appearance.matches, status?.debug === true, status?.debugSession, videoDiagnosticTracker)) outbox?.push(event, event.k === 'st' ? kind : 'latest');
+  for (const event of browserDiagnosticEvents(pageStats(), appearance.matches, status?.debug === true, status?.debugSession, videoDiagnosticTracker)) {
+    if (event.k === 'st') observeDiagnosticSummary(event.v);
+    outbox?.push(event, event.k === 'st' ? kind : 'latest');
+  }
+  diagnosticLog.render($('connection-details'));
 }
 
 function pageStats() {

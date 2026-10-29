@@ -97,6 +97,21 @@ try {
     }, mode);
     await page.waitForFunction(() => actualVideo()?.readyState >= 2 && actualVideo().currentTime > .4, null, { timeout: 30000 })
       .catch(async error => { console.log('controls-startup:', await page.evaluate(() => ({ events, engine: actualVideo()?.getPlaybackDiagnostics(), error: actualVideo()?.error, layer: document.querySelector('.airplay-player')?.textContent })), errors, requests.slice(-20)); throw error; });
+    // Use the real Video.js component and AVPlayer facade, holding the native
+    // seek open long enough for the player's normal 500 ms buffering delay.
+    await page.evaluate(async () => {
+      const { default: Player } = await import('/vendor/libmedia/avplayer.js');
+      const raw = Player.Instances[0], seek = raw.seek.bind(raw);
+      window.releaseHeldSeek = null;
+      const gate = new Promise(resolve => { window.releaseHeldSeek = resolve; });
+      raw.seek = async (...args) => { await gate; return seek(...args); };
+      actualVideo().currentTime = 2;
+    });
+    await page.waitForFunction(() => actualVideo().seeking && actualVideo().readyState < 3
+      && document.querySelector('media-buffering-indicator')?.hasAttribute('data-visible'), null, { timeout: 5000 });
+    await page.evaluate(() => releaseHeldSeek());
+    await page.waitForFunction(() => !actualVideo().seeking && actualVideo().readyState >= 3
+      && !document.querySelector('media-buffering-indicator')?.hasAttribute('data-visible'), null, { timeout: 10000 });
     if (await page.locator('media-fullscreen-button,media-pip-button,media-volume-slider,media-mute-button').count())
       throw new Error('Removed controls were restored');
     if (await page.locator('.airplay-stop').count() !== 1) throw new Error('Missing stop control');
@@ -119,8 +134,18 @@ try {
     const before = await page.evaluate(() => actualVideo().currentTime);
     await page.waitForTimeout(250);
     if (Math.abs(await page.evaluate(() => actualVideo().currentTime) - before) > .1) throw new Error('Pause clock advanced');
+    await page.evaluate(async () => {
+      const { default: Player } = await import('/vendor/libmedia/avplayer.js');
+      const raw = Player.Instances[0], seek = raw.seek.bind(raw);
+      const gate = new Promise(resolve => { window.releaseHeldSeek = resolve; });
+      raw.seek = async (...args) => { await gate; return seek(...args); };
+    });
     await page.evaluate(() => controls.update({ id: 1, resource: mediaResource, revision: 1,
       seekRevision: 1, target: .5, fraction: true, playing: false }));
+    await page.waitForFunction(() => actualVideo().seeking);
+    await page.waitForTimeout(700);
+    if (await page.locator('media-buffering-indicator[data-visible]').count()) throw new Error('Paused seek displayed buffering');
+    await page.evaluate(() => releaseHeldSeek());
     await page.waitForFunction(() => !actualVideo().seeking && Math.abs(actualVideo().currentTime / actualVideo().duration - .5) < .04);
     await clickControl('media-playback-rate-button');
     await page.waitForFunction(() => actualVideo().playbackRate === 1.25 && events.some(event => event.k === 'ap-state' && event.rate === 1.25));

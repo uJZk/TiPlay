@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { candidateCounts, rtcFailureReason, rtcFailureSummary } from '../../site/play/rtc-diagnostics.js';
+import { createBrowserDiagnosticLog } from '../../site/play/browser-diagnostic-log.js';
 
 test('candidate summaries retain anonymous protocol and address-class counts', () => {
   const sdp = 'v=0\r\na=ice-pwd:secret\r\na=candidate:1 1 udp 1 169.254.111.111 5555 typ host\r\n' +
@@ -25,33 +26,30 @@ test('failure summaries exclude exception details, SDP, passwords and session id
 function pageText(language) {
   const source = readFileSync(new URL('../../site/play/app.js', import.meta.url), 'utf8');
   const strings = new Function(`return ${/const STRINGS = (\{[\s\S]*?\n\});/.exec(source)[1]}`)();
-  const functions = ['rtcStageText', 'rtcCandidateText', 'rtcRetryText', 'retryStatusText'].map(name =>
+  const functions = ['retryStatusText'].map(name =>
     new RegExp(`function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`).exec(source)[0]).join('\n');
   return new Function('STRINGS', 'lang', 'rtcFailureSummary', `
     const t = (key, ...args) => (STRINGS[lang][key] ?? STRINGS.en[key]).replace(/\\{(\\d)\\}/g, (_, index) => args[index]);
     ${functions}
-    return { rtcRetryText, rtcStageText, retryStatusText };
+    return { retryStatusText };
   `)(strings, language, rtcFailureSummary);
 }
 
-test('optional diagnostics retain distinct HTTP, PAKE and answered-but-not-connected failures in English and Chinese', () => {
+test('diagnostic log retains safe connection stage and failure reasons in English and Chinese', () => {
   for (const language of ['en', 'zh']) {
-    const page = pageText(language);
-    const diagnostic = { stage: 'remote-ice', localCandidates: 1, localLinkLocalCandidates: 1,
-      remoteCandidates: 0, remoteLinkLocalCandidates: 0 };
-    const timed = page.rtcRetryText({ rtcReason: 'timeout', rtcDiagnostic: diagnostic, message: 'secret 9876' }, 8);
-    assert.match(timed, language === 'zh' ? /安卓端已验证.*超时/ : /Android was verified.*timed out/);
-    assert.match(timed, language === 'zh' ? /候选总数：浏览器 1，安卓端 0/ : /Candidate totals: browser 1, Android 0/);
-    assert.match(timed, language === 'zh' ? /安卓端响应中没有 ICE 候选/ : /Android’s answer contains no ICE candidates/);
-    assert.doesNotMatch(timed, /169\.254/); assert.match(timed, /8/); assert.doesNotMatch(timed, /secret|9876/);
-    const absent = page.rtcRetryText({ status: 404, rtcDiagnostic: { stage: 'pairing' } }, 8);
-    assert.match(absent, language === 'zh' ? /缺少 WebRTC 配对接口/ : /no WebRTC pairing interface/);
-    const signaling = page.rtcRetryText({ status: 503, rtcDiagnostic: { stage: 'pairing' } }, 8);
-    assert.match(signaling, language === 'zh' ? /未能准备 WebRTC/ : /could not prepare the WebRTC/);
-    const fetch = page.rtcRetryText({ rtcReason: 'fetch', rtcDiagnostic: { stage: 'pairing' } }, 8);
-    assert.match(fetch, /HTTP/);
-    const proof = page.rtcRetryText({ rtcReason: 'pairing', rtcDiagnostic: { stage: 'pairing' } }, 8);
-    assert.match(proof, language === 'zh' ? /配对校验未通过/ : /pairing verification failed/);
+    const log = createBrowserDiagnosticLog({ language });
+    log.observeSummary({ 'link.connection.stage': 'remote-ice', address: '169.254.1.1', message: 'secret 9876' });
+    log.observe({ phase: 'retry', failure: rtcFailureSummary({ rtcReason: 'timeout' }).reason });
+    const text = log.lines().join('\n');
+    assert.match(text, language === 'zh' ? /正在检查安卓端连接/ : /Checking Android connection/);
+    assert.match(text, /timeout/);
+    assert.doesNotMatch(text, /169\.254|secret|9876/);
+    for (const error of [{ status: 404 }, { status: 503 }, { rtcReason: 'fetch' }, { rtcReason: 'pairing' }]) {
+      log.observe({ phase: 'connecting' });
+      const reason = rtcFailureSummary(error).reason;
+      log.observe({ phase: 'retry', failure: reason });
+      assert.ok(log.lines()[0].includes(reason));
+    }
   }
 });
 
@@ -64,19 +62,15 @@ test('CGNAT, private IPv4, IPv6 and mDNS remain distinct without retaining addre
   assert.doesNotMatch(JSON.stringify(counts), /100\.111|169\.254|fd12|hidden|5555|candidate/);
 });
 
-test('optional diagnostics show nonzero classes and independent ICE, peer and three channel states', () => {
+test('structured failure summaries retain candidate and independent channel states', () => {
   const diagnostic = { stage: 'remote-ice', localCandidates: 2, remoteCandidates: 1,
     localUdpCandidates: 2, remoteUdpCandidates: 1, localCgnatIpv4Candidates: 1, localMdnsCandidates: 1,
     remotePrivateIpv4Candidates: 1, localLinkLocalCandidates: 0, remoteLinkLocalCandidates: 0,
     iceState: 'connected', connectionState: 'connecting', videoChannelState: 'connecting',
     audioChannelState: 'connecting', controlChannelState: 'open' };
-  for (const language of ['en', 'zh']) {
-    const text = pageText(language).rtcRetryText({ rtcReason: 'timeout', rtcDiagnostic: diagnostic }, 8);
-    assert.match(text, /UDP:2/); assert.match(text, /CGNAT IPv4:1/); assert.match(text, /mDNS:1/);
-    assert.match(text, /ICE connected/); assert.match(text, language === 'zh' ? /Peer connecting/ : /peer connecting/);
-    assert.match(text, /connecting\/connecting\/open/);
-    assert.doesNotMatch(text, /169\.254|link-local|链路本地|contains no ICE|没有 ICE 候选/);
-  }
+  const summary = rtcFailureSummary({ rtcReason: 'timeout', rtcDiagnostic: diagnostic });
+  for (const [key, value] of Object.entries(diagnostic)) assert.equal(summary[key], value, key);
+  assert.doesNotMatch(JSON.stringify(summary), /169\.254|secret/);
 });
 
 test('normal retry status offers an action and countdown without protocol internals in either language', () => {

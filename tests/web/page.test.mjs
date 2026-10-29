@@ -6,6 +6,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { APP_VERSION } from '../../site/play/app-version.js';
 import { DEFAULT_HOST, abortable, isCode, normalizeHost } from '../../site/play/link.js';
 import { browserDiagnosticEvents, PAGE_VERSION } from '../../site/play/browser-diagnostics.js';
+import { createBrowserDiagnosticLog } from '../../site/play/browser-diagnostic-log.js';
 import { decoderStatsMatch } from '../../site/play/video-diagnostics.js';
 import { rtcFailureSummary } from '../../site/play/rtc-diagnostics.js';
 import { airPlayContext, airPlayFailed, createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor } from '../../site/play/receiver-presentation.js';
@@ -36,10 +37,11 @@ test('source replacement requests video-only renegotiation once and ignores old 
 test('rejected audio blocks request compact diagnostics only for a first source fault', () => {
   const callback = /onSourceDeadline: (\(\{ first \}\) => \{[\s\S]*?\n  \}),/.exec(read('app.js'))[1];
   const events = []; let snapshots = 0;
-  const report = new Function('faultDiagnostics', 'browserDiagnosticEvents', 'pageStats', 'appearance', `return ${callback}`)(
+  const log = createBrowserDiagnosticLog();
+  const report = new Function('faultDiagnostics', 'browserDiagnosticEvents', 'pageStats', 'appearance', 'observeDiagnosticSummary', `return ${callback}`)(
     { report: event => events.push(event) }, browserDiagnosticEvents,
     () => { snapshots++; return { audio: { sourceDeadlineState: 'violated', sourceDeadlineRejectedFrames: 128,
-      debug: { contextState: 'running', privateLargeDebug: 'not part of the fault summary' } } }; }, { matches: false });
+      debug: { contextState: 'running', privateLargeDebug: 'not part of the fault summary' } } }; }, { matches: false }, summary => log.observeSummary(summary));
   report({ first: true });
   for (let i = 0; i < 1000; i++) report({ first: false });
   assert.equal(snapshots, 1); assert.equal(events.length, 1); assert.equal(events[0].k, 'st');
@@ -171,13 +173,14 @@ function retryPage(lastError) {
   const setTimer = (callback, delay, repeat) => {
     const id = ++nextId; timers.set(id, { callback, at: now + delay, repeat }); return id;
   };
-  const page = new Function('$', 'Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'renderReconnect', 'lastError', 'rtcFailureSummary', 'PAGE_VERSION', 'airPlayContext', 'airPlayFailed', 'createReceiverNoticeTracker', 'videoProblemFor', 'videoReadyFor', 'videoSourceFor', `
+  const page = new Function('$', 'Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'renderReconnect', 'lastError', 'rtcFailureSummary', 'PAGE_VERSION', 'airPlayContext', 'airPlayFailed', 'createReceiverNoticeTracker', 'videoProblemFor', 'videoReadyFor', 'videoSourceFor', 'createBrowserDiagnosticLog', `
     let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort, rtcMedia, rtcProgress, resourceToken, controlClock;
     const controlWaiters = new Set(), codecsReady = new Promise(() => {}), abortable = value => value;
     let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null, config = null;
     let videoError = null, videoRestart = null, currentVideoGeneration = 1;
     let receiverFailure = false, videoNoticeId = null;
     const receiverNotices = createReceiverNoticeTracker();
+    const diagnosticLog = createBrowserDiagnosticLog();
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
     const browserLocation = { stop() {} };
     let problem = null;
@@ -194,7 +197,7 @@ function retryPage(lastError) {
     const t = (key, ...args) => args.length ? key + ':' + args.join(',') : key;
     const phoneFetch = () => new Promise(() => {});
     const createClockEstimator = () => ({ observe: () => null, snapshot: () => null });
-    ${['statusText', 'retryStatusText', 'connectionDetailsText', 'rtcStageText', 'rtcCandidateText', 'rtcRetryText', 'render', 'scheduleRetry', 'stop', 'connectVideo'].map(extract).join('\n')}
+    ${['statusText', 'retryStatusText', 'pendingCastForCurrentSource', 'observeDiagnosticSummary', 'render', 'scheduleRetry', 'stop', 'connectVideo'].map(extract).join('\n')}
     return { scheduleRetry, stop, connectVideo, reconnects: () => reconnects,
       present(value) {
         phase = 'waiting'; status = value.status ?? null; config = value.config ?? null;
@@ -206,10 +209,11 @@ function retryPage(lastError) {
       details() { $('diagnostics').open = true; render(); return $('connection-details').textContent; },
       problem: () => problem, inlineMessage: () => $('message').textContent, statusHidden: () => $('status').hidden,
       videoFailed(reason) { videoError = reason; render(); },
+      summary(value) { observeDiagnosticSummary(value); render(); },
       trustState: () => ({ visible: trustVisible, clears: trustClears }) };
   `)($, { now: () => now }, (callback, delay) => setTimer(callback, delay, 0), id => timers.delete(id),
     (callback, delay) => setTimer(callback, delay, delay), id => timers.delete(id), value => { overlays.push(value.text); overlayStates.push(value); }, lastError, rtcFailureSummary, PAGE_VERSION,
-    airPlayContext, airPlayFailed, createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor);
+    airPlayContext, airPlayFailed, createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor, createBrowserDiagnosticLog);
   return {
     ...page, overlays, overlay: () => overlayStates.at(-1), text: () => $('status').textContent,
     intervals: () => [...timers.values()].filter(timer => timer.repeat).length,
@@ -232,11 +236,11 @@ test('video negotiation failures expose the safe video reason without changing c
   page.present({ status: { videoSource: 'carplay' }, config: { mode: 'carplay' } });
   page.videoFailed('codec-profile-not-negotiated');
   assert.equal(page.problem().text, 'rtcVideoCodecFailed');
-  assert.match(page.details(), /rtcVideoFailureDetail:codec-profile-not-negotiated/);
+  assert.match(page.details(), /Video failure：codec-profile-not-negotiated/);
   page.videoFailed('credential\nsecret=do-not-export');
   assert.equal(page.problem(), null, 'generic video faults do not produce a browser notice');
   assert.equal(page.text(), 'pictureUnavailable', 'failed video does not look like an ongoing connection');
-  assert.match(page.details(), /rtcVideoFailureDetail:rtc-video-failed/);
+  assert.match(page.details(), /Video failure：rtc-video-failed/);
   assert.doesNotMatch(page.details(), /credential|secret|do-not-export/);
   assert.equal(page.present({ status: { videoSource: null, airplay: { kind: 'video', resource: 'movie', ready: false } },
     config: { mode: 'carplay' } }), '', 'retired CarPlay fault does not mask a new cast');
@@ -257,6 +261,23 @@ test('a foreground video cast preparing without a resource masks retired CarPlay
   assert.equal(page.present({ status: { videoSource: 'carplay', receivers: { carplay } }, config }), 'pictureUnavailable');
   const fresh = retryPage();
   assert.equal(fresh.present({ status: { videoSource: null, receivers: { carplay } } }), 'carPlayFailed', 'a genuine CarPlay failure remains visible');
+});
+
+test('repeated summaries do not resurrect a retired CarPlay error during cast takeover', () => {
+  const page = retryPage();
+  const config = { mode: 'carplay' };
+  page.present({ config, status: { videoSource: 'carplay' } });
+  page.videoFailed('codec-profile-not-negotiated');
+  page.present({ config, status: { videoSource: 'carplay', airplay: { kind: 'video' },
+    receivers: { airplay: { state: 'loading' } } } });
+  const summary = { 'video.errorReason': 'codec-profile-not-negotiated' };
+  const before = page.details();
+  for (let i = 0; i < 4; i++) page.summary(summary);
+  assert.equal(page.details(), before, 'report and render do not alternate failure and recovery');
+  assert.equal(summary['video.errorReason'], 'codec-profile-not-negotiated', 'telemetry remains unchanged');
+  page.present({ config, status: { videoSource: 'carplay' } });
+  assert.equal((page.details().match(/Video failure：codec-profile-not-negotiated/g) || []).length, 2,
+    'the error can be reported again when CarPlay is current');
 });
 
 test('waiting messages follow receiver phase and actual video source rather than session availability', () => {
@@ -378,12 +399,11 @@ test('default connection and retry messages keep technical state in the optional
   const diagnostic = { stage: 'remote-ice', localCandidates: 2, remoteCandidates: 0, iceState: 'checking', connectionState: 'connecting' };
   const page = retryPage({ rtcReason: 'timeout', rtcDiagnostic: diagnostic, message: 'secret pairing-code' });
   assert.equal(page.connecting(diagnostic), 'connecting');
-  assert.match(page.details(), new RegExp(PAGE_VERSION));
-  assert.match(page.details(), /rtcCandidates:2,0/);
+  assert.match(page.details(), /Checking Android connection/);
   page.scheduleRetry(3000);
   assert.equal(page.text(), 'retryConnection:3');
   assert.equal(page.overlays.at(-1), 'retryConnection:3');
-  assert.match(page.details(), /rtcRemoteTimeout/);
+  assert.match(page.details(), /Connection interrupted; retrying \(timeout\)/);
   assert.doesNotMatch(page.details(), /secret|pairing-code/);
   page.advance(1000);
   assert.equal(page.text(), 'retryConnection:2');

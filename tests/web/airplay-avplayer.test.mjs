@@ -82,6 +82,89 @@ test('zero initial seek keeps prepared source; seek converts seconds to original
   h.media.dispose();
 });
 
+test('a playing seek exposes the native buffering state until the final coalesced seek finishes', async () => {
+  const gate = deferred(), h = fixture({ seekGate: gate });
+  await h.media.load('http://media.test/a.mp4'); await h.media.play();
+  const events = [];
+  for (const name of ['seeking', 'waiting', 'seeked', 'canplay', 'playing']) h.media.addEventListener(name, () => events.push(name));
+  h.media.currentTime = 2; h.media.currentTime = 6;
+  assert.equal(h.media.readyState, 2); assert.equal(h.media.buffering, true);
+  assert.deepEqual(events, ['seeking', 'waiting']);
+  h.players[0].fire('firstVideoRendered');
+  assert.equal(h.media.readyState, 2, 'a stale render callback cannot clear the pending seek');
+  const done = new Promise(resolve => h.media.addEventListener('seeked', resolve, { once: true }));
+  gate.resolve(); await done; await flush();
+  assert.equal(h.media.readyState, 4); assert.equal(h.media.buffering, false);
+  assert.deepEqual(events, ['seeking', 'waiting', 'seeked', 'canplay', 'playing']);
+  h.media.dispose();
+});
+
+test('first frame during an initial seek preserves startup playback state', async () => {
+  const playGate = deferred(), seekGate = deferred(), h = fixture({ playGate, seekGate });
+  await h.media.load('http://media.test/a.mp4');
+  const playing = h.media.play(); await flush();
+  h.media.currentTime = 2; await flush();
+  let settled = false; void playing.then(() => { settled = true; });
+  playGate.resolve(); await flush();
+  assert.equal(h.media.seeking, true); assert.equal(h.media.readyState, 4);
+  assert.equal(h.media.buffering, false); assert.equal(settled, false);
+  seekGate.resolve(); await playing; await flush();
+  assert.equal(h.media.seeking, false); assert.equal(h.media.readyState, 4);
+  assert.equal(h.media.buffering, false); assert.equal(settled, true);
+  h.media.dispose();
+});
+
+test('finishing an initial seek without a rendered frame keeps startup pending', async () => {
+  const playGate = deferred(), seekGate = deferred(), h = fixture({ playGate, seekGate });
+  await h.media.load('http://media.test/a.mp4');
+  const playing = h.media.play(); await flush();
+  h.media.currentTime = 2; await flush();
+  const done = new Promise(resolve => h.media.addEventListener('seeked', resolve, { once: true }));
+  seekGate.resolve(); await done; await flush();
+  assert.equal(h.media.readyState < 3, true); assert.equal(h.media.buffering, true);
+  playGate.resolve(); await playing;
+  assert.equal(h.media.readyState, 4); assert.equal(h.media.buffering, false);
+  h.media.dispose();
+});
+
+test('coalesced seeks during startup do not lose the single first-frame event', async () => {
+  const playGate = deferred(), first = deferred(), last = deferred(), h = fixture({ playGate });
+  await h.media.load('http://media.test/a.mp4');
+  const player = h.players[0];
+  player.seek = async value => { player.seeks.push(value); await (player.seeks.length === 1 ? first.promise : last.promise); player.currentTime = value; };
+  const playing = h.media.play(); await flush();
+  let settled = false; void playing.then(() => { settled = true; });
+  h.media.currentTime = 2; await flush();
+  playGate.resolve(); await flush();
+  assert.equal(h.media.seeking, true); assert.equal(h.media.buffering, false);
+  h.media.currentTime = 6; first.resolve(); await flush();
+  assert.deepEqual(player.seeks, [102000n, 106000n]);
+  const done = new Promise(resolve => h.media.addEventListener('seeked', resolve, { once: true }));
+  last.resolve(); await done; await playing; await flush();
+  assert.equal(h.media.buffering, false); assert.equal(h.media.readyState, 4); assert.equal(settled, true);
+  h.media.dispose();
+});
+
+test('pausing or replacing a pending seek cannot resurrect playback or change the new source', async () => {
+  const gate = deferred(), h = fixture({ seekGate: gate });
+  await h.media.load('http://media.test/old.mp4'); await h.media.play();
+  h.media.currentTime = 3; h.media.pause();
+  const done = new Promise(resolve => h.media.addEventListener('seeked', resolve, { once: true }));
+  gate.resolve(); await done; await flush();
+  assert.equal(h.media.paused, true); assert.equal(h.media.buffering, false);
+  assert.equal(h.media.readyState, 4);
+  h.media.dispose();
+
+  const pending = deferred(), replacement = fixture({ seekGate: pending });
+  await replacement.media.load('http://media.test/old.mp4'); await replacement.media.play();
+  replacement.media.currentTime = 4;
+  await replacement.media.load('http://media.test/new.mp4');
+  const state = replacement.media.readyState;
+  pending.resolve(); await flush();
+  assert.equal(replacement.media.readyState, state); assert.equal(replacement.media.seeking, false);
+  assert.equal(replacement.media.paused, true); replacement.media.dispose();
+});
+
 test('pause rejects an in-flight play and late played event cannot resume intent', async () => {
   const gate = deferred(), h = fixture({ playGate: gate }); await h.media.load('http://media.test/a.mp4');
   const playing = h.media.play(); h.media.pause(); gate.resolve();

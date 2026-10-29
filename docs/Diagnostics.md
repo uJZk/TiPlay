@@ -7,9 +7,13 @@ include phone/APK versions and connection mode. Keep credentials/captures outsid
 
 ## Monitor and log detail
 
-Open the browser's default-collapsed **Diagnostics** section for connection-stage,
-candidate/channel detail and the **Performance monitor** switch. Healthy playback
-shows no success message; waiting/recovery and actionable problems stay concise.
+Open the browser's default-collapsed **Diagnostics** section for a scrollable,
+newest-first log of recent connection, source and error transitions and the
+**Performance monitor** switch. The log has no timestamps and does not include
+addresses, URLs, device identities or raw errors. It remains available without
+Debug mode; full structured diagnostics remain in the Android report.
+New events stay visible at the top while the log is at the top; scrolling down
+stops automatic scrolling, including while the section is folded.
 These controls are independent of Android Debug
 mode and enable no extra capture. The monitor overlay must not change the canvas,
 negotiated viewport or touch coordinates. Its fields are:
