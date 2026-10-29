@@ -41,6 +41,15 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
 
     fun stage(connection: Long, stage: Stage) = emit("c=$connection stage=$stage")
 
+    fun trustIdentity(connection: Long, source: String) {
+        val safe = source.takeIf { it in setOf("verified-key", "verified-session", "presented-key",
+            "x-apple-device-id", "client-instance", "dacp-id", "connection-only") } ?: "other"
+        emit("c=$connection stage=TRUST_IDENTITY source=$safe")
+    }
+
+    fun pairingVerify(connection: Long, status: Int, verified: Boolean) =
+        emit("c=$connection stage=PAIR_VERIFY status=${if (status == 200) "ok" else "failed"} verified=$verified")
+
     fun reverseReply(connection: Long, reply: RtspMessage.Request) {
         val kind = if (reply.method == "EVENT/1.0") "EVENT" else "HTTP"
         val status = reply.path.toIntOrNull()?.takeIf { it in 100..599 }

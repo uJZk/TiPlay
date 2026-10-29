@@ -4,6 +4,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BrowserAudioDiagnosticsTest {
+    @Test fun nativeIceFailureEvidenceIsBoundedAndContainsNoAddresses() {
+        val values = mapOf("nativeAudio.failureStage" to "transport", "nativeAudio.failurePeerState" to "failed",
+            "nativeAudio.failureIceState" to "checking", "nativeAudio.localCandidates" to 2,
+            "nativeAudio.localPrivateIpv4Candidates" to 1, "nativeAudio.remoteCgnatIpv4Candidates" to 1,
+            "nativeAudio.retryAttempts" to 2)
+        val text = BrowserAudioDiagnostics.lines(values).joinToString(" ")
+        values.forEach { (key, value) -> assertTrue(key, text.contains("$key=$value")) }
+        for (bad in listOf("nativeAudio.failureStage" to "192.168.1.1", "nativeAudio.failureIceState" to "secret",
+            "nativeAudio.localCandidates" to -1, "nativeAudio.retryAttempts" to 1025))
+            assertTrue(BrowserAudioDiagnostics.lines(mapOf(bad)).isEmpty())
+    }
     @Test fun nativeAudioDiagnosticsSeparateSdpIceAndBoundGraphReadinessWithoutPrivateText() {
         val input = mapOf("nativeAudio.state" to "ready", "nativeAudio.rtcGeneration" to 2,
             "nativeAudio.peerState" to "connecting", "nativeAudio.iceState" to "checking", "nativeAudio.gatheringState" to "complete",

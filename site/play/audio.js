@@ -15,6 +15,9 @@ import { createRtcAudio, RTC_AUDIO_TRANSPORT, RTC_AUDIO_SLOTS } from './rtc-audi
 
 // One accepted decode/flush may emit several PCM frames and a finite filter tail.
 const DECODE_RESERVATION_BYTES = 256 * 1024;
+// Bounded exponential backoff avoids repeatedly opening failing ICE peers. A
+// successful transport connection resets the budget, not merely an SDP answer.
+const RTC_AUDIO_RETRY_DELAYS_MS = [1000, 2000, 4000];
 
 /** Playback only. Android owns demand-driven car Bluetooth capture and speech playback. */
 export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {},
@@ -42,6 +45,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   let preparingNode = null, preparationSequence = 0, nodeConnected = false;
   let nodeInstallation = null, directInputSupported = false;
   let rtcAudio = null, rtcExchange = null, rtcReady = null, rtcAudioSupported = false, rtcPeerGeneration = 0, rtcUnsubscribe = null;
+  let rtcRetryTimer = null, rtcRetryAttempts = 0, rtcLastFailure = null, rtcLastError = null;
   const directOutputs = new Map();
   let directOutputSequence = 0;
   const outputClock = createAudioOutputMapping(), playoutReferences = new Map();
@@ -97,7 +101,17 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
     wakeCapacity();
   };
   function closeDirectOutputs() { for (const output of [...directOutputs.values()]) output.close(); }
-  function closeRtcAudio() { rtcAudio?.close(); rtcAudio = null; }
+  function closeRtcAudio() { clearTimeout(rtcRetryTimer); rtcRetryTimer = null; rtcAudio?.close(); rtcAudio = null; }
+  function retryRtcAudio(generation) {
+    if (rtcRetryTimer !== null || generation !== rtcPeerGeneration || rtcRetryAttempts >= RTC_AUDIO_RETRY_DELAYS_MS.length
+      || !connection || connection.aborted || !enabled || disposed) return;
+    const delay = RTC_AUDIO_RETRY_DELAYS_MS[rtcRetryAttempts++];
+    rtcRetryTimer = setTimeout(() => {
+      rtcRetryTimer = null;
+      if (generation === rtcPeerGeneration && rtcAudio && connection && !connection.aborted && enabled && !disposed)
+        startRtcAudio(generation + 1);
+    }, delay);
+  }
   function startRtcAudio(generation = null) {
     if (generation !== null && (!Number.isSafeInteger(generation) || generation < 1 || generation > 0x7fffffff))
       throw Error('Invalid native audio generation.');
@@ -105,14 +119,25 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       || context?.state !== 'running' || !enabled || disposed) return null;
     if (!rtcAudio) {
       const owner = rtcAudio = createRtcAudio({ exchange: rtcExchange, ready: rtcReady, context, node, generation: playbackGeneration,
-        signal: connection, onError: cause => {
+        signal: connection, onConnected: generation => {
+          if (rtcAudio !== owner || generation !== rtcPeerGeneration) return;
+          rtcRetryAttempts = 0; clearTimeout(rtcRetryTimer); rtcRetryTimer = null;
+          if (audioError === rtcLastError) audioError = null;
+          rtcLastError = null; notify();
+        }, onError: (cause, detail) => {
           if (rtcAudio !== owner) return;
-          audioError = cause.message || String(cause); notify();
+          rtcLastFailure = detail ?? null;
+          rtcLastError = cause.message || String(cause); audioError = rtcLastError; notify();
+          retryRtcAudio(rtcPeerGeneration);
         } });
       rtcPeerGeneration = generation ?? rtcPeerGeneration + 1;
-      owner.start(rtcPeerGeneration).catch(() => {});
+      const starting = rtcPeerGeneration;
+      owner.start(starting).catch(() => { if (rtcAudio === owner) retryRtcAudio(starting); });
     } else if (generation !== null && generation > rtcPeerGeneration) {
-      rtcPeerGeneration = generation; rtcAudio.start(generation).catch(() => {});
+      clearTimeout(rtcRetryTimer); rtcRetryTimer = null;
+      rtcPeerGeneration = generation;
+      const owner = rtcAudio;
+      owner.start(generation).catch(() => { if (rtcAudio === owner) retryRtcAudio(generation); });
     }
     return rtcAudio;
   }
@@ -230,7 +255,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
   const snapshot = () => ({ supported: support, enabled, sound: context?.state === 'running',
     bluetooth: voiceState, browserMuted: false, error: voiceError ?? audioError,
     timedPackets, fallbackPackets, arrivalAnchoredPackets, queuedBytes, processorErrors, recoveries, processorFailed,
-    ...(rtcAudio ? { nativeAudio: rtcAudio.stats() } : {}),
+    ...(rtcAudio ? { nativeAudio: { ...rtcAudio.stats(), ...rtcLastFailure, retryAttempts: rtcRetryAttempts } } : {}),
     ...sourceDeadlineStats(),
     ...(debugEnabled ? { debug: debugSnapshot() } : {}) });
   const notify = () => onState(snapshot());
@@ -599,7 +624,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       this.stop(); voiceRevision = null; connection = signal; mediaSource = openMedia; support = hello.audio === true;
       rtcExchange = native?.exchange ?? null; rtcAudioSupported = hello.audioTransport === RTC_AUDIO_TRANSPORT;
       rtcReady = native?.ready ?? null;
-      rtcPeerGeneration = 0;
+      rtcPeerGeneration = 0; rtcRetryAttempts = 0; rtcLastFailure = null; rtcLastError = null;
       rtcUnsubscribe = native?.subscribe?.(event => {
         if (connection !== signal || signal.aborted || event.generation !== rtcPeerGeneration) return;
         if (event.k === 'audio-restart-required') startRtcAudio(rtcPeerGeneration + 1);

@@ -26,7 +26,8 @@ export const RECEIVER_FIELDS = ['retainedBytes', 'consumedBytes', 'queuedRecords
   'peakRetainedBytes', 'reassemblyMsMean', 'reassemblyMsMax', 'consumerWaitMsMean', 'consumerWaitMsMax'];
 export const ICE_FIELDS = ['currentRoundTripTimeMs', 'availableOutgoingBitrate', 'requestsSent', 'requestsReceived', 'responsesSent',
   'responsesReceived', 'bytesSent', 'bytesReceived', 'sampleAgeMs', 'errors'];
-export const RTP_VIDEO_FIELDS = ['generation', 'sampleAgeMs', 'packetsReceived', 'packetsLost', 'bytesReceived', 'framesReceived',
+export const RTP_VIDEO_FIELDS = ['generation', 'sampleAgeMs', 'packetsReceived', 'packetsLost', 'packetsDiscarded', 'bytesReceived', 'framesReceived',
+  'framesAssembledFromMultiplePackets', 'totalAssemblyTimeMs', 'totalProcessingDelayMs', 'totalInterFrameDelayMs',
   'framesDecoded', 'framesDropped', 'keyFramesDecoded', 'nackCount', 'pliCount', 'firCount', 'jitterMs',
   'jitterBufferEmittedCount', 'jitterBufferDelayMs', 'jitterBufferTargetDelayMs', 'jitterBufferMinimumDelayMs',
   'totalDecodeTimeMs', 'freezeCount', 'pauseCount', 'totalFreezesDurationMs', 'totalPausesDurationMs', 'powerEfficientDecoder'];

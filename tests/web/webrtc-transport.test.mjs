@@ -655,6 +655,8 @@ test('RTP video diagnostics sample the current receiver with bounded standardize
           framesReceived: 60, framesDecoded: 50, framesDropped: 10, keyFramesDecoded: 2, bytesReceived: 12345,
           nackCount: 3, pliCount: 4, firCount: 0, jitter: .012, jitterBufferDelay: .3,
           jitterBufferEmittedCount: 50, totalDecodeTime: .5, powerEfficientDecoder: true,
+          packetsDiscarded: 2, framesAssembledFromMultiplePackets: 40, totalAssemblyTime: .25,
+          totalProcessingDelay: .4, totalInterFrameDelay: 1.2,
           freezeCount: Infinity, pauseCount: -1, jitterBufferTargetDelay: NaN,
           id: 'private-rtp-id', trackIdentifier: 'private-track', decoderImplementation: 'private-decoder', secret: 'private-secret' }],
         ['old', { type: 'inbound-rtp', kind: 'video', mid: 'old-mid', framesReceived: 900 }],
@@ -671,6 +673,9 @@ test('RTP video diagnostics sample the current receiver with bounded standardize
     assert.equal(values.packetsReceived, 70); assert.equal(values.packetsLost, -1);
     assert.equal(values.framesReceived, 60); assert.equal(values.framesDecoded, 50); assert.equal(values.framesDropped, 10);
     assert.equal(values.jitterMs, 12); assert.equal(values.jitterBufferDelayMs, 300); assert.equal(values.totalDecodeTimeMs, 500);
+    assert.equal(values.packetsDiscarded, 2); assert.equal(values.framesAssembledFromMultiplePackets, 40);
+    assert.equal(values.totalAssemblyTimeMs, 250); assert.equal(values.totalProcessingDelayMs, 400);
+    assert.equal(values.totalInterFrameDelayMs, 1200);
     assert.equal(values.powerEfficientDecoder, true); assert.ok(values.sampleAgeMs >= 0);
     for (const key of ['freezeCount', 'pauseCount', 'jitterBufferTargetDelayMs', 'id', 'trackIdentifier', 'decoderImplementation', 'secret'])
       assert.equal(Object.hasOwn(values, key), false, key);

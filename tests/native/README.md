@@ -37,8 +37,8 @@ native input admission from bitrate bootstrap:
 ```sh
 python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe --mode paced --start-bitrate 0
 python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe --mode serial --start-bitrate 0
-python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe --mode paced --start-bitrate 16000000
-python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe --mode serial --start-bitrate 16000000
+python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe --mode paced --start-bitrate 32000000
+python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe --mode serial --start-bitrate 32000000
 ```
 
 `paced` offers at the fixture's 60 fps cadence without waiting for encoder input
@@ -50,7 +50,7 @@ a controlled delay before the real Java encoder callback; default zero leaves
 the product callback timing unchanged. `--frames` selects the measured phase
 length. `burst` is an additional stress control, not the normal producer policy.
 
-The current startup default is 16 Mbps as requested for beta.28. The published
+The current startup default is 32 Mbps. The published
 beta.27 native measurements used 24 Mbps; reproduce those historical runs with
 `--start-bitrate 24000000`. Changing this prior does not establish vehicle capacity.
 
@@ -104,7 +104,7 @@ ffmpeg -f lavfi -i color=c=red:size=1568x1080:rate=60 -frames:v 180 -an \
 python3 tests/native/rtc-video-probe.py build --work-dir /tmp/tiplay-bootstrap \
   --fixture /tmp/tiplay-high.h264
 python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-bootstrap \
-  --mode bootstrap --start-bitrate 16000000 --expect-bootstrap
+  --mode bootstrap --start-bitrate 32000000 --expect-bootstrap
 ```
 
 The assertion requires matching source, negotiated and current High formats,
@@ -141,9 +141,9 @@ Use the High-profile fixture from the preceding example and an explicit
 
 ```sh
 python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-bootstrap \
-  --mode bundle --frames 2400 --start-bitrate 16000000 --expect-continuous
+  --mode bundle --frames 2400 --start-bitrate 32000000 --expect-continuous
 python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-bootstrap \
-  --mode bundle-video-anchor --frames 2400 --start-bitrate 16000000
+  --mode bundle-video-anchor --frames 2400 --start-bitrate 32000000
 ```
 
 `bundle-video-anchor` is the historical failure control: it starts with video as

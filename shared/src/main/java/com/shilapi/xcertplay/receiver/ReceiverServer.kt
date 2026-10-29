@@ -415,7 +415,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         var audioAwaitingTimeline = false
         val peerAddress: InetAddress get() = peer
         private var mediaIdentity: ByteArray? = null
-        private var claimedIdentity: ByteArray? = null
+        private var claimedIdentity: ReceiverSenderIdentity.Claim? = null
+        private var lastTrustSource: String? = null
         private val connectionNonce = java.util.UUID.randomUUID().toString().replace("-", "")
         private var connectionApproved = false
         private var timing: NtpClock? = null
@@ -764,15 +765,30 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             val id = request.headers["x-apple-session-id"] ?: "default"
             require(id.matches(Regex("[A-Za-z0-9._-]{1,128}")))
             captureRemote(request.headers)
-            ReceiverSenderIdentity.identity(null, request.headers)?.let { claimedIdentity = it }
+            ReceiverSenderIdentity.claim(request.headers)?.let { claimedIdentity = it }
             val mediaType = receiverMediaType(request, path, raop != null)
             if ((path == "/play" && request.method == "POST") ||
                 (path == "/photo" && request.method == "PUT") || request.method == "ANNOUNCE" ||
                 request.method == "SETUP" && mediaType != "unknown" ||
                 path in listOf("/reverse", "/stop", "/scrub", "/rate", "/setProperty")) {
                 // Browser confirmation is bounded and must never block ownership or FCUP progress.
-                val senderIdentity = ReceiverSenderIdentity.identity(pairing.verifiedPublicKey ?: pairing.presentedPublicKey ?: verifiedSessions[peer to id]
-                    ?.takeIf { strongSessionId(id) && System.nanoTime() < it.expiresNanos }?.publicKey?.copyOf(), request.headers) ?: claimedIdentity
+                val verifiedKey = pairing.verifiedPublicKey
+                val sessionKey = verifiedSessions[peer to id]
+                    ?.takeIf { strongSessionId(id) && System.nanoTime() < it.expiresNanos }?.publicKey?.copyOf()
+                val presentedKey = pairing.presentedPublicKey
+                val claim = ReceiverSenderIdentity.claim(request.headers) ?: claimedIdentity
+                val source = when {
+                    verifiedKey != null -> "verified-key"
+                    sessionKey != null -> "verified-session"
+                    presentedKey != null -> "presented-key"
+                    claim != null -> claim.source
+                    else -> "connection-only"
+                }
+                val senderIdentity = verifiedKey ?: sessionKey ?: presentedKey ?: claim?.value
+                if (source != lastTrustSource) {
+                    diagnostics.trustIdentity(diagnosticId, source)
+                    lastTrustSource = source
+                }
                 val name = (request.headers["x-apple-client-name"] ?: request.headers["x-apple-device-name"] ?: "AirPlay")
                     .filter { !it.isISOControl() }.take(80)
                 if (senderIdentity != null) {
@@ -811,6 +827,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 path == "/pair-setup" -> return ReceiverHandshake.pairing { pairing.setup(request.body) }
                 path == "/pair-verify" -> {
                     val response = ReceiverHandshake.pairing { pairing.verify(request.body) }
+                    diagnostics.pairingVerify(diagnosticId, response.status, pairing.verifiedPublicKey != null)
                     if (response.status == 200) pairing.verifiedPublicKey?.let {
                         verifiedSessions.entries.removeIf { entry -> System.nanoTime() >= entry.value.expiresNanos }
                         if (strongSessionId(id) && (verifiedSessions.size < 32 || verifiedSessions.containsKey(peer to id)))

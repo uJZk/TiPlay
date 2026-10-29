@@ -15,11 +15,14 @@ const detail = events => events.find(event => event.k === 'video-diag');
 
 test('current receiver RTP evidence crosses Debug packing without arbitrary getStats text or identities', () => {
   const page = { video: video(), transport: { rtpVideo: { state: 'selected', generation: 3, sampleAgeMs: 123,
-    packetsReceived: 77, packetsLost: -1, framesDecoded: 50, framesDropped: 2, jitterMs: 4,
+    packetsReceived: 77, packetsLost: -1, packetsDiscarded: 2, framesAssembledFromMultiplePackets: 40,
+    totalAssemblyTimeMs: 250, totalProcessingDelayMs: 400, totalInterFrameDelayMs: 1200,
+    framesDecoded: 50, framesDropped: 2, jitterMs: 4,
     jitterBufferDelayMs: 900, jitterBufferEmittedCount: 50, powerEfficientDecoder: false,
     trackIdentifier: 'private-track', decoderImplementation: 'private-decoder', address: '192.0.2.10' } } };
   const event = detail(browserDiagnosticEvents(page, false, true, 'capture'));
-  for (const key of ['generation', 'sampleAgeMs', 'packetsReceived', 'packetsLost', 'framesDecoded', 'framesDropped',
+  for (const key of ['generation', 'sampleAgeMs', 'packetsReceived', 'packetsLost', 'packetsDiscarded',
+    'framesAssembledFromMultiplePackets', 'totalAssemblyTimeMs', 'totalProcessingDelayMs', 'totalInterFrameDelayMs', 'framesDecoded', 'framesDropped',
     'jitterMs', 'jitterBufferDelayMs', 'jitterBufferEmittedCount', 'powerEfficientDecoder', 'state'])
     assert.equal(event.v[`transport.rtpVideo.${key}`], page.transport.rtpVideo[key]);
   assert.doesNotMatch(JSON.stringify(event), /private-track|private-decoder|192\.0\.2\.10/);

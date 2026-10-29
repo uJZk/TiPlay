@@ -11,6 +11,9 @@ internal object BrowserAudioDiagnostics {
         "pageVersion", "omittedFields", "contextState", "contextTimeMs", "contextRate", "clockBase",
         "nativeAudio.state", "nativeAudio.rtcGeneration", "nativeAudio.peerState", "nativeAudio.iceState", "nativeAudio.gatheringState",
         "nativeAudio.tracks", "nativeAudio.boundSlots", "nativeAudio.readySlots", "nativeAudio.streams", "nativeAudio.drainUnknown",
+        "nativeAudio.failureStage", "nativeAudio.failurePeerState", "nativeAudio.failureIceState", "nativeAudio.retryAttempts",
+        "nativeAudio.localCandidates", "nativeAudio.localPrivateIpv4Candidates", "nativeAudio.localCgnatIpv4Candidates", "nativeAudio.localIpv6Candidates",
+        "nativeAudio.remoteCandidates", "nativeAudio.remotePrivateIpv4Candidates", "nativeAudio.remoteCgnatIpv4Candidates", "nativeAudio.remoteIpv6Candidates",
         "contextObservedStateChanges", "contextObservedNonRunningMs",
         "clockOffsetMs", "clockAgeMs", "clockRttMs", "contextBaseLatencyMs", "contextOutputLatencyMs",
         "processorErrors", "recoveries", "recoveryAttempts", "processorFailed", "renderAgeMs", "renderReportAgeMs",
@@ -76,6 +79,9 @@ internal object BrowserAudioDiagnostics {
         "nativeAudio.peerState" to setOf("new", "connecting", "connected", "disconnected", "failed", "closed", "unavailable"),
         "nativeAudio.iceState" to setOf("new", "checking", "connected", "completed", "disconnected", "failed", "closed", "unavailable"),
         "nativeAudio.gatheringState" to setOf("new", "gathering", "complete", "unavailable"),
+        "nativeAudio.failureStage" to setOf("offer", "local-ice", "signaling", "remote-description", "transport"),
+        "nativeAudio.failurePeerState" to setOf("new", "connecting", "connected", "disconnected", "failed", "closed", "unavailable"),
+        "nativeAudio.failureIceState" to setOf("new", "checking", "connected", "completed", "disconnected", "failed", "closed", "unavailable"),
         "renderStatsState" to setOf("available", "unavailable", "invalid", "failed"),
         "deviceClockFitStatus" to setOf("acquiring", "tracking", "holdover"),
         "deviceClockSource" to setOf("native", "render", "holdover"),
@@ -99,6 +105,11 @@ internal object BrowserAudioDiagnostics {
                 if (field == "nativeAudio.rtcGeneration" && (raw !is Number || !raw.toDouble().isFinite() ||
                     raw.toDouble() < 1 || raw.toDouble() > Int.MAX_VALUE || raw.toDouble() % 1.0 != 0.0)) return@mapNotNull null
                 if (field == "nativeAudio.drainUnknown" && raw !is Boolean) return@mapNotNull null
+                if (field in setOf("nativeAudio.retryAttempts", "nativeAudio.localCandidates", "nativeAudio.localPrivateIpv4Candidates",
+                        "nativeAudio.localCgnatIpv4Candidates", "nativeAudio.localIpv6Candidates", "nativeAudio.remoteCandidates",
+                        "nativeAudio.remotePrivateIpv4Candidates", "nativeAudio.remoteCgnatIpv4Candidates", "nativeAudio.remoteIpv6Candidates") &&
+                    (raw !is Number || !raw.toDouble().isFinite() || raw.toDouble() < 0 || raw.toDouble() > 1024 || raw.toDouble() % 1.0 != 0.0))
+                    return@mapNotNull null
                 if ((field in sourceDeadlineEvidenceFields || field in retiredDeadlineEvidenceFields) && raw !is Number)
                     return@mapNotNull null
                 if (field in retiredDeadlineIdentityFields && (raw !is Number || !raw.toDouble().isFinite() ||

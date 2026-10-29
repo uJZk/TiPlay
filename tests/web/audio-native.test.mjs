@@ -14,11 +14,11 @@ function frame(kind, payload, { type = 0, epoch = 1, rate = 48000, flags = 0 } =
 }
 const setup = (config = opus, fields = {}) => frame(6, new TextEncoder().encode(JSON.stringify(config)), { flags: 2, ...fields });
 const pcm = () => frame(2, new Uint8Array(new Int16Array([123, 456]).buffer), { type: 2 });
-async function harness(t, { exchange } = {}) {
+async function harness(t, { exchange, play } = {}) {
   const keys = ['AudioContext', 'AudioWorkletNode', 'RTCPeerConnection', 'RTCRtpReceiver', 'MediaStream', 'document'];
   const saved = Object.fromEntries(keys.map(key => [key, globalThis[key]]));
   const peers = [], nodes = [], contexts = [], sources = [], messages = [], offers = [], modes = [], ready = [];
-  globalThis.document = { createElement: () => ({ play: () => Promise.resolve(), pause() {}, remove() {} }) };
+  globalThis.document = { createElement: () => ({ play: () => play ? play() : Promise.resolve(), pause() {}, remove() {} }) };
   globalThis.MediaStream = class { constructor(tracks) { this.tracks = tracks; } };
   globalThis.RTCRtpReceiver = { getCapabilities: () => ({ codecs: [{ mimeType: 'audio/opus', clockRate: 48000, channels: 2 }] }) };
   globalThis.RTCPeerConnection = class extends EventTarget {
@@ -55,9 +55,9 @@ async function harness(t, { exchange } = {}) {
     }
     connect() {}
   };
-  let controller, eventListener, unsubscribed = 0;
+  let controller, eventListener, unsubscribed = 0, fetchCalls = 0;
   const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'test' }), onMode: mode => modes.push(mode),
-    fetchPhone: async () => ({ ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }) });
+    fetchPhone: async () => { fetchCalls++; return { ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }; } });
   t.after(() => { audio.dispose(); Object.assign(globalThis, saved); });
   await audio.activate();
   audio.attach(new AbortController().signal, { audio: true, audioTransport: 'webrtc-track-v1' }, null, {
@@ -67,7 +67,8 @@ async function harness(t, { exchange } = {}) {
   });
   await until(() => controller);
   return { audio, peers, sources, nodes, messages, offers, contexts, modes, ready,
-    send: value => controller.enqueue(value), event: value => eventListener(value), get unsubscribed() { return unsubscribed; } };
+    send: value => controller.enqueue(value), event: value => eventListener(value), get unsubscribed() { return unsubscribed; },
+    get fetchCalls() { return fetchCalls; } };
 }
 
 test('native negotiation is background work; fallback PCM proceeds and native Opus never reaches the DC decoder', async t => {
@@ -125,4 +126,59 @@ test('background native negotiation failure is visible even before a native sour
   assert.match(h.audio.stats().error, /network unavailable/);
   h.send(pcm()); await until(() => h.messages.some(record => record.type === 2 && record.pcm?.byteLength));
   assert.equal(h.peers[0].closed, true);
+});
+
+test('failed ICE retires only that generation and retries while fallback audio continues', async t => {
+  const h = await harness(t); h.send(setup()); await until(() => h.sources.length === 1 && h.ready.length === 1);
+  const failed = h.peers[0];
+  failed.connectionState = 'failed'; failed.iceConnectionState = 'failed'; failed.onconnectionstatechange();
+  assert.equal(failed.closed, true);
+  assert.equal(h.audio.stats().nativeAudio.failureStage, 'transport');
+  assert.equal(h.audio.stats().nativeAudio.failureIceState, 'failed');
+  h.send(pcm()); await until(() => h.messages.some(record => record.type === 2 && record.pcm?.byteLength));
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  await until(() => h.offers.length === 2);
+  assert.deepEqual(h.offers.map(value => value.generation), [1, 2]);
+  h.event({ k: 'audio-error', generation: 1, reason: 'stale' });
+  assert.notEqual(h.peers[1].closed, true);
+  h.send(setup({ ...opus, rtcGeneration: 2 }, { epoch: 2 }));
+  await until(() => h.ready.length === 2);
+  assert.equal(h.ready[1].rtcGeneration, 2);
+  h.peers[1].connectionState = 'connected'; h.peers[1].onconnectionstatechange();
+  assert.equal(h.audio.stats().nativeAudio.retryAttempts, 0);
+});
+
+test('stopping audio cancels the pending independent peer retry', async t => {
+  const h = await harness(t); await until(() => h.offers.length === 1);
+  h.peers[0].connectionState = 'failed'; h.peers[0].onconnectionstatechange();
+  h.audio.stop();
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  assert.equal(h.offers.length, 1);
+});
+
+test('failed native configuration does not abort PCM and can rebind the same owner in the replacement peer', async t => {
+  let resolvePlayout, plays = 0;
+  const h = await harness(t, { play: () => ++plays === 1 ? new Promise(resolve => { resolvePlayout = resolve; }) : Promise.resolve() });
+  const initialFetchCalls = h.fetchCalls, initialResets = h.messages.filter(message => message.reset).length;
+  h.send(setup({ ...opus, rtcOwnerEpoch: 1 }));
+  await until(() => resolvePlayout && h.sources.length === 1);
+  assert.equal(h.ready.length, 0, 'first owner must be waiting for the playout barrier');
+  h.peers[0].connectionState = 'failed'; h.peers[0].iceConnectionState = 'failed'; h.peers[0].onconnectionstatechange();
+  h.send(pcm());
+  await until(() => h.messages.some(record => record.type === 2 && record.pcm?.byteLength));
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  await until(() => h.offers.length === 2);
+  h.send(setup({ ...opus, rtcGeneration: 2, rtcOwnerEpoch: 1 }));
+  await until(() => h.ready.length === 1);
+  assert.equal(h.fetchCalls, initialFetchCalls, 'the audio subscription stays open across peer recovery');
+  assert.equal(h.messages.filter(message => message.reset).length, initialResets, 'peer recovery must not reset PCM');
+  assert.equal(h.ready[0].rtcGeneration, 2);
+  assert.equal(h.ready[0].rtcOwnerEpoch, 1);
+  assert.equal(h.peers[0].closed, true);
+  assert.notEqual(h.peers[1].closed, true);
+  resolvePlayout(); await turn();
+  assert.equal(h.ready.length, 1, 'late completion cannot revive the retired peer');
+  const before = h.messages.filter(record => record.type === 2 && record.pcm?.byteLength).length;
+  h.send(pcm());
+  await until(() => h.messages.filter(record => record.type === 2 && record.pcm?.byteLength).length > before);
 });

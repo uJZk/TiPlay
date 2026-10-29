@@ -205,6 +205,22 @@ class ReceiverServerTest {
     private fun Socket.status(method: String, path: String, body: ByteArray = ByteArray(0), id: String = "11223344556677889900aabbccddeeff") = send(method, path, body, id).path.toInt()
     private fun connect(port: Int) = Socket(InetAddress.getLoopbackAddress(), port).apply { soTimeout = 5000 }
 
+    @Test fun deviceClaimOnEarlierRequestIsAvailableAtAuthorizationWithoutLoggingTheId() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        val id = "A1bc2Def3Gh4ij"
+        receiver.start()
+        try {
+            connect(receiver.port).use { socket ->
+                assertEquals("200", socket.send("GET", "/info", extraHeaders = "X-Apple-Device-ID: $id\r\n").path)
+                assertEquals("200", socket.send("POST", "/play",
+                    "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()).path)
+                assertTrue(listener.logs.any { it.contains("stage=TRUST_IDENTITY source=x-apple-device-id") })
+                assertFalse(listener.logs.any { it.contains(id) })
+            }
+        } finally { receiver.close() }
+    }
+
     @Test fun defaultSessionAliasesCannotShareApprovalOrTakeOverAnotherConnection() {
         val listener = Listener()
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
