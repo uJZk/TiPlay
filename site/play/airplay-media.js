@@ -160,6 +160,8 @@ export function createMediaEngine(surface, options = {}) {
       : streams.filter(stream => (stream.mediaType === 'subtitle' || parameters(stream).codecType === 3)
         && (!item.supportedCodecs || item.supportedCodecs.includes(parameters(stream).codecId))).map((stream, index) =>
         ({ id: String(stream.id), language: stream.metadata?.language || '', label: stream.metadata?.title || stream.metadata?.language || `Subtitles ${index + 1}` }));
+    for (const track of player.getEmbeddedSubtitleList?.() || [])
+      subtitleDescriptors.push({ id: track.id, language: track.language || '', label: track.label });
     const existingSubtitles = [...textTracks];
     const changedSubtitles = existingSubtitles.length !== subtitleDescriptors.length || subtitleDescriptors.some((track, index) =>
       ['id', 'label', 'language'].some(key => track[key] !== existingSubtitles[index]?.[key]));
@@ -174,7 +176,7 @@ export function createMediaEngine(surface, options = {}) {
     event('durationchange'); event('resize');
   }
   function markPlaying(item) {
-    if (!active(item) || paused || gestureRequired() || (item.hasVideo ? !item.videoRendered : !item.audioRendered)) return;
+    if (!active(item) || paused || (seeking && item.startedAt !== undefined) || gestureRequired() || (item.hasVideo ? !item.videoRendered : !item.audioRendered)) return;
     clearTimeout(item.startupTimer);
     buffering = false; readyState = 4; item.startedAt ??= now(); item.phase = 'playing';
     event('playing'); settlePlay();
@@ -194,7 +196,8 @@ export function createMediaEngine(surface, options = {}) {
       // Enabling an already selected upstream track resets its renderer. Do that
       // before selection seeks/restarts it, so a new cue cannot be cleared later.
       item.player.setSubtitleEnable?.(id !== undefined);
-      if (id !== undefined) await item.player.selectSubtitle(Number(id));
+      if (/^cea(?:608-[1-4]|708-(?:[1-9]|[1-5][0-9]|6[0-3]))$/.test(id || '')) await item.player.selectEmbeddedSubtitle(id);
+      else if (id !== undefined) await item.player.selectSubtitle(Number(id));
     });
   }
   function wire(item) {
@@ -364,14 +367,31 @@ export function createMediaEngine(surface, options = {}) {
     if (!seeking && Math.abs(target - currentTime()) < .001) return;
     position = target; item.seekTarget = target;
     if (seeking) return;
-    seeking = true; event('seeking');
+    const previousReadyState = readyState, previousBuffering = buffering;
+    const seekPlayRevision = item.playRevision, wasPlaying = !paused;
+    const established = item.startedAt !== undefined;
+    seeking = true;
+    // The native player changes demux state asynchronously. Until the seek
+    // completes, report only the current frame as available so the existing
+    // Video.js buffering indicator can reflect the wait.
+    if (established) readyState = Math.min(readyState, 2);
+    if (established && !paused) buffering = true;
+    event('seeking');
+    if (established && !paused) event('waiting');
     void (async () => {
       try {
         while (active(item) && item.seekTarget !== undefined) {
           const next = item.seekTarget; item.seekTarget = undefined;
           await changeSource(item, () => item.player.seek(BigInt(Math.round((next + origin) * 1000))));
         }
-        if (active(item)) { seeking = false; ended = false; publishTime(); event('seeked'); event('progress'); }
+        if (active(item)) {
+          seeking = false; ended = false; readyState = Math.max(readyState, previousReadyState);
+          if (established && wasPlaying && item.playRevision === seekPlayRevision) buffering = previousBuffering;
+          publishTime(); event('seeked');
+          if (readyState >= 3) event('canplay');
+          if (established && wasPlaying && item.playRevision === seekPlayRevision && !previousBuffering) markPlaying(item);
+          event('progress');
+        }
       } catch (cause) { fail(cause, item); }
     })();
   }

@@ -70,20 +70,84 @@ class WirelessReceiveDiagnosticsTest {
         assertTrue(diagnostics.snapshot().contains("ifaceRxPacketsDelta=1"))
     }
 
-    @Test fun inaccessibleSourcesAreTriedOnceAndExceptionDetailsStayPrivate() {
+    @Test fun inaccessibleSourcesRetryAfterBackoffAndExceptionDetailsStayPrivate() {
         var attempts = 0
+        var clock = 0L
         val diagnostics = WirelessReceiveDiagnostics("p2p0", { _, _ ->
             attempts++
             throw SecurityException("phone name/password/address should never be in the report")
-        })
+        }, { clock })
         val first = diagnostics.snapshot()
         val second = diagnostics.snapshot()
-        assertEquals(3, attempts)
+        assertEquals(7, attempts) // Five interface fields plus two proc sources.
         for (result in listOf(first, second)) {
-            assertTrue(result.contains("ifaceRx=unavailable failureClass=SecurityException"))
+            assertTrue(result.contains("ifaceRx=unavailable fields=Packets:SecurityException"))
             assertTrue(result.contains("udp4=unavailable") && result.contains("udp6=unavailable"))
             assertFalse(result.contains("password") || result.contains("phone") || result.contains("address"))
         }
+        clock = 60_000_000_000L
+        diagnostics.snapshot()
+        assertEquals(14, attempts)
+    }
+
+    @Test fun missingOptionalInterfaceFieldKeepsOtherDeltasAndRecoversWithNewBaseline() {
+        var value = 10L
+        var clock = 0L
+        var missing = true
+        var missingReads = 0
+        val diagnostics = WirelessReceiveDiagnostics("p2p0", { path, _ ->
+            when {
+                path.endsWith("rx_missed_errors") -> {
+                    missingReads++
+                    if (missing) throw java.io.FileNotFoundException("private interface details")
+                    value.toString()
+                }
+                path == "/proc/net/snmp" -> udp4(value)
+                path == "/proc/net/snmp6" -> udp6(value)
+                else -> value.toString()
+            }
+        }, { clock })
+        assertTrue(diagnostics.snapshot().contains("unavailableFields=MissedErrors:FileNotFoundException"))
+        value = 13; clock = 10_000_000_000L
+        val next = diagnostics.snapshot()
+        assertTrue(next.contains("ifaceRxPacketsDelta=3 ifaceRxBytesDelta=3 ifaceRxDroppedDelta=3"))
+        assertFalse(next.contains("private interface details"))
+        assertEquals(1, missingReads)
+        missing = false; value = 20; clock = 60_000_000_000L
+        val restored = diagnostics.snapshot()
+        assertTrue(restored.contains("ifaceRxPacketsDelta=7"))
+        assertTrue(restored.contains("baselineFields=MissedErrors"))
+        assertFalse(restored.contains("ifaceRxMissedErrorsDelta="))
+        assertEquals(2, missingReads)
+        value = 21; clock += 10_000_000_000L
+        assertTrue(diagnostics.snapshot().contains("ifaceRxMissedErrorsDelta=1"))
+        assertEquals(3, missingReads)
+    }
+
+    @Test fun missingOrInvalidUdpFieldDoesNotHideOtherCounters() {
+        var value = 10L
+        var missing = true
+        val diagnostics = WirelessReceiveDiagnostics("p2p0", { path, _ ->
+            when (path) {
+                "/proc/net/snmp" -> if (missing)
+                    "Udp: InDatagrams InErrors RcvbufErrors\nUdp: $value bad $value" else udp4(value)
+                "/proc/net/snmp6" -> if (missing)
+                    "Udp6InDatagrams $value\nUdp6InErrors bad\nUdp6RcvbufErrors $value" else udp6(value)
+                else -> value.toString()
+            }
+        })
+        val first = diagnostics.snapshot()
+        assertTrue(first.contains("udp4=baseline unavailableFields=InErrors,InCsumErrors"))
+        assertTrue(first.contains("udp6=baseline unavailableFields=InErrors,InCsumErrors"))
+        value = 12
+        val next = diagnostics.snapshot()
+        assertTrue(next.contains("udp4InDatagramsDelta=2 udp4RcvbufErrorsDelta=2"))
+        assertTrue(next.contains("udp6InDatagramsDelta=2 udp6RcvbufErrorsDelta=2"))
+        assertFalse(next.contains("bad"))
+        missing = false; value = 15
+        val recovered = diagnostics.snapshot()
+        assertTrue(recovered.contains("baselineFields=InErrors,InCsumErrors"))
+        assertFalse(recovered.contains("udp4InErrorsDelta="))
     }
 
     @Test fun interfaceNameCannotEscapeTheFixedStatisticsDirectory() {

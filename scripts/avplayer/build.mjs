@@ -5,11 +5,13 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { parse } from 'acorn';
 import { simple, ancestor } from 'acorn-walk';
+import { demuxCaptionMethods, subtitleCaptionMethods } from './caption-patches.mjs';
 
 const root = new URL('./', import.meta.url);
 const destination = new URL('../../site/play/vendor/libmedia/', root);
 const lock = JSON.parse(await readFile(new URL('wasm.lock.json', root), 'utf8'));
 const sha = data => createHash('sha256').update(data).digest('hex');
+const captionExtractor = await readFile(new URL('../../site/play/vendor/captions/extractor.js', root), 'utf8');
 // Dependency-free adapter remains valid in upstream serialized workers.
 // The optional bridge changes only the Android resource fetch boundary; AVPlayer
 // retains HTTP retry, buffering, and cancellation ownership.
@@ -115,6 +117,7 @@ async function output(name, data) {
 }
 const source = new URL('node_modules/@libmedia/avplayer/dist/esm/', root);
 let fetchSites = 0, workletSites = 0, liveSites = 0, cleanupSites = 0, cancellationSites = 0, contextGuardSites = 0, lifecycleSites = 0, lifecycleAwaits = 0, rpcErrorSites = 0, subtitleEofSites = 0, seekReplySites = 0, subtitlePacketBridgeSites = 0, subtitleReleaseSites = 0, subtitleDrainSites = 0, subtitleSeekSites = 0, sdrPolicySites = 0, manifestFailureSites = 0, packedAacProbeSites = 0;
+let captionDemuxSites = 0, captionRenderSites = 0, captionAssSites = 0, captionFactorySites = 0;
 for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).sort()) {
   let code = await readFile(new URL(name, source), 'utf8');
   const edits = [];
@@ -161,7 +164,77 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
     },
     ClassDeclaration(node) {
       const methods = node.body.body.map(method => method.key?.name);
+      if (methods.includes('framing') && methods.includes('clearAll') && methods.includes('updateHeader')) {
+        const render = node.body.body.find(method => method.key?.name === 'render');
+        simple(render.value.body, { CallExpression(call) {
+          if (call.callee.type !== 'MemberExpression' || call.callee.object.type !== 'ThisExpression'
+            || call.callee.property.name !== 'framing') return;
+          const event = render.value.params[0].name, dialogue = code.slice(call.arguments[0].start,call.arguments[0].end);
+          edits.push({ start: call.start, end: call.start, value: `(${dialogue}.__tiplayEmbeddedPersistent=${event}.__tiplayEmbeddedPersistent===true,` },
+            { start: call.end, end: call.end, value: ')' });
+        } });
+        const clear = node.body.body.find(method => method.key?.name === 'clear');
+        const clearText = code.slice(clear.start,clear.end);
+        const dialogue = /const ([\w$]+)=this\.store\.actives\[/.exec(clearText)?.[1];
+        if (!dialogue) throw new Error('Upstream caption dialogue lifetime changed');
+        simple(clear.value.body, { IfStatement(statement) {
+          if (statement.test.type !== 'BinaryExpression' || statement.test.operator !== '<') return;
+            edits.push({ start: statement.test.start, end: statement.test.start, value: `!${dialogue}.__dialogue?.__tiplayEmbeddedPersistent&&(` },
+            { start: statement.test.end, end: statement.test.end, value: ')' });
+        } });
+        captionAssSites++;
+      }
+      if (methods.includes('createSubtitleRender') && methods.includes('getSelectedVideoStreamId')) {
+        const create = node.body.body.find(method => method.key?.name === 'createSubtitleRender');
+        let constructor;
+        simple(create.value.body, { AssignmentExpression(expression) {
+          if (code.slice(expression.left.start,expression.left.end) === 'this.subtitleRender' && expression.right.type === 'NewExpression')
+            constructor = expression.right;
+        } });
+        const options = constructor?.arguments[0];
+        if (options?.type !== 'ObjectExpression') throw new Error('Upstream caption renderer factory changed');
+        const codecpar = options.properties.find(property => property.key?.name === 'codecpar');
+        if (!codecpar) throw new Error('Upstream subtitle codec option changed');
+        const start = constructor.start;
+        let factory = code.slice(start,constructor.end);
+          const temporaries = new Set();
+          simple(constructor, { AssignmentExpression(expression) { if (expression.left.type === 'Identifier') temporaries.add(expression.left.name); } });
+        const changes = [
+          { start: options.start+1-start, end: options.start+1-start, value: '__tiplayEmbedded:true,' },
+          { start: codecpar.value.start-start, end: codecpar.value.end-start, value: 'null' },
+        ];
+        for (const change of changes.sort((a,b)=>b.start-a.start)) factory=factory.slice(0,change.start)+change.value+factory.slice(change.end);
+        edits.push({ start: node.body.end-1, end: node.body.end-1,
+            value: `async __tiplayCreateEmbeddedSubtitleRender(){${temporaries.size ? `let ${[...temporaries].join(',')};` : ''}return ${factory};}` });
+        addedAwaits++; captionFactorySites++;
+      }
       if (methods.includes('getDemuxerPort') && methods.includes('setDemuxTask')) {
+        const constructor = node.body.body.find(method => method.kind === 'constructor');
+        simple(constructor.value.body, {
+          CallExpression(call) {
+            if (call.callee.type === 'MemberExpression' && call.callee.object.type === 'ThisExpression'
+              && call.callee.property.name === 'createDecoder')
+              edits.push({ start: call.start, end: call.end, value: `(this.options.__tiplayEmbedded?undefined:${code.slice(call.start,call.end)})` });
+            if (call.callee.type === 'MemberExpression' && call.callee.object.type === 'ThisExpression'
+              && call.callee.property.name === 'getAssHeader')
+              edits.push({ start: call.start, end: call.end, value: `(this.options.__tiplayEmbedded?'':${code.slice(call.start,call.end)})` });
+          },
+          ArrowFunctionExpression(callback) {
+            if (callback.body.type === 'BlockStatement' && code.slice(callback.start,callback.end).includes('this.render.clear(')
+              && code.slice(callback.start,callback.end).includes('this.options.getCurrentTime()'))
+              edits.push({ start: callback.body.start+1, end: callback.body.start+1,
+                value: 'if(this.options.__tiplayEmbedded){this.__tiplayTickEmbedded();return;}' });
+          },
+        });
+        const reset = node.body.body.find(method => method.key?.name === 'reset');
+        edits.push({ start: reset.value.body.start+1, end: reset.value.body.start+1, value: 'if(this.__tiplayEmbeddedEvents)this.__tiplayEmbeddedEvents.length=0;' });
+        const destroy = node.body.body.find(method => method.key?.name === 'destroy');
+        simple(destroy.value.body, { CallExpression(call) {
+          if (code.slice(call.callee.start,call.callee.end) === 'this.decoder.close')
+            edits.push({ start: call.start, end: call.end, value: 'this.decoder?.close()' });
+        } });
+        edits.push({ start: node.body.end-1, end: node.body.end-1, value: subtitleCaptionMethods });
+        captionRenderSites++;
         const pull=node.body.body.find(method=>method.key?.name==='pull');
         // Drain the previous generation on the same port before any demux seek.
         // The marker follows the old pull even when its request is still in transit.
@@ -209,6 +282,32 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
         });
       }
       if (methods.includes('doDemux') && methods.includes('replyAVPacket')) {
+        const demux = node.body.body.find(method => method.key?.name === 'doDemux');
+        const demuxText = code.slice(demux.start,demux.end);
+        const task = demux.value.params[0].name;
+        const packetDeclaration = demux.value.body.body.find(statement => statement.type === 'VariableDeclaration'
+          && statement.declarations.some(declaration => declaration.init?.type === 'CallExpression'
+            && code.slice(declaration.init.start,declaration.init.end).includes('.avpacketPool.alloc(')));
+        const packet = packetDeclaration?.declarations[0].id.name;
+        const readAPI = /([\w$]+)\.f\[15\]\([\w$]+\+32\)/.exec(demuxText)?.[1];
+        const imports = code.slice(code.lastIndexOf('var ',node.start),node.start);
+        const packetAPI = /([\w$]+)=([\w$]+)\(46564\)/.exec(imports)?.[1];
+        const memoryAPI = /([\w$]+)\.s3\)/.exec(code.slice(node.start,node.end))?.[1];
+        if (!packet || !readAPI || !packetAPI || !memoryAPI) throw new Error(`Upstream caption packet layout changed: ${packet}/${readAPI}/${packetAPI}/${memoryAPI}`);
+        const result = demux.value.body.body.find(statement => statement.type === 'IfStatement');
+        if (result?.alternate?.type !== 'BlockStatement') throw new Error('Upstream caption demux result changed');
+        edits.push({ start: result.alternate.start+1, end: result.alternate.start+1, value: `this.__tiplayCaptionPacket(${task},${packet});` });
+        edits.push({ start: result.consequent.start+1, end: result.consequent.start+1, value: `this.__tiplayCaptionEnd(${task});` });
+        edits.push({ start: node.body.end-1, end: node.body.end-1,
+          value: demuxCaptionMethods({ extractor: captionExtractor, packetAPI, readAPI, memoryAPI }) });
+        const unregister = node.body.body.find(method => method.key?.name === 'unregisterTask');
+        if (!unregister) throw new Error('Upstream caption demux retirement changed');
+        const taskDeclaration = unregister.value.body.body.find(statement => statement.type === 'VariableDeclaration'
+          && statement.declarations.some(declaration => code.slice(declaration.init?.start || 0,declaration.init?.end || 0).includes('this.tasks.get(')));
+        if (!taskDeclaration) throw new Error('Upstream caption task lookup changed');
+        const unregisterTask = taskDeclaration.declarations[0].id.name;
+        edits.push({ start: taskDeclaration.end, end: taskDeclaration.end, value: `this.__tiplayCaptionClose(${unregisterTask});` });
+        captionDemuxSites++;
         const connect=node.body.body.find(method=>method.key?.name==='connectStreamTask');
         simple(connect.value.body,{SwitchStatement(statement){
           if(statement.discriminant.type!=='MemberExpression' || statement.discriminant.property.name!=='method')return;
@@ -224,6 +323,11 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
           subtitleDrainSites++;
         }});
         const seek=node.body.body.find(method=>method.key?.name==='seek');
+        const seekTaskDeclaration = seek.value.body.body.find(statement => statement.type === 'VariableDeclaration'
+          && statement.declarations.some(declaration => code.slice(declaration.init?.start || 0,declaration.init?.end || 0).includes('this.tasks.get(')));
+        if (!seekTaskDeclaration) throw new Error('Upstream caption seek task lookup changed');
+        edits.push({ start: seekTaskDeclaration.end, end: seekTaskDeclaration.end,
+          value: `if(${seekTaskDeclaration.declarations[0].id.name})this.__tiplayCaptionReset(${seekTaskDeclaration.declarations[0].id.name});` });
         simple(seek.value.body,{ReturnStatement(statement){
           const expressions=statement.argument?.expressions;
           const first=expressions?.[0];
@@ -239,7 +343,7 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
           const finish=expressions.slice(2,4).map(expression=>code.slice(expression.start,expression.end)).join(';');
           const timestamp=code.slice(expressions[4].start,expressions[4].end);
           edits.push({start:statement.argument.start,end:statement.argument.end,
-            value:`(()=>{const __tiplaySeekTime=${timestamp};if(${task}.cacheRequests.has(${stream})){this.replyAVPacket(${task},${task}.rightIPCPorts.get(${stream}),${task}.cacheRequests.get(${stream}),${packet});${task}.cacheRequests.delete(${stream});}else{${queue};${stats};}${finish};return __tiplaySeekTime;})()`});
+            value:`(()=>{const __tiplaySeekTime=${timestamp};this.__tiplayCaptionPacket(${task},${packet});if(${task}.cacheRequests.has(${stream})){this.replyAVPacket(${task},${task}.rightIPCPorts.get(${stream}),${task}.cacheRequests.get(${stream}),${packet});${task}.cacheRequests.delete(${stream});}else{${queue};${stats};}${finish};return __tiplaySeekTime;})()`});
           seekReplySites++;
         }});
       }
@@ -499,6 +603,8 @@ for (const name of (await readdir(source)).filter(name => name.endsWith('.js')).
 if (sdrPolicySites !== 3) throw new Error(`Upstream SDR selection/error sites changed: ${sdrPolicySites}`);
 if (manifestFailureSites !== 6) throw new Error(`Upstream HLS failure evidence sites changed: ${manifestFailureSites}`);
 if (packedAacProbeSites !== 1) throw new Error(`Upstream packed AAC probe sites changed: ${packedAacProbeSites}`);
+if (captionDemuxSites !== 1 || captionRenderSites !== 1 || captionAssSites !== 1 || captionFactorySites !== 1)
+  throw new Error(`Upstream embedded caption sites changed: ${captionDemuxSites}/${captionRenderSites}/${captionAssSites}/${captionFactorySites}`);
 if (subtitlePacketBridgeSites !== 1 || subtitleReleaseSites !== 4) throw new Error(`Upstream subtitle packet ownership sites changed: ${subtitlePacketBridgeSites}/${subtitleReleaseSites}`);
 if (subtitleDrainSites !== 3 || subtitleSeekSites !== 3) throw new Error(`Upstream subtitle drain/seek sites changed: ${subtitleDrainSites}/${subtitleSeekSites}`);
 if (subtitleEofSites !== 3 || seekReplySites !== 1) throw new Error(`Upstream subtitle EOF/seek sites changed: ${subtitleEofSites}/${seekReplySites}`);
@@ -513,6 +619,7 @@ if (fetchSites !== 13) throw new Error(`Upstream fetch call count changed: ${fet
 for (const name of ['AudioSourceWorkletProcessorWorklet.js', 'AudioSourceWorkletProcessor2Worklet.js'])
   await output(name, await readFile(new URL(`node_modules/@libmedia/avrender/dist/${name}`, root)));
 await output('avplayer.js', await readFile(new URL('entry.js', root)));
+await output('embedded-captions.js', await readFile(new URL('embedded-captions.js', root)));
 const cache = new URL('.cache/', root);
 await mkdir(cache, { recursive: true });
 for (const asset of lock.assets) {
@@ -547,5 +654,6 @@ for (const name of ['LGPL-2.1.txt','GPL-3.0.txt']) {
 notices.push('===== WASM corresponding sources =====\nFFmpeg audio codec/resample modules and SoundTouch tempo: LGPL-2.1-or-later.\nPinned source/build definitions: https://github.com/zhaohappy/libmedia/tree/' + lock.commit + '\n');
 await writeFile(new URL('THIRD_PARTY_LICENSES.txt', destination), notices.join('\n'));
 await writeFile(new URL('artifacts.json', destination), JSON.stringify({ version: lock.version,
-  commit: lock.commit, fetchRequestInitPatches: fetchSites, sameOriginWorkletPatches: workletSites, hlsClassificationPatches: liveSites, pipelineCleanupPatches: cleanupSites, cancellationPatches: cancellationSites, contextEventGuardPatches: contextGuardSites, lifecycleGuardMethods: lifecycleSites, lifecycleGuardAwaits: lifecycleAwaits, rpcErrorSerializerPatches: rpcErrorSites, subtitleEofPatches: subtitleEofSites, pendingSeekReplyPatches: seekReplySites, subtitlePacketBridgePatches: subtitlePacketBridgeSites, subtitlePacketReleasePatches: subtitleReleaseSites, subtitleDrainPatches: subtitleDrainSites, subtitleSeekPatches: subtitleSeekSites, sdrVariantPolicyPatches: sdrPolicySites, hlsManifestFailurePatches: manifestFailureSites, packedAacProbePatches: packedAacProbeSites, artifacts }, null, 2) + '\n');
+  commit: lock.commit, fetchRequestInitPatches: fetchSites, sameOriginWorkletPatches: workletSites, hlsClassificationPatches: liveSites, pipelineCleanupPatches: cleanupSites, cancellationPatches: cancellationSites, contextEventGuardPatches: contextGuardSites, lifecycleGuardMethods: lifecycleSites, lifecycleGuardAwaits: lifecycleAwaits, rpcErrorSerializerPatches: rpcErrorSites, subtitleEofPatches: subtitleEofSites, pendingSeekReplyPatches: seekReplySites, subtitlePacketBridgePatches: subtitlePacketBridgeSites, subtitlePacketReleasePatches: subtitleReleaseSites, subtitleDrainPatches: subtitleDrainSites, subtitleSeekPatches: subtitleSeekSites, sdrVariantPolicyPatches: sdrPolicySites, hlsManifestFailurePatches: manifestFailureSites, packedAacProbePatches: packedAacProbeSites,
+  embeddedCaptionPatches: { demux:captionDemuxSites,render:captionRenderSites,dialogue:captionAssSites,factory:captionFactorySites }, artifacts }, null, 2) + '\n');
 console.log(`Vendored libmedia ${lock.version}: ${artifacts.length} files, ${fetchSites} scoped RequestInit patches.`);

@@ -358,16 +358,16 @@ private class AndroidBrowserRtcPeer(
         parameters.degradationPreference = RtpParameters.DegradationPreference.DISABLED
         // The resolution-based default is 2.5 Mbps at 1080p. The source is already
         // compressed and cannot obey that encoder budget. Admit a bounded source
-        // rate; the minimum stays unset so congestion control may still reduce it.
+        // rate and retain the user-requested minimum while preserving feedback.
         check(parameters.encodings.size == 1) { "video-sender-encodings" }
         parameters.encodings.single().maxBitrateBps = VIDEO_MAX_BITRATE_BPS
         check(sender.setParameters(parameters)) { "video-sender-parameters" }
         if (!videoRateStarted) {
-            // This is an initial BWE prior, not a floor or a target for new encoding.
+            // The start value is a one-time BWE prior, separate from the minimum.
             // Reapplying it on source/IDR replacement would reset real feedback.
-            check(peer.setBitrate(null, VIDEO_START_BITRATE_BPS, VIDEO_MAX_BITRATE_BPS)) { "video-sender-bitrate" }
+            check(peer.setBitrate(VIDEO_MIN_BITRATE_BPS, VIDEO_START_BITRATE_BPS, VIDEO_MAX_BITRATE_BPS)) { "video-sender-bitrate" }
             videoRateStarted = true
-            log("Browser RTC: stage=video-rate epoch=$epoch startBps=$VIDEO_START_BITRATE_BPS maxBps=$VIDEO_MAX_BITRATE_BPS minimum=adaptive")
+            log("Browser RTC: stage=video-rate epoch=$epoch startBps=$VIDEO_START_BITRATE_BPS maxBps=$VIDEO_MAX_BITRATE_BPS minimum=$VIDEO_MIN_BITRATE_BPS")
         }
         peer.transceivers.firstOrNull { it.sender.id() == sender.id() }?.let { transceiver ->
             check(transceiver.setDirection(RtpTransceiver.RtpTransceiverDirection.SEND_ONLY)) { "video-sender-direction" }
@@ -980,8 +980,9 @@ private class AndroidBrowserRtcPeer(
     ) } ?: "operation-failed"
 
     companion object {
+        private const val VIDEO_MIN_BITRATE_BPS = 16_000_000
         private const val VIDEO_START_BITRATE_BPS = 32_000_000
-        private const val VIDEO_MAX_BITRATE_BPS = 64_000_000
+        private const val VIDEO_MAX_BITRATE_BPS = 128_000_000
         private const val VIDEO_INPUT_TIMEOUT_MS = 6_000L
         private val cleanupExecutor = Executors.newSingleThreadExecutor {
             Thread(it, "browser-rtc-cleanup").apply { isDaemon = true }

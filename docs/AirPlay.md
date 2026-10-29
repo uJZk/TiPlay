@@ -438,13 +438,23 @@ either header alone can still receive 403. Android HTTP and iPhone FCUP apply th
 host-scoped compatibility headers, reevaluating the destination after HTTP redirects
 while preserving signed URLs and byte ranges.
 
-AVPlayer owns subtitle parsing and rendering. TiPlay exposes available subtitle
-stream descriptors and selection through the existing menu; the previous separate
-HLS/MP4 caption discovery, parser and Canvas-caption clock are removed. Supported
-upstream formats do not prove that an AirPlay sender supplies them. In particular,
-CEA-608/708 delivery and rendering need separate verification before being claimed
-as supported by this URL adapter. [Apple's AirPlay 2 TV guidance](https://developer.apple.com/streaming/hls-authoring-specification-for-apple-devices.html#amended-requirements-for-airplay-2-enabled-tvs)
-specifies WebVTT.
+AVPlayer owns subtitle loading, timing and rendering. TiPlay exposes available
+subtitle descriptors through the existing menu. Registered AVC/HEVC SEI caption
+data is copied at demux, decoded into changed display states, and scheduled by
+AVPlayer's own SubtitleRender clock and ASS renderer. Embedded service IDs are
+separate from HLS playlist indexes; selecting either route disables the other.
+Seek clears decoder/display state while retaining discovered services; source or
+video-stream replacement retires their metadata and callbacks. The caption bridge
+has bounded event/text retention and acknowledged worker credits. Overload drops
+caption observation and resets its epoch without blocking video or audio.
+
+CEA-608 uses the pinned hls.js decoder. CEA-708 restores plain-text service/window
+display changes; styles, positioning and complete command parity are outside that
+decoder's contract. Caption support does not establish that a sender supplies
+caption data. [Apple's AirPlay 2 TV guidance](https://developer.apple.com/streaming/hls-authoring-specification-for-apple-devices.html#amended-requirements-for-airplay-2-enabled-tvs)
+specifies WebVTT. Desktop AVC fixtures verify this adapter's caption path; HEVC
+extraction tests do not establish browser HEVC rendering or physical iPhone/Tesla
+subtitle delivery.
 
 The local AVPlayer 1.3.1 bundle includes the selected baseline audio decoder,
 resampling and stretch resources. Video requires browser WebCodecs support; no

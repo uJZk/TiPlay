@@ -7,9 +7,13 @@ include phone/APK versions and connection mode. Keep credentials/captures outsid
 
 ## Monitor and log detail
 
-Open the browser's default-collapsed **Diagnostics** section for connection-stage,
-candidate/channel detail and the **Performance monitor** switch. Healthy playback
-shows no success message; waiting/recovery and actionable problems stay concise.
+Open the browser's default-collapsed **Diagnostics** section for a scrollable,
+newest-first log of recent connection, source and error transitions and the
+**Performance monitor** switch. The log has no timestamps and does not include
+addresses, URLs, device identities or raw errors. It remains available without
+Debug mode; full structured diagnostics remain in the Android report.
+New events stay visible at the top while the log is at the top; scrolling down
+stops automatic scrolling, including while the section is folded.
 These controls are independent of Android Debug
 mode and enable no extra capture. The monitor overlay must not change the canvas,
 negotiated viewport or touch coordinates. Its fields are:
@@ -430,6 +434,14 @@ support, not proof that feedback arrived. While Debug capture is enabled,
 `stage=video-send` samples the exact current sender every five seconds: original
 RTP counters, target bitrate, fixed quality-limitation reason, cumulative packet
 send delay, linked remote RTCP report/RTT counters and the selected ICE pair.
+When exposed by the sender, header bytes include RTP headers and padding together,
+and retransmitted bytes count RTP payload sent again; neither identifies a probe
+cluster or its padding on its own. `hugeFramesSent` and encoded target bytes use
+the encoder target, which cannot control already compressed pass-through frames.
+ICE-pair discarded packets/bytes count socket send errors, not Wi-Fi air loss.
+The optional transport `ccfbMessagesReceived` counts RFC 8888 feedback messages;
+it is not a TWCC sequence coverage counter. Missing fields mean unavailable, not
+zero, and a rising message count does not establish packet-level feedback coverage.
 Late, expired or retired-generation callbacks cannot publish. Remote report RTT
 and ICE RTT do not prove usable packet-level congestion feedback. Divide interval
 send-delay changes by sent-packet changes within one sender generation; do not

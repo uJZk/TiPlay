@@ -1,0 +1,8 @@
+{
+  "name": "tiplay-caption-parser",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "node build.mjs", "check": "node build.mjs --check" },
+  "dependencies": { "hls.js": "1.6.19" },
+  "devDependencies": { "esbuild": "0.25.12" }
+}

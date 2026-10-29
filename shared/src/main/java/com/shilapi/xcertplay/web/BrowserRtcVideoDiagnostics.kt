@@ -52,19 +52,21 @@ internal object BrowserRtcVideoDiagnostics {
                 result[prefix + name + if (name in seconds) "Ms" else ""] = if (name in seconds) value * 1000 else value
             }
         }
-        numbers("out.", selected.members, listOf("packetsSent", "bytesSent", "framesEncoded", "framesSent", "keyFramesEncoded", "targetBitrate",
-            "retransmittedPacketsSent", "nackCount", "pliCount", "firCount", "totalPacketSendDelay"), listOf("totalPacketSendDelay"))
+        numbers("out.", selected.members, listOf("packetsSent", "bytesSent", "headerBytesSent", "framesEncoded", "framesSent", "keyFramesEncoded",
+            "hugeFramesSent", "targetBitrate", "totalEncodedBytesTarget", "retransmittedPacketsSent", "retransmittedBytesSent",
+            "nackCount", "pliCount", "firCount", "totalPacketSendDelay"), listOf("totalPacketSendDelay"))
         (selected.members["qualityLimitationReason"] as? String)?.takeIf { it in setOf("none", "cpu", "bandwidth", "other") }
             ?.let { result["out.qualityLimitationReason"] = it }
         val remote = stats[selected.members["remoteId"] as? String]?.takeIf { it.type == "remote-inbound-rtp" }
         result["remoteReport"] = remote != null
-        remote?.let { numbers("remote.", it.members, listOf("packetsLost", "fractionLost", "reportsReceived", "roundTripTimeMeasurements",
+        remote?.let { numbers("remote.", it.members, listOf("packetsReceived", "packetsLost", "fractionLost", "reportsReceived", "roundTripTimeMeasurements",
             "roundTripTime", "totalRoundTripTime", "jitter"), listOf("roundTripTime", "totalRoundTripTime", "jitter")) }
         val transport = stats[selected.members["transportId"] as? String]?.takeIf { it.type == "transport" }
+        transport?.let { numbers("transport.", it.members, listOf("ccfbMessagesReceived", "selectedCandidatePairChanges")) }
         val pair = stats[transport?.members?.get("selectedCandidatePairId") as? String]?.takeIf { it.type == "candidate-pair" }
         result["selectedPair"] = pair != null
-        pair?.let { numbers("pair.", it.members, listOf("bytesSent", "bytesReceived", "availableOutgoingBitrate", "currentRoundTripTime",
-            "responsesReceived"), listOf("currentRoundTripTime")) }
+        pair?.let { numbers("pair.", it.members, listOf("packetsSent", "packetsReceived", "bytesSent", "bytesReceived", "availableOutgoingBitrate",
+            "currentRoundTripTime", "requestsSent", "responsesReceived", "packetsDiscardedOnSend", "bytesDiscardedOnSend"), listOf("currentRoundTripTime")) }
         return result
     }
 
