@@ -44,8 +44,13 @@ class ReceiverProtocolDiagnosticsTest {
 
     @Test fun implicitSuccessStatusMatchesTheWireResponse() {
         val messages = mutableListOf<String>()
-        ReceiverProtocolDiagnostics(messages::add).response(1, RtspMessage.Response())
-        assertEquals("c=1 stage=RESPONSE status=200 bodyBytes=0", messages.single())
+        val diagnostics = ReceiverProtocolDiagnostics(messages::add)
+        diagnostics.response(1, RtspMessage.Response())
+        diagnostics.pairingVerify(1, null, false)
+        diagnostics.pairingVerify(1, 400, false)
+        assertEquals("c=1 stage=RESPONSE status=200 bodyBytes=0", messages[0])
+        assertEquals("c=1 stage=PAIR_VERIFY status=ok verified=false", messages[1])
+        assertEquals("c=1 stage=PAIR_VERIFY status=failed verified=false", messages[2])
     }
 
     @Test fun videoControlDiagnosticsRecognizeAbsoluteTargetsAndHideUnknownQueryValues() {
