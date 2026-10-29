@@ -8,11 +8,11 @@ Use the Gradle wrapper and the JDK, Node and Android SDK/NDK packages in the [An
 
 The Android/browser product version comes from `tiplayVersionName` and
 `tiplayVersionCode` in [gradle.properties](../gradle.properties). The latest published
-prerelease is [**0.2.20-beta.31**](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.31)
-(code **73**). Run
+prerelease is [**0.2.20-beta.32**](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.32)
+(code **74**). Run
 `python3 scripts/build_site.py` after a version change to regenerate `app-version.js`.
 The browser diagnostic/cache revision is independent of the product version;
-the deployed page uses **v106**, with original-codec WebRTC RTP for live video and negotiated audio.
+the deployed page uses **v107**, with original-codec WebRTC RTP for live video and negotiated audio.
 Earlier SoundTouch/libsoxr browser implementations are historical; current playback
 boundaries are in [Audio tempo](Audio-tempo.md). Software checks are in
 [Testing](Testing.md#webrtc-integrated-acceptance).
@@ -568,10 +568,10 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-Browser **v106** was deployed from `9d6d02c3dd2a6071c11a28ba08f2e324a9191f8f` by
-[Pages run 40804661166](https://github.com/uJZk/TiPlay/actions/runs/40804661166).
-The public diagnostic module reports v106. The matching signed beta.31 APK and
-source archive are available from the [release](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.31).
+Browser **v107** was deployed from `274391d1b9731b19a531d32af5eff273662394b1` by
+[Pages run 40812648160](https://github.com/uJZk/TiPlay/actions/runs/40812648160).
+The public diagnostic module reports v107. The matching signed beta.32 APK and
+source archive are available from the [release](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.32).
 Real-car acceptance remains pending.
 
 The preceding browser **v104** was deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
