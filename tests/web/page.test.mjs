@@ -242,8 +242,25 @@ test('video negotiation failures expose the safe video reason without changing c
     config: { mode: 'carplay' } }), 'preparingVideo', 'retired CarPlay fault does not mask a new cast');
 });
 
+test('a foreground video cast preparing without a resource masks retired CarPlay failures', () => {
+  const page = retryPage();
+  const config = { mode: 'carplay' };
+  page.present({ status: { videoSource: 'carplay' }, config });
+  page.videoFailed('codec-profile-not-negotiated');
+  assert.equal(page.problem().text, 'rtcVideoCodecFailed');
+  const carplay = { state: 'failed' };
+  assert.equal(page.present({ config, status: { videoSource: 'carplay', airplay: { kind: 'video' },
+    receivers: { carplay, airplay: { state: 'loading' } } } }), 'preparingVideo');
+  assert.equal(page.problem(), null, 'retired codec notice closes for the new cast');
+  assert.equal(page.present({ status: { videoSource: null, receivers: { carplay, airplay: { state: 'video' } } } }), 'preparingVideo');
+  assert.equal(page.present({ status: { videoSource: 'carplay', receivers: { carplay } }, config }), 'pictureUnavailable');
+  const fresh = retryPage();
+  assert.equal(fresh.present({ status: { videoSource: null, receivers: { carplay } } }), 'carPlayFailed', 'a genuine CarPlay failure remains visible');
+});
+
 test('waiting messages follow receiver phase and actual video source rather than session availability', () => {
   const page = retryPage(null);
+  assert.match(read('app.js'), /waitingPhone: '已连接安卓端，等待 iOS…'/);
   assert.equal(page.present({ status: { state: 'idle' } }), 'waitingSource');
   assert.equal(page.present({ status: { state: 'connecting' } }), 'waitingSource');
   for (const [state, key] of Object.entries({

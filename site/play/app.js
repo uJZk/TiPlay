@@ -91,7 +91,7 @@ const STRINGS = {
     unreachable: 'The Android device does not answer. Retrying in {0} s…',
     lost: 'Connection lost. Retrying in {0} s…',
     throttled: 'Too many wrong pairing codes. Retrying in {0} s…',
-    waitingPhone: 'Connected to Android. Waiting for CarPlay or AirPlay…',
+    waitingPhone: 'Connected to Android. Waiting for iOS…',
     phoneConnecting: 'CarPlay is connecting…',
     waitingVideo: 'Waiting for the AirPlay picture…',
     preparingVideo: 'Preparing video…',
@@ -182,7 +182,7 @@ const STRINGS = {
     unreachable: '安卓端没有响应，{0} 秒后重试…',
     lost: '连接中断，{0} 秒后重试…',
     throttled: '配对码错误次数过多，{0} 秒后重试…',
-    waitingPhone: '已连接安卓端，等待 CarPlay 或 AirPlay…',
+    waitingPhone: '已连接安卓端，等待 iOS…',
     phoneConnecting: 'CarPlay 正在连接…',
     waitingVideo: '正在等待 AirPlay 画面…',
     preparingVideo: '正在准备视频…',
@@ -833,13 +833,18 @@ function render() {
   const inlineNotice = !active && ['badCode', 'invalidCode', 'invalidHost'].includes(notice?.key);
   let problem = !active && notice && notice.key !== 'stopped' && !inlineNotice
     ? { id: notice.key, text: t(notice.key, ...notice.args) } : null;
-  const videoProblem = active ? videoProblemFor(status, config, unsupported) : null;
+  const source = videoSourceFor(status, config), playback = status?.airplay;
+  const pendingCast = !videoReadyFor(status, config, live) &&
+    ((playback?.kind === 'video' && playback.outputAllowed !== false && playback.videoShown !== false)
+      || (['video', 'loading'].includes(status?.receivers?.airplay?.state)
+        && !(source === 'carplay' && playback?.videoShown === false)));
+  const videoProblem = active && !pendingCast ? videoProblemFor(status, config, unsupported) : null;
   if (active && unsupported && !videoProblem) browserNotice.reset(`codec:${unsupported}`);
   if (videoProblem) {
     const key = videoProblem === 'hdr' ? 'unsupportedHdr' : /^(hvc1|hev1)\b/.test(videoProblem) ? 'unsupportedHevc' : 'unsupported';
     problem = { id: `codec:${videoProblem}`, text: t(key, codecName(videoProblem)) };
   }
-  const currentVideoError = active && videoError ? videoProblemFor(status, config, videoError) : null;
+  const currentVideoError = active && videoError && !pendingCast ? videoProblemFor(status, config, videoError) : null;
   const codecFailure = ['codec-profile-not-negotiated', 'video-codec-not-negotiated', 'encoder-codec-mismatch'].includes(currentVideoError);
   const nextVideoNoticeId = currentVideoError && (currentVideoError === 'hdr' || codecFailure)
     ? `rtc-video:${currentVideoError}` : null;
@@ -942,6 +947,12 @@ function statusText() {
     if (playback.ready) return playback.playing ? '' : t('airPlayPaused');
     return t('preparingVideo');
   }
+  // A new cast can arrive before its resource or video track does. A retired
+  // CarPlay fault must not replace the foreground preparation message.
+  const airplayPreparing = (playback?.kind === 'video' && playback.outputAllowed !== false && playback.videoShown !== false)
+    || (['video', 'loading'].includes(status?.receivers?.airplay?.state)
+      && !(source === 'carplay' && playback?.videoShown === false));
+  if (airplayPreparing && !videoReadyFor(status, config, live)) return t('preparingVideo');
   if (videoProblemFor(status, config, unsupported || videoError)) return t('pictureUnavailable');
   if (videoReadyFor(status, config, live)) return '';
   if (source === 'carplay' && (playback?.videoShown === false || playback?.kind === 'audio')) return t('waitingFrame');
