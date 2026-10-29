@@ -434,6 +434,14 @@ support, not proof that feedback arrived. While Debug capture is enabled,
 `stage=video-send` samples the exact current sender every five seconds: original
 RTP counters, target bitrate, fixed quality-limitation reason, cumulative packet
 send delay, linked remote RTCP report/RTT counters and the selected ICE pair.
+When exposed by the sender, header bytes include RTP headers and padding together,
+and retransmitted bytes count RTP payload sent again; neither identifies a probe
+cluster or its padding on its own. `hugeFramesSent` and encoded target bytes use
+the encoder target, which cannot control already compressed pass-through frames.
+ICE-pair discarded packets/bytes count socket send errors, not Wi-Fi air loss.
+The optional transport `ccfbMessagesReceived` counts RFC 8888 feedback messages;
+it is not a TWCC sequence coverage counter. Missing fields mean unavailable, not
+zero, and a rising message count does not establish packet-level feedback coverage.
 Late, expired or retired-generation callbacks cannot publish. Remote report RTT
 and ICE RTT do not prove usable packet-level congestion feedback. Divide interval
 send-delay changes by sent-packet changes within one sender generation; do not

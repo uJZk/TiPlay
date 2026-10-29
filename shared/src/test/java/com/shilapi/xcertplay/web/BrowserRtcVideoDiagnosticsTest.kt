@@ -44,6 +44,39 @@ class BrowserRtcVideoDiagnosticsTest {
         assertFalse(result.toString().contains(secret))
     }
 
+    @Test fun optionalSenderAndTransportCountersAreScopedAndValidated() {
+        val result = BrowserRtcVideoDiagnostics.sender(report(
+            stat("video", "outbound-rtp", "kind" to "video", "transportId" to "transport", "remoteId" to "remote",
+                "headerBytesSent" to 1234L, "retransmittedBytesSent" to 432L, "hugeFramesSent" to 2L,
+                "totalEncodedBytesTarget" to 9000L, "unrelated" to "private"),
+            stat("remote", "remote-inbound-rtp", "packetsReceived" to 21L),
+            stat("transport", "transport", "selectedCandidatePairId" to "pair", "ccfbMessagesReceived" to 3L,
+                "selectedCandidatePairChanges" to 1L, "iceLocalUsernameFragment" to "private"),
+            stat("pair", "candidate-pair", "packetsSent" to 51L, "packetsReceived" to 12L, "requestsSent" to 4L,
+                "packetsDiscardedOnSend" to 2L, "bytesDiscardedOnSend" to 400L, "localCandidateId" to "private")))
+        assertEquals(1234.0, result["out.headerBytesSent"])
+        assertEquals(432.0, result["out.retransmittedBytesSent"])
+        assertEquals(2.0, result["out.hugeFramesSent"])
+        assertEquals(9000.0, result["out.totalEncodedBytesTarget"])
+        assertEquals(21.0, result["remote.packetsReceived"])
+        assertEquals(3.0, result["transport.ccfbMessagesReceived"])
+        assertEquals(1.0, result["transport.selectedCandidatePairChanges"])
+        assertEquals(51.0, result["pair.packetsSent"])
+        assertEquals(12.0, result["pair.packetsReceived"])
+        assertEquals(4.0, result["pair.requestsSent"])
+        assertEquals(2.0, result["pair.packetsDiscardedOnSend"])
+        assertEquals(400.0, result["pair.bytesDiscardedOnSend"])
+        assertFalse(result.toString().contains("private"))
+        val invalid = BrowserRtcVideoDiagnostics.sender(report(
+            stat("v", "outbound-rtp", "kind" to "video", "headerBytesSent" to Double.NaN,
+                "retransmittedBytesSent" to -1L, "hugeFramesSent" to 9e13)))
+        assertFalse(invalid.containsKey("out.headerBytesSent"))
+        assertFalse(invalid.containsKey("out.retransmittedBytesSent"))
+        assertFalse(invalid.containsKey("out.hugeFramesSent"))
+        assertFalse(invalid.containsKey("pair.packetsDiscardedOnSend"))
+        assertFalse(invalid.containsKey("transport.ccfbMessagesReceived"))
+    }
+
     @Test fun multiplePrimaryVideoStreamsDoNotBecomeOneInventedSenderSample() {
         val result = BrowserRtcVideoDiagnostics.sender(report(
             stat("a", "outbound-rtp", "kind" to "video", "packetsSent" to 1L),
