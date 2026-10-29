@@ -45,12 +45,13 @@ python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe 
 completion. `serial` waits for the product's native input completion barrier.
 A positive startup bitrate also sets the sender encoding and peer ceiling to
 128 Mbps and the peer minimum to 16 Mbps. The estimator is set only once. Zero
-retains the SDK's startup and stream defaults. `--encoder-delay 40` can inject
+retains the SDK's adaptive startup and stream defaults; zero alone does not
+enable source-rate transport. `--encoder-delay 40` can inject
 a controlled delay before the real Java encoder callback; default zero leaves
 the product callback timing unchanged. `--frames` selects the measured phase
 length. `burst` is an additional stress control, not the normal producer policy.
 
-The current startup default is 32 Mbps. A 16 Mbps minimum constrains the estimate
+The adaptive comparison's startup default is 32 Mbps. A 16 Mbps minimum constrains the estimate
 even when real network feedback indicates less capacity; it can increase queueing
 and loss on a constrained link and does not establish vehicle capacity. The published
 beta.27 native measurements used 24 Mbps with the rate limits from that revision;
@@ -78,6 +79,131 @@ The work directory retains `build.json`, per-scenario JSON results, combined
 console logs and private native logs. The build record identifies the exact AAR,
 product class bundle, DEX probe and fixture hashes. These generated files and
 synthetic H.264 input belong outside Git.
+
+## Source-rate request and observation
+
+Use `--source-rate` only with the custom AAR built by
+[`scripts/webrtc/build.py`](../../scripts/webrtc/build.py). It requests
+`TiPlay-SourceRateVideo/Enabled/` on the sending video factory only. The receiver
+retains the probe's existing trials. This request sets no peer startup/minimum/maximum bitrate
+or sender maximum, including after source replacements. A positive
+`--start-bitrate` is rejected; omitting it selects zero for this mode. The existing
+adaptive modes remain available for comparison. Distinct result filenames prevent
+source-rate runs from overwriting those controls.
+
+Select an Android device or emulator whose ABI matches the custom AAR. For example,
+an ARM64-only artifact cannot run in an x86_64 Android emulator:
+
+```sh
+python3 tests/native/rtc-video-probe.py build --work-dir /tmp/tiplay-source-rate \
+  --webrtc-aar /path/to/tiplay-source-rate.aar --abi arm64-v8a \
+  --fixture /path/to/high-profile.h264
+python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-source-rate \
+  --source-rate --mode serial --frames 180 --expect-continuous
+python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-source-rate \
+  --source-rate --mode bundle --frames 2400 --expect-continuous
+```
+
+The build record includes a matching adjacent `.provenance.json` when supplied by
+the custom AAR builder and rejects a mismatched AAR hash. Results retain the actual
+sender/receiver field-trial strings. These record selected inputs; they do not by
+themselves prove that a native binary implements the trial. Results therefore use
+`requestedRateControlMode` and always report `nativeRateControlVerified: false`.
+A stock AAR can silently ignore the unknown trial. Even when `--expect-continuous`
+passes, this script establishes the measured encoder-byte and RTP-count continuity
+only. Native activation requires separate evidence from a matching custom binary
+and an activation check or controlled feedback comparison; provenance alone is
+insufficient.
+
+For a custom AAR containing the native diagnostic schema, add
+`--expect-native-activation` to a source-rate run. This first requires an adjacent
+provenance record matching the selected AAR, pinned source and current native patch
+hash. It then correlates actual native branch events with each measured sender's
+SSRC and a nonzero, process-local transport ID. Missing events, zero IDs, or
+events with a mismatched transport or SSRC cannot satisfy the check. This is
+SSRC correlation, not a verified PeerConnection-to-transport binding:
+`peerBindingVerified` remains false. A complete event chain from another peer
+using the same SSRC cannot be distinguished by this schema. Adaptive comparison
+runs with continuous assertions reject source-rate
+branch events as a negative control.
+
+`stream_attached` is emitted on every native sender construction. Codec setup
+can retire and recreate a sender with the same transport and SSRC before its
+first frame. The structural check collapses only fully identical attachment
+observations and reports their count; the raw event list remains intact.
+Different transports or limiter choices for a measured SSRC remain ambiguous
+and fail. `attachmentInstanceIdentityVerified` remains false because these
+identifiers do not distinguish successive sender objects.
+The same boundary applies to `encoder_gate`: each recreated encoder has a fresh
+once-per-state mask. Identical gate events retain their raw count but count as
+one structural state. Conflicting allow results or a different transport for the
+measured SSRC fail; distinct consistent states remain separate observations.
+`gateInstanceIdentityVerified` remains false, and repeated allow observations
+cannot establish the order or continuity of a network down/up cycle.
+
+The bounded `TIPLAY_RTC_SOURCE_RATE` JSON events record a skipped controller,
+stream attachment with its actual RTX limiter choice, first source-rate video
+dispatch, and the encoder's actual binary gate checks. They contain no memory or
+network addresses, keys, names or media bytes. SSRC and transport IDs can link events within the probe process
+and session; keep these events and derived identifiers in the private native
+probe artifacts, not the browser's readable diagnostic log. Dispatch does not prove a socket
+write succeeded; RTP counters remain separate evidence. Gate checks log each
+network/stream state at most once per encoder, so repeated allow events cannot
+establish a down/up recovery cycle. `nativeStructuralActivation.verified` covers
+these observed implementation branches only. `nativeRateControlVerified` remains
+false: the fixture does not establish every feedback condition or all remaining
+rate-control behavior.
+
+Statistics use the active `RtpSender` or `RtpReceiver` selector, rather than the
+last RTP entry in a peer-wide report. Sender samples retain the RTC statistics
+timestamp, monotonic sample time, SSRC, source input bytes/frames and original
+RTP byte counters. `rateWindows` computes deltas only within one source phase and
+active RTP stream. It reports source input rate, RTP payload rate and, when the
+counter exists, payload rate excluding retransmissions. Required statistics,
+identity or timestamps missing during measurement cause failure; only startup
+warmup may wait for an RTP record that has not appeared yet. Optional counters
+remain missing. Per-generation and final baselines must retain the same stats ID
+and SSRC and show the expected frame count plus advancing byte/packet counters.
+Final-stage rate coverage is checked separately from earlier generations.
+Source Annex B framing and RTP packetization overhead differ; these
+rates are not expected to be byte-for-byte identical. The final drain has its own
+sample and must not be treated as continued source input. Neither an absent BWE
+estimate nor a matching average rate proves that every control path is disabled.
+
+`videoNegotiations` records each generation's actual transceiver MID after both
+peers apply the descriptions, requiring the sender and receiver MIDs to agree.
+The hosted High proof validates each offer/answer pair against that recorded MID,
+including its direction, identical H264 payload number, exact SPS profile and
+packetization mode. An old video line cannot satisfy a replacement's check.
+A zero-port `bundle-only` offer must name an accepted BUNDLE transport; a
+zero-port answer is rejected. The answer must keep the target's offered BUNDLE
+membership and tag, and cannot move members from another group. Bundle scenarios
+require an offered and answered group for every recorded target MID.
+Run `verify_high_proof_sdp.py --fixture <fixture>
+--result <scenario.json>` before another scenario replaces its SDP files.
+
+The hosted source-rate positive scenarios retain the 10 Mbps High fixture.
+Branch-negative controls use a separately generated 200 kbps High fixture in
+separate work directories; their SPS, dimensions, 180-frame cadence and paired
+SDP checks remain identical. `--max-average-bitrate 300000` rejects accidental
+use of the high-rate positive fixture for these controls. Both negative controls
+still require exact frame counts and original encoder-byte hashes and must emit
+no source-rate native events. Their smaller input isolates branch activation;
+it does not compare adaptive and source-rate throughput.
+
+Offline fixture checks need no Android runtime:
+
+```sh
+python3 tests/native/test_video_probe.py
+python3 tests/native/check_video_probe.py --work-dir /tmp/tiplay-probe-api-check \
+  --webrtc-aar /path/to/selected.aar --android-sdk "$ANDROID_HOME" \
+  --java-home "$JAVA_HOME" --kotlin-stdlib /path/to/kotlin-stdlib.jar
+```
+
+Run local compilation through Wlsc. The second check compiles against the selected
+AAR's real public Java APIs but uses isolated product signature stubs. Its JVM
+checks cover echo ownership and source bookkeeping only; it does not compile the
+product Kotlin or verify Android/JNI, AAR rate control or transmitted video.
 
 ## Sparse High-profile startup
 
@@ -130,12 +256,29 @@ sender. This makes the application section BUNDLE's canonical first section
 without editing SDP, publishing a separate handshake or rolling back. It retains
 the production's one-active-video admission and High-profile selection.
 
-The probe then replaces the video bridge three times, stopping every retired
-video transceiver while keeping the DataChannels. It verifies that all three
+The probe warms each source and sends 60 measured original access units before
+each of three video bridge replacements, checking RTP reception before retiring
+that source. It stops every retired video transceiver while keeping the DataChannels.
+It verifies that all three
 channels are open at both peers and exchanges control echoes after initial
 negotiation, every replacement, each 300-frame interval and the final drain.
+An independent control heartbeat runs throughout video generation checks,
+replacements and the final measured phase. Replies are matched by unique message
+identity so heartbeat and stage checks cannot consume each other's responses.
+Each generation retains source and encoder-output SHA-256 values. Reception is
+still count-only, explicitly reported as `receiverContentVerified: false`; matching
+encoder bytes do not establish receiver payload integrity or picture correctness.
+Results retain completion counts and control samples grouped by source/replacement
+phase. Each measured/replacement phase needs a completed control observation.
+The echo wait uses the existing five-second timeout. This proves sampled,
+timeout-level availability, not continuous low latency; results explicitly retain
+`controlLowLatencyVerified: false`. A fast replacement may have boundary checks
+but no heartbeat within the replacement itself, and phase counts expose that gap.
+The channels
+named `audio` and `video` do not carry real audio or compressed-video payloads;
+this probe cannot establish independent audio playback under video load.
 The measured original-AU phase uses the same input-completion barrier and
-one-time startup bitrate as the ordinary serial mode. The result retains BUNDLE
+selected adaptive or source-rate request as the ordinary serial mode. The result retains BUNDLE
 tag/application MID, negotiated transport-wide feedback, channel/control checks,
 native counters, packet-send delay and original-byte hashes. SDP files remain in
 the private work directory.
@@ -156,8 +299,9 @@ replacement. On M150 the sustained control can lose usable transport feedback,
 back off by 0.8 per second to 30 kbps, then suspend native inputs despite zero RTP
 packet loss. It is not expected to satisfy continuous assertions. The ordinary
 180-frame default remains unchanged; a three-second run cannot establish that
-this feedback timeout is fixed. `bundle` must preserve all original output bytes,
-RTP reception and control continuity with real adaptive feedback enabled.
+this feedback timeout is fixed. The adaptive `bundle` comparison must preserve
+all original output bytes, RTP reception and control continuity with adaptive
+feedback enabled. Source-rate transport is a separate explicit mode of the same scenario.
 
 Both modes use the counting test decoder. They establish native RTP/admission and
 DataChannel continuity, not picture correctness, acoustic output, high-rate

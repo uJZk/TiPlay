@@ -22,8 +22,8 @@ negotiated viewport or touch coordinates. Its fields are:
 | --- | --- |
 | Codec | Current video codec; hardware preference does not prove hardware decoding. |
 | FPS | Actual successful draws during the last second. |
-| Delta | Canvas submission minus a comparable sender presentation reference, when available. Current native-track timestamps alone do not establish that mapping, so Delta can remain unknown. This is not physical capture-to-display latency. |
-| Drops | Explicit application discards/replacements in the current video configuration. It cannot count decoder-internal, network or phone loss. Legacy scheduler fields do not imply a current application pacer. |
+| Receive processing | The selected inbound WebRTC stream's increase in `totalProcessingDelay` divided by its increase in decoded frames between consecutive fresh samples. This covers browser receive/decode processing, not sender, network, Canvas or panel latency. Missing, stale or changed streams show an unknown value. |
+| Drops | The browser's inbound `framesDropped` is shown separately from application queue and renderer discards. Application `pre`, `in`, `out` and `render` identify the pre-configuration, main-to-worker, worker-to-main and Canvas stages; unused or unknown stages are not reported as zero. None counts all phone or network loss. |
 
 Browser v96 adds the current video's bounded error code to **Diagnostics** and
 `tiplayStats.page.video.errorReason`; first-fault `st` telemetry prioritizes the
@@ -391,9 +391,9 @@ control or measure native jitter buffering or actual RTP playout delay.
 Use current codec errors, source/negotiated/initialized native format evidence,
 first-frame Canvas acknowledgement, successful submission counts, draw intervals
 and last-draw age together. FPS counts Canvas submissions; multiple submissions
-before one refresh can overstate visible frames. Explicit application drops do not
-count decoder-internal or network loss. Native track timestamps alone do not
-provide independently mapped sender presentation time, so Delta can remain unknown.
+before one refresh can overstate visible frames. Browser and application drop counts
+describe separate stages and do not count all network or sender loss. Receive
+processing duration is not capture-to-screen latency.
 See the [transport contract](CarPlay-DataChannel.md#current-implementation-and-evidence)
 for v96 receive-level probes and v97 encoder selection. API support, successful
 initialization and Canvas submission each prove a different boundary; none proves

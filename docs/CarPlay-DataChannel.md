@@ -199,6 +199,16 @@ setup retained adaptive feedback and all original AUs. Each generation receives
 a distinct track; the existing generation/ready barriers prevent previous-source
 frames from being admitted. The application transport is released with the peer.
 
+Video replacement signaling is an idempotent transaction: a retry retains its
+request number, generation and exact local offer. The peer retains only its last
+successful answer and replays it without applying SDP or replacing the bridge
+again. A reused request number with different contents is rejected. A ready
+deadline reports a video-only timeout while preserving the committed SDP and
+bounded writer; a matching late ready or answer replay can complete that same
+generation. Older generations cannot reopen it. Deterministic native SDP failures
+remain terminal video errors; retrying those requires explicit rollback/state
+synchronization, not another offer on an unknown signaling state.
+
 Preserve source-compressed video without reencoding: the subsequent explicit
 constraint is never to encode the video a second time. Decryption, configuration
 parsing, AU assembly and transport packetization are allowed. Final decoding must

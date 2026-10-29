@@ -1,0 +1,131 @@
+name: Native source-rate WebRTC
+
+on:
+  workflow_dispatch:
+    inputs:
+      architectures:
+        description: Native AAR architectures (all is required for a release)
+        type: choice
+        options:
+          - all
+          - arm64-v8a
+          - x86_64
+        default: all
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-source-rate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      DEPOT_TOOLS_UPDATE: '0'
+      DEPOT_TOOLS_METRICS: '0'
+      GCLIENT_PY3: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check build-driver pin and reuse contracts
+        run: python3 scripts/webrtc/test_build.py
+      - name: Prepare isolated runner disk and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only the disposable hosted runner's unused preinstalled tool caches.
+          for directory in /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL; do
+            if [ -d "$directory" ]; then sudo rm -rf -- "$directory"; fi
+          done
+          available=$(df -Pk "$RUNNER_TEMP" | awk 'NR == 2 {print $4}')
+          if [ "$available" -lt 52428800 ]; then
+            echo 'At least 50 GiB free runner disk is required.' >&2
+            exit 1
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential ninja-build pkg-config python3 curl unzip bzip2 xz-utils \
+            libglib2.0-dev libnss3-dev libasound2-dev libpulse-dev libudev-dev \
+            libx11-dev libxcomposite-dev libxdamage-dev libxext-dev libxfixes-dev \
+            libxrandr-dev libxtst-dev libdrm-dev libgbm-dev libgtk-3-dev
+      - name: Fetch immutable depot_tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tiplay-depot-tools"
+          git -C "$RUNNER_TEMP/tiplay-depot-tools" init -q
+          git -C "$RUNNER_TEMP/tiplay-depot-tools" fetch --depth=1 \
+            https://chromium.googlesource.com/chromium/tools/depot_tools.git \
+            7083aadfb53f3de2e20b72058c7f510da8f8218a
+          git -C "$RUNNER_TEMP/tiplay-depot-tools" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/tiplay-depot-tools" rev-parse HEAD)" = \
+            7083aadfb53f3de2e20b72058c7f510da8f8218a
+      - name: Prepare pinned WebRTC and apply reviewed patches
+        run: |
+          python3 scripts/webrtc/build.py prepare \
+            --work-dir "$RUNNER_TEMP/tiplay-webrtc" \
+            --depot-tools "$RUNNER_TEMP/tiplay-depot-tools"
+          git -C "$RUNNER_TEMP/tiplay-webrtc/src" diff --check
+      - name: Check decoder factory with warnings treated as errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C "$RUNNER_TEMP/tiplay-webrtc/src" show \
+            HEAD:sdk/android/api/org/webrtc/WrappedVideoDecoderFactory.java \
+            > "$RUNNER_TEMP/WrappedVideoDecoderFactory.java"
+          python3 scripts/webrtc/test_compat_javac.py \
+            --pristine "$RUNNER_TEMP/WrappedVideoDecoderFactory.java"
+      - name: Check pinned Siso concurrency flag syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          siso="$RUNNER_TEMP/tiplay-webrtc/src/third_party/siso/cipd/siso"
+          # A help request proves parsing without starting a build. The invalid
+          # compact Ninja form must remain rejected by this exact Siso binary.
+          "$siso" ninja -local_jobs=2 -h > "$RUNNER_TEMP/siso-valid-help" 2>&1 || true
+          grep -q -- '-local_jobs' "$RUNNER_TEMP/siso-valid-help"
+          if grep -q 'flag provided but not defined' "$RUNNER_TEMP/siso-valid-help"; then
+            cat "$RUNNER_TEMP/siso-valid-help" >&2
+            exit 1
+          fi
+          if "$siso" ninja -j2 -h > "$RUNNER_TEMP/siso-invalid-help" 2>&1; then
+            echo 'Unexpected acceptance of unsupported -j2' >&2
+            exit 1
+          fi
+          grep -q 'flag provided but not defined: -j2' "$RUNNER_TEMP/siso-invalid-help"
+      - name: Run focused native source-rate tests
+        run: |
+          python3 scripts/webrtc/build.py test \
+            --work-dir "$RUNNER_TEMP/tiplay-webrtc" \
+            --depot-tools "$RUNNER_TEMP/tiplay-depot-tools"
+      - name: Build custom AAR
+        shell: bash
+        env:
+          SELECTED_ARCHITECTURES: ${{ inputs.architectures }}
+        run: |
+          set -euo pipefail
+          case "$SELECTED_ARCHITECTURES" in
+            all) architectures=(armeabi-v7a arm64-v8a x86 x86_64) ;;
+            arm64-v8a|x86_64) architectures=("$SELECTED_ARCHITECTURES") ;;
+            *) echo 'Unsupported architecture selection' >&2; exit 1 ;;
+          esac
+          python3 scripts/webrtc/build.py build \
+            --work-dir "$RUNNER_TEMP/tiplay-webrtc" \
+            --depot-tools "$RUNNER_TEMP/tiplay-depot-tools" \
+            --arch "${architectures[@]}" \
+            --output "$RUNNER_TEMP/tiplay-webrtc-artifacts/tiplay-source-rate.aar"
+          cd "$RUNNER_TEMP/tiplay-webrtc-artifacts"
+          sha256sum tiplay-source-rate.aar > SHA256SUMS
+          sha256sum --check SHA256SUMS
+      - name: Upload AAR, licenses and provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tiplay-source-rate-${{ inputs.architectures }}
+          path: ${{ runner.temp }}/tiplay-webrtc-artifacts/
+          if-no-files-found: error
+          retention-days: 7

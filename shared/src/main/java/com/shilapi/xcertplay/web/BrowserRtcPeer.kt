@@ -102,6 +102,7 @@ private class AndroidBrowserRtcPeer(
     private var videoCodecOffers = emptyList<BrowserRtcVideoPolicy.Codec>()
     private var previousVideoOffer: String? = null
     private val videoLease = BrowserRtcVideoLease()
+    private val videoTransaction = BrowserRtcVideoTransaction()
     @Volatile private var pendingVideoConfig: WebVideoRecord? = null
     @Volatile private var videoFailure: String? = null
     override val videoTransport: String get() = if (videoTrack != null) BrowserRtcVideoPolicy.TRACK else BrowserRtcVideoPolicy.UNAVAILABLE
@@ -385,14 +386,22 @@ private class AndroidBrowserRtcPeer(
     private fun replaceVideo(fields: Map<*, *>): String {
         val q = fields["q"]
         val next = fields["generation"].exactInt()
+        var replacing = false
         return try {
             check(authenticated && !closed.get()) { "authentication-required" }
             val offer = fields["sdp"] as? String ?: error("invalid-video-offer")
-            check(next != null && pendingVideoConfig != null) { "video-source-unavailable" }
+            val transaction = q.exactInt()?.takeIf { it > 0 } ?: error("video-transaction")
+            check(next != null) { "video-generation" }
+            videoTransaction.replay(transaction, next, offer)?.let { response ->
+                check(videoFailure == null && videoLease.replayAnswered(next)) { "video-generation" }
+                return response
+            }
+            check(pendingVideoConfig != null) { "video-source-unavailable" }
             BrowserRtcVideoPolicy.validateReplacement(requireNotNull(previousVideoOffer), offer)
             val codecs = BrowserRtcVideoPolicy.codecs(offer).filter { offered -> videoCodecOffers.any { it.name == offered.name } }
             check(codecs.isNotEmpty()) { "video-codec-not-negotiated" }
-            videoLease.offer(next)
+            videoLease.offer(next, requireNotNull(pendingVideoConfig).epoch)
+            replacing = true
             val task = lifecycle.submit<String> {
                 check(!closed.get()) { "peer-closed" }
                 val peer = requireNotNull(connection)
@@ -415,11 +424,13 @@ private class AndroidBrowserRtcPeer(
                 WebJson.write(mapOf("q" to q, "k" to "video-answer", "sdp" to answer.description,
                     "generation" to next, "videoTransport" to BrowserRtcVideoPolicy.TRACK))
             }
-            task.get(9, TimeUnit.SECONDS)
+            task.get(9, TimeUnit.SECONDS).also { videoTransaction.save(transaction, next, offer, it) }
         } catch (error: Exception) {
             val reason = error.message?.takeIf { it.startsWith("video-") || it == "invalid-video-offer" } ?: "video-renegotiation-failed"
-            videoFailure = reason
-            videoTrack?.disable(reason)
+            if (replacing) {
+                videoFailure = reason
+                videoTrack?.disable(reason)
+            }
             log("Browser RTC: stage=video-replacement epoch=$epoch reason=$reason failed=true exception=${DiagnosticErrorText.types(error)}")
             WebJson.write(mapOf("q" to q, "k" to "video-answer", "generation" to next, "error" to reason))
         }
@@ -515,7 +526,9 @@ private class AndroidBrowserRtcPeer(
                 val sourceCodec = (WebJson.parse(String(record.payload, Charsets.UTF_8)) as? Map<*, *>)?.get("codec") as? String
                 // The first source can appear after initial signaling. Replace just video once
                 // its real codec is known instead of transcoding or using a DataChannel fallback.
-                if (videoLease.generation == 1 && sourceCodec != null && videoCodecOffers.any { BrowserRtcVideoPolicy.matches(sourceCodec, it) }) {
+                val changedDuringOffer = videoLease.sourceChangedSinceOffer(record.epoch) &&
+                    videoTrack?.failure == "codec-profile-not-negotiated"
+                if ((videoLease.generation == 1 || changedDuringOffer) && sourceCodec != null && videoCodecOffers.any { BrowserRtcVideoPolicy.matches(sourceCodec, it) }) {
                     pauseVideo(record); return true
                 }
                 endVideo(videoTrack?.failure ?: "video-codec-not-negotiated"); return false
@@ -533,7 +546,7 @@ private class AndroidBrowserRtcPeer(
                 reportCodec()
                 reportFlow()
                 videoFailure?.let { endVideo(it); return }
-                if (videoLease.readyTimedOut()) { endVideo("video-ready-timeout"); break }
+                videoLease.readyTimeoutGeneration()?.let { publishVideoError("video-ready-timeout", it) }
                 if (videoLease.ready && configuredGeneration != videoLease.generation) {
                     configuredGeneration = videoLease.generation; replacementAnnounced = false; config = null
                     val pending = pendingVideoConfig

@@ -16,8 +16,7 @@
     <string name="settings_capture_storage_failed">書き込みに失敗しました。記録が不完全な可能性があります。</string>
     <string name="settings_view_logs">ログを表示</string>
     <string name="settings_capture_stop_share">終了して共有</string>
-    <string name="settings_capture_discard">破棄</string>
-    <string name="settings_logs_minimize">最小化</string>
+    <string name="settings_report_share_again">もう一度共有</string>
     <string name="settings_logs_action_failed">操作に失敗しました。再試行してください。</string>
     <string name="settings_report_copy_path">パスをコピー</string>
     <string name="settings_report_open_folder">フォルダーを開く</string>

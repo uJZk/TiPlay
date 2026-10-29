@@ -1,142 +1,219 @@
-name: Build signed TiPlay release APK
+name: Targeted native WebRTC Android proof
 
 on:
   workflow_dispatch:
     inputs:
-      create_draft:
-        description: Create or update a prerelease draft
-        type: boolean
-        required: false
-        default: true
+      native_run_id:
+        description: Successful x86_64 native build run ID
+        required: true
+        type: string
+      native_head_sha:
+        description: Expected immutable native build commit SHA
+        required: true
+        type: string
+      native_aar_sha256:
+        description: Independently recorded SHA-256 of that run's AAR
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: read
 
-concurrency:
-  group: android-release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  android-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      PROOF_RUN_ID: ${{ inputs.native_run_id }}
+      PROOF_HEAD_SHA: ${{ inputs.native_head_sha }}
+      PROOF_AAR_SHA: ${{ inputs.native_aar_sha256 }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Check signing inputs and public source
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check proof workflow job expression contexts
         run: |
-          python3 - <<'PY'
-          import os
-          required = ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']
-          missing = [name for name in required if not os.environ.get(name)]
-          if missing:
-              raise SystemExit('Missing repository signing secrets: ' + ', '.join(missing))
-          PY
-          python3 scripts/check_public_tree.py
-          python3 -m unittest discover -s tests -p 'test_release_draft.py'
-      - uses: actions/setup-java@v4
+          python3 tests/native/test_proof_workflow_contexts.py
+          python3 tests/native/test_synthetic_probe_tail.py
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin
           java-version: '25'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
         with:
-          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358
-      - uses: gradle/actions/setup-gradle@v4
-      - name: Download pinned upstream APK
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 emulator system-images;android-35;google_apis;x86_64
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+      - name: Ensure FFmpeg fixture tools on hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            echo 'FFmpeg or ffprobe is missing; installing ffmpeg on the disposable hosted runner.'
+            sudo apt-get update -qq || { echo 'Failed to update hosted runner package index.' >&2; exit 1; }
+            sudo apt-get install -y --no-install-recommends ffmpeg || { echo 'Failed to install FFmpeg on the hosted runner.' >&2; exit 1; }
+          fi
+          for tool in ffmpeg ffprobe; do
+            if ! command -v "$tool"; then echo "Required fixture tool is unavailable: $tool" >&2; exit 1; fi
+          done
+          ffmpeg -hide_banner -encoders > "$RUNNER_TEMP/tiplay-ffmpeg-encoders.txt" 2>&1
+          if ! grep -Eq '(^|[[:space:]])libx264([[:space:]]|$)' "$RUNNER_TEMP/tiplay-ffmpeg-encoders.txt"; then
+            echo 'Hosted runner FFmpeg lacks the required libx264 encoder.' >&2
+            exit 1
+          fi
+      - name: Validate native run identity and download its artifact
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -m 700 "$RUNNER_TEMP/tiplay-release-inputs"
-          gh release download v0.2.18 --repo shihabal3amri/DiPlay --pattern DiPlay-0.2.18.apk --dir "$RUNNER_TEMP/tiplay-release-inputs"
-      - name: Verify upstream and prepare signing and runtime inputs
-        run: |
-          python3 - <<'PY'
-          import base64
-          import hashlib
-          import os
+          set -euo pipefail
+          [[ "$PROOF_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$PROOF_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PROOF_AAR_SHA" =~ ^[0-9a-f]{64}$ ]]
+          root="$RUNNER_TEMP/tiplay-proof-input"
+          mkdir -p "$root"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PROOF_RUN_ID" > "$root/run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PROOF_RUN_ID/artifacts?per_page=100" > "$root/artifacts.json"
+          gh api "repos/$GITHUB_REPOSITORY/git/commits/$PROOF_HEAD_SHA" > "$root/commit.json"
+          tree_sha=$(python3 - <<'PY'
+          import json, os, re
           from pathlib import Path
-          import zipfile
-          inputs = Path(os.environ['RUNNER_TEMP']) / 'tiplay-release-inputs'
-          apk = inputs / 'DiPlay-0.2.18.apk'
-          expected = 'e241457b36b21fe75b06b5682b4dcfc4fbc25cf75b1855c7a4d055129635ce8e'
-          assert hashlib.sha256(apk.read_bytes()).hexdigest() == expected, 'Upstream APK hash mismatch'
-          assets = inputs / 'runtime-assets' / 'offline-mfi'
-          assets.mkdir(parents=True, mode=0o700)
-          with zipfile.ZipFile(apk) as archive:
-              for name in ['identity.pk8', 'certificate.p7b']:
-                  data = archive.read('assets/offline-mfi/' + name)
-                  assert data, 'Empty runtime asset'
-                  target = assets / name
-                  target.write_bytes(data)
-                  target.chmod(0o600)
-          keystore = inputs / 'release.keystore'
-          keystore.write_bytes(base64.b64decode(os.environ['ANDROID_KEYSTORE_BASE64'], validate=True))
-          keystore.chmod(0o600)
-          with open(os.environ['GITHUB_ENV'], 'a') as env:
-              env.write(f'DIPLAY_AUTH_ASSETS_DIR={inputs / "runtime-assets"}\n')
-              env.write(f'ANDROID_KEYSTORE_PATH={keystore}\n')
+          commit = json.loads((Path(os.environ['RUNNER_TEMP']) / 'tiplay-proof-input/commit.json').read_text())
+          assert commit['sha'] == os.environ['PROOF_HEAD_SHA']
+          tree_sha = commit['tree']['sha']
+          assert re.fullmatch(r'[0-9a-f]{40}', tree_sha)
+          print(tree_sha)
           PY
-      - name: Lint and build signed release
-        run: ./gradlew :mobile:lintRelease :mobile:assembleRelease --stacktrace
-      - name: Verify release APK and prepare artifacts
-        run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs mobile/build/outputs/apk/release/mobile-release.apk
-          python3 - <<'PY'
-          import hashlib
-          import os
+          )
+          gh api "repos/$GITHUB_REPOSITORY/git/trees/$tree_sha?recursive=1" > "$root/tree.json"
+          python3 tests/native/verify_producer_tree.py --tree "$root/tree.json"
+          artifact_id=$(python3 - <<'PY'
+          import json, os
           from pathlib import Path
-          import re
-          import shutil
-          import subprocess
-          import zipfile
-          apk = Path('mobile/build/outputs/apk/release/mobile-release.apk')
-          version = re.search(r'^tiplayVersionName=(.+)$', Path('gradle.properties').read_text(), re.M).group(1)
-          assert re.fullmatch(r'[0-9A-Za-z.-]+', version), 'Invalid version'
-          badging = subprocess.check_output([os.environ['ANDROID_HOME'] + '/build-tools/36.0.0/aapt', 'dump', 'badging', str(apk)], text=True)
-          assert "name='com.ujzk.tiplay'" in badging and f"versionName='{version}'" in badging
-          expected = {'assets/offline-mfi/identity.pk8', 'assets/offline-mfi/certificate.p7b'}
-          suffixes = {'.pk8', '.p7b', '.pem', '.key', '.p12', '.pfx', '.jks', '.keystore'}
-          with zipfile.ZipFile(apk) as archive:
-              assert {name for name in archive.namelist() if Path(name).suffix.lower() in suffixes} == expected
-              for name in expected:
-                  assert archive.read(name) == (Path(os.environ['DIPLAY_AUTH_ASSETS_DIR']) / name.removeprefix('assets/')).read_bytes()
-          output = Path('release-artifacts')
-          output.mkdir()
-          target = output / f'TiPlay-{version}.apk'
-          shutil.copyfile(apk, target)
-          source = output / f'TiPlay-{version}-source.zip'
-          subprocess.run(['git', 'archive', '--format=zip', f'--prefix=TiPlay-{version}/', '-o', str(source), 'HEAD'], check=True)
-          (output / 'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.name + '\n' for path in [target, source]))
+          root = Path(os.environ['RUNNER_TEMP']) / 'tiplay-proof-input'
+          run = json.loads((root / 'run.json').read_text())
+          items = json.loads((root / 'artifacts.json').read_text())['artifacts']
+          assert run['id'] == int(os.environ['PROOF_RUN_ID'])
+          assert run['head_sha'] == os.environ['PROOF_HEAD_SHA']
+          assert run['event'] == 'workflow_dispatch' and run['conclusion'] == 'success'
+          assert run['path'].split('@')[0] == '.github/workflows/android-release.yml'
+          matching = [a for a in items if a['name'] == 'tiplay-source-rate-x86_64' and not a['expired']]
+          assert len(matching) == 1 and isinstance(matching[0]['id'], int)
+          print(matching[0]['id'])
           PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: TiPlay-signed-release
-          path: release-artifacts/
-          if-no-files-found: error
-          retention-days: 14
-      - name: Remove temporary signing and runtime inputs
+          )
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$root/artifact.zip"
+          python3 tests/native/verify_proof_artifact.py \
+            --run "$root/run.json" --artifacts "$root/artifacts.json" --tree "$root/tree.json" --archive "$root/artifact.zip" \
+            --output "$root/validated" --run-id "$PROOF_RUN_ID" --head-sha "$PROOF_HEAD_SHA" \
+            --aar-sha "$PROOF_AAR_SHA" --patch scripts/webrtc/source-rate-video.patch
+      - name: Compile actual product classes and create High fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :shared:compileDebugKotlin --no-daemon --max-workers=1 --no-parallel \
+            --no-configuration-cache -Pkotlin.compiler.execution.strategy=in-process \
+            '-Dorg.gradle.jvmargs=-Xmx1280m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -I gradle/ci-memory.init.gradle
+          fixture="$RUNNER_TEMP/tiplay-high.h264"
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=1568x1080:rate=60 \
+            -frames:v 180 -an -c:v libx264 -profile:v high -level:v 4.2 -pix_fmt yuv420p \
+            -preset veryfast -tune zerolatency -bf 0 \
+            -b:v 10M -minrate 10M -maxrate 10M -bufsize 10M \
+            -x264-params 'aud=1:keyint=60:min-keyint=60:scenecut=0:repeat-headers=1:threads=2:nal-hrd=cbr' \
+            -f h264 "$fixture"
+          python3 tests/native/verify_high_proof_sdp.py --fixture "$fixture"
+          # Negative controls observe branch activation, not high-rate capacity.
+          # Keep genuine High/SPS/dimensions/cadence with a smaller source stream.
+          control_fixture="$RUNNER_TEMP/tiplay-high-control.h264"
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=1568x1080:rate=60 \
+            -frames:v 180 -an -c:v libx264 -profile:v high -level:v 4.2 -pix_fmt yuv420p \
+            -preset veryfast -tune zerolatency -bf 0 \
+            -b:v 200k -minrate 200k -maxrate 200k -bufsize 200k \
+            -x264-params 'aud=1:keyint=60:min-keyint=60:scenecut=0:repeat-headers=1:threads=2:nal-hrd=cbr' \
+            -f h264 "$control_fixture"
+          python3 tests/native/verify_high_proof_sdp.py --fixture "$control_fixture" --max-average-bitrate 300000
+      - name: Start accelerated headless Android emulator
+        shell: bash
+        env:
+          ANDROID_AVD_HOME: ${{ runner.temp }}/tiplay-avd
+        run: |
+          set -euo pipefail
+          if [ ! -c /dev/kvm ]; then echo 'Infrastructure unavailable: /dev/kvm is missing.' >&2; exit 1; fi
+          sudo chmod a+rw /dev/kvm
+          "$ANDROID_HOME/emulator/emulator" -accel-check
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -f -n tiplay-proof \
+            -k 'system-images;android-35;google_apis;x86_64'
+          nohup "$ANDROID_HOME/emulator/emulator" -avd tiplay-proof -no-window -no-audio -no-boot-anim \
+            -no-snapshot -gpu swiftshader_indirect -accel on > "$RUNNER_TEMP/tiplay-emulator.log" 2>&1 &
+          timeout 300 "$ANDROID_HOME/platform-tools/adb" wait-for-device
+          booted=0
+          for attempt in $(seq 1 150); do
+            if [ "$("$ANDROID_HOME/platform-tools/adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then booted=1; break; fi
+            sleep 2
+          done
+          if [ "$booted" != 1 ]; then echo 'Infrastructure unavailable: emulator did not boot.' >&2; exit 1; fi
+          "$ANDROID_HOME/platform-tools/adb" shell input keyevent 82
+      - name: Run custom and stock AAR controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/tiplay-proof"
+          aar="$RUNNER_TEMP/tiplay-proof-input/validated/tiplay-source-rate.aar"
+          fixture="$RUNNER_TEMP/tiplay-high.h264"
+          control_fixture="$RUNNER_TEMP/tiplay-high-control.h264"
+          driver=tests/native/rtc-video-probe.py
+          run_probe() {
+            local log="$1"
+            shift
+            local status=0
+            python3 "$driver" run "$@" || status=$?
+            if [ "$status" -ne 0 ]; then
+              echo 'Synthetic emulator scenario failed; bounded and redacted console tail follows:' >&2
+              python3 tests/native/summarize_synthetic_probe_log.py --root "$root" --log "$log" >&2 || true
+              return "$status"
+            fi
+          }
+          python3 "$driver" build --work-dir "$root/custom" --webrtc-aar "$aar" --abi x86_64 --fixture "$fixture"
+          run_probe "$root/custom/serial-0-0-source-rate.log" --work-dir "$root/custom" --mode serial --frames 180 --source-rate --expect-continuous --expect-native-activation
+          python3 tests/native/verify_high_proof_sdp.py --fixture "$fixture" --result "$root/custom/serial-0-0-source-rate.json"
+          run_probe "$root/custom/bundle-0-0-source-rate.log" --work-dir "$root/custom" --mode bundle --frames 2400 --source-rate --expect-continuous --expect-native-activation
+          python3 tests/native/verify_high_proof_sdp.py --fixture "$fixture" \
+            --result "$root/custom/bundle-0-0-source-rate.json"
+          python3 "$driver" build --work-dir "$root/custom-adaptive" --webrtc-aar "$aar" --abi x86_64 --fixture "$control_fixture"
+          run_probe "$root/custom-adaptive/serial-0-0.log" --work-dir "$root/custom-adaptive" --mode serial --frames 180 --start-bitrate 0 --expect-continuous
+          python3 tests/native/verify_high_proof_sdp.py --fixture "$control_fixture" --max-average-bitrate 300000 \
+            --result "$root/custom-adaptive/serial-0-0.json"
+          python3 "$driver" build --work-dir "$root/stock" --abi x86_64 --fixture "$control_fixture"
+          run_probe "$root/stock/serial-0-0-source-rate.log" --work-dir "$root/stock" --mode serial --frames 180 --source-rate --expect-continuous
+          python3 tests/native/verify_high_proof_sdp.py --fixture "$control_fixture" --max-average-bitrate 300000 \
+            --result "$root/stock/serial-0-0-source-rate.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'tiplay-proof'
+          stock = json.loads((root / 'stock/serial-0-0-source-rate.json').read_text())
+          adaptive = json.loads((root / 'custom-adaptive/serial-0-0.json').read_text())
+          positive = json.loads((root / 'custom/serial-0-0-source-rate.json').read_text())
+          assert adaptive['requestedRateControlMode'] == 'adaptive'
+          assert 'TiPlay-SourceRateVideo/Enabled/' in stock['senderFieldTrials']
+          assert adaptive['build']['webrtcAarSha256'] == positive['build']['webrtcAarSha256']
+          assert adaptive['build']['fixtureSha256'] == stock['build']['fixtureSha256']
+          assert adaptive['build']['fixtureSha256'] != positive['build']['fixtureSha256']
+          for control in (adaptive, stock):
+              assert not control['nativeSourceRateEvents']
+              assert control['nativeStructuralActivation']['verified'] is False
+              assert control['nativeRateControlVerified'] is False
+          PY
+      - name: Upload bounded synthetic probe evidence
         if: always()
-        run: rm -rf "$RUNNER_TEMP/tiplay-release-inputs"
-
-  draft:
-    if: ${{ inputs.create_draft }}
-    needs: release
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: TiPlay-signed-release
-          path: release-artifacts/
-      - name: Create or update draft with APK, source and SHA256
-        run: python3 scripts/publish_release_draft.py
+          name: tiplay-native-emulator-proof
+          path: |
+            ${{ runner.temp }}/tiplay-proof/**/*.json
+            ${{ runner.temp }}/tiplay-proof/**/*.log
+            ${{ runner.temp }}/tiplay-emulator.log
+          if-no-files-found: ignore
+          retention-days: 3

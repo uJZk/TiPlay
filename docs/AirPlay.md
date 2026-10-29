@@ -28,15 +28,24 @@ Android Advanced settings can disable AirPlay immediately or **Reset AirPlay tru
 devices**. Disablement persists without reconnecting CarPlay. Reset removes stored
 and connection-only grants, cancels pending prompts and leaves already-running media,
 CarPlay pairing and browser pairing intact; later authorization requires a fresh choice.
-Always allow stores only a normalized sender-reported `X-Apple-Client-ID` UUID.
-This header is an unauthenticated claim, not proof of device ownership; it is
-not interchangeable with pairing keys, device IDs or per-session DACP IDs.
+Always allow uses a signature-verified pairing public key when available, otherwise a
+normalized sender-reported `X-Apple-Client-ID` UUID. The header is an unauthenticated
+claim, not proof of device ownership. When both appear on the same verified connection,
+an existing remembered Client-ID grant is migrated to the verified key.
 All senders see the same three choices without an
 identity-verification warning or disabled button. A sender providing no valid client
-UUID can receive connection permission but cannot be recognized on a later
-connection. Allow once never persists trust. IP/name is never trust, and approval
+UUID or verified key can receive connection permission but cannot be recognized on a later
+connection. Allow once never persists trust; concurrent connections with the same
+verified key and strong AirPlay session share it while any of them remains active.
+IP/name is never trust, and approval
 cannot displace another active sender. Ordinary AirPlay uses no PIN; browser pairing
 retains its separate code.
+
+A reverse event channel can be staged before media authorization. At most four
+unattached channels remain staged, for at most 60 seconds; attaching approved
+playback cancels that deadline. After playback ends, the channel enters a grace period
+so the queued stopped event can be delivered. If staging is full, another staged
+channel is closed to make room.
 
 ## Nearby Bluetooth discovery
 

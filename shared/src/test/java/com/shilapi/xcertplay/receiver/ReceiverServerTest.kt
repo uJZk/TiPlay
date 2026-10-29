@@ -59,8 +59,10 @@ class ReceiverServerTest {
         receiver.start()
         try {
             connect(receiver.port).use { control ->
+                assertEquals("200", control.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
                 connect(receiver.port).use { reverse ->
+                    assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     reverse.upgradeReverse()
                     for ((protocol, kind) in listOf("HTTP/1.1" to "HTTP", "EVENT/1.0" to "EVENT")) {
                         receiver.playbackEvent("playing")
@@ -90,8 +92,10 @@ class ReceiverServerTest {
         var blocked: BlockedEventOutput? = null
         try {
             connect(receiver.port).use { control ->
+                assertEquals("200", control.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
                 connect(receiver.port).use { reverse ->
+                    assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     reverse.upgradeReverse()
                     val writer = blockReverseOutput(receiver).also { blocked = it }
                     receiver.playbackEvent("playing")
@@ -108,6 +112,7 @@ class ReceiverServerTest {
                     assertEquals(1, listener.stopped)
                     assertEquals("listening", listener.states.last())
                     connect(receiver.port).use { next ->
+                        assertEquals("200", next.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                         assertEquals(200, next.status("POST", "/play", "Content-Location: https://example.org/next.mp4\r\n".toByteArray()))
                     }
                     writer.release.countDown()
@@ -128,9 +133,11 @@ class ReceiverServerTest {
         val blocked = mutableListOf<BlockedEventOutput>()
         try {
             connect(receiver.port).use { control ->
+                assertEquals("200", control.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 val play = "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()
                 assertEquals(200, control.status("POST", "/play", play))
                 connect(receiver.port).use { oldReverse ->
+                    assertEquals("200", oldReverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     oldReverse.upgradeReverse()
                     val oldWriter = blockReverseOutput(receiver).also { blocked.add(it) }
                     receiver.playbackEvent("playing")
@@ -139,6 +146,7 @@ class ReceiverServerTest {
                         .get(500, TimeUnit.MILLISECONDS).toInt())
                     assertEquals(200, control.status("POST", "/play", play))
                     connect(receiver.port).use { replacement ->
+                        assertEquals("200", replacement.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                         replacement.upgradeReverse()
                         oldWriter.release.countDown()
                         receiver.playbackEvent("playing")
@@ -167,9 +175,10 @@ class ReceiverServerTest {
         override fun photo(bytes: ByteArray) { images.add(bytes) }
         override fun authorizeDevice(verifiedPublicKey: ByteArray?, deviceName: String) = true
         override fun authorizeConnection(sessionToken: String, deviceName: String): Boolean {
-            authorizationTokens.add(sessionToken); return true
+            authorizationTokens.add(sessionToken); authorizationNames.add(deviceName); return true
         }
         val authorizationTokens = CopyOnWriteArrayList<String>()
+        val authorizationNames = CopyOnWriteArrayList<String>()
         val hub = WebVideoHub()
         val items = CopyOnWriteArrayList<ReceiverPlay>()
         val states = CopyOnWriteArrayList<String>()
@@ -205,6 +214,265 @@ class ReceiverServerTest {
     private fun Socket.status(method: String, path: String, body: ByteArray = ByteArray(0), id: String = "11223344556677889900aabbccddeeff") = send(method, path, body, id).path.toInt()
     private fun connect(port: Int) = Socket(InetAddress.getLoopbackAddress(), port).apply { soTimeout = 5000 }
 
+    @Test fun reverseWaitsForTypedVideoApprovalBeforeAttachingEvents() {
+        val listener = Listener()
+        val types = CopyOnWriteArrayList<String>()
+        val guarded = object : ReceiverServer.Listener by listener {
+            override fun authorizeDevice(sessionToken: String, identity: ByteArray, fallbackIdentity: ByteArray?, deviceName: String, mediaType: String, verifiedSessionId: String?): Boolean {
+                types.add(mediaType)
+                return true
+            }
+        }
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), guarded)
+        receiver.start()
+        val identityHeader = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n"
+        try {
+            connect(receiver.port).use { reverse ->
+                assertEquals("101", reverse.send("POST", "/reverse", extraHeaders = identityHeader + "Upgrade: PTTH/1.0\r\n").path)
+                assertTrue(types.isEmpty())
+                connect(receiver.port).use { control ->
+                    assertEquals("200", control.send("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray(), extraHeaders = identityHeader).path)
+                    assertEquals(listOf("video"), types)
+                    receiver.playbackEvent("playing")
+                    assertNotNull(readReceiverRequest(reverse.getInputStream()))
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun anonymousReverseIsStagedWithoutPromptAndCannotAttachToAnotherSocket() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { reverse ->
+                assertEquals("101", reverse.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+                assertTrue(listener.authorizationTokens.isEmpty())
+                assertTrue(listener.items.isEmpty())
+                connect(receiver.port).use { control ->
+                    assertEquals("200", control.send("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()).path)
+                    receiver.playbackEvent("playing")
+                    reverse.soTimeout = 100
+                    assertThrows(java.net.SocketTimeoutException::class.java) { readReceiverRequest(reverse.getInputStream()) }
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun anonymousReverseCanAttachToApprovedPlaybackOnTheSameSocket() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { socket ->
+                assertEquals("101", socket.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+                assertTrue(listener.authorizationTokens.isEmpty())
+                assertEquals("200", socket.send("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()).path)
+                assertEquals(1, listener.authorizationTokens.size)
+                receiver.playbackEvent("playing")
+                assertNotNull(readReceiverRequest(socket.getInputStream()))
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun stagedAnonymousReverseExpiresAndCannotFillAllControlSlots() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.reverseStagingTimeoutMillis = 500
+        receiver.start()
+        val sockets = mutableListOf<Socket>()
+        try {
+            repeat(4) {
+                val socket = connect(receiver.port).also(sockets::add)
+                assertEquals("101", socket.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+            }
+            connect(receiver.port).use { fifth ->
+                assertEquals("453", fifth.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+            }
+            sockets.forEach { assertNull(readReceiverRequest(it.getInputStream())) }
+            connect(receiver.port).use { later ->
+                assertEquals("101", later.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+            }
+        } finally { sockets.forEach { it.close() }; receiver.close() }
+    }
+
+    @Test fun attachedReverseSurvivesTheOriginalStagingDeadline() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.reverseStagingTimeoutMillis = 500
+        receiver.start()
+        try {
+            connect(receiver.port).use { socket ->
+                assertEquals("101", socket.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+                assertEquals("200", socket.send("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()).path)
+                Thread.sleep(800)
+                assertEquals("200", socket.send("GET", "/playback-info").path)
+                receiver.playbackEvent("playing")
+                assertNotNull(readReceiverRequest(socket.getInputStream()))
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun stoppedEventDrainsBeforeAttachedReverseExpires() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.reverseStagingTimeoutMillis = 500
+        receiver.start()
+        try {
+            connect(receiver.port).use { socket ->
+                assertEquals("101", socket.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+                assertEquals("200", socket.send("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()).path)
+                receiver.finishPlayback()
+                val event = requireNotNull(readReceiverRequest(socket.getInputStream()))
+                assertTrue(event.body.toString(Charsets.UTF_8).contains("<string>stopped</string>"))
+                assertNull(readReceiverRequest(socket.getInputStream()))
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun repeatingReverseReplacesItsDeadline() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.reverseStagingTimeoutMillis = 1200
+        receiver.start()
+        try {
+            connect(receiver.port).use { socket ->
+                val headers = "Upgrade: PTTH/1.0\r\n"
+                assertEquals("101", socket.send("POST", "/reverse", extraHeaders = headers).path)
+                Thread.sleep(700)
+                assertEquals("101", socket.send("POST", "/reverse", extraHeaders = headers).path)
+                Thread.sleep(700)
+                assertEquals("200", socket.send("GET", "/info").path)
+                assertNull(readReceiverRequest(socket.getInputStream()))
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun rejectedReverseUpgradeKeepsOriginalChannelAndCleansItOnClose() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        val sockets = mutableListOf<Socket>()
+        val reverseField = ReceiverServer::class.java.getDeclaredField("reverse").apply { isAccessible = true }
+        try {
+            repeat(4) {
+                val socket = connect(receiver.port).also(sockets::add)
+                assertEquals("101", socket.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+            }
+            val original = sockets.first()
+            assertEquals("453", original.send("POST", "/reverse", id = "11223344556677889900aabbccddeefa", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+            original.getOutputStream().write("EVENT/1.0 200 OK\r\nContent-Length: 0\r\n\r\n".toByteArray())
+            original.soTimeout = 100
+            assertThrows(java.net.SocketTimeoutException::class.java) { readReceiverRequest(original.getInputStream()) }
+            original.close()
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+            while ((reverseField.get(receiver) as Map<*, *>).size != 3 && System.nanoTime() < deadline) Thread.yield()
+            assertEquals(3, (reverseField.get(receiver) as Map<*, *>).size)
+        } finally { sockets.forEach { it.close() }; receiver.close() }
+    }
+
+    @Test fun stoppingAttachedReverseKeepsStagingWithinFourConnections() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        val sockets = mutableListOf<Socket>()
+        try {
+            repeat(4) {
+                val socket = connect(receiver.port).also(sockets::add)
+                assertEquals("101", socket.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+            }
+            // This channel is already attached to approved playback, so it does not occupy a staging slot.
+            connect(receiver.port).use { control ->
+                assertEquals("200", control.send("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()).path)
+                assertEquals("101", control.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+                receiver.finishPlayback()
+                assertTrue(requireNotNull(readReceiverRequest(control.getInputStream())).body.toString(Charsets.UTF_8).contains("<string>stopped</string>"))
+                connect(receiver.port).use { fifth ->
+                    assertEquals("453", fifth.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+                }
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+                while (sockets.none { socket -> runCatching { socket.soTimeout = 20; readReceiverRequest(socket.getInputStream()) == null }.getOrDefault(false) } && System.nanoTime() < deadline) Thread.yield()
+                assertTrue("one previously staged channel was retired", sockets.any { socket -> runCatching { socket.soTimeout = 20; readReceiverRequest(socket.getInputStream()) == null }.getOrDefault(false) })
+            }
+        } finally { sockets.forEach { it.close() }; receiver.close() }
+    }
+
+    @Test fun replacingReverseDoesNotLetTheOldSocketEndPlayback() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        val header = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n"
+        try {
+            connect(receiver.port).use { control ->
+                assertEquals("200", control.send("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray(), extraHeaders = header).path)
+                connect(receiver.port).use { old ->
+                    assertEquals("101", old.send("POST", "/reverse", extraHeaders = header + "Upgrade: PTTH/1.0\r\n").path)
+                    connect(receiver.port).use { replacement ->
+                        assertEquals("101", replacement.send("POST", "/reverse", extraHeaders = header + "Upgrade: PTTH/1.0\r\n").path)
+                        assertNull(readReceiverRequest(old.getInputStream()))
+                        receiver.playbackEvent("playing")
+                        assertNotNull(readReceiverRequest(replacement.getInputStream()))
+                        assertEquals("200", control.send("GET", "/playback-info").path)
+                        assertEquals(0, listener.stopped)
+                    }
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun verifiedKeyJoinsReverseWithClientIdAndPlayWithoutClientId() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        val signing = AirPlayCrypto.ed25519Generate()
+        try {
+            connect(receiver.port).use { reverse ->
+                reverse.verifyIdentity(signing)
+                assertEquals("101", reverse.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\nX-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
+                connect(receiver.port).use { control ->
+                    control.verifyIdentity(signing)
+                    assertEquals("200", control.send("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()).path)
+                    receiver.playbackEvent("playing")
+                    assertNotNull(readReceiverRequest(reverse.getInputStream()))
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun differentVerifiedKeysWithSameClientIdCannotReplaceReverseChannel() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        val owner = AirPlayCrypto.ed25519Generate()
+        val other = AirPlayCrypto.ed25519Generate()
+        val header = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n"
+        try {
+            connect(receiver.port).use { reverse ->
+                reverse.verifyIdentity(owner)
+                assertEquals("101", reverse.send("POST", "/reverse", extraHeaders = header + "Upgrade: PTTH/1.0\r\n").path)
+                connect(receiver.port).use { foreign ->
+                    foreign.verifyIdentity(other)
+                    assertEquals("101", foreign.send("POST", "/reverse", extraHeaders = header + "Upgrade: PTTH/1.0\r\n").path)
+                    connect(receiver.port).use { control ->
+                        control.verifyIdentity(owner)
+                        assertEquals("200", control.send("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray(), extraHeaders = header).path)
+                        receiver.playbackEvent("playing")
+                        assertNotNull(readReceiverRequest(reverse.getInputStream()))
+                        foreign.soTimeout = 100
+                        assertThrows(java.net.SocketTimeoutException::class.java) { readReceiverRequest(foreign.getInputStream()) }
+                    }
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun earlierUtf8DeviceNameIsShownOnlyForTheSameConnection() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { first ->
+                assertEquals("200", first.send("GET", "/info", extraHeaders = "X-Apple-Client-Name: Alex’s Phone\r\n").path)
+                first.send("POST", "/play", "Content-Location: https://example.org/one.mp4\r\n".toByteArray())
+                assertEquals("Alex’s Phone", listener.authorizationNames.single())
+                connect(receiver.port).use { second -> second.send("POST", "/play", "Content-Location: https://example.org/two.mp4\r\n".toByteArray()) }
+                assertEquals(listOf("Alex’s Phone", "AirPlay"), listener.authorizationNames.toList())
+            }
+        } finally { receiver.close() }
+    }
+
     @Test fun clientIdOnEarlierRequestIsAvailableAtAuthorizationWithoutLoggingTheId() {
         val listener = Listener()
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
@@ -221,7 +489,7 @@ class ReceiverServerTest {
         } finally { receiver.close() }
     }
 
-    @Test fun absentClientIdNeverUsesSessionOrPairingAsAnApproval() {
+    @Test fun absentStableIdentityNeverUsesSessionOrDacpAsAnApproval() {
         val listener = Listener()
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
         receiver.start()
@@ -229,8 +497,9 @@ class ReceiverServerTest {
             connect(receiver.port).use { first ->
                 connect(receiver.port).use { second ->
                     val session = "11223344556677889900aabbccddeeff"
-                    first.send("POST", "/stop", id = session, extraHeaders = "DACP-ID: 1234567890abcdef\r\n")
-                    second.send("POST", "/stop", id = session, extraHeaders = "DACP-ID: 1234567890abcdef\r\n")
+                    val video = "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()
+                    first.send("POST", "/play", video, id = session, extraHeaders = "DACP-ID: 1234567890abcdef\r\n")
+                    second.send("POST", "/play", video, id = session, extraHeaders = "DACP-ID: 1234567890abcdef\r\n")
                     assertEquals(2, listener.authorizationTokens.size)
                     assertNotEquals(listener.authorizationTokens[0], listener.authorizationTokens[1])
                 }
@@ -258,6 +527,7 @@ class ReceiverServerTest {
                 (ReceiverServer::class.java.getDeclaredField("approvedSessions").apply { isAccessible = true }
                     .get(receiver) as MutableMap<*, *>).clear()
                 connect(receiver.port).use { reverse ->
+                    assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     reverse.upgradeReverse()
                     val future = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(url) }
                     val xml = readReceiverRequest(reverse.getInputStream())!!.body.toString(Charsets.UTF_8)
@@ -269,7 +539,7 @@ class ReceiverServerTest {
                         "FCUP_Response_Data" to bytes, "FCUP_Response_StatusCode" to 200)))
                     connect(receiver.port).use { action -> assertEquals(200, action.status("POST", "/action", answer)) }
                     assertArrayEquals(bytes, future.get(2, TimeUnit.SECONDS)!!.bytes)
-                    assertEquals(1, listener.authorizationTokens.size) // reverse requested a separate grant
+                    assertEquals(0, listener.authorizationTokens.size) // reverse does not request generic consent
                 }
             }
         } finally { receiver.close() }
@@ -281,6 +551,7 @@ class ReceiverServerTest {
         receiver.start()
         try {
             connect(receiver.port).use { reverse ->
+                assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 reverse.upgradeReverse()
                 connect(receiver.port).use { control ->
                     val url = "mlhls://app/master.m3u8"
@@ -299,7 +570,7 @@ class ReceiverServerTest {
                             "FCUP_Response_Data" to bytes, "FCUP_Response_StatusCode" to 200)))
                         connect(receiver.port).use { action -> assertEquals(200, action.status("POST", "/action", answer)) }
                         assertArrayEquals(bytes, future.get(2, TimeUnit.SECONDS)!!.bytes)
-                        assertEquals(1, listener.authorizationTokens.size)
+                        assertEquals(0, listener.authorizationTokens.size)
                     }
                 }
             }
@@ -402,10 +673,12 @@ class ReceiverServerTest {
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
         receiver.start()
         try {
+            val signing = AirPlayCrypto.ed25519Generate()
             connect(receiver.port).use { control ->
-                control.verifyIdentity()
+                control.verifyIdentity(signing)
                 assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
                 connect(receiver.port).use { approved ->
+                    approved.verifyIdentity(signing)
                     approved.upgradeReverse()
                     Socket(InetAddress.getByName("127.0.0.1"), receiver.port, InetAddress.getByName("127.0.0.2"), 0).use { foreign ->
                         foreign.soTimeout = 5000
@@ -429,9 +702,8 @@ class ReceiverServerTest {
         } finally { receiver.close() }
     }
 
-    private fun Socket.verifyIdentity() {
+    private fun Socket.verifyIdentity(signing: AirPlayCrypto.Ed25519KeyPair = AirPlayCrypto.ed25519Generate()) {
         val curve = AirPlayCrypto.x25519Generate()
-        val signing = AirPlayCrypto.ed25519Generate()
         val reply = send("POST", "/pair-verify", byteArrayOf(1, 0, 0, 0) + curve.publicKey + signing.publicKey).body
         val serverCurve = reply.copyOf(32)
         val secret = AirPlayCrypto.x25519Shared(curve.privateKey, serverCurve)
@@ -448,8 +720,11 @@ class ReceiverServerTest {
         try {
             Socket(InetAddress.getByName("127.0.0.1"), receiver.port, InetAddress.getByName("127.0.0.2"), 0).use { foreign ->
                 foreign.soTimeout = 5000
+                val identity = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n"
+                assertEquals("200", foreign.send("GET", "/info", extraHeaders = identity).path)
                 foreign.upgradeReverse()
                 connect(receiver.port).use { control ->
+                    assertEquals("200", control.send("GET", "/info", extraHeaders = identity).path)
                     assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
                     receiver.playbackEvent("playing")
                     assertNull(receiver.loadResource("mlhls://private/secret.m3u8"))
@@ -457,6 +732,7 @@ class ReceiverServerTest {
                     assertThrows(java.net.SocketTimeoutException::class.java) { readReceiverRequest(foreign.getInputStream()) }
                     // The owner's approved session can install its own replacement channel.
                     connect(receiver.port).use { approved ->
+                        assertEquals("200", approved.send("GET", "/info", extraHeaders = identity).path)
                         approved.upgradeReverse()
                         receiver.playbackEvent("playing")
                         assertTrue(readReceiverRequest(approved.getInputStream())!!.body.toString(Charsets.UTF_8).contains("<string>playing</string>"))
@@ -472,7 +748,7 @@ class ReceiverServerTest {
         receiver.start()
         try {
             connect(receiver.port).use { reverse ->
-                assertEquals("101", reverse.send("POST", "/reverse", id = "default", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+                assertEquals("403", reverse.send("POST", "/reverse", id = "default", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
                 connect(receiver.port).use { control ->
                     assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray(), id = "default"))
                     receiver.playbackEvent("playing")
@@ -487,7 +763,7 @@ class ReceiverServerTest {
         } finally { receiver.close() }
     }
 
-    @Test fun unapprovedLegacyConnectionsCannotOwnMediaOrInstallAReverseChannel() {
+    @Test fun unapprovedLegacyConnectionsCannotOwnMedia() {
         val listener = Listener()
         val guarded = object : ReceiverServer.Listener by listener {
             override fun authorizeDevice(verifiedPublicKey: ByteArray?, deviceName: String) = false
@@ -511,7 +787,7 @@ class ReceiverServerTest {
                 assertEquals(0, listener.prepared)
                 assertEquals(403, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
                 assertEquals(403, control.status("PUT", "/photo", byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xd9.toByte())))
-                assertEquals("403", control.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
+                assertEquals("101", control.send("POST", "/reverse", extraHeaders = "Upgrade: PTTH/1.0\r\n").path)
                 assertTrue(listener.items.isEmpty())
                 assertTrue(listener.images.isEmpty())
             }
@@ -523,8 +799,10 @@ class ReceiverServerTest {
         receiver.start()
         try {
             connect(receiver.port).use { reverse ->
+                assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 reverse.upgradeReverse()
                 connect(receiver.port).use { control ->
+                    assertEquals("200", control.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     assertEquals(200, control.status("PUT", "/photo", byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xd9.toByte())))
                     val event = readReceiverRequest(reverse.getInputStream())!!
                     assertTrue(event.body.toString(Charsets.UTF_8).contains("<key>category</key><string>photo</string>"))
@@ -616,7 +894,9 @@ class ReceiverServerTest {
         receiver.start()
         try {
             connect(receiver.port).use { control ->
+                assertEquals("200", control.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 connect(receiver.port).use { reverse ->
+                    assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     reverse.upgradeReverse()
                     val url = "minibili://test/master.m3u8"
                     val play = java.util.concurrent.CompletableFuture.supplyAsync {
@@ -843,6 +1123,7 @@ class ReceiverServerTest {
         receiver.start()
         try {
             connect(receiver.port).use { control ->
+                assertEquals("200", control.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 assertEquals(200, control.status("GET", "/info"))
                 assertTrue(listener.logs.any { it.contains("method=GET path=/info bodyBytes=0") })
                 assertEquals(404, control.status("GET", "/unknown"))
@@ -864,6 +1145,7 @@ class ReceiverServerTest {
                 assertTrue(listener.logs.any { it.contains("exception=IllegalArgumentException") })
                 assertFalse(listener.logs.any { it.contains("example.org") || it.contains("value=NaN") })
                 connect(receiver.port).use { reverse ->
+                    assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     reverse.getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: 11223344556677889900aabbccddeeff\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
                     assertEquals("101", readReceiverRequest(reverse.getInputStream())!!.path)
                     receiver.playbackEvent("playing")
@@ -893,11 +1175,16 @@ class ReceiverServerTest {
             receiver.start()
             try {
                 connect(receiver.port).use { control ->
+                    val identity = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n"
+                    assertEquals("200", control.send("GET", "/info", extraHeaders = identity).path)
                     assertEquals(200, control.status("POST", "/play",
                         "Content-Location: https://private-host/movie.mp4?token=secret\r\nStart-Position-Seconds: 12.5\r\n".toByteArray()))
                     when (reason) {
                         ReceiverServer.PlaybackFinishReason.REVERSE_CLOSE -> {
-                            connect(receiver.port).use { it.upgradeReverse() }
+                            connect(receiver.port).use {
+                                assertEquals("200", it.send("GET", "/info", extraHeaders = identity).path)
+                                it.upgradeReverse()
+                            }
                             assertTrue(listener.ended.await(1, TimeUnit.SECONDS))
                         }
                         ReceiverServer.PlaybackFinishReason.SHUTDOWN -> receiver.close()
@@ -1218,8 +1505,10 @@ class ReceiverServerTest {
         receiver.start()
         try {
             connect(receiver.port).use { control ->
+                assertEquals("200", control.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 assertEquals(200, control.status("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to "mlhls://app/master.m3u8"))))
                 connect(receiver.port).use { reverse ->
+                    assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     reverse.upgradeReverse()
                     val url = "https://example.test/video.m4s?nbs=1&upsig=fake%2fSignature&uparams=nbs"
                     assertNull(receiver.loadResource(url, "bytes=1-2\r\nCookie: secret"))
@@ -1251,8 +1540,10 @@ class ReceiverServerTest {
         receiver.start()
         try {
             connect(receiver.port).use { control ->
+                assertEquals("200", control.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 assertEquals(200, control.status("POST", "/play", "Content-Location: mlhls://app/old.m3u8\r\n".toByteArray()))
                 connect(receiver.port).use { reverse ->
+                    assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     reverse.upgradeReverse()
                     val oldLoader = receiver.resourceLoader()
                     val oldLoad = java.util.concurrent.CompletableFuture.supplyAsync { oldLoader("mlhls://app/old.ts", null) }
@@ -1287,8 +1578,10 @@ class ReceiverServerTest {
         receiver.start()
         try {
             connect(receiver.port).use { control ->
+                assertEquals("200", control.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 assertEquals(200, control.status("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to "mlhls://app/master.m3u8"))))
                 connect(receiver.port).use { reverse ->
+                    assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     reverse.upgradeReverse()
                     val cdn = "upos-sz-estgoss.bilivideo.com"
                     for (host in listOf(cdn, "example.test", "bilivideo.com.example.test")) {
@@ -1329,8 +1622,10 @@ class ReceiverServerTest {
         receiver.start()
         try {
             connect(receiver.port).use { control ->
+                assertEquals("200", control.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 assertEquals(200, control.status("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to "mlhls://app/master.m3u8"))))
                 connect(receiver.port).use { reverse ->
+                    assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     reverse.upgradeReverse()
                     val urls = listOf("mlhls://app/video.m3u8", "mlhls://app/audio.m3u8")
                     val first = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(urls[0]) }
@@ -1372,9 +1667,11 @@ class ReceiverServerTest {
         receiver.start()
         try {
             connect(receiver.port).use { control ->
+                assertEquals("200", control.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 val url = "mlhls://app/master.m3u8"
                 assertEquals(200, control.status("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to url))))
                 connect(receiver.port).use { reverse ->
+                    assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     reverse.getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: 11223344556677889900aabbccddeeff\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
                     assertEquals("101", readReceiverRequest(reverse.getInputStream())!!.path)
                     val interrupted = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -1413,9 +1710,11 @@ class ReceiverServerTest {
         receiver.start()
         try {
             connect(receiver.port).use { control ->
+                assertEquals("200", control.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                 val url = "mlhls://app/master.m3u8"
                 assertEquals(200, control.status("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to url))))
                 connect(receiver.port).use { reverse ->
+                    assertEquals("200", reverse.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
                     reverse.getOutputStream().write("POST /reverse HTTP/1.1\r\nX-Apple-Session-ID: 11223344556677889900aabbccddeeff\r\nUpgrade: PTTH/1.0\r\nContent-Length: 0\r\n\r\n".toByteArray())
                     assertEquals("101", readReceiverRequest(reverse.getInputStream())!!.path)
                     val future = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(url) }

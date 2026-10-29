@@ -122,6 +122,11 @@ class AirPlayReceiverService : Service() {
                     override fun log(message: String) = logDiagnostic(message)
                     override fun authorizeDevice(sessionToken: String, verifiedPublicKey: ByteArray?, deviceName: String, mediaType: String): Boolean =
                         !destroyed && deviceTrust.authorizeSession(sessionToken, verifiedPublicKey, deviceName, mediaType)
+                    override fun authorizeDevice(sessionToken: String, identity: ByteArray, fallbackIdentity: ByteArray?, deviceName: String, mediaType: String): Boolean =
+                        !destroyed && deviceTrust.authorizeSession(sessionToken, identity, deviceName, mediaType, fallbackIdentity)
+                    override fun authorizeDevice(sessionToken: String, identity: ByteArray, fallbackIdentity: ByteArray?, deviceName: String,
+                                                 mediaType: String, verifiedSessionId: String?): Boolean =
+                        !destroyed && deviceTrust.authorizeSession(sessionToken, identity, deviceName, mediaType, fallbackIdentity, verifiedSessionId)
                     override fun authorizeConnection(sessionToken: String, deviceName: String, mediaType: String): Boolean =
                         !destroyed && deviceTrust.authorizeSession(sessionToken, null, deviceName, mediaType)
                     override fun onAuthorizationSessionEnded(sessionToken: String) = deviceTrust.endSession(sessionToken)

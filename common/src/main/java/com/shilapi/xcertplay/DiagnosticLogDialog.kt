@@ -6,14 +6,18 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.TextView
 import android.widget.LinearLayout
+import android.widget.Button
 import com.shilapi.xcertplay.diagnostics.RawTraffic
 import com.shilapi.xcertplay.host.R
 
-/** Minimizing only dismisses this window; all ending actions own capture cleanup. */
+/** Closing the window leaves any unfinished capture intact. */
 internal class DiagnosticLogDialog(
     private val activity: Activity,
     private val changed: () -> Unit = {},
     private val perform: (DiagnosticLogAction) -> Unit = { DiagnosticLogActions.perform(activity, it, changed) },
+    private val prepareShare: (DiagnosticLogAction, (Result<DiagnosticExportStore.SavedReport?>) -> Unit) -> Unit =
+        { action, completed -> DiagnosticLogActions.perform(activity, action, changed, completed) },
+    private val shareAgain: (DiagnosticExportStore.SavedReport) -> Unit = { BrowserDiagnosticResultUi.share(activity, it) },
 ) {
     companion object {
         private var restartPromptClaimed = false
@@ -27,6 +31,9 @@ internal class DiagnosticLogDialog(
     private var dialog: AlertDialog? = null
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var status: TextView
+    private var sharedReport: DiagnosticExportStore.SavedReport? = null
+    private var preparingShare = false
+    private var dialogEpoch = 0L
     private val update = object : Runnable {
         override fun run() {
             if (dialog?.isShowing != true || activity.isDestroyed) return
@@ -40,6 +47,9 @@ internal class DiagnosticLogDialog(
     }
     fun show() {
         if (activity.isFinishing || activity.isDestroyed || dialog?.isShowing == true || DiagnosticLogActions.busy) return
+        val epoch = ++dialogEpoch
+        sharedReport = null
+        preparingShare = false
         val debug = AirPlayPersistence.loadDiagnosticLogLevel(activity) == DiagnosticLogLevel.DEBUG
         if (debug) restartPromptClaimed = true
         val ui = TiPlayNativeUi(activity)
@@ -58,8 +68,7 @@ internal class DiagnosticLogDialog(
         val actions = if (debug) listOf(
             R.string.settings_capture_stop_export to DiagnosticLogAction.STOP_EXPORT,
             R.string.settings_capture_stop_share to DiagnosticLogAction.STOP_SHARE,
-            R.string.settings_capture_discard to DiagnosticLogAction.STOP,
-            R.string.settings_logs_minimize to null,
+            R.string.close to null,
         ) else listOf(
             R.string.save to DiagnosticLogAction.SAVE,
             R.string.share to DiagnosticLogAction.SHARE,
@@ -67,8 +76,35 @@ internal class DiagnosticLogDialog(
         )
         dialog = DiagnosticDialogUi.show(activity, R.string.settings_view_logs, content,
             actions.map { (title, selected) ->
-                DiagnosticDialogUi.Action(title) { selected?.let(perform); true }
-            }, onDismiss = { handler.removeCallbacks(update) })
+                DiagnosticDialogUi.Action(title) {
+                    when {
+                        selected == null -> true
+                        selected.shares -> {
+                            val saved = sharedReport
+                            if (saved != null) shareAgain(saved)
+                            else if (!preparingShare && !DiagnosticLogActions.busy) {
+                                preparingShare = true
+                                prepareShare(selected) { result ->
+                                    if (dialogEpoch == epoch) preparingShare = false
+                                    result.getOrNull()?.takeIf { dialogEpoch == epoch }?.let { report ->
+                                        sharedReport = report
+                                        if (dialog?.isShowing == true) {
+                                            handler.removeCallbacks(update)
+                                            status.setText(R.string.diagnostic_report_saved)
+                                            dialog?.window?.decorView?.findViewWithTag<Button>(title)
+                                                ?.setText(R.string.settings_report_share_again)
+                                            if (debug) dialog?.window?.decorView
+                                                ?.findViewWithTag<Button>(R.string.settings_capture_stop_export)?.isEnabled = false
+                                        }
+                                    }
+                                }
+                            }
+                            false
+                        }
+                        else -> { perform(selected); true }
+                    }
+                }
+            }, onDismiss = { dialogEpoch++; handler.removeCallbacks(update) })
         if (debug) handler.post(update)
     }
     fun close() { dialog?.dismiss(); dialog = null; handler.removeCallbacks(update) }

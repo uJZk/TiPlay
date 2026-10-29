@@ -48,6 +48,7 @@ class BrowserMainPageTest {
         activity.getSharedPreferences("tiplay_browser_network", 0).edit().clear().commit()
         activity.getSharedPreferences("tiplay_hotspot_address", 0).edit().clear().commit()
         activity.getSharedPreferences("tiplay_browser_audio", 0).edit().clear().commit()
+        activity.getSharedPreferences("tiplay_car_bluetooth", 0).edit().clear().commit()
         AirPlayPersistence.saveWirelessHotspotMode(activity, WirelessHotspotMode.MANUAL)
         AirPlayPersistence.saveManualHotspotSsid(activity, "Phone hotspot")
         AirPlayPersistence.saveManualHotspotPassphrase(activity, "password1")
@@ -69,8 +70,26 @@ class BrowserMainPageTest {
         assertEquals(activity.getString(R.string.settings_hint_iphone_car_audio), hint.text.toString())
         BrowserCarPlayAudioSettings.saveDisabled(activity, false)
         page.refresh()
-        assertEquals(activity.getString(R.string.settings_hint_car_bluetooth_disconnected),
+        assertEquals(activity.getString(R.string.settings_car_bluetooth_not_selected),
             page.view.findViewWithTag<TextView>("connection_hint:car-bluetooth").text.toString())
+    }
+
+    @Test fun carBluetoothFollowsIphoneAndHidesWhenForwardingDisabled() {
+        val phone = page.view.findViewWithTag<Button>("iphone_bluetooth_button")
+        val car = page.view.findViewWithTag<Button>("car_bluetooth_button")
+        val parent = phone.parent as ViewGroup
+        assertEquals(parent.indexOfChild(phone) + 1, parent.indexOfChild(car))
+        assertEquals(View.VISIBLE, car.visibility)
+        CarBluetoothPreference.save(activity, "AA:BB:CC:DD:EE:FF", "Car")
+        page.refresh()
+        assertTrue(car.text.contains("Car"))
+        BrowserCarPlayAudioSettings.saveDisabled(activity, true)
+        page.refresh()
+        assertEquals(View.GONE, car.visibility)
+        assertEquals("AA:BB:CC:DD:EE:FF", CarBluetoothPreference.address(activity))
+        BrowserCarPlayAudioSettings.saveDisabled(activity, false)
+        page.refresh()
+        assertEquals(View.VISIBLE, car.visibility)
     }
 
     @Test fun castingPrioritizesAirPlayAndDefersOnlyTheBackgroundCarPlayFailure() {
