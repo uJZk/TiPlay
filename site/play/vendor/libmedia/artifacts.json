@@ -56,13 +56,13 @@
     },
     {
       "path": "261.avplayer.js",
-      "bytes": 30185,
-      "sha256": "bbe425d7922967cae095f54538a26de3dc542512cbb2800380baacb5f00fe772"
+      "bytes": 30140,
+      "sha256": "59be3fd4484dab1299aecd75fbbd9ee979e9f3fcf05c662b53ceecd39cf6cdf5"
     },
     {
       "path": "272.avplayer.js",
-      "bytes": 72207,
-      "sha256": "7d23388961486e5ecc3b95bcbe63c86120650fb8f3010f30240e278c18905e83"
+      "bytes": 72057,
+      "sha256": "b4416099623f5f3ee27758adc26c25ebf43846d69042daa1b08f7a4f2be51347"
     },
     {
       "path": "325.avplayer.js",
@@ -176,8 +176,8 @@
     },
     {
       "path": "upstream.js",
-      "bytes": 626298,
-      "sha256": "200304514d49d157b8c7df1a63030c54fae2074d9b18efd1caefec73db2747b0"
+      "bytes": 625886,
+      "sha256": "470d5102af518000c4dd48a02920fd25d9ee1bcf13d6781974b6abf9e45b9f8e"
     },
     {
       "path": "AudioSourceWorkletProcessorWorklet.js",
@@ -191,8 +191,8 @@
     },
     {
       "path": "avplayer.js",
-      "bytes": 1950,
-      "sha256": "2ee6bda0096de3a8f4ba166d77a5accf6749bfd8e7c60dc03577f8b30a083564"
+      "bytes": 1912,
+      "sha256": "88103dc4f9e83630f4694e89472e9f0b121765ca35bfe29026f8f3e8c6ac04d0"
     },
     {
       "path": "decode/aac.wasm",
