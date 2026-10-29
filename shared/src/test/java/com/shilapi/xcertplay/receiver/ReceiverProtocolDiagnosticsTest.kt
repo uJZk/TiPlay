@@ -84,6 +84,16 @@ class ReceiverProtocolDiagnosticsTest {
         assertFalse(messages.joinToString().contains("private-protocol-secret"))
     }
 
+    @Test fun audioSecurityDiagnosticsReportOnlyBoundedState() {
+        val messages = mutableListOf<String>()
+        val diagnostic = ReceiverProtocolDiagnostics(messages::add)
+        diagnostic.audioSetupSecurity(1, mapOf("shk" to "secret", "usingScreen" to true, "isMedia" to "secret"), ByteArray(16) { 7 }, ByteArray(16) { 9 }, true, false)
+        diagnostic.audioSetupSecurity(2, mapOf("shk" to ByteArray(32) { 4 }), null, null, false, true)
+        assertEquals("c=1 stage=AUDIO_SETUP_SECURITY shk=invalid legacyKey=valid iv=valid timing=true controlCipher=false usingScreen=true isMedia=invalid", messages[0])
+        assertEquals("c=2 stage=AUDIO_SETUP_SECURITY shk=valid legacyKey=absent iv=absent timing=false controlCipher=true usingScreen=absent isMedia=absent", messages[1])
+        assertFalse(messages.joinToString().contains("secret"))
+    }
+
     @Test fun resourceDiagnosticsContainOnlyStageCorrelationAndNumericResponseMetadata() {
         val messages = mutableListOf<String>()
         val diagnostics = ReceiverProtocolDiagnostics(messages::add)

@@ -176,7 +176,7 @@ function retryPage(lastError) {
     const controlWaiters = new Set(), codecsReady = new Promise(() => {}), abortable = value => value;
     let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null, config = null;
     let videoError = null, videoRestart = null, currentVideoGeneration = 1;
-    let receiverFailure = false;
+    let receiverFailure = false, videoNoticeId = null;
     const receiverNotices = createReceiverNoticeTracker();
     let heartbeatTimer, statsTimer, lastViewport, fitRequestedAt = 0;
     const browserLocation = { stop() {} };
@@ -229,12 +229,17 @@ function retryPage(lastError) {
 
 test('video negotiation failures expose the safe video reason without changing connection-stage details', () => {
   const page = retryPage();
+  page.present({ status: { videoSource: 'carplay' }, config: { mode: 'carplay' } });
   page.videoFailed('codec-profile-not-negotiated');
   assert.equal(page.problem().text, 'rtcVideoCodecFailed');
   assert.match(page.details(), /rtcVideoFailureDetail:codec-profile-not-negotiated/);
   page.videoFailed('credential\nsecret=do-not-export');
+  assert.equal(page.problem(), null, 'generic video faults do not produce a browser notice');
+  assert.equal(page.text(), 'pictureUnavailable', 'failed video does not look like an ongoing connection');
   assert.match(page.details(), /rtcVideoFailureDetail:rtc-video-failed/);
   assert.doesNotMatch(page.details(), /credential|secret|do-not-export/);
+  assert.equal(page.present({ status: { videoSource: null, airplay: { kind: 'video', resource: 'movie', ready: false } },
+    config: { mode: 'carplay' } }), 'preparingVideo', 'retired CarPlay fault does not mask a new cast');
 });
 
 test('waiting messages follow receiver phase and actual video source rather than session availability', () => {
@@ -255,9 +260,15 @@ test('waiting messages follow receiver phase and actual video source rather than
   assert.equal(page.present({ status: { airplay: { kind: 'audio' } } }), '');
   assert.equal(page.statusHidden(), true);
   assert.equal(page.present({ status: { airplay: { kind: 'photo', resource: 'photo' } } }), '');
-  assert.equal(page.present({ status: { airplay: { kind: 'video', resource: 'movie', ready: false } } }), 'waitingVideo');
+  assert.equal(page.present({ status: { airplay: { kind: 'video', resource: 'movie', ready: false } } }), 'preparingVideo');
+  assert.equal(page.present({ status: { airplay: { kind: 'video', resource: 'movie', ready: false, buffering: true } } }), 'airPlayBuffering');
   assert.equal(page.present({ status: { airplay: { kind: 'video', resource: 'movie', ready: true, playing: false } } }), 'airPlayPaused');
   assert.equal(page.present({ status: { airplay: { kind: 'video', resource: 'movie', ready: true, playing: true } } }), '');
+  assert.equal(page.present({ config: { mode: 'carplay' }, status: { videoSource: 'carplay',
+    airplay: { kind: 'video', resource: 'movie', ready: false, videoShown: false },
+    receivers: { airplay: { state: 'video' } } } }), 'waitingFrame', 'returned CarPlay does not inherit hidden video preparation');
+  assert.equal(page.present({ config: { mode: 'carplay' }, status: { videoSource: 'carplay',
+    airplay: { kind: 'audio' } } }), 'waitingFrame', 'AirPlay audio does not hide a recovering CarPlay picture');
   assert.equal(page.present({ live: true, config: { codec: 'avc1', mode: 'carplay' }, status: { state: 'idle' } }), '');
   assert.equal(page.statusHidden(), true);
   assert.equal(page.present({ live: true, config: { codec: 'avc1', mode: 'airplay-mirror' } }), '');
@@ -268,9 +279,9 @@ test('AirPlay handoff and its local-network permission take precedence over a re
   const receivers = { carplay: { state: 'suspended' }, airplay: { state: 'listening' } };
   assert.equal(page.present({ config: { mode: 'carplay' }, status: { receivers } }), 'carPlaySuspended');
   assert.equal(page.present({ status: { receivers: { ...receivers, airplay: { state: 'permission' } } } }), 'airPlayPermission');
-  for (const state of ['mirror', 'video', 'loading', 'photo']) {
+  for (const [state, message] of [['mirror', 'waitingVideo'], ['video', 'preparingVideo'], ['loading', 'preparingVideo'], ['photo', 'preparingPhoto']]) {
     assert.equal(page.present({ config: { mode: 'carplay' },
-      status: { receivers: { ...receivers, airplay: { state } } } }), 'waitingVideo');
+      status: { receivers: { ...receivers, airplay: { state } } } }), message);
   }
   assert.equal(page.present({ status: { receivers, videoSource: 'airplay' } }), 'waitingVideo');
   for (const state of ['failed', 'suspended']) {
@@ -300,7 +311,7 @@ test('producer changes and explicit return snapshots supersede old decoded frame
   assert.equal(page.present({ live: true, config: { mode: 'carplay' }, status: { videoSource: 'carplay',
     receivers: { carplay: { state: 'suspended' }, airplay: { state: 'loading' } } } }), '');
   assert.equal(page.present({ live: true, config: { mode: 'carplay' }, status: { videoSource: null,
-    receivers: { carplay: { state: 'suspended' }, airplay: { state: 'loading' } } } }), 'waitingVideo');
+    receivers: { carplay: { state: 'suspended' }, airplay: { state: 'loading' } } } }), 'preparingVideo');
   assert.equal(page.present({ live: true, config: { mode: 'airplay-mirror' }, status: { videoSource: 'carplay',
     receivers: { carplay: { state: 'connected' }, airplay: { state: 'listening' } } } }), 'waitingFrame');
   assert.equal(page.present({ live: true, config: { mode: 'airplay-mirror' }, status: { videoSource: null,

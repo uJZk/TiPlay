@@ -84,7 +84,7 @@ test('cast loading is visible before probing and persists through source readine
   h.controls.update(h.directive());
   assert.equal(h.layer.hidden, false);
   assert.equal(h.indicator().getAttribute('role'), 'status');
-  assert.match(h.indicator().getAttribute('aria-label'), /buffering/);
+  assert.equal(h.indicator().children[1].textContent, 'Preparing video…');
   assert.equal(h.layer.getAttribute('aria-busy'), 'true');
   assert.equal(h.players.length, 0, 'the initial indicator does not wait for the player module');
   assert.equal(h.stage.children.length, 1, 'no standalone Stop button remains');

@@ -2,7 +2,7 @@
 // Real production URL adapter and self-hosted AVPlayer, under the production CSP.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, mkdtemp, rm, writeFile, readdir } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -18,7 +18,7 @@ const requests = [], pending = new Set(), foreignRequests = [];
 let foreignOrigin;
 let transientManifestRequests = 0;
 const mime = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm',
-  '.mp4': 'video/mp4', '.ts': 'video/mp2t', '.m3u8': 'application/vnd.apple.mpegurl' };
+  '.mp4': 'video/mp4', '.ts': 'video/mp2t', '.aac': 'audio/aac', '.m3u8': 'application/vnd.apple.mpegurl' };
 const foreignServer = createServer(async (req, res) => {
   foreignRequests.push(req.url);
   const name = new URL(req.url, 'http://localhost').pathname.slice(1);
@@ -44,6 +44,12 @@ const server = createServer(async (req, res) => {
         res.writeHead(403); res.end(); return;
       }
       const name = url.searchParams.get('r');
+      if (name === 'packed-master.m3u8') {
+        const child = file => `/airplay-resource?c=1234&s=fixture&r=${file}`;
+        res.setHeader('Content-Type', mime['.m3u8']);
+        res.end('#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Synthetic",DEFAULT=YES,AUTOSELECT=YES,URI="'+child('packed-audio.m3u8')+'"\n'
+          +'#EXT-X-STREAM-INF:BANDWIDTH=800000,CODECS="avc1.42c00c,mp4a.40.2",AUDIO="a",RESOLUTION=320x180\n'+child('packed-video.m3u8')+'\n'); return;
+      }
       if (['mixed.m3u8', 'hdr-only.m3u8'].includes(name)) {
         const child = name => `/airplay-resource?c=1234&s=fixture&r=${name}`;
         let body = '#EXTM3U\n';
@@ -64,13 +70,13 @@ const server = createServer(async (req, res) => {
       if (['hang', 'hang-key'].includes(name)) {
         pending.add(res); res.on('close', () => pending.delete(res)); return;
       }
-      if (!/^(movie\.mp4|index\.m3u8|live\.m3u8|remote\.m3u8|encrypted\.m3u8|retry\.m3u8|part\d+\.ts)$/.test(name || '')) { res.writeHead(404); res.end(); return; }
-      let data = await readFile(resolve(fixtures, ['live.m3u8', 'remote.m3u8', 'encrypted.m3u8', 'retry.m3u8'].includes(name) ? 'index.m3u8' : name));
+      if (!/^(movie\.mp4|index\.m3u8|live\.m3u8|remote\.m3u8|encrypted\.m3u8|retry\.m3u8|packed-(?:audio|video)\.m3u8|part\d+\.ts|video\d+\.ts|audio\d+)$/.test(name || '')) { res.writeHead(404); res.end(); return; }
+      let data = await readFile(resolve(fixtures, ['live.m3u8', 'remote.m3u8', 'encrypted.m3u8', 'retry.m3u8'].includes(name) ? 'index.m3u8' : /^audio\d+$/.test(name) ? name+'.aac' : name));
       if (name === 'encrypted.m3u8') data = Buffer.from(data.toString().replace('#EXTINF:', '#EXT-X-KEY:METHOD=AES-128,URI="/airplay-resource?c=1234&s=fixture&r=hang-key"\n#EXTINF:'));
       if (name === 'live.m3u8') data = Buffer.from(data.toString().replace('#EXT-X-ENDLIST', ''));
-      res.setHeader('Content-Type', mime[extname(name)]);
+      res.setHeader('Content-Type', mime[extname(name)] || 'application/octet-stream');
       if (name.endsWith('.m3u8')) {
-        data = Buffer.from(data.toString().replace(/^part\d+\.ts$/gm, part =>
+        data = Buffer.from(data.toString().replace(/^(?:part\d+\.ts|video\d+\.ts|audio\d+)$/gm, part =>
           name === 'remote.m3u8' ? `${foreignOrigin}/${part}` : `/airplay-resource?c=1234&s=fixture&r=${part}`));
       }
       res.setHeader('Accept-Ranges', 'bytes');
@@ -134,13 +140,35 @@ try {
   execFileSync(process.env.FFMPEG || 'ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y',
     '-i', resolve(fixtures, 'movie.mp4'), '-c', 'copy', '-f', 'hls', '-hls_time', '1', '-hls_list_size', '0',
     '-hls_segment_filename', resolve(fixtures, 'part%d.ts'), resolve(fixtures, 'index.m3u8')]);
+  // Synthetic HLS packed audio: ID3 transport timestamps precede each ADTS AAC
+  // segment. This exercises the real slice reader and both separate tracks.
+  execFileSync(process.env.FFMPEG || 'ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y',
+    '-i', resolve(fixtures, 'movie.mp4'), '-map', '0:v:0', '-c', 'copy', '-f', 'hls', '-hls_time', '1', '-hls_list_size', '0',
+    '-hls_segment_filename', resolve(fixtures, 'video%d.ts'), resolve(fixtures, 'packed-video.m3u8')]);
+  execFileSync(process.env.FFMPEG || 'ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y',
+    '-i', resolve(fixtures, 'movie.mp4'), '-map', '0:a:0', '-c:a', 'aac', '-ar', '22050', '-ac', '2',
+    '-f', 'segment', '-segment_time', '2', '-segment_format', 'adts', resolve(fixtures, 'audio%d.aac')]);
+  const audioFiles = [];
+  for (const name of (await readdir(fixtures)).filter(name => /^audio\d+\.aac$/.test(name)).sort())
+    if ((await readFile(resolve(fixtures, name))).length >= 20) audioFiles.push(name);
+  const owner = Buffer.from('com.apple.streaming.transportStreamTimestamp\0');
+  for (const [index, file] of audioFiles.entries()) {
+    const timestamp = Buffer.alloc(8); timestamp.writeBigUInt64BE(BigInt(index * 180000));
+    const payload = Buffer.concat([owner, timestamp]), frame = Buffer.alloc(10);
+    frame.write('PRIV'); frame.writeUInt32BE(payload.length, 4);
+    const size = frame.length + payload.length;
+    const header = Buffer.from([73, 68, 51, 3, 0, 0, (size >> 21) & 127, (size >> 14) & 127, (size >> 7) & 127, size & 127]);
+    await writeFile(resolve(fixtures, file), Buffer.concat([header, frame, payload, await readFile(resolve(fixtures, file))]));
+  }
+  await writeFile(resolve(fixtures, 'packed-audio.m3u8'), '#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n'
+    + audioFiles.map(name => '#EXTINF:2.000,\n'+name.replace(/\.aac$/, '')+'\n').join('') + '#EXT-X-ENDLIST\n');
   await listen(foreignServer, '127.0.0.1');
   foreignOrigin = `http://127.0.0.1:${foreignServer.address().port}`;
   await listen(server, '127.0.0.1');
   const origin = `http://127.0.0.1:${server.address().port}`;
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM || '/usr/bin/chromium',
     args: ['--no-sandbox', '--no-proxy-server', '--autoplay-policy=no-user-gesture-required'] });
-  for (const format of cancellationOnly ? [] : ['mp4', 'hls', 'sdr-master', 'live']) {
+  for (const format of cancellationOnly ? [] : (process.env.E2E_FORMAT ? [process.env.E2E_FORMAT] : ['mp4', 'hls', 'sdr-master', 'live', 'packed-aac'])) {
     const page = await browser.newPage();
     const errors = [], remote = [];
     if (process.env.AVPLAYER_DEBUG) page.on('request', request => console.log('request:', request.url()));
@@ -156,7 +184,7 @@ try {
       window.media = createMediaEngine(document.querySelector('#stage'), { fetchResource: (url, init) => fetch(url, init) });
       for (const type of ['loadedmetadata', 'playing', 'pause', 'seeking', 'seeked', 'ended', 'error'])
         media.addEventListener(type, () => evidence.events.push(type));
-      await Promise.race([media.load(`${location.origin}/airplay-resource?c=1234&s=fixture&r=${format === 'mp4' ? 'movie.mp4' : format === 'live' ? 'live.m3u8' : format === 'sdr-master' ? 'mixed.m3u8' : 'index.m3u8'}`,
+      await Promise.race([media.load(`${location.origin}/airplay-resource?c=1234&s=fixture&r=${format === 'mp4' ? 'movie.mp4' : format === 'live' ? 'live.m3u8' : format === 'sdr-master' ? 'mixed.m3u8' : format === 'packed-aac' ? 'packed-master.m3u8' : 'index.m3u8'}`,
         format === 'mp4' ? 'video/mp4' : 'application/vnd.apple.mpegurl'),
         new Promise((_, reject) => setTimeout(() => reject(new Error('URL metadata load timed out: '+JSON.stringify(media.getPlaybackDiagnostics()))), 20000))]);
       await Promise.race([media.play(), new Promise((_, reject) => setTimeout(() => reject(new Error('URL play timed out: '+JSON.stringify(media.getPlaybackDiagnostics()))), 20000))]);
@@ -240,6 +268,7 @@ try {
     console.log(JSON.stringify({ format, softwareVideoOverride: SOFTWARE_VIDEO, capabilities, coloredPixels: pixels, audioRms, replayAfterEnded: true, ...result, cleanup: await page.evaluate(() => ({ workers: evidence.workers, contexts: evidence.contexts })) }));
     await page.close();
   }
+  if (!process.env.E2E_FORMAT) {
   const page = await browser.newPage(), networkErrors = [];
   page.on('pageerror', error => networkErrors.push(error.stack || error.message));
   await instrument(page);
@@ -364,6 +393,7 @@ try {
   assert.deepEqual(networkErrors, [], 'network failure or cleanup caused an uncaught browser exception');
   assert.deepEqual(await page.evaluate(() => evidence.cspViolations), []);
   console.log(JSON.stringify({ cancellationOnly, networkFailure: failure, manifestFailures, pendingLoadCanceled: ['MP4 headers', 'HLS master headers', 'HLS AES key', 'early 0/20ms'], requests: requests.length }));
+  }
 } finally {
   await browser?.close();
   await closeServer(server);

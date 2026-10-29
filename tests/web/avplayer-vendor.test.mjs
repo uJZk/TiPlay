@@ -7,6 +7,44 @@ import { runInNewContext } from 'node:vm';
 
 const directory = new URL('../../site/play/vendor/libmedia/', import.meta.url);
 const code = await readFile(new URL('upstream.js', directory), 'utf8');
+const packedStart = code.indexOf('if(/^ID3/.test(i))');
+const packedBodyStart = code.indexOf('{if((e.flags&2)!==0)', packedStart);
+const packedBodyEnd = code.indexOf('return 14;}', packedBodyStart);
+assert.ok(packedStart >= 0 && packedBodyStart > packedStart && packedBodyEnd > packedBodyStart,
+  'actual generated ID3 format probe exists');
+const packedProbe = runInNewContext(`(async e=>${code.slice(packedBodyStart, packedBodyEnd + 'return 14;}'.length)})`);
+
+function taggedFrame(sync, { version = 4, flags = 0, length = 63 } = {}) {
+  const header = Uint8Array.from([73, 68, 51, version, 0, flags,
+    (length >> 21) & 127, (length >> 14) & 127, (length >> 7) & 127, length & 127]);
+  const bytes = new Uint8Array(10 + length + (version === 4 && flags & 16 ? 10 : 0) + 2);
+  bytes.set(header); bytes.set(sync, bytes.length - 2); return bytes;
+}
+function probeReader(bytes, flags = 2, size = 65536) {
+  return { flags, size, calls: [], async peekBuffer(length) {
+    this.calls.push(length);
+    if (length > bytes.length || length > size) throw Error('incomplete');
+    return bytes.slice(0, length);
+  } };
+}
+
+test('HLS ID3-prefixed ADTS is probed as AAC without changing ID3 MP3 or ordinary inputs', async () => {
+  const aac = taggedFrame([0xff, 0xf1]);
+  const reader = probeReader(aac);
+  assert.equal(await packedProbe(reader), 15);
+  assert.deepEqual(reader.calls, [10, aac.length]);
+  assert.equal(await packedProbe(probeReader(taggedFrame([0xff, 0xfb]))), 14);
+  assert.equal(await packedProbe(probeReader(aac, 0)), 14, 'non-slice ID3 retains upstream behavior');
+  assert.equal(await packedProbe(probeReader(taggedFrame([0xff, 0xf1], { flags: 16 }))), 15, 'ID3v2.4 footer is skipped');
+  assert.equal(await packedProbe(probeReader(taggedFrame([0xff, 0xf1], { version: 3 }))), 15);
+  const invalid = aac.slice(); invalid[6] = 0x80;
+  assert.equal(await packedProbe(probeReader(invalid)), 14, 'invalid synchsafe tag retains MP3');
+  const oversized = taggedFrame([0xff, 0xf1], { length: 65530 });
+  const bounded = probeReader(oversized, 2, 100000);
+  assert.equal(await packedProbe(bounded), 14);
+  assert.deepEqual(bounded.calls, [10], 'oversized tag does not trigger unbounded peek');
+  assert.equal(await packedProbe(probeReader(aac.slice(0, 10))), 14, 'truncated input stays bounded');
+});
 const start = code.indexOf('((url, init) => {');
 const end = code.indexOf('\n})', start);
 assert.ok(start >= 0 && end > start, 'actual generated fetch adapter exists');
@@ -248,6 +286,7 @@ test('AVPlayer shipped assets match the recorded build and unmodified WASM sourc
   }
   assert.equal(manifest.sameOriginWorkletPatches, 1);
   assert.equal(manifest.hlsClassificationPatches, 3);
+  assert.equal(manifest.packedAacProbePatches, 1);
   assert.equal(manifest.cancellationPatches, 6);
   assert.equal(manifest.pipelineCleanupPatches, 1);
   assert.equal(manifest.contextEventGuardPatches, 1);

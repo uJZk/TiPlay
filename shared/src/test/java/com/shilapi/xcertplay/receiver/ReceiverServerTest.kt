@@ -205,18 +205,175 @@ class ReceiverServerTest {
     private fun Socket.status(method: String, path: String, body: ByteArray = ByteArray(0), id: String = "11223344556677889900aabbccddeeff") = send(method, path, body, id).path.toInt()
     private fun connect(port: Int) = Socket(InetAddress.getLoopbackAddress(), port).apply { soTimeout = 5000 }
 
-    @Test fun deviceClaimOnEarlierRequestIsAvailableAtAuthorizationWithoutLoggingTheId() {
+    @Test fun clientIdOnEarlierRequestIsAvailableAtAuthorizationWithoutLoggingTheId() {
         val listener = Listener()
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
-        val id = "A1bc2Def3Gh4ij"
+        val id = "b5bf5f1e-7f23-4aa2-a02d-1133557799aa"
         receiver.start()
         try {
             connect(receiver.port).use { socket ->
-                assertEquals("200", socket.send("GET", "/info", extraHeaders = "X-Apple-Device-ID: $id\r\n").path)
+                assertEquals("200", socket.send("GET", "/info", extraHeaders = "X-Apple-Client-ID: $id\r\n").path)
                 assertEquals("200", socket.send("POST", "/play",
                     "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()).path)
-                assertTrue(listener.logs.any { it.contains("stage=TRUST_IDENTITY source=x-apple-device-id") })
+                assertTrue(listener.logs.any { it.contains("stage=TRUST_IDENTITY source=x-apple-client-id") })
                 assertFalse(listener.logs.any { it.contains(id) })
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun absentClientIdNeverUsesSessionOrPairingAsAnApproval() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { first ->
+                connect(receiver.port).use { second ->
+                    val session = "11223344556677889900aabbccddeeff"
+                    first.send("POST", "/stop", id = session, extraHeaders = "DACP-ID: 1234567890abcdef\r\n")
+                    second.send("POST", "/stop", id = session, extraHeaders = "DACP-ID: 1234567890abcdef\r\n")
+                    assertEquals(2, listener.authorizationTokens.size)
+                    assertNotEquals(listener.authorizationTokens[0], listener.authorizationTokens[1])
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun clientIdAuthorizationPreservesFcupAcrossSeparatelyApprovedConnections() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                val url = "mlhls://app/master.m3u8"
+                val play = BplistCodec.encode(mapOf("Content-Location" to url))
+                assertEquals("200", control.send("POST", "/play", play,
+                    extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
+                // A separately approved connection with the same UUID must not take
+                // ownership of the session mapping away from the active player.
+                connect(receiver.port).use { temporary ->
+                    assertEquals("200", temporary.send("GET", "/scrub",
+                        extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
+                }
+                // Model expiry of every temporary session lookup while /play stays active.
+                (ReceiverServer::class.java.getDeclaredField("approvedSessions").apply { isAccessible = true }
+                    .get(receiver) as MutableMap<*, *>).clear()
+                connect(receiver.port).use { reverse ->
+                    reverse.upgradeReverse()
+                    val future = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(url) }
+                    val xml = readReceiverRequest(reverse.getInputStream())!!.body.toString(Charsets.UTF_8)
+                    val requestId = Regex("<key>FCUP_Response_RequestID</key><integer>([0-9]+)</integer>")
+                        .find(xml)!!.groupValues[1].toLong()
+                    val bytes = byteArrayOf(1, 2, 3)
+                    val answer = BplistCodec.encode(mapOf("type" to "unhandledURLResponse", "params" to mapOf(
+                        "FCUP_Response_RequestID" to requestId, "FCUP_Response_URL" to url,
+                        "FCUP_Response_Data" to bytes, "FCUP_Response_StatusCode" to 200)))
+                    connect(receiver.port).use { action -> assertEquals(200, action.status("POST", "/action", answer)) }
+                    assertArrayEquals(bytes, future.get(2, TimeUnit.SECONDS)!!.bytes)
+                    assertEquals(1, listener.authorizationTokens.size) // reverse requested a separate grant
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun previouslyApprovedReverseCanPrecedeClientIdPlayAndFcup() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { reverse ->
+                reverse.upgradeReverse()
+                connect(receiver.port).use { control ->
+                    val url = "mlhls://app/master.m3u8"
+                    assertEquals("200", control.send("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to url)),
+                        extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
+                    connect(receiver.port).use { replacement ->
+                        assertEquals("101", replacement.send("POST", "/reverse", extraHeaders =
+                            "Upgrade: PTTH/1.0\r\nX-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
+                        val future = java.util.concurrent.CompletableFuture.supplyAsync { receiver.loadResource(url) }
+                        val xml = readReceiverRequest(replacement.getInputStream())!!.body.toString(Charsets.UTF_8)
+                        val requestId = Regex("<key>FCUP_Response_RequestID</key><integer>([0-9]+)</integer>")
+                            .find(xml)!!.groupValues[1].toLong()
+                        val bytes = byteArrayOf(3, 2, 1)
+                        val answer = BplistCodec.encode(mapOf("type" to "unhandledURLResponse", "params" to mapOf(
+                            "FCUP_Response_RequestID" to requestId, "FCUP_Response_URL" to url,
+                            "FCUP_Response_Data" to bytes, "FCUP_Response_StatusCode" to 200)))
+                        connect(receiver.port).use { action -> assertEquals(200, action.status("POST", "/action", answer)) }
+                        assertArrayEquals(bytes, future.get(2, TimeUnit.SECONDS)!!.bytes)
+                        assertEquals(1, listener.authorizationTokens.size)
+                    }
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun differentClientIdsCannotTakeOverPlaybackOnTheSameSession() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { owner ->
+                val ownerId = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n"
+                val otherId = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799ab\r\n"
+                val play = BplistCodec.encode(mapOf("Content-Location" to "https://example.org/movie.mp4"))
+                assertEquals("200", owner.send("POST", "/play", play, extraHeaders = ownerId).path)
+                connect(receiver.port).use { other ->
+                    assertEquals("403", other.send("POST", "/stop", extraHeaders = otherId).path)
+                    assertEquals("453", other.send("POST", "/play", play, extraHeaders = otherId).path)
+                    assertEquals(0, listener.stopped)
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun clientIdCannotTakeOverConnectionOnlyPlayback() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { owner ->
+                val play = BplistCodec.encode(mapOf("Content-Location" to "https://example.org/movie.mp4"))
+                assertEquals("200", owner.send("POST", "/play", play).path)
+                connect(receiver.port).use { other ->
+                    val otherId = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799ab\r\n"
+                    assertEquals("403", other.send("POST", "/stop", extraHeaders = otherId).path)
+                    assertEquals("453", other.send("POST", "/play", play, extraHeaders = otherId).path)
+                    assertEquals(0, listener.stopped)
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun connectionOnlySenderCannotTakeOverClientIdPlayback() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { owner ->
+                val play = BplistCodec.encode(mapOf("Content-Location" to "https://example.org/movie.mp4"))
+                assertEquals("200", owner.send("POST", "/play", play, extraHeaders =
+                    "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
+                connect(receiver.port).use { other ->
+                    assertEquals("403", other.send("POST", "/stop").path)
+                    assertEquals("453", other.send("POST", "/play", play).path)
+                    assertEquals(0, listener.stopped)
+                }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun differentClientIdsDoNotAdoptAnEarlierReverseChannel() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener())
+        receiver.start()
+        try {
+            connect(receiver.port).use { reverse ->
+                assertEquals("101", reverse.send("POST", "/reverse", extraHeaders =
+                    "Upgrade: PTTH/1.0\r\nX-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799aa\r\n").path)
+                connect(receiver.port).use { player ->
+                    val url = "mlhls://app/master.m3u8"
+                    assertEquals("200", player.send("POST", "/play", BplistCodec.encode(mapOf("Content-Location" to url)),
+                        extraHeaders = "X-Apple-Client-ID: b5bf5f1e-7f23-4aa2-a02d-1133557799ab\r\n").path)
+                    assertNull(receiver.loadResource(url))
+                }
             }
         } finally { receiver.close() }
     }
@@ -575,6 +732,25 @@ class ReceiverServerTest {
                 assertEquals(200, control.status("SETUP", "/", stream(8)))
                 assertEquals(200, control.status("OPTIONS", "/"))
                 assertThrows(IllegalArgumentException::class.java) { receiver.updateAudioFormats(1L shl 26) }
+            }
+        } finally { receiver.close() }
+    }
+
+    @Test fun missingAudioTransportKeyDoesNotStopExistingUrlPlayback() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                control.verifyIdentity()
+                assertEquals(200, control.status("POST", "/play", "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
+                val stream = mapOf("type" to 96, "ct" to 2, "audioFormat" to 0x40000L, "spf" to 352)
+                assertEquals(400, control.status("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(stream)))))
+                assertEquals(0, listener.stopped)
+                assertEquals("video", listener.states.last())
+                assertEquals(200, control.status("GET", "/playback-info"))
+                assertTrue(listener.logs.any { it.contains("stage=AUDIO_SETUP_SECURITY shk=absent legacyKey=absent iv=absent timing=false") })
+                assertTrue(listener.logs.any { it.contains("missing-audio-transport-key") })
             }
         } finally { receiver.close() }
     }

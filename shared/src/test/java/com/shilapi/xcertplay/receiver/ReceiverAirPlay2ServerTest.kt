@@ -29,9 +29,15 @@ class ReceiverAirPlay2ServerTest {
     private class Listener : ReceiverServer.Listener {
         val payloads = CopyOnWriteArrayList<ByteArray>()
         val types = CopyOnWriteArrayList<String>()
+        val identities = CopyOnWriteArrayList<ByteArray>()
         val received = CountDownLatch(1)
         var screenLoans = 0
         override fun authorizeConnection(sessionToken: String, deviceName: String, mediaType: String): Boolean {
+            types.add(mediaType)
+            return true
+        }
+        override fun authorizeDevice(sessionToken: String, verifiedPublicKey: ByteArray?, deviceName: String, mediaType: String): Boolean {
+            identities.add(requireNotNull(verifiedPublicKey).copyOf())
             types.add(mediaType)
             return true
         }
@@ -115,13 +121,38 @@ class ReceiverAirPlay2ServerTest {
         } finally { receiver.close() }
     }
 
-    private class Peer(port: Int) : java.io.Closeable {
+    @Test fun clientIdOnTransientPairSetupIdentifiesEncryptedStreamAcrossReconnects() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(),
+            audioOutputFormats = ReceiverAudioCapabilities.OUTPUT_FORMATS), listener)
+        receiver.start()
+        try {
+            val clientId = "b5bf5f1e-7f23-4aa2-a02d-1133557799aa"
+            for (dacp in listOf("1234567890abcdef", "fedcba0987654321")) {
+                Peer(receiver.port, clientId, dacp).use { peer ->
+                    peer.pair()
+                    assertEquals("200", peer.request("SETUP", "/session", BplistCodec.encode(mapOf(
+                        "timingProtocol" to "NTP", "timingPort" to 0L))).path)
+                    assertEquals("200", peer.request("SETUP", "/stream", BplistCodec.encode(mapOf("streams" to listOf(mapOf(
+                        "type" to 96L, "ct" to 1L, "sr" to 44100L, "ch" to 2L, "spf" to 352L,
+                        "shk" to ByteArray(32) { it.toByte() }, "controlPort" to 0L))))).path)
+                    assertEquals("200", peer.request("TEARDOWN", "/stream").path)
+                }
+            }
+            assertEquals(2, listener.identities.size)
+            assertArrayEquals(listener.identities[0], listener.identities[1])
+            assertArrayEquals(ReceiverSenderIdentity.identity(mapOf("x-apple-client-id" to clientId)), listener.identities[0])
+        } finally { receiver.close() }
+    }
+
+    private class Peer(port: Int, private val clientId: String? = null, private val dacp: String? = null) : java.io.Closeable {
         private val socket = Socket().apply { connect(InetSocketAddress("127.0.0.1", port)); soTimeout = 3000 }
         private var input: InputStream = socket.getInputStream()
         private var cipher: ReceiverAirPlay2Cipher? = null
         private var sequence = 0
         fun request(method: String, path: String, body: ByteArray = ByteArray(0), pairing: Boolean = false): RtspMessage.Request {
-            val headers = if (pairing) "Content-Type: application/octet-stream\r\nX-Apple-HKP: 4\r\n" else
+            val headers = if (pairing) "Content-Type: application/octet-stream\r\nX-Apple-HKP: 4\r\n" +
+                (clientId?.let { "X-Apple-Client-ID: $it\r\n" } ?: "") + (dacp?.let { "DACP-ID: $it\r\n" } ?: "") else
                 "Content-Type: application/x-apple-binary-plist\r\n"
             val message = ("$method $path RTSP/1.0\r\nCSeq: ${++sequence}\r\n${headers}Content-Length: ${body.size}\r\n\r\n").toByteArray() + body
             socket.getOutputStream().write(cipher?.encrypt(message) ?: message)

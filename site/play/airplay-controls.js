@@ -72,10 +72,11 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     const indicator = document.createElement('div');
     indicator.className = 'airplay-preparation media-skin'; indicator.dataset.theme = 'default';
     indicator.setAttribute('role', 'status');
-    indicator.setAttribute('aria-label', lang === 'zh' ? 'AirPlay 正在缓冲…' : 'AirPlay is buffering…');
     const spinner = document.createElement('span');
     spinner.className = 'airplay-preparation-spinner'; spinner.setAttribute('aria-hidden', 'true');
-    indicator.append(spinner); layer.append(indicator); preparation = indicator;
+    const message = document.createElement('span');
+    message.textContent = lang === 'zh' ? '正在准备视频…' : 'Preparing video…';
+    indicator.append(spinner, message); layer.append(indicator); preparation = indicator;
     layer.setAttribute('aria-busy', 'true'); layer.setAttribute('data-preparing', '');
   }
   function finishPreparation() {
