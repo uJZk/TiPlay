@@ -124,6 +124,10 @@ The freestanding audio core links no standard runtime archives.
   [test fixtures](../tests/web/fixtures/aac-eld/README.md). FDK is not a runtime dependency.
 - Video.js native controls, skin and media adapter helpers: Apache-2.0, self-hosted under
   `site/play/vendor/videojs/` with license texts and retained bundle notices.
+- Embedded CEA-608 caption decoding uses the hls.js parser, Apache-2.0. TiPlay's
+  extraction adapter and limited plain-text CEA-708 decoder are GPL-3.0-only.
+  Corresponding sources, integrity information and license notices are in
+  [vendor/captions](../site/play/vendor/captions/README.md).
 - libmedia AVPlayer 1.3.1: LGPL-3.0-or-later, with MIT-licensed cheap/common and subtitle helpers.
   The self-hosted Canvas/Web Audio player, local lazy-loaded modules, FFmpeg audio
   decoders/resampler and SoundTouch tempo WASM are under

@@ -160,6 +160,8 @@ export function createMediaEngine(surface, options = {}) {
       : streams.filter(stream => (stream.mediaType === 'subtitle' || parameters(stream).codecType === 3)
         && (!item.supportedCodecs || item.supportedCodecs.includes(parameters(stream).codecId))).map((stream, index) =>
         ({ id: String(stream.id), language: stream.metadata?.language || '', label: stream.metadata?.title || stream.metadata?.language || `Subtitles ${index + 1}` }));
+    for (const track of player.getEmbeddedSubtitleList?.() || [])
+      subtitleDescriptors.push({ id: track.id, language: track.language || '', label: track.label });
     const existingSubtitles = [...textTracks];
     const changedSubtitles = existingSubtitles.length !== subtitleDescriptors.length || subtitleDescriptors.some((track, index) =>
       ['id', 'label', 'language'].some(key => track[key] !== existingSubtitles[index]?.[key]));
@@ -194,7 +196,8 @@ export function createMediaEngine(surface, options = {}) {
       // Enabling an already selected upstream track resets its renderer. Do that
       // before selection seeks/restarts it, so a new cue cannot be cleared later.
       item.player.setSubtitleEnable?.(id !== undefined);
-      if (id !== undefined) await item.player.selectSubtitle(Number(id));
+      if (/^cea(?:608-[1-4]|708-(?:[1-9]|[1-5][0-9]|6[0-3]))$/.test(id || '')) await item.player.selectEmbeddedSubtitle(id);
+      else if (id !== undefined) await item.player.selectSubtitle(Number(id));
     });
   }
   function wire(item) {

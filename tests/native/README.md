@@ -43,16 +43,20 @@ python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-native-probe 
 
 `paced` offers at the fixture's 60 fps cadence without waiting for encoder input
 completion. `serial` waits for the product's native input completion barrier.
-A positive startup bitrate also raises the sender encoding and peer ceiling to
-64 Mbps. The minimum stays unset and the estimator is set only once. Zero
+A positive startup bitrate also sets the sender encoding and peer ceiling to
+128 Mbps and the peer minimum to 16 Mbps. The estimator is set only once. Zero
 retains the SDK's startup and stream defaults. `--encoder-delay 40` can inject
 a controlled delay before the real Java encoder callback; default zero leaves
 the product callback timing unchanged. `--frames` selects the measured phase
 length. `burst` is an additional stress control, not the normal producer policy.
 
-The current startup default is 32 Mbps. The published
-beta.27 native measurements used 24 Mbps; reproduce those historical runs with
-`--start-bitrate 24000000`. Changing this prior does not establish vehicle capacity.
+The current startup default is 32 Mbps. A 16 Mbps minimum constrains the estimate
+even when real network feedback indicates less capacity; it can increase queueing
+and loss on a constrained link and does not establish vehicle capacity. The published
+beta.27 native measurements used 24 Mbps with the rate limits from that revision;
+use that revision to reproduce its configuration. Passing `--start-bitrate 24000000`
+here changes only the startup prior within the current rate limits. Positive startup
+values outside those limits are rejected, as is a failed peer bitrate configuration.
 
 Each run warms the real source/encoder, drains preroll at the receiver, then
 reports measured counter differences. Compare `outputFrames`,

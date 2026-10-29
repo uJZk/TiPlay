@@ -1,0 +1,52 @@
+{
+  "dependency": {
+    "name": "hls.js",
+    "version": "1.6.19",
+    "resolved": "https://registry.npmjs.org/hls.js/-/hls.js-1.6.19.tgz",
+    "integrity": "sha512-A//aZeaAgM5rgUCbTURD4gkfyw5Uag2/4Jky7CfDOukL/DN+P5DjbgK2BYteyP3/KnCkPfkGVkbLxQG2T0AbUQ=="
+  },
+  "sources": [
+    {
+      "path": "entry.js",
+      "sha256": "2562e09bd57f5e2db9f1d9071981bd2ca8e6af92f0f5bb93fd972acf3d963e1a"
+    },
+    {
+      "path": "extract.js",
+      "sha256": "cce6b9f69ddd9805626f2e26c0f074c0be33623e929295f304779babe89f0144"
+    },
+    {
+      "path": "package.json",
+      "sha256": "5aed0df06d248670eef7fef97563cb2ca7ace49266aac931b13b862692e2d69c"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "6ec4852c025c595e941b35dc849e5fe4bd03a5715f811357ba7df27d446f98ac"
+    },
+    {
+      "path": "build.mjs",
+      "sha256": "4f25b1903d61d6ee36a404fc7b6d750967368357f4ba7b54ce3c24e71e939457"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "parser.js",
+      "bytes": 19700,
+      "sha256": "4729b48ea279bb7137b8cbd1ac2611de5f81e48220ea9834d2256a8dc54bf6cc"
+    },
+    {
+      "path": "extractor.js",
+      "bytes": 2659,
+      "sha256": "f0a85a6b71afc3fff4f70b763a57cf63888df109e0790e50eefc81072414e5b3"
+    },
+    {
+      "path": "THIRD_PARTY_LICENSES.txt",
+      "bytes": 1368,
+      "sha256": "6a1217397143fa0aa64f1691d72a3b14c876514112343bb78b8e21e771171be3"
+    },
+    {
+      "path": "source/hls.js-1.6.19.tgz",
+      "bytes": 5878403,
+      "sha256": "a35046767c8dff431fb02b565451d1214378ffc48928355f3622d4702ec2aca0"
+    }
+  ]
+}

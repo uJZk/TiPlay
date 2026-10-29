@@ -19,6 +19,12 @@
   "sdrVariantPolicyPatches": 3,
   "hlsManifestFailurePatches": 6,
   "packedAacProbePatches": 1,
+  "embeddedCaptionPatches": {
+    "demux": 1,
+    "render": 1,
+    "dialogue": 1,
+    "factory": 1
+  },
   "artifacts": [
     {
       "path": "163.avplayer.js",
@@ -102,8 +108,8 @@
     },
     {
       "path": "630.avplayer.js",
-      "bytes": 24670,
-      "sha256": "bfe5d2afd1dc9d34ab1f088bc4ab33d0b01e99da52a17546d34e54fb4a65bce8"
+      "bytes": 25981,
+      "sha256": "2f935aa37c29366b4ded62c80b8a952336d58ea2224219044a504436ccb99495"
     },
     {
       "path": "641.avplayer.js",
@@ -177,8 +183,8 @@
     },
     {
       "path": "upstream.js",
-      "bytes": 626294,
-      "sha256": "2cdfb647236781483d4fa0a5282dd52d050b1cece18da420efce84255e2b5d9d"
+      "bytes": 633782,
+      "sha256": "875930fb01956b70e7d27ac05784a233a9f7662781b4fad8f3f3f054b6fbd21e"
     },
     {
       "path": "AudioSourceWorkletProcessorWorklet.js",
@@ -192,8 +198,13 @@
     },
     {
       "path": "avplayer.js",
-      "bytes": 1912,
-      "sha256": "88103dc4f9e83630f4694e89472e9f0b121765ca35bfe29026f8f3e8c6ac04d0"
+      "bytes": 3899,
+      "sha256": "1840426437fea7ec4aa59be2ea8d9c303077b7c961d27bc2a8adb0b4c30a08b9"
+    },
+    {
+      "path": "embedded-captions.js",
+      "bytes": 9290,
+      "sha256": "cefc78ebc04b7e048d109b6f73441c8d81d43f9d1b4079c407c9fe1196304088"
     },
     {
       "path": "decode/aac.wasm",

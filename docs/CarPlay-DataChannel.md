@@ -159,9 +159,11 @@ stays in the existing bounded reliable source queue. A retired wait cannot fail 
 replacement; input failure uses generation-scoped control without blocking video
 credit under the shared send lock.
 
-Each sender explicitly admits up to 64 Mbps instead of the SDK's 2.5 Mbps 1080p
-default, with a one-time 32 Mbps peer startup estimate. No minimum is set and real
-feedback/pacing may reduce the rate. This prior does not encode at that bitrate or
+Each sender explicitly admits up to 128 Mbps instead of the SDK's 2.5 Mbps 1080p
+default, with a one-time 32 Mbps peer startup estimate and a 16 Mbps minimum.
+Real feedback and pacing remain enabled, but the minimum constrains reduction
+on a lower-capacity link and can increase queueing and loss. These settings do not
+establish Wi-Fi capacity. This prior does not encode at that bitrate or
 change source bytes, and is not reapplied on each IDR/source replacement.
 Actual input loss still invalidates the dependency chain. The source processor
 retains the SDK's normal drop/crop/timestamp decisions and separately counts

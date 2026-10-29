@@ -17,6 +17,8 @@ import org.webrtc.*;
  */
 public final class NativeVideoProbe {
   static final String TRIALS = "WebRTC-FrameDropper/Disabled/WebRTC-CongestionWindow/QueueSize:350,MinBitrate:30000,DropFrame:false/";
+  static final int VIDEO_MIN_BITRATE_BPS = 16000000;
+  static final int VIDEO_MAX_BITRATE_BPS = 128000000;
   static volatile BrowserRtcVideoTrack currentBridge;
   static final List<DataChannel> dataChannels=new CopyOnWriteArrayList<>();
   static final AtomicInteger decoded = new AtomicInteger();
@@ -203,6 +205,7 @@ public final class NativeVideoProbe {
     outputDigest=java.security.MessageDigest.getInstance("SHA-256");
     offeredDigest=java.security.MessageDigest.getInstance("SHA-256");
     String mode=args.length>0?args[0]:"paced"; int start=args.length>1?Integer.parseInt(args[1]):0;
+    if(start!=0&&(start<VIDEO_MIN_BITRATE_BPS||start>VIDEO_MAX_BITRATE_BPS))throw new IllegalArgumentException("start bitrate must be zero or between "+VIDEO_MIN_BITRATE_BPS+" and "+VIDEO_MAX_BITRATE_BPS);
     int delay=args.length>2?Integer.parseInt(args[2]):0;int frameCount=args.length>3?Integer.parseInt(args[3]):360;
     boolean warm=args.length>4&&args[4].equals("warm");
     boolean verbose=args.length>5&&args[5].equals("verbose");
@@ -288,7 +291,7 @@ public final class NativeVideoProbe {
     rxObs.gathered.await(30,TimeUnit.SECONDS);Files.write(Paths.get(dir+"/offer.sdp"),rx.getLocalDescription().description.getBytes("UTF-8"));s=new Sdp();tx.setRemoteDescription(s,rx.getLocalDescription());s.await();
     RtpSender sender=tx.addTrack(bridge.attach(txFactory),Collections.singletonList("probe-video"));
     RtpParameters parameters=sender.getParameters();parameters.degradationPreference=RtpParameters.DegradationPreference.DISABLED;
-    if(start>0)for(RtpParameters.Encoding e:parameters.encodings)e.maxBitrateBps=64000000;
+    if(start>0)for(RtpParameters.Encoding e:parameters.encodings)e.maxBitrateBps=VIDEO_MAX_BITRATE_BPS;
     if(!sender.setParameters(parameters))throw new Exception("setParameters failed");
     for(RtpTransceiver t:tx.getTransceivers())if(t.getSender().id().equals(sender.id())){
       t.setDirection(RtpTransceiver.RtpTransceiverDirection.SEND_ONLY);
@@ -299,7 +302,10 @@ public final class NativeVideoProbe {
         t.setCodecPreferences(preferred).throwError();
       }
     }
-    if(start>0)System.out.println("START_BITRATE "+tx.setBitrate(null,start,64000000));
+    if(start>0){
+      if(!tx.setBitrate(VIDEO_MIN_BITRATE_BPS,start,VIDEO_MAX_BITRATE_BPS))throw new Exception("setBitrate failed");
+      System.out.println("START_BITRATE true");
+    }
     s=new Sdp();tx.createAnswer(s,new MediaConstraints());SessionDescription answer=s.await();s=new Sdp();tx.setLocalDescription(s,answer);s.await();
     txObs.gathered.await(30,TimeUnit.SECONDS);Files.write(Paths.get(dir+"/answer.sdp"),tx.getLocalDescription().description.getBytes("UTF-8"));bridge.negotiated(tx.getLocalDescription().description);
     s=new Sdp();rx.setRemoteDescription(s,tx.getLocalDescription());s.await();
@@ -323,7 +329,7 @@ public final class NativeVideoProbe {
         bridge.close();bridge=new BrowserRtcVideoTrack(offered,()->Unit.INSTANCE,null,()->System.nanoTime());currentBridge=bridge;
         sender=tx.addTrack(bridge.attach(txFactory),Collections.singletonList("probe-video"));
         RtpParameters nextParameters=sender.getParameters();nextParameters.degradationPreference=RtpParameters.DegradationPreference.DISABLED;
-        for(RtpParameters.Encoding e:nextParameters.encodings)e.maxBitrateBps=64000000;
+        for(RtpParameters.Encoding e:nextParameters.encodings)e.maxBitrateBps=VIDEO_MAX_BITRATE_BPS;
         if(!sender.setParameters(nextParameters))throw new Exception("replacement setParameters failed");
         for(RtpTransceiver t:tx.getTransceivers())if(t.getSender().id().equals(sender.id())){
           t.setDirection(RtpTransceiver.RtpTransceiverDirection.SEND_ONLY);
@@ -386,7 +392,7 @@ public final class NativeVideoProbe {
     System.out.println("DELTA mode="+mode+" start="+start+" receiverDecoderInvocations="+(decoded.get()-decodedBaseline)+" nativeBlocked="+(blocked.get()-blockedBaseline)+" "+delta);
     System.out.println("RESULT mode="+mode+" start="+start+" delay="+delay+" offered="+sent+" receiverDecoderInvocations="+decoded.get()+" keys="+keys.get()+" nativeBlocked="+blocked.get()+" badTimestamps="+badTimestamps.get()+" "+bridge.flowDiagnostics());
     Map<String,Object> result=new LinkedHashMap<>();
-    result.put("mode",mode);result.put("startBitrateBps",start);result.put("maxBitrateBps",start>0?64000000:null);
+    result.put("mode",mode);result.put("startBitrateBps",start);result.put("minBitrateBps",start>0?VIDEO_MIN_BITRATE_BPS:null);result.put("maxBitrateBps",start>0?VIDEO_MAX_BITRATE_BPS:null);
     result.put("syntheticEncodeDelayMs",delay);result.put("fixtureProfile",profile);result.put("fixtureAccessUnits",frameCount);
     result.put("warmup",baseline);result.put("delta",delta);result.put("final",bridge.flowDiagnostics());
     result.put("receiverDecoderInvocations",decoded.get()-decodedBaseline);result.put("nativeBlocked",verbose?blocked.get()-blockedBaseline:null);
