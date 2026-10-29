@@ -118,9 +118,10 @@ class WirelessReceiveDiagnosticsTest {
         assertTrue(restored.contains("ifaceRxPacketsDelta=7"))
         assertTrue(restored.contains("baselineFields=MissedErrors"))
         assertFalse(restored.contains("ifaceRxMissedErrorsDelta="))
+        assertEquals(2, missingReads)
         value = 21; clock += 10_000_000_000L
         assertTrue(diagnostics.snapshot().contains("ifaceRxMissedErrorsDelta=1"))
-        assertEquals(2, missingReads)
+        assertEquals(3, missingReads)
     }
 
     @Test fun missingOrInvalidUdpFieldDoesNotHideOtherCounters() {
